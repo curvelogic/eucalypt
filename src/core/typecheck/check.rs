@@ -5,9 +5,21 @@
 //! - **Synthesis** (⇒): compute the type of an expression from its structure.
 //! - **Checking** (⇐): verify that an expression is consistent with an expected type.
 //!
-//! This is the first phase of the bidirectional checker (eu-mptm). Type
-//! variable instantiation is deferred to eu-wq59; for now, type variables
-//! (`a`, `b`, etc.) are erased to `any` before checking.
+//! ## Polymorphism
+//!
+//! Type annotations may contain type variables (`a`, `b`, etc.), forming
+//! polymorphic schemes (`forall a b. (a -> b) -> [a] -> [b]`).  The checker
+//! stores schemes in the scope; on each variable reference the scheme is
+//! *freshened* — its quantified variables are replaced with fresh unification
+//! variables (`_t0`, `_t1`, …).  As arguments are applied, the fresh variables
+//! are unified with the concrete argument types, propagating information
+//! through the return type.
+//!
+//! ## Overloaded operators
+//!
+//! Operators such as `+` carry a `Union` type covering all overloads.  When
+//! an argument is applied to a union-typed function, the checker tries each
+//! variant in order and commits to the first that unifies.
 //!
 //! Type issues are always warnings — they never prevent evaluation.
 
@@ -18,7 +30,13 @@ use crate::{
     core::{
         binding::Var,
         expr::{BlockMap, Expr, Primitive, RcExpr},
-        typecheck::{error::TypeWarning, parse, subtype::is_consistent, types::Type},
+        typecheck::{
+            error::TypeWarning,
+            parse,
+            subtype::is_consistent,
+            types::{Type, TypeScheme},
+            unify::{apply_subst, freshen, infer_scheme, unify, Substitution},
+        },
     },
 };
 
@@ -48,10 +66,12 @@ type AliasMap = HashMap<String, Type>;
 pub struct Checker {
     /// Scope stack.  Front = innermost scope.
     ///
-    /// Each frame maps binding name → type for that scope.  When we see a
-    /// `Var(_, Bound(bv))` and `bv.name` is `Some(n)`, we search from the
-    /// innermost frame outwards for `n`.
-    scope_stack: VecDeque<HashMap<String, Type>>,
+    /// Each frame maps binding name → `TypeScheme`.  Polymorphic schemes are
+    /// freshened on every lookup; monomorphic schemes are returned as-is.
+    scope_stack: VecDeque<HashMap<String, TypeScheme>>,
+
+    /// Counter for generating unique fresh type-variable names (`_t0`, `_t1`, …).
+    var_counter: u32,
 
     /// Accumulated warnings.
     warnings: Vec<TypeWarning>,
@@ -75,6 +95,7 @@ impl Checker {
     pub fn new() -> Self {
         Checker {
             scope_stack: VecDeque::new(),
+            var_counter: 0,
             warnings: Vec::new(),
             aliases: AliasMap::new(),
         }
@@ -86,16 +107,13 @@ impl Checker {
     }
 
     /// Primary entry point: walk `expr` and collect warnings.
-    ///
-    /// Equivalent to synthesising the type of the whole expression tree and
-    /// recursing into all sub-expressions along the way.
     pub fn check_expr(&mut self, expr: &RcExpr) {
         self.synthesise(expr);
     }
 
     // ── Scope management ────────────────────────────────────────────────────
 
-    fn push_scope(&mut self, frame: HashMap<String, Type>) {
+    fn push_scope(&mut self, frame: HashMap<String, TypeScheme>) {
         self.scope_stack.push_front(frame);
     }
 
@@ -103,14 +121,21 @@ impl Checker {
         self.scope_stack.pop_front();
     }
 
-    /// Look up a name by searching from the innermost scope outwards.
-    fn lookup_name(&self, name: &str) -> Type {
-        for frame in &self.scope_stack {
-            if let Some(ty) = frame.get(name) {
-                return ty.clone();
-            }
+    /// Look up a name, searching from the innermost scope outward.
+    ///
+    /// Polymorphic schemes are freshened on each lookup so every use gets its
+    /// own set of unification variables.  Monomorphic schemes are returned
+    /// with their body type unchanged.
+    fn lookup_name(&mut self, name: &str) -> Type {
+        let scheme = self
+            .scope_stack
+            .iter()
+            .find_map(|frame| frame.get(name))
+            .cloned();
+        match scheme {
+            Some(s) => freshen(&s, &mut self.var_counter),
+            None => Type::Any,
         }
-        Type::Any
     }
 
     // ── Alias management ────────────────────────────────────────────────────
@@ -233,7 +258,6 @@ impl Checker {
             _ => return None,
         };
 
-        // User annotation takes priority over desugarer hint.
         let type_str: String = if let Some(e) = block.get("type") {
             extract_string_literal(e)?
         } else if let Some(e) = block.get("__type_hint") {
@@ -246,47 +270,23 @@ impl Checker {
         Some(self.resolve_aliases_in_type(parsed))
     }
 
-    // ── Type variable erasure ────────────────────────────────────────────────
-
-    /// Replace all type variables with `any` (Phase 1 — no instantiation yet).
-    fn erase_type_vars(ty: Type) -> Type {
-        match ty {
-            Type::Var(_) => Type::Any,
-            Type::List(inner) => Type::List(Box::new(Self::erase_type_vars(*inner))),
-            Type::Tuple(elems) => {
-                Type::Tuple(elems.into_iter().map(Self::erase_type_vars).collect())
-            }
-            Type::IO(inner) => Type::IO(Box::new(Self::erase_type_vars(*inner))),
-            Type::Lens(a, b) => Type::Lens(
-                Box::new(Self::erase_type_vars(*a)),
-                Box::new(Self::erase_type_vars(*b)),
-            ),
-            Type::Traversal(a, b) => Type::Traversal(
-                Box::new(Self::erase_type_vars(*a)),
-                Box::new(Self::erase_type_vars(*b)),
-            ),
-            Type::Function(a, b) => Type::Function(
-                Box::new(Self::erase_type_vars(*a)),
-                Box::new(Self::erase_type_vars(*b)),
-            ),
-            Type::Record { fields, open } => Type::Record {
-                fields: fields
-                    .into_iter()
-                    .map(|(k, v)| (k, Self::erase_type_vars(v)))
-                    .collect(),
-                open,
-            },
-            Type::Union(variants) => {
-                Type::Union(variants.into_iter().map(Self::erase_type_vars).collect())
-            }
-            other => other,
+    /// Try to extract a `TypeScheme` from a binding value's `Meta` wrapper.
+    ///
+    /// Returns `Some(scheme)` when the value is wrapped in a `Meta` node that
+    /// carries a `type:` or `__type_hint:` annotation, `None` otherwise.  The
+    /// type variables in the annotation are quantified into the scheme via
+    /// `infer_scheme`.  Alias references are resolved before quantification.
+    fn annotation_scheme_of(&self, value: &RcExpr) -> Option<TypeScheme> {
+        if let Expr::Meta(_, _, meta) = &*value.inner {
+            self.extract_annotation(meta).map(infer_scheme)
+        } else {
+            None
         }
     }
 
     // ── Synthesis ────────────────────────────────────────────────────────────
 
-    /// Synthesise the type of `expr`, recursing to gather warnings along the
-    /// way.
+    /// Synthesise the type of `expr`, recursing to gather warnings along the way.
     pub fn synthesise(&mut self, expr: &RcExpr) -> Type {
         match &*expr.inner {
             // ── Literals ─────────────────────────────────────────────────────
@@ -316,12 +316,6 @@ impl Checker {
             Expr::Intrinsic(_, name) => self.lookup_name(name),
 
             // ── Metadata ─────────────────────────────────────────────────────
-            //
-            // A Meta node carries type annotations.  When a `type:` or
-            // `__type_hint:` annotation is present, it is the authoritative
-            // type for the wrapped expression — we synthesise the inner type
-            // purely to check consistency and to populate the scope for any
-            // nested let-bindings.
             Expr::Meta(smid, inner, meta) => self.synthesise_meta(*smid, inner, meta),
 
             // ── Let ───────────────────────────────────────────────────────────
@@ -329,33 +323,40 @@ impl Checker {
                 // Two-pass approach so that annotated bindings are visible when
                 // synthesising the values of their sibling bindings.
                 //
-                // Pass 1: extract annotation types for all bindings.  For
-                // unannotated bindings, seed with `any` as a placeholder.
-                let mut frame: HashMap<String, Type> = HashMap::new();
+                // Pass 1: pre-seed the frame with annotation schemes (or a
+                // `mono(any)` placeholder for unannotated bindings).
+                let mut frame: HashMap<String, TypeScheme> = HashMap::new();
                 for (name, value) in &scope.pattern {
-                    let ty = self.annotation_type_of(value).unwrap_or(Type::Any);
-                    frame.insert(name.clone(), ty);
+                    let scheme = self
+                        .annotation_scheme_of(value)
+                        .unwrap_or(TypeScheme::mono(Type::Any));
+                    frame.insert(name.clone(), scheme);
                 }
 
-                // Push the pre-seeded frame so sibling bindings are in scope.
                 self.push_scope(frame);
 
-                // Pass 2: synthesise each binding value — this triggers
-                // consistency checks against any annotations present.
+                // Pass 2: synthesise each binding value — triggers consistency
+                // checks against any annotations.  For unannotated bindings,
+                // replace the placeholder with the synthesised mono type so
+                // later sibling bindings and the body can use it.
                 for (name, value) in &scope.pattern {
                     let synthesised = self.synthesise_binding_value(value);
-                    // For unannotated bindings, replace the `any` placeholder
-                    // with the synthesised type so later bindings can use it.
+                    let placeholder = TypeScheme::mono(Type::Any);
                     if let Some(frame) = self.scope_stack.front_mut() {
-                        if frame.get(name) == Some(&Type::Any) {
-                            frame.insert(name.clone(), synthesised.clone());
+                        if frame.get(name) == Some(&placeholder) {
+                            frame.insert(name.clone(), TypeScheme::mono(synthesised.clone()));
                         }
                     }
                     // Register `type-def:` alias when present.
                     if let Some(alias_name) = Self::extract_type_def_name(value) {
                         // Use the explicit `type:` annotation if given; otherwise
                         // the synthesised type (inferred from the value shape).
-                        let alias_ty = self.annotation_type_of(value).unwrap_or(synthesised);
+                        let alias_ty = if let Expr::Meta(_, _, meta) = &*value.inner {
+                            self.extract_annotation(meta)
+                        } else {
+                            None
+                        }
+                        .unwrap_or(synthesised);
                         self.register_alias(alias_name, alias_ty);
                     }
                 }
@@ -366,11 +367,8 @@ impl Checker {
             }
 
             // ── Lambda ────────────────────────────────────────────────────────
-            //
-            // We cannot synthesise a lambda's type without knowing the
-            // parameter types.  Return `any` here; the checking direction
-            // (called from `check_against`) handles the case where the
-            // expected type is known.
+            // Cannot synthesise without knowing parameter types.  Return `any`
+            // and let `check_against` handle the case where the type is known.
             Expr::Lam(_, _, _) => Type::Any,
 
             // ── Application ──────────────────────────────────────────────────
@@ -395,19 +393,6 @@ impl Checker {
         }
     }
 
-    /// Extract the annotated type from a binding value without synthesising it.
-    ///
-    /// Returns `Some(T)` when the value is wrapped in a `Meta` node that carries
-    /// a `type:` or `__type_hint:` annotation, `None` otherwise.  The type has
-    /// alias references resolved and type variables erased.
-    fn annotation_type_of(&self, value: &RcExpr) -> Option<Type> {
-        if let Expr::Meta(_, _, meta) = &*value.inner {
-            self.extract_annotation(meta).map(Self::erase_type_vars)
-        } else {
-            None
-        }
-    }
-
     /// Synthesise the type of a let-binding value, giving priority to any
     /// type annotation present in a `Meta` wrapper.
     ///
@@ -421,14 +406,14 @@ impl Checker {
         self.synthesise(value)
     }
 
-    /// Synthesise the type from a `Meta(smid, inner, meta)` node.
+    /// Synthesise the type of a `Meta(smid, inner, meta)` node.
     ///
     /// Steps:
     /// 1. Register any `types:` aliases declared in `meta` so they are
     ///    available for annotations later in the same scope.
-    /// 2. If `meta` carries a `type:` or `__type_hint:` annotation, check the
-    ///    inner expression against it and return the annotated type
-    ///    (authoritative).
+    /// 2. If `meta` carries a `type:` or `__type_hint:` annotation, freshen its
+    ///    scheme (instantiating type variables), check the inner expression
+    ///    against the working type, and return it (authoritative).
     /// 3. Otherwise synthesise the inner expression.
     fn synthesise_meta(&mut self, smid: Smid, inner: &RcExpr, meta: &RcExpr) -> Type {
         // Register `types:` block aliases before reading any annotation so that
@@ -436,11 +421,10 @@ impl Checker {
         self.register_aliases_from_meta(meta);
 
         if let Some(annotated_type) = self.extract_annotation(meta) {
-            // The annotation is authoritative.  Check the inner expression
-            // against it to emit warnings for obvious mismatches.
-            let erased = Self::erase_type_vars(annotated_type.clone());
-            self.check_against(inner, &erased, smid);
-            erased
+            let scheme = infer_scheme(annotated_type);
+            let working_type = freshen(&scheme, &mut self.var_counter);
+            self.check_against(inner, &working_type, smid);
+            working_type
         } else {
             self.synthesise(inner)
         }
@@ -479,7 +463,7 @@ impl Checker {
     /// - Known closed record + absent field → emit a warning and return `any`.
     /// - `any` object type → return `any` (gradual boundary, no warning).
     /// - Non-record object type → return `any` (cannot reason about field access).
-    fn synthesise_lookup(&mut self, smid: Smid, obj_type: &Type, field: &str) -> Type {
+    pub fn synthesise_lookup(&mut self, smid: Smid, obj_type: &Type, field: &str) -> Type {
         match obj_type {
             Type::Record { fields, open } => {
                 if let Some(field_ty) = fields.get(field) {
@@ -507,43 +491,70 @@ impl Checker {
 
     /// Synthesise the result type of a function application.
     ///
-    /// Synthesises the function type, then checks each argument against the
-    /// expected parameter type, currying through function types.
+    /// Maintains a `Substitution` across all arguments so that type variables
+    /// unified by one argument automatically constrain later arguments and the
+    /// return type.
     fn synthesise_app(&mut self, smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
         let func_type = self.synthesise(func);
-
-        // Curry through the function type, checking each argument in turn.
+        let mut subst = Substitution::new();
         let mut current_type = func_type;
+
         for arg in args {
-            current_type = self.apply_one(smid, current_type, arg);
+            current_type = self.apply_one_with_subst(smid, current_type, arg, &mut subst);
         }
-        current_type
+
+        // Apply the accumulated substitution to resolve any remaining vars.
+        apply_subst(&current_type, &subst)
     }
 
-    /// Apply a single argument to the current function type, returning the
-    /// result type.  Emits a warning when the types are not consistent.
-    fn apply_one(&mut self, smid: Smid, func_type: Type, arg: &RcExpr) -> Type {
+    /// Apply a single argument to the current function type using unification.
+    ///
+    /// Unifies the parameter type with the argument type, updating `subst`.
+    /// Emits a warning when the types do not unify and neither is uninformative.
+    fn apply_one_with_subst(
+        &mut self,
+        smid: Smid,
+        func_type: Type,
+        arg: &RcExpr,
+        subst: &mut Substitution,
+    ) -> Type {
+        // Apply any substitutions accumulated so far.
+        let func_type = apply_subst(&func_type, subst);
+
         match func_type {
             Type::Function(param_type, result_type) => {
                 let arg_type = self.synthesise(arg);
-                if !is_informative(&arg_type) || !is_informative(&param_type) {
-                    // One side is uninformative (`any`) — no warning.
-                    return *result_type;
+                let param_applied = apply_subst(&param_type, subst);
+
+                if !is_informative(&arg_type) || !is_informative(&param_applied) {
+                    // Gradual boundary — no warning.
+                    return apply_subst(&result_type, subst);
                 }
-                if !is_consistent(&arg_type, &param_type) {
-                    self.emit_type_mismatch(
-                        smid,
-                        &param_type,
-                        &arg_type,
-                        "argument type does not match function parameter",
-                    );
+
+                match unify(&param_applied, &arg_type, subst) {
+                    Ok(()) => apply_subst(&result_type, subst),
+                    Err(_) => {
+                        self.emit_type_mismatch(
+                            smid,
+                            &param_applied,
+                            &arg_type,
+                            "argument type does not match function parameter",
+                        );
+                        apply_subst(&result_type, subst)
+                    }
                 }
-                *result_type
             }
-            // `any` function — we cannot say anything about arguments.
-            Type::Any => Type::Any,
-            // Applied to something that is not a function — still recurse to
-            // collect warnings from the argument sub-expression.
+
+            // Union-typed function — try each overload variant.
+            Type::Union(variants) => self.apply_union(smid, variants, arg, subst),
+
+            // Unknown function type — recurse into arg to collect sub-warnings.
+            Type::Any => {
+                self.synthesise(arg);
+                Type::Any
+            }
+
+            // Applied to a non-function — still recurse.
             _ => {
                 self.synthesise(arg);
                 Type::Any
@@ -551,20 +562,76 @@ impl Checker {
         }
     }
 
+    /// Apply a single argument to a union-typed (overloaded) function.
+    ///
+    /// Tries each variant in order.  Commits to the first variant whose
+    /// parameter type unifies with the argument type.  If no variant matches
+    /// and the argument type is informative, emits a type warning.
+    fn apply_union(
+        &mut self,
+        smid: Smid,
+        variants: Vec<Type>,
+        arg: &RcExpr,
+        subst: &mut Substitution,
+    ) -> Type {
+        let arg_type = self.synthesise(arg);
+
+        if !is_informative(&arg_type) {
+            // Gradual boundary — cannot determine which overload applies.
+            return Type::Any;
+        }
+
+        for variant in &variants {
+            if let Type::Function(param_type, result_type) = variant {
+                let param_applied = apply_subst(param_type, subst);
+                let mut trial = subst.clone();
+                if unify(&param_applied, &arg_type, &mut trial).is_ok() {
+                    *subst = trial;
+                    return apply_subst(result_type, subst);
+                }
+            }
+        }
+
+        // No variant matched — build a union of expected parameter types for
+        // the error message.
+        let param_types: Vec<Type> = variants
+            .iter()
+            .filter_map(|v| {
+                if let Type::Function(p, _) = v {
+                    Some(apply_subst(p, subst))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if !param_types.is_empty() {
+            let expected = if param_types.len() == 1 {
+                param_types.into_iter().next().unwrap()
+            } else {
+                Type::Union(param_types)
+            };
+            self.emit_type_mismatch(
+                smid,
+                &expected,
+                &arg_type,
+                "argument type does not match any overload",
+            );
+        }
+
+        Type::Any
+    }
+
     // ── Checking ─────────────────────────────────────────────────────────────
 
     /// Check `expr` against `expected`, emitting warnings on mismatch.
-    ///
-    /// `smid` is the source location used for warning annotation.
     pub fn check_against(&mut self, expr: &RcExpr, expected: &Type, smid: Smid) {
-        // Gradual boundary: `any` is consistent with everything.
         if !is_informative(expected) {
-            // Recurse to collect warnings from sub-expressions.
             self.synthesise(expr);
             return;
         }
 
-        // Lambda checking: bind parameter type when target is known.
+        // Lambda checking: bind parameter types when the target is known.
         if let (Expr::Lam(_, _, scope), Type::Function(param_type, result_type)) =
             (&*expr.inner, expected)
         {
@@ -574,7 +641,6 @@ impl Checker {
         let found = self.synthesise(expr);
 
         if !is_informative(&found) {
-            // `any` found type — no warning.
             return;
         }
 
@@ -590,35 +656,35 @@ impl Checker {
 
     /// Check a lambda body against an expected function type.
     ///
-    /// Binds the first parameter to `param_type`, then checks the body against
-    /// `result_type` (which may be another function type for curried lambdas).
+    /// Curries through the expected type for all parameters — a multi-param
+    /// lambda `λ x y z. body` checked against `A -> B -> C -> D` binds
+    /// `x : A`, `y : B`, `z : C`, and checks `body` against `D`.
     fn check_lambda(
         &mut self,
         scope: &crate::core::expr::LamScope<RcExpr>,
         param_type: &Type,
         result_type: &Type,
     ) {
-        // Bind the first parameter to the expected parameter type.
-        let mut frame: HashMap<String, Type> = HashMap::new();
-        if let Some(first_param) = scope.pattern.first() {
-            frame.insert(first_param.clone(), param_type.clone());
-        }
+        let mut frame: HashMap<String, TypeScheme> = HashMap::new();
 
-        // Remaining parameters get `any` for now (full currying deferred).
-        for param in scope.pattern.iter().skip(1) {
-            frame.insert(param.clone(), Type::Any);
+        // Curry through the expected function type for all lambda parameters.
+        // `remaining` tracks what the body is expected to produce.
+        let mut remaining =
+            Type::Function(Box::new(param_type.clone()), Box::new(result_type.clone()));
+
+        for param in &scope.pattern {
+            if let Type::Function(p, r) = remaining {
+                frame.insert(param.clone(), TypeScheme::mono(*p));
+                remaining = *r;
+            } else {
+                // More parameters than the function type accounts for — bind
+                // the rest as `any` and leave the body unchecked.
+                frame.insert(param.clone(), TypeScheme::mono(Type::Any));
+            }
         }
 
         self.push_scope(frame);
-
-        if scope.pattern.len() <= 1 {
-            self.check_against(&scope.body, result_type, scope.body.smid());
-        } else {
-            // Multi-param lambda with only the first param bound to the known
-            // type — check the body against `any` for remaining params.
-            self.synthesise(&scope.body);
-        }
-
+        self.check_against(&scope.body, &remaining, scope.body.smid());
         self.pop_scope();
     }
 
@@ -645,14 +711,12 @@ fn synthesise_primitive(prim: &Primitive) -> Type {
     }
 }
 
-/// Build the list element type from a Vec of synthesised element types.
+/// Build the list element type from a `Vec` of synthesised element types.
 ///
 /// - Empty list → `[never]`
 /// - All same type → `[T]`
-/// - Mixed types → `[T1 | T2 | ... | Tn]` (deduplicated)
+/// - Mixed types → `[T1 | T2 | … | Tn]` (deduplicated)
 fn synthesise_list_type(types: Vec<Type>) -> Type {
-    // Filter out `any` (it would widen the union uselessly) and `never`
-    // (empty contributions), then deduplicate.
     let mut seen: Vec<Type> = Vec::new();
     for ty in types {
         if is_informative(&ty) && !seen.contains(&ty) {
@@ -678,11 +742,11 @@ fn extract_string_literal(expr: &RcExpr) -> Option<String> {
     }
 }
 
-/// Returns `true` when `ty` carries useful information for checking.
+/// Returns `true` when `ty` carries useful information for type checking.
 ///
-/// `any` (and `never`) are considered uninformative because:
+/// `any` and `never` are uninformative:
 /// - `any` is the gradual boundary — it suppresses warnings.
-/// - `never` represents empty/unreachable code.
+/// - `never` represents empty or unreachable code.
 fn is_informative(ty: &Type) -> bool {
     !matches!(ty, Type::Any | Type::Never)
 }
@@ -702,6 +766,7 @@ pub fn type_check(expr: &RcExpr) -> Vec<TypeWarning> {
 mod tests {
     use super::*;
     use crate::core::expr::core;
+    use crate::core::typecheck::types::TypeVarId;
 
     fn num_lit(n: i64) -> RcExpr {
         core::num(Smid::default(), n)
@@ -737,6 +802,10 @@ mod tests {
         let hint_val = core::str(Smid::default(), hint_str);
         let meta_block = core::block(Smid::default(), [("__type_hint".to_string(), hint_val)]);
         core::meta(Smid::default(), inner, meta_block)
+    }
+
+    fn mono(ty: Type) -> TypeScheme {
+        TypeScheme::mono(ty)
     }
 
     // ── Literal synthesis ───────────────────────────────────────────────────
@@ -813,7 +882,6 @@ mod tests {
     #[test]
     fn meta_with_type_annotation_returns_annotation_type() {
         let mut c = Checker::new();
-        // Annotated number → type annotation is authoritative
         let expr = meta_with_type(num_lit(1), "number");
         assert_eq!(c.synthesise(&expr), Type::Number);
     }
@@ -821,7 +889,6 @@ mod tests {
     #[test]
     fn meta_with_wrong_annotation_emits_warning() {
         let mut c = Checker::new();
-        // `"hello"` annotated as `number` — should warn
         let expr = meta_with_type(str_lit("hello"), "number");
         c.synthesise(&expr);
         let warnings = c.into_warnings();
@@ -842,14 +909,12 @@ mod tests {
     fn meta_type_hint_used_as_fallback() {
         let mut c = Checker::new();
         let expr = meta_with_hint(num_lit(1), "number");
-        // Hint is used when no `type:` key
         assert_eq!(c.synthesise(&expr), Type::Number);
     }
 
     #[test]
     fn user_type_annotation_takes_priority_over_hint() {
         let mut c = Checker::new();
-        // Both keys present: user `type:` wins
         let type_val = core::str(Smid::default(), "string");
         let hint_val = core::str(Smid::default(), "number");
         let meta_block = core::block(
@@ -863,41 +928,18 @@ mod tests {
         assert_eq!(c.synthesise(&expr), Type::String);
     }
 
-    // ── Type variable erasure ────────────────────────────────────────────────
-
-    #[test]
-    fn type_vars_erased_to_any_in_function() {
-        use crate::core::typecheck::types::TypeVarId;
-        let ty = Type::Function(
-            Box::new(Type::Var(TypeVarId("a".to_string()))),
-            Box::new(Type::Var(TypeVarId("b".to_string()))),
-        );
-        assert_eq!(
-            Checker::erase_type_vars(ty),
-            Type::Function(Box::new(Type::Any), Box::new(Type::Any))
-        );
-    }
-
-    #[test]
-    fn type_vars_erased_in_list() {
-        use crate::core::typecheck::types::TypeVarId;
-        let ty = Type::List(Box::new(Type::Var(TypeVarId("a".to_string()))));
-        assert_eq!(
-            Checker::erase_type_vars(ty),
-            Type::List(Box::new(Type::Any))
-        );
-    }
-
     // ── Application checking ─────────────────────────────────────────────────
 
     #[test]
     fn app_with_correct_arg_no_warning() {
         let mut c = Checker::new();
-        // Seed env: `double : number -> number`
         let mut frame = HashMap::new();
         frame.insert(
             "double".to_string(),
-            Type::Function(Box::new(Type::Number), Box::new(Type::Number)),
+            mono(Type::Function(
+                Box::new(Type::Number),
+                Box::new(Type::Number),
+            )),
         );
         c.push_scope(frame);
 
@@ -911,11 +953,13 @@ mod tests {
     #[test]
     fn app_with_wrong_arg_type_emits_warning() {
         let mut c = Checker::new();
-        // Seed env: `double : number -> number`
         let mut frame = HashMap::new();
         frame.insert(
             "double".to_string(),
-            Type::Function(Box::new(Type::Number), Box::new(Type::Number)),
+            mono(Type::Function(
+                Box::new(Type::Number),
+                Box::new(Type::Number),
+            )),
         );
         c.push_scope(frame);
 
@@ -923,7 +967,7 @@ mod tests {
         let app = RcExpr::from(Expr::App(
             Smid::default(),
             double_var,
-            vec![str_lit("oops")], // wrong type
+            vec![str_lit("oops")],
         ));
 
         c.synthesise(&app);
@@ -939,7 +983,10 @@ mod tests {
         let mut frame = HashMap::new();
         frame.insert(
             "str_of".to_string(),
-            Type::Function(Box::new(Type::Number), Box::new(Type::String)),
+            mono(Type::Function(
+                Box::new(Type::Number),
+                Box::new(Type::String),
+            )),
         );
         c.push_scope(frame);
 
@@ -953,7 +1000,6 @@ mod tests {
     #[test]
     fn app_with_any_function_type_no_warning() {
         let mut c = Checker::new();
-        // Unknown function — no type info, no warning
         let func_var = RcExpr::from(Expr::Var(
             Smid::default(),
             Var::Free("unknown_fn".to_string()),
@@ -964,21 +1010,204 @@ mod tests {
         assert!(c.into_warnings().is_empty());
     }
 
+    // ── Polymorphic application ──────────────────────────────────────────────
+
+    #[test]
+    fn poly_identity_applied_to_number_returns_number() {
+        let mut c = Checker::new();
+        // identity : forall a. a -> a
+        let scheme = TypeScheme::poly(
+            vec![TypeVarId("a".to_string())],
+            Type::Function(
+                Box::new(Type::Var(TypeVarId("a".to_string()))),
+                Box::new(Type::Var(TypeVarId("a".to_string()))),
+            ),
+        );
+        let mut frame = HashMap::new();
+        frame.insert("identity".to_string(), scheme);
+        c.push_scope(frame);
+
+        let id_var = RcExpr::from(Expr::Var(
+            Smid::default(),
+            Var::Free("identity".to_string()),
+        ));
+        let app = RcExpr::from(Expr::App(Smid::default(), id_var, vec![num_lit(1)]));
+
+        let result = c.synthesise(&app);
+        assert_eq!(result, Type::Number);
+        assert!(c.into_warnings().is_empty());
+    }
+
+    #[test]
+    fn poly_map_applied_correctly_no_warning() {
+        let mut c = Checker::new();
+        // map : forall a b. (a -> b) -> [a] -> [b]
+        let a = TypeVarId("a".to_string());
+        let b = TypeVarId("b".to_string());
+        let scheme = TypeScheme::poly(
+            vec![a.clone(), b.clone()],
+            Type::Function(
+                Box::new(Type::Function(
+                    Box::new(Type::Var(a.clone())),
+                    Box::new(Type::Var(b.clone())),
+                )),
+                Box::new(Type::Function(
+                    Box::new(Type::List(Box::new(Type::Var(a.clone())))),
+                    Box::new(Type::List(Box::new(Type::Var(b.clone())))),
+                )),
+            ),
+        );
+        let mut frame = HashMap::new();
+        frame.insert("map".to_string(), scheme);
+        // double : number -> number
+        frame.insert(
+            "double".to_string(),
+            mono(Type::Function(
+                Box::new(Type::Number),
+                Box::new(Type::Number),
+            )),
+        );
+        c.push_scope(frame);
+
+        // map(double, [1, 2, 3])
+        let map_var = RcExpr::from(Expr::Var(Smid::default(), Var::Free("map".to_string())));
+        let double_var = RcExpr::from(Expr::Var(Smid::default(), Var::Free("double".to_string())));
+        let nums = list(vec![num_lit(1), num_lit(2), num_lit(3)]);
+        let app = RcExpr::from(Expr::App(Smid::default(), map_var, vec![double_var, nums]));
+
+        let result = c.synthesise(&app);
+        assert_eq!(result, Type::List(Box::new(Type::Number)));
+        assert!(c.into_warnings().is_empty());
+    }
+
+    #[test]
+    fn poly_map_applied_with_wrong_list_type_emits_warning() {
+        let mut c = Checker::new();
+        // map : forall a b. (a -> b) -> [a] -> [b]
+        let a = TypeVarId("a".to_string());
+        let b = TypeVarId("b".to_string());
+        let scheme = TypeScheme::poly(
+            vec![a.clone(), b.clone()],
+            Type::Function(
+                Box::new(Type::Function(
+                    Box::new(Type::Var(a.clone())),
+                    Box::new(Type::Var(b.clone())),
+                )),
+                Box::new(Type::Function(
+                    Box::new(Type::List(Box::new(Type::Var(a.clone())))),
+                    Box::new(Type::List(Box::new(Type::Var(b.clone())))),
+                )),
+            ),
+        );
+        let mut frame = HashMap::new();
+        frame.insert("map".to_string(), scheme);
+        // double : number -> number
+        frame.insert(
+            "double".to_string(),
+            mono(Type::Function(
+                Box::new(Type::Number),
+                Box::new(Type::Number),
+            )),
+        );
+        c.push_scope(frame);
+
+        // map(double, ["a", "b"]) — list type mismatch: [number] expected, [string] found
+        let map_var = RcExpr::from(Expr::Var(Smid::default(), Var::Free("map".to_string())));
+        let double_var = RcExpr::from(Expr::Var(Smid::default(), Var::Free("double".to_string())));
+        let strs = list(vec![str_lit("a"), str_lit("b")]);
+        let app = RcExpr::from(Expr::App(Smid::default(), map_var, vec![double_var, strs]));
+
+        c.synthesise(&app);
+        let warnings = c.into_warnings();
+        assert_eq!(warnings.len(), 1, "expected one mismatch warning");
+    }
+
+    // ── Overloaded operators (union type) ────────────────────────────────────
+
+    #[test]
+    fn union_typed_plus_with_numbers_no_warning() {
+        let mut c = Checker::new();
+        // + : (number -> number -> number) | (string -> string -> string)
+        let plus_type = Type::Union(vec![
+            Type::Function(
+                Box::new(Type::Number),
+                Box::new(Type::Function(
+                    Box::new(Type::Number),
+                    Box::new(Type::Number),
+                )),
+            ),
+            Type::Function(
+                Box::new(Type::String),
+                Box::new(Type::Function(
+                    Box::new(Type::String),
+                    Box::new(Type::String),
+                )),
+            ),
+        ]);
+        let mut frame = HashMap::new();
+        frame.insert("add".to_string(), mono(plus_type));
+        c.push_scope(frame);
+
+        let add_var = RcExpr::from(Expr::Var(Smid::default(), Var::Free("add".to_string())));
+        let app = RcExpr::from(Expr::App(
+            Smid::default(),
+            add_var,
+            vec![num_lit(1), num_lit(2)],
+        ));
+
+        let result = c.synthesise(&app);
+        assert_eq!(result, Type::Number);
+        assert!(c.into_warnings().is_empty());
+    }
+
+    #[test]
+    fn union_typed_plus_with_mixed_types_emits_warning() {
+        let mut c = Checker::new();
+        let plus_type = Type::Union(vec![
+            Type::Function(
+                Box::new(Type::Number),
+                Box::new(Type::Function(
+                    Box::new(Type::Number),
+                    Box::new(Type::Number),
+                )),
+            ),
+            Type::Function(
+                Box::new(Type::String),
+                Box::new(Type::Function(
+                    Box::new(Type::String),
+                    Box::new(Type::String),
+                )),
+            ),
+        ]);
+        let mut frame = HashMap::new();
+        frame.insert("add".to_string(), mono(plus_type));
+        c.push_scope(frame);
+
+        // add(1, "hello") — string arg fails all overloads for the second arg
+        // after the first arg selects the number branch
+        let add_var = RcExpr::from(Expr::Var(Smid::default(), Var::Free("add".to_string())));
+        let app = RcExpr::from(Expr::App(
+            Smid::default(),
+            add_var,
+            vec![num_lit(1), str_lit("hello")],
+        ));
+
+        c.synthesise(&app);
+        let warnings = c.into_warnings();
+        assert!(!warnings.is_empty(), "expected a type mismatch warning");
+    }
+
     // ── Let binding ──────────────────────────────────────────────────────────
 
     #[test]
     fn let_binding_seeds_scope_for_body() {
         let mut c = Checker::new();
 
-        // let x = 42
-        //     double = (__DOUBLE : number -> number)
-        // in double(x)
         let double_meta = meta_with_type(
             RcExpr::from(Expr::Intrinsic(Smid::default(), "__DOUBLE".to_string())),
             "number -> number",
         );
 
-        // Build the body using free variables; close_let_scope will bind them.
         let x_ref = RcExpr::from(Expr::Var(Smid::default(), Var::Free("x".to_string())));
         let double_var = RcExpr::from(Expr::Var(Smid::default(), Var::Free("double".to_string())));
         let app = RcExpr::from(Expr::App(Smid::default(), double_var, vec![x_ref]));
@@ -1006,7 +1235,6 @@ mod tests {
         let mut c = Checker::new();
 
         // λ x. x — checked against `number -> number`
-        // Use close_lam_scope so the param is properly bound in the body.
         let x_free = RcExpr::from(Expr::Var(Smid::default(), Var::Free("x".to_string())));
         let scope = close_lam_scope(vec!["x".to_string()], x_free);
         let lam = RcExpr::from(Expr::Lam(Smid::default(), false, scope));
@@ -1016,28 +1244,54 @@ mod tests {
         assert!(c.into_warnings().is_empty());
     }
 
+    #[test]
+    fn multi_param_lambda_checked_correctly() {
+        use crate::core::expr::close_lam_scope;
+
+        let mut c = Checker::new();
+
+        // λ x y. x — checked against `number -> string -> number`
+        // y is bound but unused; body returns x which is number.
+        let x_free = RcExpr::from(Expr::Var(Smid::default(), Var::Free("x".to_string())));
+        let scope = close_lam_scope(vec!["x".to_string(), "y".to_string()], x_free);
+        let lam = RcExpr::from(Expr::Lam(Smid::default(), false, scope));
+
+        let fn_type = Type::Function(
+            Box::new(Type::Number),
+            Box::new(Type::Function(
+                Box::new(Type::String),
+                Box::new(Type::Number),
+            )),
+        );
+        c.check_against(&lam, &fn_type, Smid::default());
+        assert!(c.into_warnings().is_empty());
+    }
+
     // ── Pipeline / catenation style ──────────────────────────────────────────
 
     #[test]
     fn catenation_type_flows_left_to_right() {
         let mut c = Checker::new();
-        // Simulates: `42 double str_of`
-        // = str_of(double(42)) = App(str_of, [App(double, [42])])
         let mut frame = HashMap::new();
         frame.insert(
             "double".to_string(),
-            Type::Function(Box::new(Type::Number), Box::new(Type::Number)),
+            mono(Type::Function(
+                Box::new(Type::Number),
+                Box::new(Type::Number),
+            )),
         );
         frame.insert(
             "str_of".to_string(),
-            Type::Function(Box::new(Type::Number), Box::new(Type::String)),
+            mono(Type::Function(
+                Box::new(Type::Number),
+                Box::new(Type::String),
+            )),
         );
         c.push_scope(frame);
 
         let double_var = RcExpr::from(Expr::Var(Smid::default(), Var::Free("double".to_string())));
         let str_of_var = RcExpr::from(Expr::Var(Smid::default(), Var::Free("str_of".to_string())));
 
-        // App(str_of, [App(double, [42])])
         let inner = RcExpr::from(Expr::App(Smid::default(), double_var, vec![num_lit(42)]));
         let outer = RcExpr::from(Expr::App(Smid::default(), str_of_var, vec![inner]));
 
@@ -1051,16 +1305,14 @@ mod tests {
     #[test]
     fn any_arg_passes_any_function_parameter_without_warning() {
         let mut c = Checker::new();
-        // function `f : any -> string` called with `any` arg — no warning
         let mut frame = HashMap::new();
         frame.insert(
             "f".to_string(),
-            Type::Function(Box::new(Type::Any), Box::new(Type::String)),
+            mono(Type::Function(Box::new(Type::Any), Box::new(Type::String))),
         );
         c.push_scope(frame);
 
         let f_var = RcExpr::from(Expr::Var(Smid::default(), Var::Free("f".to_string())));
-        // unknown var — type is `any`
         let arg = RcExpr::from(Expr::Var(Smid::default(), Var::Free("unknown".to_string())));
         let app = RcExpr::from(Expr::App(Smid::default(), f_var, vec![arg]));
 
@@ -1074,7 +1326,10 @@ mod tests {
         let mut frame = HashMap::new();
         frame.insert(
             "f".to_string(),
-            Type::Function(Box::new(Type::Number), Box::new(Type::String)),
+            mono(Type::Function(
+                Box::new(Type::Number),
+                Box::new(Type::String),
+            )),
         );
         c.push_scope(frame);
 
@@ -1157,7 +1412,7 @@ mod tests {
         let mut frame = HashMap::new();
         frame.insert(
             "rec".to_string(),
-            Type::Record {
+            mono(Type::Record {
                 fields: {
                     let mut m = std::collections::BTreeMap::new();
                     m.insert("name".to_string(), Type::String);
@@ -1165,7 +1420,7 @@ mod tests {
                     m
                 },
                 open: true,
-            },
+            }),
         );
         c.push_scope(frame);
 
@@ -1181,10 +1436,10 @@ mod tests {
         let mut frame = HashMap::new();
         frame.insert(
             "rec".to_string(),
-            Type::Record {
+            mono(Type::Record {
                 fields: std::collections::BTreeMap::new(),
                 open: true,
-            },
+            }),
         );
         c.push_scope(frame);
 
@@ -1201,14 +1456,14 @@ mod tests {
         let mut frame = HashMap::new();
         frame.insert(
             "rec".to_string(),
-            Type::Record {
+            mono(Type::Record {
                 fields: {
                     let mut m = std::collections::BTreeMap::new();
                     m.insert("x".to_string(), Type::Number);
                     m
                 },
                 open: false,
-            },
+            }),
         );
         c.push_scope(frame);
 
