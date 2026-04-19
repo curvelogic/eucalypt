@@ -109,6 +109,19 @@ pub enum Commands {
     Fmt(FmtArgs),
     /// Start the Language Server Protocol server
     Lsp,
+    /// Check type annotations in eucalypt source files
+    Check(CheckArgs),
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct CheckArgs {
+    /// Treat type annotation warnings as errors
+    #[arg(long = "strict")]
+    pub strict: bool,
+
+    /// Files to type-check
+    #[arg(value_name = "FILES")]
+    pub files: Vec<String>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -342,6 +355,10 @@ pub struct EucalyptOptions {
     // LSP mode
     pub lsp: bool,
 
+    // Check mode
+    pub check: bool,
+    pub check_strict: bool,
+
     // Format command options
     pub format: bool,
     pub format_width: usize,
@@ -389,6 +406,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             Some(Commands::ListTargets(args)) => &args.files,
             Some(Commands::Fmt(args)) => &args.files,
             Some(Commands::Version) | Some(Commands::Lsp) => &cli.files,
+            Some(Commands::Check(args)) => &args.files,
             None => &cli.files,
         };
 
@@ -552,6 +570,12 @@ impl From<EucalyptCli> for EucalyptOptions {
         // Extract LSP mode
         let lsp = matches!(cli.command, Some(Commands::Lsp));
 
+        // Extract check mode
+        let (check, check_strict) = match &cli.command {
+            Some(Commands::Check(args)) => (true, args.strict),
+            _ => (false, false),
+        };
+
         // Extract heap limit and no-dce from Run command
         // 0 means unbounded; any other value is the limit in MiB
         let heap_limit_mib = match &cli.command {
@@ -625,6 +649,8 @@ impl From<EucalyptCli> for EucalyptOptions {
             dump_stg,
             dump_runtime,
             lsp,
+            check,
+            check_strict,
             format,
             format_width,
             format_write,
@@ -668,6 +694,7 @@ impl EucalyptCli {
             "list-targets",
             "fmt",
             "lsp",
+            "check",
             "help",
         ];
         // Rewrite --version/-V to the version subcommand so the
@@ -783,6 +810,14 @@ impl EucalyptOptions {
         self.lsp
     }
 
+    pub fn check(&self) -> bool {
+        self.check
+    }
+
+    pub fn check_strict(&self) -> bool {
+        self.check_strict
+    }
+
     pub fn no_dce(&self) -> bool {
         self.no_dce
     }
@@ -800,6 +835,7 @@ impl EucalyptOptions {
             && !self.dump_runtime
             && !self.format
             && !self.lsp
+            && !self.check
     }
 
     pub fn target(&self) -> Option<&str> {

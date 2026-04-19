@@ -3,6 +3,7 @@ extern crate eucalypt;
 use std::process;
 use std::thread;
 
+use eucalypt::driver::check;
 use eucalypt::driver::format;
 use eucalypt::driver::lsp;
 use eucalypt::driver::options::EucalyptOptions;
@@ -69,6 +70,17 @@ fn run() -> i32 {
     // Format mode handles its own input loading
     if opt.format() {
         match format::format(&opt) {
+            Ok(exit) => return exit,
+            Err(e) => {
+                eprintln!("{e}");
+                return 2;
+            }
+        }
+    }
+
+    // Check mode: validate type annotations then exit
+    if opt.check() {
+        match check::check(&opt) {
             Ok(exit) => return exit,
             Err(e) => {
                 eprintln!("{e}");
