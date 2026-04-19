@@ -23,7 +23,7 @@ structures using lenses.
 "
 
 ` { doc: "`at(key)` defines a lens that focuses within a block on the value with key `key`."
-    type: "symbol -> Lens(block, any)" }
+    type: "symbol -> Lens({{..}}, any)" }
 at(key, k): {
   fmap: meta(k).fmap
   s(obj): fmap({ nv: • }.(obj alter-value(key, nv)), k(obj lookup(key)))
@@ -166,7 +166,7 @@ example-predicate: {
 # block element lenses
 
 ` { doc: "`element(p?)` defines a lens that focuses on the first kv pair [key, value] in a block matching `p?`. Use prelude helpers like `by-key`, `by-value` to define the predicate. Compose with `_value` to focus on just the value."
-    type: "((symbol, any) -> bool) -> Lens(block, (symbol, any))" }
+    type: "((symbol, any) -> bool) -> Lens({{..}}, (symbol, any))" }
 element(p?, k): {
   fmap: meta(k).fmap
   s(data): fmap({ nv: • }.(data elements update-first(p?, ->nv) block), k(data filter-items(p?) head))
@@ -257,7 +257,7 @@ parts-of(traversal, k): {
 }.(s // meta(k))
 
 ` { doc: "`each-element` traverses all kv pairs of a block."
-    type: "Traversal(block, (symbol, any))" }
+    type: "Traversal({{..}}, (symbol, any))" }
 each-element(k): {
   fmap: meta(k).fmap
   pure: meta(k).pure
@@ -268,7 +268,7 @@ each-element(k): {
 }.(s // meta(k))
 
 ` { doc: "`filtered-elements(p?)` traverses block kv pairs matching predicate `p?`."
-    type: "((symbol, any) -> bool) -> Traversal(block, (symbol, any))" }
+    type: "((symbol, any) -> bool) -> Traversal({{..}}, (symbol, any))" }
 filtered-elements(p?, k): {
   fmap: meta(k).fmap
   pure: meta(k).pure
