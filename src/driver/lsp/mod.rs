@@ -590,13 +590,26 @@ fn on_prepare_rename(
 }
 
 /// Parse the document and publish diagnostics to the client.
+///
+/// Collects both parse errors (as `DiagnosticSeverity::ERROR`) and any type
+/// warnings (as `DiagnosticSeverity::WARNING`) and sends them in a single
+/// `textDocument/publishDiagnostics` notification.  The type warning slice is
+/// currently always empty — it will be populated once the type checker is
+/// integrated into the LSP pipeline.
 fn publish_diagnostics(
     connection: &Connection,
     uri: Url,
     text: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    use codespan_reporting::files::SimpleFiles;
+
     let parse = crate::syntax::rowan::parse_unit(text);
-    let diags = diagnostics::diagnostics_from_parse_errors(text, parse.errors());
+    let mut diags = diagnostics::diagnostics_from_parse_errors(text, parse.errors());
+
+    // Merge type warnings (currently none — placeholder for future type checker)
+    let files: SimpleFiles<String, String> = SimpleFiles::new();
+    let type_warnings = diagnostics::diagnostics_from_type_warnings(text, &[], &files);
+    diags.extend(type_warnings);
 
     let params = PublishDiagnosticsParams {
         uri,

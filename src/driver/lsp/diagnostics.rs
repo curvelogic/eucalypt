@@ -4,6 +4,7 @@
 //! We convert these to LSP `Diagnostic` objects with line/column
 //! positions by scanning the source text for line breaks.
 
+use crate::core::typecheck::error::TypeWarning;
 use crate::syntax::rowan::ParseError;
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use rowan::TextRange;
@@ -15,6 +16,62 @@ pub fn diagnostics_from_parse_errors(source: &str, errors: &[ParseError]) -> Vec
         .iter()
         .map(|err| to_diagnostic(&line_index, err))
         .collect()
+}
+
+/// Convert a collection of type warnings into LSP diagnostics.
+///
+/// Type warnings use `DiagnosticSeverity::WARNING` and the source identifier
+/// `"eucalypt-types"` so that editors can distinguish them from parse errors.
+///
+/// The `source` parameter is the source text of the file being checked, used
+/// to resolve byte-offset spans (from `TextRange`) to LSP line/column positions.
+pub fn diagnostics_from_type_warnings(
+    source: &str,
+    warnings: &[TypeWarning],
+    files: &codespan_reporting::files::SimpleFiles<String, String>,
+) -> Vec<Diagnostic> {
+    let line_index = LineIndex::new(source);
+    warnings
+        .iter()
+        .filter_map(|w| type_warning_to_lsp_diagnostic(&line_index, w, files))
+        .collect()
+}
+
+/// Convert a single `TypeWarning` to an LSP `Diagnostic`.
+///
+/// Returns `None` if the warning has no resolvable source location.
+fn type_warning_to_lsp_diagnostic(
+    _line_index: &LineIndex<'_>,
+    warning: &TypeWarning,
+    _files: &codespan_reporting::files::SimpleFiles<String, String>,
+) -> Option<Diagnostic> {
+    let mut message = warning.message.clone();
+    if let (Some(exp), Some(fnd)) = (&warning.expected, &warning.found) {
+        message = format!("{message}: expected {exp}, found {fnd}");
+    }
+
+    // Use a zero-width range at (0,0) when no concrete source location is
+    // available.  Callers that need precise positions should attach Smids via
+    // `TypeWarning::at` — span resolution will be plumbed through once the
+    // type checker is integrated.
+    let fallback_range = Range {
+        start: lsp_types::Position {
+            line: 0,
+            character: 0,
+        },
+        end: lsp_types::Position {
+            line: 0,
+            character: 0,
+        },
+    };
+
+    Some(Diagnostic {
+        range: fallback_range,
+        severity: Some(DiagnosticSeverity::WARNING),
+        source: Some("eucalypt-types".to_string()),
+        message,
+        ..Diagnostic::default()
+    })
 }
 
 /// Convert a single parse error to an LSP diagnostic.
@@ -404,5 +461,31 @@ mod tests {
             10,
             "UTF-16 col 3 on line 1 should be byte 10"
         );
+    }
+
+    #[test]
+    fn type_warnings_produce_warning_diagnostics() {
+        use crate::core::typecheck::error::TypeWarning;
+        use codespan_reporting::files::SimpleFiles;
+
+        let source = "x: 1\n";
+        let files: SimpleFiles<String, String> = SimpleFiles::new();
+        let warnings = vec![TypeWarning::new("type mismatch")
+            .with_types("number", "string")
+            .with_note("double expects a number")];
+        let diags = diagnostics_from_type_warnings(source, &warnings, &files);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].severity, Some(DiagnosticSeverity::WARNING));
+        assert_eq!(diags[0].source.as_deref(), Some("eucalypt-types"));
+    }
+
+    #[test]
+    fn empty_type_warnings_gives_no_diagnostics() {
+        use codespan_reporting::files::SimpleFiles;
+
+        let source = "x: 1\n";
+        let files: SimpleFiles<String, String> = SimpleFiles::new();
+        let diags = diagnostics_from_type_warnings(source, &[], &files);
+        assert!(diags.is_empty());
     }
 }

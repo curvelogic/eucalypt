@@ -4,7 +4,7 @@
 //! another implementation or interpreting core directly
 use crate::{
     common::{prettify, sourcemap::*},
-    core::expr::*,
+    core::{expr::*, typecheck::error::TypeWarning},
     driver::{
         error::EucalyptError,
         io_run::{inject_world_and_run, io_run_and_render, IoRunError},
@@ -345,6 +345,23 @@ impl<'a> Executor<'a> {
             }
             Ok(code) => Ok(code),
         }
+    }
+
+    /// Emit type warnings to stderr and return whether any were emitted.
+    ///
+    /// When `strict` is `true`, the caller should treat the presence of warnings
+    /// as an error (non-zero exit).  This method always renders warnings as
+    /// `Diagnostic::warning()` regardless of the strict flag — the caller is
+    /// responsible for propagating the exit code.
+    pub fn emit_warnings(&mut self, warnings: &[TypeWarning]) -> bool {
+        if warnings.is_empty() {
+            return false;
+        }
+        for warning in warnings {
+            let diag = warning.to_diagnostic(&self.source_map);
+            self.diagnose_to_stderr(&diag);
+        }
+        true
     }
 
     /// Print a diagnostic to stderr
