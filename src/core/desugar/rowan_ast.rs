@@ -1385,9 +1385,25 @@ impl Desugarable for Element {
                     ));
                 };
 
-                let bracket_fn_name = RcExpr::from(Expr::Name(smid, pair_name));
+                let bracket_fn_name = RcExpr::from(Expr::Name(smid, pair_name.clone()));
                 let bracket_fn = desugarer.varify(bracket_fn_name);
-                Ok(RcExpr::from(Expr::App(smid, bracket_fn, vec![inner])))
+                let app = RcExpr::from(Expr::App(smid, bracket_fn, vec![inner]));
+
+                // Inject a type hint for lens path brackets (‹›).
+                //
+                // ‹ :items 0 :meta › desugars to a composed lens over
+                // at-lenses (Lens({..}, any)) and ix-lenses (Lens([any], any)).
+                // The result is always a Lens, so we attach a general
+                // Lens(any, any) hint to guide the type checker without
+                // having to re-infer through the foldr(∘, identity)
+                // implementation.
+                if pair_name == "\u{2039}\u{203A}" {
+                    let hint = core::str(smid, "Lens(any, any)");
+                    let meta = core::block(smid, [("__type_hint".to_string(), hint)]);
+                    Ok(core::meta(smid, app, meta))
+                } else {
+                    Ok(app)
+                }
             }
             Element::BracketBlock(bracket) => {
                 // BracketBlock element appearing in isolation (single-element soup, no .expr).
