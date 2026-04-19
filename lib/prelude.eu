@@ -44,23 +44,23 @@ io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
   ##
 
   ` { doc: "Run a shell command via sh -c. Returns a block with stdout, stderr, and exit-code fields."
-      type: "string -> IO(block)" }
+      type: "string -> IO({{..}})" }
   shell(c): __IO_ACTION({:io-shell cmd: c, timeout: 30})
 
   ` { doc: "Run a shell command via sh -c with extra options merged in. Options may include stdin and timeout."
-      type: "block -> string -> IO(block)" }
+      type: "{{..}} -> string -> IO({{..}})" }
   shell-with(opts, c): __IO_ACTION({:io-shell cmd: c, timeout: opts lookup-or(:timeout, 30), stdin: opts lookup-or(:stdin, null)})
 
   ` { doc: "Run a command directly without a shell. Returns a block with stdout, stderr, and exit-code fields."
-      type: "string -> IO(block)" }
+      type: "string -> IO({{..}})" }
   exec([c : as]): __IO_ACTION({:io-exec cmd: c, args: as, timeout: 30})
 
   ` { doc: "Run a command directly without a shell, with extra options merged in. Options may include stdin and timeout."
-      type: "block -> string -> IO(block)" }
+      type: "{{..}} -> string -> IO({{..}})" }
   exec-with(opts, [c : as]): __IO_ACTION({:io-exec cmd: c, args: as, timeout: opts lookup-or(:timeout, 30), stdin: opts lookup-or(:stdin, null)})
 
   ` { doc: "Check a command result: if exit-code is non-zero, fail with the stderr message; otherwise return the result."
-      type: "block -> IO(block)" }
+      type: "{{..}} -> IO({{..}})" }
   check(result): if(result.'exit-code' = 0,
     io.return(result),
     __IO_ACTION({:io-fail message: result.stderr}))
@@ -312,15 +312,15 @@ second-or(d, xs): xs tail-or([d]) head-or(d)
 sym: __SYM
 
 ` { doc: "`merge(b1, b2)` - shallow merge block `b2` on top of `b1`."
-    type: "block -> block -> block" }
+    type: "{{..}} -> {{..}} -> {{..}}" }
 merge: __MERGE
 
 ` { doc: "`deep-merge(b1, b2)` - deep merge block `b2` on top of `b1`, merges nested blocks but not lists."
-    type: "block -> block -> block" }
+    type: "{{..}} -> {{..}} -> {{..}}" }
 deep-merge: __DEEPMERGE
 
 ` { doc: "`l << r` - deep merge block `r` on top of `l`, merging nested blocks, not lists."
-    type: "block -> block -> block"
+    type: "{{..}} -> {{..}} -> {{..}}"
     export: :suppress
     associates: :left
     precedence: :append }
@@ -345,31 +345,31 @@ symbol?: __ISSYMBOL
 bool?: __ISBOOL
 
 ` { doc: "`elements(b)` - expose list of elements of block `b`."
-    type: "block -> [(symbol, any)]" }
+    type: "{{..}} -> [(symbol, any)]" }
 elements: __ELEMENTS
 
 ` { doc: "`block(kvs)` - (re)construct block from list `kvs` of elements."
-    type: "[(symbol, any)] -> block" }
+    type: "[(symbol, any)] -> {{..}}" }
 block: __BLOCK
 
 ` { doc: "`has(s, b)` - true if and only if block `b` has key (symbol) `s`."
-    type: "symbol -> block -> bool" }
+    type: "symbol -> {{..}} -> bool" }
 has(s, b): b map-values(const(true)) lookup-or(s, false)
 
 ` { doc: "`lookup(s, b)` - look up symbol `s` in block `b`, error if not found."
-    type: "symbol -> block -> any" }
+    type: "symbol -> {{..}} -> any" }
 lookup(s, b): __LOOKUP(s, b)
 
 ` { doc: "`lookup-in(b, s)` - look up symbol `s` in block `b`, error if not found."
-    type: "block -> symbol -> any" }
+    type: "{{..}} -> symbol -> any" }
 lookup-in(b, s): __LOOKUP(s, b)
 
 ` { doc: "`lookup-or(s, d, b)` - look up symbol `s` in block `b`, default `d` if not found."
-    type: "symbol -> a -> block -> any | a" }
+    type: "symbol -> a -> {{..}} -> any | a" }
 lookup-or(s, d, b): __LOOKUPOR(s, d, b)
 
 ` { doc: "`lookup-or-in(b, s, d)` - look up symbol `s` in block `b`, default `d` if not found."
-    type: "block -> symbol -> a -> any | a" }
+    type: "{{..}} -> symbol -> a -> any | a" }
 lookup-or-in(b, s, d): lookup-or(s, d, b)
 
 ` { doc: "a ~ :k - safe key lookup. Returns value at key :k if a is a block containing :k, else null. Null-propagating for chained navigation."
@@ -386,7 +386,7 @@ lookup-across(s, d, bs): {
 }.(foldr(f, d, bs))
 
 ` { doc: "`lookup-path(ks, b)` - look up value at key path `ks` in block `b`."
-    type: "[symbol] -> block -> any" }
+    type: "[symbol] -> {{..}} -> any" }
 lookup-path(ks, b): foldl(lookup-in, b, ks)
 
 ##
@@ -394,7 +394,7 @@ lookup-path(ks, b): foldl(lookup-in, b, ks)
 ##
 
 ` { doc: "`deep-fold(emit, next-state, s, b)` - depth-first fold over nested blocks and lists. `emit(state, block)` returns a list of results at each block node. `next-state(state, child-key)` updates state for recursion into a child. `s` is the initial state."
-    type: "(s -> block -> [b]) -> (s -> symbol -> s) -> s -> any -> [b]" }
+    type: "(s -> {{..}} -> [b]) -> (s -> symbol -> s) -> s -> any -> [b]" }
 deep-fold(emit, next-state, s, b): {
   walk-child(s, [ck, cv]): walk(next-state(s, ck), cv)
   walk(s, v): if(v block?,
@@ -1074,25 +1074,25 @@ fnil(f, v, x): if(x = null, f(v), f(x))
 #
 
 ` { doc: "`with-meta(m, e)` - add metadata block `m` to expression `e`."
-    type: "block -> a -> a" }
+    type: "{{..}} -> a -> a" }
 with-meta: __WITHMETA
 
 ` { doc: "`e // m` - add metadata block `m` to expression `e`."
-    type: "a -> block -> a"
+    type: "a -> {{..}} -> a"
     export: :suppress
     associates: :left
     precedence: :meta }
 (e // m): e with-meta(m)
 
 ` { doc: "`meta(e)` - retrieve expression metadata for `e`."
-    type: "a -> block" }
+    type: "a -> {{..}}" }
 meta: __META
 
 ` "`raw-meta(e)` - retrieve immediate metadata of e without recursing into inner layers."
 raw-meta: __RAWMETA
 
 ` { doc: "`merge-meta(m, e)` - merge block `m` into `e`'s metadata."
-    type: "block -> a -> a" }
+    type: "{{..}} -> a -> a" }
 merge-meta(m, e): e // (meta(e) m)
 
 ` { doc: "`e //<< m` - merge metadata block `m` into expression `e`'s metadata."
@@ -1417,7 +1417,7 @@ discriminate(pred, xs): {
 }.(xs foldl(acc, [[], []]) bimap(reverse, reverse))
 
 ` { doc: "`group-by(k, xs)` - group xs by key function returning block of key to subgroups, maintains order."
-    type: "(a -> any) -> [a] -> block" }
+    type: "(a -> any) -> [a] -> {{..}}" }
 group-by(k, xs): {
   acc(a, e): a update-value-or(e._k, cons(e._v), [e._v])
 }.(xs map({ _k: k(•0), _v: •0 }) foldl(acc, {}) map-values(reverse))
@@ -1513,7 +1513,7 @@ sort-by-zdt(key-fn): sort-by(key-fn, <)
 #
 
 ` { doc: "`merge-all(bs)` - merge all blocks in list `bs` together, later overriding earlier."
-    type: "[block] -> block" }
+    type: "[{{..}}] -> {{..}}" }
 merge-all(bs): foldl(merge, {}, bs)
 
 ` "`key(pr)` - return key in a block element / pair."
@@ -1523,11 +1523,11 @@ key: head
 value: second
 
 ` { doc: "`keys(b)` - return keys of block `b`."
-    type: "block -> [symbol]" }
+    type: "{{..}} -> [symbol]" }
 keys(b): b elements map(key)
 
 ` { doc: "`values(b)` - return values of block `b`."
-    type: "block -> [any]" }
+    type: "{{..}} -> [any]" }
 values(b): b elements map(value)
 
 ` "`sort-keys(b)` - return block `b` with keys sorted alphabetically."
@@ -1544,11 +1544,11 @@ map-first(f, prs): map(bimap(f, identity), prs)
 map-second(f, prs): map(bimap(identity, f), prs)
 
 ` { doc: "`map-kv(f, b)` - apply `f(k, v)` to each key / value pair in block `b`, returning list."
-    type: "(symbol -> any -> b) -> block -> [b]" }
+    type: "(symbol -> any -> b) -> {{..}} -> [b]" }
 map-kv(f, b): b elements map(uncurry(f))
 
 ` { doc: "`map-elements(f, b)` - apply `f([k, v])` to each element of block `b`, returning a new block. `f` receives and should return a `[key, value]` pair."
-    type: "((symbol, any) -> (symbol, any)) -> block -> block" }
+    type: "((symbol, any) -> (symbol, any)) -> {{..}} -> {{..}}" }
 map-elements(f, b): b elements map(f) block
 
 ` "`map-as-block(f, syms)` - map each symbol in `syms` and create block mapping `syms` to mapped values."
@@ -1567,15 +1567,15 @@ zip-kv(ks, vs): zip-with(pair, ks, vs) block
 with-keys: zip-kv
 
 ` { doc: "`map-values(f, b)` - apply `f(v)` to each value in block `b`."
-    type: "(any -> b) -> block -> block" }
+    type: "(any -> b) -> {{..}} -> {{..}}" }
 map-values(f, b): b elements map-second(f) block
 
 ` { doc: "`map-keys(f, b)` - apply `f(k)` to each key in block `b`."
-    type: "(symbol -> symbol) -> block -> block" }
+    type: "(symbol -> symbol) -> {{..}} -> {{..}}" }
 map-keys(f, b): b elements map-first(f) block
 
 ` { doc: "`filter-items(f, b)` - return items from block `b` which match item match function `f`."
-    type: "((symbol, any) -> bool) -> block -> [(symbol, any)]" }
+    type: "((symbol, any) -> bool) -> {{..}} -> [(symbol, any)]" }
 filter-items(f, b): b elements filter(f)
 
 ` { doc: "`by-key(p?)` - return item match function that checks predicate `p?` against the (symbol) key."
@@ -1609,11 +1609,11 @@ _block: {
 # By property alteration of blocks
 
 ` { doc: "`alter-value(k, v, b)` - alter `b.k` to value `v`."
-    type: "symbol -> any -> block -> block" }
+    type: "symbol -> any -> {{..}} -> {{..}}" }
 alter-value(k, v, b): b map-kv(_block.alter?(= k, v)) block
 
 ` { doc: "`update-value(k, f, b)` - update `b.k` to `f(b.k)`."
-    type: "symbol -> (any -> any) -> block -> block" }
+    type: "symbol -> (any -> any) -> {{..}} -> {{..}}" }
 update-value(k, f, b): b map-kv(_block.update?(= k, f)) block
 
 ` "`alter(ks, v, b)` - in nested block `b` alter value to value `v` at path-of-keys `ks`"
@@ -1931,7 +1931,7 @@ for: monad({bind(m, f): m mapcat(f), return(v): [v]})
 ##
 
 ` { doc: "Parse command-line argument list against a defaults block. Each key in `defaults` defines an option with its default value. Field metadata configures parsing: `short` (symbol for short flag), `doc` (description), `flag` (true for boolean toggle). Returns the `defaults` block updated with parsed values, plus an `args` key containing positional arguments as a list. Unknown options cause a runtime error. Use `--help` for auto-generated help text."
-    type: "block -> [string] -> block" }
+    type: "{{..}} -> [string] -> {{..}}" }
 parse-args(defaults, args): {
 
   ` "Build lookup table mapping short-flag symbols to option key symbols"
