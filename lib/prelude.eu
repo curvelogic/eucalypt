@@ -15,22 +15,28 @@ eu: {
   ` "requires(constraint) - assert that the eucalypt version satisfies the given semver constraint (e.g. '>=0.2.0')."
   requires: __REQUIRES
 
-  ` "Operating system: linux, macos, windows, etc."
+  ` { doc: "Operating system: linux, macos, windows, etc."
+      type: "string" }
   os: __OS
 
-  ` "CPU architecture: x86_64, aarch64, etc."
+  ` { doc: "CPU architecture: x86_64, aarch64, etc."
+      type: "string" }
   arch: __ARCH
 }
 
 ` { doc: "IO related declarations. The io namespace is a monad: io.bind, io.return, io.sequence, io.map-m, io.filter-m, io.then, io.join are derived automatically."
     monad: true }
 io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
-  ` "Read access to environent variables at time of launch"
+  ` { doc: "Read access to environment variables at time of launch."
+      type: "{{..}}" }
   env: __io.ENV
 
+  ` { doc: "Seconds since the Unix epoch at the time of the IO action."
+      type: "IO(number)" }
   epoch-time: __io.EPOCHTIME
 
-  ` "Command-line arguments passed after -- separator"
+  ` { doc: "Command-line arguments passed after -- separator."
+      type: "[string]" }
   args: __args
 
   ` "Seed for random number generation (from --seed or system time)"
@@ -65,7 +71,8 @@ io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
     io.return(result),
     __IO_ACTION({:io-fail message: result.stderr}))
 
-  ` "Pipeline-friendly check: bind the preceding IO action through check."
+  ` { doc: "Pipeline-friendly check: bind the preceding IO action through check."
+      type: "IO({{..}}) -> IO({{..}})" }
   checked: io.and-then(io.check)
 
   ` { doc: "Fail the IO action with the given error message."
@@ -82,8 +89,8 @@ io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
 ` :suppress
 list-map: map
 
-` "monad(m) - derive standard monad combinators from a block m with bind and return fields.
-Returns a block with bind, return, map, then, join, sequence, map-m, and filter-m."
+` { doc: "monad(m) - derive standard monad combinators from a block m with bind and return fields. Returns a block with bind, return, map, then, join, sequence, map-m, and filter-m."
+    type: "{{..}} -> {{..}}" }
 monad(m): {
   ` "Sequence two monadic actions: run action and pass its result to continuation."
   bind: m.bind
@@ -141,35 +148,40 @@ random-bind(m, f, stream): {
 ` { doc: "Monadic random: namespace. Each operation is a state-monad action: a function from stream to a value/rest block. Use random.stream(seed) to create the initial stream, then run actions by calling them with the stream."
     monad: true }
 random: monad{bind: random-bind, return: random-ret} {
-  ` "random.stream(seed) - create an opaque PRNG stream from integer seed."
+  ` { doc: "random.stream(seed) - create an opaque PRNG stream from integer seed."
+      type: "number -> any" }
   stream(seed): __STREAM_NEW(seed)
 
-  ` "random.as-list(stream) - convert an opaque random stream to a lazy cons-list of floats."
+  ` { doc: "random.as-list(stream) - convert an opaque random stream to a lazy cons-list of floats."
+      type: "any -> [number]" }
   as-list(s): cons(__STREAM_VALUE(s), as-list(__STREAM_ADVANCE(s)))
 
-  ` "random.float - action returning a random float in [0,1)."
+  ` { doc: "random.float - state-monad action returning a random float in [0,1)."
+      type: "any -> {{..}}" }
   float(s): {
     pair: __STREAM_FLOAT(s)
     value: pair head
     rest: pair tail head
   }
 
-  ` "random.int(n) - action returning a random integer in [0,n)."
+  ` { doc: "random.int(n) - state-monad action returning a random integer in [0,n)."
+      type: "number -> any -> {{..}}" }
   int(n, s): {
     pair: __STREAM_INT(n, s)
     value: pair head
     rest: pair tail head
   }
 
-  ` "random.split - action that splits the stream into two independent streams.
-  Returns a value/rest block where value and rest are each independent streams."
+  ` { doc: "random.split - state-monad action that splits the stream into two independent streams. Returns a value/rest block where value and rest are each independent streams."
+      type: "any -> {{..}}" }
   split(s): {
     pair: __STREAM_SPLIT(s)
     value: pair head
     rest: pair tail head
   }
 
-  ` "random.choice(list) - action returning a random element from list."
+  ` { doc: "random.choice(list) - state-monad action returning a random element from list."
+      type: "[a] -> any -> {{..}}" }
   choice(lst, stream): {
     r: int(lst count, stream)
     next: random-ret(lst nth(r.value), r.rest)
@@ -177,7 +189,8 @@ random: monad{bind: random-bind, return: random-ret} {
     rest: next.rest
   }
 
-  ` "random.shuffle(list) - action returning a shuffled copy of list."
+  ` { doc: "random.shuffle(list) - state-monad action returning a shuffled copy of list."
+      type: "[a] -> any -> {{..}}" }
   shuffle(lst): {
     shuffle-impl(remaining, n, acc, stream):
       if(n = 0,
@@ -193,20 +206,24 @@ random: monad{bind: random-bind, return: random-ret} {
     }
   }.(shuffle-impl(lst, lst count, []))
 
-  ` "random.sample(n, list) - action returning n elements sampled without replacement."
+  ` { doc: "random.sample(n, list) - state-monad action returning n elements sampled without replacement."
+      type: "number -> [a] -> any -> {{..}}" }
   sample(n, lst, stream): {
     shuffled: shuffle(lst, stream)
     value: shuffled.value take(n)
     rest: shuffled.rest
   }
 
-  ` "random.run(action, stream) - run a random action on a stream; returns a value/rest block."
+  ` { doc: "random.run(action, stream) - run a random action on a stream; returns a value/rest block."
+      type: "(any -> {{..}}) -> any -> {{..}}" }
   run(action, stream): action(stream)
 
-  ` "random.eval(action, stream) - run a random action and return only the value."
+  ` { doc: "random.eval(action, stream) - run a random action and return only the value."
+      type: "(any -> {{..}}) -> any -> any" }
   eval(action, stream): action(stream).value
 
-  ` "random.exec(action, stream) - run a random action and return only the remaining stream."
+  ` { doc: "random.exec(action, stream) - run a random action and return only the remaining stream."
+      type: "(any -> {{..}}) -> any -> any" }
   exec(action, stream): action(stream).rest
 }
 
@@ -222,13 +239,16 @@ panic: __PANIC
 ## Essentials
 ##
 
-` "A null value. To export as `null` in JSON or ~ in YAML."
+` { doc: "A null value. To export as `null` in JSON or ~ in YAML."
+    type: "null" }
 null: __NULL
 
-` "`true` - constant logical true"
+` { doc: "`true` - constant logical true."
+    type: "bool" }
 true: __TRUE
 
-` "`false` - constant logical false"
+` { doc: "`false` - constant logical false."
+    type: "bool" }
 false: __FALSE
 
 ` { doc: "`if(c, t, f)` - if `c` is `true`, return `t` else `f`."
@@ -1285,7 +1305,8 @@ iota(n): cons(n, iota(n + 1))
 ` "`ints-from(n)` - return infinite list of integers from `n` upwards, alias `iota` for backwards compatibility`"
 ints-from: iota
 
-` "`ℕ` - the natural numbers: `[0, 1, 2, ...]`."
+` { doc: "`ℕ` - the natural numbers: `[0, 1, 2, ...]`."
+    type: "[number]" }
 ℕ: iota(0)
 
 ` { doc: "`range(b, e)` - return list of ints from `b` to `e` (not including `e`)."
@@ -1698,41 +1719,51 @@ cal: {
     doc: "Functions for working with sets of primitive values (numbers, strings, symbols)." }
 set: {
 
-  ` "`set.from-list(xs)` - create a set from list `xs` of primitive values."
+  ` { doc: "`set.from-list(xs)` - create a set from list `xs` of primitive values."
+      type: "[a] -> any" }
   from-list(xs): foldl({s: • e: •}.(s add(e)), ∅, xs)
 
-  ` "`set.to-list(s)` - return sorted list of elements in set `s`."
+  ` { doc: "`set.to-list(s)` - return sorted list of elements in set `s`."
+      type: "any -> [a]" }
   to-list: '__SET.TO_LIST'
 
-  ` "`set.add(e, s)` - add element `e` to set `s`."
+  ` { doc: "`set.add(e, s)` - add element `e` to set `s`."
+      type: "a -> any -> any" }
   add: '__SET.ADD'
 
-  ` "`set.remove(e, s)` - remove element `e` from set `s`."
+  ` { doc: "`set.remove(e, s)` - remove element `e` from set `s`."
+      type: "a -> any -> any" }
   remove: '__SET.REMOVE'
 
-  ` "`set.contains?(e, s)` - true if set `s` contains element `e`."
+  ` { doc: "`set.contains?(e, s)` - true if set `s` contains element `e`."
+      type: "a -> any -> bool" }
   contains?: '__SET.CONTAINS'
 
-  ` "`set.size(s)` - return number of elements in set `s`."
+  ` { doc: "`set.size(s)` - return number of elements in set `s`."
+      type: "any -> number" }
   size: '__SET.SIZE'
 
-  ` "`set.empty?(s)` - true if set `s` has no elements."
+  ` { doc: "`set.empty?(s)` - true if set `s` has no elements."
+      type: "any -> bool" }
   empty?(s): (s size) = 0
 
-  ` "`set.union(a, b)` - return union of sets `a` and `b`."
+  ` { doc: "`set.union(a, b)` - return union of sets `a` and `b`."
+      type: "any -> any -> any" }
   union: '__SET.UNION'
 
-  ` "`set.intersect(a, b)` - return intersection of sets `a` and `b`."
+  ` { doc: "`set.intersect(a, b)` - return intersection of sets `a` and `b`."
+      type: "any -> any -> any" }
   intersect: '__SET.INTERSECT'
 
-  ` "`set.diff(a, b)` - return elements in set `a` that are not in set `b`."
+  ` { doc: "`set.diff(a, b)` - return elements in set `a` that are not in set `b`."
+      type: "any -> any -> any" }
   diff: '__SET.DIFF'
 
   ` :suppress
   sample-raw: '__SET.SAMPLE'
 
-  ` "`set.sample(n, s)` - random monad action: pick `n` random elements from set `s`.
-  Returns value/rest block. Use within a :random block."
+  ` { doc: "`set.sample(n, s)` - random monad action: pick `n` random elements from set `s`. Returns value/rest block."
+      type: "number -> any -> any -> {{..}}" }
   sample(k, s, stream): {
     floats: (stream random.as-list) take(k)
     value: s sample-raw(floats)
@@ -1763,23 +1794,27 @@ set: {
     doc: "Functions for working with vecs — flat primitive sequences with O(1) indexed access." }
 vec: {
 
-  ` "`vec.of(xs)` - convert list `xs` of primitive values to a vec for O(1) indexed access."
+  ` { doc: "`vec.of(xs)` - convert list `xs` of primitive values to a vec for O(1) indexed access."
+      type: "[a] -> any" }
   of: '__VEC.OF'
 
-  ` "`vec.len(v)` - return the number of elements in vec `v`."
+  ` { doc: "`vec.len(v)` - return the number of elements in vec `v`."
+      type: "any -> number" }
   len: '__VEC.LEN'
 
-  ` "`vec.nth(n, v)` - return the element at index `n` (0-based) in vec `v`."
+  ` { doc: "`vec.nth(n, v)` - return the element at index `n` (0-based) in vec `v`."
+      type: "number -> any -> a" }
   nth: '__VEC.NTH'
 
-  ` "`vec.slice(from, to, v)` - return a new vec with elements in the range `[from, to)` of `v`."
+  ` { doc: "`vec.slice(from, to, v)` - return a new vec with elements in the range `[from, to)` of `v`."
+      type: "number -> number -> any -> any" }
   slice: '__VEC.SLICE'
 
   ` :suppress
   sample-raw: '__VEC.SAMPLE'
 
-  ` "`vec.sample(n, v)` - random monad action: pick `n` random elements
-  from vec `v` without replacement. Use within a :random block."
+  ` { doc: "`vec.sample(n, v)` - random monad action: pick `n` random elements from vec `v` without replacement."
+      type: "number -> any -> any -> {{..}}" }
   sample(n, v, stream): {
     floats: (stream random.as-list) take(n)
     value: v sample-raw(floats)
@@ -1789,8 +1824,8 @@ vec: {
   ` :suppress
   shuffle-raw: '__VEC.SHUFFLE'
 
-  ` "`vec.shuffle(v)` - random monad action: return vec `v` in random order.
-  Use within a :random block."
+  ` { doc: "`vec.shuffle(v)` - random monad action: return vec `v` in random order."
+      type: "any -> any -> {{..}}" }
   shuffle(v, stream): {
     needed: (v vec.len) - 1
     floats: (stream random.as-list) take(needed)
@@ -1798,7 +1833,8 @@ vec: {
     rest: stream-advance(needed, stream)
   }
 
-  ` "`vec.to-list(v)` - convert vec `v` back to a cons-list."
+  ` { doc: "`vec.to-list(v)` - convert vec `v` back to a cons-list."
+      type: "any -> [a]" }
   to-list: '__VEC.TO_LIST'
 }
 
@@ -1812,71 +1848,92 @@ vec: {
     doc: "Functions for working with n-dimensional arrays of numbers." }
 arr: {
 
-  ` "`arr.zeros(shape)` - create an array of zeros with the given shape list."
+  ` { doc: "`arr.zeros(shape)` - create an array of zeros with the given shape list."
+      type: "[number] -> any" }
   zeros: '__ARRAY.ZEROS'
 
-  ` "`arr.fill(shape, val)` - create an array filled with `val` with the given shape list."
+  ` { doc: "`arr.fill(shape, val)` - create an array filled with `val` with the given shape list."
+      type: "[number] -> number -> any" }
   fill: '__ARRAY.FILL'
 
-  ` "`arr.from-flat(shape, vals)` - create an array from a flat list of numbers with the given shape."
+  ` { doc: "`arr.from-flat(shape, vals)` - create an array from a flat list of numbers with the given shape."
+      type: "[number] -> [number] -> any" }
   from-flat: '__ARRAY.FROM_FLAT'
 
-  ` "`arr.get(a, coords)` - get element at coordinate list `coords` in array `a`."
+  ` { doc: "`arr.get(a, coords)` - get element at coordinate list `coords` in array `a`."
+      type: "any -> [number] -> number" }
   get: '__ARRAY.GET'
 
-  ` "`arr.set(a, coords, val)` - return new array with element at `coords` set to `val`."
+  ` { doc: "`arr.set(a, coords, val)` - return new array with element at `coords` set to `val`."
+      type: "any -> [number] -> number -> any" }
   set: '__ARRAY.SET'
 
-  ` "`arr.shape(a)` - return shape of array `a` as a list of integers."
+  ` { doc: "`arr.shape(a)` - return shape of array `a` as a list of integers."
+      type: "any -> [number]" }
   shape: '__ARRAY.SHAPE'
 
-  ` "`arr.rank(a)` - return number of dimensions of array `a`."
+  ` { doc: "`arr.rank(a)` - return number of dimensions of array `a`."
+      type: "any -> number" }
   rank: '__ARRAY.RANK'
 
-  ` "`arr.length(a)` - return total number of elements in array `a`."
+  ` { doc: "`arr.length(a)` - return total number of elements in array `a`."
+      type: "any -> number" }
   length: '__ARRAY.LENGTH'
 
-  ` "`arr.to-list(a)` - return flat list of elements in row-major order."
+  ` { doc: "`arr.to-list(a)` - return flat list of elements in row-major order."
+      type: "any -> [number]" }
   to-list: '__ARRAY.TO_LIST'
 
-  ` "`arr.array?(x)` - true if `x` is an array."
+  ` { doc: "`arr.array?(x)` - true if `x` is an array."
+      type: "any -> bool" }
   array?: '__ARRAY.ISARRAY'
 
-  ` "`arr.transpose(a)` - reverse all axes of array `a`."
+  ` { doc: "`arr.transpose(a)` - reverse all axes of array `a`."
+      type: "any -> any" }
   transpose: '__ARRAY.TRANSPOSE'
 
-  ` "`arr.reshape(a, shape)` - reshape array `a` to new shape (total elements must match)."
+  ` { doc: "`arr.reshape(a, shape)` - reshape array `a` to new shape (total elements must match)."
+      type: "any -> [number] -> any" }
   reshape: '__ARRAY.RESHAPE'
 
-  ` "`arr.slice(a, axis, idx)` - take a slice along `axis` at `idx`, reducing rank by 1."
+  ` { doc: "`arr.slice(a, axis, idx)` - take a slice along `axis` at `idx`, reducing rank by 1."
+      type: "any -> number -> number -> any" }
   slice: '__ARRAY.SLICE'
 
-  ` "`arr.add(a, b)` - element-wise addition; `b` may be a scalar."
+  ` { doc: "`arr.add(a, b)` - element-wise addition; `b` may be a scalar."
+      type: "any -> any -> any" }
   add: '__ARRAY.ADD'
 
-  ` "`arr.sub(a, b)` - element-wise subtraction; `b` may be a scalar."
+  ` { doc: "`arr.sub(a, b)` - element-wise subtraction; `b` may be a scalar."
+      type: "any -> any -> any" }
   sub: '__ARRAY.SUB'
 
-  ` "`arr.mul(a, b)` - element-wise multiplication; `b` may be a scalar."
+  ` { doc: "`arr.mul(a, b)` - element-wise multiplication; `b` may be a scalar."
+      type: "any -> any -> any" }
   mul: '__ARRAY.MUL'
 
-  ` "`arr.div(a, b)` - element-wise division; `b` may be a scalar."
+  ` { doc: "`arr.div(a, b)` - element-wise division; `b` may be a scalar."
+      type: "any -> any -> any" }
   div: '__ARRAY.DIV'
 
-  ` "`arr.indices(a)` - return list of coordinate lists for all elements in row-major order."
+  ` { doc: "`arr.indices(a)` - return list of coordinate lists for all elements in row-major order."
+      type: "any -> [[number]]" }
   indices: '__ARRAY_INDICES'
 
-  ` "`arr.map(f, a)` - apply `f` to each element, return new array of same shape."
+  ` { doc: "`arr.map(f, a)` - apply `f` to each element, return new array of same shape."
+      type: "(number -> number) -> any -> any" }
   map(f, a): arr.from-flat(arr.shape(a), f <$> (a arr.to-list))
 
-  ` "`arr.map-indexed(f, a)` - apply `f(coords, val)` to each element, return new array of same shape."
+  ` { doc: "`arr.map-indexed(f, a)` - apply `f(coords, val)` to each element, return new array of same shape."
+      type: "([number] -> number -> number) -> any -> any" }
   map-indexed(f, a): arr.from-flat(arr.shape(a), (f uncurry) <$> zip(arr.indices(a), a arr.to-list))
 
-  ` "`arr.fold(f, init, a)` - left-fold `f` over all elements of `a` in row-major order."
+  ` { doc: "`arr.fold(f, init, a)` - left-fold `f` over all elements of `a` in row-major order."
+      type: "(b -> number -> b) -> b -> any -> b" }
   fold(f, init, a): a arr.to-list foldl(f, init)
 
-  ` "`arr.neighbours(a, coords, offsets)` - return list of values at valid neighbouring coordinates.
-  `offsets` is a list of offset lists (one per neighbour direction). Out-of-bounds neighbours are omitted."
+  ` { doc: "`arr.neighbours(a, coords, offsets)` - return list of values at valid neighbouring coordinates. `offsets` is a list of offset lists (one per neighbour direction). Out-of-bounds neighbours are omitted."
+      type: "any -> [number] -> [[number]] -> [number]" }
   neighbours(a, coords, offsets): __ARRAY_NEIGHBOURS(coords, offsets concat, a arr.rank, a)
 
 }
