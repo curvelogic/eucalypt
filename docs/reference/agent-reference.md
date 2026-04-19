@@ -108,6 +108,52 @@ main: { result: 42 }
 result: helper(42)
 ```
 
+**Type annotations** (optional, advisory): add `type:` alongside `doc:`
+to annotate declarations for the type checker (`eu check`):
+
+```eu,notest
+` { doc: "`double(x)` - double a number."
+    type: "number -> number" }
+double(x): x * 2
+
+` { doc: "`map(f, xs)` - apply f to each element."
+    type: "(a -> b) -> [a] -> [b]" }
+map: __MAP
+```
+
+**Type aliases**: define reusable type names in unit metadata or via
+`type-def:` on a declaration:
+
+```eu,notest
+# Named aliases in unit metadata
+{ types: { Point: "{x: number, y: number}"
+           Person: "{name: string, age: number, email: string | null, ..}" } }
+
+# Alias derived from a canonical instance
+` { type-def: "Point" }
+origin: { x: 0, y: 0 }
+```
+
+**Common type forms in annotations**:
+
+| Syntax             | Meaning                                |
+|--------------------|----------------------------------------|
+| `number`, `string`, `symbol`, `bool`, `null`, `datetime` | primitives |
+| `any`              | gradual/unknown — no type errors       |
+| `[T]`              | list of T                              |
+| `(A, B)`           | tuple                                  |
+| `{k: T, ..}`       | open record (at least k: T)            |
+| `{k: T}`           | closed record                          |
+| `block`            | any block                              |
+| `A -> B`           | function                               |
+| `A \| B`           | union                                  |
+| `a`, `b`           | type variable                          |
+| `IO(T)`            | IO action producing T                  |
+| `Lens(a, b)`       | lens                                   |
+| `Traversal(a, b)`  | traversal                              |
+
+See [Type Checking](../guide/type-checking.md) for the full guide.
+
 ### 1.6 Function Application
 
 ```eu,notest

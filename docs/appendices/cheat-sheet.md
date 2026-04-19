@@ -458,4 +458,65 @@ eu -Q file.eu               # Suppress prelude
 eu fmt file.eu              # Format source
 eu dump stg file.eu         # Dump STG syntax
 eu -- arg1 arg2             # Pass arguments (io.args)
+eu check file.eu            # Type-check, report warnings
+eu check --strict file.eu   # Treat type warnings as errors
+eu --type-check file.eu     # Check then evaluate
 ```
+
+## Type Checking
+
+Type annotations live in declaration metadata alongside doc strings.
+All annotations are optional — unannotated code is treated as `any`.
+
+### Annotation syntax
+
+```eu,notest
+` { doc: "`double(x)` - double a number."
+    type: "number -> number" }
+double(x): x * 2
+
+# Operator
+` { doc: "..."
+    type: "a -> (a -> b) -> b"
+    associates: :left
+    precedence: 20 }
+(x |> f): f(x)
+```
+
+### Type aliases
+
+```eu,notest
+# In unit metadata
+{ types: { Person: "{name: string, age: number, ..}" } }
+
+# Via type-def: on a canonical instance
+` { type-def: "Point" }
+origin: { x: 0, y: 0 }
+```
+
+### Type forms
+
+| Syntax             | Meaning                                |
+|--------------------|----------------------------------------|
+| `number`           | number                                 |
+| `string`           | string                                 |
+| `symbol`           | symbol                                 |
+| `bool`             | boolean                                |
+| `null`             | null                                   |
+| `datetime`         | zoned date-time                        |
+| `any`              | gradual/unknown — no type errors       |
+| `[T]`              | homogeneous list of T                  |
+| `(A, B)`           | 2-tuple; `(A, B, C)` for triple        |
+| `(A,)`             | 1-tuple                                |
+| `{k: T}`           | closed record                          |
+| `{k: T, ..}`       | open record (at least k: T)            |
+| `block`            | any block (no known shape)             |
+| `A -> B`           | function                               |
+| `A \| B`           | union                                  |
+| `a`, `b`, `s`      | type variable (lowercase)              |
+| `IO(T)`            | IO action producing T                  |
+| `Lens(a, b)`       | lens focusing on b within a            |
+| `Traversal(a, b)`  | traversal over b's within a            |
+| `set`              | ordered set of primitives              |
+| `vec`              | flat vector of primitives              |
+| `array`            | n-dimensional number array             |
