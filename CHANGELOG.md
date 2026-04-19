@@ -2,16 +2,24 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.5.4] - Unreleased
+## [0.5.4] - 2026-04-19
 
 ### Added
 
+- **`EU_GC_VERIFY=2`** — full multi-checkpoint structural verification of the GC heap: header validity, pointer validity, line consistency, forwarding pointer lifecycle, and block list integrity across four checkpoints during collection. Level 1 unchanged
 - **Ceiling/floor bracket notation** — `⌈n⌉` for ceiling and `⌊n⌋` for floor, using idiot bracket pairs. `⌈3.2⌉` → `4`, `⌊3.8⌋` → `3`
-- **Editor Unicode support** — `⌈⌉⌊⌋` added to Emacs quail (`|_`/`_|`/`|.`/`.|`), transient menu, and VS Code quick-pick
+- **Debugging tools guide** — `docs/development/debugging.md` documenting all debug environment variables, dump commands, and recommended debugging workflows
+- **Editor Unicode coverage** — `⌈⌉⌊⌋` (ceiling/floor) and `‹›` (lens brackets) added to Emacs quail/transient and VS Code quick-pick. Bracket pairs group in Emacs transient menu with auto-pairing
 
 ### Changed
 
+- **Unified stream producers** — `StreamProducer`/`StreamTable`/`STREAM_NEXT` replaced by `LazyProducer` trait, `ProducerTable`, and `PRODUCER_NEXT` BIF. All handle-based lazy producers (file imports, future IO streams) use one registration mechanism. `Native::Stream(u64)` renamed to `Native::Prng(u64)`, `Native::Producer(u32)` added for all producer handles
+
 ### Fixed
+
+- **Lens brackets `‹›` in tree-sitter grammar** — added to `BRACKET_OPEN_RE`/`BRACKET_CLOSE_RE` so lens path expressions parse and highlight correctly
+- **`▶` and `⊝` in tree-sitter** — added to `OPER_CHARS` for correct operator highlighting
+- **`•` in VS Code TextMate grammar** — added to unicode-operator character class
 
 ## [0.5.3] - 2026-04-17
 
