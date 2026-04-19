@@ -1,19 +1,30 @@
 //! Type annotation check command (`eu check`).
 //!
-//! Parses eucalypt source files, extracts `type:` metadata annotations from
-//! all declarations, and reports any annotation strings that fail to parse.
+//! Two phases:
 //!
-//! No actual type checking is performed yet — this phase validates that
-//! annotations are syntactically well-formed according to the type grammar.
+//! 1. **Annotation syntax check** — parse each source file's rowan AST,
+//!    find all `type:` metadata annotations, and validate them against the
+//!    type grammar.  This is fast and requires no pipeline processing.
+//!
+//! 2. **Bidirectional type check** — load source files through the full
+//!    eucalypt pipeline (parse → desugar → cook → eliminate), then run
+//!    `Checker` over the resulting core expression and report any
+//!    `TypeWarning`s.
+//!
+//! Type issues are always warnings unless `--strict` is passed.
 
 use std::fs;
 use std::path::Path;
 
-use crate::core::typecheck::parse;
+use crate::core::typecheck::{check::type_check, parse};
+use crate::driver::error::EucalyptError;
 use crate::driver::options::EucalyptOptions;
+use crate::driver::source::SourceLoader;
 use crate::syntax::rowan::ast::{self, Block, Declaration, Element, HasSoup};
 use crate::syntax::rowan::parse_unit;
 use rowan::ast::AstNode;
+
+// ── Phase 1: Annotation syntax check ────────────────────────────────────────
 
 /// A single type annotation found in a source file.
 struct Annotation {
@@ -34,7 +45,8 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
         return Ok(1);
     }
 
-    let mut total_errors = 0;
+    // ── Phase 1: annotation syntax validation ──────────────────────────────
+    let mut syntax_errors = 0usize;
 
     for input in &files {
         let path_str = input.locator().to_string();
@@ -42,34 +54,109 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
 
         if !path.exists() {
             eprintln!("eu check: file not found: {path_str}");
-            total_errors += 1;
+            syntax_errors += 1;
             continue;
         }
 
         let source = fs::read_to_string(path)
             .map_err(|e| format!("Failed to read '{}': {}", path_str, e))?;
 
-        let file_errors = check_source(&path_str, &source, opt.check_strict());
-        total_errors += file_errors;
+        syntax_errors += check_annotation_syntax(&path_str, &source, opt.check_strict());
     }
 
-    if total_errors == 0 {
+    // ── Phase 2: bidirectional type check via pipeline ─────────────────────
+    let type_warning_count = match run_type_checker(opt) {
+        Ok(warnings) => {
+            let count = warnings.len();
+            for w in &warnings {
+                let severity = if opt.check_strict() {
+                    "error"
+                } else {
+                    "warning"
+                };
+                if let (Some(exp), Some(fnd)) = (&w.expected, &w.found) {
+                    eprintln!(
+                        "eu check: {severity}: {}: expected {exp}, found {fnd}",
+                        w.message
+                    );
+                } else {
+                    eprintln!("eu check: {severity}: {}", w.message);
+                }
+                for note in &w.notes {
+                    eprintln!("  note: {note}");
+                }
+            }
+            count
+        }
+        Err(e) => {
+            // Pipeline failure is not a type error — log at debug level and
+            // continue with the annotation syntax results only.
+            eprintln!("eu check: pipeline warning: {e}");
+            0
+        }
+    };
+
+    let total_issues = syntax_errors + type_warning_count;
+
+    if total_issues == 0 {
         Ok(0)
     } else if opt.check_strict() {
         Ok(1)
     } else {
-        // Warnings do not cause non-zero exit unless --strict
-        Ok(0)
+        // Warnings never cause non-zero exit unless --strict.
+        // Annotation *syntax* errors are always real errors, though.
+        if syntax_errors > 0 {
+            Ok(1)
+        } else {
+            Ok(0)
+        }
     }
 }
 
-/// Check a single source string, reporting type annotation parse errors.
+/// Run the bidirectional type checker by loading files through the pipeline.
 ///
-/// Returns the number of annotation errors found.
-fn check_source(filename: &str, source: &str, strict: bool) -> usize {
+/// Returns an empty vec if there are no type issues.  Returns an `Err` if
+/// the pipeline fails (e.g. parse error in the source) — the caller logs this
+/// and continues with only the annotation syntax check results.
+fn run_type_checker(
+    opt: &EucalyptOptions,
+) -> Result<Vec<crate::core::typecheck::error::TypeWarning>, EucalyptError> {
+    let mut loader = SourceLoader::new(opt.lib_path().to_vec());
+    let inputs = opt.inputs();
+
+    // Load all inputs (prelude + user files).
+    for input in &inputs {
+        loader.load(input)?;
+    }
+
+    // Translate each input to core.
+    for input in &inputs {
+        loader.translate(input)?;
+    }
+
+    // Merge into a single expression.
+    loader.merge_units(&inputs)?;
+
+    // Cook (resolve operator precedence).
+    loader.cook()?;
+
+    // Eliminate dead bindings.
+    loader.eliminate()?;
+
+    // Run the type checker.
+    let core_expr = loader.core().expr.clone();
+    Ok(type_check(&core_expr))
+}
+
+// ── Annotation syntax check helpers ─────────────────────────────────────────
+
+/// Check annotation syntax in a single source string.
+///
+/// Returns the number of annotation syntax errors found.
+fn check_annotation_syntax(filename: &str, source: &str, strict: bool) -> usize {
     let parse_result = parse_unit(source);
 
-    // Report any eucalypt syntax errors first (these are real errors regardless of --strict).
+    // Report any eucalypt syntax errors first (always real errors).
     for err in parse_result.errors() {
         eprintln!("{filename}: parse error: {err}");
     }
@@ -170,7 +257,6 @@ fn extract_type_annotation(meta_block: &Block, decl_name: &str) -> Option<Annota
         if let Some(Element::Lit(lit)) = body_elems.first() {
             if let Some(lit_val) = lit.value() {
                 if let Some(type_str) = lit_val.string_value() {
-                    // Find the byte offset of this literal in the source.
                     let node_offset = usize::from(lit.syntax().text_range().start());
                     return Some(Annotation {
                         source_offset: node_offset,
@@ -206,7 +292,7 @@ mod tests {
 ` { type: "number -> number" }
 double(x): x * 2
 "#;
-        assert_eq!(check_source("<test>", src, false), 0);
+        assert_eq!(check_annotation_syntax("<test>", src, false), 0);
     }
 
     #[test]
@@ -215,7 +301,7 @@ double(x): x * 2
 ` { type: "number ->" }
 bad(x): x
 "#;
-        assert_eq!(check_source("<test>", src, false), 1);
+        assert_eq!(check_annotation_syntax("<test>", src, false), 1);
     }
 
     #[test]
@@ -224,7 +310,7 @@ bad(x): x
 ` { doc: "just a doc" }
 no_type(x): x
 "#;
-        assert_eq!(check_source("<test>", src, false), 0);
+        assert_eq!(check_annotation_syntax("<test>", src, false), 0);
     }
 
     #[test]
@@ -236,7 +322,7 @@ map(f, xs): __MAP
 ` { type: "(a -> bool) -> [a] -> [a]" }
 filter(p, xs): __FILTER
 "#;
-        assert_eq!(check_source("<test>", src, false), 0);
+        assert_eq!(check_annotation_syntax("<test>", src, false), 0);
     }
 
     #[test]
@@ -248,7 +334,7 @@ map(f, xs): __MAP
 ` { type: "number ->" }
 bad(x): x
 "#;
-        assert_eq!(check_source("<test>", src, false), 1);
+        assert_eq!(check_annotation_syntax("<test>", src, false), 1);
     }
 
     #[test]
