@@ -61,6 +61,11 @@ fn make_hover(sym: &SymbolInfo, qualifier: Option<&str>) -> Hover {
         }
     }
 
+    // Type annotation
+    if let Some(type_ann) = &sym.type_annotation {
+        lines.push(format!("type: `{}`", type_ann));
+    }
+
     // Source information
     let uri_str = sym.uri.as_str();
     if uri_str.starts_with("resource:") || uri_str.contains("prelude") {
@@ -170,6 +175,30 @@ mod tests {
         let h = result.unwrap();
         if let HoverContents::Markup(m) = &h.contents {
             assert!(m.value.contains("A helper"), "should include documentation");
+        } else {
+            panic!("expected markup content");
+        }
+    }
+
+    #[test]
+    fn test_hover_shows_type_annotation() {
+        let source = "` { type: \"number -> number\" }\nf(x): x\ny: f(1)\n";
+        let (table, _) = setup_table(source);
+        let parse = parse_unit(source);
+        let root = parse.syntax_node();
+
+        let pos = Position {
+            line: 2,
+            character: 3,
+        };
+        let result = hover(source, &root, &pos, &table);
+        assert!(result.is_some());
+        let h = result.unwrap();
+        if let HoverContents::Markup(m) = &h.contents {
+            assert!(
+                m.value.contains("number -> number"),
+                "should show type annotation"
+            );
         } else {
             panic!("expected markup content");
         }

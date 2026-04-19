@@ -113,6 +113,48 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
     }
 }
 
+/// Run the type checker on a single eucalypt source file, loading the prelude
+/// automatically.
+///
+/// Returns all `TypeWarning`s found.  Returns an empty `Vec` if the pipeline
+/// fails (parse error, import error, etc.) — the caller is responsible for
+/// deciding how to surface those errors separately.
+///
+/// This function is used by the LSP server to run the checker on document
+/// open/change events.
+pub fn type_check_path(path: &Path) -> Vec<crate::core::typecheck::error::TypeWarning> {
+    use crate::syntax::input::{Input, Locator};
+
+    let prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
+    let file = Input::new(Locator::Fs(path.to_path_buf()), None, "eu");
+    let inputs = vec![prelude, file];
+
+    let mut loader = SourceLoader::new(vec![]);
+
+    for input in &inputs {
+        if loader.load(input).is_err() {
+            return vec![];
+        }
+    }
+    for input in &inputs {
+        if loader.translate(input).is_err() {
+            return vec![];
+        }
+    }
+    if loader.merge_units(&inputs).is_err() {
+        return vec![];
+    }
+    if loader.cook().is_err() {
+        return vec![];
+    }
+    if loader.eliminate().is_err() {
+        return vec![];
+    }
+
+    let core_expr = loader.core().expr.clone();
+    type_check(&core_expr)
+}
+
 /// Run the bidirectional type checker by loading files through the pipeline.
 ///
 /// Returns an empty vec if there are no type issues.  Returns an `Err` if

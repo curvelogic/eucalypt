@@ -606,10 +606,18 @@ fn publish_diagnostics(
     let parse = crate::syntax::rowan::parse_unit(text);
     let mut diags = diagnostics::diagnostics_from_parse_errors(text, parse.errors());
 
-    // Merge type warnings (currently none — placeholder for future type checker)
-    let files: SimpleFiles<String, String> = SimpleFiles::new();
-    let type_warnings = diagnostics::diagnostics_from_type_warnings(text, &[], &files);
-    diags.extend(type_warnings);
+    // Run the type checker when the document has no parse errors.
+    // The type checker requires a valid file path (on-disk) — skip if the URI
+    // is not a local file URI.
+    if parse.errors().is_empty() {
+        if let Ok(path) = uri.to_file_path() {
+            let type_warnings = crate::driver::check::type_check_path(&path);
+            let files: SimpleFiles<String, String> = SimpleFiles::new();
+            let type_diags =
+                diagnostics::diagnostics_from_type_warnings(text, &type_warnings, &files);
+            diags.extend(type_diags);
+        }
+    }
 
     let params = PublishDiagnosticsParams {
         uri,
