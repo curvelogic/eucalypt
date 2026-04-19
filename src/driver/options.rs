@@ -372,6 +372,9 @@ pub struct EucalyptOptions {
 
     // IO monad permission flag
     pub allow_io: bool,
+
+    // Promote type warnings to errors (used by `eu check --strict`)
+    pub strict: bool,
 }
 
 impl From<EucalyptCli> for EucalyptOptions {
@@ -640,6 +643,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             args,
             seed,
             allow_io,
+            strict: false,
         }
     }
 }
@@ -875,6 +879,14 @@ impl EucalyptOptions {
     /// Whether IO monad operations (shell execution) are permitted
     pub fn allow_io(&self) -> bool {
         self.allow_io
+    }
+
+    /// Whether type warnings should be treated as hard errors
+    ///
+    /// When `true`, the presence of any `TypeWarning` causes a non-zero exit.
+    /// Set by `eu check --strict`.
+    pub fn strict(&self) -> bool {
+        self.strict
     }
 
     /// Get the error output format

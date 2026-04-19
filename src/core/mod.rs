@@ -16,5 +16,6 @@ pub mod rt;
 pub mod simplify;
 pub mod target;
 pub mod transform;
+pub mod typecheck;
 pub mod unit;
 pub mod verify;

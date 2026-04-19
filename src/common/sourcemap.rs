@@ -176,6 +176,38 @@ impl SourceMap {
         }
     }
 
+    /// Create a warning diagnostic for a value with a SMID.
+    ///
+    /// Identical in structure to [`diagnostic`], but uses
+    /// `Diagnostic::warning()` rather than `Diagnostic::error()`.
+    /// Used by the type checker to emit non-blocking diagnostics.
+    pub fn warning_diagnostic<W>(&self, warning: &W) -> Diagnostic<usize>
+    where
+        W: HasSmid + Display,
+    {
+        let diag = Diagnostic::warning().with_message(format!("{warning}"));
+
+        match self.source_info(warning) {
+            Some(&SourceInfo {
+                file: Some(file),
+                span: Some(span),
+                ..
+            }) => diag.with_labels(vec![Label::primary(file, span)]),
+            Some(SourceInfo {
+                file: None,
+                annotation: Some(ref ann),
+                ..
+            }) => {
+                if let Some(display) = intrinsic_display_name(ann) {
+                    diag.with_notes(vec![format!("in {display}")])
+                } else {
+                    diag
+                }
+            }
+            _ => diag,
+        }
+    }
+
     /// Create a default diagnostic for an exception with a SMID
     pub fn diagnostic<E>(&self, error: &E) -> Diagnostic<usize>
     where
