@@ -82,40 +82,40 @@ pub fn is_stream_format(_format: &str) -> bool {
 }
 
 /// Create a streaming import by registering a producer and returning
-/// a core expression that calls `STREAM_NEXT(handle)`.
+/// a core expression that calls `PRODUCER_NEXT(handle)`.
 ///
 /// The `path` must be a resolved filesystem path (or "-" for stdin
 /// with text-stream).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn create_stream_import(format: &str, path: &str) -> Result<RcExpr, SourceError> {
     use crate::core::expr::acore;
-    use crate::eval::stg::stream::register_stream;
+    use crate::eval::stg::stream::register_producer;
 
     let handle = match format {
         "jsonl-stream" => {
             let producer = stream::JsonlProducer::open(path).map_err(|e| {
                 SourceError::InvalidSource(format!("cannot open for streaming: {e}"), 0)
             })?;
-            register_stream(Box::new(producer))
+            register_producer(Box::new(producer))
         }
         "csv-stream" => {
             let producer = stream::CsvProducer::open(path).map_err(|e| {
                 SourceError::InvalidSource(format!("cannot open for streaming: {e}"), 0)
             })?;
-            register_stream(Box::new(producer))
+            register_producer(Box::new(producer))
         }
         "text-stream" => {
             let producer = stream::TextProducer::open(path).map_err(|e| {
                 SourceError::InvalidSource(format!("cannot open for streaming: {e}"), 0)
             })?;
-            register_stream(Box::new(producer))
+            register_producer(Box::new(producer))
         }
         _ => return Err(SourceError::UnknownSourceFormat(format.to_string(), 0)),
     };
 
-    // Return: STREAM_NEXT(handle)
+    // Return: PRODUCER_NEXT(handle)
     Ok(acore::app(
-        acore::bif("STREAM_NEXT"),
+        acore::bif("PRODUCER_NEXT"),
         vec![acore::num(handle as i64)],
     ))
 }

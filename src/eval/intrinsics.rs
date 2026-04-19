@@ -580,7 +580,7 @@ lazy_static! {
             strict: vec![0],
     },
     Intrinsic { // 106
-            name: "STREAM_NEXT",
+            name: "PRODUCER_NEXT",
             ty: function(vec![num(), unk()]).unwrap(),
             strict: vec![0],
     },
