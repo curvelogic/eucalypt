@@ -270,6 +270,36 @@ fn extract_type_annotation(meta_block: &Block, decl_name: &str) -> Option<Annota
     None
 }
 
+/// Return `(TextRange, error_message)` pairs for invalid `type:` annotations.
+///
+/// Exposed for the LSP diagnostic provider, which uses these to emit
+/// `DiagnosticSeverity::WARNING` diagnostics with accurate source ranges.
+pub fn annotation_syntax_errors(source: &str) -> Vec<(rowan::TextRange, String)> {
+    let parse_result = parse_unit(source);
+    let unit = parse_result.tree();
+    let annotations = collect_annotations_from_unit(&unit, source);
+
+    annotations
+        .into_iter()
+        .filter_map(|ann| {
+            if let Err(e) = parse::parse_type(&ann.value) {
+                // Reconstruct a TextRange covering the annotation string literal.
+                // source_offset is the start of the literal node.
+                let start = rowan::TextSize::from(ann.source_offset as u32);
+                let end = start + rowan::TextSize::from(ann.value.len() as u32 + 2); // +2 for quotes
+                let range = rowan::TextRange::new(start, end);
+                let msg = format!(
+                    "invalid type annotation on '{}': {}",
+                    ann.decl_name, e
+                );
+                Some((range, msg))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 /// Attempt to extract a human-readable name from a declaration head.
 fn declaration_name(decl: &Declaration) -> String {
     let Some(head) = decl.head() else {

@@ -5,9 +5,29 @@
 //! positions by scanning the source text for line breaks.
 
 use crate::core::typecheck::error::TypeWarning;
+use crate::driver::check::annotation_syntax_errors;
 use crate::syntax::rowan::ParseError;
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use rowan::TextRange;
+
+/// Validate `type:` annotation syntax in a source file and return LSP diagnostics.
+///
+/// Scans the Rowan AST for `type:` metadata entries and parses their string
+/// values against the type grammar.  Invalid annotations produce
+/// `DiagnosticSeverity::WARNING` diagnostics so that they never block evaluation.
+pub fn diagnostics_from_annotation_syntax(source: &str) -> Vec<Diagnostic> {
+    let line_index = LineIndex::new(source);
+    annotation_syntax_errors(source)
+        .into_iter()
+        .map(|(range, msg)| Diagnostic {
+            range: line_index.range(range),
+            severity: Some(DiagnosticSeverity::WARNING),
+            source: Some("eucalypt-types".to_string()),
+            message: msg,
+            ..Diagnostic::default()
+        })
+        .collect()
+}
 
 /// Convert a collection of parse errors into LSP diagnostics.
 pub fn diagnostics_from_parse_errors(source: &str, errors: &[ParseError]) -> Vec<Diagnostic> {
@@ -486,6 +506,37 @@ mod tests {
         let source = "x: 1\n";
         let files: SimpleFiles<String, String> = SimpleFiles::new();
         let diags = diagnostics_from_type_warnings(source, &[], &files);
+        assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn valid_annotation_syntax_gives_no_diagnostic() {
+        let source = "` { type: \"number -> number\" }\nf(x): x\n";
+        let diags = diagnostics_from_annotation_syntax(source);
+        assert!(
+            diags.is_empty(),
+            "valid annotation should produce no diagnostics"
+        );
+    }
+
+    #[test]
+    fn invalid_annotation_syntax_gives_warning() {
+        let source = "` { type: \"number ->\" }\nf(x): x\n";
+        let diags = diagnostics_from_annotation_syntax(source);
+        assert_eq!(diags.len(), 1, "invalid annotation should produce one diagnostic");
+        assert_eq!(diags[0].severity, Some(DiagnosticSeverity::WARNING));
+        assert_eq!(diags[0].source.as_deref(), Some("eucalypt-types"));
+        assert!(
+            diags[0].message.contains("invalid type annotation"),
+            "message should mention invalid annotation, got: {}",
+            diags[0].message
+        );
+    }
+
+    #[test]
+    fn no_annotations_gives_no_diagnostic() {
+        let source = "x: 1\ny: 2\n";
+        let diags = diagnostics_from_annotation_syntax(source);
         assert!(diags.is_empty());
     }
 }

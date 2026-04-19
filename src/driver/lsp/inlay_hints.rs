@@ -43,6 +43,27 @@ fn collect_hints_from_unit(
             continue;
         }
 
+        // Type annotation inlay hints
+        if let Some(head) = decl.head() {
+            let head_range = text_range_to_lsp_range(source, head.syntax().text_range());
+            if let Some(head_name) = head_name_str(&head) {
+                if let Some(sym) = table.lookup(&head_name).into_iter().next() {
+                    if let Some(ty) = &sym.type_annotation {
+                        hints.push(InlayHint {
+                            position: head_range.end,
+                            label: InlayHintLabel::String(format!(": {ty}")),
+                            kind: Some(InlayHintKind::TYPE),
+                            text_edits: None,
+                            tooltip: None,
+                            padding_left: Some(true),
+                            padding_right: Some(false),
+                            data: None,
+                        });
+                    }
+                }
+            }
+        }
+
         // Operator fixity hints
         if let Some(head) = decl.head() {
             let kind = head.classify_declaration();
@@ -55,6 +76,16 @@ fn collect_hints_from_unit(
                 collect_parameter_hints_from_soup(source, &soup, range, table, hints);
             }
         }
+    }
+}
+
+/// Extract the primary identifier text from a declaration head, for symbol table lookup.
+fn head_name_str(head: &ast::DeclarationHead) -> Option<String> {
+    match head.classify_declaration() {
+        ast::DeclarationKind::Property(id) | ast::DeclarationKind::Function(id, _) => {
+            Some(id.text().to_string())
+        }
+        _ => None,
     }
 }
 
@@ -251,6 +282,54 @@ mod tests {
             param_hints.len(),
             2,
             "should have 2 param hints for f(1, 2)"
+        );
+    }
+
+    #[test]
+    fn type_annotation_hint_shown_on_declaration() {
+        let source = "` { type: \"number -> number\" }\nf(x): x\n";
+        let parse = parse_unit(source);
+        let root = parse.syntax_node();
+        let table = make_table(source);
+        let hints = inlay_hints(source, &root, &full_range(), &table);
+        let type_hints: Vec<_> = hints
+            .iter()
+            .filter(|h| h.kind == Some(InlayHintKind::TYPE))
+            .collect();
+        assert!(
+            !type_hints.is_empty(),
+            "should have a type annotation inlay hint"
+        );
+        match &type_hints[0].label {
+            InlayHintLabel::String(s) => {
+                assert!(
+                    s.contains("number -> number"),
+                    "should show type annotation, got: {s}"
+                );
+            }
+            _ => panic!("expected string label"),
+        }
+    }
+
+    #[test]
+    fn no_type_hint_without_annotation() {
+        let source = "f(x): x\n";
+        let parse = parse_unit(source);
+        let root = parse.syntax_node();
+        let table = make_table(source);
+        let hints = inlay_hints(source, &root, &full_range(), &table);
+        // Only operator hints or param hints — no type annotation hint for f
+        // (f has no type annotation in metadata)
+        let type_hints_for_f: Vec<_> = hints
+            .iter()
+            .filter(|h| {
+                h.kind == Some(InlayHintKind::TYPE)
+                    && matches!(&h.label, InlayHintLabel::String(s) if s.contains("->"))
+            })
+            .collect();
+        assert!(
+            type_hints_for_f.is_empty(),
+            "should not show type hint for unannotated function"
         );
     }
 

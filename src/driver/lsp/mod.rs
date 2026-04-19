@@ -606,7 +606,11 @@ fn publish_diagnostics(
     let parse = crate::syntax::rowan::parse_unit(text);
     let mut diags = diagnostics::diagnostics_from_parse_errors(text, parse.errors());
 
-    // Merge type warnings (currently none — placeholder for future type checker)
+    // Validate type annotation syntax (Phase 1 check — no pipeline needed).
+    let annotation_diags = diagnostics::diagnostics_from_annotation_syntax(text);
+    diags.extend(annotation_diags);
+
+    // Full bidirectional type check requires the compiled pipeline; not run in LSP yet.
     let files: SimpleFiles<String, String> = SimpleFiles::new();
     let type_warnings = diagnostics::diagnostics_from_type_warnings(text, &[], &files);
     diags.extend(type_warnings);
