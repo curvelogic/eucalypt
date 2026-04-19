@@ -111,7 +111,8 @@ fn render_native(n: &Native, view: MutatorHeapView<'_>, machine: &dyn IntrinsicM
             let v = view.scoped(*ptr);
             format!("<vec({})>", v.len())
         }
-        Native::Stream(state) => format!("<stream({state})>"),
+        Native::Prng(state) => format!("<prng({state})>"),
+        Native::Producer(handle) => format!("<producer({handle})>"),
     }
 }
 

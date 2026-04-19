@@ -402,7 +402,7 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "LOOKUP_FAIL" => Some("lookup"),
 
         // Random / streams
-        "STREAM_NEXT" => Some("stream.next"),
+        "PRODUCER_NEXT" => Some("producer.next"),
 
         // Internal machinery — filter out of traces
         //

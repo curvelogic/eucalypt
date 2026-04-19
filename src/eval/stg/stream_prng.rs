@@ -1,6 +1,6 @@
 //! Intrinsics for opaque PRNG stream values backed by SplitMix64.
 //!
-//! These intrinsics expose `Native::Stream(u64)` — an opaque state word —
+//! These intrinsics expose `Native::Prng(u64)` — an opaque state word —
 //! through six operations:
 //!
 //! - `STREAM_NEW`     — seed a new stream from an integer
@@ -33,15 +33,15 @@ use super::{
     tags::DataConstructor,
 };
 
-/// Extract a `Native::Stream` state word from a ref, or return a
+/// Extract a `Native::Prng` state word from a ref, or return a
 /// `TypeMismatch` error.
-fn stream_arg(
+fn prng_arg(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<u64, ExecutionError> {
     let native = machine.nav(view).resolve_native(arg)?;
-    if let Native::Stream(state) = native {
+    if let Native::Prng(state) = native {
         Ok(state)
     } else {
         Err(ExecutionError::TypeMismatch(
@@ -53,7 +53,7 @@ fn stream_arg(
     }
 }
 
-/// Return a `Native::Stream(state)` atom as the machine result.
+/// Return a `Native::Prng(state)` atom as the machine result.
 fn machine_return_stream(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
@@ -62,7 +62,7 @@ fn machine_return_stream(
     use crate::eval::memory::syntax::HeapSyn;
     machine.set_closure(crate::eval::machine::env::SynClosure::new(
         view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Stream(state)),
+            evaluand: Ref::V(Native::Prng(state)),
         })?
         .as_ptr(),
         machine.root_env(),
@@ -70,7 +70,7 @@ fn machine_return_stream(
 }
 
 /// Build and return a two-element list `[first, second]` where both
-/// elements are `Native::Stream` values.
+/// elements are `Native::Prng` values.
 fn machine_return_stream_pair(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
@@ -88,7 +88,7 @@ fn machine_return_stream_pair(
 
     bindings.push(LambdaForm::value(
         view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Stream(second)),
+            evaluand: Ref::V(Native::Prng(second)),
         })?
         .as_ptr(),
     ));
@@ -103,7 +103,7 @@ fn machine_return_stream_pair(
 
     bindings.push(LambdaForm::value(
         view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Stream(first)),
+            evaluand: Ref::V(Native::Prng(first)),
         })?
         .as_ptr(),
     ));
@@ -154,7 +154,7 @@ fn machine_return_float_stream(
 
     bindings.push(LambdaForm::value(
         view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Stream(stream_state)),
+            evaluand: Ref::V(Native::Prng(stream_state)),
         })?
         .as_ptr(),
     ));
@@ -217,7 +217,7 @@ fn machine_return_int_stream(
 
     bindings.push(LambdaForm::value(
         view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Stream(stream_state)),
+            evaluand: Ref::V(Native::Prng(stream_state)),
         })?
         .as_ptr(),
     ));
@@ -263,7 +263,7 @@ fn machine_return_int_stream(
 
 /// `STREAM_NEW(seed)` — create a new stream from an integer seed.
 ///
-/// Returns `Native::Stream(state)` where `state` is derived from the seed
+/// Returns `Native::Prng(state)` where `state` is derived from the seed
 /// via `seed_to_u64`.
 pub struct StreamNew;
 
@@ -305,7 +305,7 @@ impl StgIntrinsic for StreamValue {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let state = stream_arg(machine, view, &args[0])?;
+        let state = prng_arg(machine, view, &args[0])?;
         let (_, z) = splitmix64(state);
         let float_val = (z >> 11) as f64 / ((1u64 << 53) as f64);
         let result = Number::from_f64(float_val).ok_or_else(|| {
@@ -338,7 +338,7 @@ impl StgIntrinsic for StreamAdvance {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let state = stream_arg(machine, view, &args[0])?;
+        let state = prng_arg(machine, view, &args[0])?;
         let (next_state, _) = splitmix64(state);
         machine_return_stream(machine, view, next_state)
     }
@@ -366,7 +366,7 @@ impl StgIntrinsic for StreamFloat {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let state = stream_arg(machine, view, &args[0])?;
+        let state = prng_arg(machine, view, &args[0])?;
         let (next_state, z) = splitmix64(state);
         let float_val = (z >> 11) as f64 / ((1u64 << 53) as f64);
         machine_return_float_stream(machine, view, float_val, next_state)
@@ -397,7 +397,7 @@ impl StgIntrinsic for StreamInt {
     ) -> Result<(), ExecutionError> {
         let n_num = num_arg(machine, view, &args[0])?;
         let n = n_num.as_u64().unwrap_or(1).max(1);
-        let state = stream_arg(machine, view, &args[1])?;
+        let state = prng_arg(machine, view, &args[1])?;
         let (next_state, z) = splitmix64(state);
         let int_val = z % n;
         machine_return_int_stream(machine, view, int_val, next_state)
@@ -426,7 +426,7 @@ impl StgIntrinsic for StreamSplit {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let state = stream_arg(machine, view, &args[0])?;
+        let state = prng_arg(machine, view, &args[0])?;
         let (next_state, z) = splitmix64(state);
         machine_return_stream_pair(machine, view, next_state, z)
     }
