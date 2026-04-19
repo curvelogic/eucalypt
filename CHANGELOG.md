@@ -6,6 +6,9 @@ All notable changes to eucalypt are documented here.
 
 ### Added
 
+- **Ceiling/floor bracket notation** — `⌈n⌉` for ceiling and `⌊n⌋` for floor, using idiot bracket pairs. `⌈3.2⌉` → `4`, `⌊3.8⌋` → `3`
+- **Editor Unicode support** — `⌈⌉⌊⌋` added to Emacs quail (`|_`/`_|`/`|.`/`.|`), transient menu, and VS Code quick-pick
+
 ### Changed
 
 ### Fixed

@@ -216,7 +216,7 @@
     "unicode-operator": {
       "comment": "Unicode operators used in eucalypt",
       "name": "keyword.operator.unicode.eucalypt",
-      "match": "[∧∨¬≤≥≠∸÷∘‖↑✓⊕⊝≪≫∅▶→←⊂⊃∈∉∀∃⊥⊤≈≡∩∪∼±×√∞∂∫∑∏∇△▽⊢⊣⊨⊩⊗⊙⊡⊞⊟⋅⋆⋈⋉⋊⟵⟶⟷⟸⟹⟺]+"
+      "match": "[∧∨¬≤≥≠∸÷∘•‖↑✓⊕⊝≪≫∅▶→←⊂⊃∈∉∀∃⊥⊤≈≡∩∪∼±×√∞∂∫∑∏∇△▽⊢⊣⊨⊩⊗⊙⊡⊞⊟⋅⋆⋈⋉⋊⟵⟶⟷⟸⟹⟺]+"
     },
 
     "operator": {
@@ -232,8 +232,8 @@
         { "name": "punctuation.definition.list.end.eucalypt", "match": "\\]" },
         { "name": "punctuation.definition.paren.begin.eucalypt", "match": "\\(" },
         { "name": "punctuation.definition.paren.end.eucalypt", "match": "\\)" },
-        { "name": "punctuation.definition.bracket.begin.eucalypt", "match": "[⟦⟨⟪⌈⌊⦃⦇⦉«【〔〖〘〚]" },
-        { "name": "punctuation.definition.bracket.end.eucalypt", "match": "[⟧⟩⟫⌉⌋⦄⦈⦊»】〕〗〙〛]" },
+        { "name": "punctuation.definition.bracket.begin.eucalypt", "match": "[⟦⟨⟪⌈⌊⦃⦇⦉«‹【〔〖〘〚]" },
+        { "name": "punctuation.definition.bracket.end.eucalypt", "match": "[⟧⟩⟫⌉⌋⦄⦈⦊»›】〕〗〙〛]" },
         { "name": "punctuation.separator.colon.eucalypt", "match": ":" },
         { "name": "punctuation.separator.comma.eucalypt", "match": "," }
       ]

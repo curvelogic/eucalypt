@@ -102,8 +102,17 @@ content items into a list and pass it to a function.
 result: ⟦ 3 4 5 ⟧  # [6, 8, 10]
 ```
 
-Any matching Unicode bracket pair works, e.g. `⟦⟧`, `⟨⟩`, `⟪⟫`, `⌈⌉`, `⌊⌋`, `⦃⦄`, `⦇⦈`, `⦉⦊`, `«»`,
+Any matching Unicode bracket pair works, e.g. `⟦⟧`, `⟨⟩`, `⟪⟫`, `⌈⌉`, `⌊⌋`, `‹›`, `⦃⦄`, `⦇⦈`, `⦉⦊`, `«»`,
 `【】`, `〔〕`, `〖〗`, `〘〙`, `〚〛`.
+
+The prelude defines `⌈⌉` and `⌊⌋` for ceiling and floor:
+
+```eu,notest
+⌈3.2⌉    # 4
+⌊3.8⌋    # 3
+⌈-1.5⌉   # -1
+⌊-1.5⌋   # -2
+```
 
 ## Monadic Blocks
 
@@ -378,7 +387,7 @@ Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jso
 | `max(a, b)` / `min(a, b)` | Maximum / minimum |
 | `even?` / `odd?` | Parity predicates |
 | `zero?` / `pos?` / `neg?` | Sign predicates |
-| `floor` / `ceil` / `round` | Rounding |
+| `floor` / `ceiling` / `⌊n⌋` / `⌈n⌉` | Rounding (no `round`) |
 
 ### Arrays (`arr` namespace)
 

@@ -661,6 +661,12 @@ floor: __FLOOR
 ` "`ceiling(n)` - round number upwards to nearest integer"
 ceiling: __CEILING
 
+` "`⌈n⌉` - ceiling bracket notation, round `n` upwards to nearest integer"
+⌈[x]⌉: x ceiling
+
+` "`⌊n⌋` - floor bracket notation, round `n` downwards to nearest integer"
+⌊[x]⌋: x floor
+
 ` "`pow(b, e)` - raise `b` to the power `e`"
 pow(b, e): __POW(b, e)
 
