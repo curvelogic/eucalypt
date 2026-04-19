@@ -492,7 +492,9 @@ Key sequences:
   |= → ▶  (debug trace)
   << → «  >> → »  (angle brackets)
   (( → ⟨  )) → ⟩  (mathematical angle brackets)
-  [[ → ⟦  ]] → ⟧  (double square brackets)"
+  [[ → ⟦  ]] → ⟧  (double square brackets)
+  |_ → ⌈  _| → ⌉  (ceiling brackets)
+  |. → ⌊  .| → ⌋  (floor brackets)"
  nil t nil nil nil nil nil nil nil nil t)
 
 (quail-define-rules
@@ -535,7 +537,12 @@ Key sequences:
  ("[["  ?⟦)
  ("]]"  ?⟧)
  ("<<"  ?«)
- (">>"  ?»))
+ (">>"  ?»)
+ ;; Ceiling / floor
+ ("|_"  ?⌈)
+ ("_|"  ?⌉)
+ ("|."  ?⌊)
+ (".|"  ?⌋))
 
 ;;; Transient Unicode menu
 
@@ -565,6 +572,9 @@ Key sequences:
    ("e" "∅ empty-set"  (lambda () (interactive) (insert "∅")))
    ("i" "∈ member"     (lambda () (interactive) (insert "∈")))
    ("I" "∉ not-member" (lambda () (interactive) (insert "∉")))]
+  ["Rounding"
+   ("f" "⌊⌋ floor"     (lambda () (interactive) (insert "⌊") (save-excursion (insert "⌋"))))
+   ("F" "⌈⌉ ceiling"   (lambda () (interactive) (insert "⌈") (save-excursion (insert "⌉"))))]
   ["Other"
    ("c" "∘ compose"    (lambda () (interactive) (insert "∘")))
    ("t" "▶ debug"      (lambda () (interactive) (insert "▶")))

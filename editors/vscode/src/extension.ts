@@ -46,6 +46,10 @@ const UNICODE_OPERATORS: QuickPickItem[] = [
   { label: "⟧", description: "Double square bracket close  (]])" },
   { label: "«", description: "Left angle bracket  (<<)" },
   { label: "»", description: "Right angle bracket  (>>)" },
+  { label: "⌈", description: "Ceiling bracket open  (|_)" },
+  { label: "⌉", description: "Ceiling bracket close  (_|)" },
+  { label: "⌊", description: "Floor bracket open  (|.)" },
+  { label: "⌋", description: "Floor bracket close  (.|)" },
 ];
 
 async function insertUnicodeOperator(): Promise<void> {
