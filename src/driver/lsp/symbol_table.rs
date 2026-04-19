@@ -56,6 +56,8 @@ pub struct SymbolInfo {
     pub selection_range: lsp_types::Range,
     /// Documentation from `` ` { doc: "..." } `` metadata
     pub documentation: Option<String>,
+    /// Type annotation from `` ` { type: "..." } `` metadata
+    pub type_annotation: Option<String>,
     /// Parameter names for functions
     pub parameters: Vec<String>,
     /// Child symbols (for namespace blocks)
@@ -242,6 +244,7 @@ fn symbol_from_declaration(
     let range = text_range_to_lsp_range(source_text, decl.syntax().text_range());
     let selection_range = text_range_to_lsp_range(source_text, head.syntax().text_range());
     let documentation = extract_documentation(decl);
+    let type_annotation = extract_type_annotation(decl);
     let children = extract_children(decl, source_text, uri, source);
 
     Some(SymbolInfo {
@@ -252,6 +255,7 @@ fn symbol_from_declaration(
         range,
         selection_range,
         documentation,
+        type_annotation,
         parameters,
         children,
     })
@@ -299,6 +303,42 @@ fn extract_documentation(decl: &Declaration) -> Option<String> {
                 }
             }
             _ => {}
+        }
+    }
+    None
+}
+
+/// Extract a type annotation from declaration metadata.
+///
+/// Looks for `` ` { type: "..." } `` in the declaration's metadata.
+fn extract_type_annotation(decl: &Declaration) -> Option<String> {
+    let meta = decl.meta()?;
+    let soup = meta.soup()?;
+
+    for element in soup.elements() {
+        if let crate::syntax::rowan::ast::Element::Block(block) = element {
+            for inner_decl in block.declarations() {
+                if let Some(head) = inner_decl.head() {
+                    if let DeclarationKind::Property(prop) = head.classify_declaration() {
+                        if prop.text() == "type" {
+                            if let Some(body) = inner_decl.body() {
+                                if let Some(body_soup) = body.soup() {
+                                    for el in body_soup.elements() {
+                                        if let crate::syntax::rowan::ast::Element::Lit(lit) = el {
+                                            if let Some(
+                                                crate::syntax::rowan::ast::LiteralValue::Str(s),
+                                            ) = lit.value()
+                                            {
+                                                return s.value().map(|v| v.to_string());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     None
@@ -502,5 +542,54 @@ mod tests {
 
         let filter = table.lookup("filter");
         assert!(!filter.is_empty(), "prelude should contain 'filter'");
+    }
+
+    #[test]
+    fn test_type_annotation_extraction() {
+        let source = "` { type: \"number -> number\" }\nf(x): x\n";
+        let parse = parse_unit(source);
+        let unit = parse.tree();
+        let mut table = SymbolTable::new();
+        table.add_from_unit(&unit, source, &test_uri(), SymbolSource::Local);
+
+        let results = table.lookup("f");
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].type_annotation.as_deref(),
+            Some("number -> number")
+        );
+    }
+
+    #[test]
+    fn test_type_annotation_absent_when_no_type_metadata() {
+        let source = "` { doc: \"some doc\" }\nf(x): x\n";
+        let parse = parse_unit(source);
+        let unit = parse.tree();
+        let mut table = SymbolTable::new();
+        table.add_from_unit(&unit, source, &test_uri(), SymbolSource::Local);
+
+        let results = table.lookup("f");
+        assert_eq!(results.len(), 1);
+        assert!(
+            results[0].type_annotation.is_none(),
+            "no type annotation should be present when only doc: is given"
+        );
+    }
+
+    #[test]
+    fn test_type_and_doc_both_extracted() {
+        let source = "` { doc: \"A function\" type: \"string -> string\" }\ng(s): s\n";
+        let parse = parse_unit(source);
+        let unit = parse.tree();
+        let mut table = SymbolTable::new();
+        table.add_from_unit(&unit, source, &test_uri(), SymbolSource::Local);
+
+        let results = table.lookup("g");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].documentation.as_deref(), Some("A function"));
+        assert_eq!(
+            results[0].type_annotation.as_deref(),
+            Some("string -> string")
+        );
     }
 }
