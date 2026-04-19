@@ -353,13 +353,19 @@ impl<'a> Parser<'a> {
             Token::Vec => Ok(Type::Vec),
             Token::Array => Ok(Type::Array),
             Token::Ident(name) => {
-                // Type variable — must begin with a lowercase ASCII letter
-                if name.starts_with(|c: char| c.is_ascii_lowercase()) {
+                // Type variable (lowercase) or type alias reference (uppercase).
+                //
+                // Both are represented as `Type::Var` at parse time.  Lowercase
+                // idents are universally-quantified type variables; uppercase
+                // idents are alias references resolved by the checker against
+                // its alias map.  The checker erases any unresolved `Var`s to
+                // `any` via `erase_type_vars`.
+                if name.starts_with(|c: char| c.is_ascii_alphabetic()) {
                     Ok(Type::Var(TypeVarId(name)))
                 } else {
                     Err(ParseError::new(
                         tok_pos,
-                        format!("unknown type constructor '{name}' (type variables must start with a lowercase letter)"),
+                        format!("unknown type '{name}' (type names must start with a letter)"),
                     ))
                 }
             }
@@ -630,9 +636,19 @@ mod tests {
     }
 
     #[test]
-    fn parse_uppercase_ident_fails() {
-        let err = parse_type("Foo").unwrap_err();
-        assert!(err.message.contains("unknown type constructor"));
+    fn parse_uppercase_ident_returns_var() {
+        // Uppercase idents are alias references — parsed as Type::Var,
+        // resolved to concrete types by the checker's alias map.
+        assert_eq!(parse_type("Person").unwrap(), var("Person"));
+        assert_eq!(parse_type("Point").unwrap(), var("Point"));
+    }
+
+    #[test]
+    fn parse_non_alpha_ident_fails() {
+        // Underscore-prefixed names start with a non-alpha char — the lexer
+        // rejects them before the parser even sees an ident token.
+        let err = parse_type("_foo").unwrap_err();
+        assert!(err.message.contains("unexpected character"));
     }
 
     // ── List ────────────────────────────────────────────────────────────────
