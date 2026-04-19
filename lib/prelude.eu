@@ -225,23 +225,27 @@ true: __TRUE
 ` "`false` - constant logical false"
 false: __FALSE
 
-` "`if(c, t, f)` - if `c` is `true`, return `t` else `f`."
+` { doc: "if(c, t, f) - if c is true, return t else f."
+    type: "bool -> a -> a -> a" }
 if: __IF
 
 ` "`then(t, f, c)` - for pipeline if: - `x? then(t, f)``"
 then(t, f, c): if(c, t, f)
 
-` "`when(p?, f, x)` - when `x` satisfies `p?` apply `f` else pass through unchanged."
+` { doc: "when(p?, f, x) - when x satisfies p? apply f else pass through unchanged."
+    type: "(a -> bool) -> (a -> a) -> a -> a" }
 when(p?, f, x): if(x p?, x f, x)
 
 ##
 ## List basics
 ##
 
-` "`cons(h, t)` - construct new list by prepending item `h` to list `t`."
+` { doc: "cons(h, t) - construct new list by prepending item h to list t."
+    type: "a -> [a] -> [a]" }
 cons: __CONS
 
-` "`snoc(x, l)` - append element `x` to the end of list `l`."
+` { doc: "snoc(x, l) - append element x to the end of list l."
+    type: "a -> [a] -> [a]" }
 snoc(x, l): l ++ [x]
 
 ` { doc: "`x ‖ xs` - prepend element `x` to list `xs`. Right-associative cons operator."
@@ -249,14 +253,16 @@ snoc(x, l): l ++ [x]
     precedence: 55 }
 (x ‖ xs): __CONS(x, xs)
 
-` "`head(xs)` - return the head item of list `xs`, panic if empty."
+` { doc: "head(xs) - return the head item of list xs, panic if empty."
+    type: "[a] -> a" }
 head: __HEAD
 
 ` { doc: "`↑xs` - return first element of list `xs`. Tight-binding prefix operator."
     precedence: 95 }
 (↑ xs): xs head
 
-` "`nil?(xs)` - `true` if list `xs` is empty, `false` otherwise."
+` { doc: "nil?(xs) - true if list xs is empty, false otherwise."
+    type: "[a] -> bool" }
 nil?: = []
 
 ` "`non-nil?(xs)` - `true` if list `xs` is non-empty, `false` otherwise."
@@ -272,7 +278,8 @@ coalesce(xs): (xs nil?) then(null, (xs head)✓ then(xs head, xs tail coalesce))
 ` "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
 head-or(d, xs): xs nil? then(d, xs head)
 
-` "`tail(xs)` - return list `xs` without the head item. [] causes error."
+` { doc: "tail(xs) - return list xs without the head item. [] causes error."
+    type: "[a] -> [a]" }
 tail: __TAIL
 
 ` "`tail-or(xs, d)` - return list `xs` without the head item or `d` for empty list."
@@ -481,7 +488,8 @@ match?(pat, target): {
 ## Boolean
 ##
 
-` "`not(b) - toggle boolean."
+` { doc: "not(b) - toggle boolean."
+    type: "bool -> bool" }
 not: __NOT
 
 ` { doc: "`!x` - not x, toggle boolean."
@@ -493,12 +501,14 @@ not: __NOT
 (¬ b): b not
 
 ` { doc: "`l && r` - true if and only if `l` and `r` are true."
+    type: "bool -> bool -> bool"
     export: :suppress
     associates: :left
     precedence: :bool-prod }
 (l && r): __AND(l, r)
 
-` "`and(l, r)` - true if and only if `l` and `r` are true."
+` { doc: "and(l, r) - true if and only if l and r are true."
+    type: "bool -> bool -> bool" }
 and: __AND
 
 ` { doc: "`l ∧ r` - true if and only if `l` and `r`"
@@ -507,10 +517,12 @@ and: __AND
     precedence: :bool-prod }
 (l ∧ r): l && r
 
-` "`or(l, r)` - true if and only if `l` or `r` is true."
+` { doc: "or(l, r) - true if and only if l or r is true."
+    type: "bool -> bool -> bool" }
 or: __OR
 
 ` { doc: "`l || r` - true if and only if `l` or `r`"
+    type: "bool -> bool -> bool"
     export: :suppress
     associates: :left
     precedence: :bool-sum }
@@ -529,12 +541,14 @@ or: __OR
 ##
 
 ` { doc: "`l = r` - `true` if and only if value `l` equals value `r`."
+    type: "a -> a -> bool"
     export: :suppress
     associates: :left
     precedence: :eq }
 (l = r): __EQ(l, r)
 
 ` { doc: "`l != r` - `true` if and only if value `l` is not equal to value `r`."
+    type: "a -> a -> bool"
     export: :suppress
     associates: :left
     precedence: :eq }
@@ -551,60 +565,70 @@ or: __OR
 ##
 
 ` { doc: "`l + r` - adds `l` and `r`. For numbers, both must be numeric. For arrays, performs element-wise addition; one operand may be a scalar."
+    type: "number -> number -> number | [a] -> [a] -> [a] | array -> array -> array"
     export: :suppress
     associates: :left
     precedence: :sum }
 (l + r): __ADD(l, r)
 
 ` { doc: "`l - r` - subtracts `r` from `l`. For numbers, both must be numeric. For arrays, performs element-wise subtraction; one operand may be a scalar."
+    type: "number -> number -> number | array -> array -> array"
     export: :suppress
     associates: :left
     precedence: :sum }
 (l - r): __SUB(l, r)
 
 ` { doc: "`l ^ r` - raise `l` to the power `r`."
+    type: "number -> number -> number"
     export: :suppress
     associates: :right
     precedence: :exp }
 (l ^ r): __POW(l, r)
 
 ` { doc: "`l * r` - multiplies `l` and `r`. For numbers, both must be numeric. For arrays, performs element-wise multiplication; one operand may be a scalar."
+    type: "number -> number -> number | array -> array -> array"
     export: :suppress
     associates: :left
     precedence: :prod }
 (l * r): __MUL(l, r)
 
 ` { doc: "`l / r` - floor division of `l` by `r` for numbers (rounds toward negative infinity; always returns integer). For arrays, performs element-wise division; one operand may be a scalar."
+    type: "number -> number -> number | array -> array -> array"
     export: :suppress
     associates: :left
     precedence: :prod }
 (l / r): __DIV(l, r)
 
 ` { doc: "`l ÷ r` - precise division of `l` by `r`; returns exact result."
+    type: "number -> number -> number"
     export: :suppress
     associates: :left
     precedence: :prod }
 (l ÷ r): __PDIV(l, r)
 
 ` { doc: "`l % r` - floor modulus of `l` by `r`; result has same sign as `r`."
+    type: "number -> number -> number"
     export: :suppress
     associates: :left
     precedence: :prod }
 (l % r): __MOD(l, r)
 
 ` { doc: "`l < r` - `true` if `l` is less than `r`. Works on numbers, strings, symbols, and datetimes."
+    type: "number -> number -> bool | string -> string -> bool | symbol -> symbol -> bool | datetime -> datetime -> bool"
     export: :suppress
     associates: :left
     precedence: :cmp }
 (l < r): __LT(l, r)
 
 ` { doc: "`l > r` - `true` if `l` is greater than `r`. Works on numbers, strings, symbols, and datetimes."
+    type: "number -> number -> bool | string -> string -> bool | symbol -> symbol -> bool | datetime -> datetime -> bool"
     export: :suppress
     associates: :left
     precedence: :cmp }
 (l > r): __GT(l, r)
 
 ` { doc: "`l <= r` - `true` if `l` is less than or equal to `r`. Works on numbers, strings, symbols, and datetimes."
+    type: "number -> number -> bool | string -> string -> bool | symbol -> symbol -> bool | datetime -> datetime -> bool"
     export: :suppress
     associates: :left
     precedence: :cmp }
@@ -617,6 +641,7 @@ or: __OR
 (l ≤ r): l <= r
 
 ` { doc: "`l >= r` - `true` if `l` is greater than or equal to `r`. Works on numbers, strings, symbols, and datetimes."
+    type: "number -> number -> bool | string -> string -> bool | symbol -> symbol -> bool | datetime -> datetime -> bool"
     export: :suppress
     associates: :left
     precedence: :cmp }
@@ -628,19 +653,23 @@ or: __OR
     precedence: :cmp }
 (l ≥ r): l >= r
 
-` "`inc(x)` - increment number `x` by 1."
+` { doc: "inc(x) - increment number x by 1."
+    type: "number -> number" }
 inc: _ + 1
 
-` "`dec(x)` - decrement number `x` by 1."
+` { doc: "dec(x) - decrement number x by 1."
+    type: "number -> number" }
 dec: _ - 1
 
-` "`negate(n)` - negate number `n`"
+` { doc: "negate(n) - negate number n."
+    type: "number -> number" }
 negate: 0 -
 
 ` "`∸ n` - unary minus; negate."
 (∸ n): negate(n)
 
-` "`abs(n)` - absolute value of number `n`."
+` { doc: "abs(n) - absolute value of number n."
+    type: "number -> number" }
 abs(n): if(n < 0, 0 - n, n)
 
 ` "`zero?(n)` - return true if and only if number `n` is 0."
@@ -744,13 +773,16 @@ bit: {
   clz(n): __CLZ(n)
 }
 
-` "`sum(l)` - sum a list of numbers"
+` { doc: "sum(l) - sum a list of numbers."
+    type: "[number] -> number" }
 sum(l): foldl(+, 0, l)
 
-` "`product(l)` - multiply a list of numbers"
+` { doc: "product(l) - multiply a list of numbers."
+    type: "[number] -> number" }
 product(l): foldl(*, 1, l)
 
-` "`max(l, r) - return max of numbers `l` and `r`"
+` { doc: "max(l, r) - return max of numbers l and r."
+    type: "number -> number -> number" }
 max(l, r): if(l > r, l, r)
 
 ` "`max-of(l) - return max element in list of numbers `l` - error if empty`"
@@ -774,7 +806,8 @@ max-map(f, l): l map(f) max-of
 ` "`max-of-or(d, l)` - return max element in list `l`, or default `d` if empty."
 max-of-or(d, l): l nil? then(d, max-of(l))
 
-` "`min(l, r) - return min of numbers `l` and `r`"
+` { doc: "min(l, r) - return min of numbers l and r."
+    type: "number -> number -> number" }
 min(l, r): if(l < r, l, r)
 
 ` "`min-of(l) - return min element in list of numbers `l` - error if empty`"
@@ -815,61 +848,78 @@ ch: {
 ` "String processing functions"
 str: {
 
-  ` "of(e) - convert `e` to string."
+  ` { doc: "of(e) - convert e to string."
+      type: "any -> string" }
   of: __STR
 
-  ` "split(s, re) - split string `s` on separators matching regex `re`."
+  ` { doc: "split(s, re) - split string s on separators matching regex re."
+      type: "string -> string -> [string]" }
   split: __SPLIT
 
-  ` "split-on(re, s) - split string `s` on separators matching regex `re`."
+  ` { doc: "split-on(re, s) - split string s on separators matching regex re."
+      type: "string -> string -> [string]" }
   split-on: split flip
 
-  ` "join(l, s) - join list of strings `l` by interposing string s."
+  ` { doc: "join(l, s) - join list of strings l by interposing string s."
+      type: "[string] -> string -> string" }
   join: __JOIN
 
-  ` "join-on(s, l) - join list of strings `l` by interposing string s."
+  ` { doc: "join-on(s, l) - join list of strings l by interposing string s."
+      type: "string -> [string] -> string" }
   join-on: join flip
 
-  ` "match(s, re) - match string `s` using regex `re`, return list of full match then capture groups."
+  ` { doc: "match(s, re) - match string s using regex re, return list of full match then capture groups."
+      type: "string -> string -> [string]" }
   match: __MATCH
 
-  ` "match-with(re, s) - match string `s` using regex `re`, return list of full match then capture groups."
+  ` { doc: "match-with(re, s) - match string s using regex re, return list of full match then capture groups."
+      type: "string -> string -> [string]" }
   match-with: match flip
 
-  ` "extract(re, s) - use regex `re` (with single capture) to extract substring of s - or error."
+  ` { doc: "extract(re, s) - use regex re (with single capture) to extract substring of s - or error."
+      type: "string -> string -> string" }
   extract(re): second ∘ match-with(re) 
 
   ` "extract-or(re, d, s) - use regex `re` (with single capture) to extract substring of `s` - or default `d`."
   extract-or(re, d, s): s match-with(re) second-or(d)
 
-  ` "matches(s, re) - return list of all matches in string `s` of regex `re`."
+  ` { doc: "matches(s, re) - return list of all matches in string s of regex re."
+      type: "string -> string -> [[string]]" }
   matches: __MATCHES
 
-  ` "matches-of(re, s) - return list of all matches in string `s` of regex `re`."
+  ` { doc: "matches-of(re, s) - return list of all matches in string s of regex re."
+      type: "string -> string -> [[string]]" }
   matches-of: matches flip
 
-  ` "matches?(re, s) - return true if `re` matches full string `s`."
+  ` { doc: "matches?(re, s) - return true if re matches full string s."
+      type: "string -> string -> bool" }
   matches?(re, s): match(s, re) (not ∘ nil?)
 
-  ` "suffix(b, a) - return string `b` suffixed onto `a`."
+  ` { doc: "suffix(b, a) - return string b suffixed onto a."
+      type: "string -> string -> string" }
   suffix(b, a): [a, b] join-on("")
 
-  ` "prefix(b, a) - return string `b` prefixed onto `a`."
+  ` { doc: "prefix(b, a) - return string b prefixed onto a."
+      type: "string -> string -> string" }
   prefix(b, a): [b, a] join-on("")
 
-  ` "letters(s) - return individual letters of `s` as list of strings."
+  ` { doc: "letters(s) - return individual letters of s as list of strings."
+      type: "string -> [string]" }
   letters: __LETTERS
 
-  ` "`len(s)` - return length of string in characters."
+  ` { doc: "len(s) - return length of string in characters."
+      type: "string -> number" }
   len: count ∘ letters
 
   ` "`fmt(x, spec)` - format `x` using printf-style format `spec`."
   fmt: __FMT
 
-  ` "`to-upper(s)` - convert string `s` to upper case."
+  ` { doc: "to-upper(s) - convert string s to upper case."
+      type: "string -> string" }
   to-upper: __UPPER
 
-  ` "`to-lower(s)` - convert string `s` to lower case."
+  ` { doc: "to-lower(s) - convert string s to lower case."
+      type: "string -> string" }
   to-lower: __LOWER
 
   ` "`lt(a, b)` - true if string `a` is lexicographically less than `b`."
@@ -893,19 +943,24 @@ str: {
   ` "`sha256(s)` - return the SHA-256 hash of string `s` as lowercase hex."
   sha256: __SHA256
 
-  ` "`replace(pattern, replacement, s)` - replace all occurrences of regex `pattern` with `replacement` in string `s`. Pipeline: s str.replace(pat, rep)."
+  ` { doc: "replace(pattern, replacement, s) - replace all occurrences of regex pattern with replacement in string s."
+      type: "string -> string -> string -> string" }
   replace(pattern, replacement, s): __STR_REPLACE(pattern, replacement, s)
 
-  ` "`contains?(pattern, s)` - true if string `s` contains a match for regex `pattern`. Pipeline: s str.contains?(pat)."
+  ` { doc: "contains?(pattern, s) - true if string s contains a match for regex pattern."
+      type: "string -> string -> bool" }
   contains?(pattern, s): __STR_CONTAINS(pattern, s)
 
-  ` "`trim(s)` - trim leading and trailing whitespace from string `s`."
+  ` { doc: "trim(s) - trim leading and trailing whitespace from string s."
+      type: "string -> string" }
   trim: __STR_TRIM
 
-  ` "`starts-with?(re, s)` - true if string `s` starts with a match for regex `re`."
+  ` { doc: "starts-with?(re, s) - true if string s starts with a match for regex re."
+      type: "string -> string -> bool" }
   starts-with?(re, s): __STR_CONTAINS(["^", re] join-on(""), s)
 
-  ` "`ends-with?(re, s)` - true if string `s` ends with a match for regex `re`."
+  ` { doc: "ends-with?(re, s) - true if string s ends with a match for regex re."
+      type: "string -> string -> bool" }
   ends-with?(re, s): __STR_CONTAINS([re, "$"] join-on(""), s)
 
   ` "`shell-escape(s)` - wrap string in single quotes for safe shell use. Embedded single quotes are escaped."
@@ -932,16 +987,19 @@ parse-as(fmt, str): __PARSE_STRING(fmt, str)
 ## Combinators
 ##
 
-` "`identity(v)` - identity function, return value `v`."
+` { doc: "identity(v) - identity function, return value v."
+    type: "a -> a" }
 identity(v): v
 
-` "`const(k)` - return single arg function that always returns `k`."
+` { doc: "const(k) - return single arg function that always returns k."
+    type: "b -> a -> b" }
 const(k, _): k
 
 ` "`(-> k)` - const; return single arg function that always returns `k`."
 (-> k): const(k)
 
-` "`compose(f,g,x)` - apply function `f` to `g(x)`."
+` { doc: "compose(f, g, x) - apply function f to g(x)."
+    type: "(b -> c) -> (a -> b) -> a -> c" }
 compose(f, g, x): x g f
 
 ` { doc: "`(f ∘ g)` - return composition of `f` and `g` (`g` then `f`)"
@@ -962,10 +1020,12 @@ compose(f, g, x): x g f
     precedence: :apply }
 (l @ r): l(r)
 
-` "`apply(f, xs)` - apply function `f` to arguments in list `xs`."
+` { doc: "apply(f, xs) - apply function f to arguments in list xs."
+    type: "any -> [any] -> any" }
 apply(f, xs): foldl(_0(_1), f, xs)
 
-` "`flip(f)` - flip arguments of function `f`, flip(f)(x, y) == f(y, x)"
+` { doc: "flip(f) - flip arguments of function f, flip(f)(x, y) == f(y, x)."
+    type: "(a -> b -> c) -> b -> a -> c" }
 flip(f, x, y): f(y, x)
 
 ` "`complement(p?)` - invert truth value of predicate function."
@@ -978,7 +1038,8 @@ curry(f, x, y): f([x, y])
 uncurry(f, l): f(first(l), second(l))
 
 
-` "`cond(l)` - in list `l` of [condition, value] select first true condition, returning value, else default `d`."
+` { doc: "cond(l) - in list l of [condition, value] select first true condition, returning value, else default d."
+    type: "[(bool, a)] -> a -> a" }
 cond(l, d): l foldr(uncurry(if), d)
 
 ` "`juxt(f, g) - return function of `x` returning list of `f(x)` and g(x)`."
@@ -1101,10 +1162,12 @@ __dbg-after(f, x): ▶(f(x))
 # List library functions, maps and folds
 #
 
-` "`take(n, l)` - return initial segment of integer `n` elements from list `l`."
+` { doc: "take(n, l) - return initial segment of integer n elements from list l."
+    type: "number -> [a] -> [a]" }
 take(n, l): __IF((n zero?) ∨ (l nil?), [], cons(l head, take(n dec, l tail)))
  
-` "`drop(n, l)` - return result of dropping integer `n` elements from list `l`."
+` { doc: "drop(n, l) - return result of dropping integer n elements from list l."
+    type: "number -> [a] -> [a]" }
 drop(n, l): __IF((n zero?), l, drop(n dec, l tail))
 
 ` "`rotate(n, l)` - rotate list `l` left by `n` positions."
@@ -1120,7 +1183,8 @@ transpose(rows): {
   aux(rs): if(rs head nil?, [], cons(rs map(head), aux(rs map(tail))))
 }.aux(rows)
 
-` "`take-while(p?, l)` - initial elements of list `l` while `p?` is true."
+` { doc: "take-while(p?, l) - initial elements of list l while p? is true."
+    type: "(a -> bool) -> [a] -> [a]" }
 take-while(p?, l): {
   aux(xs, prefix): if(not(xs nil?) ∧ (xs head p?), aux(xs tail, cons(xs head, prefix)), prefix reverse)
 }.aux(l, [])
@@ -1128,7 +1192,8 @@ take-while(p?, l): {
 ` "`take-until(p?, l)` - initial elements of list `l` while `p?` is false."
 take-until(p?): take-while(p? complement)
 
-` "`drop-while(p?, l)` - skip initial elements of list `l` while `p?` is true."
+` { doc: "drop-while(p?, l) - skip initial elements of list l while p? is true."
+    type: "(a -> bool) -> [a] -> [a]" }
 drop-while(p?, l): if(l nil?, [], if(l head p?, drop-while(p?, l tail), l))
 
 ` "`drop-until(p?, l)` - skip initial elements of list `l` while `p?` is false."
@@ -1145,7 +1210,8 @@ split-after(p?, l): {
 ` "`split-when(p?, l) - split list where `p?` becomes true and return pair."
 split-when(p?, l): split-after(p? complement, l)
 
-` "`nth(n, l)` - return `n`th item of list if it exists, otherwise panic."
+` { doc: "nth(n, l) - return nth item of list if it exists, otherwise panic."
+    type: "number -> [a] -> a" }
 nth(n, l): l drop(n) head
 
 ` "`update-nth(n, f, l)` - apply `f` to element at index `n` in list `l`.
@@ -1159,19 +1225,23 @@ update-first(p?, f, l): {
 }.(l split-when(p?) go)
 
 ` { doc: "`l !! n` - return `n`th item of list `l` if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and !! delegates to `arr.get`."
+    type: "[a] -> number -> a | array -> [number] -> number"
     precedence: :exp }
 (l !! n): if(l is-array?, l arr.get(n), l nth(n))
 
-` "`repeat(i)` - return infinite list of instances of item `i`."
+` { doc: "repeat(i) - return infinite list of instances of item i."
+    type: "a -> [a]" }
 repeat(i): __CONS(i, repeat(i))
 
-` "`foldl(op, i, l)` - left fold operator `op` over list `l` starting from value `i` "
+` { doc: "foldl(op, i, l) - left fold operator op over list l starting from value i."
+    type: "(b -> a -> b) -> b -> [a] -> b" }
 foldl(op, i, l): if(l nil?, i, foldl(op, op(i, l head), l tail))
 
 ` "`reduce(op, l)` - left fold with no initial value; uses first element as seed. Panics on empty list."
 reduce(op, l): foldl(op, l head, l tail)
 
-` "`foldr(op, i, l)` - right fold operator `op` over list `l` ending with value `i` "
+` { doc: "foldr(op, i, l) - right fold operator op over list l ending with value i."
+    type: "(a -> b -> b) -> b -> [a] -> b" }
 foldr(op, i, l): if(l nil?, i, op(l head, foldr(op, i, l tail)))
 
 ` "`scanl(op, i, l)` - left scan operator `op` over list `l` starting from value `i` "
@@ -1186,7 +1256,8 @@ iterate(f, i): cons(i, iterate(f, f(i)))
 ` "`tails(l)` - return list of successive tails of `l`: `[l, tail(l), tail(tail(l)), ...]`."
 tails(l): iterate(tail, l) take-while(non-nil?)
 
-` "`iota(n)` - return infinite list of integers from `n` upwards"
+` { doc: "iota(n) - return infinite list of integers from n upwards."
+    type: "number -> [number]" }
 iota(n): cons(n, iota(n + 1))
 
 ` "`ints-from(n)` - return infinite list of integers from `n` upwards, alias `iota` for backwards compatibility`"
@@ -1195,10 +1266,12 @@ ints-from: iota
 ` "`ℕ` - the natural numbers: `[0, 1, 2, ...]`."
 ℕ: iota(0)
 
-` "range(b, e)` - return list of ints from `b` to `e` (not including `e`)"
+` { doc: "range(b, e) - return list of ints from b to e (not including e)."
+    type: "number -> number -> [number]" }
 range(b, e): ints-from(b) take(e - b)
 
-` "`count(l)` - return count of items in list `l`"
+` { doc: "count(l) - return count of items in list l."
+    type: "[a] -> number" }
 count(l): foldl({ n: • el: •}.(n inc), 0, l)
 
 ` "`last(l)` - return last element of list `l`"
@@ -1207,10 +1280,12 @@ last: head ∘ reverse
 ` "`butlast(l)` - return all elements of list `l` except the last."
 butlast(l): l reverse tail reverse
 
-` "`cycle(l)` - create infinite list by cycling elements of list `l`"
+` { doc: "cycle(l) - create infinite list by cycling elements of list l."
+    type: "[a] -> [a]" }
 cycle(l): if(l nil?, [], l ++ cycle(l))
 
-` "`map(f, l)` - map function `f` over list `l`"
+` { doc: "map(f, l) - map function f over list l."
+    type: "(a -> b) -> [a] -> [b]" }
 map(f, l): if(l nil?, l, cons(l head f, l tail map(f)))
 
 ` { doc: "`f <$> l` - map function `f` over list `l`"
@@ -1225,19 +1300,23 @@ map2(f, l1, l2): if(nil?(l1) || nil?(l2), [], cons(f(l1 head, l2 head), map2(f, 
 ` "`zip-with(f, l1, l2)` - map function `f` over lists `l1` and `l2`, until the shorter is exhausted."
 zip-with: map2
 
-` "`zip(l1, l2)` - list of pairs of elements  `l1` and `l2`, until the shorter is exhausted."
+` { doc: "zip(l1, l2) - list of pairs of elements l1 and l2, until the shorter is exhausted."
+    type: "[a] -> [b] -> [(a, b)]" }
 zip: zip-with(pair)
 
-` "`unzip(pairs)` - list of pairs to pair of lists. Inverse of zip."
+` { doc: "unzip(pairs) - list of pairs to pair of lists. Inverse of zip."
+    type: "[(a, b)] -> ([a], [b])" }
 unzip(pairs): [pairs map(first), pairs map(second)]
 
-` "`interleave(a, b)` - alternate elements from lists `a` and `b`. When one is exhausted, the remainder of the other is appended."
+` { doc: "interleave(a, b) - alternate elements from lists a and b. When one is exhausted, the remainder of the other is appended."
+    type: "[a] -> [a] -> [a]" }
 interleave(a, b): if(a nil?, b, cons(a head, interleave(b, a tail)))
 
 ` "`cross(f, xs, ys)` - apply `f` to every combination of elements from `xs` and `ys` (cartesian product)."
 cross(f, xs, ys): xs mapcat({x: •}.(ys map(f(x))))
 
-` "`filter(p?, l)` - return list of elements of list `l` that satisfy predicate `p?`."
+` { doc: "filter(p?, l) - return list of elements of list l that satisfy predicate p?."
+    type: "(a -> bool) -> [a] -> [a]" }
 filter(p?, l): foldr({x: • xs: • }.(if(x p?, cons(x, xs), xs)), [], l)
 
 ` "`remove(p?, l)` - return list of elements of list `l` that do not satisfy predicate `p?`."
@@ -1250,45 +1329,57 @@ append(l1, l2): foldr(cons, l2, l1)
 prepend: flip(append)
 
 ` { doc: "`l1 ++ l2` - concatenate lists `l1` and `l2`."
+    type: "[a] -> [a] -> [a]"
     export: :suppress
     associates: :left
     precedence: :append }
 (l1 ++ l2): append(l1, l2)
 
-` "`concat(ls)` - concatenate all lists in `ls` together."
+` { doc: "concat(ls) - concatenate all lists in ls together."
+    type: "[[a]] -> [a]" }
 concat(ls): foldr(append, [], ls)
 
-` "`mapcat(f, l)` - map items in l with `f` and concatenate the resulting lists."
+` { doc: "mapcat(f, l) - map items in l with f and concatenate the resulting lists."
+    type: "(a -> [b]) -> [a] -> [b]" }
 mapcat(f): concat ∘ map(f)
 
 ` "`zip-apply(fs, vs)` - apply fns in list `fs` to corresponding values in list `vs`, until shorter is exhausted."
 zip-apply(fs, vs): zip-with(_0(_1), fs, vs)
 
-` "`reverse(l) - reverse list `l`"
+` { doc: "reverse(l) - reverse list l."
+    type: "[a] -> [a]" }
 reverse(l): foldl(cons flip, [], l)
 
-` "`all-true?(l)` - true if and only if all items in list `l` are true."
+` { doc: "all-true?(l) - true if and only if all items in list l are true."
+    type: "[bool] -> bool" }
 all-true?(l): foldl(and, true, l)
 
-` "`all(p?, l)` - true if and only if all items in list `l` satisfy predicate `p?`."
+` { doc: "all(p?, l) - true if and only if all items in list l satisfy predicate p?."
+    type: "(a -> bool) -> [a] -> bool" }
 all(p?, l): l map(p?) all-true?
 
-` "`any-true?(l)` - true if and only if any items in list `l` are true."
+` { doc: "any-true?(l) - true if and only if any items in list l are true."
+    type: "[bool] -> bool" }
 any-true?(l): foldr(or, false, l)
 
-` "`any(p?, l)` - true if and only if any items in list `l` satisfy predicate `p?`."
+` { doc: "any(p?, l) - true if and only if any items in list l satisfy predicate p?."
+    type: "(a -> bool) -> [a] -> bool" }
 any(p?, l): l map(p?) any-true?
 
-` "`window(n, step, l)` - list of lists of sliding windows over list `l` of size `n` and offest `step`"
+` { doc: "window(n, step, l) - list of lists of sliding windows over list l of size n and offset step."
+    type: "number -> number -> [a] -> [[a]]" }
 window(n, step, l): { chunk: l take(n) }.(if(count(chunk) >= n, cons(chunk, l drop(step) window(n, step)), []))
 
-` "`partition(n, l)` - list of lists of non-overlapping segments of list `l` of size `n`"
+` { doc: "partition(n, l) - list of lists of non-overlapping segments of list l of size n."
+    type: "number -> [a] -> [[a]]" }
 partition(n): window(n, n)
 
-` "`window-all(n, step, l)` - like window but includes the final short chunk even if smaller than `n`"
+` { doc: "window-all(n, step, l) - like window but includes the final short chunk even if smaller than n."
+    type: "number -> number -> [a] -> [[a]]" }
 window-all(n, step, l): { chunk: l take(n) }.(if(chunk nil?, [], cons(chunk, (if(count(l) <= step, [], l drop(step))) window-all(n, step))))
 
-` "`partition-all(n, l)` - list of lists of non-overlapping segments of `l`, including any final short chunk"
+` { doc: "partition-all(n, l) - list of lists of non-overlapping segments of l, including any final short chunk."
+    type: "number -> [a] -> [[a]]" }
 partition-all(n): window-all(n, n)
 
 ` "`over-sliding-pairs(f, l)` - apply binary fn `f` to each overlapping pair in `l` to form new list"
@@ -1297,12 +1388,14 @@ over-sliding-pairs(f, l): l window(2, 1) map(f uncurry)
 ` "differences(l) - calculate difference between each overlapping pair in list of numbers `l`"
 differences: over-sliding-pairs(_1 - _0)
 
-` "`discriminate(pred, xs)` - return pair of `xs` for which `pred(_)` is true and `xs` for which `pred(_)` is false."
+` { doc: "discriminate(pred, xs) - return pair of xs for which pred is true and xs for which pred is false."
+    type: "(a -> bool) -> [a] -> ([a], [a])" }
 discriminate(pred, xs): {
   acc(a, e): a if(e pred, bimap(cons(e), identity), bimap(identity, cons(e)))
 }.(xs foldl(acc, [[], []]) bimap(reverse, reverse))
 
-` "`group-by(k, xs)` - group xs by key function returning block of key to subgroups, maintains order."
+` { doc: "group-by(k, xs) - group xs by key function returning block of key to subgroups, maintains order."
+    type: "(a -> any) -> [a] -> block" }
 group-by(k, xs): {
   acc(a, e): a update-value-or(e._k, cons(e._v), [e._v])
 }.(xs map({ _k: k(•0), _v: •0 }) foldl(acc, {}) map-values(reverse))
@@ -1321,9 +1414,8 @@ group-consecutive: group-consecutive-by(identity)
 ` "`uniq(xs)` - remove consecutive duplicates from a list."
 uniq(xs): xs group-consecutive map(head)
 
-` "`nub-by(key, xs)` - remove duplicates from `xs`, keeping the first
-occurrence of each distinct `key(x)` value. Unlike `uniq`, works on
-non-consecutive duplicates."
+` { doc: "nub-by(key, xs) - remove duplicates from xs, keeping the first occurrence of each distinct key(x) value."
+    type: "(a -> any) -> [a] -> [a]" }
 nub-by(key, xs): {
   step(acc, x): {
     seen: acc first
@@ -1342,7 +1434,8 @@ split-on(pred, xs): {
     }.(groups ++ [current ++ [x]]))
 }.(foldl(step, [[]], xs))
 
-` "`qsort(lt, xs)` - sort `xs` using 'less-than' function `lt`"
+` { doc: "qsort(lt, xs) - sort xs using less-than function lt."
+    type: "(a -> a -> bool) -> [a] -> [a]" }
 qsort(lt, xs): if(xs nil?,
                   xs,
                   {
@@ -1354,7 +1447,8 @@ qsort(lt, xs): if(xs nil?,
                     bigger: partitions second qsort(lt)
                   }.(smaller ++ [h] ++ bigger))
 
-` "`sort-nums(xs)` - sort list of numbers ascending (Rust-level intrinsic)."
+` { doc: "sort-nums(xs) - sort list of numbers ascending (Rust-level intrinsic)."
+    type: "[number] -> [number]" }
 sort-nums: '__SORT_NUM_LIST'
 
 ` "`running-max(nums)` - running maximum over a number list.
@@ -1369,18 +1463,21 @@ running-min: '__RUNNING_MIN'
 `[3, 1, 4, 1]` → `[3, 4, 8, 9]`. (Rust-level intrinsic)."
 running-sum: '__RUNNING_SUM'
 
-` "`sort-strs(xs)` - sort list of strings or symbols ascending."
+` { doc: "sort-strs(xs) - sort list of strings or symbols ascending."
+    type: "[string] -> [string]" }
 sort-strs(xs): xs qsort(<)
 
 ` "`sort-zdts(xs)` - sort list of zoned date-times ascending."
 sort-zdts(xs): xs qsort(<)
 
-` "`sort-by(key-fn, cmp, xs)` - sort list `xs` by key extracted with `key-fn` using comparator `cmp`."
+` { doc: "sort-by(key-fn, cmp, xs) - sort list xs by key extracted with key-fn using comparator cmp."
+    type: "(a -> b) -> (b -> b -> bool) -> [a] -> [a]" }
 sort-by(key-fn, cmp, xs): {
   lt(a, b): cmp(key-fn(a), key-fn(b))
 }.(xs qsort(lt))
 
-` "`sort-by-num(key-fn, xs)` - sort list `xs` ascending by numeric key extracted with `key-fn`."
+` { doc: "sort-by-num(key-fn, xs) - sort list xs ascending by numeric key extracted with key-fn."
+    type: "(a -> number) -> [a] -> [a]" }
 sort-by-num(key-fn): sort-by(key-fn, <)
 
 ` "`sort-by-str(key-fn, xs)` - sort list `xs` ascending by string key extracted with `key-fn`."
