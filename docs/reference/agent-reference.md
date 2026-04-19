@@ -852,7 +852,7 @@ The following are commonly assumed but are **not** in the prelude:
 - `unique` — does not exist in prelude
 - `abs` — does not exist (use `if(x < 0, negate(x), x)`)
 - `even?` / `odd?` — do not exist (use `x % 2 = 0`)
-- `round` / `ceil` — use `floor` and `ceiling`
+- `round` / `ceil` — use `floor` and `ceiling` (or bracket notation `⌊n⌋` and `⌈n⌉`)
 - `select` / `dissoc` — do not exist (use `filter-items` with
   `by-key`)
 
