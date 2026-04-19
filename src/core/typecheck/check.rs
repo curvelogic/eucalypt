@@ -22,6 +22,22 @@ use crate::{
     },
 };
 
+// ── Alias table ──────────────────────────────────────────────────────────────
+
+/// A flat map from alias name to its concrete `Type`.
+///
+/// Alias names are capitalised identifiers (`Person`, `Point`, …). They are
+/// accumulated during a checker walk from two sources:
+///
+/// 1. `type-def:` metadata on a declaration — the declaration's type (from its
+///    `type:` annotation, or synthesised) is registered under the given name.
+/// 2. `types:` key inside a metadata block — each entry in the nested block is
+///    parsed as a type and registered.
+///
+/// `Type::Var` nodes whose name is in this map are replaced with the stored
+/// concrete type before type variables are erased to `any`.
+type AliasMap = HashMap<String, Type>;
+
 // ── Checker ─────────────────────────────────────────────────────────────────
 
 /// Bidirectional type checker for core expressions.
@@ -39,6 +55,13 @@ pub struct Checker {
 
     /// Accumulated warnings.
     warnings: Vec<TypeWarning>,
+
+    /// Type alias map: capitalised names → concrete `Type`.
+    ///
+    /// Populated from `type-def:` metadata and `types:` blocks as the
+    /// checker walks the expression tree.  Used in `extract_annotation` to
+    /// resolve alias references before erasing type variables.
+    aliases: AliasMap,
 }
 
 impl Default for Checker {
@@ -53,6 +76,7 @@ impl Checker {
         Checker {
             scope_stack: VecDeque::new(),
             warnings: Vec::new(),
+            aliases: AliasMap::new(),
         }
     }
 
@@ -89,13 +113,121 @@ impl Checker {
         Type::Any
     }
 
+    // ── Alias management ────────────────────────────────────────────────────
+
+    /// Register a type alias.
+    fn register_alias(&mut self, name: String, ty: Type) {
+        self.aliases.insert(name, ty);
+    }
+
+    /// Walk `ty`, replacing every `Type::Var(name)` that appears in the alias
+    /// map with its registered concrete type.
+    ///
+    /// Lowercase type-variable names (e.g. `a`, `b`) are left untouched if they
+    /// are not in the alias map, so `erase_type_vars` still handles them.
+    fn resolve_aliases_in_type(&self, ty: Type) -> Type {
+        match ty {
+            Type::Var(ref v) => {
+                if let Some(alias_ty) = self.aliases.get(&v.0) {
+                    alias_ty.clone()
+                } else {
+                    ty
+                }
+            }
+            Type::List(inner) => Type::List(Box::new(self.resolve_aliases_in_type(*inner))),
+            Type::Tuple(elems) => Type::Tuple(
+                elems
+                    .into_iter()
+                    .map(|e| self.resolve_aliases_in_type(e))
+                    .collect(),
+            ),
+            Type::IO(inner) => Type::IO(Box::new(self.resolve_aliases_in_type(*inner))),
+            Type::Lens(a, b) => Type::Lens(
+                Box::new(self.resolve_aliases_in_type(*a)),
+                Box::new(self.resolve_aliases_in_type(*b)),
+            ),
+            Type::Traversal(a, b) => Type::Traversal(
+                Box::new(self.resolve_aliases_in_type(*a)),
+                Box::new(self.resolve_aliases_in_type(*b)),
+            ),
+            Type::Function(a, b) => Type::Function(
+                Box::new(self.resolve_aliases_in_type(*a)),
+                Box::new(self.resolve_aliases_in_type(*b)),
+            ),
+            Type::Record { fields, open } => Type::Record {
+                fields: fields
+                    .into_iter()
+                    .map(|(k, v)| (k, self.resolve_aliases_in_type(v)))
+                    .collect(),
+                open,
+            },
+            Type::Union(variants) => Type::Union(
+                variants
+                    .into_iter()
+                    .map(|v| self.resolve_aliases_in_type(v))
+                    .collect(),
+            ),
+            other => other,
+        }
+    }
+
+    /// Register aliases from a `types:` sub-block in a metadata expression.
+    ///
+    /// Looks for a `types: { Name: "type string", … }` entry in `meta`.
+    /// Each key becomes an alias name; each value is parsed as a type string
+    /// and registered.  Entries with unparseable type strings are silently
+    /// skipped.
+    fn register_aliases_from_meta(&mut self, meta: &RcExpr) {
+        let meta_block = match &*meta.inner {
+            Expr::Block(_, b) => b,
+            _ => return,
+        };
+
+        let types_expr = match meta_block.get("types") {
+            Some(e) => e,
+            None => return,
+        };
+
+        let type_entries = match &*types_expr.inner {
+            Expr::Block(_, b) => b,
+            _ => return,
+        };
+
+        for (alias_name, type_str_expr) in type_entries.iter() {
+            if let Some(type_str) = extract_string_literal(type_str_expr) {
+                if let Ok(ty) = parse::parse_type(&type_str) {
+                    self.register_alias(alias_name.clone(), ty);
+                }
+            }
+        }
+    }
+
+    /// Extract the `type-def:` alias name from a binding value, if present.
+    ///
+    /// Returns `Some("Name")` when the value is a `Meta` node whose metadata
+    /// block contains `type-def: "Name"`.
+    fn extract_type_def_name(value: &RcExpr) -> Option<String> {
+        let meta = match &*value.inner {
+            Expr::Meta(_, _, m) => m,
+            _ => return None,
+        };
+        let block = match &*meta.inner {
+            Expr::Block(_, b) => b,
+            _ => return None,
+        };
+        block.get("type-def").and_then(extract_string_literal)
+    }
+
     // ── Type annotation extraction ───────────────────────────────────────────
 
     /// Try to extract a `Type` from a metadata block expression.
     ///
     /// Looks for the `type:` key (user annotation) and the `__type_hint:` key
     /// (desugarer hint).  User annotations take priority.
-    fn extract_annotation(meta: &RcExpr) -> Option<Type> {
+    ///
+    /// After parsing, alias references (`Type::Var` with a capitalised name)
+    /// are resolved against the checker's alias map.
+    fn extract_annotation(&self, meta: &RcExpr) -> Option<Type> {
         let block = match &*meta.inner {
             Expr::Block(_, b) => b,
             _ => return None,
@@ -110,7 +242,8 @@ impl Checker {
             return None;
         };
 
-        parse::parse_type(&type_str).ok()
+        let parsed = parse::parse_type(&type_str).ok()?;
+        Some(self.resolve_aliases_in_type(parsed))
     }
 
     // ── Type variable erasure ────────────────────────────────────────────────
@@ -200,7 +333,7 @@ impl Checker {
                 // unannotated bindings, seed with `any` as a placeholder.
                 let mut frame: HashMap<String, Type> = HashMap::new();
                 for (name, value) in &scope.pattern {
-                    let ty = Self::annotation_type_of(value).unwrap_or(Type::Any);
+                    let ty = self.annotation_type_of(value).unwrap_or(Type::Any);
                     frame.insert(name.clone(), ty);
                 }
 
@@ -215,8 +348,15 @@ impl Checker {
                     // with the synthesised type so later bindings can use it.
                     if let Some(frame) = self.scope_stack.front_mut() {
                         if frame.get(name) == Some(&Type::Any) {
-                            frame.insert(name.clone(), synthesised);
+                            frame.insert(name.clone(), synthesised.clone());
                         }
+                    }
+                    // Register `type-def:` alias when present.
+                    if let Some(alias_name) = Self::extract_type_def_name(value) {
+                        // Use the explicit `type:` annotation if given; otherwise
+                        // the synthesised type (inferred from the value shape).
+                        let alias_ty = self.annotation_type_of(value).unwrap_or(synthesised);
+                        self.register_alias(alias_name, alias_ty);
                     }
                 }
 
@@ -237,14 +377,17 @@ impl Checker {
             Expr::App(smid, func, args) => self.synthesise_app(*smid, func, args),
 
             // ── Lookup ───────────────────────────────────────────────────────
-            // Record field lookups are typed in eu-ikg1.  Return `any` for now.
-            Expr::Lookup(_, obj, _, fallback) => {
-                // Still recurse so we collect warnings from the sub-expressions.
-                self.synthesise(obj);
+            //
+            // `.field` on an expression with a known record type resolves to
+            // the field's type.  Unknown fields on a closed record emit a
+            // warning; unknown fields on an open record return `any`
+            // (the record might have more fields at runtime).
+            Expr::Lookup(smid, obj, field, fallback) => {
+                let obj_type = self.synthesise(obj);
                 if let Some(f) = fallback {
                     self.synthesise(f);
                 }
-                Type::Any
+                self.synthesise_lookup(*smid, &obj_type, field)
             }
 
             // ── Everything else ───────────────────────────────────────────────
@@ -256,10 +399,10 @@ impl Checker {
     ///
     /// Returns `Some(T)` when the value is wrapped in a `Meta` node that carries
     /// a `type:` or `__type_hint:` annotation, `None` otherwise.  The type has
-    /// type variables erased.
-    fn annotation_type_of(value: &RcExpr) -> Option<Type> {
+    /// alias references resolved and type variables erased.
+    fn annotation_type_of(&self, value: &RcExpr) -> Option<Type> {
         if let Expr::Meta(_, _, meta) = &*value.inner {
-            Self::extract_annotation(meta).map(Self::erase_type_vars)
+            self.extract_annotation(meta).map(Self::erase_type_vars)
         } else {
             None
         }
@@ -267,8 +410,11 @@ impl Checker {
 
     /// Synthesise the type of a let-binding value, giving priority to any
     /// type annotation present in a `Meta` wrapper.
+    ///
+    /// This is a thin wrapper around `synthesise_meta` that unwraps the outer
+    /// `Meta` layer when present, so that `synthesise_meta` can handle alias
+    /// registration, annotation checking, and synthesis in one place.
     fn synthesise_binding_value(&mut self, value: &RcExpr) -> Type {
-        // If the value is annotated, the annotation is authoritative.
         if let Expr::Meta(smid, inner, meta) = &*value.inner {
             return self.synthesise_meta(*smid, inner, meta);
         }
@@ -277,11 +423,19 @@ impl Checker {
 
     /// Synthesise the type from a `Meta(smid, inner, meta)` node.
     ///
-    /// When the metadata block carries a type annotation, check the inner
-    /// expression against it and return the annotated type (authoritative).
-    /// Otherwise fall through to synthesising the inner expression.
+    /// Steps:
+    /// 1. Register any `types:` aliases declared in `meta` so they are
+    ///    available for annotations later in the same scope.
+    /// 2. If `meta` carries a `type:` or `__type_hint:` annotation, check the
+    ///    inner expression against it and return the annotated type
+    ///    (authoritative).
+    /// 3. Otherwise synthesise the inner expression.
     fn synthesise_meta(&mut self, smid: Smid, inner: &RcExpr, meta: &RcExpr) -> Type {
-        if let Some(annotated_type) = Self::extract_annotation(meta) {
+        // Register `types:` block aliases before reading any annotation so that
+        // the annotation itself can reference freshly-declared aliases.
+        self.register_aliases_from_meta(meta);
+
+        if let Some(annotated_type) = self.extract_annotation(meta) {
             // The annotation is authoritative.  Check the inner expression
             // against it to emit warnings for obvious mismatches.
             let erased = Self::erase_type_vars(annotated_type.clone());
@@ -294,22 +448,60 @@ impl Checker {
 
     /// Synthesise a record type from a block's fields.
     ///
-    /// Function-valued fields are skipped (they contribute to the open `..`
-    /// rather than a named field type).  The record is open because the block
-    /// might contain additional function bindings.
+    /// Only fields with known (non-`any`, non-`never`) types are included in
+    /// the synthesised record — unannotated fields synthesise as `any` and
+    /// don't add useful information.  Annotated function members (type
+    /// `A -> B`) ARE included; the type system treats all block members
+    /// equally for type checking even though functions don't appear in
+    /// rendered output.
+    ///
+    /// The record is always marked **open** (`{k: T, ..}`) because a block
+    /// may have additional unannotated members beyond what we can enumerate.
     fn synthesise_block(&mut self, fields: &BlockMap<RcExpr>) -> Type {
         let mut field_types: BTreeMap<String, Type> = BTreeMap::new();
         for (key, value) in fields.iter() {
             let ty = self.synthesise(value);
-            // Skip function-like types; they widen the record but we treat the
-            // block as open regardless.
-            if !matches!(ty, Type::Any | Type::Never) {
+            // Only include fields whose type carries real information.
+            if is_informative(&ty) {
                 field_types.insert(key.clone(), ty);
             }
         }
         Type::Record {
             fields: field_types,
-            open: true, // open: functions may exist beyond what we enumerate
+            open: true, // open: unannotated members may exist at runtime
+        }
+    }
+
+    /// Synthesise the result type of a field lookup `.field` on `obj_type`.
+    ///
+    /// - Known record + present field → return the field's type.
+    /// - Known open record + absent field → return `any` (may be present at runtime).
+    /// - Known closed record + absent field → emit a warning and return `any`.
+    /// - `any` object type → return `any` (gradual boundary, no warning).
+    /// - Non-record object type → return `any` (cannot reason about field access).
+    fn synthesise_lookup(&mut self, smid: Smid, obj_type: &Type, field: &str) -> Type {
+        match obj_type {
+            Type::Record { fields, open } => {
+                if let Some(field_ty) = fields.get(field) {
+                    // Field is known — return its type directly.
+                    field_ty.clone()
+                } else if *open {
+                    // Open record may have this field at runtime.
+                    Type::Any
+                } else {
+                    // Closed record: field is definitely absent.
+                    let known: Vec<&str> = fields.keys().map(String::as_str).collect();
+                    let warning = TypeWarning::new(format!(
+                        "field '{field}' not found in closed record type"
+                    ))
+                    .at(smid)
+                    .with_types(format!("{{{}}}", known.join(", ")), format!(".{field}"));
+                    self.warnings.push(warning);
+                    Type::Any
+                }
+            }
+            // Gradual boundary or unknown — no warning.
+            _ => Type::Any,
         }
     }
 
@@ -898,5 +1090,233 @@ mod tests {
     fn type_check_top_level_collects_all_warnings() {
         let warnings = type_check(&str_lit("hello"));
         assert!(warnings.is_empty(), "plain string literal has no warnings");
+    }
+
+    // ── Block synthesis ──────────────────────────────────────────────────────
+
+    #[test]
+    fn block_synthesis_includes_annotated_fields() {
+        let mut c = Checker::new();
+        // { name: "Alice", age: 30 } — both fields have known types
+        let fields = vec![
+            ("name".to_string(), str_lit("Alice")),
+            ("age".to_string(), num_lit(30)),
+        ];
+        let block = core::block(Smid::default(), fields);
+        let ty = c.synthesise(&block);
+        assert_eq!(
+            ty,
+            Type::Record {
+                fields: {
+                    let mut m = std::collections::BTreeMap::new();
+                    m.insert("age".to_string(), Type::Number);
+                    m.insert("name".to_string(), Type::String);
+                    m
+                },
+                open: true,
+            }
+        );
+    }
+
+    #[test]
+    fn block_synthesis_includes_annotated_function_member() {
+        let mut c = Checker::new();
+        // { greet: (greet_impl : string -> string) }
+        let greet_impl = meta_with_type(
+            RcExpr::from(Expr::Intrinsic(Smid::default(), "__GREET".to_string())),
+            "string -> string",
+        );
+        let block = core::block(Smid::default(), [("greet".to_string(), greet_impl)]);
+        let ty = c.synthesise(&block);
+        assert_eq!(
+            ty,
+            Type::Record {
+                fields: {
+                    let mut m = std::collections::BTreeMap::new();
+                    m.insert(
+                        "greet".to_string(),
+                        Type::Function(Box::new(Type::String), Box::new(Type::String)),
+                    );
+                    m
+                },
+                open: true,
+            }
+        );
+    }
+
+    // ── Lookup typing ────────────────────────────────────────────────────────
+
+    fn lookup(obj: RcExpr, field: &str) -> RcExpr {
+        RcExpr::from(Expr::Lookup(Smid::default(), obj, field.to_string(), None))
+    }
+
+    #[test]
+    fn lookup_known_field_returns_field_type() {
+        let mut c = Checker::new();
+        // Seed scope with `rec : {name: string, age: number, ..}`
+        let mut frame = HashMap::new();
+        frame.insert(
+            "rec".to_string(),
+            Type::Record {
+                fields: {
+                    let mut m = std::collections::BTreeMap::new();
+                    m.insert("name".to_string(), Type::String);
+                    m.insert("age".to_string(), Type::Number);
+                    m
+                },
+                open: true,
+            },
+        );
+        c.push_scope(frame);
+
+        let rec_var = RcExpr::from(Expr::Var(Smid::default(), Var::Free("rec".to_string())));
+        let ty = c.synthesise(&lookup(rec_var, "name"));
+        assert_eq!(ty, Type::String);
+        assert!(c.into_warnings().is_empty());
+    }
+
+    #[test]
+    fn lookup_unknown_field_on_open_record_returns_any() {
+        let mut c = Checker::new();
+        let mut frame = HashMap::new();
+        frame.insert(
+            "rec".to_string(),
+            Type::Record {
+                fields: std::collections::BTreeMap::new(),
+                open: true,
+            },
+        );
+        c.push_scope(frame);
+
+        let rec_var = RcExpr::from(Expr::Var(Smid::default(), Var::Free("rec".to_string())));
+        let ty = c.synthesise(&lookup(rec_var, "missing"));
+        assert_eq!(ty, Type::Any);
+        // Open record — no warning
+        assert!(c.into_warnings().is_empty());
+    }
+
+    #[test]
+    fn lookup_unknown_field_on_closed_record_emits_warning() {
+        let mut c = Checker::new();
+        let mut frame = HashMap::new();
+        frame.insert(
+            "rec".to_string(),
+            Type::Record {
+                fields: {
+                    let mut m = std::collections::BTreeMap::new();
+                    m.insert("x".to_string(), Type::Number);
+                    m
+                },
+                open: false,
+            },
+        );
+        c.push_scope(frame);
+
+        let rec_var = RcExpr::from(Expr::Var(Smid::default(), Var::Free("rec".to_string())));
+        let ty = c.synthesise(&lookup(rec_var, "missing"));
+        assert_eq!(ty, Type::Any);
+        let warnings = c.into_warnings();
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].message.contains("'missing'"));
+    }
+
+    #[test]
+    fn lookup_on_any_returns_any_no_warning() {
+        let mut c = Checker::new();
+        // Unknown var — type is `any`
+        let unknown = RcExpr::from(Expr::Var(Smid::default(), Var::Free("x".to_string())));
+        let ty = c.synthesise(&lookup(unknown, "field"));
+        assert_eq!(ty, Type::Any);
+        assert!(c.into_warnings().is_empty());
+    }
+
+    // ── Namespace block typing ───────────────────────────────────────────────
+
+    #[test]
+    fn namespace_block_lookup_resolves_function_member() {
+        let mut c = Checker::new();
+        // Simulate a namespace block like `str` with an annotated `length` member.
+        //   { length: (__LEN : string -> number) }
+        let length_impl = meta_with_type(
+            RcExpr::from(Expr::Intrinsic(Smid::default(), "__LEN".to_string())),
+            "string -> number",
+        );
+        let ns_block = core::block(Smid::default(), [("length".to_string(), length_impl)]);
+        // Synthesise the block to get its record type, then look up `length`.
+        let ns_type = c.synthesise(&ns_block);
+
+        // Simulate `str.length` — a lookup of `length` on the namespace.
+        let result = c.synthesise_lookup(Smid::default(), &ns_type, "length");
+        assert_eq!(
+            result,
+            Type::Function(Box::new(Type::String), Box::new(Type::Number))
+        );
+        assert!(c.into_warnings().is_empty());
+    }
+
+    // ── Type aliases ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn type_def_registers_alias() {
+        use crate::core::expr::core;
+
+        let mut c = Checker::new();
+
+        // ` { type-def: "Point" }
+        // origin: { x: 0, y: 0 }
+        let type_def_val = core::str(Smid::default(), "Point");
+        let meta_block = core::block(Smid::default(), [("type-def".to_string(), type_def_val)]);
+        let inner_block = core::block(
+            Smid::default(),
+            [("x".to_string(), num_lit(0)), ("y".to_string(), num_lit(0))],
+        );
+        let annotated = core::meta(Smid::default(), inner_block, meta_block);
+
+        let let_expr = core::let_(
+            Smid::default(),
+            vec![("origin".to_string(), annotated)],
+            RcExpr::from(Expr::Var(Smid::default(), Var::Free("origin".to_string()))),
+        );
+
+        c.synthesise(&let_expr);
+        // The alias "Point" should now be registered.
+        assert!(c.aliases.contains_key("Point"));
+    }
+
+    #[test]
+    fn types_block_in_metadata_registers_aliases() {
+        use crate::core::expr::core;
+
+        let mut c = Checker::new();
+
+        // { types: { MyStr: "string" } }
+        // bound to some expression
+        let alias_type_str = core::str(Smid::default(), "string");
+        let types_inner = core::block(Smid::default(), [("MyStr".to_string(), alias_type_str)]);
+        let meta_block = core::block(Smid::default(), [("types".to_string(), types_inner)]);
+        let meta_expr = core::meta(Smid::default(), num_lit(0), meta_block);
+
+        c.synthesise(&meta_expr);
+        assert!(c.aliases.contains_key("MyStr"));
+        assert_eq!(c.aliases.get("MyStr"), Some(&Type::String));
+    }
+
+    #[test]
+    fn alias_resolved_in_type_annotation() {
+        use crate::core::expr::core;
+
+        let mut c = Checker::new();
+        // Register alias manually.
+        c.register_alias("Num".to_string(), Type::Number);
+
+        // Annotation `"Num"` should resolve to `number`.
+        let type_val = core::str(Smid::default(), "Num");
+        let meta_block = core::block(Smid::default(), [("type".to_string(), type_val)]);
+        let annotated = core::meta(Smid::default(), num_lit(42), meta_block);
+
+        let ty = c.synthesise(&annotated);
+        // Alias "Num" → number, erased type vars don't change it.
+        assert_eq!(ty, Type::Number);
+        assert!(c.into_warnings().is_empty());
     }
 }
