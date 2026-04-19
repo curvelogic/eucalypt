@@ -140,7 +140,7 @@ the presence of commas. `(A -> B)` is grouping; `(A, B)` is a tuple.
 Lowercase identifiers (`a`, `b`, `r`, etc.) are type variables in
 annotations. They are universally quantified at the declaration level:
 
-```eu
+```eu,notest
 ` { type: "(a -> b) -> [a] -> [b]" }
 map: __MAP
 ```
@@ -253,7 +253,7 @@ this could generate a runtime cast/check — but initially it is silent.
 
 Type annotations live in declaration metadata, alongside doc strings:
 
-```eu
+```eu,notest
 ` { doc: "`double(x)` - double a number."
     type: "number -> number" }
 double(x): x * 2
@@ -373,7 +373,7 @@ with arguments `(str.of, [1, 2])`:
 Intrinsic functions (`__MAP`, `__FILTER`, etc.) get type annotations in
 the prelude source alongside their doc metadata:
 
-```eu
+```eu,notest
 ` { doc: "`map(f, xs)` - apply `f` to each element of list `xs`."
     type: "(a -> b) -> [a] -> [b]" }
 map: __MAP
@@ -405,7 +405,7 @@ IO actions have dedicated runtime data constructors (`IoReturn`,
 `IoBind`, `IoAction`, `IoFail`) — they are a genuine type, not blocks
 with metadata. `IO(T)` is a parameterised type constructor:
 
-```eu
+```eu,notest
 io: {
   ` { type: "string -> IO({stdout: string, stderr: string, exit-code: number})" }
   shell(c): __IO_ACTION({:io-shell cmd: c, timeout: 30})
@@ -429,7 +429,7 @@ io: {
 
 This lets the checker catch common IO mistakes:
 
-```eu
+```eu,notest
 # Error: io.shell returns IO({..}), not {..}
 result: io.shell("echo hello")
 name: result.stdout              # warning: IO({..}) has no field .stdout
@@ -458,7 +458,7 @@ Traversal(a, b)  — focuses on zero or more b's within an a
 These are opaque — the checker doesn't need to know they're implemented
 as `(b -> f b) -> (a -> f a)` under the hood.
 
-```eu
+```eu,notest
 # Lens constructors
 ` { type: "symbol -> Lens({..}, any)" }
 at(key, k): ...
@@ -551,7 +551,7 @@ etc.) and can inject the appropriate monadic result type — e.g.
 
 Some functions are genuinely hard to type precisely:
 
-```eu
+```eu,notest
 # Return type depends on runtime key — needs any
 ` { type: "symbol -> {..} -> any" }
 lookup: __LOOKUP
@@ -574,7 +574,7 @@ merge: __MERGE
 Functions defined in eucalypt (not intrinsics) get their types
 **inferred** from their bodies, checked against annotations if present:
 
-```eu
+```eu,notest
 ` { doc: "`sum(l)` - sum of numbers."
     type: "[number] -> number" }
 sum: fold(+, 0)
@@ -822,7 +822,7 @@ struct TypeScheme {
 
 The main annotation mechanism is declaration-level metadata:
 
-```eu
+```eu,notest
 ` { type: "[number] -> number" }
 sum: fold(+, 0)
 ```
@@ -869,7 +869,7 @@ likely via option 1 or 2.
 
 3. **Type annotation for operators** — same metadata approach works.
    Operator declarations in the prelude use backtick metadata:
-   ```eu
+   ```eu,notest
    ` { doc: "`l + r` - adds l and r."
        type: "number -> number -> number" }
    (l + r): __ADD(l, r)
@@ -898,7 +898,7 @@ complementary mechanisms:
 For types without a natural default value, or for recursive types,
 declare aliases in the unit metadata block at the top of the file:
 
-```eu
+```eu,notest
 { import: "data.eu"
   types: { Person: "{name: string, age: number, email: string | null, ..}"
            Response: "{status: number, body: string | null}"
@@ -913,7 +913,7 @@ throughout the file (and to importers — see section 11.2).
 When a declaration provides a canonical instance of a type, `type-def`
 names an alias inferred from its value:
 
-```eu
+```eu,notest
 ` { type-def: "Point" }
 origin: { x: 0, y: 0 }
 # Defines: Point = {x: number, y: number, ..}
@@ -923,7 +923,7 @@ origin: { x: 0, y: 0 }
 The alias shape is inferred from the declaration's value. Member
 annotations refine the inferred type:
 
-```eu
+```eu,notest
 ` { type-def: "Person" }
 nobody: {
   ` { type: "string" }
@@ -942,7 +942,7 @@ Without annotations, `email: null` would infer as `null` not
 `type-def` and `type` can be combined — `type` provides an explicit
 shape (overriding inference), `type-def` names it:
 
-```eu
+```eu,notest
 ` { type-def: "Point"
     type: "{x: number, y: number}" }
 origin: { x: 0, y: 0 }
@@ -953,7 +953,7 @@ origin: { x: 0, y: 0 }
 Once defined (by either mechanism), aliases are used by name in type
 annotations:
 
-```eu
+```eu,notest
 ` { type: "Point -> Point -> number" }
 distance(a, b): ...
 
@@ -980,7 +980,7 @@ names: map(_.name)
    literals in the prelude. Each function inside the block gets a `type`
    annotation in its metadata, just like top-level functions:
 
-   ```eu
+   ```eu,notest
    str: {
      ` { doc: "of(e) - convert e to string."
          type: "any -> string" }
