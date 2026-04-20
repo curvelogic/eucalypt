@@ -674,6 +674,18 @@ impl Checker {
             return self.check_lambda(scope, param_type, result_type);
         }
 
+        // List literal against tuple: check each element against its position.
+        if let (Expr::List(_, items), Type::Tuple(elem_types)) = (&*expr.inner, expected) {
+            if items.len() == elem_types.len() {
+                for (item, expected_elem) in items.iter().zip(elem_types.iter()) {
+                    let item_smid = item.smid();
+                    self.check_against(item, expected_elem, item_smid);
+                }
+                return;
+            }
+            // Length mismatch — fall through to synthesis path for error
+        }
+
         let found = self.synthesise(expr);
 
         if !is_informative(&found) {
