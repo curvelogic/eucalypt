@@ -1480,3 +1480,8 @@ pub fn test_harness_145() {
 pub fn test_harness_146() {
     run_test(&opts("146_ceil_floor_brackets.eu"));
 }
+
+#[test]
+pub fn test_harness_147() {
+    run_test(&opts("147_type_annotations.eu"));
+}

@@ -4,6 +4,9 @@
 //! Supports dotted access completion (e.g. `str.` triggers completion
 //! of `str` block members) and general name completion from all sources.
 
+use std::collections::HashMap;
+
+use crate::core::typecheck::types::Type;
 use crate::syntax::rowan::kind::{SyntaxKind, SyntaxNode};
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionResponse, Documentation, MarkupContent,
@@ -17,17 +20,27 @@ use super::symbol_table::{DeclKind, SymbolInfo, SymbolTable};
 /// Compute completions at the given cursor position.
 ///
 /// If the cursor follows a dot (e.g. `str.`), returns members of the
-/// prefix symbol. Otherwise returns all symbols in scope.
+/// prefix symbol.  When `type_env` is available and the prefix has a
+/// `Record` type, record field names are offered as completions.
+/// Otherwise returns all symbols in scope.
 pub fn completions(
     source: &str,
     root: &SyntaxNode,
     position: &Position,
     table: &SymbolTable,
+    type_env: Option<&HashMap<String, Type>>,
 ) -> CompletionResponse {
     let offset = position_to_offset(source, position);
 
     // Check for dotted access: is there a `prefix.` immediately before the cursor?
     if let Some(prefix) = detect_dot_prefix(root, offset) {
+        // Try record-type completion from the type environment first
+        if let Some(items) = type_env.and_then(|env| complete_record_fields(env, &prefix)) {
+            if !items.is_empty() {
+                return CompletionResponse::Array(items);
+            }
+        }
+        // Fall back to symbol table completion
         let items = complete_members(table, &prefix);
         return CompletionResponse::Array(items);
     }
@@ -95,6 +108,34 @@ fn detect_dot_prefix(root: &SyntaxNode, offset: TextSize) -> Option<String> {
     }
 
     None
+}
+
+/// Complete fields from a record type in the type environment.
+///
+/// Returns `Some(items)` if the prefix has a `Record` type, `None` otherwise.
+fn complete_record_fields(
+    type_env: &HashMap<String, Type>,
+    prefix: &str,
+) -> Option<Vec<CompletionItem>> {
+    let ty = type_env.get(prefix)?;
+    if let Type::Record { fields, .. } = ty {
+        let items = fields
+            .iter()
+            .map(|(name, field_ty)| CompletionItem {
+                label: name.clone(),
+                kind: Some(if matches!(field_ty, Type::Function(_, _)) {
+                    CompletionItemKind::FUNCTION
+                } else {
+                    CompletionItemKind::FIELD
+                }),
+                detail: Some(field_ty.to_string()),
+                ..CompletionItem::default()
+            })
+            .collect();
+        Some(items)
+    } else {
+        None
+    }
 }
 
 /// Complete members of a namespace block.
@@ -185,7 +226,7 @@ mod tests {
             line: 2,
             character: 0,
         };
-        let result = items(completions(source, &root, &pos, &table));
+        let result = items(completions(source, &root, &pos, &table, None));
         let names: Vec<&str> = result.iter().map(|i| i.label.as_str()).collect();
         assert!(names.contains(&"x"), "should contain x");
         assert!(names.contains(&"f"), "should contain f");
@@ -203,7 +244,7 @@ mod tests {
             line: 0,
             character: 0,
         };
-        let result = items(completions(source, &root, &pos, &table));
+        let result = items(completions(source, &root, &pos, &table, None));
         let f_item = result.iter().find(|i| i.label == "f").unwrap();
         assert_eq!(f_item.kind, Some(CompletionItemKind::FUNCTION));
         assert_eq!(f_item.detail.as_deref(), Some("(a, b)"));
@@ -221,7 +262,7 @@ mod tests {
             line: 1,
             character: 6,
         };
-        let result = items(completions(source, &root, &pos, &table));
+        let result = items(completions(source, &root, &pos, &table, None));
         let names: Vec<&str> = result.iter().map(|i| i.label.as_str()).collect();
         assert!(
             names.contains(&"inner"),
@@ -246,7 +287,7 @@ mod tests {
             line: 1,
             character: 7,
         };
-        let result = items(completions(source, &root, &pos, &table));
+        let result = items(completions(source, &root, &pos, &table, None));
         let names: Vec<&str> = result.iter().map(|i| i.label.as_str()).collect();
         // Should return all members (filtering is done by the editor)
         assert!(
@@ -267,7 +308,7 @@ mod tests {
             line: 0,
             character: 0,
         };
-        let result = items(completions(source, &root, &pos, &table));
+        let result = items(completions(source, &root, &pos, &table, None));
         let f_item = result.iter().find(|i| i.label == "f").unwrap();
         assert!(f_item.documentation.is_some(), "should have documentation");
     }
@@ -283,7 +324,7 @@ mod tests {
             line: 0,
             character: 0,
         };
-        let result = items(completions(source, &root, &pos, &table));
+        let result = items(completions(source, &root, &pos, &table, None));
         let x_item = result.iter().find(|i| i.label == "x").unwrap();
         assert_eq!(x_item.kind, Some(CompletionItemKind::PROPERTY));
         assert!(x_item.detail.is_none(), "property should have no detail");

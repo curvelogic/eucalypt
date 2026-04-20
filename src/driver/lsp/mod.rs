@@ -38,7 +38,12 @@ use lsp_types::{
     TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkspaceEdit,
 };
 
+use crate::core::typecheck::types::Type;
+
 use self::symbol_table::{SymbolSource, SymbolTable};
+
+/// Inferred type environment for a document, mapping binding names to types.
+type TypeEnv = HashMap<String, Type>;
 
 /// Run the LSP server on stdio.
 ///
@@ -129,10 +134,14 @@ impl DocumentStore {
     }
 }
 
-/// Server state holding the document store and cached prelude symbols.
+/// Server state holding the document store, cached prelude symbols, and
+/// per-document inferred type environments.
 struct ServerState {
     store: DocumentStore,
     prelude_table: SymbolTable,
+    /// Cached type environments from the bidirectional type checker, keyed by
+    /// document URI.  Updated on each `publish_diagnostics` cycle.
+    type_envs: HashMap<Url, TypeEnv>,
 }
 
 impl ServerState {
@@ -142,6 +151,7 @@ impl ServerState {
         Self {
             store: DocumentStore::new(),
             prelude_table: symbol_table::prelude_symbols(&prelude_uri),
+            type_envs: HashMap::new(),
         }
     }
 
@@ -370,7 +380,7 @@ fn on_document_open(
     let uri = params.text_document.uri;
     let text = params.text_document.text;
     state.store.open(uri.clone(), text.clone());
-    publish_diagnostics(connection, uri, &text)?;
+    publish_diagnostics(connection, state, uri, &text)?;
     Ok(())
 }
 
@@ -386,7 +396,7 @@ fn on_document_change(
     let uri = params.text_document.uri;
     if let Some(change) = params.content_changes.into_iter().next() {
         state.store.change(uri.clone(), change.text.clone());
-        publish_diagnostics(connection, uri, &change.text)?;
+        publish_diagnostics(connection, state, uri, &change.text)?;
     }
     Ok(())
 }
@@ -453,11 +463,13 @@ fn on_hover(state: &ServerState, params: lsp_types::HoverParams) -> Option<Hover
     let parse = crate::syntax::rowan::parse_unit(text);
     let root = parse.syntax_node();
     let table = state.build_symbol_table(uri, text);
+    let type_env = state.type_envs.get(uri);
     hover::hover(
         text,
         &root,
         &params.text_document_position_params.position,
         &table,
+        type_env,
     )
 }
 
@@ -486,11 +498,13 @@ fn on_completion(
     let parse = crate::syntax::rowan::parse_unit(text);
     let root = parse.syntax_node();
     let table = state.build_symbol_table(uri, text);
+    let type_env = state.type_envs.get(uri);
     Some(completion::completions(
         text,
         &root,
         &params.text_document_position.position,
         &table,
+        type_env,
     ))
 }
 
@@ -558,7 +572,8 @@ fn on_inlay_hint(
     let parse = crate::syntax::rowan::parse_unit(text);
     let root = parse.syntax_node();
     let table = state.build_symbol_table(uri, text);
-    let hints = inlay_hints::inlay_hints(text, &root, &params.range, &table);
+    let type_env = state.type_envs.get(uri);
+    let hints = inlay_hints::inlay_hints(text, &root, &params.range, &table, type_env);
     Some(hints)
 }
 
@@ -590,13 +605,38 @@ fn on_prepare_rename(
 }
 
 /// Parse the document and publish diagnostics to the client.
+///
+/// Collects both parse errors (as `DiagnosticSeverity::ERROR`) and any type
+/// warnings (as `DiagnosticSeverity::WARNING`) and sends them in a single
+/// `textDocument/publishDiagnostics` notification.  Also caches the inferred
+/// type environment in `state` for use by hover, completion, and inlay hints.
 fn publish_diagnostics(
     connection: &Connection,
+    state: &mut ServerState,
     uri: Url,
     text: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let parse = crate::syntax::rowan::parse_unit(text);
-    let diags = diagnostics::diagnostics_from_parse_errors(text, parse.errors());
+    let mut diags = diagnostics::diagnostics_from_parse_errors(text, parse.errors());
+
+    // Clear stale type env for this document.
+    state.type_envs.remove(&uri);
+
+    // Run the type checker when the document has no parse errors.
+    // The type checker requires a valid file path (on-disk) — skip if the URI
+    // is not a local file URI.
+    if parse.errors().is_empty() {
+        if let Ok(path) = uri.to_file_path() {
+            let result = crate::driver::check::type_check_path_full(&path);
+            let type_diags = diagnostics::diagnostics_from_type_warnings(
+                text,
+                &result.warnings,
+                &result.source_map,
+            );
+            diags.extend(type_diags);
+            state.type_envs.insert(uri.clone(), result.types);
+        }
+    }
 
     let params = PublishDiagnosticsParams {
         uri,

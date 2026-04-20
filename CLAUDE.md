@@ -18,6 +18,11 @@ Eucalypt is a Rust-based tool and language for generating, templating, rendering
 - `cargo run` - Run the eucalypt binary
 - `cargo install --path .` - Install local `eu` binary
 
+### Type Checking
+- `eu check file.eu` - Type-check a file (report warnings)
+- `eu check --strict file.eu` - Type-check with warnings as errors
+- `eu --type-check file.eu` - Type-check then evaluate (warnings to stderr)
+
 ### Testing
 - `cargo test` - Run all tests including the comprehensive harness test suite
 - `cargo test test_harness_001` - Run a specific harness test (e.g., test 001)
@@ -41,6 +46,7 @@ Eucalypt is a Rust-based tool and language for generating, templating, rendering
 - `simplify/` - Expression simplification and optimization
 - `transform/` - Various AST transformations
 - `inline/` - Inlining and reduction passes
+- `typecheck/` - Gradual type system: type representation, parser, subtyping, bidirectional checker, polymorphic instantiation
 
 **Evaluation (`src/eval/`)**:
 - `machine/` - Virtual machine implementation with garbage collection

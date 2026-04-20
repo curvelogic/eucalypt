@@ -4,6 +4,8 @@
 //! We convert these to LSP `Diagnostic` objects with line/column
 //! positions by scanning the source text for line breaks.
 
+use crate::common::sourcemap::SourceMap;
+use crate::core::typecheck::error::TypeWarning;
 use crate::syntax::rowan::ParseError;
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use rowan::TextRange;
@@ -15,6 +17,71 @@ pub fn diagnostics_from_parse_errors(source: &str, errors: &[ParseError]) -> Vec
         .iter()
         .map(|err| to_diagnostic(&line_index, err))
         .collect()
+}
+
+/// Convert a collection of type warnings into LSP diagnostics.
+///
+/// Type warnings use `DiagnosticSeverity::WARNING` and the source identifier
+/// `"eucalypt-types"` so that editors can distinguish them from parse errors.
+///
+/// The `source` parameter is the source text of the file being checked, used
+/// to resolve byte-offset spans. The `source_map` resolves Smids to file/span.
+pub fn diagnostics_from_type_warnings(
+    source: &str,
+    warnings: &[TypeWarning],
+    source_map: &SourceMap,
+) -> Vec<Diagnostic> {
+    let line_index = LineIndex::new(source);
+    warnings
+        .iter()
+        .map(|w| type_warning_to_lsp_diagnostic(&line_index, w, source_map))
+        .collect()
+}
+
+/// Convert a single `TypeWarning` to an LSP `Diagnostic`.
+///
+/// Uses the SourceMap to resolve the warning's Smid to a byte span, then
+/// converts to LSP line/column positions. Falls back to (0,0) if the Smid
+/// has no source location.
+fn type_warning_to_lsp_diagnostic(
+    line_index: &LineIndex<'_>,
+    warning: &TypeWarning,
+    source_map: &SourceMap,
+) -> Diagnostic {
+    let mut message = warning.message.clone();
+    if let (Some(exp), Some(fnd)) = (&warning.expected, &warning.found) {
+        message = format!("{message}: expected {exp}, found {fnd}");
+    }
+
+    // Try to resolve the Smid to a source span via the SourceMap
+    let range = source_map
+        .source_info_for_smid(warning.smid)
+        .and_then(|info| info.span)
+        .map(|span| {
+            let start = u32::from(span.start());
+            let end = u32::from(span.end());
+            let text_range =
+                TextRange::new(rowan::TextSize::from(start), rowan::TextSize::from(end));
+            line_index.range(text_range)
+        })
+        .unwrap_or(Range {
+            start: Position {
+                line: 0,
+                character: 0,
+            },
+            end: Position {
+                line: 0,
+                character: 0,
+            },
+        });
+
+    Diagnostic {
+        range,
+        severity: Some(DiagnosticSeverity::WARNING),
+        source: Some("eucalypt-types".to_string()),
+        message,
+        ..Diagnostic::default()
+    }
 }
 
 /// Convert a single parse error to an LSP diagnostic.
@@ -404,5 +471,31 @@ mod tests {
             10,
             "UTF-16 col 3 on line 1 should be byte 10"
         );
+    }
+
+    #[test]
+    fn type_warnings_produce_warning_diagnostics() {
+        use crate::common::sourcemap::SourceMap;
+        use crate::core::typecheck::error::TypeWarning;
+
+        let source = "x: 1\n";
+        let source_map = SourceMap::new();
+        let warnings = vec![TypeWarning::new("type mismatch")
+            .with_types("number", "string")
+            .with_note("double expects a number")];
+        let diags = diagnostics_from_type_warnings(source, &warnings, &source_map);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].severity, Some(DiagnosticSeverity::WARNING));
+        assert_eq!(diags[0].source.as_deref(), Some("eucalypt-types"));
+    }
+
+    #[test]
+    fn empty_type_warnings_gives_no_diagnostics() {
+        use crate::common::sourcemap::SourceMap;
+
+        let source = "x: 1\n";
+        let source_map = SourceMap::new();
+        let diags = diagnostics_from_type_warnings(source, &[], &source_map);
+        assert!(diags.is_empty());
     }
 }

@@ -28,6 +28,7 @@
 - [IO and Shell Commands](guide/io.md)
 - [Monads and the monad() Utility](guide/monads.md)
 - [The State Monad](guide/state-monad.md)
+- [Type Checking](guide/type-checking.md)
 - [Advanced Topics](guide/advanced-topics.md)
 
 # Reference

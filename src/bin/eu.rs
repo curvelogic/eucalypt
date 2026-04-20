@@ -3,6 +3,7 @@ extern crate eucalypt;
 use std::process;
 use std::thread;
 
+use eucalypt::driver::check;
 use eucalypt::driver::format;
 use eucalypt::driver::lsp;
 use eucalypt::driver::options::EucalyptOptions;
@@ -77,6 +78,17 @@ fn run() -> i32 {
         }
     }
 
+    // Check mode: validate type annotations then exit
+    if opt.check() {
+        match check::check(&opt) {
+            Ok(exit) => return exit,
+            Err(e) => {
+                eprintln!("{e}");
+                return 2;
+            }
+        }
+    }
+
     // Anything else is going to involve reading the inputs
     let mut loader = SourceLoader::new(opt.lib_path().to_vec())
         .with_args(opt.args().to_vec())
@@ -93,6 +105,23 @@ fn run() -> i32 {
         }
         Ok(Command::Exit) => return exit_code(&opt, 0, &statistics),
         Ok(Command::Continue) => {}
+    }
+
+    // --type-check: run the type checker before evaluation, emit warnings
+    if opt.type_check() {
+        let t = std::time::Instant::now();
+        let core_expr = loader.core().expr.clone();
+        let warnings = eucalypt::core::typecheck::check::type_check(&core_expr);
+        let elapsed = t.elapsed();
+
+        for w in &warnings {
+            let diag = w.to_diagnostic(loader.source_map());
+            loader.diagnose_to_stderr(&diag);
+        }
+
+        if opt.statistics() {
+            statistics.timings_mut().record("type-check", elapsed);
+        }
     }
 
     if opt.run() || opt.dump_stg() || opt.dump_runtime() {
