@@ -254,11 +254,11 @@ true: __TRUE
 false: __FALSE
 
 ` { doc: "`if(c, t, f)` - if `c` is `true`, return `t` else `f`."
-    type: "bool → a → a → a" }
+    type: "bool → a → b → (a | b)" }
 if: __IF
 
 ` { doc: "`then(t, f, c)` - for pipeline if: `x? then(t, f)`."
-    type: "a → a → bool → a" }
+    type: "a → b → bool → (a | b)" }
 then(t, f, c): if(c, t, f)
 
 ` { doc: "`when(p?, f, x)` - when `x` satisfies `p?` apply `f` else pass through unchanged."
@@ -307,7 +307,7 @@ non-nil?: nil? complement
 coalesce(xs): (xs nil?) then(null, (xs head)✓ then(xs head, xs tail coalesce))
 
 ` { doc: "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
-    type: "a → [a] → a" }
+    type: "b → [a] → (a | b)" }
 head-or(d, xs): xs nil? then(d, xs head)
 
 ` { doc: "`tail(xs)` - return list `xs` without the head item. [] causes error."
@@ -315,7 +315,7 @@ head-or(d, xs): xs nil? then(d, xs head)
 tail: __TAIL
 
 ` { doc: "`tail-or(xs, d)` - return list `xs` without the head item or `d` for empty list."
-    type: "[a] → [a] → [a]" }
+    type: "b → [a] → ([a] | b)" }
 tail-or(d, xs): xs nil? then(d, xs tail)
 
 ` { doc: "`nil` - identical to `[]`, the empty list."
@@ -331,7 +331,7 @@ first: head
 second(xs): xs tail head
 
 ` { doc: "`second-or(xs, d)` - return second item of list - default `d` if there is none."
-    type: "a → [a] → a" }
+    type: "b → [a] → (a | b)" }
 second-or(d, xs): xs tail-or([d]) head-or(d)
 
 ##
