@@ -1,0 +1,4 @@
+` { type: "number → number" }
+double(x): x * 2
+
+result: double("hello")

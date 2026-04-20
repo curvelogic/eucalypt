@@ -1,0 +1,4 @@
+` { type: "number → number → number" }
+add(x, y): x + y
+
+result: add(1, "two")
