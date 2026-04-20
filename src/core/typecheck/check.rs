@@ -106,6 +106,31 @@ impl Checker {
         self.warnings
     }
 
+    /// Return the flattened type environment from the scope stack.
+    ///
+    /// Merges all scope frames (innermost wins) into a single map of
+    /// name → `Type`.  This is the checker's view of all bindings it
+    /// has seen, suitable for IDE features like hover and completion.
+    pub fn type_env(&self) -> HashMap<String, Type> {
+        let mut env = HashMap::new();
+        // Iterate outermost-first so inner scopes overwrite
+        for frame in self.scope_stack.iter().rev() {
+            for (name, scheme) in frame {
+                env.insert(name.clone(), scheme.body.clone());
+            }
+        }
+        env
+    }
+
+    /// Consume the checker and return warnings plus the type environment.
+    pub fn into_results(self) -> TypeCheckResult {
+        let type_env = self.type_env();
+        TypeCheckResult {
+            warnings: self.warnings,
+            types: type_env,
+        }
+    }
+
     /// Primary entry point: walk `expr` and collect warnings.
     pub fn check_expr(&mut self, expr: &RcExpr) {
         self.synthesise(expr);
@@ -753,11 +778,26 @@ fn is_informative(ty: &Type) -> bool {
 
 // ── Public entry point ───────────────────────────────────────────────────────
 
+/// Result of running the type checker: warnings and the inferred type environment.
+pub struct TypeCheckResult {
+    /// Type warnings (mismatches, missing fields, etc.).
+    pub warnings: Vec<TypeWarning>,
+    /// Flattened type environment mapping binding names to their inferred types.
+    pub types: HashMap<String, Type>,
+}
+
 /// Run the type checker over `expr` and return all warnings found.
 pub fn type_check(expr: &RcExpr) -> Vec<TypeWarning> {
     let mut checker = Checker::new();
     checker.check_expr(expr);
     checker.into_warnings()
+}
+
+/// Run the type checker over `expr` and return warnings plus the type environment.
+pub fn type_check_full(expr: &RcExpr) -> TypeCheckResult {
+    let mut checker = Checker::new();
+    checker.check_expr(expr);
+    checker.into_results()
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

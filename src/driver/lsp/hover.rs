@@ -3,6 +3,9 @@
 //! Provides symbol information on hover: declaration kind, parameters,
 //! documentation, and source file.
 
+use std::collections::HashMap;
+
+use crate::core::typecheck::types::Type;
 use crate::syntax::rowan::kind::{SyntaxKind, SyntaxNode, SyntaxToken};
 use lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position};
 
@@ -10,11 +13,15 @@ use super::navigation::{find_identifier_at, resolve_dotted};
 use super::symbol_table::{DeclKind, SymbolInfo, SymbolTable};
 
 /// Produce hover information for the symbol at the given cursor position.
+///
+/// If `type_env` is provided, unannotated symbols will show their inferred
+/// type from the bidirectional checker.
 pub fn hover(
     source: &str,
     root: &SyntaxNode,
     position: &Position,
     table: &SymbolTable,
+    type_env: Option<&HashMap<String, Type>>,
 ) -> Option<Hover> {
     let offset = super::selection::position_to_offset(source, position);
     let token = find_identifier_at(root, offset)?;
@@ -24,18 +31,22 @@ pub fn hover(
     if let Some((prefix, member)) = resolve_dotted(root, &token) {
         let symbols = table.lookup_qualified(&prefix, &member);
         if let Some(sym) = symbols.first() {
-            return Some(make_hover(sym, Some(&prefix)));
+            return Some(make_hover(sym, Some(&prefix), type_env));
         }
     }
 
     // Simple name lookup
     let symbols = table.lookup(&name);
     let sym = symbols.first()?;
-    Some(make_hover(sym, None))
+    Some(make_hover(sym, None, type_env))
 }
 
 /// Build an LSP Hover response from a symbol.
-fn make_hover(sym: &SymbolInfo, qualifier: Option<&str>) -> Hover {
+fn make_hover(
+    sym: &SymbolInfo,
+    qualifier: Option<&str>,
+    type_env: Option<&HashMap<String, Type>>,
+) -> Hover {
     let mut lines = Vec::new();
 
     // Signature line
@@ -61,9 +72,13 @@ fn make_hover(sym: &SymbolInfo, qualifier: Option<&str>) -> Hover {
         }
     }
 
-    // Type annotation
+    // Type annotation — prefer explicit annotation, fall back to inferred type
     if let Some(type_ann) = &sym.type_annotation {
         lines.push(format!("type: `{}`", type_ann));
+    } else if let Some(ty) = type_env.and_then(|env| env.get(&sym.name)) {
+        if !matches!(ty, Type::Any) {
+            lines.push(format!("inferred: `{}`", ty));
+        }
     }
 
     // Source information
@@ -126,7 +141,7 @@ mod tests {
             line: 1,
             character: 3,
         };
-        let result = hover(source, &root, &pos, &table);
+        let result = hover(source, &root, &pos, &table, None);
         assert!(result.is_some());
         let h = result.unwrap();
         if let HoverContents::Markup(m) = &h.contents {
@@ -148,7 +163,7 @@ mod tests {
             line: 1,
             character: 3,
         };
-        let result = hover(source, &root, &pos, &table);
+        let result = hover(source, &root, &pos, &table, None);
         assert!(result.is_some());
         let h = result.unwrap();
         if let HoverContents::Markup(m) = &h.contents {
@@ -170,7 +185,7 @@ mod tests {
             line: 2,
             character: 3,
         };
-        let result = hover(source, &root, &pos, &table);
+        let result = hover(source, &root, &pos, &table, None);
         assert!(result.is_some());
         let h = result.unwrap();
         if let HoverContents::Markup(m) = &h.contents {
@@ -191,13 +206,43 @@ mod tests {
             line: 2,
             character: 3,
         };
-        let result = hover(source, &root, &pos, &table);
+        let result = hover(source, &root, &pos, &table, None);
         assert!(result.is_some());
         let h = result.unwrap();
         if let HoverContents::Markup(m) = &h.contents {
             assert!(
                 m.value.contains("number -> number"),
                 "should show type annotation"
+            );
+        } else {
+            panic!("expected markup content");
+        }
+    }
+
+    #[test]
+    fn test_hover_shows_inferred_type() {
+        use crate::core::typecheck::types::Type;
+
+        let source = "x: 1\ny: x\n";
+        let (table, _) = setup_table(source);
+        let parse = parse_unit(source);
+        let root = parse.syntax_node();
+
+        let mut type_env = HashMap::new();
+        type_env.insert("x".to_string(), Type::Number);
+
+        let pos = Position {
+            line: 1,
+            character: 3,
+        };
+        let result = hover(source, &root, &pos, &table, Some(&type_env));
+        assert!(result.is_some());
+        let h = result.unwrap();
+        if let HoverContents::Markup(m) = &h.contents {
+            assert!(
+                m.value.contains("inferred: `number`"),
+                "should show inferred type, got: {}",
+                m.value
             );
         } else {
             panic!("expected markup content");
@@ -215,7 +260,7 @@ mod tests {
             line: 0,
             character: 3,
         };
-        let result = hover(source, &root, &pos, &table);
+        let result = hover(source, &root, &pos, &table, None);
         assert!(result.is_none());
     }
 }

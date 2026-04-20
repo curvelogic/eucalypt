@@ -4,6 +4,9 @@
 //! - Parameter names at function call sites (e.g. `f(x: 1, y: 2)`)
 //! - Operator fixity on operator declarations
 
+use std::collections::HashMap;
+
+use crate::core::typecheck::types::Type;
 use crate::syntax::rowan::ast::{self, AstToken, DeclarationKind, HasSoup};
 use crate::syntax::rowan::kind::SyntaxNode;
 use lsp_types::{InlayHint, InlayHintKind, InlayHintLabel, Range};
@@ -13,17 +16,21 @@ use super::diagnostics::text_range_to_lsp_range;
 use super::symbol_table::SymbolTable;
 
 /// Compute inlay hints for the given range of a document.
+///
+/// When `type_env` is provided, declarations with inferred types show
+/// `: <type>` hints after the declaration name.
 pub fn inlay_hints(
     source: &str,
     root: &SyntaxNode,
     range: &Range,
     table: &SymbolTable,
+    type_env: Option<&HashMap<String, Type>>,
 ) -> Vec<InlayHint> {
     let mut hints = Vec::new();
 
     // Walk declarations for operator fixity hints and parameter hints in call sites
     if let Some(unit) = ast::Unit::cast(root.clone()) {
-        collect_hints_from_unit(source, &unit, range, table, &mut hints);
+        collect_hints_from_unit(source, &unit, range, table, type_env, &mut hints);
     }
 
     hints
@@ -35,6 +42,7 @@ fn collect_hints_from_unit(
     unit: &ast::Unit,
     range: &Range,
     table: &SymbolTable,
+    type_env: Option<&HashMap<String, Type>>,
     hints: &mut Vec<InlayHint>,
 ) {
     for decl in unit.declarations() {
@@ -47,6 +55,11 @@ fn collect_hints_from_unit(
         if let Some(head) = decl.head() {
             let kind = head.classify_declaration();
             collect_operator_fixity_hint(source, &kind, hints);
+
+            // Type hints from the type environment
+            if let Some(env) = type_env {
+                collect_type_hint_for_decl(source, &kind, env, hints);
+            }
         }
 
         // Parameter name hints in declaration bodies
@@ -79,6 +92,40 @@ fn collect_operator_fixity_hint(source: &str, kind: &DeclarationKind, hints: &mu
         padding_right: Some(true),
         data: None,
     });
+}
+
+/// Add an inlay hint showing the inferred type for a declaration.
+///
+/// Skips `any` types (uninformative) and declarations that already have
+/// explicit type annotations (those are shown via hover instead).
+fn collect_type_hint_for_decl(
+    source: &str,
+    kind: &DeclarationKind,
+    type_env: &HashMap<String, Type>,
+    hints: &mut Vec<InlayHint>,
+) {
+    let (name, name_token) = match kind {
+        DeclarationKind::Property(id) => (id.value().to_string(), id.syntax().clone()),
+        DeclarationKind::Function(id, _) => (id.value().to_string(), id.syntax().clone()),
+        _ => return,
+    };
+
+    if let Some(ty) = type_env.get(&name) {
+        if matches!(ty, Type::Any) {
+            return;
+        }
+        let token_range = text_range_to_lsp_range(source, name_token.text_range());
+        hints.push(InlayHint {
+            position: token_range.end,
+            label: InlayHintLabel::String(format!(": {ty}")),
+            kind: Some(InlayHintKind::TYPE),
+            text_edits: None,
+            tooltip: None,
+            padding_left: Some(false),
+            padding_right: Some(true),
+            data: None,
+        });
+    }
 }
 
 /// Collect parameter name hints from a soup (expression sequence).
@@ -195,7 +242,7 @@ mod tests {
         let parse = parse_unit(source);
         let root = parse.syntax_node();
         let table = SymbolTable::new();
-        let hints = inlay_hints(source, &root, &full_range(), &table);
+        let hints = inlay_hints(source, &root, &full_range(), &table, None);
         assert!(hints.is_empty());
     }
 
@@ -205,7 +252,7 @@ mod tests {
         let parse = parse_unit(source);
         let root = parse.syntax_node();
         let table = make_table(source);
-        let hints = inlay_hints(source, &root, &full_range(), &table);
+        let hints = inlay_hints(source, &root, &full_range(), &table, None);
         let fixity_hints: Vec<_> = hints
             .iter()
             .filter(|h| h.kind == Some(InlayHintKind::TYPE))
@@ -225,7 +272,7 @@ mod tests {
         let parse = parse_unit(source);
         let root = parse.syntax_node();
         let table = make_table(source);
-        let hints = inlay_hints(source, &root, &full_range(), &table);
+        let hints = inlay_hints(source, &root, &full_range(), &table, None);
         let param_hints: Vec<_> = hints
             .iter()
             .filter(|h| h.kind == Some(InlayHintKind::PARAMETER))
@@ -242,7 +289,7 @@ mod tests {
         let parse = parse_unit(source);
         let root = parse.syntax_node();
         let table = make_table(source);
-        let hints = inlay_hints(source, &root, &full_range(), &table);
+        let hints = inlay_hints(source, &root, &full_range(), &table, None);
         let param_hints: Vec<_> = hints
             .iter()
             .filter(|h| h.kind == Some(InlayHintKind::PARAMETER))
