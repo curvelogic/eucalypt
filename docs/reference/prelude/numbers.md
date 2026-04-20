@@ -21,6 +21,8 @@ The binary arithmetic operators `+`, `-`, `*`, and `/` are polymorphic: when eit
 | `num` | Parse number from string |
 | `floor` | Round number downwards to nearest integer |
 | `ceiling` | Round number upwards to nearest integer |
+| `⌊n⌋` | Floor bracket notation — equivalent to `n floor` |
+| `⌈n⌉` | Ceiling bracket notation — equivalent to `n ceiling` |
 | `pow(b, e)` | Raise `b` to the power `e` |
 | `div(a, b)` | Floor division; same as `a / b` |
 | `mod(a, b)` | Floor modulus; same as `a % b` |

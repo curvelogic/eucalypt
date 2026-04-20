@@ -179,8 +179,12 @@ impl CollectorHeapView<'_> {
             self.heap.mark_object(obj);
             self.heap.mark_line(obj);
 
-            // Verify mark was actually applied
-            if super::gc_debug::verify_enabled() {
+            let verify = super::gc_debug::verify_level();
+            if verify >= 2 {
+                // Level 2: full header + line consistency check
+                super::gc_verify::verify_marked_object(self.heap, obj);
+            } else if verify >= 1 {
+                // Level 1: just verify mark persisted
                 debug_assert!(
                     self.heap.is_marked(obj),
                     "GC BUG: mark_object({:p}) did not persist! mark_state={}",
@@ -419,9 +423,9 @@ pub fn collect(roots: &mut dyn GcScannable, heap: &mut Heap, clock: &mut Clock, 
         eprintln!("Heap after mark:\n\n{:?}", &heap_view.heap)
     }
 
-    // Post-mark verification: re-scan all reachable objects and verify
-    // that every pointer they contain points to a marked object.
-    if super::gc_debug::verify_enabled() {
+    // Post-mark verification (level 2 already verified inline during mark)
+    let verify = super::gc_debug::verify_level();
+    if verify >= 1 {
         verify_mark_integrity(roots, heap_view.heap);
     }
 
@@ -429,6 +433,11 @@ pub fn collect(roots: &mut dyn GcScannable, heap: &mut Heap, clock: &mut Clock, 
 
     // Defer sweep to allocation time (lazy sweeping)
     heap_view.defer_sweep();
+
+    // Post-sweep verification (level 2)
+    if verify >= 2 {
+        super::gc_verify::verify_post_sweep(heap_view.heap);
+    }
 
     if dump_heap {
         eprintln!("Heap after defer_sweep:\n\n{:?}", &heap_view.heap)
@@ -506,6 +515,18 @@ pub fn collect_with_evacuation(
         }
     }
 
+    let verify = super::gc_debug::verify_level();
+
+    // Checkpoint 1 — Post-mark (level 2 already verified inline during mark)
+    if verify >= 1 {
+        verify_mark_integrity(roots, heap);
+    }
+
+    // Checkpoint 2 — Post-evacuate
+    if verify >= 2 {
+        super::gc_verify::verify_post_evacuate(heap);
+    }
+
     // --- Update phase ---
     // Rewrite forwarded pointers in roots and all live heap objects.
     {
@@ -564,9 +585,9 @@ pub fn collect_with_evacuation(
         heap_view.heap.finalise_evacuation();
     }
 
-    // Post-mark verification for the evacuation path
-    if super::gc_debug::verify_enabled() {
-        verify_mark_integrity(roots, heap);
+    // Checkpoint 3 — Post-update
+    if verify >= 2 {
+        super::gc_verify::verify_post_update(heap);
     }
 
     clock.switch(ThreadOccupation::CollectorSweep);
@@ -575,6 +596,11 @@ pub fn collect_with_evacuation(
     {
         let mut heap_view = CollectorHeapView { heap };
         heap_view.defer_sweep();
+    }
+
+    // Checkpoint 4 — Post-sweep
+    if verify >= 2 {
+        super::gc_verify::verify_post_sweep(heap);
     }
 
     heap.record_collection();

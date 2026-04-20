@@ -9,7 +9,7 @@ use std::io::{BufRead, BufReader};
 use std::rc::Rc;
 
 use crate::eval::stg::json_to_stg::json_to_stg;
-use crate::eval::stg::stream::StreamProducer;
+use crate::eval::stg::stream::LazyProducer;
 use crate::eval::stg::syntax::dsl;
 use crate::eval::stg::syntax::StgSyn;
 
@@ -31,7 +31,7 @@ impl JsonlProducer {
     }
 }
 
-impl StreamProducer for JsonlProducer {
+impl LazyProducer for JsonlProducer {
     fn next(&mut self) -> Option<Rc<StgSyn>> {
         loop {
             self.line_buf.clear();
@@ -72,7 +72,7 @@ impl CsvProducer {
     }
 }
 
-impl StreamProducer for CsvProducer {
+impl LazyProducer for CsvProducer {
     fn next(&mut self) -> Option<Rc<StgSyn>> {
         let record = match self.reader.records().next() {
             Some(Ok(rec)) => rec,
@@ -113,7 +113,7 @@ impl TextProducer {
     }
 }
 
-impl StreamProducer for TextProducer {
+impl LazyProducer for TextProducer {
     fn next(&mut self) -> Option<Rc<StgSyn>> {
         self.line_buf.clear();
         match self.reader.read_line(&mut self.line_buf) {

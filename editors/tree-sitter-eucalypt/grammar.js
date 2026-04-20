@@ -14,9 +14,9 @@
 // Notable inclusions: ? (for //=?, //!?), $ (for <$>), ∸ (unary minus),
 // ‖ (U+2016 DOUBLE VERTICAL LINE — the cons operator),
 // ✓ (U+2713 CHECK MARK — postfix non-nil check).
-// Note: bracket characters (⟦⟧⟨⟩⟪⟫⌈⌉⌊⌋) are intentionally excluded here;
+// Note: bracket characters (⟦⟧⟨⟩⟪⟫⌈⌉⌊⌋‹›) are intentionally excluded here;
 // they are handled by the bracket_expr rule instead.
-const OPER_CHARS = /[.!@£%^&*|><\/+\=\-~;?$∸∧∨∘‖✓→←⊕⊗⊙⊡⊞⊟¬∀∃∈∉⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪⊂⊃⊄⊅⊆⊇⊈⊉⊊⊋¡££€⨈∅∏]+/;
+const OPER_CHARS = /[.!@£%^&*|><\/+\=\-~;?$∸∧∨∘‖✓▶⊝→←⊕⊗⊙⊡⊞⊟¬∀∃∈∉⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪⊂⊃⊄⊅⊆⊇⊈⊉⊊⊋¡££€⨈∅∏]+/;
 
 // Unicode idiot bracket open characters (must match brackets.rs BUILTIN_BRACKET_PAIRS).
 //
@@ -27,8 +27,8 @@ const OPER_CHARS = /[.!@£%^&*|><\/+\=\-~;?$∸∧∨∘‖✓→←⊕⊗⊙⊡
 // bracket pair, add the open character to BRACKET_OPEN_RE and the corresponding
 // close character to BRACKET_CLOSE_RE, then regenerate parser.c with
 // `tree-sitter generate`.
-const BRACKET_OPEN_RE = /[⟦⟨⟪⌈⌊⦃⦇⦉«【〔〖〘〚]/;
-const BRACKET_CLOSE_RE = /[⟧⟩⟫⌉⌋⦄⦈⦊»】〕〗〙〛]/;
+const BRACKET_OPEN_RE = /[⟦⟨⟪⌈⌊⦃⦇⦉«‹【〔〖〘〚]/;
+const BRACKET_CLOSE_RE = /[⟧⟩⟫⌉⌋⦄⦈⦊»›】〕〗〙〛]/;
 
 module.exports = grammar({
   name: 'eucalypt',

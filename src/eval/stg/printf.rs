@@ -459,9 +459,14 @@ pub fn fmt(
                     "cannot format vec".to_string(),
                 ))
             }
-            Native::Stream(_) => {
+            Native::Prng(_) => {
                 return Err(PrintfError::InvalidFormatString(
-                    "cannot format stream".to_string(),
+                    "cannot format prng".to_string(),
+                ))
+            }
+            Native::Producer(_) => {
+                return Err(PrintfError::InvalidFormatString(
+                    "cannot format producer".to_string(),
                 ))
             }
         }

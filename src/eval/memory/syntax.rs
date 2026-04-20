@@ -52,7 +52,9 @@ pub enum Native {
     /// A vector of primitive values (O(1) indexed access)
     Vec(RefPtr<HeapVec>),
     /// An opaque PRNG stream state (SplitMix64 state word)
-    Stream(u64),
+    Prng(u64),
+    /// A handle into the ProducerTable for lazy producers
+    Producer(u32),
 }
 
 impl PartialEq for Native {
@@ -67,7 +69,8 @@ impl PartialEq for Native {
             (Native::Set(a), Native::Set(b)) => a == b,
             (Native::NdArray(a), Native::NdArray(b)) => a == b,
             (Native::Vec(a), Native::Vec(b)) => a == b,
-            (Native::Stream(a), Native::Stream(b)) => a == b,
+            (Native::Prng(a), Native::Prng(b)) => a == b,
+            (Native::Producer(a), Native::Producer(b)) => a == b,
             _ => false,
         }
     }
@@ -87,7 +90,8 @@ impl Native {
             Native::Set(_) => "set",
             Native::NdArray(_) => "array",
             Native::Vec(_) => "vec",
-            Native::Stream(_) => "stream",
+            Native::Prng(_) => "prng",
+            Native::Producer(_) => "producer",
         }
     }
 }
@@ -121,8 +125,11 @@ impl fmt::Display for Native {
             Native::Vec(_) => {
                 write!(f, "<vec>")
             }
-            Native::Stream(_) => {
-                write!(f, "<stream>")
+            Native::Prng(_) => {
+                write!(f, "<prng>")
+            }
+            Native::Producer(_) => {
+                write!(f, "<producer>")
             }
         }
     }
@@ -684,8 +691,11 @@ pub mod repr {
             memory::syntax::Ref::V(memory::syntax::Native::Vec(_)) => {
                 stg::syntax::Ref::V(stg::syntax::Native::Sym("<vec>".to_string()))
             }
-            memory::syntax::Ref::V(memory::syntax::Native::Stream(_)) => {
-                stg::syntax::Ref::V(stg::syntax::Native::Sym("<stream>".to_string()))
+            memory::syntax::Ref::V(memory::syntax::Native::Prng(_)) => {
+                stg::syntax::Ref::V(stg::syntax::Native::Sym("<prng>".to_string()))
+            }
+            memory::syntax::Ref::V(memory::syntax::Native::Producer(_)) => {
+                stg::syntax::Ref::V(stg::syntax::Native::Sym("<producer>".to_string()))
             }
         }
     }
