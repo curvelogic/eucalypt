@@ -12,7 +12,8 @@ eu: {
   ` "Metadata about this version of the eucalypt executable"
   build: __build
 
-  ` "requires(constraint) - assert that the eucalypt version satisfies the given semver constraint (e.g. '>=0.2.0')."
+  ` { doc: "requires(constraint) - assert that the eucalypt version satisfies the given semver constraint (e.g. '>=0.2.0')."
+      type: "string → null" }
   requires: __REQUIRES
 
   ` { doc: "Operating system: linux, macos, windows, etc."
@@ -232,7 +233,8 @@ random: monad{bind: random-bind, return: random-ret} {
 ## Error / debug support
 ##
 
-` "`panic(s)` - raise runtime error with message string `s`."
+` { doc: "`panic(s)` - raise runtime error with message string `s`."
+    type: "string → never" }
 panic: __PANIC
 
 ##
@@ -255,7 +257,8 @@ false: __FALSE
     type: "bool → a → a → a" }
 if: __IF
 
-` "`then(t, f, c)` - for pipeline if: - `x? then(t, f)``"
+` { doc: "`then(t, f, c)` - for pipeline if: `x? then(t, f)`."
+    type: "a → a → bool → a" }
 then(t, f, c): if(c, t, f)
 
 ` { doc: "`when(p?, f, x)` - when `x` satisfies `p?` apply `f` else pass through unchanged."
@@ -291,7 +294,8 @@ head: __HEAD
     type: "[a] → bool" }
 nil?: = []
 
-` "`non-nil?(xs)` - `true` if list `xs` is non-empty, `false` otherwise."
+` { doc: "`non-nil?(xs)` - `true` if list `xs` is non-empty, `false` otherwise."
+    type: "[a] → bool" }
 non-nil?: nil? complement
 
 ` { doc: "`x✓` - `true` if `x` is not null, `false` otherwise. Postfix not-null check operator."
@@ -302,33 +306,40 @@ non-nil?: nil? complement
     type: "[a | null] → a | null" }
 coalesce(xs): (xs nil?) then(null, (xs head)✓ then(xs head, xs tail coalesce))
 
-` "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
+` { doc: "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
+    type: "a → [a] → a" }
 head-or(d, xs): xs nil? then(d, xs head)
 
 ` { doc: "`tail(xs)` - return list `xs` without the head item. [] causes error."
     type: "[a] → [a]" }
 tail: __TAIL
 
-` "`tail-or(xs, d)` - return list `xs` without the head item or `d` for empty list."
+` { doc: "`tail-or(xs, d)` - return list `xs` without the head item or `d` for empty list."
+    type: "[a] → [a] → [a]" }
 tail-or(d, xs): xs nil? then(d, xs tail)
 
-` "`nil` - identical to `[]`, the empty list."
+` { doc: "`nil` - identical to `[]`, the empty list."
+    type: "[a]" }
 nil: []
 
-` "`first(xs)` - return first item of list `xs` - error if the list is empty."
+` { doc: "`first(xs)` - return first item of list `xs` - error if the list is empty."
+    type: "[a] → a" }
 first: head
 
-` "`second(xs)` - return second item of list - error if there is none."
+` { doc: "`second(xs)` - return second item of list - error if there is none."
+    type: "[a] → a" }
 second(xs): xs tail head
 
-` "`second-or(xs, d)` - return second item of list - default `d` if there is none."
+` { doc: "`second-or(xs, d)` - return second item of list - default `d` if there is none."
+    type: "a → [a] → a" }
 second-or(d, xs): xs tail-or([d]) head-or(d)
 
 ##
 ## Blocks / merge
 ##
 
-` "`sym(s)` - create symbol with name given by string `s`."
+` { doc: "`sym(s)` - create symbol with name given by string `s`."
+    type: "string → symbol" }
 sym: __SYM
 
 ` { doc: "`merge(b1, b2)` - shallow merge block `b2` on top of `b1`."
@@ -346,22 +357,28 @@ deep-merge: __DEEPMERGE
     precedence: :append }
 (l << r): __DEEPMERGE(l, r)
 
-` "`block?(v)` - true if and only if `v` is a block."
+` { doc: "`block?(v)` - true if and only if `v` is a block."
+    type: "any → bool" }
 block?: __ISBLOCK
 
-` "`list?(v)` - true if and only if `v` is a list."
+` { doc: "`list?(v)` - true if and only if `v` is a list."
+    type: "any → bool" }
 list?: __ISLIST
 
-` "`number?(v)` - true if and only if `v` is a number."
+` { doc: "`number?(v)` - true if and only if `v` is a number."
+    type: "any → bool" }
 number?: __ISNUMBER
 
-` "`string?(v)` - true if and only if `v` is a string."
+` { doc: "`string?(v)` - true if and only if `v` is a string."
+    type: "any → bool" }
 string?: __ISSTRING
 
-` "`symbol?(v)` - true if and only if `v` is a symbol."
+` { doc: "`symbol?(v)` - true if and only if `v` is a symbol."
+    type: "any → bool" }
 symbol?: __ISSYMBOL
 
-` "`bool?(v)` - true if and only if `v` is a boolean."
+` { doc: "`bool?(v)` - true if and only if `v` is a boolean."
+    type: "any → bool" }
 bool?: __ISBOOL
 
 ` { doc: "`elements(b)` - expose list of elements of block `b`."
@@ -710,22 +727,28 @@ negate: 0 -
     type: "number → number" }
 abs(n): if(n < 0, 0 - n, n)
 
-` "`zero?(n)` - return true if and only if number `n` is 0."
+` { doc: "`zero?(n)` - return true if and only if number `n` is 0."
+    type: "number → bool" }
 zero?: = 0
 
-` "`pos?(n)` - return true if and only if number `n` is strictly positive"
+` { doc: "`pos?(n)` - return true if and only if number `n` is strictly positive."
+    type: "number → bool" }
 pos?: > 0
 
-` "`neg?(n)` - return true if and only if number `n` is strictly negative"
+` { doc: "`neg?(n)` - return true if and only if number `n` is strictly negative."
+    type: "number → bool" }
 neg?: < 0
 
-` "`num(s)` - parse number from string"
+` { doc: "`num(s)` - parse number from string."
+    type: "string → number" }
 num: __NUMPARSE
 
-` "`floor(n)` - round number downwards to nearest integer"
+` { doc: "`floor(n)` - round number downwards to nearest integer."
+    type: "number → number" }
 floor: __FLOOR
 
-` "`ceiling(n)` - round number upwards to nearest integer"
+` { doc: "`ceiling(n)` - round number upwards to nearest integer."
+    type: "number → number" }
 ceiling: __CEILING
 
 ` "`⌈n⌉` - ceiling bracket notation, round `n` upwards to nearest integer"
@@ -734,19 +757,24 @@ ceiling: __CEILING
 ` "`⌊n⌋` - floor bracket notation, round `n` downwards to nearest integer"
 ⌊[x]⌋: x floor
 
-` "`pow(b, e)` - raise `b` to the power `e`"
+` { doc: "`pow(b, e)` - raise `b` to the power `e`."
+    type: "number → number → number" }
 pow(b, e): __POW(b, e)
 
-` "`div(a, b)` - floor division; same as `a / b`"
+` { doc: "`div(a, b)` - floor division; same as `a / b`."
+    type: "number → number → number" }
 div(a, b): __DIV(a, b)
 
-` "`mod(a, b)` - floor modulus; same as `a % b`"
+` { doc: "`mod(a, b)` - floor modulus; same as `a % b`."
+    type: "number → number → number" }
 mod(a, b): __MOD(a, b)
 
-` "`quot(a, b)` - truncation division; rounds toward zero"
+` { doc: "`quot(a, b)` - truncation division; rounds toward zero."
+    type: "number → number → number" }
 quot(a, b): __QUOT(a, b)
 
-` "`rem(a, b)` - truncation remainder; result has same sign as dividend"
+` { doc: "`rem(a, b)` - truncation remainder; result has same sign as dividend."
+    type: "number → number → number" }
 rem(a, b): __REM(a, b)
 
 # --- Bitwise operators ---
@@ -789,31 +817,40 @@ rem(a, b): __REM(a, b)
 ` { export: :suppress
     doc: "Bitwise utility functions for integer bit manipulation." }
 bit: {
-  ` "Bitwise AND of integers `l` and `r`."
+  ` { doc: "Bitwise AND of integers `l` and `r`."
+      type: "number → number → number" }
   and(l, r): __BITAND(l, r)
 
-  ` "Bitwise OR of integers `l` and `r`."
+  ` { doc: "Bitwise OR of integers `l` and `r`."
+      type: "number → number → number" }
   or(l, r): __BITOR(l, r)
 
-  ` "Bitwise XOR of integers `l` and `r`."
+  ` { doc: "Bitwise XOR of integers `l` and `r`."
+      type: "number → number → number" }
   xor(l, r): __BITXOR(l, r)
 
-  ` "Bitwise NOT of integer `n`."
+  ` { doc: "Bitwise NOT of integer `n`."
+      type: "number → number" }
   not(n): __BITNOT(n)
 
-  ` "Left shift `n` by `k` bits."
+  ` { doc: "Left shift `n` by `k` bits."
+      type: "number → number → number" }
   shl(n, k): __SHL(n, k)
 
-  ` "Arithmetic right shift `n` by `k` bits."
+  ` { doc: "Arithmetic right shift `n` by `k` bits."
+      type: "number → number → number" }
   shr(n, k): __SHR(n, k)
 
-  ` "Count set bits in integer `n`."
+  ` { doc: "Count set bits in integer `n`."
+      type: "number → number" }
   popcount(n): __POPCOUNT(n)
 
-  ` "Count trailing zeros in integer `n` (position of lowest set bit). Returns 64 if n is 0."
+  ` { doc: "Count trailing zeros in integer `n` (position of lowest set bit). Returns 64 if n is 0."
+      type: "number → number" }
   ctz(n): __CTZ(n)
 
-  ` "Count leading zeros in integer `n`."
+  ` { doc: "Count leading zeros in integer `n`."
+      type: "number → number" }
   clz(n): __CLZ(n)
 }
 
@@ -955,7 +992,8 @@ str: {
       type: "string → number" }
   len: count ∘ letters
 
-  ` "`fmt(x, spec)` - format `x` using printf-style format `spec`."
+  ` { doc: "`fmt(x, spec)` - format `x` using printf-style format `spec`."
+      type: "any → string → string" }
   fmt: __FMT
 
   ` { doc: "`to-upper(s)` - convert string `s` to upper case."
@@ -966,25 +1004,32 @@ str: {
       type: "string → string" }
   to-lower: __LOWER
 
-  ` "`lt(a, b)` - true if string `a` is lexicographically less than `b`."
+  ` { doc: "`lt(a, b)` - true if string `a` is lexicographically less than `b`."
+      type: "string → string → bool" }
   lt(a, b): a < b
 
-  ` "`gt(a, b)` - true if string `a` is lexicographically greater than `b`."
+  ` { doc: "`gt(a, b)` - true if string `a` is lexicographically greater than `b`."
+      type: "string → string → bool" }
   gt(a, b): a > b
 
-  ` "`lte(a, b)` - true if string `a` is lexicographically less than or equal to `b`."
+  ` { doc: "`lte(a, b)` - true if string `a` is lexicographically less than or equal to `b`."
+      type: "string → string → bool" }
   lte(a, b): a <= b
 
-  ` "`gte(a, b)` - true if string `a` is lexicographically greater than or equal to `b`."
+  ` { doc: "`gte(a, b)` - true if string `a` is lexicographically greater than or equal to `b`."
+      type: "string → string → bool" }
   gte(a, b): a >= b
 
-  ` "`base64-encode(s)` - encode string `s` as base64."
+  ` { doc: "`base64-encode(s)` - encode string `s` as base64."
+      type: "string → string" }
   base64-encode: __BASE64_ENCODE
 
-  ` "`base64-decode(s)` - decode base64 string `s` back to its original string."
+  ` { doc: "`base64-decode(s)` - decode base64 string `s` back to its original string."
+      type: "string → string" }
   base64-decode: __BASE64_DECODE
 
-  ` "`sha256(s)` - return the SHA-256 hash of string `s` as lowercase hex."
+  ` { doc: "`sha256(s)` - return the SHA-256 hash of string `s` as lowercase hex."
+      type: "string → string" }
   sha256: __SHA256
 
   ` { doc: "`replace(pattern, replacement, s)` - replace all occurrences of regex `pattern` with `replacement` in string `s`. Pipeline: s str.replace(pat, rep)."
@@ -1007,10 +1052,12 @@ str: {
       type: "string → string → bool" }
   ends-with?(re, s): __STR_CONTAINS([re, "$"] join-on(""), s)
 
-  ` "`shell-escape(s)` - wrap string in single quotes for safe shell use. Embedded single quotes are escaped."
+  ` { doc: "`shell-escape(s)` - wrap string in single quotes for safe shell use. Embedded single quotes are escaped."
+      type: "string → string" }
   shell-escape(s): [c"'", replace("'", c"'\\''", s), c"'"] join-on("")
 
-  ` "dq-escape(s) - escape string for use inside double quotes in shell commands. Escapes backslash, dollar, backtick, and double quote."
+  ` { doc: "dq-escape(s) - escape string for use inside double quotes in shell commands. Escapes backslash, dollar, backtick, and double quote."
+      type: "string → string" }
   dq-escape(s): s replace(c"\\\\", c"\\\\\\\\") replace("[$]", c"\\$") replace("[`]", c"\\`") replace(ch.dq, [c"\\", ch.dq] join-on(""))
 }
 
@@ -1018,13 +1065,16 @@ str: {
 ## Serialisation
 ##
 
-` "render(value) - serialise value to a YAML string."
+` { doc: "render(value) - serialise value to a YAML string."
+    type: "any → string" }
 render(value): __RENDER_TO_STRING(value, :yaml)
 
-` "render-as(fmt, value) - serialise value to a string in the named format. Pipeline-friendly: data render-as(:json). Supported formats: :yaml, :json, :toml, :text, :edn, :html, :eu."
+` { doc: "render-as(fmt, value) - serialise value to a string in the named format. Pipeline-friendly: data render-as(:json). Supported formats: :yaml, :json, :toml, :text, :edn, :html, :eu."
+    type: "symbol → any → string" }
 render-as(fmt, value): __RENDER_TO_STRING(value, fmt)
 
-` "parse-as(fmt, str) - parse a string of structured data in the named format and return eucalypt data. The inverse of render-as. Supported formats: :json, :yaml, :toml, :csv, :xml, :edn, :jsonl. Content is parsed as inert data; embedded eucalypt expressions (e.g. YAML !eu tags) are never evaluated."
+` { doc: "parse-as(fmt, str) - parse a string of structured data in the named format and return eucalypt data. The inverse of render-as. Supported formats: :json, :yaml, :toml, :csv, :xml, :edn, :jsonl. Content is parsed as inert data; embedded eucalypt expressions (e.g. YAML !eu tags) are never evaluated."
+    type: "symbol → string → any" }
 parse-as(fmt, str): __PARSE_STRING(fmt, str)
 
 ##
@@ -1072,13 +1122,16 @@ apply(f, xs): foldl(_0(_1), f, xs)
     type: "(a → b → c) → b → a → c" }
 flip(f, x, y): f(y, x)
 
-` "`complement(p?)` - invert truth value of predicate function."
+` { doc: "`complement(p?)` - invert truth value of predicate function."
+    type: "(a → bool) → a → bool" }
 complement(p?): compose(not, p?)
 
-` "`curry(f)` - turn f([x, y]) into f' of two parameters (x, y)."
+` { doc: "`curry(f)` - turn f([x, y]) into f' of two parameters (x, y)."
+    type: "([any] → c) → a → b → c" }
 curry(f, x, y): f([x, y])
 
-` "`uncurry(f)` - turn f(x, y) into f' that expects [x, y] as a list."
+` { doc: "`uncurry(f)` - turn f(x, y) into f' that expects [x, y] as a list."
+    type: "(a → b → c) → [any] → c" }
 uncurry(f, l): f(first(l), second(l))
 
 
@@ -1086,13 +1139,15 @@ uncurry(f, l): f(first(l), second(l))
     type: "[(bool, a)] → a → a" }
 cond(l, d): l foldr(uncurry(if), d)
 
-` "`juxt(f, g) - return function of `x` returning list of `f(x)` and g(x)`."
+` { doc: "`juxt(f, g) - return function of `x` returning list of `f(x)` and g(x)`."
+    type: "(a → b) → (a → c) → a → [any]" }
 juxt(f, g, x): [x f, x g]
 
 #
 # Utilities
 #
-` "`fnil(f, v, x)` - return a function equivalent to f except it sees `x` instead of `null` when null is passed."
+` { doc: "`fnil(f, v, x)` - return a function equivalent to f except it sees `x` instead of `null` when null is passed."
+    type: "(a → b) → a → a | null → b" }
 fnil(f, v, x): if(x = null, f(v), f(x))
 
 #
@@ -1218,15 +1273,18 @@ take(n, l): __IF((n zero?) ∨ (l nil?), [], cons(l head, take(n dec, l tail)))
     type: "number → [a] → [a]" }
 drop(n, l): __IF((n zero?), l, drop(n dec, l tail))
 
-` "`rotate(n, l)` - rotate list `l` left by `n` positions."
+` { doc: "`rotate(n, l)` - rotate list `l` left by `n` positions."
+    type: "number → [a] → [a]" }
 rotate(n, l): { s: split-at(n, l) }.(second(s) ++ first(s))
 
-` "'split-at(n, l) - split list in to at `n`th item and return pair."
+` { doc: "`split-at(n, l)` - split list into two at `n`th item and return pair."
+    type: "number → [a] → [[a]]" }
 split-at(n, l): {
   aux(n, xs, prefix): if((xs nil?) ∨ (n zero?), [prefix reverse, xs], aux(n dec, xs tail, cons(xs head, prefix)))
 }.aux(n, l, [])
 
-` "`transpose(rows)` - transpose a matrix (list of lists)."
+` { doc: "`transpose(rows)` - transpose a matrix (list of lists)."
+    type: "[[a]] → [[a]]" }
 transpose(rows): {
   aux(rs): if(rs head nil?, [], cons(rs map(head), aux(rs map(tail))))
 }.aux(rows)
@@ -1237,17 +1295,20 @@ take-while(p?, l): {
   aux(xs, prefix): if(not(xs nil?) ∧ (xs head p?), aux(xs tail, cons(xs head, prefix)), prefix reverse)
 }.aux(l, [])
 
-` "`take-until(p?, l)` - initial elements of list `l` while `p?` is false."
+` { doc: "`take-until(p?, l)` - initial elements of list `l` while `p?` is false."
+    type: "(a → bool) → [a] → [a]" }
 take-until(p?): take-while(p? complement)
 
 ` { doc: "`drop-while(p?, l)` - skip initial elements of list `l` while `p?` is true."
     type: "(a → bool) → [a] → [a]" }
 drop-while(p?, l): if(l nil?, [], if(l head p?, drop-while(p?, l tail), l))
 
-` "`drop-until(p?, l)` - skip initial elements of list `l` while `p?` is false."
+` { doc: "`drop-until(p?, l)` - skip initial elements of list `l` while `p?` is false."
+    type: "(a → bool) → [a] → [a]" }
 drop-until(p?): drop-while(p? complement)
 
-` "`split-after(p?, l) - split list where `p?` becomes false and return pair."
+` { doc: "`split-after(p?, l)` - split list where `p?` becomes false and return pair."
+    type: "(a → bool) → [a] → [[a]]" }
 split-after(p?, l): {
   aux(xs, prefix): if(xs nil?, [prefix reverse, []],
                      if(xs head p?,
@@ -1255,7 +1316,8 @@ split-after(p?, l): {
                         [prefix reverse, xs]))
 }.aux(l, [])
 
-` "`split-when(p?, l) - split list where `p?` becomes true and return pair."
+` { doc: "`split-when(p?, l)` - split list where `p?` becomes true and return pair."
+    type: "(a → bool) → [a] → [[a]]" }
 split-when(p?, l): split-after(p? complement, l)
 
 ` { doc: "`nth(n, l)` - return `n`th item of list if it exists, otherwise panic."
@@ -1285,30 +1347,36 @@ repeat(i): __CONS(i, repeat(i))
     type: "(b → a → b) → b → [a] → b" }
 foldl(op, i, l): if(l nil?, i, foldl(op, op(i, l head), l tail))
 
-` "`reduce(op, l)` - left fold with no initial value; uses first element as seed. Panics on empty list."
+` { doc: "`reduce(op, l)` - left fold with no initial value; uses first element as seed. Panics on empty list."
+    type: "(a → a → a) → [a] → a" }
 reduce(op, l): foldl(op, l head, l tail)
 
 ` { doc: "`foldr(op, i, l)` - right fold operator `op` over list `l` ending with value `i`."
     type: "(a → b → b) → b → [a] → b" }
 foldr(op, i, l): if(l nil?, i, op(l head, foldr(op, i, l tail)))
 
-` "`scanl(op, i, l)` - left scan operator `op` over list `l` starting from value `i` "
-scanl(op, i, l): if(l nil?, [i], scanl(op, op(i, l head), l tail) cons(i)) 
+` { doc: "`scanl(op, i, l)` - left scan operator `op` over list `l` starting from value `i`."
+    type: "(b → a → b) → b → [a] → [b]" }
+scanl(op, i, l): if(l nil?, [i], scanl(op, op(i, l head), l tail) cons(i))
 
-` "`scanr(op, i, l)` - right scan operator `op` over list `l` ending with value `i` "
+` { doc: "`scanr(op, i, l)` - right scan operator `op` over list `l` ending with value `i`."
+    type: "(a → b → b) → b → [a] → [b]" }
 scanr(op, i, l): if(l nil?, [i], { scan: scanr(op, i, l tail) }.(cons(op(l head, scan head), scan)))
 
-` "`iterate(f, i) - return list of `i` with subsequent repeated applications of `f` to `i`"
+` { doc: "`iterate(f, i)` - return list of `i` with subsequent repeated applications of `f` to `i`."
+    type: "(a → a) → a → [a]" }
 iterate(f, i): cons(i, iterate(f, f(i)))
 
-` "`tails(l)` - return list of successive tails of `l`: `[l, tail(l), tail(tail(l)), ...]`."
+` { doc: "`tails(l)` - return list of successive tails of `l`: `[l, tail(l), tail(tail(l)), ...]`."
+    type: "[a] → [[a]]" }
 tails(l): iterate(tail, l) take-while(non-nil?)
 
 ` { doc: "`iota(n)` - return infinite list of integers from `n` upwards."
     type: "number → [number]" }
 iota(n): cons(n, iota(n + 1))
 
-` "`ints-from(n)` - return infinite list of integers from `n` upwards, alias `iota` for backwards compatibility`"
+` { doc: "`ints-from(n)` - return infinite list of integers from `n` upwards, alias `iota` for backwards compatibility."
+    type: "number → [number]" }
 ints-from: iota
 
 ` { doc: "`ℕ` - the natural numbers: `[0, 1, 2, ...]`."
@@ -1323,10 +1391,12 @@ range(b, e): ints-from(b) take(e - b)
     type: "[a] → number" }
 count(l): foldl({ n: • el: •}.(n inc), 0, l)
 
-` "`last(l)` - return last element of list `l`"
+` { doc: "`last(l)` - return last element of list `l`."
+    type: "[a] → a" }
 last: head ∘ reverse
 
-` "`butlast(l)` - return all elements of list `l` except the last."
+` { doc: "`butlast(l)` - return all elements of list `l` except the last."
+    type: "[a] → [a]" }
 butlast(l): l reverse tail reverse
 
 ` { doc: "`cycle(l)` - create infinite list by cycling elements of list `l`."
@@ -1343,14 +1413,16 @@ map(f, l): if(l nil?, l, cons(l head f, l tail map(f)))
     precedence: :map }
 (f <$> l): map(f, l)
 
-` "`map(f, l1, l2)` - map function `f` over lists `l1` and `l2`, until the shorter is exhausted."
+` { doc: "`map2(f, l1, l2)` - map function `f` over lists `l1` and `l2`, until the shorter is exhausted."
+    type: "(a → b → c) → [a] → [b] → [c]" }
 map2(f, l1, l2): if(nil?(l1) || nil?(l2), [], cons(f(l1 head, l2 head), map2(f, l1 tail, l2 tail)))
 
-` "`zip-with(f, l1, l2)` - map function `f` over lists `l1` and `l2`, until the shorter is exhausted."
+` { doc: "`zip-with(f, l1, l2)` - map function `f` over lists `l1` and `l2`, until the shorter is exhausted."
+    type: "(a → b → c) → [a] → [b] → [c]" }
 zip-with: map2
 
 ` { doc: "`zip(l1, l2)` - list of pairs of elements  `l1` and `l2`, until the shorter is exhausted."
-    type: "[a] → [b] → [(a, b)]" }
+    type: "[a] → [b] → [[any]]" }
 zip: zip-with(pair)
 
 # type: [(a, b)] → ([a], [b])  — checker cannot infer tuples from list literals yet
@@ -1361,20 +1433,24 @@ unzip(pairs): [pairs map(first), pairs map(second)]
     type: "[a] → [a] → [a]" }
 interleave(a, b): if(a nil?, b, cons(a head, interleave(b, a tail)))
 
-` "`cross(f, xs, ys)` - apply `f` to every combination of elements from `xs` and `ys` (cartesian product)."
+` { doc: "`cross(f, xs, ys)` - apply `f` to every combination of elements from `xs` and `ys` (cartesian product)."
+    type: "(a → b → c) → [a] → [b] → [c]" }
 cross(f, xs, ys): xs mapcat({x: •}.(ys map(f(x))))
 
 ` { doc: "`filter(p?, l)` - return list of elements of list `l` that satisfy predicate `p?`."
     type: "(a → bool) → [a] → [a]" }
 filter(p?, l): foldr({x: • xs: • }.(if(x p?, cons(x, xs), xs)), [], l)
 
-` "`remove(p?, l)` - return list of elements of list `l` that do not satisfy predicate `p?`."
+` { doc: "`remove(p?, l)` - return list of elements of list `l` that do not satisfy predicate `p?`."
+    type: "(a → bool) → [a] → [a]" }
 remove(p?, l): l filter(p? complement)
 
-` "`append(l1, l2)` - concatenate two lists `l1` and `l2`."
+` { doc: "`append(l1, l2)` - concatenate two lists `l1` and `l2`."
+    type: "[a] → [a] → [a]" }
 append(l1, l2): foldr(cons, l2, l1)
 
-` "`prepend(l1, l2)` - concatenate two lists with `l1` after `l2`."
+` { doc: "`prepend(l1, l2)` - concatenate two lists with `l1` after `l2`."
+    type: "[a] → [a] → [a]" }
 prepend: flip(append)
 
 ` { doc: "`l1 ++ l2` - concatenate lists `l1` and `l2`."
@@ -1392,7 +1468,8 @@ concat(ls): foldr(append, [], ls)
     type: "(a → [b]) → [a] → [b]" }
 mapcat(f): concat ∘ map(f)
 
-` "`zip-apply(fs, vs)` - apply fns in list `fs` to corresponding values in list `vs`, until shorter is exhausted."
+` { doc: "`zip-apply(fs, vs)` - apply fns in list `fs` to corresponding values in list `vs`, until shorter is exhausted."
+    type: "[(a → b)] → [a] → [b]" }
 zip-apply(fs, vs): zip-with(_0(_1), fs, vs)
 
 ` { doc: "`reverse(l)` - reverse list `l`."
@@ -1431,14 +1508,16 @@ window-all(n, step, l): { chunk: l take(n) }.(if(chunk nil?, [], cons(chunk, (if
     type: "number → [a] → [[a]]" }
 partition-all(n): window-all(n, n)
 
-` "`over-sliding-pairs(f, l)` - apply binary fn `f` to each overlapping pair in `l` to form new list"
+` { doc: "`over-sliding-pairs(f, l)` - apply binary fn `f` to each overlapping pair in `l` to form new list."
+    type: "(a → a → b) → [a] → [b]" }
 over-sliding-pairs(f, l): l window(2, 1) map(f uncurry)
 
-` "differences(l) - calculate difference between each overlapping pair in list of numbers `l`"
+` { doc: "`differences(l)` - calculate difference between each overlapping pair in list of numbers `l`."
+    type: "[number] → [number]" }
 differences: over-sliding-pairs(_1 - _0)
 
 ` { doc: "`discriminate(pred, xs)` - return pair of `xs` for which `pred(_)` is true and `xs` for which `pred(_)` is false."
-    type: "(a → bool) → [a] → ([a], [a])" }
+    type: "(a → bool) → [a] → [any]" }
 discriminate(pred, xs): {
   acc(a, e): a if(e pred, bimap(cons(e), identity), bimap(identity, cons(e)))
 }.(xs foldl(acc, [[], []]) bimap(reverse, reverse))
@@ -1460,7 +1539,8 @@ group-consecutive-by(f, xs): if(xs nil?, [],
 ` "`group-consecutive(xs)` - group consecutive equal elements into sublists."
 group-consecutive: group-consecutive-by(identity)
 
-` "`uniq(xs)` - remove consecutive duplicates from a list."
+` { doc: "`uniq(xs)` - remove consecutive duplicates from a list."
+    type: "[a] → [a]" }
 uniq(xs): xs group-consecutive map(head)
 
 ` { doc: "`nub-by(key, xs)` - remove duplicates from `xs`, keeping the first occurrence of each distinct `key(x)` value. Unlike `uniq`, works on non-consecutive duplicates."
@@ -1516,7 +1596,8 @@ running-sum: '__RUNNING_SUM'
     type: "[string] → [string]" }
 sort-strs(xs): xs qsort(<)
 
-` "`sort-zdts(xs)` - sort list of zoned date-times ascending."
+` { doc: "`sort-zdts(xs)` - sort list of zoned date-times ascending."
+    type: "[datetime] → [datetime]" }
 sort-zdts(xs): xs qsort(<)
 
 ` { doc: "`sort-by(key-fn, cmp, xs)` - sort list `xs` by key extracted with `key-fn` using comparator `cmp`."
@@ -1529,10 +1610,12 @@ sort-by(key-fn, cmp, xs): {
     type: "(a → number) → [a] → [a]" }
 sort-by-num(key-fn): sort-by(key-fn, <)
 
-` "`sort-by-str(key-fn, xs)` - sort list `xs` ascending by string key extracted with `key-fn`."
+` { doc: "`sort-by-str(key-fn, xs)` - sort list `xs` ascending by string key extracted with `key-fn`."
+    type: "(a → string) → [a] → [a]" }
 sort-by-str(key-fn): sort-by(key-fn, <)
 
-` "`sort-by-zdt(key-fn, xs)` - sort list `xs` ascending by zoned date-time key extracted with `key-fn`."
+` { doc: "`sort-by-zdt(key-fn, xs)` - sort list `xs` ascending by zoned date-time key extracted with `key-fn`."
+    type: "(a → datetime) → [a] → [a]" }
 sort-by-zdt(key-fn): sort-by(key-fn, <)
 
 #
@@ -1543,10 +1626,12 @@ sort-by-zdt(key-fn): sort-by(key-fn, <)
     type: "[{{..}}] → {{..}}" }
 merge-all(bs): foldl(merge, {}, bs)
 
-` "`key(pr)` - return key in a block element / pair."
+` { doc: "`key(pr)` - return key in a block element / pair."
+    type: "[a] → a" }
 key: head
 
-` "`value(pr)` - return key in a block element / pair."
+` { doc: "`value(pr)` - return value in a block element / pair."
+    type: "[a] → a" }
 value: second
 
 ` { doc: "`keys(b)` - return keys of block `b`."
@@ -1557,17 +1642,21 @@ keys(b): b elements map(key)
     type: "{{..}} → [any]" }
 values(b): b elements map(value)
 
-` "`sort-keys(b)` - return block `b` with keys sorted alphabetically."
+` { doc: "`sort-keys(b)` - return block `b` with keys sorted alphabetically."
+    type: "{{..}} → {{..}}" }
 sort-keys(b): b elements qsort(pair-key-lt) block
   pair-key-lt(p1, p2): key(p1) < key(p2)
 
-` "`bimap(f, g, pr)` - apply f to first item of pair and g to second, return pair."
+` { doc: "`bimap(f, g, pr)` - apply f to first item of pair and g to second, return pair."
+    type: "(a → c) → (b → d) → [any] → [any]" }
 bimap(f, g, pr): [f(first(pr)), g(second(pr))]
 
-` "`map-first(f, prs)` - apply f to first elements of all pairs in list of pairs `prs`."
+` { doc: "`map-first(f, prs)` - apply f to first elements of all pairs in list of pairs `prs`."
+    type: "(a → b) → [[any]] → [[any]]" }
 map-first(f, prs): map(bimap(f, identity), prs)
 
-` "`map-second(f, prs)` - apply f to second elements of all pairs in list of pairs `prs`."
+` { doc: "`map-second(f, prs)` - apply f to second elements of all pairs in list of pairs `prs`."
+    type: "(a → b) → [[any]] → [[any]]" }
 map-second(f, prs): map(bimap(identity, f), prs)
 
 ` { doc: "`map-kv(f, b)` - apply `f(k, v)` to each key / value pair in block `b`, returning list."
@@ -1581,16 +1670,20 @@ map-elements(f, b): b elements map(f) block
 ` "`map-as-block(f, syms)` - map each symbol in `syms` and create block mapping `syms` to mapped values."
 map-as-block(f, syms): syms map({k: •}.[k, f(k)]) block
 
-` "`pair(k, v)` - form a block element from key (symbol) `k` and value `v`."
+` { doc: "`pair(k, v)` - form a block element from key (symbol) `k` and value `v`."
+    type: "a → b → [any]" }
 pair(k, v): [k, v]
 
-` "`kv-block(k, v)` - create a single-entry block from key `k` and value `v`."
+` { doc: "`kv-block(k, v)` - create a single-entry block from key `k` and value `v`."
+    type: "symbol → any → {{..}}" }
 kv-block(k, v): block([[k, v]])
 
-` "`zip-kv(ks, vs)` - create a block by zipping together keys `ks` and values `vs`."
+` { doc: "`zip-kv(ks, vs)` - create a block by zipping together keys `ks` and values `vs`."
+    type: "[symbol] → [any] → {{..}}" }
 zip-kv(ks, vs): zip-with(pair, ks, vs) block
 
-` "`with-keys(ks)` - create block from list of values by assigning list of keys `ks` against them"
+` { doc: "`with-keys(ks)` - create block from list of values by assigning list of keys `ks` against them."
+    type: "[symbol] → [any] → {{..}}" }
 with-keys: zip-kv
 
 ` { doc: "`map-values(f, b)` - apply `f(v)` to each value in block `b`."
@@ -1609,20 +1702,24 @@ filter-items(f, b): b elements filter(f)
     type: "(symbol → bool) → (symbol, any) → bool" }
 by-key(p?): p? ∘ key
 
-` "`by-key-name(p?)` - return item match function that checks predicate `p?` against string representation of the key."
+` { doc: "`by-key-name(p?)` - return item match function that checks predicate `p?` against string representation of the key."
+    type: "(string → bool) → (symbol, any) → bool" }
 by-key-name(p?): p? ∘ str.of ∘ key
 
-` "`by-key-match(re)` - return item match function that checks string representation of the key matches regex `re`."
+` { doc: "`by-key-match(re)` - return item match function that checks string representation of the key matches regex `re`."
+    type: "string → (symbol, any) → bool" }
 by-key-match(re): by-key-name(str.matches?(re))
 
 ` { doc: "`by-value(p?)` - return item match function that checks predicate `p?` against the item value."
     type: "(any → bool) → (symbol, any) → bool" }
 by-value(p?): p? ∘ value
 
-` "`match-filter-values` - return list of values from block `b` with keys matching regex `re`."
+` { doc: "`match-filter-values(re, b)` - return list of values from block `b` with keys matching regex `re`."
+    type: "string → {{..}} → [any]" }
 match-filter-values(re, b): b filter-items(by-key-match(re)) map(value)
 
-` "`filter-values(p?, b)` - return items from block `b` where values match predicate `p?`"
+` { doc: "`filter-values(p?, b)` - return items from block `b` where values match predicate `p?`."
+    type: "(any → bool) → {{..}} → [any]" }
 filter-values(p?, b): b values filter(p?)
 
 _block: {
@@ -1643,13 +1740,16 @@ alter-value(k, v, b): b map-kv(_block.alter?(= k, v)) block
     type: "symbol → (any → any) → {{..}} → {{..}}" }
 update-value(k, f, b): b map-kv(_block.update?(= k, f)) block
 
-` "`alter(ks, v, b)` - in nested block `b` alter value to value `v` at path-of-keys `ks`"
+` { doc: "`alter(ks, v, b)` - in nested block `b` alter value to value `v` at path-of-keys `ks`."
+    type: "[symbol] → any → {{..}} → {{..}}" }
 alter(ks, v, b): b foldr(update-value, const(v), ks)
 
-` "`update(ks, f, b)` - in nested block `b` applying `f` to value at path-of-keys `ks`"
+` { doc: "`update(ks, f, b)` - in nested block `b` apply `f` to value at path-of-keys `ks`."
+    type: "[symbol] → (any → any) → {{..}} → {{..}}" }
 update(ks, f, b): b foldr(update-value, f, ks)
 
-` "update-value-or(k, f, d, b) - set `b.k` to `f(v)` where v is current value, otherwise add with default value `d`."
+` { doc: "`update-value-or(k, f, d, b)` - set `b.k` to `f(v)` where v is current value, otherwise add with default value `d`."
+    type: "symbol → (any → any) → any → {{..}} → {{..}}" }
 update-value-or(k, f, d, b): {
   acc(st, el): if(k = (el key),
                   [cons([k, f(el value)], st first), []],
@@ -1660,21 +1760,24 @@ update-value-or(k, f, d, b): {
   final-block: final-state (append flip uncurry) reverse block
 }.final-block
 
-` "set-value(k, v, b) - set `b.k` to `v`, adding if absent."
+` { doc: "`set-value(k, v, b)` - set `b.k` to `v`, adding if absent."
+    type: "symbol → any → {{..}} → {{..}}" }
 set-value(k, v): update-value-or(k, const(v), v)
 
 ` "tongue(ks, v) - construct block with a single nested path-of-keys `ks` down to value `v`"
 tongue(ks, v): foldr({k: • e: •}.([[k, e]] block), v, ks) 
 
 
-` "merge-at(ks, v, b) - shallow merge block `v` into block value at path-of-keys `ks`"
+` { doc: "`merge-at(ks, v, b)` - shallow merge block `v` into block value at path-of-keys `ks`."
+    type: "[symbol] → {{..}} → {{..}} → {{..}}" }
 merge-at(ks, v, b): if(ks nil?,
                        merge(b, v),
                        b update-value-or(ks head,
 		                                        merge-at(ks tail, v),
                                             tongue(ks tail, v)))
 
-` "deep-merge-at(ks, v, b) - deep merge block `v` into block value at path-of-keys `ks`"
+` { doc: "`deep-merge-at(ks, v, b)` - deep merge block `v` into block value at path-of-keys `ks`."
+    type: "[symbol] → {{..}} → {{..}} → {{..}}" }
 deep-merge-at(ks, v, b): if(ks nil?,
                              deep-merge(b, v),
                              b update-value-or(ks head,
