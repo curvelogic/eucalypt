@@ -68,6 +68,57 @@ fn run_error_test(opt: &EucalyptOptions) {
     assert_eq!(exit_code, 0);
 }
 
+/// Run a type check test via `eu check --strict`.
+///
+/// Validates exit code and stderr content against the `.expect` sidecar.
+fn run_typecheck_test(filename: &str) {
+    let path = format!("tests/harness/typecheck/{filename}");
+    let expect_path = format!("{path}.expect");
+
+    let output = std::process::Command::new(eu_binary())
+        .args(["check", "--strict", &path])
+        .output()
+        .expect("failed to run eu check");
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    // Parse the .expect sidecar
+    let expect_content =
+        std::fs::read_to_string(&expect_path).unwrap_or_else(|_| panic!("missing {expect_path}"));
+
+    let mut expected_exit: Option<i32> = None;
+    let mut expected_stderr: Option<String> = None;
+
+    for line in expect_content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(code) = line.strip_prefix("exit:") {
+            expected_exit = Some(code.trim().parse().expect("invalid exit code in .expect"));
+        }
+        if let Some(pattern) = line.strip_prefix("stderr:") {
+            let pattern = pattern.trim().trim_matches('"');
+            expected_stderr = Some(pattern.to_string());
+        }
+    }
+
+    if let Some(expected) = expected_exit {
+        assert_eq!(
+            exit_code, expected,
+            "exit code mismatch for {filename}: expected {expected}, got {exit_code}\nstderr: {stderr}"
+        );
+    }
+
+    if let Some(pattern) = &expected_stderr {
+        assert!(
+            stderr.contains(pattern.as_str()),
+            "stderr for {filename} does not contain \"{pattern}\"\nactual stderr:\n{stderr}"
+        );
+    }
+}
+
 #[test]
 pub fn test_harness_001() {
     run_test(&opts("001_ski.eu").without_prelude());
@@ -1484,4 +1535,36 @@ pub fn test_harness_146() {
 #[test]
 pub fn test_harness_147() {
     run_test(&opts("147_type_annotations.eu"));
+}
+
+// ── Type check message tests ──────────────────────────────────────────────────
+
+#[test]
+pub fn test_typecheck_001_arg_mismatch() {
+    run_typecheck_test("001_arg_mismatch.eu");
+}
+
+#[test]
+pub fn test_typecheck_002_multi_arg() {
+    run_typecheck_test("002_multi_arg.eu");
+}
+
+#[test]
+pub fn test_typecheck_003_annotation_mismatch() {
+    run_typecheck_test("003_annotation_mismatch.eu");
+}
+
+#[test]
+pub fn test_typecheck_004_invalid_annotation() {
+    run_typecheck_test("004_invalid_annotation.eu");
+}
+
+#[test]
+pub fn test_typecheck_005_no_warnings() {
+    run_typecheck_test("005_no_warnings.eu");
+}
+
+#[test]
+pub fn test_typecheck_006_polymorphic() {
+    run_typecheck_test("006_polymorphic.eu");
 }
