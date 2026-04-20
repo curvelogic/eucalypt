@@ -129,6 +129,12 @@ pub enum Type {
     /// Union type: `A | B`.
     Union(Vec<Type>),
 
+    // ── Literal types ────────────────────────────────────────────────────────
+    /// Literal symbol type: a specific symbol value (e.g. `:active`).
+    ///
+    /// `LiteralSymbol(s)` is a subtype of `Symbol`.
+    LiteralSymbol(String),
+
     // ── Variables ────────────────────────────────────────────────────────────
     /// Type variable (lowercase identifier, e.g. `a`, `b`, `result`).
     Var(TypeVarId),
@@ -149,6 +155,7 @@ impl fmt::Display for Type {
             Type::Set => write!(f, "set"),
             Type::Vec => write!(f, "vec"),
             Type::Array => write!(f, "array"),
+            Type::LiteralSymbol(name) => write!(f, ":{name}"),
             Type::Var(v) => write!(f, "{v}"),
             Type::List(inner) => write!(f, "[{inner}]"),
             Type::Tuple(elems) => {
@@ -332,6 +339,15 @@ mod tests {
         assert_eq!(Type::Set.to_string(), "set");
         assert_eq!(Type::Vec.to_string(), "vec");
         assert_eq!(Type::Array.to_string(), "array");
+    }
+
+    #[test]
+    fn display_literal_symbol() {
+        assert_eq!(
+            Type::LiteralSymbol("active".to_string()).to_string(),
+            ":active"
+        );
+        assert_eq!(Type::LiteralSymbol("foo".to_string()).to_string(), ":foo");
     }
 
     #[test]

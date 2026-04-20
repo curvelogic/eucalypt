@@ -742,7 +742,7 @@ fn synthesise_primitive(prim: &Primitive) -> Type {
     match prim {
         Primitive::Num(_) => Type::Number,
         Primitive::Str(_) => Type::String,
-        Primitive::Sym(_) => Type::Symbol,
+        Primitive::Sym(name) => Type::LiteralSymbol(name.clone()),
         Primitive::Bool(_) => Type::Bool,
         Primitive::Null => Type::Null,
     }
@@ -877,7 +877,10 @@ mod tests {
     #[test]
     fn synthesise_symbol_literal() {
         let mut c = Checker::new();
-        assert_eq!(c.synthesise(&sym_lit("foo")), Type::Symbol);
+        assert_eq!(
+            c.synthesise(&sym_lit("foo")),
+            Type::LiteralSymbol("foo".to_string())
+        );
     }
 
     #[test]
