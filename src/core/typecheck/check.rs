@@ -551,8 +551,24 @@ impl Checker {
 
         match func_type {
             Type::Function(param_type, result_type) => {
-                let arg_type = self.synthesise(arg);
                 let param_applied = apply_subst(&param_type, subst);
+
+                // When the parameter is a Tuple and the argument is a list
+                // literal with matching arity, use checking mode (element-wise)
+                // rather than synthesis (which loses tuple structure).
+                if let Type::Tuple(elem_types) = &param_applied {
+                    if let Expr::List(_, items) = &*arg.inner {
+                        if items.len() == elem_types.len() {
+                            for (item, expected_elem) in items.iter().zip(elem_types.iter()) {
+                                let item_smid = item.smid();
+                                self.check_against(item, expected_elem, item_smid);
+                            }
+                            return apply_subst(&result_type, subst);
+                        }
+                    }
+                }
+
+                let arg_type = self.synthesise(arg);
 
                 if !is_informative(&arg_type) || !is_informative(&param_applied) {
                     // Gradual boundary — no warning.

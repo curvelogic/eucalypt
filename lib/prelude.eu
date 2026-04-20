@@ -1126,8 +1126,8 @@ flip(f, x, y): f(y, x)
     type: "(a → bool) → a → bool" }
 complement(p?): compose(not, p?)
 
-` { doc: "`curry(f)` - turn f([x, y]) into f(x, y). Semantically: ((a, b) → c) → a → b → c."
-    type: "([any] → c) → a → b → c" }
+` { doc: "`curry(f)` - turn f((x, y)) into f(x, y)."
+    type: "((a, b) → c) → a → b → c" }
 curry(f, x, y): f([x, y])
 
 ` { doc: "`uncurry(f)` - turn f(x, y) into f([x, y]). Semantically: (a → b → c) → (a, b) → c."
