@@ -173,11 +173,11 @@ element(p?, k): {
 }.(s // meta(k))
 
 ` { doc: "`_value` lens focuses on the value (index 1) of a kv pair [key, value]."
-    type: "Lens([a], a)" }
+    type: "Lens((symbol, any), any)" }
 _value: ix(1)
 
 ` { doc: "`_key` lens focuses on the key (index 0) of a kv pair [key, value]."
-    type: "Lens([a], a)" }
+    type: "Lens((symbol, any), symbol)" }
 _key: ix(0)
 
 ` { target: :test-element }
