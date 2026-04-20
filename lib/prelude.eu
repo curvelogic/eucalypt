@@ -50,33 +50,33 @@ io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
   ##
 
   ` { doc: "Run a shell command via sh -c. Returns a block with stdout, stderr, and exit-code fields."
-      type: "string -> IO({{..}})" }
+      type: "string → IO({{..}})" }
   shell(c): __IO_ACTION({:io-shell cmd: c, timeout: 30})
 
   ` { doc: "Run a shell command via sh -c with extra options merged in. Options may include stdin and timeout."
-      type: "{{..}} -> string -> IO({{..}})" }
+      type: "{{..}} → string → IO({{..}})" }
   shell-with(opts, c): __IO_ACTION({:io-shell cmd: c, timeout: opts lookup-or(:timeout, 30), stdin: opts lookup-or(:stdin, null)})
 
   ` { doc: "Run a command directly without a shell. Returns a block with stdout, stderr, and exit-code fields."
-      type: "string -> IO({{..}})" }
+      type: "string → IO({{..}})" }
   exec([c : as]): __IO_ACTION({:io-exec cmd: c, args: as, timeout: 30})
 
   ` { doc: "Run a command directly without a shell, with extra options merged in. Options may include stdin and timeout."
-      type: "{{..}} -> string -> IO({{..}})" }
+      type: "{{..}} → string → IO({{..}})" }
   exec-with(opts, [c : as]): __IO_ACTION({:io-exec cmd: c, args: as, timeout: opts lookup-or(:timeout, 30), stdin: opts lookup-or(:stdin, null)})
 
   ` { doc: "Check a command result: if exit-code is non-zero, fail with the stderr message; otherwise return the result."
-      type: "{{..}} -> IO({{..}})" }
+      type: "{{..}} → IO({{..}})" }
   check(result): if(result.'exit-code' = 0,
     io.return(result),
     __IO_ACTION({:io-fail message: result.stderr}))
 
   ` { doc: "Pipeline-friendly check: bind the preceding IO action through check."
-      type: "IO({{..}}) -> IO({{..}})" }
+      type: "IO({{..}}) → IO({{..}})" }
   checked: io.and-then(io.check)
 
   ` { doc: "Fail the IO action with the given error message."
-      type: "string -> IO(a)" }
+      type: "string → IO(a)" }
   fail(msg): __IO_ACTION({:io-fail message: msg})
 }
 
@@ -90,7 +90,7 @@ io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
 list-map: map
 
 ` { doc: "monad(m) - derive standard monad combinators from a block m with bind and return fields. Returns a block with bind, return, map, then, join, sequence, map-m, and filter-m."
-    type: "{{..}} -> {{..}}" }
+    type: "{{..}} → {{..}}" }
 monad(m): {
   ` "Sequence two monadic actions: run action and pass its result to continuation."
   bind: m.bind
@@ -149,15 +149,15 @@ random-bind(m, f, stream): {
     monad: true }
 random: monad{bind: random-bind, return: random-ret} {
   ` { doc: "random.stream(seed) - create an opaque PRNG stream from integer seed."
-      type: "number -> any" }
+      type: "number → any" }
   stream(seed): __STREAM_NEW(seed)
 
   ` { doc: "random.as-list(stream) - convert an opaque random stream to a lazy cons-list of floats."
-      type: "any -> [number]" }
+      type: "any → [number]" }
   as-list(s): cons(__STREAM_VALUE(s), as-list(__STREAM_ADVANCE(s)))
 
   ` { doc: "random.float - state-monad action returning a random float in [0,1)."
-      type: "any -> {{..}}" }
+      type: "any → {{..}}" }
   float(s): {
     pair: __STREAM_FLOAT(s)
     value: pair head
@@ -165,7 +165,7 @@ random: monad{bind: random-bind, return: random-ret} {
   }
 
   ` { doc: "random.int(n) - state-monad action returning a random integer in [0,n)."
-      type: "number -> any -> {{..}}" }
+      type: "number → any → {{..}}" }
   int(n, s): {
     pair: __STREAM_INT(n, s)
     value: pair head
@@ -173,7 +173,7 @@ random: monad{bind: random-bind, return: random-ret} {
   }
 
   ` { doc: "random.split - state-monad action that splits the stream into two independent streams. Returns a value/rest block where value and rest are each independent streams."
-      type: "any -> {{..}}" }
+      type: "any → {{..}}" }
   split(s): {
     pair: __STREAM_SPLIT(s)
     value: pair head
@@ -181,7 +181,7 @@ random: monad{bind: random-bind, return: random-ret} {
   }
 
   ` { doc: "random.choice(list) - state-monad action returning a random element from list."
-      type: "[a] -> any -> {{..}}" }
+      type: "[a] → any → {{..}}" }
   choice(lst, stream): {
     r: int(lst count, stream)
     next: random-ret(lst nth(r.value), r.rest)
@@ -190,7 +190,7 @@ random: monad{bind: random-bind, return: random-ret} {
   }
 
   ` { doc: "random.shuffle(list) - state-monad action returning a shuffled copy of list."
-      type: "[a] -> any -> {{..}}" }
+      type: "[a] → any → {{..}}" }
   shuffle(lst): {
     shuffle-impl(remaining, n, acc, stream):
       if(n = 0,
@@ -207,7 +207,7 @@ random: monad{bind: random-bind, return: random-ret} {
   }.(shuffle-impl(lst, lst count, []))
 
   ` { doc: "random.sample(n, list) - state-monad action returning n elements sampled without replacement."
-      type: "number -> [a] -> any -> {{..}}" }
+      type: "number → [a] → any → {{..}}" }
   sample(n, lst, stream): {
     shuffled: shuffle(lst, stream)
     value: shuffled.value take(n)
@@ -215,15 +215,15 @@ random: monad{bind: random-bind, return: random-ret} {
   }
 
   ` { doc: "random.run(action, stream) - run a random action on a stream; returns a value/rest block."
-      type: "(any -> {{..}}) -> any -> {{..}}" }
+      type: "(any → {{..}}) → any → {{..}}" }
   run(action, stream): action(stream)
 
   ` { doc: "random.eval(action, stream) - run a random action and return only the value."
-      type: "(any -> {{..}}) -> any -> any" }
+      type: "(any → {{..}}) → any → any" }
   eval(action, stream): action(stream).value
 
   ` { doc: "random.exec(action, stream) - run a random action and return only the remaining stream."
-      type: "(any -> {{..}}) -> any -> any" }
+      type: "(any → {{..}}) → any → any" }
   exec(action, stream): action(stream).rest
 }
 
@@ -252,14 +252,14 @@ true: __TRUE
 false: __FALSE
 
 ` { doc: "`if(c, t, f)` - if `c` is `true`, return `t` else `f`."
-    type: "bool -> a -> a -> a" }
+    type: "bool → a → a → a" }
 if: __IF
 
 ` "`then(t, f, c)` - for pipeline if: - `x? then(t, f)``"
 then(t, f, c): if(c, t, f)
 
 ` { doc: "`when(p?, f, x)` - when `x` satisfies `p?` apply `f` else pass through unchanged."
-    type: "(a -> bool) -> (a -> a) -> a -> a" }
+    type: "(a → bool) → (a → a) → a → a" }
 when(p?, f, x): if(x p?, x f, x)
 
 ##
@@ -267,11 +267,11 @@ when(p?, f, x): if(x p?, x f, x)
 ##
 
 ` { doc: "`cons(h, t)` - construct new list by prepending item `h` to list `t`."
-    type: "a -> [a] -> [a]" }
+    type: "a → [a] → [a]" }
 cons: __CONS
 
 ` { doc: "`snoc(x, l)` - append element `x` to the end of list `l`."
-    type: "a -> [a] -> [a]" }
+    type: "a → [a] → [a]" }
 snoc(x, l): l ++ [x]
 
 ` { doc: "`x ‖ xs` - prepend element `x` to list `xs`. Right-associative cons operator."
@@ -280,7 +280,7 @@ snoc(x, l): l ++ [x]
 (x ‖ xs): __CONS(x, xs)
 
 ` { doc: "`head(xs)` - return the head item of list `xs`, panic if empty."
-    type: "[a] -> a" }
+    type: "[a] → a" }
 head: __HEAD
 
 ` { doc: "`↑xs` - return first element of list `xs`. Tight-binding prefix operator."
@@ -288,7 +288,7 @@ head: __HEAD
 (↑ xs): xs head
 
 ` { doc: "`nil?(xs)` - `true` if list `xs` is empty, `false` otherwise."
-    type: "[a] -> bool" }
+    type: "[a] → bool" }
 nil?: = []
 
 ` "`non-nil?(xs)` - `true` if list `xs` is non-empty, `false` otherwise."
@@ -299,14 +299,14 @@ non-nil?: nil? complement
 (x ✓): not(x = null)
 
 ` { doc: "`coalesce(xs)` - return the first non-null element from list `xs`, or null if all are null."
-    type: "[a | null] -> a | null" }
+    type: "[a | null] → a | null" }
 coalesce(xs): (xs nil?) then(null, (xs head)✓ then(xs head, xs tail coalesce))
 
 ` "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
 head-or(d, xs): xs nil? then(d, xs head)
 
 ` { doc: "`tail(xs)` - return list `xs` without the head item. [] causes error."
-    type: "[a] -> [a]" }
+    type: "[a] → [a]" }
 tail: __TAIL
 
 ` "`tail-or(xs, d)` - return list `xs` without the head item or `d` for empty list."
@@ -332,15 +332,15 @@ second-or(d, xs): xs tail-or([d]) head-or(d)
 sym: __SYM
 
 ` { doc: "`merge(b1, b2)` - shallow merge block `b2` on top of `b1`."
-    type: "{{..}} -> {{..}} -> {{..}}" }
+    type: "{{..}} → {{..}} → {{..}}" }
 merge: __MERGE
 
 ` { doc: "`deep-merge(b1, b2)` - deep merge block `b2` on top of `b1`, merges nested blocks but not lists."
-    type: "{{..}} -> {{..}} -> {{..}}" }
+    type: "{{..}} → {{..}} → {{..}}" }
 deep-merge: __DEEPMERGE
 
 ` { doc: "`l << r` - deep merge block `r` on top of `l`, merging nested blocks, not lists."
-    type: "{{..}} -> {{..}} -> {{..}}"
+    type: "{{..}} → {{..}} → {{..}}"
     export: :suppress
     associates: :left
     precedence: :append }
@@ -365,31 +365,31 @@ symbol?: __ISSYMBOL
 bool?: __ISBOOL
 
 ` { doc: "`elements(b)` - expose list of elements of block `b`."
-    type: "{{..}} -> [(symbol, any)]" }
+    type: "{{..}} → [(symbol, any)]" }
 elements: __ELEMENTS
 
 ` { doc: "`block(kvs)` - (re)construct block from list `kvs` of elements."
-    type: "[(symbol, any)] -> {{..}}" }
+    type: "[(symbol, any)] → {{..}}" }
 block: __BLOCK
 
 ` { doc: "`has(s, b)` - true if and only if block `b` has key (symbol) `s`."
-    type: "symbol -> {{..}} -> bool" }
+    type: "symbol → {{..}} → bool" }
 has(s, b): b map-values(const(true)) lookup-or(s, false)
 
 ` { doc: "`lookup(s, b)` - look up symbol `s` in block `b`, error if not found."
-    type: "symbol -> {{..}} -> any" }
+    type: "symbol → {{..}} → any" }
 lookup(s, b): __LOOKUP(s, b)
 
 ` { doc: "`lookup-in(b, s)` - look up symbol `s` in block `b`, error if not found."
-    type: "{{..}} -> symbol -> any" }
+    type: "{{..}} → symbol → any" }
 lookup-in(b, s): __LOOKUP(s, b)
 
 ` { doc: "`lookup-or(s, d, b)` - look up symbol `s` in block `b`, default `d` if not found."
-    type: "symbol -> a -> {{..}} -> any | a" }
+    type: "symbol → a → {{..}} → any | a" }
 lookup-or(s, d, b): __LOOKUPOR(s, d, b)
 
 ` { doc: "`lookup-or-in(b, s, d)` - look up symbol `s` in block `b`, default `d` if not found."
-    type: "{{..}} -> symbol -> a -> any | a" }
+    type: "{{..}} → symbol → a → any | a" }
 lookup-or-in(b, s, d): lookup-or(s, d, b)
 
 ` { doc: "a ~ :k - safe key lookup. Returns value at key :k if a is a block containing :k, else null. Null-propagating for chained navigation."
@@ -406,7 +406,7 @@ lookup-across(s, d, bs): {
 }.(foldr(f, d, bs))
 
 ` { doc: "`lookup-path(ks, b)` - look up value at key path `ks` in block `b`."
-    type: "[symbol] -> {{..}} -> any" }
+    type: "[symbol] → {{..}} → any" }
 lookup-path(ks, b): foldl(lookup-in, b, ks)
 
 ##
@@ -414,7 +414,7 @@ lookup-path(ks, b): foldl(lookup-in, b, ks)
 ##
 
 ` { doc: "`deep-fold(emit, next-state, s, b)` - depth-first fold over nested blocks and lists. `emit(state, block)` returns a list of results at each block node. `next-state(state, child-key)` updates state for recursion into a child. `s` is the initial state."
-    type: "(s -> {{..}} -> [b]) -> (s -> symbol -> s) -> s -> any -> [b]" }
+    type: "(s → {{..}} → [b]) → (s → symbol → s) → s → any → [b]" }
 deep-fold(emit, next-state, s, b): {
   walk-child(s, [ck, cv]): walk(next-state(s, ck), cv)
   walk(s, v): if(v block?,
@@ -487,7 +487,7 @@ deep-query-paths(pattern, b): b deep-query-fold(pattern) map(first)
 ##
 
 ` { doc: "`deep-transform(rule, data)` - recursively transform a nested structure. At each node, call `rule(node)`. If it returns non-null, use that as the replacement (stop recursing into that node). If it returns null, recurse into children (block values and list elements)."
-    type: "(any -> any | null) -> any -> any" }
+    type: "(any → any | null) → any → any" }
 deep-transform(rule, data): {
   attempt: rule(data)
   recurse: if(data block?, data map-values(deep-transform(rule)),
@@ -503,7 +503,7 @@ deep-transform(rule, data): {
 any?: const(true)
 
 ` { doc: "`match?(pattern, target)` - structural predicate. Returns true if `target` conforms to `pattern`. Pattern values are interpreted by type: blocks and lists recurse as sub-patterns, functions are applied as predicates, literals are exact equality checks. Open matching: extra keys in target are ignored."
-    type: "any -> any -> bool" }
+    type: "any → any → bool" }
 match?(pat, target): {
   mv?(p, actual):
     if(p block?, mb?(p, actual),
@@ -527,7 +527,7 @@ match?(pat, target): {
 ##
 
 ` { doc: "`not(b)` - toggle boolean."
-    type: "bool -> bool" }
+    type: "bool → bool" }
 not: __NOT
 
 ` { doc: "`!x` - not x, toggle boolean."
@@ -539,14 +539,14 @@ not: __NOT
 (¬ b): b not
 
 ` { doc: "`l && r` - true if and only if `l` and `r` are true."
-    type: "bool -> bool -> bool"
+    type: "bool → bool → bool"
     export: :suppress
     associates: :left
     precedence: :bool-prod }
 (l && r): __AND(l, r)
 
 ` { doc: "`and(l, r)` - true if and only if `l` and `r` are true."
-    type: "bool -> bool -> bool" }
+    type: "bool → bool → bool" }
 and: __AND
 
 ` { doc: "`l ∧ r` - true if and only if `l` and `r`"
@@ -556,11 +556,11 @@ and: __AND
 (l ∧ r): l && r
 
 ` { doc: "`or(l, r)` - true if and only if `l` or `r` is true."
-    type: "bool -> bool -> bool" }
+    type: "bool → bool → bool" }
 or: __OR
 
 ` { doc: "`l || r` - true if and only if `l` or `r`"
-    type: "bool -> bool -> bool"
+    type: "bool → bool → bool"
     export: :suppress
     associates: :left
     precedence: :bool-sum }
@@ -579,14 +579,14 @@ or: __OR
 ##
 
 ` { doc: "`l = r` - `true` if and only if value `l` equals value `r`."
-    type: "a -> a -> bool"
+    type: "a → a → bool"
     export: :suppress
     associates: :left
     precedence: :eq }
 (l = r): __EQ(l, r)
 
 ` { doc: "`l != r` - `true` if and only if value `l` is not equal to value `r`."
-    type: "a -> a -> bool"
+    type: "a → a → bool"
     export: :suppress
     associates: :left
     precedence: :eq }
@@ -603,70 +603,70 @@ or: __OR
 ##
 
 ` { doc: "`l + r` - adds `l` and `r`. For numbers, both must be numeric. For arrays, performs element-wise addition; one operand may be a scalar."
-    type: "number -> number -> number | [a] -> [a] -> [a] | array -> array -> array"
+    type: "number → number → number | [a] → [a] → [a] | array → array → array"
     export: :suppress
     associates: :left
     precedence: :sum }
 (l + r): __ADD(l, r)
 
 ` { doc: "`l - r` - subtracts `r` from `l`. For numbers, both must be numeric. For arrays, performs element-wise subtraction; one operand may be a scalar."
-    type: "number -> number -> number | array -> array -> array"
+    type: "number → number → number | array → array → array"
     export: :suppress
     associates: :left
     precedence: :sum }
 (l - r): __SUB(l, r)
 
 ` { doc: "`l ^ r` - raise `l` to the power `r`."
-    type: "number -> number -> number"
+    type: "number → number → number"
     export: :suppress
     associates: :right
     precedence: :exp }
 (l ^ r): __POW(l, r)
 
 ` { doc: "`l * r` - multiplies `l` and `r`. For numbers, both must be numeric. For arrays, performs element-wise multiplication; one operand may be a scalar."
-    type: "number -> number -> number | array -> array -> array"
+    type: "number → number → number | array → array → array"
     export: :suppress
     associates: :left
     precedence: :prod }
 (l * r): __MUL(l, r)
 
 ` { doc: "`l / r` - floor division of `l` by `r` for numbers (rounds toward negative infinity; always returns integer). For arrays, performs element-wise division; one operand may be a scalar."
-    type: "number -> number -> number | array -> array -> array"
+    type: "number → number → number | array → array → array"
     export: :suppress
     associates: :left
     precedence: :prod }
 (l / r): __DIV(l, r)
 
 ` { doc: "`l ÷ r` - precise division of `l` by `r`; returns exact result."
-    type: "number -> number -> number"
+    type: "number → number → number"
     export: :suppress
     associates: :left
     precedence: :prod }
 (l ÷ r): __PDIV(l, r)
 
 ` { doc: "`l % r` - floor modulus of `l` by `r`; result has same sign as `r`."
-    type: "number -> number -> number"
+    type: "number → number → number"
     export: :suppress
     associates: :left
     precedence: :prod }
 (l % r): __MOD(l, r)
 
 ` { doc: "`l < r` - `true` if `l` is less than `r`. Works on numbers, strings, symbols, and datetimes."
-    type: "number -> number -> bool | string -> string -> bool | symbol -> symbol -> bool | datetime -> datetime -> bool"
+    type: "number → number → bool | string → string → bool | symbol → symbol → bool | datetime → datetime → bool"
     export: :suppress
     associates: :left
     precedence: :cmp }
 (l < r): __LT(l, r)
 
 ` { doc: "`l > r` - `true` if `l` is greater than `r`. Works on numbers, strings, symbols, and datetimes."
-    type: "number -> number -> bool | string -> string -> bool | symbol -> symbol -> bool | datetime -> datetime -> bool"
+    type: "number → number → bool | string → string → bool | symbol → symbol → bool | datetime → datetime → bool"
     export: :suppress
     associates: :left
     precedence: :cmp }
 (l > r): __GT(l, r)
 
 ` { doc: "`l <= r` - `true` if `l` is less than or equal to `r`. Works on numbers, strings, symbols, and datetimes."
-    type: "number -> number -> bool | string -> string -> bool | symbol -> symbol -> bool | datetime -> datetime -> bool"
+    type: "number → number → bool | string → string → bool | symbol → symbol → bool | datetime → datetime → bool"
     export: :suppress
     associates: :left
     precedence: :cmp }
@@ -679,7 +679,7 @@ or: __OR
 (l ≤ r): l <= r
 
 ` { doc: "`l >= r` - `true` if `l` is greater than or equal to `r`. Works on numbers, strings, symbols, and datetimes."
-    type: "number -> number -> bool | string -> string -> bool | symbol -> symbol -> bool | datetime -> datetime -> bool"
+    type: "number → number → bool | string → string → bool | symbol → symbol → bool | datetime → datetime → bool"
     export: :suppress
     associates: :left
     precedence: :cmp }
@@ -692,22 +692,22 @@ or: __OR
 (l ≥ r): l >= r
 
 ` { doc: "`inc(x)` - increment number `x` by 1."
-    type: "number -> number" }
+    type: "number → number" }
 inc: _ + 1
 
 ` { doc: "`dec(x)` - decrement number `x` by 1."
-    type: "number -> number" }
+    type: "number → number" }
 dec: _ - 1
 
 ` { doc: "`negate(n)` - negate number `n`."
-    type: "number -> number" }
+    type: "number → number" }
 negate: 0 -
 
 ` "`∸ n` - unary minus; negate."
 (∸ n): negate(n)
 
 ` { doc: "`abs(n)` - absolute value of number `n`."
-    type: "number -> number" }
+    type: "number → number" }
 abs(n): if(n < 0, 0 - n, n)
 
 ` "`zero?(n)` - return true if and only if number `n` is 0."
@@ -812,15 +812,15 @@ bit: {
 }
 
 ` { doc: "`sum(l)` - sum a list of numbers."
-    type: "[number] -> number" }
+    type: "[number] → number" }
 sum(l): foldl(+, 0, l)
 
 ` { doc: "`product(l)` - multiply a list of numbers."
-    type: "[number] -> number" }
+    type: "[number] → number" }
 product(l): foldl(*, 1, l)
 
 ` { doc: "`max(l, r)` - return max of numbers `l` and `r`."
-    type: "number -> number -> number" }
+    type: "number → number → number" }
 max(l, r): if(l > r, l, r)
 
 ` "`max-of(l) - return max element in list of numbers `l` - error if empty`"
@@ -845,7 +845,7 @@ max-map(f, l): l map(f) max-of
 max-of-or(d, l): l nil? then(d, max-of(l))
 
 ` { doc: "`min(l, r)` - return min of numbers `l` and `r`."
-    type: "number -> number -> number" }
+    type: "number → number → number" }
 min(l, r): if(l < r, l, r)
 
 ` "`min-of(l) - return min element in list of numbers `l` - error if empty`"
@@ -887,77 +887,77 @@ ch: {
 str: {
 
   ` { doc: "of(e) - convert `e` to string."
-      type: "any -> string" }
+      type: "any → string" }
   of: __STR
 
   ` { doc: "split(s, re) - split string `s` on separators matching regex `re`."
-      type: "string -> string -> [string]" }
+      type: "string → string → [string]" }
   split: __SPLIT
 
   ` { doc: "split-on(re, s) - split string `s` on separators matching regex `re`."
-      type: "string -> string -> [string]" }
+      type: "string → string → [string]" }
   split-on: split flip
 
   ` { doc: "join(l, s) - join list of strings `l` by interposing string s."
-      type: "[string] -> string -> string" }
+      type: "[string] → string → string" }
   join: __JOIN
 
   ` { doc: "join-on(s, l) - join list of strings `l` by interposing string s."
-      type: "string -> [string] -> string" }
+      type: "string → [string] → string" }
   join-on: join flip
 
   ` { doc: "match(s, re) - match string `s` using regex `re`, return list of full match then capture groups."
-      type: "string -> string -> [string]" }
+      type: "string → string → [string]" }
   match: __MATCH
 
   ` { doc: "match-with(re, s) - match string `s` using regex `re`, return list of full match then capture groups."
-      type: "string -> string -> [string]" }
+      type: "string → string → [string]" }
   match-with: match flip
 
   ` { doc: "extract(re, s) - use regex `re` (with single capture) to extract substring of s - or error."
-      type: "string -> string -> string" }
+      type: "string → string → string" }
   extract(re): second ∘ match-with(re)
 
   ` "extract-or(re, d, s) - use regex `re` (with single capture) to extract substring of `s` - or default `d`."
   extract-or(re, d, s): s match-with(re) second-or(d)
 
   ` { doc: "matches(s, re) - return list of all matches in string `s` of regex `re`."
-      type: "string -> string -> [[string]]" }
+      type: "string → string → [[string]]" }
   matches: __MATCHES
 
   ` { doc: "matches-of(re, s) - return list of all matches in string `s` of regex `re`."
-      type: "string -> string -> [[string]]" }
+      type: "string → string → [[string]]" }
   matches-of: matches flip
 
   ` { doc: "matches?(re, s) - return true if `re` matches full string `s`."
-      type: "string -> string -> bool" }
+      type: "string → string → bool" }
   matches?(re, s): match(s, re) (not ∘ nil?)
 
   ` { doc: "suffix(b, a) - return string `b` suffixed onto `a`."
-      type: "string -> string -> string" }
+      type: "string → string → string" }
   suffix(b, a): [a, b] join-on("")
 
   ` { doc: "prefix(b, a) - return string `b` prefixed onto `a`."
-      type: "string -> string -> string" }
+      type: "string → string → string" }
   prefix(b, a): [b, a] join-on("")
 
   ` { doc: "letters(s) - return individual letters of `s` as list of strings."
-      type: "string -> [string]" }
+      type: "string → [string]" }
   letters: __LETTERS
 
   ` { doc: "`len(s)` - return length of string in characters."
-      type: "string -> number" }
+      type: "string → number" }
   len: count ∘ letters
 
   ` "`fmt(x, spec)` - format `x` using printf-style format `spec`."
   fmt: __FMT
 
   ` { doc: "`to-upper(s)` - convert string `s` to upper case."
-      type: "string -> string" }
+      type: "string → string" }
   to-upper: __UPPER
 
   ` { doc: "`to-lower(s)` - convert string `s` to lower case."
-      type: "string -> string" }
+      type: "string → string" }
   to-lower: __LOWER
 
   ` "`lt(a, b)` - true if string `a` is lexicographically less than `b`."
@@ -982,23 +982,23 @@ str: {
   sha256: __SHA256
 
   ` { doc: "`replace(pattern, replacement, s)` - replace all occurrences of regex `pattern` with `replacement` in string `s`. Pipeline: s str.replace(pat, rep)."
-      type: "string -> string -> string -> string" }
+      type: "string → string → string → string" }
   replace(pattern, replacement, s): __STR_REPLACE(pattern, replacement, s)
 
   ` { doc: "`contains?(pattern, s)` - true if string `s` contains a match for regex `pattern`. Pipeline: s str.contains?(pat)."
-      type: "string -> string -> bool" }
+      type: "string → string → bool" }
   contains?(pattern, s): __STR_CONTAINS(pattern, s)
 
   ` { doc: "`trim(s)` - trim leading and trailing whitespace from string `s`."
-      type: "string -> string" }
+      type: "string → string" }
   trim: __STR_TRIM
 
   ` { doc: "`starts-with?(re, s)` - true if string `s` starts with a match for regex `re`."
-      type: "string -> string -> bool" }
+      type: "string → string → bool" }
   starts-with?(re, s): __STR_CONTAINS(["^", re] join-on(""), s)
 
   ` { doc: "`ends-with?(re, s)` - true if string `s` ends with a match for regex `re`."
-      type: "string -> string -> bool" }
+      type: "string → string → bool" }
   ends-with?(re, s): __STR_CONTAINS([re, "$"] join-on(""), s)
 
   ` "`shell-escape(s)` - wrap string in single quotes for safe shell use. Embedded single quotes are escaped."
@@ -1026,18 +1026,18 @@ parse-as(fmt, str): __PARSE_STRING(fmt, str)
 ##
 
 ` { doc: "`identity(v)` - identity function, return value `v`."
-    type: "a -> a" }
+    type: "a → a" }
 identity(v): v
 
 ` { doc: "`const(k)` - return single arg function that always returns `k`."
-    type: "b -> a -> b" }
+    type: "b → a → b" }
 const(k, _): k
 
 ` "`(-> k)` - const; return single arg function that always returns `k`."
 (-> k): const(k)
 
 ` { doc: "`compose(f,g,x)` - apply function `f` to `g(x)`."
-    type: "(b -> c) -> (a -> b) -> a -> c" }
+    type: "(b → c) → (a → b) → a → c" }
 compose(f, g, x): x g f
 
 ` { doc: "`(f ∘ g)` - return composition of `f` and `g` (`g` then `f`)"
@@ -1059,11 +1059,11 @@ compose(f, g, x): x g f
 (l @ r): l(r)
 
 ` { doc: "`apply(f, xs)` - apply function `f` to arguments in list `xs`."
-    type: "any -> [any] -> any" }
+    type: "any → [any] → any" }
 apply(f, xs): foldl(_0(_1), f, xs)
 
 ` { doc: "`flip(f)` - flip arguments of function `f`, flip(f)(x, y) == f(y, x)."
-    type: "(a -> b -> c) -> b -> a -> c" }
+    type: "(a → b → c) → b → a → c" }
 flip(f, x, y): f(y, x)
 
 ` "`complement(p?)` - invert truth value of predicate function."
@@ -1077,7 +1077,7 @@ uncurry(f, l): f(first(l), second(l))
 
 
 ` { doc: "`cond(l)` - in list `l` of [condition, value] select first true condition, returning value, else default `d`."
-    type: "[(bool, a)] -> a -> a" }
+    type: "[(bool, a)] → a → a" }
 cond(l, d): l foldr(uncurry(if), d)
 
 ` "`juxt(f, g) - return function of `x` returning list of `f(x)` and g(x)`."
@@ -1094,25 +1094,25 @@ fnil(f, v, x): if(x = null, f(v), f(x))
 #
 
 ` { doc: "`with-meta(m, e)` - add metadata block `m` to expression `e`."
-    type: "{{..}} -> a -> a" }
+    type: "{{..}} → a → a" }
 with-meta: __WITHMETA
 
 ` { doc: "`e // m` - add metadata block `m` to expression `e`."
-    type: "a -> {{..}} -> a"
+    type: "a → {{..}} → a"
     export: :suppress
     associates: :left
     precedence: :meta }
 (e // m): e with-meta(m)
 
 ` { doc: "`meta(e)` - retrieve expression metadata for `e`."
-    type: "a -> {{..}}" }
+    type: "a → {{..}}" }
 meta: __META
 
 ` "`raw-meta(e)` - retrieve immediate metadata of e without recursing into inner layers."
 raw-meta: __RAWMETA
 
 ` { doc: "`merge-meta(m, e)` - merge block `m` into `e`'s metadata."
-    type: "{{..}} -> a -> a" }
+    type: "{{..}} → a → a" }
 merge-meta(m, e): e // (meta(e) m)
 
 ` { doc: "`e //<< m` - merge metadata block `m` into expression `e`'s metadata."
@@ -1205,11 +1205,11 @@ __dbg-after(f, x): ▶(f(x))
 #
 
 ` { doc: "`take(n, l)` - return initial segment of integer `n` elements from list `l`."
-    type: "number -> [a] -> [a]" }
+    type: "number → [a] → [a]" }
 take(n, l): __IF((n zero?) ∨ (l nil?), [], cons(l head, take(n dec, l tail)))
  
 ` { doc: "`drop(n, l)` - return result of dropping integer `n` elements from list `l`."
-    type: "number -> [a] -> [a]" }
+    type: "number → [a] → [a]" }
 drop(n, l): __IF((n zero?), l, drop(n dec, l tail))
 
 ` "`rotate(n, l)` - rotate list `l` left by `n` positions."
@@ -1226,7 +1226,7 @@ transpose(rows): {
 }.aux(rows)
 
 ` { doc: "`take-while(p?, l)` - initial elements of list `l` while `p?` is true."
-    type: "(a -> bool) -> [a] -> [a]" }
+    type: "(a → bool) → [a] → [a]" }
 take-while(p?, l): {
   aux(xs, prefix): if(not(xs nil?) ∧ (xs head p?), aux(xs tail, cons(xs head, prefix)), prefix reverse)
 }.aux(l, [])
@@ -1235,7 +1235,7 @@ take-while(p?, l): {
 take-until(p?): take-while(p? complement)
 
 ` { doc: "`drop-while(p?, l)` - skip initial elements of list `l` while `p?` is true."
-    type: "(a -> bool) -> [a] -> [a]" }
+    type: "(a → bool) → [a] → [a]" }
 drop-while(p?, l): if(l nil?, [], if(l head p?, drop-while(p?, l tail), l))
 
 ` "`drop-until(p?, l)` - skip initial elements of list `l` while `p?` is false."
@@ -1253,7 +1253,7 @@ split-after(p?, l): {
 split-when(p?, l): split-after(p? complement, l)
 
 ` { doc: "`nth(n, l)` - return `n`th item of list if it exists, otherwise panic."
-    type: "number -> [a] -> a" }
+    type: "number → [a] → a" }
 nth(n, l): l drop(n) head
 
 ` "`update-nth(n, f, l)` - apply `f` to element at index `n` in list `l`.
@@ -1267,23 +1267,23 @@ update-first(p?, f, l): {
 }.(l split-when(p?) go)
 
 ` { doc: "`l !! n` - return `n`th item of list `l` if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and !! delegates to `arr.get`."
-    type: "[a] -> number -> a | array -> [number] -> number"
+    type: "[a] → number → a | array → [number] → number"
     precedence: :exp }
 (l !! n): if(l is-array?, l arr.get(n), l nth(n))
 
 ` { doc: "`repeat(i)` - return infinite list of instances of item `i`."
-    type: "a -> [a]" }
+    type: "a → [a]" }
 repeat(i): __CONS(i, repeat(i))
 
 ` { doc: "`foldl(op, i, l)` - left fold operator `op` over list `l` starting from value `i`."
-    type: "(b -> a -> b) -> b -> [a] -> b" }
+    type: "(b → a → b) → b → [a] → b" }
 foldl(op, i, l): if(l nil?, i, foldl(op, op(i, l head), l tail))
 
 ` "`reduce(op, l)` - left fold with no initial value; uses first element as seed. Panics on empty list."
 reduce(op, l): foldl(op, l head, l tail)
 
 ` { doc: "`foldr(op, i, l)` - right fold operator `op` over list `l` ending with value `i`."
-    type: "(a -> b -> b) -> b -> [a] -> b" }
+    type: "(a → b → b) → b → [a] → b" }
 foldr(op, i, l): if(l nil?, i, op(l head, foldr(op, i, l tail)))
 
 ` "`scanl(op, i, l)` - left scan operator `op` over list `l` starting from value `i` "
@@ -1299,7 +1299,7 @@ iterate(f, i): cons(i, iterate(f, f(i)))
 tails(l): iterate(tail, l) take-while(non-nil?)
 
 ` { doc: "`iota(n)` - return infinite list of integers from `n` upwards."
-    type: "number -> [number]" }
+    type: "number → [number]" }
 iota(n): cons(n, iota(n + 1))
 
 ` "`ints-from(n)` - return infinite list of integers from `n` upwards, alias `iota` for backwards compatibility`"
@@ -1310,11 +1310,11 @@ ints-from: iota
 ℕ: iota(0)
 
 ` { doc: "`range(b, e)` - return list of ints from `b` to `e` (not including `e`)."
-    type: "number -> number -> [number]" }
+    type: "number → number → [number]" }
 range(b, e): ints-from(b) take(e - b)
 
 ` { doc: "`count(l)` - return count of items in list `l`."
-    type: "[a] -> number" }
+    type: "[a] → number" }
 count(l): foldl({ n: • el: •}.(n inc), 0, l)
 
 ` "`last(l)` - return last element of list `l`"
@@ -1324,11 +1324,11 @@ last: head ∘ reverse
 butlast(l): l reverse tail reverse
 
 ` { doc: "`cycle(l)` - create infinite list by cycling elements of list `l`."
-    type: "[a] -> [a]" }
+    type: "[a] → [a]" }
 cycle(l): if(l nil?, [], l ++ cycle(l))
 
 ` { doc: "`map(f, l)` - map function `f` over list `l`."
-    type: "(a -> b) -> [a] -> [b]" }
+    type: "(a → b) → [a] → [b]" }
 map(f, l): if(l nil?, l, cons(l head f, l tail map(f)))
 
 ` { doc: "`f <$> l` - map function `f` over list `l`"
@@ -1344,22 +1344,22 @@ map2(f, l1, l2): if(nil?(l1) || nil?(l2), [], cons(f(l1 head, l2 head), map2(f, 
 zip-with: map2
 
 ` { doc: "`zip(l1, l2)` - list of pairs of elements  `l1` and `l2`, until the shorter is exhausted."
-    type: "[a] -> [b] -> [(a, b)]" }
+    type: "[a] → [b] → [(a, b)]" }
 zip: zip-with(pair)
 
 ` { doc: "`unzip(pairs)` - list of pairs to pair of lists. Inverse of zip."
-    type: "[(a, b)] -> ([a], [b])" }
+    type: "[(a, b)] → ([a], [b])" }
 unzip(pairs): [pairs map(first), pairs map(second)]
 
 ` { doc: "`interleave(a, b)` - alternate elements from lists `a` and `b`. When one is exhausted, the remainder of the other is appended."
-    type: "[a] -> [a] -> [a]" }
+    type: "[a] → [a] → [a]" }
 interleave(a, b): if(a nil?, b, cons(a head, interleave(b, a tail)))
 
 ` "`cross(f, xs, ys)` - apply `f` to every combination of elements from `xs` and `ys` (cartesian product)."
 cross(f, xs, ys): xs mapcat({x: •}.(ys map(f(x))))
 
 ` { doc: "`filter(p?, l)` - return list of elements of list `l` that satisfy predicate `p?`."
-    type: "(a -> bool) -> [a] -> [a]" }
+    type: "(a → bool) → [a] → [a]" }
 filter(p?, l): foldr({x: • xs: • }.(if(x p?, cons(x, xs), xs)), [], l)
 
 ` "`remove(p?, l)` - return list of elements of list `l` that do not satisfy predicate `p?`."
@@ -1372,57 +1372,57 @@ append(l1, l2): foldr(cons, l2, l1)
 prepend: flip(append)
 
 ` { doc: "`l1 ++ l2` - concatenate lists `l1` and `l2`."
-    type: "[a] -> [a] -> [a]"
+    type: "[a] → [a] → [a]"
     export: :suppress
     associates: :left
     precedence: :append }
 (l1 ++ l2): append(l1, l2)
 
 ` { doc: "`concat(ls)` - concatenate all lists in `ls` together."
-    type: "[[a]] -> [a]" }
+    type: "[[a]] → [a]" }
 concat(ls): foldr(append, [], ls)
 
 ` { doc: "`mapcat(f, l)` - map items in l with `f` and concatenate the resulting lists."
-    type: "(a -> [b]) -> [a] -> [b]" }
+    type: "(a → [b]) → [a] → [b]" }
 mapcat(f): concat ∘ map(f)
 
 ` "`zip-apply(fs, vs)` - apply fns in list `fs` to corresponding values in list `vs`, until shorter is exhausted."
 zip-apply(fs, vs): zip-with(_0(_1), fs, vs)
 
 ` { doc: "`reverse(l)` - reverse list `l`."
-    type: "[a] -> [a]" }
+    type: "[a] → [a]" }
 reverse(l): foldl(cons flip, [], l)
 
 ` { doc: "`all-true?(l)` - true if and only if all items in list `l` are true."
-    type: "[bool] -> bool" }
+    type: "[bool] → bool" }
 all-true?(l): foldl(and, true, l)
 
 ` { doc: "`all(p?, l)` - true if and only if all items in list `l` satisfy predicate `p?`."
-    type: "(a -> bool) -> [a] -> bool" }
+    type: "(a → bool) → [a] → bool" }
 all(p?, l): l map(p?) all-true?
 
 ` { doc: "`any-true?(l)` - true if and only if any items in list `l` are true."
-    type: "[bool] -> bool" }
+    type: "[bool] → bool" }
 any-true?(l): foldr(or, false, l)
 
 ` { doc: "`any(p?, l)` - true if and only if any items in list `l` satisfy predicate `p?`."
-    type: "(a -> bool) -> [a] -> bool" }
+    type: "(a → bool) → [a] → bool" }
 any(p?, l): l map(p?) any-true?
 
 ` { doc: "`window(n, step, l)` - list of lists of sliding windows over list `l` of size `n` and offset `step`."
-    type: "number -> number -> [a] -> [[a]]" }
+    type: "number → number → [a] → [[a]]" }
 window(n, step, l): { chunk: l take(n) }.(if(count(chunk) >= n, cons(chunk, l drop(step) window(n, step)), []))
 
 ` { doc: "`partition(n, l)` - list of lists of non-overlapping segments of list `l` of size `n`."
-    type: "number -> [a] -> [[a]]" }
+    type: "number → [a] → [[a]]" }
 partition(n): window(n, n)
 
 ` { doc: "`window-all(n, step, l)` - like window but includes the final short chunk even if smaller than `n`."
-    type: "number -> number -> [a] -> [[a]]" }
+    type: "number → number → [a] → [[a]]" }
 window-all(n, step, l): { chunk: l take(n) }.(if(chunk nil?, [], cons(chunk, (if(count(l) <= step, [], l drop(step))) window-all(n, step))))
 
 ` { doc: "`partition-all(n, l)` - list of lists of non-overlapping segments of `l`, including any final short chunk."
-    type: "number -> [a] -> [[a]]" }
+    type: "number → [a] → [[a]]" }
 partition-all(n): window-all(n, n)
 
 ` "`over-sliding-pairs(f, l)` - apply binary fn `f` to each overlapping pair in `l` to form new list"
@@ -1432,13 +1432,13 @@ over-sliding-pairs(f, l): l window(2, 1) map(f uncurry)
 differences: over-sliding-pairs(_1 - _0)
 
 ` { doc: "`discriminate(pred, xs)` - return pair of `xs` for which `pred(_)` is true and `xs` for which `pred(_)` is false."
-    type: "(a -> bool) -> [a] -> ([a], [a])" }
+    type: "(a → bool) → [a] → ([a], [a])" }
 discriminate(pred, xs): {
   acc(a, e): a if(e pred, bimap(cons(e), identity), bimap(identity, cons(e)))
 }.(xs foldl(acc, [[], []]) bimap(reverse, reverse))
 
 ` { doc: "`group-by(k, xs)` - group xs by key function returning block of key to subgroups, maintains order."
-    type: "(a -> any) -> [a] -> {{..}}" }
+    type: "(a → any) → [a] → {{..}}" }
 group-by(k, xs): {
   acc(a, e): a update-value-or(e._k, cons(e._v), [e._v])
 }.(xs map({ _k: k(•0), _v: •0 }) foldl(acc, {}) map-values(reverse))
@@ -1458,7 +1458,7 @@ group-consecutive: group-consecutive-by(identity)
 uniq(xs): xs group-consecutive map(head)
 
 ` { doc: "`nub-by(key, xs)` - remove duplicates from `xs`, keeping the first occurrence of each distinct `key(x)` value. Unlike `uniq`, works on non-consecutive duplicates."
-    type: "(a -> any) -> [a] -> [a]" }
+    type: "(a → any) → [a] → [a]" }
 nub-by(key, xs): {
   step(acc, x): {
     seen: acc first
@@ -1478,7 +1478,7 @@ split-on(pred, xs): {
 }.(foldl(step, [[]], xs))
 
 ` { doc: "`qsort(lt, xs)` - sort `xs` using 'less-than' function `lt`."
-    type: "(a -> a -> bool) -> [a] -> [a]" }
+    type: "(a → a → bool) → [a] → [a]" }
 qsort(lt, xs): if(xs nil?,
                   xs,
                   {
@@ -1491,7 +1491,7 @@ qsort(lt, xs): if(xs nil?,
                   }.(smaller ++ [h] ++ bigger))
 
 ` { doc: "`sort-nums(xs)` - sort list of numbers ascending (Rust-level intrinsic)."
-    type: "[number] -> [number]" }
+    type: "[number] → [number]" }
 sort-nums: '__SORT_NUM_LIST'
 
 ` "`running-max(nums)` - running maximum over a number list.
@@ -1507,20 +1507,20 @@ running-min: '__RUNNING_MIN'
 running-sum: '__RUNNING_SUM'
 
 ` { doc: "`sort-strs(xs)` - sort list of strings or symbols ascending."
-    type: "[string] -> [string]" }
+    type: "[string] → [string]" }
 sort-strs(xs): xs qsort(<)
 
 ` "`sort-zdts(xs)` - sort list of zoned date-times ascending."
 sort-zdts(xs): xs qsort(<)
 
 ` { doc: "`sort-by(key-fn, cmp, xs)` - sort list `xs` by key extracted with `key-fn` using comparator `cmp`."
-    type: "(a -> b) -> (b -> b -> bool) -> [a] -> [a]" }
+    type: "(a → b) → (b → b → bool) → [a] → [a]" }
 sort-by(key-fn, cmp, xs): {
   lt(a, b): cmp(key-fn(a), key-fn(b))
 }.(xs qsort(lt))
 
 ` { doc: "`sort-by-num(key-fn, xs)` - sort list `xs` ascending by numeric key extracted with `key-fn`."
-    type: "(a -> number) -> [a] -> [a]" }
+    type: "(a → number) → [a] → [a]" }
 sort-by-num(key-fn): sort-by(key-fn, <)
 
 ` "`sort-by-str(key-fn, xs)` - sort list `xs` ascending by string key extracted with `key-fn`."
@@ -1534,7 +1534,7 @@ sort-by-zdt(key-fn): sort-by(key-fn, <)
 #
 
 ` { doc: "`merge-all(bs)` - merge all blocks in list `bs` together, later overriding earlier."
-    type: "[{{..}}] -> {{..}}" }
+    type: "[{{..}}] → {{..}}" }
 merge-all(bs): foldl(merge, {}, bs)
 
 ` "`key(pr)` - return key in a block element / pair."
@@ -1544,11 +1544,11 @@ key: head
 value: second
 
 ` { doc: "`keys(b)` - return keys of block `b`."
-    type: "{{..}} -> [symbol]" }
+    type: "{{..}} → [symbol]" }
 keys(b): b elements map(key)
 
 ` { doc: "`values(b)` - return values of block `b`."
-    type: "{{..}} -> [any]" }
+    type: "{{..}} → [any]" }
 values(b): b elements map(value)
 
 ` "`sort-keys(b)` - return block `b` with keys sorted alphabetically."
@@ -1565,11 +1565,11 @@ map-first(f, prs): map(bimap(f, identity), prs)
 map-second(f, prs): map(bimap(identity, f), prs)
 
 ` { doc: "`map-kv(f, b)` - apply `f(k, v)` to each key / value pair in block `b`, returning list."
-    type: "(symbol -> any -> b) -> {{..}} -> [b]" }
+    type: "(symbol → any → b) → {{..}} → [b]" }
 map-kv(f, b): b elements map(uncurry(f))
 
 ` { doc: "`map-elements(f, b)` - apply `f([k, v])` to each element of block `b`, returning a new block. `f` receives and should return a `[key, value]` pair."
-    type: "((symbol, any) -> (symbol, any)) -> {{..}} -> {{..}}" }
+    type: "((symbol, any) → (symbol, any)) → {{..}} → {{..}}" }
 map-elements(f, b): b elements map(f) block
 
 ` "`map-as-block(f, syms)` - map each symbol in `syms` and create block mapping `syms` to mapped values."
@@ -1588,19 +1588,19 @@ zip-kv(ks, vs): zip-with(pair, ks, vs) block
 with-keys: zip-kv
 
 ` { doc: "`map-values(f, b)` - apply `f(v)` to each value in block `b`."
-    type: "(any -> b) -> {{..}} -> {{..}}" }
+    type: "(any → b) → {{..}} → {{..}}" }
 map-values(f, b): b elements map-second(f) block
 
 ` { doc: "`map-keys(f, b)` - apply `f(k)` to each key in block `b`."
-    type: "(symbol -> symbol) -> {{..}} -> {{..}}" }
+    type: "(symbol → symbol) → {{..}} → {{..}}" }
 map-keys(f, b): b elements map-first(f) block
 
 ` { doc: "`filter-items(f, b)` - return items from block `b` which match item match function `f`."
-    type: "((symbol, any) -> bool) -> {{..}} -> [(symbol, any)]" }
+    type: "((symbol, any) → bool) → {{..}} → [(symbol, any)]" }
 filter-items(f, b): b elements filter(f)
 
 ` { doc: "`by-key(p?)` - return item match function that checks predicate `p?` against the (symbol) key."
-    type: "(symbol -> bool) -> (symbol, any) -> bool" }
+    type: "(symbol → bool) → (symbol, any) → bool" }
 by-key(p?): p? ∘ key
 
 ` "`by-key-name(p?)` - return item match function that checks predicate `p?` against string representation of the key."
@@ -1610,7 +1610,7 @@ by-key-name(p?): p? ∘ str.of ∘ key
 by-key-match(re): by-key-name(str.matches?(re))
 
 ` { doc: "`by-value(p?)` - return item match function that checks predicate `p?` against the item value."
-    type: "(any -> bool) -> (symbol, any) -> bool" }
+    type: "(any → bool) → (symbol, any) → bool" }
 by-value(p?): p? ∘ value
 
 ` "`match-filter-values` - return list of values from block `b` with keys matching regex `re`."
@@ -1630,11 +1630,11 @@ _block: {
 # By property alteration of blocks
 
 ` { doc: "`alter-value(k, v, b)` - alter `b.k` to value `v`."
-    type: "symbol -> any -> {{..}} -> {{..}}" }
+    type: "symbol → any → {{..}} → {{..}}" }
 alter-value(k, v, b): b map-kv(_block.alter?(= k, v)) block
 
 ` { doc: "`update-value(k, f, b)` - update `b.k` to `f(b.k)`."
-    type: "symbol -> (any -> any) -> {{..}} -> {{..}}" }
+    type: "symbol → (any → any) → {{..}} → {{..}}" }
 update-value(k, f, b): b map-kv(_block.update?(= k, f)) block
 
 ` "`alter(ks, v, b)` - in nested block `b` alter value to value `v` at path-of-keys `ks`"
@@ -1720,50 +1720,50 @@ cal: {
 set: {
 
   ` { doc: "`set.from-list(xs)` - create a set from list `xs` of primitive values."
-      type: "[a] -> any" }
+      type: "[a] → any" }
   from-list(xs): foldl({s: • e: •}.(s add(e)), ∅, xs)
 
   ` { doc: "`set.to-list(s)` - return sorted list of elements in set `s`."
-      type: "any -> [a]" }
+      type: "any → [a]" }
   to-list: '__SET.TO_LIST'
 
   ` { doc: "`set.add(e, s)` - add element `e` to set `s`."
-      type: "a -> any -> any" }
+      type: "a → any → any" }
   add: '__SET.ADD'
 
   ` { doc: "`set.remove(e, s)` - remove element `e` from set `s`."
-      type: "a -> any -> any" }
+      type: "a → any → any" }
   remove: '__SET.REMOVE'
 
   ` { doc: "`set.contains?(e, s)` - true if set `s` contains element `e`."
-      type: "a -> any -> bool" }
+      type: "a → any → bool" }
   contains?: '__SET.CONTAINS'
 
   ` { doc: "`set.size(s)` - return number of elements in set `s`."
-      type: "any -> number" }
+      type: "any → number" }
   size: '__SET.SIZE'
 
   ` { doc: "`set.empty?(s)` - true if set `s` has no elements."
-      type: "any -> bool" }
+      type: "any → bool" }
   empty?(s): (s size) = 0
 
   ` { doc: "`set.union(a, b)` - return union of sets `a` and `b`."
-      type: "any -> any -> any" }
+      type: "any → any → any" }
   union: '__SET.UNION'
 
   ` { doc: "`set.intersect(a, b)` - return intersection of sets `a` and `b`."
-      type: "any -> any -> any" }
+      type: "any → any → any" }
   intersect: '__SET.INTERSECT'
 
   ` { doc: "`set.diff(a, b)` - return elements in set `a` that are not in set `b`."
-      type: "any -> any -> any" }
+      type: "any → any → any" }
   diff: '__SET.DIFF'
 
   ` :suppress
   sample-raw: '__SET.SAMPLE'
 
   ` { doc: "`set.sample(n, s)` - random monad action: pick `n` random elements from set `s`. Returns value/rest block."
-      type: "number -> any -> any -> {{..}}" }
+      type: "number → any → any → {{..}}" }
   sample(k, s, stream): {
     floats: (stream random.as-list) take(k)
     value: s sample-raw(floats)
@@ -1795,26 +1795,26 @@ set: {
 vec: {
 
   ` { doc: "`vec.of(xs)` - convert list `xs` of primitive values to a vec for O(1) indexed access."
-      type: "[a] -> any" }
+      type: "[a] → any" }
   of: '__VEC.OF'
 
   ` { doc: "`vec.len(v)` - return the number of elements in vec `v`."
-      type: "any -> number" }
+      type: "any → number" }
   len: '__VEC.LEN'
 
   ` { doc: "`vec.nth(n, v)` - return the element at index `n` (0-based) in vec `v`."
-      type: "number -> any -> a" }
+      type: "number → any → a" }
   nth: '__VEC.NTH'
 
   ` { doc: "`vec.slice(from, to, v)` - return a new vec with elements in the range `[from, to)` of `v`."
-      type: "number -> number -> any -> any" }
+      type: "number → number → any → any" }
   slice: '__VEC.SLICE'
 
   ` :suppress
   sample-raw: '__VEC.SAMPLE'
 
   ` { doc: "`vec.sample(n, v)` - random monad action: pick `n` random elements from vec `v` without replacement."
-      type: "number -> any -> any -> {{..}}" }
+      type: "number → any → any → {{..}}" }
   sample(n, v, stream): {
     floats: (stream random.as-list) take(n)
     value: v sample-raw(floats)
@@ -1825,7 +1825,7 @@ vec: {
   shuffle-raw: '__VEC.SHUFFLE'
 
   ` { doc: "`vec.shuffle(v)` - random monad action: return vec `v` in random order."
-      type: "any -> any -> {{..}}" }
+      type: "any → any → {{..}}" }
   shuffle(v, stream): {
     needed: (v vec.len) - 1
     floats: (stream random.as-list) take(needed)
@@ -1834,7 +1834,7 @@ vec: {
   }
 
   ` { doc: "`vec.to-list(v)` - convert vec `v` back to a cons-list."
-      type: "any -> [a]" }
+      type: "any → [a]" }
   to-list: '__VEC.TO_LIST'
 }
 
@@ -1849,91 +1849,91 @@ vec: {
 arr: {
 
   ` { doc: "`arr.zeros(shape)` - create an array of zeros with the given shape list."
-      type: "[number] -> any" }
+      type: "[number] → any" }
   zeros: '__ARRAY.ZEROS'
 
   ` { doc: "`arr.fill(shape, val)` - create an array filled with `val` with the given shape list."
-      type: "[number] -> number -> any" }
+      type: "[number] → number → any" }
   fill: '__ARRAY.FILL'
 
   ` { doc: "`arr.from-flat(shape, vals)` - create an array from a flat list of numbers with the given shape."
-      type: "[number] -> [number] -> any" }
+      type: "[number] → [number] → any" }
   from-flat: '__ARRAY.FROM_FLAT'
 
   ` { doc: "`arr.get(a, coords)` - get element at coordinate list `coords` in array `a`."
-      type: "any -> [number] -> number" }
+      type: "any → [number] → number" }
   get: '__ARRAY.GET'
 
   ` { doc: "`arr.set(a, coords, val)` - return new array with element at `coords` set to `val`."
-      type: "any -> [number] -> number -> any" }
+      type: "any → [number] → number → any" }
   set: '__ARRAY.SET'
 
   ` { doc: "`arr.shape(a)` - return shape of array `a` as a list of integers."
-      type: "any -> [number]" }
+      type: "any → [number]" }
   shape: '__ARRAY.SHAPE'
 
   ` { doc: "`arr.rank(a)` - return number of dimensions of array `a`."
-      type: "any -> number" }
+      type: "any → number" }
   rank: '__ARRAY.RANK'
 
   ` { doc: "`arr.length(a)` - return total number of elements in array `a`."
-      type: "any -> number" }
+      type: "any → number" }
   length: '__ARRAY.LENGTH'
 
   ` { doc: "`arr.to-list(a)` - return flat list of elements in row-major order."
-      type: "any -> [number]" }
+      type: "any → [number]" }
   to-list: '__ARRAY.TO_LIST'
 
   ` { doc: "`arr.array?(x)` - true if `x` is an array."
-      type: "any -> bool" }
+      type: "any → bool" }
   array?: '__ARRAY.ISARRAY'
 
   ` { doc: "`arr.transpose(a)` - reverse all axes of array `a`."
-      type: "any -> any" }
+      type: "any → any" }
   transpose: '__ARRAY.TRANSPOSE'
 
   ` { doc: "`arr.reshape(a, shape)` - reshape array `a` to new shape (total elements must match)."
-      type: "any -> [number] -> any" }
+      type: "any → [number] → any" }
   reshape: '__ARRAY.RESHAPE'
 
   ` { doc: "`arr.slice(a, axis, idx)` - take a slice along `axis` at `idx`, reducing rank by 1."
-      type: "any -> number -> number -> any" }
+      type: "any → number → number → any" }
   slice: '__ARRAY.SLICE'
 
   ` { doc: "`arr.add(a, b)` - element-wise addition; `b` may be a scalar."
-      type: "any -> any -> any" }
+      type: "any → any → any" }
   add: '__ARRAY.ADD'
 
   ` { doc: "`arr.sub(a, b)` - element-wise subtraction; `b` may be a scalar."
-      type: "any -> any -> any" }
+      type: "any → any → any" }
   sub: '__ARRAY.SUB'
 
   ` { doc: "`arr.mul(a, b)` - element-wise multiplication; `b` may be a scalar."
-      type: "any -> any -> any" }
+      type: "any → any → any" }
   mul: '__ARRAY.MUL'
 
   ` { doc: "`arr.div(a, b)` - element-wise division; `b` may be a scalar."
-      type: "any -> any -> any" }
+      type: "any → any → any" }
   div: '__ARRAY.DIV'
 
   ` { doc: "`arr.indices(a)` - return list of coordinate lists for all elements in row-major order."
-      type: "any -> [[number]]" }
+      type: "any → [[number]]" }
   indices: '__ARRAY_INDICES'
 
   ` { doc: "`arr.map(f, a)` - apply `f` to each element, return new array of same shape."
-      type: "(number -> number) -> any -> any" }
+      type: "(number → number) → any → any" }
   map(f, a): arr.from-flat(arr.shape(a), f <$> (a arr.to-list))
 
   ` { doc: "`arr.map-indexed(f, a)` - apply `f(coords, val)` to each element, return new array of same shape."
-      type: "([number] -> number -> number) -> any -> any" }
+      type: "([number] → number → number) → any → any" }
   map-indexed(f, a): arr.from-flat(arr.shape(a), (f uncurry) <$> zip(arr.indices(a), a arr.to-list))
 
   ` { doc: "`arr.fold(f, init, a)` - left-fold `f` over all elements of `a` in row-major order."
-      type: "(b -> number -> b) -> b -> any -> b" }
+      type: "(b → number → b) → b → any → b" }
   fold(f, init, a): a arr.to-list foldl(f, init)
 
   ` { doc: "`arr.neighbours(a, coords, offsets)` - return list of values at valid neighbouring coordinates. `offsets` is a list of offset lists (one per neighbour direction). Out-of-bounds neighbours are omitted."
-      type: "any -> [number] -> [[number]] -> [number]" }
+      type: "any → [number] → [[number]] → [number]" }
   neighbours(a, coords, offsets): __ARRAY_NEIGHBOURS(coords, offsets concat, a arr.rank, a)
 
 }
@@ -1988,7 +1988,7 @@ for: monad({bind(m, f): m mapcat(f), return(v): [v]})
 ##
 
 ` { doc: "Parse command-line argument list against a defaults block. Each key in `defaults` defines an option with its default value. Field metadata configures parsing: `short` (symbol for short flag), `doc` (description), `flag` (true for boolean toggle). Returns the `defaults` block updated with parsed values, plus an `args` key containing positional arguments as a list. Unknown options cause a runtime error. Use `--help` for auto-generated help text."
-    type: "{{..}} -> [string] -> {{..}}" }
+    type: "{{..}} → [string] → {{..}}" }
 parse-args(defaults, args): {
 
   ` "Build lookup table mapping short-flag symbols to option key symbols"
