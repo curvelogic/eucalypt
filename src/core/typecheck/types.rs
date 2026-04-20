@@ -197,10 +197,10 @@ impl fmt::Display for Type {
                 let lhs_needs_parens = matches!(a.as_ref(), Type::Function(_, _) | Type::Union(_));
                 let rhs_needs_parens = matches!(b.as_ref(), Type::Union(_));
                 match (lhs_needs_parens, rhs_needs_parens) {
-                    (true, true) => write!(f, "({a}) -> ({b})"),
-                    (true, false) => write!(f, "({a}) -> {b}"),
-                    (false, true) => write!(f, "{a} -> ({b})"),
-                    (false, false) => write!(f, "{a} -> {b}"),
+                    (true, true) => write!(f, "({a}) → ({b})"),
+                    (true, false) => write!(f, "({a}) → {b}"),
+                    (false, true) => write!(f, "{a} → ({b})"),
+                    (false, false) => write!(f, "{a} → {b}"),
                 }
             }
             Type::Union(variants) => {
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn display_function() {
         let t = Type::Function(Box::new(var("a")), Box::new(var("b")));
-        assert_eq!(t.to_string(), "a -> b");
+        assert_eq!(t.to_string(), "a → b");
     }
 
     #[test]
@@ -274,7 +274,7 @@ mod tests {
                 Box::new(Type::Number),
             )),
         );
-        assert_eq!(t.to_string(), "number -> number -> number");
+        assert_eq!(t.to_string(), "number → number → number");
     }
 
     #[test]
@@ -346,6 +346,6 @@ mod tests {
                 )),
             ),
         );
-        assert_eq!(s.to_string(), "forall a b. (a -> b) -> [a] -> [b]");
+        assert_eq!(s.to_string(), "forall a b. (a → b) → [a] → [b]");
     }
 }

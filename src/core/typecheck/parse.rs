@@ -197,6 +197,10 @@ impl<'a> Lexer<'a> {
                     ))
                 }
             }
+            '→' => {
+                self.pos += '→'.len_utf8();
+                Ok((Token::Arrow, start))
+            }
             c if c.is_ascii_alphabetic() => {
                 // Consume identifier
                 let ident_start = self.pos;
@@ -713,6 +717,32 @@ mod tests {
         assert_eq!(
             parse_type("number -> string").unwrap(),
             Type::Function(Box::new(Type::Number), Box::new(Type::String))
+        );
+    }
+
+    #[test]
+    fn parse_unicode_arrow() {
+        // → is accepted as an alternative to ->
+        assert_eq!(
+            parse_type("number → string").unwrap(),
+            Type::Function(Box::new(Type::Number), Box::new(Type::String))
+        );
+    }
+
+    #[test]
+    fn parse_unicode_arrow_curried() {
+        assert_eq!(
+            parse_type("(a → b) → [a] → [b]").unwrap(),
+            parse_type("(a -> b) -> [a] -> [b]").unwrap(),
+        );
+    }
+
+    #[test]
+    fn parse_mixed_arrows() {
+        // Mixing -> and → in the same annotation is accepted
+        assert_eq!(
+            parse_type("number -> string → bool").unwrap(),
+            parse_type("number -> string -> bool").unwrap(),
         );
     }
 
