@@ -1126,12 +1126,12 @@ flip(f, x, y): f(y, x)
     type: "(a → bool) → a → bool" }
 complement(p?): compose(not, p?)
 
-` { doc: "`curry(f)` - turn f([x, y]) into f' of two parameters (x, y)."
+` { doc: "`curry(f)` - turn f([x, y]) into f(x, y). Semantically: ((a, b) → c) → a → b → c."
     type: "([any] → c) → a → b → c" }
 curry(f, x, y): f([x, y])
 
-` { doc: "`uncurry(f)` - turn f(x, y) into f' that expects [x, y] as a list."
-    type: "(a → b → c) → [any] → c" }
+` { doc: "`uncurry(f)` - turn f(x, y) into f([x, y]). Semantically: (a → b → c) → (a, b) → c."
+    type: "(a → b → c) → (a, b) → c" }
 uncurry(f, l): f(first(l), second(l))
 
 
@@ -1139,7 +1139,8 @@ uncurry(f, l): f(first(l), second(l))
     type: "[(bool, a)] → a → a" }
 cond(l, d): l foldr(uncurry(if), d)
 
-` { doc: "`juxt(f, g) - return function of `x` returning list of `f(x)` and g(x)`."
+# Semantically: (a → b) → (a → c) → a → (b, c) — checker can't infer tuples from list literals yet
+` { doc: "`juxt(f, g, x)` - apply both `f` and `g` to `x`, returning pair (f(x), g(x))."
     type: "(a → b) → (a → c) → a → [any]" }
 juxt(f, g, x): [x f, x g]
 
@@ -1277,8 +1278,9 @@ drop(n, l): __IF((n zero?), l, drop(n dec, l tail))
     type: "number → [a] → [a]" }
 rotate(n, l): { s: split-at(n, l) }.(second(s) ++ first(s))
 
+# Semantically: number → [a] → ([a], [a]) — checker can't infer tuples from list literals
 ` { doc: "`split-at(n, l)` - split list into two at `n`th item and return pair."
-    type: "number → [a] → [[a]]" }
+    type: "number → [a] → [any]" }
 split-at(n, l): {
   aux(n, xs, prefix): if((xs nil?) ∨ (n zero?), [prefix reverse, xs], aux(n dec, xs tail, cons(xs head, prefix)))
 }.aux(n, l, [])
@@ -1307,8 +1309,9 @@ drop-while(p?, l): if(l nil?, [], if(l head p?, drop-while(p?, l tail), l))
     type: "(a → bool) → [a] → [a]" }
 drop-until(p?): drop-while(p? complement)
 
+# Semantically: (a → bool) → [a] → ([a], [a]) — checker can't infer tuples from list literals
 ` { doc: "`split-after(p?, l)` - split list where `p?` becomes false and return pair."
-    type: "(a → bool) → [a] → [[a]]" }
+    type: "(a → bool) → [a] → [any]" }
 split-after(p?, l): {
   aux(xs, prefix): if(xs nil?, [prefix reverse, []],
                      if(xs head p?,
@@ -1316,8 +1319,9 @@ split-after(p?, l): {
                         [prefix reverse, xs]))
 }.aux(l, [])
 
+# Semantically: (a → bool) → [a] → ([a], [a]) — checker can't infer tuples from list literals
 ` { doc: "`split-when(p?, l)` - split list where `p?` becomes true and return pair."
-    type: "(a → bool) → [a] → [[a]]" }
+    type: "(a → bool) → [a] → [any]" }
 split-when(p?, l): split-after(p? complement, l)
 
 ` { doc: "`nth(n, l)` - return `n`th item of list if it exists, otherwise panic."
@@ -1421,8 +1425,9 @@ map2(f, l1, l2): if(nil?(l1) || nil?(l2), [], cons(f(l1 head, l2 head), map2(f, 
     type: "(a → b → c) → [a] → [b] → [c]" }
 zip-with: map2
 
+# Semantically: [a] → [b] → [(a, b)] — checker can't infer tuples from pair()
 ` { doc: "`zip(l1, l2)` - list of pairs of elements  `l1` and `l2`, until the shorter is exhausted."
-    type: "[a] → [b] → [[any]]" }
+    type: "[a] → [b] → [any]" }
 zip: zip-with(pair)
 
 # type: [(a, b)] → ([a], [b])  — checker cannot infer tuples from list literals yet
