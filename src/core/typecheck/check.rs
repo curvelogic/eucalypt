@@ -719,9 +719,10 @@ impl Checker {
     // ── Warning emission ─────────────────────────────────────────────────────
 
     fn emit_type_mismatch(&mut self, smid: Smid, expected: &Type, found: &Type, message: &str) {
+        use super::types::humanise;
         let warning = TypeWarning::new(message)
             .at(smid)
-            .with_types(expected.to_string(), found.to_string());
+            .with_types(humanise(expected).to_string(), humanise(found).to_string());
         self.warnings.push(warning);
     }
 }

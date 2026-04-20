@@ -79,6 +79,7 @@ enum Token {
     Set,
     Vec,
     Array,
+    Block,
     // Type constructors
     Io,
     Lens,
@@ -226,6 +227,7 @@ impl<'a> Lexer<'a> {
                     "set" => Token::Set,
                     "vec" => Token::Vec,
                     "array" => Token::Array,
+                    "block" => Token::Block,
                     "IO" => Token::Io,
                     "Lens" => Token::Lens,
                     "Traversal" => Token::Traversal,
@@ -356,6 +358,10 @@ impl<'a> Parser<'a> {
             Token::Set => Ok(Type::Set),
             Token::Vec => Ok(Type::Vec),
             Token::Array => Ok(Type::Array),
+            Token::Block => Ok(Type::Record {
+                fields: BTreeMap::new(),
+                open: true,
+            }),
             Token::Ident(name) => {
                 // Type variable (lowercase) or type alias reference (uppercase).
                 //
@@ -629,6 +635,18 @@ mod tests {
         assert_eq!(parse_type("set").unwrap(), Type::Set);
         assert_eq!(parse_type("vec").unwrap(), Type::Vec);
         assert_eq!(parse_type("array").unwrap(), Type::Array);
+        // `block` is shorthand for open empty record `{..}`
+        assert_eq!(
+            parse_type("block").unwrap(),
+            Type::Record {
+                fields: BTreeMap::new(),
+                open: true
+            }
+        );
+        assert_eq!(
+            parse_type("symbol → block → any").unwrap(),
+            parse_type("symbol → {..} → any").unwrap(),
+        );
     }
 
     // ── Type variables ──────────────────────────────────────────────────────

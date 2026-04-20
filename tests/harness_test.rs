@@ -1475,3 +1475,8 @@ pub fn test_harness_144() {
 pub fn test_harness_145() {
     run_test(&opts("145_list_monad.eu"));
 }
+
+#[test]
+pub fn test_harness_147() {
+    run_test(&opts("147_type_annotations.eu"));
+}

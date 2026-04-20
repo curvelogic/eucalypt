@@ -217,6 +217,99 @@ impl fmt::Display for Type {
     }
 }
 
+/// Replace internal unification variables (`_t0`, `_t1`, etc.) with
+/// user-friendly names (`a`, `b`, `c`, ...) for display in diagnostics.
+///
+/// Named type variables (e.g. from annotations) are left unchanged.
+/// Only variables whose name starts with `_t` are replaced.
+pub fn humanise(ty: &Type) -> Type {
+    use std::collections::HashMap;
+
+    fn collect_fresh_vars(ty: &Type, seen: &mut Vec<String>) {
+        match ty {
+            Type::Var(v) if v.0.starts_with("_t") && !seen.contains(&v.0) => {
+                seen.push(v.0.clone());
+            }
+            Type::List(inner) | Type::IO(inner) => collect_fresh_vars(inner, seen),
+            Type::Tuple(elems) => {
+                for e in elems {
+                    collect_fresh_vars(e, seen);
+                }
+            }
+            Type::Function(a, b) | Type::Lens(a, b) | Type::Traversal(a, b) => {
+                collect_fresh_vars(a, seen);
+                collect_fresh_vars(b, seen);
+            }
+            Type::Record { fields, .. } => {
+                for v in fields.values() {
+                    collect_fresh_vars(v, seen);
+                }
+            }
+            Type::Union(variants) => {
+                for v in variants {
+                    collect_fresh_vars(v, seen);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn replace(ty: &Type, mapping: &HashMap<String, String>) -> Type {
+        match ty {
+            Type::Var(v) => {
+                if let Some(replacement) = mapping.get(&v.0) {
+                    Type::Var(TypeVarId(replacement.clone()))
+                } else {
+                    ty.clone()
+                }
+            }
+            Type::List(inner) => Type::List(Box::new(replace(inner, mapping))),
+            Type::IO(inner) => Type::IO(Box::new(replace(inner, mapping))),
+            Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| replace(e, mapping)).collect()),
+            Type::Function(a, b) => {
+                Type::Function(Box::new(replace(a, mapping)), Box::new(replace(b, mapping)))
+            }
+            Type::Lens(a, b) => {
+                Type::Lens(Box::new(replace(a, mapping)), Box::new(replace(b, mapping)))
+            }
+            Type::Traversal(a, b) => {
+                Type::Traversal(Box::new(replace(a, mapping)), Box::new(replace(b, mapping)))
+            }
+            Type::Record { fields, open } => Type::Record {
+                fields: fields
+                    .iter()
+                    .map(|(k, v)| (k.clone(), replace(v, mapping)))
+                    .collect(),
+                open: *open,
+            },
+            Type::Union(variants) => {
+                Type::Union(variants.iter().map(|v| replace(v, mapping)).collect())
+            }
+            _ => ty.clone(),
+        }
+    }
+
+    let mut fresh_vars = Vec::new();
+    collect_fresh_vars(ty, &mut fresh_vars);
+
+    if fresh_vars.is_empty() {
+        return ty.clone();
+    }
+
+    let mut mapping = HashMap::new();
+    for (i, var_name) in fresh_vars.iter().enumerate() {
+        let letter = (b'a' + (i as u8 % 26)) as char;
+        let name = if i < 26 {
+            letter.to_string()
+        } else {
+            format!("{letter}{}", i / 26)
+        };
+        mapping.insert(var_name.clone(), name);
+    }
+
+    replace(ty, &mapping)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,5 +440,40 @@ mod tests {
             ),
         );
         assert_eq!(s.to_string(), "forall a b. (a → b) → [a] → [b]");
+    }
+
+    #[test]
+    fn humanise_replaces_fresh_vars() {
+        let ty = Type::Function(
+            Box::new(var("_t0")),
+            Box::new(Type::List(Box::new(var("_t1")))),
+        );
+        let h = humanise(&ty);
+        assert_eq!(h.to_string(), "a → [b]");
+    }
+
+    #[test]
+    fn humanise_preserves_named_vars() {
+        let ty = Type::Function(Box::new(var("x")), Box::new(var("y")));
+        let h = humanise(&ty);
+        assert_eq!(h.to_string(), "x → y");
+    }
+
+    #[test]
+    fn humanise_mixed_vars() {
+        let ty = Type::Function(
+            Box::new(var("_t5")),
+            Box::new(Type::Function(Box::new(var("x")), Box::new(var("_t5")))),
+        );
+        let h = humanise(&ty);
+        // _t5 becomes 'a', x stays 'x', second _t5 also becomes 'a'
+        assert_eq!(h.to_string(), "a → x → a");
+    }
+
+    #[test]
+    fn humanise_no_change_for_concrete() {
+        let ty = Type::Function(Box::new(Type::Number), Box::new(Type::String));
+        let h = humanise(&ty);
+        assert_eq!(h.to_string(), "number → string");
     }
 }
