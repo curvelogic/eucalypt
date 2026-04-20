@@ -16,7 +16,10 @@
 use std::fs;
 use std::path::Path;
 
-use crate::core::typecheck::{check::type_check, parse};
+use crate::core::typecheck::{
+    check::{type_check, type_check_full, TypeCheckResult},
+    parse,
+};
 use crate::driver::error::EucalyptError;
 use crate::driver::options::EucalyptOptions;
 use crate::driver::source::SourceLoader;
@@ -123,7 +126,20 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
 /// This function is used by the LSP server to run the checker on document
 /// open/change events.
 pub fn type_check_path(path: &Path) -> Vec<crate::core::typecheck::error::TypeWarning> {
+    type_check_path_full(path).warnings
+}
+
+/// Run the type checker on a single eucalypt source file, returning both
+/// warnings and the inferred type environment.
+///
+/// Returns an empty result if the pipeline fails.
+pub fn type_check_path_full(path: &Path) -> TypeCheckResult {
     use crate::syntax::input::{Input, Locator};
+
+    let empty = TypeCheckResult {
+        warnings: vec![],
+        types: std::collections::HashMap::new(),
+    };
 
     let prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
     let file = Input::new(Locator::Fs(path.to_path_buf()), None, "eu");
@@ -133,26 +149,26 @@ pub fn type_check_path(path: &Path) -> Vec<crate::core::typecheck::error::TypeWa
 
     for input in &inputs {
         if loader.load(input).is_err() {
-            return vec![];
+            return empty;
         }
     }
     for input in &inputs {
         if loader.translate(input).is_err() {
-            return vec![];
+            return empty;
         }
     }
     if loader.merge_units(&inputs).is_err() {
-        return vec![];
+        return empty;
     }
     if loader.cook().is_err() {
-        return vec![];
+        return empty;
     }
     if loader.eliminate().is_err() {
-        return vec![];
+        return empty;
     }
 
     let core_expr = loader.core().expr.clone();
-    type_check(&core_expr)
+    type_check_full(&core_expr)
 }
 
 /// Run the bidirectional type checker by loading files through the pipeline.
