@@ -107,6 +107,23 @@ fn run() -> i32 {
         Ok(Command::Continue) => {}
     }
 
+    // --type-check: run the type checker before evaluation, emit warnings
+    if opt.type_check() {
+        let t = std::time::Instant::now();
+        let core_expr = loader.core().expr.clone();
+        let warnings = eucalypt::core::typecheck::check::type_check(&core_expr);
+        let elapsed = t.elapsed();
+
+        for w in &warnings {
+            let diag = w.to_diagnostic(loader.source_map());
+            loader.diagnose_to_stderr(&diag);
+        }
+
+        if opt.statistics() {
+            statistics.timings_mut().record("type-check", elapsed);
+        }
+    }
+
     if opt.run() || opt.dump_stg() || opt.dump_runtime() {
         // run manages error reporting
         match eval::run(&opt, loader) {

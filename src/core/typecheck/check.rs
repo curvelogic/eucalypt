@@ -519,13 +519,16 @@ impl Checker {
     /// Maintains a `Substitution` across all arguments so that type variables
     /// unified by one argument automatically constrain later arguments and the
     /// return type.
-    fn synthesise_app(&mut self, smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
+    fn synthesise_app(&mut self, _smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
         let func_type = self.synthesise(func);
         let mut subst = Substitution::new();
         let mut current_type = func_type;
 
         for arg in args {
-            current_type = self.apply_one_with_subst(smid, current_type, arg, &mut subst);
+            // Use the argument's own Smid so warnings point at the offending
+            // argument, not the function call site.
+            let arg_smid = arg.smid();
+            current_type = self.apply_one_with_subst(arg_smid, current_type, arg, &mut subst);
         }
 
         // Apply the accumulated substitution to resolve any remaining vars.

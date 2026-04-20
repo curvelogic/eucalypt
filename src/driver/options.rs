@@ -83,6 +83,10 @@ pub struct EucalyptCli {
     #[arg(long = "statistics-file")]
     pub statistics_file: Option<PathBuf>,
 
+    /// Run the type checker before evaluation, reporting warnings to stderr
+    #[arg(long = "type-check")]
+    pub type_check: bool,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 
@@ -177,6 +181,10 @@ pub struct RunArgs {
     /// Write statistics as JSON to a file
     #[arg(long = "statistics-file")]
     pub statistics_file: Option<PathBuf>,
+
+    /// Run the type checker before evaluation, reporting warnings to stderr
+    #[arg(long = "type-check")]
+    pub type_check: bool,
 
     /// Disable dead code elimination (for debugging)
     #[arg(long = "no-dce")]
@@ -358,6 +366,9 @@ pub struct EucalyptOptions {
     // Check mode
     pub check: bool,
     pub check_strict: bool,
+
+    // Type check before evaluation
+    pub type_check: bool,
 
     // Format command options
     pub format: bool,
@@ -651,6 +662,10 @@ impl From<EucalyptCli> for EucalyptOptions {
             lsp,
             check,
             check_strict,
+            type_check: match &cli.command {
+                Some(Commands::Run(run_args)) => run_args.type_check || cli.type_check,
+                _ => cli.type_check,
+            },
             format,
             format_width,
             format_write,
@@ -816,6 +831,10 @@ impl EucalyptOptions {
 
     pub fn check_strict(&self) -> bool {
         self.check_strict
+    }
+
+    pub fn type_check(&self) -> bool {
+        self.type_check
     }
 
     pub fn no_dce(&self) -> bool {
