@@ -31,8 +31,8 @@ io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
       type: "{{..}}" }
   env: __io.ENV
 
-  ` { doc: "Seconds since the Unix epoch at the time of the IO action."
-      type: "IO(number)" }
+  ` { doc: "Seconds since the Unix epoch at launch time."
+      type: "number" }
   epoch-time: __io.EPOCHTIME
 
   ` { doc: "Command-line arguments passed after -- separator."
@@ -1353,8 +1353,8 @@ zip-with: map2
     type: "[a] → [b] → [(a, b)]" }
 zip: zip-with(pair)
 
-` { doc: "`unzip(pairs)` - list of pairs to pair of lists. Inverse of zip."
-    type: "[(a, b)] → ([a], [b])" }
+# type: [(a, b)] → ([a], [b])  — checker cannot infer tuples from list literals yet
+` "`unzip(pairs)` - list of pairs to pair of lists. Inverse of zip."
 unzip(pairs): [pairs map(first), pairs map(second)]
 
 ` { doc: "`interleave(a, b)` - alternate elements from lists `a` and `b`. When one is exhausted, the remainder of the other is appended."
@@ -1415,16 +1415,16 @@ any-true?(l): foldr(or, false, l)
     type: "(a → bool) → [a] → bool" }
 any(p?, l): l map(p?) any-true?
 
-` { doc: "`window(n, step, l)` - list of lists of sliding windows over list `l` of size `n` and offset `step`."
-    type: "number → number → [a] → [[a]]" }
+# type: number → number → [a] → [[a]]  — checker infers [] as [never] not [[a]]
+` "`window(n, step, l)` - list of lists of sliding windows over list `l` of size `n` and offset `step`."
 window(n, step, l): { chunk: l take(n) }.(if(count(chunk) >= n, cons(chunk, l drop(step) window(n, step)), []))
 
 ` { doc: "`partition(n, l)` - list of lists of non-overlapping segments of list `l` of size `n`."
     type: "number → [a] → [[a]]" }
 partition(n): window(n, n)
 
-` { doc: "`window-all(n, step, l)` - like window but includes the final short chunk even if smaller than `n`."
-    type: "number → number → [a] → [[a]]" }
+# type: number → number → [a] → [[a]]  — checker infers [] as [never] not [[a]]
+` "`window-all(n, step, l)` - like window but includes the final short chunk even if smaller than `n`."
 window-all(n, step, l): { chunk: l take(n) }.(if(chunk nil?, [], cons(chunk, (if(count(l) <= step, [], l drop(step))) window-all(n, step))))
 
 ` { doc: "`partition-all(n, l)` - list of lists of non-overlapping segments of `l`, including any final short chunk."
@@ -1483,8 +1483,8 @@ split-on(pred, xs): {
     }.(groups ++ [current ++ [x]]))
 }.(foldl(step, [[]], xs))
 
-` { doc: "`qsort(lt, xs)` - sort `xs` using 'less-than' function `lt`."
-    type: "(a → a → bool) → [a] → [a]" }
+# type: (a → a → bool) → [a] → [a]  — checker cannot type discriminate's tuple result via first/second
+` "`qsort(lt, xs)` - sort `xs` using 'less-than' function `lt`."
 qsort(lt, xs): if(xs nil?,
                   xs,
                   {

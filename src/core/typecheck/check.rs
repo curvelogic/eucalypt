@@ -33,7 +33,7 @@ use crate::{
         typecheck::{
             error::TypeWarning,
             parse,
-            subtype::is_consistent,
+            subtype::{is_consistent, is_subtype},
             types::{Type, TypeScheme},
             unify::{apply_subst, freshen, infer_scheme, unify, Substitution},
         },
@@ -562,12 +562,15 @@ impl Checker {
                 match unify(&param_applied, &arg_type, subst) {
                     Ok(()) => apply_subst(&result_type, subst),
                     Err(_) => {
-                        self.emit_type_mismatch(
-                            smid,
-                            &param_applied,
-                            &arg_type,
-                            "argument type does not match function parameter",
-                        );
+                        // Fall back to subtyping (e.g. Lens <: Traversal)
+                        if !is_subtype(&arg_type, &param_applied) {
+                            self.emit_type_mismatch(
+                                smid,
+                                &param_applied,
+                                &arg_type,
+                                "argument type does not match function parameter",
+                            );
+                        }
                         apply_subst(&result_type, subst)
                     }
                 }
@@ -613,8 +616,13 @@ impl Checker {
             if let Type::Function(param_type, result_type) = variant {
                 let param_applied = apply_subst(param_type, subst);
                 let mut trial = subst.clone();
+                // Try unification first (binds type variables)
                 if unify(&param_applied, &arg_type, &mut trial).is_ok() {
                     *subst = trial;
+                    return apply_subst(result_type, subst);
+                }
+                // Fall back to subtyping (e.g. Lens <: Traversal)
+                if is_subtype(&arg_type, &param_applied) {
                     return apply_subst(result_type, subst);
                 }
             }

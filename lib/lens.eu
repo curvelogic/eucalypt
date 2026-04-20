@@ -38,11 +38,11 @@ fmap-get: flip(const)
 view(lens, data): data lens(identity // { fmap: fmap-get })
 
 ` { doc: "`over(lens, fn, data)` - apply fn to each focus within `data` and return the whole modified data structure. Works for both lenses and traversals."
-    type: "Lens(a, b) | Traversal(a, b) → (b → b) → a → a" }
+    type: "(Lens(a, b) | Traversal(a, b)) → (b → b) → a → a" }
 over(lens, fn, data): data lens(fn // { fmap: fmap-set, pure: identity, ap: identity })
 
 ` { doc: "`to-list-of(optic, data)` - collect all foci of an optic into a flat list. Works for both lenses (returns singleton list) and traversals (returns all foci, flattened)."
-    type: "Lens(a, b) | Traversal(a, b) → a → [b]" }
+    type: "(Lens(a, b) | Traversal(a, b)) → a → [b]" }
 to-list-of(optic, data): data optic((_ ‖ []) // { fmap: fmap-get, pure: -> [], ap: ++ })
 
 
@@ -109,8 +109,8 @@ example-index: {
   RESULT: [test-j, test-k, test-l, test-m, test-n, test-o] all-true? then(:PASS, :FAIL)
 }
 
-` { doc: "Syntactic sugar for lenses defining paths into deep data structures. A symbol navigates by block key; a number indexes into a list."
-    type: "[symbol | number | Lens(a, b)] → Lens(a, b)" }
+# type: [symbol | number | Lens(a, b)] → Lens(a, b)  — body returns identity (a → a) for empty paths
+` "Syntactic sugar for lenses defining paths into deep data structures. A symbol navigates by block key; a number indexes into a list."
 ‹xs›: {
   to-lens(x): if(x symbol?, at(x), if(x number?, ix(x), x))
 }.(xs map(to-lens) foldr(∘, identity))
@@ -173,11 +173,11 @@ element(p?, k): {
 }.(s // meta(k))
 
 ` { doc: "`_value` lens focuses on the value (index 1) of a kv pair [key, value]."
-    type: "Lens((symbol, any), any)" }
+    type: "Lens([a], a)" }
 _value: ix(1)
 
 ` { doc: "`_key` lens focuses on the key (index 0) of a kv pair [key, value]."
-    type: "Lens((symbol, any), symbol)" }
+    type: "Lens([a], a)" }
 _key: ix(0)
 
 ` { target: :test-element }
