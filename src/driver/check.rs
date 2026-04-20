@@ -167,12 +167,17 @@ pub struct PathCheckResult {
 /// Run the type checker on a single eucalypt source file, returning both
 /// warnings and the inferred type environment.
 ///
-/// Returns an empty result if the pipeline fails.
+/// If the pipeline fails at any stage, returns a single warning
+/// explaining which stage failed rather than silently producing no
+/// results.
 pub fn type_check_path_full(path: &Path) -> PathCheckResult {
+    use crate::core::typecheck::error::TypeWarning;
     use crate::syntax::input::{Input, Locator};
 
-    let empty = PathCheckResult {
-        warnings: vec![],
+    let pipeline_error = |stage: &str, err: &dyn std::fmt::Display| PathCheckResult {
+        warnings: vec![TypeWarning::new(format!(
+            "type checking unavailable: {stage} failed: {err}"
+        ))],
         types: std::collections::HashMap::new(),
         source_map: crate::common::sourcemap::SourceMap::new(),
     };
@@ -184,23 +189,23 @@ pub fn type_check_path_full(path: &Path) -> PathCheckResult {
     let mut loader = SourceLoader::new(vec![]);
 
     for input in &inputs {
-        if loader.load(input).is_err() {
-            return empty;
+        if let Err(e) = loader.load(input) {
+            return pipeline_error("load", &e);
         }
     }
     for input in &inputs {
-        if loader.translate(input).is_err() {
-            return empty;
+        if let Err(e) = loader.translate(input) {
+            return pipeline_error("desugar", &e);
         }
     }
-    if loader.merge_units(&inputs).is_err() {
-        return empty;
+    if let Err(e) = loader.merge_units(&inputs) {
+        return pipeline_error("merge", &e);
     }
-    if loader.cook().is_err() {
-        return empty;
+    if let Err(e) = loader.cook() {
+        return pipeline_error("cook", &e);
     }
-    if loader.eliminate().is_err() {
-        return empty;
+    if let Err(e) = loader.eliminate() {
+        return pipeline_error("eliminate", &e);
     }
 
     let core_expr = loader.core().expr.clone();
@@ -305,16 +310,16 @@ fn byte_offset_to_line_col(source: &str, offset: usize) -> String {
 }
 
 /// Collect all `type:` annotations from a `Unit`.
-fn collect_annotations_from_unit(unit: &ast::Unit, source: &str) -> Vec<Annotation> {
+fn collect_annotations_from_unit(unit: &ast::Unit, _source: &str) -> Vec<Annotation> {
     let mut result = Vec::new();
     for decl in unit.declarations() {
-        collect_annotations_from_decl(&decl, source, &mut result);
+        collect_annotations_from_decl(&decl, &mut result);
     }
     result
 }
 
 /// Collect `type:` annotations from a declaration (and any nested blocks in its body).
-fn collect_annotations_from_decl(decl: &Declaration, source: &str, out: &mut Vec<Annotation>) {
+fn collect_annotations_from_decl(decl: &Declaration, out: &mut Vec<Annotation>) {
     let decl_name = declaration_name(decl);
 
     // Inspect the declaration's backtick metadata block for a `type:` field.
@@ -334,7 +339,7 @@ fn collect_annotations_from_decl(decl: &Declaration, source: &str, out: &mut Vec
         if let Some(body_soup) = body.soup() {
             for elem in body_soup.elements() {
                 if let Element::Block(inner_block) = elem {
-                    collect_annotations_from_block(&inner_block, source, out);
+                    collect_annotations_from_block(&inner_block, out);
                 }
             }
         }
@@ -342,9 +347,9 @@ fn collect_annotations_from_decl(decl: &Declaration, source: &str, out: &mut Vec
 }
 
 /// Collect `type:` annotations from all declarations within a block.
-fn collect_annotations_from_block(block: &Block, source: &str, out: &mut Vec<Annotation>) {
+fn collect_annotations_from_block(block: &Block, out: &mut Vec<Annotation>) {
     for decl in block.declarations() {
-        collect_annotations_from_decl(&decl, source, out);
+        collect_annotations_from_decl(&decl, out);
     }
 }
 

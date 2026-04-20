@@ -9,7 +9,7 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 ///
 /// Type issues are reported as warnings so that they never prevent evaluation.
 /// The `--strict` flag in `eu check` can promote these to errors.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeWarning {
     /// Human-readable description of the warning.
     pub message: String,
