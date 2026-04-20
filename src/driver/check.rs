@@ -15,9 +15,10 @@
 
 use std::fs;
 use std::path::Path;
+use std::time::Instant;
 
 use crate::core::typecheck::{
-    check::{type_check, type_check_full, TypeCheckResult},
+    check::{type_check, type_check_full},
     parse,
 };
 use crate::driver::error::EucalyptError;
@@ -49,6 +50,7 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
     }
 
     // ── Phase 1: annotation syntax validation ──────────────────────────────
+    let t_phase1 = Instant::now();
     let mut syntax_errors = 0usize;
 
     for input in &files {
@@ -66,28 +68,26 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
 
         syntax_errors += check_annotation_syntax(&path_str, &source, opt.check_strict());
     }
+    let phase1_elapsed = t_phase1.elapsed();
 
     // ── Phase 2: bidirectional type check via pipeline ─────────────────────
+    let t_phase2 = Instant::now();
     let type_warning_count = match run_type_checker(opt) {
-        Ok(warnings) => {
-            let count = warnings.len();
-            for w in &warnings {
-                let severity = if opt.check_strict() {
-                    "error"
-                } else {
-                    "warning"
-                };
-                if let (Some(exp), Some(fnd)) = (&w.expected, &w.found) {
-                    eprintln!(
-                        "eu check: {severity}: {}: expected {exp}, found {fnd}",
-                        w.message
-                    );
-                } else {
-                    eprintln!("eu check: {severity}: {}", w.message);
-                }
-                for note in &w.notes {
-                    eprintln!("  note: {note}");
-                }
+        Ok(result) => {
+            let count = result.warnings.len();
+            let writer = codespan_reporting::term::termcolor::StandardStream::stderr(
+                codespan_reporting::term::termcolor::ColorChoice::Auto,
+            );
+            let config = codespan_reporting::term::Config::default();
+            for w in &result.warnings {
+                let diag = w.to_diagnostic(&result.source_map);
+                // Ignore render errors — best effort
+                let _ = codespan_reporting::term::emit(
+                    &mut writer.lock(),
+                    &config,
+                    &result.files,
+                    &diag,
+                );
             }
             count
         }
@@ -98,6 +98,16 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
             0
         }
     };
+    let phase2_elapsed = t_phase2.elapsed();
+
+    // Report timings when --statistics is active
+    if opt.statistics() {
+        eprintln!(
+            "eu check: annotation syntax: {:.3}s, type check: {:.3}s",
+            phase1_elapsed.as_secs_f64(),
+            phase2_elapsed.as_secs_f64(),
+        );
+    }
 
     let total_issues = syntax_errors + type_warning_count;
 
@@ -129,16 +139,42 @@ pub fn type_check_path(path: &Path) -> Vec<crate::core::typecheck::error::TypeWa
     type_check_path_full(path).warnings
 }
 
+/// Annotation syntax errors (Phase 1 only) — exposed for LSP use.
+pub fn annotation_syntax_errors(source: &str) -> Vec<(usize, String, String)> {
+    let parse_result = parse_unit(source);
+    let unit = parse_result.tree();
+    let annotations = collect_annotations_from_unit(&unit, source);
+    let mut errors = vec![];
+    for ann in annotations {
+        if let Err(e) = parse::parse_type(&ann.value) {
+            errors.push((ann.source_offset, ann.decl_name.clone(), e.to_string()));
+        }
+    }
+    errors
+}
+
+/// Result of running the type checker via the pipeline: warnings, inferred
+/// types, and the source map for resolving warning locations.
+pub struct PathCheckResult {
+    /// Type warnings (mismatches, missing fields, etc.).
+    pub warnings: Vec<crate::core::typecheck::error::TypeWarning>,
+    /// Flattened type environment mapping binding names to their inferred types.
+    pub types: std::collections::HashMap<String, crate::core::typecheck::types::Type>,
+    /// Source map for resolving Smids to source locations.
+    pub source_map: crate::common::sourcemap::SourceMap,
+}
+
 /// Run the type checker on a single eucalypt source file, returning both
 /// warnings and the inferred type environment.
 ///
 /// Returns an empty result if the pipeline fails.
-pub fn type_check_path_full(path: &Path) -> TypeCheckResult {
+pub fn type_check_path_full(path: &Path) -> PathCheckResult {
     use crate::syntax::input::{Input, Locator};
 
-    let empty = TypeCheckResult {
+    let empty = PathCheckResult {
         warnings: vec![],
         types: std::collections::HashMap::new(),
+        source_map: crate::common::sourcemap::SourceMap::new(),
     };
 
     let prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
@@ -168,17 +204,29 @@ pub fn type_check_path_full(path: &Path) -> TypeCheckResult {
     }
 
     let core_expr = loader.core().expr.clone();
-    type_check_full(&core_expr)
+    let result = type_check_full(&core_expr);
+    let (_, source_map, _) = loader.complete();
+    PathCheckResult {
+        warnings: result.warnings,
+        types: result.types,
+        source_map,
+    }
+}
+
+/// Result of running the type checker through the full pipeline.
+struct PipelineCheckResult {
+    warnings: Vec<crate::core::typecheck::error::TypeWarning>,
+    files: codespan_reporting::files::SimpleFiles<String, String>,
+    source_map: crate::common::sourcemap::SourceMap,
 }
 
 /// Run the bidirectional type checker by loading files through the pipeline.
 ///
-/// Returns an empty vec if there are no type issues.  Returns an `Err` if
-/// the pipeline fails (e.g. parse error in the source) — the caller logs this
-/// and continues with only the annotation syntax check results.
-fn run_type_checker(
-    opt: &EucalyptOptions,
-) -> Result<Vec<crate::core::typecheck::error::TypeWarning>, EucalyptError> {
+/// Returns warnings, the SimpleFiles (for rendering), and the SourceMap (for
+/// resolving Smids to source locations).  Returns an `Err` if the pipeline
+/// fails (e.g. parse error in the source) — the caller logs this and continues
+/// with only the annotation syntax check results.
+fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, EucalyptError> {
     let mut loader = SourceLoader::new(opt.lib_path().to_vec());
     let inputs = opt.inputs();
 
@@ -203,7 +251,13 @@ fn run_type_checker(
 
     // Run the type checker.
     let core_expr = loader.core().expr.clone();
-    Ok(type_check(&core_expr))
+    let warnings = type_check(&core_expr);
+    let (files, source_map, _) = loader.complete();
+    Ok(PipelineCheckResult {
+        warnings,
+        files,
+        source_map,
+    })
 }
 
 // ── Annotation syntax check helpers ─────────────────────────────────────────

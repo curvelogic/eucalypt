@@ -616,8 +616,6 @@ fn publish_diagnostics(
     uri: Url,
     text: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use codespan_reporting::files::SimpleFiles;
-
     let parse = crate::syntax::rowan::parse_unit(text);
     let mut diags = diagnostics::diagnostics_from_parse_errors(text, parse.errors());
 
@@ -630,9 +628,11 @@ fn publish_diagnostics(
     if parse.errors().is_empty() {
         if let Ok(path) = uri.to_file_path() {
             let result = crate::driver::check::type_check_path_full(&path);
-            let files: SimpleFiles<String, String> = SimpleFiles::new();
-            let type_diags =
-                diagnostics::diagnostics_from_type_warnings(text, &result.warnings, &files);
+            let type_diags = diagnostics::diagnostics_from_type_warnings(
+                text,
+                &result.warnings,
+                &result.source_map,
+            );
             diags.extend(type_diags);
             state.type_envs.insert(uri.clone(), result.types);
         }

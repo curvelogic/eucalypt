@@ -4,6 +4,7 @@
 //! We convert these to LSP `Diagnostic` objects with line/column
 //! positions by scanning the source text for line breaks.
 
+use crate::common::sourcemap::SourceMap;
 use crate::core::typecheck::error::TypeWarning;
 use crate::syntax::rowan::ParseError;
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
@@ -24,54 +25,63 @@ pub fn diagnostics_from_parse_errors(source: &str, errors: &[ParseError]) -> Vec
 /// `"eucalypt-types"` so that editors can distinguish them from parse errors.
 ///
 /// The `source` parameter is the source text of the file being checked, used
-/// to resolve byte-offset spans (from `TextRange`) to LSP line/column positions.
+/// to resolve byte-offset spans. The `source_map` resolves Smids to file/span.
 pub fn diagnostics_from_type_warnings(
     source: &str,
     warnings: &[TypeWarning],
-    files: &codespan_reporting::files::SimpleFiles<String, String>,
+    source_map: &SourceMap,
 ) -> Vec<Diagnostic> {
     let line_index = LineIndex::new(source);
     warnings
         .iter()
-        .filter_map(|w| type_warning_to_lsp_diagnostic(&line_index, w, files))
+        .map(|w| type_warning_to_lsp_diagnostic(&line_index, w, source_map))
         .collect()
 }
 
 /// Convert a single `TypeWarning` to an LSP `Diagnostic`.
 ///
-/// Returns `None` if the warning has no resolvable source location.
+/// Uses the SourceMap to resolve the warning's Smid to a byte span, then
+/// converts to LSP line/column positions. Falls back to (0,0) if the Smid
+/// has no source location.
 fn type_warning_to_lsp_diagnostic(
-    _line_index: &LineIndex<'_>,
+    line_index: &LineIndex<'_>,
     warning: &TypeWarning,
-    _files: &codespan_reporting::files::SimpleFiles<String, String>,
-) -> Option<Diagnostic> {
+    source_map: &SourceMap,
+) -> Diagnostic {
     let mut message = warning.message.clone();
     if let (Some(exp), Some(fnd)) = (&warning.expected, &warning.found) {
         message = format!("{message}: expected {exp}, found {fnd}");
     }
 
-    // Use a zero-width range at (0,0) when no concrete source location is
-    // available.  Callers that need precise positions should attach Smids via
-    // `TypeWarning::at` — span resolution will be plumbed through once the
-    // type checker is integrated.
-    let fallback_range = Range {
-        start: lsp_types::Position {
-            line: 0,
-            character: 0,
-        },
-        end: lsp_types::Position {
-            line: 0,
-            character: 0,
-        },
-    };
+    // Try to resolve the Smid to a source span via the SourceMap
+    let range = source_map
+        .source_info_for_smid(warning.smid)
+        .and_then(|info| info.span)
+        .map(|span| {
+            let start = u32::from(span.start());
+            let end = u32::from(span.end());
+            let text_range =
+                TextRange::new(rowan::TextSize::from(start), rowan::TextSize::from(end));
+            line_index.range(text_range)
+        })
+        .unwrap_or(Range {
+            start: Position {
+                line: 0,
+                character: 0,
+            },
+            end: Position {
+                line: 0,
+                character: 0,
+            },
+        });
 
-    Some(Diagnostic {
-        range: fallback_range,
+    Diagnostic {
+        range,
         severity: Some(DiagnosticSeverity::WARNING),
         source: Some("eucalypt-types".to_string()),
         message,
         ..Diagnostic::default()
-    })
+    }
 }
 
 /// Convert a single parse error to an LSP diagnostic.
@@ -465,15 +475,15 @@ mod tests {
 
     #[test]
     fn type_warnings_produce_warning_diagnostics() {
+        use crate::common::sourcemap::SourceMap;
         use crate::core::typecheck::error::TypeWarning;
-        use codespan_reporting::files::SimpleFiles;
 
         let source = "x: 1\n";
-        let files: SimpleFiles<String, String> = SimpleFiles::new();
+        let source_map = SourceMap::new();
         let warnings = vec![TypeWarning::new("type mismatch")
             .with_types("number", "string")
             .with_note("double expects a number")];
-        let diags = diagnostics_from_type_warnings(source, &warnings, &files);
+        let diags = diagnostics_from_type_warnings(source, &warnings, &source_map);
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].severity, Some(DiagnosticSeverity::WARNING));
         assert_eq!(diags[0].source.as_deref(), Some("eucalypt-types"));
@@ -481,11 +491,11 @@ mod tests {
 
     #[test]
     fn empty_type_warnings_gives_no_diagnostics() {
-        use codespan_reporting::files::SimpleFiles;
+        use crate::common::sourcemap::SourceMap;
 
         let source = "x: 1\n";
-        let files: SimpleFiles<String, String> = SimpleFiles::new();
-        let diags = diagnostics_from_type_warnings(source, &[], &files);
+        let source_map = SourceMap::new();
+        let diags = diagnostics_from_type_warnings(source, &[], &source_map);
         assert!(diags.is_empty());
     }
 }
