@@ -154,7 +154,7 @@ random: monad{bind: random-bind, return: random-ret} {
   stream(seed): __STREAM_NEW(seed)
 
   ` { doc: "random.as-list(stream) - convert an opaque random stream to a lazy cons-list of floats."
-      type: "any → [number]" }
+      type: "array → [number]" }
   as-list(s): cons(__STREAM_VALUE(s), as-list(__STREAM_ADVANCE(s)))
 
   ` { doc: "random.float - state-monad action returning a random float in [0,1)."
@@ -1849,7 +1849,7 @@ set: {
   contains?: '__SET.CONTAINS'
 
   ` { doc: "`set.size(s)` - return number of elements in set `s`."
-      type: "any → number" }
+      type: "array → number" }
   size: '__SET.SIZE'
 
   ` { doc: "`set.empty?(s)` - true if set `s` has no elements."
@@ -1908,22 +1908,22 @@ vec: {
   of: '__VEC.OF'
 
   ` { doc: "`vec.len(v)` - return the number of elements in vec `v`."
-      type: "any → number" }
+      type: "vec → number" }
   len: '__VEC.LEN'
 
   ` { doc: "`vec.nth(n, v)` - return the element at index `n` (0-based) in vec `v`."
-      type: "number → any → a" }
+      type: "number → vec → any" }
   nth: '__VEC.NTH'
 
   ` { doc: "`vec.slice(from, to, v)` - return a new vec with elements in the range `[from, to)` of `v`."
-      type: "number → number → any → any" }
+      type: "number → number → vec → vec" }
   slice: '__VEC.SLICE'
 
   ` :suppress
   sample-raw: '__VEC.SAMPLE'
 
   ` { doc: "`vec.sample(n, v)` - random monad action: pick `n` random elements from vec `v` without replacement."
-      type: "number → any → any → {{..}}" }
+      type: "number → vec → any → {{..}}" }
   sample(n, v, stream): {
     floats: (stream random.as-list) take(n)
     value: v sample-raw(floats)
@@ -1934,7 +1934,7 @@ vec: {
   shuffle-raw: '__VEC.SHUFFLE'
 
   ` { doc: "`vec.shuffle(v)` - random monad action: return vec `v` in random order."
-      type: "any → any → {{..}}" }
+      type: "vec → any → {{..}}" }
   shuffle(v, stream): {
     needed: (v vec.len) - 1
     floats: (stream random.as-list) take(needed)
@@ -1958,39 +1958,39 @@ vec: {
 arr: {
 
   ` { doc: "`arr.zeros(shape)` - create an array of zeros with the given shape list."
-      type: "[number] → any" }
+      type: "[number] → array" }
   zeros: '__ARRAY.ZEROS'
 
   ` { doc: "`arr.fill(shape, val)` - create an array filled with `val` with the given shape list."
-      type: "[number] → number → any" }
+      type: "[number] → number → array" }
   fill: '__ARRAY.FILL'
 
   ` { doc: "`arr.from-flat(shape, vals)` - create an array from a flat list of numbers with the given shape."
-      type: "[number] → [number] → any" }
+      type: "[number] → [number] → array" }
   from-flat: '__ARRAY.FROM_FLAT'
 
   ` { doc: "`arr.get(a, coords)` - get element at coordinate list `coords` in array `a`."
-      type: "any → [number] → number" }
+      type: "array → [number] → number" }
   get: '__ARRAY.GET'
 
   ` { doc: "`arr.set(a, coords, val)` - return new array with element at `coords` set to `val`."
-      type: "any → [number] → number → any" }
+      type: "array → [number] → number → array" }
   set: '__ARRAY.SET'
 
   ` { doc: "`arr.shape(a)` - return shape of array `a` as a list of integers."
-      type: "any → [number]" }
+      type: "array → [number]" }
   shape: '__ARRAY.SHAPE'
 
   ` { doc: "`arr.rank(a)` - return number of dimensions of array `a`."
-      type: "any → number" }
+      type: "array → number" }
   rank: '__ARRAY.RANK'
 
   ` { doc: "`arr.length(a)` - return total number of elements in array `a`."
-      type: "any → number" }
+      type: "array → number" }
   length: '__ARRAY.LENGTH'
 
   ` { doc: "`arr.to-list(a)` - return flat list of elements in row-major order."
-      type: "any → [number]" }
+      type: "array → [number]" }
   to-list: '__ARRAY.TO_LIST'
 
   ` { doc: "`arr.array?(x)` - true if `x` is an array."
@@ -1998,51 +1998,51 @@ arr: {
   array?: '__ARRAY.ISARRAY'
 
   ` { doc: "`arr.transpose(a)` - reverse all axes of array `a`."
-      type: "any → any" }
+      type: "array → array" }
   transpose: '__ARRAY.TRANSPOSE'
 
   ` { doc: "`arr.reshape(a, shape)` - reshape array `a` to new shape (total elements must match)."
-      type: "any → [number] → any" }
+      type: "array → [number] → array" }
   reshape: '__ARRAY.RESHAPE'
 
   ` { doc: "`arr.slice(a, axis, idx)` - take a slice along `axis` at `idx`, reducing rank by 1."
-      type: "any → number → number → any" }
+      type: "array → number → number → array" }
   slice: '__ARRAY.SLICE'
 
   ` { doc: "`arr.add(a, b)` - element-wise addition; `b` may be a scalar."
-      type: "any → any → any" }
+      type: "array → (array | number) → array" }
   add: '__ARRAY.ADD'
 
   ` { doc: "`arr.sub(a, b)` - element-wise subtraction; `b` may be a scalar."
-      type: "any → any → any" }
+      type: "array → (array | number) → array" }
   sub: '__ARRAY.SUB'
 
   ` { doc: "`arr.mul(a, b)` - element-wise multiplication; `b` may be a scalar."
-      type: "any → any → any" }
+      type: "array → (array | number) → array" }
   mul: '__ARRAY.MUL'
 
   ` { doc: "`arr.div(a, b)` - element-wise division; `b` may be a scalar."
-      type: "any → any → any" }
+      type: "array → (array | number) → array" }
   div: '__ARRAY.DIV'
 
   ` { doc: "`arr.indices(a)` - return list of coordinate lists for all elements in row-major order."
-      type: "any → [[number]]" }
+      type: "array → [[number]]" }
   indices: '__ARRAY_INDICES'
 
   ` { doc: "`arr.map(f, a)` - apply `f` to each element, return new array of same shape."
-      type: "(number → number) → any → any" }
+      type: "(number → number) → array → array" }
   map(f, a): arr.from-flat(arr.shape(a), f <$> (a arr.to-list))
 
   ` { doc: "`arr.map-indexed(f, a)` - apply `f(coords, val)` to each element, return new array of same shape."
-      type: "([number] → number → number) → any → any" }
+      type: "([number] → number → number) → array → array" }
   map-indexed(f, a): arr.from-flat(arr.shape(a), (f uncurry) <$> zip(arr.indices(a), a arr.to-list))
 
   ` { doc: "`arr.fold(f, init, a)` - left-fold `f` over all elements of `a` in row-major order."
-      type: "(b → number → b) → b → any → b" }
+      type: "(b → number → b) → b → array → b" }
   fold(f, init, a): a arr.to-list foldl(f, init)
 
   ` { doc: "`arr.neighbours(a, coords, offsets)` - return list of values at valid neighbouring coordinates. `offsets` is a list of offset lists (one per neighbour direction). Out-of-bounds neighbours are omitted."
-      type: "any → [number] → [[number]] → [number]" }
+      type: "array → [number] → [[number]] → [number]" }
   neighbours(a, coords, offsets): __ARRAY_NEIGHBOURS(coords, offsets concat, a arr.rank, a)
 
 }
