@@ -1492,16 +1492,16 @@ any-true?(l): foldr(or, false, l)
     type: "(a → bool) → [a] → bool" }
 any(p?, l): l map(p?) any-true?
 
-# type: number → number → [a] → [[a]]  — checker infers [] as [never] not [[a]]
-` "`window(n, step, l)` - list of lists of sliding windows over list `l` of size `n` and offset `step`."
+` { doc: "`window(n, step, l)` - list of lists of sliding windows over list `l` of size `n` and offset `step`."
+    type: "number → number → [a] → [[a]]" }
 window(n, step, l): { chunk: l take(n) }.(if(count(chunk) >= n, cons(chunk, l drop(step) window(n, step)), []))
 
 ` { doc: "`partition(n, l)` - list of lists of non-overlapping segments of list `l` of size `n`."
     type: "number → [a] → [[a]]" }
 partition(n): window(n, n)
 
-# type: number → number → [a] → [[a]]  — checker infers [] as [never] not [[a]]
-` "`window-all(n, step, l)` - like window but includes the final short chunk even if smaller than `n`."
+` { doc: "`window-all(n, step, l)` - like window but includes the final short chunk even if smaller than `n`."
+    type: "number → number → [a] → [[a]]" }
 window-all(n, step, l): { chunk: l take(n) }.(if(chunk nil?, [], cons(chunk, (if(count(l) <= step, [], l drop(step))) window-all(n, step))))
 
 ` { doc: "`partition-all(n, l)` - list of lists of non-overlapping segments of `l`, including any final short chunk."
@@ -1517,7 +1517,7 @@ over-sliding-pairs(f, l): l window(2, 1) map(f uncurry)
 differences: over-sliding-pairs(_1 - _0)
 
 ` { doc: "`discriminate(pred, xs)` - return pair of `xs` for which `pred(_)` is true and `xs` for which `pred(_)` is false."
-    type: "(a → bool) → [a] → [any]" }
+    type: "(a → bool) → [a] → ([a], [a])" }
 discriminate(pred, xs): {
   acc(a, e): a if(e pred, bimap(cons(e), identity), bimap(identity, cons(e)))
 }.(xs foldl(acc, [[], []]) bimap(reverse, reverse))
@@ -1563,8 +1563,8 @@ split-on(pred, xs): {
     }.(groups ++ [current ++ [x]]))
 }.(foldl(step, [[]], xs))
 
-# type: (a → a → bool) → [a] → [a]  — checker cannot type discriminate's tuple result via first/second
-` "`qsort(lt, xs)` - sort `xs` using 'less-than' function `lt`."
+` { doc: "`qsort(lt, xs)` - sort `xs` using 'less-than' function `lt`."
+    type: "(a → a → bool) → [a] → [a]" }
 qsort(lt, xs): if(xs nil?,
                   xs,
                   {
@@ -1648,15 +1648,15 @@ sort-keys(b): b elements qsort(pair-key-lt) block
   pair-key-lt(p1, p2): key(p1) < key(p2)
 
 ` { doc: "`bimap(f, g, pr)` - apply f to first item of pair and g to second, return pair."
-    type: "(a → c) → (b → d) → [any] → [any]" }
+    type: "(a → c) → (b → d) → (a, b) → (c, d)" }
 bimap(f, g, pr): [f(first(pr)), g(second(pr))]
 
 ` { doc: "`map-first(f, prs)` - apply f to first elements of all pairs in list of pairs `prs`."
-    type: "(a → b) → [[any]] → [[any]]" }
+    type: "(a → c) → [(a, b)] → [(c, b)]" }
 map-first(f, prs): map(bimap(f, identity), prs)
 
 ` { doc: "`map-second(f, prs)` - apply f to second elements of all pairs in list of pairs `prs`."
-    type: "(a → b) → [[any]] → [[any]]" }
+    type: "(b → c) → [(a, b)] → [(a, c)]" }
 map-second(f, prs): map(bimap(identity, f), prs)
 
 ` { doc: "`map-kv(f, b)` - apply `f(k, v)` to each key / value pair in block `b`, returning list."

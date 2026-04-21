@@ -790,7 +790,7 @@ fn synthesise_list_type(types: Vec<Type>) -> Type {
     }
 
     let elem_type = match seen.len() {
-        0 => Type::Never,
+        0 => Type::Any, // Empty list is polymorphic — compatible with any element type
         1 => seen.into_iter().next().unwrap(),
         _ => Type::Union(seen),
     };
@@ -923,11 +923,11 @@ mod tests {
     // ── List synthesis ──────────────────────────────────────────────────────
 
     #[test]
-    fn empty_list_is_never_list() {
+    fn empty_list_is_polymorphic() {
         let mut c = Checker::new();
         assert_eq!(
             c.synthesise(&list(vec![])),
-            Type::List(Box::new(Type::Never))
+            Type::List(Box::new(Type::Any))
         );
     }
 
