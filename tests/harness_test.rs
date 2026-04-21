@@ -1573,3 +1573,8 @@ pub fn test_typecheck_006_polymorphic() {
 pub fn test_typecheck_007_type_unchecked() {
     run_typecheck_test("007_type_unchecked.eu");
 }
+
+#[test]
+pub fn test_typecheck_008_literal_symbol() {
+    run_typecheck_test("008_literal_symbol.eu");
+}

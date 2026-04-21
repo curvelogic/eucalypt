@@ -59,6 +59,11 @@ pub fn is_subtype(s: &Type, t: &Type) -> bool {
         // Uninstantiated type variables are treated as `any`.
         (Type::Var(_), _) | (_, Type::Var(_)) => true,
 
+        // ── Literal symbol types ─────────────────────────────────────────────
+        // `LiteralSymbol(s) <: LiteralSymbol(t)` iff `s == t` (handled by
+        // reflexivity above).  `LiteralSymbol(_) <: Symbol` always.
+        (Type::LiteralSymbol(_), Type::Symbol) => true,
+
         // ── Primitives — flat, no cross-primitive subtyping ───────────────────
         (Type::Number, Type::Number) => true,
         (Type::String, Type::String) => true,
@@ -173,6 +178,14 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
     // `any` is consistent with everything in both directions.
     if matches!(s, Type::Any) || matches!(t, Type::Any) {
         return true;
+    }
+
+    // Literal symbol consistency: `LiteralSymbol(s) ~ Symbol` and vice versa.
+    match (s, t) {
+        (Type::LiteralSymbol(_), Type::Symbol) | (Type::Symbol, Type::LiteralSymbol(_)) => {
+            return true;
+        }
+        _ => {}
     }
 
     // Structural consistency: recurse into composite types so that, e.g.,
@@ -722,6 +735,64 @@ mod tests {
         let u = union(vec![Type::Number, Type::Any]);
         // Any variant consistent with target → union is consistent
         assert!(is_consistent(&u, &Type::String));
+    }
+
+    // ── Literal symbol types ────────────────────────────────────────────
+
+    #[test]
+    fn literal_symbol_subtype_of_symbol() {
+        let ls = Type::LiteralSymbol("x".to_string());
+        assert!(is_subtype(&ls, &Type::Symbol));
+    }
+
+    #[test]
+    fn symbol_not_subtype_of_literal_symbol() {
+        let ls = Type::LiteralSymbol("x".to_string());
+        assert!(!is_subtype(&Type::Symbol, &ls));
+    }
+
+    #[test]
+    fn literal_symbol_equal_subtype() {
+        let a = Type::LiteralSymbol("x".to_string());
+        let b = Type::LiteralSymbol("x".to_string());
+        assert!(is_subtype(&a, &b));
+    }
+
+    #[test]
+    fn literal_symbol_different_not_subtype() {
+        let a = Type::LiteralSymbol("x".to_string());
+        let b = Type::LiteralSymbol("y".to_string());
+        assert!(!is_subtype(&a, &b));
+    }
+
+    #[test]
+    fn literal_symbol_consistent_with_symbol() {
+        let ls = Type::LiteralSymbol("x".to_string());
+        assert!(is_consistent(&ls, &Type::Symbol));
+        assert!(is_consistent(&Type::Symbol, &ls));
+    }
+
+    #[test]
+    fn literal_symbol_consistent_with_same() {
+        let a = Type::LiteralSymbol("x".to_string());
+        let b = Type::LiteralSymbol("x".to_string());
+        assert!(is_consistent(&a, &b));
+    }
+
+    #[test]
+    fn literal_symbol_not_consistent_with_different() {
+        let a = Type::LiteralSymbol("x".to_string());
+        let b = Type::LiteralSymbol("y".to_string());
+        assert!(!is_consistent(&a, &b));
+    }
+
+    #[test]
+    fn literal_symbol_in_union_subtype() {
+        let u = Type::Union(vec![
+            Type::LiteralSymbol("active".to_string()),
+            Type::LiteralSymbol("inactive".to_string()),
+        ]);
+        assert!(is_subtype(&u, &Type::Symbol));
     }
 
     // ── Edge cases ───────────────────────────────────────────────────────────

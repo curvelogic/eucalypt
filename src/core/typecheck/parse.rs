@@ -412,6 +412,41 @@ impl<'a> Parser<'a> {
                 self.expect(&Token::RParen)?;
                 Ok(Type::Traversal(Box::new(a), Box::new(b)))
             }
+            Token::Colon => {
+                // Literal symbol type: `:ident`
+                //
+                // After `:`, we accept any identifier-like token — including
+                // keywords that the lexer maps to their own token variants
+                // (e.g. `number`, `string`).  These are all valid symbol names
+                // in eucalypt.
+                let (next_tok, next_pos) = self.advance()?;
+                let name = match &next_tok {
+                    Token::Ident(name) => name.clone(),
+                    Token::Number => "number".to_string(),
+                    Token::String => "string".to_string(),
+                    Token::Symbol => "symbol".to_string(),
+                    Token::Bool => "bool".to_string(),
+                    Token::Null => "null".to_string(),
+                    Token::Datetime => "datetime".to_string(),
+                    Token::Any => "any".to_string(),
+                    Token::Top => "top".to_string(),
+                    Token::Never => "never".to_string(),
+                    Token::Set => "set".to_string(),
+                    Token::Vec => "vec".to_string(),
+                    Token::Array => "array".to_string(),
+                    Token::Block => "block".to_string(),
+                    Token::Io => "IO".to_string(),
+                    Token::Lens => "Lens".to_string(),
+                    Token::Traversal => "Traversal".to_string(),
+                    _ => {
+                        return Err(ParseError::new(
+                            next_pos,
+                            format!("expected an identifier after ':' in literal symbol type, got {next_tok:?}"),
+                        ));
+                    }
+                };
+                Ok(Type::LiteralSymbol(name))
+            }
             other => Err(ParseError::new(
                 tok_pos,
                 format!("expected a type, got {other:?}"),
@@ -1064,6 +1099,42 @@ mod tests {
         let err = parse_type("[number").unwrap_err();
         // Position should be non-zero (after `[number`)
         assert!(err.position > 0);
+    }
+
+    // ── Literal symbol types ───────────────────────────────────────────────
+
+    #[test]
+    fn parse_literal_symbol() {
+        assert_eq!(
+            parse_type(":active").unwrap(),
+            Type::LiteralSymbol("active".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_literal_symbol_union() {
+        assert_eq!(
+            parse_type(":active | :inactive").unwrap(),
+            Type::Union(vec![
+                Type::LiteralSymbol("active".to_string()),
+                Type::LiteralSymbol("inactive".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn parse_literal_symbol_keyword_name() {
+        // Symbol names that collide with type keywords should still work
+        assert_eq!(
+            parse_type(":number").unwrap(),
+            Type::LiteralSymbol("number".to_string())
+        );
+    }
+
+    #[test]
+    fn roundtrip_literal_symbol() {
+        roundtrip(":active");
+        roundtrip(":active | :inactive");
     }
 
     // ── Spec examples ───────────────────────────────────────────────────────
