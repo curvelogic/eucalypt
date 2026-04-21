@@ -396,23 +396,23 @@ Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jso
 | `arr.zeros(shape)` | Create array of zeros; `shape` is a list of integers |
 | `arr.fill(shape, val)` | Create array filled with `val` |
 | `arr.from-flat(shape, vals)` | Create array from flat list of numbers |
-| `arr.get(a, coords)` | Element at coordinate list `coords` |
-| `arr.set(a, coords, val)` | New array with element at `coords` set to `val` |
+| `a arr.get(coords)` | Element at coordinate list `coords` |
+| `a arr.set(coords, val)` | New array with element at `coords` set to `val` |
 | `arr.shape(a)` | Shape as list of integers |
 | `arr.rank(a)` | Number of dimensions |
 | `arr.length(a)` | Total number of elements |
 | `arr.to-list(a)` | Flat list of elements in row-major order |
 | `arr.array?(x)` / `is-array?(x)` | Is `x` an array? |
 | `arr.transpose(a)` | Reverse all axes |
-| `arr.reshape(a, shape)` | Reshape (total elements must match) |
-| `arr.slice(a, axis, idx)` | Slice along `axis` at `idx` (reduces rank by 1) |
+| `a arr.reshape(shape)` | Reshape (total elements must match) |
+| `a arr.slice(axis, idx)` | Slice along `axis` at `idx` (reduces rank by 1) |
 | `arr.add(a, b)` / `arr.sub` / `arr.mul` / `arr.div` | Element-wise arithmetic; `b` may be scalar |
 | `a !! coords` | Index operator; for arrays, `coords` is a list e.g. `[row, col]` |
 | `arr.indices(a)` | List of coordinate lists for every element (row-major) |
 | `arr.map(f, a)` | Apply `f` to each element; same shape |
 | `arr.map-indexed(f, a)` | Apply `f(coords, val)` to each element; same shape |
 | `arr.fold(f, init, a)` | Left-fold over all elements in row-major order |
-| `arr.neighbours(a, coords, offsets)` | Values at valid in-bounds neighbours given offset vectors |
+| `a arr.neighbours(coords, offsets)` | Values at valid in-bounds neighbours given offset vectors |
 
 The standard `+`, `-`, `*`, `/` operators are polymorphic and apply element-wise when
 either operand is an array. Scalar broadcasting is supported.

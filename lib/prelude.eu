@@ -1969,12 +1969,12 @@ arr: {
       type: "[number] → [number] → array" }
   from-flat: '__ARRAY.FROM_FLAT'
 
-  ` { doc: "`arr.get(a, coords)` - get element at coordinate list `coords` in array `a`."
-      type: "array → [number] → number" }
+  ` { doc: "`arr.get(coords, a)` - get element at coordinate list `coords` in array `a`. Pipeline: `a arr.get(coords)`."
+      type: "[number] → array → number" }
   get: '__ARRAY.GET'
 
-  ` { doc: "`arr.set(a, coords, val)` - return new array with element at `coords` set to `val`."
-      type: "array → [number] → number → array" }
+  ` { doc: "`arr.set(coords, val, a)` - return new array with element at `coords` set to `val`. Pipeline: `a arr.set(coords, val)`."
+      type: "[number] → number → array → array" }
   set: '__ARRAY.SET'
 
   ` { doc: "`arr.shape(a)` - return shape of array `a` as a list of integers."
@@ -2001,13 +2001,16 @@ arr: {
       type: "array → array" }
   transpose: '__ARRAY.TRANSPOSE'
 
-  ` { doc: "`arr.reshape(a, shape)` - reshape array `a` to new shape (total elements must match)."
-      type: "array → [number] → array" }
+  ` { doc: "`arr.reshape(shape, a)` - reshape array `a` to new shape (total elements must match). Pipeline: `a arr.reshape(shape)`."
+      type: "[number] → array → array" }
   reshape: '__ARRAY.RESHAPE'
 
-  ` { doc: "`arr.slice(a, axis, idx)` - take a slice along `axis` at `idx`, reducing rank by 1."
-      type: "array → number → number → array" }
-  slice: '__ARRAY.SLICE'
+  ` :suppress
+  slice-raw: '__ARRAY.SLICE'
+
+  ` { doc: "`arr.slice(axis, idx, a)` - take a slice along `axis` at `idx`, reducing rank by 1. Pipeline: `a arr.slice(axis, idx)`."
+      type: "number → number → array → array" }
+  slice(axis, idx, a): slice-raw(a, axis, idx)
 
   ` { doc: "`arr.add(a, b)` - element-wise addition; `b` may be a scalar."
       type: "array → (array | number) → array" }
@@ -2041,9 +2044,9 @@ arr: {
       type: "(b → number → b) → b → array → b" }
   fold(f, init, a): a arr.to-list foldl(f, init)
 
-  ` { doc: "`arr.neighbours(a, coords, offsets)` - return list of values at valid neighbouring coordinates. `offsets` is a list of offset lists (one per neighbour direction). Out-of-bounds neighbours are omitted."
-      type: "array → [number] → [[number]] → [number]" }
-  neighbours(a, coords, offsets): __ARRAY_NEIGHBOURS(coords, offsets concat, a arr.rank, a)
+  ` { doc: "`arr.neighbours(coords, offsets, a)` - return list of values at valid neighbouring coordinates. Pipeline: `a arr.neighbours(coords, offsets)`. `offsets` is a list of offset lists (one per neighbour direction). Out-of-bounds neighbours are omitted."
+      type: "[number] → [[number]] → array → [number]" }
+  neighbours(coords, offsets, a): __ARRAY_NEIGHBOURS(coords, offsets concat, a arr.rank, a)
 
 }
 
