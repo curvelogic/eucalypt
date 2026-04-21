@@ -318,9 +318,19 @@ impl Checker {
             Expr::Literal(_, prim) => synthesise_primitive(prim),
 
             // ── List ─────────────────────────────────────────────────────────
+            //
+            // Small fixed-length list literals (2-4 elements) synthesise as
+            // tuples since tuples are subtypes of lists and carry more
+            // information.  Single-element lists stay as lists (not 1-tuples)
+            // and large lists stay as lists for practicality.
             Expr::List(_, items) => {
                 let elem_types: Vec<Type> = items.iter().map(|e| self.synthesise(e)).collect();
-                synthesise_list_type(elem_types)
+                let n = elem_types.len();
+                if (2..=4).contains(&n) {
+                    Type::Tuple(elem_types)
+                } else {
+                    synthesise_list_type(elem_types)
+                }
             }
 
             // ── Block ─────────────────────────────────────────────────────────
@@ -925,27 +935,37 @@ mod tests {
     #[test]
     fn empty_list_is_polymorphic() {
         let mut c = Checker::new();
+        assert_eq!(c.synthesise(&list(vec![])), Type::List(Box::new(Type::Any)));
+    }
+
+    #[test]
+    fn small_list_synthesises_as_tuple() {
+        let mut c = Checker::new();
+        // 2-4 element lists synthesise as tuples (more informative)
+        let l2 = list(vec![num_lit(1), str_lit("hello")]);
         assert_eq!(
-            c.synthesise(&list(vec![])),
-            Type::List(Box::new(Type::Any))
+            c.synthesise(&l2),
+            Type::Tuple(vec![Type::Number, Type::String])
+        );
+        let l3 = list(vec![num_lit(1), num_lit(2), num_lit(3)]);
+        assert_eq!(
+            c.synthesise(&l3),
+            Type::Tuple(vec![Type::Number, Type::Number, Type::Number])
         );
     }
 
     #[test]
-    fn homogeneous_list_synthesises_element_type() {
+    fn large_list_synthesises_as_list() {
         let mut c = Checker::new();
-        let l = list(vec![num_lit(1), num_lit(2), num_lit(3)]);
+        // 5+ element lists synthesise as homogeneous lists
+        let l = list(vec![
+            num_lit(1),
+            num_lit(2),
+            num_lit(3),
+            num_lit(4),
+            num_lit(5),
+        ]);
         assert_eq!(c.synthesise(&l), Type::List(Box::new(Type::Number)));
-    }
-
-    #[test]
-    fn heterogeneous_list_synthesises_union() {
-        let mut c = Checker::new();
-        let l = list(vec![num_lit(1), str_lit("hello")]);
-        assert_eq!(
-            c.synthesise(&l),
-            Type::List(Box::new(Type::Union(vec![Type::Number, Type::String])))
-        );
     }
 
     // ── Unknown variable is any ──────────────────────────────────────────────
