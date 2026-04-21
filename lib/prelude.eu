@@ -1509,7 +1509,8 @@ window-all(n, step, l): { chunk: l take(n) }.(if(chunk nil?, [], cons(chunk, (if
 partition-all(n): window-all(n, n)
 
 ` { doc: "`over-sliding-pairs(f, l)` - apply binary fn `f` to each overlapping pair in `l` to form new list."
-    type: "(a → a → b) → [a] → [b]" }
+    type: "(a → a → b) → [a] → [b]"
+    type-unchecked: true }
 over-sliding-pairs(f, l): l window(2, 1) map(f uncurry)
 
 ` { doc: "`differences(l)` - calculate difference between each overlapping pair in list of numbers `l`."

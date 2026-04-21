@@ -458,11 +458,28 @@ impl Checker {
         if let Some(annotated_type) = self.extract_annotation(meta) {
             let scheme = infer_scheme(annotated_type);
             let working_type = freshen(&scheme, &mut self.var_counter);
-            self.check_against(inner, &working_type, smid);
+            // Skip body verification when `type-unchecked: true` — the
+            // annotation is trusted without checking the implementation.
+            // Used when the body has type-level assumptions the checker
+            // cannot verify (e.g. dependent-length lists as tuples).
+            if !Self::is_type_unchecked(meta) {
+                self.check_against(inner, &working_type, smid);
+            }
             working_type
         } else {
             self.synthesise(inner)
         }
+    }
+
+    /// Check whether metadata contains a `type-unchecked` key.
+    ///
+    /// The value can be a boolean literal, or `true` (a variable reference
+    /// in the prelude).  We simply check for the key's presence.
+    fn is_type_unchecked(meta: &RcExpr) -> bool {
+        if let Expr::Block(_, block) = &*meta.inner {
+            return block.get("type-unchecked").is_some();
+        }
+        false
     }
 
     /// Synthesise a record type from a block's fields.
