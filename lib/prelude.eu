@@ -620,7 +620,7 @@ or: __OR
 ##
 
 ` { doc: "`l + r` - adds `l` and `r`. For numbers, both must be numeric. For arrays, performs element-wise addition; one operand may be a scalar."
-    type: "number → number → number | [a] → [a] → [a] | array → array → array"
+    type: "number → number → number | array → array → array"
     export: :suppress
     associates: :left
     precedence: :sum }
