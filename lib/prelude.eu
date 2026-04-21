@@ -2045,6 +2045,13 @@ arr: {
       type: "array → [number] → [[number]] → [number]" }
   neighbours(a, coords, offsets): __ARRAY_NEIGHBOURS(coords, offsets concat, a arr.rank, a)
 
+  ` :suppress
+  basis-array(shape, coords): arr.zeros(shape) arr.set(coords, 1)
+
+  ` { doc: "arr.unit-arrays(shape) - list of arrays with a single 1 at each coordinate position."
+      type: "[number] → [array]" }
+  unit-arrays(shape): basis-array(shape) <$> (arr.zeros(shape) arr.indices)
+
 }
 
 ` "`is-array?(x)` - true if `x` is an n-dimensional array."
