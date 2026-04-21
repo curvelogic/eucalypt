@@ -80,6 +80,9 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
             Ok(())
         }
 
+        // Literal symbol ↔ Symbol: widen to symbol (succeed, no binding).
+        (Type::LiteralSymbol(_), Type::Symbol) | (Type::Symbol, Type::LiteralSymbol(_)) => Ok(()),
+
         // Structural: function types — contravariant in param, covariant in result.
         (Type::Function(a1, b1), Type::Function(a2, b2)) => {
             let (a1, b1, a2, b2) = (a1.clone(), b1.clone(), a2.clone(), b2.clone());
@@ -360,6 +363,49 @@ mod tests {
         let l2 = Type::List(Box::new(Type::Number));
         assert!(unify(&l1, &l2, &mut s).is_ok());
         assert_eq!(s.get(&vid("a")), Some(&Type::Number));
+    }
+
+    #[test]
+    fn unify_literal_symbol_with_symbol() {
+        let mut s = Substitution::new();
+        let ls = Type::LiteralSymbol("active".to_string());
+        assert!(unify(&ls, &Type::Symbol, &mut s).is_ok());
+        assert!(s.is_empty()); // no bindings — just widening
+    }
+
+    #[test]
+    fn unify_symbol_with_literal_symbol() {
+        let mut s = Substitution::new();
+        let ls = Type::LiteralSymbol("active".to_string());
+        assert!(unify(&Type::Symbol, &ls, &mut s).is_ok());
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn unify_literal_symbol_same() {
+        let mut s = Substitution::new();
+        let a = Type::LiteralSymbol("x".to_string());
+        let b = Type::LiteralSymbol("x".to_string());
+        assert!(unify(&a, &b, &mut s).is_ok());
+    }
+
+    #[test]
+    fn unify_literal_symbol_different_fails() {
+        let mut s = Substitution::new();
+        let a = Type::LiteralSymbol("x".to_string());
+        let b = Type::LiteralSymbol("y".to_string());
+        assert!(unify(&a, &b, &mut s).is_err());
+    }
+
+    #[test]
+    fn unify_var_with_literal_symbol() {
+        let mut s = Substitution::new();
+        let ls = Type::LiteralSymbol("active".to_string());
+        assert!(unify(&var("a"), &ls, &mut s).is_ok());
+        assert_eq!(
+            s.get(&vid("a")),
+            Some(&Type::LiteralSymbol("active".to_string()))
+        );
     }
 
     // ── apply_subst ──────────────────────────────────────────────────────────

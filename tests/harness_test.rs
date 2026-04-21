@@ -1568,3 +1568,8 @@ pub fn test_typecheck_005_no_warnings() {
 pub fn test_typecheck_006_polymorphic() {
     run_typecheck_test("006_polymorphic.eu");
 }
+
+#[test]
+pub fn test_typecheck_008_literal_symbol() {
+    run_typecheck_test("008_literal_symbol.eu");
+}
