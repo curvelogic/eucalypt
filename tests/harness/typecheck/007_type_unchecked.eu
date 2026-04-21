@@ -1,0 +1,11 @@
+# type-unchecked suppresses body verification but annotation is used by callers
+
+` { type: "number → number"
+    type-unchecked: true }
+magic(x): "not actually a number"
+
+# Calling with correct type — no warning
+good: magic(42)
+
+# Calling with wrong type — should still warn
+bad: magic("hello")

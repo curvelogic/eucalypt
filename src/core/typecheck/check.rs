@@ -473,8 +473,10 @@ impl Checker {
 
     /// Check whether metadata contains a `type-unchecked` key.
     ///
-    /// The value can be a boolean literal, or `true` (a variable reference
-    /// in the prelude).  We simply check for the key's presence.
+    /// Presence of the key suppresses body verification against the type
+    /// annotation.  The annotation is still used for typing callers — only
+    /// the internal body check is skipped.  Value is not inspected because
+    /// `true` in eucalypt is a prelude binding (not a literal in core).
     fn is_type_unchecked(meta: &RcExpr) -> bool {
         if let Expr::Block(_, block) = &*meta.inner {
             return block.get("type-unchecked").is_some();
