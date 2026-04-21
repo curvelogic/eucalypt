@@ -23,12 +23,12 @@ array of 3 elements or `[2, 3]` for a 2×3 matrix.
 
 | Function | Description |
 |----------|-------------|
-| `arr.get(a, coords)` | Get element at coordinate list `coords` in array `a` |
-| `arr.set(a, coords, val)` | Return new array with element at `coords` set to `val` |
-| `arr.shape(a)` | Return shape of array `a` as a list of integers |
-| `arr.rank(a)` | Return number of dimensions of array `a` |
-| `arr.length(a)` | Return total number of elements in array `a` |
-| `arr.to-list(a)` | Return flat list of elements in row-major order |
+| `a arr.get(coords)` | Get element at coordinate list `coords` in array `a` |
+| `a arr.set(coords, val)` | Return new array with element at `coords` set to `val` |
+| `a arr.shape` | Return shape of array `a` as a list of integers |
+| `a arr.rank` | Return number of dimensions of array `a` |
+| `a arr.length` | Return total number of elements in array `a` |
+| `a arr.to-list` | Return flat list of elements in row-major order |
 | `arr.array?(x)` | `true` if `x` is an n-dimensional array |
 | `is-array?(x)` | `true` if `x` is an n-dimensional array (alias) |
 
@@ -40,14 +40,14 @@ one per dimension, e.g. `[row, col]` for a 2D array.
 The indexing operator `!!` is overloaded for arrays. When the left operand
 is an array, `!!` delegates to `arr.get`:
 
-```eu
-my-2d-array !! [row, col]   # same as arr.get(my-2d-array, [row, col])
-my-1d-array !! [idx]        # same as arr.get(my-1d-array, [idx])
+```eu,notest
+my-2d-array !! [row, col]   # same as my-2d-array arr.get([row, col])
+my-1d-array !! [idx]        # same as my-1d-array arr.get([idx])
 ```
 
 For plain lists, `!!` retains its original list-index behaviour:
 
-```eu
+```eu,notest
 [10, 20, 30] !! 1   # => 20
 ```
 
@@ -55,9 +55,9 @@ For plain lists, `!!` retains its original list-index behaviour:
 
 | Function | Description |
 |----------|-------------|
-| `arr.transpose(a)` | Reverse all axes of array `a` |
-| `arr.reshape(a, shape)` | Reshape array `a` to new shape (total elements must match) |
-| `arr.slice(a, axis, idx)` | Take a slice along `axis` at `idx`, reducing rank by 1 |
+| `a arr.transpose` | Reverse all axes of array `a` |
+| `a arr.reshape(shape)` | Reshape array `a` to new shape (total elements must match) |
+| `a arr.slice(axis, idx)` | Take a slice along `axis` at `idx`, reducing rank by 1 |
 
 ## Arithmetic
 
@@ -87,17 +87,17 @@ division as it does for plain integers).
 
 | Function | Description |
 |----------|-------------|
-| `arr.indices(a)` | Return list of coordinate lists for every element, in row-major order |
+| `a arr.indices` | Return list of coordinate lists for every element, in row-major order |
 | `arr.map(f, a)` | Apply `f` to each element; return new array of same shape |
 | `arr.map-indexed(f, a)` | Apply `f(coords, val)` to each element; return new array of same shape |
 | `arr.fold(f, init, a)` | Left-fold `f` over all elements in row-major order, starting from `init` |
-| `arr.neighbours(a, coords, offsets)` | Return list of values at valid in-bounds neighbours of `coords`, given a list of offset vectors |
+| `a arr.neighbours(coords, offsets)` | Return list of values at valid in-bounds neighbours of `coords`, given a list of offset vectors |
 
 `arr.indices` returns coordinates as lists; for a 2D array of shape `[rows, cols]`, each entry is `[row, col]`.
 
 `arr.neighbours` silently skips any out-of-bounds coordinates, so it is safe to call on border elements without special-casing.
 
-```eu
+```eu,notest
 # Double every element of a 1D array
 a: arr.from-flat([3], [1, 2, 3])
 b: arr.map((_ * 2), a)   # => [2, 4, 6] (same shape)
@@ -111,13 +111,13 @@ coords: arr.from-flat([2, 2], [0, 0, 0, 0]) arr.indices
 
 # Neighbours of centre cell in a 3×3 grid (4-connected)
 grid: arr.from-flat([3, 3], [1, 2, 3, 4, 5, 6, 7, 8, 9])
-ns: arr.neighbours(grid, [1, 1], [[-1, 0], [1, 0], [0, -1], [0, 1]])
+ns: grid arr.neighbours([1, 1], [[-1, 0], [1, 0], [0, -1], [0, 1]])
 # => [2, 8, 4, 6]
 ```
 
 ## Example
 
-```eu
+```eu,notest
 # 3×3 grid initialised to zero
 grid: arr.zeros([3, 3])
 

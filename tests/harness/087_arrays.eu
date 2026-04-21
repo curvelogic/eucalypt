@@ -192,12 +192,12 @@ neighbours-checks: {
     # should give [10, 30] (both in bounds)
     {
       a: arr.from-flat([3], [10, 20, 30])
-      ns: arr.neighbours(a, [1], [[-1], [1]])
+      ns: a arr.neighbours([1], [[-1], [1]])
     }.(ns sort-nums) = [10, 30],
     # Neighbours of boundary element [0]: only [1] offset is in bounds
     {
       a: arr.from-flat([3], [10, 20, 30])
-      ns: arr.neighbours(a, [0], [[-1], [1]])
+      ns: a arr.neighbours([0], [[-1], [1]])
     }.ns = [20]
   ]
 }
