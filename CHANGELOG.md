@@ -2,6 +2,37 @@
 
 All notable changes to eucalypt are documented here.
 
+## [0.6.0] - 2026-04-21
+
+### Added
+
+- **Gradual type system** — optional, structural type checking for eucalypt. Types are never required; all existing code continues to work unchanged.
+  - `eu check file.eu` — type-check a file, report warnings
+  - `eu check --strict file.eu` — treat warnings as errors
+  - `eu --type-check file.eu` — type-check then evaluate (warnings to stderr)
+- **Type annotation syntax** — `type:` metadata on declarations: `` ` { type: "number → number" } ``
+  - Primitives: `number`, `string`, `symbol`, `bool`, `null`, `datetime`
+  - Composites: `[T]` lists, `(A, B)` tuples, `{k: T, ..}` open records, `A → B` functions, `A | B` unions
+  - Special types: `any` (gradual), `top`, `never`, `set`, `vec`, `array`
+  - Type constructors: `IO(T)`, `Lens(A, B)`, `Traversal(A, B)`
+  - Type variables: `a`, `b`, etc. for polymorphic functions
+  - `→` (U+2192) as alternative to `->` in type strings
+  - `block` keyword as shorthand for `{..}` (open empty record)
+  - Asserted annotations: `type: "!T"` prefix trusts the type without verifying the body
+- **Literal symbol types** — `:name` in type annotations as singleton types matching specific symbols. `:active | :inactive` for discriminated unions
+- **Type aliases** — `type-def:` metadata derives an alias from a declaration's value; `types:` in unit metadata for standalone aliases
+- **Prelude type annotations** — ~200 functions annotated with `type:` metadata covering arithmetic, comparison, string, list, block, IO, lens, set, vec, arr, random, and monad operations
+- **Bidirectional type checker** — synthesis for literals, lists, blocks, variables, applications; checking mode for annotated functions; catenation/pipeline type flow; polymorphic instantiation via unification; union overload resolution with subtype fallback
+- **LSP type integration** — hover shows type annotations and inferred types; completion from record field types; inlay hints for inferred types; type warnings as `DiagnosticSeverity::WARNING`
+- **Warning diagnostic infrastructure** — `Diagnostic::warning()` in CLI (codespan-reporting) and `DiagnosticSeverity::WARNING` in LSP; warnings don't cause non-zero exit; `--strict` promotes to errors
+- **Desugarer type hints** — lens bracket expressions `‹ :items 0 :meta ›` carry `Lens(any, any)` type hints via `Expr::Meta`
+- **`arr.unit-arrays(shape)`** — list of arrays with a single 1 at each coordinate position (standard basis vectors for 1D, elementary matrices for 2D)
+- **Type check message tests** — integration tests for `eu check --strict` validating exit codes and stderr message content
+
+### Changed
+
+- **`arr.slice` and `arr.neighbours` parameter order** — reordered via prelude wrappers for pipeline style: `a arr.slice(axis, idx)`, `a arr.neighbours(coords, offsets)`
+
 ## [0.5.4] - 2026-04-19
 
 ### Added
