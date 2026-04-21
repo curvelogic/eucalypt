@@ -277,7 +277,11 @@ impl Checker {
     ///
     /// After parsing, alias references (`Type::Var` with a capitalised name)
     /// are resolved against the checker's alias map.
-    fn extract_annotation(&self, meta: &RcExpr) -> Option<Type> {
+    /// Extract a type annotation from metadata, returning the parsed type
+    /// and whether it was asserted (prefixed with `!`).
+    ///
+    /// Asserted annotations are trusted without body verification.
+    fn extract_annotation(&self, meta: &RcExpr) -> Option<(Type, bool)> {
         let block = match &*meta.inner {
             Expr::Block(_, b) => b,
             _ => return None,
@@ -291,8 +295,15 @@ impl Checker {
             return None;
         };
 
+        // A leading `!` marks the annotation as asserted (body not verified)
+        let (type_str, asserted) = if let Some(stripped) = type_str.strip_prefix('!') {
+            (stripped.trim().to_string(), true)
+        } else {
+            (type_str, false)
+        };
+
         let parsed = parse::parse_type(&type_str).ok()?;
-        Some(self.resolve_aliases_in_type(parsed))
+        Some((self.resolve_aliases_in_type(parsed), asserted))
     }
 
     /// Try to extract a `TypeScheme` from a binding value's `Meta` wrapper.
@@ -303,7 +314,8 @@ impl Checker {
     /// `infer_scheme`.  Alias references are resolved before quantification.
     fn annotation_scheme_of(&self, value: &RcExpr) -> Option<TypeScheme> {
         if let Expr::Meta(_, _, meta) = &*value.inner {
-            self.extract_annotation(meta).map(infer_scheme)
+            self.extract_annotation(meta)
+                .map(|(ty, _asserted)| infer_scheme(ty))
         } else {
             None
         }
@@ -387,7 +399,7 @@ impl Checker {
                         // Use the explicit `type:` annotation if given; otherwise
                         // the synthesised type (inferred from the value shape).
                         let alias_ty = if let Expr::Meta(_, _, meta) = &*value.inner {
-                            self.extract_annotation(meta)
+                            self.extract_annotation(meta).map(|(ty, _)| ty)
                         } else {
                             None
                         }
@@ -455,33 +467,19 @@ impl Checker {
         // the annotation itself can reference freshly-declared aliases.
         self.register_aliases_from_meta(meta);
 
-        if let Some(annotated_type) = self.extract_annotation(meta) {
+        if let Some((annotated_type, asserted)) = self.extract_annotation(meta) {
             let scheme = infer_scheme(annotated_type);
             let working_type = freshen(&scheme, &mut self.var_counter);
-            // Skip body verification when `type-unchecked: true` — the
-            // annotation is trusted without checking the implementation.
-            // Used when the body has type-level assumptions the checker
-            // cannot verify (e.g. dependent-length lists as tuples).
-            if !Self::is_type_unchecked(meta) {
+            // Asserted annotations (prefixed with `!`) are trusted without
+            // checking the body.  Used when the body has type-level assumptions
+            // the checker cannot verify (e.g. dependent-length lists as tuples).
+            if !asserted {
                 self.check_against(inner, &working_type, smid);
             }
             working_type
         } else {
             self.synthesise(inner)
         }
-    }
-
-    /// Check whether metadata contains a `type-unchecked` key.
-    ///
-    /// Presence of the key suppresses body verification against the type
-    /// annotation.  The annotation is still used for typing callers — only
-    /// the internal body check is skipped.  Value is not inspected because
-    /// `true` in eucalypt is a prelude binding (not a literal in core).
-    fn is_type_unchecked(meta: &RcExpr) -> bool {
-        if let Expr::Block(_, block) = &*meta.inner {
-            return block.get("type-unchecked").is_some();
-        }
-        false
     }
 
     /// Synthesise a record type from a block's fields.

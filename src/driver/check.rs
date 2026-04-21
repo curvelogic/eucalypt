@@ -283,7 +283,9 @@ fn check_annotation_syntax(filename: &str, source: &str, strict: bool) -> usize 
 
     let mut error_count = 0;
     for ann in annotations {
-        if let Err(e) = parse::parse_type(&ann.value) {
+        // Strip leading `!` (asserted annotation marker) before parsing
+        let type_str = ann.value.strip_prefix('!').unwrap_or(&ann.value).trim();
+        if let Err(e) = parse::parse_type(type_str) {
             let severity = if strict { "error" } else { "warning" };
             let line_col = byte_offset_to_line_col(source, ann.source_offset);
             eprintln!(

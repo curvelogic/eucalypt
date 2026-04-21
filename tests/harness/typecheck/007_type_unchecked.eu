@@ -1,7 +1,6 @@
-# type-unchecked suppresses body verification but annotation is used by callers
+# ! prefix asserts the type without verifying the body
 
-` { type: "number → number"
-    type-unchecked: true }
+` { type: "!number → number" }
 magic(x): "not actually a number"
 
 # Calling with correct type — no warning
