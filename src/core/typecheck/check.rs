@@ -277,7 +277,11 @@ impl Checker {
     ///
     /// After parsing, alias references (`Type::Var` with a capitalised name)
     /// are resolved against the checker's alias map.
-    fn extract_annotation(&self, meta: &RcExpr) -> Option<Type> {
+    /// Extract a type annotation from metadata, returning the parsed type
+    /// and whether it was asserted (prefixed with `!`).
+    ///
+    /// Asserted annotations are trusted without body verification.
+    fn extract_annotation(&self, meta: &RcExpr) -> Option<(Type, bool)> {
         let block = match &*meta.inner {
             Expr::Block(_, b) => b,
             _ => return None,
@@ -291,8 +295,15 @@ impl Checker {
             return None;
         };
 
+        // A leading `!` marks the annotation as asserted (body not verified)
+        let (type_str, asserted) = if let Some(stripped) = type_str.strip_prefix('!') {
+            (stripped.trim().to_string(), true)
+        } else {
+            (type_str, false)
+        };
+
         let parsed = parse::parse_type(&type_str).ok()?;
-        Some(self.resolve_aliases_in_type(parsed))
+        Some((self.resolve_aliases_in_type(parsed), asserted))
     }
 
     /// Try to extract a `TypeScheme` from a binding value's `Meta` wrapper.
@@ -303,7 +314,8 @@ impl Checker {
     /// `infer_scheme`.  Alias references are resolved before quantification.
     fn annotation_scheme_of(&self, value: &RcExpr) -> Option<TypeScheme> {
         if let Expr::Meta(_, _, meta) = &*value.inner {
-            self.extract_annotation(meta).map(infer_scheme)
+            self.extract_annotation(meta)
+                .map(|(ty, _asserted)| infer_scheme(ty))
         } else {
             None
         }
@@ -318,9 +330,19 @@ impl Checker {
             Expr::Literal(_, prim) => synthesise_primitive(prim),
 
             // ── List ─────────────────────────────────────────────────────────
+            //
+            // Small fixed-length list literals (2-4 elements) synthesise as
+            // tuples since tuples are subtypes of lists and carry more
+            // information.  Single-element lists stay as lists (not 1-tuples)
+            // and large lists stay as lists for practicality.
             Expr::List(_, items) => {
                 let elem_types: Vec<Type> = items.iter().map(|e| self.synthesise(e)).collect();
-                synthesise_list_type(elem_types)
+                let n = elem_types.len();
+                if (2..=4).contains(&n) {
+                    Type::Tuple(elem_types)
+                } else {
+                    synthesise_list_type(elem_types)
+                }
             }
 
             // ── Block ─────────────────────────────────────────────────────────
@@ -377,7 +399,7 @@ impl Checker {
                         // Use the explicit `type:` annotation if given; otherwise
                         // the synthesised type (inferred from the value shape).
                         let alias_ty = if let Expr::Meta(_, _, meta) = &*value.inner {
-                            self.extract_annotation(meta)
+                            self.extract_annotation(meta).map(|(ty, _)| ty)
                         } else {
                             None
                         }
@@ -445,10 +467,15 @@ impl Checker {
         // the annotation itself can reference freshly-declared aliases.
         self.register_aliases_from_meta(meta);
 
-        if let Some(annotated_type) = self.extract_annotation(meta) {
+        if let Some((annotated_type, asserted)) = self.extract_annotation(meta) {
             let scheme = infer_scheme(annotated_type);
             let working_type = freshen(&scheme, &mut self.var_counter);
-            self.check_against(inner, &working_type, smid);
+            // Asserted annotations (prefixed with `!`) are trusted without
+            // checking the body.  Used when the body has type-level assumptions
+            // the checker cannot verify (e.g. dependent-length lists as tuples).
+            if !asserted {
+                self.check_against(inner, &working_type, smid);
+            }
             working_type
         } else {
             self.synthesise(inner)
@@ -551,8 +578,24 @@ impl Checker {
 
         match func_type {
             Type::Function(param_type, result_type) => {
-                let arg_type = self.synthesise(arg);
                 let param_applied = apply_subst(&param_type, subst);
+
+                // When the parameter is a Tuple and the argument is a list
+                // literal with matching arity, use checking mode (element-wise)
+                // rather than synthesis (which loses tuple structure).
+                if let Type::Tuple(elem_types) = &param_applied {
+                    if let Expr::List(_, items) = &*arg.inner {
+                        if items.len() == elem_types.len() {
+                            for (item, expected_elem) in items.iter().zip(elem_types.iter()) {
+                                let item_smid = item.smid();
+                                self.check_against(item, expected_elem, item_smid);
+                            }
+                            return apply_subst(&result_type, subst);
+                        }
+                    }
+                }
+
+                let arg_type = self.synthesise(arg);
 
                 if !is_informative(&arg_type) || !is_informative(&param_applied) {
                     // Gradual boundary — no warning.
@@ -674,6 +717,18 @@ impl Checker {
             return self.check_lambda(scope, param_type, result_type);
         }
 
+        // List literal against tuple: check each element against its position.
+        if let (Expr::List(_, items), Type::Tuple(elem_types)) = (&*expr.inner, expected) {
+            if items.len() == elem_types.len() {
+                for (item, expected_elem) in items.iter().zip(elem_types.iter()) {
+                    let item_smid = item.smid();
+                    self.check_against(item, expected_elem, item_smid);
+                }
+                return;
+            }
+            // Length mismatch — fall through to synthesis path for error
+        }
+
         let found = self.synthesise(expr);
 
         if !is_informative(&found) {
@@ -762,7 +817,7 @@ fn synthesise_list_type(types: Vec<Type>) -> Type {
     }
 
     let elem_type = match seen.len() {
-        0 => Type::Never,
+        0 => Type::Any, // Empty list is polymorphic — compatible with any element type
         1 => seen.into_iter().next().unwrap(),
         _ => Type::Union(seen),
     };
@@ -898,29 +953,39 @@ mod tests {
     // ── List synthesis ──────────────────────────────────────────────────────
 
     #[test]
-    fn empty_list_is_never_list() {
+    fn empty_list_is_polymorphic() {
         let mut c = Checker::new();
+        assert_eq!(c.synthesise(&list(vec![])), Type::List(Box::new(Type::Any)));
+    }
+
+    #[test]
+    fn small_list_synthesises_as_tuple() {
+        let mut c = Checker::new();
+        // 2-4 element lists synthesise as tuples (more informative)
+        let l2 = list(vec![num_lit(1), str_lit("hello")]);
         assert_eq!(
-            c.synthesise(&list(vec![])),
-            Type::List(Box::new(Type::Never))
+            c.synthesise(&l2),
+            Type::Tuple(vec![Type::Number, Type::String])
+        );
+        let l3 = list(vec![num_lit(1), num_lit(2), num_lit(3)]);
+        assert_eq!(
+            c.synthesise(&l3),
+            Type::Tuple(vec![Type::Number, Type::Number, Type::Number])
         );
     }
 
     #[test]
-    fn homogeneous_list_synthesises_element_type() {
+    fn large_list_synthesises_as_list() {
         let mut c = Checker::new();
-        let l = list(vec![num_lit(1), num_lit(2), num_lit(3)]);
+        // 5+ element lists synthesise as homogeneous lists
+        let l = list(vec![
+            num_lit(1),
+            num_lit(2),
+            num_lit(3),
+            num_lit(4),
+            num_lit(5),
+        ]);
         assert_eq!(c.synthesise(&l), Type::List(Box::new(Type::Number)));
-    }
-
-    #[test]
-    fn heterogeneous_list_synthesises_union() {
-        let mut c = Checker::new();
-        let l = list(vec![num_lit(1), str_lit("hello")]);
-        assert_eq!(
-            c.synthesise(&l),
-            Type::List(Box::new(Type::Union(vec![Type::Number, Type::String])))
-        );
     }
 
     // ── Unknown variable is any ──────────────────────────────────────────────
