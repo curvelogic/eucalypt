@@ -1,0 +1,2 @@
+exit: 1
+stderr: "unknown render format 'not_a_format'"

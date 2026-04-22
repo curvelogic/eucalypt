@@ -1283,7 +1283,10 @@ fn evaluate_to_whnf_impl(
         }
         // Capture lifecycle inside sub-evaluation (needed if sub-eval uses render-as).
         if let Some(fmt) = state.pending_capture_start.take() {
-            let mut cap = crate::eval::stg::render_to_string::OwnedCaptureEmitter::new(&fmt)?;
+            let mut cap = crate::eval::stg::render_to_string::OwnedCaptureEmitter::new(
+                &fmt,
+                state.annotation,
+            )?;
             cap.stream_start();
             // We have no capture_emitters stack in this context; this is a limitation
             // of BIF-level sub-evaluation.  Nested render-as inside evaluate_to_whnf
@@ -1654,8 +1657,10 @@ impl<'a> Machine<'a> {
 
         // If a capture start was requested, push the capture emitter.
         if let Some(format) = self.state.pending_capture_start.take() {
-            let mut capture =
-                crate::eval::stg::render_to_string::OwnedCaptureEmitter::new(&format)?;
+            let mut capture = crate::eval::stg::render_to_string::OwnedCaptureEmitter::new(
+                &format,
+                self.state.annotation,
+            )?;
             capture.stream_start();
             self.capture_emitters.push(capture);
         }

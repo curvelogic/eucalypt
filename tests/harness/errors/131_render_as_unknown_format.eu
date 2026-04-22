@@ -1,0 +1,6 @@
+# Error test: render-as with an unrecognised format symbol.
+# Should produce 'unknown render format' with a helpful list of valid formats,
+# not a bare 'panic:' message.
+data: { x: 1 }
+result: data render-as(:not_a_format)
+RESULT: result
