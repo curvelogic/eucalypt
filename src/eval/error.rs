@@ -687,6 +687,10 @@ pub enum ExecutionError {
     ArrayNegativeIndex(Smid, f64),
     #[error("list index out of bounds: index {1} is beyond the end of the list")]
     ListIndexOutOfBounds(Smid, usize),
+    #[error("head requires a list, found {1}")]
+    HeadOfNonList(Smid, String),
+    #[error("tail requires a list, found {1}")]
+    TailOfNonList(Smid, String),
 }
 
 impl From<bump::AllocError> for ExecutionError {
@@ -754,6 +758,8 @@ impl HasSmid for ExecutionError {
             ExecutionError::IoTimeout(s, _) => *s,
             ExecutionError::IoCommandError(s, _) => *s,
             ExecutionError::ListIndexOutOfBounds(s, _) => *s,
+            ExecutionError::HeadOfNonList(s, _) => *s,
+            ExecutionError::TailOfNonList(s, _) => *s,
             ExecutionError::BadDateTimeString(s, _) => *s,
             ExecutionError::BadRegex(s, _, _) => *s,
             ExecutionError::BadFormatString(s, _) => *s,
@@ -1015,6 +1021,37 @@ impl ExecutionError {
                      to handle empty or short lists safely"
                         .to_string(),
                 ]
+            }
+            ExecutionError::HeadOfNonList(_, found) => {
+                let mut notes = vec![
+                    "head and tail require a list (e.g. [1, 2, 3]) as their argument".to_string(),
+                ];
+                if found.starts_with('"') {
+                    notes.push(
+                        "to concatenate strings, use string interpolation (e.g. \"{a}{b}\") \
+                         or 'str.join-on', not '++' (which is for list append)"
+                            .to_string(),
+                    );
+                    notes.push(
+                        "to get individual characters of a string, use 'str.letters'".to_string(),
+                    );
+                } else if found == "number" || found.parse::<f64>().is_ok() {
+                    notes.push("to create a list from a number, wrap it: '[n]'".to_string());
+                }
+                notes
+            }
+            ExecutionError::TailOfNonList(_, found) => {
+                let mut notes = vec![
+                    "head and tail require a list (e.g. [1, 2, 3]) as their argument".to_string(),
+                ];
+                if found.starts_with('"') {
+                    notes.push(
+                        "to concatenate strings, use string interpolation (e.g. \"{a}{b}\") \
+                         or 'str.join-on', not '++' (which is for list append)"
+                            .to_string(),
+                    );
+                }
+                notes
             }
             ExecutionError::BadDateTimeComponents(_, _, _, _, _, _, _, _) => {
                 vec![

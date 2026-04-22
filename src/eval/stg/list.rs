@@ -100,10 +100,7 @@ impl StgIntrinsic for Tail {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let repr = super::debug::render_debug_repr(machine, view, &args[0]);
-        Err(ExecutionError::Panic(
-            machine.annotation(),
-            format!("tail requires a list argument, got {repr}"),
-        ))
+        Err(ExecutionError::TailOfNonList(machine.annotation(), repr))
     }
 }
 
@@ -146,10 +143,7 @@ impl StgIntrinsic for Head {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let repr = super::debug::render_debug_repr(machine, view, &args[0]);
-        Err(ExecutionError::Panic(
-            machine.annotation(),
-            format!("head requires a list argument, got {repr}"),
-        ))
+        Err(ExecutionError::HeadOfNonList(machine.annotation(), repr))
     }
 }
 
