@@ -349,6 +349,12 @@ impl SourceLoader {
                 // store text and map locator to fileid
                 let id = self.files.add(locator.to_string(), source);
                 self.locators.insert(locator.clone(), id);
+                // Resources (prelude, stdlib) are not user files; mark them so
+                // that diagnostics can prefer user-code locations as the primary
+                // error site rather than showing prelude internals.
+                if matches!(locator, Locator::Resource(_)) {
+                    self.source_map.mark_resource_file(id);
+                }
                 Ok(id)
             }
         }

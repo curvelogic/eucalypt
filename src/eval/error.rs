@@ -788,28 +788,53 @@ impl ExecutionError {
             other => (other, [].as_slice(), [].as_slice()),
         };
 
-        // If the error's own Smid has no file location (e.g. it points to a
-        // synthetic intrinsic label), try to find a source location from the
-        // environment trace.  The env trace contains annotations from the let
-        // frames that were live at the time of the error, including any Ann
-        // nodes the compiler injected at call sites.
-        let has_source_label = source_map
-            .source_info(inner)
-            .map(|info| info.file.is_some())
+        // Determine the best primary source location:
+        // - Prefer a user-file location (the call site in user code) over a
+        //   prelude/resource location (the site of the failure inside a library).
+        // - If the error's own Smid already points to a user file, use that.
+        // - Otherwise, search the environment trace (innermost call annotations)
+        //   then the stack trace for the first user-file Smid.
+        // - As a last resort, fall back to any Smid with a file location.
+        let error_info = source_map.source_info(inner);
+        let error_has_user_file = error_info
+            .and_then(|info| info.file)
+            .map(|fid| source_map.is_user_file(fid))
             .unwrap_or(false);
 
-        if !has_source_label {
-            // Prefer the env trace (innermost call site) over the stack trace
-            let fallback_smid = source_map
-                .first_source_smid(env_trace)
-                .or_else(|| source_map.first_source_smid(stack_trace));
-            if let Some(smid) = fallback_smid {
-                if let Some(info) = source_map.source_info_for_smid(smid) {
-                    if let (Some(file), Some(span)) = (info.file, info.span) {
-                        diag = diag.with_labels(vec![Label::primary(file, span)]);
-                    }
-                }
+        let primary_file_span: Option<(usize, codespan::Span)> = if error_has_user_file {
+            error_info.and_then(|info| info.file.zip(info.span))
+        } else {
+            // Try to find a user-file location in the traces
+            let user_smid = source_map
+                .first_user_source_smid(env_trace)
+                .or_else(|| source_map.first_user_source_smid(stack_trace));
+
+            if let Some(smid) = user_smid {
+                source_map
+                    .source_info_for_smid(smid)
+                    .and_then(|info| info.file.zip(info.span))
+            } else {
+                // No user-file location; fall back to the error's own Smid or
+                // any location in the traces (handles rare all-library scenarios).
+                error_info
+                    .and_then(|info| info.file.zip(info.span))
+                    .or_else(|| {
+                        let smid = source_map
+                            .first_source_smid(env_trace)
+                            .or_else(|| source_map.first_source_smid(stack_trace))?;
+                        source_map
+                            .source_info_for_smid(smid)
+                            .and_then(|info| info.file.zip(info.span))
+                    })
             }
+        };
+
+        // Apply the primary label.  We clear any label that source_map.diagnostic()
+        // may have set (which could be a prelude location) and replace it with the
+        // best location determined above.
+        if let Some((file, span)) = primary_file_span {
+            diag.labels.clear();
+            diag.labels.push(Label::primary(file, span));
         }
 
         // Add secondary labels from the env trace for call-chain context.
@@ -818,18 +843,6 @@ impl ExecutionError {
         // from the primary label (to avoid redundant markers).  Limited to 3
         // secondary labels to keep output readable.
         {
-            // Determine the primary span (from error's own Smid or fallback)
-            let primary_file_span = source_map
-                .source_info(inner)
-                .and_then(|info| info.file.zip(info.span))
-                .or_else(|| {
-                    let smid = source_map
-                        .first_source_smid(env_trace)
-                        .or_else(|| source_map.first_source_smid(stack_trace))?;
-                    let info = source_map.source_info_for_smid(smid)?;
-                    info.file.zip(info.span)
-                });
-
             let mut secondary_labels: Vec<Label<usize>> = vec![];
             let mut seen_spans: Vec<(usize, codespan::Span)> = vec![];
 
@@ -893,8 +906,12 @@ impl ExecutionError {
                 Self::format_smid_detail(error_smid, source_map)
             ));
 
-            // vm.annotation (same as error smid for most errors)
-            dump.push(format!("has_source_label: {has_source_label}"));
+            // Whether the error's own Smid points to a user file
+            dump.push(format!("error_has_user_file: {error_has_user_file}"));
+            dump.push(format!(
+                "primary_file_span: {:?}",
+                primary_file_span.map(|(f, s)| (f, s.start(), s.end()))
+            ));
 
             // Environment trace
             if env_trace.is_empty() {
