@@ -198,8 +198,8 @@ impl CompileError {
                     }
                     "join" => {
                         notes.push(
-                            "to join strings with a separator, use 'join-on', \
-                             e.g. 'xs join-on(sep)' where sep is the separator string"
+                            "to join a list of strings with a separator, use 'str.join-on', \
+                             e.g. 'xs str.join-on(sep)' where sep is the separator string"
                                 .to_string(),
                         );
                     }

@@ -358,9 +358,14 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
             "to apply a function to each element of a list, use 'map(f, list)', e.g. 'xs map(_ + 1)'"
                 .to_string(),
         ],
+        "join" => vec![
+            "to join a list of strings with a separator, use 'str.join-on', \
+             e.g. 'items str.join-on(\", \")'"
+                .to_string(),
+        ],
         "replace" | "sub" | "gsub" => vec!["eucalypt has no 'replace' function; \
              use 'str.matches-of(re, s)' to find matches, or construct a replacement \
-             by splitting and re-joining: 's str.split-on(re) join-on(replacement)'"
+             by splitting and re-joining: 's str.split-on(re) str.join-on(replacement)'"
             .to_string()],
         "strip" | "trim" | "rstrip" | "lstrip" => vec!["eucalypt has no 'trim'/'strip' function; \
              to remove surrounding whitespace use a regex: \
