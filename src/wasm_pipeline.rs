@@ -116,6 +116,7 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
         .expect("prelude is embedded")
         .clone();
     let prelude_file_id = files.add("prelude".to_string(), prelude_text.clone());
+    source_map.mark_resource_file(prelude_file_id);
     let prelude_parse = rowan::parse_unit(&prelude_text);
     if !prelude_parse.errors().is_empty() {
         return Err(PipelineError {

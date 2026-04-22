@@ -97,6 +97,11 @@ pub struct SourceInfo {
 #[derive(Default)]
 pub struct SourceMap {
     source: Vec<SourceInfo>,
+    /// File IDs that correspond to resources (e.g. prelude, stdlib) rather
+    /// than user-authored files.  Used by `is_user_file` so that diagnostic
+    /// code can prefer user locations over resource locations when building
+    /// error labels.
+    resource_file_ids: std::collections::HashSet<usize>,
 }
 
 impl SourceMap {
@@ -238,6 +243,19 @@ impl SourceMap {
         }
     }
 
+    /// Mark a file ID as belonging to a resource (e.g. the prelude, a stdlib
+    /// module).  Diagnostics can use `is_user_file` to avoid showing resource
+    /// locations as the primary error site.
+    pub fn mark_resource_file(&mut self, file_id: usize) {
+        self.resource_file_ids.insert(file_id);
+    }
+
+    /// Returns `true` when `file_id` belongs to a user-authored file, i.e. it
+    /// has *not* been marked as a resource file.
+    pub fn is_user_file(&self, file_id: usize) -> bool {
+        !self.resource_file_ids.contains(&file_id)
+    }
+
     /// Find the first Smid in a trace slice that has a concrete file/span location.
     ///
     /// Used as a fallback when an error's own Smid is synthetic (e.g. an
@@ -247,6 +265,25 @@ impl SourceMap {
         trace.iter().copied().find(|smid| {
             if let Some(info) = self.source_info_for_smid(*smid) {
                 info.file.is_some() && info.span.is_some()
+            } else {
+                false
+            }
+        })
+    }
+
+    /// Find the first Smid in a trace slice that has a concrete location in a
+    /// *user* file (i.e. not a prelude / resource file).
+    ///
+    /// Used to surface user-code call sites as the primary error location when
+    /// the error itself originated inside a library function.
+    pub fn first_user_source_smid(&self, trace: &[Smid]) -> Option<Smid> {
+        trace.iter().copied().find(|smid| {
+            if let Some(info) = self.source_info_for_smid(*smid) {
+                if let Some(fid) = info.file {
+                    info.span.is_some() && self.is_user_file(fid)
+                } else {
+                    false
+                }
             } else {
                 false
             }
@@ -324,8 +361,69 @@ impl SourceMap {
         // Reverse to read outermost-first (matches conventional stack trace order)
         elements.reverse();
 
+        // Compress repeated cycles (e.g. mutual recursion between foldl and +)
+        let elements = compress_trace_cycles(elements);
+
         elements.as_slice().join("\n")
     }
+}
+
+/// Detect and compress repeating cycles in a formatted stack trace.
+///
+/// Scans the elements list for the smallest repeating prefix and, when the
+/// same pattern of frames appears two or more times consecutively, emits the
+/// pattern once followed by a `  ... N frames elided (M× repetition)` line.
+/// The remaining non-repeating tail is appended unchanged.
+///
+/// Only patterns of length ≤ 8 are considered to keep the algorithm efficient.
+fn compress_trace_cycles(elements: Vec<String>) -> Vec<String> {
+    let n = elements.len();
+    if n < 2 {
+        return elements;
+    }
+
+    let mut result = Vec::with_capacity(n);
+    let mut i = 0;
+
+    while i < n {
+        let remaining = n - i;
+        let max_pat = (remaining / 2).min(8);
+        let mut compressed = false;
+
+        // Try shortest patterns first so we find the smallest repeating unit
+        for pat_len in 1..=max_pat {
+            let pattern = &elements[i..i + pat_len];
+            let mut count = 1usize;
+            let mut j = i + pat_len;
+
+            while j + pat_len <= n && elements[j..j + pat_len] == *pattern {
+                count += 1;
+                j += pat_len;
+            }
+
+            if count >= 2 {
+                // Emit the pattern once
+                result.extend_from_slice(pattern);
+                let elided = (count - 1) * pat_len;
+                result.push(format!(
+                    "  ... {} frame{} elided ({}× repetition)",
+                    elided,
+                    if elided == 1 { "" } else { "s" },
+                    count
+                ));
+                i = j;
+                compressed = true;
+                break;
+            }
+        }
+
+        if !compressed {
+            result.push(elements[i].clone());
+            i += 1;
+        }
+    }
+
+    result
 }
 
 /// Map internal intrinsic names to user-facing display names.
