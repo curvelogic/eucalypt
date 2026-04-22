@@ -190,6 +190,30 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
              gives the string `\"name\"`"
                 .to_string(),
         ]
+    } else if !is_list
+        && (expected.contains(&DataConstructor::ListCons.tag())
+            || expected.contains(&DataConstructor::ListNil.tag()))
+    {
+        // A non-list value was passed where a list was expected — e.g. passing a number
+        // to a list function like 'map', 'filter', 'count', '!!', etc.
+        let mut notes = vec![
+            "list operations such as 'map', 'filter', 'count', 'head', 'tail', '++', '!!' \
+             require a list (e.g. [1, 2, 3]) as their argument"
+                .to_string(),
+        ];
+        if is_number || is_string || is_symbol {
+            notes.push(
+                "to create a single-element list, wrap the value: e.g. '[42]' or '[\"hello\"]'"
+                    .to_string(),
+            );
+        } else if is_block {
+            notes.push(
+                "to get a list of values from a block, use 'values', e.g. 'block values'; \
+                 to get a list of keys, use 'keys'"
+                    .to_string(),
+            );
+        }
+        notes
     } else {
         vec![]
     }
