@@ -285,8 +285,8 @@ fn format_lookup_failure(key: &str, suggestions: &[String], available: &[String]
 
 /// Generate contextual notes for lookup failure errors.
 ///
-/// Recognises common Python/Ruby string method names used as block keys and
-/// suggests the correct eucalypt equivalents in the `str` namespace.
+/// Recognises common method names (string, list, functional) used as block keys
+/// and suggests the correct eucalypt equivalents.
 fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
     // Only produce extra notes when there are no edit-distance suggestions,
     // i.e. the key is genuinely unknown and not a near-miss of an existing key.
@@ -294,16 +294,73 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
         return vec![];
     }
     match key {
-        "upper" | "toUpper" | "toUpperCase" | "toupper" => {
+        "upper" | "to_upper" | "to-upper" | "toUpper" | "toUpperCase" | "toupper" => {
             vec!["to convert a string to upper case, use 'str.to-upper', \
              e.g. 'text str.to-upper'"
                 .to_string()]
         }
-        "lower" | "toLower" | "toLowerCase" | "tolower" => {
+        "lower" | "to_lower" | "to-lower" | "toLower" | "toLowerCase" | "tolower" => {
             vec!["to convert a string to lower case, use 'str.to-lower', \
              e.g. 'text str.to-lower'"
                 .to_string()]
         }
+        "length" | "len" | "size" => vec![
+            "to get the number of elements in a list or the number of characters in a string, \
+             use 'count', e.g. 'xs count'"
+                .to_string(),
+        ],
+        "append" | "push" | "push-back" => vec![
+            "to add an element to the front of a list, use 'CONS(element, list)'; \
+             eucalypt lists are prepend-only — reverse and sort for tail-append patterns"
+                .to_string(),
+        ],
+        "prepend" | "cons" | "push-front" | "unshift" => vec![
+            "to add an element to the front of a list, use 'CONS(element, list)'"
+                .to_string(),
+        ],
+        "first" => vec![
+            "to get the first element of a list, use 'head', e.g. 'xs head'"
+                .to_string(),
+        ],
+        "last" => vec![
+            "eucalypt has no built-in 'last' function; use 'reverse head' to get the last element, \
+             e.g. 'xs reverse head'"
+                .to_string(),
+        ],
+        "flatten" | "flat" => vec![
+            "eucalypt has no built-in 'flatten' function; \
+             use 'mapcat(identity)' to flatten one level of nesting"
+                .to_string(),
+        ],
+        "zip-with" | "zip_with" | "zipWith" => vec![
+            "to zip two lists together, use 'zip', e.g. '[a, b, c] zip([1, 2, 3])'; \
+             to zip and combine with a function, use 'map' over the zipped pairs"
+                .to_string(),
+        ],
+        "filter" | "select" | "keep" | "reject" => vec![
+            "to filter a list, use 'filter(pred, list)', e.g. 'xs filter(_ > 0)'"
+                .to_string(),
+        ],
+        "reduce" | "fold" | "foldl" | "foldr" | "inject" => vec![
+            "eucalypt has no built-in 'reduce'/'fold'; \
+             use 'sum', 'product', or 'str.join-on' for common reductions"
+                .to_string(),
+        ],
+        "take" => vec![
+            "eucalypt has no built-in 'take'; \
+             to get the first n elements of a list, combine 'drop' and 'reverse': \
+             use 'xs reverse drop(xs count - n) reverse'"
+                .to_string(),
+        ],
+        "sort" | "sort-by" => vec![
+            "to sort a list of numbers, use 'sort-nums'; \
+             to sort by a key function, use 'sort-by-num(f, list)', e.g. 'xs sort-by-num(.value)'"
+                .to_string(),
+        ],
+        "map" | "collect" => vec![
+            "to apply a function to each element of a list, use 'map(f, list)', e.g. 'xs map(_ + 1)'"
+                .to_string(),
+        ],
         "replace" | "sub" | "gsub" => vec!["eucalypt has no 'replace' function; \
              use 'str.matches-of(re, s)' to find matches, or construct a replacement \
              by splitting and re-joining: 's str.split-on(re) join-on(replacement)'"
