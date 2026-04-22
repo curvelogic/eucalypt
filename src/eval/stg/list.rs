@@ -9,7 +9,9 @@ use crate::{
         error::ExecutionError,
         machine::{
             env::SynClosure,
-            intrinsic::{CallGlobal1, CallGlobal2, Const, IntrinsicMachine, StgIntrinsic},
+            intrinsic::{
+                CallGlobal0, CallGlobal1, CallGlobal2, Const, IntrinsicMachine, StgIntrinsic,
+            },
         },
         memory::{mutator::MutatorHeapView, syntax::Ref},
     },
@@ -17,12 +19,11 @@ use crate::{
 
 use super::{
     force::SeqNumList,
-    panic::Panic,
     support::{
         collect_num_list, data_list_arg, machine_return_bool, machine_return_num_list, num_arg,
     },
     syntax::{
-        dsl::{app_bif, box_str, case, data, force, lambda, let_, local, lref, value},
+        dsl::{app_bif, case, data, force, lambda, local, lref, value},
         LambdaForm,
     },
     tags::DataConstructor,
@@ -78,13 +79,7 @@ impl StgIntrinsic for Tail {
                 local(0),
                 vec![
                     (DataConstructor::ListCons.tag(), local(1)),
-                    (
-                        DataConstructor::ListNil.tag(),
-                        let_(
-                            vec![value(box_str("tail of empty list"))],
-                            Panic.global(lref(0)),
-                        ),
-                    ),
+                    (DataConstructor::ListNil.tag(), TailEmptyErr.global()),
                 ],
                 // Non-list value: call BIF to render actual value in error
                 app_bif(self.index() as u8, vec![lref(0)]),
@@ -121,13 +116,7 @@ impl StgIntrinsic for Head {
                 local(0),
                 vec![
                     (DataConstructor::ListCons.tag(), local(0)),
-                    (
-                        DataConstructor::ListNil.tag(),
-                        let_(
-                            vec![value(box_str("head of empty list"))],
-                            Panic.global(lref(0)),
-                        ),
-                    ),
+                    (DataConstructor::ListNil.tag(), HeadEmptyErr.global()),
                 ],
                 // Non-list value: call BIF to render actual value in error
                 app_bif(self.index() as u8, vec![lref(0)]),
@@ -148,6 +137,53 @@ impl StgIntrinsic for Head {
 }
 
 impl CallGlobal1 for Head {}
+
+/// HEAD_EMPTY_ERR — called by the HEAD wrapper when applied to an empty list.
+///
+/// Emits a `HeadOfEmptyList` error with the current annotation Smid so that
+/// the diagnostic points at the call site rather than showing a generic
+/// "panic:" message.
+pub struct HeadEmptyErr;
+
+impl StgIntrinsic for HeadEmptyErr {
+    fn name(&self) -> &str {
+        "HEAD_EMPTY_ERR"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        _view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        _args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        Err(ExecutionError::HeadOfEmptyList(machine.annotation()))
+    }
+}
+
+/// TAIL_EMPTY_ERR — called by the TAIL wrapper when applied to an empty list.
+///
+/// Emits a `TailOfEmptyList` error with the current annotation Smid.
+pub struct TailEmptyErr;
+
+impl StgIntrinsic for TailEmptyErr {
+    fn name(&self) -> &str {
+        "TAIL_EMPTY_ERR"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        _view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        _args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        Err(ExecutionError::TailOfEmptyList(machine.annotation()))
+    }
+}
+
+impl CallGlobal0 for HeadEmptyErr {}
+impl CallGlobal0 for TailEmptyErr {}
 
 /// ISLIST(value)
 ///

@@ -1,0 +1,339 @@
+---
+title: lens
+filename: /Users/greg/dev/curvelogic/eucalypt/lib/lens.eu
+tests:
+  "'test-basic-yaml'":
+    exit: 0
+    stdout:
+      - "---"
+      - "atom:"
+      - "  value: 42"
+      - "  point:"
+      - "    x: 1"
+      - "    y: 2"
+      - "α: true"
+      - "β: true"
+      - "γ: true"
+      - "δ: true"
+      - "ε: true"
+      - "ζ:"
+      - "  x: 6"
+      - "  y: 7"
+      - "η: 1"
+      - "θ:"
+      - "  value: 42"
+      - "  point:"
+      - "    x: 88"
+      - "    y: 2"
+      - "ι: true"
+      - "κ: true"
+      - "RESULT: PASS"
+    stderr: []
+    result:
+      atom:
+        value: 42
+        point:
+          x: 1
+          y: 2
+      α: true
+      β: true
+      γ: true
+      δ: true
+      ε: true
+      ζ:
+        x: 6
+        y: 7
+      η: 1
+      θ:
+        value: 42
+        point:
+          x: 88
+          y: 2
+      ι: true
+      κ: true
+      RESULT: PASS
+    expectations:
+      - name: default
+        function-key: default-expectation
+    stats:
+      ticks: 9
+      allocs: 227
+      max-stack: 0
+    validation:
+      - name: default
+        function-key: default-expectation
+        result: PASS
+  "'test-predicate-yaml'":
+    exit: 0
+    stdout:
+      - "---"
+      - "test-data:"
+      - "  - id: 1"
+      - "    value: a"
+      - "  - id: 2"
+      - "    value: b"
+      - "test-r: true"
+      - "test-s: true"
+      - "RESULT: PASS"
+    stderr: []
+    result:
+      test-data:
+        - id: 1
+          value: a
+        - id: 2
+          value: b
+      test-r: true
+      test-s: true
+      RESULT: PASS
+    expectations:
+      - name: default
+        function-key: default-expectation
+    stats:
+      ticks: 9
+      allocs: 247
+      max-stack: 1
+    validation:
+      - name: default
+        function-key: default-expectation
+        result: PASS
+  "'test-index-yaml'":
+    exit: 0
+    stdout:
+      - "---"
+      - "sequence:"
+      - "  - 2"
+      - "  - 4"
+      - "  - 6"
+      - "  - 8"
+      - "test-j: true"
+      - "test-k: true"
+      - "test-l: true"
+      - "test-m: true"
+      - "deep-list:"
+      - "  - meta:"
+      - "      title: one"
+      - "  - meta:"
+      - "      title: two"
+      - "test-n: true"
+      - "test-o: true"
+      - "RESULT: PASS"
+    stderr: []
+    result:
+      sequence:
+        - 2
+        - 4
+        - 6
+        - 8
+      test-j: true
+      test-k: true
+      test-l: true
+      test-m: true
+      deep-list:
+        - meta:
+            title: one
+        - meta:
+            title: two
+      test-n: true
+      test-o: true
+      RESULT: PASS
+    expectations:
+      - name: default
+        function-key: default-expectation
+    stats:
+      ticks: 9
+      allocs: 318
+      max-stack: 1
+    validation:
+      - name: default
+        function-key: default-expectation
+        result: PASS
+  "'test-element-yaml'":
+    exit: 0
+    stdout:
+      - "---"
+      - "test-block:"
+      - "  a: 1"
+      - "  b: 2"
+      - "  c: 3"
+      - "test-t: true"
+      - "test-u: true"
+      - "test-v: true"
+      - "test-w: true"
+      - "test-x: true"
+      - "test-y: true"
+      - "RESULT: PASS"
+    stderr: []
+    result:
+      test-block:
+        a: 1
+        b: 2
+        c: 3
+      test-t: true
+      test-u: true
+      test-v: true
+      test-w: true
+      test-x: true
+      test-y: true
+      RESULT: PASS
+    expectations:
+      - name: default
+        function-key: default-expectation
+    stats:
+      ticks: 9
+      allocs: 364
+      max-stack: 1
+    validation:
+      - name: default
+        function-key: default-expectation
+        result: PASS
+  "'test-traversals-yaml'":
+    exit: 0
+    stdout:
+      - "---"
+      - "test-ea: true"
+      - "test-eb: true"
+      - "test-ec: true"
+      - "test-ed: true"
+      - "test-ee: true"
+      - "test-ef: true"
+      - "test-fa: true"
+      - "test-fb: true"
+      - "test-fc: true"
+      - "test-fd: true"
+      - "test-fe:"
+      - "  - id: 1"
+      - "    v: a"
+      - "  - id: 2"
+      - "    v: b!"
+      - "  - id: 3"
+      - "    v: c!"
+      - "test-fe-check: true"
+      - "test-fe-check2: true"
+      - "test-fe-check3: true"
+      - "deep:"
+      - "  - meta:"
+      - "      title: one"
+      - "  - meta:"
+      - "      title: two"
+      - "test-eg: true"
+      - "test-eh: true"
+      - "RESULT: PASS"
+    stderr: []
+    result:
+      test-ea: true
+      test-eb: true
+      test-ec: true
+      test-ed: true
+      test-ee: true
+      test-ef: true
+      test-fa: true
+      test-fb: true
+      test-fc: true
+      test-fd: true
+      test-fe:
+        - id: 1
+          v: a
+        - id: 2
+          v: b!
+        - id: 3
+          v: c!
+      test-fe-check: true
+      test-fe-check2: true
+      test-fe-check3: true
+      deep:
+        - meta:
+            title: one
+        - meta:
+            title: two
+      test-eg: true
+      test-eh: true
+      RESULT: PASS
+    expectations:
+      - name: default
+        function-key: default-expectation
+    stats:
+      ticks: 9
+      allocs: 372
+      max-stack: 1
+    validation:
+      - name: default
+        function-key: default-expectation
+        result: PASS
+  "'test-paths-yaml'":
+    exit: 0
+    stdout:
+      - "---"
+      - "deep-list:"
+      - "  - meta:"
+      - "      title: one"
+      - "  - meta:"
+      - "      title: two"
+      - "test-p: true"
+      - "test-q: true"
+      - "data:"
+      - "  items:"
+      - "    - meta:"
+      - "        title: one"
+      - "    - meta:"
+      - "        title: two"
+      - "test-r: true"
+      - "test-s: true"
+      - "test-block:"
+      - "  a: 1"
+      - "  b: 2"
+      - "  c: 3"
+      - "test-t: true"
+      - "test-u: true"
+      - "test-data:"
+      - "  records:"
+      - "    - id: 1"
+      - "      value: a"
+      - "    - id: 2"
+      - "      value: b"
+      - "test-v: true"
+      - "test-w: true"
+      - "RESULT: PASS"
+    stderr: []
+    result:
+      deep-list:
+        - meta:
+            title: one
+        - meta:
+            title: two
+      test-p: true
+      test-q: true
+      data:
+        items:
+          - meta:
+              title: one
+          - meta:
+              title: two
+      test-r: true
+      test-s: true
+      test-block:
+        a: 1
+        b: 2
+        c: 3
+      test-t: true
+      test-u: true
+      test-data:
+        records:
+          - id: 1
+            value: a
+          - id: 2
+            value: b
+      test-v: true
+      test-w: true
+      RESULT: PASS
+    expectations:
+      - name: default
+        function-key: default-expectation
+    stats:
+      ticks: 9
+      allocs: 406
+      max-stack: 1
+    validation:
+      - name: default
+        function-key: default-expectation
+        result: PASS
+overall: PASS
