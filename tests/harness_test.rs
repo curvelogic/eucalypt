@@ -1533,6 +1533,16 @@ pub fn test_error_139() {
 }
 
 #[test]
+pub fn test_error_135() {
+    run_error_test(&error_opts("135_head_empty_list.eu"));
+}
+
+#[test]
+pub fn test_error_136() {
+    run_error_test(&error_opts("136_tail_empty_list.eu"));
+}
+
+#[test]
 pub fn test_harness_142() {
     run_test(&opts("142_consecutive_metadata_blocks.eu"));
 }
