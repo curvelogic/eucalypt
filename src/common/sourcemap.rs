@@ -260,9 +260,10 @@ impl SourceMap {
     /// line 5 column 3, or `example.eu:2:10 (str.letters(99))` for a
     /// source expression.
     pub fn format_trace(&self, trace: &[Smid], files: &SimpleFiles<String, String>) -> String {
-        // Collect entries in trace order (innermost-first from the VM),
-        // then reverse so the output reads outermost-first (conventional order).
-        let mut elements: Vec<_> = trace
+        // Collect entries in trace order (innermost-first from the VM).
+        // Each entry carries a deduplication key (name + file + line) to suppress
+        // repeated appearances of the same function at the same line.
+        let mut raw: Vec<(String, String)> = trace
             .iter()
             .filter_map(|smid| {
                 let info = self.source.get(smid.get())?;
@@ -288,22 +289,34 @@ impl SourceMap {
                     }
                 };
 
-                // Build file:line:col location string if we have a source location
-                let location = info.file.and_then(|id| {
-                    let name = files.name(id).ok()?;
-                    let span = info.span?;
-                    let loc = files.location(id, span.start().to_usize()).ok()?;
-                    // Strip directory prefix for readability
-                    let short_name = std::path::Path::new(&name)
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or(&name);
-                    Some(format!(
-                        "{short_name}:{line}:{col}",
-                        line = loc.line_number,
-                        col = loc.column_number
-                    ))
-                });
+                // Build file:line location string if we have a source location.
+                // The dedup key uses file + line (without column) so that multiple
+                // stack frames at different columns within the same line are collapsed.
+                let (location, dedup_key) = if let Some(id) = info.file {
+                    if let Some(span) = info.span {
+                        if let Ok(loc) = files.location(id, span.start().to_usize()) {
+                            let name = files.name(id).ok().unwrap_or_default();
+                            let short_name = std::path::Path::new(&name)
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .map(|s| s.to_string())
+                                .unwrap_or(name);
+                            let loc_str = format!(
+                                "{short_name}:{line}:{col}",
+                                line = loc.line_number,
+                                col = loc.column_number
+                            );
+                            let key = format!("{short_name}:{}", loc.line_number);
+                            (Some(loc_str), key)
+                        } else {
+                            (None, String::new())
+                        }
+                    } else {
+                        (None, String::new())
+                    }
+                } else {
+                    (None, String::new())
+                };
 
                 // Only include entries that have a user-visible name or source location.
                 // Entries with neither are internal machinery and are silently dropped.
@@ -312,19 +325,34 @@ impl SourceMap {
                     .or_else(source_snippet)?;
 
                 // Format: "name at file:line:col" or just "name" if no location
-                let entry = match location {
+                let entry = match &location {
                     Some(loc) => format!("- {name} at {loc}"),
                     None => format!("- {name}"),
                 };
 
-                Some(entry)
+                // Dedup key: "name@file:line" — entries with same name at same line are collapsed
+                let full_key = if dedup_key.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{name}@{dedup_key}")
+                };
+
+                Some((entry, full_key))
             })
             .collect();
 
         // Reverse to read outermost-first (matches conventional stack trace order)
-        elements.reverse();
+        raw.reverse();
 
-        elements.as_slice().join("\n")
+        // Deduplicate: drop entries whose dedup key was already seen
+        let mut seen = std::collections::HashSet::new();
+        let elements: Vec<&str> = raw
+            .iter()
+            .filter(|(_, key)| seen.insert(key.clone()))
+            .map(|(entry, _)| entry.as_str())
+            .collect();
+
+        elements.join("\n")
     }
 }
 
