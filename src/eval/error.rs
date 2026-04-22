@@ -60,7 +60,7 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
         (Number, String) => {
             vec![
                 "to convert a string to a number, use 'num', e.g. 's num'".to_string(),
-                "to concatenate strings, use string interpolation or 'join-on' \
+                "to concatenate strings, use string interpolation or 'str.join-on' \
                  instead of '+'"
                     .to_string(),
             ]
@@ -114,8 +114,8 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
             "to render a list as a string, use 'render-as', \
              e.g. 'my_list render-as(:json)' or 'my_list render-as(:yaml)'"
                 .to_string(),
-            "to join a list of strings with a separator, use 'join-on', \
-             e.g. 'items join-on(\", \")'"
+            "to join a list of strings with a separator, use 'str.join-on', \
+             e.g. 'items str.join-on(\", \")'"
                 .to_string(),
             "to extract a field from every item in a list of blocks, \
              use 'map', e.g. 'records map(.name)' or 'map(.name, records)'"
@@ -168,7 +168,7 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     } else if is_string && expects_number {
         vec![
             "to convert a string to a number, use 'num', e.g. 's num'".to_string(),
-            "to concatenate strings, use string interpolation or 'join-on' \
+            "to concatenate strings, use string interpolation or 'str.join-on' \
              instead of '+'"
                 .to_string(),
         ]
@@ -306,7 +306,7 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
         }
         "replace" | "sub" | "gsub" => vec!["eucalypt has no 'replace' function; \
              use 'str.matches-of(re, s)' to find matches, or construct a replacement \
-             by splitting and re-joining: 's str.split-on(re) join-on(replacement)'"
+             by splitting and re-joining: 's str.split-on(re) str.join-on(replacement)'"
             .to_string()],
         "strip" | "trim" | "rstrip" | "lstrip" => vec!["eucalypt has no 'trim'/'strip' function; \
              to remove surrounding whitespace use a regex: \
@@ -344,7 +344,7 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
         ],
         "replace-all" | "substitute" => vec!["eucalypt has no 'replace' function; \
              use 'str.matches-of(re, s)' to find matches, or construct a replacement \
-             by splitting and re-joining: 's str.split-on(re) join-on(replacement)'"
+             by splitting and re-joining: 's str.split-on(re) str.join-on(replacement)'"
             .to_string()],
         "substring" | "substr" => vec!["eucalypt has no substring function; \
              use 'str.extract(re)' with a capturing regex to extract a portion of a string"
@@ -957,7 +957,7 @@ impl ExecutionError {
                     );
                     notes.push(
                         "note: to concatenate strings, use string interpolation \
-                         or 'join-on' on a list of strings; '++' is for list append"
+                         or 'str.join-on' on a list of strings; '++' is for list append"
                             .to_string(),
                     );
                 } else {
