@@ -186,6 +186,10 @@ pub struct RunArgs {
     #[arg(long = "type-check")]
     pub type_check: bool,
 
+    /// With --type-check: treat type warnings as errors and abort before evaluation
+    #[arg(long = "strict")]
+    pub strict: bool,
+
     /// Disable dead code elimination (for debugging)
     #[arg(long = "no-dce")]
     pub no_dce: bool,
@@ -584,6 +588,7 @@ impl From<EucalyptCli> for EucalyptOptions {
         // Extract check mode
         let (check, check_strict) = match &cli.command {
             Some(Commands::Check(args)) => (true, args.strict),
+            Some(Commands::Run(run_args)) => (false, run_args.strict),
             _ => (false, false),
         };
 
