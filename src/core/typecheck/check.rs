@@ -26,7 +26,7 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use crate::{
-    common::sourcemap::{HasSmid, Smid},
+    common::sourcemap::{intrinsic_display_name, HasSmid, Smid},
     core::{
         binding::Var,
         expr::{BlockMap, Expr, Primitive, RcExpr},
@@ -547,6 +547,24 @@ impl Checker {
     /// unified by one argument automatically constrain later arguments and the
     /// return type.
     fn synthesise_app(&mut self, _smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
+        // Extract the function name for use in warning messages.
+        // For intrinsics, map to the user-facing display name (e.g. "ADD" → "+").
+        // Bound variables preserve their original name in the `name` field even
+        // after varify replaces free variables with de Bruijn indices.
+        let func_name: Option<String> = match &*func.inner {
+            Expr::Var(_, Var::Free(name)) | Expr::Name(_, name) => Some(name.clone()),
+            Expr::Var(_, Var::Bound(bv)) => bv.name.clone(),
+            Expr::Intrinsic(_, name) => {
+                // Prefer the user-facing display name; fall back to the raw name.
+                Some(
+                    intrinsic_display_name(name)
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| name.clone()),
+                )
+            }
+            _ => None,
+        };
+
         let func_type = self.synthesise(func);
         let mut subst = Substitution::new();
         let mut current_type = func_type;
@@ -555,7 +573,13 @@ impl Checker {
             // Use the argument's own Smid so warnings point at the offending
             // argument, not the function call site.
             let arg_smid = arg.smid();
-            current_type = self.apply_one_with_subst(arg_smid, current_type, arg, &mut subst);
+            current_type = self.apply_one_with_subst(
+                arg_smid,
+                current_type,
+                arg,
+                &mut subst,
+                func_name.as_deref(),
+            );
         }
 
         // Apply the accumulated substitution to resolve any remaining vars.
@@ -566,12 +590,15 @@ impl Checker {
     ///
     /// Unifies the parameter type with the argument type, updating `subst`.
     /// Emits a warning when the types do not unify and neither is uninformative.
+    /// `func_name` is the caller-supplied name of the function being applied
+    /// (e.g. `"add"`, `"+"`) and is included in the warning message when present.
     fn apply_one_with_subst(
         &mut self,
         smid: Smid,
         func_type: Type,
         arg: &RcExpr,
         subst: &mut Substitution,
+        func_name: Option<&str>,
     ) -> Type {
         // Apply any substitutions accumulated so far.
         let func_type = apply_subst(&func_type, subst);
@@ -607,12 +634,8 @@ impl Checker {
                     Err(_) => {
                         // Fall back to subtyping (e.g. Lens <: Traversal)
                         if !is_subtype(&arg_type, &param_applied) {
-                            self.emit_type_mismatch(
-                                smid,
-                                &param_applied,
-                                &arg_type,
-                                "argument type does not match function parameter",
-                            );
+                            let message = build_arg_mismatch_message(func_name);
+                            self.emit_type_mismatch(smid, &param_applied, &arg_type, &message);
                         }
                         apply_subst(&result_type, subst)
                     }
@@ -620,7 +643,7 @@ impl Checker {
             }
 
             // Union-typed function — try each overload variant.
-            Type::Union(variants) => self.apply_union(smid, variants, arg, subst),
+            Type::Union(variants) => self.apply_union(smid, variants, arg, subst, func_name),
 
             // Unknown function type — recurse into arg to collect sub-warnings.
             Type::Any => {
@@ -641,12 +664,14 @@ impl Checker {
     /// Tries each variant in order.  Commits to the first variant whose
     /// parameter type unifies with the argument type.  If no variant matches
     /// and the argument type is informative, emits a type warning.
+    /// `func_name` is included in the warning message when present.
     fn apply_union(
         &mut self,
         smid: Smid,
         variants: Vec<Type>,
         arg: &RcExpr,
         subst: &mut Substitution,
+        func_name: Option<&str>,
     ) -> Type {
         let arg_type = self.synthesise(arg);
 
@@ -690,12 +715,8 @@ impl Checker {
             } else {
                 Type::Union(param_types)
             };
-            self.emit_type_mismatch(
-                smid,
-                &expected,
-                &arg_type,
-                "argument type does not match any overload",
-            );
+            let message = build_overload_mismatch_message(func_name);
+            self.emit_type_mismatch(smid, &expected, &arg_type, &message);
         }
 
         Type::Any
@@ -841,6 +862,27 @@ fn extract_string_literal(expr: &RcExpr) -> Option<String> {
 /// - `never` represents empty or unreachable code.
 fn is_informative(ty: &Type) -> bool {
     !matches!(ty, Type::Any | Type::Never)
+}
+
+/// Build the type-mismatch warning message for a single-argument call.
+///
+/// When `func_name` is available, the message names the function so that the
+/// warning is self-contained even without reading the source snippet.
+fn build_arg_mismatch_message(func_name: Option<&str>) -> String {
+    match func_name {
+        Some(name) => format!("type mismatch calling '{name}'"),
+        None => "argument type does not match function parameter".to_string(),
+    }
+}
+
+/// Build the type-mismatch warning message for an overloaded call.
+///
+/// When `func_name` is available, the message names the function.
+fn build_overload_mismatch_message(func_name: Option<&str>) -> String {
+    match func_name {
+        Some(name) => format!("type mismatch calling '{name}': no matching overload"),
+        None => "argument type does not match any overload".to_string(),
+    }
 }
 
 // ── Public entry point ───────────────────────────────────────────────────────
