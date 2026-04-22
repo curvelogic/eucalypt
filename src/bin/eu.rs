@@ -122,6 +122,11 @@ fn run() -> i32 {
         if opt.statistics() {
             statistics.timings_mut().record("type-check", elapsed);
         }
+
+        // --strict: abort before evaluation if there are type warnings
+        if opt.check_strict() && !warnings.is_empty() {
+            return exit_code(&opt, 1, &statistics);
+        }
     }
 
     if opt.run() || opt.dump_stg() || opt.dump_runtime() {
