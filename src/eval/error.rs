@@ -100,7 +100,11 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
 
     if is_list && expects_block {
         vec![
-            "the '.' operator performs key lookup on blocks, not lists".to_string(),
+            "a block (structured record, e.g. `{a: 1}`) was expected but a list was passed; \
+             lists and blocks are different types in eucalypt"
+                .to_string(),
+            "block operations like '.', 'merge', 'has', and 'lookup' require a block argument"
+                .to_string(),
             "for lists, use pipeline functions: 'xs count' (length), 'xs head' (first element), \
              'xs tail' (rest), 'xs !! 0' (nth element, 0-indexed)"
                 .to_string(),
