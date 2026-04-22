@@ -41,6 +41,8 @@ pub struct ErrorExpectation {
     exit: Option<i32>,
     /// Regex pattern to match against stderr
     stderr_pattern: Option<String>,
+    /// Regex pattern that must NOT match stderr
+    stderr_not_pattern: Option<String>,
 }
 
 impl ErrorExpectation {
@@ -73,6 +75,15 @@ impl ErrorExpectation {
                 ));
             }
         }
+        if let Some(ref pattern) = self.stderr_not_pattern {
+            let re = Regex::new(pattern)
+                .map_err(|e| format!("invalid stderr_not regex pattern '{pattern}': {e}"))?;
+            if re.is_match(actual_stderr) {
+                return Err(format!(
+                    "stderr matched forbidden pattern '{pattern}'\nactual stderr:\n{actual_stderr}"
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -86,6 +97,7 @@ impl ErrorExpectation {
     pub fn parse(content: &str) -> Result<Self, String> {
         let mut exit = None;
         let mut stderr_pattern = None;
+        let mut stderr_not_pattern = None;
 
         for line in content.lines() {
             let line = line.trim();
@@ -99,6 +111,13 @@ impl ErrorExpectation {
                         .parse::<i32>()
                         .map_err(|e| format!("invalid exit code '{value}': {e}"))?,
                 );
+            } else if let Some(value) = line.strip_prefix("stderr_not:") {
+                let value = value.trim();
+                let value = value
+                    .strip_prefix('"')
+                    .and_then(|v| v.strip_suffix('"'))
+                    .unwrap_or(value);
+                stderr_not_pattern = Some(value.to_string());
             } else if let Some(value) = line.strip_prefix("stderr:") {
                 let value = value.trim();
                 // Strip surrounding quotes if present
@@ -110,13 +129,17 @@ impl ErrorExpectation {
             }
         }
 
-        if exit.is_none() && stderr_pattern.is_none() {
-            return Err("sidecar must specify at least one of 'exit' or 'stderr'".to_string());
+        if exit.is_none() && stderr_pattern.is_none() && stderr_not_pattern.is_none() {
+            return Err(
+                "sidecar must specify at least one of 'exit', 'stderr', or 'stderr_not'"
+                    .to_string(),
+            );
         }
 
         Ok(ErrorExpectation {
             exit,
             stderr_pattern,
+            stderr_not_pattern,
         })
     }
 
@@ -415,6 +438,7 @@ pub mod tests {
         let exp = ErrorExpectation {
             exit: Some(1),
             stderr_pattern: Some("division by zero".to_string()),
+            stderr_not_pattern: None,
         };
         assert!(exp.validate(1, "error: division by zero at line 5").is_ok());
     }
@@ -424,6 +448,7 @@ pub mod tests {
         let exp = ErrorExpectation {
             exit: Some(1),
             stderr_pattern: None,
+            stderr_not_pattern: None,
         };
         let result = exp.validate(0, "");
         assert!(result.is_err());
@@ -435,6 +460,7 @@ pub mod tests {
         let exp = ErrorExpectation {
             exit: None,
             stderr_pattern: Some("expected pattern".to_string()),
+            stderr_not_pattern: None,
         };
         let result = exp.validate(1, "something else entirely");
         assert!(result.is_err());
@@ -446,6 +472,7 @@ pub mod tests {
         let exp = ErrorExpectation {
             exit: None,
             stderr_pattern: Some(r"line \d+".to_string()),
+            stderr_not_pattern: None,
         };
         assert!(exp.validate(1, "error at line 42").is_ok());
         assert!(exp.validate(1, "error at line XY").is_err());

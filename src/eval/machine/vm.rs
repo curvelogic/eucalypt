@@ -1283,10 +1283,15 @@ fn evaluate_to_whnf_impl(
         }
         // Capture lifecycle inside sub-evaluation (needed if sub-eval uses render-as).
         if let Some(fmt) = state.pending_capture_start.take() {
-            let mut cap = crate::eval::stg::render_to_string::OwnedCaptureEmitter::new(
-                &fmt,
-                state.annotation,
-            )?;
+            let view = MutatorHeapView::new(&core.heap);
+            let mut cap = crate::eval::stg::render_to_string::OwnedCaptureEmitter::new(&fmt)
+                .map_err(|e| {
+                    ExecutionError::Traced(
+                        Box::new(e),
+                        state.nav(view).env_trace(),
+                        state.stack_trace(&view),
+                    )
+                })?;
             cap.stream_start();
             // We have no capture_emitters stack in this context; this is a limitation
             // of BIF-level sub-evaluation.  Nested render-as inside evaluate_to_whnf
@@ -1656,11 +1661,20 @@ impl<'a> Machine<'a> {
         // Handle capture lifecycle from the step just executed.
 
         // If a capture start was requested, push the capture emitter.
+        // Wrap any format error in Traced so to_diagnostic() can fall back to
+        // the env/stack trace to locate the user's render-as call site.
         if let Some(format) = self.state.pending_capture_start.take() {
-            let mut capture = crate::eval::stg::render_to_string::OwnedCaptureEmitter::new(
-                &format,
-                self.state.annotation,
-            )?;
+            let mut capture = crate::eval::stg::render_to_string::OwnedCaptureEmitter::new(&format)
+                .map_err(|e| {
+                    ExecutionError::Traced(
+                        Box::new(e),
+                        self.state
+                            .nav(MutatorHeapView::new(&self.core.heap))
+                            .env_trace(),
+                        self.state
+                            .stack_trace(&MutatorHeapView::new(&self.core.heap)),
+                    )
+                })?;
             capture.stream_start();
             self.capture_emitters.push(capture);
         }

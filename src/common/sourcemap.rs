@@ -91,12 +91,18 @@ pub struct SourceInfo {
     pub span: Option<Span>,
     /// Text annotation (e.g. global name)
     pub annotation: Option<String>,
+    /// Whether this location is in a library/resource file (e.g. the prelude).
+    /// Library locations are skipped when searching for user-code source labels.
+    pub is_lib: bool,
 }
 
 /// Store all source info...
 #[derive(Default)]
 pub struct SourceMap {
     source: Vec<SourceInfo>,
+    /// File IDs that belong to library/resource units (e.g. the prelude).
+    /// Smids registered for these files are tagged `is_lib = true`.
+    lib_files: std::collections::HashSet<usize>,
 }
 
 impl SourceMap {
@@ -105,13 +111,23 @@ impl SourceMap {
         SourceMap::default()
     }
 
+    /// Register a file ID as belonging to a library/resource unit (e.g. the
+    /// prelude).  Smids subsequently added for this file will have
+    /// `is_lib = true`, causing them to be skipped when searching for
+    /// user-code source locations during diagnostic rendering.
+    pub fn register_lib_file(&mut self, file_id: usize) {
+        self.lib_files.insert(file_id);
+    }
+
     /// Add a new source info and get a SMID referencing it
     pub fn add(&mut self, file: usize, span: Span) -> Smid {
         let smid = Smid::new(self.source.len());
+        let is_lib = self.lib_files.contains(&file);
         self.source.push(SourceInfo {
             file: Some(file),
             span: Some(span),
             annotation: None,
+            is_lib,
         });
         smid
     }
@@ -119,10 +135,12 @@ impl SourceMap {
     /// Add a new source info and get a SMID referencing it
     pub fn add_annotated<T: AsRef<str>>(&mut self, file: usize, span: Span, annotation: T) -> Smid {
         let smid = Smid::new(self.source.len());
+        let is_lib = self.lib_files.contains(&file);
         self.source.push(SourceInfo {
             file: Some(file),
             span: Some(span),
             annotation: Some(annotation.as_ref().to_string()),
+            is_lib,
         });
         smid
     }
@@ -134,6 +152,7 @@ impl SourceMap {
             file: None,
             span: None,
             annotation: Some(annotation.as_ref().to_string()),
+            is_lib: false,
         });
         smid
     }
@@ -152,6 +171,7 @@ impl SourceMap {
                 file: None,
                 span: None,
                 annotation: Some(annotation),
+                is_lib: false,
             }
         };
         self.source.push(new_info);
@@ -253,6 +273,21 @@ impl SourceMap {
         })
     }
 
+    /// Find the first Smid in a trace slice that has a concrete file/span location
+    /// in user code (i.e. not a library/prelude file).
+    ///
+    /// Skips entries marked `is_lib = true` so that diagnostics don't point
+    /// into prelude internals when only library smids are available in the trace.
+    pub fn first_user_source_smid(&self, trace: &[Smid]) -> Option<Smid> {
+        trace.iter().copied().find(|smid| {
+            if let Some(info) = self.source_info_for_smid(*smid) {
+                !info.is_lib && info.file.is_some() && info.span.is_some()
+            } else {
+                false
+            }
+        })
+    }
+
     /// Format a stack / environment trace
     ///
     /// Produces source-level references where file locations are
@@ -266,6 +301,11 @@ impl SourceMap {
             .iter()
             .filter_map(|smid| {
                 let info = self.source.get(smid.get())?;
+                // Skip library/prelude locations — they clutter the trace with
+                // internal implementation details rather than user call sites.
+                if info.is_lib {
+                    return None;
+                }
 
                 // Determine the display name: prefer intrinsic display name,
                 // then annotation (function name), then source snippet

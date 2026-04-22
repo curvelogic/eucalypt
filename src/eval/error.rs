@@ -799,10 +799,12 @@ impl ExecutionError {
             .unwrap_or(false);
 
         if !has_source_label {
-            // Prefer the env trace (innermost call site) over the stack trace
+            // Prefer user-code locations (non-library) from the env trace, then
+            // the stack trace.  Fall back to any location only if no user smid
+            // is found (this avoids pointing into prelude internals).
             let fallback_smid = source_map
-                .first_source_smid(env_trace)
-                .or_else(|| source_map.first_source_smid(stack_trace));
+                .first_user_source_smid(env_trace)
+                .or_else(|| source_map.first_user_source_smid(stack_trace));
             if let Some(smid) = fallback_smid {
                 if let Some(info) = source_map.source_info_for_smid(smid) {
                     if let (Some(file), Some(span)) = (info.file, info.span) {
@@ -824,8 +826,8 @@ impl ExecutionError {
                 .and_then(|info| info.file.zip(info.span))
                 .or_else(|| {
                     let smid = source_map
-                        .first_source_smid(env_trace)
-                        .or_else(|| source_map.first_source_smid(stack_trace))?;
+                        .first_user_source_smid(env_trace)
+                        .or_else(|| source_map.first_user_source_smid(stack_trace))?;
                     let info = source_map.source_info_for_smid(smid)?;
                     info.file.zip(info.span)
                 });
@@ -842,6 +844,10 @@ impl ExecutionError {
                     Some(i) => i,
                     None => continue,
                 };
+                // Skip library/prelude locations — only show user-code context
+                if info.is_lib {
+                    continue;
+                }
                 let (file, span) = match (info.file, info.span) {
                     (Some(f), Some(s)) => (f, s),
                     _ => continue,

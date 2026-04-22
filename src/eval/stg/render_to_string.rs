@@ -59,10 +59,11 @@ impl OwnedCaptureEmitter {
     /// Create a new capture emitter for the given format (e.g. "json",
     /// "yaml", "text").
     ///
-    /// `annotation` is the source location from the machine at the point of
-    /// the `render-as` call; it is used to produce a source-located diagnostic
-    /// when the format name is not recognised.
-    pub fn new(format: &str, annotation: Smid) -> Result<Self, ExecutionError> {
+    /// Returns `UnknownRenderFormat` with `Smid::default()` (no source
+    /// location) if the format is not recognised.  The caller in vm.rs
+    /// wraps this error in `Traced` so that `to_diagnostic()` can fall
+    /// back to the env/stack trace to find the user's call-site location.
+    pub fn new(format: &str) -> Result<Self, ExecutionError> {
         #[allow(clippy::box_default)]
         let mut buffer: Box<Vec<u8>> = Box::new(Vec::new());
         // SAFETY: We take a raw pointer to the boxed buffer.  The Box
@@ -71,8 +72,10 @@ impl OwnedCaptureEmitter {
         // before the buffer (field declaration order), so the borrow is
         // valid for the emitter's entire lifetime.
         let buf_ptr: *mut Vec<u8> = &mut *buffer;
-        let emitter = export::create_emitter(format, unsafe { &mut *buf_ptr })
-            .ok_or_else(|| ExecutionError::UnknownRenderFormat(annotation, format.to_string()))?;
+        let emitter =
+            export::create_emitter(format, unsafe { &mut *buf_ptr }).ok_or_else(|| {
+                ExecutionError::UnknownRenderFormat(Smid::default(), format.to_string())
+            })?;
         // SAFETY: The lifetime erasure is sound because format-specific emitters
         // created by `create_emitter` only write through the `&mut dyn Write`
         // trait object and never capture the lifetime parameter. The `buffer`
