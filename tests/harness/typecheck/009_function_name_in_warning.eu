@@ -1,0 +1,11 @@
+# Type-check test: function name should appear in warning message.
+# Exercises both single-argument and multi-argument call sites.
+
+` { type: "number → number" }
+negate(x): x * -1
+
+` { type: "string → string" }
+shout(s): str.to-upper(s)
+
+r1: negate("wrong type")
+r2: shout(42)

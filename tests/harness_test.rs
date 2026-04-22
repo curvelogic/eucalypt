@@ -1578,3 +1578,8 @@ pub fn test_typecheck_007_type_unchecked() {
 pub fn test_typecheck_008_literal_symbol() {
     run_typecheck_test("008_literal_symbol.eu");
 }
+
+#[test]
+pub fn test_typecheck_009_function_name_in_warning() {
+    run_typecheck_test("009_function_name_in_warning.eu");
+}
