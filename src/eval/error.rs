@@ -309,22 +309,13 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
              use 'count', e.g. 'xs count'"
                 .to_string(),
         ],
-        "append" | "push" | "push-back" => vec![
-            "to add an element to the front of a list, use 'CONS(element, list)'; \
-             eucalypt lists are prepend-only — reverse and sort for tail-append patterns"
+        "push" | "push-back" => vec![
+            "to prepend an element to a list, use 'CONS(element, list)'; \
+             to concatenate two lists, use 'append(l1, l2)' or 'l1 ++ l2'"
                 .to_string(),
         ],
-        "prepend" | "cons" | "push-front" | "unshift" => vec![
-            "to add an element to the front of a list, use 'CONS(element, list)'"
-                .to_string(),
-        ],
-        "first" => vec![
-            "to get the first element of a list, use 'head', e.g. 'xs head'"
-                .to_string(),
-        ],
-        "last" => vec![
-            "eucalypt has no built-in 'last' function; use 'reverse head' to get the last element, \
-             e.g. 'xs reverse head'"
+        "unshift" | "push-front" => vec![
+            "to prepend an element to a list, use 'CONS(element, list)'"
                 .to_string(),
         ],
         "flatten" | "flat" => vec![

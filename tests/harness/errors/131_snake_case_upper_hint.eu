@@ -1,0 +1,3 @@
+# Mistake: using snake_case str.to_upper (underscore) — eucalypt uses kebab-case str.to-upper
+text: "hello"
+result: text str.to_upper

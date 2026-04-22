@@ -1508,6 +1508,16 @@ pub fn test_error_130() {
 }
 
 #[test]
+pub fn test_error_131() {
+    run_error_test(&error_opts("131_snake_case_upper_hint.eu"));
+}
+
+#[test]
+pub fn test_error_132() {
+    run_error_test(&error_opts("132_length_hint.eu"));
+}
+
+#[test]
 pub fn test_harness_142() {
     run_test(&opts("142_consecutive_metadata_blocks.eu"));
 }

@@ -1,0 +1,3 @@
+# Mistake: using 'length' (Python/Ruby style) — eucalypt uses 'count'
+xs: [1, 2, 3]
+result: xs length
