@@ -328,8 +328,7 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
                 .to_string(),
         ],
         "flatten" | "flat" => vec![
-            "eucalypt has no built-in 'flatten' function; \
-             use 'mapcat(identity)' to flatten one level of nesting"
+            "to flatten a list of lists (one level), use 'concat', e.g. 'xss concat'"
                 .to_string(),
         ],
         "zip-with" | "zip_with" | "zipWith" => vec![
@@ -341,15 +340,13 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
             "to filter a list, use 'filter(pred, list)', e.g. 'xs filter(_ > 0)'"
                 .to_string(),
         ],
-        "reduce" | "fold" | "foldl" | "foldr" | "inject" => vec![
-            "eucalypt has no built-in 'reduce'/'fold'; \
-             use 'sum', 'product', or 'str.join-on' for common reductions"
+        "reduce" | "fold" | "inject" => vec![
+            "eucalypt has 'foldl(op, init, list)' and 'foldr(op, init, list)' for reductions; \
+             use 'sum' or 'product' for numeric aggregates, 'str.join-on' to join strings"
                 .to_string(),
         ],
         "take" => vec![
-            "eucalypt has no built-in 'take'; \
-             to get the first n elements of a list, combine 'drop' and 'reverse': \
-             use 'xs reverse drop(xs count - n) reverse'"
+            "to get the first n elements of a list, use 'take(n, list)', e.g. 'take(3, xs)' or 'xs take(3)'"
                 .to_string(),
         ],
         "sort" | "sort-by" => vec![
