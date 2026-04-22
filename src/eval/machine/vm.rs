@@ -120,7 +120,13 @@ impl HeapNavigator<'_> {
         }
 
         let description = match &*scoped_code {
-            HeapSyn::Cons { .. } => "a data constructor (e.g. block or list)",
+            HeapSyn::Cons { tag, .. } => match DataConstructor::try_from(*tag) {
+                Ok(DataConstructor::BoolTrue) => "a boolean (true)",
+                Ok(DataConstructor::BoolFalse) => "a boolean (false)",
+                Ok(DataConstructor::ListCons) | Ok(DataConstructor::ListNil) => "a list",
+                Ok(DataConstructor::Block) => "a block",
+                _ => "a data constructor",
+            },
             HeapSyn::App { .. } => "a function application",
             HeapSyn::Bif { .. } => "an intrinsic function call",
             HeapSyn::Case { .. } => "a case expression",

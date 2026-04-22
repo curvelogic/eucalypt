@@ -1508,6 +1508,11 @@ pub fn test_error_130() {
 }
 
 #[test]
+pub fn test_error_134() {
+    run_error_test(&error_opts("134_bool_where_value.eu"));
+}
+
+#[test]
 pub fn test_harness_142() {
     run_test(&opts("142_consecutive_metadata_blocks.eu"));
 }

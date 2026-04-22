@@ -93,10 +93,19 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let is_number = actual == DataConstructor::BoxedNumber.tag();
     let is_block = actual == DataConstructor::Block.tag();
     let is_symbol = actual == DataConstructor::BoxedSymbol.tag();
+    let is_null = actual == DataConstructor::Unit.tag();
     let expects_block = expected.contains(&DataConstructor::Block.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
     let expects_symbol = expected.contains(&DataConstructor::BoxedSymbol.tag());
+
+    if is_null {
+        return vec![
+            "a null value was found where a non-null value was expected".to_string(),
+            "use 'null?(value)' to check for null before passing to functions that require a value"
+                .to_string(),
+        ];
+    }
 
     if is_list && expects_block {
         vec![
@@ -380,12 +389,25 @@ fn format_not_value(context: &str) -> String {
              to each element with only one arg"
                 .to_string()
         }
-        "a data constructor (e.g. block or list)" => {
+        "a data constructor (e.g. block or list)" | "a data constructor" => {
             "expected a primitive value but found a structured value (block or list)\n  \
              help: to extract a field from a block, use '.field' notation; \
              to extract an element from a list, use 'head' or 'nth(n, list)'"
                 .to_string()
         }
+        "a boolean (true)" | "a boolean (false)" => {
+            "expected a primitive number, string, or symbol but found a boolean\n  \
+             help: use 'if(condition, then_value, else_value)' to convert a boolean to a value\n  \
+             help: eucalypt booleans cannot be used in arithmetic or as strings directly"
+                .to_string()
+        }
+        "a list" => "expected a primitive value but found a list\n  \
+             help: to access elements, use 'head' (first element) or 'xs !! n' (nth element)\n  \
+             help: to convert a list of strings to a single string, use 'str.join-on'"
+            .to_string(),
+        "a block" => "expected a primitive value but found a block\n  \
+             help: to extract a field, use '.field' notation, e.g. 'block.field'"
+            .to_string(),
         c if !c.is_empty() => {
             format!(
                 "expected a primitive value but found {c}\n  \
