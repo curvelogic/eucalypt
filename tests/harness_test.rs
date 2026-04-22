@@ -1528,6 +1528,11 @@ pub fn test_error_134() {
 }
 
 #[test]
+pub fn test_error_139() {
+    run_error_test(&error_opts("139_list_index_oob.eu"));
+}
+
+#[test]
 pub fn test_harness_142() {
     run_test(&opts("142_consecutive_metadata_blocks.eu"));
 }

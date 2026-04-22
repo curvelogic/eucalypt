@@ -1320,7 +1320,7 @@ split-after(p?, l): {
     type: "(a → bool) → [a] → ([a], [a])" }
 split-when(p?, l): split-after(p? complement, l)
 
-` { doc: "`nth(n, l)` - return `n`th item of list if it exists, otherwise panic."
+` { doc: "`nth(n, l)` - return `n`th item of list if it exists, otherwise error."
     type: "number → [a] → a" }
 nth(n, l): l drop(n) head
 

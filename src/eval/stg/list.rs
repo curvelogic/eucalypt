@@ -372,9 +372,9 @@ impl StgIntrinsic for ListNth {
         }
         match current {
             Some(closure) => machine.set_closure(closure),
-            None => Err(ExecutionError::Panic(
-                Smid::default(),
-                format!("LIST.NTH: index {} out of bounds", n),
+            None => Err(ExecutionError::ListIndexOutOfBounds(
+                machine.annotation(),
+                n,
             )),
         }
     }
