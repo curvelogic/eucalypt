@@ -93,10 +93,19 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let is_number = actual == DataConstructor::BoxedNumber.tag();
     let is_block = actual == DataConstructor::Block.tag();
     let is_symbol = actual == DataConstructor::BoxedSymbol.tag();
+    let is_null = actual == DataConstructor::Unit.tag();
     let expects_block = expected.contains(&DataConstructor::Block.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
     let expects_symbol = expected.contains(&DataConstructor::BoxedSymbol.tag());
+
+    if is_null {
+        return vec![
+            "a null value was found where a non-null value was expected".to_string(),
+            "use 'null?(value)' to check for null before passing to functions that require a value"
+                .to_string(),
+        ];
+    }
 
     if is_list && expects_block {
         vec![
