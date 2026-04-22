@@ -322,9 +322,10 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
             "to flatten a list of lists (one level), use 'concat', e.g. 'xss concat'"
                 .to_string(),
         ],
-        "zip-with" | "zip_with" | "zipWith" => vec![
-            "to zip two lists together, use 'zip', e.g. '[a, b, c] zip([1, 2, 3])'; \
-             to zip and combine with a function, use 'map' over the zipped pairs"
+        "zip_with" | "zipWith" => vec![
+            "eucalypt uses kebab-case: 'zip-with(f, xs, ys)' to zip and apply f to each pair, \
+             e.g. 'zip-with(+, xs, ys)' to sum element-wise; \
+             use 'zip(xs, ys)' to zip as pairs without combining"
                 .to_string(),
         ],
         "filter" | "select" | "keep" | "reject" => vec![
