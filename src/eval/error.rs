@@ -60,7 +60,7 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
         (Number, String) => {
             vec![
                 "to convert a string to a number, use 'num', e.g. 's num'".to_string(),
-                "to concatenate strings, use string interpolation or 'join-on' \
+                "to concatenate strings, use string interpolation or 'str.join-on' \
                  instead of '+'"
                     .to_string(),
             ]
@@ -93,10 +93,19 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let is_number = actual == DataConstructor::BoxedNumber.tag();
     let is_block = actual == DataConstructor::Block.tag();
     let is_symbol = actual == DataConstructor::BoxedSymbol.tag();
+    let is_null = actual == DataConstructor::Unit.tag();
     let expects_block = expected.contains(&DataConstructor::Block.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
     let expects_symbol = expected.contains(&DataConstructor::BoxedSymbol.tag());
+
+    if is_null {
+        return vec![
+            "a null value was found where a non-null value was expected".to_string(),
+            "use 'null?(value)' to check for null before passing to functions that require a value"
+                .to_string(),
+        ];
+    }
 
     if is_list && expects_block {
         vec![
@@ -114,8 +123,8 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
             "to render a list as a string, use 'render-as', \
              e.g. 'my_list render-as(:json)' or 'my_list render-as(:yaml)'"
                 .to_string(),
-            "to join a list of strings with a separator, use 'join-on', \
-             e.g. 'items join-on(\", \")'"
+            "to join a list of strings with a separator, use 'str.join-on', \
+             e.g. 'items str.join-on(\", \")'"
                 .to_string(),
             "to extract a field from every item in a list of blocks, \
              use 'map', e.g. 'records map(.name)' or 'map(.name, records)'"
@@ -168,7 +177,7 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     } else if is_string && expects_number {
         vec![
             "to convert a string to a number, use 'num', e.g. 's num'".to_string(),
-            "to concatenate strings, use string interpolation or 'join-on' \
+            "to concatenate strings, use string interpolation or 'str.join-on' \
              instead of '+'"
                 .to_string(),
         ]
@@ -306,7 +315,7 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
         }
         "replace" | "sub" | "gsub" => vec!["eucalypt has no 'replace' function; \
              use 'str.matches-of(re, s)' to find matches, or construct a replacement \
-             by splitting and re-joining: 's str.split-on(re) join-on(replacement)'"
+             by splitting and re-joining: 's str.split-on(re) str.join-on(replacement)'"
             .to_string()],
         "strip" | "trim" | "rstrip" | "lstrip" => vec!["eucalypt has no 'trim'/'strip' function; \
              to remove surrounding whitespace use a regex: \
@@ -344,7 +353,7 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
         ],
         "replace-all" | "substitute" => vec!["eucalypt has no 'replace' function; \
              use 'str.matches-of(re, s)' to find matches, or construct a replacement \
-             by splitting and re-joining: 's str.split-on(re) join-on(replacement)'"
+             by splitting and re-joining: 's str.split-on(re) str.join-on(replacement)'"
             .to_string()],
         "substring" | "substr" => vec!["eucalypt has no substring function; \
              use 'str.extract(re)' with a capturing regex to extract a portion of a string"
@@ -380,12 +389,25 @@ fn format_not_value(context: &str) -> String {
              to each element with only one arg"
                 .to_string()
         }
-        "a data constructor (e.g. block or list)" => {
+        "a data constructor (e.g. block or list)" | "a data constructor" => {
             "expected a primitive value but found a structured value (block or list)\n  \
              help: to extract a field from a block, use '.field' notation; \
              to extract an element from a list, use 'head' or 'nth(n, list)'"
                 .to_string()
         }
+        "a boolean (true)" | "a boolean (false)" => {
+            "expected a primitive number, string, or symbol but found a boolean\n  \
+             help: use 'if(condition, then_value, else_value)' to convert a boolean to a value\n  \
+             help: eucalypt booleans cannot be used in arithmetic or as strings directly"
+                .to_string()
+        }
+        "a list" => "expected a primitive value but found a list\n  \
+             help: to access elements, use 'head' (first element) or 'xs !! n' (nth element)\n  \
+             help: to convert a list of strings to a single string, use 'str.join-on'"
+            .to_string(),
+        "a block" => "expected a primitive value but found a block\n  \
+             help: to extract a field, use '.field' notation, e.g. 'block.field'"
+            .to_string(),
         c if !c.is_empty() => {
             format!(
                 "expected a primitive value but found {c}\n  \
@@ -687,6 +709,10 @@ pub enum ExecutionError {
     ArrayNegativeIndex(Smid, f64),
     #[error("list index out of bounds: index {1} is beyond the end of the list")]
     ListIndexOutOfBounds(Smid, usize),
+    #[error("head requires a list, found {1}")]
+    HeadOfNonList(Smid, String),
+    #[error("tail requires a list, found {1}")]
+    TailOfNonList(Smid, String),
 }
 
 impl From<bump::AllocError> for ExecutionError {
@@ -754,6 +780,8 @@ impl HasSmid for ExecutionError {
             ExecutionError::IoTimeout(s, _) => *s,
             ExecutionError::IoCommandError(s, _) => *s,
             ExecutionError::ListIndexOutOfBounds(s, _) => *s,
+            ExecutionError::HeadOfNonList(s, _) => *s,
+            ExecutionError::TailOfNonList(s, _) => *s,
             ExecutionError::BadDateTimeString(s, _) => *s,
             ExecutionError::BadRegex(s, _, _) => *s,
             ExecutionError::BadFormatString(s, _) => *s,
@@ -974,7 +1002,7 @@ impl ExecutionError {
                     );
                     notes.push(
                         "note: to concatenate strings, use string interpolation \
-                         or 'join-on' on a list of strings; '++' is for list append"
+                         or 'str.join-on' on a list of strings; '++' is for list append"
                             .to_string(),
                     );
                 } else {
@@ -1032,6 +1060,37 @@ impl ExecutionError {
                      to handle empty or short lists safely"
                         .to_string(),
                 ]
+            }
+            ExecutionError::HeadOfNonList(_, found) => {
+                let mut notes = vec![
+                    "head and tail require a list (e.g. [1, 2, 3]) as their argument".to_string(),
+                ];
+                if found.starts_with('"') {
+                    notes.push(
+                        "to concatenate strings, use string interpolation (e.g. \"{a}{b}\") \
+                         or 'str.join-on', not '++' (which is for list append)"
+                            .to_string(),
+                    );
+                    notes.push(
+                        "to get individual characters of a string, use 'str.letters'".to_string(),
+                    );
+                } else if found == "number" || found.parse::<f64>().is_ok() {
+                    notes.push("to create a list from a number, wrap it: '[n]'".to_string());
+                }
+                notes
+            }
+            ExecutionError::TailOfNonList(_, found) => {
+                let mut notes = vec![
+                    "head and tail require a list (e.g. [1, 2, 3]) as their argument".to_string(),
+                ];
+                if found.starts_with('"') {
+                    notes.push(
+                        "to concatenate strings, use string interpolation (e.g. \"{a}{b}\") \
+                         or 'str.join-on', not '++' (which is for list append)"
+                            .to_string(),
+                    );
+                }
+                notes
             }
             ExecutionError::BadDateTimeComponents(_, _, _, _, _, _, _, _) => {
                 vec![

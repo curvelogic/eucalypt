@@ -1523,6 +1523,11 @@ pub fn test_error_133() {
 }
 
 #[test]
+pub fn test_error_134() {
+    run_error_test(&error_opts("134_bool_where_value.eu"));
+}
+
+#[test]
 pub fn test_harness_142() {
     run_test(&opts("142_consecutive_metadata_blocks.eu"));
 }
@@ -1592,4 +1597,9 @@ pub fn test_typecheck_007_type_unchecked() {
 #[test]
 pub fn test_typecheck_008_literal_symbol() {
     run_typecheck_test("008_literal_symbol.eu");
+}
+
+#[test]
+pub fn test_typecheck_009_function_name_in_warning() {
+    run_typecheck_test("009_function_name_in_warning.eu");
 }
