@@ -660,25 +660,6 @@ impl Desugarable for rowan_ast::Literal {
 /// Extract the monad metadata value from a declaration's backtick metadata.
 ///
 /// Returns:
-/// Reconstruct the runtime string value from a `StringPattern`'s chunks.
-///
-/// Only handles patterns without interpolation (literal content and
-/// escaped braces).  Returns `None` if any interpolation chunk is found.
-fn string_pattern_value(pat: &rowan_ast::StringPattern) -> Option<String> {
-    let mut result = String::new();
-    for chunk in pat.chunks() {
-        match chunk {
-            rowan_ast::StringChunk::LiteralContent(c) => {
-                result.push_str(&c.value().unwrap_or_default());
-            }
-            rowan_ast::StringChunk::EscapedOpen(_) => result.push('{'),
-            rowan_ast::StringChunk::EscapedClose(_) => result.push('}'),
-            rowan_ast::StringChunk::Interpolation(_) => return None,
-        }
-    }
-    Some(result)
-}
-
 /// - `None` — no `monad:` field in the metadata
 /// - `Some(None)` — `monad: true` (untyped, backward compatible)
 /// - `Some(Some(type_str))` — `monad: "[a]"` or similar (typed)
@@ -718,18 +699,15 @@ fn extract_monad_meta(decl: &rowan_ast::Declaration) -> Option<Option<String>> {
                                 }
                                 // monad: "[a]" (simple string literal)
                                 if let rowan_ast::Element::Lit(lit) = &elems[0] {
-                                    let text = lit.syntax().text().to_string();
-                                    if text.starts_with('"')
-                                        && text.ends_with('"')
-                                        && text.len() > 2
-                                    {
-                                        let inner = text[1..text.len() - 1].to_string();
-                                        return Some(Some(inner));
+                                    if let Some(rowan_ast::LiteralValue::Str(s)) = lit.value() {
+                                        if let Some(v) = s.value() {
+                                            return Some(Some(v.to_string()));
+                                        }
                                     }
                                 }
                                 // monad: "{{value: a}}" (string pattern with escapes)
                                 if let rowan_ast::Element::StringPattern(pat) = &elems[0] {
-                                    if let Some(s) = string_pattern_value(pat) {
+                                    if let Some(s) = pat.plain_value() {
                                         return Some(Some(s));
                                     }
                                 }
@@ -1001,18 +979,19 @@ fn desugar_return_chain(
     Ok(result)
 }
 
-/// Desugar a monadic block using a monad spec.
-///
-/// Given a list of declarations `a: ma  b: mb`, a return element slice, and a
-/// monad spec, produces:
-/// ```text
-/// bind(ma, λa. bind(mb, λb. return(return_expr)))
-/// ```
-/// For namespace specs (`MonadSpec::Namespace("ns")`), emits lookup expressions:
-/// ```text
-/// ns.bind(ma, λa. ns.bind(mb, λb. ns.return(return_expr)))
-/// ```
-///
+/// Wrap a binding value expression with `__type_hint` metadata when the
+/// monad declares a wrapper type, enabling the type checker to verify
+/// binding values against the monadic type.
+fn wrap_with_type_hint(value: RcExpr, monad_type: Option<&str>, smid: Smid) -> RcExpr {
+    if let Some(type_str) = monad_type {
+        let hint = core::str(smid, type_str);
+        let meta = core::block(smid, [("__type_hint".to_string(), hint)]);
+        core::meta(smid, value, meta)
+    } else {
+        value
+    }
+}
+
 /// Look up the monadic wrapper type for a given spec and optional pair name.
 ///
 /// For namespace specs, uses the namespace name.  For bracket pair explicit
@@ -1033,6 +1012,18 @@ fn lookup_monad_type(
     }
 }
 
+/// Desugar a monadic block using a monad spec.
+///
+/// Given a list of declarations `a: ma  b: mb`, a return element slice, and a
+/// monad spec, produces:
+/// ```text
+/// bind(ma, λa. bind(mb, λb. return(return_expr)))
+/// ```
+/// For namespace specs (`MonadSpec::Namespace("ns")`), emits lookup expressions:
+/// ```text
+/// ns.bind(ma, λa. ns.bind(mb, λb. ns.return(return_expr)))
+/// ```
+///
 /// All declarations are desugared as monadic bind steps,
 /// with each declaration name becoming a lambda parameter.
 /// The return expression (from `.expr` after the block) is wrapped in `return`.
@@ -1094,15 +1085,7 @@ fn desugar_monadic_block(
                 desugarer.new_smid(span),
             ));
         };
-        // Inject __type_hint metadata when the monad declares a wrapper type.
-        let value = if let Some(type_str) = monad_type {
-            let decl_smid = desugarer.new_smid(span);
-            let hint = core::str(decl_smid, type_str);
-            let meta = core::block(decl_smid, [("__type_hint".to_string(), hint)]);
-            core::meta(decl_smid, value, meta)
-        } else {
-            value
-        };
+        let value = wrap_with_type_hint(value, monad_type, desugarer.new_smid(span));
         name_value_pairs.push((decl_name, value));
     }
 
@@ -1223,15 +1206,7 @@ fn desugar_monadic_block_implicit(
                 desugarer.new_smid(span),
             ));
         };
-        // Inject __type_hint metadata when the monad declares a wrapper type.
-        let value = if let Some(type_str) = monad_type {
-            let decl_smid = desugarer.new_smid(span);
-            let hint = core::str(decl_smid, type_str);
-            let meta = core::block(decl_smid, [("__type_hint".to_string(), hint)]);
-            core::meta(decl_smid, value, meta)
-        } else {
-            value
-        };
+        let value = wrap_with_type_hint(value, monad_type, desugarer.new_smid(span));
         name_value_pairs.push((decl_name, value));
     }
 

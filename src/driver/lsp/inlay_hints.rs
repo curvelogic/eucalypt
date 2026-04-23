@@ -103,14 +103,15 @@ fn collect_monadic_binding_hints(
         None => return,
     };
 
-    // Look up the monad in the symbol table to get its type
+    // Look up the monad in the symbol table to get its type.
+    // Only show hints for known monad namespaces with a declared type.
     let symbols = table.lookup(&monad_name);
-    let monad_type = symbols
-        .iter()
-        .find_map(|sym| sym.monad_type.as_ref())
-        .cloned();
-    let monad_type = match monad_type {
-        Some(t) => t,
+    let monad_sym = match symbols.iter().find(|sym| sym.is_monad) {
+        Some(sym) => sym,
+        None => return,
+    };
+    let monad_type = match &monad_sym.monad_type {
+        Some(t) => t.clone(),
         None => return,
     };
 
@@ -140,9 +141,11 @@ fn collect_monadic_binding_hints(
     }
 }
 
-/// Extract the monad tag name from a block's metadata.
+/// Extract a symbol tag name from a block's metadata.
 ///
-/// For `{ :for x: ... }`, returns `Some("for")`.
+/// For `{ :for x: ... }`, returns `Some("for")`.  Returns the raw
+/// name without filtering — callers check the symbol table to
+/// determine whether it is a monad namespace.
 fn extract_monad_tag_from_block(block: &ast::Block) -> Option<String> {
     let meta = block.meta()?;
     let soup = meta.soup()?;
@@ -152,9 +155,7 @@ fn extract_monad_tag_from_block(block: &ast::Block) -> Option<String> {
         if let ast::Element::Lit(lit) = &elements[0] {
             let text = lit.syntax().text().to_string();
             if let Some(name) = text.strip_prefix(':') {
-                if !matches!(name, "main" | "suppress") {
-                    return Some(name.to_string());
-                }
+                return Some(name.to_string());
             }
         }
     }

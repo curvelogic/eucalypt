@@ -401,7 +401,7 @@ fn extract_monad_metadata(decl: &Declaration) -> (bool, Option<String>) {
                                             pat,
                                         ) = &el
                                         {
-                                            if let Some(s) = lsp_string_pattern_value(pat) {
+                                            if let Some(s) = pat.plain_value() {
                                                 return (true, Some(s));
                                             }
                                         }
@@ -423,26 +423,6 @@ fn extract_monad_metadata(decl: &Declaration) -> (bool, Option<String>) {
         }
     }
     (false, None)
-}
-
-/// Reconstruct the runtime string value from a `StringPattern`'s chunks.
-///
-/// Only handles patterns without interpolation.  Returns `None` if
-/// any interpolation chunk is found.
-fn lsp_string_pattern_value(pat: &crate::syntax::rowan::ast::StringPattern) -> Option<String> {
-    use crate::syntax::rowan::ast::StringChunk;
-    let mut result = String::new();
-    for chunk in pat.chunks() {
-        match chunk {
-            StringChunk::LiteralContent(c) => {
-                result.push_str(&c.value().unwrap_or_default());
-            }
-            StringChunk::EscapedOpen(_) => result.push('{'),
-            StringChunk::EscapedClose(_) => result.push('}'),
-            StringChunk::Interpolation(_) => return None,
-        }
-    }
-    Some(result)
 }
 
 /// Extract child symbols from a declaration's body block.

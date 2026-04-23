@@ -209,11 +209,11 @@ this uses existing infrastructure, no new LSP code needed.
 
 ### Typecheck tests (tests/harness/typecheck/)
 
-- `009_for_number_binding.eu` — `{ :for x: 42 }.(x)` warns
-- `010_for_string_binding.eu` — `{ :for x: "hello" }.(x)` warns
-- `011_for_correct_binding.eu` — `{ :for x: [1,2,3] }.(x * 2)` no warning
-- `012_io_number_binding.eu` — `{ :io x: 42 }.(x)` warns
-- `013_let_any_binding.eu` — `{ :let x: 42 }.(x)` no warning (untyped)
+- `010_for_number_binding.eu` — `{ :for x: 42 }.(x)` warns
+- `011_for_string_binding.eu` — `{ :for x: "hello" }.(x)` warns
+- `012_for_correct_binding.eu` — `{ :for x: [1,2,3] }.(x * 2)` no warning
+- `013_io_number_binding.eu` — `{ :io x: 42 }.(x)` warns
+- `014_let_any_binding.eu` — `{ :let x: 42 }.(x)` no warning (untyped)
 
 ### Harness tests
 
