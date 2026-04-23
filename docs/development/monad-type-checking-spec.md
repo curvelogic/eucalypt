@@ -140,19 +140,26 @@ The existing `synthesise_meta` path already:
 
 ## 5. Bracket Pair Monads
 
-Bracket pair monads get typed the same way — via backtick metadata
-on the bracket pair definition:
+Bracket pair monads get typed via backtick metadata on the bracket
+pair definition:
 
 ```eu,notest
 ` { monad: "[a]" }
 ⟦{}⟧: { :monad bind: my-bind return: my-return }
 ```
 
-The `extract_monad_meta` function reads backtick metadata regardless
-of whether the declaration is a namespace or bracket pair. The
-`MonadSpec` stored in the bracket registry carries `monad_type` just
-like namespace specs. The hint injection in `desugar_monadic_block`
-uses the spec from whichever registry it came from.
+**Implementation note**: namespace monads are registered at line 2366
+by checking the declaration's backtick metadata via
+`has_monad_true_in_raw_meta(decl)`. Bracket pair monads are
+registered at line 2428 by extracting from the desugared body via
+`extract_monad_spec_from_body`. These are separate code paths.
+
+For bracket pairs, the `monad:` type must be extracted from the
+declaration's backtick metadata (using `extract_monad_meta`) and
+passed to the bracket registry alongside the spec extracted from
+the body. The `extract_monad_meta` function works on any declaration
+— it reads the backtick metadata block regardless of declaration
+kind.
 
 ## 6. LSP Support
 
@@ -226,7 +233,42 @@ this uses existing infrastructure, no new LSP code needed.
 | `src/driver/lsp/symbol_table.rs` | Track `monad:` metadata on symbols |
 | tests/harness/typecheck/ | New typecheck tests for monadic bindings |
 
-## 10. Future Extensions
+## 10. Acceptance Criteria
+
+### Must pass
+
+1. `{ :for x: 42 }.(x)` produces a type warning: "expected [a],
+   found number" — verified by `eu check --strict` exit code 1
+2. `{ :for x: [1,2,3] }.(x * 2)` produces NO type warning
+3. `{ :io cmd: 42 }.(cmd)` produces a type warning: "expected IO(a),
+   found number"
+4. `{ :io r: io.shell("echo hi") }.(r)` produces NO type warning
+   (requires --allow-io and an on-disk file, not -e)
+5. `{ :let x: 42 }.(x)` produces NO type warning (monad: true is
+   untyped)
+6. Bracket pair monad with `monad: "[a]"` on its definition produces
+   type warnings for non-list bindings
+7. `eu check lib/prelude.eu` — zero warnings
+8. All existing harness tests pass (096, 145, and others)
+9. `monad: true` continues to work for backward compatibility
+10. Type warnings point at the binding VALUE expression, not the
+    monadic block or the bind call
+
+### LSP acceptance
+
+11. After `{ :` in a block, completion offers `:for`, `:io`,
+    `:random`, `:let`
+12. In a `{ :for x: ... }` block, inlay hint on `x:` shows expected
+    type `[a]`
+13. Hover on `:for` shows monad description and binding type
+14. Wrong binding type shows as warning diagnostic in editor
+
+### Performance
+
+15. Type checking with monad hints adds negligible overhead (< 1ms on
+    AoC-sized files, same as existing __type_hint for lenses)
+
+## 11. Future Extensions
 
 - Bound variable type hinting (eu-z9zz.10) — infer element type from
   monad wrapper type and annotate lambda parameters
