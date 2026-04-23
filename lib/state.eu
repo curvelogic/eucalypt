@@ -50,7 +50,7 @@ mod-at(lens, f, s): { value: null, state: over(lens, f, s) }
 # ─── Namespace (enables { :state ... } blocks) ───────────────────────────────
 
 ` { doc: "State monad namespace.  Each declaration in a colon-state block is a monadic bind step."
-    monad: true }
+    monad: "state → {{value: a, state: state}}" }
 state: monad{bind: state-bind, return: state-ret} {
 
   ` "state.get - action returning the whole state as the value."
