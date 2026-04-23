@@ -1608,3 +1608,28 @@ pub fn test_typecheck_008_literal_symbol() {
 pub fn test_typecheck_009_function_name_in_warning() {
     run_typecheck_test("009_function_name_in_warning.eu");
 }
+
+#[test]
+pub fn test_typecheck_010_for_number_binding() {
+    run_typecheck_test("010_for_number_binding.eu");
+}
+
+#[test]
+pub fn test_typecheck_011_for_string_binding() {
+    run_typecheck_test("011_for_string_binding.eu");
+}
+
+#[test]
+pub fn test_typecheck_012_for_correct_binding() {
+    run_typecheck_test("012_for_correct_binding.eu");
+}
+
+#[test]
+pub fn test_typecheck_013_io_number_binding() {
+    run_typecheck_test("013_io_number_binding.eu");
+}
+
+#[test]
+pub fn test_typecheck_014_let_any_binding() {
+    run_typecheck_test("014_let_any_binding.eu");
+}

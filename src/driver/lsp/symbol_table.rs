@@ -58,6 +58,11 @@ pub struct SymbolInfo {
     pub documentation: Option<String>,
     /// Type annotation from `` ` { type: "..." } `` metadata
     pub type_annotation: Option<String>,
+    /// Monadic wrapper type from `` ` { monad: "..." } `` metadata.
+    /// `None` for non-monads and untyped (`monad: true`) monads.
+    pub monad_type: Option<String>,
+    /// Whether this is a monad namespace (`monad: true` or `monad: "type"`).
+    pub is_monad: bool,
     /// Parameter names for functions
     pub parameters: Vec<String>,
     /// Child symbols (for namespace blocks)
@@ -118,6 +123,16 @@ impl SymbolTable {
     /// Return all top-level symbol names.
     pub fn all_names(&self) -> impl Iterator<Item = &str> {
         self.symbols.keys().map(|s| s.as_str())
+    }
+
+    /// Return all monad namespace symbols (those with `monad:` metadata).
+    ///
+    /// Used by the completion provider to offer monad tags after `{ :`.
+    pub fn monad_namespaces(&self) -> impl Iterator<Item = &SymbolInfo> {
+        self.symbols
+            .values()
+            .flat_map(|v| v.iter())
+            .filter(|sym| sym.is_monad)
     }
 
     /// Find qualified names for an unresolved identifier.
@@ -245,6 +260,7 @@ fn symbol_from_declaration(
     let selection_range = text_range_to_lsp_range(source_text, head.syntax().text_range());
     let documentation = extract_documentation(decl);
     let type_annotation = extract_type_annotation(decl);
+    let (is_monad, monad_type) = extract_monad_metadata(decl);
     let children = extract_children(decl, source_text, uri, source);
 
     Some(SymbolInfo {
@@ -256,6 +272,8 @@ fn symbol_from_declaration(
         selection_range,
         documentation,
         type_annotation,
+        monad_type,
+        is_monad,
         parameters,
         children,
     })
@@ -342,6 +360,60 @@ fn extract_type_annotation(decl: &Declaration) -> Option<String> {
         }
     }
     None
+}
+
+/// Extract monad metadata from a declaration.
+///
+/// Returns `(is_monad, monad_type)`:
+/// - `(false, None)` — no `monad:` field
+/// - `(true, None)` — `monad: true` (untyped)
+/// - `(true, Some(type_str))` — `monad: "[a]"` or similar (typed)
+fn extract_monad_metadata(decl: &Declaration) -> (bool, Option<String>) {
+    let meta = match decl.meta() {
+        Some(m) => m,
+        None => return (false, None),
+    };
+    let soup = match meta.soup() {
+        Some(s) => s,
+        None => return (false, None),
+    };
+
+    for element in soup.elements() {
+        if let crate::syntax::rowan::ast::Element::Block(block) = element {
+            for inner_decl in block.declarations() {
+                if let Some(head) = inner_decl.head() {
+                    if let DeclarationKind::Property(prop) = head.classify_declaration() {
+                        if prop.text() == "monad" {
+                            if let Some(body) = inner_decl.body() {
+                                if let Some(body_soup) = body.soup() {
+                                    for el in body_soup.elements() {
+                                        // monad: "type" (typed)
+                                        if let crate::syntax::rowan::ast::Element::Lit(lit) = &el {
+                                            if let Some(
+                                                crate::syntax::rowan::ast::LiteralValue::Str(s),
+                                            ) = lit.value()
+                                            {
+                                                return (true, s.value().map(|v| v.to_string()));
+                                            }
+                                        }
+                                        // monad: true (untyped)
+                                        if let crate::syntax::rowan::ast::Element::Name(n) = &el {
+                                            if let Some(id) = n.identifier() {
+                                                if id.text() == "true" {
+                                                    return (true, None);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (false, None)
 }
 
 /// Extract child symbols from a declaration's body block.
@@ -591,5 +663,47 @@ mod tests {
             results[0].type_annotation.as_deref(),
             Some("string -> string")
         );
+    }
+
+    #[test]
+    fn test_monad_typed_metadata() {
+        let source = "` { monad: \"[a]\" }\nfor: 1\n";
+        let parse = parse_unit(source);
+        let unit = parse.tree();
+        let mut table = SymbolTable::new();
+        table.add_from_unit(&unit, source, &test_uri(), SymbolSource::Local);
+
+        let results = table.lookup("for");
+        assert_eq!(results.len(), 1);
+        assert!(results[0].is_monad, "should be marked as monad");
+        assert_eq!(results[0].monad_type.as_deref(), Some("[a]"));
+    }
+
+    #[test]
+    fn test_monad_untyped_metadata() {
+        let source = "` { monad: true }\nmy_monad: 1\n";
+        let parse = parse_unit(source);
+        let unit = parse.tree();
+        let mut table = SymbolTable::new();
+        table.add_from_unit(&unit, source, &test_uri(), SymbolSource::Local);
+
+        let results = table.lookup("my_monad");
+        assert_eq!(results.len(), 1);
+        assert!(results[0].is_monad, "should be marked as monad");
+        assert!(results[0].monad_type.is_none(), "untyped monad has no type");
+    }
+
+    #[test]
+    fn test_monad_namespaces() {
+        let source = "` { monad: \"[a]\" }\nfor: 1\n` { monad: true }\nlet: 2\nx: 3\n";
+        let parse = parse_unit(source);
+        let unit = parse.tree();
+        let mut table = SymbolTable::new();
+        table.add_from_unit(&unit, source, &test_uri(), SymbolSource::Local);
+
+        let monad_names: Vec<&str> = table.monad_namespaces().map(|s| s.name.as_str()).collect();
+        assert!(monad_names.contains(&"for"), "should include for");
+        assert!(monad_names.contains(&"let"), "should include let");
+        assert!(!monad_names.contains(&"x"), "should not include x");
     }
 }

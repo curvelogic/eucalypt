@@ -26,7 +26,7 @@ eu: {
 }
 
 ` { doc: "IO related declarations. The io namespace is a monad: io.bind, io.return, io.sequence, io.map-m, io.filter-m, io.then, io.join are derived automatically."
-    monad: true }
+    monad: "IO(a)" }
 io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
   ` { doc: "Read access to environment variables at time of launch."
       type: "{{..}}" }
@@ -2098,7 +2098,7 @@ let: monad({bind(m, f): f(m), return: identity})
 ##
 
 ` { doc: "List monad for list comprehensions. Each binding draws from a list; subsequent bindings can depend on earlier ones. Use [x] filter(pred?) for guards."
-    monad: true }
+    monad: "[a]" }
 for: monad({bind(m, f): m mapcat(f), return(v): [v]})
 
 ##

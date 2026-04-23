@@ -68,7 +68,97 @@ fn collect_hints_from_unit(
                 collect_parameter_hints_from_soup(source, &soup, range, table, hints);
             }
         }
+
+        // Monadic block binding type hints in declaration bodies
+        if let Some(body) = decl.body() {
+            if let Some(soup) = body.soup() {
+                for element in soup.elements() {
+                    if let ast::Element::Block(block) = element {
+                        collect_monadic_binding_hints(source, &block, range, table, hints);
+                    }
+                }
+            }
+        }
     }
+}
+
+/// Collect inlay hints for monadic block bindings showing the expected type.
+///
+/// For `{ :for x: [1,2,3] }`, shows `[a]` as a type hint on `x`.
+fn collect_monadic_binding_hints(
+    source: &str,
+    block: &ast::Block,
+    range: &Range,
+    table: &SymbolTable,
+    hints: &mut Vec<InlayHint>,
+) {
+    let block_range = text_range_to_lsp_range(source, block.syntax().text_range());
+    if !ranges_overlap(&block_range, range) {
+        return;
+    }
+
+    // Detect the monad tag from block metadata
+    let monad_name = match extract_monad_tag_from_block(block) {
+        Some(name) => name,
+        None => return,
+    };
+
+    // Look up the monad in the symbol table to get its type
+    let symbols = table.lookup(&monad_name);
+    let monad_type = symbols
+        .iter()
+        .find_map(|sym| sym.monad_type.as_ref())
+        .cloned();
+    let monad_type = match monad_type {
+        Some(t) => t,
+        None => return,
+    };
+
+    // Add type hints on each binding declaration
+    for decl in block.declarations() {
+        if let Some(head) = decl.head() {
+            let kind = head.classify_declaration();
+            let name_token = match &kind {
+                DeclarationKind::Property(id) => id.syntax().clone(),
+                DeclarationKind::Function(id, _) => id.syntax().clone(),
+                _ => continue,
+            };
+            let token_range = text_range_to_lsp_range(source, name_token.text_range());
+            hints.push(InlayHint {
+                position: token_range.end,
+                label: InlayHintLabel::String(format!(": {monad_type}")),
+                kind: Some(InlayHintKind::TYPE),
+                text_edits: None,
+                tooltip: Some(lsp_types::InlayHintTooltip::String(format!(
+                    "Monad binding — value must be {monad_type}",
+                ))),
+                padding_left: Some(false),
+                padding_right: Some(true),
+                data: None,
+            });
+        }
+    }
+}
+
+/// Extract the monad tag name from a block's metadata.
+///
+/// For `{ :for x: ... }`, returns `Some("for")`.
+fn extract_monad_tag_from_block(block: &ast::Block) -> Option<String> {
+    let meta = block.meta()?;
+    let soup = meta.soup()?;
+    let elements: Vec<ast::Element> = soup.elements().collect();
+
+    if elements.len() == 1 {
+        if let ast::Element::Lit(lit) = &elements[0] {
+            let text = lit.syntax().text().to_string();
+            if let Some(name) = text.strip_prefix(':') {
+                if !matches!(name, "main" | "suppress") {
+                    return Some(name.to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Add an inlay hint showing operator fixity for operator declarations.
@@ -335,5 +425,31 @@ mod tests {
             },
         };
         assert!(!ranges_overlap(&a, &c));
+    }
+
+    #[test]
+    fn monadic_binding_type_hint() {
+        // Set up a table with a typed monad
+        let uri = lsp_types::Url::parse("file:///test.eu").unwrap();
+        let monad_source = "` { monad: \"[a]\" }\nfor: 1\n";
+        let monad_parse = parse_unit(monad_source);
+        let monad_unit = monad_parse.tree();
+        let mut table = SymbolTable::new();
+        table.add_from_unit(&monad_unit, monad_source, &uri, SymbolSource::Local);
+
+        // Now parse a file using the monad
+        let source = "main: { :for x: [1,2] }.(x)\n";
+        let parse = parse_unit(source);
+        let root = parse.syntax_node();
+
+        let hints = inlay_hints(source, &root, &full_range(), &table, None);
+        let type_hints: Vec<_> = hints
+            .iter()
+            .filter(|h| matches!(&h.label, InlayHintLabel::String(s) if s.contains("[a]")))
+            .collect();
+        assert!(
+            !type_hints.is_empty(),
+            "should show [a] type hint on monadic binding"
+        );
     }
 }

@@ -1,0 +1,2 @@
+exit: 1
+stderr: "expected IO(a), found number"

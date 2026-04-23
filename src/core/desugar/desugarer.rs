@@ -67,6 +67,13 @@ pub struct Desugarer<'smap> {
     /// Consulted when desugaring `{ :ns ... }` blocks without an explicit
     /// `.expr` return — only registered namespaces trigger implicit return.
     monad_namespace_registry: HashMap<String, MonadSpec>,
+    /// Registry mapping monad names to their wrapper type string for type
+    /// checking (e.g. `"for" → "[a]"`, `"io" → "IO(a)"`).
+    ///
+    /// Populated from `monad: "<type>"` metadata on namespace or bracket pair
+    /// declarations.  Consulted during monadic block desugaring to inject
+    /// `__type_hint` metadata on binding values.
+    monad_type_registry: HashMap<String, String>,
     /// Import guard — direct imports (depth == 1, i.e. imported directly
     /// by the top-level unit being desugared).
     ///
@@ -113,6 +120,7 @@ impl<'smap> Desugarer<'smap> {
             file: vec![],
             monad_registry: HashMap::new(),
             monad_namespace_registry: HashMap::new(),
+            monad_type_registry: HashMap::new(),
             import_seen_direct: HashSet::new(),
             import_seen_nested: HashSet::new(),
             import_first_direct: HashMap::new(),
@@ -161,6 +169,26 @@ impl<'smap> Desugarer<'smap> {
     /// Drain the monad namespace registry for persistence across units.
     pub fn drain_monad_namespace_registry(&mut self) -> HashMap<String, MonadSpec> {
         std::mem::take(&mut self.monad_namespace_registry)
+    }
+
+    /// Register the monadic wrapper type for a monad name.
+    pub fn register_monad_type(&mut self, name: String, type_str: String) {
+        self.monad_type_registry.insert(name, type_str);
+    }
+
+    /// Look up the monadic wrapper type for a monad name.
+    pub fn monad_type(&self, name: &str) -> Option<&str> {
+        self.monad_type_registry.get(name).map(|s| s.as_str())
+    }
+
+    /// Seed the monad type registry from a previous unit.
+    pub fn seed_monad_type_registry(&mut self, registry: &HashMap<String, String>) {
+        self.monad_type_registry.extend(registry.clone());
+    }
+
+    /// Drain the monad type registry for persistence across units.
+    pub fn drain_monad_type_registry(&mut self) -> HashMap<String, String> {
+        std::mem::take(&mut self.monad_type_registry)
     }
 
     /// Desugar content at locator (and imports) to create a new
