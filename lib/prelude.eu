@@ -147,7 +147,7 @@ random-bind(m, f, stream): {
 }
 
 ` { doc: "Monadic random: namespace. Each operation is a state-monad action: a function from stream to a value/rest block. Use random.stream(seed) to create the initial stream, then run actions by calling them with the stream."
-    monad: true }
+    monad: "stream → {{value: a, rest: stream}}" }
 random: monad{bind: random-bind, return: random-ret} {
   ` { doc: "random.stream(seed) - create an opaque PRNG stream from integer seed."
       type: "number → any" }
