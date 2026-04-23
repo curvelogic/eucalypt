@@ -138,43 +138,98 @@ The existing `synthesise_meta` path already:
 # warning on y: expected [a], found string
 ```
 
-## 5. What This Doesn't Catch
+## 5. Bracket Pair Monads
+
+Bracket pair monads get typed the same way — via backtick metadata
+on the bracket pair definition:
+
+```eu,notest
+` { monad: "[a]" }
+⟦{}⟧: { :monad bind: my-bind return: my-return }
+```
+
+The `extract_monad_meta` function reads backtick metadata regardless
+of whether the declaration is a namespace or bracket pair. The
+`MonadSpec` stored in the bracket registry carries `monad_type` just
+like namespace specs. The hint injection in `desugar_monadic_block`
+uses the spec from whichever registry it came from.
+
+## 6. LSP Support
+
+### 6.1 Completion for monad tags
+
+After `{ :` in a block, the completion provider offers known monad
+namespace names from the symbol table — those whose `SymbolInfo`
+carries `monad:` metadata. This is an AST-level feature, no type
+checker dependency.
+
+### 6.2 Inlay hints on monadic block bindings
+
+When the LSP detects a monadic block (block with monad tag in
+metadata), it shows inlay hints on each binding declaration showing
+the expected type from the monad's `monad:` metadata:
+
+```
+{ :for x: [1,2,3] }           x : [a]  (inlay hint)
+{ :io  r: io.shell("cmd") }   r : IO(a)  (inlay hint)
+```
+
+This is AST-level — the LSP reads the monad tag, looks up the
+namespace's metadata, and extracts the `monad:` type string.
+
+### 6.3 Hover on monad tags
+
+Hovering over `:for` / `:io` / `:random` in a monadic block shows
+the monad description and binding type requirement.
+
+### 6.4 Type warnings as diagnostics
+
+Type warnings from `__type_hint` mismatches appear as
+`DiagnosticSeverity::WARNING` with source `"eucalypt-types"` —
+this uses existing infrastructure, no new LSP code needed.
+
+## 7. What This Doesn't Catch
 
 - Wrong types passed to monad functions directly (e.g.
   `for.bind(42, identity)`) — the monad functions themselves are
   still untyped. Addressed by eu-dme3.
-- Bracket pair monads without `monad:` metadata on their definition.
+- Type of the bound variable inside the block body — `x` in
+  `{ :for x: [1,2,3] }` should be `number` (unwrapped), not `any`.
+  Addressed by eu-z9zz.10.
 - Type mismatches in the return expression.
 
-## 6. Testing
+## 8. Testing
 
-### Error tests (tests/harness/typecheck/)
+### Typecheck tests (tests/harness/typecheck/)
 
-- `for_number_binding.eu` — `{ :for x: 42 }.(x)` warns
-- `for_string_binding.eu` — `{ :for x: "hello" }.(x)` warns
-- `for_correct_binding.eu` — `{ :for x: [1,2,3] }.(x * 2)` no warning
-- `io_number_binding.eu` — `{ :io x: 42 }.(x)` warns
-- `io_correct_binding.eu` — `{ :io r: io.shell("cmd") }.(r)` no warning
-- `let_any_binding.eu` — `{ :let x: 42 }.(x)` no warning (untyped)
+- `009_for_number_binding.eu` — `{ :for x: 42 }.(x)` warns
+- `010_for_string_binding.eu` — `{ :for x: "hello" }.(x)` warns
+- `011_for_correct_binding.eu` — `{ :for x: [1,2,3] }.(x * 2)` no warning
+- `012_io_number_binding.eu` — `{ :io x: 42 }.(x)` warns
+- `013_let_any_binding.eu` — `{ :let x: 42 }.(x)` no warning (untyped)
 
 ### Harness tests
 
-- Existing monadic block harness tests (096, 145) must still pass.
-- Verify `eu check lib/prelude.eu` — zero warnings.
+- Existing monadic block harness tests (096, 145) must still pass
+- Verify `eu check lib/prelude.eu` — zero warnings
 
-## 7. Files Changed
+## 9. Files Changed
 
 | File | Change |
 |------|--------|
 | `src/core/desugar/desugarer.rs` | `MonadSpec` gains `monad_type: Option<String>` |
-| `src/core/desugar/rowan_ast.rs` | `extract_monad_meta` replaces `has_monad_true_in_raw_meta`; `desugar_monadic_block` injects `__type_hint` |
+| `src/core/desugar/rowan_ast.rs` | `extract_monad_meta` replaces `has_monad_true_in_raw_meta`; `desugar_monadic_block` injects `__type_hint`; bracket pair registration reads `monad:` from backtick metadata |
 | `lib/prelude.eu` | `for` gets `monad: "[a]"`, `io` gets `monad: "IO(a)"` |
+| `src/driver/lsp/completion.rs` | Monad tag completion after `{ :` |
+| `src/driver/lsp/inlay_hints.rs` | Binding type hints in monadic blocks |
+| `src/driver/lsp/hover.rs` | Hover info on monad tags |
+| `src/driver/lsp/symbol_table.rs` | Track `monad:` metadata on symbols |
 | tests/harness/typecheck/ | New typecheck tests for monadic bindings |
 
-## 8. Future Extensions
+## 10. Future Extensions
 
-- Bracket pair monads could get typed via backtick metadata on the
-  bracket pair definition (same `monad:` field)
+- Bound variable type hinting (eu-z9zz.10) — infer element type from
+  monad wrapper type and annotate lambda parameters
 - The monad type could eventually be inferred from the `return`
   function's type annotation rather than declared explicitly
 - Row variables (eu-z9zz.5) would enable typing monad() output
