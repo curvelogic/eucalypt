@@ -387,13 +387,22 @@ fn extract_monad_metadata(decl: &Declaration) -> (bool, Option<String>) {
                             if let Some(body) = inner_decl.body() {
                                 if let Some(body_soup) = body.soup() {
                                     for el in body_soup.elements() {
-                                        // monad: "type" (typed)
+                                        // monad: "type" (simple string)
                                         if let crate::syntax::rowan::ast::Element::Lit(lit) = &el {
                                             if let Some(
                                                 crate::syntax::rowan::ast::LiteralValue::Str(s),
                                             ) = lit.value()
                                             {
                                                 return (true, s.value().map(|v| v.to_string()));
+                                            }
+                                        }
+                                        // monad: "{{...}}" (string pattern with escapes)
+                                        if let crate::syntax::rowan::ast::Element::StringPattern(
+                                            pat,
+                                        ) = &el
+                                        {
+                                            if let Some(s) = lsp_string_pattern_value(pat) {
+                                                return (true, Some(s));
                                             }
                                         }
                                         // monad: true (untyped)
@@ -414,6 +423,26 @@ fn extract_monad_metadata(decl: &Declaration) -> (bool, Option<String>) {
         }
     }
     (false, None)
+}
+
+/// Reconstruct the runtime string value from a `StringPattern`'s chunks.
+///
+/// Only handles patterns without interpolation.  Returns `None` if
+/// any interpolation chunk is found.
+fn lsp_string_pattern_value(pat: &crate::syntax::rowan::ast::StringPattern) -> Option<String> {
+    use crate::syntax::rowan::ast::StringChunk;
+    let mut result = String::new();
+    for chunk in pat.chunks() {
+        match chunk {
+            StringChunk::LiteralContent(c) => {
+                result.push_str(&c.value().unwrap_or_default());
+            }
+            StringChunk::EscapedOpen(_) => result.push('{'),
+            StringChunk::EscapedClose(_) => result.push('}'),
+            StringChunk::Interpolation(_) => return None,
+        }
+    }
+    Some(result)
 }
 
 /// Extract child symbols from a declaration's body block.

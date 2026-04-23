@@ -660,6 +660,25 @@ impl Desugarable for rowan_ast::Literal {
 /// Extract the monad metadata value from a declaration's backtick metadata.
 ///
 /// Returns:
+/// Reconstruct the runtime string value from a `StringPattern`'s chunks.
+///
+/// Only handles patterns without interpolation (literal content and
+/// escaped braces).  Returns `None` if any interpolation chunk is found.
+fn string_pattern_value(pat: &rowan_ast::StringPattern) -> Option<String> {
+    let mut result = String::new();
+    for chunk in pat.chunks() {
+        match chunk {
+            rowan_ast::StringChunk::LiteralContent(c) => {
+                result.push_str(&c.value().unwrap_or_default());
+            }
+            rowan_ast::StringChunk::EscapedOpen(_) => result.push('{'),
+            rowan_ast::StringChunk::EscapedClose(_) => result.push('}'),
+            rowan_ast::StringChunk::Interpolation(_) => return None,
+        }
+    }
+    Some(result)
+}
+
 /// - `None` — no `monad:` field in the metadata
 /// - `Some(None)` — `monad: true` (untyped, backward compatible)
 /// - `Some(Some(type_str))` — `monad: "[a]"` or similar (typed)
@@ -697,16 +716,21 @@ fn extract_monad_meta(decl: &rowan_ast::Declaration) -> Option<Option<String>> {
                                         }
                                     }
                                 }
-                                // monad: "[a]" (string literal)
+                                // monad: "[a]" (simple string literal)
                                 if let rowan_ast::Element::Lit(lit) = &elems[0] {
                                     let text = lit.syntax().text().to_string();
-                                    // String literals are quoted in the AST
                                     if text.starts_with('"')
                                         && text.ends_with('"')
                                         && text.len() > 2
                                     {
                                         let inner = text[1..text.len() - 1].to_string();
                                         return Some(Some(inner));
+                                    }
+                                }
+                                // monad: "{{value: a}}" (string pattern with escapes)
+                                if let rowan_ast::Element::StringPattern(pat) = &elems[0] {
+                                    if let Some(s) = string_pattern_value(pat) {
+                                        return Some(Some(s));
                                     }
                                 }
                             }
