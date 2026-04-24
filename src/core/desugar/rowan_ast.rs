@@ -657,23 +657,24 @@ impl Desugarable for rowan_ast::Literal {
     }
 }
 
-/// Return `true` if the raw Rowan declaration has `monad: true` in its
-/// backtick metadata block.
+/// Extract the monad metadata value from a declaration's backtick metadata.
+///
+/// Returns:
+/// - `None` — no `monad:` field in the metadata
+/// - `Some(None)` — `monad: true` (untyped, backward compatible)
+/// - `Some(Some(type_str))` — `monad: "[a]"` or similar (typed)
 ///
 /// This is used to detect monad namespace declarations such as:
 /// ```eucalypt
 /// ` { monad: true }
-/// io: monad{…} { … }
+/// let: monad(…)
+///
+/// ` { monad: "[a]" }
+/// for: monad(…)
 /// ```
-fn has_monad_true_in_raw_meta(decl: &rowan_ast::Declaration) -> bool {
-    let meta = match decl.meta() {
-        Some(m) => m,
-        None => return false,
-    };
-    let soup = match meta.soup() {
-        Some(s) => s,
-        None => return false,
-    };
+fn extract_monad_meta(decl: &rowan_ast::Declaration) -> Option<Option<String>> {
+    let meta = decl.meta()?;
+    let soup = meta.soup()?;
     let elements: Vec<rowan_ast::Element> = soup.elements().collect();
 
     // The metadata soup must contain exactly one Block element.
@@ -684,16 +685,30 @@ fn has_monad_true_in_raw_meta(decl: &rowan_ast::Declaration) -> bool {
                     if prop.text() != "monad" {
                         continue;
                     }
-                    // Check that the value is the identifier `true`.
                     if let Some(body) = inner_decl.body() {
                         if let Some(body_soup) = body.soup() {
                             let elems: Vec<rowan_ast::Element> = body_soup.elements().collect();
                             if elems.len() == 1 {
+                                // monad: true (identifier)
                                 if let rowan_ast::Element::Name(name_elem) = &elems[0] {
                                     if let Some(id) = name_elem.identifier() {
                                         if id.text() == "true" {
-                                            return true;
+                                            return Some(None);
                                         }
+                                    }
+                                }
+                                // monad: "[a]" (simple string literal)
+                                if let rowan_ast::Element::Lit(lit) = &elems[0] {
+                                    if let Some(rowan_ast::LiteralValue::Str(s)) = lit.value() {
+                                        if let Some(v) = s.value() {
+                                            return Some(Some(v.to_string()));
+                                        }
+                                    }
+                                }
+                                // monad: "{{value: a}}" (string pattern with escapes)
+                                if let rowan_ast::Element::StringPattern(pat) = &elems[0] {
+                                    if let Some(s) = pat.plain_value() {
+                                        return Some(Some(s));
                                     }
                                 }
                             }
@@ -703,7 +718,7 @@ fn has_monad_true_in_raw_meta(decl: &rowan_ast::Declaration) -> bool {
             }
         }
     }
-    false
+    None
 }
 
 /// Extract a MonadSpec from a desugared block body used in a bracket pair definition.
@@ -964,6 +979,39 @@ fn desugar_return_chain(
     Ok(result)
 }
 
+/// Wrap a binding value expression with `__type_hint` metadata when the
+/// monad declares a wrapper type, enabling the type checker to verify
+/// binding values against the monadic type.
+fn wrap_with_type_hint(value: RcExpr, monad_type: Option<&str>, smid: Smid) -> RcExpr {
+    if let Some(type_str) = monad_type {
+        let hint = core::str(smid, type_str);
+        let meta = core::block(smid, [("__type_hint".to_string(), hint)]);
+        core::meta(smid, value, meta)
+    } else {
+        value
+    }
+}
+
+/// Look up the monadic wrapper type for a given spec and optional pair name.
+///
+/// For namespace specs, uses the namespace name.  For bracket pair explicit
+/// specs, uses the provided `pair_name`.  Returns an owned `String` to avoid
+/// borrow conflicts with subsequent mutable desugarer calls.
+fn lookup_monad_type(
+    spec: &super::desugarer::MonadSpec,
+    pair_name: Option<&str>,
+    desugarer: &Desugarer,
+) -> Option<String> {
+    match spec {
+        super::desugarer::MonadSpec::Namespace(ns) => {
+            desugarer.monad_type(ns).map(|s| s.to_string())
+        }
+        super::desugarer::MonadSpec::Explicit { .. } => {
+            pair_name.and_then(|name| desugarer.monad_type(name).map(|s| s.to_string()))
+        }
+    }
+}
+
 /// Desugar a monadic block using a monad spec.
 ///
 /// Given a list of declarations `a: ma  b: mb`, a return element slice, and a
@@ -984,6 +1032,7 @@ fn desugar_monadic_block(
     decls: Vec<rowan_ast::Declaration>,
     return_elems: &[Element],
     spec: &super::desugarer::MonadSpec,
+    monad_type: Option<&str>,
     desugarer: &mut Desugarer,
 ) -> Result<RcExpr, CoreError> {
     if decls.is_empty() {
@@ -1036,6 +1085,7 @@ fn desugar_monadic_block(
                 desugarer.new_smid(span),
             ));
         };
+        let value = wrap_with_type_hint(value, monad_type, desugarer.new_smid(span));
         name_value_pairs.push((decl_name, value));
     }
 
@@ -1106,6 +1156,7 @@ fn desugar_monadic_block_implicit(
     smid: Smid,
     decls: Vec<rowan_ast::Declaration>,
     spec: &super::desugarer::MonadSpec,
+    monad_type: Option<&str>,
     desugarer: &mut Desugarer,
 ) -> Result<RcExpr, CoreError> {
     if decls.is_empty() {
@@ -1155,6 +1206,7 @@ fn desugar_monadic_block_implicit(
                 desugarer.new_smid(span),
             ));
         };
+        let value = wrap_with_type_hint(value, monad_type, desugarer.new_smid(span));
         name_value_pairs.push((decl_name, value));
     }
 
@@ -1283,7 +1335,14 @@ impl Desugarable for Element {
                         let smid = desugarer.new_smid(span);
                         let block_decls: Vec<rowan_ast::Declaration> =
                             block.declarations().collect();
-                        return desugar_monadic_block_implicit(smid, block_decls, &spec, desugarer);
+                        let mt = lookup_monad_type(&spec, None, desugarer);
+                        return desugar_monadic_block_implicit(
+                            smid,
+                            block_decls,
+                            &spec,
+                            mt.as_deref(),
+                            desugarer,
+                        );
                     }
                 }
                 block.desugar(desugarer)
@@ -1425,7 +1484,8 @@ impl Desugarable for Element {
                     .ok_or_else(|| CoreError::NoMonadSpec(pair_name.clone(), smid))?;
 
                 let bracket_decls: Vec<rowan_ast::Declaration> = bracket.declarations().collect();
-                desugar_monadic_block_implicit(smid, bracket_decls, &spec, desugarer)
+                let mt = lookup_monad_type(&spec, Some(&pair_name), desugarer);
+                desugar_monadic_block_implicit(smid, bracket_decls, &spec, mt.as_deref(), desugarer)
             }
             Element::ApplyTuple(tuple) => {
                 let span = text_range_to_span(tuple.syntax().text_range());
@@ -2095,6 +2155,7 @@ fn desugar_rowan_soup_inner(
             };
 
             let bracket_decls: Vec<rowan_ast::Declaration> = bracket.declarations().collect();
+            let mt = lookup_monad_type(&spec, Some(&pair_name), desugarer);
 
             let monadic_expr = if has_dot_return {
                 // Explicit .expr — consume ONE return expression.
@@ -2108,12 +2169,19 @@ fn desugar_rowan_soup_inner(
                     bracket_decls,
                     &elements[ret_start..ret_end],
                     &spec,
+                    mt.as_deref(),
                     desugarer,
                 )?
             } else {
                 // Implicit return — synthesise { k1: k1, k2: k2, … } from bind names.
                 idx += 1;
-                desugar_monadic_block_implicit(smid, bracket_decls, &spec, desugarer)?
+                desugar_monadic_block_implicit(
+                    smid,
+                    bracket_decls,
+                    &spec,
+                    mt.as_deref(),
+                    desugarer,
+                )?
             };
 
             soup.push(monadic_expr);
@@ -2146,8 +2214,14 @@ fn desugar_rowan_soup_inner(
                 if lookup != PendingLookup::None && ns_registered {
                     idx += 1;
                     let block_decls: Vec<rowan_ast::Declaration> = block.declarations().collect();
-                    let monadic_expr =
-                        desugar_monadic_block_implicit(smid, block_decls, &spec, desugarer)?;
+                    let mt = lookup_monad_type(&spec, None, desugarer);
+                    let monadic_expr = desugar_monadic_block_implicit(
+                        smid,
+                        block_decls,
+                        &spec,
+                        mt.as_deref(),
+                        desugarer,
+                    )?;
 
                     // Feed into the generalised lookup handler
                     if lookup == PendingLookup::Dynamic {
@@ -2179,6 +2253,8 @@ fn desugar_rowan_soup_inner(
                         .unwrap_or(false)
                 };
 
+                let mt = lookup_monad_type(&spec, None, desugarer);
+
                 if has_dot_return {
                     // Explicit .expr — consume ONE return expression.
                     //
@@ -2195,6 +2271,7 @@ fn desugar_rowan_soup_inner(
                         block_decls,
                         &elements[ret_start..ret_end],
                         &spec,
+                        mt.as_deref(),
                         desugarer,
                     )?;
                     soup.push(monadic_expr);
@@ -2203,8 +2280,13 @@ fn desugar_rowan_soup_inner(
                     // No .expr, standalone — use implicit return.
                     idx += 1;
                     let block_decls: Vec<rowan_ast::Declaration> = block.declarations().collect();
-                    let monadic_expr =
-                        desugar_monadic_block_implicit(smid, block_decls, &spec, desugarer)?;
+                    let monadic_expr = desugar_monadic_block_implicit(
+                        smid,
+                        block_decls,
+                        &spec,
+                        mt.as_deref(),
+                        desugarer,
+                    )?;
                     soup.push(monadic_expr);
                     continue;
                 }
@@ -2363,9 +2445,14 @@ fn rowan_declaration_to_binding(
     // monadic blocks in the same file can find the spec.  Only register at
     // the top level (stack empty before push) to avoid spurious registrations
     // from nested declarations.
-    if desugarer.is_top_level() && has_monad_true_in_raw_meta(decl) {
-        let spec = super::desugarer::MonadSpec::Namespace(name.clone());
-        desugarer.register_monad_namespace(name.clone(), spec);
+    if desugarer.is_top_level() {
+        if let Some(monad_type) = extract_monad_meta(decl) {
+            let spec = super::desugarer::MonadSpec::Namespace(name.clone());
+            desugarer.register_monad_namespace(name.clone(), spec);
+            if let Some(type_str) = monad_type {
+                desugarer.register_monad_type(name.clone(), type_str);
+            }
+        }
     }
 
     desugarer.push(&name);
@@ -2428,6 +2515,10 @@ fn rowan_declaration_to_binding(
             let spec = extract_monad_spec_from_body(&components.body, spec_smid)?;
             if let Some(monad_spec) = spec {
                 desugarer.register_monad_spec(components.name.clone(), monad_spec);
+            }
+            // Also extract monad type from backtick metadata on bracket pair definition.
+            if let Some(Some(type_str)) = extract_monad_meta(decl) {
+                desugarer.register_monad_type(components.name.clone(), type_str);
             }
         }
     }

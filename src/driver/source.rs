@@ -86,6 +86,12 @@ pub struct SourceLoader {
     /// desugaring `-e` expressions.  This field carries them forward.
     monad_namespace_registry:
         std::collections::HashMap<String, crate::core::desugar::desugarer::MonadSpec>,
+    /// Persisted monad wrapper types across translation units.
+    ///
+    /// Records `monad: "<type>"` metadata (e.g. `"[a]"`, `"IO(a)"`) from
+    /// namespace declarations so that the desugarer can inject `__type_hint`
+    /// annotations on monadic block binding values.
+    monad_type_registry: std::collections::HashMap<String, String>,
 }
 
 impl Default for SourceLoader {
@@ -104,6 +110,7 @@ impl Default for SourceLoader {
             args: Vec::new(),
             seed: None,
             monad_namespace_registry: std::collections::HashMap::new(),
+            monad_type_registry: std::collections::HashMap::new(),
         }
     }
 }
@@ -125,6 +132,7 @@ impl SourceLoader {
             args: Vec::new(),
             seed: None,
             monad_namespace_registry: std::collections::HashMap::new(),
+            monad_type_registry: std::collections::HashMap::new(),
         }
     }
 
@@ -411,10 +419,13 @@ impl SourceLoader {
         // so that `-e` expressions see `monad: true` from the prelude.
         let mut desugarer = Desugarer::new(&desugarables, &mut self.source_map);
         desugarer.seed_monad_namespace_registry(&self.monad_namespace_registry);
+        desugarer.seed_monad_type_registry(&self.monad_type_registry);
         let unit = desugarer.translate_unit(input)?;
-        // Persist any newly registered monad namespaces for later units.
+        // Persist any newly registered monad namespaces and types for later units.
         self.monad_namespace_registry
             .extend(desugarer.drain_monad_namespace_registry());
+        self.monad_type_registry
+            .extend(desugarer.drain_monad_type_registry());
         self.translation_units.insert(input.clone(), unit);
         Ok(&self.translation_units[input])
     }

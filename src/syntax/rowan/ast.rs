@@ -1144,6 +1144,26 @@ impl StringPattern {
     pub fn chunks(&self) -> AstChildren<StringChunk> {
         support::children::<StringChunk>(self.syntax())
     }
+
+    /// Reconstruct the plain string value from the pattern's chunks.
+    ///
+    /// Only succeeds for patterns without interpolation (literal content
+    /// and escaped braces only).  Returns `None` if any interpolation
+    /// chunk is found.
+    pub fn plain_value(&self) -> Option<String> {
+        let mut result = String::new();
+        for chunk in self.chunks() {
+            match chunk {
+                StringChunk::LiteralContent(c) => {
+                    result.push_str(&c.value().unwrap_or_default());
+                }
+                StringChunk::EscapedOpen(_) => result.push('{'),
+                StringChunk::EscapedClose(_) => result.push('}'),
+                StringChunk::Interpolation(_) => return None,
+            }
+        }
+        Some(result)
+    }
 }
 
 impl CStringPattern {

@@ -24,6 +24,12 @@ pub fn hover(
     type_env: Option<&HashMap<String, Type>>,
 ) -> Option<Hover> {
     let offset = super::selection::position_to_offset(source, position);
+
+    // Check for monad tag hover (`:for`, `:io`, etc. in block metadata)
+    if let Some(hover) = monad_tag_hover(root, offset, table) {
+        return Some(hover);
+    }
+
     let token = find_identifier_at(root, offset)?;
     let name = identifier_text(&token);
 
@@ -100,6 +106,66 @@ fn make_hover(
         }),
         range: None,
     }
+}
+
+/// Produce hover information for a monad tag (`:for`, `:io`, etc.) in block metadata.
+fn monad_tag_hover(
+    root: &SyntaxNode,
+    offset: rowan::TextSize,
+    table: &SymbolTable,
+) -> Option<Hover> {
+    let token = root.token_at_offset(offset).left_biased()?;
+
+    // Must be a SYMBOL token like `:for`
+    if token.kind() != SyntaxKind::SYMBOL {
+        return None;
+    }
+
+    let text = token.text().to_string();
+    let name = text.strip_prefix(':')?;
+
+    // Must be in block metadata position
+    let mut node = token.parent()?;
+    let mut in_meta = false;
+    loop {
+        if node.kind() == SyntaxKind::BLOCK_META {
+            in_meta = true;
+            break;
+        }
+        if node.kind() == SyntaxKind::BLOCK {
+            break;
+        }
+        node = node.parent()?;
+    }
+    if !in_meta {
+        return None;
+    }
+
+    // Look up the monad namespace
+    let symbols = table.lookup(name);
+    let sym = symbols.iter().find(|s| s.is_monad)?;
+
+    let mut lines = Vec::new();
+    lines.push(format!("**:{}** — monad tag", name));
+
+    if let Some(monad_type) = &sym.monad_type {
+        lines.push(format!("binding type: `{}`", monad_type));
+    } else {
+        lines.push("untyped monad (any binding value accepted)".to_string());
+    }
+
+    if let Some(doc) = &sym.documentation {
+        lines.push(String::new());
+        lines.push(doc.clone());
+    }
+
+    Some(Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: lines.join("\n"),
+        }),
+        range: None,
+    })
 }
 
 /// Extract the display name from an identifier token.

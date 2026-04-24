@@ -32,6 +32,11 @@ pub fn completions(
 ) -> CompletionResponse {
     let offset = position_to_offset(source, position);
 
+    // Check for monad tag context: is cursor after `{ :` or `:` in block metadata?
+    if let Some(items) = detect_monad_tag_completion(root, offset, table) {
+        return CompletionResponse::Array(items);
+    }
+
     // Check for dotted access: is there a `prefix.` immediately before the cursor?
     if let Some(prefix) = detect_dot_prefix(root, offset) {
         // Try record-type completion from the type environment first
@@ -48,6 +53,74 @@ pub fn completions(
     // General completion: all symbols in scope
     let items = complete_all(table);
     CompletionResponse::Array(items)
+}
+
+/// Detect if cursor is in a monad tag position (`{ :` in block metadata).
+///
+/// When the cursor follows a `:` symbol literal at the start of a block,
+/// we offer known monad namespace names as completions.
+fn detect_monad_tag_completion(
+    root: &SyntaxNode,
+    offset: TextSize,
+    table: &SymbolTable,
+) -> Option<Vec<CompletionItem>> {
+    let token = root.token_at_offset(offset).left_biased()?;
+
+    // Look for a SYMBOL token (`:name`) or a token immediately after `:`
+    let is_colon_context = if token.kind() == SyntaxKind::SYMBOL {
+        true
+    } else if token.kind() == SyntaxKind::UNQUOTED_IDENTIFIER {
+        // Check if preceded by `:` — user is typing after `:`
+        token
+            .prev_token()
+            .map(|t| t.kind() == SyntaxKind::SYMBOL)
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
+    if !is_colon_context {
+        return None;
+    }
+
+    // We're in a potential monad tag position — check if inside a block
+    let mut node = token.parent()?;
+    loop {
+        if node.kind() == SyntaxKind::BLOCK {
+            break;
+        }
+        node = node.parent()?;
+    }
+
+    // Offer monad namespace names
+    let items: Vec<CompletionItem> = table
+        .monad_namespaces()
+        .map(|sym| {
+            let detail = sym
+                .monad_type
+                .as_ref()
+                .map(|t| format!("monad — bindings: {t}"))
+                .unwrap_or_else(|| "monad".to_string());
+            CompletionItem {
+                label: format!(":{}", sym.name),
+                kind: Some(CompletionItemKind::KEYWORD),
+                detail: Some(detail),
+                documentation: sym.documentation.as_ref().map(|doc| {
+                    Documentation::MarkupContent(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value: doc.clone(),
+                    })
+                }),
+                ..CompletionItem::default()
+            }
+        })
+        .collect();
+
+    if items.is_empty() {
+        None
+    } else {
+        Some(items)
+    }
 }
 
 /// Detect if cursor is right after `prefix.` and return the prefix name.
