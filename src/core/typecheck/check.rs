@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use crate::{
     common::sourcemap::{intrinsic_display_name, HasSmid, Smid},
     core::{
-        binding::Var,
+        binding::{BoundVar, Var},
         expr::{BlockMap, Expr, Primitive, RcExpr},
         typecheck::{
             error::TypeWarning,
@@ -161,6 +161,29 @@ impl Checker {
             Some(s) => freshen(&s, &mut self.var_counter),
             None => Type::Any,
         }
+    }
+
+    /// Look up a bound variable using its de Bruijn scope index.
+    ///
+    /// The scope index tells us exactly which enclosing scope the variable
+    /// belongs to (0 = innermost).  Using this avoids false positives when
+    /// a name is shadowed in an inner scope — the name-based `lookup_name`
+    /// would find the shadow, but the de Bruijn index refers to the correct
+    /// outer binding.
+    fn lookup_bound(&mut self, bv: &BoundVar) -> Type {
+        let name = match bv.name.as_deref() {
+            Some(n) => n,
+            None => return Type::Any,
+        };
+        let idx = bv.scope as usize;
+        if let Some(frame) = self.scope_stack.get(idx) {
+            if let Some(scheme) = frame.get(name) {
+                return freshen(scheme, &mut self.var_counter);
+            }
+        }
+        // Fall back to name-based lookup if the scope index is out of range
+        // (e.g. references to the global scope beyond the checker's stack).
+        self.lookup_name(name)
     }
 
     // ── Alias management ────────────────────────────────────────────────────
@@ -350,11 +373,7 @@ impl Checker {
 
             // ── Variables ────────────────────────────────────────────────────
             Expr::Var(_, Var::Free(name)) => self.lookup_name(name),
-            Expr::Var(_, Var::Bound(bv)) => bv
-                .name
-                .as_deref()
-                .map(|n| self.lookup_name(n))
-                .unwrap_or(Type::Any),
+            Expr::Var(_, Var::Bound(bv)) => self.lookup_bound(bv),
 
             // ── Name (pre-varify) ─────────────────────────────────────────────
             Expr::Name(_, name) => self.lookup_name(name),
