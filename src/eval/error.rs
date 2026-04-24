@@ -659,8 +659,18 @@ pub enum ExecutionError {
     NoBranchForNative(Smid, String),
     #[error("{}", format_cannot_return_fun(.1))]
     CannotReturnFunToCase(Smid, Vec<u8>),
-    #[error("panic: {1}")]
+    /// Internal runtime error — shown as-is, without any "panic:" prefix.
+    ///
+    /// Use `UserPanic` when the error originates from the user's `panic()`
+    /// function so that the "panic:" label appears in the diagnostic.
+    #[error("{1}")]
     Panic(Smid, String),
+    /// Error raised by the user's `panic("msg")` call.
+    ///
+    /// Displays with the "panic: " prefix so the user sees their explicit
+    /// call to `panic()` reflected in the error message.
+    #[error("panic: {1}")]
+    UserPanic(Smid, String),
     #[error("parse-as({1}): {2}")]
     ParseError(Smid, String, String),
     #[error("version requirement not satisfied: eucalypt {1} does not satisfy '{2}'")]
@@ -767,6 +777,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::CannotReturnFunToCase(s, _) => *s,
             ExecutionError::BlackHole(s) => *s,
             ExecutionError::Panic(s, _) => *s,
+            ExecutionError::UserPanic(s, _) => *s,
             ExecutionError::ParseError(s, _, _) => *s,
             ExecutionError::VersionRequirementFailed(s, _, _) => *s,
             ExecutionError::InvalidBase64(s, _) => *s,
