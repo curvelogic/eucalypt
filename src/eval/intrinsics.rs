@@ -974,6 +974,16 @@ lazy_static! {
             ty: function(vec![unk(), unk()]).unwrap(),
             strict: vec![],
     },
+    Intrinsic { // 185
+            name: "HEAD_EMPTY_ERR",
+            ty: function(vec![unk()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 186
+            name: "TAIL_EMPTY_ERR",
+            ty: function(vec![unk()]).unwrap(),
+            strict: vec![],
+    },
     ];
 }
 

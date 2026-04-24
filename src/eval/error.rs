@@ -713,6 +713,10 @@ pub enum ExecutionError {
     HeadOfNonList(Smid, String),
     #[error("tail requires a list, found {1}")]
     TailOfNonList(Smid, String),
+    #[error("head of empty list")]
+    HeadOfEmptyList(Smid),
+    #[error("tail of empty list")]
+    TailOfEmptyList(Smid),
 }
 
 impl From<bump::AllocError> for ExecutionError {
@@ -782,6 +786,8 @@ impl HasSmid for ExecutionError {
             ExecutionError::ListIndexOutOfBounds(s, _) => *s,
             ExecutionError::HeadOfNonList(s, _) => *s,
             ExecutionError::TailOfNonList(s, _) => *s,
+            ExecutionError::HeadOfEmptyList(s) => *s,
+            ExecutionError::TailOfEmptyList(s) => *s,
             ExecutionError::BadDateTimeString(s, _) => *s,
             ExecutionError::BadRegex(s, _, _) => *s,
             ExecutionError::BadFormatString(s, _) => *s,
@@ -1102,6 +1108,16 @@ impl ExecutionError {
             ExecutionError::BadTimeZone(_, _) => {
                 vec![
                     "timezone must be a UTC offset string like '+0100', '-0530', or 'UTC'"
+                        .to_string(),
+                ]
+            }
+            ExecutionError::HeadOfEmptyList(_) | ExecutionError::TailOfEmptyList(_) => {
+                vec![
+                    "guard against empty lists with 'nil?', e.g. \
+                     'if(xs nil?, default, xs head)'"
+                        .to_string(),
+                    "'head' and 'tail' are only defined on non-empty lists; \
+                     use 'nth(0, xs)' or pattern matching if the list may be empty"
                         .to_string(),
                 ]
             }

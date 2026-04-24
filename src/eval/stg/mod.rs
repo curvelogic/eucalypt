@@ -124,6 +124,8 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(list::Tail));
     rt.add(Box::new(list::Head));
     rt.add(Box::new(list::Nil));
+    rt.add(Box::new(list::HeadEmptyErr));
+    rt.add(Box::new(list::TailEmptyErr));
     rt.add(Box::new(string::Sym));
     rt.add(Box::new(string::Str));
     rt.add(Box::new(string::Join));
