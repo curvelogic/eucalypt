@@ -63,11 +63,32 @@ type AliasMap = HashMap<String, Type>;
 /// Walk a `RcExpr` with `check_expr()` to collect all `TypeWarning`s.
 /// The checker is stateful — it builds up a scope stack as it descends
 /// into let-bindings and lambdas.
+///
+/// # Scope stack invariant
+///
+/// The scope stack corresponds 1:1 with de Bruijn scope levels.  Every
+/// scope-introducing form the checker enters (Let bindings, Lambda
+/// parameters via `check_lambda`) pushes exactly one frame.  This means
+/// `scope_stack[i]` is the frame for de Bruijn level `i` (0 = innermost).
+///
+/// Bound variables use their de Bruijn `scope` index to look up directly
+/// in the correct frame via `lookup_bound`, avoiding name-shadowing bugs
+/// that plague name-based lookup.
+///
+/// The checker only encounters `BoundVar` nodes inside code it has
+/// actually traversed (you can't reach a variable without entering its
+/// enclosing scopes), so the scope index is always within range for
+/// variables the checker synthesises — except for references to scopes
+/// outside the checker's root expression (the global/prelude scope),
+/// which fall back to name-based lookup.
 pub struct Checker {
     /// Scope stack.  Front = innermost scope.
     ///
     /// Each frame maps binding name → `TypeScheme`.  Polymorphic schemes are
     /// freshened on every lookup; monomorphic schemes are returned as-is.
+    ///
+    /// Position in the deque corresponds to de Bruijn scope level:
+    /// index 0 is the innermost scope, index N is N scopes outward.
     scope_stack: VecDeque<HashMap<String, TypeScheme>>,
 
     /// Counter for generating unique fresh type-variable names (`_t0`, `_t1`, …).
@@ -165,11 +186,11 @@ impl Checker {
 
     /// Look up a bound variable using its de Bruijn scope index.
     ///
-    /// The scope index tells us exactly which enclosing scope the variable
-    /// belongs to (0 = innermost).  Using this avoids false positives when
-    /// a name is shadowed in an inner scope — the name-based `lookup_name`
-    /// would find the shadow, but the de Bruijn index refers to the correct
-    /// outer binding.
+    /// Uses the scope index to look directly in the correct frame, avoiding
+    /// name-shadowing false positives.  Falls back to name-based lookup only
+    /// when the scope index exceeds the stack depth — this happens for
+    /// references to bindings outside the checker's root expression (e.g.
+    /// prelude globals when checking a single unit).
     fn lookup_bound(&mut self, bv: &BoundVar) -> Type {
         let name = match bv.name.as_deref() {
             Some(n) => n,
@@ -180,9 +201,19 @@ impl Checker {
             if let Some(scheme) = frame.get(name) {
                 return freshen(scheme, &mut self.var_counter);
             }
+            // The frame exists but doesn't contain the name.  This shouldn't
+            // happen for well-formed core expressions — the de Bruijn index
+            // should point to the frame that actually binds this name.
+            debug_assert!(
+                false,
+                "BoundVar '{name}' at scope {idx} not found in frame (frame has: {:?})",
+                frame.keys().collect::<Vec<_>>()
+            );
+            return Type::Any;
         }
-        // Fall back to name-based lookup if the scope index is out of range
-        // (e.g. references to the global scope beyond the checker's stack).
+        // Scope index beyond the stack — this variable refers to a binding
+        // outside the checker's root (e.g. prelude globals).  Fall back to
+        // name-based search which covers pre-seeded outer scopes.
         self.lookup_name(name)
     }
 
@@ -1754,5 +1785,93 @@ mod tests {
         // Alias "Num" → number, erased type vars don't change it.
         assert_eq!(ty, Type::Number);
         assert!(c.into_warnings().is_empty());
+    }
+
+    // ── Bound variable scope resolution ──────────────────────────────────────
+
+    #[test]
+    fn bound_var_resolves_to_correct_scope_when_shadowed() {
+        // Simulates the arr.map scenario: outer scope has `map: (a→b)→[a]→[b]`,
+        // inner scope shadows it with `map: (number→number)→array→array`.
+        // A BoundVar at scope 1 (outer) should get the outer type, not the
+        // inner shadow.
+        let mut c = Checker::new();
+
+        // Outer scope: list map
+        let list_map_type = Type::Function(
+            Box::new(Type::Function(
+                Box::new(Type::Var(TypeVarId("a".into()))),
+                Box::new(Type::Var(TypeVarId("b".into()))),
+            )),
+            Box::new(Type::Function(
+                Box::new(Type::List(Box::new(Type::Var(TypeVarId("a".into()))))),
+                Box::new(Type::List(Box::new(Type::Var(TypeVarId("b".into()))))),
+            )),
+        );
+        let mut outer = HashMap::new();
+        outer.insert("map".to_string(), TypeScheme::mono(list_map_type.clone()));
+        c.push_scope(outer);
+
+        // Inner scope: arr.map (narrower type)
+        let arr_map_type = Type::Function(
+            Box::new(Type::Function(
+                Box::new(Type::Number),
+                Box::new(Type::Number),
+            )),
+            Box::new(Type::Function(
+                Box::new(Type::Array),
+                Box::new(Type::Array),
+            )),
+        );
+        let mut inner = HashMap::new();
+        inner.insert("map".to_string(), TypeScheme::mono(arr_map_type.clone()));
+        c.push_scope(inner);
+
+        // BoundVar at scope 0 (inner) → arr.map type
+        let bv_inner = BoundVar {
+            scope: 0,
+            binder: 0,
+            name: Some("map".to_string()),
+        };
+        let inner_result = c.lookup_bound(&bv_inner);
+        assert_eq!(inner_result, arr_map_type, "scope 0 should resolve to inner (arr.map)");
+
+        // BoundVar at scope 1 (outer) → list map type
+        let bv_outer = BoundVar {
+            scope: 1,
+            binder: 0,
+            name: Some("map".to_string()),
+        };
+        let outer_result = c.lookup_bound(&bv_outer);
+        assert_eq!(outer_result, list_map_type, "scope 1 should resolve to outer (list map)");
+
+        // Name-based lookup would find the inner shadow — verify they differ.
+        let name_result = c.lookup_name("map");
+        assert_eq!(name_result, arr_map_type, "name lookup finds innermost");
+        assert_ne!(
+            name_result, list_map_type,
+            "name lookup does NOT find outer — this is the bug that lookup_bound fixes"
+        );
+    }
+
+    #[test]
+    fn bound_var_beyond_stack_falls_back_to_name_lookup() {
+        // BoundVar referencing a scope outside the checker's stack (e.g. prelude
+        // globals) should fall back to name-based lookup.
+        let mut c = Checker::new();
+
+        let mut frame = HashMap::new();
+        frame.insert("x".to_string(), mono(Type::Number));
+        c.push_scope(frame);
+
+        // scope 5 is well beyond the stack (depth 1)
+        let bv = BoundVar {
+            scope: 5,
+            binder: 0,
+            name: Some("x".to_string()),
+        };
+        // Falls back to name lookup, which finds "x" in the single frame.
+        let result = c.lookup_bound(&bv);
+        assert_eq!(result, Type::Number);
     }
 }
