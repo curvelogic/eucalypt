@@ -368,4 +368,25 @@ mod tests {
             panic!("Element should be a StringPattern");
         }
     }
+
+    #[test]
+    fn bare_colon_in_block_does_not_panic() {
+        use crate::syntax::rowan::parse_unit;
+
+        // Typing `{ : }` in the editor (e.g. starting a monad tag) must
+        // not crash the parser.  The LSP completion provider needs to run
+        // on partially-typed input like this.
+        let parse = parse_unit("main: { : }");
+        // Parse should complete without panic — errors are acceptable.
+        let _ = parse.syntax_node();
+    }
+
+    #[test]
+    fn bare_colon_at_block_end_does_not_panic() {
+        use crate::syntax::rowan::parse_unit;
+
+        // Edge case: colon immediately before close brace with no space.
+        let parse = parse_unit("main: {:}");
+        let _ = parse.syntax_node();
+    }
 }
