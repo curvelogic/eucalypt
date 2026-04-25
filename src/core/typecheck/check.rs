@@ -1818,10 +1818,7 @@ mod tests {
                 Box::new(Type::Number),
                 Box::new(Type::Number),
             )),
-            Box::new(Type::Function(
-                Box::new(Type::Array),
-                Box::new(Type::Array),
-            )),
+            Box::new(Type::Function(Box::new(Type::Array), Box::new(Type::Array))),
         );
         let mut inner = HashMap::new();
         inner.insert("map".to_string(), TypeScheme::mono(arr_map_type.clone()));
@@ -1834,7 +1831,10 @@ mod tests {
             name: Some("map".to_string()),
         };
         let inner_result = c.lookup_bound(&bv_inner);
-        assert_eq!(inner_result, arr_map_type, "scope 0 should resolve to inner (arr.map)");
+        assert_eq!(
+            inner_result, arr_map_type,
+            "scope 0 should resolve to inner (arr.map)"
+        );
 
         // BoundVar at scope 1 (outer) → list map type
         let bv_outer = BoundVar {
@@ -1843,7 +1843,10 @@ mod tests {
             name: Some("map".to_string()),
         };
         let outer_result = c.lookup_bound(&bv_outer);
-        assert_eq!(outer_result, list_map_type, "scope 1 should resolve to outer (list map)");
+        assert_eq!(
+            outer_result, list_map_type,
+            "scope 1 should resolve to outer (list map)"
+        );
 
         // Name-based lookup would find the inner shadow — verify they differ.
         let name_result = c.lookup_name("map");
