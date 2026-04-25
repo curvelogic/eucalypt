@@ -1,0 +1,459 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Import Formats - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/reference/import-formats.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="import-formats"><a class="header" href="#import-formats">Import Formats</a></h1>
+<p>Eucalypt supports importing content from other units in a variety of
+ways.</p>
+<p>Imported names can be scoped to specific declarations, they may be
+made accessible under a specific namespace, and they may be imported
+from disk or direct from git repositories.</p>
+<h2 id="import-scopes"><a class="header" href="#import-scopes">Import scopes</a></h2>
+<p>Imports are specified in declaration metadata and make the names in
+the imported unit available within the declaration that is annotated.</p>
+<pre><code class="language-eu notest">{ import: "config.eu" }
+data: {
+  # names from config are available here
+  x: config-value
+}
+</code></pre>
+<p>As described in <a href="syntax.html">Syntax Reference</a>, declaration metadata can
+be applied at a unit level simply by including a metadata block as the
+very first thing in a eucalypt file:</p>
+<pre><code class="language-eu notest">{ import: "config.eu" }
+
+# names from config are available here
+
+x: config-value
+</code></pre>
+<h2 id="import-syntax"><a class="header" href="#import-syntax">Import syntax</a></h2>
+<p>Imports are specified using the key <code>import</code> in a declaration metadata
+block. The value may be a single import specification:</p>
+<pre><code class="language-eu notest">{ import: "dep-a.eu"}
+</code></pre>
+<p>or a list of import specifications:</p>
+<pre><code class="language-eu notest">{ import: ["dep-a.eu", "dep-b.eu"]}
+</code></pre>
+<p>The import specification itself can be either a <em>simple import</em> or a
+<em>git import</em>.</p>
+<h3 id="simple-imports"><a class="header" href="#simple-imports">Simple imports</a></h3>
+<p>Simple imports are specified in exactly the same way as <em>inputs</em> are
+specified at the command line (see <a href="cli.html">CLI Reference</a>).</p>
+<p>So you can override the format of the imported file when the file
+extension is misleading:</p>
+<pre><code class="language-eu notest">{ import: "yaml@dep.txt" }
+</code></pre>
+<p>...and provide a name under which the imported names will be
+available:</p>
+<pre><code class="language-eu notest">{ import: "cfg=config.eu" }
+
+# names in config.eu are available by lookup in cfg:
+
+x: cfg.x
+</code></pre>
+<p>In cases where the import format delivers a list rather than a block
+("text", "csv", "jsonl", ...) a name is mandatory:</p>
+<pre><code class="language-eu notest">{ import: "txns=transactions.csv" }
+</code></pre>
+<p>Simple imports support exactly the same inputs as the command line,
+with the proviso that the stdin input ("-") will not be consumable if
+it has already been specified in the command line or another unit.</p>
+<h3 id="git-imports"><a class="header" href="#git-imports">Git imports</a></h3>
+<p>Git imports allow you to import eucalypt direct from a git repository
+at a specified commit, combining the convenience of not having to
+explicitly manage a git working copy and a library path with the
+repeatability of a git SHA. A git import is specified as a block with
+the keys "git", "commit" and "import", all of which are mandatory:</p>
+<pre><code class="language-eu notest">{ import: { git: "https://github.com/gmorpheme/eu.aws"
+            commit: "0140232cf882a922bdd67b520ed56f0cddbd0637"
+            import: "aws/cloudformation.eu" } }
+</code></pre>
+<p>The <code>git</code> URL may be any format that the git command line expects.</p>
+<p><code>commit</code> is required and should be a SHA. It is intended to ensure the
+import is repeatable and cacheable.</p>
+<p><code>import</code> identifies the file within the repository to import.</p>
+<p>Just as with simple imports, several git imports may be listed:</p>
+<pre><code class="language-eu">{ import: [{ git: ... }, { git: ... }]}
+</code></pre>
+<p>...and simple imports and git imports may be freely mixed.</p>
+<h2 id="yaml-import-features"><a class="header" href="#yaml-import-features">YAML import features</a></h2>
+<p>When importing YAML files, eucalypt supports several YAML features that
+help reduce repetition and express data more naturally.</p>
+<h3 id="anchors-and-aliases"><a class="header" href="#anchors-and-aliases">Anchors and aliases</a></h3>
+<p>YAML anchors (<code>&amp;name</code>) and aliases (<code>*name</code>) allow you to define a value
+once and reference it multiple times. When eucalypt imports a YAML file
+with anchors and aliases, the aliased values are resolved to copies of
+the anchored expression.</p>
+<pre><code class="language-yaml"># config.yaml
+defaults: &amp;defaults
+  timeout: 30
+  retries: 3
+
+development:
+  &lt;&lt;: *defaults
+  debug: true
+
+production:
+  &lt;&lt;: *defaults
+  debug: false
+</code></pre>
+<p>Anchors can be applied to any YAML value: scalars, lists, or mappings.</p>
+<pre><code class="language-yaml"># Anchor on a scalar
+name: &amp;author "Alice"
+books:
+  - title: "First Book"
+    author: *author
+  - title: "Second Book"
+    author: *author
+
+# Anchor on a list
+colours: &amp;primary [red, green, blue]
+palette:
+  primary: *primary
+  secondary: [yellow, cyan, magenta]
+
+# Anchor on a mapping (block)
+base: &amp;base
+  x: 1
+  y: 2
+ref: *base  # ref now has { x: 1, y: 2 }
+</code></pre>
+<p>Nested anchors are supported -- an anchored structure can itself contain
+anchored values:</p>
+<pre><code class="language-yaml">outer: &amp;outer
+  inner: &amp;inner 42
+ref_outer: *outer   # { inner: 42 }
+ref_inner: *inner   # 42
+</code></pre>
+<p>If you reference an undefined alias, eucalypt reports an error:</p>
+<pre><code class="language-yaml"># This will fail: *undefined is not defined
+value: *undefined
+</code></pre>
+<h3 id="merge-keys"><a class="header" href="#merge-keys">Merge keys</a></h3>
+<p>The YAML merge key (<code>&lt;&lt;</code>) allows you to merge entries from one or more
+mappings into another. This is useful for creating configuration
+variations that share a common base.</p>
+<p><strong>Single merge:</strong></p>
+<pre><code class="language-yaml">base: &amp;base
+  host: localhost
+  port: 8080
+
+server:
+  &lt;&lt;: *base
+  name: main
+# server = { host: localhost, port: 8080, name: main }
+</code></pre>
+<p><strong>Multiple merge:</strong></p>
+<p>When merging multiple mappings, later ones override earlier ones:</p>
+<pre><code class="language-yaml">defaults: &amp;defaults
+  timeout: 30
+  retries: 3
+
+overrides: &amp;overrides
+  timeout: 60
+
+config:
+  &lt;&lt;: [*defaults, *overrides]
+  name: myapp
+# config = { timeout: 60, retries: 3, name: myapp }
+</code></pre>
+<p><strong>Explicit keys override merged values:</strong></p>
+<p>Keys defined explicitly in the mapping (before or after the merge)
+always take precedence over merged values:</p>
+<pre><code class="language-yaml">base: &amp;base
+  x: 1
+  y: 2
+
+derived:
+  &lt;&lt;: *base
+  y: 99
+# derived = { x: 1, y: 99 }
+</code></pre>
+<p><strong>Inline merge:</strong></p>
+<p>You can also merge an inline mapping directly:</p>
+<pre><code class="language-yaml">config:
+  &lt;&lt;: { timeout: 30, retries: 3 }
+  name: myapp
+</code></pre>
+<p>The merge key value must be a mapping (or list of mappings). Attempting
+to merge a non-mapping value (e.g., <code>&lt;&lt;: 42</code>) results in an error.</p>
+<h3 id="timestamps"><a class="header" href="#timestamps">Timestamps</a></h3>
+<p>Eucalypt automatically converts YAML timestamps to ZDT (zoned date-time)
+expressions. Plain scalar values matching timestamp patterns are parsed
+and converted; quoted strings are left as strings.</p>
+<p><strong>Supported formats:</strong></p>
+<div class="table-wrapper"><table><thead><tr><th>Format</th><th>Example</th><th>Notes</th></tr></thead><tbody>
+<tr><td>Date only</td><td><code>2023-01-15</code></td><td>Midnight UTC</td></tr>
+<tr><td>ISO 8601 UTC</td><td><code>2023-01-15T10:30:00Z</code></td><td></td></tr>
+<tr><td>ISO 8601 offset</td><td><code>2023-01-15T10:30:00+05:00</code></td><td></td></tr>
+<tr><td>Space separator</td><td><code>2023-01-15 10:30:00</code></td><td>Treated as UTC</td></tr>
+<tr><td>Fractional seconds</td><td><code>2023-01-15T10:30:00.123456Z</code></td><td></td></tr>
+</tbody></table>
+</div>
+<p><strong>Examples:</strong></p>
+<pre><code class="language-yaml"># These are converted to ZDT expressions:
+created: 2023-01-15
+updated: 2023-01-15T10:30:00Z
+scheduled: 2023-06-01 09:00:00
+
+# This remains a string (quoted):
+date_string: "2023-01-15T10:30:00Z"
+</code></pre>
+<p><strong>Invalid timestamps fall back to strings:</strong></p>
+<p>If a value looks like a timestamp but has invalid date components
+(e.g., month 13 or day 45), it remains a string:</p>
+<pre><code class="language-yaml">invalid: 2023-13-45  # Remains string "2023-13-45"
+</code></pre>
+<p><strong>To keep timestamps as strings:</strong></p>
+<p>If you need to preserve a timestamp-like value as a string rather than
+converting it to a ZDT, quote it:</p>
+<pre><code class="language-yaml"># As ZDT:
+actual_date: 2023-01-15
+
+# As string:
+date_label: "2023-01-15"
+</code></pre>
+<h2 id="streaming-imports"><a class="header" href="#streaming-imports">Streaming imports</a></h2>
+<p>For large files, eucalypt supports streaming import formats that read
+data lazily without loading the entire file into memory. Streaming
+formats produce a lazy list of records.</p>
+<div class="table-wrapper"><table><thead><tr><th>Format</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>jsonl-stream</code></td><td>JSON Lines (one JSON object per line)</td></tr>
+<tr><td><code>csv-stream</code></td><td>CSV with headers (each row becomes a block)</td></tr>
+<tr><td><code>text-stream</code></td><td>Plain text (each line becomes a string)</td></tr>
+</tbody></table>
+</div>
+<p>Streaming formats are specified using the <code>format@path</code> syntax:</p>
+<pre><code class="language-sh"># Stream a JSONL file
+eu -e 'data take(10)' data=jsonl-stream@events.jsonl
+
+# Stream a large CSV
+eu -e 'data filter(.age &gt; 30) count' data=csv-stream@people.csv
+
+# Stream lines of text
+eu -e 'data filter(str.matches?("ERROR"))' log=text-stream@app.log
+</code></pre>
+<p>Streaming imports can also be used via the import syntax in eucalypt
+source files:</p>
+<pre><code class="language-eu notest">{ import: "events=jsonl-stream@events.jsonl" }
+
+recent: events take(100)
+</code></pre>
+<blockquote>
+<p><strong>Note:</strong> Streaming imports require a name binding (e.g., <code>data=</code>) because
+they produce a list, not a block.</p>
+</blockquote>
+<blockquote>
+<p><strong>Note:</strong> <code>text-stream</code> supports reading from stdin using <code>-</code> as the path:
+<code>eu -e 'data count' data=text-stream@-</code></p>
+</blockquote>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../reference/cli.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../reference/export-formats.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../reference/cli.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../reference/export-formats.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>

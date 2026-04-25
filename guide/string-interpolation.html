@@ -1,0 +1,456 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Strings and Text - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/guide/string-interpolation.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="strings-and-text"><a class="header" href="#strings-and-text">Strings and Text</a></h1>
+<p>In this chapter you will learn:</p>
+<ul>
+<li>The two string literal types (raw and c-strings)</li>
+<li>How to embed expressions in strings using <code>{...}</code> syntax</li>
+<li>How strings with anaphora become functions</li>
+<li>Format specifiers for controlling output</li>
+<li>The string functions available in the <code>str</code> namespace</li>
+</ul>
+<h2 id="string-literal-types"><a class="header" href="#string-literal-types">String Literal Types</a></h2>
+<p>Eucalypt has two kinds of string literal: <strong>raw strings</strong> and
+<strong>c-strings</strong>.</p>
+<h3 id="raw-strings"><a class="header" href="#raw-strings">Raw Strings</a></h3>
+<p>A plain double-quoted string is a raw string — backslashes are
+literal characters with no escape processing. This is convenient for
+regular expression usage.</p>
+<pre><code class="language-eu">greeting: "Hello, World!"
+path: "C:\Users\alice\docs"
+regex: "^\d+\.\d+"
+</code></pre>
+<p>The <code>r"..."</code> prefix is equivalent and can be used for clarity when
+the string contains backslashes:</p>
+<pre><code class="language-eu">path: r"C:\Users\alice\docs"
+regex: r"^\d+\.\d+"
+</code></pre>
+<p>Raw strings support interpolation with <code>{...}</code>. Use <code>{{</code> and <code>}}</code>
+for literal braces.</p>
+<h3 id="c-strings-c"><a class="header" href="#c-strings-c">C-Strings (<code>c"..."</code>)</a></h3>
+<p>If you require C-style escapes, you can use C-strings:</p>
+<div class="table-wrapper"><table><thead><tr><th>Escape</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>\n</code></td><td>Newline</td></tr>
+<tr><td><code>\t</code></td><td>Tab</td></tr>
+<tr><td><code>\r</code></td><td>Carriage return</td></tr>
+<tr><td><code>\\</code></td><td>Literal backslash</td></tr>
+<tr><td><code>\"</code></td><td>Literal quote</td></tr>
+<tr><td><code>\{</code>, <code>\}</code></td><td>Literal braces</td></tr>
+<tr><td><code>\xHH</code></td><td>Hex byte</td></tr>
+<tr><td><code>\uHHHH</code></td><td>Unicode code point</td></tr>
+<tr><td><code>\UHHHHHHHH</code></td><td>Extended Unicode</td></tr>
+</tbody></table>
+</div>
+<pre><code class="language-eu">multiline: c"first line\nsecond line"
+</code></pre>
+<p>C-strings also support interpolation with <code>{...}</code>.</p>
+<h2 id="basic-interpolation"><a class="header" href="#basic-interpolation">Basic Interpolation</a></h2>
+<p>Embed any expression inside a string using curly braces:</p>
+<pre><code class="language-eu">name: "World"
+greeting: "Hello, {name}!"
+</code></pre>
+<pre><code class="language-yaml">name: World
+greeting: Hello, World!
+</code></pre>
+<p>Interpolation braces accept names and dotted lookups. To use a
+computed value, bind it to a name first:</p>
+<pre><code class="language-eu">x: 3
+y: 4
+sum: x + y
+result: "{x} + {y} = {sum}"
+</code></pre>
+<pre><code class="language-yaml">x: 3
+y: 4
+sum: 7
+result: 3 + 4 = 7
+</code></pre>
+<h2 id="nested-lookups-in-interpolation"><a class="header" href="#nested-lookups-in-interpolation">Nested Lookups in Interpolation</a></h2>
+<p>You can use dotted paths inside interpolation:</p>
+<pre><code class="language-eu">data: { foo: { bar: 99 } }
+label: "{data.foo.bar}"
+</code></pre>
+<pre><code class="language-yaml">data:
+  foo:
+    bar: 99
+label: '99'
+</code></pre>
+<blockquote>
+<p><strong>Note:</strong> Interpolation braces accept names and dotted lookups, but
+not arbitrary eucalypt expressions. If you need a computed value,
+bind it to a name first:</p>
+<pre><code class="language-eu">sum: x + y
+result: "{sum}"
+</code></pre>
+</blockquote>
+<h2 id="escaping-braces"><a class="header" href="#escaping-braces">Escaping Braces</a></h2>
+<p>To include a literal brace in a string, double it:</p>
+<pre><code class="language-eu">example: "Use {{braces}} for interpolation"
+</code></pre>
+<pre><code class="language-yaml">example: Use {braces} for interpolation
+</code></pre>
+<p>This is also needed in regular expressions within interpolated
+strings:</p>
+<pre><code class="language-eu">pattern: "01234" str.match-with("\d{{4}}")
+</code></pre>
+<h2 id="format-specifiers"><a class="header" href="#format-specifiers">Format Specifiers</a></h2>
+<p>Add a format specifier after a colon inside the interpolation braces.
+These use printf-style format codes:</p>
+<pre><code class="language-eu">pi: 3.14159
+formatted: "{pi:%.2f}"
+padded: "{42:%06d}"
+</code></pre>
+<pre><code class="language-yaml">pi: 3.14159
+formatted: '3.14'
+padded: '000042'
+</code></pre>
+<h2 id="string-anaphora"><a class="header" href="#string-anaphora">String Anaphora</a></h2>
+<p>When a string contains <code>{}</code> (empty braces) or <code>{0}</code>, <code>{1}</code>, etc.,
+the string literal actually defines a function rather than a plain
+string value:</p>
+<pre><code class="language-sh">eu -e '["a", "b", "c"] map("item: {}")'
+</code></pre>
+<pre><code class="language-yaml">- 'item: a'
+- 'item: b'
+- 'item: c'
+</code></pre>
+<p>Numbered anaphora control argument order:</p>
+<pre><code class="language-eu">reverse-pair: "{1},{0}"
+result: reverse-pair(:a, :b)
+</code></pre>
+<pre><code class="language-yaml">result: b,a
+</code></pre>
+<p>You can mix named references and anaphora:</p>
+<pre><code class="language-eu">prefix: "Hello"
+greet: "{prefix} {}!"
+result: greet("World")
+</code></pre>
+<pre><code class="language-yaml">prefix: Hello
+result: Hello World!
+</code></pre>
+<h2 id="string-functions"><a class="header" href="#string-functions">String Functions</a></h2>
+<p>The <code>str</code> namespace contains functions for working with strings.</p>
+<h3 id="conversion"><a class="header" href="#conversion">Conversion</a></h3>
+<pre><code class="language-sh">eu -e '42 str.of'
+</code></pre>
+<pre><code class="language-yaml">'42'
+</code></pre>
+<h3 id="case-conversion"><a class="header" href="#case-conversion">Case Conversion</a></h3>
+<pre><code class="language-sh">eu -e '"hello" str.to-upper'
+</code></pre>
+<pre><code class="language-yaml">HELLO
+</code></pre>
+<pre><code class="language-sh">eu -e '"GOODBYE" str.to-lower'
+</code></pre>
+<pre><code class="language-yaml">goodbye
+</code></pre>
+<h3 id="splitting-and-joining"><a class="header" href="#splitting-and-joining">Splitting and Joining</a></h3>
+<p>Split a string on a pattern:</p>
+<pre><code class="language-sh">eu -e '"one-two-three" str.split-on("-")'
+</code></pre>
+<pre><code class="language-yaml">- one
+- two
+- three
+</code></pre>
+<p>Join a list of strings:</p>
+<pre><code class="language-sh">eu -e '["a", "b", "c"] str.join-on(", ")'
+</code></pre>
+<pre><code class="language-yaml">a, b, c
+</code></pre>
+<h3 id="prefix-and-suffix"><a class="header" href="#prefix-and-suffix">Prefix and Suffix</a></h3>
+<pre><code class="language-sh">eu -e '"world" str.prefix("hello ")'
+</code></pre>
+<pre><code class="language-yaml">hello world
+</code></pre>
+<pre><code class="language-sh">eu -e '"hello" str.suffix("!")'
+</code></pre>
+<pre><code class="language-yaml">hello!
+</code></pre>
+<h3 id="characters-and-letters"><a class="header" href="#characters-and-letters">Characters and Letters</a></h3>
+<pre><code class="language-sh">eu -e '"hello" str.letters'
+</code></pre>
+<pre><code class="language-yaml">- h
+- e
+- l
+- l
+- o
+</code></pre>
+<pre><code class="language-sh">eu -e '"hello" str.letters count'
+</code></pre>
+<pre><code class="language-yaml">5
+</code></pre>
+<h2 id="regular-expressions"><a class="header" href="#regular-expressions">Regular Expressions</a></h2>
+<h3 id="testing-a-match"><a class="header" href="#testing-a-match">Testing a Match</a></h3>
+<pre><code class="language-sh">eu -e '"hello" str.matches?("^h.*o$")'
+</code></pre>
+<pre><code class="language-yaml">true
+</code></pre>
+<h3 id="extracting-matches"><a class="header" href="#extracting-matches">Extracting Matches</a></h3>
+<p><code>str.match-with</code> returns the full match and capture groups:</p>
+<pre><code class="language-sh">eu -e '"192.168.0.1" str.match-with("(\d+)[.](\d+)[.](\d+)[.](\d+)") tail'
+</code></pre>
+<pre><code class="language-yaml">- '192'
+- '168'
+- '0'
+- '1'
+</code></pre>
+<p><code>str.matches-of</code> returns all occurrences of a pattern:</p>
+<pre><code class="language-sh">eu -e '"192.168.0.1" str.matches-of("\d+")'
+</code></pre>
+<pre><code class="language-yaml">- '192'
+- '168'
+- '0'
+- '1'
+</code></pre>
+<h3 id="base64-and-sha-256"><a class="header" href="#base64-and-sha-256">Base64 and SHA-256</a></h3>
+<pre><code class="language-sh">eu -e '"hello" str.base64-encode'
+</code></pre>
+<pre><code class="language-yaml">aGVsbG8=
+</code></pre>
+<pre><code class="language-sh">eu -e '"hello" str.sha256'
+</code></pre>
+<pre><code class="language-yaml">2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
+</code></pre>
+<h2 id="practical-examples"><a class="header" href="#practical-examples">Practical Examples</a></h2>
+<h3 id="generating-urls"><a class="header" href="#generating-urls">Generating URLs</a></h3>
+<pre><code class="language-eu">base: "https://api.example.com"
+endpoints: ["users", "posts", "comments"] map("{base}/{}")
+</code></pre>
+<pre><code class="language-yaml">base: https://api.example.com
+endpoints:
+- https://api.example.com/users
+- https://api.example.com/posts
+- https://api.example.com/comments
+</code></pre>
+<h3 id="formatting-a-table"><a class="header" href="#formatting-a-table">Formatting a Table</a></h3>
+<pre><code class="language-eu">rows: [
+  { name: "Alice" score: 85 }
+  { name: "Bob" score: 92 }
+]
+
+` :suppress
+format-row(r): "{r.name:%10s} | {r.score:%3d}"
+
+table: rows map(format-row)
+</code></pre>
+<h2 id="key-concepts"><a class="header" href="#key-concepts">Key Concepts</a></h2>
+<ul>
+<li>Interpolation uses <code>{expression}</code> inside double-quoted strings</li>
+<li>Empty braces <code>{}</code> and numbered braces <code>{0}</code>, <code>{1}</code> create string
+functions (anaphora)</li>
+<li>Format specifiers follow a colon: <code>{value:%06d}</code></li>
+<li>Escape literal braces by doubling them: <code>{{</code> and <code>}}</code></li>
+<li>The <code>str</code> namespace provides splitting, joining, case conversion,
+matching, and more</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../guide/lists-and-transformations.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../guide/functions-and-combinators.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../guide/lists-and-transformations.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../guide/functions-and-combinators.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>
