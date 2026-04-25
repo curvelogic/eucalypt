@@ -40,15 +40,12 @@ All notable changes to eucalypt are documented here.
 
 ### Fixed
 
-- **Type checker bound variable scope** — the type checker now uses de Bruijn scope indices for bound variable lookup instead of name-based search, fixing false positive warnings when names are shadowed in inner scopes (e.g. `<$>` inside `arr` namespace)
-- **Function name in type mismatch warnings** — warnings now include the function name (e.g. "type mismatch calling 'map'") for easier diagnosis
-- **User-code source location as primary error site** — runtime errors now show the user's source location as the primary site, not the prelude internals
 - **Dedicated `head`/`tail` of empty list errors** — `head` and `tail` on empty lists now produce clear "empty list" errors instead of generic panics
 - **Dedicated `head`/`tail` of non-list errors** — `head` and `tail` on non-list values produce specific "expected a list" errors with suggestions
 - **User `panic()` vs internal errors** — `panic("message")` in user code now shows "panic: message" without the "internal error" framing used for VM-level failures
 - **`NotValue` diagnostic improvements** — type-specific messages for bool, list, and block contexts; helpful notes for null values
 - **List index out of bounds** — `nth` raises `ListIndexOutOfBounds` with the index and list length instead of a generic panic
-- **`str.join-on` references in error notes** — corrected references from `join-on` to `str.join-on`
+- **User-code source location as primary error site** — runtime errors now show the user's source location as the primary site, not the prelude internals
 
 ## [0.5.4] - 2026-04-19
 
