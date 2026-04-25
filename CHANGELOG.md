@@ -2,7 +2,7 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.6.0] - 2026-04-21
+## [0.6.0] - 2026-04-25
 
 ### Added
 
@@ -10,6 +10,7 @@ All notable changes to eucalypt are documented here.
   - `eu check file.eu` — type-check a file, report warnings
   - `eu check --strict file.eu` — treat warnings as errors
   - `eu --type-check file.eu` — type-check then evaluate (warnings to stderr)
+  - `eu --type-check --strict file.eu` — type-check (abort on warnings) then evaluate
 - **Type annotation syntax** — `type:` metadata on declarations: `` ` { type: "number → number" } ``
   - Primitives: `number`, `string`, `symbol`, `bool`, `null`, `datetime`
   - Composites: `[T]` lists, `(A, B)` tuples, `{k: T, ..}` open records, `A → B` functions, `A | B` unions
@@ -19,6 +20,10 @@ All notable changes to eucalypt are documented here.
   - `→` (U+2192) as alternative to `->` in type strings
   - `block` keyword as shorthand for `{..}` (open empty record)
   - Asserted annotations: `type: "!T"` prefix trusts the type without verifying the body
+- **Typed monad metadata** — `monad:` metadata field on namespace declarations optionally declares the monadic wrapper type (e.g. `monad: "[a]"` instead of `monad: true`). The desugarer injects type hints on binding values, enabling the type checker to catch wrong-type bindings in monadic blocks (e.g. `{ :for x: 42 }` warns "expected [a], found number")
+  - `for` typed as `[a]`, `io` as `IO(a)`, `random` and `state` also typed
+  - `let` remains `monad: true` (untyped) for backward compatibility
+- **LSP monad support** — completion for monad tags after `{ :`, inlay hints showing expected binding types, hover on monad tags showing description and binding type
 - **Literal symbol types** — `:name` in type annotations as singleton types matching specific symbols. `:active | :inactive` for discriminated unions
 - **Type aliases** — `type-def:` metadata derives an alias from a declaration's value; `types:` in unit metadata for standalone aliases
 - **Prelude type annotations** — ~200 functions annotated with `type:` metadata covering arithmetic, comparison, string, list, block, IO, lens, set, vec, arr, random, and monad operations
@@ -32,6 +37,18 @@ All notable changes to eucalypt are documented here.
 ### Changed
 
 - **`arr.slice` and `arr.neighbours` parameter order** — reordered via prelude wrappers for pipeline style: `a arr.slice(axis, idx)`, `a arr.neighbours(coords, offsets)`
+
+### Fixed
+
+- **Type checker bound variable scope** — the type checker now uses de Bruijn scope indices for bound variable lookup instead of name-based search, fixing false positive warnings when names are shadowed in inner scopes (e.g. `<$>` inside `arr` namespace)
+- **Function name in type mismatch warnings** — warnings now include the function name (e.g. "type mismatch calling 'map'") for easier diagnosis
+- **User-code source location as primary error site** — runtime errors now show the user's source location as the primary site, not the prelude internals
+- **Dedicated `head`/`tail` of empty list errors** — `head` and `tail` on empty lists now produce clear "empty list" errors instead of generic panics
+- **Dedicated `head`/`tail` of non-list errors** — `head` and `tail` on non-list values produce specific "expected a list" errors with suggestions
+- **User `panic()` vs internal errors** — `panic("message")` in user code now shows "panic: message" without the "internal error" framing used for VM-level failures
+- **`NotValue` diagnostic improvements** — type-specific messages for bool, list, and block contexts; helpful notes for null values
+- **List index out of bounds** — `nth` raises `ListIndexOutOfBounds` with the index and list length instead of a generic panic
+- **`str.join-on` references in error notes** — corrected references from `join-on` to `str.join-on`
 
 ## [0.5.4] - 2026-04-19
 
