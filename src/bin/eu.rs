@@ -3,6 +3,8 @@ extern crate eucalypt;
 use std::process;
 use std::thread;
 
+use std::io::IsTerminal;
+
 use eucalypt::driver::check;
 use eucalypt::driver::format;
 use eucalypt::driver::lsp;
@@ -87,6 +89,16 @@ fn run() -> i32 {
                 return 2;
             }
         }
+    }
+
+    // No files, no -e, and stdin is a terminal — show help.
+    if opt.explicit_inputs.is_empty() && opt.evaluate.is_none() && std::io::stdin().is_terminal() {
+        use clap::CommandFactory;
+        eucalypt::driver::options::EucalyptCli::command()
+            .print_help()
+            .ok();
+        println!();
+        return 0;
     }
 
     // Anything else is going to involve reading the inputs
