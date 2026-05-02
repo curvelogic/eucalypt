@@ -457,6 +457,36 @@ The wrong pattern causes a compiler error because only the first
 block is unit metadata — the second becomes an anonymous block
 declaration catenated into the metadata expression.
 
+## Juxtaposed Block Call vs Catenation — Space Matters
+
+### `{a}{b}` and `{a} {b}` Have Different Override Order
+
+Blocks are callable: applying a block to another block merges them.
+But the **override order reverses** depending on whether there is a
+space between the two blocks:
+
+```eu
+{x: 1, y: 3} {x: 2}    # catenation: RHS overrides → x: 2, y: 3
+{x: 1, y: 3}{x: 2}     # juxtaposed call: LHS is "function" → x: 1, y: 3
+```
+
+**Why**: `{a}{b}` (no space) parses as a juxtaposed function call —
+the lexer produces `OPEN_BRACE_APPLY` for the second `{`, making
+`{b}` an argument to `{a}`. Since `{a}` is in function position, its
+fields override. `{a} {b}` (with space) is catenation where the RHS
+`{b}` merges onto the LHS `{a}`, so the RHS overrides.
+
+When keys don't conflict, both forms produce identical results — the
+difference only surfaces with duplicate keys.
+
+**Fix**: be explicit about intent. Use `merge(a, b)` when you want
+`b` to override, or use clear spacing:
+
+```eu
+defaults config        # config overrides defaults (catenation)
+template(overrides)    # template overrides (call syntax)
+```
+
 ## Future Improvements
 
 These gotchas highlight areas where the language could benefit from:
