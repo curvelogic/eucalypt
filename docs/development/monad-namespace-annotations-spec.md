@@ -89,6 +89,10 @@ annotations use open records.
    "expected [a], found number"
 6. After annotation, `io.return("hello")` has type `IO(string)`
 7. `for.map` has type `(a → b) → [a] → [b]`
+8. (With eu-z9zz.6) `{ :for x: [1,2,3] }.(x * 2)` — `x` inferred
+   as `number` through `for.bind` type and lambda parameter checking
+9. (With eu-z9zz.6) `{ :for x: [1,2,3] }.(x ++ "!")` warns via the
+   desugared type checker path
 
 ## 5. Files Changed
 

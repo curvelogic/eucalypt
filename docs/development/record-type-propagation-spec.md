@@ -110,10 +110,16 @@ wins on conflicts.
 6. Block applied to untyped value — no warning (gradual)
 7. Nested merge preserves deep field types
 
+### Monadic bound variable typing (with eu-meir)
+
+8. `{ :for x: [1,2,3] }.(x * 2)` — `x` inferred as `number`
+   through the desugared `for.bind([1,2,3], λx. ...)` path
+9. `{ :for x: [1,2,3] }.(x ++ "!")` — warns (number vs string)
+
 ### Must warn
 
-8. Access field absent from both sides (both closed) — warn
-9. Wrong type for merged field propagates correctly
+10. Access field absent from both sides (both closed) — warn
+11. Wrong type for merged field propagates correctly
 
 ### Gradual boundary (no warning)
 
