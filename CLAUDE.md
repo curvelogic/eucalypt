@@ -116,8 +116,6 @@ Use `eu dump <phase>` to inspect intermediate representations at each pipeline s
 
 Add `--debug-format` for the Rust Debug representation (shows full structure including de Bruijn indices), or `--embed` for eucalypt source representation.
 
-Use `-B` (batch mode) to skip `.eucalypt.d` config files.
-
 ### Language Features
 
 - Functional programming with lazy evaluation

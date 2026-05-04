@@ -14,8 +14,6 @@ pub mod lsp;
 pub mod options;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod prepare;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod project;
 pub mod resources;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod source;

@@ -49,3 +49,5 @@ editors/vscode/*.vsix
 /book/
 #*#
 .playwright-mcp/
+lib/.result/
+lib/.result/

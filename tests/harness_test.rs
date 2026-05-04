@@ -1590,12 +1590,7 @@ pub fn test_harness_148() {
 #[test]
 pub fn test_target_symbol_shortcut_alpha() {
     let output = std::process::Command::new(eu_binary())
-        .args([
-            "-B",
-            "-t",
-            "alpha",
-            "tests/harness/148_symbol_target_shortcut.eu",
-        ])
+        .args(["-t", "alpha", "tests/harness/148_symbol_target_shortcut.eu"])
         .output()
         .expect("failed to run eu");
     assert_eq!(output.status.code(), Some(0), "eu -t alpha should succeed");
@@ -1610,7 +1605,6 @@ pub fn test_target_symbol_shortcut_alpha() {
 pub fn test_target_symbol_shortcut_self_named() {
     let output = std::process::Command::new(eu_binary())
         .args([
-            "-B",
             "-t",
             "self-named",
             "tests/harness/148_symbol_target_shortcut.eu",
@@ -1632,7 +1626,7 @@ pub fn test_target_symbol_shortcut_self_named() {
 #[test]
 pub fn test_target_symbol_suppress_still_works() {
     let output = std::process::Command::new(eu_binary())
-        .args(["-B", "tests/harness/148_symbol_target_shortcut.eu"])
+        .args(["tests/harness/148_symbol_target_shortcut.eu"])
         .output()
         .expect("failed to run eu");
     let stdout = String::from_utf8_lossy(&output.stdout);

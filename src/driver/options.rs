@@ -10,15 +10,6 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use super::project;
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum CommandLineMode {
-    #[default]
-    Ergonomic,
-    Batch,
-}
-
 /// Format for error output
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ErrorFormat {
@@ -66,10 +57,6 @@ pub struct EucalyptCli {
     /// Don't load the standard prelude
     #[arg(short = 'Q', long = "no-prelude")]
     pub no_prelude: bool,
-
-    /// Batch mode (no .eucalypt.d)
-    #[arg(short = 'B', long = "batch")]
-    pub batch: bool,
 
     /// Turn on debug features
     #[arg(short = 'd', long = "debug")]
@@ -166,10 +153,6 @@ pub struct RunArgs {
     #[arg(short = 'Q', long = "no-prelude")]
     pub no_prelude: bool,
 
-    /// Batch mode (no .eucalypt.d)
-    #[arg(short = 'B', long = "batch")]
-    pub batch: bool,
-
     /// Turn on debug features
     #[arg(short = 'd', long = "debug")]
     pub debug: bool,
@@ -260,10 +243,6 @@ pub struct DumpArgs {
     #[arg(long = "debug-format")]
     pub quote_debug: bool,
 
-    /// Batch mode (no Eufile)
-    #[arg(short = 'B', long = "batch")]
-    pub batch: bool,
-
     /// Files to dump
     #[arg(value_name = "FILES")]
     pub files: Vec<String>,
@@ -332,7 +311,6 @@ pub struct FmtArgs {
 #[derive(Debug, Clone, Default)]
 pub struct EucalyptOptions {
     // Global options
-    pub mode: CommandLineMode,
     pub lib_path: Vec<PathBuf>,
     pub no_prelude: bool,
     pub debug: bool,
@@ -445,7 +423,6 @@ impl From<EucalyptCli> for EucalyptOptions {
             open_browser,
             cmd_lib_path,
             cmd_no_prelude,
-            cmd_batch,
             cmd_debug,
             cmd_statistics,
             cmd_statistics_file,
@@ -463,7 +440,6 @@ impl From<EucalyptCli> for EucalyptOptions {
                 false,
                 Some(args.lib_path.clone()),
                 Some(args.no_prelude),
-                Some(args.batch),
                 Some(args.debug),
                 Some(args.statistics),
                 args.statistics_file.clone(),
@@ -484,7 +460,6 @@ impl From<EucalyptCli> for EucalyptOptions {
                 None,
                 None,
                 None,
-                None,
             ),
             Some(Commands::Dump(args)) => (
                 args.target.clone(),
@@ -499,18 +474,17 @@ impl From<EucalyptCli> for EucalyptOptions {
                 false,
                 None,
                 None,
-                Some(args.batch),
                 None,
                 None,
                 None,
             ),
             Some(Commands::ListTargets(_)) => (
                 None, None, None, None, false, None, false, false, false, false, None, None, None,
-                None, None, None,
+                None, None,
             ),
             _ => (
                 None, None, None, None, false, None, false, false, false, false, None, None, None,
-                None, None, None,
+                None, None,
             ),
         };
 
@@ -633,11 +607,6 @@ impl From<EucalyptCli> for EucalyptOptions {
         };
 
         EucalyptOptions {
-            mode: if cmd_batch.unwrap_or(cli.batch) {
-                CommandLineMode::Batch
-            } else {
-                CommandLineMode::Ergonomic
-            },
             lib_path: cmd_lib_path.unwrap_or(cli.lib_path),
             no_prelude: cmd_no_prelude.unwrap_or(cli.no_prelude),
             debug: cmd_debug.unwrap_or(cli.debug),
@@ -1114,20 +1083,6 @@ impl EucalyptOptions {
             && !std::io::stdin().is_terminal()
         {
             self.prepend_input(Input::from_str("-").expect("stdin locator '-' is valid"));
-        }
-
-        // Prepend project Eufile (unless in batch mode)
-        if self.mode != CommandLineMode::Batch {
-            if let Some(eufile) = project::eufile() {
-                self.prepend_input(Input::new(Locator::Fs(eufile), None, "eu"));
-            }
-        }
-
-        // In ergonomic mode prepend user .eucalypt
-        if self.mode == CommandLineMode::Ergonomic {
-            if let Some(dotfile) = project::dotfile() {
-                self.prepend_input(Input::new(Locator::Fs(dotfile), None, "eu"));
-            }
         }
 
         // add prelude by default
