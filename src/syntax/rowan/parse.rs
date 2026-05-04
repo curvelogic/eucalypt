@@ -1195,6 +1195,12 @@ impl EventSink for BlockEventSink {
                     self.commit_meta();
                 }
             }
+        } else if self.declaration.is_some() {
+            // Orphaned declaration with empty body (e.g. `{ : }` while
+            // typing a monad tag).  Commit it so all tokens are accounted
+            // for — it will have an empty body which is valid for error
+            // recovery and LSP completion.
+            self.commit_declaration();
         }
         swap(&mut self.committed, &mut ret);
         ret
