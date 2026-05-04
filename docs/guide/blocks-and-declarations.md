@@ -209,6 +209,7 @@ Some metadata keys activate special behaviour:
 - `:suppress` -- hides the declaration from output
 - `:target` -- marks the declaration as an export target
 - `:main` -- marks the default target
+- Any other bare symbol -- marks a named target
 
 ```eu
 ` :suppress
@@ -221,6 +222,16 @@ output: {
 ```
 
 Running `eu file.eu -t my-output` renders only the `output` block.
+
+Bare symbols are a shortcut for target metadata — `` ` :my-output ``
+is equivalent to `` ` { target: :my-output } ``.  The special symbol
+`:target` uses the declaration's own name:
+
+```eu
+` :target
+report: { total: 42 }
+# equivalent to ` { target: :report }
+```
 
 ## Block and Unit Metadata
 

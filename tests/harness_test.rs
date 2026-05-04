@@ -1582,6 +1582,66 @@ pub fn test_harness_147() {
     run_test(&opts("147_type_annotations.eu"));
 }
 
+#[test]
+pub fn test_harness_148() {
+    run_test(&opts("148_symbol_target_shortcut.eu"));
+}
+
+#[test]
+pub fn test_target_symbol_shortcut_alpha() {
+    let output = std::process::Command::new(eu_binary())
+        .args([
+            "-B",
+            "-t",
+            "alpha",
+            "tests/harness/148_symbol_target_shortcut.eu",
+        ])
+        .output()
+        .expect("failed to run eu");
+    assert_eq!(output.status.code(), Some(0), "eu -t alpha should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains('1'),
+        "alpha target should render 1, got: {stdout}"
+    );
+}
+
+#[test]
+pub fn test_target_symbol_shortcut_self_named() {
+    let output = std::process::Command::new(eu_binary())
+        .args([
+            "-B",
+            "-t",
+            "self-named",
+            "tests/harness/148_symbol_target_shortcut.eu",
+        ])
+        .output()
+        .expect("failed to run eu");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "eu -t self-named should succeed"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains('3'),
+        "self-named target should render 3, got: {stdout}"
+    );
+}
+
+#[test]
+pub fn test_target_symbol_suppress_still_works() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["-B", "tests/harness/148_symbol_target_shortcut.eu"])
+        .output()
+        .expect("failed to run eu");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("hidden"),
+        ":suppress should suppress 'hidden' from output, got: {stdout}"
+    );
+}
+
 // ── Type check message tests ──────────────────────────────────────────────────
 
 #[test]
