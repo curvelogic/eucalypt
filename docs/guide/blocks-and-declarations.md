@@ -208,14 +208,13 @@ Some metadata keys activate special behaviour:
 
 - `:suppress` -- hides the declaration from output
 - `:main` -- marks the default target
-
-Any other bare symbol becomes a **target shortcut**:
+- Any other bare symbol -- marks a named target
 
 ```eu
 ` :suppress
 helper(x): x + 1
 
-` :my-output
+` { target: :my-output }
 output: {
   result: helper(41)
 }
@@ -223,17 +222,15 @@ output: {
 
 Running `eu file.eu -t my-output` renders only the `output` block.
 
-The symbol `:target` uses the declaration's own name:
+Bare symbols are a shortcut for target metadata — `` ` :my-output ``
+is equivalent to `` ` { target: :my-output } ``.  The special symbol
+`:target` uses the declaration's own name:
 
 ```eu
 ` :target
 report: { total: 42 }
+# equivalent to ` { target: :report }
 ```
-
-This is equivalent to `` ` { target: :report } ``.
-
-The block form `` ` { target: :name } `` is still supported for when
-you need to combine target with other metadata fields.
 
 ## Block and Unit Metadata
 
