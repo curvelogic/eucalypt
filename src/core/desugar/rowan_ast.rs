@@ -2462,7 +2462,7 @@ fn rowan_declaration_to_binding(
     // Process metadata for desugar-phase information
     let (core_meta, metadata) = match components.metadata {
         Some(m) => {
-            let mut core_meta = normalise_metadata(&m);
+            let mut core_meta = normalise_metadata(&m, Some(&name));
             let metadata: DesugarPhaseDeclarationMetadata =
                 core_meta.read_metadata().unwrap_or_default();
             (Some(core_meta), metadata)
@@ -2615,7 +2615,7 @@ impl Desugarable for rowan_ast::Block {
         // Transform metadata for attachment later
         let mut metadata = if let Some(meta) = self.meta() {
             if let Some(meta_soup) = meta.soup() {
-                Some(normalise_metadata(&meta_soup.desugar(desugarer)?))
+                Some(normalise_metadata(&meta_soup.desugar(desugarer)?, None))
             } else {
                 None
             }
@@ -2758,7 +2758,7 @@ impl Desugarable for rowan_ast::Unit {
         // Transform metadata for attachment later
         let mut metadata = if let Some(meta) = self.meta() {
             if let Some(meta_soup) = meta.soup() {
-                Some(normalise_metadata(&meta_soup.desugar(desugarer)?))
+                Some(normalise_metadata(&meta_soup.desugar(desugarer)?, None))
             } else {
                 None
             }

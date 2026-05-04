@@ -1,0 +1,21 @@
+"Symbol metadata target shortcuts. Bare symbols become targets. :target uses the declaration name."
+
+` :alpha
+alpha-target: 1
+
+` :beta
+beta-target: 2
+
+` :target
+self-named: 3
+
+` :suppress
+hidden: 99
+
+` :main
+tests: {
+  ` "symbol shortcut targets"
+  shortcut-alpha: alpha-target //= 1
+  shortcut-beta: beta-target //= 2
+  self-target: self-named //= 3
+}

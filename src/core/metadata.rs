@@ -30,11 +30,12 @@ fn extract_function_name(expr: &RcExpr) -> Option<String> {
     None
 }
 
-/// Support a few shortcuts for metadata
+/// Support shortcuts for metadata symbols.
 ///
-/// Strings are values for :doc. :main is a target. :suppress is an
-/// export specifier.
-pub fn normalise_metadata(expr: &RcExpr) -> RcExpr {
+/// Strings are values for `:doc`.  `:suppress` is an export specifier.
+/// `:main` is a target.  `:target` uses the declaration's own name as
+/// the target.  Any other unrecognised symbol becomes a target shortcut.
+pub fn normalise_metadata(expr: &RcExpr, decl_name: Option<&str>) -> RcExpr {
     match &*expr.inner {
         Expr::Literal(smid, prim) => match prim {
             Primitive::Str(_) => {
@@ -45,10 +46,22 @@ pub fn normalise_metadata(expr: &RcExpr) -> RcExpr {
                     *smid,
                     [("export".to_string(), expr.clone())].iter().cloned(),
                 ),
-                "main" => core::block(
-                    *smid,
-                    [("target".to_string(), expr.clone())].iter().cloned(),
-                ),
+                "target" => {
+                    if let Some(name) = decl_name {
+                        let target_sym = core::sym(*smid, name);
+                        core::block(*smid, [("target".to_string(), target_sym)].iter().cloned())
+                    } else {
+                        // Unit-level :target — no declaration name, pass through
+                        expr.clone()
+                    }
+                }
+                _ if decl_name.is_some() => {
+                    // Unrecognised symbol on a declaration → target shortcut
+                    core::block(
+                        *smid,
+                        [("target".to_string(), expr.clone())].iter().cloned(),
+                    )
+                }
                 _ => expr.clone(),
             },
             _ => expr.clone(),

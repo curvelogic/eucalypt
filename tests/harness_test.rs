@@ -1582,6 +1582,11 @@ pub fn test_harness_147() {
     run_test(&opts("147_type_annotations.eu"));
 }
 
+#[test]
+pub fn test_harness_148() {
+    run_test(&opts("148_symbol_target_shortcut.eu"));
+}
+
 // ── Type check message tests ──────────────────────────────────────────────────
 
 #[test]
