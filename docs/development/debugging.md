@@ -150,14 +150,12 @@ tool** for investigating compiler and core expression issues.
 - `--debug-format` — Rust Debug representation showing full structure
   including de Bruijn indices
 - `--embed` — eucalypt source representation
-- `-B` — batch mode, skip `.eucalypt.d` config files (avoids loading
-  local configuration that may alter the output)
 
 ### Examples
 
 ```sh
 # See how an expression desugars
-eu dump desugared -B myfile.eu --embed
+eu dump desugared myfile.eu --embed
 
 # Inspect STG output for a specific file
 eu dump stg myfile.eu --debug-format
@@ -187,8 +185,8 @@ eu dump ast myfile.eu
 
 1. Use `eu dump` to inspect the pipeline:
    ```sh
-   eu dump desugared -B myfile.eu --embed | less
-   eu dump stg -B myfile.eu --debug-format | less
+   eu dump desugared myfile.eu --embed | less
+   eu dump stg myfile.eu --debug-format | less
    ```
 2. Compare desugared output with expected core expression
 

@@ -977,7 +977,6 @@ eu fmt file.eu              # Format source
 eu fmt --write file.eu      # Format in place
 eu -o output.json file.eu   # Write to file (format inferred)
 eu -Q file.eu               # Suppress prelude
-eu -B file.eu               # Batch mode (no ergonomic features)
 eu --seed 42 file.eu        # Deterministic random
 eu -e 'io.args' -- arg1 arg2  # Pass arguments
 ```
