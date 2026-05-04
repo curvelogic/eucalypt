@@ -341,12 +341,6 @@ eu version
 to allow you to say what you want succinctly. The intention is to be
 easy to use in pipelines in combination with other tools like `jq`.
 
-By default, it runs in ergonomic mode which will make a few
-assumptions in order to allow you to be a little less explicit. It
-also pulls in user-specific declarations from `~/.eucalypt`. For
-repeatable builds and scripted usage, it is better to turn ergonomic
-mode *off* using the `-B (--batch)` switch.
-
 The simplest usage is to specify a eucalypt file to evaluate and leave
 the default render format (YAML) and output (standard out) alone.
 

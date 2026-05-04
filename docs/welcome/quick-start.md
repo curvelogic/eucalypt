@@ -86,7 +86,6 @@ Arguments:
 Options:
   -L, --lib-path <LIB_PATH>                Add directory to lib path
   -Q, --no-prelude                         Don't load the standard prelude
-  -B, --batch                              Batch mode (no .eucalypt.d)
   -d, --debug                              Turn on debug features
   -S, --statistics                         Print metrics to stderr before exiting
       --statistics-file <STATISTICS_FILE>  Write statistics as JSON to a file

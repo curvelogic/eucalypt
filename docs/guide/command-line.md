@@ -268,15 +268,6 @@ eu explain file.eu          # show what would be executed
 eu -S file.eu               # print metrics to stderr
 ```
 
-## Batch Mode
-
-Use `-B` for repeatable builds (disables ergonomic mode and
-`~/.eucalypt`):
-
-```sh
-eu -B file.eu
-```
-
 ## Suppressing the Prelude
 
 The standard prelude is loaded automatically. Suppress it with `-Q`:
