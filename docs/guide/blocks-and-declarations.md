@@ -208,6 +208,7 @@ Some metadata keys activate special behaviour:
 
 - `:suppress` -- hides the declaration from output
 - `:main` -- marks the default target
+- `:target` -- marks a target using the declaration's own name
 - Any other bare symbol -- marks a named target
 
 ```eu
