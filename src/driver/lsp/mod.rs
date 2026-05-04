@@ -20,6 +20,7 @@ mod selection;
 mod semantic;
 pub mod symbol_table;
 mod symbols;
+pub mod testing;
 
 use std::collections::HashMap;
 
