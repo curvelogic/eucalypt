@@ -116,6 +116,18 @@ impl LspTestSession {
         })
     }
 
+    /// Exercise all LSP operations at every character position in the
+    /// document.  Panics if any operation panics.  Used for stability
+    /// testing — the return value is not meaningful.
+    pub fn exercise_all(&self) {
+        let len = self.content.len() as u32;
+        for col in 0..=len {
+            let _ = self.complete(0, col);
+            let _ = self.hover(0, col);
+        }
+        let _ = self.inlay_hints();
+    }
+
     fn build_symbol_table(&self) -> SymbolTable {
         let parse = parse_unit(&self.content);
         let unit = parse.tree();
