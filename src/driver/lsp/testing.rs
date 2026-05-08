@@ -35,6 +35,11 @@ impl LspTestSession {
         }
     }
 
+    /// Set the document URI (for import resolution against real files).
+    pub fn set_uri(&mut self, uri: &str) {
+        self.uri = Url::parse(uri).expect("valid URI");
+    }
+
     /// Open (or replace) the document content.
     pub fn open(&mut self, content: &str) {
         self.content = content.to_string();
@@ -135,11 +140,45 @@ impl LspTestSession {
         let mut table = SymbolTable::new();
         table.add_from_unit(&unit, &self.content, &self.uri, SymbolSource::Local);
 
+        // Resolve imports from the document
+        let base_dir = self
+            .uri
+            .to_file_path()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+        if let Some(ref dir) = base_dir {
+            let imports = super::context::import_inputs(&unit, dir);
+            for input in &imports {
+                self.load_import_symbols(input, &mut table);
+            }
+        }
+
         for sym in self.prelude_table.all_symbols() {
             table.add(sym.clone());
         }
 
         table
+    }
+
+    fn load_import_symbols(&self, input: &crate::syntax::input::Input, table: &mut SymbolTable) {
+        use crate::syntax::input::Locator;
+
+        let (source_text, import_uri) = match input.locator() {
+            Locator::Fs(path) => {
+                let text = match std::fs::read_to_string(path) {
+                    Ok(t) => t,
+                    Err(_) => return,
+                };
+                let uri = Url::from_file_path(path)
+                    .unwrap_or_else(|_| Url::parse("file:///unknown.eu").expect("fallback URI"));
+                (text, uri)
+            }
+            _ => return,
+        };
+
+        let parse = parse_unit(&source_text);
+        let unit = parse.tree();
+        table.add_from_unit(&unit, &source_text, &import_uri, SymbolSource::Import);
     }
 }
 

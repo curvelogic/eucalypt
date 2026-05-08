@@ -39,7 +39,7 @@ pub fn lsp_context_inputs(unit: &Unit, base_dir: &Path) -> Vec<Input> {
     // Check unit-level block metadata (no backtick)
     if let Some(meta) = unit.meta() {
         if let Some(meta_soup) = meta.soup() {
-            scrape_lsp_context_from_soup(&meta_soup, &mut inputs, base_dir);
+            scrape_metadata_key(&meta_soup, "lsp-context", &mut inputs, base_dir);
         }
     }
 
@@ -48,7 +48,7 @@ pub fn lsp_context_inputs(unit: &Unit, base_dir: &Path) -> Vec<Input> {
         for decl in unit.declarations() {
             if let Some(meta) = decl.meta() {
                 if let Some(meta_soup) = meta.soup() {
-                    scrape_lsp_context_from_soup(&meta_soup, &mut inputs, base_dir);
+                    scrape_metadata_key(&meta_soup, "lsp-context", &mut inputs, base_dir);
                     if !inputs.is_empty() {
                         break;
                     }
@@ -60,14 +60,47 @@ pub fn lsp_context_inputs(unit: &Unit, base_dir: &Path) -> Vec<Input> {
     inputs
 }
 
-/// Walk a soup looking for blocks containing an `lsp-context` property.
-fn scrape_lsp_context_from_soup(soup: &Soup, inputs: &mut Vec<Input>, base_dir: &Path) {
+/// Extract `import` entries from a parsed eucalypt unit.
+///
+/// Searches unit-level block metadata for `import:` fields.
+/// In eucalypt, imports are declared as: `{ import: "file.eu" }`
+/// or `{ import: ["a.eu", "b.eu"] }`.  Returns a list of `Input`
+/// values with relative paths resolved against `base_dir`.
+pub fn import_inputs(unit: &Unit, base_dir: &Path) -> Vec<Input> {
+    let mut inputs = Vec::new();
+
+    // Imports appear in unit-level block metadata
+    if let Some(meta) = unit.meta() {
+        if let Some(meta_soup) = meta.soup() {
+            scrape_metadata_key(&meta_soup, "import", &mut inputs, base_dir);
+        }
+    }
+
+    // Also check declaration-level metadata (backtick syntax)
+    if inputs.is_empty() {
+        for decl in unit.declarations() {
+            if let Some(meta) = decl.meta() {
+                if let Some(meta_soup) = meta.soup() {
+                    scrape_metadata_key(&meta_soup, "import", &mut inputs, base_dir);
+                    if !inputs.is_empty() {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    inputs
+}
+
+/// Walk a soup looking for blocks containing a named metadata property.
+fn scrape_metadata_key(soup: &Soup, key: &str, inputs: &mut Vec<Input>, base_dir: &Path) {
     for element in soup.elements() {
         if let Element::Block(block) = element {
             for decl in block.declarations() {
                 if let Some(head) = decl.head() {
                     if let DeclarationKind::Property(prop) = head.classify_declaration() {
-                        if prop.text() == "lsp-context" {
+                        if prop.text() == key {
                             if let Some(body) = decl.body() {
                                 if let Some(body_soup) = body.soup() {
                                     scrape_string_inputs(&body_soup, inputs, base_dir);

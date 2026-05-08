@@ -1,0 +1,6 @@
+` { doc: "A helper function from the imported library."
+    type: "number → number" }
+double(x): x * 2
+
+` { doc: "A constant from the imported library." }
+lib-version: 42
