@@ -156,7 +156,8 @@ impl ServerState {
         }
     }
 
-    /// Build a symbol table for a document, including prelude symbols.
+    /// Build a symbol table for a document, including prelude and
+    /// imported file symbols.
     fn build_symbol_table(&self, uri: &Url, text: &str) -> SymbolTable {
         let parse = crate::syntax::rowan::parse_unit(text);
         let unit = parse.tree();
@@ -166,12 +167,62 @@ impl ServerState {
         // Add local file symbols
         table.add_from_unit(&unit, text, uri, SymbolSource::Local);
 
+        // Add symbols from imported files
+        let base_dir = uri
+            .to_file_path()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+        if let Some(ref dir) = base_dir {
+            let imports = context::import_inputs(&unit, dir);
+            for input in &imports {
+                self.load_import_symbols(input, &mut table);
+            }
+            let context = context::lsp_context_inputs(&unit, dir);
+            for input in &context {
+                self.load_import_symbols(input, &mut table);
+            }
+        }
+
         // Add prelude symbols
         for sym in self.prelude_table.all_symbols() {
             table.add(sym.clone());
         }
 
         table
+    }
+
+    /// Load symbols from an imported file into the symbol table.
+    fn load_import_symbols(&self, input: &crate::syntax::input::Input, table: &mut SymbolTable) {
+        use crate::syntax::input::Locator;
+
+        let (source_text, import_uri) = match input.locator() {
+            Locator::Fs(path) => {
+                let text = match std::fs::read_to_string(path) {
+                    Ok(t) => t,
+                    Err(_) => return, // Missing file — silent, no crash
+                };
+                let uri = Url::from_file_path(path)
+                    .unwrap_or_else(|_| Url::parse("file:///unknown.eu").expect("fallback URI"));
+                (text, uri)
+            }
+            Locator::Resource(name) => {
+                let resources = crate::driver::resources::Resources::default();
+                match resources.get(name) {
+                    Some(text) => {
+                        let uri = Url::parse(&format!("resource:{name}")).unwrap_or_else(|_| {
+                            Url::parse("resource:unknown").expect("fallback URI")
+                        });
+                        (text.clone(), uri)
+                    }
+                    None => return,
+                }
+            }
+            _ => return, // Unsupported locator type
+        };
+
+        let parse = crate::syntax::rowan::parse_unit(&source_text);
+        let unit = parse.tree();
+        table.add_from_unit(&unit, &source_text, &import_uri, SymbolSource::Import);
     }
 }
 

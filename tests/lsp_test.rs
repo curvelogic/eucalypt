@@ -505,3 +505,68 @@ fn inlay_hints_on_monadic_binding() {
         "should show [a] type hint on monadic binding, got: {hints:?}"
     );
 }
+
+// ── Feature: import resolution ───────────────────────────────────────────────
+
+#[test]
+fn hover_on_imported_function() {
+    let mut s = LspTestSession::new();
+    // Point the URI at a real file location so import resolution works
+    let test_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/lsp");
+    let test_uri =
+        lsp_types::Url::from_file_path(test_dir.join("test_import.eu")).expect("valid file URI");
+    s.set_uri(test_uri.as_str());
+    s.open("{ import: \"import_lib.eu\" }\nmain: double(21)");
+    let text = s.hover_text(1, 6);
+    assert!(
+        text.is_some(),
+        "hover on 'double' (from import) should return something"
+    );
+    let content = text.unwrap();
+    assert!(
+        content.contains("double") || content.contains("helper"),
+        "hover should mention the imported function, got: {content}"
+    );
+}
+
+#[test]
+fn completion_includes_imported_names() {
+    let mut s = LspTestSession::new();
+    let test_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/lsp");
+    let test_uri =
+        lsp_types::Url::from_file_path(test_dir.join("test_import.eu")).expect("valid file URI");
+    s.set_uri(test_uri.as_str());
+    s.open("{ import: \"import_lib.eu\" }\nmain: d");
+    let labels = s.complete_labels(1, 7);
+    assert!(
+        labels.iter().any(|l| l == "double"),
+        "completion should include 'double' from import, got: {labels:?}"
+    );
+}
+
+#[test]
+fn missing_import_does_not_crash() {
+    let mut s = LspTestSession::new();
+    let test_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/lsp");
+    let test_uri =
+        lsp_types::Url::from_file_path(test_dir.join("test_import.eu")).expect("valid file URI");
+    s.set_uri(test_uri.as_str());
+    s.open("{ import: \"nonexistent.eu\" }\nmain: 42");
+    // Must not panic
+    s.exercise_all();
+}
+
+#[test]
+fn multiple_imports() {
+    let mut s = LspTestSession::new();
+    let test_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/lsp");
+    let test_uri =
+        lsp_types::Url::from_file_path(test_dir.join("test_import.eu")).expect("valid file URI");
+    s.set_uri(test_uri.as_str());
+    s.open("{ import: [\"import_lib.eu\"] }\nmain: lib-version");
+    let text = s.hover_text(1, 6);
+    assert!(
+        text.is_some(),
+        "hover on 'lib-version' (from import) should return something"
+    );
+}
