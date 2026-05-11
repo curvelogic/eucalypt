@@ -516,7 +516,9 @@ fn hover_on_imported_function() {
     let test_uri =
         lsp_types::Url::from_file_path(test_dir.join("test_import.eu")).expect("valid file URI");
     s.set_uri(test_uri.as_str());
-    s.open("{ import: \"import_lib.eu\" }\nmain: double(21)");
+    // Use run_pipeline to wait for the background pipeline to complete
+    // before checking hover — import symbols come from the pipeline now.
+    s.run_pipeline("{ import: \"import_lib.eu\" }\nmain: double(21)");
     let text = s.hover_text(1, 6);
     assert!(
         text.is_some(),
@@ -536,7 +538,8 @@ fn completion_includes_imported_names() {
     let test_uri =
         lsp_types::Url::from_file_path(test_dir.join("test_import.eu")).expect("valid file URI");
     s.set_uri(test_uri.as_str());
-    s.open("{ import: \"import_lib.eu\" }\nmain: d");
+    // Wait for the pipeline to complete so import symbols are available.
+    s.run_pipeline("{ import: \"import_lib.eu\" }\nmain: d");
     let labels = s.complete_labels(1, 7);
     assert!(
         labels.iter().any(|l| l == "double"),
@@ -552,7 +555,7 @@ fn missing_import_does_not_crash() {
         lsp_types::Url::from_file_path(test_dir.join("test_import.eu")).expect("valid file URI");
     s.set_uri(test_uri.as_str());
     s.open("{ import: \"nonexistent.eu\" }\nmain: 42");
-    // Must not panic
+    // Must not panic — pipeline will fail but that's fine.
     s.exercise_all();
 }
 
@@ -563,7 +566,8 @@ fn multiple_imports() {
     let test_uri =
         lsp_types::Url::from_file_path(test_dir.join("test_import.eu")).expect("valid file URI");
     s.set_uri(test_uri.as_str());
-    s.open("{ import: [\"import_lib.eu\"] }\nmain: lib-version");
+    // Wait for the pipeline to complete so import symbols are available.
+    s.run_pipeline("{ import: [\"import_lib.eu\"] }\nmain: lib-version");
     let text = s.hover_text(1, 6);
     assert!(
         text.is_some(),

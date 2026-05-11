@@ -23,6 +23,10 @@ mod symbols;
 pub mod testing;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
+use std::time::Duration;
 
 use lsp_server::{Connection, Message, Notification, Request, Response};
 use lsp_types::{
@@ -39,12 +43,27 @@ use lsp_types::{
     TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkspaceEdit,
 };
 
+use crate::common::sourcemap::SourceMap;
 use crate::core::typecheck::types::Type;
 
 use self::symbol_table::{SymbolSource, SymbolTable};
 
 /// Inferred type environment for a document, mapping binding names to types.
 type TypeEnv = HashMap<String, Type>;
+
+/// Cached result of a successful pipeline run.
+struct CachedPipeline {
+    uri: Url,
+    type_env: TypeEnv,
+    warnings: Vec<crate::core::typecheck::error::TypeWarning>,
+    source_map: SourceMap,
+}
+
+/// Result sent from the background pipeline thread.
+struct PipelineResult {
+    uri: Url,
+    result: Result<CachedPipeline, String>,
+}
 
 /// Run the LSP server on stdio.
 ///
@@ -136,28 +155,56 @@ impl DocumentStore {
 }
 
 /// Server state holding the document store, cached prelude symbols, and
-/// per-document inferred type environments.
+/// the cached pipeline result from the last successful background run.
 struct ServerState {
     store: DocumentStore,
     prelude_table: SymbolTable,
-    /// Cached type environments from the bidirectional type checker, keyed by
-    /// document URI.  Updated on each `publish_diagnostics` cycle.
-    type_envs: HashMap<Url, TypeEnv>,
+
+    /// Cached pipeline result from the last successful run.
+    cached: Option<CachedPipeline>,
+
+    /// Green node from the last parse, for change detection.
+    last_green: Option<(Url, rowan::GreenNode)>,
+
+    /// Channel for receiving pipeline results from the background thread.
+    pipeline_rx: mpsc::Receiver<PipelineResult>,
+
+    /// Sender cloned to each background thread for delivering results.
+    pipeline_tx: mpsc::Sender<PipelineResult>,
+
+    /// Cancel flag for in-flight pipeline runs.
+    cancel: Arc<AtomicBool>,
 }
 
 impl ServerState {
     fn new() -> Self {
         let prelude_uri = Url::parse("resource:prelude")
             .unwrap_or_else(|_| Url::parse("file:///prelude.eu").expect("fallback URI"));
+        let (pipeline_tx, pipeline_rx) = mpsc::channel();
         Self {
             store: DocumentStore::new(),
             prelude_table: symbol_table::prelude_symbols(&prelude_uri),
-            type_envs: HashMap::new(),
+            cached: None,
+            last_green: None,
+            pipeline_rx,
+            pipeline_tx,
+            cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    /// Build a symbol table for a document, including prelude and
-    /// imported file symbols.
+    /// Look up the type env for a URI from the cached pipeline result.
+    fn type_env_for(&self, uri: &Url) -> Option<&TypeEnv> {
+        self.cached
+            .as_ref()
+            .filter(|c| c.uri == *uri)
+            .map(|c| &c.type_env)
+    }
+
+    /// Build a symbol table for a document from AST, prelude, and
+    /// cached pipeline type environment.
+    ///
+    /// Import resolution is handled by the background pipeline;
+    /// symbols for imported names come from the cached type_env.
     fn build_symbol_table(&self, uri: &Url, text: &str) -> SymbolTable {
         let parse = crate::syntax::rowan::parse_unit(text);
         let unit = parse.tree();
@@ -167,62 +214,59 @@ impl ServerState {
         // Add local file symbols
         table.add_from_unit(&unit, text, uri, SymbolSource::Local);
 
-        // Add symbols from imported files
-        let base_dir = uri
-            .to_file_path()
-            .ok()
-            .and_then(|p| p.parent().map(|d| d.to_path_buf()));
-        if let Some(ref dir) = base_dir {
-            let imports = context::import_inputs(&unit, dir);
-            for input in &imports {
-                self.load_import_symbols(input, &mut table);
-            }
-            let context = context::lsp_context_inputs(&unit, dir);
-            for input in &context {
-                self.load_import_symbols(input, &mut table);
-            }
-        }
-
         // Add prelude symbols
         for sym in self.prelude_table.all_symbols() {
             table.add(sym.clone());
         }
 
+        // Add synthetic symbols from the pipeline's type_env for
+        // names not already in the table (i.e. from imports).
+        if let Some(cached) = self.cached.as_ref().filter(|c| c.uri == *uri) {
+            add_pipeline_symbols(&mut table, &cached.type_env, uri);
+        }
+
         table
     }
 
-    /// Load symbols from an imported file into the symbol table.
-    fn load_import_symbols(&self, input: &crate::syntax::input::Input, table: &mut SymbolTable) {
-        use crate::syntax::input::Locator;
+    /// Apply a pipeline result: swap into cached and publish type diagnostics.
+    fn apply_pipeline_result(
+        &mut self,
+        connection: &Connection,
+        result: PipelineResult,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let uri = result.uri.clone();
+        match result.result {
+            Ok(cached) => {
+                // Publish type diagnostics from the new pipeline result.
+                let text = self.store.get(&uri).unwrap_or_default().to_string();
+                let type_diags = diagnostics::diagnostics_from_type_warnings(
+                    &text,
+                    &cached.warnings,
+                    &cached.source_map,
+                );
+                // Re-parse to get parse errors too (we must include them).
+                let parse = crate::syntax::rowan::parse_unit(&text);
+                let mut diags = diagnostics::diagnostics_from_parse_errors(&text, parse.errors());
+                diags.extend(type_diags);
 
-        let (source_text, import_uri) = match input.locator() {
-            Locator::Fs(path) => {
-                let text = match std::fs::read_to_string(path) {
-                    Ok(t) => t,
-                    Err(_) => return, // Missing file — silent, no crash
+                let params = PublishDiagnosticsParams {
+                    uri: uri.clone(),
+                    diagnostics: diags,
+                    version: None,
                 };
-                let uri = Url::from_file_path(path)
-                    .unwrap_or_else(|_| Url::parse("file:///unknown.eu").expect("fallback URI"));
-                (text, uri)
-            }
-            Locator::Resource(name) => {
-                let resources = crate::driver::resources::Resources::default();
-                match resources.get(name) {
-                    Some(text) => {
-                        let uri = Url::parse(&format!("resource:{name}")).unwrap_or_else(|_| {
-                            Url::parse("resource:unknown").expect("fallback URI")
-                        });
-                        (text.clone(), uri)
-                    }
-                    None => return,
-                }
-            }
-            _ => return, // Unsupported locator type
-        };
+                let notif = lsp_server::Notification::new(
+                    lsp_types::notification::PublishDiagnostics::METHOD.to_string(),
+                    params,
+                );
+                connection.sender.send(Message::Notification(notif))?;
 
-        let parse = crate::syntax::rowan::parse_unit(&source_text);
-        let unit = parse.tree();
-        table.add_from_unit(&unit, &source_text, &import_uri, SymbolSource::Import);
+                self.cached = Some(cached);
+            }
+            Err(err) => {
+                eprintln!("pipeline error for {uri}: {err}");
+            }
+        }
+        Ok(())
     }
 }
 
@@ -245,6 +289,11 @@ fn main_loop(connection: &Connection) -> Result<(), Box<dyn std::error::Error>> 
                 // We don't send requests to the client yet,
                 // so responses are unexpected.
             }
+        }
+
+        // Check for pipeline results from the background thread.
+        while let Ok(result) = state.pipeline_rx.try_recv() {
+            state.apply_pipeline_result(connection, result)?;
         }
     }
     Ok(())
@@ -432,7 +481,7 @@ fn on_document_open(
     let uri = params.text_document.uri;
     let text = params.text_document.text;
     state.store.open(uri.clone(), text.clone());
-    publish_diagnostics(connection, state, uri, &text)?;
+    on_document_changed(connection, state, uri, &text)?;
     Ok(())
 }
 
@@ -448,8 +497,60 @@ fn on_document_change(
     let uri = params.text_document.uri;
     if let Some(change) = params.content_changes.into_iter().next() {
         state.store.change(uri.clone(), change.text.clone());
-        publish_diagnostics(connection, state, uri, &change.text)?;
+        on_document_changed(connection, state, uri, &change.text)?;
     }
+    Ok(())
+}
+
+/// Common handler for document open/change: parse, detect changes,
+/// publish parse diagnostics, and spawn a background pipeline run.
+fn on_document_changed(
+    connection: &Connection,
+    state: &mut ServerState,
+    uri: Url,
+    text: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let parse = crate::syntax::rowan::parse_unit(text);
+    let new_green = parse.syntax_node().green().into_owned();
+
+    // Check if the green node actually changed.
+    let changed = match &state.last_green {
+        Some((prev_uri, prev_green)) if *prev_uri == uri => *prev_green != new_green,
+        _ => true,
+    };
+
+    if !changed {
+        return Ok(());
+    }
+
+    // Update cached green node.
+    state.last_green = Some((uri.clone(), new_green));
+
+    // Publish parse-error diagnostics immediately.
+    let diags = diagnostics::diagnostics_from_parse_errors(text, parse.errors());
+    let params = PublishDiagnosticsParams {
+        uri: uri.clone(),
+        diagnostics: diags,
+        version: None,
+    };
+    let notif = lsp_server::Notification::new(
+        lsp_types::notification::PublishDiagnostics::METHOD.to_string(),
+        params,
+    );
+    connection.sender.send(Message::Notification(notif))?;
+
+    // Cancel any in-flight pipeline run and spawn a new one.
+    state.cancel.store(true, Ordering::SeqCst);
+    let cancel = Arc::new(AtomicBool::new(false));
+    state.cancel = cancel.clone();
+
+    let path = uri.to_file_path().ok();
+    let text_owned = text.to_string();
+    let tx = state.pipeline_tx.clone();
+    let uri_clone = uri.clone();
+
+    spawn_pipeline(uri_clone, text_owned, path, tx, cancel);
+
     Ok(())
 }
 
@@ -515,7 +616,7 @@ fn on_hover(state: &ServerState, params: lsp_types::HoverParams) -> Option<Hover
     let parse = crate::syntax::rowan::parse_unit(text);
     let root = parse.syntax_node();
     let table = state.build_symbol_table(uri, text);
-    let type_env = state.type_envs.get(uri);
+    let type_env = state.type_env_for(uri);
     hover::hover(
         text,
         &root,
@@ -550,7 +651,7 @@ fn on_completion(
     let parse = crate::syntax::rowan::parse_unit(text);
     let root = parse.syntax_node();
     let table = state.build_symbol_table(uri, text);
-    let type_env = state.type_envs.get(uri);
+    let type_env = state.type_env_for(uri);
     Some(completion::completions(
         text,
         &root,
@@ -624,7 +725,7 @@ fn on_inlay_hint(
     let parse = crate::syntax::rowan::parse_unit(text);
     let root = parse.syntax_node();
     let table = state.build_symbol_table(uri, text);
-    let type_env = state.type_envs.get(uri);
+    let type_env = state.type_env_for(uri);
     let hints = inlay_hints::inlay_hints(text, &root, &params.range, &table, type_env);
     Some(hints)
 }
@@ -656,52 +757,184 @@ fn on_prepare_rename(
     rename::prepare_rename(text, &root, &params.position)
 }
 
-/// Parse the document and publish diagnostics to the client.
-///
-/// Collects both parse errors (as `DiagnosticSeverity::ERROR`) and any type
-/// warnings (as `DiagnosticSeverity::WARNING`) and sends them in a single
-/// `textDocument/publishDiagnostics` notification.  Also caches the inferred
-/// type environment in `state` for use by hover, completion, and inlay hints.
-fn publish_diagnostics(
-    connection: &Connection,
-    state: &mut ServerState,
-    uri: Url,
-    text: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let parse = crate::syntax::rowan::parse_unit(text);
-    let mut diags = diagnostics::diagnostics_from_parse_errors(text, parse.errors());
+/// Add synthetic symbol entries from the pipeline's type environment
+/// for names not already present in the table. These represent
+/// imported bindings resolved by the SourceLoader pipeline.
+fn add_pipeline_symbols(table: &mut SymbolTable, type_env: &TypeEnv, uri: &Url) {
+    use symbol_table::{DeclKind, SymbolInfo};
 
-    // Clear stale type env for this document.
-    state.type_envs.remove(&uri);
-
-    // Run the type checker when the document has no parse errors.
-    // The type checker requires a valid file path (on-disk) — skip if the URI
-    // is not a local file URI.
-    if parse.errors().is_empty() {
-        if let Ok(path) = uri.to_file_path() {
-            let result = crate::driver::check::type_check_path_full(&path);
-            let type_diags = diagnostics::diagnostics_from_type_warnings(
-                text,
-                &result.warnings,
-                &result.source_map,
-            );
-            diags.extend(type_diags);
-            state.type_envs.insert(uri.clone(), result.types);
-        }
-    }
-
-    let params = PublishDiagnosticsParams {
-        uri,
-        diagnostics: diags,
-        version: None,
+    let zero_range = lsp_types::Range {
+        start: lsp_types::Position {
+            line: 0,
+            character: 0,
+        },
+        end: lsp_types::Position {
+            line: 0,
+            character: 0,
+        },
     };
 
-    let notif = lsp_server::Notification::new(
-        lsp_types::notification::PublishDiagnostics::METHOD.to_string(),
-        params,
-    );
-    connection.sender.send(Message::Notification(notif))?;
-    Ok(())
+    for (name, ty) in type_env {
+        // Skip names already in the table (local or prelude).
+        if !table.lookup(name).is_empty() {
+            continue;
+        }
+
+        let kind = match count_function_arity(ty) {
+            Some(arity) => DeclKind::Function { arity },
+            None => DeclKind::Property,
+        };
+
+        let sym = SymbolInfo {
+            name: name.clone(),
+            kind,
+            source: SymbolSource::Import,
+            uri: uri.clone(),
+            range: zero_range,
+            selection_range: zero_range,
+            documentation: None,
+            type_annotation: Some(ty.to_string()),
+            monad_type: None,
+            is_monad: false,
+            parameters: vec![],
+            children: vec![],
+        };
+        table.add(sym);
+    }
+}
+
+/// Extract binding names from the core expression's nested Lets
+/// and insert them into the type env with `Type::Any` as a placeholder.
+///
+/// This is needed because the checker's scope stack is empty after
+/// checking (all scopes are pushed then popped). The Let bindings
+/// still provide the names of all resolved symbols (local + imported).
+/// We recurse into the body of each Let to capture nested scopes
+/// (prelude, imports, user bindings).
+fn extract_top_level_bindings(expr: &crate::core::expr::RcExpr, type_env: &mut TypeEnv) {
+    use crate::core::expr::Expr;
+
+    match &*expr.inner {
+        Expr::Let(_, scope, _) => {
+            for (name, _) in &scope.pattern {
+                type_env.entry(name.clone()).or_insert(Type::Any);
+            }
+            // Recurse into the body to capture nested Let scopes.
+            extract_top_level_bindings(&scope.body, type_env);
+        }
+        Expr::Meta(_, inner, _) => {
+            extract_top_level_bindings(inner, type_env);
+        }
+        _ => {}
+    }
+}
+
+/// Count the arity of a function type by walking `A -> B -> C -> ...`.
+/// Returns `None` if the type is not a function.
+fn count_function_arity(ty: &Type) -> Option<usize> {
+    match ty {
+        Type::Function(_, ret) => Some(1 + count_function_arity(ret).unwrap_or(0)),
+        _ => None,
+    }
+}
+
+/// Spawn a background thread that runs the full SourceLoader pipeline
+/// after a debounce delay. Results are sent via the mpsc channel.
+fn spawn_pipeline(
+    uri: Url,
+    text: String,
+    path: Option<PathBuf>,
+    tx: mpsc::Sender<PipelineResult>,
+    cancel: Arc<AtomicBool>,
+) {
+    std::thread::spawn(move || {
+        // Debounce: wait 300ms before starting the pipeline.
+        std::thread::sleep(Duration::from_millis(300));
+        if cancel.load(Ordering::SeqCst) {
+            return;
+        }
+
+        let result = run_pipeline(&uri, &text, path.as_deref());
+        if cancel.load(Ordering::SeqCst) {
+            return;
+        }
+
+        let _ = tx.send(PipelineResult { uri, result });
+    });
+}
+
+/// Run the full SourceLoader pipeline on the given document text.
+///
+/// Uses `Locator::Buffer` for the primary document so that unsaved
+/// editor content is type-checked without requiring a save to disk.
+/// Returns extracted data (type env, warnings, source map) since
+/// `SourceLoader` is not `Send`.
+fn run_pipeline(
+    uri: &Url,
+    text: &str,
+    path: Option<&std::path::Path>,
+) -> Result<CachedPipeline, String> {
+    use crate::core::typecheck::check::type_check_full;
+    use crate::driver::source::SourceLoader;
+    use crate::syntax::input::{Input, Locator};
+
+    let prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
+
+    // Use Locator::Buffer when we have a path, otherwise fall back to
+    // Locator::Literal (no source map location, but still runs).
+    let doc_input = if let Some(p) = path {
+        Input::new(
+            Locator::Buffer {
+                path: p.to_path_buf(),
+                text: text.to_string(),
+            },
+            None,
+            "eu",
+        )
+    } else {
+        Input::new(Locator::Literal(text.to_string()), None, "eu")
+    };
+
+    let inputs = vec![prelude, doc_input];
+    let mut loader = SourceLoader::new(vec![]);
+
+    for input in &inputs {
+        loader.load(input).map_err(|e| format!("load: {e}"))?;
+    }
+    for input in &inputs {
+        loader
+            .translate(input)
+            .map_err(|e| format!("desugar: {e}"))?;
+    }
+    loader
+        .merge_units(&inputs)
+        .map_err(|e| format!("merge: {e}"))?;
+    loader.cook().map_err(|e| format!("cook: {e}"))?;
+
+    // Extract all binding names BEFORE dead-code elimination so that
+    // completion can offer imported names that aren't yet referenced.
+    let mut type_env = TypeEnv::new();
+    extract_top_level_bindings(&loader.core().expr, &mut type_env);
+
+    loader.eliminate().map_err(|e| format!("eliminate: {e}"))?;
+
+    let core_expr = loader.core().expr.clone();
+    let result = type_check_full(&core_expr);
+
+    // Merge any types from the checker (currently empty because the
+    // scope stack is popped, but future checker changes may fix this).
+    for (name, ty) in result.types {
+        type_env.insert(name, ty);
+    }
+
+    let (_, source_map, _) = loader.complete();
+
+    Ok(CachedPipeline {
+        uri: uri.clone(),
+        type_env,
+        warnings: result.warnings,
+        source_map,
+    })
 }
 
 #[cfg(test)]
