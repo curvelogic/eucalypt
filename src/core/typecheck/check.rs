@@ -697,6 +697,46 @@ impl Checker {
             // Union-typed function — try each overload variant.
             Type::Union(variants) => self.apply_union(smid, variants, arg, subst, func_name),
 
+            // Block application (catenation): record type applied to an argument.
+            //
+            // In eucalypt, `lhs rhs` where both sides are blocks merges them into a
+            // single block, with RHS fields overriding LHS fields on conflicts.
+            // When we know the LHS type is a record, propagate: synthesise the RHS
+            // record type and merge the field maps (RHS wins).
+            //
+            // If the RHS type is `any` (unannotated block), the result is an open
+            // record with all LHS fields preserved — callers still benefit from the
+            // known LHS field types.
+            Type::Record {
+                fields: lhs_fields,
+                open: lhs_open,
+            } => {
+                let rhs_type = self.synthesise(arg);
+                match rhs_type {
+                    Type::Record {
+                        fields: rhs_fields,
+                        open: rhs_open,
+                    } => {
+                        // Merge: LHS fields as base, RHS overrides on conflicts.
+                        let mut merged = lhs_fields;
+                        for (k, v) in rhs_fields {
+                            merged.insert(k, v);
+                        }
+                        Type::Record {
+                            fields: merged,
+                            open: lhs_open || rhs_open,
+                        }
+                    }
+                    // Gradual boundary: RHS unknown, preserve LHS fields as open.
+                    Type::Any => Type::Record {
+                        fields: lhs_fields,
+                        open: true,
+                    },
+                    // RHS is not a record: can't reason about the merge result.
+                    _ => Type::Any,
+                }
+            }
+
             // Unknown function type — recurse into arg to collect sub-warnings.
             Type::Any => {
                 self.synthesise(arg);
