@@ -679,3 +679,80 @@ fn requests_during_pipeline_run_do_not_crash() {
     s.wait_for_pipeline();
     assert!(s.has_cached());
 }
+
+// ── Incremental sync: apply_edit ─────────────────────────────────────────────
+
+#[test]
+fn incremental_edit_appends_binding() {
+    let mut s = LspTestSession::new();
+    s.open("x: 1\n");
+    // Append a new binding at the end of the document.
+    s.apply_edit(1, 0, 1, 0, "y: 2\n");
+    assert_eq!(s.content(), "x: 1\ny: 2\n");
+}
+
+#[test]
+fn incremental_edit_replaces_value() {
+    let mut s = LspTestSession::new();
+    s.open("x: 42\n");
+    // Replace the value 42 with 99 (columns 3–5 on line 0).
+    s.apply_edit(0, 3, 0, 5, "99");
+    assert_eq!(s.content(), "x: 99\n");
+}
+
+#[test]
+fn incremental_edit_deletes_range() {
+    let mut s = LspTestSession::new();
+    s.open("x: 1\ny: 2\nz: 3\n");
+    // Delete the middle line entirely.
+    s.apply_edit(1, 0, 2, 0, "");
+    assert_eq!(s.content(), "x: 1\nz: 3\n");
+}
+
+#[test]
+fn incremental_edit_multi_step_produces_valid_parse() {
+    let mut s = LspTestSession::new();
+    s.open("x: 1\n");
+    s.apply_edit(1, 0, 1, 0, "y: ");
+    s.apply_edit(1, 3, 1, 3, "2\n");
+    assert_eq!(s.content(), "x: 1\ny: 2\n");
+    // LSP operations on the final content should not panic.
+    s.exercise_all();
+}
+
+#[test]
+fn incremental_full_replace_without_range() {
+    // An edit with no range is treated as a full-document replacement.
+    let mut s = LspTestSession::new();
+    s.open("x: 1\n");
+    s.change("y: 2\n");
+    assert_eq!(s.content(), "y: 2\n");
+}
+
+#[test]
+fn incremental_edit_unicode_operator() {
+    // Eucalypt uses Unicode operators — verify that UTF-16 offsets are
+    // handled correctly when the text contains multi-byte UTF-8 characters.
+    // '÷' is U+00F7: 1 UTF-16 code unit, 2 UTF-8 bytes.
+    // UTF-16 layout of "x: 10 ÷ 2\n":
+    //   x(0) :(1) (2) 1(3) 0(4) (5) ÷(6,1unit) (7) 2(8) \n(9)
+    let mut s = LspTestSession::new();
+    s.open("x: 10 ÷ 2\n");
+    // Replace '÷' at UTF-16 offset 6–7 with '*'.
+    s.apply_edit(0, 6, 0, 7, "*");
+    assert_eq!(s.content(), "x: 10 * 2\n");
+}
+
+#[test]
+fn incremental_edit_surrogate_pair_offset() {
+    // Characters requiring surrogate pairs in UTF-16 (U+10000+) must shift
+    // subsequent offsets by 2 code units.  '😀' is U+1F600: 2 UTF-16 code
+    // units, 4 UTF-8 bytes.
+    // UTF-16 layout of "a 😀 b\n":
+    //   a(0) (1) 😀(2-3,2units) (4) b(5) \n(6)
+    let mut s = LspTestSession::new();
+    s.open("a \u{1F600} b\n");
+    // Replace 'b' at UTF-16 offset 5 with 'c'.
+    s.apply_edit(0, 5, 0, 6, "c");
+    assert_eq!(s.content(), "a \u{1F600} c\n");
+}
