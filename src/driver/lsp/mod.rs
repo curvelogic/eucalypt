@@ -7,7 +7,6 @@
 
 mod actions;
 mod completion;
-pub mod context;
 mod diagnostics;
 mod folding;
 mod formatting;

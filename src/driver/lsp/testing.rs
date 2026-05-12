@@ -184,14 +184,44 @@ impl LspTestSession {
         let _ = self.inlay_hints();
     }
 
-    /// Check if a cached pipeline result is available (for debugging).
+    /// Check if a cached pipeline result is available.
     pub fn has_cached(&self) -> bool {
         self.cached.is_some()
     }
 
-    /// Count of imported files in the cached pipeline (for debugging).
+    /// Count of imported files in the cached pipeline.
     pub fn import_count(&self) -> usize {
         self.cached.as_ref().map_or(0, |c| c.imports.len())
+    }
+
+    /// Check whether a pipeline result is pending (has been spawned
+    /// but not yet received).
+    pub fn has_pending_pipeline(&self) -> bool {
+        // Try a non-blocking recv — if there's a result, put it back
+        // by storing it. This is a peek operation.
+        // Actually, we can't peek with mpsc. Instead, check if the
+        // cancel flag is still false (meaning a pipeline is running).
+        !self.cancel.load(std::sync::atomic::Ordering::SeqCst) && self.last_green.is_some()
+    }
+
+    /// Try to receive a pipeline result without blocking.
+    /// Returns true if a result was received and applied.
+    pub fn try_recv_pipeline(&mut self) -> bool {
+        match self.pipeline_rx.try_recv() {
+            Ok(result) => {
+                match result.result {
+                    Ok(cached) => {
+                        self.cached = Some(cached);
+                    }
+                    Err(err) => {
+                        eprintln!("pipeline error in test: {err}");
+                        self.cached = None;
+                    }
+                }
+                true
+            }
+            Err(_) => false,
+        }
     }
 
     fn type_env(&self) -> Option<&TypeEnv> {

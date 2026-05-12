@@ -574,3 +574,108 @@ fn multiple_imports() {
         "hover on 'lib-version' (from import) should return something"
     );
 }
+
+// ── Pipeline: green node change detection ────────────────────────────────────
+
+#[test]
+fn identical_content_does_not_spawn_pipeline() {
+    let mut s = LspTestSession::new();
+    s.run_pipeline("x: 1");
+    assert!(s.has_cached(), "first open should produce cached result");
+
+    // Change to identical content — green node should be the same
+    s.change("x: 1");
+
+    // Wait a bit longer than the debounce period
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    // No new pipeline result should have arrived (try_recv returns false)
+    let received = s.try_recv_pipeline();
+    assert!(
+        !received,
+        "identical content should not spawn a new pipeline"
+    );
+}
+
+#[test]
+fn different_content_spawns_pipeline() {
+    let mut s = LspTestSession::new();
+    s.run_pipeline("x: 1");
+    assert!(s.has_cached());
+
+    // Change to different content
+    s.change("x: 2");
+    s.wait_for_pipeline();
+
+    // Should have a new cached result
+    assert!(
+        s.has_cached(),
+        "different content should produce new cached result"
+    );
+}
+
+// ── Pipeline: rapid changes cancel previous runs ─────────────────────────────
+
+#[test]
+fn rapid_changes_produce_single_pipeline_result() {
+    let mut s = LspTestSession::new();
+
+    // Fire many rapid changes
+    for i in 0..10 {
+        s.change(&format!("x: {i}"));
+    }
+
+    // Wait for the final pipeline to complete
+    s.wait_for_pipeline();
+    assert!(s.has_cached());
+
+    // Drain any extra results — there should be at most one
+    // (the final change, since earlier ones were cancelled)
+    let mut extra = 0;
+    while s.try_recv_pipeline() {
+        extra += 1;
+    }
+    assert!(
+        extra <= 1,
+        "rapid changes should cancel intermediate pipelines, got {extra} extra results"
+    );
+}
+
+// ── Pipeline: error handling ─────────────────────────────────────────────────
+
+#[test]
+fn pipeline_error_does_not_crash() {
+    let mut s = LspTestSession::new();
+    // Valid content first
+    s.run_pipeline("x: 1");
+    assert!(s.has_cached());
+
+    // Content with a deliberate desugar error (unclosed block in import)
+    // This should cause a pipeline error but not crash
+    s.change("{ import: \"nonexistent_file_that_doesnt_exist.eu\" }\nx: 1");
+    s.wait_for_pipeline();
+
+    // LSP operations should still work (using AST)
+    let _ = s.complete(0, 0);
+    let _ = s.hover(0, 0);
+}
+
+// ── Pipeline: requests during pipeline run ───────────────────────────────────
+
+#[test]
+fn requests_during_pipeline_run_do_not_crash() {
+    let mut s = LspTestSession::new();
+    s.open("x: 1\ny: 2\nz: x + y");
+
+    // Don't wait — fire requests while pipeline is in flight
+    for _ in 0..5 {
+        let _ = s.complete(0, 0);
+        let _ = s.hover(0, 0);
+        let _ = s.hover(1, 0);
+        let _ = s.inlay_hints();
+    }
+
+    // Now wait and verify it completes
+    s.wait_for_pipeline();
+    assert!(s.has_cached());
+}
