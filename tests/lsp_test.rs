@@ -756,3 +756,43 @@ fn incremental_edit_surrogate_pair_offset() {
     s.apply_edit(0, 5, 0, 6, "c");
     assert_eq!(s.content(), "a \u{1F600} c\n");
 }
+
+// ── Green node change detection: string-only changes ────────────────────────
+
+/// The green node equality comparison includes token text, not just structure.
+/// Changing a string literal must trigger a pipeline re-run because string
+/// values can affect the pipeline (e.g. import paths are string literals).
+#[test]
+fn string_change_triggers_pipeline_run() {
+    let mut s = LspTestSession::new();
+    // First open: pipeline spawned.
+    s.open("x: \"hello\"\n");
+    // Change only the string content.  The tree structure is identical
+    // (same node kinds), but the token text differs.  Change detection
+    // must still report a change and spawn a new pipeline run.
+    s.change("x: \"world\"\n");
+    // Wait for the pipeline spawned by the second change.
+    // If change detection incorrectly skipped the re-run, this would time out.
+    s.wait_for_pipeline();
+    assert!(
+        s.has_cached(),
+        "pipeline should have run after string change"
+    );
+}
+
+#[test]
+fn identical_content_does_not_respawn_pipeline() {
+    let mut s = LspTestSession::new();
+    s.open("x: 1\n");
+    // Simulate an editor sending the same content again (no real change).
+    // The green node is identical so no pipeline should be spawned.
+    // We verify by checking that try_recv returns nothing after a brief wait.
+    s.change("x: 1\n");
+    // Give a short window for any spurious spawn.
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let received = s.try_recv_pipeline();
+    assert!(
+        !received,
+        "no pipeline should run when content is unchanged"
+    );
+}
