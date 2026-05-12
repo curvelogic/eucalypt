@@ -1707,3 +1707,34 @@ pub fn test_typecheck_013_io_number_binding() {
 pub fn test_typecheck_014_let_any_binding() {
     run_typecheck_test("014_let_any_binding.eu");
 }
+
+// ── Prelude type annotation regression tests ──────────────────────────────────
+
+/// Run `eu check <path>` and assert zero warnings (exit 0, empty stderr).
+fn run_prelude_check(path: &str) {
+    let output = std::process::Command::new(eu_binary())
+        .args(["check", path])
+        .output()
+        .unwrap_or_else(|e| panic!("failed to run eu check on {path}: {e}"));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "eu check {path} exited with non-zero status; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.is_empty(),
+        "eu check {path} produced unexpected warnings:\n{stderr}"
+    );
+}
+
+#[test]
+pub fn test_prelude_check_zero_warnings() {
+    run_prelude_check("lib/prelude.eu");
+}
+
+#[test]
+pub fn test_state_check_zero_warnings() {
+    run_prelude_check("lib/state.eu");
+}
