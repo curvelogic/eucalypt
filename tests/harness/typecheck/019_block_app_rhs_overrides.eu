@@ -1,0 +1,9 @@
+# RHS field types override LHS on conflict.
+# base = {a: 1}, override = {a: "hello"} — merged `a` is string.
+# Passing merged.a to a number function should warn.
+` { type: "number -> number" }
+inc(x): x + 1
+
+base: { a: 1 }
+override: base { a: "hello" }
+result: inc(override.a)

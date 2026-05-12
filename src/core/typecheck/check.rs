@@ -699,14 +699,17 @@ impl Checker {
 
             // Block application (catenation): record type applied to an argument.
             //
-            // In eucalypt, `lhs rhs` where both sides are blocks merges them into a
-            // single block, with RHS fields overriding LHS fields on conflicts.
-            // When we know the LHS type is a record, propagate: synthesise the RHS
-            // record type and merge the field maps (RHS wins).
+            // In eucalypt, `base override` (catenation) is cooked to `override(base)`:
+            // the new/override block is in function position (LHS), and the base
+            // block is the argument (RHS).  The function-position block wins on field
+            // conflicts — its declared field types take precedence over the base.
             //
-            // If the RHS type is `any` (unannotated block), the result is an open
-            // record with all LHS fields preserved — callers still benefit from the
-            // known LHS field types.
+            // Merge: start with RHS (base) fields, then overlay LHS (override) fields.
+            // LHS wins where both declare the same field.
+            //
+            // If the RHS type is `any` (unannotated base), the result is an open
+            // record with all LHS fields — callers still benefit from the override's
+            // known field types.
             Type::Record {
                 fields: lhs_fields,
                 open: lhs_open,
@@ -717,9 +720,10 @@ impl Checker {
                         fields: rhs_fields,
                         open: rhs_open,
                     } => {
-                        // Merge: LHS fields as base, RHS overrides on conflicts.
-                        let mut merged = lhs_fields;
-                        for (k, v) in rhs_fields {
+                        // Merge: base (RHS) as starting point, overlay LHS (function).
+                        // LHS fields override RHS on conflicts.
+                        let mut merged = rhs_fields;
+                        for (k, v) in lhs_fields {
                             merged.insert(k, v);
                         }
                         Type::Record {
@@ -727,7 +731,7 @@ impl Checker {
                             open: lhs_open || rhs_open,
                         }
                     }
-                    // Gradual boundary: RHS unknown, preserve LHS fields as open.
+                    // Gradual boundary: base unknown, preserve LHS (override) fields as open.
                     Type::Any => Type::Record {
                         fields: lhs_fields,
                         open: true,

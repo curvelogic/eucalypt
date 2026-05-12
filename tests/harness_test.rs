@@ -1753,3 +1753,18 @@ pub fn test_typecheck_016_row_var_missing_field() {
 pub fn test_typecheck_017_row_var_wrong_field_type() {
     run_typecheck_test("017_row_var_wrong_field_type.eu");
 }
+
+#[test]
+pub fn test_typecheck_018_block_app_merge_no_warn() {
+    run_typecheck_test("018_block_app_merge_no_warn.eu");
+}
+
+#[test]
+pub fn test_typecheck_019_block_app_rhs_overrides() {
+    run_typecheck_test("019_block_app_rhs_overrides.eu");
+}
+
+#[test]
+pub fn test_typecheck_020_block_app_gradual_boundary() {
+    run_typecheck_test("020_block_app_gradual_boundary.eu");
+}
