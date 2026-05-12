@@ -30,7 +30,9 @@ use std::time::Duration;
 
 use lsp_server::{Connection, Message, Notification, Request, Response};
 use lsp_types::{
-    notification::{DidChangeTextDocument, DidOpenTextDocument, Notification as _},
+    notification::{
+        DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification as _,
+    },
     request::{
         CodeActionRequest, Completion, DocumentSymbolRequest, FoldingRangeRequest, Formatting,
         GotoDefinition, HoverRequest, InlayHintRequest, RangeFormatting, References, Rename,
@@ -159,6 +161,10 @@ impl DocumentStore {
         self.documents.insert(uri, text);
     }
 
+    fn close(&mut self, uri: &Url) {
+        self.documents.remove(uri);
+    }
+
     fn get(&self, uri: &Url) -> Option<&str> {
         self.documents.get(uri).map(|s| s.as_str())
     }
@@ -279,6 +285,23 @@ impl ServerState {
             }
             Err(err) => {
                 eprintln!("pipeline error for {uri}: {err}");
+                // Remove stale cached result so we don't serve outdated
+                // type information. Re-publish diagnostics with only parse
+                // errors (no type warnings).
+                self.cached.remove(&uri);
+                let text = self.store.get(&uri).unwrap_or_default().to_string();
+                let parse = crate::syntax::rowan::parse_unit(&text);
+                let diags = diagnostics::diagnostics_from_parse_errors(&text, parse.errors());
+                let params = PublishDiagnosticsParams {
+                    uri: uri.clone(),
+                    diagnostics: diags,
+                    version: None,
+                };
+                let notif = lsp_server::Notification::new(
+                    lsp_types::notification::PublishDiagnostics::METHOD.to_string(),
+                    params,
+                );
+                connection.sender.send(Message::Notification(notif))?;
             }
         }
         Ok(())
@@ -480,6 +503,11 @@ fn handle_notification(
                 serde_json::from_value(notif.params)?;
             on_document_change(connection, state, params)?;
         }
+        DidCloseTextDocument::METHOD => {
+            let params: lsp_types::DidCloseTextDocumentParams =
+                serde_json::from_value(notif.params)?;
+            on_document_close(state, params);
+        }
         _ => {
             eprintln!("unhandled notification: {}", notif.method);
         }
@@ -515,6 +543,17 @@ fn on_document_change(
         on_document_changed(connection, state, uri, &change.text)?;
     }
     Ok(())
+}
+
+/// Handle textDocument/didClose — clean up per-document caches.
+fn on_document_close(state: &mut ServerState, params: lsp_types::DidCloseTextDocumentParams) {
+    let uri = params.text_document.uri;
+    state.store.close(&uri);
+    state.cached.remove(&uri);
+    state.last_green.remove(&uri);
+    if let Some(cancel) = state.cancel.remove(&uri) {
+        cancel.store(true, Ordering::SeqCst);
+    }
 }
 
 /// Common handler for document open/change: parse, detect changes,
