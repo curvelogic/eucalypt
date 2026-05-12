@@ -104,10 +104,12 @@ pub fn is_subtype(s: &Type, t: &Type) -> bool {
             Type::Record {
                 fields: s_fields,
                 open: s_open,
+                ..
             },
             Type::Record {
                 fields: t_fields,
                 open: t_open,
+                ..
             },
         ) => {
             // Every field required by T must be present in S with a subtype.
@@ -211,10 +213,12 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
             Type::Record {
                 fields: s_fields,
                 open: s_open,
+                ..
             },
             Type::Record {
                 fields: t_fields,
                 open: t_open,
+                ..
             },
         ) => {
             // For shared field names, field types must be consistent.
@@ -279,6 +283,7 @@ mod tests {
                 .map(|(k, v)| ((*k).to_string(), v.clone()))
                 .collect(),
             open: false,
+            row: None,
         }
     }
 
@@ -289,6 +294,7 @@ mod tests {
                 .map(|(k, v)| ((*k).to_string(), v.clone()))
                 .collect(),
             open: true,
+            row: None,
         }
     }
 

@@ -361,6 +361,7 @@ impl<'a> Parser<'a> {
             Token::Block => Ok(Type::Record {
                 fields: BTreeMap::new(),
                 open: true,
+                row: None,
             }),
             Token::Ident(name) => {
                 // Type variable (lowercase) or type alias reference (uppercase).
@@ -532,18 +533,42 @@ impl<'a> Parser<'a> {
     /// Called after `{` has been consumed.
     ///
     /// ```text
-    /// row   ::= field (',' field)* (',' '..')?
-    ///         | '..'
+    /// row   ::= field (',' field)* (',' ('..' IDENT?)?)?
+    ///         | '..' IDENT?
     /// field ::= IDENT ':' type
     /// ```
+    ///
+    /// When `..` is followed by a lowercase identifier, it is a named row
+    /// variable (e.g. `{x: number, ..r}`).  When `..` appears alone the
+    /// record is open with an anonymous tail (e.g. `{x: number, ..}`).
     fn parse_record(&mut self, _open_pos: usize) -> Result<Type, ParseError> {
-        // Empty open record: `{..}`
+        use super::types::TypeVarId;
+
+        // After consuming `..`, optionally consume a following ident as the
+        // row variable name.  Returns `(open=true, row)`.
+        let parse_open_tail = |parser: &mut Parser<'_>| -> Result<Option<TypeVarId>, ParseError> {
+            match parser.peek()? {
+                Token::Ident(_) => {
+                    let (tok, _) = parser.advance()?;
+                    if let Token::Ident(name) = tok {
+                        Ok(Some(TypeVarId(name)))
+                    } else {
+                        unreachable!()
+                    }
+                }
+                _ => Ok(None),
+            }
+        };
+
+        // Empty open record — `{..}` or `{..r}`.
         if self.peek()? == &Token::DotDot {
             self.advance()?;
+            let row = parse_open_tail(self)?;
             self.expect(&Token::RBrace)?;
             return Ok(Type::Record {
                 fields: BTreeMap::new(),
                 open: true,
+                row,
             });
         }
 
@@ -553,11 +578,13 @@ impl<'a> Parser<'a> {
             return Ok(Type::Record {
                 fields: BTreeMap::new(),
                 open: false,
+                row: None,
             });
         }
 
         let mut fields = BTreeMap::new();
         let mut open = false;
+        let mut row: Option<TypeVarId> = None;
 
         loop {
             // Check for `..` (open marker) or a field name
@@ -565,6 +592,7 @@ impl<'a> Parser<'a> {
             match self.peek()? {
                 Token::DotDot => {
                     self.advance()?;
+                    row = parse_open_tail(self)?;
                     open = true;
                     self.expect(&Token::RBrace)?;
                     break;
@@ -614,7 +642,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(Type::Record { fields, open })
+        Ok(Type::Record { fields, open, row })
     }
 }
 
@@ -675,7 +703,8 @@ mod tests {
             parse_type("block").unwrap(),
             Type::Record {
                 fields: BTreeMap::new(),
-                open: true
+                open: true,
+                row: None,
             }
         );
         assert_eq!(
@@ -870,7 +899,8 @@ mod tests {
             parse_type("{name: string}").unwrap(),
             Type::Record {
                 fields,
-                open: false
+                open: false,
+                row: None,
             }
         );
     }
@@ -881,7 +911,11 @@ mod tests {
         fields.insert("name".to_string(), Type::String);
         assert_eq!(
             parse_type("{name: string, ..}").unwrap(),
-            Type::Record { fields, open: true }
+            Type::Record {
+                fields,
+                open: true,
+                row: None
+            }
         );
     }
 
@@ -891,7 +925,8 @@ mod tests {
             parse_type("{..}").unwrap(),
             Type::Record {
                 fields: BTreeMap::new(),
-                open: true
+                open: true,
+                row: None,
             }
         );
     }
@@ -902,7 +937,8 @@ mod tests {
             parse_type("{}").unwrap(),
             Type::Record {
                 fields: BTreeMap::new(),
-                open: false
+                open: false,
+                row: None,
             }
         );
     }
@@ -917,7 +953,8 @@ mod tests {
             parse_type("{stdout: string, stderr: string, exit-code: number}").unwrap(),
             Type::Record {
                 fields,
-                open: false
+                open: false,
+                row: None,
             }
         );
     }
@@ -949,7 +986,8 @@ mod tests {
                     m.insert("exit-code".to_string(), Type::Number);
                     m
                 },
-                open: false
+                open: false,
+                row: None,
             }))
         );
     }
@@ -961,7 +999,8 @@ mod tests {
             Type::Lens(
                 Box::new(Type::Record {
                     fields: BTreeMap::new(),
-                    open: true
+                    open: true,
+                    row: None,
                 }),
                 Box::new(Type::Any)
             )

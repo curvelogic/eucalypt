@@ -258,12 +258,13 @@ impl Checker {
                 Box::new(self.resolve_aliases_in_type(*a)),
                 Box::new(self.resolve_aliases_in_type(*b)),
             ),
-            Type::Record { fields, open } => Type::Record {
+            Type::Record { fields, open, row } => Type::Record {
                 fields: fields
                     .into_iter()
                     .map(|(k, v)| (k, self.resolve_aliases_in_type(v)))
                     .collect(),
                 open,
+                row,
             },
             Type::Union(variants) => Type::Union(
                 variants
@@ -555,6 +556,7 @@ impl Checker {
         Type::Record {
             fields: field_types,
             open: true, // open: unannotated members may exist at runtime
+            row: None,
         }
     }
 
@@ -567,7 +569,7 @@ impl Checker {
     /// - Non-record object type → return `any` (cannot reason about field access).
     pub fn synthesise_lookup(&mut self, smid: Smid, obj_type: &Type, field: &str) -> Type {
         match obj_type {
-            Type::Record { fields, open } => {
+            Type::Record { fields, open, .. } => {
                 if let Some(field_ty) = fields.get(field) {
                     // Field is known — return its type directly.
                     field_ty.clone()
@@ -1581,6 +1583,7 @@ mod tests {
                     m
                 },
                 open: true,
+                row: None,
             }
         );
     }
@@ -1607,6 +1610,7 @@ mod tests {
                     m
                 },
                 open: true,
+                row: None,
             }
         );
     }
@@ -1632,6 +1636,7 @@ mod tests {
                     m
                 },
                 open: true,
+                row: None,
             }),
         );
         c.push_scope(frame);
@@ -1651,6 +1656,7 @@ mod tests {
             mono(Type::Record {
                 fields: std::collections::BTreeMap::new(),
                 open: true,
+                row: None,
             }),
         );
         c.push_scope(frame);
@@ -1675,6 +1681,7 @@ mod tests {
                     m
                 },
                 open: false,
+                row: None,
             }),
         );
         c.push_scope(frame);
