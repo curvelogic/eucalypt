@@ -184,6 +184,16 @@ impl LspTestSession {
         let _ = self.inlay_hints();
     }
 
+    /// Check if a cached pipeline result is available (for debugging).
+    pub fn has_cached(&self) -> bool {
+        self.cached.is_some()
+    }
+
+    /// Count of imported files in the cached pipeline (for debugging).
+    pub fn import_count(&self) -> usize {
+        self.cached.as_ref().map_or(0, |c| c.imports.len())
+    }
+
     fn type_env(&self) -> Option<&TypeEnv> {
         self.cached
             .as_ref()
@@ -202,9 +212,18 @@ impl LspTestSession {
             table.add(sym.clone());
         }
 
-        // Add synthetic symbols from the pipeline's type_env.
+        // Add symbols from imported files resolved by the pipeline.
         if let Some(cached) = self.cached.as_ref().filter(|c| c.uri == self.uri) {
-            super::add_pipeline_symbols(&mut table, &cached.type_env, &self.uri);
+            for import in &cached.imports {
+                let import_parse = parse_unit(&import.source);
+                let import_unit = import_parse.tree();
+                table.add_from_unit(
+                    &import_unit,
+                    &import.source,
+                    &import.uri,
+                    SymbolSource::Import,
+                );
+            }
         }
 
         table

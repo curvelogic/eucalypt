@@ -555,6 +555,19 @@ impl SourceLoader {
         &self.core
     }
 
+    /// Return the source text for a file by its locator.
+    pub fn source_text(&self, locator: &Locator) -> Option<&str> {
+        self.locators
+            .get(locator)
+            .and_then(|id| self.files.get(*id).ok())
+            .map(|f| f.source().as_str())
+    }
+
+    /// Return all loaded locators (including imports).
+    pub fn loaded_locators(&self) -> Vec<&Locator> {
+        self.locators.keys().collect()
+    }
+
     /// Declare source manipulation complete and take ownership of
     /// reporting resources
     pub fn complete(self) -> (SimpleFiles<String, String>, SourceMap, RcExpr) {

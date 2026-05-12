@@ -51,12 +51,22 @@ use self::symbol_table::{SymbolSource, SymbolTable};
 /// Inferred type environment for a document, mapping binding names to types.
 type TypeEnv = HashMap<String, Type>;
 
+/// Source text and URI for an imported file, used to build symbol
+/// tables for go-to-definition and hover on imported names.
+struct ImportedFile {
+    uri: Url,
+    source: String,
+}
+
 /// Cached result of a successful pipeline run.
 struct CachedPipeline {
     uri: Url,
     type_env: TypeEnv,
     warnings: Vec<crate::core::typecheck::error::TypeWarning>,
     source_map: SourceMap,
+    /// Imported files resolved by the pipeline, for building symbol
+    /// tables with proper source locations.
+    imports: Vec<ImportedFile>,
 }
 
 /// Result sent from the background pipeline thread.
@@ -219,10 +229,18 @@ impl ServerState {
             table.add(sym.clone());
         }
 
-        // Add synthetic symbols from the pipeline's type_env for
-        // names not already in the table (i.e. from imports).
+        // Add symbols from imported files resolved by the pipeline.
         if let Some(cached) = self.cached.as_ref().filter(|c| c.uri == *uri) {
-            add_pipeline_symbols(&mut table, &cached.type_env, uri);
+            for import in &cached.imports {
+                let import_parse = crate::syntax::rowan::parse_unit(&import.source);
+                let import_unit = import_parse.tree();
+                table.add_from_unit(
+                    &import_unit,
+                    &import.source,
+                    &import.uri,
+                    SymbolSource::Import,
+                );
+            }
         }
 
         table
@@ -757,52 +775,6 @@ fn on_prepare_rename(
     rename::prepare_rename(text, &root, &params.position)
 }
 
-/// Add synthetic symbol entries from the pipeline's type environment
-/// for names not already present in the table. These represent
-/// imported bindings resolved by the SourceLoader pipeline.
-fn add_pipeline_symbols(table: &mut SymbolTable, type_env: &TypeEnv, uri: &Url) {
-    use symbol_table::{DeclKind, SymbolInfo};
-
-    let zero_range = lsp_types::Range {
-        start: lsp_types::Position {
-            line: 0,
-            character: 0,
-        },
-        end: lsp_types::Position {
-            line: 0,
-            character: 0,
-        },
-    };
-
-    for (name, ty) in type_env {
-        // Skip names already in the table (local or prelude).
-        if !table.lookup(name).is_empty() {
-            continue;
-        }
-
-        let kind = match count_function_arity(ty) {
-            Some(arity) => DeclKind::Function { arity },
-            None => DeclKind::Property,
-        };
-
-        let sym = SymbolInfo {
-            name: name.clone(),
-            kind,
-            source: SymbolSource::Import,
-            uri: uri.clone(),
-            range: zero_range,
-            selection_range: zero_range,
-            documentation: None,
-            type_annotation: Some(ty.to_string()),
-            monad_type: None,
-            is_monad: false,
-            parameters: vec![],
-            children: vec![],
-        };
-        table.add(sym);
-    }
-}
-
 /// Extract binding names from the core expression's nested Lets
 /// and insert them into the type env with `Type::Any` as a placeholder.
 ///
@@ -826,15 +798,6 @@ fn extract_top_level_bindings(expr: &crate::core::expr::RcExpr, type_env: &mut T
             extract_top_level_bindings(inner, type_env);
         }
         _ => {}
-    }
-}
-
-/// Count the arity of a function type by walking `A -> B -> C -> ...`.
-/// Returns `None` if the type is not a function.
-fn count_function_arity(ty: &Type) -> Option<usize> {
-    match ty {
-        Type::Function(_, ret) => Some(1 + count_function_arity(ret).unwrap_or(0)),
-        _ => None,
     }
 }
 
@@ -927,6 +890,35 @@ fn run_pipeline(
         type_env.insert(name, ty);
     }
 
+    // Extract imported file sources before consuming the loader.
+    // Skip the prelude (resource locator) and the primary document
+    // (buffer/literal locator) — we only want actual filesystem imports.
+    // Determine the document's directory for resolving relative imports.
+    let doc_dir = path.and_then(|p| p.parent());
+
+    let imports: Vec<ImportedFile> = loader
+        .loaded_locators()
+        .iter()
+        .filter_map(|loc| {
+            if let Locator::Fs(fs_path) = loc {
+                let source = loader.source_text(loc)?;
+                // Resolve relative paths against the document's directory.
+                let abs_path = if fs_path.is_relative() {
+                    doc_dir?.join(fs_path)
+                } else {
+                    fs_path.clone()
+                };
+                let import_uri = Url::from_file_path(&abs_path).ok()?;
+                Some(ImportedFile {
+                    uri: import_uri,
+                    source: source.to_string(),
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
     let (_, source_map, _) = loader.complete();
 
     Ok(CachedPipeline {
@@ -934,6 +926,7 @@ fn run_pipeline(
         type_env,
         warnings: result.warnings,
         source_map,
+        imports,
     })
 }
 
