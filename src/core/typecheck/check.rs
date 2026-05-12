@@ -713,12 +713,14 @@ impl Checker {
             Type::Record {
                 fields: lhs_fields,
                 open: lhs_open,
+                row: lhs_row,
             } => {
                 let rhs_type = self.synthesise(arg);
                 match rhs_type {
                     Type::Record {
                         fields: rhs_fields,
                         open: rhs_open,
+                        row: rhs_row,
                     } => {
                         // Merge: base (RHS) as starting point, overlay LHS (function).
                         // LHS fields override RHS on conflicts.
@@ -729,12 +731,14 @@ impl Checker {
                         Type::Record {
                             fields: merged,
                             open: lhs_open || rhs_open,
+                            row: lhs_row.or(rhs_row),
                         }
                     }
                     // Gradual boundary: base unknown, preserve LHS (override) fields as open.
                     Type::Any => Type::Record {
                         fields: lhs_fields,
                         open: true,
+                        row: lhs_row,
                     },
                     // RHS is not a record: can't reason about the merge result.
                     _ => Type::Any,
