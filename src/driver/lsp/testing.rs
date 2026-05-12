@@ -19,7 +19,7 @@ use super::hover;
 use super::inlay_hints;
 use super::symbol_table::{self, SymbolSource, SymbolTable};
 use super::{apply_content_change, CachedPipeline, PipelineResult, TypeEnv};
-use crate::syntax::rowan::parse_unit;
+use crate::syntax::rowan::{parse_unit, ParseError};
 
 /// An in-process LSP editing session for testing.
 ///
@@ -35,6 +35,8 @@ pub struct LspTestSession {
     pipeline_tx: mpsc::Sender<PipelineResult>,
     cancel: Arc<AtomicBool>,
     last_green: Option<rowan::GreenNode>,
+    /// Parse errors from the most recent parse, cached to avoid re-parsing.
+    last_parse_errors: Vec<ParseError>,
 }
 
 impl LspTestSession {
@@ -52,6 +54,7 @@ impl LspTestSession {
             pipeline_tx,
             cancel: Arc::new(AtomicBool::new(false)),
             last_green: None,
+            last_parse_errors: Vec::new(),
         }
     }
 
@@ -305,6 +308,7 @@ impl LspTestSession {
             return;
         }
         self.last_green = Some(new_green);
+        self.last_parse_errors = parse.errors().clone();
 
         // Cancel any in-flight run.
         self.cancel.store(true, Ordering::SeqCst);
