@@ -5,22 +5,33 @@
 //! JSON-RPC transport.  Used for integration tests that exercise LSP
 //! features against realistic editing scenarios.
 
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
+
 use lsp_types::{CompletionItem, CompletionResponse, Hover, InlayHint, Position, Range, Url};
 
 use super::completion;
 use super::hover;
 use super::inlay_hints;
 use super::symbol_table::{self, SymbolSource, SymbolTable};
+use super::{CachedPipeline, PipelineResult, TypeEnv};
 use crate::syntax::rowan::parse_unit;
 
 /// An in-process LSP editing session for testing.
 ///
 /// Simulates opening, editing, and querying a single document without
-/// the JSON-RPC transport layer.
+/// the JSON-RPC transport layer. Mirrors the real server architecture
+/// with a background pipeline for semantic features.
 pub struct LspTestSession {
     uri: Url,
     content: String,
     prelude_table: SymbolTable,
+    cached: Option<CachedPipeline>,
+    pipeline_rx: mpsc::Receiver<PipelineResult>,
+    pipeline_tx: mpsc::Sender<PipelineResult>,
+    cancel: Arc<AtomicBool>,
+    last_green: Option<rowan::GreenNode>,
 }
 
 impl LspTestSession {
@@ -28,10 +39,16 @@ impl LspTestSession {
     pub fn new() -> Self {
         let uri = Url::parse("file:///test.eu").expect("test URI");
         let prelude_uri = Url::parse("resource:prelude").expect("prelude URI");
+        let (pipeline_tx, pipeline_rx) = mpsc::channel();
         Self {
             uri,
             content: String::new(),
             prelude_table: symbol_table::prelude_symbols(&prelude_uri),
+            cached: None,
+            pipeline_rx,
+            pipeline_tx,
+            cancel: Arc::new(AtomicBool::new(false)),
+            last_green: None,
         }
     }
 
@@ -40,14 +57,45 @@ impl LspTestSession {
         self.uri = Url::parse(uri).expect("valid URI");
     }
 
-    /// Open (or replace) the document content.
+    /// Open (or replace) the document content and trigger a background
+    /// pipeline run if the green node changed.
     pub fn open(&mut self, content: &str) {
         self.content = content.to_string();
+        self.maybe_spawn_pipeline();
     }
 
-    /// Replace the entire document content (alias for `open`).
+    /// Replace the entire document content (alias for `open`) and
+    /// trigger a background pipeline run if the green node changed.
     pub fn change(&mut self, content: &str) {
         self.content = content.to_string();
+        self.maybe_spawn_pipeline();
+    }
+
+    /// Block until the background pipeline completes and apply the
+    /// result. Used in tests that need deterministic semantic data.
+    pub fn wait_for_pipeline(&mut self) {
+        match self
+            .pipeline_rx
+            .recv_timeout(std::time::Duration::from_secs(30))
+        {
+            Ok(result) => match result.result {
+                Ok(cached) => {
+                    self.cached = Some(cached);
+                }
+                Err(err) => {
+                    eprintln!("pipeline error in test: {err}");
+                }
+            },
+            Err(e) => {
+                eprintln!("pipeline recv timeout/disconnect: {e}");
+            }
+        }
+    }
+
+    /// Convenience: open + wait_for_pipeline.
+    pub fn run_pipeline(&mut self, content: &str) {
+        self.open(content);
+        self.wait_for_pipeline();
     }
 
     /// Request completion at the given line and character offset.
@@ -55,13 +103,14 @@ impl LspTestSession {
         let parse = parse_unit(&self.content);
         let root = parse.syntax_node();
         let table = self.build_symbol_table();
+        let type_env = self.type_env();
 
         let response = completion::completions(
             &self.content,
             &root,
             &Position::new(line, character),
             &table,
-            None,
+            type_env,
         );
         match response {
             CompletionResponse::Array(items) => items,
@@ -74,13 +123,14 @@ impl LspTestSession {
         let parse = parse_unit(&self.content);
         let root = parse.syntax_node();
         let table = self.build_symbol_table();
+        let type_env = self.type_env();
 
         hover::hover(
             &self.content,
             &root,
             &Position::new(line, character),
             &table,
-            None,
+            type_env,
         )
     }
 
@@ -89,9 +139,10 @@ impl LspTestSession {
         let parse = parse_unit(&self.content);
         let root = parse.syntax_node();
         let table = self.build_symbol_table();
+        let type_env = self.type_env();
 
         let range = Range::new(Position::new(0, 0), Position::new(u32::MAX, 0));
-        inlay_hints::inlay_hints(&self.content, &root, &range, &table, None)
+        inlay_hints::inlay_hints(&self.content, &root, &range, &table, type_env)
     }
 
     /// Get the completion labels as strings (convenience for assertions).
@@ -133,6 +184,53 @@ impl LspTestSession {
         let _ = self.inlay_hints();
     }
 
+    /// Check if a cached pipeline result is available.
+    pub fn has_cached(&self) -> bool {
+        self.cached.is_some()
+    }
+
+    /// Count of imported files in the cached pipeline.
+    pub fn import_count(&self) -> usize {
+        self.cached.as_ref().map_or(0, |c| c.imports.len())
+    }
+
+    /// Check whether a pipeline result is pending (has been spawned
+    /// but not yet received).
+    pub fn has_pending_pipeline(&self) -> bool {
+        // Try a non-blocking recv — if there's a result, put it back
+        // by storing it. This is a peek operation.
+        // Actually, we can't peek with mpsc. Instead, check if the
+        // cancel flag is still false (meaning a pipeline is running).
+        !self.cancel.load(std::sync::atomic::Ordering::SeqCst) && self.last_green.is_some()
+    }
+
+    /// Try to receive a pipeline result without blocking.
+    /// Returns true if a result was received and applied.
+    pub fn try_recv_pipeline(&mut self) -> bool {
+        match self.pipeline_rx.try_recv() {
+            Ok(result) => {
+                match result.result {
+                    Ok(cached) => {
+                        self.cached = Some(cached);
+                    }
+                    Err(err) => {
+                        eprintln!("pipeline error in test: {err}");
+                        self.cached = None;
+                    }
+                }
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    fn type_env(&self) -> Option<&TypeEnv> {
+        self.cached
+            .as_ref()
+            .filter(|c| c.uri == self.uri)
+            .map(|c| &c.type_env)
+    }
+
     fn build_symbol_table(&self) -> SymbolTable {
         let parse = parse_unit(&self.content);
         let unit = parse.tree();
@@ -140,45 +238,54 @@ impl LspTestSession {
         let mut table = SymbolTable::new();
         table.add_from_unit(&unit, &self.content, &self.uri, SymbolSource::Local);
 
-        // Resolve imports from the document
-        let base_dir = self
-            .uri
-            .to_file_path()
-            .ok()
-            .and_then(|p| p.parent().map(|d| d.to_path_buf()));
-        if let Some(ref dir) = base_dir {
-            let imports = super::context::import_inputs(&unit, dir);
-            for input in &imports {
-                self.load_import_symbols(input, &mut table);
-            }
-        }
-
         for sym in self.prelude_table.all_symbols() {
             table.add(sym.clone());
+        }
+
+        // Add symbols from imported files resolved by the pipeline.
+        if let Some(cached) = self.cached.as_ref().filter(|c| c.uri == self.uri) {
+            for import in &cached.imports {
+                let import_parse = parse_unit(&import.source);
+                let import_unit = import_parse.tree();
+                table.add_from_unit(
+                    &import_unit,
+                    &import.source,
+                    &import.uri,
+                    SymbolSource::Import,
+                );
+            }
         }
 
         table
     }
 
-    fn load_import_symbols(&self, input: &crate::syntax::input::Input, table: &mut SymbolTable) {
-        use crate::syntax::input::Locator;
+    /// Parse and check whether the green node changed; if so, cancel
+    /// any previous pipeline run and spawn a new one.
+    fn maybe_spawn_pipeline(&mut self) {
+        let parse = parse_unit(&self.content);
+        let new_green = parse.syntax_node().green().into_owned();
 
-        let (source_text, import_uri) = match input.locator() {
-            Locator::Fs(path) => {
-                let text = match std::fs::read_to_string(path) {
-                    Ok(t) => t,
-                    Err(_) => return,
-                };
-                let uri = Url::from_file_path(path)
-                    .unwrap_or_else(|_| Url::parse("file:///unknown.eu").expect("fallback URI"));
-                (text, uri)
-            }
-            _ => return,
+        let changed = match &self.last_green {
+            Some(prev) => *prev != new_green,
+            None => true,
         };
 
-        let parse = parse_unit(&source_text);
-        let unit = parse.tree();
-        table.add_from_unit(&unit, &source_text, &import_uri, SymbolSource::Import);
+        if !changed {
+            return;
+        }
+        self.last_green = Some(new_green);
+
+        // Cancel any in-flight run.
+        self.cancel.store(true, Ordering::SeqCst);
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.cancel = cancel.clone();
+
+        let path: Option<PathBuf> = self.uri.to_file_path().ok();
+        let text = self.content.clone();
+        let tx = self.pipeline_tx.clone();
+        let uri = self.uri.clone();
+
+        super::spawn_pipeline(uri, text, path, tx, cancel);
     }
 }
 

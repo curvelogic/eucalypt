@@ -29,6 +29,10 @@ pub enum Locator {
     Cli(String),
     /// Literal for testing purposes
     Literal(String),
+    /// In-memory buffer with a filesystem path for source map
+    /// registration.  Used by the LSP to feed document content from
+    /// the editor buffer without requiring a save to disk.
+    Buffer { path: PathBuf, text: String },
 }
 
 /// Any filename can be represented as a locator
@@ -72,6 +76,7 @@ impl Display for Locator {
             Locator::StdIn => write!(f, "-"),
             Locator::Cli(text) => write!(f, "'{text}'"),
             Locator::Literal(text) => write!(f, "'''{text}'''"),
+            Locator::Buffer { path, .. } => write!(f, "buffer:{}", path.display()),
         }
     }
 }
@@ -83,6 +88,7 @@ impl Into<OsString> for Locator {
         match self {
             Locator::Fs(path) => path.into(),
             Locator::Cli(text) => format!("cli:'{text}'").into(),
+            Locator::Buffer { path, .. } => path.into(),
             _ => todo!(),
         }
     }
@@ -130,6 +136,10 @@ impl Locator {
             Locator::StdIn => Some(String::from("json")),
             Locator::Resource(_) => Some(String::from("eu")),
             Locator::Pseudo(_) => Some(String::from("core")),
+            Locator::Buffer { path, .. } => path
+                .extension()
+                .and_then(|s| s.to_str())
+                .and_then(Self::ext_to_format),
             _ => Some(String::from("eu")),
         }
     }

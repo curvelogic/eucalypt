@@ -275,18 +275,26 @@ impl SourceLoader {
     /// Find the directory containing the source file identified by `locator`,
     /// searching the lib_path. Returns `None` for non-filesystem locators.
     fn find_source_dir(&self, locator: &Locator) -> Option<PathBuf> {
-        if let Locator::Fs(path) = locator {
-            // Search lib_path entries
-            for libdir in &self.lib_path {
-                let candidate = libdir.join(path);
-                if candidate.exists() {
-                    return candidate.parent().map(|p| p.to_path_buf());
-                }
+        let path = match locator {
+            Locator::Fs(path) => path,
+            Locator::Buffer { path, .. } => path,
+            _ => return None,
+        };
+        // Search lib_path entries
+        for libdir in &self.lib_path {
+            let candidate = libdir.join(path);
+            if candidate.exists() {
+                return candidate.parent().map(|p| p.to_path_buf());
             }
-            // Try the path directly (absolute or CWD-relative)
-            if path.exists() {
-                return path.parent().map(|p| p.to_path_buf());
-            }
+        }
+        // Try the path directly (absolute or CWD-relative)
+        if path.exists() {
+            return path.parent().map(|p| p.to_path_buf());
+        }
+        // For Buffer locators, the path may not exist on disk but
+        // we still know its directory.
+        if matches!(locator, Locator::Buffer { .. }) {
+            return path.parent().map(|p| p.to_path_buf());
         }
         None
     }
@@ -344,6 +352,7 @@ impl SourceLoader {
                     Locator::Fs(path) => self.read_fs_input(path)?,
                     Locator::Cli(text) => text.to_string(),
                     Locator::Literal(text) => text.to_string(),
+                    Locator::Buffer { text, .. } => text.to_string(),
                     Locator::Resource(name) => self
                         .resources
                         .get(name)
@@ -544,6 +553,19 @@ impl SourceLoader {
     /// Retrieve the merged, complete, core expression
     pub fn core(&self) -> &TranslationUnit {
         &self.core
+    }
+
+    /// Return the source text for a file by its locator.
+    pub fn source_text(&self, locator: &Locator) -> Option<&str> {
+        self.locators
+            .get(locator)
+            .and_then(|id| self.files.get(*id).ok())
+            .map(|f| f.source().as_str())
+    }
+
+    /// Return all loaded locators (including imports).
+    pub fn loaded_locators(&self) -> Vec<&Locator> {
+        self.locators.keys().collect()
     }
 
     /// Declare source manipulation complete and take ownership of
