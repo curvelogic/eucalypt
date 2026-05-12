@@ -1784,3 +1784,24 @@ pub fn test_typecheck_021_row_var_block_app_preserves_field() {
 pub fn test_typecheck_022_row_var_block_app_absent_field_warns() {
     run_typecheck_test("022_row_var_block_app_absent_field_warns.eu");
 }
+
+// ── Monad namespace field type tests ─────────────────────────────────────────
+//
+// Verify that the explicit record type annotations on monad namespaces do not
+// produce spurious warnings for well-typed direct field access calls.
+//
+// DEFERRED: type-mismatch warnings for direct-call monad field access
+//   e.g. `for.bind(42, identity)` should warn "expected [a], found number".
+//   The checker currently does not synthesise types through direct field access
+//   on namespace bindings defined with function-definition syntax (f(x): ...).
+//   Colon-block syntax (tests 010–014) is the supported path today.
+
+#[test]
+pub fn test_typecheck_023_for_map_no_warning() {
+    run_typecheck_test("023_for_map_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_024_for_bind_no_warning() {
+    run_typecheck_test("024_for_bind_no_warning.eu");
+}

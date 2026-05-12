@@ -1,0 +1,4 @@
+# Verify for.map with correct types produces no spurious warnings.
+# (for.map is annotated (a → b) → [a] → [b])
+for.map(negate, [1,2,3])
+
