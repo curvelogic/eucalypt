@@ -898,8 +898,39 @@ fn synthesise_list_type(types: Vec<Type>) -> Type {
     Type::List(Box::new(elem_type))
 }
 
-/// Extract a string literal value from a core expression.
+/// Extract a string value from a core expression.
+///
+/// Handles two forms:
+/// 1. `Literal(Str(s))` — a plain string literal.
+/// 2. `App(JOIN, [List([str…]), sep])` — the desugared form of a eucalypt
+///    string with `{{…}}` escapes (e.g. `"{{x: number}} -> number"`).
+///    When every list element and the separator are string literals, the join
+///    is evaluated at compile time and the result is returned.
 fn extract_string_literal(expr: &RcExpr) -> Option<String> {
+    // Plain string literal — fast path.
+    if let Expr::Literal(_, Primitive::Str(s)) = &*expr.inner {
+        return Some(s.clone());
+    }
+
+    // JOIN([chunk, …], sep) — produced by the desugarer for interpolated
+    // strings.  Evaluate it statically when all chunks are string literals.
+    if let Expr::App(_, func, args) = &*expr.inner {
+        if let Expr::Intrinsic(_, name) = &*func.inner {
+            if name == "JOIN" && args.len() == 2 {
+                let sep = extract_plain_str(&args[1])?;
+                if let Expr::List(_, items) = &*args[0].inner {
+                    let parts: Option<Vec<String>> = items.iter().map(extract_plain_str).collect();
+                    return parts.map(|ps| ps.join(&sep));
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Extract a plain string literal (no interpolation) from a core expression.
+fn extract_plain_str(expr: &RcExpr) -> Option<String> {
     if let Expr::Literal(_, Primitive::Str(s)) = &*expr.inner {
         Some(s.clone())
     } else {

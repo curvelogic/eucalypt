@@ -161,6 +161,49 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
                 unify(&v1, &v2, subst)?;
             }
 
+            // Missing-field check: if one side requires a field the other side's
+            // known fields don't include, fail unless the other side has a named
+            // row variable that can absorb the difference.
+            //
+            // We intentionally do NOT exempt anonymously-open records (`{..}`)
+            // from this check: even though an open record *might* have the field
+            // at runtime, the synthesised type only lists what is statically
+            // known, and we warn when a required field is absent from that set.
+            // This is the gradual-typing decision: prefer actionable warnings over
+            // silently allowing unverifiable constraints.
+            let f1_only: Vec<&String> = f1.keys().filter(|k| !f2.contains_key(*k)).collect();
+            if !f1_only.is_empty() && row2.is_none() {
+                // f2 has no row var and is missing fields that f1 requires — fail.
+                return Err(UnifyError::Mismatch(
+                    Type::Record {
+                        fields: f1.clone(),
+                        open: open1,
+                        row: row1.clone(),
+                    },
+                    Type::Record {
+                        fields: f2.clone(),
+                        open: open2,
+                        row: row2.clone(),
+                    },
+                ));
+            }
+            let f2_only: Vec<&String> = f2.keys().filter(|k| !f1.contains_key(*k)).collect();
+            if !f2_only.is_empty() && !open1 && row1.is_none() {
+                // f1 is closed and has no row var — it cannot absorb f2's extra fields.
+                return Err(UnifyError::Mismatch(
+                    Type::Record {
+                        fields: f1.clone(),
+                        open: open1,
+                        row: row1.clone(),
+                    },
+                    Type::Record {
+                        fields: f2.clone(),
+                        open: open2,
+                        row: row2.clone(),
+                    },
+                ));
+            }
+
             // Greedy row variable absorption:
             //   If lhs has a row var, bind it to a record of the rhs's extra fields.
             //   If rhs has a row var, bind it to a record of the lhs's extra fields.
@@ -267,12 +310,23 @@ pub fn apply_subst(ty: &Type, subst: &Substitution) -> Type {
                                 // Extra fields do not override existing fields.
                                 merged.entry(k).or_insert(v);
                             }
+                            // Openness after expanding the row var is determined
+                            // solely by the bound value: the original `open: true`
+                            // was because of the row var itself, which is now gone.
                             Type::Record {
                                 fields: merged,
-                                open: *open || extra_open,
+                                open: extra_open,
                                 row: extra_row,
                             }
                         }
+                        // Row bound to a type variable — this is a rename (e.g.
+                        // from a freshen pass: r → _t0).  Preserve the row as a
+                        // named row variable with the new name.
+                        Type::Var(new_id) => Type::Record {
+                            fields: new_fields,
+                            open: *open,
+                            row: Some(new_id),
+                        },
                         // Row bound to any — make open with no named row.
                         Type::Any => Type::Record {
                             fields: new_fields,
@@ -632,5 +686,63 @@ mod tests {
         let ty = Type::Function(Box::new(var("b")), Box::new(var("a")));
         let scheme = infer_scheme(ty);
         assert_eq!(scheme.vars, vec![vid("b"), vid("a")]);
+    }
+
+    // ── Row variable greedy absorption ───────────────────────────────────────
+
+    fn rec(fields: &[(&str, Type)], open: bool, row: Option<&str>) -> Type {
+        Type::Record {
+            fields: fields
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+            open,
+            row: row.map(|r| TypeVarId(r.to_string())),
+        }
+    }
+
+    #[test]
+    fn row_var_absorbs_extra_fields() {
+        // {x: number, ..r} unified with {x: number, y: string}
+        // should bind r → {y: string}
+        let lhs = rec(&[("x", Type::Number)], true, Some("r"));
+        let rhs = rec(&[("x", Type::Number), ("y", Type::String)], false, None);
+        let mut s = Substitution::new();
+        assert!(unify(&lhs, &rhs, &mut s).is_ok());
+        // r is bound to a record containing only {y: string}
+        let r_bound = s.get(&vid("r")).expect("r should be bound");
+        assert_eq!(r_bound, &rec(&[("y", Type::String)], false, None));
+    }
+
+    #[test]
+    fn row_var_absorbs_empty_when_no_extra_fields() {
+        // {x: number, ..r} unified with {x: number} (closed)
+        // should bind r → {} (empty, closed)
+        let lhs = rec(&[("x", Type::Number)], true, Some("r"));
+        let rhs = rec(&[("x", Type::Number)], false, None);
+        let mut s = Substitution::new();
+        assert!(unify(&lhs, &rhs, &mut s).is_ok());
+        let r_bound = s.get(&vid("r")).expect("r should be bound");
+        assert_eq!(r_bound, &rec(&[], false, None));
+    }
+
+    #[test]
+    fn apply_subst_expands_row_var() {
+        // Given r → {y: string}, {x: number, ..r} should expand to
+        // {x: number, y: string}
+        let mut s = Substitution::new();
+        s.insert(vid("r"), rec(&[("y", Type::String)], false, None));
+        let ty = rec(&[("x", Type::Number)], true, Some("r"));
+        let result = apply_subst(&ty, &s);
+        let expected = rec(&[("x", Type::Number), ("y", Type::String)], false, None);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn occurs_includes_row_var() {
+        // occurs check should detect the row variable
+        let ty = rec(&[("x", Type::Number)], true, Some("r"));
+        assert!(occurs(&vid("r"), &ty));
+        assert!(!occurs(&vid("q"), &ty));
     }
 }

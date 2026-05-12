@@ -1738,3 +1738,18 @@ pub fn test_prelude_check_zero_warnings() {
 pub fn test_state_check_zero_warnings() {
     run_prelude_check("lib/state.eu");
 }
+
+#[test]
+pub fn test_typecheck_015_row_var_no_warning() {
+    run_typecheck_test("015_row_var_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_016_row_var_missing_field() {
+    run_typecheck_test("016_row_var_missing_field.eu");
+}
+
+#[test]
+pub fn test_typecheck_017_row_var_wrong_field_type() {
+    run_typecheck_test("017_row_var_wrong_field_type.eu");
+}

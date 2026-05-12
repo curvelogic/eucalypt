@@ -22,7 +22,8 @@
 //! paren_body ::= type
 //!              | type ','
 //!              | type ( ',' type )+ ','?
-//! row        ::= field ( ',' field )* ( ',' '..' )?
+//! row        ::= field ( ',' field )* ( ',' ('..' IDENT?)? )?
+//!              | '..' IDENT?
 //! field      ::= IDENT ':' type
 //! ```
 
@@ -1174,6 +1175,59 @@ mod tests {
     fn roundtrip_literal_symbol() {
         roundtrip(":active");
         roundtrip(":active | :inactive");
+    }
+
+    // ── Named row variables ─────────────────────────────────────────────────
+
+    #[test]
+    fn parse_record_named_row_with_field() {
+        // {x: number, ..r} — named row variable after a field
+        let mut fields = BTreeMap::new();
+        fields.insert("x".to_string(), Type::Number);
+        assert_eq!(
+            parse_type("{x: number, ..r}").unwrap(),
+            Type::Record {
+                fields,
+                open: true,
+                row: Some(TypeVarId("r".to_string())),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_record_only_row_var() {
+        // {..r} — just a named row variable, no explicit fields
+        assert_eq!(
+            parse_type("{..r}").unwrap(),
+            Type::Record {
+                fields: BTreeMap::new(),
+                open: true,
+                row: Some(TypeVarId("r".to_string())),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_record_named_row_multi_field() {
+        // {name: string, age: number, ..rest}
+        let mut fields = BTreeMap::new();
+        fields.insert("name".to_string(), Type::String);
+        fields.insert("age".to_string(), Type::Number);
+        assert_eq!(
+            parse_type("{name: string, age: number, ..rest}").unwrap(),
+            Type::Record {
+                fields,
+                open: true,
+                row: Some(TypeVarId("rest".to_string())),
+            }
+        );
+    }
+
+    #[test]
+    fn roundtrip_named_row_var() {
+        roundtrip("{x: number, ..r}");
+        roundtrip("{..r}");
+        roundtrip("{name: string, age: number, ..rest}");
     }
 
     // ── Spec examples ───────────────────────────────────────────────────────
