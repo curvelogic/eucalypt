@@ -170,20 +170,20 @@ struct ServerState {
     store: DocumentStore,
     prelude_table: SymbolTable,
 
-    /// Cached pipeline result from the last successful run.
-    cached: Option<CachedPipeline>,
+    /// Cached pipeline results per document URI.
+    cached: HashMap<Url, CachedPipeline>,
 
-    /// Green node from the last parse, for change detection.
-    last_green: Option<(Url, rowan::GreenNode)>,
+    /// Green node from the last parse per document, for change detection.
+    last_green: HashMap<Url, rowan::GreenNode>,
 
-    /// Channel for receiving pipeline results from the background thread.
+    /// Channel for receiving pipeline results from background threads.
     pipeline_rx: mpsc::Receiver<PipelineResult>,
 
     /// Sender cloned to each background thread for delivering results.
     pipeline_tx: mpsc::Sender<PipelineResult>,
 
-    /// Cancel flag for in-flight pipeline runs.
-    cancel: Arc<AtomicBool>,
+    /// Cancel flags per document URI for in-flight pipeline runs.
+    cancel: HashMap<Url, Arc<AtomicBool>>,
 }
 
 impl ServerState {
@@ -194,20 +194,17 @@ impl ServerState {
         Self {
             store: DocumentStore::new(),
             prelude_table: symbol_table::prelude_symbols(&prelude_uri),
-            cached: None,
-            last_green: None,
+            cached: HashMap::new(),
+            last_green: HashMap::new(),
             pipeline_rx,
             pipeline_tx,
-            cancel: Arc::new(AtomicBool::new(false)),
+            cancel: HashMap::new(),
         }
     }
 
     /// Look up the type env for a URI from the cached pipeline result.
     fn type_env_for(&self, uri: &Url) -> Option<&TypeEnv> {
-        self.cached
-            .as_ref()
-            .filter(|c| c.uri == *uri)
-            .map(|c| &c.type_env)
+        self.cached.get(uri).map(|c| &c.type_env)
     }
 
     /// Build a symbol table for a document from AST, prelude, and
@@ -230,7 +227,7 @@ impl ServerState {
         }
 
         // Add symbols from imported files resolved by the pipeline.
-        if let Some(cached) = self.cached.as_ref().filter(|c| c.uri == *uri) {
+        if let Some(cached) = self.cached.get(uri) {
             for import in &cached.imports {
                 let import_parse = crate::syntax::rowan::parse_unit(&import.source);
                 let import_unit = import_parse.tree();
@@ -278,7 +275,7 @@ impl ServerState {
                 );
                 connection.sender.send(Message::Notification(notif))?;
 
-                self.cached = Some(cached);
+                self.cached.insert(uri.clone(), cached);
             }
             Err(err) => {
                 eprintln!("pipeline error for {uri}: {err}");
@@ -532,9 +529,9 @@ fn on_document_changed(
     let new_green = parse.syntax_node().green().into_owned();
 
     // Check if the green node actually changed.
-    let changed = match &state.last_green {
-        Some((prev_uri, prev_green)) if *prev_uri == uri => *prev_green != new_green,
-        _ => true,
+    let changed = match state.last_green.get(&uri) {
+        Some(prev_green) => *prev_green != new_green,
+        None => true,
     };
 
     if !changed {
@@ -542,7 +539,7 @@ fn on_document_changed(
     }
 
     // Update cached green node.
-    state.last_green = Some((uri.clone(), new_green));
+    state.last_green.insert(uri.clone(), new_green);
 
     // Publish parse-error diagnostics immediately.
     let diags = diagnostics::diagnostics_from_parse_errors(text, parse.errors());
@@ -557,10 +554,12 @@ fn on_document_changed(
     );
     connection.sender.send(Message::Notification(notif))?;
 
-    // Cancel any in-flight pipeline run and spawn a new one.
-    state.cancel.store(true, Ordering::SeqCst);
+    // Cancel any in-flight pipeline run for this document.
+    if let Some(prev_cancel) = state.cancel.get(&uri) {
+        prev_cancel.store(true, Ordering::SeqCst);
+    }
     let cancel = Arc::new(AtomicBool::new(false));
-    state.cancel = cancel.clone();
+    state.cancel.insert(uri.clone(), cancel.clone());
 
     let path = uri.to_file_path().ok();
     let text_owned = text.to_string();
