@@ -567,6 +567,7 @@ not: __NOT
 and: __AND
 
 ` { doc: "`l ∧ r` - true if and only if `l` and `r`"
+    type: "bool → bool → bool"
     export: :suppress
     associates: :left
     precedence: :bool-prod }
@@ -584,6 +585,7 @@ or: __OR
 (l || r): __OR(l, r)
 
 ` { doc: "`l ∨ r` - true if and only if `l` or `r`"
+    type: "bool → bool → bool"
     export: :suppress
     associates: :left
     precedence: :bool-sum }
@@ -610,6 +612,7 @@ or: __OR
 (l != r): not(__EQ(l, r))
 
 ` { doc: "`l ≠ r` - `true` if and only if value `l` is not equal to value `r`."
+    type: "a → a → bool"
     export: :suppress
     associates: :left
     precedence: :eq }
@@ -690,6 +693,7 @@ or: __OR
 (l <= r): __LTE(l, r)
 
 ` { doc: "`l ≤ r` - `true` if `l` is less than or equal to `r`. Works on numbers, strings, symbols, and datetimes."
+    type: "number → number → bool | string → string → bool | symbol → symbol → bool | datetime → datetime → bool"
     export: :suppress
     associates: :left
     precedence: :cmp }
@@ -703,6 +707,7 @@ or: __OR
 (l >= r): __GTE(l, r)
 
 ` { doc: "`l ≥ r` - `true` if `l` is greater than or equal to `r`. Works on numbers, strings, symbols, and datetimes."
+    type: "number → number → bool | string → string → bool | symbol → symbol → bool | datetime → datetime → bool"
     export: :suppress
     associates: :left
     precedence: :cmp }
@@ -780,41 +785,48 @@ rem(a, b): __REM(a, b)
 # --- Bitwise operators ---
 
 ` { doc: "`l & r` - bitwise AND of integers `l` and `r`."
+    type: "number → number → number"
     export: :suppress
     associates: :left
     precedence: :bitwise }
 (l & r): __BITAND(l, r)
 
 ` { doc: "`l | r` - bitwise OR of integers `l` and `r`."
+    type: "number → number → number"
     export: :suppress
     associates: :left
     precedence: :bitwise }
 (l | r): __BITOR(l, r)
 
 ` { doc: "`l ⊕ r` - bitwise XOR of integers `l` and `r`."
+    type: "number → number → number"
     export: :suppress
     associates: :left
     precedence: :bitwise }
 (l ⊕ r): __BITXOR(l, r)
 
 ` { doc: "`⊝ n` - bitwise NOT (complement) of integer `n`."
+    type: "number → number"
     export: :suppress
     precedence: :bool-unary }
 (⊝ n): __BITNOT(n)
 
 ` { doc: "`n ≪ k` - left shift `n` by `k` bits."
+    type: "number → number → number"
     export: :suppress
     associates: :left
     precedence: :shift }
 (n ≪ k): __SHL(n, k)
 
 ` { doc: "`n ≫ k` - arithmetic right shift `n` by `k` bits."
+    type: "number → number → number"
     export: :suppress
     associates: :left
     precedence: :shift }
 (n ≫ k): __SHR(n, k)
 
 ` { export: :suppress
+    type: "{{..}}"
     doc: "Bitwise utility functions for integer bit manipulation." }
 bit: {
   ` { doc: "Bitwise AND of integers `l` and `r`."
@@ -917,6 +929,7 @@ min-of-or(d, l): l nil? then(d, min-of(l))
 ##
 ` { doc:"We don't support the usual string escapes so these make it
 a little more convenient to use interpolation instead.."
+    type: "{{..}}"
     export: :suppress }
 ch: {
   n: "
@@ -1097,18 +1110,21 @@ const(k, _): k
 compose(f, g, x): x g f
 
 ` { doc: "`(f ∘ g)` - return composition of `f` and `g` (`g` then `f`)"
+    type: "(b → c) → (a → b) → (a → c)"
     export: :suppress
     associates: :right
     precedence: 88 }
 (f ∘ g): compose(f, g)
 
 ` { doc: "`(f ; g)` - return composition of `f` then `g`"
+    type: "(a → b) → (b → c) → (a → c)"
     export: :suppress
     associates: :left
     precedence: 88 }
 (f ; g): compose(g, f)
 
 ` { doc: "(l @ r) - function application operator, for reversing catentation args and eliding parentheses"
+    type: "(a → b) → a → b"
     export: :suppress
     associates: :right
     precedence: :apply }
@@ -1177,6 +1193,7 @@ raw-meta: __RAWMETA
 merge-meta(m, e): e // (meta(e) m)
 
 ` { doc: "`e //<< m` - merge metadata block `m` into expression `e`'s metadata."
+    type: "a → {{..}} → a"
     export: :suppress
     associates: :left
     precedence: :meta }
@@ -1201,6 +1218,7 @@ assert(p?, s, v): if(v p?, v, panic(s))
     On success: return true.
     On failure (normal mode): panic with diagnostic.
     On failure (test mode): emit diagnostic to stderr, return false."
+    type: "a → a → bool"
     export: :suppress
     associates: :left
     precedence: :meta }
@@ -1211,6 +1229,7 @@ assert(p?, s, v): if(v p?, v, panic(s))
     On success: return true.
     On failure (normal mode): panic with diagnostic.
     On failure (test mode): emit diagnostic to stderr, return false."
+    type: "a → (a → bool) → bool"
     export: :suppress
     associates: :left
     precedence: :meta }
@@ -1221,6 +1240,7 @@ assert(p?, s, v): if(v p?, v, panic(s))
     On success: return true.
     On failure (normal mode): panic with diagnostic.
     On failure (test mode): emit diagnostic to stderr, return false."
+    type: "bool → bool"
     export: :suppress
     precedence: :meta }
 (e //!): __EXPECT(e, "true", e = true, true)
@@ -1230,6 +1250,7 @@ assert(p?, s, v): if(v p?, v, panic(s))
     On success: return e (pass-through).
     On failure (normal mode): panic with diagnostic.
     On failure (test mode): emit diagnostic to stderr, return false."
+    type: "a → a → a"
     export: :suppress
     associates: :left
     precedence: :meta }
@@ -1240,6 +1261,7 @@ assert(p?, s, v): if(v p?, v, panic(s))
     On success: return e (pass-through).
     On failure (normal mode): panic with diagnostic.
     On failure (test mode): emit diagnostic to stderr, return false."
+    type: "a → (a → bool) → a"
     export: :suppress
     associates: :left
     precedence: :meta }
@@ -1408,8 +1430,9 @@ cycle(l): if(l nil?, [], l ++ cycle(l))
 map(f, l): if(l nil?, l, cons(l head f, l tail map(f)))
 
 ` { doc: "`f <$> l` - map function `f` over list `l`"
-    export: :suppress 
-    associates: :left 
+    type: "(a → b) → [a] → [b]"
+    export: :suppress
+    associates: :left
     precedence: :map }
 (f <$> l): map(f, l)
 
@@ -1787,6 +1810,7 @@ deep-merge-at(ks, v, b): if(ks nil?,
 
 
 ` { export: :suppress
+    type: "{{..}}"
     doc: "Function for working with a human view of time." }
 cal: {
 
@@ -1825,6 +1849,7 @@ cal: {
 ##
 
 ` { export: :suppress
+    type: "{{..}}"
     doc: "Functions for working with sets of primitive values (numbers, strings, symbols)." }
 set: {
 
@@ -1900,6 +1925,7 @@ set: {
 ##
 
 ` { export: :suppress
+    type: "{{..}}"
     doc: "Functions for working with vecs — flat primitive sequences with O(1) indexed access." }
 vec: {
 
@@ -1954,6 +1980,7 @@ vec: {
 ##
 
 ` { export: :suppress
+    type: "{{..}}"
     doc: "Functions for working with n-dimensional arrays of numbers." }
 arr: {
 
@@ -2067,6 +2094,7 @@ is-array?(x): x arr.array?
 ##
 
 ` { export: :suppress
+    type: "{{..}}"
     doc: "Graph algorithms on integer-indexed nodes [0..n-1]. EXPERIMENTAL." }
 graph: {
   ` "`graph.union-find(n, edges)` - connected components via union-find.
