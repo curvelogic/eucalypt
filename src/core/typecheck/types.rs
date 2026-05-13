@@ -120,9 +120,19 @@ pub enum Type {
     /// `open = true` means at least the listed fields are present (open record
     /// — the `{k: T, ..}` form). `open = false` means exactly those fields
     /// (closed record — the `{k: T}` form).
+    ///
+    /// When `row` is `Some(id)`, the record is implicitly open and the named
+    /// row variable captures the unknown extra fields — the `{k: T, ..r}` form.
+    /// Substituting the row variable with a concrete record type merges those
+    /// fields in.
     Record {
         fields: BTreeMap<String, Type>,
         open: bool,
+        /// Named row variable — `..r` in the `{k: T, ..r}` form.
+        ///
+        /// Implies `open = true`.  When `None` the record is either closed
+        /// (`open = false`) or open with an anonymous tail (`open = true`).
+        row: Option<TypeVarId>,
     },
     /// Function type: `A -> B`.
     Function(Box<Type>, Box<Type>),
@@ -177,7 +187,7 @@ impl fmt::Display for Type {
             Type::IO(inner) => write!(f, "IO({inner})"),
             Type::Lens(a, b) => write!(f, "Lens({a}, {b})"),
             Type::Traversal(a, b) => write!(f, "Traversal({a}, {b})"),
-            Type::Record { fields, open } => {
+            Type::Record { fields, open, row } => {
                 write!(f, "{{")?;
                 let mut iter = fields.iter();
                 if let Some((k, v)) = iter.next() {
@@ -186,7 +196,13 @@ impl fmt::Display for Type {
                         write!(f, ", {k}: {v}")?;
                     }
                 }
-                if *open {
+                if let Some(r) = row {
+                    if fields.is_empty() {
+                        write!(f, "..{r}")?;
+                    } else {
+                        write!(f, ", ..{r}")?;
+                    }
+                } else if *open {
                     if fields.is_empty() {
                         write!(f, "..")?;
                     } else {
@@ -247,9 +263,15 @@ pub fn humanise(ty: &Type) -> Type {
                 collect_fresh_vars(a, seen);
                 collect_fresh_vars(b, seen);
             }
-            Type::Record { fields, .. } => {
+            Type::Record { fields, row, .. } => {
                 for v in fields.values() {
                     collect_fresh_vars(v, seen);
+                }
+                // Row variables with `_t` prefix are fresh vars to be renamed.
+                if let Some(r) = row {
+                    if r.0.starts_with("_t") && !seen.contains(&r.0) {
+                        seen.push(r.0.clone());
+                    }
                 }
             }
             Type::Union(variants) => {
@@ -282,12 +304,19 @@ pub fn humanise(ty: &Type) -> Type {
             Type::Traversal(a, b) => {
                 Type::Traversal(Box::new(replace(a, mapping)), Box::new(replace(b, mapping)))
             }
-            Type::Record { fields, open } => Type::Record {
+            Type::Record { fields, open, row } => Type::Record {
                 fields: fields
                     .iter()
                     .map(|(k, v)| (k.clone(), replace(v, mapping)))
                     .collect(),
                 open: *open,
+                row: row.as_ref().map(|r| {
+                    if let Some(replacement) = mapping.get(&r.0) {
+                        TypeVarId(replacement.clone())
+                    } else {
+                        r.clone()
+                    }
+                }),
             },
             Type::Union(variants) => {
                 Type::Union(variants.iter().map(|v| replace(v, mapping)).collect())
@@ -398,6 +427,7 @@ mod tests {
             Box::new(Type::Record {
                 fields: BTreeMap::new(),
                 open: true,
+                row: None,
             }),
             Box::new(Type::Any),
         );
@@ -412,6 +442,7 @@ mod tests {
         let t = Type::Record {
             fields,
             open: false,
+            row: None,
         };
         // BTreeMap is sorted alphabetically
         assert_eq!(t.to_string(), "{age: number, name: string}");
@@ -421,7 +452,11 @@ mod tests {
     fn display_open_record() {
         let mut fields = BTreeMap::new();
         fields.insert("name".to_string(), Type::String);
-        let t = Type::Record { fields, open: true };
+        let t = Type::Record {
+            fields,
+            open: true,
+            row: None,
+        };
         assert_eq!(t.to_string(), "{name: string, ..}");
     }
 

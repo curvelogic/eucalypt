@@ -135,16 +135,118 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
             unify(&b1, &b2, subst)
         }
 
-        // Structural: record types — unify the common fields; extra fields are
-        // allowed for open records.
-        (Type::Record { fields: f1, .. }, Type::Record { fields: f2, .. }) => {
-            let pairs: Vec<_> = f1
-                .iter()
-                .filter_map(|(k, v)| f2.get(k).map(|v2| (v.clone(), v2.clone())))
-                .collect();
-            for (v1, v2) in pairs {
+        // Structural: record types — unify common fields; handle row variables
+        // using greedy absorption for gradual semantics.
+        (
+            Type::Record {
+                fields: f1,
+                open: open1,
+                row: row1,
+            },
+            Type::Record {
+                fields: f2,
+                open: open2,
+                row: row2,
+            },
+        ) => {
+            let (f1, open1, row1) = (f1.clone(), *open1, row1.clone());
+            let (f2, open2, row2) = (f2.clone(), *open2, row2.clone());
+
+            // Unify common fields.
+            let common_keys: Vec<String> =
+                f1.keys().filter(|k| f2.contains_key(*k)).cloned().collect();
+            for k in &common_keys {
+                let v1 = apply_subst(f1.get(k).unwrap(), subst);
+                let v2 = apply_subst(f2.get(k).unwrap(), subst);
                 unify(&v1, &v2, subst)?;
             }
+
+            // Missing-field check: if one side requires a field the other side's
+            // known fields don't include, fail unless the other side has a named
+            // row variable that can absorb the difference.
+            //
+            // We intentionally do NOT exempt anonymously-open records (`{..}`)
+            // from this check: even though an open record *might* have the field
+            // at runtime, the synthesised type only lists what is statically
+            // known, and we warn when a required field is absent from that set.
+            // This is the gradual-typing decision: prefer actionable warnings over
+            // silently allowing unverifiable constraints.
+            let f1_only: Vec<&String> = f1.keys().filter(|k| !f2.contains_key(*k)).collect();
+            if !f1_only.is_empty() && row2.is_none() {
+                // f2 has no row var and is missing fields that f1 requires — fail.
+                return Err(UnifyError::Mismatch(
+                    Type::Record {
+                        fields: f1.clone(),
+                        open: open1,
+                        row: row1.clone(),
+                    },
+                    Type::Record {
+                        fields: f2.clone(),
+                        open: open2,
+                        row: row2.clone(),
+                    },
+                ));
+            }
+            let f2_only: Vec<&String> = f2.keys().filter(|k| !f1.contains_key(*k)).collect();
+            if !f2_only.is_empty() && !open1 && row1.is_none() {
+                // f1 is closed and has no row var — it cannot absorb f2's extra fields.
+                return Err(UnifyError::Mismatch(
+                    Type::Record {
+                        fields: f1.clone(),
+                        open: open1,
+                        row: row1.clone(),
+                    },
+                    Type::Record {
+                        fields: f2.clone(),
+                        open: open2,
+                        row: row2.clone(),
+                    },
+                ));
+            }
+
+            // Greedy row variable absorption:
+            //   If lhs has a row var, bind it to a record of the rhs's extra fields.
+            //   If rhs has a row var, bind it to a record of the lhs's extra fields.
+            //   Extra = fields present in one side but not the other.
+            if let Some(r1) = &row1 {
+                // Only absorb if r1 is not already bound.
+                let r1_resolved = apply_subst(&Type::Var(r1.clone()), subst);
+                if matches!(r1_resolved, Type::Var(_)) {
+                    // Collect fields in f2 that are not in f1.
+                    let extra: std::collections::BTreeMap<String, Type> = f2
+                        .iter()
+                        .filter(|(k, _)| !f1.contains_key(*k))
+                        .map(|(k, v)| (k.clone(), apply_subst(v, subst)))
+                        .collect();
+                    let extra_ty = Type::Record {
+                        fields: extra,
+                        open: open2,
+                        row: row2.clone(),
+                    };
+                    if !occurs(r1, &extra_ty) {
+                        subst.insert(r1.clone(), extra_ty);
+                    }
+                }
+            }
+            if let Some(r2) = &row2 {
+                let r2_resolved = apply_subst(&Type::Var(r2.clone()), subst);
+                if matches!(r2_resolved, Type::Var(_)) {
+                    let extra: std::collections::BTreeMap<String, Type> = f1
+                        .iter()
+                        .filter(|(k, _)| !f2.contains_key(*k))
+                        .map(|(k, v)| (k.clone(), apply_subst(v, subst)))
+                        .collect();
+                    let extra_ty = Type::Record {
+                        fields: extra,
+                        open: open1,
+                        row: row1.clone(),
+                    };
+                    if !occurs(r2, &extra_ty) {
+                        subst.insert(r2.clone(), extra_ty);
+                    }
+                }
+            }
+
             Ok(())
         }
 
@@ -185,13 +287,80 @@ pub fn apply_subst(ty: &Type, subst: &Substitution) -> Type {
             Box::new(apply_subst(a, subst)),
             Box::new(apply_subst(b, subst)),
         ),
-        Type::Record { fields, open } => Type::Record {
-            fields: fields
+        Type::Record { fields, open, row } => {
+            // Apply substitution to each field type.
+            let new_fields: std::collections::BTreeMap<String, Type> = fields
                 .iter()
                 .map(|(k, v)| (k.clone(), apply_subst(v, subst)))
-                .collect(),
-            open: *open,
-        },
+                .collect();
+
+            // If there is a row variable, look it up in the substitution.
+            if let Some(r) = row {
+                if let Some(bound) = subst.get(r).cloned() {
+                    let bound = apply_subst(&bound, subst);
+                    // Merge the bound record's fields into our fields.
+                    match bound {
+                        Type::Record {
+                            fields: extra_fields,
+                            open: extra_open,
+                            row: extra_row,
+                        } => {
+                            let mut merged = new_fields;
+                            for (k, v) in extra_fields {
+                                // Extra fields do not override existing fields.
+                                merged.entry(k).or_insert(v);
+                            }
+                            // Openness after expanding the row var is determined
+                            // solely by the bound value: the original `open: true`
+                            // was because of the row var itself, which is now gone.
+                            Type::Record {
+                                fields: merged,
+                                open: extra_open,
+                                row: extra_row,
+                            }
+                        }
+                        // Row bound to a type variable — this is a rename (e.g.
+                        // from a freshen pass: r → _t0).  Preserve the row as a
+                        // named row variable with the new name.
+                        Type::Var(new_id) => Type::Record {
+                            fields: new_fields,
+                            open: *open,
+                            row: Some(new_id),
+                        },
+                        // Row bound to any — make open with no named row.
+                        Type::Any => Type::Record {
+                            fields: new_fields,
+                            open: true,
+                            row: None,
+                        },
+                        // Other types — ignore row binding, keep open.
+                        _ => Type::Record {
+                            fields: new_fields,
+                            open: true,
+                            row: None,
+                        },
+                    }
+                } else {
+                    // Row variable not yet bound — apply subst to it too
+                    // (it may have been renamed by a freshen pass).
+                    let new_row = match apply_subst(&Type::Var(r.clone()), subst) {
+                        Type::Var(new_r) => Some(new_r),
+                        _ => None, // resolved to a non-var; drop the row name
+                    };
+                    Type::Record {
+                        fields: new_fields,
+                        open: *open,
+                        row: new_row,
+                    }
+                }
+            } else {
+                Type::Record {
+                    fields: new_fields,
+                    open: *open,
+                    row: None,
+                }
+            }
+        }
         Type::Union(variants) => {
             Type::Union(variants.iter().map(|v| apply_subst(v, subst)).collect())
         }
@@ -212,6 +381,10 @@ pub fn freshen(scheme: &TypeScheme, counter: &mut u32) -> Type {
         return scheme.body.clone();
     }
 
+    // For regular type variables, map Var(id) → Var(_tN).
+    // For row variables (which appear as row fields in Records), we also map
+    // them via fresh TypeVarId values stored in the same rename substitution
+    // — the apply_subst function handles row variable expansion correctly.
     let mut rename: Substitution = HashMap::new();
     for var in &scheme.vars {
         let fresh = TypeVarId(format!("_t{}", *counter));
@@ -257,9 +430,16 @@ fn collect_free_vars(ty: &Type, vars: &mut Vec<TypeVarId>, seen: &mut HashSet<Ty
                 collect_free_vars(e, vars, seen);
             }
         }
-        Type::Record { fields, .. } => {
+        Type::Record { fields, row, .. } => {
             for v in fields.values() {
                 collect_free_vars(v, vars, seen);
+            }
+            // Row variables are free variables too.
+            if let Some(r) = row {
+                if !seen.contains(r) {
+                    seen.insert(r.clone());
+                    vars.push(r.clone());
+                }
             }
         }
         Type::Union(variants) => {
@@ -281,7 +461,9 @@ fn occurs(id: &TypeVarId, ty: &Type) -> bool {
             occurs(id, a) || occurs(id, b)
         }
         Type::Tuple(elems) => elems.iter().any(|e| occurs(id, e)),
-        Type::Record { fields, .. } => fields.values().any(|v| occurs(id, v)),
+        Type::Record { fields, row, .. } => {
+            fields.values().any(|v| occurs(id, v)) || row.as_ref().is_some_and(|r| r == id)
+        }
         Type::Union(variants) => variants.iter().any(|v| occurs(id, v)),
         _ => false,
     }
@@ -504,5 +686,63 @@ mod tests {
         let ty = Type::Function(Box::new(var("b")), Box::new(var("a")));
         let scheme = infer_scheme(ty);
         assert_eq!(scheme.vars, vec![vid("b"), vid("a")]);
+    }
+
+    // ── Row variable greedy absorption ───────────────────────────────────────
+
+    fn rec(fields: &[(&str, Type)], open: bool, row: Option<&str>) -> Type {
+        Type::Record {
+            fields: fields
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+            open,
+            row: row.map(|r| TypeVarId(r.to_string())),
+        }
+    }
+
+    #[test]
+    fn row_var_absorbs_extra_fields() {
+        // {x: number, ..r} unified with {x: number, y: string}
+        // should bind r → {y: string}
+        let lhs = rec(&[("x", Type::Number)], true, Some("r"));
+        let rhs = rec(&[("x", Type::Number), ("y", Type::String)], false, None);
+        let mut s = Substitution::new();
+        assert!(unify(&lhs, &rhs, &mut s).is_ok());
+        // r is bound to a record containing only {y: string}
+        let r_bound = s.get(&vid("r")).expect("r should be bound");
+        assert_eq!(r_bound, &rec(&[("y", Type::String)], false, None));
+    }
+
+    #[test]
+    fn row_var_absorbs_empty_when_no_extra_fields() {
+        // {x: number, ..r} unified with {x: number} (closed)
+        // should bind r → {} (empty, closed)
+        let lhs = rec(&[("x", Type::Number)], true, Some("r"));
+        let rhs = rec(&[("x", Type::Number)], false, None);
+        let mut s = Substitution::new();
+        assert!(unify(&lhs, &rhs, &mut s).is_ok());
+        let r_bound = s.get(&vid("r")).expect("r should be bound");
+        assert_eq!(r_bound, &rec(&[], false, None));
+    }
+
+    #[test]
+    fn apply_subst_expands_row_var() {
+        // Given r → {y: string}, {x: number, ..r} should expand to
+        // {x: number, y: string}
+        let mut s = Substitution::new();
+        s.insert(vid("r"), rec(&[("y", Type::String)], false, None));
+        let ty = rec(&[("x", Type::Number)], true, Some("r"));
+        let result = apply_subst(&ty, &s);
+        let expected = rec(&[("x", Type::Number), ("y", Type::String)], false, None);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn occurs_includes_row_var() {
+        // occurs check should detect the row variable
+        let ty = rec(&[("x", Type::Number)], true, Some("r"));
+        assert!(occurs(&vid("r"), &ty));
+        assert!(!occurs(&vid("q"), &ty));
     }
 }
