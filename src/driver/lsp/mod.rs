@@ -106,7 +106,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// Build the server capabilities advertised during initialisation.
 fn server_capabilities() -> ServerCapabilities {
     ServerCapabilities {
-        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+        text_document_sync: Some(TextDocumentSyncCapability::Kind(
+            TextDocumentSyncKind::INCREMENTAL,
+        )),
         document_symbol_provider: Some(lsp_types::OneOf::Left(true)),
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
         selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
@@ -166,6 +168,74 @@ impl DocumentStore {
 
     fn get(&self, uri: &Url) -> Option<&str> {
         self.documents.get(uri).map(|s| s.as_str())
+    }
+}
+
+/// Convert an LSP `Position` (line, UTF-16 character offset) to a byte offset
+/// within `text`.  Clamps to the end of file if the position is out of range.
+fn lsp_position_to_byte_offset(text: &str, pos: lsp_types::Position) -> usize {
+    let mut current_line = 0u32;
+    let mut line_start = 0usize;
+
+    // Walk characters to find the start of the target line.
+    for (byte_idx, ch) in text.char_indices() {
+        if current_line == pos.line {
+            break;
+        }
+        if ch == '\n' {
+            current_line += 1;
+            line_start = byte_idx + 1; // '\n' is always 1 byte
+        }
+    }
+
+    // If the requested line is beyond the end of file, clamp.
+    if current_line < pos.line {
+        return text.len();
+    }
+
+    // Walk UTF-16 code units within the target line.
+    let line_text = &text[line_start..];
+    let mut utf16_count = 0u32;
+    let mut byte_offset = 0usize;
+
+    for ch in line_text.chars() {
+        if utf16_count >= pos.character {
+            break;
+        }
+        utf16_count += ch.len_utf16() as u32;
+        byte_offset += ch.len_utf8();
+    }
+
+    (line_start + byte_offset).min(text.len())
+}
+
+/// Apply a single LSP `TextDocumentContentChangeEvent` to `text`, returning
+/// the updated document string.
+///
+/// If the change has no `range` it is a full-document replacement (the LSP
+/// server may send this even in incremental mode as a fallback).  Otherwise
+/// only the specified range is replaced.
+pub fn apply_content_change(
+    text: &str,
+    change: &lsp_types::TextDocumentContentChangeEvent,
+) -> String {
+    if let Some(range) = change.range {
+        let start = lsp_position_to_byte_offset(text, range.start);
+        let end = lsp_position_to_byte_offset(text, range.end);
+        // Guard against a malformed range where end < start.
+        let (start, end) = if end < start {
+            (end, start)
+        } else {
+            (start, end)
+        };
+        let mut result = String::with_capacity(text.len() - (end - start) + change.text.len());
+        result.push_str(&text[..start]);
+        result.push_str(&change.text);
+        result.push_str(&text[end..]);
+        result
+    } else {
+        // Full-document replacement.
+        change.text.clone()
     }
 }
 
@@ -527,20 +597,25 @@ fn on_document_open(
     Ok(())
 }
 
-/// Handle textDocument/didChange — update stored text, re-parse, and publish diagnostics.
+/// Handle textDocument/didChange — apply incremental edits, re-parse, and
+/// publish diagnostics.
 ///
-/// We use full document sync, so the first content change contains the
-/// entire document.
+/// We use incremental document sync, so each change event may contain a
+/// `range` that describes only the modified region.  Multiple changes are
+/// applied in order.  A change without a `range` is treated as a full
+/// document replacement (the LSP spec permits this as a fallback).
 fn on_document_change(
     connection: &Connection,
     state: &mut ServerState,
     params: lsp_types::DidChangeTextDocumentParams,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let uri = params.text_document.uri;
-    if let Some(change) = params.content_changes.into_iter().next() {
-        state.store.change(uri.clone(), change.text.clone());
-        on_document_changed(connection, state, uri, &change.text)?;
+    let mut text = state.store.get(&uri).unwrap_or_default().to_string();
+    for change in &params.content_changes {
+        text = apply_content_change(&text, change);
     }
+    state.store.change(uri.clone(), text.clone());
+    on_document_changed(connection, state, uri, &text)?;
     Ok(())
 }
 
@@ -977,7 +1052,7 @@ mod tests {
         assert!(caps.text_document_sync.is_some());
         match caps.text_document_sync.unwrap() {
             TextDocumentSyncCapability::Kind(kind) => {
-                assert_eq!(kind, TextDocumentSyncKind::FULL);
+                assert_eq!(kind, TextDocumentSyncKind::INCREMENTAL);
             }
             _ => panic!("expected TextDocumentSyncKind"),
         }

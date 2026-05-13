@@ -9,13 +9,16 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 
-use lsp_types::{CompletionItem, CompletionResponse, Hover, InlayHint, Position, Range, Url};
+use lsp_types::{
+    CompletionItem, CompletionResponse, Hover, InlayHint, Position, Range,
+    TextDocumentContentChangeEvent, Url,
+};
 
 use super::completion;
 use super::hover;
 use super::inlay_hints;
 use super::symbol_table::{self, SymbolSource, SymbolTable};
-use super::{CachedPipeline, PipelineResult, TypeEnv};
+use super::{apply_content_change, CachedPipeline, PipelineResult, TypeEnv};
 use crate::syntax::rowan::parse_unit;
 
 /// An in-process LSP editing session for testing.
@@ -68,6 +71,29 @@ impl LspTestSession {
     /// trigger a background pipeline run if the green node changed.
     pub fn change(&mut self, content: &str) {
         self.content = content.to_string();
+        self.maybe_spawn_pipeline();
+    }
+
+    /// Apply an incremental edit to the document using an LSP-style range
+    /// (line, UTF-16 character offsets) and replacement text, then trigger
+    /// a pipeline run if the green node changed.
+    pub fn apply_edit(
+        &mut self,
+        start_line: u32,
+        start_char: u32,
+        end_line: u32,
+        end_char: u32,
+        new_text: &str,
+    ) {
+        let change = TextDocumentContentChangeEvent {
+            range: Some(Range {
+                start: Position::new(start_line, start_char),
+                end: Position::new(end_line, end_char),
+            }),
+            range_length: None,
+            text: new_text.to_string(),
+        };
+        self.content = apply_content_change(&self.content, &change);
         self.maybe_spawn_pipeline();
     }
 
@@ -182,6 +208,11 @@ impl LspTestSession {
             let _ = self.hover(0, col);
         }
         let _ = self.inlay_hints();
+    }
+
+    /// Return the current document content.
+    pub fn content(&self) -> &str {
+        &self.content
     }
 
     /// Check if a cached pipeline result is available.
