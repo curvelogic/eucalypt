@@ -1753,3 +1753,34 @@ pub fn test_typecheck_016_row_var_missing_field() {
 pub fn test_typecheck_017_row_var_wrong_field_type() {
     run_typecheck_test("017_row_var_wrong_field_type.eu");
 }
+
+#[test]
+pub fn test_typecheck_018_block_app_merge_no_warn() {
+    run_typecheck_test("018_block_app_merge_no_warn.eu");
+}
+
+#[test]
+pub fn test_typecheck_019_block_app_rhs_overrides() {
+    run_typecheck_test("019_block_app_rhs_overrides.eu");
+}
+
+#[test]
+pub fn test_typecheck_020_block_app_gradual_boundary() {
+    run_typecheck_test("020_block_app_gradual_boundary.eu");
+}
+
+#[test]
+pub fn test_typecheck_021_row_var_block_app_preserves_field() {
+    run_typecheck_test("021_row_var_block_app_preserves_field.eu");
+}
+
+// DEFERRED: `synthesise_app` does not yet propagate row variable bindings
+// from function arguments into the return type.  When `extend({x:1})` is
+// checked, unification binds `r → {}` but that substitution is not applied
+// to the declared return type, so the result is treated as open and `result.w`
+// produces no warning.  This test documents the desired end state.
+#[test]
+#[ignore = "row var return-type substitution not yet implemented in synthesise_app"]
+pub fn test_typecheck_022_row_var_block_app_absent_field_warns() {
+    run_typecheck_test("022_row_var_block_app_absent_field_warns.eu");
+}

@@ -1,0 +1,13 @@
+# Row variable propagation through block application.
+# extend is annotated {x: number, ..r} -> {x: number, y: string, ..r}.
+# Called with {x: 1, z: 42}, r is bound to {z: number}.
+# Result type is closed {x: number, y: string, z: number}.
+# inc(result.z) uses z as a number — no warning expected.
+` { type: "!{{x: number, ..r}} -> {{x: number, y: string, ..r}}" }
+extend(base): base { y: "hello" }
+
+` { type: "number -> number" }
+inc(n): n + 1
+
+result: extend({ x: 1, z: 42 })
+check: inc(result.z)

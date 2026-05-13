@@ -697,6 +697,54 @@ impl Checker {
             // Union-typed function — try each overload variant.
             Type::Union(variants) => self.apply_union(smid, variants, arg, subst, func_name),
 
+            // Block application (catenation): record type applied to an argument.
+            //
+            // In eucalypt, `base override` (catenation) is cooked to `override(base)`:
+            // the new/override block is in function position (LHS), and the base
+            // block is the argument (RHS).  The function-position block wins on field
+            // conflicts — its declared field types take precedence over the base.
+            //
+            // Merge: start with RHS (base) fields, then overlay LHS (override) fields.
+            // LHS wins where both declare the same field.
+            //
+            // If the RHS type is `any` (unannotated base), the result is an open
+            // record with all LHS fields — callers still benefit from the override's
+            // known field types.
+            Type::Record {
+                fields: lhs_fields,
+                open: lhs_open,
+                row: lhs_row,
+            } => {
+                let rhs_type = self.synthesise(arg);
+                match rhs_type {
+                    Type::Record {
+                        fields: rhs_fields,
+                        open: rhs_open,
+                        row: rhs_row,
+                    } => {
+                        // Merge: base (RHS) as starting point, overlay LHS (function).
+                        // LHS fields override RHS on conflicts.
+                        let mut merged = rhs_fields;
+                        for (k, v) in lhs_fields {
+                            merged.insert(k, v);
+                        }
+                        Type::Record {
+                            fields: merged,
+                            open: lhs_open || rhs_open,
+                            row: lhs_row.or(rhs_row),
+                        }
+                    }
+                    // Gradual boundary: base unknown, preserve LHS (override) fields as open.
+                    Type::Any => Type::Record {
+                        fields: lhs_fields,
+                        open: true,
+                        row: lhs_row,
+                    },
+                    // RHS is not a record: can't reason about the merge result.
+                    _ => Type::Any,
+                }
+            }
+
             // Unknown function type — recurse into arg to collect sub-warnings.
             Type::Any => {
                 self.synthesise(arg);
