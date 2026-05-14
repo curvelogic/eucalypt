@@ -655,6 +655,18 @@ fn on_document_changed(
     let new_green = parse.syntax_node().green().into_owned();
 
     // Check if the green node actually changed.
+    //
+    // Rowan's GreenNode equality compares both tree structure AND token text,
+    // so changing a string literal (e.g. `"hello"` → `"world"`) is detected
+    // as a change and triggers a pipeline re-run.  This is intentional:
+    //
+    // - Import paths are string literals (`{ import: "foo.eu" }`), and
+    //   changing the path must re-run the pipeline to load the new file.
+    // - Eucalypt string values participate in type-checking and can affect
+    //   pipeline output semantically.
+    //
+    // A structural-only comparison (ignoring token text) would incorrectly
+    // suppress re-runs for such changes.  The current approach is correct.
     let changed = match state.last_green.get(&uri) {
         Some(prev_green) => *prev_green != new_green,
         None => true,
