@@ -21,6 +21,12 @@ pub fn goto_definition(
     table: &SymbolTable,
 ) -> Option<GotoDefinitionResponse> {
     let offset = position_to_offset(source, position);
+
+    // Check for bracket delimiter go-to-definition first.
+    if let Some(result) = bracket_goto_definition(root, offset, table) {
+        return Some(result);
+    }
+
     let token = find_identifier_at(root, offset)?;
     let name = identifier_text(&token);
 
@@ -42,6 +48,60 @@ pub fn goto_definition(
         uri: sym.uri.clone(),
         range: sym.selection_range,
     }))
+}
+
+/// Go-to-definition for bracket pair delimiters.
+///
+/// When the cursor is on a `BRACKET_OPEN` or `BRACKET_CLOSE` token, jump to
+/// the bracket pair definition (`⟦{}⟧: ...` or `⟦ x ⟧: ...`).
+fn bracket_goto_definition(
+    root: &SyntaxNode,
+    offset: TextSize,
+    table: &SymbolTable,
+) -> Option<GotoDefinitionResponse> {
+    // Try right-biased so the cursor at the very start of a bracket character
+    // (token boundary) finds the bracket token rather than the preceding space.
+    let candidates = root.token_at_offset(offset);
+    let token = candidates
+        .clone()
+        .right_biased()
+        .or_else(|| candidates.left_biased())?;
+
+    if !matches!(
+        token.kind(),
+        SyntaxKind::BRACKET_OPEN | SyntaxKind::BRACKET_CLOSE
+    ) {
+        return None;
+    }
+
+    let pair_name = bracket_pair_name_for_token(&token)?;
+    let symbols = table.lookup(&pair_name);
+    let sym = symbols.first()?;
+
+    Some(GotoDefinitionResponse::Scalar(Location {
+        uri: sym.uri.clone(),
+        range: sym.selection_range,
+    }))
+}
+
+/// Derive the bracket pair name (e.g. `"⟦⟧"`) from a `BRACKET_OPEN` or
+/// `BRACKET_CLOSE` token by inspecting its parent node.
+pub(super) fn bracket_pair_name_for_token(token: &SyntaxToken) -> Option<String> {
+    let parent = token.parent()?;
+    let open_tok = parent
+        .children_with_tokens()
+        .filter_map(|it| it.into_token())
+        .find(|t| t.kind() == SyntaxKind::BRACKET_OPEN)?;
+    let close_tok = parent
+        .children_with_tokens()
+        .filter_map(|it| it.into_token())
+        .find(|t| t.kind() == SyntaxKind::BRACKET_CLOSE)?;
+    let open_char = open_tok.text().chars().next()?;
+    let close_char = close_tok.text().chars().next()?;
+    let mut s = String::with_capacity(open_char.len_utf8() + close_char.len_utf8());
+    s.push(open_char);
+    s.push(close_char);
+    Some(s)
 }
 
 /// Find the identifier token at or near the given offset.

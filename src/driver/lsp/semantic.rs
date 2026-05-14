@@ -169,6 +169,20 @@ fn classify_token(
                 None
             }
         }
+        SyntaxKind::BRACKET_OPEN | SyntaxKind::BRACKET_CLOSE => {
+            // Bracket pair delimiters (e.g. ⟦ ⟧, ‹ ›) — use OPERATOR type.
+            // Apply DECLARATION modifier when used in a declaration head.
+            let in_decl_head = token
+                .parent()
+                .and_then(|p| p.parent())
+                .is_some_and(|p| is_in_ancestor(p, SyntaxKind::DECL_HEAD));
+            let modifiers = if in_decl_head {
+                token_modifier::DECLARATION
+            } else {
+                0
+            };
+            Some((token_type::OPERATOR, modifiers))
+        }
         _ => None,
     }
 }

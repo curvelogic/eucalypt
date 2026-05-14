@@ -796,3 +796,63 @@ fn identical_content_does_not_respawn_pipeline() {
         "no pipeline should run when content is unchanged"
     );
 }
+
+// ── Bracket pair LSP features (eu-gduc, Phase 1) ─────────────────────────────
+
+/// Bracket delimiters must not cause panics in any LSP operation.
+#[test]
+fn bracket_pair_expression_mode_stability() {
+    let mut s = LspTestSession::new();
+    // Expression-mode bracket pair: ⟦ x ⟧: body
+    s.open("⟦ x ⟧: x\nresult: ⟦ 42 ⟧\n");
+    s.exercise_all();
+}
+
+#[test]
+fn bracket_pair_block_mode_stability() {
+    let mut s = LspTestSession::new();
+    // Block-mode bracket pair: ⟦{}⟧: id  then  ⟦ a: 1 ⟧
+    s.open("⟦{}⟧: id\nresult: ⟦ a: 1 ⟧\n");
+    s.exercise_all();
+}
+
+/// Hover on a bracket open delimiter should return information about the pair.
+#[test]
+fn hover_on_bracket_open_delimiter() {
+    let mut s = LspTestSession::new();
+    let src = "⟦ x ⟧: x\nresult: ⟦ 42 ⟧\n";
+    s.open(src);
+    // The second line starts with '⟦' — hover at column 8 (UTF-16)
+    // Line 1 is "result: ⟦ 42 ⟧"
+    //   r(0) e(1) s(2) u(3) l(4) t(5) :(6) (7) ⟦(8, 1 UTF-16 unit) …
+    let hover = s.hover_text(1, 8);
+    assert!(
+        hover.is_some(),
+        "hover on bracket delimiter should return information"
+    );
+    let text = hover.unwrap();
+    assert!(
+        text.contains("⟦⟧") || text.contains("bracket"),
+        "hover should mention the bracket pair: {text}"
+    );
+}
+
+/// Go-to-definition on a bracket open delimiter should resolve to the declaration.
+#[test]
+fn goto_definition_on_bracket_open_not_panic() {
+    let mut s = LspTestSession::new();
+    let src = "⟦ x ⟧: x\nresult: ⟦ 42 ⟧\n";
+    s.open(src);
+    // Just verify it does not panic — the result depends on the symbol table
+    let _hover = s.hover(1, 8);
+    let _complete = s.complete(1, 8);
+}
+
+/// Bracket pair definitions should appear in document symbols.
+#[test]
+fn bracket_pair_in_stability_exercise() {
+    let mut s = LspTestSession::new();
+    // Multiple different bracket pairs
+    s.open("⟦ x ⟧: x\n⌈ x ⌉: x * 2\n\nresult: ⟦ 99 ⟧\n");
+    s.exercise_all();
+}

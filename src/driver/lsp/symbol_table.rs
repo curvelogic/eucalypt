@@ -26,6 +26,15 @@ pub enum DeclKind {
     Operator { fixity: String },
 }
 
+/// The mode of a bracket pair definition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BracketMode {
+    /// Expression mode: `⟦ expr ⟧`
+    Expression,
+    /// Block mode: `⟦ x: 1, y: 2 ⟧` (declared with `⟦{}⟧: ...`)
+    Block,
+}
+
 /// The source of a symbol — determines resolution priority.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SymbolSource {
@@ -67,6 +76,10 @@ pub struct SymbolInfo {
     pub parameters: Vec<String>,
     /// Child symbols (for namespace blocks)
     pub children: Vec<SymbolInfo>,
+    /// If this is a bracket pair definition, its open/close chars (e.g. `"⟦⟧"`).
+    pub bracket_pair_name: Option<String>,
+    /// Mode of the bracket pair definition (expression or block).
+    pub bracket_mode: Option<BracketMode>,
 }
 
 /// A symbol table collecting declarations from multiple sources.
@@ -195,8 +208,14 @@ fn symbol_from_declaration(
     let head = decl.head()?;
     let kind = head.classify_declaration();
 
-    let (name, decl_kind, parameters) = match &kind {
-        DeclarationKind::Property(id) => (normal_id_name(id), DeclKind::Property, Vec::new()),
+    let (name, decl_kind, parameters, bracket_pair_name, bracket_mode) = match &kind {
+        DeclarationKind::Property(id) => (
+            normal_id_name(id),
+            DeclKind::Property,
+            Vec::new(),
+            None,
+            None,
+        ),
         DeclarationKind::Function(id, args) => {
             let params: Vec<String> = args
                 .items()
@@ -211,7 +230,13 @@ fn symbol_from_declaration(
                 })
                 .collect();
             let arity = params.len();
-            (normal_id_name(id), DeclKind::Function { arity }, params)
+            (
+                normal_id_name(id),
+                DeclKind::Function { arity },
+                params,
+                None,
+                None,
+            )
         }
         DeclarationKind::Nullary(_, op) => (
             op.text().to_string(),
@@ -219,6 +244,8 @@ fn symbol_from_declaration(
                 fixity: "nullary".to_string(),
             },
             Vec::new(),
+            None,
+            None,
         ),
         DeclarationKind::Prefix(_, op, _) => (
             op.text().to_string(),
@@ -226,6 +253,8 @@ fn symbol_from_declaration(
                 fixity: "prefix".to_string(),
             },
             Vec::new(),
+            None,
+            None,
         ),
         DeclarationKind::Postfix(_, _, op) => (
             op.text().to_string(),
@@ -233,6 +262,8 @@ fn symbol_from_declaration(
                 fixity: "postfix".to_string(),
             },
             Vec::new(),
+            None,
+            None,
         ),
         DeclarationKind::Binary(_, _, op, _) => (
             op.text().to_string(),
@@ -240,18 +271,30 @@ fn symbol_from_declaration(
                 fixity: "binary".to_string(),
             },
             Vec::new(),
+            None,
+            None,
         ),
         DeclarationKind::BracketPair(_, bracket_expr, _) => {
-            let name = bracket_expr
-                .bracket_pair_name()
-                .unwrap_or_else(|| "bracket".to_string());
-            (name, DeclKind::Function { arity: 1 }, Vec::new())
+            let pair_name = bracket_expr.bracket_pair_name();
+            let name = pair_name.clone().unwrap_or_else(|| "bracket".to_string());
+            (
+                name,
+                DeclKind::Function { arity: 1 },
+                Vec::new(),
+                pair_name,
+                Some(BracketMode::Expression),
+            )
         }
         DeclarationKind::BracketBlockDef(_, bracket_expr) => {
-            let name = bracket_expr
-                .bracket_pair_name()
-                .unwrap_or_else(|| "bracket".to_string());
-            (name, DeclKind::Function { arity: 0 }, Vec::new())
+            let pair_name = bracket_expr.bracket_pair_name();
+            let name = pair_name.clone().unwrap_or_else(|| "bracket".to_string());
+            (
+                name,
+                DeclKind::Function { arity: 0 },
+                Vec::new(),
+                pair_name,
+                Some(BracketMode::Block),
+            )
         }
         DeclarationKind::MalformedHead(_) => return None,
     };
@@ -276,6 +319,8 @@ fn symbol_from_declaration(
         is_monad,
         parameters,
         children,
+        bracket_pair_name,
+        bracket_mode,
     })
 }
 

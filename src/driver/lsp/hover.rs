@@ -5,11 +5,12 @@
 
 use std::collections::HashMap;
 
+use super::symbol_table::BracketMode;
 use crate::core::typecheck::types::Type;
 use crate::syntax::rowan::kind::{SyntaxKind, SyntaxNode, SyntaxToken};
 use lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position};
 
-use super::navigation::{find_identifier_at, resolve_dotted};
+use super::navigation::{bracket_pair_name_for_token, find_identifier_at, resolve_dotted};
 use super::symbol_table::{DeclKind, SymbolInfo, SymbolTable};
 
 /// Produce hover information for the symbol at the given cursor position.
@@ -24,6 +25,11 @@ pub fn hover(
     type_env: Option<&HashMap<String, Type>>,
 ) -> Option<Hover> {
     let offset = super::selection::position_to_offset(source, position);
+
+    // Check for bracket delimiter hover (⟦, ⟧, etc.)
+    if let Some(hover) = bracket_delimiter_hover(root, offset, table) {
+        return Some(hover);
+    }
 
     // Check for monad tag hover (`:for`, `:io`, etc. in block metadata)
     if let Some(hover) = monad_tag_hover(root, offset, table) {
@@ -106,6 +112,78 @@ fn make_hover(
         }),
         range: None,
     }
+}
+
+/// Produce hover information when the cursor is on a bracket delimiter token
+/// (`BRACKET_OPEN` or `BRACKET_CLOSE`, e.g. `⟦` or `⟧`).
+///
+/// Looks up the bracket pair definition in the symbol table and shows:
+/// - The pair name (e.g. `⟦⟧`)
+/// - The mode (expression or block)
+/// - Any documentation from the definition
+fn bracket_delimiter_hover(
+    root: &SyntaxNode,
+    offset: rowan::TextSize,
+    table: &SymbolTable,
+) -> Option<Hover> {
+    // Try right-biased first so that hovering at the very start of a bracket
+    // character (which is at a token boundary) finds the bracket token rather
+    // than the preceding whitespace.
+    let candidates = root.token_at_offset(offset);
+    let token = candidates
+        .clone()
+        .right_biased()
+        .or_else(|| candidates.left_biased())?;
+
+    if !matches!(
+        token.kind(),
+        SyntaxKind::BRACKET_OPEN | SyntaxKind::BRACKET_CLOSE
+    ) {
+        return None;
+    }
+
+    // Derive the bracket pair name from the parent node's open/close tokens.
+    let pair_name = bracket_pair_name_for_token(&token)?;
+
+    let mut lines = Vec::new();
+    lines.push(format!("**{}** — bracket pair", pair_name));
+
+    // Look up in the symbol table.
+    let symbols = table.lookup(&pair_name);
+    if let Some(sym) = symbols.first() {
+        match &sym.bracket_mode {
+            Some(BracketMode::Block) => {
+                lines.push("mode: block (declarations inside)".to_string());
+            }
+            Some(BracketMode::Expression) => {
+                lines.push("mode: expression".to_string());
+            }
+            None => {}
+        }
+
+        if sym.is_monad {
+            if let Some(monad_type) = &sym.monad_type {
+                lines.push(format!("binding type: `{}`", monad_type));
+            } else {
+                lines.push("monadic (untyped)".to_string());
+            }
+        }
+
+        if let Some(doc) = &sym.documentation {
+            lines.push(String::new());
+            lines.push(doc.clone());
+        }
+    } else {
+        lines.push("*no definition found*".to_string());
+    }
+
+    Some(Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: lines.join("\n"),
+        }),
+        range: None,
+    })
 }
 
 /// Produce hover information for a monad tag (`:for`, `:io`, etc.) in block metadata.
@@ -328,5 +406,71 @@ mod tests {
         };
         let result = hover(source, &root, &pos, &table, None);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_hover_bracket_delimiter_expression_mode() {
+        // Expression-mode bracket: ⟦ x ⟧: x  then use ⟦ 42 ⟧
+        let source = "⟦ x ⟧: x\nresult: ⟦ 42 ⟧\n";
+        let (table, _) = setup_table(source);
+        let parse = parse_unit(source);
+        let root = parse.syntax_node();
+
+        // Verify the symbol table has the bracket pair registered.
+        let syms = table.lookup("⟦⟧");
+        assert!(
+            !syms.is_empty(),
+            "symbol table should have ⟦⟧ entry: {:?}",
+            table.all_names().collect::<Vec<_>>()
+        );
+
+        // Hover at the '⟦' in "result: ⟦ 42 ⟧" (line 1, char 8).
+        let pos = Position {
+            line: 1,
+            character: 8,
+        };
+        let result = hover(source, &root, &pos, &table, None);
+        assert!(
+            result.is_some(),
+            "hover on bracket delimiter should return information"
+        );
+        if let Some(h) = result {
+            if let HoverContents::Markup(m) = h.contents {
+                assert!(
+                    m.value.contains("⟦⟧") || m.value.contains("bracket"),
+                    "hover should mention the bracket pair: {}",
+                    m.value
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_hover_bracket_delimiter_block_mode() {
+        // Block-mode bracket: ⟦{}⟧: id  then use ⟦ a: 1 ⟧
+        let source = "⟦{}⟧: id\nresult: ⟦ a: 1 ⟧\n";
+        let (table, _) = setup_table(source);
+        let parse = parse_unit(source);
+        let root = parse.syntax_node();
+
+        // Hover at the '⟦' in "result: ⟦ a: 1 ⟧" (line 1, char 8).
+        let pos = Position {
+            line: 1,
+            character: 8,
+        };
+        let result = hover(source, &root, &pos, &table, None);
+        assert!(
+            result.is_some(),
+            "hover on block-mode bracket should return info"
+        );
+        if let Some(h) = result {
+            if let HoverContents::Markup(m) = h.contents {
+                assert!(
+                    m.value.contains("block"),
+                    "hover should mention block mode: {}",
+                    m.value
+                );
+            }
+        }
     }
 }
