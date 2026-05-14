@@ -856,3 +856,99 @@ fn bracket_pair_in_stability_exercise() {
     s.open("⟦ x ⟧: x\n⌈ x ⌉: x * 2\n\nresult: ⟦ 99 ⟧\n");
     s.exercise_all();
 }
+
+// ── Phase 2: bracket pair matching (documentHighlight) ───────────────────────
+
+/// Hovering on the open bracket should highlight both open and close.
+#[test]
+fn document_highlight_bracket_open_highlights_pair() {
+    let mut s = LspTestSession::new();
+    s.open("⟦ x ⟧: x\nresult: ⟦ 42 ⟧\n");
+    // Hover at '⟦' on line 1, UTF-16 column 8
+    let highlights = s.document_highlights(1, 8);
+    assert_eq!(
+        highlights.len(),
+        2,
+        "should highlight both open and close bracket: {highlights:?}"
+    );
+}
+
+/// Hovering on the close bracket should also highlight both.
+#[test]
+fn document_highlight_bracket_close_highlights_pair() {
+    let mut s = LspTestSession::new();
+    s.open("⟦ x ⟧: x\nresult: ⟦ 42 ⟧\n");
+    // '⟧' is at UTF-16 column 13 on line 1
+    // "result: ⟦ 42 ⟧" → r(0)e(1)s(2)u(3)l(4)t(5):(6) (7)⟦(8) (9)4(10)2(11) (12)⟧(13)
+    let highlights = s.document_highlights(1, 13);
+    assert_eq!(
+        highlights.len(),
+        2,
+        "close bracket should highlight both delimiters: {highlights:?}"
+    );
+}
+
+/// Non-bracket positions should return no highlights.
+#[test]
+fn document_highlight_non_bracket_returns_empty() {
+    let mut s = LspTestSession::new();
+    s.open("x: 42\n");
+    let highlights = s.document_highlights(0, 0);
+    assert!(highlights.is_empty(), "should return empty for non-bracket");
+}
+
+/// Block-mode bracket pairs should also get matching highlights.
+#[test]
+fn document_highlight_block_mode_bracket() {
+    let mut s = LspTestSession::new();
+    s.open("⟦{}⟧: id\nresult: ⟦ a: 1 ⟧\n");
+    let highlights = s.document_highlights(1, 8);
+    assert_eq!(
+        highlights.len(),
+        2,
+        "block-mode bracket should highlight both delimiters: {highlights:?}"
+    );
+}
+
+// ── Phase 2: inlay hints for monadic bracket blocks ───────────────────────────
+
+/// Monadic bracket blocks should show binding type hints on each binding.
+#[test]
+fn inlay_hints_monadic_bracket_block() {
+    let mut s = LspTestSession::new();
+    // Define a monadic bracket pair with type annotation, then use it.
+    // The bracket pair ⟦{}⟧ has monad: "[a]" metadata — bindings should get
+    // an inlay hint showing "[a]" as the expected binding type.
+    s.open("` { monad: \"[a]\" }\n⟦{}⟧: id\nresult: ⟦ x: [1,2] y: [3,4] ⟧\n");
+    let hints = s.inlay_hints();
+    // Should have at least 2 type hints (one per binding: x and y)
+    let type_hints: Vec<_> = hints
+        .iter()
+        .filter(|h| matches!(&h.label, lsp_types::InlayHintLabel::String(s) if s.contains("[a]")))
+        .collect();
+    assert!(
+        !type_hints.is_empty(),
+        "should show [a] type hints on monadic bracket block bindings"
+    );
+}
+
+// ── Phase 2: go-to-definition on bracket block binding names ─────────────────
+
+/// Go-to-definition on a binding name inside a bracket block should jump
+/// to the bracket pair definition.
+#[test]
+fn goto_definition_bracket_block_binding_jumps_to_pair() {
+    let mut s = LspTestSession::new();
+    // Define and use a block-mode bracket pair
+    let src = "⟦{}⟧: id\nresult: ⟦ a: 1 ⟧\n";
+    s.open(src);
+    s.wait_for_pipeline();
+    // 'a' is the binding name in "⟦ a: 1 ⟧" on line 1
+    // Line 1: "result: ⟦ a: 1 ⟧"
+    //   r(0)e(1)s(2)u(3)l(4)t(5):(6) (7)⟦(8) (9)a(10):(11) (12)1(13) (14)⟧(15)
+    let def = s.goto_definition(1, 10);
+    assert!(
+        def.is_some(),
+        "go-to-def on bracket block binding should return a result"
+    );
+}
