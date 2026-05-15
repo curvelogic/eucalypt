@@ -41,6 +41,12 @@ pub fn goto_definition(
         }
     }
 
+    // Check if this identifier is a binding name inside a bracket block.
+    // If so, jump to the bracket pair definition rather than the binding itself.
+    if let Some(result) = bracket_content_goto_definition(root, &token, table) {
+        return Some(result);
+    }
+
     // Simple name lookup
     let symbols = table.lookup(&name);
     let sym = symbols.first()?;
@@ -75,6 +81,68 @@ fn bracket_goto_definition(
     }
 
     let pair_name = bracket_pair_name_for_token(&token)?;
+    let symbols = table.lookup(&pair_name);
+    let sym = symbols.first()?;
+
+    Some(GotoDefinitionResponse::Scalar(Location {
+        uri: sym.uri.clone(),
+        range: sym.selection_range,
+    }))
+}
+
+/// Go-to-definition for identifiers that are binding names inside a bracket block.
+///
+/// When the cursor is on a declaration name inside a `BRACKET_BLOCK` (e.g. `a`
+/// in `⟦ a: val ⟧`), jump to the bracket pair definition so the user can see
+/// what the bracket pair does — particularly useful for monadic bracket pairs
+/// where the bracket pair determines the binding semantics.
+///
+/// Returns `None` if the token is not a declaration name inside a bracket block,
+/// or if the bracket pair has no definition in the symbol table.
+fn bracket_content_goto_definition(
+    _root: &SyntaxNode,
+    token: &SyntaxToken,
+    table: &SymbolTable,
+) -> Option<GotoDefinitionResponse> {
+    // Walk up ancestors to find a BRACKET_BLOCK parent
+    let mut node = token.parent()?;
+    let mut inside_decl_head = false;
+
+    loop {
+        match node.kind() {
+            SyntaxKind::DECL_HEAD => {
+                inside_decl_head = true;
+            }
+            SyntaxKind::BRACKET_BLOCK => {
+                break;
+            }
+            // Stop at unit or block roots — not inside a bracket block
+            SyntaxKind::UNIT | SyntaxKind::BLOCK => return None,
+            _ => {}
+        }
+        node = node.parent()?;
+    }
+
+    // Only trigger for binding names (declaration heads), not values
+    if !inside_decl_head {
+        return None;
+    }
+
+    // Extract the bracket pair name from the BRACKET_BLOCK node
+    let open_tok = node
+        .children_with_tokens()
+        .filter_map(|it| it.into_token())
+        .find(|t| t.kind() == SyntaxKind::BRACKET_OPEN)?;
+    let close_tok = node
+        .children_with_tokens()
+        .filter_map(|it| it.into_token())
+        .find(|t| t.kind() == SyntaxKind::BRACKET_CLOSE)?;
+    let open_char = open_tok.text().chars().next()?;
+    let close_char = close_tok.text().chars().next()?;
+    let mut pair_name = String::with_capacity(open_char.len_utf8() + close_char.len_utf8());
+    pair_name.push(open_char);
+    pair_name.push(close_char);
+
     let symbols = table.lookup(&pair_name);
     let sym = symbols.first()?;
 

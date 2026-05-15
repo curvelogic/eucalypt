@@ -73,8 +73,16 @@ fn collect_hints_from_unit(
         if let Some(body) = decl.body() {
             if let Some(soup) = body.soup() {
                 for element in soup.elements() {
-                    if let ast::Element::Block(block) = element {
-                        collect_monadic_binding_hints(source, &block, range, table, hints);
+                    match element {
+                        ast::Element::Block(block) => {
+                            collect_monadic_binding_hints(source, &block, range, table, hints);
+                        }
+                        ast::Element::BracketBlock(block) => {
+                            collect_bracket_block_binding_hints(
+                                source, &block, range, table, hints,
+                            );
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -132,6 +140,64 @@ fn collect_monadic_binding_hints(
                 text_edits: None,
                 tooltip: Some(lsp_types::InlayHintTooltip::String(format!(
                     "Monad binding — value must be {monad_type}",
+                ))),
+                padding_left: Some(false),
+                padding_right: Some(true),
+                data: None,
+            });
+        }
+    }
+}
+
+/// Collect inlay hints for monadic bracket block bindings showing the expected type.
+///
+/// For `⟦ x: val ⟧` where the `⟦⟧` pair has `monad: "[a]"` metadata, shows
+/// `[a]` as a type hint on each binding declaration name.
+fn collect_bracket_block_binding_hints(
+    source: &str,
+    block: &ast::BracketBlock,
+    range: &Range,
+    table: &SymbolTable,
+    hints: &mut Vec<InlayHint>,
+) {
+    let block_range = text_range_to_lsp_range(source, block.syntax().text_range());
+    if !ranges_overlap(&block_range, range) {
+        return;
+    }
+
+    // Get the bracket pair name (e.g. "⟦⟧") and look it up in the symbol table
+    let pair_name = match block.bracket_pair_name() {
+        Some(n) => n,
+        None => return,
+    };
+
+    let symbols = table.lookup(&pair_name);
+    let bracket_sym = match symbols.iter().find(|s| s.is_monad) {
+        Some(s) => s,
+        None => return,
+    };
+    let monad_type = match &bracket_sym.monad_type {
+        Some(t) => t.clone(),
+        None => return,
+    };
+
+    // Show binding type hints on each declaration inside the bracket block
+    for decl in block.declarations() {
+        if let Some(head) = decl.head() {
+            let kind = head.classify_declaration();
+            let name_token = match &kind {
+                DeclarationKind::Property(id) => id.syntax().clone(),
+                DeclarationKind::Function(id, _) => id.syntax().clone(),
+                _ => continue,
+            };
+            let token_range = text_range_to_lsp_range(source, name_token.text_range());
+            hints.push(InlayHint {
+                position: token_range.end,
+                label: InlayHintLabel::String(format!(": {monad_type}")),
+                kind: Some(InlayHintKind::TYPE),
+                text_edits: None,
+                tooltip: Some(lsp_types::InlayHintTooltip::String(format!(
+                    "Bracket pair monad binding — value must be {monad_type}",
                 ))),
                 padding_left: Some(false),
                 padding_right: Some(true),

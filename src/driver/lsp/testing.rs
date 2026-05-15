@@ -10,13 +10,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 
 use lsp_types::{
-    CompletionItem, CompletionResponse, Hover, InlayHint, Position, Range,
-    TextDocumentContentChangeEvent, Url,
+    CompletionItem, CompletionResponse, DocumentHighlight, GotoDefinitionResponse, Hover,
+    InlayHint, Position, Range, TextDocumentContentChangeEvent, Url,
 };
 
 use super::completion;
+use super::highlight;
 use super::hover;
 use super::inlay_hints;
+use super::navigation;
 use super::symbol_table::{self, SymbolSource, SymbolTable};
 use super::{apply_content_change, CachedPipeline, PipelineResult, TypeEnv};
 use crate::syntax::rowan::{parse_unit, ParseError};
@@ -201,6 +203,23 @@ impl LspTestSession {
         })
     }
 
+    /// Compute go-to-definition at the given cursor position.
+    pub fn goto_definition(&self, line: u32, character: u32) -> Option<GotoDefinitionResponse> {
+        let parse = parse_unit(&self.content);
+        let root = parse.syntax_node();
+        let position = Position { line, character };
+        let table = self.build_symbol_table();
+        navigation::goto_definition(&self.content, &root, &position, &table)
+    }
+
+    /// Compute document highlights at the given cursor position.
+    pub fn document_highlights(&self, line: u32, character: u32) -> Vec<DocumentHighlight> {
+        let parse = parse_unit(&self.content);
+        let root = parse.syntax_node();
+        let position = Position { line, character };
+        highlight::document_highlights(&self.content, &root, &position)
+    }
+
     /// Exercise all LSP operations at every character position in the
     /// document.  Panics if any operation panics.  Used for stability
     /// testing — the return value is not meaningful.
@@ -209,6 +228,7 @@ impl LspTestSession {
         for col in 0..=len {
             let _ = self.complete(0, col);
             let _ = self.hover(0, col);
+            let _ = self.document_highlights(0, col);
         }
         let _ = self.inlay_hints();
     }

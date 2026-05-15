@@ -10,6 +10,7 @@ mod completion;
 mod diagnostics;
 mod folding;
 mod formatting;
+mod highlight;
 mod hover;
 mod inlay_hints;
 mod navigation;
@@ -33,9 +34,9 @@ use lsp_types::{
         DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification as _,
     },
     request::{
-        CodeActionRequest, Completion, DocumentSymbolRequest, FoldingRangeRequest, Formatting,
-        GotoDefinition, HoverRequest, InlayHintRequest, RangeFormatting, References, Rename,
-        SelectionRangeRequest, SemanticTokensFullRequest,
+        CodeActionRequest, Completion, DocumentHighlightRequest, DocumentSymbolRequest,
+        FoldingRangeRequest, Formatting, GotoDefinition, HoverRequest, InlayHintRequest,
+        RangeFormatting, References, Rename, SelectionRangeRequest, SemanticTokensFullRequest,
     },
     CompletionOptions, CompletionResponse, DocumentSymbolResponse, FoldingRangeProviderCapability,
     GotoDefinitionResponse, Hover, HoverProviderCapability, InitializeParams, Location,
@@ -132,6 +133,7 @@ fn server_capabilities() -> ServerCapabilities {
         references_provider: Some(lsp_types::OneOf::Left(true)),
         code_action_provider: None,
         inlay_hint_provider: Some(lsp_types::OneOf::Left(true)),
+        document_highlight_provider: Some(lsp_types::OneOf::Left(true)),
         rename_provider: Some(lsp_types::OneOf::Right(lsp_types::RenameOptions {
             prepare_provider: Some(true),
             work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
@@ -534,6 +536,15 @@ fn handle_request(
         return Ok(());
     }
 
+    if req.method == DocumentHighlightRequest::METHOD {
+        let (id, params): (_, lsp_types::DocumentHighlightParams) =
+            req.extract(DocumentHighlightRequest::METHOD)?;
+        let result = on_document_highlight(state, params);
+        let resp = Response::new_ok(id, result);
+        connection.sender.send(Message::Response(resp))?;
+        return Ok(());
+    }
+
     if req.method == Rename::METHOD {
         let (id, params): (_, lsp_types::RenameParams) = req.extract(Rename::METHOD)?;
         let result = on_rename(state, params);
@@ -886,6 +897,24 @@ fn on_inlay_hint(
     let type_env = state.type_env_for(uri);
     let hints = inlay_hints::inlay_hints(text, &root, &params.range, &table, type_env);
     Some(hints)
+}
+
+/// Handle textDocument/documentHighlight — highlight matching bracket pairs.
+fn on_document_highlight(
+    state: &ServerState,
+    params: lsp_types::DocumentHighlightParams,
+) -> Option<Vec<lsp_types::DocumentHighlight>> {
+    let uri = &params.text_document_position_params.text_document.uri;
+    let text = state.store.get(uri)?;
+    let parse = crate::syntax::rowan::parse_unit(text);
+    let root = parse.syntax_node();
+    let position = &params.text_document_position_params.position;
+    let highlights = highlight::document_highlights(text, &root, position);
+    if highlights.is_empty() {
+        None
+    } else {
+        Some(highlights)
+    }
 }
 
 /// Handle textDocument/rename — rename the symbol at cursor across the file.
