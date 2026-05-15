@@ -223,8 +223,20 @@ fn collect_promote_metadata_actions(
         MetadataShortcut::DocString(s) => format!("{{ doc: \"{s}\" }}"),
         MetadataShortcut::Symbol(s) => match s.as_str() {
             "suppress" => "{ export: :suppress }".to_string(),
-            "main" => "{ target: :main }".to_string(),
-            _ => format!("{{ tag: :{s} }}"),
+            "target" => {
+                // :target uses the declaration's own name
+                let decl_name = decl
+                    .head()
+                    .map(|h| match h.classify_declaration() {
+                        DeclarationKind::Property(id) => id.text().to_string(),
+                        DeclarationKind::Function(id, _) => id.text().to_string(),
+                        _ => "unknown".to_string(),
+                    })
+                    .unwrap_or_else(|| "unknown".to_string());
+                format!("{{ target: :{decl_name} }}")
+            }
+            // Any other symbol is a target shortcut
+            _ => format!("{{ target: :{s} }}"),
         },
     };
 
@@ -346,8 +358,22 @@ fn collect_demote_metadata_actions(
             }
         }
         "target" => {
-            if body_trimmed == ":main" {
-                Some(":main".to_string())
+            // target: :sym → :sym (symbol shortcut)
+            // target: :decl-name → :target (self-naming shortcut)
+            if let Some(sym_name) = body_trimmed.strip_prefix(':') {
+                let decl_name = decl
+                    .head()
+                    .map(|h| match h.classify_declaration() {
+                        DeclarationKind::Property(id) => id.text().to_string(),
+                        DeclarationKind::Function(id, _) => id.text().to_string(),
+                        _ => String::new(),
+                    })
+                    .unwrap_or_default();
+                if sym_name == decl_name {
+                    Some(":target".to_string())
+                } else {
+                    Some(body_trimmed.to_string())
+                }
             } else {
                 None
             }
