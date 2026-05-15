@@ -623,6 +623,11 @@ impl SourceLoader {
         &self.source_map
     }
 
+    /// Access the file store for error location resolution.
+    pub fn files(&self) -> &SimpleFiles<String, String> {
+        &self.files
+    }
+
     /// Print a diagnostic to stderr
     pub fn diagnose_to_stderr(&self, diag: &Diagnostic<usize>) {
         let writer = StandardStream::stderr(ColorChoice::Auto);

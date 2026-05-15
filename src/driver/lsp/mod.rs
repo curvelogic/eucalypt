@@ -72,10 +72,24 @@ struct CachedPipeline {
     imports: Vec<ImportedFile>,
 }
 
+/// A pipeline error with a message and optional source location.
+pub struct PipelineError {
+    /// The error message.
+    pub message: String,
+    /// Source location of the error, if available.
+    pub range: Option<lsp_types::Range>,
+}
+
+impl std::fmt::Display for PipelineError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
 /// Result sent from the background pipeline thread.
 struct PipelineResult {
     uri: Url,
-    result: Result<CachedPipeline, String>,
+    result: Result<CachedPipeline, PipelineError>,
 }
 
 /// Run the LSP server on stdio.
@@ -365,16 +379,25 @@ impl ServerState {
                 self.cached.insert(uri.clone(), cached);
             }
             Err(err) => {
-                eprintln!("pipeline error for {uri}: {err}");
+                eprintln!("pipeline error for {}: {}", uri, err.message);
                 // Remove stale cached result so we don't serve outdated
-                // type information. Re-publish diagnostics with only parse
-                // errors (no type warnings), using the cached parse errors.
+                // type information. Re-publish diagnostics with parse
+                // errors plus the pipeline error as a visible warning.
                 self.cached.remove(&uri);
                 let text = self.store.get(&uri).unwrap_or_default().to_string();
                 let cached_errors = self.last_parse_errors.get(&uri);
                 let empty = vec![];
                 let parse_errors = cached_errors.unwrap_or(&empty);
-                let diags = diagnostics::diagnostics_from_parse_errors(&text, parse_errors);
+                let mut diags = diagnostics::diagnostics_from_parse_errors(&text, parse_errors);
+                // Surface the pipeline error as a diagnostic so the user
+                // can see why type checking and import resolution failed.
+                diags.push(lsp_types::Diagnostic {
+                    range: err.range.unwrap_or_default(),
+                    severity: Some(lsp_types::DiagnosticSeverity::WARNING),
+                    source: Some("eucalypt-pipeline".to_string()),
+                    message: err.message,
+                    ..Default::default()
+                });
                 let params = PublishDiagnosticsParams {
                     uri: uri.clone(),
                     diagnostics: diags,
@@ -1001,11 +1024,40 @@ fn spawn_pipeline(
 /// editor content is type-checked without requiring a save to disk.
 /// Returns extracted data (type env, warnings, source map) since
 /// `SourceLoader` is not `Send`.
+/// Convert a `EucalyptError` into a `PipelineError` with source location
+/// extracted from the loader's source map and file store.
+fn make_pipeline_error(
+    loader: &crate::driver::source::SourceLoader,
+    e: &crate::driver::error::EucalyptError,
+) -> PipelineError {
+    use codespan_reporting::files::Files;
+    let diag = e.to_diagnostic(loader.source_map());
+    let range = diag.labels.first().and_then(|label| {
+        let files = loader.files();
+        let start = files.location(label.file_id, label.range.start).ok()?;
+        let end = files.location(label.file_id, label.range.end).ok()?;
+        Some(lsp_types::Range {
+            start: lsp_types::Position {
+                line: (start.line_number - 1) as u32,
+                character: (start.column_number - 1) as u32,
+            },
+            end: lsp_types::Position {
+                line: (end.line_number - 1) as u32,
+                character: (end.column_number - 1) as u32,
+            },
+        })
+    });
+    PipelineError {
+        message: format!("{e}"),
+        range,
+    }
+}
+
 fn run_pipeline(
     uri: &Url,
     text: &str,
     path: Option<&std::path::Path>,
-) -> Result<CachedPipeline, String> {
+) -> Result<CachedPipeline, PipelineError> {
     use crate::core::typecheck::check::type_check_full;
     use crate::driver::source::SourceLoader;
     use crate::syntax::input::{Input, Locator};
@@ -1031,24 +1083,30 @@ fn run_pipeline(
     let mut loader = SourceLoader::new(vec![]);
 
     for input in &inputs {
-        loader.load(input).map_err(|e| format!("load: {e}"))?;
+        if let Err(e) = loader.load(input) {
+            return Err(make_pipeline_error(&loader, &e));
+        }
     }
     for input in &inputs {
-        loader
-            .translate(input)
-            .map_err(|e| format!("desugar: {e}"))?;
+        if let Err(e) = loader.translate(input) {
+            return Err(make_pipeline_error(&loader, &e));
+        }
     }
-    loader
-        .merge_units(&inputs)
-        .map_err(|e| format!("merge: {e}"))?;
-    loader.cook().map_err(|e| format!("cook: {e}"))?;
+    if let Err(e) = loader.merge_units(&inputs) {
+        return Err(make_pipeline_error(&loader, &e));
+    }
+    if let Err(e) = loader.cook() {
+        return Err(make_pipeline_error(&loader, &e));
+    }
 
     // Extract all binding names BEFORE dead-code elimination so that
     // completion can offer imported names that aren't yet referenced.
     let mut type_env = TypeEnv::new();
     extract_top_level_bindings(&loader.core().expr, &mut type_env);
 
-    loader.eliminate().map_err(|e| format!("eliminate: {e}"))?;
+    if let Err(e) = loader.eliminate() {
+        return Err(make_pipeline_error(&loader, &e));
+    }
 
     let core_expr = loader.core().expr.clone();
     let result = type_check_full(&core_expr);
