@@ -285,8 +285,13 @@ struct ServerState {
 
 impl ServerState {
     fn new() -> Self {
-        let prelude_uri = Url::parse("resource:prelude")
-            .unwrap_or_else(|_| Url::parse("file:///prelude.eu").expect("fallback URI"));
+        // Write the embedded prelude to a temp file so go-to-definition
+        // can navigate to real source locations instead of the non-existent
+        // resource:prelude URI.
+        let prelude_uri = Self::write_prelude_to_temp().unwrap_or_else(|| {
+            Url::parse("resource:prelude")
+                .unwrap_or_else(|_| Url::parse("file:///prelude.eu").expect("fallback URI"))
+        });
         let (pipeline_tx, pipeline_rx) = mpsc::channel();
         Self {
             store: DocumentStore::new(),
@@ -298,6 +303,19 @@ impl ServerState {
             pipeline_tx,
             cancel: HashMap::new(),
         }
+    }
+
+    /// Write the embedded prelude source to a temp file and return its
+    /// file URI.  Returns `None` if the write fails.
+    fn write_prelude_to_temp() -> Option<Url> {
+        let prelude_source = crate::driver::resources::Resources::default()
+            .get("prelude")?
+            .clone();
+        let dir = std::env::temp_dir().join("eucalypt-lsp");
+        std::fs::create_dir_all(&dir).ok()?;
+        let path = dir.join("prelude.eu");
+        std::fs::write(&path, &prelude_source).ok()?;
+        Url::from_file_path(&path).ok()
     }
 
     /// Look up the type env for a URI from the cached pipeline result.
