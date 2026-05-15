@@ -1785,7 +1785,6 @@ pub fn test_typecheck_021_row_var_block_app_preserves_field() {
 // to the declared return type, so the result is treated as open and `result.w`
 // produces no warning.  This test documents the desired end state.
 #[test]
-#[ignore = "row var return-type substitution not yet implemented in synthesise_app"]
 pub fn test_typecheck_022_row_var_block_app_absent_field_warns() {
     run_typecheck_test("022_row_var_block_app_absent_field_warns.eu");
 }

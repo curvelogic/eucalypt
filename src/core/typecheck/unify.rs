@@ -218,9 +218,15 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
                         .filter(|(k, _)| !f1.contains_key(*k))
                         .map(|(k, v)| (k.clone(), apply_subst(v, subst)))
                         .collect();
+                    // The row var captures exactly the extra fields.  If the
+                    // other side has a row var, propagate it (the result stays
+                    // open with a named row).  Otherwise the captured record
+                    // is closed — the anonymous openness of synthesised blocks
+                    // reflects runtime uncertainty, not a structural guarantee
+                    // that should propagate through row variable bindings.
                     let extra_ty = Type::Record {
                         fields: extra,
-                        open: open2,
+                        open: row2.is_some(),
                         row: row2.clone(),
                     };
                     if !occurs(r1, &extra_ty) {
@@ -238,7 +244,7 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
                         .collect();
                     let extra_ty = Type::Record {
                         fields: extra,
-                        open: open1,
+                        open: row1.is_some(),
                         row: row1.clone(),
                     };
                     if !occurs(r2, &extra_ty) {
