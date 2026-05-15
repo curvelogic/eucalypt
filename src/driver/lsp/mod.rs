@@ -65,6 +65,9 @@ struct ImportedFile {
 struct CachedPipeline {
     uri: Url,
     type_env: TypeEnv,
+    /// Lambda parameter types inferred by the type checker (e.g.
+    /// monadic block bound variable types).
+    lambda_params: HashMap<String, Type>,
     warnings: Vec<crate::core::typecheck::error::TypeWarning>,
     source_map: SourceMap,
     /// Imported files resolved by the pipeline, for building symbol
@@ -321,6 +324,11 @@ impl ServerState {
     /// Look up the type env for a URI from the cached pipeline result.
     fn type_env_for(&self, uri: &Url) -> Option<&TypeEnv> {
         self.cached.get(uri).map(|c| &c.type_env)
+    }
+
+    /// Look up lambda parameter types from the cached pipeline.
+    fn lambda_params_for(&self, uri: &Url) -> Option<&HashMap<String, Type>> {
+        self.cached.get(uri).map(|c| &c.lambda_params)
     }
 
     /// Build a symbol table for a document from AST, prelude, and
@@ -936,7 +944,9 @@ fn on_inlay_hint(
     let root = parse.syntax_node();
     let table = state.build_symbol_table(uri, text);
     let type_env = state.type_env_for(uri);
-    let hints = inlay_hints::inlay_hints(text, &root, &params.range, &table, type_env);
+    let lambda_params = state.lambda_params_for(uri);
+    let hints =
+        inlay_hints::inlay_hints(text, &root, &params.range, &table, type_env, lambda_params);
     Some(hints)
 }
 
@@ -1169,6 +1179,7 @@ fn run_pipeline(
     Ok(CachedPipeline {
         uri: uri.clone(),
         type_env,
+        lambda_params: result.lambda_params,
         warnings: result.warnings,
         source_map,
         imports,

@@ -506,6 +506,35 @@ fn inlay_hints_on_monadic_binding() {
     );
 }
 
+// ── Feature: monadic bound variable type hinting ─────────────────────────────
+
+#[test]
+fn inlay_hint_shows_element_type_after_pipeline() {
+    let mut s = LspTestSession::new();
+    // After the pipeline runs, the type checker infers x: number
+    // from for.bind([1,2,3], λx. ...) where bind: [a] → (a → [b]) → [b]
+    // and a unifies with number.
+    s.run_pipeline("main: { :for x: [1,2,3] }.(x)");
+    let hints = s.inlay_hints();
+    let type_hints: Vec<_> = hints
+        .iter()
+        .filter(
+            |h| matches!(&h.label, lsp_types::InlayHintLabel::String(s) if s.contains("number")),
+        )
+        .collect();
+    assert!(
+        !type_hints.is_empty(),
+        "after pipeline, should show element type 'number' not wrapper '[a]', got: {:?}",
+        hints
+            .iter()
+            .filter_map(|h| match &h.label {
+                lsp_types::InlayHintLabel::String(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    );
+}
+
 // ── Feature: import resolution ───────────────────────────────────────────────
 
 #[test]
