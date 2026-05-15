@@ -551,16 +551,28 @@ impl Checker {
                 // type inference (e.g. for.bind arg unification) sees the
                 // concrete type, not the hint's type variables.
                 //
+                // We synthesise the inner expression to get its concrete type.
+                // check_against above already validated the value against the
+                // wrapper type; this second synthesis is just to extract the
+                // type for the return value.
+                //
                 // Small list literals synthesise as tuples (e.g. [1,2,3] →
                 // (number, number, number)) which don't unify with the
-                // wrapper's list type [a].  Convert tuples to their common
-                // element type as a list.
+                // wrapper's list type [a].  Convert homogeneous tuples to
+                // lists; heterogeneous tuples fall back to the wrapper type.
                 let inner_type = self.synthesise(inner);
                 if is_informative(&inner_type) {
                     match &inner_type {
                         Type::Tuple(elems) if !elems.is_empty() => {
-                            // Use the first element's type as representative
-                            Type::List(Box::new(elems[0].clone()))
+                            let first = &elems[0];
+                            if elems.iter().all(|e| e == first) {
+                                Type::List(Box::new(first.clone()))
+                            } else {
+                                // Heterogeneous tuple — can't reduce to a
+                                // single list element type; fall back to
+                                // wrapper type.
+                                working_type
+                            }
                         }
                         _ => inner_type,
                     }

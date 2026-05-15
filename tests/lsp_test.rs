@@ -535,6 +535,42 @@ fn inlay_hint_shows_element_type_after_pipeline() {
     );
 }
 
+#[test]
+fn inlay_hint_let_monad_shows_wrapper_not_element() {
+    let mut s = LspTestSession::new();
+    // :let is untyped (monad: true) — no element type inference
+    s.run_pipeline("main: { :let x: 42 }.(x)");
+    let hints = s.inlay_hints();
+    // Should NOT show a resolved element type — :let has no typed wrapper
+    let number_hints: Vec<_> = hints
+        .iter()
+        .filter(
+            |h| matches!(&h.label, lsp_types::InlayHintLabel::String(s) if s.contains("number")),
+        )
+        .collect();
+    assert!(
+        number_hints.is_empty(),
+        ":let monad should not show element type hints, got: {:?}",
+        hints
+            .iter()
+            .filter_map(|h| match &h.label {
+                lsp_types::InlayHintLabel::String(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn inlay_hint_element_type_does_not_crash_on_incomplete() {
+    let mut s = LspTestSession::new();
+    // Incomplete monadic block value — pipeline may fail, must not crash
+    s.open("main: { :for x: }.(x)");
+    let _ = s.inlay_hints();
+    s.open("main: { :for x: [1, }.(x)");
+    let _ = s.inlay_hints();
+}
+
 // ── Feature: import resolution ───────────────────────────────────────────────
 
 #[test]
