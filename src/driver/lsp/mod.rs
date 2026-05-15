@@ -65,9 +65,12 @@ struct ImportedFile {
 struct CachedPipeline {
     uri: Url,
     type_env: TypeEnv,
-    /// Lambda parameter types inferred by the type checker (e.g.
-    /// monadic block bound variable types).
-    lambda_params: HashMap<String, Type>,
+    /// Lambda parameter types inferred by the type checker.
+    ///
+    /// Keyed by `(param_name, line)` to avoid collisions between
+    /// different monadic blocks using the same binding name on different
+    /// lines.
+    lambda_params: HashMap<(String, u32), Type>,
     warnings: Vec<crate::core::typecheck::error::TypeWarning>,
     source_map: SourceMap,
     /// Imported files resolved by the pipeline, for building symbol
@@ -327,7 +330,7 @@ impl ServerState {
     }
 
     /// Look up lambda parameter types from the cached pipeline.
-    fn lambda_params_for(&self, uri: &Url) -> Option<&HashMap<String, Type>> {
+    fn lambda_params_for(&self, uri: &Url) -> Option<&HashMap<(String, u32), Type>> {
         self.cached.get(uri).map(|c| &c.lambda_params)
     }
 
@@ -1174,12 +1177,33 @@ fn run_pipeline(
         })
         .collect();
 
+    // Flatten the Smid-keyed lambda_params into (name, line) keys
+    // so the LSP inlay hints can look up by declaration position.
+    let mut lambda_params = HashMap::new();
+    {
+        use codespan_reporting::files::Files;
+        let files = loader.files();
+        let sm = loader.source_map();
+        for (smid, params) in &result.lambda_params {
+            if let Some(info) = sm.source_info_for_smid(*smid) {
+                if let (Some(file_id), Some(span)) = (info.file, info.span) {
+                    if let Ok(loc) = files.location(file_id, span.start().into()) {
+                        let line = (loc.line_number - 1) as u32;
+                        for (name, ty) in params {
+                            lambda_params.insert((name.clone(), line), ty.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let (_, source_map, _) = loader.complete();
 
     Ok(CachedPipeline {
         uri: uri.clone(),
         type_env,
-        lambda_params: result.lambda_params,
+        lambda_params,
         warnings: result.warnings,
         source_map,
         imports,

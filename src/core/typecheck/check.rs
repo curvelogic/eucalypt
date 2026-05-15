@@ -104,14 +104,12 @@ pub struct Checker {
     /// resolve alias references before erasing type variables.
     aliases: AliasMap,
 
-    /// Lambda parameter types inferred during `check_lambda`.
+    /// Lambda parameter types inferred during function argument checking.
     ///
-    /// Maps parameter name → inferred type.  These are accumulated as
-    /// the checker walks the expression tree and survive scope pops,
-    /// making them available for LSP features (hover, inlay hints on
-    /// monadic block bound variables).  Later bindings with the same
-    /// name overwrite earlier ones.
-    lambda_params: HashMap<String, Type>,
+    /// Maps `Smid` (source location of the lambda) → parameter types.
+    /// Used by LSP features (inlay hints on monadic block bound
+    /// variables) to show the unwrapped element type.
+    lambda_params: HashMap<Smid, Vec<(String, Type)>>,
 }
 
 impl Default for Checker {
@@ -542,36 +540,55 @@ impl Checker {
             // Asserted annotations (prefixed with `!`) are trusted without
             // checking the body.  Used when the body has type-level assumptions
             // the checker cannot verify (e.g. dependent-length lists as tuples).
-            if !asserted {
-                self.check_against(inner, &working_type, smid);
-            }
             if is_hint {
-                // For __type_hint (monad bindings), the hint is for checking
-                // only — return the value's synthesised type so downstream
-                // type inference (e.g. for.bind arg unification) sees the
-                // concrete type, not the hint's type variables.
-                //
-                // We synthesise the inner expression to get its concrete type.
-                // check_against above already validated the value against the
-                // wrapper type; this second synthesis is just to extract the
-                // type for the return value.
-                //
+                // For __type_hint (monad bindings), synthesise the inner
+                // expression ONCE, emit a warning if it doesn't match the
+                // hint type, then return the synthesised type (not the hint)
+                // so downstream unification sees concrete types.
+                let inner_type = self.synthesise(inner);
+
+                // Check consistency and warn (replicates check_against logic
+                // without double-synthesising).
+                if !asserted
+                    && is_informative(&inner_type)
+                    && is_informative(&working_type)
+                    && !is_consistent(&inner_type, &working_type)
+                {
+                    self.emit_type_mismatch(
+                        smid,
+                        &working_type,
+                        &inner_type,
+                        "expression type does not match annotation",
+                    );
+                }
+
                 // Small list literals synthesise as tuples (e.g. [1,2,3] →
                 // (number, number, number)) which don't unify with the
                 // wrapper's list type [a].  Convert homogeneous tuples to
                 // lists; heterogeneous tuples fall back to the wrapper type.
-                let inner_type = self.synthesise(inner);
                 if is_informative(&inner_type) {
                     match &inner_type {
                         Type::Tuple(elems) if !elems.is_empty() => {
                             let first = &elems[0];
                             if elems.iter().all(|e| e == first) {
+                                // Homogeneous tuple → list of element type
                                 Type::List(Box::new(first.clone()))
                             } else {
-                                // Heterogeneous tuple — can't reduce to a
-                                // single list element type; fall back to
-                                // wrapper type.
-                                working_type
+                                // Heterogeneous tuple → list of union
+                                let mut seen = std::collections::BTreeSet::new();
+                                let mut unique = Vec::new();
+                                for e in elems {
+                                    let s = format!("{e}");
+                                    if seen.insert(s) {
+                                        unique.push(e.clone());
+                                    }
+                                }
+                                let elem_type = if unique.len() == 1 {
+                                    unique.into_iter().next().unwrap()
+                                } else {
+                                    Type::Union(unique)
+                                };
+                                Type::List(Box::new(elem_type))
                             }
                         }
                         _ => inner_type,
@@ -579,6 +596,9 @@ impl Checker {
                 } else {
                     working_type
                 }
+            } else if !asserted {
+                self.check_against(inner, &working_type, smid);
+                working_type
             } else {
                 working_type
             }
@@ -732,23 +752,28 @@ impl Checker {
                 // known function type, use check_against so that check_lambda
                 // fires — this infers parameter types for the lambda's bound
                 // variables (needed for LSP inlay hints on monadic bindings).
-                if let Expr::Lam(_, _, scope) = &*arg.inner {
+                if let Expr::Lam(lam_smid, _, scope) = &*arg.inner {
                     if matches!(&param_applied, Type::Function(_, _))
                         && is_informative(&param_applied)
                     {
                         self.check_against(arg, &param_applied, smid);
-                        // Record resolved lambda parameter types for LSP.
-                        // Only record when substitution resolves to concrete
-                        // types (no unresolved type variables).
+                        // Record resolved lambda parameter types for LSP,
+                        // keyed by the lambda's Smid (source location) to
+                        // avoid name collisions between different monadic
+                        // blocks using the same binding name.
+                        let mut params = Vec::new();
                         let mut remaining = param_applied.clone();
                         for param in &scope.pattern {
                             if let Type::Function(p, r) = remaining {
                                 let resolved = apply_subst(&p, subst);
                                 if is_informative(&resolved) && !matches!(&resolved, Type::Var(_)) {
-                                    self.lambda_params.insert(param.clone(), resolved);
+                                    params.push((param.clone(), resolved));
                                 }
                                 remaining = *r;
                             }
+                        }
+                        if !params.is_empty() {
+                            self.lambda_params.insert(*lam_smid, params);
                         }
                         return apply_subst(&result_type, subst);
                     }
@@ -1106,9 +1131,11 @@ pub struct TypeCheckResult {
     pub types: HashMap<String, Type>,
     /// Lambda parameter types inferred during type checking.
     ///
-    /// Maps parameter name → inferred type.  Available for LSP features
-    /// like hover and inlay hints on monadic block bound variables.
-    pub lambda_params: HashMap<String, Type>,
+    /// Maps `Smid` (source location of the lambda) → list of
+    /// `(param_name, inferred_type)` pairs.  Keyed by Smid to avoid
+    /// name collisions between different lambdas with the same param
+    /// names.
+    pub lambda_params: HashMap<Smid, Vec<(String, Type)>>,
 }
 
 /// Run the type checker over `expr` and return all warnings found.

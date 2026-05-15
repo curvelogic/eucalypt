@@ -264,12 +264,12 @@ impl LspTestSession {
         self.cached.as_ref().map_or(vec![], |c| {
             c.lambda_params
                 .iter()
-                .map(|(k, v)| (k.clone(), format!("{v}")))
+                .map(|((name, _line), v)| (name.clone(), format!("{v}")))
                 .collect()
         })
     }
 
-    fn lambda_params(&self) -> Option<&HashMap<String, Type>> {
+    fn lambda_params(&self) -> Option<&HashMap<(String, u32), Type>> {
         self.cached.as_ref().map(|c| &c.lambda_params)
     }
 
