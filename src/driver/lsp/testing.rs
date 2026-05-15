@@ -18,7 +18,7 @@ use super::completion;
 use super::hover;
 use super::inlay_hints;
 use super::symbol_table::{self, SymbolSource, SymbolTable};
-use super::{apply_content_change, CachedPipeline, PipelineResult, TypeEnv};
+use super::{apply_content_change, CachedPipeline, PipelineError, PipelineResult, TypeEnv};
 use crate::syntax::rowan::{parse_unit, ParseError};
 
 /// An in-process LSP editing session for testing.
@@ -37,6 +37,8 @@ pub struct LspTestSession {
     last_green: Option<rowan::GreenNode>,
     /// Parse errors from the most recent parse, cached to avoid re-parsing.
     last_parse_errors: Vec<ParseError>,
+    /// Last pipeline error, if any.
+    last_pipeline_error: Option<PipelineError>,
 }
 
 impl LspTestSession {
@@ -55,6 +57,7 @@ impl LspTestSession {
             cancel: Arc::new(AtomicBool::new(false)),
             last_green: None,
             last_parse_errors: Vec::new(),
+            last_pipeline_error: None,
         }
     }
 
@@ -110,9 +113,12 @@ impl LspTestSession {
             Ok(result) => match result.result {
                 Ok(cached) => {
                     self.cached = Some(cached);
+                    self.last_pipeline_error = None;
                 }
                 Err(err) => {
                     eprintln!("pipeline error in test: {err}");
+                    self.cached = None;
+                    self.last_pipeline_error = Some(err);
                 }
             },
             Err(e) => {
@@ -216,6 +222,11 @@ impl LspTestSession {
     /// Return the current document content.
     pub fn content(&self) -> &str {
         &self.content
+    }
+
+    /// Return the last pipeline error, if any.
+    pub fn last_pipeline_error(&self) -> Option<&PipelineError> {
+        self.last_pipeline_error.as_ref()
     }
 
     /// Check if a cached pipeline result is available.

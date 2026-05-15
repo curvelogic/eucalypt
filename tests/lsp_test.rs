@@ -680,6 +680,63 @@ fn requests_during_pipeline_run_do_not_crash() {
     assert!(s.has_cached());
 }
 
+// ── Pipeline: error diagnostics with source location ─────────────────────────
+
+#[test]
+fn pipeline_error_has_source_location() {
+    let mut s = LspTestSession::new();
+    let test_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/lsp");
+    let test_uri =
+        lsp_types::Url::from_file_path(test_dir.join("pipeline_error.eu")).expect("valid file URI");
+    s.set_uri(test_uri.as_str());
+
+    // Content that will cause a pipeline error (bad import)
+    s.open("{ import: \"nonexistent_file.eu\" }\nmain: 42");
+    s.wait_for_pipeline();
+
+    let err = s.last_pipeline_error();
+    assert!(
+        err.is_some(),
+        "pipeline should have produced an error for missing import"
+    );
+    let err = err.unwrap();
+    assert!(
+        !err.message.is_empty(),
+        "pipeline error should have a message"
+    );
+}
+
+#[test]
+fn pipeline_error_clears_stale_cache() {
+    let mut s = LspTestSession::new();
+
+    // Successful pipeline first
+    s.run_pipeline("x: 1");
+    assert!(s.has_cached(), "should have cached result");
+    assert!(
+        s.last_pipeline_error().is_none(),
+        "should have no error after success"
+    );
+
+    // Now cause a pipeline error
+    let test_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/lsp");
+    let test_uri =
+        lsp_types::Url::from_file_path(test_dir.join("pipeline_error.eu")).expect("valid file URI");
+    s.set_uri(test_uri.as_str());
+    s.open("{ import: \"nonexistent_file.eu\" }\nmain: 42");
+    s.wait_for_pipeline();
+
+    assert!(
+        s.last_pipeline_error().is_some(),
+        "should have pipeline error"
+    );
+    // Stale cache should have been cleared
+    assert!(
+        !s.has_cached(),
+        "stale cached result should be cleared on pipeline error"
+    );
+}
+
 // ── Incremental sync: apply_edit ─────────────────────────────────────────────
 
 #[test]
