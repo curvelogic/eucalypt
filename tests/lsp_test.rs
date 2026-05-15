@@ -1009,3 +1009,41 @@ fn goto_definition_bracket_block_binding_jumps_to_pair() {
         "go-to-def on bracket block binding should return a result"
     );
 }
+
+// ── Go-to-definition: prelude names ──────────────────────────────────────────
+
+#[test]
+fn goto_definition_prelude_function_returns_file_uri() {
+    let mut s = LspTestSession::new();
+    // "map" is at column 6 in "main: map(negate, [1])"
+    s.open("main: map(negate, [1])");
+    let def = s.goto_definition(0, 6);
+    assert!(def.is_some(), "go-to-def on 'map' should return a result");
+    // The definition should point to a file: URI (the temp prelude),
+    // not resource:prelude which editors can't navigate to.
+    match def.unwrap() {
+        lsp_types::GotoDefinitionResponse::Scalar(loc) => {
+            assert!(
+                loc.uri.scheme() == "file",
+                "prelude go-to-def should use file: URI, got: {}",
+                loc.uri
+            );
+        }
+        lsp_types::GotoDefinitionResponse::Array(locs) => {
+            assert!(!locs.is_empty());
+            assert!(
+                locs[0].uri.scheme() == "file",
+                "prelude go-to-def should use file: URI, got: {}",
+                locs[0].uri
+            );
+        }
+        lsp_types::GotoDefinitionResponse::Link(links) => {
+            assert!(!links.is_empty());
+            assert!(
+                links[0].target_uri.scheme() == "file",
+                "prelude go-to-def should use file: URI, got: {}",
+                links[0].target_uri
+            );
+        }
+    }
+}

@@ -45,9 +45,13 @@ pub struct LspTestSession {
 
 impl LspTestSession {
     /// Create a new session with the prelude loaded.
+    ///
+    /// Uses the same temp-file prelude as the real server so that
+    /// go-to-definition on prelude names returns a file: URI.
     pub fn new() -> Self {
         let uri = Url::parse("file:///test.eu").expect("test URI");
-        let prelude_uri = Url::parse("resource:prelude").expect("prelude URI");
+        let prelude_uri = super::ServerState::write_prelude_to_temp()
+            .unwrap_or_else(|| Url::parse("resource:prelude").expect("prelude URI"));
         let (pipeline_tx, pipeline_rx) = mpsc::channel();
         Self {
             uri,
