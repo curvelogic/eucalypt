@@ -1,0 +1,23 @@
+"Bracket pairs with inline monad function definitions"
+
+# Identity monad with inline bind and return
+⟦{}⟧: { :monad bind(m, f): f(m)  return(a): a }
+
+# List monad with inline bind and return (uses free variable mapcat)
+⌈{}⌉: { :monad bind(m, f): m mapcat(f)  return(v): [v] }
+
+` :main
+tests: {
+
+  ` "inline identity monad — single binding"
+  id-single: ⟦ r: 42 ⟧.r //= 42
+
+  ` "inline identity monad — two bindings"
+  id-two: ⟦ a: 1  b: a + 1 ⟧.b //= 2
+
+  ` "inline list monad — single binding maps and wraps"
+  list-single: ⌈ x: [1, 2, 3] ⌉.(x * 2) //= [2, 4, 6]
+
+  ` "inline list monad — cartesian product"
+  list-product: ⌈ x: [1, 2]  y: [10, 20] ⌉.(x + y) //= [11, 21, 12, 22]
+}

@@ -733,13 +733,24 @@ fn extract_monad_meta(decl: &rowan_ast::Declaration) -> Option<Option<String>> {
 fn extract_monad_spec_from_body(
     body: &RcExpr,
     smid: Smid,
+    pair_name: Option<&str>,
 ) -> Result<Option<super::desugarer::MonadSpec>, CoreError> {
     use super::desugarer::MonadSpec;
     let has_monad_marker = has_monad_block_metadata(body);
     let spec = find_monad_spec_in_bindings(body);
     match (has_monad_marker, spec) {
         (true, Some(spec)) => Ok(Some(spec)),
-        (true, None) => Ok(None),
+        (true, None) => {
+            // Monad marker present but bind/return not extractable as names
+            // (e.g. inline function definitions).  If we have a pair name,
+            // fall back to treating the bracket pair itself as a namespace —
+            // its body block has bind and return as fields.
+            if let Some(name) = pair_name {
+                Ok(Some(MonadSpec::Namespace(name.to_string())))
+            } else {
+                Ok(None)
+            }
+        }
         (
             false,
             Some(MonadSpec::Explicit {
@@ -2512,7 +2523,8 @@ fn rowan_declaration_to_binding(
             rowan_ast::DeclarationKind::BracketBlockDef(_, _)
         ) {
             let spec_smid = desugarer.new_smid(components.span);
-            let spec = extract_monad_spec_from_body(&components.body, spec_smid)?;
+            let spec =
+                extract_monad_spec_from_body(&components.body, spec_smid, Some(&components.name))?;
             if let Some(monad_spec) = spec {
                 desugarer.register_monad_spec(components.name.clone(), monad_spec);
             }
