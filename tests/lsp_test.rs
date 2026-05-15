@@ -1112,3 +1112,186 @@ fn goto_definition_prelude_function_returns_file_uri() {
         }
     }
 }
+
+// ── Code actions: structural editing ────────────────────────────────────────────
+
+#[test]
+fn code_action_wrap_as_namespace() {
+    let mut s = LspTestSession::new();
+    s.open("my-ns: value\n");
+    let titles: Vec<String> = s.all_code_actions().into_iter().map(|a| a.title).collect();
+    assert!(
+        titles.contains(&"Wrap as namespace".to_string()),
+        "expected 'Wrap as namespace' action, got: {titles:?}"
+    );
+
+    // Verify the edit content
+    let action = s
+        .all_code_actions()
+        .into_iter()
+        .find(|a| a.title == "Wrap as namespace")
+        .unwrap();
+    let edit = action.edit.unwrap();
+    let changes = edit.changes.unwrap();
+    let edits = changes.values().next().unwrap();
+    assert!(
+        edits[0].new_text.contains('{'),
+        "edit should introduce a block: {:?}",
+        edits[0].new_text
+    );
+}
+
+#[test]
+fn code_action_promote_metadata_docstring() {
+    let mut s = LspTestSession::new();
+    s.open("` \"docstring\"\nx: 1\n");
+    let titles: Vec<String> = s.all_code_actions().into_iter().map(|a| a.title).collect();
+    assert!(
+        titles.contains(&"Promote metadata to block form".to_string()),
+        "expected promote action, got: {titles:?}"
+    );
+
+    let action = s
+        .all_code_actions()
+        .into_iter()
+        .find(|a| a.title == "Promote metadata to block form")
+        .unwrap();
+    let edit = action.edit.unwrap();
+    let changes = edit.changes.unwrap();
+    let edits = changes.values().next().unwrap();
+    assert!(
+        edits[0].new_text.contains("doc:"),
+        "promoted form should contain 'doc:': {:?}",
+        edits[0].new_text
+    );
+}
+
+#[test]
+fn code_action_promote_metadata_suppress() {
+    let mut s = LspTestSession::new();
+    s.open("` :suppress\nx: 1\n");
+    let action = s
+        .all_code_actions()
+        .into_iter()
+        .find(|a| a.title == "Promote metadata to block form")
+        .unwrap();
+    let edit = action.edit.unwrap();
+    let changes = edit.changes.unwrap();
+    let edits = changes.values().next().unwrap();
+    assert!(
+        edits[0].new_text.contains("export: :suppress"),
+        "promoted :suppress should become 'export: :suppress': {:?}",
+        edits[0].new_text
+    );
+}
+
+#[test]
+fn code_action_demote_metadata() {
+    let mut s = LspTestSession::new();
+    s.open("` { doc: \"hello\" }\nx: 1\n");
+    let titles: Vec<String> = s.all_code_actions().into_iter().map(|a| a.title).collect();
+    assert!(
+        titles.contains(&"Demote metadata to shortcut form".to_string()),
+        "expected demote action, got: {titles:?}"
+    );
+
+    let action = s
+        .all_code_actions()
+        .into_iter()
+        .find(|a| a.title == "Demote metadata to shortcut form")
+        .unwrap();
+    let edit = action.edit.unwrap();
+    let changes = edit.changes.unwrap();
+    let edits = changes.values().next().unwrap();
+    assert!(
+        edits[0].new_text.contains("\"hello\""),
+        "demoted form should contain the string: {:?}",
+        edits[0].new_text
+    );
+    assert!(
+        !edits[0].new_text.contains("doc:"),
+        "demoted form should not contain 'doc:': {:?}",
+        edits[0].new_text
+    );
+}
+
+#[test]
+fn code_action_demote_metadata_not_offered_for_multi_field() {
+    let mut s = LspTestSession::new();
+    s.open("` { doc: \"hello\", type: \"Num\" }\nx: 1\n");
+    let titles: Vec<String> = s.all_code_actions().into_iter().map(|a| a.title).collect();
+    assert!(
+        !titles.contains(&"Demote metadata to shortcut form".to_string()),
+        "demote should not be offered for multi-field metadata"
+    );
+}
+
+#[test]
+fn code_action_add_metadata_to_bare_declaration() {
+    let mut s = LspTestSession::new();
+    s.open("x: 1\n");
+    let titles: Vec<String> = s.all_code_actions().into_iter().map(|a| a.title).collect();
+    assert!(
+        titles.contains(&"Add `doc:` metadata".to_string()),
+        "expected add-doc action, got: {titles:?}"
+    );
+    assert!(
+        titles.contains(&"Add `type:` metadata".to_string()),
+        "expected add-type action, got: {titles:?}"
+    );
+}
+
+#[test]
+fn code_action_add_metadata_to_block_metadata() {
+    let mut s = LspTestSession::new();
+    s.open("` { doc: \"hello\" }\nx: 1\n");
+    let action = s
+        .all_code_actions()
+        .into_iter()
+        .find(|a| a.title == "Add `type:` metadata")
+        .expect("should offer add-type action on block metadata");
+    let edit = action.edit.unwrap();
+    let changes = edit.changes.unwrap();
+    let edits = changes.values().next().unwrap();
+    assert!(
+        edits[0].new_text.contains("type:"),
+        "edit should add 'type:' field: {:?}",
+        edits[0].new_text
+    );
+}
+
+#[test]
+fn code_action_let_block_toggle_add() {
+    let mut s = LspTestSession::new();
+    s.open("{ x: 1, y: 2 }\n");
+    let titles: Vec<String> = s.all_code_actions().into_iter().map(|a| a.title).collect();
+    assert!(
+        titles.contains(&"Convert to sequential let-block".to_string()),
+        "expected let-block toggle action, got: {titles:?}"
+    );
+
+    let action = s
+        .all_code_actions()
+        .into_iter()
+        .find(|a| a.title == "Convert to sequential let-block")
+        .unwrap();
+    let edit = action.edit.unwrap();
+    let changes = edit.changes.unwrap();
+    let edits = changes.values().next().unwrap();
+    assert!(
+        edits[0].new_text.contains(":let"),
+        "edit should insert ':let': {:?}",
+        edits[0].new_text
+    );
+}
+
+#[test]
+fn code_action_let_block_toggle_remove() {
+    let mut s = LspTestSession::new();
+    s.open("{ :let x: 1, y: 2 }\n");
+    let titles: Vec<String> = s.all_code_actions().into_iter().map(|a| a.title).collect();
+    assert!(
+        titles.contains(&"Convert to plain block".to_string()),
+        "expected plain block toggle action, got: {titles:?}"
+    );
+}
