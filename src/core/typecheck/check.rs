@@ -103,6 +103,13 @@ pub struct Checker {
     /// checker walks the expression tree.  Used in `extract_annotation` to
     /// resolve alias references before erasing type variables.
     aliases: AliasMap,
+
+    /// Lambda parameter types inferred during function argument checking.
+    ///
+    /// Maps `Smid` (source location of the lambda) → parameter types.
+    /// Used by LSP features (inlay hints on monadic block bound
+    /// variables) to show the unwrapped element type.
+    lambda_params: HashMap<Smid, Vec<(String, Type)>>,
 }
 
 impl Default for Checker {
@@ -119,6 +126,7 @@ impl Checker {
             var_counter: 0,
             warnings: Vec::new(),
             aliases: AliasMap::new(),
+            lambda_params: HashMap::new(),
         }
     }
 
@@ -149,6 +157,7 @@ impl Checker {
         TypeCheckResult {
             warnings: self.warnings,
             types: type_env,
+            lambda_params: self.lambda_params,
         }
     }
 
@@ -336,16 +345,23 @@ impl Checker {
     /// and whether it was asserted (prefixed with `!`).
     ///
     /// Asserted annotations are trusted without body verification.
-    fn extract_annotation(&self, meta: &RcExpr) -> Option<(Type, bool)> {
+    /// Extract a type annotation from metadata.
+    ///
+    /// Returns `(type, asserted, is_hint)`:
+    /// - `asserted`: `!` prefix — body not verified
+    /// - `is_hint`: came from `__type_hint` (monad binding) — the
+    ///   annotation is for checking only, not for overriding the
+    ///   synthesised type
+    fn extract_annotation(&self, meta: &RcExpr) -> Option<(Type, bool, bool)> {
         let block = match &*meta.inner {
             Expr::Block(_, b) => b,
             _ => return None,
         };
 
-        let type_str: String = if let Some(e) = block.get("type") {
-            extract_string_literal(e)?
+        let (type_str, is_hint): (String, bool) = if let Some(e) = block.get("type") {
+            (extract_string_literal(e)?, false)
         } else if let Some(e) = block.get("__type_hint") {
-            extract_string_literal(e)?
+            (extract_string_literal(e)?, true)
         } else {
             return None;
         };
@@ -358,7 +374,7 @@ impl Checker {
         };
 
         let parsed = parse::parse_type(&type_str).ok()?;
-        Some((self.resolve_aliases_in_type(parsed), asserted))
+        Some((self.resolve_aliases_in_type(parsed), asserted, is_hint))
     }
 
     /// Try to extract a `TypeScheme` from a binding value's `Meta` wrapper.
@@ -370,7 +386,7 @@ impl Checker {
     fn annotation_scheme_of(&self, value: &RcExpr) -> Option<TypeScheme> {
         if let Expr::Meta(_, _, meta) = &*value.inner {
             self.extract_annotation(meta)
-                .map(|(ty, _asserted)| infer_scheme(ty))
+                .map(|(ty, _asserted, _is_hint)| infer_scheme(ty))
         } else {
             None
         }
@@ -450,7 +466,7 @@ impl Checker {
                         // Use the explicit `type:` annotation if given; otherwise
                         // the synthesised type (inferred from the value shape).
                         let alias_ty = if let Expr::Meta(_, _, meta) = &*value.inner {
-                            self.extract_annotation(meta).map(|(ty, _)| ty)
+                            self.extract_annotation(meta).map(|(ty, _, _)| ty)
                         } else {
                             None
                         }
@@ -518,16 +534,74 @@ impl Checker {
         // the annotation itself can reference freshly-declared aliases.
         self.register_aliases_from_meta(meta);
 
-        if let Some((annotated_type, asserted)) = self.extract_annotation(meta) {
+        if let Some((annotated_type, asserted, is_hint)) = self.extract_annotation(meta) {
             let scheme = infer_scheme(annotated_type);
             let working_type = freshen(&scheme, &mut self.var_counter);
             // Asserted annotations (prefixed with `!`) are trusted without
             // checking the body.  Used when the body has type-level assumptions
             // the checker cannot verify (e.g. dependent-length lists as tuples).
-            if !asserted {
+            if is_hint {
+                // For __type_hint (monad bindings), synthesise the inner
+                // expression ONCE, emit a warning if it doesn't match the
+                // hint type, then return the synthesised type (not the hint)
+                // so downstream unification sees concrete types.
+                let inner_type = self.synthesise(inner);
+
+                // Check consistency and warn (replicates check_against logic
+                // without double-synthesising).
+                if !asserted
+                    && is_informative(&inner_type)
+                    && is_informative(&working_type)
+                    && !is_consistent(&inner_type, &working_type)
+                {
+                    self.emit_type_mismatch(
+                        smid,
+                        &working_type,
+                        &inner_type,
+                        "expression type does not match annotation",
+                    );
+                }
+
+                // Small list literals synthesise as tuples (e.g. [1,2,3] →
+                // (number, number, number)) which don't unify with the
+                // wrapper's list type [a].  Convert homogeneous tuples to
+                // lists; heterogeneous tuples fall back to the wrapper type.
+                if is_informative(&inner_type) {
+                    match &inner_type {
+                        Type::Tuple(elems) if !elems.is_empty() => {
+                            let first = &elems[0];
+                            if elems.iter().all(|e| e == first) {
+                                // Homogeneous tuple → list of element type
+                                Type::List(Box::new(first.clone()))
+                            } else {
+                                // Heterogeneous tuple → list of union
+                                let mut seen = std::collections::BTreeSet::new();
+                                let mut unique = Vec::new();
+                                for e in elems {
+                                    let s = format!("{e}");
+                                    if seen.insert(s) {
+                                        unique.push(e.clone());
+                                    }
+                                }
+                                let elem_type = if unique.len() == 1 {
+                                    unique.into_iter().next().unwrap()
+                                } else {
+                                    Type::Union(unique)
+                                };
+                                Type::List(Box::new(elem_type))
+                            }
+                        }
+                        _ => inner_type,
+                    }
+                } else {
+                    working_type
+                }
+            } else if !asserted {
                 self.check_against(inner, &working_type, smid);
+                working_type
+            } else {
+                working_type
             }
-            working_type
         } else {
             self.synthesise(inner)
         }
@@ -671,6 +745,37 @@ impl Checker {
                             }
                             return apply_subst(&result_type, subst);
                         }
+                    }
+                }
+
+                // When the argument is a lambda and the parameter type is a
+                // known function type, use check_against so that check_lambda
+                // fires — this infers parameter types for the lambda's bound
+                // variables (needed for LSP inlay hints on monadic bindings).
+                if let Expr::Lam(lam_smid, _, scope) = &*arg.inner {
+                    if matches!(&param_applied, Type::Function(_, _))
+                        && is_informative(&param_applied)
+                    {
+                        self.check_against(arg, &param_applied, smid);
+                        // Record resolved lambda parameter types for LSP,
+                        // keyed by the lambda's Smid (source location) to
+                        // avoid name collisions between different monadic
+                        // blocks using the same binding name.
+                        let mut params = Vec::new();
+                        let mut remaining = param_applied.clone();
+                        for param in &scope.pattern {
+                            if let Type::Function(p, r) = remaining {
+                                let resolved = apply_subst(&p, subst);
+                                if is_informative(&resolved) && !matches!(&resolved, Type::Var(_)) {
+                                    params.push((param.clone(), resolved));
+                                }
+                                remaining = *r;
+                            }
+                        }
+                        if !params.is_empty() {
+                            self.lambda_params.insert(*lam_smid, params);
+                        }
+                        return apply_subst(&result_type, subst);
                     }
                 }
 
@@ -1024,6 +1129,13 @@ pub struct TypeCheckResult {
     pub warnings: Vec<TypeWarning>,
     /// Flattened type environment mapping binding names to their inferred types.
     pub types: HashMap<String, Type>,
+    /// Lambda parameter types inferred during type checking.
+    ///
+    /// Maps `Smid` (source location of the lambda) → list of
+    /// `(param_name, inferred_type)` pairs.  Keyed by Smid to avoid
+    /// name collisions between different lambdas with the same param
+    /// names.
+    pub lambda_params: HashMap<Smid, Vec<(String, Type)>>,
 }
 
 /// Run the type checker over `expr` and return all warnings found.

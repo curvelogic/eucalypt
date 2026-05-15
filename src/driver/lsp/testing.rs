@@ -5,9 +5,12 @@
 //! JSON-RPC transport.  Used for integration tests that exercise LSP
 //! features against realistic editing scenarios.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
+
+use crate::core::typecheck::types::Type;
 
 use lsp_types::{
     CompletionItem, CompletionResponse, DocumentHighlight, GotoDefinitionResponse, Hover,
@@ -181,9 +184,17 @@ impl LspTestSession {
         let root = parse.syntax_node();
         let table = self.build_symbol_table();
         let type_env = self.type_env();
+        let lambda_params = self.lambda_params();
 
         let range = Range::new(Position::new(0, 0), Position::new(u32::MAX, 0));
-        inlay_hints::inlay_hints(&self.content, &root, &range, &table, type_env)
+        inlay_hints::inlay_hints(
+            &self.content,
+            &root,
+            &range,
+            &table,
+            type_env,
+            lambda_params,
+        )
     }
 
     /// Get the completion labels as strings (convenience for assertions).
@@ -246,6 +257,20 @@ impl LspTestSession {
     /// Return the current document content.
     pub fn content(&self) -> &str {
         &self.content
+    }
+
+    /// Lambda param names and types in the cached pipeline (for debugging).
+    pub fn lambda_param_names(&self) -> Vec<(String, String)> {
+        self.cached.as_ref().map_or(vec![], |c| {
+            c.lambda_params
+                .iter()
+                .map(|((_line, _col, name), v)| (name.clone(), format!("{v}")))
+                .collect()
+        })
+    }
+
+    fn lambda_params(&self) -> Option<&HashMap<(u32, u32, String), Type>> {
+        self.cached.as_ref().map(|c| &c.lambda_params)
     }
 
     /// Return the last pipeline error, if any.

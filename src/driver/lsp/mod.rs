@@ -65,6 +65,12 @@ struct ImportedFile {
 struct CachedPipeline {
     uri: Url,
     type_env: TypeEnv,
+    /// Lambda parameter types inferred by the type checker.
+    ///
+    /// Lambda parameter types keyed by `(line, column, param_name)`.
+    /// The line/column come from the lambda's Smid resolved via the
+    /// source map, giving a unique key per binding declaration.
+    lambda_params: HashMap<(u32, u32, String), Type>,
     warnings: Vec<crate::core::typecheck::error::TypeWarning>,
     source_map: SourceMap,
     /// Imported files resolved by the pipeline, for building symbol
@@ -321,6 +327,11 @@ impl ServerState {
     /// Look up the type env for a URI from the cached pipeline result.
     fn type_env_for(&self, uri: &Url) -> Option<&TypeEnv> {
         self.cached.get(uri).map(|c| &c.type_env)
+    }
+
+    /// Look up lambda parameter types from the cached pipeline.
+    fn lambda_params_for(&self, uri: &Url) -> Option<&HashMap<(u32, u32, String), Type>> {
+        self.cached.get(uri).map(|c| &c.lambda_params)
     }
 
     /// Build a symbol table for a document from AST, prelude, and
@@ -936,7 +947,9 @@ fn on_inlay_hint(
     let root = parse.syntax_node();
     let table = state.build_symbol_table(uri, text);
     let type_env = state.type_env_for(uri);
-    let hints = inlay_hints::inlay_hints(text, &root, &params.range, &table, type_env);
+    let lambda_params = state.lambda_params_for(uri);
+    let hints =
+        inlay_hints::inlay_hints(text, &root, &params.range, &table, type_env, lambda_params);
     Some(hints)
 }
 
@@ -1164,11 +1177,36 @@ fn run_pipeline(
         })
         .collect();
 
+    // Flatten the Smid-keyed lambda_params into (name, line) keys
+    // so the LSP inlay hints can look up by declaration position.
+    // Flatten the Smid-keyed lambda_params into (line, col, name) keys
+    // using the source map for position resolution.
+    let mut lambda_params = HashMap::new();
+    {
+        use codespan_reporting::files::Files;
+        let files = loader.files();
+        let sm = loader.source_map();
+        for (smid, params) in &result.lambda_params {
+            if let Some(info) = sm.source_info_for_smid(*smid) {
+                if let (Some(file_id), Some(span)) = (info.file, info.span) {
+                    if let Ok(loc) = files.location(file_id, span.start().into()) {
+                        let line = (loc.line_number - 1) as u32;
+                        let col = (loc.column_number - 1) as u32;
+                        for (name, ty) in params {
+                            lambda_params.insert((line, col, name.clone()), ty.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let (_, source_map, _) = loader.complete();
 
     Ok(CachedPipeline {
         uri: uri.clone(),
         type_env,
+        lambda_params,
         warnings: result.warnings,
         source_map,
         imports,

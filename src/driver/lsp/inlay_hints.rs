@@ -25,12 +25,21 @@ pub fn inlay_hints(
     range: &Range,
     table: &SymbolTable,
     type_env: Option<&HashMap<String, Type>>,
+    lambda_params: Option<&HashMap<(u32, u32, String), Type>>,
 ) -> Vec<InlayHint> {
     let mut hints = Vec::new();
 
     // Walk declarations for operator fixity hints and parameter hints in call sites
     if let Some(unit) = ast::Unit::cast(root.clone()) {
-        collect_hints_from_unit(source, &unit, range, table, type_env, &mut hints);
+        collect_hints_from_unit(
+            source,
+            &unit,
+            range,
+            table,
+            type_env,
+            lambda_params,
+            &mut hints,
+        );
     }
 
     hints
@@ -43,6 +52,7 @@ fn collect_hints_from_unit(
     range: &Range,
     table: &SymbolTable,
     type_env: Option<&HashMap<String, Type>>,
+    lambda_params: Option<&HashMap<(u32, u32, String), Type>>,
     hints: &mut Vec<InlayHint>,
 ) {
     for decl in unit.declarations() {
@@ -75,11 +85,23 @@ fn collect_hints_from_unit(
                 for element in soup.elements() {
                     match element {
                         ast::Element::Block(block) => {
-                            collect_monadic_binding_hints(source, &block, range, table, hints);
+                            collect_monadic_binding_hints(
+                                source,
+                                &block,
+                                range,
+                                table,
+                                lambda_params,
+                                hints,
+                            );
                         }
                         ast::Element::BracketBlock(block) => {
                             collect_bracket_block_binding_hints(
-                                source, &block, range, table, hints,
+                                source,
+                                &block,
+                                range,
+                                table,
+                                lambda_params,
+                                hints,
                             );
                         }
                         _ => {}
@@ -98,6 +120,7 @@ fn collect_monadic_binding_hints(
     block: &ast::Block,
     range: &Range,
     table: &SymbolTable,
+    lambda_params: Option<&HashMap<(u32, u32, String), Type>>,
     hints: &mut Vec<InlayHint>,
 ) {
     let block_range = text_range_to_lsp_range(source, block.syntax().text_range());
@@ -123,19 +146,34 @@ fn collect_monadic_binding_hints(
         None => return,
     };
 
-    // Add type hints on each binding declaration
+    // Add type hints on each binding declaration.
+    // When the pipeline has inferred an element type for the bound
+    // variable (via check_lambda), show that instead of the raw wrapper.
     for decl in block.declarations() {
         if let Some(head) = decl.head() {
             let kind = head.classify_declaration();
-            let name_token = match &kind {
-                DeclarationKind::Property(id) => id.syntax().clone(),
-                DeclarationKind::Function(id, _) => id.syntax().clone(),
+            let (name_token, decl_name) = match &kind {
+                DeclarationKind::Property(id) => (id.syntax().clone(), id.text().to_string()),
+                DeclarationKind::Function(id, _) => (id.syntax().clone(), id.text().to_string()),
                 _ => continue,
             };
             let token_range = text_range_to_lsp_range(source, name_token.text_range());
+
+            // Prefer the inferred element type from the pipeline's
+            // lambda_params (e.g. x: number) over the raw wrapper
+            // type (e.g. x: [a]).  Keyed by (name, line) to avoid
+            // collisions between different monadic blocks.
+            let hint_type = lambda_params
+                .and_then(|params| {
+                    let line = token_range.start.line;
+                    let col = token_range.start.character;
+                    params.get(&(line, col, decl_name.clone()))
+                })
+                .map(|ty| crate::core::typecheck::types::humanise(ty).to_string())
+                .unwrap_or_else(|| monad_type.clone());
             hints.push(InlayHint {
                 position: token_range.end,
-                label: InlayHintLabel::String(format!(": {monad_type}")),
+                label: InlayHintLabel::String(format!(": {hint_type}")),
                 kind: Some(InlayHintKind::TYPE),
                 text_edits: None,
                 tooltip: Some(lsp_types::InlayHintTooltip::String(format!(
@@ -158,6 +196,7 @@ fn collect_bracket_block_binding_hints(
     block: &ast::BracketBlock,
     range: &Range,
     table: &SymbolTable,
+    lambda_params: Option<&HashMap<(u32, u32, String), Type>>,
     hints: &mut Vec<InlayHint>,
 ) {
     let block_range = text_range_to_lsp_range(source, block.syntax().text_range());
@@ -185,15 +224,24 @@ fn collect_bracket_block_binding_hints(
     for decl in block.declarations() {
         if let Some(head) = decl.head() {
             let kind = head.classify_declaration();
-            let name_token = match &kind {
-                DeclarationKind::Property(id) => id.syntax().clone(),
-                DeclarationKind::Function(id, _) => id.syntax().clone(),
+            let (name_token, decl_name) = match &kind {
+                DeclarationKind::Property(id) => (id.syntax().clone(), id.text().to_string()),
+                DeclarationKind::Function(id, _) => (id.syntax().clone(), id.text().to_string()),
                 _ => continue,
             };
             let token_range = text_range_to_lsp_range(source, name_token.text_range());
+
+            let hint_type = lambda_params
+                .and_then(|params| {
+                    let line = token_range.start.line;
+                    let col = token_range.start.character;
+                    params.get(&(line, col, decl_name.clone()))
+                })
+                .map(|ty| crate::core::typecheck::types::humanise(ty).to_string())
+                .unwrap_or_else(|| monad_type.clone());
             hints.push(InlayHint {
                 position: token_range.end,
-                label: InlayHintLabel::String(format!(": {monad_type}")),
+                label: InlayHintLabel::String(format!(": {hint_type}")),
                 kind: Some(InlayHintKind::TYPE),
                 text_edits: None,
                 tooltip: Some(lsp_types::InlayHintTooltip::String(format!(
@@ -399,7 +447,7 @@ mod tests {
         let parse = parse_unit(source);
         let root = parse.syntax_node();
         let table = SymbolTable::new();
-        let hints = inlay_hints(source, &root, &full_range(), &table, None);
+        let hints = inlay_hints(source, &root, &full_range(), &table, None, None);
         assert!(hints.is_empty());
     }
 
@@ -409,7 +457,7 @@ mod tests {
         let parse = parse_unit(source);
         let root = parse.syntax_node();
         let table = make_table(source);
-        let hints = inlay_hints(source, &root, &full_range(), &table, None);
+        let hints = inlay_hints(source, &root, &full_range(), &table, None, None);
         let fixity_hints: Vec<_> = hints
             .iter()
             .filter(|h| h.kind == Some(InlayHintKind::TYPE))
@@ -429,7 +477,7 @@ mod tests {
         let parse = parse_unit(source);
         let root = parse.syntax_node();
         let table = make_table(source);
-        let hints = inlay_hints(source, &root, &full_range(), &table, None);
+        let hints = inlay_hints(source, &root, &full_range(), &table, None, None);
         let param_hints: Vec<_> = hints
             .iter()
             .filter(|h| h.kind == Some(InlayHintKind::PARAMETER))
@@ -446,7 +494,7 @@ mod tests {
         let parse = parse_unit(source);
         let root = parse.syntax_node();
         let table = make_table(source);
-        let hints = inlay_hints(source, &root, &full_range(), &table, None);
+        let hints = inlay_hints(source, &root, &full_range(), &table, None, None);
         let param_hints: Vec<_> = hints
             .iter()
             .filter(|h| h.kind == Some(InlayHintKind::PARAMETER))
@@ -509,7 +557,7 @@ mod tests {
         let parse = parse_unit(source);
         let root = parse.syntax_node();
 
-        let hints = inlay_hints(source, &root, &full_range(), &table, None);
+        let hints = inlay_hints(source, &root, &full_range(), &table, None, None);
         let type_hints: Vec<_> = hints
             .iter()
             .filter(|h| matches!(&h.label, InlayHintLabel::String(s) if s.contains("[a]")))
