@@ -439,7 +439,7 @@ fn collect_add_metadata_actions(
         return;
     }
 
-    let fields = ["type", "doc", "target", "export"];
+    let fields = ["type", "doc", "target", "export", "monad", "format", "type-def"];
 
     for field in &fields {
         let (edit_range, new_text) = compute_add_metadata_edit(source, decl, field);
@@ -476,6 +476,9 @@ fn compute_add_metadata_edit(source: &str, decl: &Declaration, field: &str) -> (
         "doc" => "\"\"",
         "target" => ":main",
         "export" => ":suppress",
+        "monad" => "true",
+        "format" => ":yaml",
+        "type-def" => "\"\"",
         _ => "\"\"",
     };
 
