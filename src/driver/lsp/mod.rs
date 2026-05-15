@@ -67,10 +67,10 @@ struct CachedPipeline {
     type_env: TypeEnv,
     /// Lambda parameter types inferred by the type checker.
     ///
-    /// Keyed by `(param_name, line)` to avoid collisions between
-    /// different monadic blocks using the same binding name on different
-    /// lines.
-    lambda_params: HashMap<(String, u32), Type>,
+    /// Lambda parameter types keyed by `(line, column, param_name)`.
+    /// The line/column come from the lambda's Smid resolved via the
+    /// source map, giving a unique key per binding declaration.
+    lambda_params: HashMap<(u32, u32, String), Type>,
     warnings: Vec<crate::core::typecheck::error::TypeWarning>,
     source_map: SourceMap,
     /// Imported files resolved by the pipeline, for building symbol
@@ -330,7 +330,7 @@ impl ServerState {
     }
 
     /// Look up lambda parameter types from the cached pipeline.
-    fn lambda_params_for(&self, uri: &Url) -> Option<&HashMap<(String, u32), Type>> {
+    fn lambda_params_for(&self, uri: &Url) -> Option<&HashMap<(u32, u32, String), Type>> {
         self.cached.get(uri).map(|c| &c.lambda_params)
     }
 
@@ -1179,6 +1179,8 @@ fn run_pipeline(
 
     // Flatten the Smid-keyed lambda_params into (name, line) keys
     // so the LSP inlay hints can look up by declaration position.
+    // Flatten the Smid-keyed lambda_params into (line, col, name) keys
+    // using the source map for position resolution.
     let mut lambda_params = HashMap::new();
     {
         use codespan_reporting::files::Files;
@@ -1189,8 +1191,9 @@ fn run_pipeline(
                 if let (Some(file_id), Some(span)) = (info.file, info.span) {
                     if let Ok(loc) = files.location(file_id, span.start().into()) {
                         let line = (loc.line_number - 1) as u32;
+                        let col = (loc.column_number - 1) as u32;
                         for (name, ty) in params {
-                            lambda_params.insert((name.clone(), line), ty.clone());
+                            lambda_params.insert((line, col, name.clone()), ty.clone());
                         }
                     }
                 }

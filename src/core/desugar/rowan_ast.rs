@@ -1069,8 +1069,11 @@ fn desugar_monadic_block(
         .map(|name| desugarer.env().get(name).unwrap().clone())
         .collect();
 
-    // Desugar all declaration bodies (in order) with bind names in scope
-    let mut name_value_pairs: Vec<(String, RcExpr)> = Vec::with_capacity(decls.len());
+    // Desugar all declaration bodies (in order) with bind names in scope.
+    // Each entry carries (name, value, smid) — the smid is from the
+    // individual declaration's span so that lambdas in the bind chain
+    // have unique source locations.
+    let mut name_value_pairs: Vec<(String, RcExpr, Smid)> = Vec::with_capacity(decls.len());
     for (i, decl) in decls.iter().enumerate() {
         let decl_name = bind_names[i].clone();
         let span = text_range_to_span(decl.syntax().text_range());
@@ -1096,8 +1099,9 @@ fn desugar_monadic_block(
                 desugarer.new_smid(span),
             ));
         };
-        let value = wrap_with_type_hint(value, monad_type, desugarer.new_smid(span));
-        name_value_pairs.push((decl_name, value));
+        let decl_smid = desugarer.new_smid(span);
+        let value = wrap_with_type_hint(value, monad_type, decl_smid);
+        name_value_pairs.push((decl_name, value, decl_smid));
     }
 
     // Desugar the return expression (potentially a dot chain) now that
@@ -1129,9 +1133,11 @@ fn desugar_monadic_block(
         }
     };
 
-    // Build bind chain from right-to-left using all pairs
-    for ((_, value), bind_var) in name_value_pairs.into_iter().zip(bind_vars).rev() {
-        let lambda = core::lam(smid, vec![bind_var], result);
+    // Build bind chain from right-to-left using all pairs.
+    // Each lambda gets the individual declaration's Smid so that
+    // lambda_params in the type checker can be keyed uniquely.
+    for ((_, value, decl_smid), bind_var) in name_value_pairs.into_iter().zip(bind_vars).rev() {
+        let lambda = core::lam(decl_smid, vec![bind_var], result);
         result = match spec {
             MonadSpec::Explicit { bind_name, .. } => {
                 let bind_fn = desugarer.varify(RcExpr::from(Expr::Name(smid, bind_name.clone())));
@@ -1191,7 +1197,7 @@ fn desugar_monadic_block_implicit(
         .collect();
 
     // Desugar all declaration bodies.
-    let mut name_value_pairs: Vec<(String, RcExpr)> = Vec::with_capacity(decls.len());
+    let mut name_value_pairs: Vec<(String, RcExpr, Smid)> = Vec::with_capacity(decls.len());
     for (i, decl) in decls.iter().enumerate() {
         let decl_name = bind_names[i].clone();
         let span = text_range_to_span(decl.syntax().text_range());
@@ -1217,8 +1223,9 @@ fn desugar_monadic_block_implicit(
                 desugarer.new_smid(span),
             ));
         };
-        let value = wrap_with_type_hint(value, monad_type, desugarer.new_smid(span));
-        name_value_pairs.push((decl_name, value));
+        let decl_smid = desugarer.new_smid(span);
+        let value = wrap_with_type_hint(value, monad_type, decl_smid);
+        name_value_pairs.push((decl_name, value, decl_smid));
     }
 
     // Synthesise the implicit return block from all non-underscore bind names.
@@ -1304,8 +1311,8 @@ fn desugar_monadic_block_implicit(
         }
     };
 
-    for ((_, value), bind_var) in name_value_pairs.into_iter().zip(bind_vars).rev() {
-        let lambda = core::lam(smid, vec![bind_var], result);
+    for ((_, value, decl_smid), bind_var) in name_value_pairs.into_iter().zip(bind_vars).rev() {
+        let lambda = core::lam(decl_smid, vec![bind_var], result);
         result = match spec {
             MonadSpec::Explicit { bind_name, .. } => {
                 let bind_fn = desugarer.varify(RcExpr::from(Expr::Name(smid, bind_name.clone())));

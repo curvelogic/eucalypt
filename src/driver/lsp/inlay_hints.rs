@@ -25,7 +25,7 @@ pub fn inlay_hints(
     range: &Range,
     table: &SymbolTable,
     type_env: Option<&HashMap<String, Type>>,
-    lambda_params: Option<&HashMap<(String, u32), Type>>,
+    lambda_params: Option<&HashMap<(u32, u32, String), Type>>,
 ) -> Vec<InlayHint> {
     let mut hints = Vec::new();
 
@@ -52,7 +52,7 @@ fn collect_hints_from_unit(
     range: &Range,
     table: &SymbolTable,
     type_env: Option<&HashMap<String, Type>>,
-    lambda_params: Option<&HashMap<(String, u32), Type>>,
+    lambda_params: Option<&HashMap<(u32, u32, String), Type>>,
     hints: &mut Vec<InlayHint>,
 ) {
     for decl in unit.declarations() {
@@ -120,7 +120,7 @@ fn collect_monadic_binding_hints(
     block: &ast::Block,
     range: &Range,
     table: &SymbolTable,
-    lambda_params: Option<&HashMap<(String, u32), Type>>,
+    lambda_params: Option<&HashMap<(u32, u32, String), Type>>,
     hints: &mut Vec<InlayHint>,
 ) {
     let block_range = text_range_to_lsp_range(source, block.syntax().text_range());
@@ -158,13 +158,17 @@ fn collect_monadic_binding_hints(
                 _ => continue,
             };
             let token_range = text_range_to_lsp_range(source, name_token.text_range());
-            let line = token_range.start.line;
+
             // Prefer the inferred element type from the pipeline's
             // lambda_params (e.g. x: number) over the raw wrapper
             // type (e.g. x: [a]).  Keyed by (name, line) to avoid
             // collisions between different monadic blocks.
             let hint_type = lambda_params
-                .and_then(|params| params.get(&(decl_name.clone(), line)))
+                .and_then(|params| {
+                    let line = token_range.start.line;
+                    let col = token_range.start.character;
+                    params.get(&(line, col, decl_name.clone()))
+                })
                 .map(|ty| crate::core::typecheck::types::humanise(ty).to_string())
                 .unwrap_or_else(|| monad_type.clone());
             hints.push(InlayHint {
@@ -192,7 +196,7 @@ fn collect_bracket_block_binding_hints(
     block: &ast::BracketBlock,
     range: &Range,
     table: &SymbolTable,
-    lambda_params: Option<&HashMap<(String, u32), Type>>,
+    lambda_params: Option<&HashMap<(u32, u32, String), Type>>,
     hints: &mut Vec<InlayHint>,
 ) {
     let block_range = text_range_to_lsp_range(source, block.syntax().text_range());
@@ -226,9 +230,13 @@ fn collect_bracket_block_binding_hints(
                 _ => continue,
             };
             let token_range = text_range_to_lsp_range(source, name_token.text_range());
-            let line = token_range.start.line;
+
             let hint_type = lambda_params
-                .and_then(|params| params.get(&(decl_name.clone(), line)))
+                .and_then(|params| {
+                    let line = token_range.start.line;
+                    let col = token_range.start.character;
+                    params.get(&(line, col, decl_name.clone()))
+                })
                 .map(|ty| crate::core::typecheck::types::humanise(ty).to_string())
                 .unwrap_or_else(|| monad_type.clone());
             hints.push(InlayHint {
