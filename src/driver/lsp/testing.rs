@@ -13,10 +13,11 @@ use std::sync::{mpsc, Arc};
 use crate::core::typecheck::types::Type;
 
 use lsp_types::{
-    CompletionItem, CompletionResponse, DocumentHighlight, GotoDefinitionResponse, Hover,
-    InlayHint, Position, Range, TextDocumentContentChangeEvent, Url,
+    CodeAction, CompletionItem, CompletionResponse, DocumentHighlight, GotoDefinitionResponse,
+    Hover, InlayHint, Position, Range, TextDocumentContentChangeEvent, Url,
 };
 
+use super::actions;
 use super::completion;
 use super::highlight;
 use super::hover;
@@ -239,6 +240,43 @@ impl LspTestSession {
         let root = parse.syntax_node();
         let position = Position { line, character };
         highlight::document_highlights(&self.content, &root, &position)
+    }
+
+    /// Compute code actions for the given range.
+    pub fn code_actions(
+        &self,
+        start_line: u32,
+        start_char: u32,
+        end_line: u32,
+        end_char: u32,
+    ) -> Vec<CodeAction> {
+        let parse = parse_unit(&self.content);
+        let root = parse.syntax_node();
+        let table = self.build_symbol_table();
+        let range = Range::new(
+            Position::new(start_line, start_char),
+            Position::new(end_line, end_char),
+        );
+        actions::code_actions(&self.content, &root, &range, &self.uri, &table)
+    }
+
+    /// Compute code actions for the full document.
+    pub fn all_code_actions(&self) -> Vec<CodeAction> {
+        self.code_actions(0, 0, 1000, 0)
+    }
+
+    /// Get code action titles (convenience for assertions).
+    pub fn code_action_titles(
+        &self,
+        start_line: u32,
+        start_char: u32,
+        end_line: u32,
+        end_char: u32,
+    ) -> Vec<String> {
+        self.code_actions(start_line, start_char, end_line, end_char)
+            .into_iter()
+            .map(|a| a.title)
+            .collect()
     }
 
     /// Exercise all LSP operations at every character position in the

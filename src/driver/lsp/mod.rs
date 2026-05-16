@@ -151,7 +151,7 @@ fn server_capabilities() -> ServerCapabilities {
         document_formatting_provider: Some(lsp_types::OneOf::Left(true)),
         document_range_formatting_provider: Some(lsp_types::OneOf::Left(true)),
         references_provider: Some(lsp_types::OneOf::Left(true)),
-        code_action_provider: None,
+        code_action_provider: Some(lsp_types::CodeActionProviderCapability::Simple(true)),
         inlay_hint_provider: Some(lsp_types::OneOf::Left(true)),
         document_highlight_provider: Some(lsp_types::OneOf::Left(true)),
         rename_provider: Some(lsp_types::OneOf::Right(lsp_types::RenameOptions {
@@ -1272,9 +1272,9 @@ mod tests {
     }
 
     #[test]
-    fn server_capabilities_has_no_code_actions() {
+    fn server_capabilities_has_code_actions() {
         let caps = server_capabilities();
-        assert!(caps.code_action_provider.is_none());
+        assert!(caps.code_action_provider.is_some());
     }
 
     #[test]
