@@ -51,3 +51,6 @@ editors/vscode/*.vsix
 .playwright-mcp/
 lib/.result/
 lib/.result/
+# Emacs auto-save and lock files
+\#*\#
+.#*

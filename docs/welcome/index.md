@@ -415,6 +415,5 @@ There is much more to this story. For instance `eu` can:
 - accept YAML or JSON annotated with eucalypt to execute: `eu
   data.yaml`
 - override the default extensions: `eu yaml@info.txt`
-- automatically use `Eufile` files in the current folder hierarchy
 
 See [CLI Reference](../reference/cli.md) for more complete documentation.

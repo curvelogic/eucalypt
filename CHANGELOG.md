@@ -2,6 +2,39 @@
 
 All notable changes to eucalypt are documented here.
 
+## [0.6.1] - 2026-05-16
+
+### Added
+
+- **Named row variables** — `{k: T, ..r}` syntax in type annotations.  Row variables express "a record with at least these fields, plus unknown extra fields that are preserved through a transformation"
+- **Record type propagation** — blocks applied to blocks (catenation) now propagate field types through the merge.  The type checker understands that blocks are callable
+- **Monad namespace annotations** — `for`, `io`, `random`, and `state` have explicit record type annotations declaring all combinator types (bind, return, map, etc.)
+- **Monadic bound variable type hinting** — LSP inlay hints show the unwrapped element type (e.g. `x: number`) instead of the raw wrapper type (`x: [a]`) for monadic block bindings
+- **Symbol metadata shortcut for targets** — bare symbols in declaration metadata become targets: `` ` :test `` is equivalent to `` ` { target: :test } ``.  `:target` uses the declaration's own name
+- **LSP pipeline backend** — the LSP server uses the SourceLoader pipeline as its primary semantic backend with debounced background type checking, replacing AST-level scraping
+- **LSP incremental text sync** — the LSP uses incremental text document synchronisation with proper UTF-16 offset handling
+- **LSP import resolution** — `{ import: "file.eu" }` declarations are resolved by the pipeline; go-to-definition, hover, and completion work for imported names
+- **LSP bracket pair support** — semantic tokens, hover, go-to-definition, document highlight (matching), and inlay hints for idiot bracket pairs
+- **LSP code actions** — structural editing: wrap as namespace (single or multi-declaration with reference prefixing), promote/demote metadata shortcuts, add metadata fields, let-block toggle
+- **LSP prelude go-to-definition** — prelude functions resolve to a temp file with the prelude source, enabling go-to-definition navigation
+- **LSP pipeline error diagnostics** — pipeline errors (e.g. invalid monad spec) surface as visible editor diagnostics with source locations
+- **Prelude operator annotations** — ~30 remaining unannotated operators now have `type:` metadata
+- **`eu` with no inputs shows help** — running `eu` with no files, no `-e`, and terminal stdin shows the clap help text instead of crashing
+
+### Changed
+
+- **LSP architecture** — per-document caching with background pipeline, green node change detection, `didClose` cleanup.  Type checking works on unsaved buffers
+
+### Removed
+
+- **Eufile support** — the Eufile project file mechanism and `Ergonomic`/`Batch` `CommandLineMode` distinction are removed.  `eu` now always behaves as former batch mode.  The `-B`/`--batch` flag is removed.  Scripts using `-B` should remove the flag
+
+### Fixed
+
+- **Bracket pair inline monad definitions** — `⟦{}⟧: { :monad bind(m, f): f(m) return(a): a }` now works; falls back to namespace monad when inline definitions can't be extracted as names
+- **Row variable closedness** — row variable absorption uses `row.is_some()` for openness instead of inheriting anonymous openness from synthesised blocks
+- **Parser bare colon recovery** — `{ : }` (typing a monad tag) no longer crashes the parser; the LSP can offer completion
+
 ## [0.6.0] - 2026-04-25
 
 ### Added
