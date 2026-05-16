@@ -1299,12 +1299,29 @@ fn code_action_let_block_toggle_remove() {
 #[test]
 fn code_action_wrap_selection_into_namespace() {
     let mut s = LspTestSession::new();
-    s.open("a: 1\nb: 2\nc: 3\n");
-    // Select all three declarations (lines 0-2)
-    let actions = s.code_actions(0, 0, 2, 4);
-    let titles: Vec<String> = actions.iter().map(|a| a.title.clone()).collect();
+    s.open("a: 1\nb: 2\nc: a + b\n");
+    // Select first two declarations (a and b), leaving c outside
+    let actions = s.code_actions(0, 0, 1, 4);
+    let wrap_action = actions
+        .iter()
+        .find(|a| a.title == "Wrap selection into namespace");
     assert!(
-        titles.contains(&"Wrap selection into namespace".to_string()),
-        "expected multi-wrap action when multiple declarations selected, got: {titles:?}"
+        wrap_action.is_some(),
+        "expected multi-wrap action when multiple declarations selected"
+    );
+
+    // Check that the edit prefixes the reference to `a` in `c: a + b`
+    let action = wrap_action.unwrap();
+    let ws_edit = action.edit.as_ref().unwrap();
+    let edits = ws_edit.changes.as_ref().unwrap();
+    let file_edits = edits.values().next().unwrap();
+    // Should have: 1 edit for the wrap + 2 edits for prefixing `a` and `b` in `c: a + b`
+    let prefix_edits: Vec<_> = file_edits
+        .iter()
+        .filter(|e| e.new_text.starts_with("my-ns."))
+        .collect();
+    assert!(
+        prefix_edits.len() >= 2,
+        "should prefix references to a and b outside the wrapped block, got: {prefix_edits:?}"
     );
 }

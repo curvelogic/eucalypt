@@ -83,7 +83,6 @@ fn collect_structural_actions(
 
         // Declaration-level actions
         if let Some(decl) = Declaration::cast(node.clone()) {
-            collect_wrap_as_namespace_actions(source, &decl, uri, actions);
             collect_promote_metadata_actions(source, &decl, uri, actions);
             collect_demote_metadata_actions(source, &decl, uri, actions);
             collect_add_metadata_actions(source, &decl, uri, actions);
@@ -170,8 +169,10 @@ fn collect_wrap_as_namespace_actions(
     });
 }
 
-/// If the selection spans multiple top-level declarations, offer to wrap
-/// them into a new namespace block with a placeholder name.
+/// Offer "Wrap as namespace" — behaviour depends on selection:
+/// - Single declaration: wraps its value into `name: { ... }`
+/// - Multiple declarations: wraps them into `my-ns: { ... }` with
+///   reference prefixing
 fn collect_wrap_selection_into_namespace(
     source: &str,
     root: &SyntaxNode,
@@ -193,8 +194,13 @@ fn collect_wrap_selection_into_namespace(
         })
         .collect();
 
-    // Only offer when 2+ declarations are selected.
-    if selected.len() < 2 {
+    if selected.is_empty() {
+        return;
+    }
+
+    // Single declaration — wrap value into block
+    if selected.len() == 1 {
+        collect_wrap_as_namespace_actions(source, &selected[0], uri, actions);
         return;
     }
 
@@ -238,8 +244,62 @@ fn collect_wrap_selection_into_namespace(
         new_text,
     };
 
+    // Collect the names of declarations being wrapped.
+    let wrapped_names: Vec<String> = selected
+        .iter()
+        .filter_map(|decl| {
+            decl.head().map(|h| match h.classify_declaration() {
+                DeclarationKind::Property(id) => id.text().to_string(),
+                DeclarationKind::Function(id, _) => id.text().to_string(),
+                _ => String::new(),
+            })
+        })
+        .filter(|n| !n.is_empty())
+        .collect();
+
+    // Find references to the wrapped names OUTSIDE the wrapped range
+    // and prefix them with `my-ns.`.
+    let mut edits = vec![edit];
+    for descendant in root.descendants_with_tokens() {
+        let tok = match descendant.as_token() {
+            Some(t) => t,
+            None => continue,
+        };
+
+        if !matches!(
+            tok.kind(),
+            SyntaxKind::UNQUOTED_IDENTIFIER | SyntaxKind::SINGLE_QUOTE_IDENTIFIER
+        ) {
+            continue;
+        }
+
+        let tok_range = tok.text_range();
+
+        // Skip tokens inside the wrapped range.
+        if tok_range.start() >= start && tok_range.end() <= end {
+            continue;
+        }
+
+        // Skip tokens in declaration heads (they're definitions, not references).
+        if is_in_decl_head(tok) {
+            continue;
+        }
+
+        let tok_text = tok.text().to_string();
+        if !wrapped_names.contains(&tok_text) {
+            continue;
+        }
+
+        // Prefix this reference with `my-ns.`
+        let ref_range = text_range_to_lsp_range(source, tok_range);
+        edits.push(TextEdit {
+            range: ref_range,
+            new_text: format!("my-ns.{tok_text}"),
+        });
+    }
+
     let mut changes = HashMap::new();
-    changes.insert(uri.clone(), vec![edit]);
+    changes.insert(uri.clone(), edits);
 
     actions.push(CodeAction {
         title: "Wrap selection into namespace".to_string(),
