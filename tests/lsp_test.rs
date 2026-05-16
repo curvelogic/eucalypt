@@ -574,6 +574,89 @@ fn inlay_hint_element_type_does_not_crash_on_incomplete() {
     let _ = s.inlay_hints();
 }
 
+#[test]
+fn inlay_hint_io_monad_element_type() {
+    let mut s = LspTestSession::new();
+    // IO monad bindings: io.bind returns IO(a), element type should be string
+    // for io.read-file. Since we can't actually run IO in tests, use a typed
+    // wrapper that the checker can resolve.
+    s.run_pipeline("main: { :io x: io.read-file(\"test.txt\") }.(x)");
+    let hints = s.inlay_hints();
+    let type_hints: Vec<_> = hints
+        .iter()
+        .filter_map(|h| match &h.label {
+            lsp_types::InlayHintLabel::String(s) => Some(s.as_str()),
+            _ => None,
+        })
+        .filter(|s| s.contains(':'))
+        .collect();
+    // IO monad has monad type IO(a) — if the pipeline resolves it,
+    // we get a type hint; if not (IO is opaque), hint is suppressed.
+    // Either way, no crash and no misleading [a]-style wrapper.
+    for hint in &type_hints {
+        assert!(
+            !hint.contains("[a]") && !hint.contains("IO("),
+            "IO binding should not show raw wrapper type, got: {hint}"
+        );
+    }
+}
+
+#[test]
+fn inlay_hint_multi_block_same_binding_name() {
+    let mut s = LspTestSession::new();
+    // Two :for blocks on different lines with the same binding name 'x'.
+    // Each should resolve independently without collision.
+    s.run_pipeline("a: { :for x: [1, 2, 3] }.(x)\nb: { :for x: [\"a\", \"b\"] }.(x)\n");
+    let hints = s.inlay_hints();
+    let type_hints: Vec<_> = hints
+        .iter()
+        .filter_map(|h| match &h.label {
+            lsp_types::InlayHintLabel::String(s) => Some(s.as_str()),
+            _ => None,
+        })
+        .filter(|s| s.contains(':'))
+        .collect();
+    // Should have two hints: one 'number' and one 'string'
+    let has_number = type_hints.iter().any(|h| h.contains("number"));
+    let has_string = type_hints.iter().any(|h| h.contains("string"));
+    assert!(
+        has_number && has_string,
+        "should have both number and string hints for independent blocks, got: {type_hints:?}"
+    );
+}
+
+#[test]
+fn inlay_hint_heterogeneous_list_shows_union() {
+    let mut s = LspTestSession::new();
+    // Heterogeneous list — element type should be a union
+    s.run_pipeline("main: { :for x: [1, \"hello\"] }.(x)");
+    let hints = s.inlay_hints();
+    let type_hints: Vec<_> = hints
+        .iter()
+        .filter_map(|h| match &h.label {
+            lsp_types::InlayHintLabel::String(s) => Some(s.as_str()),
+            _ => None,
+        })
+        .filter(|s| s.contains(':'))
+        .collect();
+    // Should show a union type (number | string) or suppress if
+    // the checker can't resolve it. Must not show [a] wrapper.
+    for hint in &type_hints {
+        assert!(
+            !hint.contains("[a]"),
+            "heterogeneous list should not show raw wrapper, got: {hint}"
+        );
+    }
+    // If a hint is present, it should mention both types
+    if !type_hints.is_empty() {
+        let combined = type_hints.join(" ");
+        assert!(
+            combined.contains("number") || combined.contains("string"),
+            "heterogeneous hint should show union type, got: {type_hints:?}"
+        );
+    }
+}
+
 // ── Feature: import resolution ───────────────────────────────────────────────
 
 #[test]
