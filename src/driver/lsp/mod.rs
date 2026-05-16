@@ -1157,10 +1157,46 @@ fn run_pipeline(
     let core_expr = loader.core().expr.clone();
     let result = type_check_full(&core_expr);
 
-    // Merge any types from the checker (currently empty because the
-    // scope stack is popped, but future checker changes may fix this).
-    for (name, ty) in result.types {
-        type_env.insert(name, ty);
+    // Merge inferred types from the checker into the type env.
+    for (name, ty) in &result.types {
+        type_env.insert(name.clone(), ty.clone());
+    }
+
+    // For unannotated lambda bindings still typed as Any, infer a
+    // function shape (param₁ → param₂ → ... → body_type) so hover
+    // can show something useful.  Uses a fresh checker to avoid
+    // contaminating warnings.
+    // For unannotated lambda bindings still typed as Any, infer a
+    // function shape (param₁ → ... → body_type) for hover display.
+    {
+        use crate::core::expr::Expr;
+        use crate::core::typecheck::check::Checker;
+        fn infer_lambda_shapes(expr: &crate::core::expr::RcExpr, type_env: &mut TypeEnv) {
+            if let Expr::Meta(_, inner, _) = &*expr.inner {
+                infer_lambda_shapes(inner, type_env);
+                return;
+            }
+            if let Expr::Let(_, scope, _) = &*expr.inner {
+                for (name, value) in &scope.pattern {
+                    if type_env.get(name).is_none_or(|t| matches!(t, Type::Any)) {
+                        let inner = if let Expr::Meta(_, inner, _) = &*value.inner {
+                            inner
+                        } else {
+                            value
+                        };
+                        if let Expr::Lam(_, _, ref lam_scope) = *inner.inner {
+                            let mut checker = Checker::new();
+                            let shape = checker.synthesise_lambda_shape(lam_scope);
+                            if !matches!(&shape, Type::Any) {
+                                type_env.insert(name.clone(), shape);
+                            }
+                        }
+                    }
+                }
+                infer_lambda_shapes(&scope.body, type_env);
+            }
+        }
+        infer_lambda_shapes(&core_expr, &mut type_env);
     }
 
     // Extract imported file sources before consuming the loader.

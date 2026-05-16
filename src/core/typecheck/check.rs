@@ -110,6 +110,10 @@ pub struct Checker {
     /// Used by LSP features (inlay hints on monadic block bound
     /// variables) to show the unwrapped element type.
     lambda_params: HashMap<Smid, Vec<(String, Type)>>,
+    /// Inferred types for the outermost (top-level) scope bindings.
+    /// Captured just before the outermost Let scope is popped, so that
+    /// `type_env()` can return them after checking completes.
+    top_level_types: HashMap<String, Type>,
 }
 
 impl Default for Checker {
@@ -127,6 +131,7 @@ impl Checker {
             warnings: Vec::new(),
             aliases: AliasMap::new(),
             lambda_params: HashMap::new(),
+            top_level_types: HashMap::new(),
         }
     }
 
@@ -141,8 +146,12 @@ impl Checker {
     /// name → `Type`.  This is the checker's view of all bindings it
     /// has seen, suitable for IDE features like hover and completion.
     pub fn type_env(&self) -> HashMap<String, Type> {
+        // Use the captured top-level types (saved before the outermost
+        // scope was popped).  Fall back to live scope stack if available.
+        if !self.top_level_types.is_empty() {
+            return self.top_level_types.clone();
+        }
         let mut env = HashMap::new();
-        // Iterate outermost-first so inner scopes overwrite
         for frame in self.scope_stack.iter().rev() {
             for (name, scheme) in frame {
                 env.insert(name.clone(), scheme.body.clone());
@@ -476,6 +485,17 @@ impl Checker {
                 }
 
                 let body_type = self.synthesise(&scope.body);
+                // Capture resolved types from every Let scope as it's
+                // popped.  Non-Any types overwrite earlier captures, so
+                // the final state reflects the innermost (user) scope.
+                if let Some(frame) = self.scope_stack.front() {
+                    for (name, scheme) in frame {
+                        if !matches!(&scheme.body, Type::Any) {
+                            self.top_level_types
+                                .insert(name.clone(), scheme.body.clone());
+                        }
+                    }
+                }
                 self.pop_scope();
                 body_type
             }
@@ -518,6 +538,31 @@ impl Checker {
             return self.synthesise_meta(*smid, inner, meta);
         }
         self.synthesise(value)
+    }
+
+    /// Synthesise a function type shape for an unannotated lambda.
+    ///
+    /// Pushes fresh type variables for each parameter, synthesises the
+    /// body, then constructs `param₁ → param₂ → ... → body_type`.
+    /// Public for use by the LSP pipeline (post-check lambda inference).
+    pub fn synthesise_lambda_shape(&mut self, scope: &crate::core::expr::LamScope<RcExpr>) -> Type {
+        let mut param_types = Vec::new();
+        let mut frame = HashMap::new();
+        for name in &scope.pattern {
+            let var = Type::Var(super::types::TypeVarId(format!("_t{}", self.var_counter)));
+            self.var_counter += 1;
+            frame.insert(name.clone(), TypeScheme::mono(var.clone()));
+            param_types.push(var);
+        }
+        self.push_scope(frame);
+        let body_type = self.synthesise(&scope.body);
+        self.pop_scope();
+        // Build function type right-to-left: pN → ... → p1 → body
+        let mut result = body_type;
+        for param in param_types.into_iter().rev() {
+            result = Type::Function(Box::new(param), Box::new(result));
+        }
+        result
     }
 
     /// Synthesise the type of a `Meta(smid, inner, meta)` node.

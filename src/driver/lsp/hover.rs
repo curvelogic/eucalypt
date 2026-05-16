@@ -94,7 +94,8 @@ fn make_hover(
         lines.push(format!("type: `{}`", type_ann));
     } else if let Some(ty) = type_env.and_then(|env| env.get(&sym.name)) {
         if !matches!(ty, Type::Any) {
-            lines.push(format!("inferred: `{}`", ty));
+            let display_ty = crate::core::typecheck::types::humanise(ty);
+            lines.push(format!("inferred: `{}`", display_ty));
         }
     }
 
