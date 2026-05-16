@@ -409,12 +409,18 @@ impl ServerState {
 
                 // Ask the client to re-request inlay hints now that
                 // pipeline-resolved types (lambda_params) are available.
-                let refresh = lsp_server::Request::new(
-                    lsp_server::RequestId::from("inlay-refresh".to_string()),
-                    "workspace/inlayHint/refresh".to_string(),
-                    (),
-                );
-                let _ = connection.sender.send(Message::Request(refresh));
+                // Also try semanticTokens/refresh as some clients respond to that.
+                for (id_suffix, method) in [
+                    ("inlay", "workspace/inlayHint/refresh"),
+                    ("semantic", "workspace/semanticTokens/refresh"),
+                ] {
+                    let refresh = lsp_server::Request::new(
+                        lsp_server::RequestId::from(format!("{id_suffix}-refresh")),
+                        method.to_string(),
+                        serde_json::Value::Null,
+                    );
+                    let _ = connection.sender.send(Message::Request(refresh));
+                }
             }
             Err(err) => {
                 eprintln!("pipeline error for {}: {}", uri, err.message);
