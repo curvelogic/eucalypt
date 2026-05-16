@@ -180,7 +180,7 @@ fn collect_monadic_binding_hints(
                 kind: Some(InlayHintKind::TYPE),
                 text_edits: None,
                 tooltip: Some(lsp_types::InlayHintTooltip::String(format!(
-                    "Monad binding — value must be {monad_type}",
+                    "Monad binding — element type inferred from {monad_type}",
                 ))),
                 padding_left: Some(false),
                 padding_right: Some(true),
@@ -251,7 +251,7 @@ fn collect_bracket_block_binding_hints(
                 kind: Some(InlayHintKind::TYPE),
                 text_edits: None,
                 tooltip: Some(lsp_types::InlayHintTooltip::String(format!(
-                    "Bracket pair monad binding — value must be {monad_type}",
+                    "Bracket pair monad binding — element type inferred from {monad_type}",
                 ))),
                 padding_left: Some(false),
                 padding_right: Some(true),
