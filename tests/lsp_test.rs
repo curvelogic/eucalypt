@@ -1295,3 +1295,16 @@ fn code_action_let_block_toggle_remove() {
         "expected plain block toggle action, got: {titles:?}"
     );
 }
+
+#[test]
+fn code_action_wrap_selection_into_namespace() {
+    let mut s = LspTestSession::new();
+    s.open("a: 1\nb: 2\nc: 3\n");
+    // Select all three declarations (lines 0-2)
+    let actions = s.code_actions(0, 0, 2, 4);
+    let titles: Vec<String> = actions.iter().map(|a| a.title.clone()).collect();
+    assert!(
+        titles.contains(&"Wrap selection into namespace".to_string()),
+        "expected multi-wrap action when multiple declarations selected, got: {titles:?}"
+    );
+}

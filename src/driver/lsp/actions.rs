@@ -12,7 +12,7 @@
 //! - Let-block toggle
 
 use crate::syntax::rowan::ast::{
-    AstToken, Block, Declaration, DeclarationKind, DeclarationMetadata, Element, HasSoup,
+    AstToken, Block, Declaration, DeclarationKind, DeclarationMetadata, Element, HasSoup, Unit,
 };
 use crate::syntax::rowan::kind::{SyntaxKind, SyntaxNode, SyntaxToken};
 use lsp_types::{CodeAction, CodeActionKind, Range, TextEdit, Url, WorkspaceEdit};
@@ -54,6 +54,9 @@ pub fn code_actions(
 
     // Structural editing actions: walk AST nodes
     collect_structural_actions(source, root, range, uri, &mut actions);
+
+    // Multi-declaration wrapping (selection spanning multiple decls)
+    collect_wrap_selection_into_namespace(source, root, range, uri, &mut actions);
 
     actions
 }
@@ -156,6 +159,90 @@ fn collect_wrap_as_namespace_actions(
 
     actions.push(CodeAction {
         title: "Wrap as namespace".to_string(),
+        kind: Some(CodeActionKind::REFACTOR_REWRITE),
+        diagnostics: None,
+        edit: Some(WorkspaceEdit {
+            changes: Some(changes),
+            ..WorkspaceEdit::default()
+        }),
+        is_preferred: None,
+        ..CodeAction::default()
+    });
+}
+
+/// If the selection spans multiple top-level declarations, offer to wrap
+/// them into a new namespace block with a placeholder name.
+fn collect_wrap_selection_into_namespace(
+    source: &str,
+    root: &SyntaxNode,
+    range: &Range,
+    uri: &Url,
+    actions: &mut Vec<CodeAction>,
+) {
+    let unit = match Unit::cast(root.clone()) {
+        Some(u) => u,
+        None => return,
+    };
+
+    // Collect declarations whose range overlaps the selection.
+    let selected: Vec<Declaration> = unit
+        .declarations()
+        .filter(|decl| {
+            let decl_range = text_range_to_lsp_range(source, decl.syntax().text_range());
+            ranges_overlap(&decl_range, range)
+        })
+        .collect();
+
+    // Only offer when 2+ declarations are selected.
+    if selected.len() < 2 {
+        return;
+    }
+
+    // Compute the range covering all selected declarations.
+    let first = selected.first().unwrap();
+    let last = selected.last().unwrap();
+
+    // Include any metadata (backtick) that precedes the first declaration.
+    let start = if let Some(meta) = first.meta() {
+        meta.syntax().text_range().start()
+    } else {
+        first.syntax().text_range().start()
+    };
+    let end = last.syntax().text_range().end();
+    let full_range = rowan::TextRange::new(start, end);
+
+    let edit_range = text_range_to_lsp_range(source, full_range);
+
+    // Extract the selected text and re-indent it.
+    let start_offset: usize = start.into();
+    let end_offset: usize = end.into();
+    let selected_text = &source[start_offset..end_offset];
+
+    // Indent each line by 2 spaces.
+    let indented: String = selected_text
+        .lines()
+        .map(|line| {
+            if line.trim().is_empty() {
+                String::new()
+            } else {
+                format!("  {line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let new_text = format!("my-ns: {{\n{indented}\n}}");
+
+    let edit = TextEdit {
+        range: edit_range,
+        new_text,
+    };
+
+    let mut changes = HashMap::new();
+    changes.insert(uri.clone(), vec![edit]);
+
+    actions.push(CodeAction {
+        title: "Wrap selection into namespace".to_string(),
         kind: Some(CodeActionKind::REFACTOR_REWRITE),
         diagnostics: None,
         edit: Some(WorkspaceEdit {
@@ -439,7 +526,9 @@ fn collect_add_metadata_actions(
         return;
     }
 
-    let fields = ["type", "doc", "target", "export", "monad", "format", "type-def"];
+    let fields = [
+        "type", "doc", "target", "export", "monad", "format", "type-def",
+    ];
 
     for field in &fields {
         let (edit_range, new_text) = compute_add_metadata_edit(source, decl, field);
