@@ -477,7 +477,7 @@ fn compute_add_metadata_edit(source: &str, decl: &Declaration, field: &str) -> (
         "target" => ":my-target",
         "export" => ":suppress",
         "monad" => "\"<wrapper type>\"",
-        "format" => ":yaml",
+        "format" => ":json",
         "type-def" => "\"<type alias>\"",
         _ => "\"\"",
     };
