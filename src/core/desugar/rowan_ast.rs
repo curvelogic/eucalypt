@@ -1070,13 +1070,15 @@ fn desugar_monadic_block(
         .collect();
 
     // Desugar all declaration bodies (in order) with bind names in scope.
-    // Each entry carries (name, value, smid) — the smid is from the
-    // individual declaration's span so that lambdas in the bind chain
-    // have unique source locations.
+    // Each entry carries (name, value, smid) �� the smid is from the
+    // individual declaration's name identifier so that lambdas in the
+    // bind chain have unique source locations that match the token
+    // positions used by inlay hint lookups.
     let mut name_value_pairs: Vec<(String, RcExpr, Smid)> = Vec::with_capacity(decls.len());
     for (i, decl) in decls.iter().enumerate() {
         let decl_name = bind_names[i].clone();
-        let span = text_range_to_span(decl.syntax().text_range());
+        let span = name_identifier_span(decl)
+            .unwrap_or_else(|| text_range_to_span(decl.syntax().text_range()));
         let value = if let Some(body) = decl.body() {
             if let Some(soup) = body.soup() {
                 let expr = soup.desugar(desugarer)?;
@@ -1200,7 +1202,8 @@ fn desugar_monadic_block_implicit(
     let mut name_value_pairs: Vec<(String, RcExpr, Smid)> = Vec::with_capacity(decls.len());
     for (i, decl) in decls.iter().enumerate() {
         let decl_name = bind_names[i].clone();
-        let span = text_range_to_span(decl.syntax().text_range());
+        let span = name_identifier_span(decl)
+            .unwrap_or_else(|| text_range_to_span(decl.syntax().text_range()));
         let value = if let Some(body) = decl.body() {
             if let Some(soup) = body.soup() {
                 let expr = soup.desugar(desugarer)?;
@@ -2408,6 +2411,22 @@ fn desugar_rowan_soup_inner(
             soup,
             bracket,
         )))
+    }
+}
+
+/// Get the span of a declaration's name identifier token, excluding
+/// leading trivia.  This ensures the Smid position matches the token
+/// position used by LSP inlay hint lookups.
+fn name_identifier_span(decl: &rowan_ast::Declaration) -> Option<Span> {
+    let head = decl.head()?;
+    match head.classify_declaration() {
+        rowan_ast::DeclarationKind::Property(id) => {
+            Some(text_range_to_span(id.syntax().text_range()))
+        }
+        rowan_ast::DeclarationKind::Function(id, _) => {
+            Some(text_range_to_span(id.syntax().text_range()))
+        }
+        _ => None,
     }
 }
 

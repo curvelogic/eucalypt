@@ -67,6 +67,8 @@ pub struct SymbolInfo {
     pub documentation: Option<String>,
     /// Type annotation from `` ` { type: "..." } `` metadata
     pub type_annotation: Option<String>,
+    /// Type definition name from `` ` { type-def: "..." } `` metadata
+    pub type_def: Option<String>,
     /// Monadic wrapper type from `` ` { monad: "..." } `` metadata.
     /// `None` for non-monads and untyped (`monad: true`) monads.
     pub monad_type: Option<String>,
@@ -303,6 +305,7 @@ fn symbol_from_declaration(
     let selection_range = text_range_to_lsp_range(source_text, head.syntax().text_range());
     let documentation = extract_documentation(decl);
     let type_annotation = extract_type_annotation(decl);
+    let type_def = extract_meta_string(decl, "type-def");
     let (is_monad, monad_type) = extract_monad_metadata(decl);
     let children = extract_children(decl, source_text, uri, source);
 
@@ -315,6 +318,7 @@ fn symbol_from_declaration(
         selection_range,
         documentation,
         type_annotation,
+        type_def,
         monad_type,
         is_monad,
         parameters,
@@ -375,6 +379,14 @@ fn extract_documentation(decl: &Declaration) -> Option<String> {
 ///
 /// Looks for `` ` { type: "..." } `` in the declaration's metadata.
 fn extract_type_annotation(decl: &Declaration) -> Option<String> {
+    extract_meta_string(decl, "type")
+}
+
+/// Extract a string-valued metadata field by key name.
+///
+/// Handles both plain string literals and string patterns (which
+/// contain escaped braces like `"{{ ... }}"`).
+fn extract_meta_string(decl: &Declaration, key: &str) -> Option<String> {
     let meta = decl.meta()?;
     let soup = meta.soup()?;
 
@@ -383,17 +395,25 @@ fn extract_type_annotation(decl: &Declaration) -> Option<String> {
             for inner_decl in block.declarations() {
                 if let Some(head) = inner_decl.head() {
                     if let DeclarationKind::Property(prop) = head.classify_declaration() {
-                        if prop.text() == "type" {
+                        if prop.text() == key {
                             if let Some(body) = inner_decl.body() {
                                 if let Some(body_soup) = body.soup() {
                                     for el in body_soup.elements() {
-                                        if let crate::syntax::rowan::ast::Element::Lit(lit) = el {
-                                            if let Some(
-                                                crate::syntax::rowan::ast::LiteralValue::Str(s),
-                                            ) = lit.value()
-                                            {
-                                                return s.value().map(|v| v.to_string());
+                                        match el {
+                                            crate::syntax::rowan::ast::Element::Lit(lit) => {
+                                                if let Some(
+                                                    crate::syntax::rowan::ast::LiteralValue::Str(s),
+                                                ) = lit.value()
+                                                {
+                                                    return s.value().map(|v| v.to_string());
+                                                }
                                             }
+                                            crate::syntax::rowan::ast::Element::StringPattern(
+                                                sp,
+                                            ) => {
+                                                return sp.plain_value();
+                                            }
+                                            _ => {}
                                         }
                                     }
                                 }
@@ -716,6 +736,31 @@ mod tests {
         assert_eq!(
             results[0].type_annotation.as_deref(),
             Some("string -> string")
+        );
+    }
+
+    #[test]
+    fn test_type_def_and_type_multiline() {
+        let source =
+            "` {\n  type-def: \"Assembly\"\n  type: \"{{ block: block }}\"\n}\nFoo: { x: 1 }\n";
+        let parse = parse_unit(source);
+        let unit = parse.tree();
+
+        let mut table = SymbolTable::new();
+        table.add_from_unit(&unit, source, &test_uri(), SymbolSource::Local);
+
+        let results = table.lookup("Foo");
+        assert_eq!(results.len(), 1, "should find Foo");
+        assert_eq!(
+            results[0].type_def.as_deref(),
+            Some("Assembly"),
+            "should extract type-def"
+        );
+        assert_eq!(
+            results[0].type_annotation.as_deref(),
+            Some("{ block: block }"),
+            "should extract type (escaped braces resolved), got: {:?}",
+            results[0].type_annotation
         );
     }
 

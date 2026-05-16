@@ -91,9 +91,13 @@ add(x, y): x + y
 ` :suppress
 helper(x): x + 1
 
-# Export target
-` { target: :my-output }
+# Export target (any bare symbol is a target shortcut)
+` :my-output
 output: { result: 42 }
+
+# Target using the declaration's own name
+` :target
+report: { total: 42 }
 
 # Mark as main (default) target
 ` :main
@@ -143,6 +147,7 @@ origin: { x: 0, y: 0 }
 | `[T]`              | list of T                              |
 | `(A, B)`           | tuple                                  |
 | `{k: T, ..}`       | open record (at least k: T)            |
+| `{k: T, ..r}`      | named row variable (extra fields in r) |
 | `{k: T}`           | closed record                          |
 | `block`            | any block                              |
 | `A -> B`           | function                               |

@@ -159,25 +159,28 @@ fn collect_monadic_binding_hints(
             };
             let token_range = text_range_to_lsp_range(source, name_token.text_range());
 
-            // Prefer the inferred element type from the pipeline's
-            // lambda_params (e.g. x: number) over the raw wrapper
-            // type (e.g. x: [a]).  Keyed by (name, line) to avoid
-            // collisions between different monadic blocks.
-            let hint_type = lambda_params
-                .and_then(|params| {
-                    let line = token_range.start.line;
-                    let col = token_range.start.character;
-                    params.get(&(line, col, decl_name.clone()))
-                })
-                .map(|ty| crate::core::typecheck::types::humanise(ty).to_string())
-                .unwrap_or_else(|| monad_type.clone());
+            // Show the inferred element type from the pipeline's
+            // lambda_params (e.g. x: number).  If the pipeline hasn't
+            // resolved the type, skip the hint entirely — showing the
+            // raw wrapper type (e.g. [a]) would be misleading.
+            let hint_type = lambda_params.and_then(|params| {
+                let line = token_range.start.line;
+                let col = token_range.start.character;
+                params
+                    .get(&(line, col, decl_name.clone()))
+                    .map(|ty| crate::core::typecheck::types::humanise(ty).to_string())
+            });
+            let hint_type = match hint_type {
+                Some(t) => t,
+                None => continue, // No resolved type — skip hint
+            };
             hints.push(InlayHint {
                 position: token_range.end,
                 label: InlayHintLabel::String(format!(": {hint_type}")),
                 kind: Some(InlayHintKind::TYPE),
                 text_edits: None,
                 tooltip: Some(lsp_types::InlayHintTooltip::String(format!(
-                    "Monad binding — value must be {monad_type}",
+                    "Monad binding — element type inferred from {monad_type}",
                 ))),
                 padding_left: Some(false),
                 padding_right: Some(true),
@@ -231,21 +234,24 @@ fn collect_bracket_block_binding_hints(
             };
             let token_range = text_range_to_lsp_range(source, name_token.text_range());
 
-            let hint_type = lambda_params
-                .and_then(|params| {
-                    let line = token_range.start.line;
-                    let col = token_range.start.character;
-                    params.get(&(line, col, decl_name.clone()))
-                })
-                .map(|ty| crate::core::typecheck::types::humanise(ty).to_string())
-                .unwrap_or_else(|| monad_type.clone());
+            let hint_type = lambda_params.and_then(|params| {
+                let line = token_range.start.line;
+                let col = token_range.start.character;
+                params
+                    .get(&(line, col, decl_name.clone()))
+                    .map(|ty| crate::core::typecheck::types::humanise(ty).to_string())
+            });
+            let hint_type = match hint_type {
+                Some(t) => t,
+                None => continue,
+            };
             hints.push(InlayHint {
                 position: token_range.end,
                 label: InlayHintLabel::String(format!(": {hint_type}")),
                 kind: Some(InlayHintKind::TYPE),
                 text_edits: None,
                 tooltip: Some(lsp_types::InlayHintTooltip::String(format!(
-                    "Bracket pair monad binding — value must be {monad_type}",
+                    "Bracket pair monad binding — element type inferred from {monad_type}",
                 ))),
                 padding_left: Some(false),
                 padding_right: Some(true),
@@ -543,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    fn monadic_binding_type_hint() {
+    fn monadic_binding_suppressed_without_pipeline() {
         // Set up a table with a typed monad
         let uri = lsp_types::Url::parse("file:///test.eu").unwrap();
         let monad_source = "` { monad: \"[a]\" }\nfor: 1\n";
@@ -552,19 +558,21 @@ mod tests {
         let mut table = SymbolTable::new();
         table.add_from_unit(&monad_unit, monad_source, &uri, SymbolSource::Local);
 
-        // Now parse a file using the monad
+        // Now parse a file using the monad — no lambda_params available
         let source = "main: { :for x: [1,2] }.(x)\n";
         let parse = parse_unit(source);
         let root = parse.syntax_node();
 
         let hints = inlay_hints(source, &root, &full_range(), &table, None, None);
+        // Without pipeline data, hints should be suppressed rather than
+        // showing the misleading wrapper type [a].
         let type_hints: Vec<_> = hints
             .iter()
             .filter(|h| matches!(&h.label, InlayHintLabel::String(s) if s.contains("[a]")))
             .collect();
         assert!(
-            !type_hints.is_empty(),
-            "should show [a] type hint on monadic binding"
+            type_hints.is_empty(),
+            "should NOT show [a] wrapper type without pipeline resolution"
         );
     }
 }

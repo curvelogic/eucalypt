@@ -84,6 +84,11 @@ fn make_hover(
         }
     }
 
+    // Type definition name
+    if let Some(type_def) = &sym.type_def {
+        lines.push(format!("type-def: `{}`", type_def));
+    }
+
     // Type annotation — prefer explicit annotation, fall back to inferred type
     if let Some(type_ann) = &sym.type_annotation {
         lines.push(format!("type: `{}`", type_ann));
@@ -386,6 +391,38 @@ mod tests {
             assert!(
                 m.value.contains("inferred: `number`"),
                 "should show inferred type, got: {}",
+                m.value
+            );
+        } else {
+            panic!("expected markup content");
+        }
+    }
+
+    #[test]
+    fn test_hover_shows_type_def_and_type() {
+        let source =
+            "` {\n  type-def: \"Assembly\"\n  type: \"{{ block: block }}\" \n}\nFoo: { x: 1 }\ny: Foo\n";
+        let (table, _) = setup_table(source);
+        let parse = parse_unit(source);
+        let root = parse.syntax_node();
+
+        // Hover on 'Foo' usage at line 5
+        let pos = Position {
+            line: 5,
+            character: 3,
+        };
+        let result = hover(source, &root, &pos, &table, None);
+        assert!(result.is_some(), "should have hover result");
+        let h = result.unwrap();
+        if let HoverContents::Markup(m) = &h.contents {
+            assert!(
+                m.value.contains("type-def: `Assembly`"),
+                "should show type-def, got: {}",
+                m.value
+            );
+            assert!(
+                m.value.contains("type: `{ block: block }`"),
+                "should show type annotation, got: {}",
                 m.value
             );
         } else {
