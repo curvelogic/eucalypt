@@ -1338,9 +1338,9 @@ fn inlay_hint_element_type_multiline_file() {
     let hints = s.inlay_hints();
     let number_hints: Vec<_> = hints
         .iter()
-        .filter(|h| {
-            matches!(&h.label, lsp_types::InlayHintLabel::String(s) if s.contains("number"))
-        })
+        .filter(
+            |h| matches!(&h.label, lsp_types::InlayHintLabel::String(s) if s.contains("number")),
+        )
         .collect();
     let all_labels: Vec<_> = hints
         .iter()
@@ -1366,9 +1366,9 @@ fn inlay_hint_element_type_with_import() {
     let hints = s.inlay_hints();
     let number_hints: Vec<_> = hints
         .iter()
-        .filter(|h| {
-            matches!(&h.label, lsp_types::InlayHintLabel::String(s) if s.contains("number"))
-        })
+        .filter(
+            |h| matches!(&h.label, lsp_types::InlayHintLabel::String(s) if s.contains("number")),
+        )
         .collect();
     let all_labels: Vec<_> = hints
         .iter()
