@@ -492,17 +492,20 @@ fn hover_on_prelude_function() {
 // ── Feature: inlay hints ─────────────────────────────────────────────────────
 
 #[test]
-fn inlay_hints_on_monadic_binding() {
+fn inlay_hints_on_monadic_binding_without_pipeline() {
     let mut s = LspTestSession::new();
     s.open("main: { :for x: [1,2,3] }.(x)");
     let hints = s.inlay_hints();
+    // Without the pipeline, no resolved element type is available.
+    // We suppress the hint entirely rather than showing the misleading
+    // wrapper type [a].
     let type_hints: Vec<_> = hints
         .iter()
         .filter(|h| matches!(&h.label, lsp_types::InlayHintLabel::String(s) if s.contains("[a]")))
         .collect();
     assert!(
-        !type_hints.is_empty(),
-        "should show [a] type hint on monadic binding, got: {hints:?}"
+        type_hints.is_empty(),
+        "should NOT show [a] wrapper type hint without pipeline, got: {hints:?}"
     );
 }
 
@@ -1034,23 +1037,22 @@ fn document_highlight_block_mode_bracket() {
 
 // ── Phase 2: inlay hints for monadic bracket blocks ───────────────────────────
 
-/// Monadic bracket blocks should show binding type hints on each binding.
+/// Without the pipeline, monadic bracket blocks should suppress binding
+/// type hints rather than showing the misleading wrapper type.
 #[test]
-fn inlay_hints_monadic_bracket_block() {
+fn inlay_hints_monadic_bracket_block_without_pipeline() {
     let mut s = LspTestSession::new();
     // Define a monadic bracket pair with type annotation, then use it.
-    // The bracket pair ⟦{}⟧ has monad: "[a]" metadata — bindings should get
-    // an inlay hint showing "[a]" as the expected binding type.
     s.open("` { monad: \"[a]\" }\n⟦{}⟧: id\nresult: ⟦ x: [1,2] y: [3,4] ⟧\n");
     let hints = s.inlay_hints();
-    // Should have at least 2 type hints (one per binding: x and y)
+    // Without the pipeline, no resolved element type — hints suppressed.
     let type_hints: Vec<_> = hints
         .iter()
         .filter(|h| matches!(&h.label, lsp_types::InlayHintLabel::String(s) if s.contains("[a]")))
         .collect();
     assert!(
-        !type_hints.is_empty(),
-        "should show [a] type hints on monadic bracket block bindings"
+        type_hints.is_empty(),
+        "should NOT show [a] wrapper type hints without pipeline"
     );
 }
 
@@ -1323,5 +1325,60 @@ fn code_action_wrap_selection_into_namespace() {
     assert!(
         prefix_edits.len() >= 2,
         "should prefix references to a and b outside the wrapped block, got: {prefix_edits:?}"
+    );
+}
+
+#[test]
+fn inlay_hint_element_type_multiline_file() {
+    let mut s = LspTestSession::new();
+    // Multi-line file with content before the monadic block —
+    // replicates the real-world scenario where the hint shows [a]
+    // instead of number.
+    s.run_pipeline("helper: 42\nfor-test: { :for x: [1, 2, 3] }.(x * 2)\n");
+    let hints = s.inlay_hints();
+    let number_hints: Vec<_> = hints
+        .iter()
+        .filter(|h| {
+            matches!(&h.label, lsp_types::InlayHintLabel::String(s) if s.contains("number"))
+        })
+        .collect();
+    let all_labels: Vec<_> = hints
+        .iter()
+        .filter_map(|h| match &h.label {
+            lsp_types::InlayHintLabel::String(s) => Some(s.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        !number_hints.is_empty(),
+        "multiline: should show 'number' hint, got: {all_labels:?}"
+    );
+}
+
+#[test]
+fn inlay_hint_element_type_with_import() {
+    let mut s = LspTestSession::new();
+    let test_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/lsp");
+    let test_uri =
+        lsp_types::Url::from_file_path(test_dir.join("hint_import_test.eu")).expect("valid URI");
+    s.set_uri(test_uri.as_str());
+    s.run_pipeline("{ import: \"import_lib.eu\" }\nfor-test: { :for x: [1, 2, 3] }.(x * 2)\n");
+    let hints = s.inlay_hints();
+    let number_hints: Vec<_> = hints
+        .iter()
+        .filter(|h| {
+            matches!(&h.label, lsp_types::InlayHintLabel::String(s) if s.contains("number"))
+        })
+        .collect();
+    let all_labels: Vec<_> = hints
+        .iter()
+        .filter_map(|h| match &h.label {
+            lsp_types::InlayHintLabel::String(s) => Some(s.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        !number_hints.is_empty(),
+        "with import: should show 'number' hint, got: {all_labels:?}"
     );
 }
