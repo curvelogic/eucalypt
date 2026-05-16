@@ -484,7 +484,7 @@ fn compute_add_metadata_edit(source: &str, decl: &Declaration, field: &str) -> (
 
     match decl.meta() {
         None => {
-            // No metadata: insert `` ` { field: value }\n `` before the head
+            // No metadata: prefer shortcut form when one exists.
             let head = decl.head().expect("checked above");
             let head_start = head.syntax().text_range().start();
             let head_offset: usize = head_start.into();
@@ -493,7 +493,18 @@ fn compute_add_metadata_edit(source: &str, decl: &Declaration, field: &str) -> (
             let insert_pos =
                 text_range_to_lsp_range(source, rowan::TextRange::new(head_start, head_start));
 
-            let new_text = format!("` {{ {field}: {default_value} }}\n{indent}");
+            let shortcut = match field {
+                "doc" => Some("\"\"".to_string()),
+                "target" => Some(":target".to_string()),
+                "export" => Some(":suppress".to_string()),
+                _ => None,
+            };
+
+            let new_text = if let Some(sc) = shortcut {
+                format!("` {sc}\n{indent}")
+            } else {
+                format!("` {{ {field}: {default_value} }}\n{indent}")
+            };
             (insert_pos, new_text)
         }
         Some(meta) => {
