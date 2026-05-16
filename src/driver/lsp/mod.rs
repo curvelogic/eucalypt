@@ -406,6 +406,15 @@ impl ServerState {
                 connection.sender.send(Message::Notification(notif))?;
 
                 self.cached.insert(uri.clone(), cached);
+
+                // Ask the client to re-request inlay hints now that
+                // pipeline-resolved types (lambda_params) are available.
+                let refresh = lsp_server::Request::new(
+                    lsp_server::RequestId::from("inlay-refresh".to_string()),
+                    "workspace/inlayHint/refresh".to_string(),
+                    (),
+                );
+                let _ = connection.sender.send(Message::Request(refresh));
             }
             Err(err) => {
                 eprintln!("pipeline error for {}: {}", uri, err.message);
@@ -459,8 +468,8 @@ fn main_loop(connection: &Connection) -> Result<(), Box<dyn std::error::Error>> 
                 handle_notification(connection, &mut state, notif)?;
             }
             Message::Response(_resp) => {
-                // We don't send requests to the client yet,
-                // so responses are unexpected.
+                // Responses to server-initiated requests (e.g.
+                // workspace/inlayHint/refresh) — nothing to do.
             }
         }
 
