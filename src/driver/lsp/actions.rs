@@ -472,13 +472,13 @@ fn collect_add_metadata_actions(
 /// 3. Block metadata → append the field to the existing block
 fn compute_add_metadata_edit(source: &str, decl: &Declaration, field: &str) -> (Range, String) {
     let default_value = match field {
-        "type" => "\"\"",
-        "doc" => "\"\"",
-        "target" => ":main",
+        "type" => "\"<type>\"",
+        "doc" => "\"<documentation>\"",
+        "target" => ":my-target",
         "export" => ":suppress",
-        "monad" => "true",
+        "monad" => "\"<wrapper type>\"",
         "format" => ":yaml",
-        "type-def" => "\"\"",
+        "type-def" => "\"<type alias>\"",
         _ => "\"\"",
     };
 
@@ -494,8 +494,8 @@ fn compute_add_metadata_edit(source: &str, decl: &Declaration, field: &str) -> (
                 text_range_to_lsp_range(source, rowan::TextRange::new(head_start, head_start));
 
             let shortcut = match field {
-                "doc" => Some("\"\"".to_string()),
-                "target" => Some(":target".to_string()),
+                "doc" => Some("\"<documentation>\"".to_string()),
+                "target" => Some(":my-target".to_string()),
                 "export" => Some(":suppress".to_string()),
                 _ => None,
             };
