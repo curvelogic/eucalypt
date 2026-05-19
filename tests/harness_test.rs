@@ -1598,6 +1598,11 @@ pub fn test_harness_150() {
 }
 
 #[test]
+pub fn test_harness_151() {
+    run_test(&opts("151_nested_named_diamond.eu"));
+}
+
+#[test]
 pub fn test_target_symbol_shortcut_alpha() {
     let output = std::process::Command::new(eu_binary())
         .args(["-t", "alpha", "tests/harness/148_symbol_target_shortcut.eu"])

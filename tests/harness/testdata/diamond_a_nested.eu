@@ -1,0 +1,2 @@
+` { import: "m=diamond_mid.eu" }
+a-nested-val: m.mid-val + 1

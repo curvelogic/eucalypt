@@ -1,0 +1,2 @@
+` { import: "diamond_common.eu" }
+mid-val: common-val + 50
