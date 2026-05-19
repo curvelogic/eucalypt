@@ -99,6 +99,11 @@ pub struct Desugarer<'smap> {
     /// direct import of the same file under a *different* name emits an
     /// alias binding `let { new_name = old_name }` instead of re-desugaring.
     import_first_direct: HashMap<usize, String>,
+    /// Nesting depth of named imports.  Incremented when entering a named
+    /// import (`a=a.eu`), decremented on exit.  When > 0, transitive
+    /// imports are "namespaced" — their bindings won't be visible at the
+    /// top level, so they must not suppress later unnamed encounters.
+    named_import_depth: usize,
 }
 
 impl<'smap> Desugarer<'smap> {
@@ -124,6 +129,7 @@ impl<'smap> Desugarer<'smap> {
             import_seen_direct: HashSet::new(),
             import_seen_nested: HashSet::new(),
             import_first_direct: HashMap::new(),
+            named_import_depth: 0,
         }
     }
 
@@ -298,6 +304,10 @@ impl<'smap> Desugarer<'smap> {
 
             // Suppress if already seen transitively, OR if already seen
             // directly and we're now inside a nested import.
+            // However, do NOT suppress if the previous encounter was inside
+            // a named import chain — those bindings are namespaced and not
+            // visible to the current scope.
+            let inside_named = self.named_import_depth > 0;
             if self.import_seen_nested.contains(&guard_key)
                 || (is_nested && self.import_seen_direct.contains(&guard_key))
             {
@@ -305,8 +315,13 @@ impl<'smap> Desugarer<'smap> {
             }
 
             // Record this import in the appropriate guard set.
+            // Only record nested imports when NOT inside a named import
+            // chain, since namespaced bindings don't satisfy other
+            // importers' need for the same file at the top level.
             if is_nested {
-                self.import_seen_nested.insert(guard_key);
+                if !inside_named {
+                    self.import_seen_nested.insert(guard_key);
+                }
             } else {
                 self.import_seen_direct.insert(guard_key);
                 // Record the first direct named import for Rule 3 alias resolution.
@@ -319,6 +334,13 @@ impl<'smap> Desugarer<'smap> {
 
             self.file.push(file_id);
 
+            // Track whether we're inside a named import chain so that
+            // transitive imports know their bindings will be namespaced.
+            let is_named = import.name().is_some();
+            if is_named {
+                self.named_import_depth += 1;
+            }
+
             // Snapshot targets before desugaring the import so we can
             // identify which targets were added by the imported file.
             let targets_before = self.targets.clone();
@@ -330,8 +352,9 @@ impl<'smap> Desugarer<'smap> {
             let newly_added = self.targets.difference(&targets_before).cloned();
             self.imported_targets.extend(newly_added);
 
-            if let Some(name) = import.name() {
-                expr = expr.apply_name(smid, name);
+            if is_named {
+                self.named_import_depth -= 1;
+                expr = expr.apply_name(smid, import.name().as_ref().unwrap());
             }
 
             self.file.pop();
