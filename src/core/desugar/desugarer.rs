@@ -304,10 +304,6 @@ impl<'smap> Desugarer<'smap> {
 
             // Suppress if already seen transitively, OR if already seen
             // directly and we're now inside a nested import.
-            // However, do NOT suppress if the previous encounter was inside
-            // a named import chain — those bindings are namespaced and not
-            // visible to the current scope.
-            let inside_named = self.named_import_depth > 0;
             if self.import_seen_nested.contains(&guard_key)
                 || (is_nested && self.import_seen_direct.contains(&guard_key))
             {
@@ -316,10 +312,11 @@ impl<'smap> Desugarer<'smap> {
 
             // Record this import in the appropriate guard set.
             // Only record nested imports when NOT inside a named import
-            // chain, since namespaced bindings don't satisfy other
-            // importers' need for the same file at the top level.
+            // chain — namespaced bindings are invisible to sibling
+            // importers, so recording would incorrectly suppress later
+            // unnamed encounters of the same file.
             if is_nested {
-                if !inside_named {
+                if self.named_import_depth == 0 {
                     self.import_seen_nested.insert(guard_key);
                 }
             } else {
@@ -334,10 +331,9 @@ impl<'smap> Desugarer<'smap> {
 
             self.file.push(file_id);
 
-            // Track whether we're inside a named import chain so that
-            // transitive imports know their bindings will be namespaced.
-            let is_named = import.name().is_some();
-            if is_named {
+            // Track named import depth so transitive imports know their
+            // bindings will be namespaced.
+            if import.name().is_some() {
                 self.named_import_depth += 1;
             }
 
@@ -352,9 +348,9 @@ impl<'smap> Desugarer<'smap> {
             let newly_added = self.targets.difference(&targets_before).cloned();
             self.imported_targets.extend(newly_added);
 
-            if is_named {
+            if let Some(name) = import.name() {
                 self.named_import_depth -= 1;
-                expr = expr.apply_name(smid, import.name().as_ref().unwrap());
+                expr = expr.apply_name(smid, name);
             }
 
             self.file.pop();
