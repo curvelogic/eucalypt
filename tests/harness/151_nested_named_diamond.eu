@@ -1,0 +1,18 @@
+"151 nested named import diamond deduplication"
+
+# Multi-level named import nesting: this file imports
+# a=diamond_a_nested.eu (which imports m=diamond_mid.eu, which
+# imports diamond_common.eu) alongside diamond_b.eu (which also
+# imports diamond_common.eu unnamed).
+#
+# diamond_common.eu is first seen two named-import levels deep.
+# diamond_b.eu must still resolve common-val from diamond_common.eu.
+
+` { import: ["a=testdata/diamond_a_nested.eu", "testdata/diamond_b.eu"], target: :test }
+test: {
+  # b-val depends on common-val from diamond_common.eu
+  b-accessible: b-val //= 11
+
+  # a.a-nested-val depends on m.mid-val which depends on common-val
+  a-accessible: a.a-nested-val //= 61
+}
