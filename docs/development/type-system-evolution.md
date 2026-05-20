@@ -37,7 +37,12 @@ though the field is always empty today.
 Inference is rank-1 prenex. There is no kind system, no constraint
 resolution, no rank-N or rank-2 quantification, no recursive types, no
 flow-sensitive narrowing, no use of types at runtime, no embedded type
-language — annotations live in metadata strings.
+language — annotations live in metadata strings. Two further gaps
+worth naming because later hypotheses lean on them: there is **no way
+to type a value's metadata channel** (so the van Laarhoven lens
+internals cannot be typed honestly — H2), and **no homogeneous-block
+type** — `Map(symbol, T)` / dictionary — distinct from named records
+(H19).
 
 The interesting unfinished business already on the spec's roadmap:
 recursive types (section 12), named row variables in inference (section
@@ -137,6 +142,24 @@ catch errors inside the lens library itself, and cannot describe the
 internal contract of "the `(b -> f b)` argument carries `fmap`
 metadata".
 
+**The hard prerequisite: typing metadata.** Before any of the routes
+below, note a gap the rest of this hypothesis depends on. The type
+representation today has *no way to talk about a value's metadata
+channel at all*. The gradual-typing-spec defers this explicitly
+(§14, "Metadata-Typed Values"). Eucalypt's lens encoding is not a
+real van Laarhoven lens — there is no functor `f` at runtime. The
+"functor" is a *metadata-dispatch fiction*: the inner function carries
+`fmap`/`pure`/`ap` as metadata, and `view` vs `over` differ only in
+which metadata block they attach (`fmap-get` vs `fmap-set`). The
+value `f b` is representationally just `b` with a dispatch table
+hanging off it. So any honest internal typing must be able to say
+"a function value whose metadata is a block of shape
+`{fmap: …, pure: …, ap: …}`". Until the type system can attach types
+to the metadata channel, H2b–H2d are not implementable — not merely
+hard. Metadata typing is a feature in its own right (it would also
+benefit fixity/precedence metadata, `target`, and the `type:` field
+itself) and is a genuine precondition here, separate from HKT.
+
 Four routes, increasing in ambition:
 
 #### H2a. Stay opaque (current plan)
@@ -145,50 +168,42 @@ Four routes, increasing in ambition:
 written `at`, `ix`, `item`, `each` signatures. We have this; it works
 for users.
 
-#### H2b. van Laarhoven internals with HKT + rank-2 + structural constraints
+#### H2b. van Laarhoven internals — the Haskell-idealised type
 
-The honest type:
+The textbook type:
 
 ```
 Lens(s, t, a, b) = forall (f :: * -> *). Functor f => (a -> f b) -> (s -> f t)
 ```
 
-Simplified monomorphic-focus version (eucalypt usage):
-
-```
-Lens(a, b) = forall f. Functor f => (b -> f b) -> (a -> f a)
-```
-
-This needs three things we don't have:
+This needs three things we don't have — *and* a fourth we'd be wrong
+to ignore:
 
 1. **Higher-kinded variables** (H1).
 2. **Rank-2 quantification** — `forall f` inside the alias body, used
    wherever the lens is *applied*.
 3. **A way to spell `Functor f`** without introducing typeclasses.
+4. **Metadata typing** (the prerequisite above) — because in eucalypt
+   there is no `f`. The "functor" is the dispatch table on the inner
+   function's metadata.
 
-For (3) the structural-constraint route fits eucalypt:
-
-```
-Functor(f) = exists fmap on f. (a -> b) -> f a -> f b
-```
-
-Phrased operationally: "`f` is a Functor when the block in scope
-provides `fmap` with that type". Since our lens code *literally
-passes a block carrying `fmap` as metadata*, this constraint is exactly
-a row constraint on the metadata namespace. The type system can read
-it as:
+Point (3) on its own fits eucalypt nicely: a structural constraint
+reading "the metadata block provides `fmap` of the right shape" —
+i.e. a row constraint `{fmap: (a -> b) -> f a -> f b, ..}`, Functor as
+namespace shape rather than class. But point (4) is the one that
+bites: the type `(a -> f b) -> (s -> f t)` describes a runtime that
+does not exist. The eucalypt-honest type is closer to
 
 ```
-{ fmap: (a -> b) -> f a -> f b, .. }
+Lens(a, b) = (b -@F-> b) -> (a -@F-> a)
 ```
 
-— i.e. a record whose `fmap` field has the Functor signature. This
-treats Functor not as a class but as a *namespace shape*. Lens checking
-then becomes: when applied, the inner function must arrive carrying a
-metadata block of this shape.
-
-This is structurally what eucalypt's lens encoding already does at
-runtime. We're just giving the same idea a static reading.
+where `-@F->` reads "function carrying functor-dispatch metadata of
+shape `F = {fmap, pure, ap}`". HKT and rank-2 are needed to *say* `F`
+abstractly; metadata typing is needed to *attach* it. So H2b is
+really "metadata typing + structural constraints + HKT + rank-2"
+together. That is a large package for a payoff (checking the bodies
+in `lib/lens.eu`) that affects one library file.
 
 #### H2c. Profunctor optics
 
@@ -208,10 +223,15 @@ Lens(a, b) @ { fmap, pure, ap } = (b -> f b @ {..}) -> (a -> f a @ {..})
 Metadata as effects. Cute but conflates two ideas. Probably worse than
 H2b.
 
-**Recommendation.** H2a for users; H2b as an *internal* kernel so the
-lens library body can be type-checked. Users only see `Lens(a, b)` and
-`Traversal(a, b)`. The internal type would only appear in
-`lib/lens.eu` and would not propagate.
+**Recommendation.** H2a for users — indefinitely. Treat H2b as gated
+on metadata typing, which is a substantial feature of its own and
+should be justified on its own merits (it touches far more than
+lenses). Until metadata typing exists, the lens library *body* stays
+`any`-typed; only the *interface* (`Lens(a, b)`, `Traversal(a, b)`)
+is typed, and that is enough for users. The realistic near-term
+question is not "type the lens internals" but "is metadata typing
+worth doing for its own sake?" — if yes, H2b follows cheaply
+afterwards; if no, H2b stays parked.
 
 **Prior art.** Edward Kmett's `lens` and its profunctor cousin (van
 Laarhoven 2007; Bartosz Milewski's lens posts), "Profunctor Optics:
@@ -236,14 +256,24 @@ merge: __MERGE
 
 ` { type: "Lens({k: a, ..r}, b) -> (a -> a) -> {k: a, ..r} -> {k: a, ..r}" }
 over-at: ...
-
-` { type: "(symbol -> a -> b) -> {..r} -> {..r}[a/b]" }
-map-values: ...
 ```
 
-The last is harder: `[a/b]` means "substitute `a` for `b` throughout
-the row". This is what the *kind*-level `Row` mini-algebra of PureScript
-provides.
+**What row polymorphism does *not* solve: `map-values`.** An earlier
+draft tried `(symbol -> a -> b) -> {..r} -> {..r}[a/b]`. That is wrong.
+`map-values` applies a function to every value, so for a *heterogeneous*
+block like `{x: number, y: string}` there is no single `a`: each field
+instantiates the value type differently, and the result row is "the
+input row with each field type `T` rewritten to the function's result
+on `T`". That is a *type-level map over a row* — a higher-order
+operation on the row itself, which row polymorphism alone does not
+give you (PureScript needs `RowToList` plus type families for it).
+
+The clean way out is *not* row polymorphism but a **homogeneous block
+type** — `map-values` types trivially as `(symbol -> a -> b) ->
+Dict(a) -> Dict(b)` when the block is known to have uniformly-typed
+values. See H19. Row polymorphism is the right tool for `merge` and
+for row-*preserving* functions like `over-at`; homogeneous-block
+typing is the right tool for `map-values`. They are complementary.
 
 **Two row algebras to choose from.**
 
@@ -284,14 +314,32 @@ But four restricted forms each give significant power for small cost.
 and `b : {foo: T, ..}` returns `T`. The result type depends on the
 literal value of `k`.
 
+A correction over an earlier draft: `lookup` does **not** return
+`null` on a missing key — it raises an execution error. (The
+existence of `lookup-or` with an explicit default is the tell.) That
+makes the dependent type *more* valuable, not less:
+
 ```
-` { type: "(k :: symbol) -> {..r} -> r[k] | null" }
+` { type: "(k :: symbol) -> {..r} -> r[k]" }
 lookup: __LOOKUP
+
+` { type: "(k :: symbol) -> d -> {..r} -> r[k] | d" }
+lookup-or: __LOOKUPOR
 ```
 
-This is exactly what TypeScript's `T[K]` *indexed access type* gives.
-For non-literal `k`, the result falls back to `any` (the union over the
-row, in principle). For literal `k`, we get precision.
+The three cases for `lookup`:
+
+- **literal `k` present in the row** → result is exactly `r[k]`.
+- **literal `k` absent from a closed/known row** → the checker can
+  issue a *static warning* — `lookup(:naem, person)` becomes a typo
+  caught before it errors at runtime. This is the real prize.
+- **non-literal `k`** → result is `any`, and the call carries a
+  latent runtime error (a `Partial` flavour — see H6b).
+
+This is TypeScript's `T[K]` indexed access, but the missing-key story
+is sharper because eucalypt errors rather than widening to
+`undefined`. H4a therefore depends on literal types (H16) to be worth
+much — together they turn block-key typos into warnings.
 
 #### H4b. Indexed access on tuples and short lists
 
@@ -302,24 +350,39 @@ row, in principle). For literal `k`, we get precision.
 The `monad: "[a]"` annotation on `for` is already a tiny dependent
 type — the *value* of the metadata determines the *type* of the
 desugared bindings. The desugarer reads the string and emits a type
-hint. We don't call this dependent, but it is.
+hint (this is the mechanism in monad-type-checking-spec.md).
 
-A full version: a monadic block `{ :name k: v ... }` would have its
-type computed by substituting the binding values into the monad's
-declared wrapper type. The infrastructure is already half there.
+**Is this still valuable once we have HKT (H1)?** Mostly *not*, for
+type-checking purposes. Once H1 types the monad namespaces properly,
+`for.bind : [a] -> (a -> [b]) -> [b]`, `io.bind : IO(a) -> …`, etc.,
+the desugared `bind` chain type-checks *directly* — a wrong binding
+fails because `42` does not unify with `[a]`. The explicit
+`__type_hint` injection becomes redundant for checking.
 
-#### H4d. Lens path types
+What remains after HKT is the **non-type role** of the `monad:`
+field: it tells the *desugarer* a block is monadic and which
+namespace's `bind`/`return` to use, and it drives LSP inlay hints and
+hover. That role is unaffected by HKT. So: H4c's hint-injection is a
+*bridge* — worth doing now because HKT is far off, superseded for
+checking once HKT lands, with the metadata field itself living on for
+desugaring and tooling.
 
-`‹:items 0 :meta›` has a type that depends on the literal symbols and
-indices in it. Today the desugarer composes lens types and emits a
-hint. A real dependent encoding —
-`path : ∀ ks. (ks :: [Symbol|Number]) -> Lens(walk(ks, s), t)` —
-would be expressive but probably not worth the complexity. The
-desugar-time hint is enough.
+#### H4d. Lens path types — not viable
 
-**Recommendation.** Take H4a, defer the rest. H4a is the most useful
-single dependent-type feature for a data-transformation language. The
-rest are nice-to-have.
+An earlier draft floated typing `‹:items 0 :meta›` dependently on the
+literal symbols and indices it contains. This does not work: path
+elements are not restricted to literals. `to-lens` accepts
+`if(x symbol?, at(x), if(x number?, ix(x), x))` — the third case is
+"`x` is already a lens", so a path may contain arbitrary lens
+*expressions* (`item(_.id = 1)`, `element(by-key(…))`, composed
+optics). There is no literal vector to index over. The desugar-time
+hint that composes the per-segment optic types is the only workable
+approach, and it already handles the lens-function case by using that
+segment's own type. Drop H4d.
+
+**Recommendation.** Take H4a (with H16). H4b is a minor follow-on.
+H4c is a bridge worth building now and retiring after H1. H4d is
+dropped.
 
 **Prior art.** TypeScript indexed access types and conditional types,
 Idris 2 dependent records, F* refinement types, Liquid Haskell,
@@ -409,9 +472,18 @@ For eucalypt the question is the constraint algebra:
 
 - **Lightweight**: a finite set of pre-declared refinements
   (`NonEmpty`, `Positive`, `Nonzero`, `Saturating`, …) as type
-  constructors. Cheap to implement, useful, no SMT.
-- **Heavyweight**: arithmetic predicates with an SMT backend. Out of
-  scope for a config-and-data tool.
+  constructors. Cheap to implement, useful, no solver needed.
+- **Heavyweight**: arbitrary arithmetic predicates discharged by an
+  SMT backend. Out of scope for a config-and-data tool.
+
+*SMT* — Satisfiability Modulo Theories — means an automated solver
+(Z3, CVC5, …) that decides logical formulas over built-in theories
+such as integer/real arithmetic, arrays, and bit-vectors. Liquid
+Haskell and F* lean on one to prove that refinement predicates (e.g.
+`0 <= i && i < len(xs)`) hold at every call site. It is powerful but
+heavy: a solver dependency, non-trivial latency, and predicates that
+can be hard to debug when they fail. For eucalypt the lightweight
+finite-refinement route avoids the solver entirely.
 
 #### H7a. `NonEmpty([a])`
 
@@ -433,7 +505,8 @@ free if the inliner already knows about the value.
 #### H7c. Branch-sensitive narrowing
 
 After `if(xs nil?, ..., body)` the checker narrows `xs : [a]` to
-`xs : NonEmpty([a])` in `body`. Pairs naturally with H15.
+`xs : NonEmpty([a])` in `body`. Pairs naturally with H15 — and shares
+H15's "branching is not syntax" complication (see there).
 
 **Recommendation.** H7a + H7c is a small package with disproportionate
 value. Skip arithmetic refinements.
@@ -537,9 +610,28 @@ labels: map(str.of)
 means "valid wherever `str.of` accepts `a`". The constraint references
 the function in the prelude namespace, not a class membership.
 
+**More than one constraint.** A function may need several operations
+on the same variable — e.g. a numeric routine that both compares and
+adds. The representation already allows this: `TypeScheme.constraints`
+is a `Vec<Constraint>`, not a single slot. The DSL just needs the
+constraints comma-separated before the `=>`:
+
+```
+` { type: "<(a, a), +(a, a) => a -> a -> a" }
+clamp-step: ...
+```
+
+Read: "valid wherever *both* `<` and `+` accept `a, a`". Resolution
+checks each constraint independently against the declared overloads;
+all must succeed. There is no inter-constraint interaction to worry
+about — they share only the type variable `a`, already unified by the
+rest of the signature. The grammar addition is one production: a
+comma-separated constraint list. No `forall`-level entanglement.
+
 **Cost.** Modest after H1 lands — the resolution machinery is the
 analogue of typeclass instance search, but with finite enumeration over
-declared overloads. No backtracking nightmares.
+declared overloads. No backtracking nightmares; multiple constraints
+are just a conjunction checked left-to-right.
 
 **Forwards compatibility.** Union overloads (current) are a strict
 specialisation of structural constraints. Existing annotations don't
@@ -595,7 +687,10 @@ eucalypt is dynamic block construction.
 
 `if(x = :foo, A, B)` where `x : LiteralSymbol(:foo)` reduces to `A` at
 compile time. Tiny but free, and synergises with H16. Already half-done
-by simple constant folding.
+by simple constant folding. Note the "branching is not syntax"
+complication from H15 applies here too: the pass must recognise the
+*set* of branch combinators (`if`, `then`, `cond`, `||`), not just
+`if`.
 
 #### H11f. Direct intrinsic dispatch for typed arithmetic
 
@@ -638,18 +733,41 @@ type DSL. The trade-off is clear.
 
 Three options for moving on, in order of conservatism:
 
-#### H12a. Keep the string DSL; interpolate alias names
+#### H12a. Keep the string DSL; make alias references first-class to tooling
 
-Reuse eucalypt's string interpolation inside the type string:
+A first draft of this called for "string interpolation" of alias
+names — `"{Person} -> string"`. That framing was muddled and needs
+correcting. Aliases today are *not* eucalypt bindings: `Person` is
+defined inside a `types:` metadata block or via `type-def:`, and it
+lives in the type checker's *alias table*, not in eucalypt's value
+scope. So `{Person}` cannot be resolved by eucalypt's ordinary name
+resolution / interpolation machinery — there is no value named
+`Person` to interpolate.
 
-```
-` { type: "{Person} -> [{Person}] -> bool" }
-member?(p, ps): ...
-```
+The honest version of H12a, then, is not interpolation but
+**alias references resolved within the DSL**. The current DSL grammar
+*already* treats a capitalised identifier as an alias reference
+(`Person` in `"Person -> string"` resolves against the alias table).
+So the bare-name reference already works. What's actually missing is
+the *tooling*, and that does not require moving aliases out of
+metadata at all:
 
-The `{Person}` is resolved as an alias reference at parse time. LSP
-can offer rename, go-to-def, hover. Implementation is trivial — the
-string parser already tokenises identifiers.
+1. The type-string parser must record **source spans** for the
+   identifiers it tokenises (offsets within the string literal).
+2. The LSP must **index the `types:` blocks and `type-def:`
+   declarations** — they are already in the AST, fully visible — to
+   build an alias-name → definition-site map.
+
+With (1) and (2), go-to-definition, hover, and rename work for alias
+references inside type strings, even though the alias and its uses
+both live in metadata. No new binding form, no change to where
+aliases are defined.
+
+The only situation that *would* require aliases to become real
+eucalypt entities is if we wanted them in eucalypt's value namespace
+(usable in expressions, importable by name like ordinary bindings) —
+that is H12c territory, a different and larger step. H12a as
+corrected stays entirely within metadata.
 
 This is the cheapest serious step. Recommended in Stage A.
 
@@ -685,23 +803,44 @@ This is interesting from a meta-programming angle but loses the
 readability that the string DSL has. It would also make types
 computable at compile time, which raises termination questions.
 
-#### H12d. Light embedded type-only mini-syntax (radical)
+#### H12d. Embedded type expressions via idiot brackets — and the phasing problem
 
-Add a single new bracket pair for types, e.g.:
+The first draft proposed a new `⟨ ⟩` bracket pair and called it a
+syntactic addition. That overstated the cost: eucalypt's **idiot
+brackets** (`⟦ ⟧`, user-definable bracket pairs) already let you
+introduce a bracketed construct *without* extending the grammar — a
+bracket pair is bound to a function and collects its contents. So a
+type-expression bracket need not be new syntax at all; it could be an
+idiot-bracket pair whose contents build a type.
 
-```
-` { type: ⟨Person -> [Person] -> bool⟩ }
-member?(p, ps): ...
-```
+But there is a real obstacle, and it is a **phasing problem**. Idiot
+brackets desugar to an ordinary function applied to the collected
+items, and that function runs *at evaluation time* — in the VM, after
+STG compilation. The type checker runs much earlier in the pipeline
+(`… → simplify → [TYPE CHECK] → inline → STG`). A type expressed
+through idiot brackets would therefore be a *runtime value*, produced
+by a computation the checker cannot see the result of: the type isn't
+known when the checker needs it.
 
-Inside `⟨ ⟩` the parser switches to type-DSL mode. Syntactically
-self-contained, no conflict. But it *is* a syntactic addition and the
-brief is to avoid those. Skip unless H12a proves insufficient.
+To make idiot-bracket types work, the checker would have to
+**statically evaluate** the bracket body itself — i.e. run a small
+compile-time interpreter over the type-building sub-language. That is
+feasible (the type DSL is small, total, and first-order) but it is
+real work and it deliberately blurs the phase boundary the
+architecture otherwise keeps clean. It also drags in H12c (types as
+values) as a dependency, since the bracket body would be building
+type values.
 
-**Recommendation.** H12a in Stage A — pure ergonomic upgrade with no
-risk. Defer H12b/c/d unless evidence appears that the string DSL is
-genuinely slowing users down. The string form is honest about being a
-separate language and that honesty has value.
+So H12d is *not* a free ride via existing bracket machinery. It is
+"H12c + a compile-time evaluator for the type sublanguage". That may
+still be worth it one day, but it is a bigger commitment than "just
+add a bracket".
+
+**Recommendation.** H12a (corrected) in Stage A — pure ergonomic
+upgrade with no risk and no change to where aliases live. Defer
+H12b/c/d unless evidence appears that the string DSL is genuinely
+slowing users down. The string form is honest about being a separate
+language and that honesty has value.
 
 **Prior art.** Racket contracts (DSL inside `#:contract` annotations
 that uses Racket syntax), TypeScript JSDoc types in strings vs `.ts`
@@ -830,12 +969,50 @@ This requires:
 - A table of recognised predicates → narrowing rules.
 - A "subtraction" or "exclude" form in the type representation
   (`T - U`) computed by walking unions.
-- Pattern recognition in the checker for the `if` form.
+- Pattern recognition in the checker for the branching forms.
 
 It also pairs with `match?` and `cond`, where the discriminant is a
 literal symbol — the case selecting `:active` narrows `x : :active`.
 
-**Cost.** Small after literal types (H16) and a slightly richer union
+**Complication: branching is not syntax.** This is the catch. `if` is
+an ordinary prelude function, not a syntactic form. By the time the
+checker sees core expressions, `if(x number?, A, B)` is just an
+application of the `if` *function* to three arguments, both branches
+evaluated as plain sub-expressions with no scoping of their own. And
+`if` is far from the only branching form: code routinely uses the
+pipeline cousin `then` (`cond then(A, B)`), the multi-way `cond`, and
+short-circuiting `||` / `&&`. There is no single syntactic node to
+hang narrowing on.
+
+The consequence: narrowing cannot be a general mechanism keyed on
+syntax. It must be a *special case in `synthesise_app`* that fires
+when the callee resolves to one of a known, finite set of branch
+combinators. For each, the checker needs a small descriptor: which
+argument is the condition, which are the branches, and (for `then`)
+that the condition arrives by catenation rather than as the first
+written argument. So:
+
+- It is a fixed table — `if`, `then`, `cond`, `||`, `&&`, perhaps
+  `when` / `unless` — not an open mechanism. New branch forms need a
+  table entry.
+- It is *defeated by rebinding* — if a user shadows `if` with their
+  own definition the checker should detect the callee is no longer
+  the prelude `if` and simply not narrow (sound: it just misses the
+  narrowing, never narrows wrongly).
+- The narrowed type must be threaded into the synthesis of the
+  branch sub-expressions specifically, since they are not otherwise
+  scoped.
+
+None of this is hard, but it is genuinely a *complication* rather
+than a clean rule — flow narrowing in eucalypt is "recognise these
+prelude functions", not "analyse the `if` construct". Worth being
+honest about up front. It also bounds the feature: narrowing only
+ever works through the recognised combinators; an exotic
+user-defined brancher gets no narrowing.
+
+**Cost.** Small-to-medium. The narrowing logic is small; the
+combinator-recognition table and its integration into `synthesise_app`
+are the fiddly part. Needs literal types (H16) and a richer union
 representation. Big perceived improvement.
 
 **Prior art.** TypeScript control-flow analysis, Flow type
@@ -936,6 +1113,90 @@ notion of "advanced features" worth gating.
 
 ---
 
+### H19. Homogeneous block (dictionary) types
+
+**The gap.** There is currently no way to type "a block, arbitrary
+keys, *all values of the same type*" — a `Map(symbol, T)`. The record
+type `{k: T, ..}` requires *named* keys; `{..}` means "some block,
+values unknown". Neither expresses "a dictionary from symbols to
+`number`". This is a real hole: it is the natural type of the result
+of `group-by`, of config sections with uniform shape, of
+`block(kvs)`-constructed blocks with a known value type, and of
+JSON objects with uniform values.
+
+**Sketch.** Add a type form for it. Eucalypt block keys are symbols,
+so the key type is fixed and only the value type varies — a one-
+parameter constructor suffices:
+
+```
+Dict(T)        — block, any symbol keys, every value of type T
+```
+
+In the DSL this could spell as `Dict(T)`, or, reusing record syntax
+with a wildcard key, `{*: T}` or `{symbol: T}`. `Dict(number)` is the
+type of `{a: 1, b: 2, c: 3}`.
+
+Subtyping and relationships:
+
+- `Dict(T)` is covariant in `T`: `Dict(A) <: Dict(B)` if `A <: B`.
+- A closed record `{a: A, b: B}` is a subtype of `Dict(A | B)` —
+  every value fits the union. So `{a: 1, b: 2} <: Dict(number)`.
+- `Dict(T) <: {..}` — a dictionary is still a block.
+- It is *not* a subtype of any record requiring a named key, since
+  no individual key is guaranteed present.
+
+This makes a family of functions that are currently `{..} -> {..}`
+type honestly:
+
+```
+` { type: "(symbol -> a -> b) -> Dict(a) -> Dict(b)" }
+map-values: ...
+
+` { type: "(a -> any) -> [a] -> Dict([a])" }
+group-by: ...
+
+` { type: "symbol -> Dict(a) -> a" }
+lookup: ...                # on a Dict, the result type is just a
+
+` { type: "Dict(a) -> [a]" }
+values: ...
+
+` { type: "Dict(a) -> [symbol]" }
+keys: ...
+```
+
+Note how `map-values` — the function H3 could *not* type cleanly with
+row polymorphism — falls out trivially here. The two features are
+complementary: row polymorphism for *named, heterogeneous, shape-
+preserving* block operations (`merge`, `over`); `Dict(T)` for
+*uniform, key-agnostic* block operations (`map-values`, `group-by`,
+`values`). And on a `Dict(a)`, the dependent `lookup` of H4a collapses
+to the simple `symbol -> Dict(a) -> a` — no indexing needed, every
+value is already `a`.
+
+**Inference.** A block literal `{a: 1, b: 2}` synthesises as a closed
+record `{a: number, b: number}` as today; the checker widens to
+`Dict(number)` on demand (when checked against a `Dict` annotation, or
+when joining with another block of incompatible shape). Widening on
+use, like literal types (H16).
+
+**Cost.** Small. One new `Type` variant (`Dict(Box<Type>)`), a
+covariance rule, two or three subtyping rules, one DSL production,
+one display case. No interaction with HKT or constraints.
+
+**Prior art.** TypeScript index signatures (`{ [k: string]: T }`),
+Flow indexer properties, PureScript's `Foreign.Object` /
+`Data.Map` (records stay fixed; dictionaries are a separate type —
+exactly this split), Elm `Dict`, OCaml's distinction between records
+and `Hashtbl`.
+
+**Recommendation.** Stage A. It is small, it closes a real
+expressiveness gap, it makes a cluster of prelude functions typeable,
+and it removes the `map-values` awkwardness from H3. Pairs naturally
+with row polymorphism — adopt both together.
+
+---
+
 ## 2. A coherent path
 
 If we want to avoid scattering effort, the hypotheses cluster
@@ -947,11 +1208,14 @@ These complete what's already half-done. Each is small individually;
 together they make the type system feel finished for everyday work.
 
 - H3: row polymorphism in inference and merges
+- H19: homogeneous block (`Dict(T)`) types — adopt alongside H3
 - H14: recursive types via equirecursion + alias self-reference
-- H15: flow-sensitive narrowing via predicates
+- H15: flow-sensitive narrowing via predicates (with the
+  branch-combinator recognition table)
 - H16: literal types for strings and booleans (symbols already)
 - H7a + H7c: `NonEmpty` and branch-narrowing
-- H12a: alias interpolation in DSL strings
+- H12a: first-class alias references in DSL strings (parser spans +
+  LSP indexing of `types:` blocks)
 - H9 (cheap version): in-memory per-module summary cache
 
 End state: a complete structural gradual checker that catches a much
@@ -964,15 +1228,20 @@ The big-step features. Each depends on the unifier/checker being
 solid. Each is genuinely new theory in the codebase.
 
 - H1: higher-kinded type variables
-- H10: structural operator constraints
-- H2b: typed lens internals as an internal kernel
+- H10: structural operator constraints (incl. multiple constraints
+  per scheme)
 - H6b: `Partial(T)` opaque type
-- H4a: indexed access on records (`r[k]` for literal `k`)
+- H4a: indexed access on records (`r[k]` for literal `k`) — builds on
+  H16 from Stage A
 - H9 (full version): persistent summaries and LSP cross-file inference
+- *Metadata typing* — a prerequisite if H2b is wanted; justify it on
+  its own merits (fixity, `target`, `type:` itself), not just lenses
 
 End state: the prelude can be honestly typed end to end, including
-`monad()`, `min`/`max`, `head`, and lens internals. User-defined
-monads inherit correct types.
+`monad()`, `min`/`max`, and `head`. User-defined monads inherit
+correct types. Lens *internals* (H2b) remain gated on metadata
+typing — the lens *interface* is already typed and that suffices for
+users.
 
 ### Stage C — Radical options (24+ months)
 
@@ -1075,6 +1344,13 @@ These should be decided before committing to a stage plan.
 6. **What is the policy on boundary unsoundness?** Forever silent
    (H13a), opt-in checks (H13c), or eventually mandatory checks
    (H13b)?
+
+7. **Is typing the metadata channel worth doing for its own sake?**
+   It is the hard prerequisite for H2b (lens internals) but also
+   touches fixity/precedence metadata, `target`, and the `type:`
+   field itself. If the answer is no, H2b stays parked indefinitely
+   and that is fine — the lens *interface* is already typed. (Affects
+   H2.)
 
 ---
 
