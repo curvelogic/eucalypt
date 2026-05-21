@@ -492,9 +492,23 @@ finite-refinement route avoids the solver entirely.
 head: __HEAD
 ```
 
-Construction: lists with at least one literal element, `cons(_, xs)`,
-or after a `nil?` narrowing branch. Wide impact, small effort. The
-type is just a thin tag.
+Construction: `cons(_, xs)` results, or after a `nil?` narrowing
+branch. Wide impact, small effort. The type is just a thin tag.
+
+For **list literals** the cleaner route is via `Tuple`, not `NonEmpty`
+directly. A non-empty list literal should synthesise as `Tuple` of its
+element types at every arity (up to a practicality cap), because
+`Tuple` is the most general principal type — it widens to `Tuple`
+(same-arity tuple parameters), to `[T]`, *and* to `NonEmpty` via a
+`Tuple <: NonEmpty` rule. This both feeds `NonEmpty` for free and
+fixes a pre-existing cliff: the current synthesiser keeps only 2–4
+element literals as tuples and downgrades the rest to `List`, so a
+5+-element literal cannot be passed to a tuple parameter even though
+its length is statically known. Beyond the cap the literal falls back
+to `NonEmpty(<element union>)`. Precision carries through *unannotated*
+functions by inference but stops — correctly — at `[T]` annotations
+and length-erasing operations (`map`, `++`, recursion); see the
+literal-types spec for the full treatment.
 
 #### H7b. Constant-folded refinements
 
