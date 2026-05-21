@@ -57,6 +57,11 @@ pub enum CoreError {
     /// (e.g. `` ` { x.y: val } ``) which is not valid eucalypt syntax.
     #[error("invalid block key: dotted names are not allowed as block keys")]
     NoSmidForImplicitAnaphor,
+    /// The body of a string interpolation `{...}` could not be parsed as
+    /// a valid variable reference or dotted path.  This typically happens
+    /// when braces that should be literal are not escaped (use `{{` / `}}`).
+    #[error("invalid string interpolation")]
+    InvalidStringInterpolation(Smid),
     /// An internal compiler error — a variable references a binding that
     /// was eliminated during dead code elimination.
     #[error("internal compiler error: {1}")]
@@ -77,6 +82,7 @@ impl HasSmid for CoreError {
             NoMonadSpec(_, s) => s,
             EmptyMonadicBlock(s) => s,
             MonadSpecMissingMarker(_, _, s) => s,
+            InvalidStringInterpolation(s) => s,
             InternalCompilerError(s, _) => s,
             _ => Smid::default(),
         }
@@ -103,6 +109,14 @@ impl CoreError {
                 "example of valid metadata: `` ` { x: val } `` — use 'x', not 'x.y' as the key".to_string(),
                 "if you need nested metadata, use nested blocks: `` ` { x: { y: val } } ``".to_string(),
             ]),
+            CoreError::InvalidStringInterpolation(_) => {
+                source_map.diagnostic(self).with_notes(vec![
+                    "the content between { and } was not a valid variable name or dotted path"
+                        .to_string(),
+                    "if you want a literal brace in a string, escape it by doubling: {{ and }}"
+                        .to_string(),
+                ])
+            }
             _ => source_map.diagnostic(self),
         }
     }

@@ -1938,7 +1938,9 @@ fn desugar_rowan_string_pattern(
 
                     // Apply the exact legacy algorithm for InterpolationTarget::Reference
                     let smid = desugarer.new_smid(chunk_span);
-                    if names.len() == 1 {
+                    if names.is_empty() {
+                        return Err(CoreError::InvalidStringInterpolation(smid));
+                    } else if names.len() == 1 {
                         // Single name case: just desugar the name and varify it
                         let name = &names[0];
                         let name_text = name
