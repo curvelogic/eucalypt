@@ -1138,7 +1138,7 @@ compose(f, g, x): x g f
 ` { doc: "(l @ r) - function application operator, for reversing catentation args and eliding parentheses"
     type: "(a → b) → a → b"
     export: :suppress
-    associates: :right
+    associates: :left
     precedence: :apply }
 (l @ r): l(r)
 

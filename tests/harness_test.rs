@@ -1603,6 +1603,11 @@ pub fn test_harness_151() {
 }
 
 #[test]
+pub fn test_harness_152() {
+    run_test(&opts("152_at_operator.eu"));
+}
+
+#[test]
 pub fn test_target_symbol_shortcut_alpha() {
     let output = std::process::Command::new(eu_binary())
         .args(["-t", "alpha", "tests/harness/148_symbol_target_shortcut.eu"])
