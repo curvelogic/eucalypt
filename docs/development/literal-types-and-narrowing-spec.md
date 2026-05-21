@@ -17,12 +17,17 @@ discriminate unions by branch.
 Two scoping questions were settled before writing this spec:
 
 1. **Narrowing recognition scope (A5)** — *Core + prelude guards*. The
-   checker recognises `if`, `then`, `cond` and the boolean operators
-   (`and`/`∧`, `or`/`∨`) as branch forms; conditions are the type
+   checker narrows through the branch intrinsics `__IF`/`__AND`/`__OR`
+   (and their aliases `if`/`and`/`or`/`∧`/`∨`) and through pass-through
+   wrappers — `then`, plus any user-defined `my-if` — recognised
+   **structurally**, not by name (§A5.3). Conditions are the type
    predicates (`number?`, `string?`, …), `nil?` and `non-nil?`. This
-   covers every guard pattern the prelude itself uses. *Not* in scope for
-   6.1: equality-against-literal narrowing (`x = :active`), `has(:k, …)`,
-   `when`/`unless`, and `.field`-path narrowing.
+   covers every guard pattern the prelude itself uses. `cond` is a
+   recursive `foldr` and is *not* recognised; the few prelude
+   partial-function `cond` sites are rewritten as explicit `if`
+   (§A5.7). *Not* in scope for 6.1: equality-against-literal narrowing
+   (`x = :active`), `has(:k, …)`, `when`/`unless`, `.field`-path
+   narrowing, and general union discrimination through `cond`.
 
 2. **Partial list functions (A6)** — *annotate now*. `head`, `tail` and
    the other partial list functions are retyped with `NonEmpty` in
@@ -193,45 +198,91 @@ if(x null?, A,        # in A:  x : null
             B)        # in B:  x : number | string
 ```
 
-Narrowing is **not** a syntactic rule — `if`/`then`/`cond` are ordinary
-functions. It is a special case inside `synthesise_app`, keyed on a fixed,
-closed table of recognised callees. An unrecognised brancher gets no
-narrowing (sound: the feature simply does not fire).
+Narrowing is **not** a syntactic rule — `if`/`then` are ordinary
+functions. It is a special case inside `synthesise_app`, keyed
+**structurally** on the branch *intrinsics* (`__IF`/`__AND`/`__OR`) and
+on the *shape* of wrapper definitions — never on a name (§A5.3). A
+brancher the checker cannot classify gets no narrowing (sound: the
+feature simply does not fire).
 
 ### A5.2 The mechanism
 
-At the **start** of `synthesise_app` (check.rs ~675), before the generic
+At the **start** of `synthesise_app` (check.rs:675), before the generic
 function/argument loop:
 
-1. Flatten the application spine: `App(App(f, xs), ys)` → `(f, xs ++ ys)`.
-   (`then` arrives by catenation as `cond then(t, f)` = `then(t, f, cond)`,
-   sometimes as nested `App`s.)
-2. Call `recognise_branch(f, &spine_args)`. If it returns a
-   `BranchDescriptor`, delegate to `synthesise_branch`. Otherwise fall
+1. **Flatten the spine.** Walk down the `func` position collecting
+   argument vectors: `App(App(f, xs), ys)` → `(f, xs ++ ys)`, to any
+   depth. This is mandatory, not an optimisation. `then` is the
+   idiomatic branch form and is *always* used in pipeline style
+   `x then(a, b)`, which cooks to the **nested** `App(App(then, [a, b]),
+   [x])` — the partial application `then(a, b)` sits in the function
+   position of the outer `App`. Flattening reassembles the full
+   argument list `[a, b, x]`.
+2. **Recognise at the outermost `App`.** `synthesise_app` flattens
+   *before* doing anything else, so the intermediate node
+   `App(then, [a, b])` is consumed by the spine — it is never
+   type-checked as a standalone partial application. The checker
+   synthesises the argument *expressions* directly.
+3. Call `recognise_branch(head, &spine_args)` (§A5.3). On a
+   `BranchDescriptor`, delegate to `synthesise_branch`; otherwise fall
    through to the existing generic path unchanged.
 
-`synthesise_branch` does **not** re-use the generic application path; it
-fully handles the call: analyses the condition, synthesises each branch
-under its narrowing facts, and returns the union of branch result types.
+`synthesise_branch` does not re-use the generic application path: it
+analyses the condition, synthesises each branch under its narrowing
+facts, and returns the union of branch result types.
 
-### A5.3 Recognition table
+For `x then(a, b)` the flattened spine is `(then, [a, b, x])`; `then`'s
+shape (§A5.3) puts the condition at parameter 2, so the condition is the
+pipelined subject `x` and the branches are `a`, `b` — "if `x` then `a`
+else `b`". All three are arguments of the *one* call expression, hence
+in one scope, which is exactly what lets the condition narrow the
+branches (see §A5.6, §A5.10).
 
-`recognise_branch` matches the callee against this closed table. The
-callee is identified by **name** (`Var::Free`/`Var::Bound`/`Name`) or by
-**intrinsic** (`Expr::Intrinsic`), gated by the provenance check in §A5.6.
+### A5.3 Recognising branchers — structurally
 
-| Callee | Arity | Condition arg | Positive branch | Negative branch |
-|--------|-------|---------------|-----------------|-----------------|
-| `if` / `__IF` | 3 | arg 0 | arg 1 | arg 2 |
-| `then` | 3 | arg 2 | arg 0 | arg 1 |
-| `cond` | 2 | see §A5.7 | per-row | default (arg 1) |
-| `and` / `∧` / `__AND` | 2 | — | see §A5.8 | — |
-| `or` / `∨` / `__OR` | 2 | — | see §A5.8 | — |
+Recognition is **structural**: it never matches a name. Given a
+flattened spine `(head, args)`:
 
-`then(t, f, c): if(c, t, f)` — written `c then(t, f)`, so after spine
-flattening the condition is the **last** argument. Any callee at an arity
-other than the table's (a partial application) is **not** recognised and
-falls through to the generic path.
+**Mechanism 1 — a raw branch intrinsic.** `head` is literally an
+`Expr::Intrinsic` node for `IF`, `AND` or `OR`. Unforgeable. Fixed
+shapes:
+
+| Intrinsic | Arity | Condition | Branches |
+|-----------|-------|-----------|----------|
+| `IF`  | 3 | arg 0 | arg 1 positive, arg 2 negative |
+| `AND` | 2 | — | see §A5.8 |
+| `OR`  | 2 | — | see §A5.8 |
+
+**Mechanism 2 — a binding with a branch shape.** `head` is a `Var`;
+resolve it to its binding and consult the binding's memoised
+`BranchShape`. A binding is classified **once** (on first need) and the
+result cached:
+
+- If the body (peeling metadata) is a bare branch intrinsic —
+  `if: __IF` (prelude.eu:272) — the binding *inherits* that intrinsic's
+  shape. This is alias chasing; `compress` may already have done it.
+- If the body is an *application* whose head is an already-classified
+  brancher and whose condition slot plus at least one branch slot are
+  filled by this function's **own parameters** — `then(t,f,c): if(c,t,f)`
+  — the binding is a **pass-through wrapper**: compose the inner shape
+  with this function's parameter positions. `then` →
+  `BranchShape { arity 3, condition: param 2, branches: [param 0, param 1] }`.
+- Otherwise: no `BranchShape`.
+
+Classification is one level deep, **memoised** (O(1) per call site
+thereafter), composes bottom-up, and is guarded against recursion (a
+function reaching itself during classification → no shape, which is
+always correct — a recursive function is not a pass-through wrapper).
+The *same* machinery covers an alias (`if`), a prelude wrapper (`then`),
+and a user's own `my-if(c,t,e): if(c,t,e)` — narrowing works for all
+three with zero name knowledge. Most functions fail the first check and
+are dismissed; in the 6.1 prelude only `if`/`and`/`or` (aliases) and
+`then` (wrapper) acquire a shape.
+
+A spine matches when its flattened arity equals the shape's arity; the
+condition and branch *expressions* are then the spine arguments at the
+shape's recorded indices. An arity mismatch (a partial application) does
+not match — see §A5.6.
 
 ### A5.4 Threading narrowed types — the `scope_stack` constraint
 
@@ -304,37 +355,76 @@ The predicate may be written by catenation (`x p?`) or prefix
 (`p?(x)`) — both desugar to `App(p?, [x])`, so one match shape covers
 both.
 
-### A5.6 Provenance — defeat by rebinding
+Predicates are recognised **structurally** too, consistent with §A5.3 —
+no predicate name table. A type predicate resolves to its underlying
+test intrinsic; `nil?`/`non-nil?` are recognised as an equality test
+against the empty-list literal `[]` (`nil?` is defined that way in the
+prelude). The implementer confirms the intrinsic backing each predicate.
 
-Recognition is by name/intrinsic, gated so a user who redefines a branch
-combinator silently loses narrowing (never gets *wrong* narrowing):
+### A5.6 Recognition is structural — no name matching
 
-1. **Local shadowing**: if the callee name is bound in any frame on
-   `scope_stack`, do not recognise it.
-2. **Global identity**: the `Checker` records, while walking the
-   top-level (prelude) bindings, which of `if`/`then`/`cond`/`and`/`or`
-   resolve to their expected definitions (`if`→`__IF` intrinsic,
-   `and`→`__AND`, `or`→`__OR`, `then`/`cond`→a prelude lambda). It keeps
-   a `recognised: HashSet<&str>`. If a later top-level binding rebinds
-   one of these names, it is removed from the set. `recognise_branch`
-   fires only for names still in the set. Calls written as the bare
-   intrinsic (`__IF`, `__AND`, `__OR`) are always recognised — intrinsics
-   cannot be rebound.
+Because recognition keys off the branch *intrinsics* and the structural
+*shape* of definitions (§A5.3), there is no name to spoof and no
+provenance table to maintain:
 
-### A5.7 `cond`
+- A user who **rebinds** `if`/`then`/`and`/`or` gets recognition based
+  on what the new definition *is*. Rebound to something still a
+  pass-through wrapper → still narrows, correctly. Rebound to something
+  that is not → classifies as "no shape" and narrowing simply does not
+  fire. Never unsound.
+- A user who **defines their own** brancher (`my-if`, `select`, …) gets
+  narrowing for free, by classification.
+- **Local shadowing** needs no special handling: a locally-bound `if`
+  is a `Var` resolving to a local binding, classified by its
+  definition like any other.
 
-`cond(l, d)` where `l` is a **list literal** of two-element list literals
-`[[c₁, r₁], [c₂, r₂], …]` and `d` is the default. Process rows in order,
-carrying an accumulated negative-fact set `acc` (initially empty):
+This dissolves the former open question about `then`/`cond` provenance.
 
-- Row *i*: synthesise `rᵢ` under `positive(cᵢ) ⊓ acc`; then
-  `acc := acc ⊓ negative(cᵢ)`.
-- Default: synthesise `d` under `acc`.
+**A partially-applied brancher is opaque — and that is sound.** A
+brancher is recognised only when a *complete* spine — all condition and
+branch slots filled — appears in **one** expression. If `if` is
+partially applied and stored,
 
-Result type: union of all `rᵢ` and `d`. The accumulated negatives are
-what let `cond([[l nil?, panic(…)], …])` narrow `l` to `NonEmpty` in
-*every later row*. If `l` is not a literal of the expected shape, `cond`
-is not recognised (falls through — no narrowing).
+```
+g: if(c)            # g : a -> a -> a — a stored partial application
+... g(p, q)
+```
+
+the checker classifies `g` as having no `BranchShape` (its body is an
+*incomplete* `__IF`, and `g` has no parameters to fill the open slots),
+so `g(p, q)` is typed generically with no narrowing. This is sound — no
+*wrong* narrowing — and nothing useful is lost. Narrowing is meaningful
+only when the condition and the branches share variables in a shared
+**scope**; a stored partial application necessarily splits the baked-in
+condition (definition scope) from the later-supplied branches (call-site
+scope), and a variable narrowed through the condition cannot appear in
+branches from another scope. The checker therefore resolves a spine head
+through *function/wrapper* definitions — parameter-hole substitution
+keeps every concrete expression in its own scope — but treats a binding
+whose *value* is a partial application as **opaque**. Chasing it would
+mean splicing a concrete condition across a scope boundary (with de
+Bruijn re-indexing) for a vacuous gain. See §A5.10.
+
+### A5.7 `cond` is engineered out, not recognised
+
+`cond(l, d): l foldr(uncurry(if), d)` (prelude.eu:1168) is a `foldr` —
+recursive and data-driven. It does not reduce to a static `__IF` tree,
+and the classification recursion guard (§A5.3) correctly gives it no
+`BranchShape`. `cond` is therefore **not** a recognised brancher, and
+narrowing does not flow through it.
+
+The only `cond` uses that *need* narrowing for the prelude
+warning-free gate are the partial-function sites — a `cond` whose first
+row guards `nil?` and a later row calls `head`/`tail`. These are
+**rewritten** in `lib/prelude.eu` as explicit nested / `nil?`-guarded
+`if`, which narrow via Mechanism 1. The rewrite is part of the A6
+prelude work; §A6.7's audit enumerates the sites and confirms the count
+is small.
+
+General narrowing through `cond` in *user* code — discriminating a union
+across `cond` rows — is deferred. It belongs with the occurrence-typing
+endgame (latent propositions; see `type-system-evolution.md`), not with
+a `cond`-specific special case.
 
 ### A5.8 `and` / `or` as standalone calls
 
@@ -364,8 +454,18 @@ narrowed to `NonEmpty` by the left conjunct.
 ### A5.10 Limitations (documented, not bugs)
 
 - Only bare variables narrow — not `.field` paths or call results.
-- Narrowing flows only through the recognised combinators; an exotic
-  user-defined brancher gets none.
+- Narrowing reaches a brancher only when it can be classified
+  structurally (§A5.3): the `BranchShape` requires the condition and
+  branch slots to be the function's own parameters. A brancher
+  assembled by higher-order composition, or one whose branch structure
+  is data-driven (`cond`, §A5.7), gets no shape and does not narrow.
+- A partially-applied brancher stored in a binding is opaque (§A5.6):
+  completing it elsewhere does not narrow. Sound, and the lost narrowing
+  is vacuous — the stored partial application splits the condition from
+  the branches across scopes, so nothing they share could be narrowed.
+  The sole non-vacuous case — a partial application closing over an
+  *outer-scope* variable that the later-supplied branches also mention —
+  is pathologically rare and accepted.
 - Negative narrowing only changes a *union*; on an unannotated `any` the
   else-branch stays `any`.
 
@@ -535,20 +635,21 @@ Retyping `head`/`tail` re-checks every call in `lib/prelude.eu`. Each must
 resolve one of three ways:
 
 1. **On a literal / `cons`-built non-empty list** → `NonEmpty` by §A6.3.
-2. **Inside a branch narrowed by a `nil?`/`non-nil?` guard** through a
-   recognised combinator → `NonEmpty` by §A6.4. A survey of the prelude
-   confirms the chosen A5 scope covers the patterns in use:
-   - `if(xs nil?, …, xs head)` — `if`. ✓
-   - `xs nil? then(d, xs head)` — `then`. ✓
-   - `cond([[l nil?, panic(…)], …])` — `cond` with accumulated negatives.
-     ✓
-   - `__IF((n zero?) ∨ (l nil?), [], cons(l head, …))` — `__IF` intrinsic
-     + `∨` negative facts (`take`, `drop`). ✓
+2. **Inside a branch narrowed by a `nil?`/`non-nil?` guard** → `NonEmpty`
+   by §A6.4. A survey of the prelude confirms structural recognition
+   (§A5.3) covers the patterns in use:
+   - `if(xs nil?, …, xs head)` — `if` (alias of `__IF`). ✓
+   - `xs nil? then(d, xs head)` — `then` (pass-through wrapper). ✓
+   - `__IF((n zero?) ∨ (l nil?), [], cons(l head, …))` — raw `__IF`
+     intrinsic + `∨` negative facts (`take`, `drop`). ✓
    - `if(not(xs nil?) ∧ (xs head p?), …)` — `∧` threads the left conjunct
      into the right (`take-while`). ✓
    - nested `if(l nil?, [], if(l head p?, …))` — outer guard narrows `l`
      for the whole else branch including the inner condition
      (`drop-while`, `group-consecutive-by`). ✓
+   - `cond([[l nil?, panic(…)], …])` — `cond` is **not** recognised
+     (§A5.7); these sites are **rewritten** as explicit `nil?`-guarded
+     `if`. Enumerate them here and rewrite each as part of the A6 work.
 3. **Genuinely unguarded** — the audit *will* find a few (e.g. a
    `transpose`-style `aux(rs): if(rs head nil?, …)` where `rs head` sits
    in the condition with no guard on `rs`). Each such site is fixed
@@ -626,11 +727,13 @@ Harness tests live in `tests/harness/typecheck/NNN_*.eu` with paired
 subtyping, consistency, unification, DSL round-trip); harness:
 literal-string annotation accepted/rejected, union absorption display.
 
-**A5** — harness: positive and negative narrowing through `if`, `then`,
-`cond`; `∧` fact-threading and `∨` negative facts; nested narrowing;
-`__IF`/`__AND`/`__OR` intrinsic recognition; **rebinding disables
-narrowing** (shadow `if` locally and at top level, assert no narrowing);
-narrowing of `any`. Unit tests for `analyse_condition` and `subtract`.
+**A5** — harness: positive and negative narrowing through `if` and
+`then`; `∧` fact-threading and `∨` negative facts; nested narrowing;
+raw `__IF`/`__AND`/`__OR` intrinsic recognition; **a user-defined
+`my-if` narrows** (structural classification); a partially-applied
+stored `if` does *not* narrow and is sound; narrowing of `any`. Unit
+tests for `BranchShape` classification (alias, wrapper, recursion guard,
+arity mismatch), `analyse_condition`, and `subtract`.
 
 **A6** — harness: `head([])` warns; `head([1])` and `head([1,2,3])` do
 not; `head` after a `nil?`/`then`/`cond` guard does not; `cons` result is
@@ -663,22 +766,28 @@ arms.
   — a union of bool literals is just `bool` — and the one feature that
   could use it (literal-equality narrowing) is deferred past 6.1, so it
   would ship inert. `Primitive::Bool` keeps synthesising `Type::Bool`.
-- **Recognised-branch result type**: a recognised `if`/`then`/`cond`
-  call is typed accurately as `union(branch types)` (§A5.9, §6.1) — not
-  via the generic application path. This is the precise type
-  (`if(c, 1, "x")` *is* `number | string`), and the new — correct —
-  warnings it surfaces are the point. A5's PR carries the same
-  zero-new-warning triage gate as A6 (prelude + harness).
+- **Recognised-branch result type**: a recognised `if`/`then` call is
+  typed accurately as `union(branch types)` (§A5.9, §6.1) — not via the
+  generic application path. This is the precise type (`if(c, 1, "x")`
+  *is* `number | string`), and the new — correct — warnings it surfaces
+  are the point. A5's PR carries the same zero-new-warning triage gate
+  as A6 (prelude + harness).
+- **Brancher recognition is structural, not nominal** (§A5.3, §A5.6):
+  the checker recognises the raw `__IF`/`__AND`/`__OR` intrinsics, and
+  classifies each binding once into an optional `BranchShape` (alias
+  chasing for `if: __IF`; pass-through-wrapper composition for
+  `then(t,f,c): if(c,t,f)`). No name table. This makes a user's `my-if`
+  narrow for free and dissolves the former `then`/`cond` provenance
+  question — there is no name to spoof. `cond` (a recursive `foldr`)
+  gets no shape and is engineered out of the prelude's narrowing-
+  critical sites (§A5.7).
 
 ### Still open
 
-1. **`then`/`cond` provenance** (§A5.6): `then`/`cond` are recognised as
-   "a prelude lambda bound to this name", not by inspecting the body. A
-   top-level redefinition of `then` to a *different* lambda would still
-   be recognised and could narrow wrongly. Is the local-shadowing guard
-   plus "first top-level binding wins, later rebinding disables"
-   sufficient, or should recognition also pin the prelude binding's
-   `Smid`?
+None. The design questions raised in review are resolved. Two values
+are left to the implementation as audits, not design choices: the
+`LIST_TUPLE_CAP` constant (§A6.3) and the exact set of partial-function
+`cond` sites to rewrite (§A6.7).
 
 ## 10. File-by-file change summary
 
@@ -688,6 +797,6 @@ arms.
 | `subtype.rs` | literal `<:` + consistency arms | — | `NonEmpty` `<:` + consistency arms |
 | `unify.rs` | literal unify arms | — | `NonEmpty` unify arm |
 | `parse.rs` | literal-string token + production; grammar comment | — | `NonEmpty([T])` token + production |
-| `check.rs` | `synthesise_primitive`; route unions through `Type::union` | `Checker.narrowing` field; `recognise_branch`, `synthesise_branch`, `analyse_condition`, `subtract`; narrowing-aware `Var` synthesis; `recognised` set | list-literal arm — drop the 2–4 cutoff, synthesise `Tuple` up to `LIST_TUPLE_CAP` then `NonEmpty`; `nil?` table entries |
+| `check.rs` | `synthesise_primitive`; route unions through `Type::union` | `Checker.narrowing` field; spine flattening; `BranchShape` classification (memoised); `recognise_branch`, `synthesise_branch`, `analyse_condition`, `subtract`; narrowing-aware `Var` synthesis | list-literal arm — drop the 2–4 cutoff, synthesise `Tuple` up to `LIST_TUPLE_CAP` then `NonEmpty`; `nil?` predicate handling |
 | `lib/prelude.eu` | — | — | annotate `head`/`tail`/`cons`/`‖`/…; blast-radius fixes |
 | `tests/harness/typecheck/` | literal tests | narrowing tests | `NonEmpty` tests |
