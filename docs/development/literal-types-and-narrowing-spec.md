@@ -171,14 +171,16 @@ smart-constructor in §6.1, which absorbs any `LiteralX(v)` when its base
 - `synthesise_block` records literal field types: `{ mode: "r" }` →
   `{mode: "r", ..}`. Harmless — `"r" <: string`, so any check against
   `{mode: string}` passes; LSP hover gets *more* precise.
-- List literals: 2–4 string elements → `Tuple` of literal strings (kept —
-  tuples carry more information); ≥5 → see §A6.3, the list path now
-  produces `NonEmpty` of a (deduplicated, absorbed) element type. A list
-  of many distinct strings should widen to `[string]` rather than a giant
-  literal union — the union smart-constructor with literal absorption
-  does **not** do this on its own, so §A6.3's element-type construction
-  must widen a pure all-literal union of one base to that base. (Stated
-  there because the list path is shared with A6.)
+- List literals keep **full literal precision** at every element
+  position. `["a", "b", "c"]` synthesises `Tuple(["a", "b", "c"])` (see
+  §A6.3 — A6 makes all non-empty list literals tuples). There is **no
+  widening** of literal element types to their base — a literal union
+  like `"a" | "b"` is the maximally precise, sound type, and is left
+  intact. Union *absorption* (§6.1) still applies, but absorption only
+  drops a literal when its base is *also* present in the union, so a
+  pure literal union is untouched. If a wide literal union ever reads
+  badly in diagnostics, that is a *display* concern (truncate on
+  render), not a reason to discard type information.
 - Existing harness tests using string/bool literals (e.g.
   `126_type_predicates.eu`): re-run; expect no behavioural change because
   every `LiteralX <: X`.
@@ -430,22 +432,61 @@ consistency must keep that asymmetry so passing a plain list where
 which is `false` — producing the warning. A `NonEmpty`/`NonEmpty` or
 `Tuple`/`NonEmpty` argument passes (unify or subtype fallback succeeds).
 
-**Construction** — `synthesise` list-literal arm (check.rs ~409):
+**Construction** — `synthesise` list-literal arm (check.rs:409).
+
+Today the arm has a 2–4-element cutoff: 2–4 elements → `Tuple`,
+everything else → `List` (via `synthesise_list_type`, check.rs:1037).
+That cutoff is a **behavioural cliff**, not a cosmetic one. A `Tuple`
+records arity; a `List` does not, and there is correctly no
+`List <: Tuple` rule (a value typed `List` has statically-unknown
+length). So `[1, 2]` passes to a `(number, number)` parameter but
+`[1, 2, 3, 4, 5]` — synthesised `List` — does **not** pass to a
+`(number, number, number, number, number)` parameter, purely because
+the cutoff discarded its length. A6 rewrites this arm anyway, so it
+fixes the cliff:
 
 | Literal | Today | After A6 |
 |---------|-------|----------|
 | `[]` | `[any]` | `[any]` (unchanged — definitely empty) |
-| `[x]` | `[T]` | `NonEmpty(T)` |
-| `[a,b]`…`[a,b,c,d]` | `Tuple` | `Tuple` (unchanged — `Tuple <: NonEmpty`) |
-| `[a,…]` ≥5 | `[T]` | `NonEmpty(T)` |
+| `[x]` … `[a,…]` up to the cap | `[T]` (n=1, n≥5) / `Tuple` (n 2–4) | `Tuple([…])` |
+| `[a,…]` beyond the cap | `[T]` | `NonEmpty(<elem union>)` |
 
-So a non-empty list literal that is not in the tuple range synthesises
-`NonEmpty`. Concretely, `synthesise_list_type` gains a flag for "input
-was non-empty"; the element type is built as today (dedup) and then
-**widened**: a union all of whose members are literal types of a single
-base collapses to that base (so `["jan","feb",…]` is `NonEmpty([string])`,
-not a 12-way literal union). Wrap the result in `NonEmpty` when non-empty,
-`List` when empty.
+A non-empty list literal synthesises as `Tuple` of its element types at
+**every** arity up to a practicality cap (`LIST_TUPLE_CAP`, ~16–32 —
+purely to bound type size for pathological generated literals). `Tuple`
+is the strictly most general principal type for such a literal: it
+widens to everything the other forms need —
+
+- `Tuple <: Tuple` → passes to a same-arity tuple parameter;
+- `Tuple <: List` → passes to `[T]`;
+- `Tuple <: NonEmpty` → passes to `head`/`tail`.
+
+So there is no separate "1-element / ≥5-element" case and no widening of
+element types — element positions keep their full (literal) precision.
+Beyond the cap, fall back to `NonEmpty(<deduplicated element union>)`:
+length is lost but non-emptiness is kept. `[]` stays `List(any)`.
+
+**Precision across function boundaries.** This `Tuple` precision
+propagates *through inference* but stops where the type system honestly
+loses information — and the spec should not pretend otherwise:
+
+- An **unannotated** function whose body is a literal (or an
+  `if`/`cond` all of whose branches are same-shape tuples) gets a
+  `Tuple` *inferred* return type; its callers can pass the result to a
+  tuple parameter. The union smart-constructor (§6.1) dedups identical
+  tuple branches; mismatched-arity branches stay a union and correctly
+  fail a tuple parameter.
+- A function **annotated** `[T]` returns `List(T)` — length is gone *by
+  the author's choice*. To carry a fixed arity across a boundary,
+  annotate the boundary `(T, T, …)`. The annotation *is* the contract.
+- A value routed through a **length-erasing** operation (`map`, `++`,
+  `reverse`, `tail`, recursion) becomes `List` (or `any` for an
+  unannotated recursive call). `List` here genuinely means "unknown
+  length" and rejecting a tuple parameter is sound and correct.
+  Recovering this would need length-indexed types — out of scope.
+  (A future, optional checker special-case could recognise
+  structure-preserving combinators — `map`/`reverse`/`zip` on a `Tuple`
+  argument yielding a `Tuple` result — but that is not part of 6.1.)
 
 `cons` and the `‖` operator: annotate `a -> [a] -> NonEmpty([a])` in
 `lib/prelude.eu` (find the exact bindings — `(x ‖ xs): __CONS(x, xs)` and
@@ -601,8 +642,11 @@ narrowing of `any`. Unit tests for `analyse_condition` and `subtract`.
 
 **A6** — harness: `head([])` warns; `head([1])` and `head([1,2,3])` do
 not; `head` after a `nil?`/`then`/`cond` guard does not; `cons` result is
-`NonEmpty`; `List`-typed argument to `head` warns. Unit tests for the
-`NonEmpty` subtyping/consistency/unify arms.
+`NonEmpty`; `List`-typed argument to `head` warns. Arity-cliff
+regression: a 5+-element list literal passes to a same-arity tuple
+parameter, and *fails* a `[T]`-annotated value passed to a tuple
+parameter. Unit tests for the `NonEmpty` subtyping/consistency/unify
+arms.
 
 **Regression gates**:
 - `eu check lib/prelude.eu` → **zero warnings** after A6 (§A6.7).
@@ -611,21 +655,30 @@ not; `head` after a `nil?`/`then`/`cond` guard does not; `cons` result is
 
 ## 9. Open sub-questions
 
-1. **List-of-literals widening** (§A6.3): the spec widens a pure
-   single-base literal union to its base in *list* synthesis, but keeps
-   literal element types in *tuples* (2–4 elements). Confirm this seam is
-   acceptable — it mirrors the existing symbol behaviour but is a visible
-   inconsistency.
-2. **`LiteralBool` value**: included for consistency and because it is
+### Resolved during review
+
+- **List-literal synthesis**: there is **no widening** of literal
+  element types, and the 2–4-element tuple cutoff is **removed**. A
+  non-empty list literal synthesises as `Tuple` at every arity up to a
+  practicality cap (`NonEmpty` of an element union beyond it); `[]`
+  stays `List(any)`. This keeps full element precision *and* fixes the
+  pre-existing arity cliff where 5+-element literals could not be passed
+  to tuple parameters — see §A6.3, which now also documents how far
+  `Tuple` precision carries across function boundaries.
+
+### Still open
+
+1. **`LiteralBool` value**: included for consistency and because it is
    nearly free, but its practical payoff is small (two inhabitants, and
-   no `LiteralNumber` to pair with). Acceptable as-is, or drop it and
-   ship only `LiteralString`?
-3. **Recognised-branch result type** (§A5.9): switching `if`'s result
+   no `LiteralNumber` to pair with) — the one feature that would consume
+   it, literal-equality narrowing, is deferred past 6.1. Acceptable as
+   inert-but-uniform, or drop it and ship only `LiteralString`?
+2. **Recognised-branch result type** (§A5.9): switching `if`'s result
    from the generic-path type to `union(then, else)` is more precise but
    may surface new warnings in user code. Land it, or keep the generic
    result and have narrowing *only* add facts? The spec assumes the
    former.
-4. **`then`/`cond` provenance** (§A5.6): `then`/`cond` are recognised as
+3. **`then`/`cond` provenance** (§A5.6): `then`/`cond` are recognised as
    "a prelude lambda bound to this name", not by inspecting the body. A
    top-level redefinition of `then` to a *different* lambda would still
    be recognised and could narrow wrongly. Is the local-shadowing guard
@@ -641,6 +694,6 @@ not; `head` after a `nil?`/`then`/`cond` guard does not; `cons` result is
 | `subtype.rs` | literal `<:` + consistency arms | — | `NonEmpty` `<:` + consistency arms |
 | `unify.rs` | literal unify arms | — | `NonEmpty` unify arm |
 | `parse.rs` | literal-string/bool tokens + productions; grammar comment | — | `NonEmpty([T])` token + production |
-| `check.rs` | `synthesise_primitive`; route unions through `Type::union` | `Checker.narrowing` field; `recognise_branch`, `synthesise_branch`, `analyse_condition`, `subtract`; narrowing-aware `Var` synthesis; `recognised` set | list-literal synthesis → `NonEmpty`; `nil?` table entries |
+| `check.rs` | `synthesise_primitive`; route unions through `Type::union` | `Checker.narrowing` field; `recognise_branch`, `synthesise_branch`, `analyse_condition`, `subtract`; narrowing-aware `Var` synthesis; `recognised` set | list-literal arm — drop the 2–4 cutoff, synthesise `Tuple` up to `LIST_TUPLE_CAP` then `NonEmpty`; `nil?` table entries |
 | `lib/prelude.eu` | — | — | annotate `head`/`tail`/`cons`/`‖`/…; blast-radius fixes |
 | `tests/harness/typecheck/` | literal tests | narrowing tests | `NonEmpty` tests |
