@@ -313,7 +313,7 @@ From highest (tightest) to lowest binding:
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
-| 10 | apply | right | `@` | Function application |
+| 10 | apply | left | `@` | Function application |
 | 5 | meta | left | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//=?>`, `//!` | Metadata and assertions |
 
 **Named precedence levels** for use in operator metadata: `:lookup`,
