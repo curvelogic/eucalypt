@@ -1533,6 +1533,11 @@ pub fn test_error_139() {
 }
 
 #[test]
+pub fn test_error_140() {
+    run_error_test(&error_opts("140_invalid_string_interpolation.eu"));
+}
+
+#[test]
 pub fn test_error_135() {
     run_error_test(&error_opts("135_head_empty_list.eu"));
 }

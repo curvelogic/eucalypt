@@ -13,6 +13,10 @@ pub fn fill_gaps(xs: &[RcExpr]) -> Result<(Vec<RcExpr>, AnaphorSet), CoreError> 
     let mut out = Vec::new();
     let mut naked_anaphora = HashSet::new();
 
+    if xs.is_empty() {
+        return Ok((out, naked_anaphora));
+    }
+
     if let Some(prefix) = filler(None, Some(&xs[0]))? {
         naked_anaphora.extend(anaphora::naked_anaphora(&prefix));
         out.push(prefix);
