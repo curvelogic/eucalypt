@@ -1042,9 +1042,11 @@ Felleisen, 2010, Typed Racket).
 
 `LiteralSymbol` is in. Extend the cheap way:
 
-- `LiteralString("foo")`
-- `LiteralBool(true)`
-- `LiteralNumber(42)` (optional, often overkill)
+- `LiteralString("foo")` — **taken** (A4).
+- `LiteralBool(true)` — **dropped**: a union of bool literals is just
+  `bool`, so it adds no expressiveness, and literal-equality narrowing
+  (its only consumer) is deferred. Not worth a permanently-inert variant.
+- `LiteralNumber(42)` (optional, often overkill).
 
 Subtype rule: `LiteralX(v) <: X`.
 
@@ -1068,8 +1070,8 @@ And with H4a to give precise lookup results.
 **Cost.** Small for symbol/string/bool. Larger for number because
 arithmetic of literal numbers is itself a small type-level computation.
 
-**Recommendation.** Stage A: take symbols (have it), strings, bools.
-Skip numbers.
+**Recommendation.** Stage A: take symbols (have it) and strings. Skip
+bools (no expressiveness gain) and numbers (type-level arithmetic).
 
 **Prior art.** Scala 3 literal types, TypeScript literal types, Haskell
 `DataKinds` + `KnownSymbol`, Crystal, Closer-to-home: F#

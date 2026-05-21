@@ -35,7 +35,7 @@ The checker is a freshen-and-unify bidirectional checker
 (`src/core/typecheck/`). Relevant existing facts:
 
 - `Type` (types.rs) already has `LiteralSymbol(String)`. There is **no**
-  `LiteralString`/`LiteralBool`.
+  `LiteralString`.
 - `synthesise_primitive` (check.rs ~1022) maps `Primitive::Sym` →
   `LiteralSymbol`, but `Primitive::Str` → `Type::String` and
   `Primitive::Bool` → `Type::Bool` (base types, literal info discarded).
@@ -58,25 +58,26 @@ The checker is a freshen-and-unify bidirectional checker
 
 ---
 
-## A4 — Literal types for strings and booleans
+## A4 — Literal types for strings
 
 ### A4.1 Goal
 
 Extend the literal-singleton treatment that `LiteralSymbol` already has to
-string and boolean literals, so the checker can express and check
-finite enumerations like `"r" | "w" | "rw"`. **`LiteralNumber` is out of
-scope** (arithmetic on literal numbers is a type-level computation not
-worth the cost — per H16).
+string literals, so the checker can express and check finite
+enumerations like `"r" | "w" | "rw"` — the form structured-data enums
+(YAML/JSON config fields) take. **`LiteralNumber` is out of scope**
+(arithmetic on literal numbers is a type-level computation not worth the
+cost — per H16). **`LiteralBool` is also out of scope**: a union of bool
+literals (`true | false`) is just `bool`, so there is no useful proper
+subset to name — see §9.
 
 ### A4.2 Representation
 
-Add two variants to `Type` (types.rs), beside `LiteralSymbol`:
+Add one variant to `Type` (types.rs), beside `LiteralSymbol`:
 
 ```rust
 /// Literal string type: a specific string value.
 LiteralString(String),
-/// Literal boolean type: a specific boolean value.
-LiteralBool(bool),
 ```
 
 `humanise` (types.rs ~248) needs no change — its `collect_fresh_vars`
@@ -84,25 +85,23 @@ and `replace` both fall through `_` arms for variant-free types.
 
 ### A4.3 Display
 
-Add `Display` arms (types.rs ~155):
+Add a `Display` arm (types.rs ~155):
 
 - `LiteralString(s)` → `"s"` (double-quoted; escape embedded `"` and `\`).
-- `LiteralBool(true)` → `true`; `LiteralBool(false)` → `false`.
 
 ### A4.4 Synthesis
 
 In `synthesise_primitive` (check.rs ~1022):
 
 ```rust
-Primitive::Str(s)  => Type::LiteralString(s.clone()),
-Primitive::Bool(b) => Type::LiteralBool(*b),
+Primitive::Str(s) => Type::LiteralString(s.clone()),
 ```
 
-This is **always-on**, mirroring `LiteralSymbol`: every string and boolean
-literal synthesises its literal type. Widening to the base type happens
-*on use* — via subtyping and unification (below) — never on construction.
-This keeps reasoning local and is consistent with how symbols already
-behave.
+`Primitive::Bool` is left unchanged (`→ Type::Bool`). This is
+**always-on**, mirroring `LiteralSymbol`: every string literal
+synthesises its literal type. Widening to the base type happens *on use*
+— via subtyping and unification (below) — never on construction. This
+keeps reasoning local and is consistent with how symbols already behave.
 
 ### A4.5 Subtyping and consistency
 
@@ -110,20 +109,18 @@ behave.
 
 ```
 (LiteralString(_), String) => true,
-(LiteralBool(_),   Bool)   => true,
 ```
 
 Equal literals are covered by the reflexivity check at the top of
 `is_subtype`; unequal literals fall through to `_ => false`. The base type
 is **not** a subtype of a literal (`String </: "foo"`).
 
-`is_consistent` (subtype.rs ~186) — extend the literal arm to both new
-pairs, in both directions (mirrors the existing `LiteralSymbol`/`Symbol`
+`is_consistent` (subtype.rs ~186) — extend the literal arm to the new
+pair, in both directions (mirrors the existing `LiteralSymbol`/`Symbol`
 arm):
 
 ```
 (LiteralString(_), String) | (String, LiteralString(_)) => true,
-(LiteralBool(_),   Bool)   | (Bool,   LiteralBool(_))   => true,
 ```
 
 ### A4.6 Unification
@@ -132,10 +129,9 @@ arm):
 
 ```
 (LiteralString(_), String) | (String, LiteralString(_)) => Ok(()),
-(LiteralBool(_),   Bool)   | (Bool,   LiteralBool(_))    => Ok(()),
 ```
 
-Two *different* literal strings/bools do **not** unify (no arm → existing
+Two *different* literal strings do **not** unify (no arm → existing
 mismatch error), exactly as for literal symbols.
 
 ### A4.7 DSL syntax
@@ -146,9 +142,6 @@ Extend the type-DSL parser (parse.rs) and its grammar comment (~lines
 - **Literal string**: a double-quoted string in a type position →
   `LiteralString`. Requires a `Token::StringLit(String)` in the DSL lexer
   (handle `\"` and `\\`). New `parse_primary` arm.
-- **Literal bool**: `true` / `false` keyword tokens → `LiteralBool`. The
-  DSL already lexes the `bool` keyword; add `true`/`false` similarly. New
-  `parse_primary` arms.
 
 Annotations that newly become expressible:
 
@@ -181,9 +174,9 @@ smart-constructor in §6.1, which absorbs any `LiteralX(v)` when its base
   pure literal union is untouched. If a wide literal union ever reads
   badly in diagnostics, that is a *display* concern (truncate on
   render), not a reason to discard type information.
-- Existing harness tests using string/bool literals (e.g.
+- Existing harness tests using string literals (e.g.
   `126_type_predicates.eu`): re-run; expect no behavioural change because
-  every `LiteralX <: X`.
+  every `LiteralString <: String`.
 
 ---
 
@@ -578,8 +571,8 @@ Add `Type::union(variants: Vec<Type>) -> Type`:
 2. If any member is `Any` → return `Any`.
 3. Drop `Never` members.
 4. Deduplicate structurally.
-5. **Absorb literals**: drop `LiteralSymbol`/`LiteralString`/`LiteralBool`
-   members whose base (`Symbol`/`String`/`Bool`) is also present.
+5. **Absorb literals**: drop `LiteralSymbol`/`LiteralString` members
+   whose base (`Symbol`/`String`) is also present.
 6. Length 0 → `Never`; length 1 → that member; else `Union`.
 
 Route union construction through it: `synthesise_list_type`, the
@@ -629,10 +622,9 @@ A4 and A5 can proceed in parallel; A6 is last.
 Harness tests live in `tests/harness/typecheck/NNN_*.eu` with paired
 `.expect` files; add Rust unit tests in the relevant module.
 
-**A4** — unit tests in subtype.rs, unify.rs, parse.rs (literal
-string/bool subtyping, consistency, unification, DSL round-trip);
-harness: literal-string annotation accepted/rejected, union absorption
-display.
+**A4** — unit tests in subtype.rs, unify.rs, parse.rs (literal-string
+subtyping, consistency, unification, DSL round-trip); harness:
+literal-string annotation accepted/rejected, union absorption display.
 
 **A5** — harness: positive and negative narrowing through `if`, `then`,
 `cond`; `∧` fact-threading and `∨` negative facts; nested narrowing;
@@ -665,20 +657,22 @@ arms.
   pre-existing arity cliff where 5+-element literals could not be passed
   to tuple parameters — see §A6.3, which now also documents how far
   `Tuple` precision carries across function boundaries.
+- **`LiteralBool` dropped**: A4 ships `LiteralString` only.
+  `LiteralString` adds real expressiveness (arbitrary finite string
+  enums, the form structured-data config takes). `LiteralBool` does not
+  — a union of bool literals is just `bool` — and the one feature that
+  could use it (literal-equality narrowing) is deferred past 6.1, so it
+  would ship inert. `Primitive::Bool` keeps synthesising `Type::Bool`.
+- **Recognised-branch result type**: a recognised `if`/`then`/`cond`
+  call is typed accurately as `union(branch types)` (§A5.9, §6.1) — not
+  via the generic application path. This is the precise type
+  (`if(c, 1, "x")` *is* `number | string`), and the new — correct —
+  warnings it surfaces are the point. A5's PR carries the same
+  zero-new-warning triage gate as A6 (prelude + harness).
 
 ### Still open
 
-1. **`LiteralBool` value**: included for consistency and because it is
-   nearly free, but its practical payoff is small (two inhabitants, and
-   no `LiteralNumber` to pair with) — the one feature that would consume
-   it, literal-equality narrowing, is deferred past 6.1. Acceptable as
-   inert-but-uniform, or drop it and ship only `LiteralString`?
-2. **Recognised-branch result type** (§A5.9): switching `if`'s result
-   from the generic-path type to `union(then, else)` is more precise but
-   may surface new warnings in user code. Land it, or keep the generic
-   result and have narrowing *only* add facts? The spec assumes the
-   former.
-3. **`then`/`cond` provenance** (§A5.6): `then`/`cond` are recognised as
+1. **`then`/`cond` provenance** (§A5.6): `then`/`cond` are recognised as
    "a prelude lambda bound to this name", not by inspecting the body. A
    top-level redefinition of `then` to a *different* lambda would still
    be recognised and could narrow wrongly. Is the local-shadowing guard
@@ -690,10 +684,10 @@ arms.
 
 | File | A4 | A5 | A6 |
 |------|----|----|----|
-| `types.rs` | `LiteralString`/`LiteralBool` variants + display; `Type::union` | — | `NonEmpty` variant + display + `humanise` |
+| `types.rs` | `LiteralString` variant + display; `Type::union` | — | `NonEmpty` variant + display + `humanise` |
 | `subtype.rs` | literal `<:` + consistency arms | — | `NonEmpty` `<:` + consistency arms |
 | `unify.rs` | literal unify arms | — | `NonEmpty` unify arm |
-| `parse.rs` | literal-string/bool tokens + productions; grammar comment | — | `NonEmpty([T])` token + production |
+| `parse.rs` | literal-string token + production; grammar comment | — | `NonEmpty([T])` token + production |
 | `check.rs` | `synthesise_primitive`; route unions through `Type::union` | `Checker.narrowing` field; `recognise_branch`, `synthesise_branch`, `analyse_condition`, `subtract`; narrowing-aware `Var` synthesis; `recognised` set | list-literal arm — drop the 2–4 cutoff, synthesise `Tuple` up to `LIST_TUPLE_CAP` then `NonEmpty`; `nil?` table entries |
 | `lib/prelude.eu` | — | — | annotate `head`/`tail`/`cons`/`‖`/…; blast-radius fixes |
 | `tests/harness/typecheck/` | literal tests | narrowing tests | `NonEmpty` tests |
