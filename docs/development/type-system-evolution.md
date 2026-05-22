@@ -614,16 +614,23 @@ modest because unannotated code is already silently `any`. Skip it.
 **Correction (2026-05-18).** The "cheap in-memory cache" first step is
 not cheap *and* sound. `eliminate` (dead-binding pruning) runs **before**
 the type checker, and prunes a different subset of the prelude for every
-user file — so a prelude type environment cached from one check is
-missing bindings for the next. A sound cache must check the prelude and
-each unit *standalone* against seeded summaries — a per-module-checking
-restructure, not a `HashMap`. The in-memory and persistent forms are
-therefore one body of work. Bead **TS-A8** (the in-memory cache) is
-**withdrawn**; the whole feature is **TS-B7**. For 6.1 the prelude is
-re-checked each run — a one-shot cost on a CLI check; the latency that
-matters (LSP re-check per keystroke) is TS-B7's remit.
+user file — so a prelude type environment cached from a *merged* check
+is missing bindings for the next. A sound cache must check the prelude
+*standalone* and *unpruned*. Bead **TS-A8** (the in-memory cache) is
+**withdrawn** into **TS-B7**.
 
-**Recommendation.** Phase B (TS-B7). Skip whole-program inference.
+**Refinement (2026-05-19).** TS-B7 is scoped to the **prelude only**.
+The prelude's types are stable (it is fixed, merged first, references
+only itself); general per-*user*-module summaries are not guaranteed
+stable under positional merge-override and offer a small payoff — out
+of scope. B7 = check the prelude standalone once → cache a summary of
+its binding schemes *and* type aliases → seed every user-file check.
+LSP responsiveness is the motivation: for a tooling-first language the
+checker exists to support writing eucalypt. See
+[prelude-type-cache-spec.md](./prelude-type-cache-spec.md).
+
+**Recommendation.** Phase B (TS-B7), prelude-scoped. Skip whole-program
+inference and general per-user-module summaries.
 
 ---
 
