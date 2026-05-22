@@ -103,15 +103,23 @@ This composes with A2's `Dict` annotation of `lookup` (`symbol ->
 Dict(a) -> a`): on a `Dict` the special case yields `a`, consistent with
 the annotation; on a named record it is more precise.
 
-### B6.3 H4b — literal index on tuples and short lists
+### B6.3 H4b — literal index on tuples — deferred, no clean hook
 
-The same treatment for the list-index intrinsic (`!!` / its `__LOOKUP`-
-analogue for integers): on a `Tuple` (a short list literal carries
-per-position types — see the list-synthesis rework in
-literal-types-and-narrowing-spec.md §A6.3) with a **literal** integer
-index in range → the element type at that position; literal index out
-of range → `any` + warning; non-literal index → `any` + `Partial`. A
-minor follow-on to B6.2, same call-site-special-case shape.
+H4b (literal integer indexing of a `Tuple` returning the element type
+at that position) was sketched as "the same call-site special case on a
+list-index intrinsic". **A codebase check found there is no such
+intrinsic.** `nth` is a prelude function (`nth(n, l): l drop(n) head`),
+and `!!` is a prelude *operator* that dispatches at runtime
+(`(l !! n): if(l is-array?, l arr.get(n), l nth(n))`). Neither is an
+`Expr::Intrinsic` node the checker can recognise structurally the way
+`__LOOKUP` is. So H4b has no clean mechanism analogous to B6.2.
+
+H4b is therefore **deferred** out of B6. B6 delivers record indexed
+access only (the `LOOKUP` intrinsic — a clean hook, the real prize:
+catching `:naem` typos). Tuple literal-indexing would need either `!!`
+promoted to an intrinsic, or a dedicated index intrinsic — a separate,
+larger change not worth bundling here. Recorded so the gap is explicit,
+not a silent omission.
 
 ### B6.4 Non-literal keys are partial
 
@@ -138,8 +146,8 @@ variant — immaterial to this spec.
 - **B6** — harness: `lookup(:name, person)` yields the field type;
   `lookup(:naem, person)` warns on a closed record; an open record
   yields `any` with no warning; `lookup` on a `Dict` yields the value
-  type; a non-literal-key `lookup` is `any?`. Tuple literal-index
-  resolution and out-of-range warning.
+  type; a non-literal-key `lookup` is `any?`. (Tuple literal-indexing —
+  H4b — is deferred, §B6.3.)
 - `eu check lib/prelude.eu` clean; full `cargo test` green; clippy clean.
 
 ## File-by-file change summary
@@ -149,6 +157,6 @@ variant — immaterial to this spec.
 | `types.rs` | nullary `ExecutionError`; display re-sugars `T \| ExecutionError` → `T?` | — |
 | `parse.rs` | `T?` postfix sugar → `Union([T, ExecutionError])` | — |
 | `subtype.rs` | — (union machinery suffices) | — |
-| `check.rs` | — | `__LOOKUP` (and list-index intrinsic) call-site special case; literal-key resolution; missing-key warning |
+| `check.rs` | — | `LOOKUP` intrinsic call-site special case; literal-key resolution; missing-key warning |
 | `lib/prelude.eu` | `T?` annotations on partial functions | — |
 | `tests/harness/typecheck/` | partiality tests | indexed-access tests |
