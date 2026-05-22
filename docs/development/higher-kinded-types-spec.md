@@ -48,9 +48,13 @@ variables can range over type *constructors* (`* -> *`), so that
 - `TypeScheme` carries outer quantification (`quantified`,
   `constraints`, `body`). Quantification is *prenex* (rank-1) — there is
   no nested `forall`.
-- The DSL (`parse.rs`) has `[T]`, `IO(T)`, `(A,B)`, `{…}`, `A -> B`,
-  type variables, alias references. No application syntax, no `forall`
-  keyword, no kinds.
+- The DSL (`parse.rs`) has `[T]`, `IO(T)`, `Lens(A,B)`, `Traversal(A,B)`,
+  `(A,B)`, `{…}`/`{..r}`, `A | B`, `A -> B`, literal symbols (`:active`),
+  the opaque primitives (`set`/`vec`/`array`/`block`/…), type variables
+  and alias references (a grammar comment block documents it). No
+  application syntax, no `forall` keyword, no kinds. `Lens(A,B)` and
+  `Traversal(A,B)` are existing productions that B1 re-points at the
+  applied form.
 
 ## B1.1 Representation — `Con` and `App`
 
@@ -85,6 +89,12 @@ Their meaning becomes:
 - `Tuple(Vec<Type>)` — variadic; not a fixed-arity constructor.
 - `Record{…}`, `Union(Vec<Type>)`, `Mu(…)`, `Var`, `LiteralSymbol`,
   `LiteralString`, the primitives — structural / nullary; unchanged.
+- `Set`, `Vec`, `Array` — verified to be **nullary** `Type` variants
+  (opaque "set/vector/array of primitives" — they carry *no* element
+  type), as are `DateTime` and `Top`. They are kind `*`, not
+  constructors, so the `Con`/`App` rewrite does **not** touch them.
+  (Only `List`/`IO`/`Dict`/`NonEmpty`/`Lens`/`Traversal` are parametric
+  — six variants.)
 
 So B1 re-does, in uniform form, the representation of constructors that
 Phase A introduced as variants (`Dict`, `NonEmpty`). Phase A ships first

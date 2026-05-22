@@ -63,10 +63,10 @@ From a read of `src/core/typecheck/`:
 ### A1.1 Goal
 
 Activate the dormant row machinery. The unifier already binds and
-propagates row variables; the gap is that (a) nothing is annotated to
-exercise it and (b) polymorphic schemes may not freshen row variables
-correctly. Closing both lets `merge` and lens `over` carry honest
-row-polymorphic types, so block content flows through them.
+propagates row variables, and freshening/generalisation already handle
+them (§A1.3, verified) — the gap is simply that **nothing is annotated**
+to exercise any of it. Annotating `merge` and lens `over` lets block
+content flow through them as honest row-polymorphic types.
 
 ### A1.2 Row algebra — Leijen scoped labels
 
@@ -76,25 +76,27 @@ correct choice — it maps directly onto eucalypt's rightmost-wins block
 merge — and it is already what the code does. A1 **confirms and
 documents** this; no algebra change.
 
-### A1.3 The actual work — freshening row variables
+### A1.3 Freshening row variables — already done (verified)
 
-The dominant correctness task. A polymorphic `TypeScheme` whose body
-contains row variables must **freshen those row variables per use**,
-exactly as it freshens ordinary `Type::Var`s. Without this, every call
-site of `merge` shares the *same* row variables `r`, `s` — and
-unification at one call site contaminates another.
+A polymorphic `TypeScheme` whose body contains row variables must
+**freshen those row variables per use**, exactly as it freshens ordinary
+`Type::Var`s — otherwise every call site of `merge` would share the same
+row variables `r`, `s` and contaminate one another.
 
-- Audit `freshen` (check.rs) and the scheme-generalisation path: the
-  set of quantified variables must include row variables (the
-  `Option<TypeVarId>` in every nested `Record`), and `freshen` must
-  rewrite them through the same fresh-variable substitution it applies
-  to `Type::Var`.
-- `humanise` (types.rs) must likewise rename row variables when it
-  pretty-prints a scheme, so `{..r} -> {..s} -> {..r,..s}` displays
-  with stable, readable names.
+**A codebase review (2026-05-19) found this already works.** `freshen`
+(unify.rs ~378) renames row variables through the same fresh-variable
+substitution it applies to `Type::Var` — its own comment says so — and
+the generalisation path `infer_scheme` / `collect_free_vars`
+(unify.rs ~404) already collects row variables (the `Option<TypeVarId>`
+in nested `Record`s) into the quantified set. `humanise` (types.rs ~248)
+also walks the `row` field.
 
-This is the piece that makes row-polymorphic *annotations* sound. It is
-small but non-optional.
+So A1 does **not** need to build this. The task here is reduced to a
+**verification test** — confirm two instantiations of a row-polymorphic
+scheme get distinct row variables (a unit test; see the test plan) —
+not new machinery. This makes A1 smaller than first scoped: the
+substantive work is the prelude annotations (§A1.5) and confirming the
+subtyping treatment (§A1.4).
 
 ### A1.4 Subtyping and consistency — `..r` behaves as `..`
 
@@ -277,19 +279,19 @@ The two features are disjoint and compose cleanly:
 ## Sequencing
 
 One PR, A1 + A2 together. Internal order: land `Dict` (A2 — self
-contained) and the row-variable freshening fix (A1.3) first, then the
-prelude annotations for both, then the harness tests. No dependency on
+contained) first, then the prelude annotations for both (A1's freshening
+is already in place — §A1.3), then the harness tests. No dependency on
 A4/A5/A6; no dependency from them.
 
 ## Test plan
 
 Harness tests in `tests/harness/typecheck/`; Rust unit tests per module.
 
-**A1** — unit: `freshen` produces distinct row variables for two
-instantiations of a row-polymorphic scheme; `humanise` renames row
-variables stably. Harness: `{x:1} merge({y:2})` synthesises
-`{x:number, y:string}`; a row clash resolves rightmost-wins; an
-annotated `over` preserves the row.
+**A1** — unit (regression-style, since the machinery already exists):
+`freshen` produces distinct row variables for two instantiations of a
+row-polymorphic scheme; `humanise` renames row variables stably.
+Harness: `{x:1} merge({y:2})` synthesises `{x:number, y:string}`; a row
+clash resolves rightmost-wins; an annotated `over` preserves the row.
 
 **A2** — unit: `Dict` subtyping (covariance; closed record `<: Dict`;
 open record *not* `<: Dict`; `Dict <: {..}`; `Dict` not `<:` a
@@ -305,10 +307,10 @@ accepted; passed to `Dict(string)` warns.
 
 | File | A1 | A2 |
 |------|----|----|
-| `types.rs` | confirm row vars in `humanise`'s var-collection/rename | `Dict` variant + display + `humanise` |
+| `types.rs` | — (`humanise` already walks the `row` field) | `Dict` variant + display + `humanise` |
 | `subtype.rs` | document `..r` ≡ `..`; no new rules | `Dict` `<:` + consistency arms |
-| `unify.rs` | — (row unification already complete) | `Dict`/`Dict`, `Dict`/`Record` arms |
-| `check.rs` | `freshen` / scheme generalisation must quantify & freshen row variables | route the `Dict`/`Record` value-union through `Type::union` |
+| `unify.rs` | — (row unification, `freshen` and `infer_scheme` already handle row variables) | `Dict`/`Dict`, `Dict`/`Record` arms |
+| `check.rs` | — | route the `Dict`/`Record` value-union through `Type::union` |
 | `parse.rs` | — | `Dict(T)` token + production; grammar comment |
 | `lib/prelude.eu` | annotate `merge`, `merge-all` | annotate `map-values`, `group-by`, `values`, `keys`, `lookup` |
 | `lib/lens.eu` | row-preserving annotations for the `over`-family | — |
