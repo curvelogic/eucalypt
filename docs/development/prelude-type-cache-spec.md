@@ -67,7 +67,10 @@ become the `PreludeSummary`.
 
 - The prelude is a fixed resource shipped with the binary; its summary
   changes only when `lib/prelude.eu` changes. Key the cache on the
-  **hash of the prelude source**.
+  **hash of the prelude source**. Hash-keying also means a project that
+  swaps the implicit base prelude for a different file is handled for
+  free — a different prelude is simply a different cache entry, no
+  special case.
 - **In-memory first**: compute the summary on the first check of a
   process and reuse it for every subsequent file — the dominant LSP and
   CLI win.
@@ -130,6 +133,20 @@ for.
   soundly would need the composition model pinned down and offers a
   small payoff. Not done. If multi-file user projects later need it,
   it is a fresh, larger bead gated on that analysis.
+- **Explicitly imported preludes.** B7's seed is the *implicit base*
+  prelude — the unit merged in automatically at the bottom of the
+  stack, its bindings at top level. A unit that instead brings the
+  prelude in via an explicit `import:` — in particular a namespaced
+  import such as `import: "pre=prelude.eu"`, exposing it as `pre.map`
+  etc. — is a *different construct*: an ordinary imported unit, checked
+  as one, **not served from the cache**. This is a deliberate scope
+  choice, not an impossibility: because the cache is content-addressed
+  by source hash, a hash-matching import *could* be served the same
+  summary re-shaped into a namespaced block type — but that needs the
+  cache lookup to fire on imports and the summary to be re-namespaced,
+  for a rare case, so B7 does not do it. Documentation of the prelude
+  cache should state plainly that an explicitly-imported prelude is not
+  pre-checked.
 - **Whole-program inference.** Unannotated prelude exports keep
   whatever the checker infers (often `any`); B7 caches that, it does
   not improve it (H9).
