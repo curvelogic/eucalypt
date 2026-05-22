@@ -176,13 +176,17 @@ design.)
 
 `NonEmpty([a])` as a thin refinement constructor; `head`/`tail`-class
 functions typed against it. Branch-narrowing integration (after a
-`nil?` test). Includes the H7b sub-task: inliner suppresses refinement
-warnings for values it can prove satisfy the refinement.
+`nil?` test). Includes precise `HEAD`/`TAIL`-on-`Tuple` element typing
+(§A6.8 of the spec — `[k,v] head` → `k`'s exact type), the primitive
+that B6.3's tuple accessors build on.
 
 **Scope**: `NonEmpty` constructor; construction sites (`cons`, literal
-non-empty lists, post-`nil?` branch); H7b constant-folded suppression.
+non-empty lists, post-`nil?` branch); `HEAD`/`TAIL`-on-`Tuple`
+special-case. (H7b — constant-folded refinement suppression — is
+subsumed: literal non-empty lists already synthesise `Tuple`/`NonEmpty`,
+so no separate inliner work.)
 **Done when**: `[] head` warns; `[1] head` does not; a post-`nil?`
-branch narrows to `NonEmpty`.
+branch narrows to `NonEmpty`; `[k,v] head` types precisely.
 **Depends on TS-A5** for the branch-narrowing machinery.
 
 ### TS-A7 — First-class alias references in the type DSL
@@ -332,14 +336,19 @@ where a total value is expected warns.
 
 `lookup(k, b)` with literal `k` returns the exact field type `r[k]`;
 literal `k` absent from a known row produces a **static warning**
-(key typo); non-literal `k` falls back to `any`. Includes the H4b
-sub-task: literal-index access on tuples/short lists.
+(key typo); non-literal `k` falls back to `any`. Includes H4b — tuple
+element access: a `ProjectionShape` classifier (parallel to A5's
+`BranchShape`) types `[key, value]`-pair accessors (`value`, `second`,
+…) precisely, building on the `HEAD`/`TAIL`-on-`Tuple` primitive in
+A6.8. Numeric `!! n` literal-indexing is left deferred (no structural
+hook).
 
-**Scope**: indexed-access resolution for literal symbol keys;
-missing-key warning; tuple index access.
+**Scope**: `LOOKUP` call-site special case for literal symbol keys;
+missing-key warning; `ProjectionShape` classifier for tuple accessors.
 **Done when**: `lookup(:naem, person)` warns; `lookup(:name, person)`
-yields the field type.
-**Depends on TS-A4** (literal types) — cross-phase dependency.
+yields the field type; `[k,v] value` types precisely.
+**Depends on TS-A4** (literal types) and **TS-A6** (the §A6.8 tuple
+primitive) — cross-phase dependencies.
 
 ### TS-B7 — Prelude type-summary cache
 
@@ -430,7 +439,7 @@ Hard dependencies (blocker → blocked):
 ```
 TS-A4  ──▶ TS-A5  ──▶ TS-A6
 TS-A9  ──▶ TS-A10
-TS-A4  ──▶ TS-B6
+TS-A4, TS-A6  ──▶ TS-B6
 TS-A1  ──▶ TS-B9
 TS-B1  ──▶ TS-B8
 ```

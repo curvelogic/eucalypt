@@ -10,8 +10,9 @@
 Two small Phase B beads. **B5** adds `Partial(T)` / `T?` — a type-level
 mark for functions that can raise an `ExecutionError`. **B6** makes
 `lookup` on a record with a *literal* key return the exact field type
-and warn on a key typo. They share a PR; they interact (a non-literal
-`lookup` is partial) but neither depends on the other.
+(warning on a key typo), and types `[key, value]`-tuple element access
+precisely. They share a PR; they interact (a non-literal `lookup` is
+partial) but neither depends on the other.
 
 ## B5 — `Partial(T)` / `T?`
 
@@ -103,23 +104,46 @@ This composes with A2's `Dict` annotation of `lookup` (`symbol ->
 Dict(a) -> a`): on a `Dict` the special case yields `a`, consistent with
 the annotation; on a named record it is more precise.
 
-### B6.3 H4b — literal index on tuples — deferred, no clean hook
+### B6.3 H4b — tuple element access via a projection classifier
 
-H4b (literal integer indexing of a `Tuple` returning the element type
-at that position) was sketched as "the same call-site special case on a
-list-index intrinsic". **A codebase check found there is no such
-intrinsic.** `nth` is a prelude function (`nth(n, l): l drop(n) head`),
-and `!!` is a prelude *operator* that dispatches at runtime
-(`(l !! n): if(l is-array?, l arr.get(n), l nth(n))`). Neither is an
-`Expr::Intrinsic` node the checker can recognise structurally the way
-`__LOOKUP` is. So H4b has no clean mechanism analogous to B6.2.
+Pair-shaped tuples (`[key, value]`) are accessed by
+`head`/`tail`/`first`/`second`/`key`/`value` — *not* by numeric
+indexing. **§A6.8 (Phase A) already makes `head`/`tail` precise on a
+`Tuple`** — `[k, v] head` → `k`'s type — and so are their bare aliases
+`first`/`key` (`first: head`, `key: head`). The gap B6.3 closes is the
+accessor *functions*: `value` is `value: second` and
+`second(xs): xs tail head` — a function whose body is checked once,
+generically, so `value(Tuple([K, V]))` widens to `K | V` rather than
+the precise `V`.
 
-H4b is therefore **deferred** out of B6. B6 delivers record indexed
-access only (the `LOOKUP` intrinsic — a clean hook, the real prize:
-catching `:naem` typos). Tuple literal-indexing would need either `!!`
-promoted to an intrinsic, or a dedicated index intrinsic — a separate,
-larger change not worth bundling here. Recorded so the gap is explicit,
-not a silent omission.
+B6.3 adds a **`ProjectionShape` classifier** — the same structural,
+memoised, once-per-binding classification as A5's `BranchShape`. A
+function whose body is a fixed `head`/`tail` composition of one of its
+parameters is classified by its **projection index**: `head` → 0,
+`head ∘ tail` → 1, `head ∘ tail ∘ tail` → 2, … (the index is the count
+of `TAIL`s before the final `HEAD`). `second(xs): xs tail head` →
+index 1; `value: second` inherits it; `first`/`key` → index 0; a user
+accessor classifies the same way. The classification composes
+bottom-up and is recursion-guarded, exactly like `BranchShape`.
+
+At a call `accessor(t)` where `accessor` has a `ProjectionShape` of
+index `i` and `t` synthesises to `Tuple([T₀, …, Tₙ])`: the result is
+`Tᵢ`; an out-of-range `i` → `any` + a warning (like the missing-key
+case). A non-`Tuple` argument falls through to the accessor's ordinary
+type.
+
+With §A6.8's primitive plus this classifier, the whole `[key, value]`
+pair surface — `key`, `value`, `first`, `second`, `head`, `tail` — is
+precisely typed. B6.3 therefore **depends on A6.8** (Phase A — shipped
+before B6).
+
+**Numeric `!! n` literal indexing stays deferred.** `[k, v] !! 1`
+routes through `!!` (a runtime array-vs-list dispatch) and `nth`
+(`drop(n)` then `head`); `drop`/`take` are `__IF`-based prelude
+functions with no structural hook, and `drop`-on-`Tuple` with a literal
+count would need its own special case. Pairs are accessed by the named
+accessors, not `!! 0`/`!! 1`, so this residual sub-case is left out —
+recorded explicitly, not silently.
 
 ### B6.4 Non-literal keys are partial
 
@@ -130,12 +154,14 @@ non-literal `lookup` *is* the partial one.
 
 ## Sequencing
 
-One PR. B6 depends on A4 (literal types — Phase A, shipped). B5 is
+One PR. B6 depends on A4 (literal types) and — for §B6.3 — on A6.8
+(precise `head`/`tail` on tuples); both are Phase A, shipped. B5 is
 independent. Order within the PR: B5 (`ExecutionError`, `T?` sugar,
-display, annotations) then B6 (the `__LOOKUP` special case, which uses
-B5's `Partial` for the non-literal row). Neither depends on B1; if B1
-has landed, `ExecutionError` is a nullary `Con`, otherwise a nullary
-variant — immaterial to this spec.
+display, annotations) then B6 (the `LOOKUP` special case, which uses
+B5's `Partial` for the non-literal row; then the `ProjectionShape`
+classifier). Neither depends on B1; if B1 has landed, `ExecutionError`
+is a nullary `Con`, otherwise a nullary variant — immaterial to this
+spec.
 
 ## Test plan
 
@@ -146,8 +172,12 @@ variant — immaterial to this spec.
 - **B6** — harness: `lookup(:name, person)` yields the field type;
   `lookup(:naem, person)` warns on a closed record; an open record
   yields `any` with no warning; `lookup` on a `Dict` yields the value
-  type; a non-literal-key `lookup` is `any?`. (Tuple literal-indexing —
-  H4b — is deferred, §B6.3.)
+  type; a non-literal-key `lookup` is `any?`. Tuple access (§B6.3):
+  `[k, v] value` synthesises `v`'s exact type via the `ProjectionShape`
+  classifier; `second`/`first`/`key` likewise; an out-of-range accessor
+  warns. Unit tests for `ProjectionShape` classification (alias,
+  composition, index computation, recursion guard). (Numeric `!! n`
+  literal-indexing remains deferred — §B6.3.)
 - `eu check lib/prelude.eu` clean; full `cargo test` green; clippy clean.
 
 ## File-by-file change summary
@@ -157,6 +187,6 @@ variant — immaterial to this spec.
 | `types.rs` | nullary `ExecutionError`; display re-sugars `T \| ExecutionError` → `T?` | — |
 | `parse.rs` | `T?` postfix sugar → `Union([T, ExecutionError])` | — |
 | `subtype.rs` | — (union machinery suffices) | — |
-| `check.rs` | — | `LOOKUP` intrinsic call-site special case; literal-key resolution; missing-key warning |
+| `check.rs` | — | `LOOKUP` intrinsic call-site special case (literal-key resolution; missing-key warning); `ProjectionShape` classifier for tuple-element accessors (§B6.3) |
 | `lib/prelude.eu` | `T?` annotations on partial functions | — |
 | `tests/harness/typecheck/` | partiality tests | indexed-access tests |
