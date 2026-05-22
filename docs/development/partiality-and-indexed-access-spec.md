@@ -73,11 +73,15 @@ should return `string`, and `lookup(:naem, person)` should be a
 **static warning** — a key typo caught before it errors at runtime.
 This needs literal types (A4 — `LiteralSymbol`, shipped).
 
-### B6.2 Mechanism — a call-site special case on `__LOOKUP`
+### B6.2 Mechanism — a call-site special case on the lookup intrinsic
 
-`lookup(s, b): __LOOKUP(s, b)`. The checker special-cases the `__LOOKUP`
-intrinsic, recognised **structurally** (an intrinsic node — the same
-pattern as A5's `__COND`). On `App(__LOOKUP, [key, block])`:
+`lookup(s, b): __LOOKUP(s, b)` in the prelude. The checker special-cases
+that intrinsic, recognised **structurally** (the same pattern as A5's
+recognised intrinsics). Note the naming: the eucalypt-source spelling is
+`__LOOKUP`, but the desugared core `Expr::Intrinsic` node carries the
+**bare** name `LOOKUP` (verified — `eu dump cooked` shows intrinsics
+without the `__` prefix). The checker matches `App(Intrinsic("LOOKUP"),
+[key, block])`:
 
 | `key` | `block` | Result |
 |-------|---------|--------|

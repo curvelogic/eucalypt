@@ -36,8 +36,8 @@ Two scoping questions were settled before writing this spec:
    **reworked** into a recognised intrinsic `__COND` with a clean clause
    syntax — narrowing flows through it like any other recognised
    brancher (§A5.7). *Not* in scope for 6.1: equality-against-literal
-   narrowing (`x = :active`), `has(:k, …)`, `when`/`unless`, and
-   `.field`-path narrowing.
+   narrowing (`x = :active`), `has(:k, …)`, `when` (`unless` does not
+   exist in the prelude), and `.field`-path narrowing.
 
 2. **Partial list functions (A6)** — *annotate now*. `head`, `tail` and
    the other partial list functions are retyped with `NonEmpty` in
@@ -61,6 +61,13 @@ The checker is a freshen-and-unify bidirectional checker
   The checker does **no** special-casing of any of them — `if(c, a, b)`
   is just an application of three sub-expressions, both branches always
   synthesised.
+- **Intrinsic naming.** An intrinsic is written `__IF` in eucalypt
+  *source* (e.g. the prelude binding `if: __IF`); the desugarer strips
+  the `__`, so the core `Expr::Intrinsic` node carries the **bare**
+  name `IF` — verified: `eu dump cooked` shows `if = … IF;`. Where this
+  spec recognises an intrinsic *node* it means the bare name (`IF`,
+  `AND`, `OR`, `COND`, `CLAUSE`); where it writes `__X` it means the
+  source-level binding the user or prelude writes.
 - `synthesise_app` (check.rs ~675) handles application generically.
 - **Critical constraint**: `lookup_bound` (check.rs ~203) resolves bound
   variables by indexing `scope_stack` *directly* with the de Bruijn
@@ -204,8 +211,8 @@ tested variable's type within each branch:
 
 ```
 x : number | string | null
-if(x null?, A,        # in A:  x : null
-            B)        # in B:  x : number | string
+if(x number?, A,      # in A:  x : number
+              B)      # in B:  x : string | null
 ```
 
 Narrowing is **not** a syntactic rule — `if`/`then` are ordinary
@@ -350,6 +357,7 @@ Rules:
 | Condition shape | `positive` | `negative` |
 |-----------------|-----------|-----------|
 | `x p?` (`p?` a recognised predicate) | `{x ↦ narrow(p?, ty(x))}` | `{x ↦ subtract(p?, ty(x))}` |
+| `x✓` (postfix not-null operator) | `{x ↦ subtract(Null, ty(x))}` | `{x ↦ Null}` |
 | `not(c)` / `¬c` | `negative(c)` | `positive(c)` |
 | `a ∧ b` | `positive(a) ⊓ positive(b)` | `∅` |
 | `a ∨ b` | `∅` | `negative(a) ⊓ negative(b)` |
@@ -371,10 +379,15 @@ The predicate may be written by catenation (`x p?`) or prefix
 both.
 
 Predicates are recognised **structurally** too, consistent with §A5.3 —
-no predicate name table. A type predicate resolves to its underlying
-test intrinsic; `nil?`/`non-nil?` are recognised as an equality test
-against the empty-list literal `[]` (`nil?` is defined that way in the
-prelude). The implementer confirms the intrinsic backing each predicate.
+no predicate name table. The type predicates `number?`/`string?`/
+`symbol?`/`bool?`/`list?`/`block?` resolve to their underlying test
+intrinsics (`__ISNUMBER`, `__ISSTRING`, …, verified present in the
+prelude); `nil?`/`non-nil?` are recognised as an equality test against
+the empty-list literal `[]` (`nil?` is defined `nil?: = []` in the
+prelude). **There is no `null?` predicate** — null-discrimination is
+the postfix `✓` not-null operator (prelude: "`x✓` — `true` if `x` is
+not null"), handled by the dedicated `x✓` row above. The implementer
+confirms the intrinsic backing each predicate.
 
 ### A5.6 Recognition is structural — no name matching
 

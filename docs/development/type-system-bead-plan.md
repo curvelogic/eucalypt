@@ -157,17 +157,20 @@ keeps existing tests green. (`LiteralNumber` explicitly out of scope.)
 
 ### TS-A5 — Flow-sensitive narrowing + type subtraction
 
-Branch-sensitive narrowing via type predicates (`number?`, `null?`,
-`nil?`, …) and a `T - U` subtraction form over unions.
+Branch-sensitive narrowing via type predicates (`number?`, `string?`,
+`nil?`, …; null-discrimination via the `✓` not-null operator) and a
+`T - U` subtraction form over unions.
 
 **Scope**: predicate→narrowing table; union subtraction; **branch-
 combinator recognition table** — narrowing is not syntactic, it is a
 special case in `synthesise_app` keyed on a fixed set of branch
 functions (`if`, `then`, `cond`, `||`, `&&`); silently (soundly) skip
 when the callee is a rebound non-prelude function.
-**Done when**: `if(x null?, …, …)` narrows `x` in each branch; the
-recognition table covers `if`/`then`/`cond`; rebinding `if` disables
-narrowing without false positives.
+**Done when**: `if(x number?, …, …)` narrows `x` in each branch; the
+recognition covers `if`/`then`/`cond`; rebinding `if` disables
+narrowing without false positives. (The spec reworked recognition from
+a name table to *structural* recognition — see it for the final
+design.)
 
 ### TS-A6 — NonEmpty refinement + branch-narrowing
 
@@ -362,11 +365,13 @@ check); LSP re-check latency drops measurably.
 
 ### TS-B8 — Type the monad namespaces with HKT
 
-Apply HKT (TS-B1) to give `io`, `for`, `random`, `state` and the
-`monad()` output their proper polymorphic types, so the desugared
-`bind` chains type-check directly (superseding the TS-A9 hint
-mechanism for *checking* — the `monad:` field lives on for desugaring
-and tooling).
+Apply HKT (TS-B1) to give the monad namespaces (`io`, `for`, `random`,
+`let` — there is no `state` monad) and the `monad()` output their
+proper polymorphic types, so the desugared `bind` chains type-check
+directly (superseding the TS-A9 hint mechanism for *checking* — the
+`monad:` field lives on for desugaring and tooling). `for`/`let`/
+`random` are built via `monad()`, so they inherit once `monad()` is
+typed.
 
 **Scope**: HKT signatures for the monad namespaces and `monad()`
 derived combinators; verify monadic blocks check without `__type_hint`

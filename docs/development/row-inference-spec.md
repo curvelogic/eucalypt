@@ -28,14 +28,19 @@ generalises over them, so `f` infers
   rather than `any` — `Record { fields: {known projections…}, open:
   true, row: Some(fresh) }`. The known projections seed the `fields`;
   the row variable carries the unknown remainder.
-- **Flow.** The unifier (already row-capable since A1) propagates the
-  fresh row variable through the body — `merge`'s `{..r} -> {..s} ->
-  {..r,..s}` binds the parameters' row variables and concatenates them
-  into the result.
+- **Flow.** The unifier (already row-capable) propagates the fresh row
+  variable through the body — `merge`'s `{..r} -> {..s} -> {..r,..s}`
+  binds the parameters' row variables and concatenates them into the
+  result.
 - **Generalisation.** When the lambda's scheme is generalised, the
-  fresh row variables are **quantified** alongside ordinary type
-  variables (A1's freshening already handles row variables per use —
-  B9 adds them to the *generalisation* step, the dual operation).
+  fresh row variables must be **quantified** alongside ordinary type
+  variables. A codebase review (2026-05-19) found this is *already*
+  done: `infer_scheme` / `collect_free_vars` (unify.rs ~404) collects
+  row variables, and `freshen` (unify.rs ~378) renames them per use. So
+  B9's generalisation and freshening halves are pre-built; **B9's only
+  real work is the allocation step above** — deciding a parameter is
+  block-shaped and giving it a fresh-row-variable record instead of
+  `any`.
 
 ## B9.3 The hard part — when to allocate
 
@@ -72,5 +77,5 @@ its absence only means unannotated generic block combinators stay
 
 | File | Change |
 |------|--------|
-| `src/core/typecheck/check.rs` | fresh row-variable allocation at lambda boundaries; row variables in scheme generalisation |
+| `src/core/typecheck/check.rs` | fresh row-variable allocation at lambda boundaries (the block-use judgement, §B9.3) — generalisation/freshening of row variables already exist in `unify.rs` |
 | `tests/harness/typecheck/` | row-inference tests |

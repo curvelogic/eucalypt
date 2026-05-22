@@ -1005,9 +1005,9 @@ with `p?` a recognised type predicate, narrow `x` in each branch:
 ```
 x : number | string | null
 
-if(x null?,
-   then,     # here x : null
-   else)     # here x : number | string
+if(x string?,
+   then,     # here x : string
+   else)     # here x : number | null
 
 if(x number?,
    then,     # here x : number
