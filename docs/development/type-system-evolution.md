@@ -300,6 +300,15 @@ Labels" (2005), PureScript record-row, Koka effects-as-rows, MLstruct
 `Lens` opaque types feel under-typed (e.g. `over` should preserve row
 content).
 
+**Scope split (per the A1 spec).** Stage A / 6.1 covers *annotated*
+row-polymorphic types only: the unifier already propagates row content,
+so annotating `merge` and the lens `over`-family activates it (the main
+remaining task is freshening row variables per use). Inferring *fresh*
+row variables for *unannotated* functions — so a generic block
+combinator becomes row-polymorphic without an annotation — is deferred
+to Phase B, bead **TS-B9**. See
+[row-polymorphism-and-dict-spec.md](./row-polymorphism-and-dict-spec.md).
+
 ---
 
 ### H4. Restricted dependent types where they pay rent
@@ -592,8 +601,19 @@ need invalidation.
 separate question. Cost is high; payoff in this gradual setting is
 modest because unannotated code is already silently `any`. Skip it.
 
-**Recommendation.** Stage B or C. Cheap to start small (in-memory
-cache); persistence and the LSP wiring are the real work.
+**Correction (2026-05-18).** The "cheap in-memory cache" first step is
+not cheap *and* sound. `eliminate` (dead-binding pruning) runs **before**
+the type checker, and prunes a different subset of the prelude for every
+user file — so a prelude type environment cached from one check is
+missing bindings for the next. A sound cache must check the prelude and
+each unit *standalone* against seeded summaries — a per-module-checking
+restructure, not a `HashMap`. The in-memory and persistent forms are
+therefore one body of work. Bead **TS-A8** (the in-memory cache) is
+**withdrawn**; the whole feature is **TS-B7**. For 6.1 the prelude is
+re-checked each run — a one-shot cost on a CLI check; the latency that
+matters (LSP re-check per keystroke) is TS-B7's remit.
+
+**Recommendation.** Phase B (TS-B7). Skip whole-program inference.
 
 ---
 
@@ -933,16 +953,15 @@ to avoid infinite recursion.
 **JSON without dependent types.**
 
 ```
-{ types: { Json: "number | string | bool | null | [Json] | {symbol: Json}" } }
+{ types: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
 
 ` { type: "Json -> string" }
 to-pretty: ...
 ```
 
-Note `{symbol: Json}` requires row polymorphism + a way to say "a row
-where all values have type Json". This is exactly the
-`map-values`-shaped row constraint of H3, and the natural unifying
-point.
+The object case is `Dict(Json)` — the homogeneous-block type of H19
+(bead A2). That is why A3 lands after A1/A2: the `Mu` core is
+independent, but the motivating `Json` type wants `Dict`.
 
 **Cost.** Medium. The representation is small; the subtyping algorithm
 needs care; the printer needs μ-detection to avoid loops.
@@ -1153,9 +1172,10 @@ parameter constructor suffices:
 Dict(T)        — block, any symbol keys, every value of type T
 ```
 
-In the DSL this could spell as `Dict(T)`, or, reusing record syntax
-with a wildcard key, `{*: T}` or `{symbol: T}`. `Dict(number)` is the
-type of `{a: 1, b: 2, c: 3}`.
+In the DSL it spells `Dict(T)` — parsed like the existing `IO(T)`.
+(The record-syntax alternatives `{*: T}` / `{symbol: T}` were
+considered and dropped — one spelling, no ambiguity; see the A1/A2
+spec.) `Dict(number)` is the type of `{a: 1, b: 2, c: 3}`.
 
 Subtyping and relationships:
 

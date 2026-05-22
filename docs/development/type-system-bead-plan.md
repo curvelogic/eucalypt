@@ -47,7 +47,6 @@ TS-ROOT  Type system evolution                              (epic)
 │   ├── TS-A5   Flow-sensitive narrowing + type subtraction
 │   ├── TS-A6   NonEmpty refinement + branch-narrowing
 │   ├── TS-A7   First-class alias references in the type DSL
-│   ├── TS-A8   Per-module type summary cache (in-memory)
 │   ├── TS-A9   Monadic block binding type hints          (← eu-ggr9)
 │   └── TS-A10  Monadic bound-variable element-type hints (← eu-z9zz.10)
 │
@@ -58,13 +57,23 @@ TS-ROOT  Type system evolution                              (epic)
     ├── TS-B4   Typed van Laarhoven lens internals (decision-gated)
     ├── TS-B5   Partial(T) opaque type
     ├── TS-B6   Dependent record indexed access
-    ├── TS-B7   Persistent type summaries + LSP cross-file inference
-    └── TS-B8   Type the monad namespaces with HKT          (← eu-dme3)
+    ├── TS-B7   Per-module type summaries — in-memory + persistent
+    ├── TS-B8   Type the monad namespaces with HKT          (← eu-dme3)
+    └── TS-B9   Full row-variable inference at lambda boundaries
 ```
 
 Three levels: root epic → phase epic → feature bead. A few feature
 beads list sub-tasks inline in §2/§3; create those as sub-issues if
 the grain is useful, otherwise keep them as checklist items.
+
+> **Revision note (2026-05-18).** TS-A8 ("per-module type summary
+> cache, in-memory") has been **withdrawn from Phase A** and folded
+> into TS-B7. A sound cache requires checking the prelude and each unit
+> *standalone* against seeded summaries — a per-module-checking
+> restructure, not a `HashMap` — because pruning runs *before* the
+> checker and removes a different prelude subset for every user file
+> (see §3 TS-B7 and evolution-doc H9). TS-B9 is **new**: the
+> fresh-row-variable *inference* deferred out of the TS-A1 spec.
 
 ---
 
@@ -88,7 +97,6 @@ data-transformation work. No new type-theoretic ambition. Parent:
 | TS-A5 | Flow-sensitive narrowing + type subtraction | M | P2 | A4 | H15 |
 | TS-A6 | NonEmpty refinement + branch-narrowing | S | P2 | A5 | H7a, H7b, H7c |
 | TS-A7 | First-class alias references in the type DSL | S | P2 | — | H12a |
-| TS-A8 | Per-module type summary cache (in-memory) | M | P2 | — | H9 |
 | TS-A9 | Monadic block binding type hints | M | P1 | — | H4c |
 | TS-A10 | Monadic bound-variable element-type hints | S | P2 | A9 | — |
 
@@ -186,16 +194,20 @@ rename.
 **Done when**: go-to-def/hover/rename work for an alias referenced in
 a `type:` string.
 
-### TS-A8 — Per-module type summary cache (in-memory)
+### TS-A8 — Per-module type summary cache — **withdrawn, folded into TS-B7**
 
-Cache the inferred/annotated types of each module's exports; importers
-load summaries instead of re-checking. In-memory only at this stage
-(persistence is TS-B7).
-
-**Scope**: per-module export type summary; content-addressed in-memory
-cache keyed on module hash; invalidation on upstream change.
-**Done when**: re-checking a multi-file project reuses unchanged
-module summaries; LSP re-check latency drops measurably.
+Originally scoped as a small in-memory cache of the prelude's export
+types. Investigation showed the modest form is **unsound**: `eliminate`
+(dead-binding pruning) runs *before* the checker, so the prelude as the
+checker sees it is pruned to a different subset for every user file —
+a cache built from one run is missing bindings for the next. The sound
+form checks the prelude and each unit *standalone* against seeded
+summaries (a per-module-checking restructure), which is precisely
+TS-B7's architecture. The in-memory / persistent split therefore no
+longer makes sense; TS-B7 absorbs the whole thing. For 6.1 the prelude
+is re-checked each run — a one-shot cost, acceptable for a CLI check;
+the latency that matters (LSP re-check on every keystroke) is TS-B7's
+remit. See evolution-doc H9.
 
 ### TS-A9 — Monadic block binding type hints
 
@@ -240,8 +252,9 @@ monads inherit correct types. Parent: `TS-ROOT`.
 | TS-B4 | Typed van Laarhoven lens internals | M | P3 | B1, B2, B3 | H2b |
 | TS-B5 | Partial(T) opaque type | S/M | P2 | — | H6b |
 | TS-B6 | Dependent record indexed access | M | P2 | TS-A4 | H4a, H4b |
-| TS-B7 | Persistent type summaries + LSP cross-file inference | M | P2 | TS-A8 | H9 |
+| TS-B7 | Per-module type summaries — in-memory + persistent | M/L | P2 | — | H9 |
 | TS-B8 | Type the monad namespaces with HKT | M | P2 | B1 | H1 (apply) |
+| TS-B9 | Full row-variable inference at lambda boundaries | M | P3 | TS-A1 | H3 |
 
 ### TS-B1 — Higher-kinded type variables
 
@@ -320,16 +333,25 @@ missing-key warning; tuple index access.
 yields the field type.
 **Depends on TS-A4** (literal types) — cross-phase dependency.
 
-### TS-B7 — Persistent type summaries + LSP cross-file inference
+### TS-B7 — Per-module type summaries (in-memory + persistent)
 
-Persist the TS-A8 summaries (content-addressed on disk) and wire the
-LSP to do cross-file inference: an upstream change invalidates only
-downstream summaries.
+Absorbs the withdrawn TS-A8. The whole per-module-summary architecture:
+check the prelude and each unit *standalone*, producing an export type
+summary; importers (and re-checks) load summaries instead of
+re-checking. The check pipeline moves from "merge everything → prune →
+check once" to "check prelude standalone → check each unit standalone
+against seeded summaries" — necessary because pruning runs before the
+checker and is context-dependent (see the TS-A8 note in §2). In-memory
+caching and on-disk persistence are two milestones of the same work,
+no longer separate beads.
 
-**Scope**: on-disk summary store; invalidation graph; LSP integration.
-**Done when**: type info persists across sessions; cross-file
-diagnostics update incrementally.
-**Depends on TS-A8.**
+**Scope**: standalone per-unit checking with a seeded outer-scope
+environment; per-module export summary; content-addressed cache
+(in-memory, then on-disk); invalidation graph on upstream change; LSP
+cross-file inference and incremental re-check.
+**Done when**: re-checking a multi-file project reuses unchanged module
+summaries; LSP re-check latency drops measurably; type info persists
+across sessions; cross-file diagnostics update incrementally.
 
 ### TS-B8 — Type the monad namespaces with HKT
 
@@ -346,6 +368,23 @@ injection.
 monads built with `monad()` inherit correct types.
 **Note**: this *is* existing bead `eu-dme3` — re-parent it here.
 **Depends on TS-B1.**
+
+### TS-B9 — Full row-variable inference at lambda boundaries
+
+Deferred out of TS-A1. A1 makes *annotated* row-polymorphic types work
+(the unifier already propagates row content); B9 adds the *inference*
+— the checker allocates fresh row variables when a parameter is used as
+a block and generalises over them, so an unannotated generic block
+combinator (`f(a, b): a merge(b)`) infers a row-polymorphic type
+instead of leaving its block parameters `any`.
+
+**Scope**: fresh row-variable allocation at lambda boundaries;
+generalisation over row variables; bidirectional integration.
+**Done when**: an unannotated function that merges/extends its block
+parameters infers a row-polymorphic type; row content flows through
+unannotated block code.
+**Depends on TS-A1.** See [row-polymorphism-and-dict-spec.md](./row-polymorphism-and-dict-spec.md)
+§A1.6 and evolution-doc H3.
 
 ---
 
@@ -380,7 +419,7 @@ Hard dependencies (blocker → blocked):
 TS-A4  ──▶ TS-A5  ──▶ TS-A6
 TS-A9  ──▶ TS-A10
 TS-A4  ──▶ TS-B6
-TS-A8  ──▶ TS-B7
+TS-A1  ──▶ TS-B9
 TS-B1  ──▶ TS-B2
 TS-B1  ──▶ TS-B8
 TS-B1, TS-B2, TS-B3  ──▶ TS-B4
@@ -404,9 +443,9 @@ Phase A is parallelisable.
 1. Create `TS-ROOT` (epic).
 2. Create `TS-A` and `TS-B` as children of `TS-ROOT`; set milestones
    6.1 and 7.0.
-3. Create `TS-A2`–`TS-A8`, `TS-B1`–`TS-B7` as children of their phase
-   epic. (`TS-A1`, `TS-A9`, `TS-A10`, `TS-B8` are re-homed existing
-   beads — see step 5.)
+3. Create `TS-A2`–`TS-A7`, `TS-B1`–`TS-B7`, `TS-B9` as children of
+   their phase epic. (`TS-A1`, `TS-A9`, `TS-A10`, `TS-B8` are re-homed
+   existing beads — see step 5. `TS-A8` is withdrawn — see §2.)
 4. Set the hard dependencies from §5.
 5. Re-parent the existing beads per §4: `eu-z9zz.5 → TS-A1`,
    `eu-ggr9 → TS-A9`, `eu-z9zz.10 → TS-A10`, `eu-dme3 → TS-B8`.
@@ -414,5 +453,16 @@ Phase A is parallelisable.
 6. Apply labels: `type-system` to all; `phase-a` / `phase-b` per
    phase. Set priorities from the §2/§3 tables.
 
-After import, the next step is to brainstorm and spec each Phase A
-bead in detail.
+## 7. Specifications
+
+Detailed specs now exist for the Phase A beads:
+
+| Beads | Specification |
+|-------|---------------|
+| A4, A5, A6 | [literal-types-and-narrowing-spec.md](./literal-types-and-narrowing-spec.md) |
+| A1, A2 | [row-polymorphism-and-dict-spec.md](./row-polymorphism-and-dict-spec.md) |
+| A3 | [recursive-types-spec.md](./recursive-types-spec.md) |
+| A7 | [alias-reference-tooling-spec.md](./alias-reference-tooling-spec.md) |
+| A9, A10 | [monad-type-checking-spec.md](./monad-type-checking-spec.md) |
+
+Phase B beads are specced when scheduled.
