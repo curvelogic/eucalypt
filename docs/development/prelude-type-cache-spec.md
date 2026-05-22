@@ -65,12 +65,19 @@ become the `PreludeSummary`.
 
 ## B7.4 The cache
 
-- The prelude is a fixed resource shipped with the binary; its summary
-  changes only when `lib/prelude.eu` changes. Key the cache on the
-  **hash of the prelude source**. Hash-keying also means a project that
-  swaps the implicit base prelude for a different file is handled for
-  free — a different prelude is simply a different cache entry, no
-  special case.
+- The prelude is **embedded in the binary** — `src/driver/resources.rs`
+  does `include_bytes!("../../lib/prelude.eu")` and registers it as the
+  `"prelude"` resource, loaded by a hardcoded `Locator::Resource`. It is
+  fixed for a given build: there is **no** mechanism to substitute a
+  different base prelude (the only related control is `-Q` /
+  `--no-prelude`, which *suppresses* the prelude — a check run that way
+  has an empty seed and B7 is simply inert). So the cache key is
+  effectively constant per build, and B7 is in practice "compute the
+  summary once per process".
+- Key the cache on the **hash of the prelude source** even so — it
+  costs nothing, makes the cache self-invalidating should the embedded
+  prelude change between builds, and is the right key if the summary is
+  later persisted across binary versions.
 - **In-memory first**: compute the summary on the first check of a
   process and reuse it for every subsequent file — the dominant LSP and
   CLI win.
