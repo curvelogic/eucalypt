@@ -53,8 +53,8 @@ TS-ROOT  Type system evolution                              (epic)
 └── TS-B   Phase B — expressiveness                          [7.0]
     ├── TS-B1   Higher-kinded type variables
     ├── TS-B2   Structural operator constraints
-    ├── TS-B3   Metadata-channel typing
-    ├── TS-B4   Typed van Laarhoven lens internals (decision-gated)
+    ├── TS-B3   Metadata schema validation
+    ├── TS-B4   Typed van Laarhoven lens internals (won't-do)
     ├── TS-B5   Partial(T) opaque type
     ├── TS-B6   Dependent record indexed access
     ├── TS-B7   Per-module type summaries — in-memory + persistent
@@ -247,9 +247,9 @@ monads inherit correct types. Parent: `TS-ROOT`.
 | ID | Title | Size | Prio | Depends on | H-ref |
 |----|-------|------|------|-----------|-------|
 | TS-B1 | Higher-kinded type variables | M/L | P2 | — | H1 |
-| TS-B2 | Structural operator constraints | M | P2 | B1 | H10 |
-| TS-B3 | Metadata-channel typing | M/L | P3 | — | H2 (prereq) |
-| TS-B4 | Typed van Laarhoven lens internals | M | P3 | B1, B2, B3 | H2b |
+| TS-B2 | Structural operator constraints | M | P2 | — | H10 |
+| TS-B3 | Metadata schema validation | S | P3 | — | H2 (prereq) |
+| TS-B4 | Typed van Laarhoven lens internals | — | — | — | **won't-do** |
 | TS-B5 | Partial(T) opaque type | S/M | P2 | — | H6b |
 | TS-B6 | Dependent record indexed access | M | P2 | TS-A4 | H4a, H4b |
 | TS-B7 | Per-module type summaries — in-memory + persistent | M/L | P2 | — | H9 |
@@ -281,28 +281,36 @@ resolve constraints at call sites by finite enumeration over declared
 overloads; conjunction of multiple constraints.
 **Done when**: `min`/`max`/comparison carry constraint-based types;
 union-overload annotations still accepted (forwards-compatible).
-**Depends on TS-B1** (shared constraint/kind resolution machinery).
+**Independent of TS-B1** — constraints are value-level (operators),
+kinds are type-level; they share no essential machinery and B2 may
+proceed in parallel. See the spec.
 
 ### TS-B3 — Metadata-channel typing
 
-Give the type system a way to describe a value's metadata. Justified
-on its own merits — fixity/precedence metadata, `target`, the `type:`
-field itself — not only as a lens prerequisite.
+Give the type checker a way to validate a value's metadata. Specced at
+a deliberately modest scope: **metadata schema validation** — a checker
+pass over `Meta` nodes against the fixed shape of known metadata keys
+(`doc`, `precedence`, `associates`, `target`, `import`, `type`,
+`monad`, …) — *not* a type-lattice feature.
 
-**Scope**: a metadata-shape form in the type representation; checking
-metadata against it; interaction with the gradual boundary.
-**Done when**: a value's metadata can be typed and checked; design
-note covers `with-meta`/`//` flow.
-**Decision-gated** — see open question 7 in type-system-evolution.md.
-If declined, this bead and TS-B4 are closed as won't-do.
+**Scope**: a metadata-key schema; a validation pass in `synthesise_meta`.
+**Done when**: malformed known metadata (`precedence: "high"`) warns;
+user-defined keys are untouched.
+**Decision resolved**: with TS-B4 won't-do, metadata need not *flow*
+through the type system — only be validated. The heavier
+lattice-integrated form (`Type::WithMeta`, metadata subtyping) is **not
+built**; see the metadata-typing spec §B3.5.
 
-### TS-B4 — Typed van Laarhoven lens internals
+### TS-B4 — Typed van Laarhoven lens internals — **won't-do**
 
-Type the *bodies* in `lib/lens.eu` — the encoding is metadata-dispatch
-(`fmap`/`pure`/`ap`), so the honest type needs metadata typing plus
-HKT plus structural constraints. User-facing `Lens`/`Traversal` stay
-opaque regardless.
+**Closed as won't-do.** Typing the metadata-dispatch lens kernel in
+`lib/lens.eu` would need the full B1+B2+B3 package for a payoff that
+affects one library file's internals — complexity not worth its
+keep. `Lens`/`Traversal` stay opaque at the interface (which is enough
+for users) indefinitely. Recorded here for traceability; create no
+active bead, or create it already closed.
 
+*(Original scope, for reference:)*
 **Scope**: internal lens kernel type; check `lib/lens.eu` bodies;
 internal types do not leak to users.
 **Done when**: `eu check lib/lens.eu` exercises the internal kernel;
@@ -420,10 +428,11 @@ TS-A4  ──▶ TS-A5  ──▶ TS-A6
 TS-A9  ──▶ TS-A10
 TS-A4  ──▶ TS-B6
 TS-A1  ──▶ TS-B9
-TS-B1  ──▶ TS-B2
 TS-B1  ──▶ TS-B8
-TS-B1, TS-B2, TS-B3  ──▶ TS-B4
 ```
+
+(TS-B2 is **not** dependent on TS-B1 — see §3. TS-B4 is won't-do, so
+its former `B1,B2,B3 ──▶ B4` dependency is dropped.)
 
 Soft / coordinate (not blockers):
 
@@ -443,9 +452,11 @@ Phase A is parallelisable.
 1. Create `TS-ROOT` (epic).
 2. Create `TS-A` and `TS-B` as children of `TS-ROOT`; set milestones
    6.1 and 7.0.
-3. Create `TS-A2`–`TS-A7`, `TS-B1`–`TS-B7`, `TS-B9` as children of
-   their phase epic. (`TS-A1`, `TS-A9`, `TS-A10`, `TS-B8` are re-homed
-   existing beads — see step 5. `TS-A8` is withdrawn — see §2.)
+3. Create `TS-A2`–`TS-A7`, `TS-B1`–`TS-B3`, `TS-B5`–`TS-B7`, `TS-B9`
+   as children of their phase epic. (`TS-A1`, `TS-A9`, `TS-A10`,
+   `TS-B8` are re-homed existing beads — see step 5. `TS-A8` is
+   withdrawn — see §2. `TS-B4` is won't-do — see §3; create it already
+   closed, or not at all.)
 4. Set the hard dependencies from §5.
 5. Re-parent the existing beads per §4: `eu-z9zz.5 → TS-A1`,
    `eu-ggr9 → TS-A9`, `eu-z9zz.10 → TS-A10`, `eu-dme3 → TS-B8`.
@@ -455,7 +466,8 @@ Phase A is parallelisable.
 
 ## 7. Specifications
 
-Detailed specs now exist for the Phase A beads:
+Detailed specs exist for every Phase A bead and every actioned Phase B
+bead:
 
 | Beads | Specification |
 |-------|---------------|
@@ -464,5 +476,14 @@ Detailed specs now exist for the Phase A beads:
 | A3 | [recursive-types-spec.md](./recursive-types-spec.md) |
 | A7 | [alias-reference-tooling-spec.md](./alias-reference-tooling-spec.md) |
 | A9, A10 | [monad-type-checking-spec.md](./monad-type-checking-spec.md) |
+| B1 | [higher-kinded-types-spec.md](./higher-kinded-types-spec.md) |
+| B2, B8 | [operator-constraints-and-monad-types-spec.md](./operator-constraints-and-monad-types-spec.md) |
+| B3 | [metadata-typing-spec.md](./metadata-typing-spec.md) |
+| B5, B6 | [partiality-and-indexed-access-spec.md](./partiality-and-indexed-access-spec.md) |
+| B7, B9 | [type-summaries-and-row-inference-spec.md](./type-summaries-and-row-inference-spec.md) |
 
-Phase B beads are specced when scheduled.
+**TS-B4** (typed van Laarhoven lens internals) is **won't-do** — its
+payoff is one library file's internals and does not justify the
+B1+B2+B3 package; `Lens`/`Traversal` stay opaque for users
+indefinitely. See the metadata-typing spec §"Scope decision" and §3
+below.

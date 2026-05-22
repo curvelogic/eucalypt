@@ -233,6 +233,13 @@ question is not "type the lens internals" but "is metadata typing
 worth doing for its own sake?" — if yes, H2b follows cheaply
 afterwards; if no, H2b stays parked.
 
+**Resolved (2026-05-19).** H2b (bead TS-B4 — typed lens internals) is
+**won't-do**: the B1+B2+B3 package for a one-file payoff is not worth
+its keep. With no consumer that needs metadata to *flow*, metadata
+typing (bead TS-B3) is scoped down to **schema validation** — a checker
+pass over metadata blocks against the known-key shapes — not a
+type-lattice feature. See [metadata-typing-spec.md](./metadata-typing-spec.md).
+
 **Prior art.** Edward Kmett's `lens` and its profunctor cousin (van
 Laarhoven 2007; Bartosz Milewski's lens posts), "Profunctor Optics:
 Modular Data Accessors" (Pickering, Gibbons, Wu 2017), "Don't Fear the
