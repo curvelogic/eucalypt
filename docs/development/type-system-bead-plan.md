@@ -57,7 +57,7 @@ TS-ROOT  Type system evolution                              (epic)
     ├── TS-B4   Typed van Laarhoven lens internals (won't-do)
     ├── TS-B5   Partial(T) opaque type
     ├── TS-B6   Dependent record indexed access
-    ├── TS-B7   Per-module type summaries — in-memory + persistent
+    ├── TS-B7   Prelude type-summary cache
     ├── TS-B8   Type the monad namespaces with HKT          (← eu-dme3)
     └── TS-B9   Full row-variable inference at lambda boundaries
 ```
@@ -252,7 +252,7 @@ correct types. Parent: `TS-ROOT`.
 | TS-B4 | Typed van Laarhoven lens internals | — | — | — | **won't-do** |
 | TS-B5 | Partial(T) opaque type | S/M | P2 | — | H6b |
 | TS-B6 | Dependent record indexed access | M | P2 | TS-A4 | H4a, H4b |
-| TS-B7 | Per-module type summaries — in-memory + persistent | M/L | P2 | — | H9 |
+| TS-B7 | Prelude type-summary cache | S/M | P2 | — | H9 |
 | TS-B8 | Type the monad namespaces with HKT | M | P2 | B1 | H1 (apply) |
 | TS-B9 | Full row-variable inference at lambda boundaries | M | P3 | TS-A1 | H3 |
 
@@ -338,25 +338,27 @@ missing-key warning; tuple index access.
 yields the field type.
 **Depends on TS-A4** (literal types) — cross-phase dependency.
 
-### TS-B7 — Per-module type summaries (in-memory + persistent)
+### TS-B7 — Prelude type-summary cache
 
-Absorbs the withdrawn TS-A8. The whole per-module-summary architecture:
-check the prelude and each unit *standalone*, producing an export type
-summary; importers (and re-checks) load summaries instead of
-re-checking. The check pipeline moves from "merge everything → prune →
-check once" to "check prelude standalone → check each unit standalone
-against seeded summaries" — necessary because pruning runs before the
-checker and is context-dependent (see the TS-A8 note in §2). In-memory
-caching and on-disk persistence are two milestones of the same work,
-no longer separate beads.
+Absorbs the withdrawn TS-A8, scoped to the **prelude only**. Check the
+prelude *standalone* once, producing a summary of its binding type
+schemes and its type aliases; cache it (keyed on the prelude source
+hash); seed every user-file check with it so the prelude is not
+re-walked. User files are checked standalone against the seed.
 
-**Scope**: standalone per-unit checking with a seeded outer-scope
-environment; per-module export summary; content-addressed cache
-(in-memory, then on-disk); invalidation graph on upstream change; LSP
-cross-file inference and incremental re-check.
-**Done when**: re-checking a multi-file project reuses unchanged module
-summaries; LSP re-check latency drops measurably; type info persists
-across sessions; cross-file diagnostics update incrementally.
+Scoped to the prelude because the prelude's types are *stable* (it is
+fixed, merged first, and references only itself), whereas general
+per-user-module summaries are not guaranteed stable under positional
+merge-override and offer a small payoff. The prelude is also the
+dominant cost. LSP responsiveness — the point of typing in a tooling-
+first language — is the motivation.
+
+**Scope**: standalone prelude check → `PreludeSummary` (binding schemes
++ aliases); hash-keyed in-memory cache; a seeded standalone user-file
+check path; LSP re-check off the cache.
+**Done when**: the prelude is checked once per process, not per file;
+seeded checking is behaviour-preserving (same warnings as the merged
+check); LSP re-check latency drops measurably.
 
 ### TS-B8 — Type the monad namespaces with HKT
 
@@ -476,7 +478,7 @@ bead:
 | B1 | [higher-kinded-types-spec.md](./higher-kinded-types-spec.md) |
 | B2, B8 | [operator-constraints-and-monad-types-spec.md](./operator-constraints-and-monad-types-spec.md) |
 | B5, B6 | [partiality-and-indexed-access-spec.md](./partiality-and-indexed-access-spec.md) |
-| B7 | [type-summaries-spec.md](./type-summaries-spec.md) |
+| B7 | [prelude-type-cache-spec.md](./prelude-type-cache-spec.md) |
 | B9 | [row-inference-spec.md](./row-inference-spec.md) |
 
 **TS-B3** (metadata-channel typing) and **TS-B4** (typed van Laarhoven
