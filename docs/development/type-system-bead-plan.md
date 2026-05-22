@@ -476,7 +476,8 @@ bead:
 | B1 | [higher-kinded-types-spec.md](./higher-kinded-types-spec.md) |
 | B2, B8 | [operator-constraints-and-monad-types-spec.md](./operator-constraints-and-monad-types-spec.md) |
 | B5, B6 | [partiality-and-indexed-access-spec.md](./partiality-and-indexed-access-spec.md) |
-| B7, B9 | [type-summaries-and-row-inference-spec.md](./type-summaries-and-row-inference-spec.md) |
+| B7 | [type-summaries-spec.md](./type-summaries-spec.md) |
+| B9 | [row-inference-spec.md](./row-inference-spec.md) |
 
 **TS-B3** (metadata-channel typing) and **TS-B4** (typed van Laarhoven
 lens internals) are both **won't-do** — see §3. They were gated
