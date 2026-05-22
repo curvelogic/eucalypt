@@ -755,6 +755,37 @@ resolve one of three ways:
 **Acceptance gate**: after A6, `eu check lib/prelude.eu` emits **zero**
 warnings. This gate is non-negotiable and is the reason A6 depends on A5.
 
+### A6.8 Precise `head`/`tail` on tuples
+
+`head`/`tail` are annotated `NonEmpty([a]) -> a` / `NonEmpty([a]) ->
+[a]` (§A6.5), and a `Tuple` is `<: NonEmpty` (§A6.3) — so `[k, v] head`
+*type-checks*, but via the annotation it yields the widened `k | v`,
+not the precise first element. A6 adds a **structural call-site
+special-case** on the `HEAD`/`TAIL` intrinsics — the same pattern as
+A5's `__COND` recognition — to recover precision:
+
+- `head`/`tail` resolve to the `HEAD`/`TAIL` intrinsics (`head: __HEAD`,
+  `tail: __TAIL` — alias chasing, as §A5.3 already does for `if: __IF`).
+- When the argument synthesises to a `Tuple`, the special-case
+  *overrides* the annotation result:
+  - `HEAD(Tuple([T₀, …, Tₙ]))` → `T₀`.
+  - `TAIL(Tuple([T₀, T₁, …, Tₙ]))` → `Tuple([T₁, …, Tₙ])`; for a
+    one-element tuple, `TAIL(Tuple([T₀]))` → `List(any)` (the empty
+    list).
+- For a non-`Tuple` argument (`List`/`NonEmpty`) the §A6.5 annotation
+  applies unchanged.
+
+So `[k, v] head` synthesises `k`'s type and `[k, v] tail` →
+`Tuple([v-type])` — pair access by `head`/`tail`, and by their bare
+aliases `first`/`key` (`first: head`, `key: head`), is precise from
+Phase A. Accessor *functions* whose body is a `head`/`tail` composition
+— `value` (`value: second`, `second(xs): xs tail head`) — need the
+`ProjectionShape` classifier, which is bead B6.3 (Phase B,
+[partiality-and-indexed-access-spec.md](./partiality-and-indexed-access-spec.md)).
+This subsection is the *primitive* B6.3 builds on, pulled into A6
+because it shares A6's `head`/`tail` handling and makes pair `head`/
+`tail` access precise in 6.1.
+
 ---
 
 ## 6. Cross-cutting helpers
@@ -854,8 +885,10 @@ not; `head` after a `nil?`/`then`/`cond` guard does not; `cons` result is
 `NonEmpty`; `List`-typed argument to `head` warns. Arity-cliff
 regression: a 5+-element list literal passes to a same-arity tuple
 parameter, and *fails* a `[T]`-annotated value passed to a tuple
-parameter. Unit tests for the `NonEmpty` subtyping/consistency/unify
-arms.
+parameter. Tuple precision (§A6.8): `[k, v] head` synthesises `k`'s
+exact type (not `k | v`), `[k, v] tail` → a 1-tuple; `head`/`tail` on a
+non-tuple list still type via the annotation. Unit tests for the
+`NonEmpty` subtyping/consistency/unify arms.
 
 **Regression gates**:
 - `eu check lib/prelude.eu` → **zero warnings** after A6 (§A6.7).
@@ -916,7 +949,7 @@ to migrate to the new clause syntax (§A5.7, §A6.7).
 | `subtype.rs` | literal `<:` + consistency arms | — | `NonEmpty` `<:` + consistency arms |
 | `unify.rs` | literal unify arms | — | `NonEmpty` unify arm |
 | `parse.rs` | literal-string token + production; grammar comment | — | `NonEmpty([T])` token + production |
-| `check.rs` | `synthesise_primitive`; route unions through `Type::union` | `Checker.narrowing` field; spine flattening; `BranchShape` classification (memoised); `recognise_branch`, `synthesise_branch`, `analyse_condition`, `subtract`; narrowing-aware `Var` synthesis; recognise `__COND` and pattern its clause-list argument (literal `List` / `__CONS` spine) | list-literal arm — drop the 2–4 cutoff, synthesise `Tuple` up to `LIST_TUPLE_CAP` then `NonEmpty`; `nil?` predicate handling |
+| `check.rs` | `synthesise_primitive`; route unions through `Type::union` | `Checker.narrowing` field; spine flattening; `BranchShape` classification (memoised); `recognise_branch`, `synthesise_branch`, `analyse_condition`, `subtract`; narrowing-aware `Var` synthesis; recognise `__COND` and pattern its clause-list argument (literal `List` / `__CONS` spine) | list-literal arm — drop the 2–4 cutoff, synthesise `Tuple` up to `LIST_TUPLE_CAP` then `NonEmpty`; `nil?` predicate handling; `HEAD`/`TAIL`-on-`Tuple` precise special-case (§A6.8) |
 | `src/eval/` (intrinsics + STG) | — | `__COND` and `__CLAUSE` intrinsics — runtime semantics + STG compilation | — |
 | `src/syntax/` (lexer/grammar) | — | tokenise the `=>`/`⇒` operator glyphs (if not already lexed generically) | — |
 | `lib/prelude.eu` | — | `cond: __COND`; `=>`/`⇒` operators (→ `__CLAUSE`) with fixity; migrate existing `cond` call sites to the clause form | annotate `head`/`tail`/`cons`/`‖`/…; blast-radius fixes |
