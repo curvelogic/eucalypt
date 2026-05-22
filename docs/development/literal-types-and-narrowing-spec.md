@@ -12,6 +12,16 @@ narrowing (A5) → `NonEmpty` refinement (A6). The three ship in order, each
 its own PR. Together they let the checker catch `head([])`-class bugs and
 discriminate unions by branch.
 
+A5 additionally carries an **explicit language goal**: rework the
+existing `cond`. Today `cond` is a `foldr` over a list of two-element
+lists — clumsy to write (`cond([[c, r], …], d)` — bracket soup) and
+opaque to the type-checker (a fold it cannot see through). It is
+replaced by a recognised intrinsic with a clean clause syntax
+(`cond[c => r, …, d]`). This is not incidental tidy-up: the old `cond`
+is the *one* prelude branching construct narrowing cannot penetrate, so
+fixing it is on the critical path — and it is a worthwhile readability
+win in its own right. See §A5.7.
+
 ## Decisions taken
 
 Two scoping questions were settled before writing this spec:
@@ -22,12 +32,12 @@ Two scoping questions were settled before writing this spec:
    wrappers — `then`, plus any user-defined `my-if` — recognised
    **structurally**, not by name (§A5.3). Conditions are the type
    predicates (`number?`, `string?`, …), `nil?` and `non-nil?`. This
-   covers every guard pattern the prelude itself uses. `cond` is a
-   recursive `foldr` and is *not* recognised; the few prelude
-   partial-function `cond` sites are rewritten as explicit `if`
-   (§A5.7). *Not* in scope for 6.1: equality-against-literal narrowing
-   (`x = :active`), `has(:k, …)`, `when`/`unless`, `.field`-path
-   narrowing, and general union discrimination through `cond`.
+   covers every guard pattern the prelude itself uses. `cond` is
+   **reworked** into a recognised intrinsic `__COND` with a clean clause
+   syntax — narrowing flows through it like any other recognised
+   brancher (§A5.7). *Not* in scope for 6.1: equality-against-literal
+   narrowing (`x = :active`), `has(:k, …)`, `when`/`unless`, and
+   `.field`-path narrowing.
 
 2. **Partial list functions (A6)** — *annotate now*. `head`, `tail` and
    the other partial list functions are retyped with `NonEmpty` in
@@ -244,14 +254,19 @@ Recognition is **structural**: it never matches a name. Given a
 flattened spine `(head, args)`:
 
 **Mechanism 1 — a raw branch intrinsic.** `head` is literally an
-`Expr::Intrinsic` node for `IF`, `AND` or `OR`. Unforgeable. Fixed
-shapes:
+`Expr::Intrinsic` node for `IF`, `AND`, `OR` or `COND`. Unforgeable.
+Fixed shapes:
 
 | Intrinsic | Arity | Condition | Branches |
 |-----------|-------|-----------|----------|
 | `IF`  | 3 | arg 0 | arg 1 positive, arg 2 negative |
 | `AND` | 2 | — | see §A5.8 |
 | `OR`  | 2 | — | see §A5.8 |
+| `COND` | 1 | per-clause | the clause list — see §A5.7 |
+
+`IF`/`AND`/`OR` have a fixed argument layout; `COND` takes a single
+clause-list argument whose branch structure the checker reads by
+patterning that argument (§A5.7).
 
 **Mechanism 2 — a binding with a branch shape.** `head` is a `Var`;
 resolve it to its binding and consult the binding's memoised
@@ -273,11 +288,11 @@ Classification is one level deep, **memoised** (O(1) per call site
 thereafter), composes bottom-up, and is guarded against recursion (a
 function reaching itself during classification → no shape, which is
 always correct — a recursive function is not a pass-through wrapper).
-The *same* machinery covers an alias (`if`), a prelude wrapper (`then`),
-and a user's own `my-if(c,t,e): if(c,t,e)` — narrowing works for all
-three with zero name knowledge. Most functions fail the first check and
-are dismissed; in the 6.1 prelude only `if`/`and`/`or` (aliases) and
-`then` (wrapper) acquire a shape.
+The *same* machinery covers an alias (`if`, `cond`), a prelude wrapper
+(`then`), and a user's own `my-if(c,t,e): if(c,t,e)` — narrowing works
+for all with zero name knowledge. Most functions fail the first check
+and are dismissed; in the 6.1 prelude only `if`/`and`/`or`/`cond`
+(aliases of intrinsics) and `then` (wrapper) acquire a shape.
 
 A spine matches when its flattened arity equals the shape's arity; the
 condition and branch *expressions* are then the spine arguments at the
@@ -405,26 +420,88 @@ whose *value* is a partial application as **opaque**. Chasing it would
 mean splicing a concrete condition across a scope boundary (with de
 Bruijn re-indexing) for a vacuous gain. See §A5.10.
 
-### A5.7 `cond` is engineered out, not recognised
+### A5.7 Reworking `cond` into a recognised intrinsic
 
-`cond(l, d): l foldr(uncurry(if), d)` (prelude.eu:1168) is a `foldr` —
-recursive and data-driven. It does not reduce to a static `__IF` tree,
-and the classification recursion guard (§A5.3) correctly gives it no
-`BranchShape`. `cond` is therefore **not** a recognised brancher, and
-narrowing does not flow through it.
+`cond(l, d): l foldr(uncurry(if), d)` (prelude.eu:1168) is eucalypt's
+multi-way conditional, and it has two faults. It is **clumsy** to write
+— `cond([[c₁, r₁], [c₂, r₂], …], d)`, a list of two-element lists,
+bracket soup — and it is **opaque** to the checker: a `foldr`,
+recursive, with no `BranchShape` (§A5.3's recursion guard correctly
+refuses it). It is the one prelude branching construct narrowing cannot
+see through. A5 reworks it — using **only operators and intrinsics**, no
+new grammar syntax and no special desugaring.
 
-The only `cond` uses that *need* narrowing for the prelude
-warning-free gate are the partial-function sites — a `cond` whose first
-row guards `nil?` and a later row calls `head`/`tail`. These are
-**rewritten** in `lib/prelude.eu` as explicit nested / `nil?`-guarded
-`if`, which narrow via Mechanism 1. The rewrite is part of the A6
-prelude work; §A6.7's audit enumerates the sites and confirms the count
-is small.
+**Two new intrinsics.**
 
-General narrowing through `cond` in *user* code — discriminating a union
-across `cond` rows — is deferred. It belongs with the occurrence-typing
-endgame (latent propositions; see `type-system-evolution.md`), not with
-a `cond`-specific special case.
+- `__COND` — the multi-way conditional. One argument: a list of clauses
+  with an optional trailing default. At runtime it walks the list,
+  evaluating each clause's condition left-to-right; the first true
+  clause yields its result; a trailing non-clause element is the
+  default. Lazy in the obvious places (a clause result is forced only
+  when its condition holds), exactly as the old `cond`.
+- `__CLAUSE` — the clause builder, surfaced as the operator `=>` with
+  its Unicode twin `⇒`: `(c => r): __CLAUSE(c, r)` and
+  `(c ⇒ r): __CLAUSE(c, r)`. A clause is then the intrinsic node
+  `App(__CLAUSE, [c, r])`. Both spellings cook to the same intrinsic, so
+  the surface glyph is invisible to the checker.
+
+`cond` keeps its name — the same concept (Lisp/Clojure `cond`: multi-way,
+first-match-wins), better expressed — bound `cond: __COND`. There is no
+deprecated alias for the old list-of-pairs form.
+
+**Surface syntax.** Clauses are `c => r`; a bare trailing element is the
+default. The clause list is a literal or `‖`-built:
+
+```
+classify(n): cond[n < 0 => :negative, n > 100 => :huge, :normal]
+classify(n): cond(n < 0 => :negative ‖ n > 100 => :huge ‖ [:normal])
+```
+
+`cond[…]` is juxtaposed call syntax — a function directly followed by a
+self-delimiting `[…]` needs no parens; `cond(…)` parens are needed only
+when the argument is a bare expression (the `‖`-built form). Operator
+fixity: `=>`/`⇒` bind below catenation (a clause result may be a
+catenation such as `xs head`) and above `‖` (so each `c => r` groups
+before being consed).
+
+**Type-checking.** `__COND` is an intrinsic node → recognised by
+Mechanism 1 (§A5.3), structurally, no name involved. On a recognised
+`__COND` the checker inspects the clause-list argument:
+
+- It is **statically readable** when it is a literal `List` node, or a
+  `__CONS` spine ending in one (the checker flattens a `__CONS` spine as
+  it flattens an `App` spine).
+- The checker patterns each element: `App(__CLAUSE, [cᵢ, rᵢ])` is clause
+  *i*; a trailing non-`__CLAUSE` element is the default.
+- Per-row narrowing, carrying an accumulated negative-fact set `acc`
+  (initially empty): synthesise `rᵢ` under `positive(cᵢ) ⊓ acc`, then
+  `acc := acc ⊓ negative(cᵢ)`; synthesise the default under `acc`.
+- Result type: the union (§6.1) of every `rᵢ` and the default.
+
+All clauses and the default sit in the *one* `cond` expression, hence in
+one scope, so the conditions can narrow the results (cf. §A5.6). When
+the argument is **not** statically readable (a clause list computed at
+runtime) the checker cannot pattern it: `__COND` is typed generically
+with no narrowing — graceful, the intrinsic still runs correctly, only
+static narrowing is forgone.
+
+This is consistent with the whole structural-recognition design: `cond`
+joins `if`/`and`/`or` as a recognised intrinsic, narrowing flows through
+it for *user* code as well as the prelude, and the §A5.3 recursion-guard
+problem disappears — there is no longer a `foldr` to see through.
+
+**`if` is retained.** `__COND` strictly generalises `__IF`
+(`if(c, t, e)` ≡ `cond[c => t, e]`), but `__IF` is kept as the fast
+path: a direct ternary that allocates no list and destructures nothing.
+`__IF` stays the primitive the prelude and desugarer emit for two-way
+branching; `__COND` is the general multi-way form.
+
+**Migration.** Changing `cond`'s clause form breaks its ~handful of call
+sites (the prelude's own `cond` uses, plus any in the harness); each is
+migrated to the new clause syntax as part of the A5 work. This
+*replaces* the earlier plan to rewrite the partial-function `cond` sites
+as explicit `if`-nests — they simply become new-form `cond[…]` and
+narrow as recognised intrinsics (§A6.7).
 
 ### A5.8 `and` / `or` as standalone calls
 
@@ -454,11 +531,12 @@ narrowed to `NonEmpty` by the left conjunct.
 ### A5.10 Limitations (documented, not bugs)
 
 - Only bare variables narrow — not `.field` paths or call results.
-- Narrowing reaches a brancher only when it can be classified
-  structurally (§A5.3): the `BranchShape` requires the condition and
-  branch slots to be the function's own parameters. A brancher
-  assembled by higher-order composition, or one whose branch structure
-  is data-driven (`cond`, §A5.7), gets no shape and does not narrow.
+- Narrowing reaches a brancher only when it is recognised structurally
+  (§A5.3): a raw branch intrinsic, or a binding with a `BranchShape`. A
+  brancher assembled by higher-order composition gets no shape and does
+  not narrow. `cond` *is* recognised (§A5.7), but narrows only when its
+  clause list is statically readable — a runtime-computed clause list is
+  opaque.
 - A partially-applied brancher stored in a binding is opaque (§A5.6):
   completing it elsewhere does not narrow. Sound, and the lost narrowing
   is vacuous — the stored partial application splits the condition from
@@ -647,9 +725,11 @@ resolve one of three ways:
    - nested `if(l nil?, [], if(l head p?, …))` — outer guard narrows `l`
      for the whole else branch including the inner condition
      (`drop-while`, `group-consecutive-by`). ✓
-   - `cond([[l nil?, panic(…)], …])` — `cond` is **not** recognised
-     (§A5.7); these sites are **rewritten** as explicit `nil?`-guarded
-     `if`. Enumerate them here and rewrite each as part of the A6 work.
+   - `cond[l nil? => panic(…), …]` — `cond` is the recognised `__COND`
+     intrinsic (§A5.7); the per-clause narrowing (accumulated negatives)
+     narrows `l` to `NonEmpty` in later clauses. These sites narrow
+     as-is once migrated to the new clause syntax — no rewrite to
+     explicit `if` is needed. ✓
 3. **Genuinely unguarded** — the audit *will* find a few (e.g. a
    `transpose`-style `aux(rs): if(rs head nil?, …)` where `rs head` sits
    in the condition with no guard on `rs`). Each such site is fixed
@@ -705,14 +785,19 @@ Three PRs, in order:
 
 1. **A4** — literal types + §6.1 union smart-constructor. Self-contained;
    no dependency on A5/A6.
-2. **A5** — flow narrowing (§6.2 subtraction included). With the chosen
-   "Core + prelude guards" scope, A5 uses only type predicates and
-   `nil?`/`non-nil?` — it does **not** depend on A4. (A4 becomes a hard
-   dependency only if equality-against-literal narrowing is added later.)
-   Note: A5's `nil?` table entry references `NonEmpty`; either land the
-   `NonEmpty` variant (a few lines of types.rs) first, or gate the `nil?`
-   row until A6. Cleanest: introduce the bare `Type::NonEmpty` variant in
-   A5 and add its subtyping/construction/annotations in A6.
+2. **A5** — flow narrowing (§6.2 subtraction included) **and the `cond`
+   rework** (§A5.7). With the chosen "Core + prelude guards" scope, the
+   narrowing itself uses only type predicates and `nil?`/`non-nil?` — it
+   does **not** depend on A4. (A4 becomes a hard dependency only if
+   equality-against-literal narrowing is added later.) Note: A5's `nil?`
+   handling references `NonEmpty`; either land the `NonEmpty` variant (a
+   few lines of types.rs) first, or gate the `nil?` rule until A6.
+   Cleanest: introduce the bare `Type::NonEmpty` variant in A5 and add
+   its subtyping/construction/annotations in A6. A5 is the broadest of
+   the three PRs — beyond the checker it adds the `__COND`/`__CLAUSE`
+   intrinsics (VM), the `=>`/`⇒` operators and `cond: __COND` (prelude),
+   and migrates existing `cond` call sites. Consider splitting the
+   `cond` rework into its own commit within the A5 PR.
 3. **A6** — `NonEmpty` subtyping, construction, prelude annotations, and
    the blast-radius audit. Depends on A5.
 
@@ -734,6 +819,14 @@ raw `__IF`/`__AND`/`__OR` intrinsic recognition; **a user-defined
 stored `if` does *not* narrow and is sound; narrowing of `any`. Unit
 tests for `BranchShape` classification (alias, wrapper, recursion guard,
 arity mismatch), `analyse_condition`, and `subtract`.
+
+**A5 — `cond` rework**: `cond[…]` and `cond(…)` parse and evaluate
+correctly; `=>` and `⇒` both build `__CLAUSE`; runtime semantics match
+the old `cond` (first-true-wins, lazy results); harness: per-clause
+narrowing with accumulated negatives (a later clause sees earlier
+conditions negated), narrowing through both a literal and a `‖`-built
+clause list, and a runtime-computed clause list yielding no narrowing
+(graceful). Confirm migrated prelude `cond` sites still behave.
 
 **A6** — harness: `head([])` warns; `head([1])` and `head([1,2,3])` do
 not; `head` after a `nil?`/`then`/`cond` guard does not; `cons` result is
@@ -773,21 +866,26 @@ arms.
   are the point. A5's PR carries the same zero-new-warning triage gate
   as A6 (prelude + harness).
 - **Brancher recognition is structural, not nominal** (§A5.3, §A5.6):
-  the checker recognises the raw `__IF`/`__AND`/`__OR` intrinsics, and
-  classifies each binding once into an optional `BranchShape` (alias
-  chasing for `if: __IF`; pass-through-wrapper composition for
-  `then(t,f,c): if(c,t,f)`). No name table. This makes a user's `my-if`
-  narrow for free and dissolves the former `then`/`cond` provenance
-  question — there is no name to spoof. `cond` (a recursive `foldr`)
-  gets no shape and is engineered out of the prelude's narrowing-
-  critical sites (§A5.7).
+  the checker recognises the raw `__IF`/`__AND`/`__OR`/`__COND`
+  intrinsics, and classifies each binding once into an optional
+  `BranchShape` (alias chasing for `if: __IF`, `cond: __COND`;
+  pass-through-wrapper composition for `then(t,f,c): if(c,t,f)`). No name
+  table. This makes a user's `my-if` narrow for free and dissolves the
+  former `then`/`cond` provenance question — there is no name to spoof.
+- **`cond` reworked** (§A5.7): the old `foldr`-based `cond` — clumsy
+  (`cond([[c,r],…], d)`) and opaque to the checker — is replaced by a
+  recognised intrinsic `__COND` with a clean clause syntax
+  (`cond[c => r, …, d]`, `=>`/`⇒` → `__CLAUSE`). It costs two intrinsics
+  and two operators, no new grammar syntax. `cond` narrows like any
+  recognised brancher; `if`/`__IF` is retained as the two-way fast path.
+  This is an explicit goal of the A5 work.
 
 ### Still open
 
 None. The design questions raised in review are resolved. Two values
 are left to the implementation as audits, not design choices: the
-`LIST_TUPLE_CAP` constant (§A6.3) and the exact set of partial-function
-`cond` sites to rewrite (§A6.7).
+`LIST_TUPLE_CAP` constant (§A6.3) and the exact set of `cond` call sites
+to migrate to the new clause syntax (§A5.7, §A6.7).
 
 ## 10. File-by-file change summary
 
@@ -797,6 +895,8 @@ are left to the implementation as audits, not design choices: the
 | `subtype.rs` | literal `<:` + consistency arms | — | `NonEmpty` `<:` + consistency arms |
 | `unify.rs` | literal unify arms | — | `NonEmpty` unify arm |
 | `parse.rs` | literal-string token + production; grammar comment | — | `NonEmpty([T])` token + production |
-| `check.rs` | `synthesise_primitive`; route unions through `Type::union` | `Checker.narrowing` field; spine flattening; `BranchShape` classification (memoised); `recognise_branch`, `synthesise_branch`, `analyse_condition`, `subtract`; narrowing-aware `Var` synthesis | list-literal arm — drop the 2–4 cutoff, synthesise `Tuple` up to `LIST_TUPLE_CAP` then `NonEmpty`; `nil?` predicate handling |
-| `lib/prelude.eu` | — | — | annotate `head`/`tail`/`cons`/`‖`/…; blast-radius fixes |
-| `tests/harness/typecheck/` | literal tests | narrowing tests | `NonEmpty` tests |
+| `check.rs` | `synthesise_primitive`; route unions through `Type::union` | `Checker.narrowing` field; spine flattening; `BranchShape` classification (memoised); `recognise_branch`, `synthesise_branch`, `analyse_condition`, `subtract`; narrowing-aware `Var` synthesis; recognise `__COND` and pattern its clause-list argument (literal `List` / `__CONS` spine) | list-literal arm — drop the 2–4 cutoff, synthesise `Tuple` up to `LIST_TUPLE_CAP` then `NonEmpty`; `nil?` predicate handling |
+| `src/eval/` (intrinsics + STG) | — | `__COND` and `__CLAUSE` intrinsics — runtime semantics + STG compilation | — |
+| `src/syntax/` (lexer/grammar) | — | tokenise the `=>`/`⇒` operator glyphs (if not already lexed generically) | — |
+| `lib/prelude.eu` | — | `cond: __COND`; `=>`/`⇒` operators (→ `__CLAUSE`) with fixity; migrate existing `cond` call sites to the clause form | annotate `head`/`tail`/`cons`/`‖`/…; blast-radius fixes |
+| `tests/harness/typecheck/` | literal tests | narrowing + `cond` rework tests | `NonEmpty` tests |
