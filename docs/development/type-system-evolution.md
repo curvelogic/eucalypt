@@ -999,35 +999,37 @@ short-circuiting `||` / `&&`. There is no single syntactic node to
 hang narrowing on.
 
 The consequence: narrowing cannot be a general mechanism keyed on
-syntax. It must be a *special case in `synthesise_app`* that fires
-when the callee resolves to one of a known, finite set of branch
-combinators. For each, the checker needs a small descriptor: which
-argument is the condition, which are the branches, and (for `then`)
-that the condition arrives by catenation rather than as the first
-written argument. So:
+syntax. It is a *special case in `synthesise_app`* that fires when the
+callee is a recognised brancher. The detailed design — settled in
+[literal-types-and-narrowing-spec.md](./literal-types-and-narrowing-spec.md)
+— makes recognition **structural**, not a table of prelude names:
 
-- It is a fixed table — `if`, `then`, `cond`, `||`, `&&`, perhaps
-  `when` / `unless` — not an open mechanism. New branch forms need a
-  table entry.
-- It is *defeated by rebinding* — if a user shadows `if` with their
-  own definition the checker should detect the callee is no longer
-  the prelude `if` and simply not narrow (sound: it just misses the
-  narrowing, never narrows wrongly).
-- The narrowed type must be threaded into the synthesis of the
-  branch sub-expressions specifically, since they are not otherwise
-  scoped.
+- The branch *intrinsics* `__IF`/`__AND`/`__OR`/`__COND` are recognised
+  as intrinsic nodes — unforgeable.
+- Wrapper functions — `then`, and a user's own `my-if` — are recognised
+  by a once-per-binding, memoised structural classification of the body
+  (`then(t,f,c): if(c,t,f)` is a brancher because its body is one, with
+  its parameters in the slots). No name table; a user-defined brancher
+  narrows for free.
+- Because recognition keys off intrinsics and definition shape, there
+  is no name to spoof: a rebinding that keeps the shape still narrows,
+  one that changes it simply stops. The earlier "defeated by rebinding"
+  worry dissolves.
+- The narrowed type is threaded into the branch sub-expressions via a
+  parallel narrowing stack — the de Bruijn `scope_stack` must not be
+  disturbed.
 
-None of this is hard, but it is genuinely a *complication* rather
-than a clean rule — flow narrowing in eucalypt is "recognise these
-prelude functions", not "analyse the `if` construct". Worth being
-honest about up front. It also bounds the feature: narrowing only
-ever works through the recognised combinators; an exotic
-user-defined brancher gets no narrowing.
+This is cleaner than the "fixed table of prelude names" this section
+first assumed: it bottoms out on the intrinsics, so any wrapper works
+structurally. Narrowing still only reaches branchers the checker can
+classify; one assembled by higher-order composition gets none. The old
+`foldr`-based `cond` is itself reworked into the `__COND` intrinsic as
+part of this — see the spec §A5.7.
 
-**Cost.** Small-to-medium. The narrowing logic is small; the
-combinator-recognition table and its integration into `synthesise_app`
-are the fiddly part. Needs literal types (H16) and a richer union
-representation. Big perceived improvement.
+**Cost.** Small-to-medium. The narrowing logic is small; the structural
+brancher classifier and its integration into `synthesise_app` are the
+fiddly part. Needs a richer union representation. Big perceived
+improvement.
 
 **Prior art.** TypeScript control-flow analysis, Flow type
 refinements, Ceylon union/intersection narrowing, Crystal's compiler,
@@ -1059,11 +1061,14 @@ This combines with H15 to give exhaustive-case awareness:
 
 ```
 ` { type: ":active | :pending | :failed -> string" }
-describe(s): cond([[s = :active, "go"],
-                   [s = :pending, "wait"]],
-                  "stop")
+describe(s): cond[s = :active => "go",
+                  s = :pending => "wait",
+                  "stop"]
 # warning: no branch for :failed; default catches it but reader may not realise
 ```
+
+(`cond` here is the reworked clause form — see the literal-types spec
+§A5.7.)
 
 And with H4a to give precise lookup results.
 
