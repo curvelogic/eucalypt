@@ -118,30 +118,34 @@ and `monad()` their real polymorphic types, so a desugared monadic
 block's `bind` chain type-checks **directly** — a wrong binding fails
 because its type does not unify, with no `__type_hint` needed.
 
-### B8.2 The monad namespaces — what actually exists
+### B8.2 The monad namespaces
 
-A codebase check (2026-05-19) corrects the namespace list. The prelude
-defines **`io`, `random`, `for`, `let`** monad namespaces — there is
-**no `state` monad** (an earlier draft listed one). Each is a `* -> *`
-monad:
+The monad namespaces are **`io`, `for`, `random`, `let`** (in
+`lib/prelude.eu`) and **`state`** (in `lib/state.eu` — a separate
+library, imported on demand, not the auto-loaded prelude). All five are
+`* -> *` monads:
 
 ```
-io     — Con("IO"),       IO actions
-for    — Con("List"),     the list monad ([a])
-random — Con("Random"),   a new opaque * -> * constructor
+io     — Con("IO"),     IO actions
+for    — Con("List"),   the list monad ([a])
+random — Con("Random"), a new opaque * -> * constructor
 let    — the identity monad (m a ≡ a; bind(m,f) = f(m))
+state  — Con("State"),  a state action  s -> {value: a, state: s}
 ```
 
-Crucially, `random`, `for` and `let` are each defined **via `monad()`**
-in the prelude (`for: monad({bind(m,f): m mapcat(f), return(v): [v]})`,
-`let: monad({…})`, `random: monad{…}`). So once `monad()` carries its
-HKT signature (§B8.3), those three namespaces *inherit* typed
-combinators with no separate annotation. B8's hand-written annotation
-work is therefore essentially **`monad()` itself** plus the *primitive*
-`bind`/`return` each namespace passes to it (and `io`, if `io` is not
-itself built via `monad()` — confirm during implementation). `Random`
-is a new opaque `* -> *` `Con`; `let`'s constructor is the identity
-(`m a` ≡ `a`).
+Crucially, **`for`, `random`, `let` and `state` are each defined via
+`monad()`** (`for: monad({bind(m,f): m mapcat(f), return(v): [v]})`;
+`state: monad{bind: state-bind, return: state-ret}` in `state.eu`;
+etc.). So once `monad()` carries its HKT signature (§B8.3) those four
+namespaces *inherit* typed combinators with no separate annotation.
+B8's hand-written annotation work is therefore essentially **`monad()`
+itself** plus the *primitive* `bind`/`return` each namespace passes to
+it — `io`'s (if `io` is not itself built via `monad()` — confirm during
+implementation), and `state.eu`'s `state-bind`/`state-ret`. `Random` is
+a new opaque `* -> *` `Con`; `let`'s constructor is the identity
+(`m a` ≡ `a`); `State` is `* -> *` over the value type. Note `state.eu`
+*already* carries a `!`-asserted `type:` annotation on `state` — B8
+should reconcile its HKT signature with that.
 
 ### B8.3 `monad()`
 
@@ -154,7 +158,7 @@ own `a`, `b` (so each combinator field is a `Type::Forall` — B1.3)
 while sharing `m`. B1 supplies every piece — `Con`, `App`, `Forall`,
 kinds; B8 simply writes the annotation. The result is that a user monad
 built with `monad()` *inherits* correct types for all derived
-combinators — and so do the prelude's own `for`/`let`/`random`.
+combinators — and so do `for`/`let`/`random`/`state`.
 
 Note the monad `then` (an `m`-sequencing combinator, `monad()`'s
 output) is distinct from the top-level branch `then` of A5 — different
@@ -179,7 +183,8 @@ once B8 is proven; A9/A10 need no rework for B8.
 ### B8.5 Scope
 
 B8 **depends on B1** and is otherwise small — it is annotation work plus
-the `Con("Random")` kind-table entry. Its acceptance is
+the `Con("Random")` and `Con("State")` kind-table entries (`state` lives
+in `lib/state.eu`, so B8 touches that file too). Its acceptance is
 that a monadic block (`{ :for x: [1,2,3], … }`) type-checks via direct
 unification and a wrong binding (`{ :for x: 42 }`) warns without the
 hint mechanism.
@@ -202,7 +207,7 @@ slips, B2 still ships; B8 waits for B1.
   existing union-overload annotation still works.
 - **B8** — harness: a `{ :for x: […] }` block checks via direct
   unification; `{ :for x: 42 }` warns; a user monad from `monad()` gets
-  correct derived-combinator types; `io`/`for`/`let`/`random` chains
+  correct derived-combinator types; `io`/`for`/`let`/`random`/`state` chains
   check. Confirm A9's existing acceptance tests still pass (hints
   redundant, not wrong).
 - Full `cargo test` green; `eu check lib/prelude.eu` clean; clippy clean.
@@ -215,4 +220,5 @@ slips, B2 still ships; B8 waits for B1.
 | `parse.rs` | constraint-list prefix before `=>` | — |
 | `check.rs` | constraint discharge / propagation at instantiation; overload enumeration | — |
 | `lib/prelude.eu` | retype `min`, `max`, comparison-generic functions with constraints | HKT annotation for `monad()` (and `io`'s primitive `bind`/`return`); `for`/`let`/`random` inherit via `monad()` |
+| `lib/state.eu` | — | reconcile the existing `state` annotation with the HKT `monad()` signature (`state` inherits via `monad()`) |
 | `tests/harness/typecheck/` | constraint tests | monad-namespace / `monad()` tests |

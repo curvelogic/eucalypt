@@ -366,12 +366,12 @@ check); LSP re-check latency drops measurably.
 ### TS-B8 — Type the monad namespaces with HKT
 
 Apply HKT (TS-B1) to give the monad namespaces (`io`, `for`, `random`,
-`let` — there is no `state` monad) and the `monad()` output their
-proper polymorphic types, so the desugared `bind` chains type-check
-directly (superseding the TS-A9 hint mechanism for *checking* — the
-`monad:` field lives on for desugaring and tooling). `for`/`let`/
-`random` are built via `monad()`, so they inherit once `monad()` is
-typed.
+`let` in the prelude; `state` in `lib/state.eu`) and the `monad()`
+output their proper polymorphic types, so the desugared `bind` chains
+type-check directly (superseding the TS-A9 hint mechanism for
+*checking* — the `monad:` field lives on for desugaring and tooling).
+`for`/`let`/`random`/`state` are built via `monad()`, so they inherit
+once `monad()` is typed.
 
 **Scope**: HKT signatures for the monad namespaces and `monad()`
 derived combinators; verify monadic blocks check without `__type_hint`

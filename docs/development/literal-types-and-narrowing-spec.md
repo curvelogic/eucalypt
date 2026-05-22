@@ -36,8 +36,8 @@ Two scoping questions were settled before writing this spec:
    **reworked** into a recognised intrinsic `__COND` with a clean clause
    syntax — narrowing flows through it like any other recognised
    brancher (§A5.7). *Not* in scope for 6.1: equality-against-literal
-   narrowing (`x = :active`), `has(:k, …)`, `when` (`unless` does not
-   exist in the prelude), and `.field`-path narrowing.
+   narrowing (`x = :active`), `has(:k, …)`, `when` (the predicate-applied
+   condition shape), and `.field`-path narrowing.
 
 2. **Partial list functions (A6)** — *annotate now*. `head`, `tail` and
    the other partial list functions are retyped with `NonEmpty` in
@@ -211,8 +211,8 @@ tested variable's type within each branch:
 
 ```
 x : number | string | null
-if(x number?, A,      # in A:  x : number
-              B)      # in B:  x : string | null
+if(x null?, A,        # in A:  x : null
+            B)        # in B:  x : number | string
 ```
 
 Narrowing is **not** a syntactic rule — `if`/`then` are ordinary
@@ -382,12 +382,14 @@ Predicates are recognised **structurally** too, consistent with §A5.3 —
 no predicate name table. The type predicates `number?`/`string?`/
 `symbol?`/`bool?`/`list?`/`block?` resolve to their underlying test
 intrinsics (`__ISNUMBER`, `__ISSTRING`, …, verified present in the
-prelude); `nil?`/`non-nil?` are recognised as an equality test against
-the empty-list literal `[]` (`nil?` is defined `nil?: = []` in the
-prelude). **There is no `null?` predicate** — null-discrimination is
-the postfix `✓` not-null operator (prelude: "`x✓` — `true` if `x` is
-not null"), handled by the dedicated `x✓` row above. The implementer
-confirms the intrinsic backing each predicate.
+prelude). `nil?` (`= []`) and `null?` are recognised as an equality
+test against a literal — `nil?` against the empty-list literal `[]`,
+`null?` against `null` — the same structural shape (`__EQ` against a
+literal). **`null?` does not exist in the prelude today**; A5 adds it,
+`null?: = null` (mirroring `nil?: = []`) — a one-line prelude addition.
+The postfix `✓` not-null operator is the existing form and is also
+recognised (the `x✓` row above); `null?` and `x✓` are duals. The
+implementer confirms the intrinsic backing each predicate.
 
 ### A5.6 Recognition is structural — no name matching
 
@@ -827,11 +829,17 @@ literal-string annotation accepted/rejected, union absorption display.
 
 **A5** — harness: positive and negative narrowing through `if` and
 `then`; `∧` fact-threading and `∨` negative facts; nested narrowing;
-raw `__IF`/`__AND`/`__OR` intrinsic recognition; **a user-defined
-`my-if` narrows** (structural classification); a partially-applied
-stored `if` does *not* narrow and is sound; narrowing of `any`. Unit
-tests for `BranchShape` classification (alias, wrapper, recursion guard,
-arity mismatch), `analyse_condition`, and `subtract`.
+raw `__IF`/`__AND`/`__OR` intrinsic recognition; **user-defined
+branchers narrow** by structural classification — test both a
+straight wrapper `my-if(c,t,e): if(c,t,e)` *and* a
+polarity-swapping one `unless(c,a,b): if(c,b,a)` (the latter confirms
+the classifier *composes* the inner `BranchShape` — mapping `if`'s
+positive slot to `unless`'s `b` — rather than copying it; `unless` is
+not a prelude function, it is a deliberate test fixture); a
+partially-applied stored `if` does *not* narrow and is sound; narrowing
+of `any`. Unit tests for `BranchShape` classification (alias, wrapper,
+polarity-swap, recursion guard, arity mismatch), `analyse_condition`,
+and `subtract`.
 
 **A5 — `cond` rework**: `cond[…]` and `cond(…)` parse and evaluate
 correctly; `=>` and `⇒` both build `__CLAUSE`; runtime semantics match
