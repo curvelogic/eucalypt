@@ -80,8 +80,9 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
             Ok(())
         }
 
-        // Literal symbol ↔ Symbol: widen to symbol (succeed, no binding).
+        // Literal ↔ base widening: succeed with no binding.
         (Type::LiteralSymbol(_), Type::Symbol) | (Type::Symbol, Type::LiteralSymbol(_)) => Ok(()),
+        (Type::LiteralString(_), Type::String) | (Type::String, Type::LiteralString(_)) => Ok(()),
 
         // Structural: function types — contravariant in param, covariant in result.
         (Type::Function(a1, b1), Type::Function(a2, b2)) => {

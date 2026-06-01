@@ -13,6 +13,7 @@
 //!              | 'datetime' | 'any' | 'top' | 'never'
 //!              | 'set' | 'vec' | 'array'
 //!              | LOWER_IDENT                        # type variable
+//!              | '"' STRING '"'                     # literal string type
 //!              | '[' type ']'                       # list
 //!              | 'IO' '(' type ')'
 //!              | 'Lens' '(' type ',' type ')'
@@ -100,6 +101,8 @@ enum Token {
     Colon,    // :
     Comma,    // ,
     DotDot,   // ..
+    // Literal string value (e.g. `"read"` in type position)
+    StringLit(String),
     // End of input
     Eof,
 }
@@ -203,6 +206,39 @@ impl<'a> Lexer<'a> {
             '→' => {
                 self.pos += '→'.len_utf8();
                 Ok((Token::Arrow, start))
+            }
+            '"' => {
+                // Lex a double-quoted string literal for use in type position.
+                self.pos += 1; // consume opening '"'
+                let mut s = String::new();
+                loop {
+                    if self.pos >= self.input.len() {
+                        return Err(ParseError::new(start, "unterminated string literal"));
+                    }
+                    let ch = self.input[self.pos..].chars().next().unwrap();
+                    self.pos += ch.len_utf8();
+                    match ch {
+                        '"' => break, // closing quote
+                        '\\' => {
+                            // Escape: \\ → \, \" → "
+                            if self.pos >= self.input.len() {
+                                return Err(ParseError::new(start, "unterminated escape"));
+                            }
+                            let esc = self.input[self.pos..].chars().next().unwrap();
+                            self.pos += esc.len_utf8();
+                            match esc {
+                                '\\' => s.push('\\'),
+                                '"' => s.push('"'),
+                                other => {
+                                    s.push('\\');
+                                    s.push(other);
+                                }
+                            }
+                        }
+                        other => s.push(other),
+                    }
+                }
+                Ok((Token::StringLit(s), start))
             }
             c if c.is_ascii_alphabetic() => {
                 // Consume identifier
@@ -422,6 +458,10 @@ impl<'a> Parser<'a> {
                 let b = self.parse_union()?;
                 self.expect(&Token::RParen)?;
                 Ok(Type::Traversal(Box::new(a), Box::new(b)))
+            }
+            Token::StringLit(s) => {
+                // Literal string type: `"some value"` in type position.
+                Ok(Type::LiteralString(s))
             }
             Token::Colon => {
                 // Literal symbol type: `:ident`

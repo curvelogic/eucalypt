@@ -1895,3 +1895,28 @@ pub fn test_typecheck_032_nonrecursive_alias_flat() {
 pub fn test_typecheck_033_json_dict_no_warning() {
     run_typecheck_test("033_json_dict_no_warning.eu");
 }
+
+#[test]
+pub fn test_typecheck_034_literal_string_synthesis() {
+    run_typecheck_test("034_literal_string_synthesis.eu");
+}
+
+#[test]
+pub fn test_typecheck_035_literal_string_dsl() {
+    run_typecheck_test("035_literal_string_dsl.eu");
+}
+
+#[test]
+pub fn test_typecheck_036_literal_string_mismatch() {
+    run_typecheck_test("036_literal_string_mismatch.eu");
+}
+
+#[test]
+pub fn test_typecheck_037_union_absorbs_literal_string() {
+    run_typecheck_test("037_union_absorbs_literal_string.eu");
+}
+
+#[test]
+pub fn test_typecheck_038_literal_string_annotation_widens() {
+    run_typecheck_test("038_literal_string_annotation_widens.eu");
+}
