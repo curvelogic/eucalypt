@@ -731,19 +731,9 @@ impl Checker {
                                 Type::List(Box::new(first.clone()))
                             } else {
                                 // Heterogeneous tuple → list of union
-                                let mut seen = std::collections::BTreeSet::new();
-                                let mut unique = Vec::new();
-                                for e in elems {
-                                    let s = format!("{e}");
-                                    if seen.insert(s) {
-                                        unique.push(e.clone());
-                                    }
-                                }
-                                let elem_type = if unique.len() == 1 {
-                                    unique.into_iter().next().unwrap()
-                                } else {
-                                    Type::Union(unique)
-                                };
+                                // Type::union deduplicates and normalises
+                                // (absorbs LiteralString into String, etc.)
+                                let elem_type = Type::union(elems.iter().cloned());
                                 Type::List(Box::new(elem_type))
                             }
                         }
@@ -1959,6 +1949,28 @@ mod tests {
         let mut c = Checker::new();
         let expr = meta_with_hint(num_lit(1), "number");
         assert_eq!(c.synthesise(&expr), Type::Number);
+    }
+
+    /// Regression: synthesise_meta heterogeneous-tuple branch must route
+    /// through Type::union (not Type::Union directly) so that a literal
+    /// string mixed with the base String type is absorbed to just `string`.
+    ///
+    /// Before the fix the element type was `LiteralString("a") | string`
+    /// (un-normalised).  After the fix Type::union absorbs the literal into
+    /// its base type, yielding `string`.
+    #[test]
+    fn meta_type_hint_heterogeneous_tuple_normalises_union() {
+        let mut c = Checker::new();
+        // Build [str_lit("a"), x_annotated_string] where the second element
+        // is annotated `type: "string"` so it synthesises as base String.
+        // The resulting list has tuple type (LiteralString("a"), String).
+        let elem_a = str_lit("a");
+        let elem_b = meta_with_type(str_lit("b"), "string"); // synthesises String
+        let lst = list(vec![elem_a, elem_b]);
+        // Wrap in __type_hint to trigger the is_hint code path.
+        let expr = meta_with_hint(lst, "[string]");
+        // Must be List(String), not List(LiteralString("a") | String).
+        assert_eq!(c.synthesise(&expr), Type::List(Box::new(Type::String)));
     }
 
     #[test]
