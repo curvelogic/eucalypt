@@ -1,7 +1,6 @@
 # A3: A function annotated Json → string produces no type warning
 # when given a plain number (number <: Json).
-` { type-def: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
-unit: {}
+{ types: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
 
 ` { type: "Json → string" }
 describe: (_ str.from)
