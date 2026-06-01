@@ -1543,6 +1543,11 @@ pub fn test_error_141() {
 }
 
 #[test]
+pub fn test_error_142() {
+    run_error_test(&error_opts("142_render_unknown_format.eu"));
+}
+
+#[test]
 pub fn test_error_135() {
     run_error_test(&error_opts("135_head_empty_list.eu"));
 }
