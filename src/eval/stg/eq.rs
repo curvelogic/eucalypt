@@ -47,7 +47,13 @@ fn unary_branch(tag: Tag) -> (Tag, Rc<StgSyn>) {
                 tag, // [y-content] [x-content] [x y]
                 Eq.global(lref(1), lref(0)),
             )],
-            f(),
+            // native y fallback — env: [y_native] [x-content] [x] [y]
+            // Force x-content then compare natively.
+            force(
+                local(1), // x-content
+                // env: [x_native] [y_native] [x-content] [x] [y]
+                app_bif(Eq.index() as u8, vec![lref(0), lref(1)]),
+            ),
         ),
     )
 }
@@ -191,10 +197,52 @@ impl StgIntrinsic for Eq {
                         ),
                     ),
                 ],
-                // native and unknown tags
-                force(
-                    local(2),                                            // [x-eval] [x y]
-                    app_bif(self.index() as u8, vec![lref(0), lref(1)]), // [y-eval] [x-eval] [x y]
+                // native and unknown tags — env: [x-eval] [x] [y]
+                // x is a native atom; unbox y if it is a boxed primitive, then
+                // compare natively via the EQ intrinsic.
+                case(
+                    local(2), // y
+                    vec![
+                        (
+                            DataConstructor::BoxedNumber.tag(),
+                            // [num_field] [x-eval] [x] [y]
+                            force(
+                                local(0), // num_field
+                                // [y-native] [num_field] [x-eval] [x] [y]
+                                app_bif(self.index() as u8, vec![lref(2), lref(0)]),
+                            ),
+                        ),
+                        (
+                            DataConstructor::BoxedString.tag(),
+                            // [str_field] [x-eval] [x] [y]
+                            force(
+                                local(0), // str_field
+                                // [y-native] [str_field] [x-eval] [x] [y]
+                                app_bif(self.index() as u8, vec![lref(2), lref(0)]),
+                            ),
+                        ),
+                        (
+                            DataConstructor::BoxedSymbol.tag(),
+                            // [sym_field] [x-eval] [x] [y]
+                            force(
+                                local(0), // sym_field
+                                // [y-native] [sym_field] [x-eval] [x] [y]
+                                app_bif(self.index() as u8, vec![lref(2), lref(0)]),
+                            ),
+                        ),
+                        (
+                            DataConstructor::BoxedZdt.tag(),
+                            // [zdt_field] [x-eval] [x] [y]
+                            force(
+                                local(0), // zdt_field
+                                // [y-native] [zdt_field] [x-eval] [x] [y]
+                                app_bif(self.index() as u8, vec![lref(2), lref(0)]),
+                            ),
+                        ),
+                    ],
+                    // native y fallback: case puts y-native at local(0)
+                    // [y-native] [x-eval] [x] [y]
+                    app_bif(self.index() as u8, vec![lref(1), lref(0)]),
                 ),
             ),
         )
@@ -207,8 +255,17 @@ impl StgIntrinsic for Eq {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let x = machine.nav(view).resolve_native(&args[0])?;
-        let y = machine.nav(view).resolve_native(&args[1])?;
+        // The wrapper always unboxes before calling the BIF; if a non-native
+        // arg slips through (e.g. a cross-type comparison in the native-x
+        // fallback), it cannot be equal to a primitive — return false.
+        let x = match machine.nav(view).resolve_native(&args[0]) {
+            Ok(v) => v,
+            Err(_) => return machine_return_bool(machine, view, false),
+        };
+        let y = match machine.nav(view).resolve_native(&args[1]) {
+            Ok(v) => v,
+            Err(_) => return machine_return_bool(machine, view, false),
+        };
         let eq = match (x, y) {
             (Native::Num(ref nx), Native::Num(ref ny)) => num_eq(nx, ny),
             (Native::Str(sx), Native::Str(sy)) => str_eq(view, sx, sy),

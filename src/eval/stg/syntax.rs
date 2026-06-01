@@ -501,9 +501,16 @@ pub mod dsl {
         case(scrutinee, vec![], then)
     }
 
-    /// Unbox a number
+    /// Unbox a number, accepting native atoms as a passthrough fallback.
+    /// In the BoxedNumber branch `local(0)` holds the inner field (same as
+    /// before); in the native fallback `local(0)` holds the atom closure —
+    /// callers that use `lref(0)` work identically in both cases.
     pub fn unbox_num(scrutinee: Rc<StgSyn>, then: Rc<StgSyn>) -> Rc<StgSyn> {
-        switch(scrutinee, vec![(DataConstructor::BoxedNumber.tag(), then)])
+        case(
+            scrutinee,
+            vec![(DataConstructor::BoxedNumber.tag(), then.clone())],
+            then,
+        )
     }
 
     /// Unbox a string
@@ -516,7 +523,7 @@ pub mod dsl {
         switch(scrutinee, vec![(DataConstructor::BoxedSymbol.tag(), then)])
     }
 
-    /// Unbox a symbol
+    /// Unbox a datetime
     pub fn unbox_zdt(scrutinee: Rc<StgSyn>, then: Rc<StgSyn>) -> Rc<StgSyn> {
         switch(scrutinee, vec![(DataConstructor::BoxedZdt.tag(), then)])
     }

@@ -25,7 +25,8 @@ use super::{
     },
     syntax::{
         dsl::{
-            atom, box_str, data, force, lambda, let_, local, lref, str, switch, unbox_str, value,
+            atom, box_str, case, data, force, lambda, let_, local, lref, str, switch, unbox_str,
+            value,
         },
         LambdaForm,
     },
@@ -89,7 +90,7 @@ impl StgIntrinsic for Str {
         lambda(
             1,
             let_(
-                vec![value(switch(
+                vec![value(case(
                     local(0),
                     vec![
                         (
@@ -105,6 +106,8 @@ impl StgIntrinsic for Str {
                         (DataConstructor::BoolTrue.tag(), atom(str("true"))),
                         (DataConstructor::Unit.tag(), atom(str("null"))),
                     ],
+                    // native atom fallback — from_closure puts native at local(0)
+                    call::bif::str(lref(0)),
                 ))],
                 data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
             ),
