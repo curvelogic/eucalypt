@@ -32,9 +32,11 @@ review bead first, then raise sub-beads for each fix.
   frames from internal machinery that confuse users
 - **Converting panics to proper errors** — any `panic!` or `.unwrap()`
   in user-reachable code should become an `ExecutionError`
-- **Auditing and REMOVING misleading notes/hints** — prior Clarion
-  work added notes to error messages that are irrelevant or confusing
-  in most real-world cases. Find these and remove them.
+- **Reviewing existing notes/hints case-by-case** — some prior notes
+  are misleading in common cases. If you find a specific note that is
+  genuinely confusing or irrelevant most of the time, propose removing
+  it with justification. Do NOT bulk-remove notes — many are useful.
+  Each removal must be individually justified.
 
 ### What is NOT IN SCOPE (causes regressions — DO NOT DO)
 
