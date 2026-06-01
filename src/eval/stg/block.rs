@@ -1154,77 +1154,15 @@ impl StgIntrinsic for LookupFail {
             },
         };
 
-        // Collect keys from the block. The block arg has been forced by
-        // the wrapper, so it should be a Block cons cell accessible via
-        // resolve.
-        let available_keys = collect_block_keys_from_args(machine, view, &args[1]);
-
-        // Compute suggestions via edit distance
-        let max_distance = (key_name.len() / 2).clamp(2, 4);
-        let suggestions =
-            crate::eval::error::suggest_similar(&key_name, &available_keys, 3, max_distance);
-
         Err(ExecutionError::LookupFailure(
             machine.annotation(),
             key_name,
-            suggestions,
-            available_keys,
         ))
     }
 }
 
 impl CallGlobal2 for LookupFail {}
 
-/// Collect all key names from a block that has been resolved to a closure.
-///
-/// The closure should point to a `Block` cons cell. This is the main
-/// implementation used by both the BIF args path and direct closure path.
-fn collect_block_keys_from_closure(
-    machine: &dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    closure: &SynClosure,
-) -> Vec<String> {
-    let nav = machine.nav(view);
-    let code = view.scoped(closure.code());
-    let blocklist_ref = match &*code {
-        HeapSyn::Cons { tag, args } if *tag == DataConstructor::Block.tag() => match args.get(0) {
-            Some(r) => r.clone(),
-            None => return vec![],
-        },
-        _ => return vec![],
-    };
-
-    let list_closure = match nav.resolve_in_closure(closure, blocklist_ref) {
-        Some(c) => c,
-        None => return vec![],
-    };
-
-    let iter = BlockListIterator {
-        closure: list_closure,
-        nav: &nav,
-        done: false,
-    };
-
-    iter.filter_map(|pair| {
-        let sym_id = pair_key_symbol_id(view, &pair)?;
-        Some(machine.symbol_pool().resolve(sym_id).to_string())
-    })
-    .collect()
-}
-
-/// Collect block keys from a BIF arg ref. Resolves the ref to a closure
-/// first, then delegates to `collect_block_keys_from_closure`.
-fn collect_block_keys_from_args(
-    machine: &dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    block_ref: &Ref,
-) -> Vec<String> {
-    let nav = machine.nav(view);
-    match nav.resolve(block_ref) {
-        Ok(closure) => collect_block_keys_from_closure(machine, view, &closure),
-        Err(_) => vec![],
-    }
-}
 
 /// MERGE(l, r)
 ///

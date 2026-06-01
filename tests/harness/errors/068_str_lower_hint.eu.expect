@@ -1,2 +1,2 @@
 exit: 1
-stderr: "str.to-lower"
+stderr: "key 'lower' not found in block"

@@ -204,177 +204,6 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     }
 }
 
-/// Compute the Levenshtein edit distance between two strings.
-///
-/// This is a simple dynamic programming implementation suitable for
-/// short identifier names in error messages.
-pub fn levenshtein_distance(a: &str, b: &str) -> usize {
-    let a_len = a.len();
-    let b_len = b.len();
-
-    if a_len == 0 {
-        return b_len;
-    }
-    if b_len == 0 {
-        return a_len;
-    }
-
-    // Use a single row with rolling update to save memory
-    let mut prev_row: Vec<usize> = (0..=b_len).collect();
-    let mut curr_row = vec![0; b_len + 1];
-
-    for (i, a_ch) in a.chars().enumerate() {
-        curr_row[0] = i + 1;
-        for (j, b_ch) in b.chars().enumerate() {
-            let cost = if a_ch == b_ch { 0 } else { 1 };
-            curr_row[j + 1] = (prev_row[j] + cost)
-                .min(prev_row[j + 1] + 1)
-                .min(curr_row[j] + 1);
-        }
-        std::mem::swap(&mut prev_row, &mut curr_row);
-    }
-
-    prev_row[b_len]
-}
-
-/// Find similar names from a list of candidates, ranked by edit distance.
-///
-/// Returns up to `max_suggestions` candidates with edit distance at most
-/// `max_distance`. Results are sorted by distance (closest first).
-pub fn suggest_similar(
-    target: &str,
-    candidates: &[String],
-    max_suggestions: usize,
-    max_distance: usize,
-) -> Vec<String> {
-    let mut scored: Vec<(usize, &String)> = candidates
-        .iter()
-        .map(|c| (levenshtein_distance(target, c), c))
-        .filter(|(d, _)| *d > 0 && *d <= max_distance)
-        .collect();
-
-    scored.sort_by_key(|(d, _)| *d);
-    scored
-        .into_iter()
-        .take(max_suggestions)
-        .map(|(_, name)| name.clone())
-        .collect()
-}
-
-/// Format a "did you mean?" hint from a list of suggestions.
-pub fn format_suggestions(suggestions: &[String]) -> Option<String> {
-    if suggestions.is_empty() {
-        return None;
-    }
-    let quoted: Vec<String> = suggestions.iter().map(|s| format!("'{s}'")).collect();
-    Some(format!("similar keys: {}", quoted.join(", ")))
-}
-
-/// Format a lookup failure message, including suggestions or available keys
-fn format_lookup_failure(key: &str, suggestions: &[String], available: &[String]) -> String {
-    let mut msg = format!("key '{key}' not found in block");
-    if let Some(hint) = format_suggestions(suggestions) {
-        msg.push_str(&format!("\n  help: {hint}"));
-    } else if !available.is_empty() {
-        // No close matches — show the full set of available keys (capped at 8)
-        let shown: Vec<String> = available.iter().take(8).map(|s| format!("'{s}'")).collect();
-        let suffix = if available.len() > 8 {
-            format!(" (and {} more)", available.len() - 8)
-        } else {
-            String::new()
-        };
-        msg.push_str(&format!(
-            "\n  help: available keys: {}{}",
-            shown.join(", "),
-            suffix
-        ));
-    }
-    msg
-}
-
-/// Generate contextual notes for lookup failure errors.
-///
-/// Recognises common Python/Ruby string method names used as block keys and
-/// suggests the correct eucalypt equivalents in the `str` namespace.
-fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
-    // Only produce extra notes when there are no edit-distance suggestions,
-    // i.e. the key is genuinely unknown and not a near-miss of an existing key.
-    if !suggestions.is_empty() {
-        return vec![];
-    }
-    match key {
-        "upper" | "toUpper" | "toUpperCase" | "toupper" => {
-            vec!["to convert a string to upper case, use 'str.to-upper', \
-             e.g. 'text str.to-upper'"
-                .to_string()]
-        }
-        "lower" | "toLower" | "toLowerCase" | "tolower" => {
-            vec!["to convert a string to lower case, use 'str.to-lower', \
-             e.g. 'text str.to-lower'"
-                .to_string()]
-        }
-        "replace" | "sub" | "gsub" => vec!["eucalypt has no 'replace' function; \
-             use 'str.matches-of(re, s)' to find matches, or construct a replacement \
-             by splitting and re-joining: 's str.split-on(re) str.join-on(replacement)'"
-            .to_string()],
-        "strip" | "trim" | "rstrip" | "lstrip" => vec!["eucalypt has no 'trim'/'strip' function; \
-             to remove surrounding whitespace use a regex: \
-             'text str.extract(\"^\\\\s*(.*?)\\\\s*$\")'"
-            .to_string()],
-        "startswith" | "starts_with" | "startsWith" | "hasPrefix" => vec![
-            "to test if a string starts with a prefix, use 'str.matches?(re, s)' \
-             with an anchored regex, e.g. 'text str.matches?(\"^prefix\")'"
-                .to_string(),
-        ],
-        "endswith" | "ends_with" | "endsWith" | "hasSuffix" => vec![
-            "to test if a string ends with a suffix, use 'str.matches?(re, s)' \
-             with an anchored regex, e.g. 'text str.matches?(\"suffix$\")'"
-                .to_string(),
-        ],
-        "find" | "index" | "indexOf" | "indexof" => {
-            vec!["eucalypt has no string 'find'/'index' function; \
-             to extract a substring use 'str.extract(re, s)' with a capture group, \
-             e.g. 'text str.extract(\"(pattern)\")'"
-                .to_string()]
-        }
-        "encode" | "decode" => vec!["to encode a string as base64 use 'str.base64-encode', \
-             to decode use 'str.base64-decode'"
-            .to_string()],
-        "format" | "sprintf" | "printf" => vec!["to format a value as a string, use 'str.fmt', \
-             e.g. 'str.fmt(x, \"%.2f\")' for two decimal places"
-            .to_string()],
-        "contains?" | "contains" | "includes?" | "includes" => vec![
-            "to test if a string contains a pattern, use 'str.matches?', \
-             e.g. `text str.matches?(\"pattern\")`"
-                .to_string(),
-            "note: 'str.matches?' uses a regular expression, so special \
-             characters like '.', '+', '*' must be escaped with '\\'"
-                .to_string(),
-        ],
-        "replace-all" | "substitute" => vec!["eucalypt has no 'replace' function; \
-             use 'str.matches-of(re, s)' to find matches, or construct a replacement \
-             by splitting and re-joining: 's str.split-on(re) str.join-on(replacement)'"
-            .to_string()],
-        "substring" | "substr" => vec!["eucalypt has no substring function; \
-             use 'str.extract(re)' with a capturing regex to extract a portion of a string"
-            .to_string()],
-        "reverse" => vec!["eucalypt has no built-in string reverse function; \
-             use 'str.letters' to get individual characters, then 'reverse' the list, \
-             then 'str.join-on(\"\")'"
-            .to_string()],
-        "to-string" | "to_string" | "toString" => vec![
-            "to convert a value to a string, use 'str.of', e.g. `str.of(42)`, \
-             or string interpolation: `\"{42}\"`"
-                .to_string(),
-        ],
-        "pad" | "pad-left" | "pad-right" | "rpad" | "lpad" | "padStart" | "padEnd" => vec![
-            "to pad a string, use 'str.fmt' with a printf width specifier, \
-             e.g. `42 str.fmt(\"%10d\")` for right-padding"
-                .to_string(),
-        ],
-        _ => vec![],
-    }
-}
 
 /// Format a "not a value" error message when a non-value expression is found
 /// where a primitive value was expected.
@@ -607,8 +436,8 @@ pub enum ExecutionError {
     FreeVar(Smid, String),
     #[error("code not valid for execution")]
     InvalidCode(Smid),
-    #[error("{}", format_lookup_failure(.1, .2, .3))]
-    LookupFailure(Smid, String, Vec<String>, Vec<String>),
+    #[error("key '{1}' not found in block")]
+    LookupFailure(Smid, String),
     #[error("{}", format_type_mismatch(.1, .2, .3))]
     TypeMismatch(Smid, Box<IntrinsicType>, Box<IntrinsicType>, Option<String>),
     #[error("unknown intrinsic {1}")]
@@ -766,7 +595,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NotFound(s) => *s,
             ExecutionError::FreeVar(s, _) => *s,
             ExecutionError::InvalidCode(s) => *s,
-            ExecutionError::LookupFailure(s, _, _, _) => *s,
+            ExecutionError::LookupFailure(s, _) => *s,
             ExecutionError::TypeMismatch(s, _, _, _) => *s,
             ExecutionError::UnknownIntrinsic(s, _) => *s,
             ExecutionError::NotCallable(s, _) => *s,
@@ -1049,9 +878,7 @@ impl ExecutionError {
                 ]
             }
             ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name),
-            ExecutionError::LookupFailure(_, key, suggestions, _) => {
-                lookup_failure_notes(key, suggestions)
-            }
+            ExecutionError::LookupFailure(_, _) => vec![],
             ExecutionError::CannotReturnFunToCase(_, expected_tags) => {
                 let expects_bool = expected_tags.contains(&DataConstructor::BoolTrue.tag())
                     || expected_tags.contains(&DataConstructor::BoolFalse.tag());
