@@ -146,16 +146,23 @@ origin: { x: 0, y: 0 }
 | `any`              | gradual/unknown — no type errors       |
 | `[T]`              | list of T                              |
 | `(A, B)`           | tuple                                  |
-| `{k: T, ..}`       | open record (at least k: T)            |
-| `{k: T, ..r}`      | named row variable (extra fields in r) |
-| `{k: T}`           | closed record                          |
-| `block`            | any block                              |
+| `{{k: T, ..}}`     | open record (at least k: T)            |
+| `{{k: T, ..r}}`    | named row variable (extra fields in r) |
+| `{{..r, ..s}}`     | row concatenation (union of r and s)   |
+| `{{k: T}}`         | closed record                          |
+| `block`            | any block (no known shape)             |
+| `Dict(T)`          | homogeneous block — all values type T  |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
 | `a`, `b`           | type variable                          |
 | `IO(T)`            | IO action producing T                  |
 | `Lens(a, b)`       | lens                                   |
 | `Traversal(a, b)`  | traversal                              |
+
+**Important**: record braces (`{`) in type strings trigger eucalypt
+string interpolation. Always escape with `{{` and `}}`:
+`"{{name: string, ..}} -> string"` not `"{name: string, ..} -> string"`.
+Types without braces (`"number -> number"`, `"IO(T)"`) need no escaping.
 
 See [Type Checking](../guide/type-checking.md) for the full guide.
 
