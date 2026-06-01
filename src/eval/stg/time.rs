@@ -128,16 +128,16 @@ impl StgIntrinsic for Zdt {
             sec.as_u64(),
         ) {
             let date = NaiveDate::from_ymd_opt(
-                yy.try_into().expect("year must fit in i32"),
-                mm.try_into().expect("month must fit in u32"),
-                dd.try_into().expect("day must fit in u32"),
+                yy.try_into().ok().ok_or_else(err)?,
+                mm.try_into().ok().ok_or_else(err)?,
+                dd.try_into().ok().ok_or_else(err)?,
             )
             .ok_or_else(err)?;
 
             let time = NaiveTime::from_hms_opt(
-                hours.try_into().expect("hours must fit in u32"),
-                mins.try_into().expect("minutes must fit in u32"),
-                secs.try_into().expect("seconds must fit in u32"),
+                hours.try_into().ok().ok_or_else(err)?,
+                mins.try_into().ok().ok_or_else(err)?,
+                secs.try_into().ok().ok_or_else(err)?,
             )
             .ok_or_else(err)?;
 
