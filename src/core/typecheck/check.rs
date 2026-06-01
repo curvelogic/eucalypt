@@ -1084,7 +1084,7 @@ fn contains_var_named(ty: &Type, name: &str) -> bool {
 fn synthesise_primitive(prim: &Primitive) -> Type {
     match prim {
         Primitive::Num(_) => Type::Number,
-        Primitive::Str(_) => Type::String,
+        Primitive::Str(s) => Type::LiteralString(s.clone()),
         Primitive::Sym(name) => Type::LiteralSymbol(name.clone()),
         Primitive::Bool(_) => Type::Bool,
         Primitive::Null => Type::Null,
@@ -1097,19 +1097,13 @@ fn synthesise_primitive(prim: &Primitive) -> Type {
 /// - All same type → `[T]`
 /// - Mixed types → `[T1 | T2 | … | Tn]` (deduplicated)
 fn synthesise_list_type(types: Vec<Type>) -> Type {
-    let mut seen: Vec<Type> = Vec::new();
-    for ty in types {
-        if is_informative(&ty) && !seen.contains(&ty) {
-            seen.push(ty);
-        }
-    }
-
-    let elem_type = match seen.len() {
-        0 => Type::Any, // Empty list is polymorphic — compatible with any element type
-        1 => seen.into_iter().next().unwrap(),
-        _ => Type::Union(seen),
+    let informative: Vec<Type> = types.into_iter().filter(is_informative).collect();
+    let elem_type = if informative.is_empty() {
+        // Empty list is polymorphic — compatible with any element type.
+        Type::Any
+    } else {
+        Type::union(informative)
     };
-
     Type::List(Box::new(elem_type))
 }
 
@@ -1272,8 +1266,13 @@ mod tests {
 
     #[test]
     fn synthesise_string_literal() {
+        // String literals now synthesise their literal type (LiteralString),
+        // not the base String type — consistent with how symbols work.
         let mut c = Checker::new();
-        assert_eq!(c.synthesise(&str_lit("hello")), Type::String);
+        assert_eq!(
+            c.synthesise(&str_lit("hello")),
+            Type::LiteralString("hello".to_string())
+        );
     }
 
     #[test]
@@ -1308,11 +1307,12 @@ mod tests {
     #[test]
     fn small_list_synthesises_as_tuple() {
         let mut c = Checker::new();
-        // 2-4 element lists synthesise as tuples (more informative)
+        // 2-4 element lists synthesise as tuples (more informative).
+        // String literals now synthesise as LiteralString.
         let l2 = list(vec![num_lit(1), str_lit("hello")]);
         assert_eq!(
             c.synthesise(&l2),
-            Type::Tuple(vec![Type::Number, Type::String])
+            Type::Tuple(vec![Type::Number, Type::LiteralString("hello".to_string())])
         );
         let l3 = list(vec![num_lit(1), num_lit(2), num_lit(3)]);
         assert_eq!(
@@ -1361,7 +1361,8 @@ mod tests {
         let warnings = c.into_warnings();
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].expected.as_deref() == Some("number"));
-        assert!(warnings[0].found.as_deref() == Some("string"));
+        // String literals now synthesise as LiteralString — display as "\"hello\"".
+        assert!(warnings[0].found.as_deref() == Some("\"hello\""));
     }
 
     #[test]
@@ -1441,7 +1442,8 @@ mod tests {
         let warnings = c.into_warnings();
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0].expected.as_deref(), Some("number"));
-        assert_eq!(warnings[0].found.as_deref(), Some("string"));
+        // String literal "oops" synthesises as LiteralString.
+        assert_eq!(warnings[0].found.as_deref(), Some("\"oops\""));
     }
 
     #[test]
@@ -1832,7 +1834,8 @@ mod tests {
                 fields: {
                     let mut m = std::collections::BTreeMap::new();
                     m.insert("age".to_string(), Type::Number);
-                    m.insert("name".to_string(), Type::String);
+                    // String literals synthesise as LiteralString.
+                    m.insert("name".to_string(), Type::LiteralString("Alice".to_string()));
                     m
                 },
                 open: true,

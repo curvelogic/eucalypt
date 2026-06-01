@@ -157,6 +157,10 @@ pub enum Type {
     ///
     /// `LiteralSymbol(s)` is a subtype of `Symbol`.
     LiteralSymbol(String),
+    /// Literal string type: a specific string value (e.g. `"read"`).
+    ///
+    /// `LiteralString(s)` is a subtype of `String`.
+    LiteralString(String),
 
     // ── Variables ────────────────────────────────────────────────────────────
     /// Type variable (lowercase identifier, e.g. `a`, `b`, `result`).
@@ -177,19 +181,54 @@ pub enum Type {
 }
 
 impl Type {
-    /// Construct a `Union` from an iterator, flattening singleton and empty cases.
+    /// Canonical union constructor implementing the §6.1 smart-constructor algorithm.
     ///
-    /// - Empty iterator → `Type::Never` (empty union = bottom type).
-    /// - Single type → that type (no wrapper needed).
-    /// - Multiple types → `Type::Union(types)`.
+    /// Steps (in order):
+    ///
+    /// 1. **Flatten** — splice nested `Union(vs)` into the flat list.
+    /// 2. **Absorb `Any`** — if any member is `Any`, return `Any`.
+    /// 3. **Drop `Never`** — remove all `Never` members.
+    /// 4. **Deduplicate** — drop structurally identical members (preserve order).
+    /// 5. **Absorb literals into bases** — drop `LiteralSymbol(v)` when
+    ///    `Symbol` is present; drop `LiteralString(v)` when `String` is present.
+    /// 6. **Normalise** — empty → `Never`; singleton → unwrap; else `Union`.
     pub fn union(types: impl IntoIterator<Item = Type>) -> Type {
-        // Deduplicate while preserving order.
-        let mut seen: Vec<Type> = Vec::new();
+        // Step 1: flatten nested unions.
+        let mut flat: Vec<Type> = Vec::new();
         for ty in types {
+            match ty {
+                Type::Union(vs) => flat.extend(vs),
+                other => flat.push(other),
+            }
+        }
+
+        // Step 2: absorb Any.
+        if flat.iter().any(|t| matches!(t, Type::Any)) {
+            return Type::Any;
+        }
+
+        // Step 3: drop Never.
+        flat.retain(|t| !matches!(t, Type::Never));
+
+        // Step 4: deduplicate (preserve first-seen order).
+        let mut seen: Vec<Type> = Vec::new();
+        for ty in flat {
             if !seen.contains(&ty) {
                 seen.push(ty);
             }
         }
+
+        // Step 5: absorb literals into their base types.
+        let has_symbol = seen.iter().any(|t| matches!(t, Type::Symbol));
+        let has_string = seen.iter().any(|t| matches!(t, Type::String));
+        if has_symbol || has_string {
+            seen.retain(|t| {
+                !(has_symbol && matches!(t, Type::LiteralSymbol(_))
+                    || has_string && matches!(t, Type::LiteralString(_)))
+            });
+        }
+
+        // Step 6: normalise.
         match seen.len() {
             0 => Type::Never,
             1 => seen.remove(0),
@@ -214,6 +253,11 @@ impl fmt::Display for Type {
             Type::Vec => write!(f, "vec"),
             Type::Array => write!(f, "array"),
             Type::LiteralSymbol(name) => write!(f, ":{name}"),
+            Type::LiteralString(s) => {
+                // Escape embedded double-quotes and backslashes.
+                let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+                write!(f, "\"{escaped}\"")
+            }
             Type::Var(v) => write!(f, "{v}"),
             Type::List(inner) => write!(f, "[{inner}]"),
             Type::Tuple(elems) => {

@@ -95,10 +95,13 @@ fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
         // Uninstantiated type variables are treated as `any`.
         (Type::Var(_), _) | (_, Type::Var(_)) => true,
 
-        // ── Literal symbol types ─────────────────────────────────────────────
+        // ── Literal types ────────────────────────────────────────────────────
         // `LiteralSymbol(s) <: LiteralSymbol(t)` iff `s == t` (handled by
         // reflexivity above).  `LiteralSymbol(_) <: Symbol` always.
         (Type::LiteralSymbol(_), Type::Symbol) => true,
+        // `LiteralString(s) <: LiteralString(t)` iff `s == t` (reflexivity).
+        // `LiteralString(_) <: String` always.
+        (Type::LiteralString(_), Type::String) => true,
 
         // ── Primitives — flat, no cross-primitive subtyping ───────────────────
         (Type::Number, Type::Number) => true,
@@ -268,9 +271,12 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
         return true;
     }
 
-    // Literal symbol consistency: `LiteralSymbol(s) ~ Symbol` and vice versa.
+    // Literal type consistency: `LiteralSymbol ~ Symbol`, `LiteralString ~ String`.
     match (s, t) {
-        (Type::LiteralSymbol(_), Type::Symbol) | (Type::Symbol, Type::LiteralSymbol(_)) => {
+        (Type::LiteralSymbol(_), Type::Symbol)
+        | (Type::Symbol, Type::LiteralSymbol(_))
+        | (Type::LiteralString(_), Type::String)
+        | (Type::String, Type::LiteralString(_)) => {
             return true;
         }
         _ => {}

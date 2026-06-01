@@ -616,12 +616,16 @@ fn inlay_hint_multi_block_same_binding_name() {
         })
         .filter(|s| s.contains(':'))
         .collect();
-    // Should have two hints: one 'number' and one 'string'
+    // Should have two hints: one 'number' and one literal-string union ("a" | "b").
+    // Since A4, string literals synthesise to their LiteralString type, so the
+    // element type of ["a", "b"] is "a" | "b" rather than string.
     let has_number = type_hints.iter().any(|h| h.contains("number"));
-    let has_string = type_hints.iter().any(|h| h.contains("string"));
+    let has_string_hint = type_hints
+        .iter()
+        .any(|h| h.contains("\"a\"") && h.contains("\"b\""));
     assert!(
-        has_number && has_string,
-        "should have both number and string hints for independent blocks, got: {type_hints:?}"
+        has_number && has_string_hint,
+        "should have both number and literal-string union hints for independent blocks, got: {type_hints:?}"
     );
 }
 
