@@ -229,11 +229,11 @@ Overloaded operators use union types:
 
 A **recursive alias** is an alias whose definition refers back to itself.
 The type checker resolves it to an equirecursive `μ`-type automatically —
-no special syntax is needed.
+no special syntax is needed. Define recursive aliases with the `types:`
+metadata key:
 
 ```eu,notest
-` { type-def: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
-unit: {}
+{ types: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
 
 ` { type: "Json → string" }
 describe: str.from
@@ -244,12 +244,14 @@ and any value whose type is a subtype of any variant passes without
 warning.  The type always *displays* as its alias name (`Json`) — never
 as the (infinite) unfolded form.
 
-**Defining recursive aliases** — use `type-def:` metadata at the block
-level, or a `types:` sub-block:
+**Unit metadata** (the bare block at the top of a file, no `` ` ``) is
+the natural place for type aliases shared across a whole file. Declaration
+metadata (with `` ` ``) can also carry a `types:` block to scope aliases
+to a single binding:
 
 ```eu,notest
-` { types: { Tree: "{value: number, children: [Tree]}" } }
-unit: {}
+` { types: { Tree: "{{value: number, children: [Tree]}}" } }
+root: { value: 1, children: [] }
 ```
 
 **Mutual recursion** — aliases that reference each other are handled:

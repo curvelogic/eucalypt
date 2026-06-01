@@ -1,7 +1,6 @@
 # A3 + A2: Dict(Json) in a recursive type — a closed record of Json values
 # (here numbers, since number <: Json) is consistent with Dict(Json).
-` { type-def: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
-unit: {}
+{ types: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
 
 ` { type: "Dict(Json)" }
 data: { a: 1, b: 2, c: 3 }
