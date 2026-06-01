@@ -68,6 +68,18 @@ origin:
   alias-reference tooling, no error) for escaped/interpolated ones.
   Note this limitation in the LSP code.
 
+**Rename safety.** If a user renames an alias via go-to-definition on a
+plain-string occurrence, interpolated type strings referencing the same
+alias are **not updated** (the LSP cannot see inside them). The type
+checker would then fail with an "unknown alias" warning on the stale
+reference. This is acceptable — interpolated type strings are extremely
+rare in practice (type annotations are almost always plain literals),
+and the checker warning immediately surfaces the stale reference. The
+alternative — forbidding interpolated type strings entirely — would
+reject valid code for a theoretical edge case. Document this in the
+LSP rename handler: "Rename updates plain type-string references only;
+interpolated or escaped type strings may contain stale references."
+
 ## A7.3 LSP — index alias definitions
 
 Build, per checked document, an **alias-name → definition-site** map by

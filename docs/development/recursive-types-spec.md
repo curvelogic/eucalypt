@@ -97,9 +97,49 @@ Resolving an alias name `N`:
 
 So `Json = "number | string | bool | null | [Json] | Dict(Json)"`
 resolves to `Mu(Json, number | string | bool | null | [Mu-var Json] |
-Dict(Mu-var Json))`. Mutually recursive aliases (`A` mentions `B`
-mentions `A`) resolve to nested `Mu`s — the same back-edge logic
-handles them; document the nesting order.
+Dict(Mu-var Json))`.
+
+**Mutual recursion.** When aliases reference each other (`A` mentions
+`B` mentions `A`), the same back-edge logic produces nested `Mu`s.
+The nesting order is determined by **expansion order** — whichever
+alias is expanded first becomes the outer `Mu`:
+
+Example: `A = "{x: B}"` and `B = "{y: A | string}"`.
+
+Expanding `A` first:
+1. Push `A` onto `resolving`. Expand body `{x: B}`.
+2. Encounter `B` — not on `resolving`. Push `B`. Expand body `{y: A | string}`.
+3. Encounter `A` — already on `resolving` → back-edge. Emit `Var(A)`.
+4. Pop `B`. Body contains `Var(A)` (from the outer cycle), but NOT
+   `Var(B)` — `B` is not self-referential in this expansion. So `B`'s
+   body is `{y: Var(A) | string}` — no `Mu(B, …)` wrapper.
+5. Pop `A`. The resolved body `{x: {y: Var(A) | string}}` contains
+   `Var(A)` → wrap: `Mu(A, {x: {y: Var(A) | string}})`.
+
+Result: `A = Mu(A, {x: {y: A | string}})` — a single `Mu` with `A`
+as the recursion variable. `B`, when expanded independently, produces
+`Mu(B, {y: {x: B} | string})`. Both are correct equirecursive
+representations of the same mutual cycle; which one the checker uses
+depends on which name appears in a given annotation.
+
+**Key invariant**: a `Mu(N, body)` is only created when `Var(N)`
+actually appears in `body` (the back-edge fired). A non-recursive
+reference within a cycle does not get a spurious `Mu` wrapper.
+
+**Binder-tracking context.** Operations that recurse into types must
+distinguish µ-bound variables from free unification variables.
+Maintain a `mu_binders: HashSet<TypeVarId>` threaded through the
+recursion:
+
+- On entering `Mu(x, body)`: insert `x` into `mu_binders`, recurse
+  into `body`, remove `x`.
+- On encountering `Var(id)`: if `id ∈ mu_binders`, it is the
+  recursion variable (do NOT substitute, do NOT collect as free). If
+  `id ∉ mu_binders`, it is a unification variable (existing behaviour).
+
+This context is already implicitly present in subtyping (the `assumed`
+set tracks which `Mu`s are in progress) and needs to be explicit only
+in `apply_subst`, `collect_free_vars`, and `humanise`.
 
 ## A3.3 Equirecursive subtyping, consistency, unification
 
@@ -148,6 +188,25 @@ end-to-end `Json` acceptance test needs `Dict`.
 `Union` containing a `Mu`, `Record` fields of `Mu` type. The coinductive
 arms handle all of them — the `assumed` set short-circuits any cycle
 regardless of which constructors the cycle threads through.
+
+## Sample diagnostics
+
+**Recursive alias display:**
+```
+  type: Json
+```
+Not `μJson. number | string | bool | null | [Json] | Dict(Json)` — the
+alias name is the display form. Hover in the LSP shows `Json`.
+
+**Subtyping failure involving a recursive type:**
+```
+warning: type mismatch
+  ┌─ src/schema.eu:5:10
+  │
+ 5│   parse(input) validate
+  │                ^^^^^^^^ validate expects Json, found string
+```
+The recursive type prints as its alias name — never as its unfolding.
 
 ## Test plan
 

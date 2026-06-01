@@ -291,10 +291,42 @@ result cached:
   `BranchShape { arity 3, condition: param 2, branches: [param 0, param 1] }`.
 - Otherwise: no `BranchShape`.
 
-Classification is one level deep, **memoised** (O(1) per call site
-thereafter), composes bottom-up, and is guarded against recursion (a
-function reaching itself during classification → no shape, which is
-always correct — a recursive function is not a pass-through wrapper).
+Classification is one level deep, **memoised**, and guarded against
+recursion.
+
+**Memoisation storage.** Add to `Checker`:
+
+```rust
+/// Memoised BranchShape classification per binding.
+/// Keyed by the anchored frame index of the binding (same identity
+/// as narrowing facts — scope_stack.len() - 1 - scope).
+/// Populated lazily on first `recognise_branch` for each binding.
+/// Reset when `Checker` is constructed (one per check run) — no
+/// cross-file or cross-session persistence.
+branch_shapes: HashMap<usize, Option<BranchShape>>,
+```
+
+`None` means "classified, no shape" (not a brancher). `Some(shape)`
+means the binding is a brancher with that shape. The map is consulted
+before classification; if the key is absent, classify and insert.
+
+**Invalidation.** The `branch_shapes` map lives on `Checker`, which is
+constructed fresh for each `check` call (one per file, one per LSP
+re-check). There is no cross-file or cross-session state to
+invalidate. The map is populated during the single top-down walk and
+is immutable thereafter.
+
+**Recursion guard.** Classification maintains a thread-local
+`classifying: HashSet<usize>` of binding identities currently being
+classified. If a binding is already in `classifying` when reached →
+insert `None` (no shape) and return. This prevents infinite recursion
+on self-referential definitions (e.g. a recursive function) and is
+always correct — a recursive function cannot be a pass-through
+wrapper. The set is scoped to the classification call chain and
+cleared on return.
+
+The result is O(1) per call site after first classification (hash
+lookup), composes bottom-up, and terminates on recursive definitions.
 The *same* machinery covers an alias (`if`, `cond`), a prelude wrapper
 (`then`), and a user's own `my-if(c,t,e): if(c,t,e)` — narrowing works
 for all with zero name knowledge. Most functions fail the first check
@@ -792,20 +824,42 @@ because it shares A6's `head`/`tail` handling and makes pair `head`/
 
 ### 6.1 Union smart-constructor
 
-Add `Type::union(variants: Vec<Type>) -> Type`:
+Add `Type::union(variants: Vec<Type>) -> Type` — the **single
+canonical way** to build union types. Every place in the checker that
+constructs a union must go through this function.
 
-1. Flatten nested `Union`s.
-2. If any member is `Any` → return `Any`.
-3. Drop `Never` members.
-4. Deduplicate structurally.
-5. **Absorb literals**: drop `LiteralSymbol`/`LiteralString` members
-   whose base (`Symbol`/`String`) is also present.
-6. Length 0 → `Never`; length 1 → that member; else `Union`.
+**Algorithm** (in order):
 
-Route union construction through it: `synthesise_list_type`, the
-heterogeneous-tuple path in `synthesise_meta`, the recognised-branch
-result (§A5.9), and `subtract`'s rebuild (§6.2). This is a small,
-self-contained change and should land with A4.
+1. **Flatten** — if any member is itself a `Union(vs)`, splice `vs`
+   into the list (one level; nested unions cannot nest after this).
+2. **Absorb `Any`** — if any member is `Any`, return `Any`
+   immediately. A union with `any` is `any`.
+3. **Drop `Never`** — remove all `Never` members. A union with `never`
+   is the other members.
+4. **Deduplicate** — remove structurally identical members (use `Eq`
+   on `Type`; order-insensitive — the BTreeMap in records makes this
+   stable).
+5. **Absorb literals into bases** — for each `LiteralSymbol(v)`, if
+   `Symbol` is also present, drop the literal. For each
+   `LiteralString(v)`, if `String` is also present, drop the literal.
+   This prevents noisy `"foo" | string` unions in diagnostics.
+6. **Normalise degenerate cases** — empty list → `Never`; single
+   member → that member unwrapped; otherwise → `Union(members)`.
+
+**Call sites that must be routed through `Type::union`:**
+
+- `synthesise_list_type` — heterogeneous list element unions
+- `synthesise_meta` — the heterogeneous-tuple path
+- `synthesise_branch` — the union of branch result types (§A5.9)
+- `subtract` — rebuilding a union after removing members (§6.2)
+- `Dict`/`Record` unification — the field-type union in §A2.5
+- Any future union construction
+
+**Diagnostic guarantee**: after `Type::union`, a union never contains
+nested unions, `Any`, `Never`, duplicates, or a literal alongside its
+base type. Display code can rely on this invariant.
+
+This is a small, self-contained change and should land with A4.
 
 ### 6.2 Type subtraction
 
@@ -824,6 +878,55 @@ T)`) maps each predicate to the base type it removes; `nil?`/`non-nil?`
 are special-cased per §A6.4.
 
 ---
+
+## 6.3 Sample diagnostics
+
+Each feature must produce clear, actionable warnings. Examples of what
+the user sees (format matches existing `eu check` output):
+
+**A4 — literal type mismatch:**
+```
+warning: type mismatch
+  ┌─ src/config.eu:12:15
+  │
+12│   mode: "read"
+  │         ^^^^^^ found "read", expected "r" | "w" | "rw"
+```
+
+**A5 — narrowed branch reveals dead code:**
+```
+warning: type mismatch in branch
+  ┌─ src/transform.eu:8:25
+  │
+ 8│   if(x number?, x + 1, x ++ "!")
+  │                        ^^^^^^^^ x is narrowed to string here,
+  │                                 ++ expects string, found number | string
+```
+
+**A5 — `cond` clause unreachable (future, not required for A5):**
+Not in scope for A5 — reachability analysis is not implemented.
+
+**A6 — head on possibly-empty list:**
+```
+warning: type mismatch
+  ┌─ src/process.eu:15:3
+  │
+15│   xs head
+  │   ^^^^^^^ head expects NonEmpty([a]), found [a]
+  │
+  = help: guard with nil? or use head-or for a default
+```
+
+**A6 — head after guard (no warning):**
+```
+   if(xs nil?, default, xs head)
+                        ^^^^^^^ ok — xs narrowed to NonEmpty([a]) by nil? guard
+```
+
+The `= help:` line in the A6 diagnostic is a **one-time exception** to
+the "no notes/hints" rule — it directly tells the user how to fix the
+most common error the feature introduces. It does not speculate about
+what went wrong.
 
 ## 7. Sequencing
 

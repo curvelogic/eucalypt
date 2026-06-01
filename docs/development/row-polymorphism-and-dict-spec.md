@@ -128,7 +128,30 @@ merge: __MERGE          # prelude.eu:361
 
 `{..r,..s}` is the row-concatenation result — Leijen scoped labels make
 this well-formed (rightmost wins on label clash, matching `__MERGE`'s
-runtime semantics). Annotate the lens `over`-family in `lib/lens.eu`
+runtime semantics).
+
+**DSL syntax for row concatenation.** The type-DSL parser (parse.rs)
+must be extended to accept multiple row-variable tails in a record:
+`{..r, ..s}` parses as a `Record` with `row` referencing both
+variables. Representation: since `Record.row` is currently
+`Option<TypeVarId>` (a single variable), extend it to support row
+concatenation — either:
+
+- (a) A `RowConcat(TypeVarId, TypeVarId)` form in the row position, or
+- (b) Treat `{..r,..s}` as sugar that the *unifier* resolves: `merge`'s
+  return type is annotated `{..r,..s}` and the unifier, after binding
+  `r` and `s` at the call site, merges their bound fields into a
+  single record (which it already does for single row variables).
+
+Option (b) is preferred — it requires **no new `Type` variant**. The
+DSL parser accepts `{..r, ..s}` and emits a `Record` with
+`row: Some(r)` *plus* a second row variable `s` stored as extra
+fields to merge. In practice, `apply_subst` already merges a bound
+row variable's fields into the parent record; with two bound row
+variables, it merges both. The implementation verifies this works or
+falls back to option (a) if the unifier cannot handle it.
+
+Annotate the lens `over`-family in `lib/lens.eu`
 analogously — a row-*preserving* update is `{k:a,..r} -> … ->
 {k:a,..r}` (the exact form per the lens kernel; the user-facing `Lens`
 type stays opaque). `merge-all` (prelude.eu:1662) folds `merge` and can
@@ -275,6 +298,31 @@ The two features are disjoint and compose cleanly:
   generic path. Acceptable; rare.
 
 ---
+
+## Sample diagnostics
+
+**A1 — row content flows through merge:**
+```
+  a: {x: 1}
+  b: {y: "hello"}
+  a merge(b)          # synthesises {x: number, y: string}
+```
+No warning. Hover shows the precise merged record type.
+
+**A2 — Dict type mismatch:**
+```
+warning: type mismatch
+  ┌─ src/config.eu:8:12
+  │
+ 8│   transform(settings)
+  │             ^^^^^^^^ map-values expects Dict(number), found {name: string, count: number}
+  │                      field name: string is not a subtype of number
+```
+
+**A2 — widening to Dict succeeds:**
+```
+  {a: 1, b: 2} values   # ok — {a: number, b: number} <: Dict(number)
+```
 
 ## Sequencing
 
