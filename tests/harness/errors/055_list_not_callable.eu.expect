@@ -1,2 +1,2 @@
 exit: 1
-stderr: "nth.*index"
+stderr: "tried to call a list as a function"

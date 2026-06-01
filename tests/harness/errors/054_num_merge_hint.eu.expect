@@ -1,2 +1,2 @@
 exit: 1
-stderr: "str.*namespace of string functions"
+stderr: "type mismatch: expected block, found number"

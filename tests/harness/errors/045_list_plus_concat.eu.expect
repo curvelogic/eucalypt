@@ -1,2 +1,2 @@
 exit: 1
-stderr: "to concatenate two lists, use 'append"
+stderr: "type mismatch: expected number, found list"

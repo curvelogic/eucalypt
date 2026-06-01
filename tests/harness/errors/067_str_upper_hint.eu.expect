@@ -1,2 +1,2 @@
 exit: 1
-stderr: "str.to-upper"
+stderr: "key 'upper' not found in block"
