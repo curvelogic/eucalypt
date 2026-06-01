@@ -237,6 +237,89 @@ values from leaking into pure data.
 
 ---
 
+## Monadic block binding types
+
+When `eu check` encounters a monadic block, it uses the monad's element
+type to infer the types of bound variables. Each binding in a `{ :ns
+... }` block should be an action in that monad; the checker unwraps the
+monad layer and gives the bound name the result type.
+
+### The list monad: `{ :for ... }`
+
+The `for` namespace is the list monad. Binding a name draws elements
+from a list, so the bound variable gets the list's element type:
+
+```eu,notest
+{ :for x: [1, 2, 3] }.(x * 2)   # x : number  ✓
+{ :for s: ["a", "b"] }.(s)       # s : string  ✓
+```
+
+If you bind a non-list, `eu check` warns:
+
+```eu,notest
+{ :for x: 42 }.(x)   # warning: binding in :for block must be [a], got number
+```
+
+### The IO monad: `{ :io ... }`
+
+The `io` namespace is typed with `IO(a)`. Each binding must be an IO
+action; the bound variable gets the inner type:
+
+```eu,notest
+{ :io
+  r: io.shell("echo hello")   # r : block  (IO(block) unwrapped)
+  _: io.check(r)
+}.(r.stdout)                  # stdout lookup on block  ✓
+```
+
+The most common mistake the checker catches is binding a plain value
+instead of an IO action:
+
+```eu,notest
+{ :io
+  cmd: 42                     # warning: expected IO(a), got number
+}.(cmd)
+```
+
+### The state monad: `{ :random ... }` and `{ :state ... }`
+
+State monads wrap actions as functions of a state value. The checker
+validates that each binding is a valid monadic action for that namespace.
+Bound variables receive the result type (the `value` component):
+
+```eu,notest
+{ :random
+  d6:  random.int(6)     # d6  : number
+  d20: random.int(20)    # d20 : number
+}.[d6, d20]
+```
+
+### The identity monad: `{ :let ... }`
+
+`{ :let ... }` blocks use the identity monad — every binding is a plain
+value, so bound variables keep their inferred types directly:
+
+```eu,notest
+{ :let
+  x: 1 + 1               # x : number
+  s: str.of(x)           # s : string
+}.(x + 1)                # number + number  ✓
+```
+
+### What the checker validates
+
+`eu check` reports a warning when:
+
+- A binding's RHS type is inconsistent with the monad's expected action
+  type (e.g. `number` in an `:io` block instead of `IO(a)`)
+- A bound variable is used in a way inconsistent with its unwrapped type
+  (e.g. calling `.stdout` on a `number`)
+
+The checker does **not** require annotations — it infers binding types
+from the monad's known type signature and the RHS expression type.
+
+---
+
 ## Lens and traversal types
 
 The lens library is typed with two opaque type constructors:
