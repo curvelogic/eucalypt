@@ -106,7 +106,7 @@ impl ConditionFacts {
 }
 
 /// The kind of branching construct recognised by the checker.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 enum BranchKind {
     /// `if(condition, true_branch, false_branch)` — 3-argument form.
     If,
@@ -116,6 +116,27 @@ enum BranchKind {
     Or,
     /// `cond(clause_list)` — multi-way conditional with `=>` clauses.
     Cond,
+}
+
+/// The structural shape of a recognised branch combinator.
+///
+/// Records the arity, condition parameter index, and branch parameter
+/// indices so that `synthesise_branch` can extract the right arguments
+/// from a flattened application spine.  Constructed once per binding and
+/// memoised.
+///
+/// For `BranchKind::Cond`, `condition` is unused; `branches[0]` is the
+/// clause-list argument index.
+#[derive(Debug, Clone)]
+struct BranchShape {
+    /// Total number of arguments when fully applied.
+    arity: usize,
+    /// Index into the flattened argument list for the condition expression.
+    condition: usize,
+    /// Indices into the flattened argument list for the branch arms.
+    branches: Vec<usize>,
+    /// Semantics — determines how narrowing is applied.
+    kind: BranchKind,
 }
 
 /// A type predicate recognisable from the condition expression.
@@ -210,6 +231,25 @@ pub struct Checker {
     /// `lookup_bound` consults this stack before the normal scope lookup.
     /// Push before synthesising a branch body; pop immediately after.
     narrowing: Vec<NarrowFrame>,
+
+    /// Binding bodies for structural BranchShape classification (§A5.3).
+    ///
+    /// Populated eagerly during Let synthesis: for each binding `(name, val)`,
+    /// the metadata-peeled expression is stored under the binding's `BoundKey`.
+    /// Consulted during `recognise_brancher` to classify wrapper functions
+    /// such as `then(t,f,c): if(c,t,f)` and user-defined equivalents.
+    binding_bodies: HashMap<BoundKey, RcExpr>,
+
+    /// Memoised BranchShape classification per binding (§A5.3).
+    ///
+    /// `None` = classified, not a brancher.
+    /// `Some(shape)` = recognised brancher with this shape.
+    ///
+    /// Populated eagerly during Let synthesis alongside `binding_bodies`.
+    /// The `None` entry also serves as a recursion guard: a binding already
+    /// inserted as `None` (tentative) is treated as "not a brancher" if
+    /// re-encountered during its own classification.
+    branch_shapes: HashMap<BoundKey, Option<BranchShape>>,
 }
 
 impl Default for Checker {
@@ -228,6 +268,8 @@ impl Checker {
             aliases: AliasMap::new(),
             lambda_params: HashMap::new(),
             narrowing: Vec::new(),
+            binding_bodies: HashMap::new(),
+            branch_shapes: HashMap::new(),
         }
     }
 
@@ -605,6 +647,27 @@ impl Checker {
 
                 self.push_scope(frame);
 
+                // BranchShape classification (§A5.3): store binding bodies and
+                // eagerly classify each binding as a branch combinator so that
+                // later uses of the binding (even user-defined wrappers like
+                // `my-if(c,t,e): if(c,t,f)`) are recognised during synthesis.
+                //
+                // anchored = scope_stack.len() - 1 (the newly-pushed innermost frame).
+                let anchored = self.scope_stack.len() - 1;
+                for (name, value) in &scope.pattern {
+                    let key: BoundKey = (anchored, name.clone());
+                    // Tentative `None` entry doubles as a recursion guard: if
+                    // classification recurses back to this binding, it sees
+                    // "not a brancher" and terminates.
+                    self.branch_shapes.insert(key.clone(), None);
+                    // Store the body for later structural analysis.
+                    let body = peel_meta(value).clone();
+                    self.binding_bodies.insert(key.clone(), body.clone());
+                    // Classify and update.
+                    let shape = self.classify_binding_shape(&body, self.scope_stack.len());
+                    self.branch_shapes.insert(key, shape);
+                }
+
                 // Pass 2: synthesise each binding value — triggers consistency
                 // checks against any annotations.  For unannotated bindings,
                 // replace the placeholder with the synthesised mono type so
@@ -820,21 +883,28 @@ impl Checker {
     /// return type.
     ///
     /// Before the generic application loop, attempts to recognise the function
-    /// as a branching construct (`if`, `and`, `or`, `cond`) and delegates to
-    /// the narrowing-aware `synthesise_branch_*` helpers when recognised.
+    /// as a branching construct (`if`, `then`, `and`, `or`, `cond`, or any
+    /// user-defined wrapper) and delegates to the narrowing-aware
+    /// `synthesise_branch_*` helpers when recognised.
+    ///
+    /// Spine flattening: `x then(a, b)` cooks to `App(App(then, [a,b]), [x])`.
+    /// We flatten `func` into `(head, prefix_args)` and prepend to `args` so
+    /// the full argument list `[a, b, x]` is visible for recognition.
     fn synthesise_app(&mut self, _smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
-        // ── Branch recognition (flow-sensitive narrowing) ─────────────────────
+        // ── Spine flattening + branch recognition (§A5.2, §A5.3) ─────────────
         //
-        // Check whether the function is a recognised brancher before the normal
-        // argument loop.  Only fires when the full argument list is present
-        // (partial applications fall through to the generic path).
-        if let Some(kind) = classify_brancher(func, self.scope_stack.len()) {
-            let result = self.synthesise_branch(kind, func, args);
-            if let Some(ty) = result {
-                return ty;
+        // Flatten the function spine to find the outermost head and the full
+        // argument list.  Required for pipelined branchers like `x then(a,b)`.
+        let (head, prefix_args) = flatten_app_spine(func);
+        let spine_args: Vec<&RcExpr> = prefix_args.into_iter().chain(args.iter()).collect();
+
+        if let Some(shape) = self.recognise_brancher(head) {
+            if spine_args.len() == shape.arity {
+                if let Some(ty) = self.synthesise_branch_with_shape(&shape, head, &spine_args) {
+                    return ty;
+                }
             }
-            // Fall through: synthesise_branch returned None (arity mismatch,
-            // etc.) — use the generic path below.
+            // Wrong arity (partial application) — fall through to generic path.
         }
 
         // Extract the function name for use in warning messages.
@@ -1100,33 +1170,41 @@ impl Checker {
 
     // ── Flow-sensitive narrowing ──────────────────────────────────────────────
 
-    /// Delegate to narrowing-aware branch synthesis for recognised branchers.
+    /// Dispatch to the appropriate narrowing-aware branch synthesiser using
+    /// a `BranchShape` extracted from the flattened application spine.
     ///
-    /// Returns `Some(ty)` when the function is a recognised brancher *and*
-    /// the argument count matches the expected arity.  Returns `None` for
-    /// partial applications or unrecognised functions — the caller falls back
-    /// to the generic application path.
-    fn synthesise_branch(
+    /// `spine_args` contains the *full* argument list (flattened); the shape
+    /// records which indices are the condition and branch arms.
+    ///
+    /// Returns `Some(ty)` on success, `None` for internal errors only (the
+    /// arity check is done by the caller).
+    fn synthesise_branch_with_shape(
         &mut self,
-        kind: BranchKind,
+        shape: &BranchShape,
         func: &RcExpr,
-        args: &[RcExpr],
+        spine_args: &[&RcExpr],
     ) -> Option<Type> {
-        match kind {
-            BranchKind::If if args.len() == 3 => {
-                Some(self.synthesise_branch_if(func, &args[0], &args[1], &args[2]))
+        match shape.kind {
+            BranchKind::If => {
+                let condition = spine_args[shape.condition];
+                let true_branch = spine_args[shape.branches[0]];
+                let false_branch = spine_args[shape.branches[1]];
+                Some(self.synthesise_branch_if(func, condition, true_branch, false_branch))
             }
-            BranchKind::And if args.len() == 2 => {
-                Some(self.synthesise_branch_and(func, &args[0], &args[1]))
+            BranchKind::And => {
+                let left = spine_args[shape.condition];
+                let right = spine_args[shape.branches[0]];
+                Some(self.synthesise_branch_and(func, left, right))
             }
-            BranchKind::Or if args.len() == 2 => {
-                Some(self.synthesise_branch_or(func, &args[0], &args[1]))
+            BranchKind::Or => {
+                let left = spine_args[shape.condition];
+                let right = spine_args[shape.branches[0]];
+                Some(self.synthesise_branch_or(func, left, right))
             }
-            BranchKind::Cond if args.len() == 1 => {
-                Some(self.synthesise_branch_cond(func, &args[0]))
+            BranchKind::Cond => {
+                let clause_list = spine_args[shape.branches[0]];
+                Some(self.synthesise_branch_cond(func, clause_list))
             }
-            // Partial application or wrong arity — fall through.
-            _ => None,
         }
     }
 
@@ -1264,18 +1342,15 @@ impl Checker {
     /// to non-variables yield empty facts.
     fn analyse_condition(&self, condition: &RcExpr) -> ConditionFacts {
         match &*condition.inner {
-            // `p?(x)` — predicate applied to a variable
+            // Single-argument application: either `p?(x)` (predicate) or `not(c)`.
             Expr::App(_, func, args) if args.len() == 1 => {
+                // `p?(x)` — predicate applied to a variable.
                 if let Some(pred) = classify_predicate(func) {
                     if let Expr::Var(_, Var::Bound(bv)) = &*args[0].inner {
                         return self.facts_for_predicate(pred, bv);
                     }
-                }
-                ConditionFacts::empty()
-            }
-            // `not(c)` — invert facts
-            Expr::App(_, func, args) if args.len() == 1 => {
-                if is_not_func(func) {
+                // `not(c)` — invert the condition's facts.
+                } else if is_not_func(func) {
                     return self.analyse_condition(&args[0]).negated();
                 }
                 ConditionFacts::empty()
@@ -1423,6 +1498,135 @@ impl Checker {
         self.pop_scope();
     }
 
+    // ── BranchShape recognition (§A5.3) ─────────────────────────────────────
+
+    /// Look up the `BranchShape` for an expression in the head position of an
+    /// application.
+    ///
+    /// Covers:
+    /// - Raw branch intrinsics (`Expr::Intrinsic`).
+    /// - Bound variables with a memoised shape in `branch_shapes`.
+    ///
+    /// Returns `None` for everything else (not a recognised brancher).
+    fn recognise_brancher(&self, func: &RcExpr) -> Option<BranchShape> {
+        match &*func.inner {
+            Expr::Intrinsic(_, name) => intrinsic_branch_shape(name),
+            Expr::Var(_, Var::Bound(bv)) => {
+                let name = bv.name.as_deref()?;
+                let idx = bv.scope as usize;
+                // Saturating sub: if idx >= scope_stack.len(), the variable
+                // is from an outer scope that we haven't seen (should not
+                // normally happen after varify, but guard anyway).
+                let anchored = self.scope_stack.len().saturating_sub(1 + idx);
+                let key = (anchored, name.to_string());
+                // Flatten Option<Option<BranchShape>> via and_then.
+                self.branch_shapes.get(&key).and_then(|opt| opt.clone())
+            }
+            _ => None,
+        }
+    }
+
+    /// Classify a binding's body expression as a `BranchShape`.
+    ///
+    /// `body` is the metadata-peeled binding value.
+    /// `stack_len` is `scope_stack.len()` at the time the enclosing Let is
+    /// being processed (AFTER the frame has been pushed).
+    ///
+    /// Classification is one level deep (§A5.3):
+    /// - An alias of a raw intrinsic inherits the intrinsic's shape.
+    /// - A `Lam` whose body is a pass-through application of a known
+    ///   brancher acquires a composed shape.
+    /// - Everything else → `None`.
+    fn classify_binding_shape(&self, body: &RcExpr, stack_len: usize) -> Option<BranchShape> {
+        let peeled = peel_meta(body);
+        match &*peeled.inner {
+            // Direct alias: `if: __IF` — inherits the intrinsic's shape.
+            Expr::Intrinsic(_, name) => intrinsic_branch_shape(name),
+            // Lambda — inspect the body for a pass-through call (§A5.3 Mechanism 2).
+            Expr::Lam(_, _, scope) => {
+                self.classify_lam_body(&scope.pattern, &scope.body, stack_len)
+            }
+            _ => None,
+        }
+    }
+
+    /// Attempt to classify a lambda as a pass-through wrapper around a
+    /// known brancher.
+    ///
+    /// `params` — the parameter names in order (e.g. `["t","f","c"]`).
+    /// `body` — the lambda body expression.
+    /// `stack_len` — `scope_stack.len()` at the time of classification
+    ///   (BEFORE entering the lambda's own scope).
+    ///
+    /// Returns a composed `BranchShape` when the body is `inner(args…)` where
+    /// `inner` is a recognised brancher and every argument is one of the
+    /// lambda's own parameters.
+    fn classify_lam_body(
+        &self,
+        params: &[String],
+        body: &RcExpr,
+        stack_len: usize,
+    ) -> Option<BranchShape> {
+        // Inside the lambda there is one extra scope level for the params.
+        let effective_len = stack_len + 1;
+
+        let peeled = peel_meta(body);
+        let (app_head, app_args) = match &*peeled.inner {
+            Expr::App(_, head, args) => (head, args.as_slice()),
+            _ => return None,
+        };
+
+        // Determine the inner brancher's shape from the application head.
+        let inner_shape: BranchShape = match &*peel_meta(app_head).inner {
+            // Head is a raw intrinsic.
+            Expr::Intrinsic(_, name) => intrinsic_branch_shape(name)?,
+            // Head is an outer bound variable — look up in branch_shapes.
+            Expr::Var(_, Var::Bound(bv)) if bv.scope as usize >= 1 => {
+                let name = bv.name.as_deref()?;
+                let anchored = effective_len.checked_sub(1 + bv.scope as usize)?;
+                let key = (anchored, name.to_string());
+                self.branch_shapes.get(&key)?.clone()?
+            }
+            _ => return None,
+        };
+
+        // Verify the call arity matches the inner shape.
+        if app_args.len() != inner_shape.arity {
+            return None;
+        }
+
+        // Every app_arg must be one of the lambda's own parameters (scope = 0).
+        // Map each to its parameter index in `params`.
+        let param_positions: Vec<usize> = app_args
+            .iter()
+            .map(|arg| {
+                let peeled = peel_meta(arg);
+                if let Expr::Var(_, Var::Bound(bv)) = &*peeled.inner {
+                    if bv.scope == 0 {
+                        let pname = bv.name.as_deref()?;
+                        return params.iter().position(|p| p == pname);
+                    }
+                }
+                None
+            })
+            .collect::<Option<Vec<_>>>()?;
+
+        // Compose: map inner shape's condition/branch arg indices through param_positions.
+        let condition_param = *param_positions.get(inner_shape.condition)?;
+        let branch_params: Option<Vec<usize>> = inner_shape
+            .branches
+            .iter()
+            .map(|&bi| param_positions.get(bi).copied())
+            .collect();
+
+        Some(BranchShape {
+            arity: params.len(),
+            condition: condition_param,
+            branches: branch_params?,
+            kind: inner_shape.kind,
+        })
+    }
+
     // ── Warning emission ─────────────────────────────────────────────────────
 
     fn emit_type_mismatch(&mut self, smid: Smid, expected: &Type, found: &Type, message: &str) {
@@ -1436,44 +1640,66 @@ impl Checker {
 
 // ── Flow-sensitive narrowing — free functions ─────────────────────────────────
 
-/// Classify a function expression as a branching construct.
-///
-/// Recognition is name-based for prelude-level bindings (scope index ≥
-/// `stack_len` — i.e., the variable refers outside the checker's own
-/// scope stack to a prelude binding) and intrinsic-based for `Expr::Intrinsic`
-/// nodes.  Functions bound within the current scope (scope index < stack_len)
-/// are *not* recognised as branchers — this implements AC6 (user rebinding
-/// of `if` etc. disables narrowing).
-///
-/// Returns `None` when the function is not a recognised brancher.
-fn classify_brancher(func: &RcExpr, stack_len: usize) -> Option<BranchKind> {
-    match &*func.inner {
-        // Mechanism 1: raw branch intrinsic nodes.
-        Expr::Intrinsic(_, name) => match name.as_str() {
-            "IF" => Some(BranchKind::If),
-            "AND" => Some(BranchKind::And),
-            "OR" => Some(BranchKind::Or),
-            "COND" => Some(BranchKind::Cond),
-            _ => None,
-        },
-        // Mechanism 2: bound variable referencing an outer (prelude) scope.
-        // Only applies when the scope index falls *outside* the checker's
-        // stack — that means the variable is from the prelude, not user code.
-        Expr::Var(_, Var::Bound(bv)) => {
-            let is_outer = (bv.scope as usize) >= stack_len;
-            if !is_outer {
-                return None;
-            }
-            match bv.name.as_deref() {
-                Some("if") => Some(BranchKind::If),
-                Some("and" | "&&") => Some(BranchKind::And),
-                Some("or" | "||") => Some(BranchKind::Or),
-                Some("cond") => Some(BranchKind::Cond),
-                _ => None,
-            }
-        }
+/// Return the `BranchShape` for a raw branch intrinsic, or `None`.
+fn intrinsic_branch_shape(name: &str) -> Option<BranchShape> {
+    match name {
+        "IF" => Some(BranchShape {
+            arity: 3,
+            condition: 0,
+            branches: vec![1, 2],
+            kind: BranchKind::If,
+        }),
+        "AND" => Some(BranchShape {
+            arity: 2,
+            condition: 0,
+            branches: vec![1],
+            kind: BranchKind::And,
+        }),
+        "OR" => Some(BranchShape {
+            arity: 2,
+            condition: 0,
+            branches: vec![1],
+            kind: BranchKind::Or,
+        }),
+        "COND" => Some(BranchShape {
+            arity: 1,
+            condition: 0, // unused for cond
+            branches: vec![0],
+            kind: BranchKind::Cond,
+        }),
         _ => None,
     }
+}
+
+/// Peel `Meta` wrappers from an expression, returning the innermost non-Meta node.
+fn peel_meta(expr: &RcExpr) -> &RcExpr {
+    match &*expr.inner {
+        Expr::Meta(_, inner, _) => peel_meta(inner),
+        _ => expr,
+    }
+}
+
+/// Flatten a nested application spine into `(head, prefix_args)`.
+///
+/// Given `App(App(f, xs), ys)`, returns `(f, xs)` (without `ys`). The
+/// caller is responsible for appending `ys` (the outer args) to get the
+/// full argument list.
+///
+/// This handles pipelined branchers such as `x then(a, b)` which cook to
+/// `App(App(then, [a, b]), [x])`: flattening yields `head = then`,
+/// `prefix_args = [a, b]`, and the caller appends `[x]` to get the
+/// full spine `[a, b, x]`.
+fn flatten_app_spine(func: &RcExpr) -> (&RcExpr, Vec<&RcExpr>) {
+    let mut head = func;
+    let mut prefix: Vec<&RcExpr> = Vec::new();
+    while let Expr::App(_, f, inner_args) = &*head.inner {
+        // Prepend inner_args (they came before the outer args).
+        let mut new_prefix: Vec<&RcExpr> = inner_args.iter().collect();
+        new_prefix.extend_from_slice(&prefix);
+        prefix = new_prefix;
+        head = f;
+    }
+    (head, prefix)
 }
 
 /// Classify a function expression as a type predicate.
@@ -1544,28 +1770,12 @@ fn subtract_type(ty: &Type, remove: &Type) -> Type {
     }
 }
 
-/// Build a union type from two branch result types, deduplicating identical
-/// members.  Returns `Never` when both are `Never`; returns the non-Never
-/// side when only one is `Never`.
+/// Build a union type from two branch result types.
+///
+/// Delegates to `Type::union` which deduplicates, absorbs literals into
+/// their base types, and normalises singleton unions.
 fn make_union_type(a: Type, b: Type) -> Type {
-    match (a, b) {
-        (Type::Never, b) => b,
-        (a, Type::Never) => a,
-        (ref a, ref b) if a == b => a.clone(),
-        (Type::Union(mut vs), b) => {
-            if !vs.contains(&b) {
-                vs.push(b);
-            }
-            Type::Union(vs)
-        }
-        (a, Type::Union(mut vs)) => {
-            if !vs.contains(&a) {
-                vs.insert(0, a);
-            }
-            Type::Union(vs)
-        }
-        (a, b) => Type::Union(vec![a, b]),
-    }
+    Type::union([a, b])
 }
 
 /// A parsed clause from a `cond` clause list.

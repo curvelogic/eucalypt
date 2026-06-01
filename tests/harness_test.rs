@@ -1955,3 +1955,13 @@ pub fn test_typecheck_044_clause_operator() {
 pub fn test_typecheck_045_narrowing_union_subtraction() {
     run_typecheck_test("045_narrowing_union_subtraction.eu");
 }
+
+#[test]
+pub fn test_typecheck_046_narrowing_then_no_warn() {
+    run_typecheck_test("046_narrowing_then_no_warn.eu");
+}
+
+#[test]
+pub fn test_typecheck_047_narrowing_user_brancher() {
+    run_typecheck_test("047_narrowing_user_brancher.eu");
+}
