@@ -57,23 +57,18 @@ land.
 ### Merge is catenation, and it is everywhere
 
 The index helps lookup but does nothing for the other half of the problem.
-Block merge — `merge`, `deep-merge`, and the `<<` operator (`lib/prelude.eu:359`,
-`365`, `372`) — is implemented by walking **both** operand lists into an
-`IndexMap` and re-emitting a fresh cons-list (`Merge::execute`,
-`block.rs:1453`; `MergeWith::execute`, `block.rs:1560`). Every merge is O(n+m)
-and allocates a whole new spine; the cached index on the inputs is discarded and
-must be rebuilt on the output. `deep-merge` recurses this at every level of
-nesting. Configuration workloads are merge-heavy by nature — layering a base
-over an environment override over a local patch is the canonical eucalypt task —
-so the O(n) spine-copy is not an edge case but the main line. A persistent map
-with structural sharing would make merge *share* unchanged sub-trees instead of
-copying them.
-
-The user-visible ceiling shows up in `deep-find` (`lib/prelude.eu:461`), which
-generically walks an entire block tree collecting values for a key at any depth.
-On a large uniform configuration this is O(total nodes) with an O(n) lookup at
-each block — quadratic in practice. These are the workloads where O(n) blocks
-bite (quantified in §"Honest cost/benefit").
+Block merge — `merge`, `deep-merge`, and `<<` (`lib/prelude.eu:359`, `365`,
+`372`) — walks **both** operand lists into an `IndexMap` and re-emits a fresh
+cons-list (`Merge::execute`, `block.rs:1453`; `MergeWith::execute`,
+`block.rs:1560`). Every merge is O(n+m), allocates a whole new spine, and
+discards the inputs' cached index; `deep-merge` recurses this at every level.
+Configuration workloads are merge-heavy by nature — layering a base over an
+override over a local patch is the canonical eucalypt task — so this spine-copy
+is the main line, not an edge case. A persistent map with structural sharing
+would make merge *share* unchanged sub-trees instead of copying them. The same
+linearity sets the practical ceiling on `deep-find` (`lib/prelude.eu:461`), which
+walks a whole block tree for a key at any depth: O(nodes) × O(n) per block,
+quadratic in practice (quantified in §"Honest cost/benefit").
 
 ### The root cause, precisely (ADR-001)
 
@@ -176,12 +171,11 @@ principled answer.
 
 ### (b) Arena-allocated nodes instead of `Rc`
 
-Replace `im_rc`'s `Rc` nodes with nodes bump-allocated from a side arena, freed
-en masse. *Against the code:* this trades a leak for a correctness problem.
-Persistent maps share nodes across versions; a per-block arena cannot free a node
-that a *later* block still shares, and a global arena that never frees is just
-the leak again. Lifetime-tracking the arena reintroduces reference counting by
-hand. Rejected.
+Replace `im_rc`'s `Rc` nodes with arena-allocated nodes freed en masse.
+*Against the code:* persistent maps share nodes across versions, so a per-block
+arena cannot free a node a *later* block still shares, and a global arena that
+never frees is just the leak again. Lifetime-tracking the arena reintroduces
+reference counting by hand. Rejected.
 
 ### (c) Store the persistent map inline in the GC heap *(recommended)*
 
@@ -215,11 +209,11 @@ unaffected.
 
 The `Block` constructor changes from `Block(cons-list, index)` to
 `Block(champ-root, meta)`; `LOOKUP`/`MERGE`/`ELEMENTS` reimplement against the
-trie. Iteration for rendering walks the node arrays in order — the CHAMP
-two-array split is what makes that iteration fast. This is the principled fix
-because it **reuses evacuation and scanning that already exist**, introduces no
-finalisation hazard, and fits Immix unchanged: nodes are normal small objects
-that mark, evacuate, and sweep like everything else.
+trie, and rendering iterates the node arrays in order (the two-array split is
+what makes that fast). This is the principled fix: it **reuses evacuation and
+scanning that already exist**, adds no finalisation hazard, and fits Immix
+unchanged — nodes are normal small objects that mark, evacuate, and sweep like
+everything else.
 
 ### (d) Switch to a `Drop`-supporting GC strategy
 
@@ -267,13 +261,13 @@ concurrently; concurrency stays deferred to [0008](0008-parallel-evaluation.md).
 | 4 | Switch `Block` ctor + `LOOKUP`/`MERGE`/`DEEPMERGE`/`ELEMENTS`; drop the `Rc` index | `block.rs`, `syntax.rs:47` | medium / medium |
 | 5 | Validation under `EU_GC_VERIFY=2`, `EU_GC_POISON=1`, `EU_GC_STRESS=1`; benches | tests, benches | small / low |
 
-Phase 2 is the genuine risk and where the existing GC debug harness (CLAUDE.md)
-is indispensable: `EU_GC_STRESS=1` forces evacuation every cycle, exercising
-CHAMP-node forwarding immediately; `EU_GC_POISON=1` catches any node whose lines
-were mis-marked; `EU_GC_VERIFY=2` re-traces to prove no reachable node is missed.
-A new verifier checkpoint should assert CHAMP child/value pointers are valid
-post-update. Removing the `Rc<BlockIndex>` index slot (`syntax.rs:47`) is a small
-ancillary win: it deletes the one leak we currently tolerate.
+Phase 2 is the genuine risk, and the existing GC debug harness (CLAUDE.md) is
+indispensable there: `EU_GC_STRESS=1` forces evacuation every cycle (exercising
+CHAMP-node forwarding immediately), `EU_GC_POISON=1` catches mis-marked node
+lines, and `EU_GC_VERIFY=2` re-traces to prove no reachable node is missed; a new
+checkpoint should assert CHAMP child/value pointers are valid post-update.
+Removing the `Rc<BlockIndex>` slot (`syntax.rs:47`) deletes the one leak we
+currently tolerate.
 
 ## Alternatives considered
 
@@ -311,11 +305,10 @@ O(n) blocks bite when:
    practical depth/size limit on generic block queries.
 
 For the dominant eucalypt workload — small-to-medium config with shallow merges —
-0020 buys little and costs real GC risk. That is the genuine tension the
-maintainer must weigh, and it is why the horizon is 0.9 (after the type-system
-work and after 0005), not sooner. The decision hinges on whether large/merge-heavy
-configs are a target class for 1.0. If they are, 0020 removes a hard scaling wall
-*and* deletes the one leak in the heap today; if they are not, deferring remains
+0020 buys little and costs real GC risk; hence the 0.9 horizon, after the
+type-system work and after 0005. The decision hinges on whether large/merge-heavy
+configs are a target class for 1.0: if they are, 0020 removes a hard scaling wall
+*and* deletes the one leak in the heap today; if not, deferring remains
 defensible.
 
 ## Risks & what would kill this
@@ -356,20 +349,16 @@ defensible.
 
 ## References
 
-**Eucalypt source.** `src/eval/stg/block.rs` (79/87 — block constructor; 469 —
-index threshold; 495 — linear `find`; 854 — `store_index_in_block`; 1453/1560 —
-`Merge`/`MergeWith` spine-copy); `src/eval/memory/syntax.rs` (33/47 —
-`BlockIndex`/`Native::Index(Rc<…>)`; 396/574–606 — `HeapSyn` scan and
-`scan_and_update`); `src/eval/memory/bump.rs` (294/311/371 — bump/fill/recycle,
-no `Drop`); `src/eval/memory/heap.rs` (safety preamble — single-threaded
-invariant; 674/680 — defer/lazy sweep); `src/eval/memory/collect.rs` (90/207 —
-`OpaqueHeapBytes`/`mark_raw_bytes`; 220 — `mark_array`; 298 — `evacuate`;
-465 — `collect_with_evacuation`; 1312+ — evacuation-bug suite);
-`src/eval/memory/array.rs` (131 — `alloc_bytes`; 419/435 —
-`allocated_data`/`set_backing_ptr`); `lib/prelude.eu` (359/365/372 —
-merge/`<<`; 408–441 — lookup family; 461 — `deep-find`; 1662 — `merge-all`).
-Also `docs/development/architectural-decisions.md` (ADR-001) and branch
-`feat/furnace-persistent-blocks-v2`.
+**Eucalypt source** (specific lines cited inline in the body): `src/eval/stg/block.rs`
+(block constructor, index threshold, linear `find`, `store_index_in_block`,
+`Merge`/`MergeWith`); `src/eval/memory/syntax.rs` (`BlockIndex`/`Native::Index`,
+`HeapSyn` scan/`scan_and_update`); `src/eval/memory/bump.rs` (bump/recycle, no
+`Drop`); `src/eval/memory/heap.rs` (single-threaded invariant, defer/lazy sweep);
+`src/eval/memory/collect.rs` (`OpaqueHeapBytes`, `mark_array`, `evacuate`,
+`collect_with_evacuation`, evacuation-bug suite); `src/eval/memory/array.rs`
+(`alloc_bytes`, `set_backing_ptr`); `lib/prelude.eu` (merge/`<<`, lookup family,
+`deep-find`, `merge-all`). Also `docs/development/architectural-decisions.md`
+(ADR-001) and branch `feat/furnace-persistent-blocks-v2`.
 
 **Papers & systems.** P. Bagwell, *Ideal Hash Trees*, EPFL TR, 2001.
 M. J. Steindorfer & J. J. Vinju, *Optimizing Hash-Array Mapped Tries for Fast and
@@ -381,6 +370,6 @@ Collection for Rust: The Finalizer Frontier*, 2024. *Object resurrection* and
 docs.rs (OrdMap = B-tree, `Rc` nodes, 2–3× slower than std).
 
 **Peer languages.** Clojure and Scala ship HAMT/CHAMP immutable maps as standard
-collections; their experience is the evidence that a persistent O(log n) map is
-the right representation once the host can reclaim its nodes. Among the data
-peers, none resolves the GC-finalisation issue for us — the answer is internal.
+collections — evidence that a persistent O(log n) map is the right representation
+once the host can reclaim its nodes. None of the data peers resolves the
+GC-finalisation issue for us; the answer is internal.
