@@ -53,26 +53,26 @@ What to borrow: Nickel's contract-as-schema model, its `'Ok`/`'Error`-with-blame
 
 Expose it **metadata-first** and at the **natural ingress points**. Two surfaces, both conservative (non-negotiable #1 — machinery in metadata, symbols, operators, prelude forms, never new keywords):
 
-**(1) A `validate(shape, data)` prelude form** — the explicit, composable core. `shape` is a contract value; `data` is anything; the result is the data on success or a structured error on failure. The companion `valid?(shape, data)` returns a boolean. A shape is built either from a type-DSL string (reusing the existing parser) or from a predicate:
+**(1) A `validate(shape, data)` prelude form** — the explicit, composable core (`validate`, `valid?`, and the refinement predicates below are the *proposed* additions). `shape` is a contract value; `data` is anything; the result is the data on success or a structured error on failure. The companion `valid?(shape, data)` returns a boolean. A shape is built either from a type-DSL string (reusing the existing parser) or from a predicate:
 
 ```eu,notest
 { import: "raw.eu"
   types: { Server: "{host: string, port: number, replicas: number}" } }
 
-# Validate parsed data at ingress; blame points at the source, not a deep use site
-config: read("config.yaml") validate(:Server)
+# Validate imported data at ingress; blame points at the source, not a deep use site
+config: imported-data validate(:Server)
 
 # A refinement contract from a predicate, named in metadata
 ` { contract: positive? }
 port: config.port
 ```
 
-**(2) A `check:`/`contract:` block annotation** in declaration metadata, mirroring KCL's `check` and Nickel's contract attachment. A block's fields each name a shape; extra `check:` lines are arbitrary boolean expressions with messages, evaluated against the block:
+**(2) A `check:`/`contract:` block annotation** in declaration metadata, mirroring KCL's `check` and Nickel's contract attachment. A block's fields each name a shape; each `check:` entry is a `[predicate, message]` pair evaluated against the block (anaphoric `_` is the block):
 
 ```eu,notest
 ` { contract: { host: string?, port: number?, replicas: number? }
-    check: [ (_.port > 0)      ! "port must be positive",
-             (_.replicas >= 1) ! "need at least one replica" ] }
+    check: [ [(_.port > 0),      "port must be positive"],
+             [(_.replicas >= 1),  "need at least one replica"] ] }
 server(raw): raw
 ```
 
@@ -81,10 +81,9 @@ Validation is **structural, not nominal** (non-negotiable #2): `:Server` is a *s
 Insert contracts at the boundaries that already exist. The high-value integration is making the ingress functions *contract-aware* rather than asking users to remember to call `validate`:
 
 ```eu,notest
-# parse-as / read / parse-args grow an optional shape argument
-config:  read("config.yaml", :Server)            # validated on load
-opts:    parse-args(defaults, cli-args)          # defaults block carries field contracts
-data:    json-string parse-as(:json, :Response)  # validated on parse
+# parse-as / imports / parse-args grow an optional shape argument
+data: json-string parse-as(:json, :Response)  # validated on parse
+opts: parse-args(defaults, cli-args)          # defaults block carries field contracts
 ```
 
 Because `parse-args` already coerces values against the `defaults` block (`lib/prelude.eu:2173-2175`) and already raises on unknown options, contract-checking its output is a natural extension of behaviour it half-performs today.
@@ -104,7 +103,7 @@ It must **not** become the H13b sound-cast road [0002] rejects. The discipline i
 - **Contract representation & engine** — a new module that interprets a `Type` (from the existing `parse.rs`) *as* a predicate over a runtime value, reusing the predicate intrinsics that already exist (`__ISBLOCK`, `__ISLIST`, `__ISNUMBER`, … — `src/eval/intrinsics.rs:862` onward; prelude `block?`/`list?`/`number?` at `lib/prelude.eu:376-392`). Medium size; the core is a recursive `check(shape, value) -> Result`.
 - **Prelude surface** — `validate`, `valid?`, and the refinement predicates (`positive?`, `non-empty?`, …) added to `lib/prelude.eu`. Small.
 - **Structured blame** — extend `src/eval/error.rs`, which already builds `codespan_reporting` diagnostics with `help:` hints and "available keys" suggestions (`error.rs:5, 277-287`), with a `ContractViolation` variant carrying: the failed field/path, the expected shape, the actual value's kind, and the ingress source span. This is the make-or-break work (below).
-- **Ingress integration** — optional shape arguments on `parse-as`, the import/`read` path (`src/import/`), and `parse-args` (`lib/prelude.eu:2152`). Small per site; behaviour-preserving when the argument is omitted.
+- **Ingress integration** — optional shape arguments on `parse-as`, the import path (`src/import/`), and `parse-args` (`lib/prelude.eu:2152`). Small per site; behaviour-preserving when the argument is omitted.
 - **No STG/GC/typecheck-core change.** Contracts are ordinary evaluated core; erasure and the [0002] boundary guarantee are untouched.
 
 Sequencing: land `validate`/`valid?` + the engine + structured blame first (self-contained, testable with `//=`); add the `contract:`/`check:` annotation; wire ingress integration last; fold in H7 refinements as they arrive.
