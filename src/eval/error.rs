@@ -381,44 +381,18 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
 fn format_not_value(context: &str) -> String {
     match context {
         "a function application" => {
-            "expected a primitive value but found an unevaluated function application\n  \
-             help: this often means a function received fewer arguments than it needs, \
-             producing a partial application instead of a result\n  \
-             help: check that all functions in the pipeline receive the correct number of \
-             arguments — e.g. 'add(x, y)' needs two args but 'xs map(add)' applies 'add' \
-             to each element with only one arg"
-                .to_string()
+            "expected a primitive value but found an unevaluated function application".to_string()
         }
         "a data constructor (e.g. block or list)" | "a data constructor" => {
-            "expected a primitive value but found a structured value (block or list)\n  \
-             help: to extract a field from a block, use '.field' notation; \
-             to extract an element from a list, use 'head' or 'nth(n, list)'"
-                .to_string()
+            "expected a primitive value but found a structured value (block or list)".to_string()
         }
         "a boolean (true)" | "a boolean (false)" => {
-            "expected a primitive number, string, or symbol but found a boolean\n  \
-             help: use 'if(condition, then_value, else_value)' to convert a boolean to a value\n  \
-             help: eucalypt booleans cannot be used in arithmetic or as strings directly"
-                .to_string()
+            "expected a primitive number, string, or symbol but found a boolean".to_string()
         }
-        "a list" => "expected a primitive value but found a list\n  \
-             help: to access elements, use 'head' (first element) or 'xs !! n' (nth element)\n  \
-             help: to convert a list of strings to a single string, use 'str.join-on'"
-            .to_string(),
-        "a block" => "expected a primitive value but found a block\n  \
-             help: to extract a field, use '.field' notation, e.g. 'block.field'"
-            .to_string(),
-        c if !c.is_empty() => {
-            format!(
-                "expected a primitive value but found {c}\n  \
-                 help: this can occur when a function or structured value appears \
-                 where a primitive (number, string, etc.) was expected"
-            )
-        }
-        _ => "expected a value but found an unevaluated expression\n  \
-              help: this can occur when a function or structured value appears \
-              where a primitive (number, string, etc.) was expected"
-            .to_string(),
+        "a list" => "expected a primitive value but found a list".to_string(),
+        "a block" => "expected a primitive value but found a block".to_string(),
+        c if !c.is_empty() => format!("expected a primitive value but found {c}"),
+        _ => "expected a value but found an unevaluated expression".to_string(),
     }
 }
 
@@ -458,11 +432,7 @@ fn format_not_callable(actual_type: &str) -> String {
     if actual_type.is_empty() {
         "tried to call a value that is not a function".to_string()
     } else {
-        format!(
-            "tried to call a {actual_type} as a function\n  \
-             help: only functions and blocks can be called with arguments\n  \
-             help: this often means too many arguments were passed to a function"
-        )
+        format!("tried to call a {actual_type} as a function")
     }
 }
 
@@ -475,19 +445,14 @@ fn format_not_callable(actual_type: &str) -> String {
 /// `xs head + 1` which parses as `xs (head + 1)` rather than the
 /// intended `(xs head) + 1`.
 fn format_cannot_return_fun(expected_tags: &[u8]) -> String {
-    let mut msg = if expected_tags.is_empty() {
+    if expected_tags.is_empty() {
         "type mismatch: received a function where a value was expected".to_string()
     } else {
         format!(
             "type mismatch: received a function where {} was expected",
             display_expected_tags(expected_tags)
         )
-    };
-    msg.push_str(
-        "\n  help: this often happens due to operator precedence; \
-         try adding parentheses, e.g. `(xs f) + 1` instead of `xs f + 1`",
-    );
-    msg
+    }
 }
 
 /// Format a division by zero error message with the operation context
@@ -495,40 +460,26 @@ fn format_division_by_zero(operation: &str) -> String {
     if operation.is_empty() {
         "division by zero".to_string()
     } else {
-        format!(
-            "division by zero in {operation}\n  \
-             help: the divisor evaluated to zero"
-        )
+        format!("division by zero in {operation}")
     }
 }
 
 /// Format an unknown format error message listing valid export formats
 fn format_unknown_format(name: &str) -> String {
-    format!(
-        "unknown export format '{name}'\n  \
-         help: supported formats are: yaml, json, toml, text, edn, html"
-    )
+    format!("unknown export format '{name}'")
 }
 
-/// Format a bad format string error message with help about valid specifiers
+/// Format a bad format string error message
 fn format_bad_format_string(detail: &str) -> String {
-    format!(
-        "bad format string: {detail}\n  \
-         help: format strings use printf-style %-specifiers, \
-         e.g. %d (integer), %f (float), %s (string), %e (scientific)"
-    )
+    format!("bad format string: {detail}")
 }
 
 /// Format a bad timezone string error message
 fn format_bad_timezone(tz: &str) -> String {
-    format!(
-        "unrecognised time zone '{tz}'\n  \
-         help: use an IANA timezone name (e.g. 'Europe/London', 'America/New_York') \
-         or a UTC offset string (e.g. '+0100', '-0530', 'UTC')"
-    )
+    format!("unrecognised time zone '{tz}'")
 }
 
-/// Format a bad datetime components error with a hint about valid ranges
+/// Format a bad datetime components error message identifying which component is out of range
 fn format_bad_datetime_components(
     y: &Number,
     m: &Number,
@@ -536,7 +487,6 @@ fn format_bad_datetime_components(
     h: &Number,
     min: &Number,
     s: &Number,
-    tz: &str,
 ) -> String {
     // Try to identify which component is out of range
     let hint = if m.as_u64().is_some_and(|v| v == 0 || v > 12) {
@@ -555,12 +505,7 @@ fn format_bad_datetime_components(
              (e.g. February has at most 29 days)"
         )
     };
-    format!(
-        "invalid date/time components: {hint}\n  \
-         help: cal.zdt takes (year, month, day, hour, minute, second, timezone), \
-         e.g. cal.zdt(2023, 1, 15, 10, 30, 0, \"UTC\")\n  \
-         note: given components were ({y}, {m}, {d}, {h}, {min}, {s}, {tz})"
-    )
+    format!("invalid date/time components: {hint}")
 }
 
 /// Convert a data tag number to a human-readable type name for error messages
@@ -617,23 +562,19 @@ pub enum ExecutionError {
     NotCallable(Smid, String),
     #[error("{}", format_not_value(.1))]
     NotValue(Smid, String),
-    #[error("bad regex: {2}\n  help: the pattern '{1}' is not a valid regular expression")]
+    #[error("bad regex '{1}': {2}")]
     BadRegex(Smid, String, String),
-    #[error("{}", format_bad_datetime_components(.1, .2, .3, .4, .5, .6, .7))]
+    #[error("{}", format_bad_datetime_components(.1, .2, .3, .4, .5, .6))]
     BadDateTimeComponents(Smid, Number, Number, Number, Number, Number, Number, String),
     #[error("{}", format_bad_timezone(.1))]
     BadTimeZone(Smid, String),
     #[error("bad timestamp ({1})")]
     BadTimestamp(Smid, Number),
-    #[error("bad datetime format '{1}': not a recognised ISO 8601 datetime string\n  help: expected a format like '2024-01-15T09:30:00+00:00' or '2024-01-15'")]
+    #[error("bad datetime format '{1}': not a recognised ISO 8601 datetime string")]
     BadDateTimeString(Smid, String),
     #[error("failed to apply format string")]
     FormatFailure(Smid),
-    #[error(
-        "failed to convert numeric type as required by format string\n  \
-         help: integer specifiers like %d, %o, %x require an integer value; \
-         use %f or %g for floating-point numbers"
-    )]
+    #[error("failed to convert numeric type as required by format string")]
     BadNumericTypeForFormat(Smid),
     #[error("bad number format: {1}")]
     BadNumberFormat(Smid, String),
@@ -643,11 +584,11 @@ pub enum ExecutionError {
     NotScalar(Smid),
     #[error("{}", format_unknown_format(.0))]
     UnknownFormat(String),
-    #[error("cannot combine numbers ({1}, {2}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
+    #[error("cannot combine numbers ({1}, {2}) into same numeric domain")]
     NumericDomainError(Smid, Number, Number),
-    #[error("result of ({1})^({2}) is not a real number\n  help: raising a negative base to a fractional exponent yields a complex result; use a non-negative base or an integer exponent")]
+    #[error("result of ({1})^({2}) is not a real number")]
     ComplexResult(Smid, Number, Number),
-    #[error("numeric overflow: result of operating on {1} and {2} is out of range\n  help: the result exceeds the representable range for this numeric type")]
+    #[error("numeric overflow: result of operating on {1} and {2} is out of range")]
     NumericRangeError(Smid, Number, Number),
     #[error("{}", format_division_by_zero(.1))]
     DivisionByZero(Smid, String),
@@ -691,7 +632,7 @@ pub enum ExecutionError {
     AssertionFailed(Smid, String, String),
     #[error("shift amount {1} is out of range: must be between 0 and 63 for 64-bit integers")]
     BitshiftRangeError(Smid, i64),
-    #[error("unknown render format '{1}'\n  help: supported formats for render-as are: :yaml, :json, :toml, :text, :edn, :html")]
+    #[error("unknown render format '{1}'")]
     UnknownRenderFormat(Smid, String),
     #[error("cannot compare incompatible types with '{1}': operands must both be numbers, strings, symbols, or datetimes")]
     ComparisonTypeMismatch(Smid, String),
