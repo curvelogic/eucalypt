@@ -457,6 +457,56 @@ The wrong pattern causes a compiler error because only the first
 block is unit metadata — the second becomes an anonymous block
 declaration catenated into the metadata expression.
 
+## Type Annotation String Escaping
+
+### Record Braces in Type Strings Require `{{` Escaping
+
+Type annotation values (`type:`, `types:`) are ordinary eucalypt strings.
+`{` inside a eucalypt string starts string interpolation — it does
+**not** produce a literal `{` for the type parser.
+
+Any record type written in a type annotation string must escape braces
+with `{{` and `}}`:
+
+```eu,notest
+# WRONG — {..r} triggers string interpolation
+` { type: "{..r} -> {..r}" }
+pass-through(x): x
+
+# RIGHT — use {{ and }} for literal braces
+` { type: "{{..r}} -> {{..r}}" }
+pass-through(x): x
+
+# WRONG — {name: string} triggers interpolation
+` { type: "{name: string, age: number, ..} -> string" }
+greet(p): "Hello, {p.name}!"
+
+# RIGHT
+` { type: "{{name: string, age: number, ..}} -> string" }
+greet(p): "Hello, {p.name}!"
+```
+
+The same applies to `types:` unit metadata values:
+
+```eu,notest
+# RIGHT — escape braces in types: values too
+{ types: { Person: "{{name: string, age: number}}" } }
+```
+
+**When escaping is NOT needed**: type strings that contain no `{` at all
+never need escaping. Simple function types and built-in type constructors
+are fine as-is:
+
+```eu,notest
+` { type: "number -> number" }           # fine — no braces
+` { type: "[a] -> a" }                   # fine
+` { type: "IO(block)" }                  # fine — parens, not braces
+` { type: "Lens(a, b) -> a -> b" }       # fine
+` { type-def: "Point" }                  # fine — just a name, no braces
+```
+
+---
+
 ## Future Improvements
 
 These gotchas highlight areas where the language could benefit from:

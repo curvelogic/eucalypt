@@ -147,7 +147,7 @@ Records describe the shape of blocks:
 | `block`          | any block (no known shape)                        |
 
 ```eu,notest
-` { type: "{name: string, age: number, ..} -> string" }
+` { type: "{{name: string, age: number, ..}} -> string" }
 greet-person(p): "Hello, {p.name}!"
 ```
 
@@ -368,8 +368,8 @@ using unit metadata:
 
 ```eu,notest
 { import: "data.eu"
-  types: { Person: "{name: string, age: number, email: string | null, ..}"
-           Response: "{status: number, body: string | null}" } }
+  types: { Person: "{{name: string, age: number, email: string | null, ..}}"
+           Response: "{{status: number, body: string | null}}" } }
 
 ` { type: "[Person] -> [string]" }
 names: map(_.name)
@@ -395,7 +395,7 @@ Combine `type:` and `type-def:` to override inference:
 
 ```eu,notest
 ` { type-def: "Person"
-    type: "{name: string, age: number, email: string | null, ..}" }
+    type: "{{name: string, age: number, email: string | null, ..}}" }
 nobody: { name: "", age: 0, email: null }
 ```
 
@@ -406,7 +406,7 @@ nobody: { name: "", age: 0, email: null }
 Consider a small data processing pipeline with type annotations:
 
 ```eu,notest
-{ types: { Record: "{id: number, name: string, active: bool, ..}" } }
+{ types: { Record: "{{id: number, name: string, active: bool, ..}}" } }
 
 ` { type: "[Record] -> [Record]" }
 active-records: filter(_.active)
@@ -442,11 +442,11 @@ typically have variable shapes:
 
 ```eu,notest
 # Open: works with any block that has a .name field
-` { type: "{name: string, ..} -> string" }
+` { type: "{{name: string, ..}} -> string" }
 get-name(b): b.name
 
 # Closed: only works with blocks of exactly this shape
-` { type: "{name: string}" }
+` { type: "{{name: string}}" }
 exact-block: { name: "Alice" }
 ```
 
