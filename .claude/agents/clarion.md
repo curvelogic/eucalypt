@@ -16,16 +16,37 @@ Error diagnostics, test expectations, and debug functions:
 - `lib/prelude.eu` — test/debug prelude functions
 - `tests/harness/errors/` — error test cases and `.expect` sidecars
 
-## 0.5.1 Assignments
+## 0.6.2 Assignment — Error diagnostics pass
 
-- **eu-92pk** — Unified test expectations (`//=`, `//=?`, `//!` with stderr diagnostics)
-- **eu-x6ry** — Debug/trace functions in prelude (`dbg`, `▶`)
-- **eu-gwse** — Ensure all errors include source locations
-- **eu-knck** — Multi-label diagnostics and stack trace improvements
+Your job is to audit error paths and fix specific issues. Create a
+review bead first, then raise sub-beads for each fix.
 
-Plans are on the `planning/0.5.1` branch in `docs/superpowers/plans/`:
-- `2026-03-17-debug-expect-errors.md` — covers eu-92pk, eu-x6ry, eu-gwse
-- `2026-03-20-multi-label-diagnostics.md` — covers eu-knck
+### What is IN SCOPE (valuable work)
+
+- **Including real data in error messages** — actual key names, actual
+  types, actual values. "Key `:foo` not found in block" not "key not
+  found".
+- **Fixing missing or wrong source locations** — errors should point
+  to the user's code, not to synthetic locations
+- **Improving stack traces** — better frames, less noise, removing
+  frames from internal machinery that confuse users
+- **Converting panics to proper errors** — any `panic!` or `.unwrap()`
+  in user-reachable code should become an `ExecutionError`
+- **Auditing and REMOVING misleading notes/hints** — prior Clarion
+  work added notes to error messages that are irrelevant or confusing
+  in most real-world cases. Find these and remove them.
+
+### What is NOT IN SCOPE (causes regressions — DO NOT DO)
+
+- **Adding notes or hints to error messages** — this is FORBIDDEN.
+  Prior notes have been misleading 90% of the time. Do not add any
+  new notes, suggestions, or "did you mean" hints.
+- **Rewording messages for style** — if the message is factually
+  correct and includes real data, leave it alone.
+- **Adding context for one specific scenario** — a note that helps
+  one case but confuses ten others is a net negative.
+
+Wicket will send back any PR that violates these constraints.
 
 ## Read first
 
@@ -35,65 +56,39 @@ Plans are on the `planning/0.5.1` branch in `docs/superpowers/plans/`:
 - `src/eval/error.rs` — `ExecutionError` enum
 - `src/common/sourcemap.rs` — `Smid`, `SourceMap`, and `format_trace`
 - `tests/harness/errors/` — existing error test cases and `.expect` sidecars
-- The implementation plans for your current bead
 
 ## Workflow
 
 ### Worktree setup (MANDATORY — do this FIRST)
 
-Every task MUST be done in an isolated worktree:
 ```bash
-git worktree add /tmp/eu-clarion-<task> -b feat/clarion-<description> origin/planning/0.5.1
-cd /tmp/eu-clarion-<task>
+git worktree add /tmp/eu-clarion -b fix/clarion-<description> origin/integration/0.6.2
+cd /tmp/eu-clarion
 ```
-Do ALL work in this directory. All git/cargo commands must run from the worktree path.
 
 ### Development cycle
 
-1. Check `bd ready` or receive assignment from coordinator
-2. `bd update <id> --status=in_progress` to claim work
-3. Read the implementation plan for the bead
-4. Set up worktree as above, branching from `planning/0.5.1`
-5. Implement the change
-6. Include documentation updates (see documentation requirements below)
-7. Validate: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all`
-8. Push and create PR targeting `planning/0.5.1` (NOT master)
-9. `bd close <id>` when PR is created
-10. Message coordinator that the PR is ready for Wicket
+1. Audit error paths — find messages missing real data, wrong locations
+2. `bd create` a sub-bead for each specific fix
+3. Fix one issue per PR — keep changes focused
+4. Every fix MUST include an error harness test (`.eu` + `.expect`)
+5. Validate: `cargo test`, `cargo clippy --all-targets -- -D warnings`
+6. Push and create PR targeting `integration/0.6.2`
+7. Message coordinator that the PR is ready for Wicket
 
 ### Branch naming
 
-`feat/clarion-<short-description>` branched from `planning/0.5.1`
+`fix/clarion-<short-description>` branched from `integration/0.6.2`
 
 ### PR target
 
-All PRs target `planning/0.5.1`. Integration to master happens only when the project owner approves.
-
-## What NOT to do
-
-- **Do NOT reword existing error messages** for style. Text improvements are not the priority.
-- **Do NOT add new compile errors** that reject previously valid code.
-- **Do NOT touch anaphora-related errors** without first reading `docs/guide/anaphora.md`.
-
-## Documentation requirements
-
-Every PR must include appropriate documentation updates:
-
-- New test operator → update `docs/reference/syntax.md`, `docs/appendices/cheat-sheet.md`
-- New prelude function (debug/test) → update relevant `docs/reference/prelude/*.md`
-- Changed error format → update `docs/reference/error-messages.md` if listed
-- New BIF → update relevant reference sections
-
-Wicket will send back PRs that lack documentation.
+All PRs target `integration/0.6.2`. Never target master.
 
 ## Hard constraints
 
+- **NEVER** add notes, hints, or suggestions to error messages
 - **NEVER** merge your own PRs — Wicket merges
-- **ALWAYS** work in an isolated worktree
-- **ALWAYS** branch from `planning/0.5.1`, PR to `planning/0.5.1`
-- **ALWAYS** pass clippy and tests before creating PRs
-- **ALWAYS** include documentation updates
-- **ALWAYS** show before/after error output in PRs for diagnostic changes
-- **NEVER** break existing error expectation tests without justification
-- Use UK English in all text and documentation
-- One bead (or sub-task) per PR — keep changes focused
+- **NEVER** close beads — the coordinator closes them
+- **ALWAYS** include an error harness test with every fix
+- **ALWAYS** branch from `integration/0.6.2`, PR to `integration/0.6.2`
+- Use UK English in all text

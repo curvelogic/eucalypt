@@ -17,30 +17,32 @@ Editor integration, developer tooling, and web targets:
 - WASM compilation target and JS API
 - Browser playground (separate repo)
 
-## 0.5.1 Assignments
+## 0.6.2 Assignment — Documentation and tooling review
 
-- **eu-9fph** — Markdown formatting in docstrings (tree-sitter grammar + emacs mode)
-- **eu-32so** — Review and update VS Code extension to feature parity with emacs mode
-- **eu-7z2m** — Add wasm-bindgen JS API for eucalypt library
-- **eu-vgq4** — Eucalypt browser playground (separate project — see below)
+### Phase 1: Initial review (start of release)
 
-Plans are on the `planning/0.5.1` branch in `docs/superpowers/plans/`:
-- `2026-03-20-markdown-docstrings.md` — covers eu-9fph
-- `2026-03-17-wasm-api-and-playground.md` — covers eu-7z2m and eu-vgq4
+Review the following against current 0.6.1 features and raise beads
+for each issue found:
 
-### Browser playground (eu-vgq4) — SEPARATE REPO
+- **User-facing docs** (`docs/guide/`, `docs/reference/`) — do they
+  cover the type system adequately?
+- **Agent reference** (`docs/reference/agent-reference.md`) — up to date?
+- **Cheat sheet** (`docs/appendices/cheat-sheet.md`) — complete?
+- **Syntax gotchas** (`docs/appendices/syntax-gotchas.md`) — current?
+- **Tree-sitter grammar** (`editors/tree-sitter-eucalypt/`) — missing constructs?
+- **Emacs mode** (`editors/emacs/`) — issues?
+- **VS Code extension** (`editors/vscode/`) — feature parity?
 
-The browser playground is developed in a **separate private repository**:
-```
-git@github.com:curvelogic/eucalypt-playground.git
-```
+### Phase 2: Ongoing (after each Quill bead lands)
 
-For this bead:
-1. Clone or create the repo above
-2. Develop the playground there (HTML/JS/CSS + wasm-pack output from eucalypt)
-3. PRs and branches are within that repo, not the main eucalypt repo
-4. Once developed, the owner will add a beads db, make it public, and develop it separately
-5. Do NOT create worktrees in the main eucalypt repo for this bead
+After each type system bead is merged to `integration/0.6.2`, review
+whether docs need updating for the new features. Specifically check:
+- `docs/guide/` — type system guide sections
+- `docs/reference/agent-reference.md` — syntax reference
+- `docs/appendices/cheat-sheet.md` — quick reference
+- `docs/appendices/syntax-gotchas.md` — pitfalls
+
+Raise beads for any gaps and create PRs to fix them.
 
 ## Read first
 
@@ -58,7 +60,7 @@ For this bead:
 
 Every task (except eu-vgq4) MUST be done in an isolated worktree:
 ```bash
-git worktree add /tmp/eu-lantern-<task> -b feat/lantern-<description> origin/planning/0.5.1
+git worktree add /tmp/eu-lantern-<task> -b feat/lantern-<description> origin/integration/0.6.2
 cd /tmp/eu-lantern-<task>
 ```
 Do ALL work in this directory. All git/cargo commands must run from the worktree path.
@@ -68,22 +70,22 @@ Do ALL work in this directory. All git/cargo commands must run from the worktree
 1. Check `bd ready` or receive assignment from coordinator
 2. `bd update <id> --status=in_progress` to claim work
 3. Read the implementation plan for the bead
-4. Set up worktree as above, branching from `planning/0.5.1`
+4. Set up worktree as above, branching from `integration/0.6.2`
 5. Implement the change
 6. Include documentation updates where appropriate
 7. Validate: byte-compile Emacs lisp, test tree-sitter queries,
    run any available editor tests
-8. Push and create PR targeting `planning/0.5.1` (NOT master)
+8. Push and create PR targeting `integration/0.6.2` (NOT master)
 9. `bd close <id>` when PR is created
 10. Message coordinator that the PR is ready for Wicket
 
 ### Branch naming
 
-`feat/lantern-<short-description>` branched from `planning/0.5.1`
+`feat/lantern-<short-description>` branched from `integration/0.6.2`
 
 ### PR target
 
-All PRs target `planning/0.5.1`. Integration to master happens only when the project owner approves.
+All PRs target `integration/0.6.2`. Integration to master happens only when the project owner approves.
 
 ## Reactive duties
 
@@ -104,7 +106,7 @@ your normal phasing.
 
 - **NEVER** merge your own PRs — Wicket merges
 - **ALWAYS** work in an isolated worktree (except playground repo)
-- **ALWAYS** branch from `planning/0.5.1`, PR to `planning/0.5.1`
+- **ALWAYS** branch from `integration/0.6.2`, PR to `integration/0.6.2`
 - **ALWAYS** keep editor tooling in sync with language changes
 - Use UK English in all text
 - One bead (or sub-task) per PR — keep changes focused

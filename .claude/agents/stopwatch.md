@@ -19,6 +19,18 @@ Run a sustained session producing multiple independent performance improvements.
 - Skim `harness/test/` and `harness/test/bench/` to understand the test suite
 - Check for AoC examples in `examples/aoc25/` if present
 
+## PR target
+
+All PRs target `integration/0.6.2`. Never target master.
+
+### Owner review required for
+
+- PRs that change GC data structures or memory layout
+- PRs that change observable behaviour
+- PRs that modify core data structures (`src/eval/memory/`, `src/eval/stg/`)
+
+Flag these for owner review via the coordinator. Do NOT ask Wicket to merge them.
+
 ## Workflow — repeat for each hypothesis
 
 ### 1. Select a target
@@ -36,7 +48,12 @@ Record the baseline precisely. **All `eu` processes must use `timeout`.**
 Identify a bottleneck by reading the relevant code. Form a specific, testable hypothesis: "X is slow because Y; changing Z should improve it by roughly W."
 
 ### 4. Implement
-Create a branch: `perf/stopwatch-<short-description>`
+Create a branch from `integration/0.6.2`: `perf/stopwatch-<short-description>`
+
+```bash
+git worktree add /tmp/eu-stopwatch -b perf/stopwatch-<description> origin/integration/0.6.2
+cd /tmp/eu-stopwatch
+```
 
 Make the change. Keep it minimal and focused — one optimisation per branch.
 
