@@ -1,2 +1,2 @@
 exit: 1
-stderr: "anaphora.*anonymous"
+stderr: "unresolved variable 'lambda'"

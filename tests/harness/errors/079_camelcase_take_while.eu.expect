@@ -1,2 +1,2 @@
 exit: 1
-stderr: "kebab-case"
+stderr: "unresolved variable 'takeWhile'"

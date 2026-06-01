@@ -1,2 +1,2 @@
 exit: 1
-stderr: "modulo"
+stderr: "unresolved variable 'even\?'"

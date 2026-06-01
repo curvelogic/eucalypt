@@ -1,2 +1,2 @@
 exit: 1
-stderr: "name.args.: body"
+stderr: "unresolved variable 'def'"

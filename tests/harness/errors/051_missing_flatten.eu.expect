@@ -1,2 +1,2 @@
 exit: 1
-stderr: "use 'concat'"
+stderr: "unresolved variable 'flatten'"

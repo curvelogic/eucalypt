@@ -1,2 +1,2 @@
 exit: 1
-stderr: "use 'count'"
+stderr: "unresolved variable 'length'"

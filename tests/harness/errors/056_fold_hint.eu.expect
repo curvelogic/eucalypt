@@ -1,2 +1,2 @@
 exit: 1
-stderr: "foldl.*foldr"
+stderr: "unresolved variable 'fold'"

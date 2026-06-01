@@ -1,2 +1,2 @@
 exit: 1
-stderr: "use 'num'"
+stderr: "unresolved variable 'parse-num'"
