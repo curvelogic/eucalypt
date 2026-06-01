@@ -19,7 +19,7 @@ use crate::{
 
 use super::{
     array::array_binop,
-    support::{machine_return_bool, machine_return_boxed_num, machine_return_num, num_arg},
+    support::{machine_return_bool, machine_return_num, num_arg},
     syntax::{
         dsl::{app_bif, case, force, lambda, local, lref},
         LambdaForm, StgSyn,
@@ -110,17 +110,17 @@ impl StgIntrinsic for Add {
                 x,
                 y,
             ))?;
-            machine_return_boxed_num(machine, view, Number::from(total))
+            machine_return_num(machine, view, Number::from(total))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let total = l.checked_add(r).ok_or(ExecutionError::NumericRangeError(
                 machine.annotation(),
                 x,
                 y,
             ))?;
-            machine_return_boxed_num(machine, view, Number::from(total))
+            machine_return_num(machine, view, Number::from(total))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l + r) {
-                machine_return_boxed_num(machine, view, ret)
+                machine_return_num(machine, view, ret)
             } else {
                 Err(ExecutionError::NumericDomainError(
                     machine.annotation(),
@@ -177,17 +177,17 @@ impl StgIntrinsic for Sub {
                 x,
                 y,
             ))?;
-            machine_return_boxed_num(machine, view, Number::from(result))
+            machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let result = l.checked_sub(r).ok_or(ExecutionError::NumericRangeError(
                 machine.annotation(),
                 x,
                 y,
             ))?;
-            machine_return_boxed_num(machine, view, Number::from(result))
+            machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l - r) {
-                machine_return_boxed_num(machine, view, ret)
+                machine_return_num(machine, view, ret)
             } else {
                 Err(ExecutionError::NumericDomainError(
                     machine.annotation(),
@@ -244,17 +244,17 @@ impl StgIntrinsic for Mul {
                 x,
                 y,
             ))?;
-            machine_return_boxed_num(machine, view, Number::from(product))
+            machine_return_num(machine, view, Number::from(product))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let product = l.checked_mul(r).ok_or(ExecutionError::NumericRangeError(
                 machine.annotation(),
                 x,
                 y,
             ))?;
-            machine_return_boxed_num(machine, view, Number::from(product))
+            machine_return_num(machine, view, Number::from(product))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l * r) {
-                machine_return_boxed_num(machine, view, ret)
+                machine_return_num(machine, view, ret)
             } else {
                 Err(ExecutionError::NumericDomainError(
                     machine.annotation(),
@@ -318,18 +318,18 @@ impl StgIntrinsic for Div {
                 x,
                 y,
             ))?;
-            machine_return_boxed_num(machine, view, Number::from(result))
+            machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let result = l.checked_div(r).ok_or(ExecutionError::NumericRangeError(
                 machine.annotation(),
                 x,
                 y,
             ))?;
-            machine_return_boxed_num(machine, view, Number::from(result))
+            machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             let result = (l / r).floor();
             if let Some(n) = num_from_floored(result) {
-                machine_return_boxed_num(machine, view, n)
+                machine_return_num(machine, view, n)
             } else {
                 Err(ExecutionError::NumericDomainError(
                     machine.annotation(),
@@ -1277,11 +1277,8 @@ pub mod tests {
 
     #[test]
     pub fn test_unboxed_add() {
-        // ADD with a custom wrapper returns BoxedNumber directly from execute
-        // (the arithmetic_wrapper does not include a boxing step, so execute
-        // must call machine_return_boxed_num). Calling the BIF directly also
-        // produces a BoxedNumber, so we check via terminated() rather than
-        // native_return() (which only works for raw atom results).
+        // ADD called directly (bypassing the wrapper) returns a native atom via
+        // machine_return_num.  native_return() should give Some(Num(4)).
         let syntax = letrec_(
             vec![],
             app_bif(intrinsics::index_u8("ADD"), vec![num(2), num(2)]),
@@ -1290,8 +1287,8 @@ pub mod tests {
         let mut m = testing::machine(rt.as_ref(), syntax);
         m.run(Some(100)).unwrap();
         assert!(m.terminated());
-        // Result is BoxedNumber([Num(4)]) — native_return() returns None for Cons
-        assert_eq!(m.native_return(), None);
+        // Result is a native atom — native_return() should yield Some(Num(4)).
+        assert_eq!(m.native_return(), Some(Native::Num(4.into())));
     }
 
     #[test]
