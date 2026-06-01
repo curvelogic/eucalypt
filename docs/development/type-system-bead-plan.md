@@ -25,8 +25,8 @@ Existing beads keep their real IDs (`eu-oh3p`, `eu-ggr9`, etc.) — see
 
 | Phase | Epic | Milestone |
 |-------|------|-----------|
-| Phase A — close the existing system | `TS-A` | **6.1** |
-| Phase B — expressiveness | `TS-B` | **7.0** |
+| Phase A — close the existing system | `TS-A` | **0.6.2** |
+| Phase B — expressiveness | `TS-B` | **0.7.0** |
 
 Tag every child with its phase milestone and a `type-system` label
 (plus `phase-a` / `phase-b`). Use whatever milestone/label mechanism
@@ -39,7 +39,7 @@ the local `bd` setup provides.
 ```
 TS-ROOT  Type system evolution                              (epic)
 │
-├── TS-A   Phase A — close the existing system               [6.1]
+├── TS-A   Phase A — close the existing system               [0.6.2]
 │   ├── TS-A1   Row polymorphism in inference            (← eu-z9zz.5)
 │   ├── TS-A2   Homogeneous block (Dict) types
 │   ├── TS-A3   Recursive types (equirecursive)
@@ -50,7 +50,7 @@ TS-ROOT  Type system evolution                              (epic)
 │   ├── TS-A9   Monadic block binding type hints          (← eu-ggr9)
 │   └── TS-A10  Monadic bound-variable element-type hints (← eu-z9zz.10)
 │
-└── TS-B   Phase B — expressiveness                          [7.0]
+└── TS-B   Phase B — expressiveness                          [0.7.0]
     ├── TS-B1   Higher-kinded type variables
     ├── TS-B2   Structural operator constraints
     ├── TS-B3   Metadata-channel typing (won't-do)
@@ -77,7 +77,7 @@ the grain is useful, otherwise keep them as checklist items.
 
 ---
 
-## 2. Phase A — `TS-A` (milestone 6.1)
+## 2. Phase A — `TS-A` (milestone 0.6.2)
 
 **Epic.** *Phase A — close the existing gradual type system.*
 Completes work already half-built in the representation (row
@@ -211,7 +211,7 @@ a cache built from one run is missing bindings for the next. The sound
 form checks the prelude and each unit *standalone* against seeded
 summaries (a per-module-checking restructure), which is precisely
 TS-B7's architecture. The in-memory / persistent split therefore no
-longer makes sense; TS-B7 absorbs the whole thing. For 6.1 the prelude
+longer makes sense; TS-B7 absorbs the whole thing. For 0.6.2 the prelude
 is re-checked each run — a one-shot cost, acceptable for a CLI check;
 the latency that matters (LSP re-check on every keystroke) is TS-B7's
 remit. See evolution-doc H9.
@@ -241,7 +241,7 @@ unwrapped element type; inlay hints reflect it.
 
 ---
 
-## 3. Phase B — `TS-B` (milestone 7.0)
+## 3. Phase B — `TS-B` (milestone 0.7.0)
 
 **Epic.** *Phase B — type-system expressiveness.* Genuinely new theory
 in the codebase: higher-kinded types, structural constraints,
@@ -421,11 +421,11 @@ and a working `eu check` indicates.
 | Bead | What it is | Recommended disposition | Milestone |
 |------|-----------|-------------------------|-----------|
 | `eu-oh3p` | Gradual typing spec | **Close as done** — spec delivered, base system implemented. `TS-ROOT` + the evolution doc are the continuation. | — |
-| `eu-z9zz` | Gradual typing implementation epic | **Close as done** once children below are re-homed (base system shipped). If not fully shipped, keep open until it is; future children move to `TS-A`. | 6.1 |
-| `eu-z9zz.5` | Row variables | **Re-parent → `TS-A1`**, retitle to match. Preserves design history. | 6.1 |
-| `eu-z9zz.10` | Monadic bound-variable type hints | **Re-parent → `TS-A10`**. | 6.1 |
-| `eu-ggr9` | Typed monad metadata for monadic block checking | **Re-parent → `TS-A9`**. Bring any sub-beads along. Must land for 6.1. | 6.1 |
-| `eu-dme3` | Type the monad functions directly | **Re-parent → `TS-B8`**. Its full ambition needs HKT, so it belongs in Phase B. | 7.0 |
+| `eu-z9zz` | Gradual typing implementation epic | **Close as done** once children below are re-homed (base system shipped). If not fully shipped, keep open until it is; future children move to `TS-A`. | 0.6.2 |
+| `eu-z9zz.5` | Row variables | **Re-parent → `TS-A1`**, retitle to match. Preserves design history. | 0.6.2 |
+| `eu-z9zz.10` | Monadic bound-variable type hints | **Re-parent → `TS-A10`**. | 0.6.2 |
+| `eu-ggr9` | Typed monad metadata for monadic block checking | **Re-parent → `TS-A9`**. Bring any sub-beads along. Must land for 0.6.2. | 0.6.2 |
+| `eu-dme3` | Type the monad functions directly | **Re-parent → `TS-B8`**. Its full ambition needs HKT, so it belongs in Phase B. | 0.7.0 |
 
 If a bead is already closed, just record the link (`TS-A1` references
 `eu-z9zz.5`, etc.) rather than re-parenting.
@@ -455,7 +455,7 @@ Soft / coordinate (not blockers):
 - `TS-B8` should follow `TS-A9`/`TS-A10` so monadic-block checking
   exists before HKT supersedes the hint mechanism.
 
-Critical path to 6.1: `TS-A4 → TS-A5 → TS-A6`. Everything else in
+Critical path to 0.6.2: `TS-A4 → TS-A5 → TS-A6`. Everything else in
 Phase A is parallelisable.
 
 ---
@@ -464,7 +464,7 @@ Phase A is parallelisable.
 
 1. Create `TS-ROOT` (epic).
 2. Create `TS-A` and `TS-B` as children of `TS-ROOT`; set milestones
-   6.1 and 7.0.
+   0.6.2 and 0.7.0.
 3. Create `TS-A2`–`TS-A7`, `TS-B1`, `TS-B2`, `TS-B5`–`TS-B7`, `TS-B9`
    as children of their phase epic. (`TS-A1`, `TS-A9`, `TS-A10`,
    `TS-B8` are re-homed existing beads — see step 5. `TS-A8` is
