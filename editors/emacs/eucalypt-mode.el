@@ -46,6 +46,8 @@
 (declare-function yaml-mode "yaml-mode" ())
 (declare-function json-mode "json-mode" ())
 (declare-function sp-local-pair "smartparens" (modes open close &rest keys))
+(defvar treesit-fold-range-alist)
+(declare-function treesit-fold-range-seq "treesit-fold" (node offset))
 
 ;;; Group
 
@@ -633,6 +635,29 @@ region is active.  Skips replacements inside strings and comments."
 ;; Disable smartparens auto-pairing for ` in eucalypt buffers.
 (with-eval-after-load 'smartparens
   (sp-local-pair 'eucalypt-mode "`" nil :actions nil))
+
+;;; Code folding (treesit-fold)
+;;
+;; When the optional `treesit-fold' package is available, register fold
+;; ranges for the main structural node types.  Install via:
+;;   (package-install 'treesit-fold)     ; MELPA
+;; or:
+;;   (use-package treesit-fold :ensure t)
+;;
+;; Foldable constructs:
+;;   block       — { declarations }
+;;   list        — [ elements ]
+;;   bracket_expr — ⟦ ... ⟧  (custom bracket pairs, including monadic blocks)
+
+(defvar eucalypt-mode--treesit-fold-ranges
+  '((block        . treesit-fold-range-seq)
+    (list         . treesit-fold-range-seq)
+    (bracket_expr . treesit-fold-range-seq))
+  "Fold range rules for `eucalypt-mode', keyed by tree-sitter node type.")
+
+(with-eval-after-load 'treesit-fold
+  (add-to-list 'treesit-fold-range-alist
+               (cons 'eucalypt-mode eucalypt-mode--treesit-fold-ranges)))
 
 ;;; Markdown highlighting within docstrings
 
