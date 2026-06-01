@@ -320,30 +320,20 @@ builds — avoids duplicating that logic across two pipeline entry points in
 
 ## Implementation sketch
 
-**Phase 1 — JSON Schema export (1.0-adjacent, ~Medium effort).**
-New module `src/driver/schema.rs` and a `Schema` variant in
-`src/driver/options.rs:Commands`. The export pass: collect `type:` annotations
-from all translation units, resolve aliases (reusing `check.rs` alias map),
-walk the resolved `Type` enum (`src/core/typecheck/types.rs:75–151`), and
-recursively emit `serde_json::Value`. The JSON Schema emitter is a structural
-fold over `Type` — no heap, no VM. Recursive alias support is gated on TS-A3.
+**Phase 1 — JSON Schema export (~Medium, low risk).**
+New module `src/driver/schema.rs`, new `Schema` variant in
+`src/driver/options.rs:Commands`. Collect `type:` annotations, resolve aliases
+via the existing `check.rs` alias map, fold the `Type` enum
+(`src/core/typecheck/types.rs:75–151`) into `serde_json::Value`. No heap, no
+VM. `serde_json` is already present (`src/export/json.rs`). Recursive alias
+support gated on TS-A3.
 
-The only novel Rust code is the `Type → serde_json::Value` fold and the CLI
-wiring. Risk: low. The `serde_json` crate is already a transitive dependency
-(via the JSON export path, `src/export/json.rs`).
-
-**Phase 2 — JSON Schema import (1.0-adjacent, ~Medium effort).**
-New module `src/driver/schema_import.rs`. Reads JSON using `serde_json`, walks
-the JSON Schema object graph, and emits eucalypt source text (the type DSL
-strings). The output is a `.eu` file, not an in-memory data structure — the
-importer is a code generator in the simplest possible sense. CRD support adds a
-preprocessing step that extracts the embedded `openAPIV3Schema`. The `--contracts`
-flag emits additional binding declarations with `type:` metadata, to be
-consumed by [0009] at runtime.
-
-Risk: medium. The JSON Schema spec has edge cases (recursive `$ref`, `allOf`
-merging, `not`, `if`/`then`/`else`). A first pass can defer unsupported
-constructs to `any` with a warning, and tighten over time.
+**Phase 2 — JSON Schema import (~Medium, moderate risk).**
+New module `src/driver/schema_import.rs`. Read JSON Schema with `serde_json`,
+walk the object graph, emit eucalypt source text (`.eu` file). CRD support adds
+envelope peeling for `openAPIV3Schema`. The `--contracts` flag emits [0009]-style
+binding declarations. Risk: the JSON Schema spec has edge cases (`allOf`, `not`,
+`if`/`then`/`else`); unsupported constructs degrade to `any` with a warning.
 
 **Phase 3 — Host-language codegen (post-1.0, community-driven).**
 Deliberately not designed here. Eucalypt emits valid JSON Schema; any JSON Schema
@@ -362,31 +352,25 @@ per-language generation. This avoids maintaining N language-specific generators.
 
 ## Alternatives considered
 
-**Full per-language codegen now.** Rejected. Pkl has a dedicated team and
-invested years in its Java, Kotlin, Swift and Go generators; they remain
-a significant maintenance burden. KCL's SDK breadth (11 languages plus WASM)
-requires an active CNCF community to sustain. For a single-maintainer project,
-adding even one per-language code generator creates an obligation to update it
-on every language release cycle. The JSON Schema bridge delivers the same
-adoption surface via the existing per-language JSON Schema ecosystem.
+**Full per-language codegen now.** Rejected. Pkl's Java, Kotlin, Swift and Go
+generators are a significant ongoing maintenance burden even with a dedicated
+Apple team. KCL's 11-language SDK breadth requires an active CNCF community.
+For a single-maintainer project, the JSON Schema bridge delivers the same
+adoption surface at a fraction of the cost — existing JSON Schema toolchains
+do the per-language step.
 
-**`eu run -x json-schema`.** Export JSON Schema as just another output format
-via the existing `-x` flag. Rejected because schema emission is not evaluation:
-it operates on type annotations, not runtime values. Conflating the two would
-require evaluating the program to discover its type annotations, which is
-backwards. A distinct subcommand is the correct boundary.
+**`eu run -x json-schema`.** Rejected. Schema emission operates on type
+annotations, not runtime values; conflating the two requires evaluating the
+programme to discover annotations. A distinct subcommand is the correct boundary.
 
-**CUE or Dhall as the interchange format.** CUE has deeper bidirectional support
-and a richer constraint language. Rejected because JSON Schema has far broader
-ecosystem support (Kubernetes, OpenAPI, Helm, IDE validators, `ajv`, `quicktype`)
-and is standardised (IETF RFC 8927). CUE is a valid interop target for a
-community plugin, not a core commitment.
+**CUE or Dhall as the interchange format.** Rejected. JSON Schema has broader
+ecosystem support (Kubernetes, OpenAPI, Helm, `ajv`, `quicktype`) and is
+standardised (IETF RFC 8927). CUE is a valid community plugin target, not a
+core commitment.
 
-**Ingest JSON Schema as native eucalypt prelude values.** Rather than emitting
-`.eu` source, parse the schema at import time and inject type aliases directly.
-Rejected because it is invisible to the user, uncacheable, and incompatible with
-the principle that type annotations are human-readable artefacts committed to the
-repository. Source-text output is auditable and version-controllable.
+**Ingest JSON Schema as in-memory type aliases (no source emit).** Rejected.
+Invisible to the user, uncacheable, and not version-controllable. Source-text
+output is auditable and can be reviewed in pull requests.
 
 ---
 

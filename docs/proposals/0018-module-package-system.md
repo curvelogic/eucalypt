@@ -138,14 +138,12 @@ infrastructure — they belong with the deferred registry, not the 1.0 core.
 
 Unison identifies every definition by the hash of its implementation; code is
 stored as hashed ASTs, so there are "no builds, no dependency conflicts", two
-versions of a type can coexist, and `lib.install` pulls a release from Unison
-Share. This is the radical end-state: dependency *conflicts* cease to exist
-because names are not the identity. **Instructive** — it shows where
-content-addressing ultimately leads — but **not adoptable** for eucalypt:
-Unison's model requires a codebase database and a wholly different editing
-model (the `ucm` tool), which collides with eucalypt's "plain `.eu` text files
-on disk, rendered by a CLI" identity and its syntactic conservatism. We take
-the *idea* (hash-as-identity for integrity) without the *codebase-manager*.
+versions of a type coexist, and `lib.install` pulls a release from Unison
+Share. The radical end-state: conflicts cease to exist because names are not
+the identity. **Instructive** — but **not adoptable**, since it requires a
+codebase database and a different editing model (`ucm`) that collides with
+eucalypt's plain-`.eu`-files-on-disk identity. We take the *idea*
+(hash-as-identity for integrity) without the *codebase-manager*.
 
 ### Starlark / Bazel & Nix/Nickel (boundary references)
 
@@ -207,31 +205,28 @@ package: {
 }
 ```
 
-The **lockfile** is the same shape, fully resolved, written by the tool and
-committed: every dep pinned to an exact commit/path *and* a `sha256:`. It is a
-generated `.eu` block — readable, diffable, and parseable by eucalypt itself,
-so no new format is introduced. This honours syntactic conservatism completely:
-a manifest is a block with a `:package` target, consumed exactly as any other
-`.eu` data. The driver resolves `deps` names to import roots so that
-`{ import: "json-tools" }` in source resolves through the manifest rather than
-the bare lib-path.
+The **lockfile** is the same shape, fully resolved and committed: every dep
+pinned to an exact commit/path *and* a `sha256:`. It is a generated `.eu`
+block — readable, diffable, parseable by eucalypt itself — so no new format is
+introduced, honouring syntactic conservatism completely. The driver resolves
+`deps` names to import roots, so `{ import: "json-tools" }` in source resolves
+through the manifest rather than the bare lib-path.
 
 ### (c) Namespace isolation — building on `export: :internal` (1.0)
 
 A library that exposes a curated surface and hides its helpers is the
-precondition for *anyone* depending on it without their namespace being
-polluted (the exact problem `unit-visibility-spec.md` opens with). The
-per-declaration `export: :internal` mechanism specified there — a binding that
-stays live within its unit but is masked from importers/mergers and from
-rendered output, via a position-preserving capture mask in `rebody_int`
-(`src/core/expr.rs:548`) — is **the namespace-isolation primitive this proposal
-needs**, and this proposal is a primary *consumer* and motivation for shipping
-it. On top of it, a package's manifest may declare its public surface
-explicitly (an allowlist of exported names), so "what this package exports" is a
-reviewable data declaration, not an emergent property of which helpers happen
-not to clash. Named imports (`cfg=config.eu`) remain the per-import
-namespacing tool; `:internal` is the per-*library* one. No new syntax: one
-metadata value plus a manifest key.
+precondition for *anyone* depending on it without namespace pollution — the
+exact problem `unit-visibility-spec.md` opens with. The per-declaration
+`export: :internal` mechanism specified there — a binding that stays live
+within its unit but is masked from importers/mergers and from rendered output,
+via a position-preserving capture mask in `rebody_int` (`src/core/expr.rs:548`)
+— is **the namespace-isolation primitive this proposal needs**, and this
+proposal is a primary motivation for shipping it. On top of it, a manifest may
+declare its public surface as an explicit allowlist, so "what this package
+exports" is a reviewable data declaration, not an accident of which helpers
+clash. Named imports (`cfg=config.eu`) remain the per-import namespacing tool;
+`:internal` is the per-*library* one. No new syntax: one metadata value plus a
+manifest key.
 
 ### (d) Versioned dependencies — start minimal (1.0-if-affordable, else 1.1)
 
