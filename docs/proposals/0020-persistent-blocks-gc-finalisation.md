@@ -15,13 +15,13 @@ representation (`im_rc::OrdMap`) was built across two phases and then
 bump allocator recycles memory blocks **by overwrite and never runs `Drop`**, so
 the `Rc`-counted map nodes — which live on the Rust heap, outside GC management —
 were never freed, producing 220–580% regressions on GC-intensive benchmarks even
-for programs that barely use blocks. This proposal argues the right fix is to
-attack the **underlying GC-finalisation problem** rather than the block
-representation, evaluates ADR-001's four candidate paths against the collector as
-it actually exists, and recommends storing a **CHAMP** (an improved HAMT) map
-**inline in the GC heap** as ordinary scannable objects via the existing `Array`
-backing-store machinery — sidestepping finalisation entirely — with a finaliser
-table as the pragmatic fallback. It is deep GC work that competes with
+for programs that barely use blocks. This proposal argues the right fix attacks
+the **underlying GC-finalisation problem**, not the block representation. It
+evaluates ADR-001's four candidate paths against the collector as it actually
+exists, and recommends storing a **CHAMP** (an improved HAMT) map **inline in the
+GC heap** as ordinary scannable objects via the existing `Array` backing-store
+machinery — sidestepping finalisation entirely — with a finaliser table as the
+pragmatic fallback. It is deep GC work that competes with
 [0005](0005-generational-gc.md) for the same expertise and must be sequenced
 against it.
 
@@ -314,22 +314,18 @@ defensible.
 ## Risks & what would kill this
 
 - **CHAMP-node tracing bugs.** Getting `scan`/`scan_and_update`/evacuation right
-  for a new pointer-bearing heap type is the same class of subtle, sometimes
-  platform-specific bug the existing evacuation suite documents
-  (`collect.rs:1312`+). Mitigation: the `EU_GC_VERIFY`/`POISON`/`STRESS` harness
-  and a dedicated CHAMP-pointer checkpoint. **A use-after-free under
-  `EU_GC_POISON=1` falsifies the implementation.**
-- **No net win on real configs.** If benchmarks on representative large/merge
-  configs show CHAMP failing to beat the indexed cons-list end-to-end (rendering
-  included), the value case collapses. Mitigation: gate acceptance on
-  independently verified benches (CLAUDE.md) over large-block and merge-heavy
-  inputs, not microbenchmarks.
-- **Collides with 0005.** Both rewrite GC core. Mitigation: strict sequencing —
-  0005 first.
-- **Pointer-chasing regresses small blocks.** A trie can lose to a linear scan
-  for tiny n. Mitigation: keep a small inline-leaf fast path (CHAMP's inline data
-  array already gives this for the root) and benchmark the small-block case as a
-  guardrail.
+  for a new pointer-bearing heap type is the same class of subtle, platform-specific
+  bug the existing evacuation suite documents (`collect.rs:1312`+). Mitigation:
+  the `EU_GC_VERIFY`/`POISON`/`STRESS` harness plus a CHAMP-pointer checkpoint.
+  **A use-after-free under `EU_GC_POISON=1` falsifies the implementation.**
+- **No net win on real configs.** If benches on representative large/merge configs
+  show CHAMP failing to beat the indexed cons-list end-to-end (rendering included),
+  the value case collapses. Mitigation: gate acceptance on independently verified
+  benches (CLAUDE.md), not microbenchmarks.
+- **Collides with 0005.** Both rewrite GC core. Mitigation: strict sequencing.
+- **Pointer-chasing regresses small blocks.** A trie can lose to a linear scan at
+  tiny n. Mitigation: a small inline-leaf fast path (the root's inline data array
+  already gives this) and a small-block guardrail benchmark.
 
 ## Success criteria
 
