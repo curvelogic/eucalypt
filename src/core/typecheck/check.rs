@@ -267,13 +267,14 @@ impl Checker {
                 Box::new(self.resolve_aliases_in_type(*a)),
                 Box::new(self.resolve_aliases_in_type(*b)),
             ),
-            Type::Record { fields, open, row } => Type::Record {
+            Type::Dict(inner) => Type::Dict(Box::new(self.resolve_aliases_in_type(*inner))),
+            Type::Record { fields, open, rows } => Type::Record {
                 fields: fields
                     .into_iter()
                     .map(|(k, v)| (k, self.resolve_aliases_in_type(v)))
                     .collect(),
                 open,
-                row,
+                rows,
             },
             Type::Union(variants) => Type::Union(
                 variants
@@ -630,7 +631,7 @@ impl Checker {
         Type::Record {
             fields: field_types,
             open: true, // open: unannotated members may exist at runtime
-            row: None,
+            rows: vec![],
         }
     }
 
@@ -818,14 +819,14 @@ impl Checker {
             Type::Record {
                 fields: lhs_fields,
                 open: lhs_open,
-                row: lhs_row,
+                rows: lhs_rows,
             } => {
                 let rhs_type = self.synthesise(arg);
                 match rhs_type {
                     Type::Record {
                         fields: rhs_fields,
                         open: rhs_open,
-                        row: rhs_row,
+                        rows: rhs_rows,
                     } => {
                         // Merge: base (RHS) as starting point, overlay LHS (function).
                         // LHS fields override RHS on conflicts.
@@ -833,17 +834,24 @@ impl Checker {
                         for (k, v) in lhs_fields {
                             merged.insert(k, v);
                         }
+                        // Combine row variables from both sides (deduplicating)
+                        let mut combined_rows = lhs_rows;
+                        for r in rhs_rows {
+                            if !combined_rows.contains(&r) {
+                                combined_rows.push(r);
+                            }
+                        }
                         Type::Record {
                             fields: merged,
                             open: lhs_open || rhs_open,
-                            row: lhs_row.or(rhs_row),
+                            rows: combined_rows,
                         }
                     }
                     // Gradual boundary: base unknown, preserve LHS (override) fields as open.
                     Type::Any => Type::Record {
                         fields: lhs_fields,
                         open: true,
-                        row: lhs_row,
+                        rows: lhs_rows,
                     },
                     // RHS is not a record: can't reason about the merge result.
                     _ => Type::Any,
@@ -1774,7 +1782,7 @@ mod tests {
                     m
                 },
                 open: true,
-                row: None,
+                rows: vec![],
             }
         );
     }
@@ -1801,7 +1809,7 @@ mod tests {
                     m
                 },
                 open: true,
-                row: None,
+                rows: vec![],
             }
         );
     }
@@ -1827,7 +1835,7 @@ mod tests {
                     m
                 },
                 open: true,
-                row: None,
+                rows: vec![],
             }),
         );
         c.push_scope(frame);
@@ -1847,7 +1855,7 @@ mod tests {
             mono(Type::Record {
                 fields: std::collections::BTreeMap::new(),
                 open: true,
-                row: None,
+                rows: vec![],
             }),
         );
         c.push_scope(frame);
@@ -1872,7 +1880,7 @@ mod tests {
                     m
                 },
                 open: false,
-                row: None,
+                rows: vec![],
             }),
         );
         c.push_scope(frame);

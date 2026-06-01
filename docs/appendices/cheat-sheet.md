@@ -527,7 +527,10 @@ origin: { x: 0, y: 0 }
 | `(A,)`             | 1-tuple                                |
 | `{k: T}`           | closed record                          |
 | `{k: T, ..}`       | open record (at least k: T)            |
+| `{k: T, ..r}`      | named row variable (in string: `{{k: T, ..r}}`) |
+| `{..r, ..s}`       | row concatenation (in string: `{{..r, ..s}}`)   |
 | `block`            | any block (no known shape)             |
+| `Dict(T)`          | homogeneous block — all values type T  |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
 | `a`, `b`, `s`      | type variable (lowercase)              |

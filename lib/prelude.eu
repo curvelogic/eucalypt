@@ -357,7 +357,7 @@ second-or(d, xs): xs tail-or([d]) head-or(d)
 sym: __SYM
 
 ` { doc: "`merge(b1, b2)` - shallow merge block `b2` on top of `b1`."
-    type: "{{..}} → {{..}} → {{..}}" }
+    type: "{{..r}} → {{..s}} → {{..r, ..s}}" }
 merge: __MERGE
 
 ` { doc: "`deep-merge(b1, b2)` - deep merge block `b2` on top of `b1`, merges nested blocks but not lists."
@@ -408,7 +408,7 @@ block: __BLOCK
 has(s, b): b map-values(const(true)) lookup-or(s, false)
 
 ` { doc: "`lookup(s, b)` - look up symbol `s` in block `b`, error if not found."
-    type: "symbol → {{..}} → any" }
+    type: "symbol → Dict(a) → a" }
 lookup(s, b): __LOOKUP(s, b)
 
 ` { doc: "`lookup-in(b, s)` - look up symbol `s` in block `b`, error if not found."
@@ -1558,7 +1558,7 @@ discriminate(pred, xs): {
 }.(xs foldl(acc, [[], []]) bimap(reverse, reverse))
 
 ` { doc: "`group-by(k, xs)` - group xs by key function returning block of key to subgroups, maintains order."
-    type: "(a → any) → [a] → {{..}}" }
+    type: "(a → any) → [a] → Dict([a])" }
 group-by(k, xs): {
   acc(a, e): a update-value-or(e._k, cons(e._v), [e._v])
 }.(xs map({ _k: k(•0), _v: •0 }) foldl(acc, {}) map-values(reverse))
@@ -1658,7 +1658,7 @@ sort-by-zdt(key-fn): sort-by(key-fn, <)
 #
 
 ` { doc: "`merge-all(bs)` - merge all blocks in list `bs` together, later overriding earlier."
-    type: "[{{..}}] → {{..}}" }
+    type: "[{{..r}}] → {{..r}}" }
 merge-all(bs): foldl(merge, {}, bs)
 
 ` { doc: "`key(pr)` - return key in a block element / pair."
@@ -1670,11 +1670,11 @@ key: head
 value: second
 
 ` { doc: "`keys(b)` - return keys of block `b`."
-    type: "{{..}} → [symbol]" }
+    type: "Dict(a) → [symbol]" }
 keys(b): b elements map(key)
 
 ` { doc: "`values(b)` - return values of block `b`."
-    type: "{{..}} → [any]" }
+    type: "Dict(a) → [a]" }
 values(b): b elements map(value)
 
 ` { doc: "`sort-keys(b)` - return block `b` with keys sorted alphabetically."
@@ -1722,7 +1722,7 @@ zip-kv(ks, vs): zip-with(pair, ks, vs) block
 with-keys: zip-kv
 
 ` { doc: "`map-values(f, b)` - apply `f(v)` to each value in block `b`."
-    type: "(any → b) → {{..}} → {{..}}" }
+    type: "(a → b) → Dict(a) → Dict(b)" }
 map-values(f, b): b elements map-second(f) block
 
 ` { doc: "`map-keys(f, b)` - apply `f(k)` to each key in block `b`."
