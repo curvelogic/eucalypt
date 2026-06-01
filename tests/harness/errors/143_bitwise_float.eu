@@ -1,0 +1,3 @@
+# Bitwise AND on a non-integer float should produce a BitwiseIntegerRequired
+# error with a source location pointing to the call site.
+result: 1.5 bit.and(2)

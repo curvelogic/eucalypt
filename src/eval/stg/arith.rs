@@ -993,25 +993,28 @@ impl CallGlobal2 for Rem {}
 
 /// Extract an i64 from a Number, accepting integer-valued floats
 /// (which arise from intrinsics like `sort-nums` that convert via f64).
-fn require_i64(n: &Number) -> Result<i64, ExecutionError> {
+fn require_i64(n: &Number, smid: crate::common::sourcemap::Smid) -> Result<i64, ExecutionError> {
     if let Some(i) = n.as_i64() {
         Ok(i)
     } else if let Some(u) = n.as_u64() {
         i64::try_from(u).map_err(|_| {
-            ExecutionError::BitwiseIntegerRequired(format!(
-                "{u} is out of the i64 range for bitwise operations"
-            ))
+            ExecutionError::BitwiseIntegerRequired(
+                smid,
+                format!("{u} is out of the i64 range for bitwise operations"),
+            )
         })
     } else if let Some(f) = n.as_f64() {
         if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
             Ok(f as i64)
         } else {
-            Err(ExecutionError::BitwiseIntegerRequired(format!(
-                "got {f}, which is not a whole number"
-            )))
+            Err(ExecutionError::BitwiseIntegerRequired(
+                smid,
+                format!("got {f}, which is not a whole number"),
+            ))
         }
     } else {
         Err(ExecutionError::BitwiseIntegerRequired(
+            smid,
             "value cannot be represented as an integer".to_string(),
         ))
     }
@@ -1034,7 +1037,8 @@ impl StgIntrinsic for BitAnd {
     ) -> Result<(), ExecutionError> {
         let x = num_arg(machine, view, &args[0])?;
         let y = num_arg(machine, view, &args[1])?;
-        let result = require_i64(&x)? & require_i64(&y)?;
+        let smid = machine.annotation();
+        let result = require_i64(&x, smid)? & require_i64(&y, smid)?;
         machine_return_num(machine, view, Number::from(result))
     }
 }
@@ -1058,7 +1062,8 @@ impl StgIntrinsic for BitOr {
     ) -> Result<(), ExecutionError> {
         let x = num_arg(machine, view, &args[0])?;
         let y = num_arg(machine, view, &args[1])?;
-        let result = require_i64(&x)? | require_i64(&y)?;
+        let smid = machine.annotation();
+        let result = require_i64(&x, smid)? | require_i64(&y, smid)?;
         machine_return_num(machine, view, Number::from(result))
     }
 }
@@ -1082,7 +1087,8 @@ impl StgIntrinsic for BitXor {
     ) -> Result<(), ExecutionError> {
         let x = num_arg(machine, view, &args[0])?;
         let y = num_arg(machine, view, &args[1])?;
-        let result = require_i64(&x)? ^ require_i64(&y)?;
+        let smid = machine.annotation();
+        let result = require_i64(&x, smid)? ^ require_i64(&y, smid)?;
         machine_return_num(machine, view, Number::from(result))
     }
 }
@@ -1105,7 +1111,8 @@ impl StgIntrinsic for BitNot {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let x = num_arg(machine, view, &args[0])?;
-        let result = !require_i64(&x)?;
+        let smid = machine.annotation();
+        let result = !require_i64(&x, smid)?;
         machine_return_num(machine, view, Number::from(result))
     }
 }
@@ -1129,10 +1136,11 @@ impl StgIntrinsic for Shl {
     ) -> Result<(), ExecutionError> {
         let x = num_arg(machine, view, &args[0])?;
         let y = num_arg(machine, view, &args[1])?;
-        let n = require_i64(&x)?;
-        let k = require_i64(&y)?;
+        let smid = machine.annotation();
+        let n = require_i64(&x, smid)?;
+        let k = require_i64(&y, smid)?;
         if !(0..64).contains(&k) {
-            return Err(ExecutionError::BitshiftRangeError(machine.annotation(), k));
+            return Err(ExecutionError::BitshiftRangeError(smid, k));
         }
         let result = n << k;
         machine_return_num(machine, view, Number::from(result))
@@ -1158,10 +1166,11 @@ impl StgIntrinsic for Shr {
     ) -> Result<(), ExecutionError> {
         let x = num_arg(machine, view, &args[0])?;
         let y = num_arg(machine, view, &args[1])?;
-        let n = require_i64(&x)?;
-        let k = require_i64(&y)?;
+        let smid = machine.annotation();
+        let n = require_i64(&x, smid)?;
+        let k = require_i64(&y, smid)?;
         if !(0..64).contains(&k) {
-            return Err(ExecutionError::BitshiftRangeError(machine.annotation(), k));
+            return Err(ExecutionError::BitshiftRangeError(smid, k));
         }
         let result = n >> k;
         machine_return_num(machine, view, Number::from(result))
@@ -1186,7 +1195,7 @@ impl StgIntrinsic for PopCount {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let x = num_arg(machine, view, &args[0])?;
-        let n = require_i64(&x)?;
+        let n = require_i64(&x, machine.annotation())?;
         let result = n.count_ones() as i64;
         machine_return_num(machine, view, Number::from(result))
     }
@@ -1210,7 +1219,7 @@ impl StgIntrinsic for Ctz {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let x = num_arg(machine, view, &args[0])?;
-        let n = require_i64(&x)?;
+        let n = require_i64(&x, machine.annotation())?;
         let result = n.trailing_zeros() as i64;
         machine_return_num(machine, view, Number::from(result))
     }
@@ -1234,7 +1243,7 @@ impl StgIntrinsic for Clz {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let x = num_arg(machine, view, &args[0])?;
-        let n = require_i64(&x)?;
+        let n = require_i64(&x, machine.annotation())?;
         let result = n.leading_zeros() as i64;
         machine_return_num(machine, view, Number::from(result))
     }

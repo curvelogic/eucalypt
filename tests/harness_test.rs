@@ -1538,6 +1538,11 @@ pub fn test_error_140() {
 }
 
 #[test]
+pub fn test_error_143() {
+    run_error_test(&error_opts("143_bitwise_float.eu"));
+}
+
+#[test]
 pub fn test_error_135() {
     run_error_test(&error_opts("135_head_empty_list.eu"));
 }

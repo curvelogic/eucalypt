@@ -1,0 +1,2 @@
+exit: 1
+stderr: "bitwise operations require integer arguments"

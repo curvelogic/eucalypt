@@ -709,8 +709,8 @@ pub enum ExecutionError {
     ExpectedClosure,
     #[error("array bounds error: index {index} out of bounds for array of length {length}")]
     ArrayBoundsError { index: usize, length: usize },
-    #[error("bitwise operations require integer arguments ({0})")]
-    BitwiseIntegerRequired(String),
+    #[error("bitwise operations require integer arguments ({1})")]
+    BitwiseIntegerRequired(Smid, String),
     #[error("array index out of bounds: coordinates {1:?} are outside the array bounds")]
     ArrayNdIndexOutOfBounds(Smid, Vec<usize>),
     #[error("array shape mismatch: {1}")]
@@ -813,6 +813,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NumericRangeError(s, _, _) => *s,
             ExecutionError::DivisionByZero(s, _) => *s,
             ExecutionError::BadDateTimeComponents(s, _, _, _, _, _, _, _) => *s,
+            ExecutionError::BitwiseIntegerRequired(s, _) => *s,
             _ => Smid::default(),
         }
     }
