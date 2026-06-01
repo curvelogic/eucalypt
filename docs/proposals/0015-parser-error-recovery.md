@@ -92,21 +92,18 @@ shim layer (`src/syntax/parser.rs`) that wraps Rowan in an all-or-nothing
 
 ### Why this matters for the LSP
 
-The LSP specification requires that servers "tolerate incomplete programs
-and return best-effort results."  Eucalypt's LSP advertises `TextDocumentSyncKind::INCREMENTAL`
-(`src/driver/lsp/mod.rs:133`) — a deliberate commitment to handling
-per-keystroke change events.  In practice, users write declarations
-incrementally: `x: {` before adding the closing brace, or `foo(a, b` before
-closing the tuple.  At every such transient state, any LSP feature that
-depends on a successful pipeline run is silently unavailable.
+The LSP specification requires servers to "tolerate incomplete programs and
+return best-effort results."  Eucalypt advertises `TextDocumentSyncKind::INCREMENTAL`
+(`src/driver/lsp/mod.rs:133`) — a commitment to per-keystroke change events.
+Users write declarations incrementally: `x: {` before adding the closing
+brace, or `foo(a, b` before closing the tuple.  At every such transient
+state any LSP feature depending on a successful pipeline run is unavailable.
 
-The existing parse-error diagnostics (`src/driver/lsp/diagnostics.rs:14-19`)
-are published immediately via `on_document_changed` from the Rowan tree, so
-error *reporting* already works.  The gap is that the rest of the pipeline —
-desugar, cook, type-check, import resolution — aborts at the first parse
-error, leaving the cached type environment stale.  After a user fixes the
-error, the pipeline re-runs and recovers, but during editing the LSP is
-degraded precisely when it matters most.
+Parse-error diagnostics (`src/driver/lsp/diagnostics.rs:14-19`) are
+published immediately from the Rowan tree — error *reporting* already works.
+The gap is that desugar, cook, type-check, and import resolution abort at
+the first parse error, leaving the cached type environment stale during
+editing, exactly when it matters most.
 
 ### Why LR/LALRPOP struggles, and why Rowan is well-suited
 
@@ -152,22 +149,18 @@ and `Parse<T>` struct are direct equivalents.
 
 **Resilient LL parsing (matklad 2023).**  The tutorial
 (`matklad.github.io/2023/05/21/resilient-ll-parsing-tutorial.html`)
-identifies three principles for resilient recursive descent: (1) every
-parse function returns, even on error; (2) error nodes wrap the tokens that
-could not be incorporated; (3) recovery sets (`FIRST` / `FOLLOW` of the
-parent construct) terminate a failed sub-parse early so the parent can
-continue.  The `read_surplus` / `ERROR_STOWAWAYS` mechanism in the eucalypt
-parser is a partial implementation of principle (2) and (3); principles
-need to be applied more consistently throughout.
+gives three principles: (1) every parse function returns, even on error;
+(2) error nodes wrap unincorporated tokens; (3) recovery sets terminate a
+failed sub-parse so the parent can continue.  The eucalypt parser's
+`read_surplus` / `ERROR_STOWAWAYS` mechanism is a partial implementation
+of (2) and (3); it needs to be applied consistently throughout.
 
-**Merlin (OCaml).**  Merlin's approach (Bour, Refis, Pédrot, Scherer;
-ICFP 2018, arxiv:1807.06702; also the `let-def/ocaml-recovery-parser` on
-GitHub) instruments the Menhir LR automaton to synthesise tokens when
-stuck, completing partial parses at the cost of sometimes producing
-semantically nonsensical trees.  The technique applies well to statically
-typed ML-family languages where recovery targets specific non-terminals;
-it is harder to adapt to eucalypt's grammar, which has no keywords and
-resolves structure through indentation-free layout.
+**Merlin (OCaml).**  Bour et al. (ICFP 2018, arxiv:1807.06702;
+`let-def/ocaml-recovery-parser`) instrument the Menhir LR automaton to
+synthesise tokens when stuck, completing partial parses at the cost of
+semantically nonsensical subtrees.  The technique suits ML-family languages
+with keywords and explicit delimiters; eucalypt's keywordless, layout-free
+grammar makes it harder to adapt.
 
 **Other peer languages.**  Dhall (Rust, hand-written PEG), CUE (Go, `bailout`
 on first error), and Nickel (Lalrpop LR) all abort on parse failure.
