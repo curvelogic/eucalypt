@@ -1,0 +1,9 @@
+# A3: A function annotated Json → string produces no type warning
+# when given a plain number (number <: Json).
+` { type-def: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
+unit: {}
+
+` { type: "Json → string" }
+describe: (_ str.from)
+
+result: describe(42)

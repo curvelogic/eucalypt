@@ -225,6 +225,36 @@ Overloaded operators use union types:
 <   : number -> number -> bool | string -> string -> bool | symbol -> symbol -> bool
 ```
 
+### Recursive types
+
+A **recursive alias** is an alias whose definition refers back to itself.
+The type checker resolves it to an equirecursive `μ`-type automatically —
+no special syntax is needed.
+
+```eu,notest
+` { type-def: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
+unit: {}
+
+` { type: "Json → string" }
+describe: str.from
+```
+
+`Json` unfolds to `number | string | bool | null | [Json] | Dict(Json)`,
+and any value whose type is a subtype of any variant passes without
+warning.  The type always *displays* as its alias name (`Json`) — never
+as the (infinite) unfolded form.
+
+**Defining recursive aliases** — use `type-def:` metadata at the block
+level, or a `types:` sub-block:
+
+```eu,notest
+` { types: { Tree: "{value: number, children: [Tree]}" } }
+unit: {}
+```
+
+**Mutual recursion** — aliases that reference each other are handled:
+the first alias expanded in an annotation becomes the outer `μ` binder.
+
 ### Type variables
 
 Lowercase identifiers are type variables, universally quantified at

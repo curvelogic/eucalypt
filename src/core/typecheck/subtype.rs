@@ -25,19 +25,55 @@
 //! with every type in both directions.  For non-`any` types the relation
 //! falls through to subtyping.
 
-use super::types::Type;
+use super::types::{unfold_mu, Type};
 
 /// Return `true` if type `s` is a subtype of type `t` (`s <: t`).
 ///
 /// Type variables are treated as `any` (consistent with everything) because
 /// at the point of subtyping they have not been instantiated.
+///
+/// Mu types (equirecursive types) are handled coinductively: `Mu(x, A) <: T`
+/// is checked by unfolding one step and recurse with an assumed-pairs set to
+/// prevent infinite regress.
 pub fn is_subtype(s: &Type, t: &Type) -> bool {
-    // Reflexivity
+    is_subtype_co(s, t, &mut Vec::new())
+}
+
+/// Coinductive subtyping with an assumed-pairs set to handle equirecursive types.
+///
+/// If `(s, t)` is already in `assumed`, we return `true` immediately (coinductive
+/// assumption — we are in the process of proving it and assume it holds).
+fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
+    // Reflexivity — also handles the Mu(x, A) == Mu(x, A) case.
     if s == t {
         return true;
     }
 
+    // Coinductive base: if this pair is already assumed, return true.
+    if assumed.iter().any(|(as_, at)| as_ == s && at == t) {
+        return true;
+    }
+
     match (s, t) {
+        // ── Mu (equirecursive) ────────────────────────────────────────────────
+        // Unfold one step and check recursively under the coinductive assumption.
+        (Type::Mu(x, body), _) => {
+            let mu = s.clone();
+            assumed.push((s.clone(), t.clone()));
+            let unfolded = unfold_mu(x, body, &mu);
+            let result = is_subtype_co(&unfolded, t, assumed);
+            assumed.pop();
+            result
+        }
+        (_, Type::Mu(x, body)) => {
+            let mu = t.clone();
+            assumed.push((s.clone(), t.clone()));
+            let unfolded = unfold_mu(x, body, &mu);
+            let result = is_subtype_co(s, &unfolded, assumed);
+            assumed.pop();
+            result
+        }
+
         // ── Top and Never ─────────────────────────────────────────────────────
         // `never` is the bottom type — subtype of everything.
         (Type::Never, _) => true,
@@ -79,17 +115,21 @@ pub fn is_subtype(s: &Type, t: &Type) -> bool {
         // No cross-kind subtyping between set/vec/array/list.
 
         // ── List — covariant ──────────────────────────────────────────────────
-        (Type::List(a), Type::List(b)) => is_subtype(a, b),
+        (Type::List(a), Type::List(b)) => is_subtype_co(a, b, assumed),
 
         // ── Tuple ─────────────────────────────────────────────────────────────
         // Tuples widen to lists: `(A, B) <: [A | B]`
         (Type::Tuple(elems), Type::List(elem_ty)) => {
             // The tuple is a subtype of `[U]` when every element type is <: U.
-            elems.iter().all(|e| is_subtype(e, elem_ty))
+            elems.iter().all(|e| is_subtype_co(e, elem_ty, assumed))
         }
         // Tuples are covariant in each component position.
         (Type::Tuple(as_), Type::Tuple(bs)) => {
-            as_.len() == bs.len() && as_.iter().zip(bs.iter()).all(|(a, b)| is_subtype(a, b))
+            as_.len() == bs.len()
+                && as_
+                    .iter()
+                    .zip(bs.iter())
+                    .all(|(a, b)| is_subtype_co(a, b, assumed))
         }
 
         // ── Record — width + depth subtyping ──────────────────────────────────
@@ -123,7 +163,7 @@ pub fn is_subtype(s: &Type, t: &Type) -> bool {
             let fields_ok = t_fields
                 .iter()
                 .all(|(name, t_ty)| match s_fields.get(name) {
-                    Some(s_ty) => is_subtype(s_ty, t_ty),
+                    Some(s_ty) => is_subtype_co(s_ty, t_ty, assumed),
                     None => false,
                 });
 
@@ -145,7 +185,7 @@ pub fn is_subtype(s: &Type, t: &Type) -> bool {
         // ── Dict — covariant homogeneous block type ────────────────────────────
         //
         // `Dict(A) <: Dict(B)` iff `A <: B` (covariant in value type).
-        (Type::Dict(a), Type::Dict(b)) => is_subtype(a, b),
+        (Type::Dict(a), Type::Dict(b)) => is_subtype_co(a, b, assumed),
 
         // A *closed* record `{k1: V1, k2: V2}` is a subtype of `Dict(B)` when
         // every field value is `<: B`.  Open records and row-variable records
@@ -157,7 +197,7 @@ pub fn is_subtype(s: &Type, t: &Type) -> bool {
                 rows,
             },
             Type::Dict(b),
-        ) if rows.is_empty() => s_fields.values().all(|v| is_subtype(v, b)),
+        ) if rows.is_empty() => s_fields.values().all(|v| is_subtype_co(v, b, assumed)),
 
         // `Dict(T) <: {..}` — a dictionary is a block (empty, anonymous-open
         // record).  Satisfies the `{..}` annotation used for generic block
@@ -171,30 +211,42 @@ pub fn is_subtype(s: &Type, t: &Type) -> bool {
 
         // ── Function — contravariant input, covariant output ──────────────────
         // `(A -> B) <: (C -> D)` iff `C <: A` and `B <: D`
-        (Type::Function(a, b), Type::Function(c, d)) => is_subtype(c, a) && is_subtype(b, d),
+        (Type::Function(a, b), Type::Function(c, d)) => {
+            is_subtype_co(c, a, assumed) && is_subtype_co(b, d, assumed)
+        }
 
         // ── IO — covariant ────────────────────────────────────────────────────
-        (Type::IO(a), Type::IO(b)) => is_subtype(a, b),
+        (Type::IO(a), Type::IO(b)) => is_subtype_co(a, b, assumed),
 
         // ── Lens / Traversal — optics ─────────────────────────────────────────
         // `Lens(A, B) <: Traversal(A, B)` (a lens is a traversal of exactly one).
         // Both Lens and Traversal are covariant in both parameters.
-        (Type::Lens(a1, b1), Type::Lens(a2, b2)) => is_subtype(a1, a2) && is_subtype(b1, b2),
+        (Type::Lens(a1, b1), Type::Lens(a2, b2)) => {
+            is_subtype_co(a1, a2, assumed) && is_subtype_co(b1, b2, assumed)
+        }
         (Type::Traversal(a1, b1), Type::Traversal(a2, b2)) => {
-            is_subtype(a1, a2) && is_subtype(b1, b2)
+            is_subtype_co(a1, a2, assumed) && is_subtype_co(b1, b2, assumed)
         }
         // Lens is a subtype of Traversal when parameters are compatible.
-        (Type::Lens(a1, b1), Type::Traversal(a2, b2)) => is_subtype(a1, a2) && is_subtype(b1, b2),
+        (Type::Lens(a1, b1), Type::Traversal(a2, b2)) => {
+            is_subtype_co(a1, a2, assumed) && is_subtype_co(b1, b2, assumed)
+        }
 
         // ── Union ─────────────────────────────────────────────────────────────
         // `A | B <: C` — a union is a subtype of C when every variant is.
         // This arm must come before the T-is-union arm so that when both S and
         // T are unions we recurse correctly (each variant of S must be a
         // subtype of T, which in turn checks membership in T's variants).
-        (Type::Union(variants), t) => variants.iter().all(|v| is_subtype(v, t)),
+        (Type::Union(variants), t) => {
+            let variants = variants.clone();
+            variants.iter().all(|v| is_subtype_co(v, t, assumed))
+        }
         // `A <: A | B` — any (non-union) type is a subtype of a union that
         // contains a supertype of it.
-        (s, Type::Union(variants)) => variants.iter().any(|v| is_subtype(s, v)),
+        (s, Type::Union(variants)) => {
+            let variants = variants.clone();
+            variants.iter().any(|v| is_subtype_co(s, v, assumed))
+        }
 
         // ── Everything else ───────────────────────────────────────────────────
         _ => false,
@@ -227,6 +279,21 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
     // Structural consistency: recurse into composite types so that, e.g.,
     // `[any] ~ [number]` holds.
     match (s, t) {
+        // ── Mu (equirecursive) ────────────────────────────────────────────────
+        // Unfold one step and check consistency of the unfolded type.
+        // No coinductive guard needed here — any `any` in the body terminates
+        // via the early return above, and well-formed Mu types always unfold to
+        // a finite normal form after finitely many steps.
+        (Type::Mu(x, body), _) => {
+            let mu = s.clone();
+            let unfolded = unfold_mu(x, body, &mu);
+            is_consistent(&unfolded, t)
+        }
+        (_, Type::Mu(x, body)) => {
+            let mu = t.clone();
+            let unfolded = unfold_mu(x, body, &mu);
+            is_consistent(s, &unfolded)
+        }
         (Type::List(a), Type::List(b)) => is_consistent(a, b),
         (Type::Tuple(as_), Type::Tuple(bs)) if as_.len() == bs.len() => {
             as_.iter().zip(bs.iter()).all(|(a, b)| is_consistent(a, b))

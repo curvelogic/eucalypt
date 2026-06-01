@@ -8,7 +8,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::core::typecheck::types::{Type, TypeScheme, TypeVarId};
+use crate::core::typecheck::types::{unfold_mu, Type, TypeScheme, TypeVarId};
 
 /// A mapping from type variable identifiers to their concrete types.
 ///
@@ -311,6 +311,29 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
             unify(&Type::Any, &t, subst)
         }
 
+        // Recursive type (Mu): unfold once and unify the body.
+        //
+        // Equirecursive unification: unfolding Mu(x, a) means substituting
+        // x with the full Mu type in the body — a[x := Mu(x,a)].
+        // A simple one-level unfold terminates because:
+        //  - If both sides are the same Mu, the `t1 == t2` branch above
+        //    already short-circuits.
+        //  - Unification of structurally identical recursive types terminates
+        //    via the occurs check / structural identity path.
+        // For a fully coinductive guard (needed only for mutually recursive
+        // aliases that differ), the occurs check is the safety net — infinite
+        // unification would require infinite types which the occurs check
+        // rejects.  This is sound for the acyclic annotation patterns that
+        // arise in practice.
+        (Type::Mu(x, body), other) | (other, Type::Mu(x, body)) => {
+            let (x, body) = (x.clone(), body.clone());
+            let mu = Type::Mu(x.clone(), body.clone());
+            // Unfold: replace the recursion variable x with the full Mu type.
+            let unfolded = unfold_mu(&x, &body, &mu);
+            let other = other.clone();
+            unify(&unfolded, &other, subst)
+        }
+
         // Everything else is a structural mismatch.
         (lhs, rhs) => Err(UnifyError::Mismatch(lhs.clone(), rhs.clone())),
     }
@@ -419,6 +442,13 @@ pub fn apply_subst(ty: &Type, subst: &Substitution) -> Type {
         Type::Union(variants) => {
             Type::Union(variants.iter().map(|v| apply_subst(v, subst)).collect())
         }
+        // Mu: apply substitution inside the body, but do not substitute the
+        // bound variable — it is a binder, not a free unification variable.
+        Type::Mu(x, body) => {
+            let mut inner_subst = subst.clone();
+            inner_subst.remove(x);
+            Type::Mu(x.clone(), Box::new(apply_subst(body, &inner_subst)))
+        }
         // All other types contain no variables.
         other => other.clone(),
     }
@@ -504,6 +534,14 @@ fn collect_free_vars(ty: &Type, vars: &mut Vec<TypeVarId>, seen: &mut HashSet<Ty
                 collect_free_vars(v, vars, seen);
             }
         }
+        // Mu: the bound variable x is not free; collect free vars from body
+        // (x is already in `seen` if it appears in the scheme's var list, but
+        // in general the body may contain other free unification variables).
+        Type::Mu(x, body) => {
+            // Mark x as seen so it is not collected as a free variable.
+            seen.insert(x.clone());
+            collect_free_vars(body, vars, seen);
+        }
         // Primitives and special types have no variables.
         _ => {}
     }
@@ -522,6 +560,9 @@ fn occurs(id: &TypeVarId, ty: &Type) -> bool {
             fields.values().any(|v| occurs(id, v)) || rows.iter().any(|r| r == id)
         }
         Type::Union(variants) => variants.iter().any(|v| occurs(id, v)),
+        // Mu: x is bound, so it does not count as a free occurrence.
+        // Check if id (a different variable) appears free in the body.
+        Type::Mu(x, body) => x != id && occurs(id, body),
         _ => false,
     }
 }

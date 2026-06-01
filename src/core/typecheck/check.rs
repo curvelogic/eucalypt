@@ -239,39 +239,68 @@ impl Checker {
     /// Lowercase type-variable names (e.g. `a`, `b`) are left untouched if they
     /// are not in the alias map, so `erase_type_vars` still handles them.
     fn resolve_aliases_in_type(&self, ty: Type) -> Type {
+        self.resolve_aliases_inner(ty, &mut Vec::new())
+    }
+
+    /// Inner alias resolution with cycle detection via a `resolving` stack.
+    ///
+    /// When we encounter an alias name that is already on the stack, we return
+    /// `Type::Var(name)` as a back-reference.  After resolving the alias body,
+    /// if the back-reference is still free in the result we wrap it in
+    /// `Type::Mu(name, body)` to form an equirecursive type.
+    fn resolve_aliases_inner(&self, ty: Type, resolving: &mut Vec<String>) -> Type {
         match ty {
             Type::Var(ref v) => {
                 if let Some(alias_ty) = self.aliases.get(&v.0) {
-                    alias_ty.clone()
+                    if resolving.contains(&v.0) {
+                        // Cycle detected: return the bare Var as a back-reference.
+                        // The caller that pushed this name will wrap it in Mu.
+                        return ty;
+                    }
+                    resolving.push(v.0.clone());
+                    let resolved = self.resolve_aliases_inner(alias_ty.clone(), resolving);
+                    resolving.pop();
+                    // If the alias name still appears free in the resolved body,
+                    // the alias is self-referential — wrap in Mu for an
+                    // equirecursive type.
+                    if contains_var_named(&resolved, &v.0) {
+                        Type::Mu(v.clone(), Box::new(resolved))
+                    } else {
+                        resolved
+                    }
                 } else {
                     ty
                 }
             }
-            Type::List(inner) => Type::List(Box::new(self.resolve_aliases_in_type(*inner))),
+            Type::List(inner) => {
+                Type::List(Box::new(self.resolve_aliases_inner(*inner, resolving)))
+            }
             Type::Tuple(elems) => Type::Tuple(
                 elems
                     .into_iter()
-                    .map(|e| self.resolve_aliases_in_type(e))
+                    .map(|e| self.resolve_aliases_inner(e, resolving))
                     .collect(),
             ),
-            Type::IO(inner) => Type::IO(Box::new(self.resolve_aliases_in_type(*inner))),
+            Type::IO(inner) => Type::IO(Box::new(self.resolve_aliases_inner(*inner, resolving))),
             Type::Lens(a, b) => Type::Lens(
-                Box::new(self.resolve_aliases_in_type(*a)),
-                Box::new(self.resolve_aliases_in_type(*b)),
+                Box::new(self.resolve_aliases_inner(*a, resolving)),
+                Box::new(self.resolve_aliases_inner(*b, resolving)),
             ),
             Type::Traversal(a, b) => Type::Traversal(
-                Box::new(self.resolve_aliases_in_type(*a)),
-                Box::new(self.resolve_aliases_in_type(*b)),
+                Box::new(self.resolve_aliases_inner(*a, resolving)),
+                Box::new(self.resolve_aliases_inner(*b, resolving)),
             ),
             Type::Function(a, b) => Type::Function(
-                Box::new(self.resolve_aliases_in_type(*a)),
-                Box::new(self.resolve_aliases_in_type(*b)),
+                Box::new(self.resolve_aliases_inner(*a, resolving)),
+                Box::new(self.resolve_aliases_inner(*b, resolving)),
             ),
-            Type::Dict(inner) => Type::Dict(Box::new(self.resolve_aliases_in_type(*inner))),
+            Type::Dict(inner) => {
+                Type::Dict(Box::new(self.resolve_aliases_inner(*inner, resolving)))
+            }
             Type::Record { fields, open, rows } => Type::Record {
                 fields: fields
                     .into_iter()
-                    .map(|(k, v)| (k, self.resolve_aliases_in_type(v)))
+                    .map(|(k, v)| (k, self.resolve_aliases_inner(v, resolving)))
                     .collect(),
                 open,
                 rows,
@@ -279,9 +308,14 @@ impl Checker {
             Type::Union(variants) => Type::Union(
                 variants
                     .into_iter()
-                    .map(|v| self.resolve_aliases_in_type(v))
+                    .map(|v| self.resolve_aliases_inner(v, resolving))
                     .collect(),
             ),
+            // Mu: pass through, resolving inside the body without pushing
+            // the binder (it is not an alias name).
+            Type::Mu(x, body) => {
+                Type::Mu(x, Box::new(self.resolve_aliases_inner(*body, resolving)))
+            }
             other => other,
         }
     }
@@ -1025,6 +1059,26 @@ impl Checker {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Return `true` if `ty` contains a free `Type::Var` whose name matches `name`.
+///
+/// Used by `resolve_aliases_inner` to detect self-referential aliases and
+/// decide whether to wrap the resolved body in `Type::Mu`.
+fn contains_var_named(ty: &Type, name: &str) -> bool {
+    match ty {
+        Type::Var(id) => id.0 == name,
+        Type::List(inner) | Type::IO(inner) | Type::Dict(inner) => contains_var_named(inner, name),
+        Type::Function(a, b) | Type::Lens(a, b) | Type::Traversal(a, b) => {
+            contains_var_named(a, name) || contains_var_named(b, name)
+        }
+        Type::Tuple(elems) => elems.iter().any(|e| contains_var_named(e, name)),
+        Type::Record { fields, .. } => fields.values().any(|v| contains_var_named(v, name)),
+        Type::Union(variants) => variants.iter().any(|v| contains_var_named(v, name)),
+        // Mu: the binder name `x` is bound, not free — stop if it shadows `name`.
+        Type::Mu(x, body) => x.0 != name && contains_var_named(body, name),
+        _ => false,
+    }
+}
 
 /// Synthesise the type for a primitive literal.
 fn synthesise_primitive(prim: &Primitive) -> Type {

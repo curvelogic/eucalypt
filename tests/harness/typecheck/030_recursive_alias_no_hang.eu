@@ -1,0 +1,6 @@
+# A3: Self-referential alias resolves to Mu — does NOT hang.
+# Json = number | string | bool | null | [Json] | Dict(Json)
+` { type-def: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
+unit: {}
+
+result: 42

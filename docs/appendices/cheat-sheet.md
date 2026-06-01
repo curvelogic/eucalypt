@@ -531,6 +531,7 @@ origin: { x: 0, y: 0 }
 | `{..r, ..s}`       | row concatenation (in string: `{{..r, ..s}}`)   |
 | `block`            | any block (no known shape)             |
 | `Dict(T)`          | homogeneous block — all values type T  |
+| `Name` (capitalised) | recursive alias — resolved from `type-def:` |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
 | `a`, `b`, `s`      | type variable (lowercase)              |
