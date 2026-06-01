@@ -984,6 +984,16 @@ lazy_static! {
             ty: function(vec![unk()]).unwrap(),
             strict: vec![],
     },
+    Intrinsic { // 187
+            name: "COND",
+            ty: function(vec![list(), any()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 188
+            name: "CLAUSE",
+            ty: function(vec![any(), any(), any()]).unwrap(),
+            strict: vec![],
+    },
     ];
 }
 

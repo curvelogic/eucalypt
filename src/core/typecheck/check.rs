@@ -40,6 +40,97 @@ use crate::{
     },
 };
 
+// ── Flow-sensitive narrowing types ───────────────────────────────────────────
+
+/// Stable binding identity for a narrowed bound variable.
+///
+/// The first element is the *anchored frame index*:
+/// `scope_stack.len() - 1 - bv.scope` at the point narrowing is
+/// established. This value is invariant under inner scope pushes — when
+/// an extra frame is pushed, both `len` and the variable's `bv.scope`
+/// grow by one, so the difference is unchanged. A narrowing fact installed
+/// for a particular variable therefore continues to match that same
+/// variable deeper inside the branch without matching inner rebindings of
+/// the same name (which have a different anchored index).
+type BoundKey = (usize, String);
+
+/// One narrowing frame: a set of type overrides for variables within a branch.
+///
+/// Installed on the `narrow_stack` before synthesising a branch body and
+/// popped immediately after. Keyed by `BoundKey` so a fact matches the
+/// *specific binding* whose type was narrowed, not just any variable with
+/// the same name.
+#[derive(Debug, Default, Clone)]
+struct NarrowFrame {
+    entries: HashMap<BoundKey, Type>,
+}
+
+impl NarrowFrame {
+    fn new() -> Self {
+        NarrowFrame {
+            entries: HashMap::new(),
+        }
+    }
+
+    /// Merge `other` into `self`. For the same key, the existing entry wins
+    /// (the caller controls priority by choosing which frame is `self`).
+    fn merge_from(&mut self, other: NarrowFrame) {
+        for (k, v) in other.entries {
+            self.entries.entry(k).or_insert(v);
+        }
+    }
+}
+
+/// Facts derived from analysing a condition expression.
+///
+/// `positive` applies in the branch where the condition is *true*.
+/// `negative` applies in the branch where the condition is *false*.
+#[derive(Debug, Default, Clone)]
+struct ConditionFacts {
+    positive: NarrowFrame,
+    negative: NarrowFrame,
+}
+
+impl ConditionFacts {
+    fn empty() -> Self {
+        ConditionFacts::default()
+    }
+
+    /// Swap positive and negative (models `not(c)` inversion).
+    fn negated(self) -> Self {
+        ConditionFacts {
+            positive: self.negative,
+            negative: self.positive,
+        }
+    }
+}
+
+/// The kind of branching construct recognised by the checker.
+#[derive(Debug, Clone)]
+enum BranchKind {
+    /// `if(condition, true_branch, false_branch)` — 3-argument form.
+    If,
+    /// `and(left, right)` — synthesise `right` under positive facts from `left`.
+    And,
+    /// `or(left, right)` — synthesise `right` under negative facts from `left`.
+    Or,
+    /// `cond(clause_list)` — multi-way conditional with `=>` clauses.
+    Cond,
+}
+
+/// A type predicate recognisable from the condition expression.
+#[derive(Debug, Clone)]
+enum PredicateKind {
+    Number,
+    String,
+    Symbol,
+    Bool,
+    List,
+    Block,
+    Nil,    // nil? or null? — tests for null / empty list
+    NotNil, // not-nil? — positive = non-null, negative = null
+}
+
 // ── Alias table ──────────────────────────────────────────────────────────────
 
 /// A flat map from alias name to its concrete `Type`.
@@ -110,6 +201,15 @@ pub struct Checker {
     /// Used by LSP features (inlay hints on monadic block bound
     /// variables) to show the unwrapped element type.
     lambda_params: HashMap<Smid, Vec<(String, Type)>>,
+
+    /// Flow-sensitive narrowing stack.
+    ///
+    /// Each entry overrides a variable's type within the branch currently
+    /// being synthesised. This is a *parallel* stack — it is never pushed
+    /// onto `scope_stack`, which would shift all de Bruijn indices. Instead,
+    /// `lookup_bound` consults this stack before the normal scope lookup.
+    /// Push before synthesising a branch body; pop immediately after.
+    narrowing: Vec<NarrowFrame>,
 }
 
 impl Default for Checker {
@@ -127,6 +227,7 @@ impl Checker {
             warnings: Vec::new(),
             aliases: AliasMap::new(),
             lambda_params: HashMap::new(),
+            narrowing: Vec::new(),
         }
     }
 
@@ -200,12 +301,32 @@ impl Checker {
     /// when the scope index exceeds the stack depth — this happens for
     /// references to bindings outside the checker's root expression (e.g.
     /// prelude globals when checking a single unit).
+    ///
+    /// Before the normal scope lookup, consults the narrowing stack.  A hit
+    /// overrides the stored type with the narrowed type for the current branch.
     fn lookup_bound(&mut self, bv: &BoundVar) -> Type {
         let name = match bv.name.as_deref() {
             Some(n) => n,
             None => return Type::Any,
         };
         let idx = bv.scope as usize;
+
+        // ── Narrowing check ──────────────────────────────────────────────────
+        // Compute the stable anchored index for this variable (invariant under
+        // inner scope pushes).  Only check narrowing for in-scope variables
+        // (scope index within the stack) — prelude fall-through refs are not
+        // narrowed.
+        if idx < self.scope_stack.len() {
+            let anchored = self.scope_stack.len() - 1 - idx;
+            let key = (anchored, name.to_string());
+            // Innermost narrowing frame wins.
+            for frame in self.narrowing.iter().rev() {
+                if let Some(narrowed_ty) = frame.entries.get(&key) {
+                    return narrowed_ty.clone();
+                }
+            }
+        }
+
         if let Some(frame) = self.scope_stack.get(idx) {
             if let Some(scheme) = frame.get(name) {
                 return freshen(scheme, &mut self.var_counter);
@@ -707,7 +828,25 @@ impl Checker {
     /// Maintains a `Substitution` across all arguments so that type variables
     /// unified by one argument automatically constrain later arguments and the
     /// return type.
+    ///
+    /// Before the generic application loop, attempts to recognise the function
+    /// as a branching construct (`if`, `and`, `or`, `cond`) and delegates to
+    /// the narrowing-aware `synthesise_branch_*` helpers when recognised.
     fn synthesise_app(&mut self, _smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
+        // ── Branch recognition (flow-sensitive narrowing) ─────────────────────
+        //
+        // Check whether the function is a recognised brancher before the normal
+        // argument loop.  Only fires when the full argument list is present
+        // (partial applications fall through to the generic path).
+        if let Some(kind) = classify_brancher(func, self.scope_stack.len()) {
+            let result = self.synthesise_branch(kind, func, args);
+            if let Some(ty) = result {
+                return ty;
+            }
+            // Fall through: synthesise_branch returned None (arity mismatch,
+            // etc.) — use the generic path below.
+        }
+
         // Extract the function name for use in warning messages.
         // For intrinsics, map to the user-facing display name (e.g. "ADD" → "+").
         // Bound variables preserve their original name in the `name` field even
@@ -969,6 +1108,253 @@ impl Checker {
         Type::Any
     }
 
+    // ── Flow-sensitive narrowing ──────────────────────────────────────────────
+
+    /// Delegate to narrowing-aware branch synthesis for recognised branchers.
+    ///
+    /// Returns `Some(ty)` when the function is a recognised brancher *and*
+    /// the argument count matches the expected arity.  Returns `None` for
+    /// partial applications or unrecognised functions — the caller falls back
+    /// to the generic application path.
+    fn synthesise_branch(
+        &mut self,
+        kind: BranchKind,
+        func: &RcExpr,
+        args: &[RcExpr],
+    ) -> Option<Type> {
+        match kind {
+            BranchKind::If if args.len() == 3 => {
+                Some(self.synthesise_branch_if(func, &args[0], &args[1], &args[2]))
+            }
+            BranchKind::And if args.len() == 2 => {
+                Some(self.synthesise_branch_and(func, &args[0], &args[1]))
+            }
+            BranchKind::Or if args.len() == 2 => {
+                Some(self.synthesise_branch_or(func, &args[0], &args[1]))
+            }
+            BranchKind::Cond if args.len() == 1 => {
+                Some(self.synthesise_branch_cond(func, &args[0]))
+            }
+            // Partial application or wrong arity — fall through.
+            _ => None,
+        }
+    }
+
+    /// Synthesise `if(condition, true_branch, false_branch)` with narrowing.
+    ///
+    /// Analyses the condition to derive narrowing facts, then synthesises
+    /// each branch under the appropriate fact set.  Returns the union of
+    /// the two branch result types (§A5.9).
+    fn synthesise_branch_if(
+        &mut self,
+        func: &RcExpr,
+        condition: &RcExpr,
+        true_branch: &RcExpr,
+        false_branch: &RcExpr,
+    ) -> Type {
+        // Synthesise the function itself (for its type — not used for the
+        // result but needed so any warnings on the function position fire).
+        self.synthesise(func);
+
+        // Synthesise the condition normally (validates condition type).
+        self.synthesise(condition);
+
+        // Derive narrowing facts from the condition structure.
+        let facts = self.analyse_condition(condition);
+
+        // Synthesise true branch with positive narrowing.
+        self.narrowing.push(facts.positive);
+        let true_type = self.synthesise(true_branch);
+        self.narrowing.pop();
+
+        // Synthesise false branch with negative narrowing.
+        self.narrowing.push(facts.negative);
+        let false_type = self.synthesise(false_branch);
+        self.narrowing.pop();
+
+        // Result: union of branch types (§A5.9).
+        make_union_type(true_type, false_type)
+    }
+
+    /// Synthesise `and(left, right)` with narrowing.
+    ///
+    /// `right` is synthesised under the positive facts from `left`.
+    /// Returns `Bool`.
+    fn synthesise_branch_and(&mut self, func: &RcExpr, left: &RcExpr, right: &RcExpr) -> Type {
+        self.synthesise(func);
+        self.synthesise(left);
+        let facts = self.analyse_condition(left);
+        self.narrowing.push(facts.positive);
+        self.synthesise(right);
+        self.narrowing.pop();
+        Type::Bool
+    }
+
+    /// Synthesise `or(left, right)` with narrowing.
+    ///
+    /// `right` is synthesised under the negative facts from `left`.
+    /// Returns `Bool`.
+    fn synthesise_branch_or(&mut self, func: &RcExpr, left: &RcExpr, right: &RcExpr) -> Type {
+        self.synthesise(func);
+        self.synthesise(left);
+        let facts = self.analyse_condition(left);
+        self.narrowing.push(facts.negative);
+        self.synthesise(right);
+        self.narrowing.pop();
+        Type::Bool
+    }
+
+    /// Synthesise `cond(clause_list)` with per-clause narrowing.
+    ///
+    /// Inspects the clause list statically when it is a list literal
+    /// whose elements are `App(CLAUSE, [c, r])` pairs or a trailing default.
+    /// Returns the union of all branch result types.
+    ///
+    /// When the clause list is not statically readable (a runtime-computed
+    /// list), falls back to generic synthesis without narrowing.
+    fn synthesise_branch_cond(&mut self, func: &RcExpr, clause_list: &RcExpr) -> Type {
+        self.synthesise(func);
+
+        // Try to read a static clause list.
+        let clauses = match extract_clause_list(clause_list) {
+            Some(cs) => cs,
+            None => {
+                // Not statically readable — synthesise the list arg normally.
+                self.synthesise(clause_list);
+                return Type::Any;
+            }
+        };
+
+        // Per-row narrowing with accumulated negative-fact set (§A5.7).
+        let mut acc = NarrowFrame::new();
+        let mut result_types: Vec<Type> = Vec::new();
+
+        for clause in &clauses {
+            match clause {
+                Clause::Case { condition, result } => {
+                    // Synthesise condition under current accumulated negations.
+                    self.narrowing.push(acc.clone());
+                    self.synthesise(condition);
+                    self.narrowing.pop();
+
+                    // Derive facts from condition.
+                    let facts = self.analyse_condition(condition);
+
+                    // Synthesise result under positive facts + accumulated negations.
+                    let mut branch_frame = facts.positive.clone();
+                    branch_frame.merge_from(acc.clone());
+                    self.narrowing.push(branch_frame);
+                    let branch_type = self.synthesise(result);
+                    self.narrowing.pop();
+
+                    result_types.push(branch_type);
+
+                    // Accumulate negative facts for subsequent clauses.
+                    acc.merge_from(facts.negative);
+                }
+                Clause::Default(default_expr) => {
+                    // Synthesise default under accumulated negations.
+                    self.narrowing.push(acc.clone());
+                    let default_type = self.synthesise(default_expr);
+                    self.narrowing.pop();
+                    result_types.push(default_type);
+                }
+            }
+        }
+
+        // Union of all branch and default result types.
+        result_types.into_iter().fold(Type::Never, make_union_type)
+    }
+
+    /// Analyse a condition expression to derive narrowing facts.
+    ///
+    /// Returns a `ConditionFacts` with positive facts (hold when condition
+    /// is true) and negative facts (hold when condition is false).
+    /// Only bare variable references are narrowed — predicate applications
+    /// to non-variables yield empty facts.
+    fn analyse_condition(&self, condition: &RcExpr) -> ConditionFacts {
+        match &*condition.inner {
+            // `p?(x)` — predicate applied to a variable
+            Expr::App(_, func, args) if args.len() == 1 => {
+                if let Some(pred) = classify_predicate(func) {
+                    if let Expr::Var(_, Var::Bound(bv)) = &*args[0].inner {
+                        return self.facts_for_predicate(pred, bv);
+                    }
+                }
+                ConditionFacts::empty()
+            }
+            // `not(c)` — invert facts
+            Expr::App(_, func, args) if args.len() == 1 => {
+                if is_not_func(func) {
+                    return self.analyse_condition(&args[0]).negated();
+                }
+                ConditionFacts::empty()
+            }
+            _ => ConditionFacts::empty(),
+        }
+    }
+
+    /// Derive narrowing facts for `predicate(variable)`.
+    fn facts_for_predicate(&self, pred: PredicateKind, bv: &BoundVar) -> ConditionFacts {
+        let name = match bv.name.as_deref() {
+            Some(n) => n.to_string(),
+            None => return ConditionFacts::empty(),
+        };
+
+        let idx = bv.scope as usize;
+        // Only narrow in-scope variables (not prelude fall-throughs).
+        if idx >= self.scope_stack.len() {
+            return ConditionFacts::empty();
+        }
+
+        let anchored = self.scope_stack.len() - 1 - idx;
+        let key = (anchored, name.clone());
+
+        // Current type of the variable (without narrowing) — for subtraction.
+        let current_ty = if let Some(frame) = self.scope_stack.get(idx) {
+            if let Some(scheme) = frame.get(&name) {
+                scheme.body.clone()
+            } else {
+                Type::Any
+            }
+        } else {
+            Type::Any
+        };
+
+        let (positive_ty, negative_ty) = match pred {
+            PredicateKind::Number => (Type::Number, subtract_type(&current_ty, &Type::Number)),
+            PredicateKind::String => (Type::String, subtract_type(&current_ty, &Type::String)),
+            PredicateKind::Symbol => (Type::Symbol, subtract_type(&current_ty, &Type::Symbol)),
+            PredicateKind::Bool => (Type::Bool, subtract_type(&current_ty, &Type::Bool)),
+            PredicateKind::List => (
+                Type::List(Box::new(Type::Any)),
+                subtract_type(&current_ty, &Type::List(Box::new(Type::Any))),
+            ),
+            PredicateKind::Block => (
+                Type::Record {
+                    fields: Default::default(),
+                    open: true,
+                    rows: vec![],
+                },
+                Type::Any,
+            ),
+            PredicateKind::Nil => (Type::Null, subtract_type(&current_ty, &Type::Null)),
+            PredicateKind::NotNil => (subtract_type(&current_ty, &Type::Null), Type::Null),
+        };
+
+        let mut positive = NarrowFrame::new();
+        let mut negative = NarrowFrame::new();
+
+        if is_informative(&positive_ty) && !matches!(positive_ty, Type::Any) {
+            positive.entries.insert(key.clone(), positive_ty);
+        }
+        if is_informative(&negative_ty) && !matches!(negative_ty, Type::Any) {
+            negative.entries.insert(key, negative_ty);
+        }
+
+        ConditionFacts { positive, negative }
+    }
+
     // ── Checking ─────────────────────────────────────────────────────────────
 
     /// Check `expr` against `expected`, emitting warnings on mismatch.
@@ -1055,6 +1441,201 @@ impl Checker {
             .at(smid)
             .with_types(humanise(expected).to_string(), humanise(found).to_string());
         self.warnings.push(warning);
+    }
+}
+
+// ── Flow-sensitive narrowing — free functions ─────────────────────────────────
+
+/// Classify a function expression as a branching construct.
+///
+/// Recognition is name-based for prelude-level bindings (scope index ≥
+/// `stack_len` — i.e., the variable refers outside the checker's own
+/// scope stack to a prelude binding) and intrinsic-based for `Expr::Intrinsic`
+/// nodes.  Functions bound within the current scope (scope index < stack_len)
+/// are *not* recognised as branchers — this implements AC6 (user rebinding
+/// of `if` etc. disables narrowing).
+///
+/// Returns `None` when the function is not a recognised brancher.
+fn classify_brancher(func: &RcExpr, stack_len: usize) -> Option<BranchKind> {
+    match &*func.inner {
+        // Mechanism 1: raw branch intrinsic nodes.
+        Expr::Intrinsic(_, name) => match name.as_str() {
+            "IF" => Some(BranchKind::If),
+            "AND" => Some(BranchKind::And),
+            "OR" => Some(BranchKind::Or),
+            "COND" => Some(BranchKind::Cond),
+            _ => None,
+        },
+        // Mechanism 2: bound variable referencing an outer (prelude) scope.
+        // Only applies when the scope index falls *outside* the checker's
+        // stack — that means the variable is from the prelude, not user code.
+        Expr::Var(_, Var::Bound(bv)) => {
+            let is_outer = (bv.scope as usize) >= stack_len;
+            if !is_outer {
+                return None;
+            }
+            match bv.name.as_deref() {
+                Some("if") => Some(BranchKind::If),
+                Some("and" | "&&") => Some(BranchKind::And),
+                Some("or" | "||") => Some(BranchKind::Or),
+                Some("cond") => Some(BranchKind::Cond),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Classify a function expression as a type predicate.
+///
+/// Recognised predicates are the standard type-test functions from the prelude.
+/// Both intrinsic nodes (`IS_NUMBER`, …) and prelude-alias bound variables
+/// (`number?`, …) are recognised.
+fn classify_predicate(func: &RcExpr) -> Option<PredicateKind> {
+    match &*func.inner {
+        Expr::Intrinsic(_, name) => match name.as_str() {
+            "IS_NUMBER" | "ISNUMBER" => Some(PredicateKind::Number),
+            "IS_STRING" | "ISSTRING" => Some(PredicateKind::String),
+            "IS_SYMBOL" | "ISSYMBOL" => Some(PredicateKind::Symbol),
+            "IS_BOOL" | "ISBOOL" => Some(PredicateKind::Bool),
+            "IS_LIST" | "ISLIST" => Some(PredicateKind::List),
+            "IS_BLOCK" | "ISBLOCK" => Some(PredicateKind::Block),
+            "IS_NIL" | "ISNIL" => Some(PredicateKind::Nil),
+            _ => None,
+        },
+        Expr::Var(_, Var::Bound(bv)) => match bv.name.as_deref() {
+            Some("number?") => Some(PredicateKind::Number),
+            Some("string?") => Some(PredicateKind::String),
+            Some("symbol?") => Some(PredicateKind::Symbol),
+            Some("bool?") => Some(PredicateKind::Bool),
+            Some("list?") => Some(PredicateKind::List),
+            Some("block?") => Some(PredicateKind::Block),
+            Some("nil?" | "null?") => Some(PredicateKind::Nil),
+            Some("not-nil?") => Some(PredicateKind::NotNil),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Return `true` if `func` is the `not` function (boolean negation).
+fn is_not_func(func: &RcExpr) -> bool {
+    match &*func.inner {
+        Expr::Intrinsic(_, name) => name == "NOT",
+        Expr::Var(_, Var::Bound(bv)) => matches!(bv.name.as_deref(), Some("not" | "¬")),
+        _ => false,
+    }
+}
+
+/// Subtract `remove` from `ty`, returning the remaining type.
+///
+/// For union types, removes every variant that is a subtype of `remove`.
+/// For singleton types equal to `remove`, returns `Never`.
+/// For `any` or other opaque types, returns the original type unchanged
+/// (the gradual boundary is preserved — §A5.10).
+fn subtract_type(ty: &Type, remove: &Type) -> Type {
+    match ty {
+        Type::Union(variants) => {
+            let remaining: Vec<Type> = variants
+                .iter()
+                .filter(|v| !is_subtype(v, remove))
+                .cloned()
+                .collect();
+            match remaining.len() {
+                0 => Type::Never,
+                1 => remaining.into_iter().next().unwrap(),
+                _ => Type::Union(remaining),
+            }
+        }
+        // Exact match: subtracting the whole type gives Never.
+        t if is_subtype(t, remove) => Type::Never,
+        // Opaque or unrelated type: leave unchanged.
+        t => t.clone(),
+    }
+}
+
+/// Build a union type from two branch result types, deduplicating identical
+/// members.  Returns `Never` when both are `Never`; returns the non-Never
+/// side when only one is `Never`.
+fn make_union_type(a: Type, b: Type) -> Type {
+    match (a, b) {
+        (Type::Never, b) => b,
+        (a, Type::Never) => a,
+        (ref a, ref b) if a == b => a.clone(),
+        (Type::Union(mut vs), b) => {
+            if !vs.contains(&b) {
+                vs.push(b);
+            }
+            Type::Union(vs)
+        }
+        (a, Type::Union(mut vs)) => {
+            if !vs.contains(&a) {
+                vs.insert(0, a);
+            }
+            Type::Union(vs)
+        }
+        (a, b) => Type::Union(vec![a, b]),
+    }
+}
+
+/// A parsed clause from a `cond` clause list.
+enum Clause<'a> {
+    /// `condition => result` — a `__CLAUSE(condition, result)` application.
+    Case {
+        condition: &'a RcExpr,
+        result: &'a RcExpr,
+    },
+    /// Trailing bare expression (the default branch).
+    Default(&'a RcExpr),
+}
+
+/// Try to extract a static clause list from a `cond(…)` argument.
+///
+/// Returns `Some(clauses)` when the argument is a list literal (or a small
+/// tuple that is equivalent) whose elements are `__CLAUSE(c, r)` applications
+/// or a trailing default value.  Returns `None` for runtime-computed lists.
+fn extract_clause_list(expr: &RcExpr) -> Option<Vec<Clause<'_>>> {
+    let items = match &*expr.inner {
+        Expr::List(_, items) => items,
+        _ => return None,
+    };
+
+    let mut clauses = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        match &*item.inner {
+            Expr::App(_, func, args) if args.len() == 2 => {
+                if is_clause_intrinsic(func) {
+                    clauses.push(Clause::Case {
+                        condition: &args[0],
+                        result: &args[1],
+                    });
+                } else {
+                    // Non-clause app in non-trailing position — fall back to generic.
+                    if i + 1 < items.len() {
+                        return None;
+                    }
+                    clauses.push(Clause::Default(item));
+                }
+            }
+            _ => {
+                // Bare expression: OK as trailing default.
+                if i + 1 < items.len() {
+                    // Non-trailing bare expression makes list unreadable.
+                    return None;
+                }
+                clauses.push(Clause::Default(item));
+            }
+        }
+    }
+    Some(clauses)
+}
+
+/// Return `true` if `func` is the `CLAUSE` intrinsic or its prelude alias `=>`.
+fn is_clause_intrinsic(func: &RcExpr) -> bool {
+    match &*func.inner {
+        Expr::Intrinsic(_, name) => name == "CLAUSE",
+        Expr::Var(_, Var::Bound(bv)) => matches!(bv.name.as_deref(), Some("=>" | "⇒")),
+        _ => false,
     }
 }
 

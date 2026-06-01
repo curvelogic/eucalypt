@@ -99,6 +99,18 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
             unify(&e1, &e2, subst)
         }
 
+        // Structural: NonEmpty — covariant in element type.
+        (Type::NonEmpty(e1), Type::NonEmpty(e2)) => {
+            let (e1, e2) = (e1.clone(), e2.clone());
+            unify(&e1, &e2, subst)
+        }
+
+        // NonEmpty widens to List during unification.
+        (Type::NonEmpty(e1), Type::List(e2)) | (Type::List(e1), Type::NonEmpty(e2)) => {
+            let (e1, e2) = (e1.clone(), e2.clone());
+            unify(&e1, &e2, subst)
+        }
+
         // Structural: tuple types — covariant, same arity required.
         (Type::Tuple(elems1), Type::Tuple(elems2)) if elems1.len() == elems2.len() => {
             let pairs: Vec<_> = elems1
@@ -358,6 +370,7 @@ pub fn apply_subst(ty: &Type, subst: &Substitution) -> Type {
             }
         }
         Type::List(inner) => Type::List(Box::new(apply_subst(inner, subst))),
+        Type::NonEmpty(inner) => Type::NonEmpty(Box::new(apply_subst(inner, subst))),
         Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| apply_subst(e, subst)).collect()),
         Type::IO(inner) => Type::IO(Box::new(apply_subst(inner, subst))),
         Type::Dict(inner) => Type::Dict(Box::new(apply_subst(inner, subst))),
@@ -506,7 +519,7 @@ fn collect_free_vars(ty: &Type, vars: &mut Vec<TypeVarId>, seen: &mut HashSet<Ty
             vars.push(id.clone());
         }
         Type::Var(_) => {}
-        Type::List(inner) | Type::IO(inner) | Type::Dict(inner) => {
+        Type::List(inner) | Type::NonEmpty(inner) | Type::IO(inner) | Type::Dict(inner) => {
             collect_free_vars(inner, vars, seen);
         }
         Type::Lens(a, b) | Type::Traversal(a, b) | Type::Function(a, b) => {
@@ -552,7 +565,9 @@ fn collect_free_vars(ty: &Type, vars: &mut Vec<TypeVarId>, seen: &mut HashSet<Ty
 fn occurs(id: &TypeVarId, ty: &Type) -> bool {
     match ty {
         Type::Var(other) => other == id,
-        Type::List(inner) | Type::IO(inner) | Type::Dict(inner) => occurs(id, inner),
+        Type::List(inner) | Type::NonEmpty(inner) | Type::IO(inner) | Type::Dict(inner) => {
+            occurs(id, inner)
+        }
         Type::Lens(a, b) | Type::Traversal(a, b) | Type::Function(a, b) => {
             occurs(id, a) || occurs(id, b)
         }

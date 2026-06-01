@@ -87,6 +87,7 @@ enum Token {
     Lens,
     Traversal,
     Dict,
+    NonEmpty,
     // Identifiers (type variables and record field names)
     Ident(String),
     // Punctuation
@@ -270,6 +271,7 @@ impl<'a> Lexer<'a> {
                     "Dict" => Token::Dict,
                     "Lens" => Token::Lens,
                     "Traversal" => Token::Traversal,
+                    "NonEmpty" => Token::NonEmpty,
                     other => Token::Ident(other.to_string()),
                 };
                 Ok((tok, start))
@@ -408,6 +410,15 @@ impl<'a> Parser<'a> {
                 let inner = self.parse_union()?;
                 self.expect(&Token::RParen)?;
                 Ok(Type::Dict(Box::new(inner)))
+            }
+            Token::NonEmpty => {
+                // `NonEmpty` `(` `[` type `]` `)`
+                self.expect(&Token::LParen)?;
+                self.expect(&Token::LBracket)?;
+                let inner = self.parse_union()?;
+                self.expect(&Token::RBracket)?;
+                self.expect(&Token::RParen)?;
+                Ok(Type::NonEmpty(Box::new(inner)))
             }
             Token::Ident(name) => {
                 // Type variable (lowercase) or type alias reference (uppercase).
