@@ -161,6 +161,19 @@ pub enum Type {
     // ── Variables ────────────────────────────────────────────────────────────
     /// Type variable (lowercase identifier, e.g. `a`, `b`, `result`).
     Var(TypeVarId),
+
+    // ── Recursive types ──────────────────────────────────────────────────────
+    /// Equirecursive type: `Mu(x, body)` ≡ `body[x := Mu(x, body)]`.
+    ///
+    /// References to `x` inside `body` are `Type::Var(x)` — the recursion
+    /// variable.  This arises *only* from self-referential type aliases
+    /// (e.g. `Json = "number | [Json] | Dict(Json)"`); there is no user-
+    /// visible `μ` syntax.
+    ///
+    /// Display: the alias name `x` (never the unfolded body — printing is
+    /// always finite).  `apply_subst` recurses into the body but **skips**
+    /// substituting `x` because it is bound, not a free unification variable.
+    Mu(TypeVarId, Box<Type>),
 }
 
 impl Type {
@@ -251,6 +264,8 @@ impl fmt::Display for Type {
                 write!(f, "}}")
             }
             Type::Dict(inner) => write!(f, "Dict({inner})"),
+            // Recursive type: print just the alias name — never unfold.
+            Type::Mu(x, _) => write!(f, "{x}"),
             Type::Function(a, b) => {
                 // Parenthesise LHS if it is itself a function or a union, to
                 // avoid ambiguity: `(a -> b) -> c` and `(a | b) -> c` must
@@ -321,6 +336,11 @@ pub fn humanise(ty: &Type) -> Type {
                     collect_fresh_vars(v, seen);
                 }
             }
+            // Mu: recurse into the body; the binder id is NOT a fresh unification
+            // variable (it is a user alias name, not a `_t`-prefixed fresh var).
+            Type::Mu(_, body) => {
+                collect_fresh_vars(body, seen);
+            }
             _ => {}
         }
     }
@@ -367,6 +387,9 @@ pub fn humanise(ty: &Type) -> Type {
             Type::Union(variants) => {
                 Type::Union(variants.iter().map(|v| replace(v, mapping)).collect())
             }
+            // Mu: replace inside the body, but do NOT rename the binder itself
+            // (it is the alias name, never a `_t`-prefixed fresh variable).
+            Type::Mu(x, body) => Type::Mu(x.clone(), Box::new(replace(body, mapping))),
             _ => ty.clone(),
         }
     }
@@ -390,6 +413,57 @@ pub fn humanise(ty: &Type) -> Type {
     }
 
     replace(ty, &mapping)
+}
+
+/// One-step unfolding of a `Mu` type.
+///
+/// Substitutes `replacement` for every free occurrence of `x` in `ty`.
+/// Used for equirecursive subtyping and unification.
+///
+/// To unfold `Mu(x, body)` once, call `unfold_mu(&x, &body, &Type::Mu(x, body))`.
+/// The result is `body` with all occurrences of the recursive variable `x`
+/// replaced by the full `Mu` type — one step of coinductive unrolling.
+pub fn unfold_mu(x: &TypeVarId, ty: &Type, replacement: &Type) -> Type {
+    match ty {
+        Type::Var(id) if id == x => replacement.clone(),
+        // Binder shadowing: if we enter another Mu that binds the same name,
+        // stop substituting (the inner binder shadows x).
+        Type::Mu(y, _) if y == x => ty.clone(),
+        Type::Mu(y, body) => Type::Mu(y.clone(), Box::new(unfold_mu(x, body, replacement))),
+        Type::List(inner) => Type::List(Box::new(unfold_mu(x, inner, replacement))),
+        Type::IO(inner) => Type::IO(Box::new(unfold_mu(x, inner, replacement))),
+        Type::Dict(inner) => Type::Dict(Box::new(unfold_mu(x, inner, replacement))),
+        Type::Tuple(elems) => {
+            Type::Tuple(elems.iter().map(|e| unfold_mu(x, e, replacement)).collect())
+        }
+        Type::Function(a, b) => Type::Function(
+            Box::new(unfold_mu(x, a, replacement)),
+            Box::new(unfold_mu(x, b, replacement)),
+        ),
+        Type::Lens(a, b) => Type::Lens(
+            Box::new(unfold_mu(x, a, replacement)),
+            Box::new(unfold_mu(x, b, replacement)),
+        ),
+        Type::Traversal(a, b) => Type::Traversal(
+            Box::new(unfold_mu(x, a, replacement)),
+            Box::new(unfold_mu(x, b, replacement)),
+        ),
+        Type::Record { fields, open, rows } => Type::Record {
+            fields: fields
+                .iter()
+                .map(|(k, v)| (k.clone(), unfold_mu(x, v, replacement)))
+                .collect(),
+            open: *open,
+            rows: rows.clone(),
+        },
+        Type::Union(variants) => Type::Union(
+            variants
+                .iter()
+                .map(|v| unfold_mu(x, v, replacement))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
 }
 
 #[cfg(test)]
@@ -667,5 +741,44 @@ mod tests {
         let ty = Type::Dict(Box::new(var("_t0")));
         let h = humanise(&ty);
         assert_eq!(h.to_string(), "Dict(a)");
+    }
+
+    // ── Mu (recursive types) ────────────────────────────────────────────────
+
+    #[test]
+    fn display_mu_shows_binder_name() {
+        // Mu(Json, body) displays as "Json" — never unfolds
+        let body = Type::Union(vec![Type::Number, Type::Var(TypeVarId("Json".to_string()))]);
+        let mu = Type::Mu(TypeVarId("Json".to_string()), Box::new(body));
+        assert_eq!(mu.to_string(), "Json");
+    }
+
+    #[test]
+    fn display_mu_in_function_type() {
+        // A -> Mu(Json, _) displays as "A -> Json"
+        let body = Type::Union(vec![Type::Number, Type::Var(TypeVarId("Json".to_string()))]);
+        let mu = Type::Mu(TypeVarId("Json".to_string()), Box::new(body));
+        let func = Type::Function(Box::new(Type::String), Box::new(mu));
+        assert_eq!(func.to_string(), "string → Json");
+    }
+
+    #[test]
+    fn humanise_mu_body_renames_fresh_vars() {
+        // Mu(Tree, {value: _t0, left: Mu(Tree,_)}) — _t0 should become `a`
+        let tree_id = TypeVarId("Tree".to_string());
+        let body = Type::Record {
+            fields: {
+                let mut m = BTreeMap::new();
+                m.insert("value".to_string(), var("_t0"));
+                m.insert("left".to_string(), Type::Var(tree_id.clone()));
+                m
+            },
+            open: false,
+            rows: vec![],
+        };
+        let mu = Type::Mu(tree_id, Box::new(body));
+        let h = humanise(&mu);
+        // Mu still displays as its name, but inner structure is renamed
+        assert_eq!(h.to_string(), "Tree");
     }
 }

@@ -1873,3 +1873,25 @@ pub fn test_typecheck_027_values_keys_dict_no_warning() {
 pub fn test_typecheck_028_group_by_dict_no_warning() {
     run_typecheck_test("028_group_by_dict_no_warning.eu");
 }
+
+// ── A3: Recursive types (equirecursive Mu) ────────────────────────────────────
+
+#[test]
+pub fn test_typecheck_030_recursive_alias_no_hang() {
+    run_typecheck_test("030_recursive_alias_no_hang.eu");
+}
+
+#[test]
+pub fn test_typecheck_031_json_function_no_warning() {
+    run_typecheck_test("031_json_function_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_032_nonrecursive_alias_flat() {
+    run_typecheck_test("032_nonrecursive_alias_flat.eu");
+}
+
+#[test]
+pub fn test_typecheck_033_json_dict_no_warning() {
+    run_typecheck_test("033_json_dict_no_warning.eu");
+}

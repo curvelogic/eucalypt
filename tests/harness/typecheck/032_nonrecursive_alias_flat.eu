@@ -1,0 +1,9 @@
+# A3: A non-recursive alias (Name = string) resolves flat — no Mu wrapper,
+# no warning when passing a string.
+` { type-def: { Name: "string" } }
+unit: {}
+
+` { type: "Name → number" }
+length: str.length
+
+result: length("hello")
