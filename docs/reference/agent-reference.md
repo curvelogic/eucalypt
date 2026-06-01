@@ -152,6 +152,8 @@ origin: { x: 0, y: 0 }
 | `{{k: T}}`         | closed record                          |
 | `block`            | any block (no known shape)             |
 | `Dict(T)`          | homogeneous block — all values type T  |
+| `"value"`          | literal string — subtype of `string`; in annotation string: `\"value\"` |
+| `:name`            | literal symbol — subtype of `symbol`   |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
 | `a`, `b`           | type variable                          |
@@ -163,6 +165,7 @@ origin: { x: 0, y: 0 }
 string interpolation. Always escape with `{{` and `}}`:
 `"{{name: string, ..}} -> string"` not `"{name: string, ..} -> string"`.
 Types without braces (`"number -> number"`, `"IO(T)"`) need no escaping.
+Literal string types (`"value"`) need `\"` escaping inside annotation strings.
 
 See [Type Checking](../guide/type-checking.md) for the full guide.
 

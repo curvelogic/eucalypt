@@ -532,6 +532,8 @@ origin: { x: 0, y: 0 }
 | `block`            | any block (no known shape)             |
 | `Dict(T)`          | homogeneous block — all values type T  |
 | `Name` (capitalised) | recursive alias — resolved from `type-def:` |
+| `"value"`          | literal string type (subtype of `string`); in annotation string: `\"value\"` |
+| `:name`            | literal symbol type (subtype of `symbol`)      |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
 | `a`, `b`, `s`      | type variable (lowercase)              |

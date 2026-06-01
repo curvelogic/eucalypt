@@ -106,6 +106,45 @@ Operators use the same metadata syntax:
 | `datetime` | zoned date-time values             |
 | `any`      | unknown — consistent with all types|
 
+### Literal types
+
+A **literal type** represents exactly one value. Literal types are
+subtypes of their corresponding primitive:
+
+| Type syntax     | Meaning                           | Subtype of |
+|-----------------|-----------------------------------|------------|
+| `"value"`       | the specific string `"value"`     | `string`   |
+| `:name`         | the specific symbol `:name`       | `symbol`   |
+
+Literal types are most useful in **discriminated unions** — type aliases
+where a tag field distinguishes variants:
+
+```eu,notest
+{ types: { Shape: "{{type: \"circle\", radius: number, ..}} | {{type: \"rect\", w: number, h: number, ..}}" } }
+```
+
+Because writing complex union types inline is verbose, defining a `types:`
+alias is the recommended approach.
+
+**Subtyping rules**:
+- `"foo"` is consistent with `string` — a literal satisfies a string parameter
+- `"foo" | string` simplifies to `string` — the specific literal is absorbed
+- `:active` is consistent with `symbol` — same for symbols
+
+**Writing literal types in annotation strings**: the type syntax uses
+`"value"` (double-quoted) for literal strings. Since this appears inside
+a eucalypt string, the inner quotes must be escaped with `\"`:
+
+```eu,notest
+# Literal string type in a type annotation — inner quotes escaped with \"
+` { type: "\"circle\" | \"rect\" -> bool" }
+is-shape-name(s): s match?("circle") or s match?("rect")
+
+# Literal symbol type — no escaping needed (: is not special in strings)
+` { type: ":ok | :err -> bool" }
+ok?(status): status = :ok
+```
+
 ### Lists
 
 `[T]` is a homogeneous list of `T`:
@@ -571,6 +610,8 @@ lookup.
 | IO action                | `IO(T)`                                          |
 | Lens                     | `Lens(a, b)`                                     |
 | Traversal                | `Traversal(a, b)`                                |
+| Literal string type      | `"value"` (`\"value\"` in annotation string)     |
+| Literal symbol type      | `:name`                                           |
 | Type variable            | lowercase identifier: `a`, `b`, `s`              |
 | Union type               | `A \| B`                              |
 | Type alias (unit meta)   | `{ types: { Name: "..." } }`          |
