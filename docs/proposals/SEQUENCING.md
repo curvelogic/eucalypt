@@ -109,9 +109,9 @@ come earlier), **0012** (MLsub — probably never), **0019** (host-language
 codegen; JSON-Schema interop could be pulled toward 1.0), **0018** (a registry),
 **0014** (incremental *evaluation*, beyond analysis).
 
-## 4. The four competing "big rebuilds"
+## 4. The competing "big rebuilds"
 
-Four proposals each want a sustained, expert, deep-systems effort, and they draw
+Five proposals each want a sustained, expert, deep-systems effort, and they draw
 on overlapping skills (the GC, the core checker, the STG machine). **They cannot
 all be done at once, and most are post-1.0.**
 
@@ -132,9 +132,9 @@ to be chosen one at a time.
 | Leverage / cost | Proposals |
 |---|---|
 | **Cheap & high-leverage** (do early) | 0004, 0015, 0016, 0013, 0001 (design-heavy, not code-heavy) |
-| **High-leverage, real engineering** | 0005, 0003, 0009, 0014, 0018, 0002 |
+| **High-leverage, real engineering** | 0005, 0020, 0003, 0009, 0014, 0018, 0002 |
 | **Worthwhile, medium** | 0006, 0011, 0017 |
-| **Big bets / forks** (deliberate, mostly post-1.0) | 0007, 0008, 0010, 0012, 0019, 0020 |
+| **Big bets / forks** (deliberate, mostly post-1.0) | 0007, 0008, 0010, 0012, 0019 |
 
 ## 6. Decisions the portfolio forces
 
