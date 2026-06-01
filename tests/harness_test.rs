@@ -1829,3 +1829,32 @@ pub fn test_typecheck_023_for_map_no_warning() {
 pub fn test_typecheck_024_for_bind_no_warning() {
     run_typecheck_test("024_for_bind_no_warning.eu");
 }
+
+// ── A1: Row polymorphism prelude annotations ───────────────────────────────────
+
+#[test]
+pub fn test_typecheck_025_merge_row_poly_no_warning() {
+    run_typecheck_test("025_merge_row_poly_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_029_merge_all_row_poly_no_warning() {
+    run_typecheck_test("029_merge_all_row_poly_no_warning.eu");
+}
+
+// ── A2: Dict type prelude annotations ─────────────────────────────────────────
+
+#[test]
+pub fn test_typecheck_026_map_values_dict_no_warning() {
+    run_typecheck_test("026_map_values_dict_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_027_values_keys_dict_no_warning() {
+    run_typecheck_test("027_values_keys_dict_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_028_group_by_dict_no_warning() {
+    run_typecheck_test("028_group_by_dict_no_warning.eu");
+}

@@ -140,11 +140,13 @@ discriminate: ...
 
 Records describe the shape of blocks:
 
-| Syntax           | Meaning                                           |
-|------------------|---------------------------------------------------|
-| `{k: T}`         | closed record — exactly the key `k` of type `T`  |
-| `{k: T, ..}`     | open record — at least `k: T`, may have more      |
-| `block`          | any block (no known shape)                        |
+| Syntax           | Meaning                                             |
+|------------------|-----------------------------------------------------|
+| `{k: T}`         | closed record — exactly the key `k` of type `T`    |
+| `{k: T, ..}`     | open record — at least `k: T`, may have more        |
+| `{k: T, ..r}`    | named row variable — `r` captures the extra fields  |
+| `{..r, ..s}`     | row concatenation — union of row `r` and row `s`    |
+| `block`          | any block (no known shape)                          |
 
 ```eu,notest
 ` { type: "{name: string, age: number, ..} -> string" }
@@ -153,6 +155,50 @@ greet-person(p): "Hello, {p.name}!"
 
 Open records are more commonly useful — most block-processing functions
 don't require a specific shape.
+
+### Dict
+
+`Dict(T)` represents a homogeneous block — a block where every value has
+the same type `T`. Use this when you know what the values are but not what
+the keys are:
+
+```eu,notest
+` { type: "Dict(number)" }
+scores: { alice: 95 bob: 87 carol: 92 }
+```
+
+Key prelude functions are annotated with `Dict` types:
+
+| Function     | Type                              |
+|--------------|-----------------------------------|
+| `map-values` | `(a -> b) -> Dict(a) -> Dict(b)`  |
+| `values`     | `Dict(a) -> [a]`                  |
+| `keys`       | `Dict(a) -> [symbol]`             |
+| `group-by`   | `(a -> any) -> [a] -> Dict([a])`  |
+
+A closed record is a subtype of the corresponding `Dict` type when all
+its field values share a common type. An open or annotated-Dict record is
+consistent with `Dict(T)` for gradual typing purposes.
+
+### Row polymorphism
+
+**Named row variables** allow functions that preserve the shape of records
+they do not inspect. The `merge` function is annotated:
+
+```eu,notest
+` { type: "{{..r}} -> {{..s}} -> {{..r, ..s}}" }
+merge: __MERGE
+```
+
+Here `r` and `s` are row variables that capture the fields from each
+input. The result contains both sets of fields. In a type annotation
+string, `{{` and `}}` are literal braces (eucalypt string escaping);
+the parser sees `{..r}` and `{..r, ..s}`.
+
+Row variables propagate through function applications: if a function
+with a named row in its type is applied to a concrete record, the
+checker unifies the known fields and binds the row variable to the
+remaining fields.
 
 ### Functions
 
@@ -479,18 +525,21 @@ lookup.
 
 ## Summary
 
-| What                     | How                                   |
-|--------------------------|---------------------------------------|
-| Run the checker          | `eu check file.eu`                    |
-| Treat warnings as errors | `eu check file.eu --strict`           |
-| Annotate a declaration   | `` ` { type: "number -> number" } ``  |
-| Any block                | `block`                               |
-| Open record              | `{k: T, ..}`                          |
-| Closed record            | `{k: T}`                              |
-| IO action                | `IO(T)`                               |
-| Lens                     | `Lens(a, b)`                          |
-| Traversal                | `Traversal(a, b)`                     |
-| Type variable            | lowercase identifier: `a`, `b`, `s`   |
+| What                     | How                                              |
+|--------------------------|--------------------------------------------------|
+| Run the checker          | `eu check file.eu`                               |
+| Treat warnings as errors | `eu check file.eu --strict`                      |
+| Annotate a declaration   | `` ` { type: "number -> number" } ``             |
+| Any block                | `block`                                          |
+| Open record              | `{k: T, ..}`                                     |
+| Closed record            | `{k: T}`                                         |
+| Named row variable       | `{k: T, ..r}` (`{{k: T, ..r}}` in string)       |
+| Row concatenation        | `{..r, ..s}` (`{{..r, ..s}}` in string)          |
+| Homogeneous dict         | `Dict(T)`                                        |
+| IO action                | `IO(T)`                                          |
+| Lens                     | `Lens(a, b)`                                     |
+| Traversal                | `Traversal(a, b)`                                |
+| Type variable            | lowercase identifier: `a`, `b`, `s`              |
 | Union type               | `A \| B`                              |
 | Type alias (unit meta)   | `{ types: { Name: "..." } }`          |
 | Type alias (declaration) | `` ` { type-def: "Name" } ``          |

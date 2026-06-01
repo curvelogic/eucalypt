@@ -121,19 +121,32 @@ pub enum Type {
     /// — the `{k: T, ..}` form). `open = false` means exactly those fields
     /// (closed record — the `{k: T}` form).
     ///
-    /// When `row` is `Some(id)`, the record is implicitly open and the named
-    /// row variable captures the unknown extra fields — the `{k: T, ..r}` form.
-    /// Substituting the row variable with a concrete record type merges those
-    /// fields in.
+    /// `rows` holds named row variables (the `..r` tail variables).  Each entry
+    /// represents one row variable capturing extra fields.  Substituting a row
+    /// variable with a concrete record type merges those fields in.
+    ///
+    /// - `rows: []` — no named row variables (anonymous open or closed).
+    /// - `rows: [r]` — single named row: `{k: T, ..r}`.
+    /// - `rows: [r, s]` — row concatenation: `{..r, ..s}` (as in `merge`'s
+    ///   return type).  After substitution, fields from both `r` and `s` are
+    ///   merged in.
+    ///
+    /// Non-empty `rows` implies `open = true`.
     Record {
         fields: BTreeMap<String, Type>,
         open: bool,
-        /// Named row variable — `..r` in the `{k: T, ..r}` form.
-        ///
-        /// Implies `open = true`.  When `None` the record is either closed
-        /// (`open = false`) or open with an anonymous tail (`open = true`).
-        row: Option<TypeVarId>,
+        /// Named row variables — the `..r` tail form.  Usually 0 or 1 entries;
+        /// 2 entries represent row concatenation `{..r, ..s}`.
+        rows: Vec<TypeVarId>,
     },
+    /// Homogeneous block: arbitrary symbol keys, every value of type `T`.
+    ///
+    /// Distinct from `Record` (which names individual fields).  `Dict(T)`
+    /// is the honest type of `map-values`, `group-by`, `values`, `keys`,
+    /// and `lookup` — any block whose values all share a common type.
+    ///
+    /// Display: `Dict(T)`.
+    Dict(Box<Type>),
     /// Function type: `A -> B`.
     Function(Box<Type>, Box<Type>),
     /// Union type: `A | B`.
@@ -148,6 +161,28 @@ pub enum Type {
     // ── Variables ────────────────────────────────────────────────────────────
     /// Type variable (lowercase identifier, e.g. `a`, `b`, `result`).
     Var(TypeVarId),
+}
+
+impl Type {
+    /// Construct a `Union` from an iterator, flattening singleton and empty cases.
+    ///
+    /// - Empty iterator → `Type::Never` (empty union = bottom type).
+    /// - Single type → that type (no wrapper needed).
+    /// - Multiple types → `Type::Union(types)`.
+    pub fn union(types: impl IntoIterator<Item = Type>) -> Type {
+        // Deduplicate while preserving order.
+        let mut seen: Vec<Type> = Vec::new();
+        for ty in types {
+            if !seen.contains(&ty) {
+                seen.push(ty);
+            }
+        }
+        match seen.len() {
+            0 => Type::Never,
+            1 => seen.remove(0),
+            _ => Type::Union(seen),
+        }
+    }
 }
 
 impl fmt::Display for Type {
@@ -187,30 +222,35 @@ impl fmt::Display for Type {
             Type::IO(inner) => write!(f, "IO({inner})"),
             Type::Lens(a, b) => write!(f, "Lens({a}, {b})"),
             Type::Traversal(a, b) => write!(f, "Traversal({a}, {b})"),
-            Type::Record { fields, open, row } => {
+            Type::Record { fields, open, rows } => {
                 write!(f, "{{")?;
-                let mut iter = fields.iter();
-                if let Some((k, v)) = iter.next() {
+                let mut any_written = false;
+                for (k, v) in fields.iter() {
+                    if any_written {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{k}: {v}")?;
-                    for (k, v) in iter {
-                        write!(f, ", {k}: {v}")?;
-                    }
+                    any_written = true;
                 }
-                if let Some(r) = row {
-                    if fields.is_empty() {
-                        write!(f, "..{r}")?;
-                    } else {
-                        write!(f, ", ..{r}")?;
+                // Print named row variables as `..r`, `..s`, …
+                for r in rows {
+                    if any_written {
+                        write!(f, ", ")?;
                     }
-                } else if *open {
-                    if fields.is_empty() {
-                        write!(f, "..")?;
-                    } else {
-                        write!(f, ", ..")?;
+                    write!(f, "..{r}")?;
+                    any_written = true;
+                }
+                // Print anonymous open tail `..` if the record is anonymously open
+                // (independently of any named row variables).
+                if *open {
+                    if any_written {
+                        write!(f, ", ")?;
                     }
+                    write!(f, "..")?;
                 }
                 write!(f, "}}")
             }
+            Type::Dict(inner) => write!(f, "Dict({inner})"),
             Type::Function(a, b) => {
                 // Parenthesise LHS if it is itself a function or a union, to
                 // avoid ambiguity: `(a -> b) -> c` and `(a | b) -> c` must
@@ -253,7 +293,9 @@ pub fn humanise(ty: &Type) -> Type {
             Type::Var(v) if v.0.starts_with("_t") && !seen.contains(&v.0) => {
                 seen.push(v.0.clone());
             }
-            Type::List(inner) | Type::IO(inner) => collect_fresh_vars(inner, seen),
+            Type::List(inner) | Type::IO(inner) | Type::Dict(inner) => {
+                collect_fresh_vars(inner, seen);
+            }
             Type::Tuple(elems) => {
                 for e in elems {
                     collect_fresh_vars(e, seen);
@@ -263,12 +305,12 @@ pub fn humanise(ty: &Type) -> Type {
                 collect_fresh_vars(a, seen);
                 collect_fresh_vars(b, seen);
             }
-            Type::Record { fields, row, .. } => {
+            Type::Record { fields, rows, .. } => {
                 for v in fields.values() {
                     collect_fresh_vars(v, seen);
                 }
                 // Row variables with `_t` prefix are fresh vars to be renamed.
-                if let Some(r) = row {
+                for r in rows {
                     if r.0.starts_with("_t") && !seen.contains(&r.0) {
                         seen.push(r.0.clone());
                     }
@@ -294,6 +336,7 @@ pub fn humanise(ty: &Type) -> Type {
             }
             Type::List(inner) => Type::List(Box::new(replace(inner, mapping))),
             Type::IO(inner) => Type::IO(Box::new(replace(inner, mapping))),
+            Type::Dict(inner) => Type::Dict(Box::new(replace(inner, mapping))),
             Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| replace(e, mapping)).collect()),
             Type::Function(a, b) => {
                 Type::Function(Box::new(replace(a, mapping)), Box::new(replace(b, mapping)))
@@ -304,19 +347,22 @@ pub fn humanise(ty: &Type) -> Type {
             Type::Traversal(a, b) => {
                 Type::Traversal(Box::new(replace(a, mapping)), Box::new(replace(b, mapping)))
             }
-            Type::Record { fields, open, row } => Type::Record {
+            Type::Record { fields, open, rows } => Type::Record {
                 fields: fields
                     .iter()
                     .map(|(k, v)| (k.clone(), replace(v, mapping)))
                     .collect(),
                 open: *open,
-                row: row.as_ref().map(|r| {
-                    if let Some(replacement) = mapping.get(&r.0) {
-                        TypeVarId(replacement.clone())
-                    } else {
-                        r.clone()
-                    }
-                }),
+                rows: rows
+                    .iter()
+                    .map(|r| {
+                        if let Some(replacement) = mapping.get(&r.0) {
+                            TypeVarId(replacement.clone())
+                        } else {
+                            r.clone()
+                        }
+                    })
+                    .collect(),
             },
             Type::Union(variants) => {
                 Type::Union(variants.iter().map(|v| replace(v, mapping)).collect())
@@ -427,7 +473,7 @@ mod tests {
             Box::new(Type::Record {
                 fields: BTreeMap::new(),
                 open: true,
-                row: None,
+                rows: vec![],
             }),
             Box::new(Type::Any),
         );
@@ -442,7 +488,7 @@ mod tests {
         let t = Type::Record {
             fields,
             open: false,
-            row: None,
+            rows: vec![],
         };
         // BTreeMap is sorted alphabetically
         assert_eq!(t.to_string(), "{age: number, name: string}");
@@ -455,7 +501,7 @@ mod tests {
         let t = Type::Record {
             fields,
             open: true,
-            row: None,
+            rows: vec![],
         };
         assert_eq!(t.to_string(), "{name: string, ..}");
     }
@@ -526,5 +572,100 @@ mod tests {
         let ty = Type::Function(Box::new(Type::Number), Box::new(Type::String));
         let h = humanise(&ty);
         assert_eq!(h.to_string(), "number → string");
+    }
+
+    // ── Dict display ────────────────────────────────────────────────────────
+
+    #[test]
+    fn display_dict_number() {
+        let t = Type::Dict(Box::new(Type::Number));
+        assert_eq!(t.to_string(), "Dict(number)");
+    }
+
+    #[test]
+    fn display_dict_string() {
+        let t = Type::Dict(Box::new(Type::String));
+        assert_eq!(t.to_string(), "Dict(string)");
+    }
+
+    #[test]
+    fn display_dict_list() {
+        let t = Type::Dict(Box::new(Type::List(Box::new(Type::Number))));
+        assert_eq!(t.to_string(), "Dict([number])");
+    }
+
+    // ── Row variable display ────────────────────────────────────────────────
+
+    #[test]
+    fn display_single_row_var() {
+        // open: false — the named row var is the only extension
+        let t = Type::Record {
+            fields: BTreeMap::new(),
+            open: false,
+            rows: vec![TypeVarId("r".to_string())],
+        };
+        assert_eq!(t.to_string(), "{..r}");
+    }
+
+    #[test]
+    fn display_row_var_with_fields() {
+        let mut fields = BTreeMap::new();
+        fields.insert("x".to_string(), Type::Number);
+        // open: false — the named row var captures the extension
+        let t = Type::Record {
+            fields,
+            open: false,
+            rows: vec![TypeVarId("r".to_string())],
+        };
+        assert_eq!(t.to_string(), "{x: number, ..r}");
+    }
+
+    #[test]
+    fn display_two_row_vars() {
+        // open: false — both named row vars together capture the extension
+        let t = Type::Record {
+            fields: BTreeMap::new(),
+            open: false,
+            rows: vec![TypeVarId("r".to_string()), TypeVarId("s".to_string())],
+        };
+        assert_eq!(t.to_string(), "{..r, ..s}");
+    }
+
+    #[test]
+    fn display_row_var_and_anon_open() {
+        // open: true AND rows: [r] — row var plus extra anonymous tail
+        let t = Type::Record {
+            fields: BTreeMap::new(),
+            open: true,
+            rows: vec![TypeVarId("r".to_string())],
+        };
+        assert_eq!(t.to_string(), "{..r, ..}");
+    }
+
+    // ── Type::union constructor ─────────────────────────────────────────────
+
+    #[test]
+    fn union_empty_is_never() {
+        assert_eq!(Type::union(std::iter::empty()), Type::Never);
+    }
+
+    #[test]
+    fn union_singleton_unwraps() {
+        assert_eq!(Type::union(std::iter::once(Type::Number)), Type::Number);
+    }
+
+    #[test]
+    fn union_multiple_wraps() {
+        let u = Type::union(vec![Type::Number, Type::String]);
+        assert_eq!(u, Type::Union(vec![Type::Number, Type::String]));
+    }
+
+    // ── Humanise Dict ───────────────────────────────────────────────────────
+
+    #[test]
+    fn humanise_dict_with_fresh_var() {
+        let ty = Type::Dict(Box::new(var("_t0")));
+        let h = humanise(&ty);
+        assert_eq!(h.to_string(), "Dict(a)");
     }
 }
