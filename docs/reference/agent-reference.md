@@ -894,18 +894,22 @@ generalised lookup.
 
 The following are commonly assumed but are **not** in the prelude:
 
-- `str.replace` — does not exist
 - `str.trim` — does not exist
-- `str.starts-with?` — does not exist
-- `str.ends-with?` — does not exist
-- `str.contains?` — does not exist
 - `flatten` — use `concat` (flattens one level)
 - `unique` — does not exist in prelude
-- `abs` — does not exist (use `if(x < 0, negate(x), x)`)
 - `even?` / `odd?` — do not exist (use `x % 2 = 0`)
 - `round` / `ceil` — use `floor` and `ceiling` (or bracket notation `⌊n⌋` and `⌈n⌉`)
 - `select` / `dissoc` — do not exist (use `filter-items` with
   `by-key`)
+
+These **do exist** and are commonly available:
+
+- `str.replace(pattern, replacement, s)` — replaces all regex matches
+- `str.contains?(pattern, s)` — true if `s` contains a match for regex `pattern`
+- `str.starts-with?(re, s)` — true if `s` starts with regex match
+- `str.ends-with?(re, s)` — true if `s` ends with regex match
+- `abs(n)` — absolute value
+- `str.to-upper(s)` / `str.to-lower(s)` — case conversion (not `str.upper` / `str.lower`)
 
 ### 5.12 str.split-on Uses Regex, Not Literal Strings
 

@@ -96,5 +96,37 @@
     "prefix": "pipe",
     "body": ["${1:value} ${2:f} ${3:g}"],
     "description": "Value pipeline (catenation)"
+  },
+  "Typed function declaration": {
+    "prefix": "tfn",
+    "body": [
+      "` { doc: \"`${1:name}(${2:x})` - ${3:description}.\"",
+      "    type: \"${4:number} -> ${5:number}\" }",
+      "${1:name}(${2:x}): ${6:${2:x}}"
+    ],
+    "description": "Function declaration with type annotation"
+  },
+  "Type alias in unit metadata": {
+    "prefix": "types",
+    "body": [
+      "{ types: { ${1:Name}: \"{${2:key}: ${3:type}, ..}\" } }"
+    ],
+    "description": "Type alias definitions in unit metadata"
+  },
+  "Type-def declaration": {
+    "prefix": "typedef",
+    "body": [
+      "` { type-def: \"${1:TypeName}\" }",
+      "${2:canonical-value}: ${3:{ key: value }}"
+    ],
+    "description": "Derive type alias from canonical instance"
+  },
+  "IO typed binding": {
+    "prefix": "iobind",
+    "body": [
+      "` { type: \"IO(${1:block})\" }",
+      "${2:action}: io.shell(\"${3:command}\")"
+    ],
+    "description": "IO action with type annotation"
   }
 }

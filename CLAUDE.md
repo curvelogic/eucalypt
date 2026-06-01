@@ -159,7 +159,7 @@ For specific topics, also consult:
 4. **Each `_` creates a new param**: `_ + _` means `_0 + _1` (two params). Use `_0 * _0` to reference the same param twice.
 5. **Backtick is metadata, not comment**: `` ` "text" `` attaches to the NEXT declaration. Use `#` for comments.
 6. **`/` is floor division**: Use `÷` for exact division.
-7. **Many "obvious" functions don't exist**: No `str.replace`, `str.trim`, `str.contains?`, `flatten`, `abs`, `even?`. Check agent-reference.md section 5.11.
+7. **Many "obvious" functions don't exist**: No `str.trim`, `flatten`, `even?`, `odd?`. Check agent-reference.md section 5.11. Note: `str.replace`, `str.contains?`, `str.starts-with?`, `str.ends-with?`, and `abs` **do** exist.
 8. **`has` takes a symbol, not a string**: `has(:key)` not `has("key")`.
 9. **`str.split-on` uses regex**: `"a.b" str.split-on(".")` matches any char. Use `"[.]"`.
 10. **No whitespace before `(`**: `f(x)` is a call, `f (x)` is catenation.

@@ -237,9 +237,12 @@ From highest to lowest binding:
 |------|------|-------|-----------|-------------|
 | 95 | -- | prefix | `↑` | Tight prefix (head) |
 | 90 | lookup | left | `.` | Field access / lookup |
+| 90 | lookup | left | `~` | Safe key lookup (null-propagating) |
+| 85 | exp | right | `!!` | Indexing (`xs !! 0`, arrays use list: `a !! [r,c]`) |
 | 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
 | 88 | bool-unary | postfix | `✓` | Not-null check (true if not null) |
-| 85 | exp | right | `^`, `∘`, `;` | Power, composition |
+| 88 | -- | right/left | `∘`, `;` | Composition (right-to-left, left-to-right) |
+| 85 | exp | right | `^` | Power |
 | 80 | prod | left | `*`, `/`, `÷`, `%` | Multiplication, floor division, precise division, floor modulo |
 | 75 | sum | left | `+`, `-` | Addition, subtraction |
 | 55 | -- | right | `‖` | List cons (prepend element) |
@@ -340,16 +343,21 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | Function | Description |
 |----------|-------------|
 | `str.len(s)` | String length |
-| `str.upper(s)` | Upper case |
-| `str.lower(s)` | Lower case |
-| `str.starts-with?(prefix)` | Starts with prefix? |
-| `str.ends-with?(suffix)` | Ends with suffix? |
-| `str.contains?(sub)` | Contains substring? |
-| `str.matches?(regex)` | Matches regex? |
-| `str.split(sep)` | Split by separator |
-| `str.join(sep)` | Join list with separator |
-| `str.replace(from, to)` | Replace occurrences |
-| `str.trim` | Remove surrounding whitespace |
+| `str.to-upper(s)` | Upper case |
+| `str.to-lower(s)` | Lower case |
+| `str.starts-with?(re, s)` | Starts with regex match? |
+| `str.ends-with?(re, s)` | Ends with regex match? |
+| `str.contains?(re, s)` | Contains regex match? |
+| `str.matches?(re, s)` | Matches full regex? |
+| `str.split-on(re, s)` | Split by regex (pipeline-friendly) |
+| `str.join-on(sep, l)` | Join list with separator (pipeline-friendly) |
+| `str.replace(re, rep, s)` | Replace all regex matches |
+| `str.prefix(b, a)` | Prepend `b` onto `a` |
+| `str.suffix(b, a)` | Append `b` onto `a` |
+
+**All str regex functions treat the pattern argument as a regular expression.**
+`str.split-on` and `str.contains?` are pipeline-friendly (data is last arg).
+Note: `str.trim` does **not** exist — strip leading/trailing manually with `str.replace`.
 
 ### Serialisation and Parsing
 
@@ -388,6 +396,7 @@ Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jso
 | `even?` / `odd?` | Parity predicates |
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceiling` / `⌊n⌋` / `⌈n⌉` | Rounding (no `round`) |
+| `even?` / `odd?` | Do **not** exist — use `x % 2 = 0` / `x % 2 = 1` |
 
 ### Arrays (`arr` namespace)
 
