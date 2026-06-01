@@ -306,7 +306,7 @@ head: __HEAD
 
 ` { doc: "`nil?(xs)` - `true` if list `xs` is empty, `false` otherwise."
     type: "[a] → bool" }
-nil?: = []
+nil?: __NILP
 
 ` { doc: "`non-nil?(xs)` - `true` if list `xs` is non-empty, `false` otherwise."
     type: "[a] → bool" }

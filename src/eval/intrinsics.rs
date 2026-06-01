@@ -984,6 +984,11 @@ lazy_static! {
             ty: function(vec![unk()]).unwrap(),
             strict: vec![],
     },
+    Intrinsic { // 187
+            name: "NILP",
+            ty: function(vec![any(), bool_()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 
