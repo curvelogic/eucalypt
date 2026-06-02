@@ -994,6 +994,11 @@ lazy_static! {
             ty: function(vec![any(), any(), any()]).unwrap(),
             strict: vec![],
     },
+    Intrinsic { // 189
+            name: "SLIDING_SUM_NUM_LIST",
+            ty: function(vec![num(), list(), list()]).unwrap(),
+            strict: vec![],
+    },
     ];
 }
 

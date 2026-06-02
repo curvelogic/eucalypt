@@ -1640,6 +1640,10 @@ running-min: '__RUNNING_MIN'
 `[3, 1, 4, 1]` → `[3, 4, 8, 9]`. (Rust-level intrinsic)."
 running-sum: '__RUNNING_SUM'
 
+` { doc: "nums sliding-sum(n) - sliding window sums of size n over number list nums. Returns a list of length max(0, len(nums) - n + 1). Equivalent to window(n, 1) map(sum) but O(n) time."
+    type: "[number] -> number -> [number]" }
+sliding-sum(n, nums): __SLIDING_SUM_NUM_LIST(n, nums)
+
 ` { doc: "`sort-strs(xs)` - sort list of strings or symbols ascending."
     type: "[string] → [string]" }
 sort-strs(xs): xs qsort(<)

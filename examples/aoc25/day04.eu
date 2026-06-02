@@ -32,7 +32,7 @@ pad(row): [0] ++ row ++ [0]
 zero-row(row): row map(const(0))
 
 ` "Horizontal sums: for each position, sum of the 3-wide window."
-h-sums(row): row pad window(3, 1) map(sum)
+h-sums(row): row pad sliding-sum(3)
 
 ` "Element-wise sum of two lists."
 add-rows(a, b): zip-with(+, a, b)

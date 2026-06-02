@@ -198,6 +198,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(running::RunningMax));
     rt.add(Box::new(running::RunningMin));
     rt.add(Box::new(running::RunningSum));
+    rt.add(Box::new(running::SlidingSumNumList));
     rt.add(Box::new(list::ListNth));
     rt.add(Box::new(list::ListDrop));
     rt.add(Box::new(array::ArrayZeros));
