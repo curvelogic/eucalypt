@@ -1491,7 +1491,10 @@ fn alias_goto_definition_from_type_string() {
     // Cursor on "Point" inside the type: string on line 2.
     // "` { type: \"" is 11 chars; "Point" starts at col 11.
     let result = s.goto_definition_for_type_alias(2, 11);
-    assert!(result.is_some(), "should find definition of Point from type: string");
+    assert!(
+        result.is_some(),
+        "should find definition of Point from type: string"
+    );
 }
 
 /// Hover on an alias reference inside a `type:` string shows the alias name.
@@ -1513,7 +1516,10 @@ fn alias_hover_in_type_string() {
             lsp_types::HoverContents::Markup(m) => m.value,
             _ => String::new(),
         };
-        assert!(text.contains("Point"), "hover should mention the alias name");
+        assert!(
+            text.contains("Point"),
+            "hover should mention the alias name"
+        );
     }
 }
 
@@ -1535,7 +1541,10 @@ fn alias_rename_updates_definition_and_references() {
     let changes = edit.unwrap().changes.unwrap();
     // The test session uses a single URI.
     let edits: Vec<_> = changes.values().flatten().collect();
-    assert!(edits.len() >= 2, "expected at least 2 edits (definition + reference)");
+    assert!(
+        edits.len() >= 2,
+        "expected at least 2 edits (definition + reference)"
+    );
     for e in &edits {
         assert_eq!(e.new_text, "Coord", "all edits should rename to 'Coord'");
     }
@@ -1552,5 +1561,8 @@ fn alias_no_result_outside_type_string() {
 
     // Cursor on the identifier "point" (not inside a type: string).
     let result = s.goto_definition_for_type_alias(1, 0);
-    assert!(result.is_none(), "should return None when cursor is not on an alias in a type: string");
+    assert!(
+        result.is_none(),
+        "should return None when cursor is not on an alias in a type: string"
+    );
 }
