@@ -1526,7 +1526,7 @@ reverse(l): foldl(cons flip, [], l)
 
 ` { doc: "`all-true?(l)` - true if and only if all items in list `l` are true."
     type: "[bool] → bool" }
-all-true?(l): foldl(and, true, l)
+all-true?: '__ALL_TRUE_LIST'
 
 ` { doc: "`all(p?, l)` - true if and only if all items in list `l` satisfy predicate `p?`."
     type: "(a → bool) → [a] → bool" }
@@ -1534,7 +1534,7 @@ all(p?, l): l map(p?) all-true?
 
 ` { doc: "`any-true?(l)` - true if and only if any items in list `l` are true."
     type: "[bool] → bool" }
-any-true?(l): foldr(or, false, l)
+any-true?: '__ANY_TRUE_LIST'
 
 ` { doc: "`any(p?, l)` - true if and only if any items in list `l` satisfy predicate `p?`."
     type: "(a → bool) → [a] → bool" }
