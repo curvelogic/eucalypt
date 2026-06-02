@@ -1,4 +1,4 @@
-# AC9b: union subtraction in false branch.
+# Union subtraction in false branch.
 # `x` is `number | string | null`. After null?(x) in the condition:
 # - true branch: x is `null`
 # - false branch: x is `number | string` (null subtracted)

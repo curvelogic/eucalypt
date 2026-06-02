@@ -1,4 +1,4 @@
-# AC2 / AC8: `head` on an empty list literal synthesises `List(never)`,
+# `head` on an empty list literal synthesises `List(never)`,
 # which is NOT a subtype of the return annotation `number`.
 # The type checker must emit a warning.
 

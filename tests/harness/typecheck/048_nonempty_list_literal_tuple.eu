@@ -1,9 +1,6 @@
-# AC1 / AC6: Non-empty list literals synthesise as Tuple up to LIST_TUPLE_CAP=16.
+# Non-empty list literals synthesise as Tuple up to LIST_TUPLE_CAP=16.
 # A Tuple([number]) is a subtype of NonEmpty(number) and of List(number),
 # so `head` accepts it without a warning.
-#
-# Without the AC6 rewrite, `[42]` synthesised as `List(number)`, and the
-# element type information was lost.
 
 ` { type: "number" }
 first-of-singleton: [42] head

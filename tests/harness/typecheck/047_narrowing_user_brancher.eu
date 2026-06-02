@@ -1,4 +1,4 @@
-# AC5 / AC9: user-defined brancher wrapper narrows types.
+# User-defined brancher wrapper narrows types.
 # `my-if(c, t, f): if(c, t, f)` is structurally equivalent to `if`.
 # The BranchShape classifier must recognise it as a pass-through
 # wrapper and apply the same If-shaped narrowing.

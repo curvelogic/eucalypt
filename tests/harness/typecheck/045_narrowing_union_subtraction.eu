@@ -1,4 +1,4 @@
-# AC9g: union subtraction — `string | number | null` minus `null` leaves
+# Union subtraction — `string | number | null` minus `null` leaves
 # `string | number`. Demonstrates that negative narrowing on a union removes
 # the tested member, and a second predicate then further narrows.
 ` { type: "(string | number | null) → string" }

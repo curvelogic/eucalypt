@@ -1,4 +1,4 @@
-# AC4: `then` (pipeline if) is recognised as a brancher.
+# `then` (pipeline if) is recognised as a brancher.
 # `x then(a, b)` is the idiomatic pipeline form; it cooks to
 # App(App(then, [a, b]), [x]).  Spine flattening + structural
 # BranchShape classification must recognise it as an If-shape and

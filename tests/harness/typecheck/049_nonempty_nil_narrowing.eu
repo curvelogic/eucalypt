@@ -1,9 +1,6 @@
-# AC3: `nil?` narrows List(a) to NonEmpty(a) in its negative (false) branch.
+# `nil?` narrows List(a) to NonEmpty(a) in its negative (false) branch.
 # The annotation `[number] → number` must check cleanly because the type
 # checker knows that in the false branch of `nil?`, the list is non-empty.
-#
-# Without AC3, `head` on `xs` (type `[number]`) would synthesise `any`,
-# causing a type mismatch warning against the `number` return annotation.
 
 ` { type: "[number] → number" }
 safe-head(xs): if(xs nil?, 0, xs head)

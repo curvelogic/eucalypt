@@ -5,4 +5,4 @@
 
 checks: [1 = [1], "hello" = [:hello], :foo = 42, [] = 0, 1 = {x: 1}]
 
-RESULT: if(checks map(¬) all-true?, :PASS, :FAIL)
+RESULT: checks map(¬) all-true? then(:PASS, :FAIL)

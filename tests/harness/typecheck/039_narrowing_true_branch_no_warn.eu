@@ -1,8 +1,7 @@
-# AC9a: type predicate narrows variable in true branch.
-# `x` is annotated as `number | string`. In the true branch of
-# `if(number?(x), …)`, `x` is narrowed to `number` so `x + 1`
-# does not produce a type warning.
+# Type predicate narrows variable in true branch.
+# `x` is annotated as `number | string`. In the true branch,
+# `x` is narrowed to `number` so `x + 1` produces no warning.
 ` { type: "(number | string) → number" }
-add-one-if-num(x): if(x number?, x + 1, 0)
+add-one-if-num(x): x number? then(x + 1, 0)
 
 result: add-one-if-num(42)

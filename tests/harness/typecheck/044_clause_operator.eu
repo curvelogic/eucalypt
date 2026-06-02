@@ -1,4 +1,4 @@
-# AC9f: `=>` operator builds cond clauses; cond evaluates the clause list.
+# `=>` operator builds cond clauses; cond evaluates the clause list.
 # This tests basic clause syntax and evaluation semantics.
 grade(score): cond[score >= 90 => "A"
                   , score >= 80 => "B"
