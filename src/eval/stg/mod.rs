@@ -200,6 +200,8 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(running::RunningSum));
     rt.add(Box::new(list::ListNth));
     rt.add(Box::new(list::ListDrop));
+    rt.add(Box::new(list::ReverseList));
+    rt.add(Box::new(force::SeqListSpine));
     rt.add(Box::new(array::ArrayZeros));
     rt.add(Box::new(array::ArrayFill));
     rt.add(Box::new(array::ArrayFromFlat));

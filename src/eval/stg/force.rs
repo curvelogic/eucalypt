@@ -185,6 +185,52 @@ impl StgIntrinsic for SeqList {
 
 impl CallGlobal1 for SeqList {}
 
+/// `SeqListSpine` — force only the *spine* of a list, without touching the head elements.
+///
+/// Unlike `SeqList`, this does NOT unbox or force each head element — it only forces
+/// each cons cell's tail pointer to the next cons cell (or nil).  The result has an
+/// identical structure to the input but with a fully-evaluated spine.
+///
+/// Used by `REVERSE_LIST`, which needs `DataIterator` to traverse the list (requiring
+/// a forced spine) but must preserve the original head closures (e.g. `BoxedString`)
+/// so that downstream BIFs such as `str.letters` receive the representation they expect.
+pub struct SeqListSpine;
+
+impl StgIntrinsic for SeqListSpine {
+    fn name(&self) -> &str {
+        "seqListSpine"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        // switch local(0) of
+        //   ListNil  → local(0)                           -- already nil, return as-is
+        //   ListCons → [h, t]                             -- local(0)=h, local(1)=t
+        //     force(SeqListSpine(t),                      -- force the tail spine
+        //       [seq_t, h, t]                             -- local(0)=seq_t, lref(1)=h
+        //       ListCons(lref(1), lref(0))               -- rebuild with original h
+        //     )
+        lambda(
+            1,
+            switch(
+                local(0),
+                vec![
+                    (DataConstructor::ListNil.tag(), local(0)),
+                    (
+                        DataConstructor::ListCons.tag(), // [h t]: local(0)=h, local(1)=t
+                        force(
+                            SeqListSpine.global(lref(1)), // SeqListSpine(t)
+                            // [seq_t] [h t]: local(0)=seq_t, lref(1)=h, lref(2)=t
+                            data(DataConstructor::ListCons.tag(), vec![lref(1), lref(0)]),
+                        ),
+                    ),
+                ],
+            ),
+        )
+    }
+}
+
+impl CallGlobal1 for SeqListSpine {}
+
 /// `__FORCE_WHNF` — force a thunk to weak head normal form from within an intrinsic.
 ///
 /// Unlike the STG-level `force` DSL combinator (which is woven into the

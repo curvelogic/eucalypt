@@ -994,6 +994,16 @@ lazy_static! {
             ty: function(vec![any(), any(), any()]).unwrap(),
             strict: vec![],
     },
+    Intrinsic { // 189
+            name: "REVERSE_LIST",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 190
+            name: "seqListSpine",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 

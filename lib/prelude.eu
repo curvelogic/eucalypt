@@ -1522,7 +1522,7 @@ zip-apply(fs, vs): zip-with(_0(_1), fs, vs)
 
 ` { doc: "`reverse(l)` - reverse list `l`."
     type: "[a] → [a]" }
-reverse(l): foldl(cons flip, [], l)
+reverse: '__REVERSE_LIST'
 
 ` { doc: "`all-true?(l)` - true if and only if all items in list `l` are true."
     type: "[bool] → bool" }

@@ -18,9 +18,10 @@ use crate::{
 };
 
 use super::{
-    force::SeqNumList,
+    force::{SeqListSpine, SeqNumList},
     support::{
-        collect_num_list, data_list_arg, machine_return_bool, machine_return_num_list, num_arg,
+        collect_num_list, data_list_arg, machine_return_bool, machine_return_closure_list,
+        machine_return_num_list, num_arg,
     },
     syntax::{
         dsl::{app_bif, case, data, force, lambda, local, lref, value},
@@ -488,3 +489,48 @@ impl StgIntrinsic for ListDrop {
 }
 
 impl CallGlobal2 for ListDrop {}
+
+/// `REVERSE_LIST(l)` — reverse a list.
+///
+/// Replaces `reverse(l): foldl(cons flip, [], l)` which builds an N-deep
+/// lazy accumulator thunk chain.  The GC must traverse all N thunks each
+/// collection cycle, producing super-linear scaling on large lists.
+///
+/// Uses `SeqListSpine` to force only the list spine (not the head elements),
+/// preserving original head closures (e.g. `BoxedString`) so that downstream
+/// BIFs receive the representation they expect.  Then collects into a `Vec`
+/// and returns the reversed elements in a single pass.
+pub struct ReverseList;
+
+impl StgIntrinsic for ReverseList {
+    fn name(&self) -> &str {
+        "REVERSE_LIST"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        let bif_index: u8 = self.index().try_into().unwrap();
+        lambda(
+            1, // [list]
+            force(
+                SeqListSpine.global(lref(0)),
+                // [spine_forced] [list]: spine is in WHNF, heads are unmodified
+                app_bif(bif_index, vec![lref(0)]),
+            ),
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let iter = data_list_arg(machine, view, args[0].clone())?;
+        let mut items: Vec<_> = iter.collect::<Result<_, _>>()?;
+        items.reverse();
+        machine_return_closure_list(machine, view, items)
+    }
+}
+
+impl CallGlobal1 for ReverseList {}
