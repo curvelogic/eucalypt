@@ -994,6 +994,11 @@ lazy_static! {
             ty: function(vec![any(), any(), any()]).unwrap(),
             strict: vec![],
     },
+    Intrinsic { // 189
+            name: "SORT_STR_LIST",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![],
+    },
     ];
 }
 

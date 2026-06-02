@@ -18,9 +18,10 @@ use crate::{
 };
 
 use super::{
-    force::SeqNumList,
+    force::{SeqNumList, SeqStrList},
     support::{
-        collect_num_list, data_list_arg, machine_return_bool, machine_return_num_list, num_arg,
+        collect_num_list, data_list_arg, machine_return_bool, machine_return_num_list,
+        machine_return_str_list, num_arg, str_list_arg,
     },
     syntax::{
         dsl::{app_bif, case, data, force, lambda, local, lref, value},
@@ -377,6 +378,45 @@ impl StgIntrinsic for SortNumList {
 }
 
 impl CallGlobal1 for SortNumList {}
+
+/// SORT_STR_LIST — sort a list of strings lexicographically in Rust.
+///
+/// The wrapper first applies SeqStrList to force and unbox all elements,
+/// then calls execute which sorts in Rust and returns a sorted list.
+pub struct SortStrList;
+
+impl StgIntrinsic for SortStrList {
+    fn name(&self) -> &str {
+        "SORT_STR_LIST"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        let bif_index: u8 = self.index().try_into().unwrap();
+        lambda(
+            1, // [xs]
+            force(
+                SeqStrList.global(lref(0)),
+                // [concrete_list] [xs]
+                app_bif(bif_index, vec![lref(0)]),
+            ),
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let mut strings: Vec<String> =
+            str_list_arg(machine, view, args[0].clone())?.collect::<Result<_, _>>()?;
+        strings.sort();
+        machine_return_str_list(machine, view, strings)
+    }
+}
+
+impl CallGlobal1 for SortStrList {}
 
 /// LIST.NTH(list, n) — return the nth element (0-indexed) of a list.
 ///
