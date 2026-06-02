@@ -157,6 +157,22 @@ to-strings: map(str.of)
 first: head
 ```
 
+`NonEmpty([T])` is a non-empty list guaranteed to have at least one element.
+`head` and `tail` are safe on `NonEmpty([T])` without type warnings.
+
+#### List literal synthesis
+
+The checker assigns precise types to list literals:
+
+| Literal         | Synthesised type      | Notes                                  |
+|-----------------|-----------------------|----------------------------------------|
+| `[]`            | `List(Never)`         | Empty — `head` on this warns           |
+| `[42]`          | `Tuple([number])`     | 1–16 elements → Tuple with element types |
+| `[42, "hello"]` | `Tuple([number, string])` | Heterogeneous; `head` gives `number` |
+| `[e1..e17, ...]`| `NonEmpty([T])`       | >16 elements → non-empty homogeneous   |
+
+`cons(h, t)` and `h ‖ t` both return `NonEmpty([a])`.
+
 ### Tuples
 
 Tuples use parentheses with commas:
@@ -173,6 +189,14 @@ Tuples appear naturally in lens element types and in functions like
 ```eu,notest
 ` { type: "(a -> bool) -> [a] -> ([a], [a])" }
 discriminate: ...
+```
+
+`head` on a `Tuple([A, B, ...])` returns the precise first-element type `A`
+(not `A | B | ...`). `tail` returns `Tuple([B, ...])`:
+
+```eu,notest
+[42, "hello"] head       # type: number
+[42, "hello"] tail head  # type: string
 ```
 
 ### Records
@@ -610,6 +634,14 @@ describe(x): if(x null?, "nothing", if(x string?, x, str(x)))
 Recognised predicates: `number?`, `string?`, `symbol?`, `bool?`, `list?`,
 `block?`, `nil?`, `null?`, `not-nil?`.
 
+`nil?` narrows a `[T]` to `NonEmpty([T])` in the **false** branch (the
+list is non-empty), enabling `head` without a type warning:
+
+```eu,notest
+` { type: "[number] -> number" }
+safe-head(xs): if(xs nil?, 0, xs head)   # no warning — xs is NonEmpty([number]) in false branch
+```
+
 Recognised branchers: `if` (three-argument), `and`, `or`, `cond`.
 A user-defined brancher that aliases or wraps one of these inherits its
 narrowing — but only if the prelude's `if`/`and`/`or`/`cond` is used,
@@ -652,6 +684,9 @@ checker for flow-sensitive narrowing through each clause.
 | Type variable            | lowercase identifier: `a`, `b`, `s`              |
 | Union type               | `A \| B`                              |
 | NonEmpty list            | `NonEmpty([a])`                       |
+| Empty list literal       | `[]` synthesises as `List(Never)`     |
+| Short list literal       | `[a, b]` synthesises as `Tuple([A, B])` (1–16 elements) |
+| `nil?` false-branch      | `[T]` narrowed to `NonEmpty([T])`     |
 | Type alias (unit meta)   | `{ types: { Name: "..." } }`          |
 | Type alias (declaration) | `` ` { type-def: "Name" } ``          |
 | Cond clause              | `condition => result`                 |

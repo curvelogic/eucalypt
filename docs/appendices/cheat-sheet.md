@@ -524,6 +524,7 @@ origin: { x: 0, y: 0 }
 | `datetime`         | zoned date-time                        |
 | `any`              | gradual/unknown — no type errors       |
 | `[T]`              | homogeneous list of T                  |
+| `NonEmpty([T])`    | non-empty list of T                    |
 | `(A, B)`           | 2-tuple; `(A, B, C)` for triple        |
 | `(A,)`             | 1-tuple                                |
 | `{k: T}`           | closed record                          |

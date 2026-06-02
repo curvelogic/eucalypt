@@ -550,6 +550,29 @@ The second example does not produce false-positive warnings because
 `always-true` is not narrowing-aware — `x` retains its declared type
 `number | string` throughout the body, which is type-safe here.
 
+## `head` on an Empty List Produces a Type Warning
+
+The type checker tracks list emptiness.  `[]` synthesises as `List(Never)`,
+which means `head []` is flagged as a potential error:
+
+```eu,notest
+# WARNING — [] is List(Never); head on an empty list
+bad: [] head
+
+# OK — non-empty literal is Tuple([number]); head gives number
+ok: [42] head
+```
+
+To use `head` safely on a list of unknown size, guard with `nil?`:
+
+```eu,notest
+` { type: "[number] → number" }
+safe-head(xs): if(xs nil?, 0, xs head)   # xs is NonEmpty([number]) in the false branch
+```
+
+Or annotate the input as `NonEmpty([T])` when the caller guarantees
+non-emptiness.
+
 ---
 
 ## Future Improvements
