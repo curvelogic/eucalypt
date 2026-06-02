@@ -1,4 +1,4 @@
-# A4: An explicit `string` annotation on a string-literal binding widens it.
+# An explicit `string` annotation on a string-literal binding widens it.
 # The widened value passes a string-typed function without warning.
 ` { type: "string → number" }
 length: str.length

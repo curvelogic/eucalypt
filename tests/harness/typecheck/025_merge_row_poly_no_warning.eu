@@ -1,4 +1,4 @@
-# A1: merge annotated {..r} → {..s} → {..r, ..s}
+# merge annotated {..r} → {..s} → {..r, ..s}
 # Merging two blocks should produce no type warning.
 ` { type: "{x: number}" }
 base: { x: 1 }

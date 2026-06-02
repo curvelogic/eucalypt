@@ -1470,7 +1470,7 @@ fn inlay_hint_element_type_with_import() {
     );
 }
 
-// ── A7: Type-alias reference tooling ──────────────────────────────────────────
+// ── Type-alias reference tooling ─────────────────────────────────────────────
 
 /// Go-to-definition from an alias reference inside a `type:` string lands
 /// on the alias definition site.

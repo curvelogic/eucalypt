@@ -1850,7 +1850,7 @@ pub fn test_typecheck_024_for_bind_no_warning() {
     run_typecheck_test("024_for_bind_no_warning.eu");
 }
 
-// ── A1: Row polymorphism prelude annotations ───────────────────────────────────
+// ── Row polymorphism prelude annotations ────────────────────────────────────
 
 #[test]
 pub fn test_typecheck_025_merge_row_poly_no_warning() {
@@ -1862,7 +1862,7 @@ pub fn test_typecheck_029_merge_all_row_poly_no_warning() {
     run_typecheck_test("029_merge_all_row_poly_no_warning.eu");
 }
 
-// ── A2: Dict type prelude annotations ─────────────────────────────────────────
+// ── Dict type prelude annotations ──────────────────────────────────────────
 
 #[test]
 pub fn test_typecheck_026_map_values_dict_no_warning() {
@@ -1879,7 +1879,7 @@ pub fn test_typecheck_028_group_by_dict_no_warning() {
     run_typecheck_test("028_group_by_dict_no_warning.eu");
 }
 
-// ── A3: Recursive types (equirecursive Mu) ────────────────────────────────────
+// ── Recursive types (equirecursive Mu) ─────────────────────────────────────
 
 #[test]
 pub fn test_typecheck_030_recursive_alias_no_hang() {

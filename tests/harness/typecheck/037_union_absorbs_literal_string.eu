@@ -1,4 +1,4 @@
-# A4: Union smart-constructor absorbs LiteralString into String.
+# Union smart-constructor absorbs LiteralString into String.
 # "read" | string → string  (no LiteralString survives alongside its base).
 # A string-typed function accepts the result without warning.
 { types: { Src: "\"read\" | string" } }

@@ -1,5 +1,5 @@
 # AC1: x in { :for x: [1,2,3] } has element type number.
 # Using x as a number (x * 2) is correct — no warning expected.
-# This tests that A10 does not introduce spurious warnings when x is
+# This tests that monadic element-type hints do not introduce spurious warnings when x is
 # used correctly.
 result: { :for x: [1,2,3] }.(x * 2)

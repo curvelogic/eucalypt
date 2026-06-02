@@ -176,7 +176,7 @@ checker narrows the variable's type in each branch.  Non-structural
 wrappers (e.g. `my-if(c,t,_f): t`) are not recognised as branchers
 and do not trigger narrowing.
 
-**LSP alias navigation (A7)**: alias names written inside `type:` strings
+**LSP alias navigation**: alias names written inside `type:` strings
 support go-to-definition, hover (shows the alias name and resolved type), and
 rename.  This works for plain, unescaped type strings only — escaped or
 interpolated strings (`"{{...}}"`) degrade gracefully with no crash.  Rename

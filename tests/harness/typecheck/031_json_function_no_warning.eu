@@ -1,4 +1,4 @@
-# A3: A function annotated Json → string produces no type warning
+# A function annotated Json → string produces no type warning
 # when given a plain number (number <: Json).
 { types: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
 

@@ -1,4 +1,4 @@
-# A2: map-values annotated (a → b) → Dict(a) → Dict(b)
+# map-values annotated (a → b) → Dict(a) → Dict(b)
 # Applying map-values with a correctly typed function should produce no warning.
 ` { type: "Dict(number)" }
 scores: { alice: 95 bob: 87 carol: 92 }
