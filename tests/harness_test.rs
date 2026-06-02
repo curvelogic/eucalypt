@@ -1985,3 +1985,13 @@ pub fn test_typecheck_050_nonempty_head_tuple_precise() {
 pub fn test_typecheck_051_nonempty_empty_head_warns() {
     run_typecheck_test("051_nonempty_empty_head_warns.eu");
 }
+
+#[test]
+pub fn test_typecheck_052_for_elem_type_correct_use() {
+    run_typecheck_test("052_for_elem_type_correct_use.eu");
+}
+
+#[test]
+pub fn test_typecheck_053_for_string_elem_correct() {
+    run_typecheck_test("053_for_string_elem_correct.eu");
+}

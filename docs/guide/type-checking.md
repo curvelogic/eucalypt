@@ -459,6 +459,10 @@ value, so bound variables keep their inferred types directly:
 The checker does **not** require annotations — it infers binding types
 from the monad's known type signature and the RHS expression type.
 
+When using an LSP-enabled editor, inlay hints display the inferred
+element type next to each bound variable name, e.g. `x: number` inside
+a `{ :for x: [...] }` block.
+
 ---
 
 ## Lens and traversal types
