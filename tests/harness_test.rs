@@ -1995,3 +1995,13 @@ pub fn test_typecheck_052_for_elem_type_correct_use() {
 pub fn test_typecheck_053_for_string_elem_correct() {
     run_typecheck_test("053_for_string_elem_correct.eu");
 }
+
+#[test]
+pub fn test_typecheck_054_io_elem_type_correct() {
+    run_typecheck_test("054_io_elem_type_correct.eu");
+}
+
+#[test]
+pub fn test_typecheck_055_user_monad_elem_type() {
+    run_typecheck_test("055_user_monad_elem_type.eu");
+}
