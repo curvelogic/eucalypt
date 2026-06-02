@@ -898,7 +898,7 @@ max(l, r): if(l > r, l, r)
 
 ` "`max-of(l) - return max element in list of numbers `l` - error if empty`"
 max-of(l): cond([l nil? => panic("max of empty list")
-               , count(l) = 1 => l head
+               , l tail nil? => l head
                , max(l head, max-of(l tail))])
 
 ` "`max-of-by(f, l)` - return the element of `l` that maximises `f`. Error if empty."
@@ -923,7 +923,7 @@ min(l, r): if(l < r, l, r)
 
 ` "`min-of(l) - return min element in list of numbers `l` - error if empty`"
 min-of(l): cond([l nil? => panic("min of empty list")
-               , count(l) = 1 => l head
+               , l tail nil? => l head
                , min(l head, min-of(l tail))])
 
 ` "`min-of-by(f, l)` - return the element of `l` that minimises `f`. Error if empty."
