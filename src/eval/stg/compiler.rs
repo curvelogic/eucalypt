@@ -469,38 +469,6 @@ impl Context<'_> {
                 .map(|r| r.bump(self.size))
         }
     }
-
-    /// Resolve a bound variable to its binding expression in the core scope.
-    ///
-    /// Traverses the context chain, skipping synthetic frames, and returns
-    /// a reference to the expression bound at this variable's position.
-    /// Returns `None` if the binding expression is unavailable (synthetic
-    /// root, scope not a `Let` node, or binder index out of range).
-    pub fn resolve_binding_expr(&self, bound_var: &BoundVar) -> Option<&RcExpr> {
-        if self.is_synthetic() {
-            self.next?.resolve_binding_expr(bound_var)
-        } else if bound_var.scope == 0 {
-            if let Some(scope_expr) = &self.scope {
-                if let Expr::Let(_, let_scope, _) = &*scope_expr.inner {
-                    let_scope
-                        .pattern
-                        .get(bound_var.binder as usize)
-                        .map(|(_, v)| v)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            let adjusted = BoundVar {
-                scope: bound_var.scope.checked_sub(1)?,
-                binder: bound_var.binder,
-                name: None,
-            };
-            self.next?.resolve_binding_expr(&adjusted)
-        }
-    }
 }
 
 /// Compiler for translating core to STG
@@ -936,24 +904,7 @@ impl ProtoSyntax for ProtoAppGroup {
 
         // Find a reference for the function
         let f_index: Box<dyn ProtoReference> = match &*self.f.inner {
-            Expr::Var(s, v) => {
-                let bv = extract_bound_var(s, v)?;
-                // If this variable is bound directly to an intrinsic (possibly
-                // through one or more metadata annotations), enable inlining of
-                // its wrapper body exactly as if the intrinsic appeared at the
-                // call site.  This inlines prelude wrappers such as `if` which
-                // are defined as `if = IF` in the prelude letrec.
-                if let Some(binding) = context.resolve_binding_expr(bv) {
-                    if let Some(bif_name) = intrinsic_name_from_expr(binding) {
-                        if let Some(idx) = intrinsics::index(bif_name) {
-                            intrinsic_index = Some(idx);
-                            let info = intrinsics::intrinsic(idx);
-                            strict_args = info.strict_args();
-                        }
-                    }
-                }
-                Box::new(ProtoVar::new(bv.clone()))
-            }
+            Expr::Var(s, v) => Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())),
             Expr::Intrinsic(_, bif) => {
                 intrinsic_index = intrinsics::index(bif);
                 let n =
@@ -1081,16 +1032,6 @@ pub fn extract_bound_var<'a>(smid: &'a Smid, var: &'a Var) -> Result<&'a BoundVa
     match var {
         Var::Bound(bound_var) => Ok(bound_var),
         Var::Free(name) => Err(CompileError::FreeVar(*smid, name.clone())),
-    }
-}
-
-/// If `expr` is (possibly wrapped in one or more `Meta` layers) a direct
-/// intrinsic reference, return the intrinsic name; otherwise return `None`.
-fn intrinsic_name_from_expr(expr: &RcExpr) -> Option<&str> {
-    match &*expr.inner {
-        Expr::Intrinsic(_, name) => Some(name.as_str()),
-        Expr::Meta(_, body, _) => intrinsic_name_from_expr(body),
-        _ => None,
     }
 }
 
