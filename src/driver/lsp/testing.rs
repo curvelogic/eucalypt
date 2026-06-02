@@ -230,8 +230,80 @@ impl LspTestSession {
         let parse = parse_unit(&self.content);
         let root = parse.syntax_node();
         let position = Position { line, character };
+
+        // Check for alias reference in a type: string first (§A7).
+        let alias_idx = super::alias_index::build_alias_index(&self.content, &root, &self.uri);
+        if let Some(result) = super::alias_index::goto_definition_for_alias(
+            &self.content,
+            &root,
+            &position,
+            &alias_idx,
+            &self.uri,
+        ) {
+            return Some(result);
+        }
+
         let table = self.build_symbol_table();
         navigation::goto_definition(&self.content, &root, &position, &table)
+    }
+
+    /// Go-to-definition for a type alias reference inside a `type:` string (§A7).
+    ///
+    /// Returns `Some` if the cursor is on an alias name inside a plain `type:` string
+    /// and the alias is indexed in the document.
+    pub fn goto_definition_for_type_alias(
+        &self,
+        line: u32,
+        character: u32,
+    ) -> Option<GotoDefinitionResponse> {
+        let parse = parse_unit(&self.content);
+        let root = parse.syntax_node();
+        let position = Position { line, character };
+        let alias_idx = super::alias_index::build_alias_index(&self.content, &root, &self.uri);
+        super::alias_index::goto_definition_for_alias(
+            &self.content,
+            &root,
+            &position,
+            &alias_idx,
+            &self.uri,
+        )
+    }
+
+    /// Hover for a type alias reference inside a `type:` string (§A7).
+    pub fn hover_for_type_alias(&self, line: u32, character: u32) -> Option<Hover> {
+        let parse = parse_unit(&self.content);
+        let root = parse.syntax_node();
+        let position = Position { line, character };
+        let alias_idx = super::alias_index::build_alias_index(&self.content, &root, &self.uri);
+        let alias_types = self.cached.as_ref().map(|c| &c.alias_types);
+        super::alias_index::hover_for_alias(
+            &self.content,
+            &root,
+            &position,
+            &alias_idx,
+            alias_types,
+        )
+    }
+
+    /// Rename a type alias at the given cursor position (§A7).
+    pub fn rename_type_alias(
+        &self,
+        line: u32,
+        character: u32,
+        new_name: &str,
+    ) -> Option<lsp_types::WorkspaceEdit> {
+        let parse = parse_unit(&self.content);
+        let root = parse.syntax_node();
+        let position = Position { line, character };
+        let alias_idx = super::alias_index::build_alias_index(&self.content, &root, &self.uri);
+        super::alias_index::rename_alias(
+            &self.content,
+            &root,
+            &position,
+            new_name,
+            &alias_idx,
+            &self.uri,
+        )
     }
 
     /// Compute document highlights at the given cursor position.
