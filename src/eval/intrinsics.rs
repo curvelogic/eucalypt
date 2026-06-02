@@ -994,6 +994,11 @@ lazy_static! {
             ty: function(vec![any(), any(), any()]).unwrap(),
             strict: vec![],
     },
+    Intrinsic { // 189
+            name: "RANGE_LIST",
+            ty: function(vec![num(), num(), list()]).unwrap(),
+            strict: vec![0, 1],
+    },
     ];
 }
 

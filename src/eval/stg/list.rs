@@ -2,6 +2,8 @@
 
 use std::convert::TryInto;
 
+use serde_json;
+
 use crate::{
     common::sourcemap::Smid,
     eval::{
@@ -13,7 +15,10 @@ use crate::{
                 CallGlobal0, CallGlobal1, CallGlobal2, Const, IntrinsicMachine, StgIntrinsic,
             },
         },
-        memory::{mutator::MutatorHeapView, syntax::Ref},
+        memory::{
+            mutator::MutatorHeapView,
+            syntax::{Ref, StgBuilder},
+        },
     },
 };
 
@@ -488,3 +493,65 @@ impl StgIntrinsic for ListDrop {
 }
 
 impl CallGlobal2 for ListDrop {}
+
+/// Convert a serde_json Number to i64, accepting whole-number floats.
+///
+/// `serde_json::Number::as_i64` returns `None` for values stored as floats
+/// (e.g. `20.0` produced by eucalypt arithmetic).  We accept any finite
+/// float whose fractional part is zero.
+fn to_range_int(n: &serde_json::Number) -> Option<i64> {
+    if let Some(i) = n.as_i64() {
+        return Some(i);
+    }
+    let f = n.as_f64()?;
+    if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
+        Some(f as i64)
+    } else {
+        None
+    }
+}
+
+/// RANGE_LIST(b, e) — eagerly build the integer list [b, b+1, …, e-1].
+///
+/// Replaces the lazy `ints-from(b) take(e - b)` pipeline, which
+/// requires forcing `iota` and `take` thunks for every element.  The
+/// native implementation allocates all cons cells and boxed integers in
+/// a single Rust pass, so subsequent traversal (e.g. `foldl`, `sum`)
+/// sees fully-evaluated cons cells with no per-element thunk overhead.
+///
+/// If `b >= e` the empty list `[]` is returned immediately.
+pub struct RangeList;
+
+impl StgIntrinsic for RangeList {
+    fn name(&self) -> &str {
+        "RANGE_LIST"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let b = num_arg(machine, view, &args[0])?;
+        let e = num_arg(machine, view, &args[1])?;
+
+        let b_i = to_range_int(&b).ok_or_else(|| {
+            ExecutionError::Panic(Smid::default(), "RANGE_LIST: non-integer begin".to_string())
+        })?;
+        let e_i = to_range_int(&e).ok_or_else(|| {
+            ExecutionError::Panic(Smid::default(), "RANGE_LIST: non-integer end".to_string())
+        })?;
+
+        if b_i >= e_i {
+            let nil = view.nil()?.as_ptr();
+            return machine.set_closure(SynClosure::new(nil, machine.root_env()));
+        }
+
+        let nums: Vec<f64> = (b_i..e_i).map(|n| n as f64).collect();
+        machine_return_num_list(machine, view, nums)
+    }
+}
+
+impl CallGlobal2 for RangeList {}

@@ -1432,7 +1432,7 @@ ints-from: iota
 
 ` { doc: "`range(b, e)` - return list of ints from `b` to `e` (not including `e`)."
     type: "number → number → [number]" }
-range(b, e): ints-from(b) take(e - b)
+range: '__RANGE_LIST'
 
 ` { doc: "`count(l)` - return count of items in list `l`."
     type: "[a] → number" }
