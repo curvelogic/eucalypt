@@ -284,12 +284,34 @@ impl<'a> Lexer<'a> {
     }
 }
 
+// ── AliasRef ────────────────────────────────────────────────────────────────
+
+/// A reference to a type alias inside a type-annotation string.
+///
+/// The `span` is a `(start, end)` byte range within the **content** of the
+/// type-string (i.e. after stripping the surrounding `"…"`).  Only
+/// capitalised identifiers are recorded; lowercase identifiers are
+/// type-variable binders and are not alias references.
+///
+/// Used by [`parse_type_with_refs`] for LSP go-to-definition / hover /
+/// rename support (§A7.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AliasRef {
+    /// The alias name as it appears in the type string (e.g. `"Person"`).
+    pub name: String,
+    /// Byte range `(start, end)` within the type-string content.
+    pub span: (usize, usize),
+}
+
 // ── Parser ──────────────────────────────────────────────────────────────────
 
 struct Parser<'a> {
     lexer: Lexer<'a>,
     /// One-token lookahead buffer: `(token, position)`.
     peeked: Option<(Token, usize)>,
+    /// Alias references collected during parsing (only populated when the
+    /// caller uses [`parse_type_with_refs`]).
+    alias_refs: Vec<AliasRef>,
 }
 
 impl<'a> Parser<'a> {
@@ -297,6 +319,7 @@ impl<'a> Parser<'a> {
         Parser {
             lexer: Lexer::new(input),
             peeked: None,
+            alias_refs: Vec::new(),
         }
     }
 
@@ -429,6 +452,14 @@ impl<'a> Parser<'a> {
                 // its alias map.  The checker erases any unresolved `Var`s to
                 // `any` via `erase_type_vars`.
                 if name.starts_with(|c: char| c.is_ascii_alphabetic()) {
+                    // Record capitalised idents as alias references.  Identifier
+                    // bytes are all ASCII so `name.len()` == byte length.
+                    if name.starts_with(|c: char| c.is_ascii_uppercase()) {
+                        self.alias_refs.push(AliasRef {
+                            span: (tok_pos, tok_pos + name.len()),
+                            name: name.clone(),
+                        });
+                    }
                     Ok(Type::Var(TypeVarId(name)))
                 } else {
                     Err(ParseError::new(
@@ -817,6 +848,33 @@ impl<'a> Parser<'a> {
 pub fn parse_type(input: &str) -> Result<Type, ParseError> {
     let mut parser = Parser::new(input);
     parser.parse_type_toplevel()
+}
+
+/// Parse a type-annotation string and return all alias references found.
+///
+/// This is the tooling-oriented entry point (§A7.1).  It is identical to
+/// [`parse_type`] in every respect except that it also returns a
+/// `Vec<AliasRef>` recording the byte spans of every **capitalised**
+/// identifier encountered — these are type-alias references that can be
+/// resolved by the LSP for go-to-definition, hover, and rename.
+///
+/// Lowercase identifiers (universally-quantified type variables) are **not**
+/// recorded.  A malformed type string still returns an `Err` as before.
+///
+/// # Example
+/// ```
+/// # use eucalypt::core::typecheck::parse::parse_type_with_refs;
+/// let (ty, refs) = parse_type_with_refs("Person -> Json").unwrap();
+/// assert_eq!(refs.len(), 2);
+/// assert_eq!(refs[0].name, "Person");
+/// assert_eq!(refs[0].span, (0, 6));
+/// assert_eq!(refs[1].name, "Json");
+/// assert_eq!(refs[1].span, (10, 14));
+/// ```
+pub fn parse_type_with_refs(input: &str) -> Result<(Type, Vec<AliasRef>), ParseError> {
+    let mut parser = Parser::new(input);
+    let ty = parser.parse_type_toplevel()?;
+    Ok((ty, parser.alias_refs))
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

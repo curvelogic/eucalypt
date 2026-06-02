@@ -1469,3 +1469,88 @@ fn inlay_hint_element_type_with_import() {
         "with import: should show 'number' hint, got: {all_labels:?}"
     );
 }
+
+// ── A7: Type-alias reference tooling ──────────────────────────────────────────
+
+/// Go-to-definition from an alias reference inside a `type:` string lands
+/// on the alias definition site.
+#[test]
+fn alias_goto_definition_from_type_string() {
+    let mut s = LspTestSession::new();
+    // Line 0: the alias definition (type-def: "Point")
+    // Line 1: the defined binding
+    // Line 2: `{ type: "Point -> number" }` — contains alias reference
+    // Line 3: the annotated function
+    s.open(concat!(
+        "` { type-def: \"Point\" }\n",
+        "point: { x: 1, y: 2 }\n",
+        "` { type: \"Point -> number\" }\n",
+        "get-x(p): p.x\n",
+    ));
+
+    // Cursor on "Point" inside the type: string on line 2.
+    // "` { type: \"" is 11 chars; "Point" starts at col 11.
+    let result = s.goto_definition_for_type_alias(2, 11);
+    assert!(result.is_some(), "should find definition of Point from type: string");
+}
+
+/// Hover on an alias reference inside a `type:` string shows the alias name.
+#[test]
+fn alias_hover_in_type_string() {
+    let mut s = LspTestSession::new();
+    s.open(concat!(
+        "` { type-def: \"Point\" }\n",
+        "point: { x: 1, y: 2 }\n",
+        "` { type: \"Point -> number\" }\n",
+        "get-x(p): p.x\n",
+    ));
+
+    // Cursor on "Point" in the type: string on line 2.
+    let hover = s.hover_for_type_alias(2, 11);
+    assert!(hover.is_some(), "should produce hover for alias reference");
+    if let Some(h) = hover {
+        let text = match h.contents {
+            lsp_types::HoverContents::Markup(m) => m.value,
+            _ => String::new(),
+        };
+        assert!(text.contains("Point"), "hover should mention the alias name");
+    }
+}
+
+/// Rename a type alias: updates both the type-def: value and the type: reference.
+#[test]
+fn alias_rename_updates_definition_and_references() {
+    let mut s = LspTestSession::new();
+    s.open(concat!(
+        "` { type-def: \"Point\" }\n",
+        "point: { x: 1, y: 2 }\n",
+        "` { type: \"Point -> number\" }\n",
+        "get-x(p): p.x\n",
+    ));
+
+    // Cursor on "Point" in the type: string on line 2.
+    let edit = s.rename_type_alias(2, 11, "Coord");
+    assert!(edit.is_some(), "rename should produce a WorkspaceEdit");
+
+    let changes = edit.unwrap().changes.unwrap();
+    // The test session uses a single URI.
+    let edits: Vec<_> = changes.values().flatten().collect();
+    assert!(edits.len() >= 2, "expected at least 2 edits (definition + reference)");
+    for e in &edits {
+        assert_eq!(e.new_text, "Coord", "all edits should rename to 'Coord'");
+    }
+}
+
+/// Alias tooling degrades gracefully when cursor is NOT inside a type: string.
+#[test]
+fn alias_no_result_outside_type_string() {
+    let mut s = LspTestSession::new();
+    s.open(concat!(
+        "` { type-def: \"Point\" }\n",
+        "point: { x: 1, y: 2 }\n",
+    ));
+
+    // Cursor on the identifier "point" (not inside a type: string).
+    let result = s.goto_definition_for_type_alias(1, 0);
+    assert!(result.is_none(), "should return None when cursor is not on an alias in a type: string");
+}

@@ -6,6 +6,7 @@
 //! and notifications.
 
 mod actions;
+pub mod alias_index;
 mod completion;
 mod diagnostics;
 mod folding;
@@ -836,13 +837,18 @@ fn on_goto_definition(
     let text = state.store.get(uri)?;
     let parse = crate::syntax::rowan::parse_unit(text);
     let root = parse.syntax_node();
+    let position = &params.text_document_position_params.position;
+
+    // Check for alias reference inside a `type:` string first (§A7).
+    let alias_idx = alias_index::build_alias_index(text, &root, uri);
+    if let Some(result) =
+        alias_index::goto_definition_for_alias(text, &root, position, &alias_idx, uri)
+    {
+        return Some(result);
+    }
+
     let table = state.build_symbol_table(uri, text);
-    navigation::goto_definition(
-        text,
-        &root,
-        &params.text_document_position_params.position,
-        &table,
-    )
+    navigation::goto_definition(text, &root, position, &table)
 }
 
 /// Handle textDocument/hover — return hover information for the symbol at cursor.
@@ -851,15 +857,17 @@ fn on_hover(state: &ServerState, params: lsp_types::HoverParams) -> Option<Hover
     let text = state.store.get(uri)?;
     let parse = crate::syntax::rowan::parse_unit(text);
     let root = parse.syntax_node();
+    let position = &params.text_document_position_params.position;
+
+    // Check for alias reference inside a `type:` string first (§A7).
+    let alias_idx = alias_index::build_alias_index(text, &root, uri);
+    if let Some(h) = alias_index::hover_for_alias(text, &root, position, &alias_idx, None) {
+        return Some(h);
+    }
+
     let table = state.build_symbol_table(uri, text);
     let type_env = state.type_env_for(uri);
-    hover::hover(
-        text,
-        &root,
-        &params.text_document_position_params.position,
-        &table,
-        type_env,
-    )
+    hover::hover(text, &root, position, &table, type_env)
 }
 
 /// Handle textDocument/references — find all references to the symbol at cursor.
@@ -992,13 +1000,17 @@ fn on_rename(state: &ServerState, params: lsp_types::RenameParams) -> Option<Wor
     let text = state.store.get(uri)?;
     let parse = crate::syntax::rowan::parse_unit(text);
     let root = parse.syntax_node();
-    rename::rename(
-        text,
-        &root,
-        &params.text_document_position.position,
-        &params.new_name,
-        uri,
-    )
+    let position = &params.text_document_position.position;
+
+    // If cursor is on an alias reference inside a type: string, rename the alias (§A7).
+    let alias_idx = alias_index::build_alias_index(text, &root, uri);
+    if let Some(edit) =
+        alias_index::rename_alias(text, &root, position, &params.new_name, &alias_idx, uri)
+    {
+        return Some(edit);
+    }
+
+    rename::rename(text, &root, position, &params.new_name, uri)
 }
 
 /// Handle textDocument/prepareRename — validate the rename target.
