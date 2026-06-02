@@ -1006,6 +1006,51 @@ impl Checker {
             _ => None,
         };
 
+        // ── §A10: Monadic bind element-type pre-pass ─────────────────────────
+        //
+        // Detect the two-argument monadic bind pattern produced by
+        // `desugar_monadic_block`:
+        //
+        //   App(bind_fn, [Meta(inner, {__type_hint: "T(a)"}), Lam(x, body)])
+        //
+        // When recognised, synthesise the inner value directly (bypassing the
+        // Meta wrapper to avoid double-synthesising via `synthesise_meta`),
+        // normalise any homogeneous tuple to a list, and infer the concrete
+        // element type `a` by unifying the freshened wrapper against the
+        // synthesised value type.
+        //
+        // If a concrete element type is found, record the resolved lambda
+        // parameter types in `self.lambda_params` (keyed by the lambda's Smid)
+        // for LSP inlay hints.
+        //
+        // Body type-checking is deliberately left to the normal application
+        // loop below — when the bind function carries a type annotation (as
+        // `for.bind` and `io.bind` do), `apply_one_with_subst` fires the
+        // `check_lambda` branch and emits any warnings from the body.  The
+        // pre-pass avoids calling `check_against` on the lambda to prevent
+        // duplicate warnings.
+        if args.len() == 2 {
+            if let Some((hint_str, inner_val)) = extract_monad_hint_inner(&args[0]) {
+                if let Expr::Lam(lam_smid, _, scope) = &*args[1].inner {
+                    let raw_val_type = self.synthesise(inner_val);
+                    let val_type = normalise_tuple_to_list(raw_val_type);
+                    if let Some(elem_type) =
+                        self.infer_elem_type_from_hint_str(&hint_str, &val_type)
+                    {
+                        // Record lambda parameter types for LSP inlay hints.
+                        let params: Vec<(String, Type)> = scope
+                            .pattern
+                            .iter()
+                            .map(|name| (name.clone(), elem_type.clone()))
+                            .collect();
+                        if !params.is_empty() {
+                            self.lambda_params.insert(*lam_smid, params);
+                        }
+                    }
+                }
+            }
+        }
+
         let func_type = self.synthesise(func);
         let mut subst = Substitution::new();
         let mut current_type = func_type;
@@ -1025,6 +1070,52 @@ impl Checker {
 
         // Apply the accumulated substitution to resolve any remaining vars.
         apply_subst(&current_type, &subst)
+    }
+
+    /// Infer the element type of a monadic container from its hint string and
+    /// a concrete value type.
+    ///
+    /// §A10: Given a hint like `"[a]"` (for `List`) or `"io(a)"` (for `IO`),
+    /// and the synthesised type of the bound value (e.g. `List(number)`), this
+    /// method:
+    ///
+    /// 1. Parses and alias-resolves the hint to get a wrapper type such as
+    ///    `List(Var("a"))`.
+    /// 2. Freshens the wrapper, replacing `"a"` with a fresh unification
+    ///    variable `_t5`.
+    /// 3. Unifies the freshened wrapper with `val_type`.
+    /// 4. Extracts the element component from the freshened wrapper and applies
+    ///    the substitution to resolve it to a concrete type.
+    ///
+    /// Returns `None` when the hint cannot be parsed, the wrapper type is
+    /// not a recognised container (`List`, `IO`, `Dict`, `NonEmpty`), or
+    /// the unification fails (e.g. `val_type = string` vs wrapper `[a]`).
+    fn infer_elem_type_from_hint_str(&mut self, hint_str: &str, val_type: &Type) -> Option<Type> {
+        let parsed = parse::parse_type(hint_str).ok()?;
+        let resolved = self.resolve_aliases_in_type(parsed);
+        let scheme = infer_scheme(resolved);
+        let freshened = freshen(&scheme, &mut self.var_counter);
+
+        // Extract the inner type variable from the freshened wrapper.
+        let inner = match &freshened {
+            Type::List(i) | Type::IO(i) | Type::Dict(i) | Type::NonEmpty(i) => *i.clone(),
+            _ => return None,
+        };
+
+        // Unify the freshened wrapper with the concrete value type.
+        let mut subst = Substitution::new();
+        unify(&freshened, val_type, &mut subst).ok()?;
+
+        // Resolve the inner type variable through the substitution.
+        let elem = apply_subst(&inner, &subst);
+
+        // Return the element type only if it is concrete (informative and not
+        // an unresolved type variable, which would give no useful information).
+        if is_informative(&elem) && !matches!(&elem, Type::Var(_)) {
+            Some(elem)
+        } else {
+            None
+        }
     }
 
     /// Apply a single argument to the current function type using unification.
@@ -2094,6 +2185,46 @@ fn extract_plain_str(expr: &RcExpr) -> Option<String> {
         Some(s.clone())
     } else {
         None
+    }
+}
+
+/// Extract the `__type_hint` string and inner value from a `Meta` node.
+///
+/// Returns `(hint_str, inner)` when `expr` is `Meta(_, inner, {__type_hint: "..."})`,
+/// `None` otherwise.  Used by the §A10 monadic bind element-type pre-pass.
+fn extract_monad_hint_inner(expr: &RcExpr) -> Option<(String, &RcExpr)> {
+    if let Expr::Meta(_, inner, meta) = &*expr.inner {
+        if let Expr::Block(_, block) = &*meta.inner {
+            if let Some(hint_expr) = block.get("__type_hint") {
+                if let Some(hint_str) = extract_string_literal(hint_expr) {
+                    return Some((hint_str, inner));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Normalise a homogeneous `Tuple` to a `List` of the common element type.
+///
+/// Replicates the logic in `synthesise_meta`'s `is_hint` branch so that
+/// `[1, 2, 3]`, which synthesises as `Tuple([number, number, number])`, is
+/// treated as `List(number)` when matching against a monad wrapper type `[a]`.
+///
+/// Heterogeneous tuples become `List(union(elems))`.  Non-tuple types are
+/// returned unchanged.
+fn normalise_tuple_to_list(ty: Type) -> Type {
+    match &ty {
+        Type::Tuple(elems) if !elems.is_empty() => {
+            let first = &elems[0];
+            if elems.iter().all(|e| e == first) {
+                Type::List(Box::new(first.clone()))
+            } else {
+                let elem_type = Type::union(elems.iter().cloned());
+                Type::List(Box::new(elem_type))
+            }
+        }
+        _ => ty,
     }
 }
 
@@ -3177,5 +3308,111 @@ mod tests {
         // Falls back to name lookup, which finds "x" in the single frame.
         let result = c.lookup_bound(&bv);
         assert_eq!(result, Type::Number);
+    }
+
+    // ── §A10: Monadic bound-variable element-type hints ──────────────────────
+
+    /// Helper: make `App(Name("bind"), [Meta(inner, {__type_hint: hint}), Lam(x, body)])`
+    /// which is the shape produced by `desugar_monadic_block`.
+    fn monadic_bind_app(hint: &str, inner: RcExpr, lam_body: RcExpr) -> RcExpr {
+        use crate::core::expr::core;
+        let hint_val = core::str(Smid::default(), hint);
+        let meta_block = core::block(Smid::default(), [("__type_hint".to_string(), hint_val)]);
+        let value = core::meta(Smid::default(), inner, meta_block);
+        let lam = RcExpr::from(Expr::Lam(
+            Smid::default(),
+            false,
+            crate::core::expr::LamScope {
+                pattern: vec!["x".to_string()],
+                body: lam_body,
+            },
+        ));
+        let bind_fn = RcExpr::from(Expr::Name(Smid::default(), "bind".to_string()));
+        RcExpr::from(Expr::App(Smid::default(), bind_fn, vec![value, lam]))
+    }
+
+    #[test]
+    fn a10_infer_elem_type_from_list_hint() {
+        // `infer_elem_type_from_hint_str("[a]", List(number))` → `Some(number)`.
+        let mut c = Checker::new();
+        let val_type = Type::List(Box::new(Type::Number));
+        let result = c.infer_elem_type_from_hint_str("[a]", &val_type);
+        assert_eq!(result, Some(Type::Number));
+    }
+
+    #[test]
+    fn a10_infer_elem_type_from_io_hint() {
+        // `infer_elem_type_from_hint_str("IO(a)", IO(string))` → `Some(string)`.
+        let mut c = Checker::new();
+        let val_type = Type::IO(Box::new(Type::String));
+        let result = c.infer_elem_type_from_hint_str("IO(a)", &val_type);
+        assert_eq!(result, Some(Type::String));
+    }
+
+    #[test]
+    fn a10_infer_elem_type_no_match() {
+        // Hint wrapper does not match concrete type → `None`.
+        let mut c = Checker::new();
+        // Hint says "[a]" (list) but val_type is number — unification fails.
+        let result = c.infer_elem_type_from_hint_str("[a]", &Type::Number);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn a10_normalise_homogeneous_tuple_to_list() {
+        // `[1, 2, 3]` synthesises as `Tuple([number, number, number])`.
+        // `normalise_tuple_to_list` should give `List(number)`.
+        let tuple = Type::Tuple(vec![Type::Number, Type::Number, Type::Number]);
+        assert_eq!(
+            normalise_tuple_to_list(tuple),
+            Type::List(Box::new(Type::Number))
+        );
+    }
+
+    #[test]
+    fn a10_normalise_non_tuple_unchanged() {
+        // Non-tuple types pass through unchanged.
+        assert_eq!(
+            normalise_tuple_to_list(Type::List(Box::new(Type::Number))),
+            Type::List(Box::new(Type::Number))
+        );
+        assert_eq!(normalise_tuple_to_list(Type::Number), Type::Number);
+    }
+
+    #[test]
+    fn a10_monadic_bind_lambda_params_recorded() {
+        // The A10 pre-pass should record `x: number` in `lambda_params` when
+        // the monadic bind pattern is `App(bind, [Meta([1,2,3], {__type_hint: "[a]"}), Lam(x, body)])`.
+        let mut c = Checker::new();
+        // Use `num_lit(0)` as the body — its synthesis doesn't affect param recording.
+        let inner = list(vec![num_lit(1), num_lit(2), num_lit(3)]);
+        let app = monadic_bind_app("[a]", inner, num_lit(0));
+        c.synthesise(&app);
+
+        // The lambda's Smid is Smid::default() (from our helper).
+        let lam_smid = Smid::default();
+        let params = c.lambda_params.get(&lam_smid);
+        assert!(
+            params.is_some(),
+            "lambda_params should be recorded for the monadic lambda"
+        );
+        let params = params.unwrap();
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0].0, "x");
+        assert_eq!(params[0].1, Type::Number, "x should be inferred as number");
+    }
+
+    #[test]
+    fn a10_extract_monad_hint_inner_basic() {
+        // `extract_monad_hint_inner(Meta(num, {__type_hint: "[a]"}))` → `Some(("[a]", num))`.
+        let meta_expr = {
+            let hint_val = core::str(Smid::default(), "[a]");
+            let meta_block = core::block(Smid::default(), [("__type_hint".to_string(), hint_val)]);
+            core::meta(Smid::default(), num_lit(42), meta_block)
+        };
+        let result = extract_monad_hint_inner(&meta_expr);
+        assert!(result.is_some(), "should extract hint from Meta node");
+        let (hint, _inner) = result.unwrap();
+        assert_eq!(hint, "[a]");
     }
 }
