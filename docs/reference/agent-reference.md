@@ -406,17 +406,25 @@ foldr(++, [], [[1,2],[3,4]])  # [1, 2, 3, 4]
 [10, 20, 30] head            # 10
 ```
 
+The type checker warns if `xs` could be empty (`List(T)` or `List(Never)`).
+Use `nil?` narrowing or annotate as `NonEmpty([T])` to suppress.  On a
+`Tuple([A, B, ...])` literal, `head` synthesises the precise type `A`.
+
 #### `tail(xs)` — all but first (panics if empty)
 
 ```
 [10, 20, 30] tail            # [20, 30]
 ```
 
+On a `Tuple([A, B, C])`, `tail` synthesises `Tuple([B, C])`.
+
 #### `cons(h, t)` — prepend element to list
 
 ```
 cons(0, [1, 2, 3])           # [0, 1, 2, 3]
 ```
+
+`cons` and `‖` return `NonEmpty([a])` — the result is guaranteed non-empty.
 
 #### `reverse(l)` — reverse a list
 
