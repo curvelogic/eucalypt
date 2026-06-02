@@ -207,39 +207,3 @@ impl StgIntrinsic for AllTrueList {
 }
 
 impl CallGlobal1 for AllTrueList {}
-
-/// `ANY_TRUE_LIST(bools)` — true iff at least one element of a boolean list is true.
-///
-/// Replaces `any-true?: foldr(or, false)` which builds an N-deep
-/// stack chain.  Uses `SeqList` to force the list upfront, then
-/// traverses in a single O(N) Rust loop.
-pub struct AnyTrueList;
-
-impl StgIntrinsic for AnyTrueList {
-    fn name(&self) -> &str {
-        "ANY_TRUE_LIST"
-    }
-
-    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
-        bool_list_wrapper(self)
-    }
-
-    fn execute(
-        &self,
-        machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'_>,
-        _emitter: &mut dyn Emitter,
-        args: &[Ref],
-    ) -> Result<(), ExecutionError> {
-        let iter = data_list_arg(machine, view, args[0].clone())?;
-        for item in iter {
-            let closure = item?;
-            if read_bool(&closure, &view)? {
-                return machine_return_bool(machine, view, true);
-            }
-        }
-        machine_return_bool(machine, view, false)
-    }
-}
-
-impl CallGlobal1 for AnyTrueList {}

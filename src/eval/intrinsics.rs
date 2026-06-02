@@ -999,11 +999,6 @@ lazy_static! {
             ty: function(vec![list(), any()]).unwrap(),
             strict: vec![],
     },
-    Intrinsic { // 190
-            name: "ANY_TRUE_LIST",
-            ty: function(vec![list(), any()]).unwrap(),
-            strict: vec![],
-    },
     ];
 }
 

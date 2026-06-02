@@ -1534,7 +1534,7 @@ all(p?, l): l map(p?) all-true?
 
 ` { doc: "`any-true?(l)` - true if and only if any items in list `l` are true."
     type: "[bool] → bool" }
-any-true?: '__ANY_TRUE_LIST'
+any-true?(l): foldr(or, false, l)
 
 ` { doc: "`any(p?, l)` - true if and only if any items in list `l` satisfy predicate `p?`."
     type: "(a → bool) → [a] → bool" }
