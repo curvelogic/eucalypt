@@ -162,6 +162,16 @@ pub enum Type {
     /// `LiteralString(s)` is a subtype of `String`.
     LiteralString(String),
 
+    // ── Refinement types ─────────────────────────────────────────────────────
+    /// Non-empty list refinement: `NonEmpty([a])`.
+    ///
+    /// `NonEmpty(a)` is a subtype of `List(a)` — any non-empty list satisfies
+    /// it.  Used by flow-sensitive narrowing to express "this variable is known
+    /// not to be `nil`" after a negative `nil?` test.
+    ///
+    /// Display: `NonEmpty([a])`.
+    NonEmpty(Box<Type>),
+
     // ── Variables ────────────────────────────────────────────────────────────
     /// Type variable (lowercase identifier, e.g. `a`, `b`, `result`).
     Var(TypeVarId),
@@ -258,6 +268,7 @@ impl fmt::Display for Type {
                 let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
                 write!(f, "\"{escaped}\"")
             }
+            Type::NonEmpty(inner) => write!(f, "NonEmpty([{inner}])"),
             Type::Var(v) => write!(f, "{v}"),
             Type::List(inner) => write!(f, "[{inner}]"),
             Type::Tuple(elems) => {
@@ -399,6 +410,7 @@ pub fn humanise(ty: &Type) -> Type {
                 }
             }
             Type::List(inner) => Type::List(Box::new(replace(inner, mapping))),
+            Type::NonEmpty(inner) => Type::NonEmpty(Box::new(replace(inner, mapping))),
             Type::IO(inner) => Type::IO(Box::new(replace(inner, mapping))),
             Type::Dict(inner) => Type::Dict(Box::new(replace(inner, mapping))),
             Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| replace(e, mapping)).collect()),
@@ -475,6 +487,7 @@ pub fn unfold_mu(x: &TypeVarId, ty: &Type, replacement: &Type) -> Type {
         Type::Mu(y, _) if y == x => ty.clone(),
         Type::Mu(y, body) => Type::Mu(y.clone(), Box::new(unfold_mu(x, body, replacement))),
         Type::List(inner) => Type::List(Box::new(unfold_mu(x, inner, replacement))),
+        Type::NonEmpty(inner) => Type::NonEmpty(Box::new(unfold_mu(x, inner, replacement))),
         Type::IO(inner) => Type::IO(Box::new(unfold_mu(x, inner, replacement))),
         Type::Dict(inner) => Type::Dict(Box::new(unfold_mu(x, inner, replacement))),
         Type::Tuple(elems) => {

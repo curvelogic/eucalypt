@@ -120,6 +120,13 @@ fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
         // ── List — covariant ──────────────────────────────────────────────────
         (Type::List(a), Type::List(b)) => is_subtype_co(a, b, assumed),
 
+        // ── NonEmpty — refines List ────────────────────────────────────────────
+        // `NonEmpty(a) <: NonEmpty(b)` when `a <: b`.
+        (Type::NonEmpty(a), Type::NonEmpty(b)) => is_subtype_co(a, b, assumed),
+        // `NonEmpty(a) <: [a]` — a non-empty list is a list.
+        (Type::NonEmpty(a), Type::List(b)) => is_subtype_co(a, b, assumed),
+        // `[a]` is NOT a subtype of `NonEmpty(a)` — the list could be empty.
+
         // ── Tuple ─────────────────────────────────────────────────────────────
         // Tuples widen to lists: `(A, B) <: [A | B]`
         (Type::Tuple(elems), Type::List(elem_ty)) => {
@@ -301,6 +308,10 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
             is_consistent(s, &unfolded)
         }
         (Type::List(a), Type::List(b)) => is_consistent(a, b),
+        (Type::NonEmpty(a), Type::NonEmpty(b)) => is_consistent(a, b),
+        (Type::NonEmpty(a), Type::List(b)) | (Type::List(a), Type::NonEmpty(b)) => {
+            is_consistent(a, b)
+        }
         (Type::Tuple(as_), Type::Tuple(bs)) if as_.len() == bs.len() => {
             as_.iter().zip(bs.iter()).all(|(a, b)| is_consistent(a, b))
         }

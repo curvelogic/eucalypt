@@ -253,6 +253,7 @@ From highest to lowest binding:
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
+| 15 | clause | right | `=>`, `⇒` | Cond clause builder (`condition => result`) |
 | 10 | apply | right | `@` | Function application |
 | 5 | meta | right | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//=?>`, `//!` | Metadata / assertions |
 

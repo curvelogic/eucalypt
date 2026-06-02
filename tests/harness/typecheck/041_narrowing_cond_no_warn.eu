@@ -1,0 +1,7 @@
+# AC9c: cond narrowing — each clause narrows the tested variable.
+# classify(n) uses cond with number predicates.
+# The => operator builds clauses; cond dispatches them.
+` { type: "number → string" }
+classify(n): cond[n < 0 => "negative", n > 100 => "huge", "normal"]
+
+result: classify(42)

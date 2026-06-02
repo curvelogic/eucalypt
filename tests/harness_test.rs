@@ -1920,3 +1920,48 @@ pub fn test_typecheck_037_union_absorbs_literal_string() {
 pub fn test_typecheck_038_literal_string_annotation_widens() {
     run_typecheck_test("038_literal_string_annotation_widens.eu");
 }
+
+#[test]
+pub fn test_typecheck_039_narrowing_true_branch_no_warn() {
+    run_typecheck_test("039_narrowing_true_branch_no_warn.eu");
+}
+
+#[test]
+pub fn test_typecheck_040_narrowing_subtraction_no_warn() {
+    run_typecheck_test("040_narrowing_subtraction_no_warn.eu");
+}
+
+#[test]
+pub fn test_typecheck_041_narrowing_cond_no_warn() {
+    run_typecheck_test("041_narrowing_cond_no_warn.eu");
+}
+
+#[test]
+pub fn test_typecheck_042_narrowing_rebind_no_false_positive() {
+    run_typecheck_test("042_narrowing_rebind_no_false_positive.eu");
+}
+
+#[test]
+pub fn test_typecheck_043_narrowing_nil_check() {
+    run_typecheck_test("043_narrowing_nil_check.eu");
+}
+
+#[test]
+pub fn test_typecheck_044_clause_operator() {
+    run_typecheck_test("044_clause_operator.eu");
+}
+
+#[test]
+pub fn test_typecheck_045_narrowing_union_subtraction() {
+    run_typecheck_test("045_narrowing_union_subtraction.eu");
+}
+
+#[test]
+pub fn test_typecheck_046_narrowing_then_no_warn() {
+    run_typecheck_test("046_narrowing_then_no_warn.eu");
+}
+
+#[test]
+pub fn test_typecheck_047_narrowing_user_brancher() {
+    run_typecheck_test("047_narrowing_user_brancher.eu");
+}

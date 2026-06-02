@@ -594,6 +594,43 @@ lookup.
 
 ---
 
+## Flow-sensitive narrowing
+
+After a recognised branch on a type predicate, the checker narrows the
+tested variable's type within each branch:
+
+```eu,notest
+# x : number | string | null
+# In the true branch, x is narrowed to `null`.
+# In the false branch, x is narrowed to `number | string` (null subtracted).
+` { type: "(number | string | null) -> string" }
+describe(x): if(x null?, "nothing", if(x string?, x, str(x)))
+```
+
+Recognised predicates: `number?`, `string?`, `symbol?`, `bool?`, `list?`,
+`block?`, `nil?`, `null?`, `not-nil?`.
+
+Recognised branchers: `if` (three-argument), `and`, `or`, `cond`.
+A user-defined brancher that aliases or wraps one of these inherits its
+narrowing — but only if the prelude's `if`/`and`/`or`/`cond` is used,
+not a local rebinding.
+
+## `cond` — multi-way conditional
+
+`cond` dispatches a list of `condition => result` clauses, returning the
+first result whose condition is true. A trailing bare expression is the
+default:
+
+```eu,notest
+classify(n): cond[n < 0 => "negative", n > 100 => "huge", "normal"]
+```
+
+The `=>` operator (precedence 15, right-associative) builds a clause pair.
+The Unicode alias `⇒` is equivalent. Both forms are recognised by the
+checker for flow-sensitive narrowing through each clause.
+
+---
+
 ## Summary
 
 | What                     | How                                              |
@@ -614,5 +651,8 @@ lookup.
 | Literal symbol type      | `:name`                                           |
 | Type variable            | lowercase identifier: `a`, `b`, `s`              |
 | Union type               | `A \| B`                              |
+| NonEmpty list            | `NonEmpty([a])`                       |
 | Type alias (unit meta)   | `{ types: { Name: "..." } }`          |
 | Type alias (declaration) | `` ` { type-def: "Name" } ``          |
+| Cond clause              | `condition => result`                 |
+| Multi-way conditional    | `cond[c1 => r1, c2 => r2, default]`   |
