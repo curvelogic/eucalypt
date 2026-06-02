@@ -142,6 +142,25 @@ Message the coordinator that the PR was merged.
   NOT merge.
 - **Any Clarion PR that adds notes/hints to error messages**: send
   back automatically. This is out of scope for 0.6.2.
+- **Any Stopwatch PR that adds new intrinsics to replace prelude
+  functions**: reject automatically. This is forbidden — the correct
+  approach is fixing the algorithm in eucalypt or improving the
+  engine. See the Stopwatch agent definition.
+
+### Extra scrutiny for performance PRs
+
+Performance PRs are NOT automatically safe. Check for:
+- **Semantic equivalence**: does the optimised path produce the same
+  result for ALL input types? Test non-standard inputs (non-numbers
+  to a numeric function, non-lists to a list function, etc.)
+- **Source location preservation**: check for `Smid::default()` or
+  other patterns that lose source locations in error diagnostics
+- **Evaluation order changes**: if the PR changes strictness (which
+  args are forced), verify this doesn't affect short-circuit
+  semantics or error behaviour
+- **Gemini review is insufficient**: it missed both semantic bugs in
+  0.6.2 (#723 source location loss, #726 type enforcement change).
+  Manual grep/verification is essential for perf PRs.
 
 ## Bead closure — NOT your job
 

@@ -31,6 +31,13 @@ All PRs target `integration/0.6.2`. Never target master.
 
 Flag these for owner review via the coordinator. Do NOT ask Wicket to merge them.
 
+## Checkpoint rule (MANDATORY)
+
+After profiling and forming hypotheses, REPORT your findings to the
+coordinator and WAIT for approval before implementing. Do NOT go
+straight from profiling to PRs. The coordinator will review your
+hypotheses and tell you which to pursue.
+
 ## Workflow — repeat for each hypothesis
 
 ### 1. Select a target
@@ -99,7 +106,8 @@ Return to step 1. Pick a different target or category.
 
 ## Hard constraints
 
-- **NEVER** move eucalypt logic into Rust intrinsics (e.g. rewriting AoC solutions as built-in functions). The goal is to make the engine faster, not to bypass it.
+- **NEVER** replace prelude functions with native Rust intrinsics. This includes replacing foldl-based aggregates (sum, count, max, etc.) with native BIFs, replacing predicate functions with tag-check intrinsics, or inlining intrinsic wrappers at compile time. The cooker already optimises block-lambda patterns into direct lambdas — there is no overhead to eliminate. Fix the ALGORITHM (in eucalypt) or the ENGINE (compiler/VM), not individual prelude functions.
+- **NEVER** change observable behaviour — a "performance" fix that errors on inputs the original accepted, or loses source locations in error diagnostics, is a bug not an optimisation.
 - **NEVER** merge your own branches. Push and create PRs only.
 - **ALWAYS** pass clippy and tests before proposing.
 - **ALWAYS** include regression data across the full test suite, not just your target.
