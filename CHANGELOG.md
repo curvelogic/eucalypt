@@ -9,17 +9,17 @@ All notable changes to eucalypt are documented here.
 - **Gradual type system — Dict types** — `Dict(a)` type for homogeneous key-value blocks with covariant subtyping; closed records widen to `Dict(T)` when all values share a type
 - **Gradual type system — equirecursive types** — `type-def: { Json: "number | string | bool | null | [Json] | Dict(Json)" }` with `Mu` binder and coinductive subtyping for recursive aliases
 - **Gradual type system — literal string types** — string literal expressions synthesise as `"hello"` (a singleton subtype of `string`); union smart-constructor deduplicates and absorbs
-- **Gradual type system — flow-sensitive narrowing** — `if(x nil?, ..., ...)` narrows `x` to `List(never)` in the then-branch and `NonEmpty` in the else-branch; works with `nil?`, `number?`, `string?`, `block?`, and user-defined branchers
-- **Gradual type system — NonEmpty refinement** — `NonEmpty([a])` type for provably non-empty lists; `cons` and `||` return `NonEmpty`; branch narrowing refines `[a]` to `NonEmpty` in else-branch of `nil?`
+- **Gradual type system — flow-sensitive narrowing** — `x nil? then(a, b)` and `if(x nil?, a, b)` narrow `x` to `List(never)` in the then-branch and `NonEmpty` in the else-branch; works with `nil?`, `number?`, `string?`, `block?`, and user-defined branchers
+- **Gradual type system — NonEmpty refinement** — `NonEmpty([a])` type for provably non-empty lists; `cons` and `‖` return `NonEmpty`; branch narrowing refines `[a]` to `NonEmpty` in else-branch of `nil?`
 - **Gradual type system — first-class alias references** — type aliases are resolved in annotations; LSP provides hover (shows resolved type), go-to-definition, and rename for alias references
 - **Gradual type system — monadic element-type hints** — `for.bind(m, f)` and similar monadic combinators extract the element type from the monad spec, enabling better inlay hints
-- **`cond` multi-way conditional** — new `cond([c1 => r1, c2 => r2, default])` syntax using `=>` clause operator and `__COND`/`__CLAUSE` intrinsics
+- **`cond` multi-way conditional** — new `cond[c1 => r1, c2 => r2, default]` syntax using `=>` clause operator and `__COND`/`__CLAUSE` intrinsics
 - **`nil?` intrinsic** — `nil?` is now a `NILP` intrinsic (direct tag check) instead of `= []`; semantically equivalent but faster
 - **Cross-type equality** — comparing values of different types (e.g. `1 = [1]`) now returns `false` instead of erroring
 
 ### Changed
 
-- **`cond` API (BREAKING)** — `cond(list_of_pairs, default)` is replaced by `cond([clause_list])`.  The old two-argument form `cond([[c1, v1], [c2, v2]], default)` must be rewritten as `cond([c1 => v1, c2 => v2, default])`.  The `=>` operator (precedence 15) builds clause pairs.  Internal callers (`max-of`, `min-of`, `parse-args`) have been updated
+- **`cond` API (BREAKING)** — `cond(list_of_pairs, default)` is replaced by `cond[clause_list]`.  The old two-argument form `cond([[c1, v1], [c2, v2]], default)` must be rewritten as `cond[c1 => v1, c2 => v2, default]`.  The `=>` operator (precedence 15) builds clause pairs.  Internal callers (`max-of`, `min-of`, `parse-args`) have been updated
 - **Prelude type annotations** — `lookup`, `keys`, `values`, `map-values`, `group-by`, `merge`, `cons`, `||` now have precise `Dict`/`NonEmpty`/row-polymorphic type annotations
 - **Arithmetic native returns** — arithmetic operations return native atoms directly, avoiding one allocation per result (PR #720)
 
