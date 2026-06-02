@@ -1004,6 +1004,16 @@ lazy_static! {
             ty: function(vec![num(), bool_()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 191
+            name: "SCANL_ADD",
+            ty: function(vec![num(), list(), list()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 192
+            name: "TAKE_NUM_LIST",
+            ty: function(vec![num(), list(), list()]).unwrap(),
+            strict: vec![],
+    },
     ];
 }
 

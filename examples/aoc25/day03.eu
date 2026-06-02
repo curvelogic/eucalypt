@@ -26,7 +26,7 @@ enough to leave k-1 picks remaining, skip forward to its first
 occurrence, take it, and recurse on the suffix."
 pick(k, ds): {
 
-  best: ds take((ds count) - k + 1) max-of
+  best: ds take-nums((ds count) - k + 1) max-of
   at-best: ds drop-while(!= best)
 
 }.((k = 0) then([], cons(best, pick(k - 1, at-best tail))))

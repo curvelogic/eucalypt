@@ -23,7 +23,7 @@ use super::{
         collect_num_list, data_list_arg, machine_return_bool, machine_return_num_list, num_arg,
     },
     syntax::{
-        dsl::{app_bif, case, data, f, force, lambda, local, lref, t, value},
+        dsl::{app_bif, case, data, f, force, lambda, local, lref, t, unbox_num, value},
         LambdaForm,
     },
     tags::DataConstructor,
@@ -511,3 +511,73 @@ impl StgIntrinsic for ListDrop {
 }
 
 impl CallGlobal2 for ListDrop {}
+
+/// `TAKE_NUM_LIST(n, nums)` — return the first `n` elements of a number list
+/// as a new number list.
+///
+/// Replaces `take(n, nums)` for the common case where the input is a num list.
+/// The general `take` is a recursive interpreter-level function that creates a
+/// thunk chain of depth n; this BIF forces the list via `SeqNumList` and
+/// extracts n elements with a single Rust loop.
+///
+/// Returns an empty num list when n = 0 or the input has fewer than n elements
+/// (truncates silently rather than erroring).
+///
+/// Example: `[3, 1, 4, 1, 5]` with n=3 → `[3.0, 1.0, 4.0]`
+pub struct TakeNumList;
+
+impl StgIntrinsic for TakeNumList {
+    fn name(&self) -> &str {
+        "TAKE_NUM_LIST"
+    }
+
+    /// Wrapper: force the num list (arg 1, `nums`) via `SeqNumList`, then
+    /// unbox arg 0 (`n`, a `BoxedNumber`), then call the BIF.
+    ///
+    /// STG argument layout inside the lambda:
+    ///   local 0 = n    (BoxedNumber)
+    ///   local 1 = nums (list)
+    ///
+    /// After `force(SeqNumList(local 1), ...)`:
+    ///   local 0 = forced_list
+    ///   local 1 = n (BoxedNumber, was local 0)
+    ///
+    /// After `unbox_num(local(1), ...)`:
+    ///   local 0 = n_inner (native Num)
+    ///   local 1 = forced_list
+    ///
+    /// BIF call: `(local 0 = n_native, local 1 = forced_list)`
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        let bif_index: u8 = self.index().try_into().unwrap();
+        lambda(
+            2, // [n, nums] — n is local 0, nums is local 1
+            force(
+                SeqNumList.global(lref(1)),
+                // After force: local 0 = forced_list, local 1 = n (BoxedNumber)
+                unbox_num(
+                    local(1),
+                    // After unbox_num: local 0 = n_inner (native Num), local 1 = forced_list
+                    app_bif(bif_index, vec![lref(0), lref(1)]),
+                ),
+            ),
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let n = {
+            let num = num_arg(machine, view, &args[0])?;
+            num.as_u64().unwrap_or(0) as usize
+        };
+        let nums = collect_num_list(machine, view, args[1].clone())?;
+        let result: Vec<f64> = nums.into_iter().take(n).collect();
+        machine_return_num_list(machine, view, result)
+    }
+}
+
+impl CallGlobal2 for TakeNumList {}
