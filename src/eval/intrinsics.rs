@@ -994,6 +994,16 @@ lazy_static! {
             ty: function(vec![any(), any(), any()]).unwrap(),
             strict: vec![],
     },
+    Intrinsic { // 189
+            name: "MAX_OF",
+            ty: function(vec![list(), num()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 190
+            name: "MIN_OF",
+            ty: function(vec![list(), num()]).unwrap(),
+            strict: vec![],
+    },
     ];
 }
 
