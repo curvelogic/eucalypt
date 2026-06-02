@@ -241,6 +241,8 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(platform::Os));
     rt.add(Box::new(platform::Arch));
     rt.add(Box::new(set::SetSample));
+    rt.add(Box::new(running::SumList));
+    rt.add(Box::new(running::ProductList));
     rt.prepare(source_map);
     Box::new(rt)
 }

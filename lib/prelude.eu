@@ -886,11 +886,11 @@ bit: {
 
 ` { doc: "`sum(l)` - sum a list of numbers."
     type: "[number] → number" }
-sum(l): foldl(+, 0, l)
+sum: '__SUM_LIST'
 
 ` { doc: "`product(l)` - multiply a list of numbers."
     type: "[number] → number" }
-product(l): foldl(*, 1, l)
+product: '__PRODUCT_LIST'
 
 ` { doc: "`max(l, r)` - return max of numbers `l` and `r`."
     type: "number → number → number" }
