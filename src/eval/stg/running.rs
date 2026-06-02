@@ -2,6 +2,8 @@
 
 use std::convert::TryInto;
 
+use serde_json;
+
 use crate::{
     common::sourcemap::Smid,
     eval::{
@@ -14,7 +16,7 @@ use crate::{
 
 use super::{
     force::SeqNumList,
-    support::{collect_num_list, machine_return_num_list},
+    support::{collect_num_list, machine_return_boxed_num, machine_return_num_list},
     syntax::{
         dsl::{app_bif, force, lambda, lref},
         LambdaForm,
@@ -133,3 +135,85 @@ impl StgIntrinsic for RunningSum {
 }
 
 impl CallGlobal1 for RunningSum {}
+
+/// `SUM_NUM_LIST(nums)` — sum a list of numbers in a single Rust pass.
+///
+/// The wrapper forces all elements via `SeqNumList` so that `execute`
+/// receives a fully-evaluated cons structure.  Replacing `sum: foldl(+, 0)`
+/// with this native BIF eliminates the N-deep thunk chain that `foldl`
+/// builds before any arithmetic occurs, giving O(N) ticks instead of the
+/// O(N²) behaviour of the lazy accumulator pattern.
+pub struct SumNumList;
+
+impl StgIntrinsic for SumNumList {
+    fn name(&self) -> &str {
+        "SUM_NUM_LIST"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        num_list_wrapper(self)
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let nums = collect_num_list(machine, view, args[0].clone())?;
+        let total: f64 = nums.iter().sum();
+        // Use integer representation when the result is a whole number so
+        // that YAML/JSON output matches what `foldl(+, 0, l)` produces.
+        let n = if total.fract() == 0.0 && total.is_finite() {
+            serde_json::Number::from(total as i64)
+        } else {
+            serde_json::Number::from_f64(total).ok_or_else(|| {
+                ExecutionError::Panic(Smid::default(), "SUM_NUM_LIST: non-finite sum".to_string())
+            })?
+        };
+        machine_return_boxed_num(machine, view, n)
+    }
+}
+
+impl CallGlobal1 for SumNumList {}
+
+/// `PRODUCT_NUM_LIST(nums)` — multiply a list of numbers in a single Rust pass.
+///
+/// Replaces `product: foldl(*, 1)` with the same native approach as
+/// `SUM_NUM_LIST`.  Eliminates the N-deep lazy accumulator thunk chain.
+pub struct ProductNumList;
+
+impl StgIntrinsic for ProductNumList {
+    fn name(&self) -> &str {
+        "PRODUCT_NUM_LIST"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        num_list_wrapper(self)
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let nums = collect_num_list(machine, view, args[0].clone())?;
+        let total: f64 = nums.iter().product();
+        let n = if total.fract() == 0.0 && total.is_finite() {
+            serde_json::Number::from(total as i64)
+        } else {
+            serde_json::Number::from_f64(total).ok_or_else(|| {
+                ExecutionError::Panic(
+                    Smid::default(),
+                    "PRODUCT_NUM_LIST: non-finite product".to_string(),
+                )
+            })?
+        };
+        machine_return_boxed_num(machine, view, n)
+    }
+}
+
+impl CallGlobal1 for ProductNumList {}

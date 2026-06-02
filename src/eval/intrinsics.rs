@@ -994,6 +994,16 @@ lazy_static! {
             ty: function(vec![any(), any(), any()]).unwrap(),
             strict: vec![],
     },
+    Intrinsic { // 189
+            name: "SUM_NUM_LIST",
+            ty: function(vec![list(), num()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 190
+            name: "PRODUCT_NUM_LIST",
+            ty: function(vec![list(), num()]).unwrap(),
+            strict: vec![],
+    },
     ];
 }
 
