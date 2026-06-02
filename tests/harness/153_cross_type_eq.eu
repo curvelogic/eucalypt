@@ -3,10 +3,6 @@
 # Cross-type equality should return false, not error.
 # Regression test for PR #720 (native atom returns in arithmetic).
 
-a: 1 = [1]
-b: "hello" = [:hello]
-c: :foo = 42
-d: [] = 0
-e: 1 = {x: 1}
+checks: [1 = [1], "hello" = [:hello], :foo = 42, [] = 0, 1 = {x: 1}]
 
-RESULT: if(not(a) and(not(b)) and(not(c)) and(not(d)) and(not(e)), :PASS, :FAIL)
+RESULT: if(checks map(¬) all-true?, :PASS, :FAIL)
