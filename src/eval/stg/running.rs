@@ -2,6 +2,8 @@
 
 use std::convert::TryInto;
 
+use serde_json;
+
 use crate::{
     common::sourcemap::Smid,
     eval::{
@@ -13,8 +15,8 @@ use crate::{
 };
 
 use super::{
-    force::SeqNumList,
-    support::{collect_num_list, machine_return_num_list},
+    force::{SeqList, SeqNumList},
+    support::{collect_num_list, data_list_arg, machine_return_boxed_num, machine_return_num_list},
     syntax::{
         dsl::{app_bif, force, lambda, lref},
         LambdaForm,
@@ -133,3 +135,49 @@ impl StgIntrinsic for RunningSum {
 }
 
 impl CallGlobal1 for RunningSum {}
+
+/// `COUNT_LIST(l)` — count the elements of a list in a single Rust pass.
+///
+/// Replaces `count: foldl({n: •el: •}.(n inc), 0)` which builds an N-deep
+/// lazy accumulator thunk chain.  The wrapper forces the entire list spine
+/// via `SeqList` so that `execute` receives fully-evaluated cons cells;
+/// counting then requires only a single O(N) traversal with no heap
+/// allocation and no thunk building.
+pub struct CountList;
+
+impl StgIntrinsic for CountList {
+    fn name(&self) -> &str {
+        "COUNT_LIST"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        let bif_index: u8 = self.index().try_into().unwrap();
+        lambda(
+            1, // [xs]
+            force(
+                SeqList.global(lref(0)),
+                // [concrete_list] [xs]
+                app_bif(bif_index, vec![lref(0)]),
+            ),
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let iter = data_list_arg(machine, view, args[0].clone())?;
+        let mut n: i64 = 0;
+        for item in iter {
+            item?;
+            n += 1;
+        }
+        let num = serde_json::Number::from(n);
+        machine_return_boxed_num(machine, view, num)
+    }
+}
+
+impl CallGlobal1 for CountList {}

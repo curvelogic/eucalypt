@@ -994,6 +994,11 @@ lazy_static! {
             ty: function(vec![any(), any(), any()]).unwrap(),
             strict: vec![],
     },
+    Intrinsic { // 189
+            name: "COUNT_LIST",
+            ty: function(vec![list(), num()]).unwrap(),
+            strict: vec![],
+    },
     ];
 }
 

@@ -1436,7 +1436,7 @@ range(b, e): ints-from(b) take(e - b)
 
 ` { doc: "`count(l)` - return count of items in list `l`."
     type: "[a] → number" }
-count(l): foldl({ n: • el: •}.(n inc), 0, l)
+count: '__COUNT_LIST'
 
 ` { doc: "`last(l)` - return last element of list `l`."
     type: "[a] → a" }
