@@ -133,6 +133,11 @@ fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
             // The tuple is a subtype of `[U]` when every element type is <: U.
             elems.iter().all(|e| is_subtype_co(e, elem_ty, assumed))
         }
+        // A non-empty tuple is a subtype of NonEmpty([U]) when every element
+        // type is <: U.  An empty tuple is NOT a subtype of NonEmpty.
+        (Type::Tuple(elems), Type::NonEmpty(elem_ty)) => {
+            !elems.is_empty() && elems.iter().all(|e| is_subtype_co(e, elem_ty, assumed))
+        }
         // Tuples are covariant in each component position.
         (Type::Tuple(as_), Type::Tuple(bs)) => {
             as_.len() == bs.len()
@@ -314,6 +319,10 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
         }
         (Type::Tuple(as_), Type::Tuple(bs)) if as_.len() == bs.len() => {
             as_.iter().zip(bs.iter()).all(|(a, b)| is_consistent(a, b))
+        }
+        // A non-empty Tuple is consistent with NonEmpty (and vice versa).
+        (Type::Tuple(elems), Type::NonEmpty(b)) | (Type::NonEmpty(b), Type::Tuple(elems)) => {
+            !elems.is_empty() && elems.iter().all(|e| is_consistent(e, b))
         }
         (Type::IO(a), Type::IO(b)) => is_consistent(a, b),
         (Type::Lens(a1, b1), Type::Lens(a2, b2)) => is_consistent(a1, a2) && is_consistent(b1, b2),
