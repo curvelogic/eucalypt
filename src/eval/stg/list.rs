@@ -17,10 +17,13 @@ use crate::{
     },
 };
 
+use serde_json::Number;
+
 use super::{
-    force::SeqNumList,
+    force::{SeqNumList, SeqSpine},
     support::{
-        collect_num_list, data_list_arg, machine_return_bool, machine_return_num_list, num_arg,
+        collect_num_list, data_list_arg, machine_return_bool, machine_return_num,
+        machine_return_num_list, num_arg,
     },
     syntax::{
         dsl::{app_bif, case, data, force, lambda, local, lref, value},
@@ -488,3 +491,47 @@ impl StgIntrinsic for ListDrop {
 }
 
 impl CallGlobal2 for ListDrop {}
+
+/// `COUNT(list)` — count the elements of a list in Rust.
+///
+/// Replaces `count(l): foldl({n: • el: •}.(n inc), 0, l)` which allocates
+/// a block-lambda closure per element.  The wrapper forces the cons/nil
+/// spine via `SeqSpine` (without touching element values — elements remain
+/// lazy) and the execute body simply increments a Rust counter.
+pub struct NativeCount;
+
+impl StgIntrinsic for NativeCount {
+    fn name(&self) -> &str {
+        "COUNT"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        let bif_index: u8 = self.index().try_into().unwrap();
+        lambda(
+            1,
+            force(
+                SeqSpine.global(lref(0)),
+                // [spine_list] [xs]
+                app_bif(bif_index, vec![lref(0)]),
+            ),
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let iter = data_list_arg(machine, view, args[0].clone())?;
+        let mut count = 0i64;
+        for item in iter {
+            item?;
+            count += 1;
+        }
+        machine_return_num(machine, view, Number::from(count))
+    }
+}
+
+impl CallGlobal1 for NativeCount {}

@@ -185,6 +185,53 @@ impl StgIntrinsic for SeqList {
 
 impl CallGlobal1 for SeqList {}
 
+/// `SeqSpine` — force the spine (cons/nil structure) of a list without
+/// touching the elements.
+///
+/// Unlike `SeqNumList` / `SeqStrList` / `SeqList`, this does **not** evaluate
+/// list elements.  It only forces each cons cell constructor so that the
+/// resulting list is traversable by `DataIterator` without further thunk
+/// evaluation.  Element closures are preserved as-is.
+///
+/// This gives the same semantics as `foldl` over the list: the cons/nil
+/// structure is forced lazily (element by element) but the values themselves
+/// are never evaluated.
+pub struct SeqSpine;
+
+impl StgIntrinsic for SeqSpine {
+    fn name(&self) -> &str {
+        "seqSpine"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        // switch(xs)
+        //   NIL → NIL (spine is already terminal)
+        //   CONS [h t] →
+        //     force SeqSpine(t)     -- [stail, h, t, xs]
+        //     data CONS(h, stail)   -- rebuild with unforced head, forced tail
+        lambda(
+            1,
+            switch(
+                local(0),
+                vec![
+                    (DataConstructor::ListNil.tag(), local(0)),
+                    (
+                        DataConstructor::ListCons.tag(),
+                        // env after switch: [h=0, t=1, xs=2]
+                        force(
+                            SeqSpine.global(lref(1)), // SeqSpine(t)
+                            // env after force: [stail=0, h=1, t=2, xs=3]
+                            data(DataConstructor::ListCons.tag(), vec![lref(1), lref(0)]),
+                        ),
+                    ),
+                ],
+            ),
+        )
+    }
+}
+
+impl CallGlobal1 for SeqSpine {}
+
 /// `__FORCE_WHNF` — force a thunk to weak head normal form from within an intrinsic.
 ///
 /// Unlike the STG-level `force` DSL combinator (which is woven into the

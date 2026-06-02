@@ -984,6 +984,16 @@ lazy_static! {
             ty: function(vec![unk()]).unwrap(),
             strict: vec![],
     },
+    Intrinsic { // 187
+            name: "seqSpine",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 188
+            name: "COUNT",
+            ty: function(vec![list(), num()]).unwrap(),
+            strict: vec![],
+    },
     ];
 }
 
