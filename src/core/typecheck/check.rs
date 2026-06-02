@@ -471,6 +471,9 @@ impl Checker {
             Type::Dict(inner) => {
                 Type::Dict(Box::new(self.resolve_aliases_inner(*inner, resolving)))
             }
+            Type::NonEmpty(inner) => {
+                Type::NonEmpty(Box::new(self.resolve_aliases_inner(*inner, resolving)))
+            }
             Type::Record { fields, open, rows } => Type::Record {
                 fields: fields
                     .into_iter()
@@ -1893,7 +1896,7 @@ fn classify_predicate(func: &RcExpr) -> Option<PredicateKind> {
             "IS_BOOL" | "ISBOOL" => Some(PredicateKind::Bool),
             "IS_LIST" | "ISLIST" => Some(PredicateKind::List),
             "IS_BLOCK" | "ISBLOCK" => Some(PredicateKind::Block),
-            "IS_NIL" | "ISNIL" => Some(PredicateKind::Nil), // eucalypt nil? = empty list
+            "IS_NIL" | "ISNIL" | "NILP" => Some(PredicateKind::Nil),
             _ => None,
         },
         Expr::Var(_, Var::Bound(bv)) => match bv.name.as_deref() {
@@ -2091,7 +2094,9 @@ fn is_clause_intrinsic(func: &RcExpr) -> bool {
 fn contains_var_named(ty: &Type, name: &str) -> bool {
     match ty {
         Type::Var(id) => id.0 == name,
-        Type::List(inner) | Type::IO(inner) | Type::Dict(inner) => contains_var_named(inner, name),
+        Type::List(inner) | Type::IO(inner) | Type::Dict(inner) | Type::NonEmpty(inner) => {
+            contains_var_named(inner, name)
+        }
         Type::Function(a, b) | Type::Lens(a, b) | Type::Traversal(a, b) => {
             contains_var_named(a, name) || contains_var_named(b, name)
         }
@@ -3400,6 +3405,14 @@ mod tests {
         assert_eq!(params.len(), 1);
         assert_eq!(params[0].0, "x");
         assert_eq!(params[0].1, Type::Number, "x should be inferred as number");
+    }
+
+    #[test]
+    fn contains_var_named_in_nonempty() {
+        // NonEmpty(X) should detect X as a free variable.
+        let ty = Type::NonEmpty(Box::new(Type::Var(TypeVarId("X".to_string()))));
+        assert!(contains_var_named(&ty, "X"));
+        assert!(!contains_var_named(&ty, "Y"));
     }
 
     #[test]

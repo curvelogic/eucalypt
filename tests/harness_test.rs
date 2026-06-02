@@ -1628,6 +1628,11 @@ pub fn test_harness_152() {
 }
 
 #[test]
+pub fn test_harness_153() {
+    run_test(&opts("153_cross_type_eq.eu"));
+}
+
+#[test]
 pub fn test_target_symbol_shortcut_alpha() {
     let output = std::process::Command::new(eu_binary())
         .args(["-t", "alpha", "tests/harness/148_symbol_target_shortcut.eu"])
