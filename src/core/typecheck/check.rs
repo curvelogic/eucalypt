@@ -2222,9 +2222,15 @@ mod tests {
     // ── List synthesis ──────────────────────────────────────────────────────
 
     #[test]
-    fn empty_list_is_polymorphic() {
+    fn empty_list_has_never_element_type() {
+        // `[]` synthesises as `List(Never)` — definitively empty.
+        // This ensures `head([])` triggers a type warning rather than
+        // silently returning `Any`.
         let mut c = Checker::new();
-        assert_eq!(c.synthesise(&list(vec![])), Type::List(Box::new(Type::Any)));
+        assert_eq!(
+            c.synthesise(&list(vec![])),
+            Type::List(Box::new(Type::Never))
+        );
     }
 
     #[test]
@@ -2245,17 +2251,24 @@ mod tests {
     }
 
     #[test]
-    fn large_list_synthesises_as_list() {
+    fn large_list_synthesises_as_tuple_or_nonempty() {
         let mut c = Checker::new();
-        // 5+ element lists synthesise as homogeneous lists
-        let l = list(vec![
+        // 5-element list: within LIST_TUPLE_CAP (16) → Tuple.
+        let l5 = list(vec![
             num_lit(1),
             num_lit(2),
             num_lit(3),
             num_lit(4),
             num_lit(5),
         ]);
-        assert_eq!(c.synthesise(&l), Type::List(Box::new(Type::Number)));
+        assert_eq!(c.synthesise(&l5), Type::Tuple(vec![Type::Number; 5]));
+
+        // >16-element list: beyond cap → NonEmpty(element union).
+        let l17: Vec<_> = (0..17).map(|_| num_lit(1)).collect();
+        assert_eq!(
+            c.synthesise(&list(l17)),
+            Type::NonEmpty(Box::new(Type::Number))
+        );
     }
 
     // ── Unknown variable is any ──────────────────────────────────────────────
