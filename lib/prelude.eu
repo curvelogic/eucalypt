@@ -284,7 +284,7 @@ when(p?, f, x): if(x p?, x f, x)
 ##
 
 ` { doc: "`cons(h, t)` - construct new list by prepending item `h` to list `t`."
-    type: "a → [a] → [a]" }
+    type: "a → [a] → NonEmpty([a])" }
 cons: __CONS
 
 ` { doc: "`snoc(x, l)` - append element `x` to the end of list `l`."
@@ -292,6 +292,7 @@ cons: __CONS
 snoc(x, l): l ++ [x]
 
 ` { doc: "`x ‖ xs` - prepend element `x` to list `xs`. Right-associative cons operator."
+    type: "a → [a] → NonEmpty([a])"
     associates: :right
     precedence: 55 }
 (x ‖ xs): __CONS(x, xs)
