@@ -77,6 +77,10 @@ struct CachedPipeline {
     /// Imported files resolved by the pipeline, for building symbol
     /// tables with proper source locations.
     imports: Vec<ImportedFile>,
+    /// Type alias definitions registered during type checking.
+    ///
+    /// Passed to `hover_for_alias` so hover can show the resolved type.
+    alias_types: HashMap<String, Type>,
 }
 
 /// A pipeline error with a message and optional source location.
@@ -861,7 +865,8 @@ fn on_hover(state: &ServerState, params: lsp_types::HoverParams) -> Option<Hover
 
     // Check for alias reference inside a `type:` string first (§A7).
     let alias_idx = alias_index::build_alias_index(text, &root, uri);
-    if let Some(h) = alias_index::hover_for_alias(text, &root, position, &alias_idx, None) {
+    let alias_types = state.cached.get(uri).map(|c| &c.alias_types);
+    if let Some(h) = alias_index::hover_for_alias(text, &root, position, &alias_idx, alias_types) {
         return Some(h);
     }
 
@@ -1162,6 +1167,13 @@ fn run_pipeline(
     let mut type_env = TypeEnv::new();
     extract_top_level_bindings(&loader.core().expr, &mut type_env);
 
+    // Extract type aliases BEFORE dead-code elimination.  Dead-code
+    // elimination (prune) removes unreferenced bindings, which may include
+    // declarations that carry `types:` metadata used only for annotations.
+    // We walk all Meta nodes in the cooked expression to collect aliases that
+    // would otherwise be lost before the type checker runs on the pruned expr.
+    let alias_types_pre = crate::core::typecheck::check::extract_aliases(&loader.core().expr);
+
     if let Err(e) = loader.eliminate() {
         return Err(make_pipeline_error(&loader, &e));
     }
@@ -1230,6 +1242,12 @@ fn run_pipeline(
 
     let (_, source_map, _) = loader.complete();
 
+    // Merge pre-elimination aliases with post-elimination aliases.
+    // Post-elimination aliases (from the type-check pass) take priority
+    // since they are more precisely resolved against the inferred types.
+    let mut alias_types = alias_types_pre;
+    alias_types.extend(result.aliases);
+
     Ok(CachedPipeline {
         uri: uri.clone(),
         type_env,
@@ -1237,6 +1255,7 @@ fn run_pipeline(
         warnings: result.warnings,
         source_map,
         imports,
+        alias_types,
     })
 }
 

@@ -1497,18 +1497,23 @@ fn alias_goto_definition_from_type_string() {
     );
 }
 
-/// Hover on an alias reference inside a `type:` string shows the alias name.
+/// Hover on an alias reference inside a `type:` string shows the alias name and
+/// its resolved type when the pipeline has run.
 #[test]
 fn alias_hover_in_type_string() {
     let mut s = LspTestSession::new();
-    s.open(concat!(
-        "` { type-def: \"Point\" }\n",
-        "point: { x: 1, y: 2 }\n",
+    // Use a types: block so the type checker registers "Point" → number in the
+    // alias map.  A real declaration must appear between consecutive backtick
+    // metadata blocks.  run_pipeline waits for the background pipeline so that
+    // alias_types is populated in the cached result.
+    s.run_pipeline(concat!(
+        "` { types: { Point: \"number\" } }\n",
+        "data: 1\n",
         "` { type: \"Point -> number\" }\n",
-        "get-x(p): p.x\n",
+        "get-x(p): p\n",
     ));
 
-    // Cursor on "Point" in the type: string on line 2.
+    // Cursor on "Point" in the type: string on line 2 (col 11 = after `"`).
     let hover = s.hover_for_type_alias(2, 11);
     assert!(hover.is_some(), "should produce hover for alias reference");
     if let Some(h) = hover {
@@ -1520,7 +1525,38 @@ fn alias_hover_in_type_string() {
             text.contains("Point"),
             "hover should mention the alias name"
         );
+        assert!(
+            text.contains("Resolved"),
+            "hover should include the resolved type (got: {text})"
+        );
     }
+}
+
+/// Hover correctly positions aliases in type strings containing Unicode arrows (→).
+///
+/// U+2192 (→) is 3 UTF-8 bytes but 1 UTF-16 code unit; go-to-definition must
+/// use UTF-16 column arithmetic to produce correct LSP positions.
+#[test]
+fn alias_goto_definition_utf16_column() {
+    let mut s = LspTestSession::new();
+    s.open(concat!(
+        "` { type-def: \"MyType\" }\n",
+        "alias-val: 42\n",
+        "` { type: \"number \u{2192} MyType\" }\n",
+        "get-it(p): p\n",
+    ));
+
+    // Line 2: ` { type: "number → MyType" }
+    //          0123456789012345678901234567
+    // "number " = 7 ASCII + "→" (1 UTF-16 unit) + " " = col 9 for "MyType".
+    // String token starts at col 9 of that line (the opening quote is at
+    // position 9 in ` { type: ...), content starts col 10, so "MyType" is
+    // at col 10 + 9 = 19.  We place the cursor in the middle of "MyType".
+    let result = s.goto_definition_for_type_alias(2, 21);
+    assert!(
+        result.is_some(),
+        "should find definition of MyType through a Unicode → in the type string"
+    );
 }
 
 /// Rename a type alias: updates both the type-def: value and the type: reference.

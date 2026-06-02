@@ -275,7 +275,14 @@ impl LspTestSession {
         let root = parse.syntax_node();
         let position = Position { line, character };
         let alias_idx = super::alias_index::build_alias_index(&self.content, &root, &self.uri);
-        super::alias_index::hover_for_alias(&self.content, &root, &position, &alias_idx, None)
+        let alias_types = self.cached.as_ref().map(|c| &c.alias_types);
+        super::alias_index::hover_for_alias(
+            &self.content,
+            &root,
+            &position,
+            &alias_idx,
+            alias_types,
+        )
     }
 
     /// Rename a type alias at the given cursor position (§A7).

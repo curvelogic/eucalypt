@@ -369,7 +369,7 @@ fn byte_range_to_lsp_range(source: &str, start: usize, end: usize) -> Range {
                 line += 1;
                 col = 0;
             } else {
-                col += ch.len_utf8() as u32;
+                col += ch.len_utf16() as u32;
             }
         }
         LspPos {
@@ -735,5 +735,22 @@ mod tests {
             result.is_none(),
             "escaped type strings should degrade gracefully"
         );
+    }
+
+    #[test]
+    fn byte_range_to_lsp_range_utf16_column() {
+        // U+2192 (→) is 3 UTF-8 bytes but 1 UTF-16 code unit.
+        // In "number → MyType", MyType starts at byte 11 (6 + 1 + 3 + 1)
+        // but at UTF-16 column 9 (6 + 1 + 1 + 1).
+        let source = "number \u{2192} MyType";
+        let start = source.find("MyType").unwrap();
+        let end = start + "MyType".len();
+        let range = byte_range_to_lsp_range(source, start, end);
+        assert_eq!(range.start.line, 0);
+        assert_eq!(
+            range.start.character, 9,
+            "column must be counted in UTF-16 units, not UTF-8 bytes"
+        );
+        assert_eq!(range.end.character, 15);
     }
 }

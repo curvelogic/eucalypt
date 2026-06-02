@@ -311,6 +311,7 @@ impl Checker {
             warnings: self.warnings,
             types: type_env,
             lambda_params: self.lambda_params,
+            aliases: self.aliases,
         }
     }
 
@@ -510,17 +511,43 @@ impl Checker {
             None => return,
         };
 
-        let type_entries = match &*types_expr.inner {
-            Expr::Block(_, b) => b,
-            _ => return,
-        };
+        // In source, `types: { Point: "string" }` desugars the inner block to
+        // `let Point = "string" in { Point: Point }`.  Walk the Let chain to
+        // collect bindings, then fall back to direct Block iteration for
+        // expressions that were constructed directly (e.g. in unit tests).
+        self.register_aliases_from_types_expr(types_expr);
+    }
 
-        for (alias_name, type_str_expr) in type_entries.iter() {
-            if let Some(type_str) = extract_string_literal(type_str_expr) {
-                if let Ok(ty) = parse::parse_type(&type_str) {
-                    self.register_alias(alias_name.clone(), ty);
+    /// Extract alias entries from a `types:` value expression.
+    ///
+    /// Handles both:
+    /// - Desugared form: `let Name = "type" in { … }` (normal source code)
+    /// - Direct block form: `{ Name: "type" }` (unit-test core construction)
+    fn register_aliases_from_types_expr(&mut self, expr: &RcExpr) {
+        match &*expr.inner {
+            Expr::Let(_, scope, _) => {
+                // Each binding in the scope corresponds to one alias declaration.
+                for (alias_name, type_str_expr) in &scope.pattern {
+                    if let Some(type_str) = extract_string_literal(type_str_expr) {
+                        if let Ok(ty) = parse::parse_type(&type_str) {
+                            self.register_alias(alias_name.clone(), ty);
+                        }
+                    }
+                }
+                // Continue into the body in case of nested let-chains.
+                self.register_aliases_from_types_expr(&scope.body);
+            }
+            Expr::Block(_, b) => {
+                // Direct block form (unit tests / hand-built core expressions).
+                for (alias_name, type_str_expr) in b.iter() {
+                    if let Some(type_str) = extract_string_literal(type_str_expr) {
+                        if let Ok(ty) = parse::parse_type(&type_str) {
+                            self.register_alias(alias_name.clone(), ty);
+                        }
+                    }
                 }
             }
+            _ => {}
         }
     }
 
@@ -2115,6 +2142,12 @@ pub struct TypeCheckResult {
     /// name collisions between different lambdas with the same param
     /// names.
     pub lambda_params: HashMap<Smid, Vec<(String, Type)>>,
+    /// Type alias definitions registered during type checking.
+    ///
+    /// Maps alias name (e.g. `"Point"`) to its resolved `Type`.  Used
+    /// by the LSP hover provider to show the resolved type for alias
+    /// references in `type:` annotation strings.
+    pub aliases: HashMap<String, Type>,
 }
 
 /// Run the type checker over `expr` and return all warnings found.
@@ -2129,6 +2162,53 @@ pub fn type_check_full(expr: &RcExpr) -> TypeCheckResult {
     let mut checker = Checker::new();
     checker.check_expr(expr);
     checker.into_results()
+}
+
+/// Extract type alias definitions from `expr` without running full type checking.
+///
+/// Walks all `Meta` nodes and registers any `types:` block entries found,
+/// then returns the alias map.  Cheaper than `type_check_full` — intended
+/// for use on the pre-pruned expression where aliases may be stripped by
+/// dead-code elimination before the full type-check pass.
+pub fn extract_aliases(expr: &RcExpr) -> HashMap<String, Type> {
+    let mut checker = Checker::new();
+    checker.walk_meta_for_aliases(expr);
+    checker.aliases
+}
+
+impl Checker {
+    /// Walk `expr` recursively, registering any `types:` aliases found in
+    /// `Meta` nodes.  Does not perform type inference — only alias collection.
+    fn walk_meta_for_aliases(&mut self, expr: &RcExpr) {
+        match &*expr.inner {
+            Expr::Meta(_, inner, meta) => {
+                self.register_aliases_from_meta(meta);
+                self.walk_meta_for_aliases(inner);
+                self.walk_meta_for_aliases(meta);
+            }
+            Expr::Let(_, scope, _) => {
+                for (_, value) in &scope.pattern {
+                    self.walk_meta_for_aliases(value);
+                }
+                self.walk_meta_for_aliases(&scope.body);
+            }
+            Expr::App(_, f, args) => {
+                self.walk_meta_for_aliases(f);
+                for a in args {
+                    self.walk_meta_for_aliases(a);
+                }
+            }
+            Expr::Lam(_, _, scope) => {
+                self.walk_meta_for_aliases(&scope.body);
+            }
+            Expr::Block(_, bindings) => {
+                for e in bindings.values() {
+                    self.walk_meta_for_aliases(e);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
