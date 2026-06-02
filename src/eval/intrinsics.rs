@@ -994,6 +994,11 @@ lazy_static! {
             ty: function(vec![any(), any(), any()]).unwrap(),
             strict: vec![],
     },
+    Intrinsic { // 189
+            name: "BLOCK_HAS",
+            ty: function(vec![sym(), any(), bool_()]).unwrap(),
+            strict: vec![],
+    },
     ];
 }
 

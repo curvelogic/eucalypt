@@ -407,9 +407,9 @@ elements: __ELEMENTS
     type: "[(symbol, any)] → {{..}}" }
 block: __BLOCK
 
-` { doc: "`has(s, b)` - true if and only if block `b` has key (symbol) `s`."
+` { doc: "`has(s, b)` - true if and only if block `b` has key (symbol) `s`. (Rust-level intrinsic)."
     type: "symbol → {{..}} → bool" }
-has(s, b): b map-values(const(true)) lookup-or(s, false)
+has: __BLOCK_HAS
 
 ` { doc: "`lookup(s, b)` - look up symbol `s` in block `b`, error if not found."
     type: "symbol → Dict(a) → a" }

@@ -1073,6 +1073,145 @@ impl StgIntrinsic for SafeLookup {
 
 impl CallGlobal2 for SafeLookup {}
 
+/// BLOCK_HAS(k, block) — test whether key `k` exists in `block`.
+///
+/// Replaces `has(s, b): b map-values(const(true)) lookup-or(s, false)`
+/// which allocates O(N) closures per call.  This intrinsic uses the same
+/// index/linear-search strategy as `SafeLookup` but returns `true`/`false`
+/// rather than a value.
+pub struct BlockHas;
+
+impl StgIntrinsic for BlockHas {
+    fn name(&self) -> &str {
+        "BLOCK_HAS"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        use dsl::*;
+
+        let bif_index: u8 = intrinsics::index(self.name())
+            .expect("BLOCK_HAS must be registered")
+            .try_into()
+            .unwrap();
+
+        // Linear search fallback: [list k find] → bool
+        // Mirrors SafeLookup's find but returns t()/f() instead of a value/unit.
+        let find = lambda(
+            3, // [list k find]
+            case(
+                local(0),
+                vec![
+                    (
+                        DataConstructor::ListCons.tag(), // [h t] [list k find]
+                        switch(
+                            MatchesKey.global(lref(0), lref(3)),
+                            vec![
+                                (DataConstructor::BoolTrue.tag(), t()),
+                                (
+                                    DataConstructor::BoolFalse.tag(),
+                                    app(lref(4), vec![lref(1), lref(3), lref(4)]),
+                                ),
+                            ],
+                        ),
+                    ),
+                    (DataConstructor::ListNil.tag(), f()),
+                ],
+                call::bif::panic(str("BLOCK_HAS: bad block content")),
+            ),
+        );
+
+        // main wrapper: [k obj]
+        // local(0) = k (boxed sym), local(1) = obj (block)
+        lambda(
+            2, // [k obj]
+            case(
+                local(1), // scrutinise obj
+                vec![(
+                    DataConstructor::Block.tag(),
+                    // env: [blocklist blockindex] [k obj]
+                    // L(0)=blocklist, L(1)=blockindex, L(2)=k, L(3)=obj
+                    letrec_(
+                        vec![find],
+                        // L(0)=find, L(1)=blocklist, L(2)=blockindex, L(3)=k, L(4)=obj
+                        unbox_sym(
+                            local(3), // k is boxed sym at L(3)
+                            // env: [sym] [find] [blocklist blockindex] [k obj]
+                            // L(0)=sym, L(1)=find, L(2)=blocklist, L(3)=blockindex, L(4)=k, L(5)=obj
+                            case(
+                                app_bif(bif_index, vec![lref(0), lref(2), lref(3), lref(5)]),
+                                vec![
+                                    (DataConstructor::ListCons.tag(), t()),
+                                    (
+                                        DataConstructor::ListNil.tag(),
+                                        // BIF couldn't determine — run linear search
+                                        app(lref(1), vec![lref(2), lref(0), lref(1)]),
+                                    ),
+                                ],
+                                // native fallback (shouldn't occur in practice)
+                                app(lref(2), vec![lref(3), lref(1), lref(2)]),
+                            ),
+                        ),
+                    ),
+                )],
+                f(), // non-block → false
+            ),
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        // args: [sym_key, blocklist, blockindex, block]
+        // Returns ListCons to signal "found" or ListNil to trigger linear search.
+        if let Ok(Native::Index(ref map)) = machine.nav(view).resolve_native(&args[2]) {
+            if let Ok(Native::Sym(sym_id)) = machine.nav(view).resolve_native(&args[0]) {
+                if map.contains_key(&sym_id) {
+                    let dummy = Ref::V(Native::Num(serde_json::Number::from(0)));
+                    let cons = view.data(
+                        DataConstructor::ListCons.tag(),
+                        Array::from_slice(&view, &[dummy.clone(), dummy]),
+                    )?;
+                    return machine
+                        .set_closure(SynClosure::new(cons.as_ptr(), machine.root_env()));
+                }
+            }
+            let nil = view.nil()?;
+            return machine.set_closure(SynClosure::new(nil.as_ptr(), machine.root_env()));
+        }
+
+        let count = count_list(machine, view, &args[1]);
+        if count >= BLOCK_INDEX_THRESHOLD {
+            let map = build_index(machine, view, &args[1]);
+            let found = if let Ok(Native::Sym(sym_id)) = machine.nav(view).resolve_native(&args[0])
+            {
+                let f = map.contains_key(&sym_id);
+                store_index_in_block(view, machine, &args[3], map);
+                f
+            } else {
+                false
+            };
+            if found {
+                let dummy = Ref::V(Native::Num(serde_json::Number::from(0)));
+                let cons = view.data(
+                    DataConstructor::ListCons.tag(),
+                    Array::from_slice(&view, &[dummy.clone(), dummy]),
+                )?;
+                return machine
+                    .set_closure(SynClosure::new(cons.as_ptr(), machine.root_env()));
+            }
+        }
+
+        let nil = view.nil()?;
+        machine.set_closure(SynClosure::new(nil.as_ptr(), machine.root_env()))
+    }
+}
+
+impl CallGlobal2 for BlockHas {}
+
 /// LOOKUP(k, block)
 pub struct Lookup;
 
