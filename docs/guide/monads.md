@@ -483,6 +483,23 @@ ok:     maybe.bind(safe-head([42]), inc) # => 43
 
 ---
 
+## Type checking in monadic blocks
+
+`eu check` understands monadic blocks. When a namespace has a known
+element type (e.g. `io` uses `IO(a)`, `for` uses `[a]`), the checker
+infers the types of bound variables automatically and warns if a binding
+RHS has the wrong type.
+
+```sh
+eu check file.eu          # reports type warnings in monadic blocks
+eu check file.eu --strict # treats type warnings as errors
+```
+
+See [Type Checking — Monadic block binding types](type-checking.md#monadic-block-binding-types)
+for examples and a full explanation.
+
+---
+
 ## Key concepts
 
 - `monad(m)` takes `{bind, return}` and returns a block with `bind`,

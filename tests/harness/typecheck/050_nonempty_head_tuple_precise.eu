@@ -1,0 +1,11 @@
+# `head` applied to a Tuple yields the precise first-element type.
+# `head([42, "hello"])` synthesises `number` (not `number | string` or `any`).
+#
+# `tail([42, "hello"])` synthesises `Tuple([string])`.
+# `head(tail([42, "hello"]))` therefore synthesises `string`.
+
+` { type: "number" }
+hd: [42, "hello"] head
+
+` { type: "string" }
+tl-hd: [42, "hello"] tail head

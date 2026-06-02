@@ -23,7 +23,7 @@ structures using lenses.
 "
 
 ` { doc: "`at(key)` defines a lens that focuses within a block on the value with key `key`."
-    type: "symbol → Lens({{..}}, any)" }
+    type: "symbol → Lens({{..r}}, a)" }
 at(key, k): {
   fmap: meta(k).fmap
   s(obj): fmap({ nv: • }.(obj alter-value(key, nv)), k(obj lookup(key)))

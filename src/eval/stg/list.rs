@@ -23,7 +23,7 @@ use super::{
         collect_num_list, data_list_arg, machine_return_bool, machine_return_num_list, num_arg,
     },
     syntax::{
-        dsl::{app_bif, case, data, force, lambda, local, lref, value},
+        dsl::{app_bif, case, data, f, force, lambda, local, lref, t, value},
         LambdaForm,
     },
     tags::DataConstructor,
@@ -184,6 +184,29 @@ impl StgIntrinsic for TailEmptyErr {
 
 impl CallGlobal0 for HeadEmptyErr {}
 impl CallGlobal0 for TailEmptyErr {}
+
+/// NILP(xs) — test whether a list is empty.
+///
+/// Generates a direct tag check rather than the lambda `λ(x). EQ(x, [])`,
+/// saving a function-call, env-frame creation, and EQ dispatch per call.
+/// The wrapper inlines (via `ProtoInline`) to:
+///   `case xs of Nil → True | _ → False`
+pub struct NilP;
+
+impl StgIntrinsic for NilP {
+    fn name(&self) -> &str {
+        "NILP"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
+            1,
+            case(local(0), vec![(DataConstructor::ListNil.tag(), t())], f()),
+        )
+    }
+}
+
+impl CallGlobal1 for NilP {}
 
 /// ISLIST(value)
 ///

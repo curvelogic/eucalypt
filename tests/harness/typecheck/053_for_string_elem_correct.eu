@@ -1,0 +1,3 @@
+# x in { :for x: ["a","b"] } has element type string.
+# The element type is correctly inferred as string from the list literal.
+result: { :for x: ["a", "b"] }.(x)

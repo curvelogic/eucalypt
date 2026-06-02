@@ -1,0 +1,10 @@
+# User rebinding of `if` disables narrowing (no false
+# positives). The user binds their own `my-if` that always takes the true
+# branch. Since `my-if` is a user-defined function (not the prelude's `if`),
+# narrowing does NOT fire and the false branch body is type-checked normally
+# without any narrowing context.
+my-if(c, t, _f): t
+` { type: "(number | string) → number" }
+safe(x): my-if(x number?, x + 1, 0)
+
+result: safe(42)

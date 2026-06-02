@@ -284,7 +284,7 @@ when(p?, f, x): if(x p?, x f, x)
 ##
 
 ` { doc: "`cons(h, t)` - construct new list by prepending item `h` to list `t`."
-    type: "a → [a] → [a]" }
+    type: "a → [a] → NonEmpty([a])" }
 cons: __CONS
 
 ` { doc: "`snoc(x, l)` - append element `x` to the end of list `l`."
@@ -292,6 +292,7 @@ cons: __CONS
 snoc(x, l): l ++ [x]
 
 ` { doc: "`x ‖ xs` - prepend element `x` to list `xs`. Right-associative cons operator."
+    type: "a → [a] → NonEmpty([a])"
     associates: :right
     precedence: 55 }
 (x ‖ xs): __CONS(x, xs)
@@ -306,11 +307,15 @@ head: __HEAD
 
 ` { doc: "`nil?(xs)` - `true` if list `xs` is empty, `false` otherwise."
     type: "[a] → bool" }
-nil?: = []
+nil?: __NILP
 
 ` { doc: "`non-nil?(xs)` - `true` if list `xs` is non-empty, `false` otherwise."
     type: "[a] → bool" }
 non-nil?: nil? complement
+
+` { doc: "`null?(x)` - `true` if `x` is null, `false` otherwise."
+    type: "any → bool" }
+null?: = null
 
 ` { doc: "`x✓` - `true` if `x` is not null, `false` otherwise. Postfix not-null check operator."
     precedence: :bool-unary }
@@ -357,7 +362,7 @@ second-or(d, xs): xs tail-or([d]) head-or(d)
 sym: __SYM
 
 ` { doc: "`merge(b1, b2)` - shallow merge block `b2` on top of `b1`."
-    type: "{{..}} → {{..}} → {{..}}" }
+    type: "{{..r}} → {{..s}} → {{..r, ..s}}" }
 merge: __MERGE
 
 ` { doc: "`deep-merge(b1, b2)` - deep merge block `b2` on top of `b1`, merges nested blocks but not lists."
@@ -408,7 +413,7 @@ block: __BLOCK
 has(s, b): b map-values(const(true)) lookup-or(s, false)
 
 ` { doc: "`lookup(s, b)` - look up symbol `s` in block `b`, error if not found."
-    type: "symbol → {{..}} → any" }
+    type: "symbol → Dict(a) → a" }
 lookup(s, b): __LOOKUP(s, b)
 
 ` { doc: "`lookup-in(b, s)` - look up symbol `s` in block `b`, error if not found."
@@ -892,9 +897,9 @@ product(l): foldl(*, 1, l)
 max(l, r): if(l > r, l, r)
 
 ` "`max-of(l) - return max element in list of numbers `l` - error if empty`"
-max-of(l): cond( [[l nil?,      panic("max of empty list")]
-               , [count(l) = 1, l head]]
-	       , max(l head, max-of(l tail)))
+max-of(l): cond([l nil? => panic("max of empty list")
+               , l tail nil? => l head
+               , max(l head, max-of(l tail))])
 
 ` "`max-of-by(f, l)` - return the element of `l` that maximises `f`. Error if empty."
 max-of-by(f, l): {
@@ -917,9 +922,9 @@ max-of-or(d, l): l nil? then(d, max-of(l))
 min(l, r): if(l < r, l, r)
 
 ` "`min-of(l) - return min element in list of numbers `l` - error if empty`"
-min-of(l): cond( [[l nil?,      panic("min of empty list")]
-               , [count(l) = 1, l head]]
-	       , min(l head, min-of(l tail)))
+min-of(l): cond([l nil? => panic("min of empty list")
+               , l tail nil? => l head
+               , min(l head, min-of(l tail))])
 
 ` "`min-of-by(f, l)` - return the element of `l` that minimises `f`. Error if empty."
 min-of-by(f, l): {
@@ -1163,9 +1168,17 @@ curry(f, x, y): f([x, y])
 uncurry(f, l): f(first(l), second(l))
 
 
-` { doc: "`cond(l)` - in list `l` of [condition, value] select first true condition, returning value, else default `d`."
-    type: "[(bool, a)] → a → a" }
-cond(l, d): l foldr(uncurry(if), d)
+` { doc: "`cond(clauses)` - multi-way conditional: evaluate each `cond => result` clause in turn, returning the first matching result, or the last element as a default."
+    type: "[a] → a" }
+cond: __COND
+
+` { doc: "`c => r` - build a cond clause: condition `c` paired with result `r`. Use inside `cond([...])` lists."
+    precedence: 15 }
+(c => r): __CLAUSE(c, r)
+
+` { doc: "`c ⇒ r` - Unicode alias for `c => r`."
+    precedence: 15 }
+(c ⇒ r): __CLAUSE(c, r)
 
 ` { doc: "`juxt(f, g, x)` - apply both `f` and `g` to `x`, returning pair (f(x), g(x))."
     type: "(a → b) → (a → c) → a → (b, c)" }
@@ -1558,7 +1571,7 @@ discriminate(pred, xs): {
 }.(xs foldl(acc, [[], []]) bimap(reverse, reverse))
 
 ` { doc: "`group-by(k, xs)` - group xs by key function returning block of key to subgroups, maintains order."
-    type: "(a → any) → [a] → {{..}}" }
+    type: "(a → any) → [a] → Dict([a])" }
 group-by(k, xs): {
   acc(a, e): a update-value-or(e._k, cons(e._v), [e._v])
 }.(xs map({ _k: k(•0), _v: •0 }) foldl(acc, {}) map-values(reverse))
@@ -1658,7 +1671,7 @@ sort-by-zdt(key-fn): sort-by(key-fn, <)
 #
 
 ` { doc: "`merge-all(bs)` - merge all blocks in list `bs` together, later overriding earlier."
-    type: "[{{..}}] → {{..}}" }
+    type: "[{{..r}}] → {{..r}}" }
 merge-all(bs): foldl(merge, {}, bs)
 
 ` { doc: "`key(pr)` - return key in a block element / pair."
@@ -1670,11 +1683,11 @@ key: head
 value: second
 
 ` { doc: "`keys(b)` - return keys of block `b`."
-    type: "{{..}} → [symbol]" }
+    type: "Dict(a) → [symbol]" }
 keys(b): b elements map(key)
 
 ` { doc: "`values(b)` - return values of block `b`."
-    type: "{{..}} → [any]" }
+    type: "Dict(a) → [a]" }
 values(b): b elements map(value)
 
 ` { doc: "`sort-keys(b)` - return block `b` with keys sorted alphabetically."
@@ -1722,7 +1735,7 @@ zip-kv(ks, vs): zip-with(pair, ks, vs) block
 with-keys: zip-kv
 
 ` { doc: "`map-values(f, b)` - apply `f(v)` to each value in block `b`."
-    type: "(any → b) → {{..}} → {{..}}" }
+    type: "(a → b) → Dict(a) → Dict(b)" }
 map-values(f, b): b elements map-second(f) block
 
 ` { doc: "`map-keys(f, b)` - apply `f(k)` to each key in block `b`."
@@ -2224,12 +2237,11 @@ parse-args(defaults, args): {
 
   ` "Process a single argument in state"
   process-one(defs, sl, state, arg):
-    cond( [ [state.pending✓,            state resolve-pending(defs, arg)]
-          , [arg = "--help",             panic(generate-help(defs))]
-          , [arg str.starts-with?("--"), arg process-long(defs, state)]
-          , [arg str.starts-with?("-"),  arg str.replace("^-", "") str.letters process-short-chars(defs, sl, state)]
-          ]
-          , { opts: state.opts, rest: state.rest ++ [arg], pending: null })
+    cond([state.pending✓ => state resolve-pending(defs, arg)
+         , arg = "--help" => panic(generate-help(defs))
+         , arg str.starts-with?("--") => arg process-long(defs, state)
+         , arg str.starts-with?("-") => arg str.replace("^-", "") str.letters process-short-chars(defs, sl, state)
+         , { opts: state.opts, rest: state.rest ++ [arg], pending: null }])
 
 
   ` "Generate help text for `--help`"

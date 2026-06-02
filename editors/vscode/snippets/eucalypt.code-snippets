@@ -96,5 +96,133 @@
     "prefix": "pipe",
     "body": ["${1:value} ${2:f} ${3:g}"],
     "description": "Value pipeline (catenation)"
+  },
+
+  "Typed function declaration": {
+    "prefix": "tfn",
+    "body": [
+      "` { doc: \"`${1:name}(${2:x})` - ${3:description}.\"",
+      "    type: \"${4:number} -> ${5:number}\" }",
+      "${1:name}(${2:x}): ${0:${2:x}}"
+    ],
+    "description": "Function declaration with doc string and type annotation"
+  },
+  "Typed property declaration": {
+    "prefix": "tprop",
+    "body": [
+      "` { doc: \"`${1:name}` - ${2:description}.\"",
+      "    type: \"${3:string}\" }",
+      "${1:name}: ${0:value}"
+    ],
+    "description": "Property declaration with doc string and type annotation"
+  },
+  "Typed operator declaration": {
+    "prefix": "top",
+    "body": [
+      "` { doc: \"`${1:l} ${2:op} ${3:r}` - ${4:description}.\"",
+      "    type: \"${5:a} -> ${6:b} -> ${7:c}\"",
+      "    associates: :${8:left}",
+      "    precedence: :${9:sum} }",
+      "(${1:l} ${2:op} ${3:r}): ${0:expression}"
+    ],
+    "description": "Operator declaration with type annotation and precedence"
+  },
+  "Type aliases in unit metadata": {
+    "prefix": "types",
+    "body": [
+      "{ types: { ${1:Name}: \"{${2:key}: ${3:type}, ..}\"",
+      "           ${4:Other}: \"${5:string}\" } }"
+    ],
+    "description": "Named type aliases in unit-level metadata block"
+  },
+  "Type alias (single)": {
+    "prefix": "type1",
+    "body": [
+      "{ types: { ${1:Name}: \"${2:{key: type, ..}}\" } }"
+    ],
+    "description": "Single named type alias in unit-level metadata"
+  },
+  "Type-def from canonical instance": {
+    "prefix": "typedef",
+    "body": [
+      "` { type-def: \"${1:TypeName}\" }",
+      "${2:canonical}: ${0:{ key: value }}"
+    ],
+    "description": "Derive a type alias from the type of a canonical value"
+  },
+  "Type-def with explicit type override": {
+    "prefix": "typedefx",
+    "body": [
+      "` { type-def: \"${1:TypeName}\"",
+      "    type: \"${2:{key: type, ..}}\" }",
+      "${3:canonical}: ${0:{ key: value }}"
+    ],
+    "description": "Type-def with explicit type (overrides inferred type)"
+  },
+  "Typed IO action": {
+    "prefix": "tio",
+    "body": [
+      "` { doc: \"`${1:name}` - ${2:description}.\"",
+      "    type: \"IO(${3:block})\" }",
+      "${1:name}: io.shell(\"${0:command}\")"
+    ],
+    "description": "IO action binding with type annotation"
+  },
+  "Typed function returning IO": {
+    "prefix": "tiofn",
+    "body": [
+      "` { doc: \"`${1:name}(${2:x})` - ${3:description}.\"",
+      "    type: \"${4:string} -> IO(${5:block})\" }",
+      "${1:name}(${2:x}): io.shell(${0:${2:x}})"
+    ],
+    "description": "Function that returns an IO action, with type annotation"
+  },
+  "Typed Lens declaration": {
+    "prefix": "tlens",
+    "body": [
+      "` { doc: \"`${1:name}` - lens focusing on ${2:field} within ${3:record}.\"",
+      "    type: \"Lens(${4:{..}}, ${5:any})\" }",
+      "${1:name}: at(:${0:field})"
+    ],
+    "description": "Lens declaration with Lens(a, b) type annotation"
+  },
+  "Typed Traversal declaration": {
+    "prefix": "ttraversal",
+    "body": [
+      "` { doc: \"`${1:name}` - traversal over ${2:elements}.\"",
+      "    type: \"Traversal(${3:[a]}, ${4:a})\" }",
+      "${1:name}: ${0:expression}"
+    ],
+    "description": "Traversal declaration with Traversal(a, b) type annotation"
+  },
+  "Open record type annotation": {
+    "prefix": "torec",
+    "body": "\"{${1:key}: ${2:type}, ..}\"",
+    "description": "Open record type string — at least the named fields, may have more"
+  },
+  "Closed record type annotation": {
+    "prefix": "tcrec",
+    "body": "\"{${1:key}: ${2:type}}\"",
+    "description": "Closed record type string — exactly the named fields"
+  },
+  "List type annotation": {
+    "prefix": "tlist",
+    "body": "\"[${1:type}]\"",
+    "description": "Homogeneous list type string"
+  },
+  "Union type annotation": {
+    "prefix": "tunion",
+    "body": "\"${1:A} | ${2:B}\"",
+    "description": "Union type string — value is either A or B"
+  },
+  "Function type annotation": {
+    "prefix": "tftype",
+    "body": "\"${1:a} -> ${2:b}\"",
+    "description": "Function type string"
+  },
+  "IO type annotation": {
+    "prefix": "tiotype",
+    "body": "\"IO(${1:result})\"",
+    "description": "IO action type string"
   }
 }

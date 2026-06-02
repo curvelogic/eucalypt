@@ -73,6 +73,7 @@ fn format_ref(machine: &dyn IntrinsicMachine, view: MutatorHeapView<'_>, r: &Ref
                 Ok(DataConstructor::IoBind) => "<io-bind>".to_string(),
                 Ok(DataConstructor::IoAction) => "<io-action>".to_string(),
                 Ok(DataConstructor::IoFail) => "<io-fail>".to_string(),
+                Ok(DataConstructor::Clause) => "<clause>".to_string(),
                 Err(_) => "<value>".to_string(),
             }
         }

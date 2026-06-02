@@ -13,6 +13,7 @@
 //!              | 'datetime' | 'any' | 'top' | 'never'
 //!              | 'set' | 'vec' | 'array'
 //!              | LOWER_IDENT                        # type variable
+//!              | '"' STRING '"'                     # literal string type
 //!              | '[' type ']'                       # list
 //!              | 'IO' '(' type ')'
 //!              | 'Lens' '(' type ',' type ')'
@@ -85,6 +86,8 @@ enum Token {
     Io,
     Lens,
     Traversal,
+    Dict,
+    NonEmpty,
     // Identifiers (type variables and record field names)
     Ident(String),
     // Punctuation
@@ -99,6 +102,8 @@ enum Token {
     Colon,    // :
     Comma,    // ,
     DotDot,   // ..
+    // Literal string value (e.g. `"read"` in type position)
+    StringLit(String),
     // End of input
     Eof,
 }
@@ -203,6 +208,39 @@ impl<'a> Lexer<'a> {
                 self.pos += '→'.len_utf8();
                 Ok((Token::Arrow, start))
             }
+            '"' => {
+                // Lex a double-quoted string literal for use in type position.
+                self.pos += 1; // consume opening '"'
+                let mut s = String::new();
+                loop {
+                    if self.pos >= self.input.len() {
+                        return Err(ParseError::new(start, "unterminated string literal"));
+                    }
+                    let ch = self.input[self.pos..].chars().next().unwrap();
+                    self.pos += ch.len_utf8();
+                    match ch {
+                        '"' => break, // closing quote
+                        '\\' => {
+                            // Escape: \\ → \, \" → "
+                            if self.pos >= self.input.len() {
+                                return Err(ParseError::new(start, "unterminated escape"));
+                            }
+                            let esc = self.input[self.pos..].chars().next().unwrap();
+                            self.pos += esc.len_utf8();
+                            match esc {
+                                '\\' => s.push('\\'),
+                                '"' => s.push('"'),
+                                other => {
+                                    s.push('\\');
+                                    s.push(other);
+                                }
+                            }
+                        }
+                        other => s.push(other),
+                    }
+                }
+                Ok((Token::StringLit(s), start))
+            }
             c if c.is_ascii_alphabetic() => {
                 // Consume identifier
                 let ident_start = self.pos;
@@ -230,8 +268,10 @@ impl<'a> Lexer<'a> {
                     "array" => Token::Array,
                     "block" => Token::Block,
                     "IO" => Token::Io,
+                    "Dict" => Token::Dict,
                     "Lens" => Token::Lens,
                     "Traversal" => Token::Traversal,
+                    "NonEmpty" => Token::NonEmpty,
                     other => Token::Ident(other.to_string()),
                 };
                 Ok((tok, start))
@@ -244,12 +284,34 @@ impl<'a> Lexer<'a> {
     }
 }
 
+// ── AliasRef ────────────────────────────────────────────────────────────────
+
+/// A reference to a type alias inside a type-annotation string.
+///
+/// The `span` is a `(start, end)` byte range within the **content** of the
+/// type-string (i.e. after stripping the surrounding `"…"`).  Only
+/// capitalised identifiers are recorded; lowercase identifiers are
+/// type-variable binders and are not alias references.
+///
+/// Used by [`parse_type_with_refs`] for LSP go-to-definition / hover /
+/// rename support (§A7.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AliasRef {
+    /// The alias name as it appears in the type string (e.g. `"Person"`).
+    pub name: String,
+    /// Byte range `(start, end)` within the type-string content.
+    pub span: (usize, usize),
+}
+
 // ── Parser ──────────────────────────────────────────────────────────────────
 
 struct Parser<'a> {
     lexer: Lexer<'a>,
     /// One-token lookahead buffer: `(token, position)`.
     peeked: Option<(Token, usize)>,
+    /// Alias references collected during parsing (only populated when the
+    /// caller uses [`parse_type_with_refs`]).
+    alias_refs: Vec<AliasRef>,
 }
 
 impl<'a> Parser<'a> {
@@ -257,6 +319,7 @@ impl<'a> Parser<'a> {
         Parser {
             lexer: Lexer::new(input),
             peeked: None,
+            alias_refs: Vec::new(),
         }
     }
 
@@ -362,8 +425,24 @@ impl<'a> Parser<'a> {
             Token::Block => Ok(Type::Record {
                 fields: BTreeMap::new(),
                 open: true,
-                row: None,
+                rows: vec![],
             }),
+            Token::Dict => {
+                // `Dict` `(` type `)`
+                self.expect(&Token::LParen)?;
+                let inner = self.parse_union()?;
+                self.expect(&Token::RParen)?;
+                Ok(Type::Dict(Box::new(inner)))
+            }
+            Token::NonEmpty => {
+                // `NonEmpty` `(` `[` type `]` `)`
+                self.expect(&Token::LParen)?;
+                self.expect(&Token::LBracket)?;
+                let inner = self.parse_union()?;
+                self.expect(&Token::RBracket)?;
+                self.expect(&Token::RParen)?;
+                Ok(Type::NonEmpty(Box::new(inner)))
+            }
             Token::Ident(name) => {
                 // Type variable (lowercase) or type alias reference (uppercase).
                 //
@@ -373,6 +452,14 @@ impl<'a> Parser<'a> {
                 // its alias map.  The checker erases any unresolved `Var`s to
                 // `any` via `erase_type_vars`.
                 if name.starts_with(|c: char| c.is_ascii_alphabetic()) {
+                    // Record capitalised idents as alias references.  Identifier
+                    // bytes are all ASCII so `name.len()` == byte length.
+                    if name.starts_with(|c: char| c.is_ascii_uppercase()) {
+                        self.alias_refs.push(AliasRef {
+                            span: (tok_pos, tok_pos + name.len()),
+                            name: name.clone(),
+                        });
+                    }
                     Ok(Type::Var(TypeVarId(name)))
                 } else {
                     Err(ParseError::new(
@@ -414,6 +501,10 @@ impl<'a> Parser<'a> {
                 self.expect(&Token::RParen)?;
                 Ok(Type::Traversal(Box::new(a), Box::new(b)))
             }
+            Token::StringLit(s) => {
+                // Literal string type: `"some value"` in type position.
+                Ok(Type::LiteralString(s))
+            }
             Token::Colon => {
                 // Literal symbol type: `:ident`
                 //
@@ -438,6 +529,7 @@ impl<'a> Parser<'a> {
                     Token::Array => "array".to_string(),
                     Token::Block => "block".to_string(),
                     Token::Io => "IO".to_string(),
+                    Token::Dict => "Dict".to_string(),
                     Token::Lens => "Lens".to_string(),
                     Token::Traversal => "Traversal".to_string(),
                     _ => {
@@ -546,8 +638,8 @@ impl<'a> Parser<'a> {
         use super::types::TypeVarId;
 
         // After consuming `..`, optionally consume a following ident as the
-        // row variable name.  Returns `(open=true, row)`.
-        let parse_open_tail = |parser: &mut Parser<'_>| -> Result<Option<TypeVarId>, ParseError> {
+        // row variable name.  Returns a named TypeVarId or None for anonymous open.
+        let parse_row_var = |parser: &mut Parser<'_>| -> Result<Option<TypeVarId>, ParseError> {
             match parser.peek()? {
                 Token::Ident(_) => {
                     let (tok, _) = parser.advance()?;
@@ -562,14 +654,61 @@ impl<'a> Parser<'a> {
         };
 
         // Empty open record — `{..}` or `{..r}`.
+        //
+        // Semantics:
+        //   `{..}`    — anonymously open: `open: true, rows: []`
+        //   `{..r}`   — named row var:   `open: false, rows: [r]`
+        //   `{..r, ..s}` — two row vars: `open: false, rows: [r, s]`
+        //   `{..r, ..}` — row var + anon open: `open: true, rows: [r]`
         if self.peek()? == &Token::DotDot {
             self.advance()?;
-            let row = parse_open_tail(self)?;
+            let mut anon_open = false;
+            let mut more_rows: Vec<TypeVarId> = Vec::new();
+            let row_var = parse_row_var(self)?;
+            match row_var {
+                Some(rv) => more_rows.push(rv),
+                None => anon_open = true,
+            }
+            if !anon_open {
+                // Possibly more `,..<row>` or `,..<anon>` entries
+                loop {
+                    match self.peek()? {
+                        Token::Comma => {
+                            self.advance()?;
+                            if self.peek()? == &Token::DotDot {
+                                self.advance()?;
+                                let rv = parse_row_var(self)?;
+                                match rv {
+                                    Some(r) => more_rows.push(r),
+                                    None => {
+                                        anon_open = true;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                let p = self.pos();
+                                return Err(ParseError::new(
+                                    p,
+                                    "expected '..' after ',' in open record tail",
+                                ));
+                            }
+                        }
+                        Token::RBrace => break,
+                        _ => {
+                            let p = self.pos();
+                            return Err(ParseError::new(
+                                p,
+                                "expected ',' or '}' after row variable",
+                            ));
+                        }
+                    }
+                }
+            }
             self.expect(&Token::RBrace)?;
             return Ok(Type::Record {
                 fields: BTreeMap::new(),
-                open: true,
-                row,
+                open: anon_open,
+                rows: more_rows,
             });
         }
 
@@ -579,13 +718,13 @@ impl<'a> Parser<'a> {
             return Ok(Type::Record {
                 fields: BTreeMap::new(),
                 open: false,
-                row: None,
+                rows: vec![],
             });
         }
 
         let mut fields = BTreeMap::new();
         let mut open = false;
-        let mut row: Option<TypeVarId> = None;
+        let mut rows: Vec<TypeVarId> = vec![];
 
         loop {
             // Check for `..` (open marker) or a field name
@@ -593,9 +732,49 @@ impl<'a> Parser<'a> {
             match self.peek()? {
                 Token::DotDot => {
                     self.advance()?;
-                    row = parse_open_tail(self)?;
-                    open = true;
-                    self.expect(&Token::RBrace)?;
+                    let rv = parse_row_var(self)?;
+                    match rv {
+                        Some(r) => rows.push(r),
+                        None => {
+                            open = true;
+                        }
+                    }
+                    // Allow additional `,..<row>` tail entries
+                    if !open {
+                        loop {
+                            match self.peek()? {
+                                Token::Comma => {
+                                    self.advance()?;
+                                    if self.peek()? == &Token::DotDot {
+                                        self.advance()?;
+                                        let extra = parse_row_var(self)?;
+                                        match extra {
+                                            Some(r) => rows.push(r),
+                                            None => {
+                                                open = true;
+                                                break;
+                                            }
+                                        }
+                                    } else {
+                                        let p = self.pos();
+                                        return Err(ParseError::new(
+                                            p,
+                                            "expected '..' after ',' in open record tail",
+                                        ));
+                                    }
+                                }
+                                Token::RBrace => break,
+                                _ => {
+                                    let p = self.pos();
+                                    return Err(ParseError::new(
+                                        p,
+                                        "expected ',' or '}' after row variable",
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    self.advance()?; // consume '}'
                     break;
                 }
                 Token::RBrace => {
@@ -643,7 +822,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(Type::Record { fields, open, row })
+        Ok(Type::Record { fields, open, rows })
     }
 }
 
@@ -669,6 +848,33 @@ impl<'a> Parser<'a> {
 pub fn parse_type(input: &str) -> Result<Type, ParseError> {
     let mut parser = Parser::new(input);
     parser.parse_type_toplevel()
+}
+
+/// Parse a type-annotation string and return all alias references found.
+///
+/// This is the tooling-oriented entry point (§A7.1).  It is identical to
+/// [`parse_type`] in every respect except that it also returns a
+/// `Vec<AliasRef>` recording the byte spans of every **capitalised**
+/// identifier encountered — these are type-alias references that can be
+/// resolved by the LSP for go-to-definition, hover, and rename.
+///
+/// Lowercase identifiers (universally-quantified type variables) are **not**
+/// recorded.  A malformed type string still returns an `Err` as before.
+///
+/// # Example
+/// ```
+/// # use eucalypt::core::typecheck::parse::parse_type_with_refs;
+/// let (ty, refs) = parse_type_with_refs("Person -> Json").unwrap();
+/// assert_eq!(refs.len(), 2);
+/// assert_eq!(refs[0].name, "Person");
+/// assert_eq!(refs[0].span, (0, 6));
+/// assert_eq!(refs[1].name, "Json");
+/// assert_eq!(refs[1].span, (10, 14));
+/// ```
+pub fn parse_type_with_refs(input: &str) -> Result<(Type, Vec<AliasRef>), ParseError> {
+    let mut parser = Parser::new(input);
+    let ty = parser.parse_type_toplevel()?;
+    Ok((ty, parser.alias_refs))
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -705,7 +911,7 @@ mod tests {
             Type::Record {
                 fields: BTreeMap::new(),
                 open: true,
-                row: None,
+                rows: vec![],
             }
         );
         assert_eq!(
@@ -901,7 +1107,7 @@ mod tests {
             Type::Record {
                 fields,
                 open: false,
-                row: None,
+                rows: vec![],
             }
         );
     }
@@ -915,7 +1121,7 @@ mod tests {
             Type::Record {
                 fields,
                 open: true,
-                row: None
+                rows: vec![]
             }
         );
     }
@@ -927,7 +1133,7 @@ mod tests {
             Type::Record {
                 fields: BTreeMap::new(),
                 open: true,
-                row: None,
+                rows: vec![],
             }
         );
     }
@@ -939,7 +1145,7 @@ mod tests {
             Type::Record {
                 fields: BTreeMap::new(),
                 open: false,
-                row: None,
+                rows: vec![],
             }
         );
     }
@@ -955,7 +1161,7 @@ mod tests {
             Type::Record {
                 fields,
                 open: false,
-                row: None,
+                rows: vec![],
             }
         );
     }
@@ -988,7 +1194,7 @@ mod tests {
                     m
                 },
                 open: false,
-                row: None,
+                rows: vec![],
             }))
         );
     }
@@ -1001,7 +1207,7 @@ mod tests {
                 Box::new(Type::Record {
                     fields: BTreeMap::new(),
                     open: true,
-                    row: None,
+                    rows: vec![],
                 }),
                 Box::new(Type::Any)
             )
@@ -1182,14 +1388,15 @@ mod tests {
     #[test]
     fn parse_record_named_row_with_field() {
         // {x: number, ..r} — named row variable after a field
+        // open: false because openness is captured in the named row var, not anonymous
         let mut fields = BTreeMap::new();
         fields.insert("x".to_string(), Type::Number);
         assert_eq!(
             parse_type("{x: number, ..r}").unwrap(),
             Type::Record {
                 fields,
-                open: true,
-                row: Some(TypeVarId("r".to_string())),
+                open: false,
+                rows: vec![TypeVarId("r".to_string())],
             }
         );
     }
@@ -1197,12 +1404,13 @@ mod tests {
     #[test]
     fn parse_record_only_row_var() {
         // {..r} — just a named row variable, no explicit fields
+        // open: false — the row var captures all extras
         assert_eq!(
             parse_type("{..r}").unwrap(),
             Type::Record {
                 fields: BTreeMap::new(),
-                open: true,
-                row: Some(TypeVarId("r".to_string())),
+                open: false,
+                rows: vec![TypeVarId("r".to_string())],
             }
         );
     }
@@ -1217,8 +1425,37 @@ mod tests {
             parse_type("{name: string, age: number, ..rest}").unwrap(),
             Type::Record {
                 fields,
-                open: true,
-                row: Some(TypeVarId("rest".to_string())),
+                open: false,
+                rows: vec![TypeVarId("rest".to_string())],
+            }
+        );
+    }
+
+    #[test]
+    fn parse_record_two_row_vars() {
+        // {..r, ..s} — two named row variables (row concatenation)
+        // open: false — both row vars together capture all extras
+        assert_eq!(
+            parse_type("{..r, ..s}").unwrap(),
+            Type::Record {
+                fields: BTreeMap::new(),
+                open: false,
+                rows: vec![TypeVarId("r".to_string()), TypeVarId("s".to_string())],
+            }
+        );
+    }
+
+    #[test]
+    fn parse_record_field_then_two_row_vars() {
+        // {x: number, ..r, ..s}
+        let mut fields = BTreeMap::new();
+        fields.insert("x".to_string(), Type::Number);
+        assert_eq!(
+            parse_type("{x: number, ..r, ..s}").unwrap(),
+            Type::Record {
+                fields,
+                open: false,
+                rows: vec![TypeVarId("r".to_string()), TypeVarId("s".to_string())],
             }
         );
     }
@@ -1228,6 +1465,30 @@ mod tests {
         roundtrip("{x: number, ..r}");
         roundtrip("{..r}");
         roundtrip("{name: string, age: number, ..rest}");
+        roundtrip("{..r, ..s}");
+    }
+
+    #[test]
+    fn parse_dict_type() {
+        assert_eq!(
+            parse_type("Dict(number)").unwrap(),
+            Type::Dict(Box::new(Type::Number))
+        );
+    }
+
+    #[test]
+    fn parse_dict_with_var() {
+        assert_eq!(
+            parse_type("Dict(a)").unwrap(),
+            Type::Dict(Box::new(Type::Var(TypeVarId("a".to_string()))))
+        );
+    }
+
+    #[test]
+    fn parse_dict_in_function() {
+        // symbol -> Dict(a) -> a
+        let ty = parse_type("symbol -> Dict(a) -> a").unwrap();
+        assert!(matches!(ty, Type::Function(_, _)));
     }
 
     // ── Spec examples ───────────────────────────────────────────────────────

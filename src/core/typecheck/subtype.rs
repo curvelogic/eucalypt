@@ -25,19 +25,55 @@
 //! with every type in both directions.  For non-`any` types the relation
 //! falls through to subtyping.
 
-use super::types::Type;
+use super::types::{unfold_mu, Type};
 
 /// Return `true` if type `s` is a subtype of type `t` (`s <: t`).
 ///
 /// Type variables are treated as `any` (consistent with everything) because
 /// at the point of subtyping they have not been instantiated.
+///
+/// Mu types (equirecursive types) are handled coinductively: `Mu(x, A) <: T`
+/// is checked by unfolding one step and recurse with an assumed-pairs set to
+/// prevent infinite regress.
 pub fn is_subtype(s: &Type, t: &Type) -> bool {
-    // Reflexivity
+    is_subtype_co(s, t, &mut Vec::new())
+}
+
+/// Coinductive subtyping with an assumed-pairs set to handle equirecursive types.
+///
+/// If `(s, t)` is already in `assumed`, we return `true` immediately (coinductive
+/// assumption — we are in the process of proving it and assume it holds).
+fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
+    // Reflexivity — also handles the Mu(x, A) == Mu(x, A) case.
     if s == t {
         return true;
     }
 
+    // Coinductive base: if this pair is already assumed, return true.
+    if assumed.iter().any(|(as_, at)| as_ == s && at == t) {
+        return true;
+    }
+
     match (s, t) {
+        // ── Mu (equirecursive) ────────────────────────────────────────────────
+        // Unfold one step and check recursively under the coinductive assumption.
+        (Type::Mu(x, body), _) => {
+            let mu = s.clone();
+            assumed.push((s.clone(), t.clone()));
+            let unfolded = unfold_mu(x, body, &mu);
+            let result = is_subtype_co(&unfolded, t, assumed);
+            assumed.pop();
+            result
+        }
+        (_, Type::Mu(x, body)) => {
+            let mu = t.clone();
+            assumed.push((s.clone(), t.clone()));
+            let unfolded = unfold_mu(x, body, &mu);
+            let result = is_subtype_co(s, &unfolded, assumed);
+            assumed.pop();
+            result
+        }
+
         // ── Top and Never ─────────────────────────────────────────────────────
         // `never` is the bottom type — subtype of everything.
         (Type::Never, _) => true,
@@ -59,10 +95,13 @@ pub fn is_subtype(s: &Type, t: &Type) -> bool {
         // Uninstantiated type variables are treated as `any`.
         (Type::Var(_), _) | (_, Type::Var(_)) => true,
 
-        // ── Literal symbol types ─────────────────────────────────────────────
+        // ── Literal types ────────────────────────────────────────────────────
         // `LiteralSymbol(s) <: LiteralSymbol(t)` iff `s == t` (handled by
         // reflexivity above).  `LiteralSymbol(_) <: Symbol` always.
         (Type::LiteralSymbol(_), Type::Symbol) => true,
+        // `LiteralString(s) <: LiteralString(t)` iff `s == t` (reflexivity).
+        // `LiteralString(_) <: String` always.
+        (Type::LiteralString(_), Type::String) => true,
 
         // ── Primitives — flat, no cross-primitive subtyping ───────────────────
         (Type::Number, Type::Number) => true,
@@ -79,17 +118,33 @@ pub fn is_subtype(s: &Type, t: &Type) -> bool {
         // No cross-kind subtyping between set/vec/array/list.
 
         // ── List — covariant ──────────────────────────────────────────────────
-        (Type::List(a), Type::List(b)) => is_subtype(a, b),
+        (Type::List(a), Type::List(b)) => is_subtype_co(a, b, assumed),
+
+        // ── NonEmpty — refines List ────────────────────────────────────────────
+        // `NonEmpty(a) <: NonEmpty(b)` when `a <: b`.
+        (Type::NonEmpty(a), Type::NonEmpty(b)) => is_subtype_co(a, b, assumed),
+        // `NonEmpty(a) <: [a]` — a non-empty list is a list.
+        (Type::NonEmpty(a), Type::List(b)) => is_subtype_co(a, b, assumed),
+        // `[a]` is NOT a subtype of `NonEmpty(a)` — the list could be empty.
 
         // ── Tuple ─────────────────────────────────────────────────────────────
         // Tuples widen to lists: `(A, B) <: [A | B]`
         (Type::Tuple(elems), Type::List(elem_ty)) => {
             // The tuple is a subtype of `[U]` when every element type is <: U.
-            elems.iter().all(|e| is_subtype(e, elem_ty))
+            elems.iter().all(|e| is_subtype_co(e, elem_ty, assumed))
+        }
+        // A non-empty tuple is a subtype of NonEmpty([U]) when every element
+        // type is <: U.  An empty tuple is NOT a subtype of NonEmpty.
+        (Type::Tuple(elems), Type::NonEmpty(elem_ty)) => {
+            !elems.is_empty() && elems.iter().all(|e| is_subtype_co(e, elem_ty, assumed))
         }
         // Tuples are covariant in each component position.
         (Type::Tuple(as_), Type::Tuple(bs)) => {
-            as_.len() == bs.len() && as_.iter().zip(bs.iter()).all(|(a, b)| is_subtype(a, b))
+            as_.len() == bs.len()
+                && as_
+                    .iter()
+                    .zip(bs.iter())
+                    .all(|(a, b)| is_subtype_co(a, b, assumed))
         }
 
         // ── Record — width + depth subtyping ──────────────────────────────────
@@ -100,23 +155,30 @@ pub fn is_subtype(s: &Type, t: &Type) -> bool {
         // For closed `T`: `S` must have exactly the same set of fields
         // (no extras allowed unless `S` is open).
         // For open `T`: `S` may have additional fields.
+        //
+        // Row variables (`rows`) are treated as anonymous open tails for
+        // subtyping: `{x: A, ..r}` behaves as `{x: A, ..}`.  The row
+        // variable's identity matters only during *unification*.
         (
             Type::Record {
                 fields: s_fields,
                 open: s_open,
-                ..
+                rows: s_rows,
             },
             Type::Record {
                 fields: t_fields,
                 open: t_open,
-                ..
+                rows: _,
             },
         ) => {
+            // A record is open when the `open` flag is set OR it has row vars.
+            let s_is_open = *s_open || !s_rows.is_empty();
+
             // Every field required by T must be present in S with a subtype.
             let fields_ok = t_fields
                 .iter()
                 .all(|(name, t_ty)| match s_fields.get(name) {
-                    Some(s_ty) => is_subtype(s_ty, t_ty),
+                    Some(s_ty) => is_subtype_co(s_ty, t_ty, assumed),
                     None => false,
                 });
 
@@ -128,39 +190,78 @@ pub fn is_subtype(s: &Type, t: &Type) -> bool {
             // fields at runtime that violate T's closed contract.
             // Width subtyping allows S to declare more fields than T (a record
             // with extra fields is more specific, hence a subtype).
-            if !t_open && *s_open {
+            if !t_open && s_is_open {
                 return false;
             }
 
             true
         }
 
+        // ── Dict — covariant homogeneous block type ────────────────────────────
+        //
+        // `Dict(A) <: Dict(B)` iff `A <: B` (covariant in value type).
+        (Type::Dict(a), Type::Dict(b)) => is_subtype_co(a, b, assumed),
+
+        // A *closed* record `{k1: V1, k2: V2}` is a subtype of `Dict(B)` when
+        // every field value is `<: B`.  Open records and row-variable records
+        // are excluded — their unknown tail could contain values of any type.
+        (
+            Type::Record {
+                fields: s_fields,
+                open: false,
+                rows,
+            },
+            Type::Dict(b),
+        ) if rows.is_empty() => s_fields.values().all(|v| is_subtype_co(v, b, assumed)),
+
+        // `Dict(T) <: {..}` — a dictionary is a block (empty, anonymous-open
+        // record).  Satisfies the `{..}` annotation used for generic block
+        // parameters.
+        (
+            Type::Dict(_),
+            Type::Record {
+                fields, open: true, ..
+            },
+        ) if fields.is_empty() => true,
+
         // ── Function — contravariant input, covariant output ──────────────────
         // `(A -> B) <: (C -> D)` iff `C <: A` and `B <: D`
-        (Type::Function(a, b), Type::Function(c, d)) => is_subtype(c, a) && is_subtype(b, d),
+        (Type::Function(a, b), Type::Function(c, d)) => {
+            is_subtype_co(c, a, assumed) && is_subtype_co(b, d, assumed)
+        }
 
         // ── IO — covariant ────────────────────────────────────────────────────
-        (Type::IO(a), Type::IO(b)) => is_subtype(a, b),
+        (Type::IO(a), Type::IO(b)) => is_subtype_co(a, b, assumed),
 
         // ── Lens / Traversal — optics ─────────────────────────────────────────
         // `Lens(A, B) <: Traversal(A, B)` (a lens is a traversal of exactly one).
         // Both Lens and Traversal are covariant in both parameters.
-        (Type::Lens(a1, b1), Type::Lens(a2, b2)) => is_subtype(a1, a2) && is_subtype(b1, b2),
+        (Type::Lens(a1, b1), Type::Lens(a2, b2)) => {
+            is_subtype_co(a1, a2, assumed) && is_subtype_co(b1, b2, assumed)
+        }
         (Type::Traversal(a1, b1), Type::Traversal(a2, b2)) => {
-            is_subtype(a1, a2) && is_subtype(b1, b2)
+            is_subtype_co(a1, a2, assumed) && is_subtype_co(b1, b2, assumed)
         }
         // Lens is a subtype of Traversal when parameters are compatible.
-        (Type::Lens(a1, b1), Type::Traversal(a2, b2)) => is_subtype(a1, a2) && is_subtype(b1, b2),
+        (Type::Lens(a1, b1), Type::Traversal(a2, b2)) => {
+            is_subtype_co(a1, a2, assumed) && is_subtype_co(b1, b2, assumed)
+        }
 
         // ── Union ─────────────────────────────────────────────────────────────
         // `A | B <: C` — a union is a subtype of C when every variant is.
         // This arm must come before the T-is-union arm so that when both S and
         // T are unions we recurse correctly (each variant of S must be a
         // subtype of T, which in turn checks membership in T's variants).
-        (Type::Union(variants), t) => variants.iter().all(|v| is_subtype(v, t)),
+        (Type::Union(variants), t) => {
+            let variants = variants.clone();
+            variants.iter().all(|v| is_subtype_co(v, t, assumed))
+        }
         // `A <: A | B` — any (non-union) type is a subtype of a union that
         // contains a supertype of it.
-        (s, Type::Union(variants)) => variants.iter().any(|v| is_subtype(s, v)),
+        (s, Type::Union(variants)) => {
+            let variants = variants.clone();
+            variants.iter().any(|v| is_subtype_co(s, v, assumed))
+        }
 
         // ── Everything else ───────────────────────────────────────────────────
         _ => false,
@@ -182,9 +283,12 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
         return true;
     }
 
-    // Literal symbol consistency: `LiteralSymbol(s) ~ Symbol` and vice versa.
+    // Literal type consistency: `LiteralSymbol ~ Symbol`, `LiteralString ~ String`.
     match (s, t) {
-        (Type::LiteralSymbol(_), Type::Symbol) | (Type::Symbol, Type::LiteralSymbol(_)) => {
+        (Type::LiteralSymbol(_), Type::Symbol)
+        | (Type::Symbol, Type::LiteralSymbol(_))
+        | (Type::LiteralString(_), Type::String)
+        | (Type::String, Type::LiteralString(_)) => {
             return true;
         }
         _ => {}
@@ -193,9 +297,32 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
     // Structural consistency: recurse into composite types so that, e.g.,
     // `[any] ~ [number]` holds.
     match (s, t) {
+        // ── Mu (equirecursive) ────────────────────────────────────────────────
+        // Unfold one step and check consistency of the unfolded type.
+        // No coinductive guard needed here — any `any` in the body terminates
+        // via the early return above, and well-formed Mu types always unfold to
+        // a finite normal form after finitely many steps.
+        (Type::Mu(x, body), _) => {
+            let mu = s.clone();
+            let unfolded = unfold_mu(x, body, &mu);
+            is_consistent(&unfolded, t)
+        }
+        (_, Type::Mu(x, body)) => {
+            let mu = t.clone();
+            let unfolded = unfold_mu(x, body, &mu);
+            is_consistent(s, &unfolded)
+        }
         (Type::List(a), Type::List(b)) => is_consistent(a, b),
+        (Type::NonEmpty(a), Type::NonEmpty(b)) => is_consistent(a, b),
+        (Type::NonEmpty(a), Type::List(b)) | (Type::List(a), Type::NonEmpty(b)) => {
+            is_consistent(a, b)
+        }
         (Type::Tuple(as_), Type::Tuple(bs)) if as_.len() == bs.len() => {
             as_.iter().zip(bs.iter()).all(|(a, b)| is_consistent(a, b))
+        }
+        // A non-empty Tuple is consistent with NonEmpty (and vice versa).
+        (Type::Tuple(elems), Type::NonEmpty(b)) | (Type::NonEmpty(b), Type::Tuple(elems)) => {
+            !elems.is_empty() && elems.iter().all(|e| is_consistent(e, b))
         }
         (Type::IO(a), Type::IO(b)) => is_consistent(a, b),
         (Type::Lens(a1, b1), Type::Lens(a2, b2)) => is_consistent(a1, a2) && is_consistent(b1, b2),
@@ -213,31 +340,45 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
             Type::Record {
                 fields: s_fields,
                 open: s_open,
-                ..
+                rows: s_rows,
             },
             Type::Record {
                 fields: t_fields,
                 open: t_open,
-                ..
+                rows: _,
             },
         ) => {
+            let s_is_open = *s_open || !s_rows.is_empty();
             // For shared field names, field types must be consistent.
             // Extra fields in an open record are fine.
             let shared_ok = t_fields.iter().all(|(name, t_ty)| {
                 match s_fields.get(name) {
                     Some(s_ty) => is_consistent(s_ty, t_ty),
                     // Missing field in closed S is inconsistent.
-                    None => *s_open,
+                    None => s_is_open,
                 }
             });
             if !shared_ok {
                 return false;
             }
             // Extra fields in S are OK only if T is open or S has no extras.
-            if !t_open && s_fields.len() > t_fields.len() && !s_open {
+            if !t_open && s_fields.len() > t_fields.len() && !s_is_open {
                 return false;
             }
             true
+        }
+        // Dict consistency: structural recursion.
+        (Type::Dict(a), Type::Dict(b)) => is_consistent(a, b),
+        // A record is consistent with Dict when all known fields are consistent
+        // with the Dict's value type.  Open records and row-variable records
+        // pass the consistency check because the unknown tail is treated as a
+        // gradual boundary — we cannot rule out consistency without examining
+        // runtime values.
+        (Type::Record { fields, .. }, Type::Dict(b)) => {
+            fields.values().all(|v| is_consistent(v, b))
+        }
+        (Type::Dict(a), Type::Record { fields, .. }) => {
+            fields.values().all(|v| is_consistent(a, v))
         }
         // For union types: consistent if any variant is consistent with t.
         (Type::Union(vs), t) => vs.iter().any(|v| is_consistent(v, t)),
@@ -283,7 +424,7 @@ mod tests {
                 .map(|(k, v)| ((*k).to_string(), v.clone()))
                 .collect(),
             open: false,
-            row: None,
+            rows: vec![],
         }
     }
 
@@ -294,7 +435,7 @@ mod tests {
                 .map(|(k, v)| ((*k).to_string(), v.clone()))
                 .collect(),
             open: true,
-            row: None,
+            rows: vec![],
         }
     }
 
@@ -817,5 +958,106 @@ mod tests {
         let l = lens(Type::Never, Type::Never);
         let tr = traversal(Type::Number, Type::String);
         assert!(is_subtype(&l, &tr));
+    }
+
+    // ── Dict subtyping ───────────────────────────────────────────────────────
+
+    fn dict(t: Type) -> Type {
+        Type::Dict(Box::new(t))
+    }
+
+    #[test]
+    fn dict_covariant() {
+        // Dict(never) <: Dict(number) <: Dict(top)
+        assert!(is_subtype(&dict(Type::Never), &dict(Type::Number)));
+        assert!(is_subtype(&dict(Type::Number), &dict(Type::Number)));
+        assert!(is_subtype(&dict(Type::Number), &dict(Type::Top)));
+        assert!(!is_subtype(&dict(Type::Number), &dict(Type::String)));
+    }
+
+    #[test]
+    fn closed_record_subtype_of_dict() {
+        // {a: number, b: number} <: Dict(number)
+        let r = closed(&[("a", Type::Number), ("b", Type::Number)]);
+        assert!(is_subtype(&r, &dict(Type::Number)));
+    }
+
+    #[test]
+    fn closed_record_not_subtype_of_wrong_dict() {
+        // {a: number, b: string} is NOT <: Dict(number) (b: string fails)
+        let r = closed(&[("a", Type::Number), ("b", Type::String)]);
+        assert!(!is_subtype(&r, &dict(Type::Number)));
+    }
+
+    #[test]
+    fn open_record_not_subtype_of_dict() {
+        // Open records have unknown tail — not a subtype of Dict
+        let r = open(&[("a", Type::Number)]);
+        assert!(!is_subtype(&r, &dict(Type::Number)));
+    }
+
+    #[test]
+    fn dict_subtype_of_empty_open_record() {
+        // Dict(T) <: {..}
+        let any_block = open(&[]);
+        assert!(is_subtype(&dict(Type::Number), &any_block));
+        assert!(is_subtype(&dict(Type::String), &any_block));
+    }
+
+    #[test]
+    fn dict_not_subtype_of_named_field_record() {
+        // Dict(T) does NOT guarantee any named field is present
+        let r = closed(&[("x", Type::Number)]);
+        assert!(!is_subtype(&dict(Type::Number), &r));
+    }
+
+    #[test]
+    fn dict_consistent_with_same_dict() {
+        assert!(is_consistent(&dict(Type::Number), &dict(Type::Number)));
+    }
+
+    #[test]
+    fn dict_consistent_with_any_dict() {
+        assert!(is_consistent(&dict(Type::Any), &dict(Type::Number)));
+        assert!(is_consistent(&dict(Type::Number), &dict(Type::Any)));
+    }
+
+    #[test]
+    fn dict_consistent_with_empty_open_record() {
+        let any_block = open(&[]);
+        assert!(is_consistent(&dict(Type::Number), &any_block));
+        assert!(is_consistent(&any_block, &dict(Type::Number)));
+    }
+
+    // ── Row variable subtyping ───────────────────────────────────────────────
+
+    fn row_rec(fields: &[(&str, Type)], row_name: &str) -> Type {
+        // open: false — the named row var captures all extras; not anonymously open
+        Type::Record {
+            fields: fields
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), v.clone()))
+                .collect(),
+            open: false,
+            rows: vec![crate::core::typecheck::types::TypeVarId(
+                row_name.to_string(),
+            )],
+        }
+    }
+
+    #[test]
+    fn row_var_record_is_open_for_subtyping() {
+        // {x: number, ..r} <: {x: number, ..}  — row var acts as open tail
+        let with_row = row_rec(&[("x", Type::Number)], "r");
+        let open_rec = open(&[("x", Type::Number)]);
+        assert!(is_subtype(&with_row, &open_rec));
+    }
+
+    #[test]
+    fn row_var_record_not_subtype_of_closed() {
+        // {x: number, ..r} is NOT <: {x: number}  — open cannot satisfy closed
+        let with_row = row_rec(&[("x", Type::Number)], "r");
+        let closed_rec = closed(&[("x", Type::Number)]);
+        assert!(!is_subtype(&with_row, &closed_rec));
     }
 }

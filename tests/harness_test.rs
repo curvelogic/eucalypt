@@ -1538,6 +1538,21 @@ pub fn test_error_140() {
 }
 
 #[test]
+pub fn test_error_141() {
+    run_error_test(&error_opts("141_calzdt_year_overflow.eu"));
+}
+
+#[test]
+pub fn test_error_142() {
+    run_error_test(&error_opts("142_render_unknown_format.eu"));
+}
+
+#[test]
+pub fn test_error_143() {
+    run_error_test(&error_opts("143_bitwise_float.eu"));
+}
+
+#[test]
 pub fn test_error_135() {
     run_error_test(&error_opts("135_head_empty_list.eu"));
 }
@@ -1610,6 +1625,11 @@ pub fn test_harness_151() {
 #[test]
 pub fn test_harness_152() {
     run_test(&opts("152_at_operator.eu"));
+}
+
+#[test]
+pub fn test_harness_153() {
+    run_test(&opts("153_cross_type_eq.eu"));
 }
 
 #[test]
@@ -1828,4 +1848,165 @@ pub fn test_typecheck_023_for_map_no_warning() {
 #[test]
 pub fn test_typecheck_024_for_bind_no_warning() {
     run_typecheck_test("024_for_bind_no_warning.eu");
+}
+
+// ── Row polymorphism prelude annotations ────────────────────────────────────
+
+#[test]
+pub fn test_typecheck_025_merge_row_poly_no_warning() {
+    run_typecheck_test("025_merge_row_poly_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_029_merge_all_row_poly_no_warning() {
+    run_typecheck_test("029_merge_all_row_poly_no_warning.eu");
+}
+
+// ── Dict type prelude annotations ──────────────────────────────────────────
+
+#[test]
+pub fn test_typecheck_026_map_values_dict_no_warning() {
+    run_typecheck_test("026_map_values_dict_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_027_values_keys_dict_no_warning() {
+    run_typecheck_test("027_values_keys_dict_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_028_group_by_dict_no_warning() {
+    run_typecheck_test("028_group_by_dict_no_warning.eu");
+}
+
+// ── Recursive types (equirecursive Mu) ─────────────────────────────────────
+
+#[test]
+pub fn test_typecheck_030_recursive_alias_no_hang() {
+    run_typecheck_test("030_recursive_alias_no_hang.eu");
+}
+
+#[test]
+pub fn test_typecheck_031_json_function_no_warning() {
+    run_typecheck_test("031_json_function_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_032_nonrecursive_alias_flat() {
+    run_typecheck_test("032_nonrecursive_alias_flat.eu");
+}
+
+#[test]
+pub fn test_typecheck_033_json_dict_no_warning() {
+    run_typecheck_test("033_json_dict_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_034_literal_string_synthesis() {
+    run_typecheck_test("034_literal_string_synthesis.eu");
+}
+
+#[test]
+pub fn test_typecheck_035_literal_string_dsl() {
+    run_typecheck_test("035_literal_string_dsl.eu");
+}
+
+#[test]
+pub fn test_typecheck_036_literal_string_mismatch() {
+    run_typecheck_test("036_literal_string_mismatch.eu");
+}
+
+#[test]
+pub fn test_typecheck_037_union_absorbs_literal_string() {
+    run_typecheck_test("037_union_absorbs_literal_string.eu");
+}
+
+#[test]
+pub fn test_typecheck_038_literal_string_annotation_widens() {
+    run_typecheck_test("038_literal_string_annotation_widens.eu");
+}
+
+#[test]
+pub fn test_typecheck_039_narrowing_true_branch_no_warn() {
+    run_typecheck_test("039_narrowing_true_branch_no_warn.eu");
+}
+
+#[test]
+pub fn test_typecheck_040_narrowing_subtraction_no_warn() {
+    run_typecheck_test("040_narrowing_subtraction_no_warn.eu");
+}
+
+#[test]
+pub fn test_typecheck_041_narrowing_cond_no_warn() {
+    run_typecheck_test("041_narrowing_cond_no_warn.eu");
+}
+
+#[test]
+pub fn test_typecheck_042_narrowing_rebind_no_false_positive() {
+    run_typecheck_test("042_narrowing_rebind_no_false_positive.eu");
+}
+
+#[test]
+pub fn test_typecheck_043_narrowing_nil_check() {
+    run_typecheck_test("043_narrowing_nil_check.eu");
+}
+
+#[test]
+pub fn test_typecheck_044_clause_operator() {
+    run_typecheck_test("044_clause_operator.eu");
+}
+
+#[test]
+pub fn test_typecheck_045_narrowing_union_subtraction() {
+    run_typecheck_test("045_narrowing_union_subtraction.eu");
+}
+
+#[test]
+pub fn test_typecheck_046_narrowing_then_no_warn() {
+    run_typecheck_test("046_narrowing_then_no_warn.eu");
+}
+
+#[test]
+pub fn test_typecheck_047_narrowing_user_brancher() {
+    run_typecheck_test("047_narrowing_user_brancher.eu");
+}
+
+#[test]
+pub fn test_typecheck_048_nonempty_list_literal_tuple() {
+    run_typecheck_test("048_nonempty_list_literal_tuple.eu");
+}
+
+#[test]
+pub fn test_typecheck_049_nonempty_nil_narrowing() {
+    run_typecheck_test("049_nonempty_nil_narrowing.eu");
+}
+
+#[test]
+pub fn test_typecheck_050_nonempty_head_tuple_precise() {
+    run_typecheck_test("050_nonempty_head_tuple_precise.eu");
+}
+
+#[test]
+pub fn test_typecheck_051_nonempty_empty_head_warns() {
+    run_typecheck_test("051_nonempty_empty_head_warns.eu");
+}
+
+#[test]
+pub fn test_typecheck_052_for_elem_type_correct_use() {
+    run_typecheck_test("052_for_elem_type_correct_use.eu");
+}
+
+#[test]
+pub fn test_typecheck_053_for_string_elem_correct() {
+    run_typecheck_test("053_for_string_elem_correct.eu");
+}
+
+#[test]
+pub fn test_typecheck_054_io_elem_type_correct() {
+    run_typecheck_test("054_io_elem_type_correct.eu");
+}
+
+#[test]
+pub fn test_typecheck_055_user_monad_elem_type() {
+    run_typecheck_test("055_user_monad_elem_type.eu");
 }

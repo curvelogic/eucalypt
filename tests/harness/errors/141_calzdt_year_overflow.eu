@@ -1,0 +1,3 @@
+# cal.zdt with a year too large for a 32-bit integer should return a proper
+# BadDateTimeComponents error, not a panic.
+result: cal.zdt(3000000000, 1, 1, 0, 0, 0, "UTC")

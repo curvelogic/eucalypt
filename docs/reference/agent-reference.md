@@ -145,17 +145,43 @@ origin: { x: 0, y: 0 }
 | `number`, `string`, `symbol`, `bool`, `null`, `datetime` | primitives |
 | `any`              | gradual/unknown — no type errors       |
 | `[T]`              | list of T                              |
+| `NonEmpty([T])`    | non-empty list of T                    |
 | `(A, B)`           | tuple                                  |
-| `{k: T, ..}`       | open record (at least k: T)            |
-| `{k: T, ..r}`      | named row variable (extra fields in r) |
-| `{k: T}`           | closed record                          |
-| `block`            | any block                              |
+| `{{k: T, ..}}`     | open record (at least k: T)            |
+| `{{k: T, ..r}}`    | named row variable (extra fields in r) |
+| `{{..r, ..s}}`     | row concatenation (union of r and s)   |
+| `{{k: T}}`         | closed record                          |
+| `block`            | any block (no known shape)             |
+| `Dict(T)`          | homogeneous block — all values type T  |
+| `"value"`          | literal string — subtype of `string`; in annotation string: `\"value\"` |
+| `:name`            | literal symbol — subtype of `symbol`   |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
 | `a`, `b`           | type variable                          |
 | `IO(T)`            | IO action producing T                  |
 | `Lens(a, b)`       | lens                                   |
 | `Traversal(a, b)`  | traversal                              |
+
+**Important**: record braces (`{`) in type strings trigger eucalypt
+string interpolation. Always escape with `{{` and `}}`:
+`"{{name: string, ..}} -> string"` not `"{name: string, ..} -> string"`.
+Types without braces (`"number -> number"`, `"IO(T)"`) need no escaping.
+Literal string types (`"value"`) need `\"` escaping inside annotation strings.
+
+**Flow-sensitive narrowing**: when a type-predicate test (`number?`,
+`string?`, `bool?`, `null?`, `list?`, `block?`, `symbol?`) on an
+annotated variable is used as the condition of `if`, `and`, `or`,
+`cond`, or a structural wrapper (e.g. `then(t,f,c): if(c,t,f)`), the
+checker narrows the variable's type in each branch.  Non-structural
+wrappers (e.g. `my-if(c,t,_f): t`) are not recognised as branchers
+and do not trigger narrowing.
+
+**LSP alias navigation**: alias names written inside `type:` strings
+support go-to-definition, hover (shows the alias name and resolved type), and
+rename.  This works for plain, unescaped type strings only — escaped or
+interpolated strings (`"{{...}}"`) degrade gracefully with no crash.  Rename
+updates plain-string references; any interpolated references that still mention
+the old name will produce an "unknown alias" type warning after the rename.
 
 See [Type Checking](../guide/type-checking.md) for the full guide.
 
@@ -387,17 +413,25 @@ foldr(++, [], [[1,2],[3,4]])  # [1, 2, 3, 4]
 [10, 20, 30] head            # 10
 ```
 
+The type checker warns if `xs` could be empty (`List(T)` or `List(Never)`).
+Use `nil?` narrowing or annotate as `NonEmpty([T])` to suppress.  On a
+`Tuple([A, B, ...])` literal, `head` synthesises the precise type `A`.
+
 #### `tail(xs)` — all but first (panics if empty)
 
 ```
 [10, 20, 30] tail            # [20, 30]
 ```
 
+On a `Tuple([A, B, C])`, `tail` synthesises `Tuple([B, C])`.
+
 #### `cons(h, t)` — prepend element to list
 
 ```
 cons(0, [1, 2, 3])           # [0, 1, 2, 3]
 ```
+
+`cons` and `‖` return `NonEmpty([a])` — the result is guaranteed non-empty.
 
 #### `reverse(l)` — reverse a list
 
@@ -556,6 +590,17 @@ Patterns: bare `foo` = `**.foo`; `*` = one level; `**` = any depth.
 See also: `identity(v)`, `const(k, _)`, `compose(f, g, x)`,
 `flip(f, x, y)`, `complement(p?)`, `curry(f, x, y)`,
 `uncurry(f, l)`, `cond(l, d)`.
+
+`cond` takes a list of clauses built with `=>` / `⇒` (precedence 15)
+and a default value.  Each clause is `condition => result`; the first
+true clause wins:
+
+```eu,notest
+classify(n): cond[n < 0 => "negative", n > 100 => "huge", "normal"]
+```
+
+Flow-sensitive narrowing applies inside each `cond` clause when the
+condition is a type-predicate test on an annotated variable.
 
 ### 3.5 Type Predicates
 
@@ -894,18 +939,22 @@ generalised lookup.
 
 The following are commonly assumed but are **not** in the prelude:
 
-- `str.replace` — does not exist
 - `str.trim` — does not exist
-- `str.starts-with?` — does not exist
-- `str.ends-with?` — does not exist
-- `str.contains?` — does not exist
 - `flatten` — use `concat` (flattens one level)
 - `unique` — does not exist in prelude
-- `abs` — does not exist (use `if(x < 0, negate(x), x)`)
 - `even?` / `odd?` — do not exist (use `x % 2 = 0`)
 - `round` / `ceil` — use `floor` and `ceiling` (or bracket notation `⌊n⌋` and `⌈n⌉`)
 - `select` / `dissoc` — do not exist (use `filter-items` with
   `by-key`)
+
+These **do exist** and are commonly available:
+
+- `str.replace(pattern, replacement, s)` — replaces all regex matches
+- `str.contains?(pattern, s)` — true if `s` contains a match for regex `pattern`
+- `str.starts-with?(re, s)` — true if `s` starts with regex match
+- `str.ends-with?(re, s)` — true if `s` ends with regex match
+- `abs(n)` — absolute value
+- `str.to-upper(s)` / `str.to-lower(s)` — case conversion (not `str.upper` / `str.lower`)
 
 ### 5.12 str.split-on Uses Regex, Not Literal Strings
 

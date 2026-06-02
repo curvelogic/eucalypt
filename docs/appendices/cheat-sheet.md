@@ -237,9 +237,12 @@ From highest to lowest binding:
 |------|------|-------|-----------|-------------|
 | 95 | -- | prefix | `↑` | Tight prefix (head) |
 | 90 | lookup | left | `.` | Field access / lookup |
+| 90 | lookup | left | `~` | Safe key lookup (null-propagating) |
 | 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
 | 88 | bool-unary | postfix | `✓` | Not-null check (true if not null) |
-| 85 | exp | right | `^`, `∘`, `;` | Power, composition |
+| 88 | -- | right/left | `∘`, `;` | Composition (right-to-left, left-to-right) |
+| 85 | exp | right | `^` | Power |
+| 85 | exp | right | `!!` | Indexing (`xs !! 0`, arrays use list: `a !! [r,c]`) |
 | 80 | prod | left | `*`, `/`, `÷`, `%` | Multiplication, floor division, precise division, floor modulo |
 | 75 | sum | left | `+`, `-` | Addition, subtraction |
 | 55 | -- | right | `‖` | List cons (prepend element) |
@@ -250,6 +253,7 @@ From highest to lowest binding:
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
+| 15 | clause | right | `=>`, `⇒` | Cond clause builder (`condition => result`) |
 | 10 | apply | right | `@` | Function application |
 | 5 | meta | right | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//=?>`, `//!` | Metadata / assertions |
 
@@ -340,16 +344,21 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | Function | Description |
 |----------|-------------|
 | `str.len(s)` | String length |
-| `str.upper(s)` | Upper case |
-| `str.lower(s)` | Lower case |
-| `str.starts-with?(prefix)` | Starts with prefix? |
-| `str.ends-with?(suffix)` | Ends with suffix? |
-| `str.contains?(sub)` | Contains substring? |
-| `str.matches?(regex)` | Matches regex? |
-| `str.split(sep)` | Split by separator |
-| `str.join(sep)` | Join list with separator |
-| `str.replace(from, to)` | Replace occurrences |
-| `str.trim` | Remove surrounding whitespace |
+| `str.to-upper(s)` | Upper case |
+| `str.to-lower(s)` | Lower case |
+| `str.starts-with?(re, s)` | Starts with regex match? |
+| `str.ends-with?(re, s)` | Ends with regex match? |
+| `str.contains?(re, s)` | Contains regex match? |
+| `str.matches?(re, s)` | Matches full regex? |
+| `str.split-on(re, s)` | Split by regex (pipeline-friendly) |
+| `str.join-on(sep, l)` | Join list with separator (pipeline-friendly) |
+| `str.replace(re, rep, s)` | Replace all regex matches |
+| `str.prefix(b, a)` | Prepend `b` onto `a` |
+| `str.suffix(b, a)` | Append `b` onto `a` |
+
+**All str regex functions treat the pattern argument as a regular expression.**
+`str.split-on` and `str.contains?` are pipeline-friendly (data is last arg).
+Note: `str.trim` does **not** exist — strip leading/trailing manually with `str.replace`.
 
 ### Serialisation and Parsing
 
@@ -385,9 +394,9 @@ Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jso
 | `negate` | Negate number |
 | `inc` / `dec` | Increment / decrement |
 | `max(a, b)` / `min(a, b)` | Maximum / minimum |
-| `even?` / `odd?` | Parity predicates |
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceiling` / `⌊n⌋` / `⌈n⌉` | Rounding (no `round`) |
+| `even?` / `odd?` | Do **not** exist — use `x % 2 = 0` / `x % 2 = 1` |
 
 ### Arrays (`arr` namespace)
 
@@ -515,11 +524,18 @@ origin: { x: 0, y: 0 }
 | `datetime`         | zoned date-time                        |
 | `any`              | gradual/unknown — no type errors       |
 | `[T]`              | homogeneous list of T                  |
+| `NonEmpty([T])`    | non-empty list of T                    |
 | `(A, B)`           | 2-tuple; `(A, B, C)` for triple        |
 | `(A,)`             | 1-tuple                                |
 | `{k: T}`           | closed record                          |
 | `{k: T, ..}`       | open record (at least k: T)            |
+| `{k: T, ..r}`      | named row variable (in string: `{{k: T, ..r}}`) |
+| `{..r, ..s}`       | row concatenation (in string: `{{..r, ..s}}`)   |
 | `block`            | any block (no known shape)             |
+| `Dict(T)`          | homogeneous block — all values type T  |
+| `Name` (capitalised) | type alias — defined via `types: { Name: "..." }` |
+| `"value"`          | literal string type (subtype of `string`); in annotation string: `\"value\"` |
+| `:name`            | literal symbol type (subtype of `symbol`)      |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
 | `a`, `b`, `s`      | type variable (lowercase)              |

@@ -457,6 +457,124 @@ The wrong pattern causes a compiler error because only the first
 block is unit metadata — the second becomes an anonymous block
 declaration catenated into the metadata expression.
 
+## Type Annotation String Escaping
+
+### Record Braces in Type Strings Require `{{` Escaping
+
+Type annotation values (`type:`, `types:`) are ordinary eucalypt strings.
+`{` inside a eucalypt string starts string interpolation — it does
+**not** produce a literal `{` for the type parser.
+
+Any record type written in a type annotation string must escape braces
+with `{{` and `}}`:
+
+```eu,notest
+# WRONG — {..r} triggers string interpolation
+` { type: "{..r} -> {..r}" }
+pass-through(x): x
+
+# RIGHT — use {{ and }} for literal braces
+` { type: "{{..r}} -> {{..r}}" }
+pass-through(x): x
+
+# WRONG — {name: string} triggers interpolation
+` { type: "{name: string, age: number, ..} -> string" }
+greet(p): "Hello, {p.name}!"
+
+# RIGHT
+` { type: "{{name: string, age: number, ..}} -> string" }
+greet(p): "Hello, {p.name}!"
+```
+
+The same applies to `types:` unit metadata values:
+
+```eu,notest
+# RIGHT — escape braces in types: values too
+{ types: { Person: "{{name: string, age: number}}" } }
+```
+
+**When escaping is NOT needed**: type strings that contain no `{` at all
+never need escaping. Simple function types and built-in type constructors
+are fine as-is:
+
+```eu,notest
+` { type: "number -> number" }           # fine — no braces
+` { type: "[a] -> a" }                   # fine
+` { type: "IO(block)" }                  # fine — parens, not braces
+` { type: "Lens(a, b) -> a -> b" }       # fine
+` { type-def: "Point" }                  # fine — just a name, no braces
+```
+
+## Flow-Sensitive Narrowing and User-Defined Branchers
+
+### `=>` (Clause) vs `//=>` (Assertion)
+
+The `=>` / `⇒` operator (precedence 15) builds a `cond` clause
+(`condition => result`).  It looks similar to the assertion meta-operator
+`//=>` (precedence 5) but has a completely different purpose:
+
+```eu,notest
+# CLAUSE — builds a cond branch; result is a list element
+cond[x > 0 => "positive", "non-positive"]
+
+# ASSERTION — checks a value equals the RHS at meta-evaluation time
+` { result //=> "positive" }
+result: "positive"
+```
+
+Mixing these up produces confusing type or parse errors.
+
+### Non-Structural Brancher Wrappers Disable Narrowing
+
+Flow-sensitive narrowing only applies when the checker can verify that
+a user function is a **structural pass-through** of `if` — i.e. its
+body is exactly `if(condition, true-branch, false-branch)` with
+arguments forwarded in order.  A wrapper that ignores one branch, reorders
+arguments, or adds logic is treated as an opaque function:
+
+```eu,notest
+# STRUCTURAL — recognised as If-shaped; narrowing fires
+my-if(c, t, f): if(c, t, f)
+
+` { type: "(number | string) → number" }
+safe-add(x): my-if(x number?, x + 1, 0)   # no warning
+
+# NON-STRUCTURAL — not a brancher; narrowing does NOT fire
+always-true(c, t, _f): t
+
+` { type: "(number | string) → number" }
+safe2(x): always-true(x number?, x + 1, 0)   # x is still number|string in body
+```
+
+The second example does not produce false-positive warnings because
+`always-true` is not narrowing-aware — `x` retains its declared type
+`number | string` throughout the body, which is type-safe here.
+
+## `head` on an Empty List Produces a Type Warning
+
+The type checker tracks list emptiness.  `[]` synthesises as `List(Never)`,
+which means `head []` is flagged as a potential error:
+
+```eu,notest
+# WARNING — [] is List(Never); head on an empty list
+bad: [] head
+
+# OK — non-empty literal is Tuple([number]); head gives number
+ok: [42] head
+```
+
+To use `head` safely on a list of unknown size, guard with `nil?`:
+
+```eu,notest
+` { type: "[number] → number" }
+safe-head(xs): if(xs nil?, 0, xs head)   # xs is NonEmpty([number]) in the false branch
+```
+
+Or annotate the input as `NonEmpty([T])` when the caller guarantees
+non-emptiness.
+
+---
+
 ## Future Improvements
 
 These gotchas highlight areas where the language could benefit from:

@@ -40,6 +40,128 @@ use crate::{
     },
 };
 
+// ── Flow-sensitive narrowing types ───────────────────────────────────────────
+
+/// Stable binding identity for a narrowed bound variable.
+///
+/// The first element is the *anchored frame index*:
+/// `scope_stack.len() - 1 - bv.scope` at the point narrowing is
+/// established. This value is invariant under inner scope pushes — when
+/// an extra frame is pushed, both `len` and the variable's `bv.scope`
+/// grow by one, so the difference is unchanged. A narrowing fact installed
+/// for a particular variable therefore continues to match that same
+/// variable deeper inside the branch without matching inner rebindings of
+/// the same name (which have a different anchored index).
+type BoundKey = (usize, String);
+
+/// One narrowing frame: a set of type overrides for variables within a branch.
+///
+/// Installed on the `narrow_stack` before synthesising a branch body and
+/// popped immediately after. Keyed by `BoundKey` so a fact matches the
+/// *specific binding* whose type was narrowed, not just any variable with
+/// the same name.
+#[derive(Debug, Default, Clone)]
+struct NarrowFrame {
+    entries: HashMap<BoundKey, Type>,
+}
+
+impl NarrowFrame {
+    fn new() -> Self {
+        NarrowFrame {
+            entries: HashMap::new(),
+        }
+    }
+
+    /// Merge `other` into `self`. For the same key, the existing entry wins
+    /// (the caller controls priority by choosing which frame is `self`).
+    fn merge_from(&mut self, other: NarrowFrame) {
+        for (k, v) in other.entries {
+            self.entries.entry(k).or_insert(v);
+        }
+    }
+}
+
+/// Facts derived from analysing a condition expression.
+///
+/// `positive` applies in the branch where the condition is *true*.
+/// `negative` applies in the branch where the condition is *false*.
+#[derive(Debug, Default, Clone)]
+struct ConditionFacts {
+    positive: NarrowFrame,
+    negative: NarrowFrame,
+}
+
+impl ConditionFacts {
+    fn empty() -> Self {
+        ConditionFacts::default()
+    }
+
+    /// Swap positive and negative (models `not(c)` inversion).
+    fn negated(self) -> Self {
+        ConditionFacts {
+            positive: self.negative,
+            negative: self.positive,
+        }
+    }
+}
+
+/// The kind of branching construct recognised by the checker.
+#[derive(Debug, Clone, Copy)]
+enum BranchKind {
+    /// `if(condition, true_branch, false_branch)` — 3-argument form.
+    If,
+    /// `and(left, right)` — synthesise `right` under positive facts from `left`.
+    And,
+    /// `or(left, right)` — synthesise `right` under negative facts from `left`.
+    Or,
+    /// `cond(clause_list)` — multi-way conditional with `=>` clauses.
+    Cond,
+}
+
+/// The structural shape of a recognised branch combinator.
+///
+/// Records the arity, condition parameter index, and branch parameter
+/// indices so that `synthesise_branch` can extract the right arguments
+/// from a flattened application spine.  Constructed once per binding and
+/// memoised.
+///
+/// For `BranchKind::Cond`, `condition` is unused; `branches[0]` is the
+/// clause-list argument index.
+#[derive(Debug, Clone)]
+struct BranchShape {
+    /// Total number of arguments when fully applied.
+    arity: usize,
+    /// Index into the flattened argument list for the condition expression.
+    condition: usize,
+    /// Indices into the flattened argument list for the branch arms.
+    branches: Vec<usize>,
+    /// Semantics — determines how narrowing is applied.
+    kind: BranchKind,
+}
+
+/// A type predicate recognisable from the condition expression.
+#[derive(Debug, Clone)]
+enum PredicateKind {
+    Number,
+    String,
+    Symbol,
+    Bool,
+    List,
+    Block,
+    /// `nil?` — empty-list check (`= []`).
+    /// Positive branch: no structural narrowing (empty is `[a]`).
+    /// Negative branch: `List(a) → NonEmpty(a)` (§A6.4).
+    Nil,
+    /// `non-nil?` — non-empty list check.
+    /// Positive branch: `List(a) → NonEmpty(a)` (§A6.4).
+    /// Negative branch: no structural narrowing.
+    NonNil,
+    /// `null?` — null check (`= null`).
+    /// Positive branch: `Type::Null`.
+    /// Negative branch: subtract `Null` from union.
+    Null,
+}
+
 // ── Alias table ──────────────────────────────────────────────────────────────
 
 /// A flat map from alias name to its concrete `Type`.
@@ -110,6 +232,34 @@ pub struct Checker {
     /// Used by LSP features (inlay hints on monadic block bound
     /// variables) to show the unwrapped element type.
     lambda_params: HashMap<Smid, Vec<(String, Type)>>,
+
+    /// Flow-sensitive narrowing stack.
+    ///
+    /// Each entry overrides a variable's type within the branch currently
+    /// being synthesised. This is a *parallel* stack — it is never pushed
+    /// onto `scope_stack`, which would shift all de Bruijn indices. Instead,
+    /// `lookup_bound` consults this stack before the normal scope lookup.
+    /// Push before synthesising a branch body; pop immediately after.
+    narrowing: Vec<NarrowFrame>,
+
+    /// Binding bodies for structural BranchShape classification (§A5.3).
+    ///
+    /// Populated eagerly during Let synthesis: for each binding `(name, val)`,
+    /// the metadata-peeled expression is stored under the binding's `BoundKey`.
+    /// Consulted during `recognise_brancher` to classify wrapper functions
+    /// such as `then(t,f,c): if(c,t,f)` and user-defined equivalents.
+    binding_bodies: HashMap<BoundKey, RcExpr>,
+
+    /// Memoised BranchShape classification per binding (§A5.3).
+    ///
+    /// `None` = classified, not a brancher.
+    /// `Some(shape)` = recognised brancher with this shape.
+    ///
+    /// Populated eagerly during Let synthesis alongside `binding_bodies`.
+    /// The `None` entry also serves as a recursion guard: a binding already
+    /// inserted as `None` (tentative) is treated as "not a brancher" if
+    /// re-encountered during its own classification.
+    branch_shapes: HashMap<BoundKey, Option<BranchShape>>,
 }
 
 impl Default for Checker {
@@ -127,6 +277,9 @@ impl Checker {
             warnings: Vec::new(),
             aliases: AliasMap::new(),
             lambda_params: HashMap::new(),
+            narrowing: Vec::new(),
+            binding_bodies: HashMap::new(),
+            branch_shapes: HashMap::new(),
         }
     }
 
@@ -158,6 +311,7 @@ impl Checker {
             warnings: self.warnings,
             types: type_env,
             lambda_params: self.lambda_params,
+            aliases: self.aliases,
         }
     }
 
@@ -200,12 +354,32 @@ impl Checker {
     /// when the scope index exceeds the stack depth — this happens for
     /// references to bindings outside the checker's root expression (e.g.
     /// prelude globals when checking a single unit).
+    ///
+    /// Before the normal scope lookup, consults the narrowing stack.  A hit
+    /// overrides the stored type with the narrowed type for the current branch.
     fn lookup_bound(&mut self, bv: &BoundVar) -> Type {
         let name = match bv.name.as_deref() {
             Some(n) => n,
             None => return Type::Any,
         };
         let idx = bv.scope as usize;
+
+        // ── Narrowing check ──────────────────────────────────────────────────
+        // Compute the stable anchored index for this variable (invariant under
+        // inner scope pushes).  Only check narrowing for in-scope variables
+        // (scope index within the stack) — prelude fall-through refs are not
+        // narrowed.
+        if idx < self.scope_stack.len() {
+            let anchored = self.scope_stack.len() - 1 - idx;
+            let key = (anchored, name.to_string());
+            // Innermost narrowing frame wins.
+            for frame in self.narrowing.iter().rev() {
+                if let Some(narrowed_ty) = frame.entries.get(&key) {
+                    return narrowed_ty.clone();
+                }
+            }
+        }
+
         if let Some(frame) = self.scope_stack.get(idx) {
             if let Some(scheme) = frame.get(name) {
                 return freshen(scheme, &mut self.var_counter);
@@ -239,48 +413,86 @@ impl Checker {
     /// Lowercase type-variable names (e.g. `a`, `b`) are left untouched if they
     /// are not in the alias map, so `erase_type_vars` still handles them.
     fn resolve_aliases_in_type(&self, ty: Type) -> Type {
+        self.resolve_aliases_inner(ty, &mut Vec::new())
+    }
+
+    /// Inner alias resolution with cycle detection via a `resolving` stack.
+    ///
+    /// When we encounter an alias name that is already on the stack, we return
+    /// `Type::Var(name)` as a back-reference.  After resolving the alias body,
+    /// if the back-reference is still free in the result we wrap it in
+    /// `Type::Mu(name, body)` to form an equirecursive type.
+    fn resolve_aliases_inner(&self, ty: Type, resolving: &mut Vec<String>) -> Type {
         match ty {
             Type::Var(ref v) => {
                 if let Some(alias_ty) = self.aliases.get(&v.0) {
-                    alias_ty.clone()
+                    if resolving.contains(&v.0) {
+                        // Cycle detected: return the bare Var as a back-reference.
+                        // The caller that pushed this name will wrap it in Mu.
+                        return ty;
+                    }
+                    resolving.push(v.0.clone());
+                    let resolved = self.resolve_aliases_inner(alias_ty.clone(), resolving);
+                    resolving.pop();
+                    // If the alias name still appears free in the resolved body,
+                    // the alias is self-referential — wrap in Mu for an
+                    // equirecursive type.
+                    if contains_var_named(&resolved, &v.0) {
+                        Type::Mu(v.clone(), Box::new(resolved))
+                    } else {
+                        resolved
+                    }
                 } else {
                     ty
                 }
             }
-            Type::List(inner) => Type::List(Box::new(self.resolve_aliases_in_type(*inner))),
+            Type::List(inner) => {
+                Type::List(Box::new(self.resolve_aliases_inner(*inner, resolving)))
+            }
             Type::Tuple(elems) => Type::Tuple(
                 elems
                     .into_iter()
-                    .map(|e| self.resolve_aliases_in_type(e))
+                    .map(|e| self.resolve_aliases_inner(e, resolving))
                     .collect(),
             ),
-            Type::IO(inner) => Type::IO(Box::new(self.resolve_aliases_in_type(*inner))),
+            Type::IO(inner) => Type::IO(Box::new(self.resolve_aliases_inner(*inner, resolving))),
             Type::Lens(a, b) => Type::Lens(
-                Box::new(self.resolve_aliases_in_type(*a)),
-                Box::new(self.resolve_aliases_in_type(*b)),
+                Box::new(self.resolve_aliases_inner(*a, resolving)),
+                Box::new(self.resolve_aliases_inner(*b, resolving)),
             ),
             Type::Traversal(a, b) => Type::Traversal(
-                Box::new(self.resolve_aliases_in_type(*a)),
-                Box::new(self.resolve_aliases_in_type(*b)),
+                Box::new(self.resolve_aliases_inner(*a, resolving)),
+                Box::new(self.resolve_aliases_inner(*b, resolving)),
             ),
             Type::Function(a, b) => Type::Function(
-                Box::new(self.resolve_aliases_in_type(*a)),
-                Box::new(self.resolve_aliases_in_type(*b)),
+                Box::new(self.resolve_aliases_inner(*a, resolving)),
+                Box::new(self.resolve_aliases_inner(*b, resolving)),
             ),
-            Type::Record { fields, open, row } => Type::Record {
+            Type::Dict(inner) => {
+                Type::Dict(Box::new(self.resolve_aliases_inner(*inner, resolving)))
+            }
+            Type::NonEmpty(inner) => {
+                Type::NonEmpty(Box::new(self.resolve_aliases_inner(*inner, resolving)))
+            }
+            Type::Record { fields, open, rows } => Type::Record {
                 fields: fields
                     .into_iter()
-                    .map(|(k, v)| (k, self.resolve_aliases_in_type(v)))
+                    .map(|(k, v)| (k, self.resolve_aliases_inner(v, resolving)))
                     .collect(),
                 open,
-                row,
+                rows,
             },
             Type::Union(variants) => Type::Union(
                 variants
                     .into_iter()
-                    .map(|v| self.resolve_aliases_in_type(v))
+                    .map(|v| self.resolve_aliases_inner(v, resolving))
                     .collect(),
             ),
+            // Mu: pass through, resolving inside the body without pushing
+            // the binder (it is not an alias name).
+            Type::Mu(x, body) => {
+                Type::Mu(x, Box::new(self.resolve_aliases_inner(*body, resolving)))
+            }
             other => other,
         }
     }
@@ -302,17 +514,43 @@ impl Checker {
             None => return,
         };
 
-        let type_entries = match &*types_expr.inner {
-            Expr::Block(_, b) => b,
-            _ => return,
-        };
+        // In source, `types: { Point: "string" }` desugars the inner block to
+        // `let Point = "string" in { Point: Point }`.  Walk the Let chain to
+        // collect bindings, then fall back to direct Block iteration for
+        // expressions that were constructed directly (e.g. in unit tests).
+        self.register_aliases_from_types_expr(types_expr);
+    }
 
-        for (alias_name, type_str_expr) in type_entries.iter() {
-            if let Some(type_str) = extract_string_literal(type_str_expr) {
-                if let Ok(ty) = parse::parse_type(&type_str) {
-                    self.register_alias(alias_name.clone(), ty);
+    /// Extract alias entries from a `types:` value expression.
+    ///
+    /// Handles both:
+    /// - Desugared form: `let Name = "type" in { … }` (normal source code)
+    /// - Direct block form: `{ Name: "type" }` (unit-test core construction)
+    fn register_aliases_from_types_expr(&mut self, expr: &RcExpr) {
+        match &*expr.inner {
+            Expr::Let(_, scope, _) => {
+                // Each binding in the scope corresponds to one alias declaration.
+                for (alias_name, type_str_expr) in &scope.pattern {
+                    if let Some(type_str) = extract_string_literal(type_str_expr) {
+                        if let Ok(ty) = parse::parse_type(&type_str) {
+                            self.register_alias(alias_name.clone(), ty);
+                        }
+                    }
+                }
+                // Continue into the body in case of nested let-chains.
+                self.register_aliases_from_types_expr(&scope.body);
+            }
+            Expr::Block(_, b) => {
+                // Direct block form (unit tests / hand-built core expressions).
+                for (alias_name, type_str_expr) in b.iter() {
+                    if let Some(type_str) = extract_string_literal(type_str_expr) {
+                        if let Ok(ty) = parse::parse_type(&type_str) {
+                            self.register_alias(alias_name.clone(), ty);
+                        }
+                    }
                 }
             }
+            _ => {}
         }
     }
 
@@ -402,18 +640,14 @@ impl Checker {
 
             // ── List ─────────────────────────────────────────────────────────
             //
-            // Small fixed-length list literals (2-4 elements) synthesise as
-            // tuples since tuples are subtypes of lists and carry more
-            // information.  Single-element lists stay as lists (not 1-tuples)
-            // and large lists stay as lists for practicality.
+            // Non-empty list literals synthesise as `Tuple` up to a
+            // practicality cap (`LIST_TUPLE_CAP`), preserving element positions
+            // for precise head/tail typing (§A6.3).  Beyond the cap the tuple
+            // would become unwieldy so we fall back to `NonEmpty(<elem union>)`,
+            // which still captures non-emptiness. The empty literal is `[any]`.
             Expr::List(_, items) => {
                 let elem_types: Vec<Type> = items.iter().map(|e| self.synthesise(e)).collect();
-                let n = elem_types.len();
-                if (2..=4).contains(&n) {
-                    Type::Tuple(elem_types)
-                } else {
-                    synthesise_list_type(elem_types)
-                }
+                synthesise_list_literal(elem_types)
             }
 
             // ── Block ─────────────────────────────────────────────────────────
@@ -448,6 +682,27 @@ impl Checker {
                 }
 
                 self.push_scope(frame);
+
+                // BranchShape classification (§A5.3): store binding bodies and
+                // eagerly classify each binding as a branch combinator so that
+                // later uses of the binding (even user-defined wrappers like
+                // `my-if(c,t,e): if(c,t,f)`) are recognised during synthesis.
+                //
+                // anchored = scope_stack.len() - 1 (the newly-pushed innermost frame).
+                let anchored = self.scope_stack.len() - 1;
+                for (name, value) in &scope.pattern {
+                    let key: BoundKey = (anchored, name.clone());
+                    // Tentative `None` entry doubles as a recursion guard: if
+                    // classification recurses back to this binding, it sees
+                    // "not a brancher" and terminates.
+                    self.branch_shapes.insert(key.clone(), None);
+                    // Store the body for later structural analysis.
+                    let body = peel_meta(value).clone();
+                    self.binding_bodies.insert(key.clone(), body.clone());
+                    // Classify and update.
+                    let shape = self.classify_binding_shape(&body, self.scope_stack.len());
+                    self.branch_shapes.insert(key, shape);
+                }
 
                 // Pass 2: synthesise each binding value — triggers consistency
                 // checks against any annotations.  For unannotated bindings,
@@ -575,19 +830,9 @@ impl Checker {
                                 Type::List(Box::new(first.clone()))
                             } else {
                                 // Heterogeneous tuple → list of union
-                                let mut seen = std::collections::BTreeSet::new();
-                                let mut unique = Vec::new();
-                                for e in elems {
-                                    let s = format!("{e}");
-                                    if seen.insert(s) {
-                                        unique.push(e.clone());
-                                    }
-                                }
-                                let elem_type = if unique.len() == 1 {
-                                    unique.into_iter().next().unwrap()
-                                } else {
-                                    Type::Union(unique)
-                                };
+                                // Type::union deduplicates and normalises
+                                // (absorbs LiteralString into String, etc.)
+                                let elem_type = Type::union(elems.iter().cloned());
                                 Type::List(Box::new(elem_type))
                             }
                         }
@@ -630,7 +875,7 @@ impl Checker {
         Type::Record {
             fields: field_types,
             open: true, // open: unannotated members may exist at runtime
-            row: None,
+            rows: vec![],
         }
     }
 
@@ -672,7 +917,80 @@ impl Checker {
     /// Maintains a `Substitution` across all arguments so that type variables
     /// unified by one argument automatically constrain later arguments and the
     /// return type.
+    ///
+    /// Before the generic application loop, attempts to recognise the function
+    /// as a branching construct (`if`, `then`, `and`, `or`, `cond`, or any
+    /// user-defined wrapper) and delegates to the narrowing-aware
+    /// `synthesise_branch_*` helpers when recognised.
+    ///
+    /// Spine flattening: `x then(a, b)` cooks to `App(App(then, [a,b]), [x])`.
+    /// We flatten `func` into `(head, prefix_args)` and prepend to `args` so
+    /// the full argument list `[a, b, x]` is visible for recognition.
     fn synthesise_app(&mut self, _smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
+        // ── Spine flattening + branch recognition (§A5.2, §A5.3) ─────────────
+        //
+        // Flatten the function spine to find the outermost head and the full
+        // argument list.  Required for pipelined branchers like `x then(a,b)`.
+        let (head, prefix_args) = flatten_app_spine(func);
+        let spine_args: Vec<&RcExpr> = prefix_args.into_iter().chain(args.iter()).collect();
+
+        if let Some(shape) = self.recognise_brancher(head) {
+            if spine_args.len() == shape.arity {
+                if let Some(ty) = self.synthesise_branch_with_shape(&shape, head, &spine_args) {
+                    return ty;
+                }
+            }
+            // Wrong arity (partial application) — fall through to generic path.
+        }
+
+        // ── HEAD/TAIL-on-Tuple precise typing (§A6.8) ────────────────────────
+        //
+        // When `head` or `tail` is applied to a `Tuple` argument, override the
+        // annotation result with precise element-type information:
+        //   head(Tuple([T₀,…,Tₙ])) → T₀
+        //   tail(Tuple([T₀,T₁,…])) → Tuple([T₁,…])   (1-elem → List(any))
+        //
+        // Also: head/tail on `List(Never)` (the empty literal `[]`) returns
+        // `Never`, ensuring the annotation check warns (AC2).
+        //
+        // This is checked AFTER branch recognition (which takes priority) and
+        // only fires when there is exactly one argument.
+        if spine_args.len() == 1 {
+            if let Some(proj) = is_head_or_tail(head) {
+                let arg_type = self.synthesise(spine_args[0]);
+                if let Some(result) = apply_head_tail_to_tuple(proj, &arg_type) {
+                    return result;
+                }
+                // Empty list literal: `[]` synthesises as `List(Never)`.
+                // `head`/`tail` on an empty list always panics at runtime —
+                // emit a direct type warning so the user is alerted even if
+                // the call site annotation is `any`.  Return `Any` so that
+                // downstream checks can continue without cascading errors.
+                if matches!(&arg_type, Type::List(e) if matches!(e.as_ref(), Type::Never)) {
+                    let proj_name = match proj {
+                        HeadTailProjection::Head => "head",
+                        HeadTailProjection::Tail => "tail",
+                    };
+                    let smid = func.smid();
+                    let warning = TypeWarning::new(format!("{proj_name} of empty list"))
+                        .at(smid)
+                        .with_note(format!(
+                            "guard against empty lists with 'nil?', e.g. \
+                         'if(xs nil?, default, xs {proj_name})'"
+                        ))
+                        .with_note(
+                            "'head' and 'tail' are only defined on non-empty lists; \
+                         use 'nth(0, xs)' or pattern matching if the list may be empty"
+                                .to_string(),
+                        );
+                    self.warnings.push(warning);
+                    return Type::Any;
+                }
+                // Not a Tuple or empty — fall through to generic path which uses
+                // the NonEmpty([a]) annotation.
+            }
+        }
+
         // Extract the function name for use in warning messages.
         // For intrinsics, map to the user-facing display name (e.g. "ADD" → "+").
         // Bound variables preserve their original name in the `name` field even
@@ -690,6 +1008,51 @@ impl Checker {
             }
             _ => None,
         };
+
+        // ── §A10: Monadic bind element-type pre-pass ─────────────────────────
+        //
+        // Detect the two-argument monadic bind pattern produced by
+        // `desugar_monadic_block`:
+        //
+        //   App(bind_fn, [Meta(inner, {__type_hint: "T(a)"}), Lam(x, body)])
+        //
+        // When recognised, synthesise the inner value directly (bypassing the
+        // Meta wrapper to avoid double-synthesising via `synthesise_meta`),
+        // normalise any homogeneous tuple to a list, and infer the concrete
+        // element type `a` by unifying the freshened wrapper against the
+        // synthesised value type.
+        //
+        // If a concrete element type is found, record the resolved lambda
+        // parameter types in `self.lambda_params` (keyed by the lambda's Smid)
+        // for LSP inlay hints.
+        //
+        // Body type-checking is deliberately left to the normal application
+        // loop below — when the bind function carries a type annotation (as
+        // `for.bind` and `io.bind` do), `apply_one_with_subst` fires the
+        // `check_lambda` branch and emits any warnings from the body.  The
+        // pre-pass avoids calling `check_against` on the lambda to prevent
+        // duplicate warnings.
+        if args.len() == 2 {
+            if let Some((hint_str, inner_val)) = extract_monad_hint_inner(&args[0]) {
+                if let Expr::Lam(lam_smid, _, scope) = &*args[1].inner {
+                    let raw_val_type = self.synthesise(inner_val);
+                    let val_type = normalise_tuple_to_list(raw_val_type);
+                    if let Some(elem_type) =
+                        self.infer_elem_type_from_hint_str(&hint_str, &val_type)
+                    {
+                        // Record lambda parameter types for LSP inlay hints.
+                        let params: Vec<(String, Type)> = scope
+                            .pattern
+                            .iter()
+                            .map(|name| (name.clone(), elem_type.clone()))
+                            .collect();
+                        if !params.is_empty() {
+                            self.lambda_params.insert(*lam_smid, params);
+                        }
+                    }
+                }
+            }
+        }
 
         let func_type = self.synthesise(func);
         let mut subst = Substitution::new();
@@ -710,6 +1073,52 @@ impl Checker {
 
         // Apply the accumulated substitution to resolve any remaining vars.
         apply_subst(&current_type, &subst)
+    }
+
+    /// Infer the element type of a monadic container from its hint string and
+    /// a concrete value type.
+    ///
+    /// §A10: Given a hint like `"[a]"` (for `List`) or `"io(a)"` (for `IO`),
+    /// and the synthesised type of the bound value (e.g. `List(number)`), this
+    /// method:
+    ///
+    /// 1. Parses and alias-resolves the hint to get a wrapper type such as
+    ///    `List(Var("a"))`.
+    /// 2. Freshens the wrapper, replacing `"a"` with a fresh unification
+    ///    variable `_t5`.
+    /// 3. Unifies the freshened wrapper with `val_type`.
+    /// 4. Extracts the element component from the freshened wrapper and applies
+    ///    the substitution to resolve it to a concrete type.
+    ///
+    /// Returns `None` when the hint cannot be parsed, the wrapper type is
+    /// not a recognised container (`List`, `IO`, `Dict`, `NonEmpty`), or
+    /// the unification fails (e.g. `val_type = string` vs wrapper `[a]`).
+    fn infer_elem_type_from_hint_str(&mut self, hint_str: &str, val_type: &Type) -> Option<Type> {
+        let parsed = parse::parse_type(hint_str).ok()?;
+        let resolved = self.resolve_aliases_in_type(parsed);
+        let scheme = infer_scheme(resolved);
+        let freshened = freshen(&scheme, &mut self.var_counter);
+
+        // Extract the inner type variable from the freshened wrapper.
+        let inner = match &freshened {
+            Type::List(i) | Type::IO(i) | Type::Dict(i) | Type::NonEmpty(i) => *i.clone(),
+            _ => return None,
+        };
+
+        // Unify the freshened wrapper with the concrete value type.
+        let mut subst = Substitution::new();
+        unify(&freshened, val_type, &mut subst).ok()?;
+
+        // Resolve the inner type variable through the substitution.
+        let elem = apply_subst(&inner, &subst);
+
+        // Return the element type only if it is concrete (informative and not
+        // an unresolved type variable, which would give no useful information).
+        if is_informative(&elem) && !matches!(&elem, Type::Var(_)) {
+            Some(elem)
+        } else {
+            None
+        }
     }
 
     /// Apply a single argument to the current function type using unification.
@@ -818,14 +1227,14 @@ impl Checker {
             Type::Record {
                 fields: lhs_fields,
                 open: lhs_open,
-                row: lhs_row,
+                rows: lhs_rows,
             } => {
                 let rhs_type = self.synthesise(arg);
                 match rhs_type {
                     Type::Record {
                         fields: rhs_fields,
                         open: rhs_open,
-                        row: rhs_row,
+                        rows: rhs_rows,
                     } => {
                         // Merge: base (RHS) as starting point, overlay LHS (function).
                         // LHS fields override RHS on conflicts.
@@ -833,17 +1242,24 @@ impl Checker {
                         for (k, v) in lhs_fields {
                             merged.insert(k, v);
                         }
+                        // Combine row variables from both sides (deduplicating)
+                        let mut combined_rows = lhs_rows;
+                        for r in rhs_rows {
+                            if !combined_rows.contains(&r) {
+                                combined_rows.push(r);
+                            }
+                        }
                         Type::Record {
                             fields: merged,
                             open: lhs_open || rhs_open,
-                            row: lhs_row.or(rhs_row),
+                            rows: combined_rows,
                         }
                     }
                     // Gradual boundary: base unknown, preserve LHS (override) fields as open.
                     Type::Any => Type::Record {
                         fields: lhs_fields,
                         open: true,
-                        row: lhs_row,
+                        rows: lhs_rows,
                     },
                     // RHS is not a record: can't reason about the merge result.
                     _ => Type::Any,
@@ -927,6 +1343,263 @@ impl Checker {
         Type::Any
     }
 
+    // ── Flow-sensitive narrowing ──────────────────────────────────────────────
+
+    /// Dispatch to the appropriate narrowing-aware branch synthesiser using
+    /// a `BranchShape` extracted from the flattened application spine.
+    ///
+    /// `spine_args` contains the *full* argument list (flattened); the shape
+    /// records which indices are the condition and branch arms.
+    ///
+    /// Returns `Some(ty)` on success, `None` for internal errors only (the
+    /// arity check is done by the caller).
+    fn synthesise_branch_with_shape(
+        &mut self,
+        shape: &BranchShape,
+        func: &RcExpr,
+        spine_args: &[&RcExpr],
+    ) -> Option<Type> {
+        match shape.kind {
+            BranchKind::If => {
+                let condition = spine_args[shape.condition];
+                let true_branch = spine_args[shape.branches[0]];
+                let false_branch = spine_args[shape.branches[1]];
+                Some(self.synthesise_branch_if(func, condition, true_branch, false_branch))
+            }
+            BranchKind::And => {
+                let left = spine_args[shape.condition];
+                let right = spine_args[shape.branches[0]];
+                Some(self.synthesise_branch_and(func, left, right))
+            }
+            BranchKind::Or => {
+                let left = spine_args[shape.condition];
+                let right = spine_args[shape.branches[0]];
+                Some(self.synthesise_branch_or(func, left, right))
+            }
+            BranchKind::Cond => {
+                let clause_list = spine_args[shape.branches[0]];
+                Some(self.synthesise_branch_cond(func, clause_list))
+            }
+        }
+    }
+
+    /// Synthesise `if(condition, true_branch, false_branch)` with narrowing.
+    ///
+    /// Analyses the condition to derive narrowing facts, then synthesises
+    /// each branch under the appropriate fact set.  Returns the union of
+    /// the two branch result types (§A5.9).
+    fn synthesise_branch_if(
+        &mut self,
+        func: &RcExpr,
+        condition: &RcExpr,
+        true_branch: &RcExpr,
+        false_branch: &RcExpr,
+    ) -> Type {
+        // Synthesise the function itself (for its type — not used for the
+        // result but needed so any warnings on the function position fire).
+        self.synthesise(func);
+
+        // Synthesise the condition normally (validates condition type).
+        self.synthesise(condition);
+
+        // Derive narrowing facts from the condition structure.
+        let facts = self.analyse_condition(condition);
+
+        // Synthesise true branch with positive narrowing.
+        self.narrowing.push(facts.positive);
+        let true_type = self.synthesise(true_branch);
+        self.narrowing.pop();
+
+        // Synthesise false branch with negative narrowing.
+        self.narrowing.push(facts.negative);
+        let false_type = self.synthesise(false_branch);
+        self.narrowing.pop();
+
+        // Result: union of branch types (§A5.9).
+        make_union_type(true_type, false_type)
+    }
+
+    /// Synthesise `and(left, right)` with narrowing.
+    ///
+    /// `right` is synthesised under the positive facts from `left`.
+    /// Returns `Bool`.
+    fn synthesise_branch_and(&mut self, func: &RcExpr, left: &RcExpr, right: &RcExpr) -> Type {
+        self.synthesise(func);
+        self.synthesise(left);
+        let facts = self.analyse_condition(left);
+        self.narrowing.push(facts.positive);
+        self.synthesise(right);
+        self.narrowing.pop();
+        Type::Bool
+    }
+
+    /// Synthesise `or(left, right)` with narrowing.
+    ///
+    /// `right` is synthesised under the negative facts from `left`.
+    /// Returns `Bool`.
+    fn synthesise_branch_or(&mut self, func: &RcExpr, left: &RcExpr, right: &RcExpr) -> Type {
+        self.synthesise(func);
+        self.synthesise(left);
+        let facts = self.analyse_condition(left);
+        self.narrowing.push(facts.negative);
+        self.synthesise(right);
+        self.narrowing.pop();
+        Type::Bool
+    }
+
+    /// Synthesise `cond(clause_list)` with per-clause narrowing.
+    ///
+    /// Inspects the clause list statically when it is a list literal
+    /// whose elements are `App(CLAUSE, [c, r])` pairs or a trailing default.
+    /// Returns the union of all branch result types.
+    ///
+    /// When the clause list is not statically readable (a runtime-computed
+    /// list), falls back to generic synthesis without narrowing.
+    fn synthesise_branch_cond(&mut self, func: &RcExpr, clause_list: &RcExpr) -> Type {
+        self.synthesise(func);
+
+        // Try to read a static clause list.
+        let clauses = match extract_clause_list(clause_list) {
+            Some(cs) => cs,
+            None => {
+                // Not statically readable — synthesise the list arg normally.
+                self.synthesise(clause_list);
+                return Type::Any;
+            }
+        };
+
+        // Per-row narrowing with accumulated negative-fact set (§A5.7).
+        let mut acc = NarrowFrame::new();
+        let mut result_types: Vec<Type> = Vec::new();
+
+        for clause in &clauses {
+            match clause {
+                Clause::Case { condition, result } => {
+                    // Synthesise condition under current accumulated negations.
+                    self.narrowing.push(acc.clone());
+                    self.synthesise(condition);
+                    self.narrowing.pop();
+
+                    // Derive facts from condition.
+                    let facts = self.analyse_condition(condition);
+
+                    // Synthesise result under positive facts + accumulated negations.
+                    let mut branch_frame = facts.positive.clone();
+                    branch_frame.merge_from(acc.clone());
+                    self.narrowing.push(branch_frame);
+                    let branch_type = self.synthesise(result);
+                    self.narrowing.pop();
+
+                    result_types.push(branch_type);
+
+                    // Accumulate negative facts for subsequent clauses.
+                    acc.merge_from(facts.negative);
+                }
+                Clause::Default(default_expr) => {
+                    // Synthesise default under accumulated negations.
+                    self.narrowing.push(acc.clone());
+                    let default_type = self.synthesise(default_expr);
+                    self.narrowing.pop();
+                    result_types.push(default_type);
+                }
+            }
+        }
+
+        // Union of all branch and default result types.
+        result_types.into_iter().fold(Type::Never, make_union_type)
+    }
+
+    /// Analyse a condition expression to derive narrowing facts.
+    ///
+    /// Returns a `ConditionFacts` with positive facts (hold when condition
+    /// is true) and negative facts (hold when condition is false).
+    /// Only bare variable references are narrowed — predicate applications
+    /// to non-variables yield empty facts.
+    fn analyse_condition(&self, condition: &RcExpr) -> ConditionFacts {
+        match &*condition.inner {
+            // Single-argument application: either `p?(x)` (predicate) or `not(c)`.
+            Expr::App(_, func, args) if args.len() == 1 => {
+                // `p?(x)` — predicate applied to a variable.
+                if let Some(pred) = classify_predicate(func) {
+                    if let Expr::Var(_, Var::Bound(bv)) = &*args[0].inner {
+                        return self.facts_for_predicate(pred, bv);
+                    }
+                // `not(c)` — invert the condition's facts.
+                } else if is_not_func(func) {
+                    return self.analyse_condition(&args[0]).negated();
+                }
+                ConditionFacts::empty()
+            }
+            _ => ConditionFacts::empty(),
+        }
+    }
+
+    /// Derive narrowing facts for `predicate(variable)`.
+    fn facts_for_predicate(&self, pred: PredicateKind, bv: &BoundVar) -> ConditionFacts {
+        let name = match bv.name.as_deref() {
+            Some(n) => n.to_string(),
+            None => return ConditionFacts::empty(),
+        };
+
+        let idx = bv.scope as usize;
+        // Only narrow in-scope variables (not prelude fall-throughs).
+        if idx >= self.scope_stack.len() {
+            return ConditionFacts::empty();
+        }
+
+        let anchored = self.scope_stack.len() - 1 - idx;
+        let key = (anchored, name.clone());
+
+        // Current type of the variable (without narrowing) — for subtraction.
+        let current_ty = if let Some(frame) = self.scope_stack.get(idx) {
+            if let Some(scheme) = frame.get(&name) {
+                scheme.body.clone()
+            } else {
+                Type::Any
+            }
+        } else {
+            Type::Any
+        };
+
+        let (positive_ty, negative_ty) = match pred {
+            PredicateKind::Number => (Type::Number, subtract_type(&current_ty, &Type::Number)),
+            PredicateKind::String => (Type::String, subtract_type(&current_ty, &Type::String)),
+            PredicateKind::Symbol => (Type::Symbol, subtract_type(&current_ty, &Type::Symbol)),
+            PredicateKind::Bool => (Type::Bool, subtract_type(&current_ty, &Type::Bool)),
+            PredicateKind::List => (
+                Type::List(Box::new(Type::Any)),
+                subtract_type(&current_ty, &Type::List(Box::new(Type::Any))),
+            ),
+            PredicateKind::Block => (
+                Type::Record {
+                    fields: Default::default(),
+                    open: true,
+                    rows: vec![],
+                },
+                Type::Any,
+            ),
+            // `nil?` narrows to NonEmpty in the NEGATIVE branch (§A6.4).
+            // Positive branch: no useful narrowing — leave as Any (suppressed).
+            PredicateKind::Nil => (Type::Any, narrow_to_nonempty(&current_ty)),
+            // `non-nil?` narrows to NonEmpty in the POSITIVE branch (§A6.4).
+            PredicateKind::NonNil => (narrow_to_nonempty(&current_ty), Type::Any),
+            // `null?` narrows to Null (positive) / subtracts Null (negative).
+            PredicateKind::Null => (Type::Null, subtract_type(&current_ty, &Type::Null)),
+        };
+
+        let mut positive = NarrowFrame::new();
+        let mut negative = NarrowFrame::new();
+
+        if is_informative(&positive_ty) && !matches!(positive_ty, Type::Any) {
+            positive.entries.insert(key.clone(), positive_ty);
+        }
+        if is_informative(&negative_ty) && !matches!(negative_ty, Type::Any) {
+            negative.entries.insert(key, negative_ty);
+        }
+
+        ConditionFacts { positive, negative }
+    }
+
     // ── Checking ─────────────────────────────────────────────────────────────
 
     /// Check `expr` against `expected`, emitting warnings on mismatch.
@@ -1005,6 +1678,135 @@ impl Checker {
         self.pop_scope();
     }
 
+    // ── BranchShape recognition (§A5.3) ─────────────────────────────────────
+
+    /// Look up the `BranchShape` for an expression in the head position of an
+    /// application.
+    ///
+    /// Covers:
+    /// - Raw branch intrinsics (`Expr::Intrinsic`).
+    /// - Bound variables with a memoised shape in `branch_shapes`.
+    ///
+    /// Returns `None` for everything else (not a recognised brancher).
+    fn recognise_brancher(&self, func: &RcExpr) -> Option<BranchShape> {
+        match &*func.inner {
+            Expr::Intrinsic(_, name) => intrinsic_branch_shape(name),
+            Expr::Var(_, Var::Bound(bv)) => {
+                let name = bv.name.as_deref()?;
+                let idx = bv.scope as usize;
+                // Saturating sub: if idx >= scope_stack.len(), the variable
+                // is from an outer scope that we haven't seen (should not
+                // normally happen after varify, but guard anyway).
+                let anchored = self.scope_stack.len().saturating_sub(1 + idx);
+                let key = (anchored, name.to_string());
+                // Flatten Option<Option<BranchShape>> via and_then.
+                self.branch_shapes.get(&key).and_then(|opt| opt.clone())
+            }
+            _ => None,
+        }
+    }
+
+    /// Classify a binding's body expression as a `BranchShape`.
+    ///
+    /// `body` is the metadata-peeled binding value.
+    /// `stack_len` is `scope_stack.len()` at the time the enclosing Let is
+    /// being processed (AFTER the frame has been pushed).
+    ///
+    /// Classification is one level deep (§A5.3):
+    /// - An alias of a raw intrinsic inherits the intrinsic's shape.
+    /// - A `Lam` whose body is a pass-through application of a known
+    ///   brancher acquires a composed shape.
+    /// - Everything else → `None`.
+    fn classify_binding_shape(&self, body: &RcExpr, stack_len: usize) -> Option<BranchShape> {
+        let peeled = peel_meta(body);
+        match &*peeled.inner {
+            // Direct alias: `if: __IF` — inherits the intrinsic's shape.
+            Expr::Intrinsic(_, name) => intrinsic_branch_shape(name),
+            // Lambda — inspect the body for a pass-through call (§A5.3 Mechanism 2).
+            Expr::Lam(_, _, scope) => {
+                self.classify_lam_body(&scope.pattern, &scope.body, stack_len)
+            }
+            _ => None,
+        }
+    }
+
+    /// Attempt to classify a lambda as a pass-through wrapper around a
+    /// known brancher.
+    ///
+    /// `params` — the parameter names in order (e.g. `["t","f","c"]`).
+    /// `body` — the lambda body expression.
+    /// `stack_len` — `scope_stack.len()` at the time of classification
+    ///   (BEFORE entering the lambda's own scope).
+    ///
+    /// Returns a composed `BranchShape` when the body is `inner(args…)` where
+    /// `inner` is a recognised brancher and every argument is one of the
+    /// lambda's own parameters.
+    fn classify_lam_body(
+        &self,
+        params: &[String],
+        body: &RcExpr,
+        stack_len: usize,
+    ) -> Option<BranchShape> {
+        // Inside the lambda there is one extra scope level for the params.
+        let effective_len = stack_len + 1;
+
+        let peeled = peel_meta(body);
+        let (app_head, app_args) = match &*peeled.inner {
+            Expr::App(_, head, args) => (head, args.as_slice()),
+            _ => return None,
+        };
+
+        // Determine the inner brancher's shape from the application head.
+        let inner_shape: BranchShape = match &*peel_meta(app_head).inner {
+            // Head is a raw intrinsic.
+            Expr::Intrinsic(_, name) => intrinsic_branch_shape(name)?,
+            // Head is an outer bound variable — look up in branch_shapes.
+            Expr::Var(_, Var::Bound(bv)) if bv.scope as usize >= 1 => {
+                let name = bv.name.as_deref()?;
+                let anchored = effective_len.checked_sub(1 + bv.scope as usize)?;
+                let key = (anchored, name.to_string());
+                self.branch_shapes.get(&key)?.clone()?
+            }
+            _ => return None,
+        };
+
+        // Verify the call arity matches the inner shape.
+        if app_args.len() != inner_shape.arity {
+            return None;
+        }
+
+        // Every app_arg must be one of the lambda's own parameters (scope = 0).
+        // Map each to its parameter index in `params`.
+        let param_positions: Vec<usize> = app_args
+            .iter()
+            .map(|arg| {
+                let peeled = peel_meta(arg);
+                if let Expr::Var(_, Var::Bound(bv)) = &*peeled.inner {
+                    if bv.scope == 0 {
+                        let pname = bv.name.as_deref()?;
+                        return params.iter().position(|p| p == pname);
+                    }
+                }
+                None
+            })
+            .collect::<Option<Vec<_>>>()?;
+
+        // Compose: map inner shape's condition/branch arg indices through param_positions.
+        let condition_param = *param_positions.get(inner_shape.condition)?;
+        let branch_params: Option<Vec<usize>> = inner_shape
+            .branches
+            .iter()
+            .map(|&bi| param_positions.get(bi).copied())
+            .collect();
+
+        Some(BranchShape {
+            arity: params.len(),
+            condition: condition_param,
+            branches: branch_params?,
+            kind: inner_shape.kind,
+        })
+    }
+
     // ── Warning emission ─────────────────────────────────────────────────────
 
     fn emit_type_mismatch(&mut self, smid: Smid, expected: &Type, found: &Type, message: &str) {
@@ -1016,41 +1818,341 @@ impl Checker {
     }
 }
 
+// ── Flow-sensitive narrowing — free functions ─────────────────────────────────
+
+/// Return the `BranchShape` for a raw branch intrinsic, or `None`.
+fn intrinsic_branch_shape(name: &str) -> Option<BranchShape> {
+    match name {
+        "IF" => Some(BranchShape {
+            arity: 3,
+            condition: 0,
+            branches: vec![1, 2],
+            kind: BranchKind::If,
+        }),
+        "AND" => Some(BranchShape {
+            arity: 2,
+            condition: 0,
+            branches: vec![1],
+            kind: BranchKind::And,
+        }),
+        "OR" => Some(BranchShape {
+            arity: 2,
+            condition: 0,
+            branches: vec![1],
+            kind: BranchKind::Or,
+        }),
+        "COND" => Some(BranchShape {
+            arity: 1,
+            condition: 0, // unused for cond
+            branches: vec![0],
+            kind: BranchKind::Cond,
+        }),
+        _ => None,
+    }
+}
+
+/// Peel `Meta` wrappers from an expression, returning the innermost non-Meta node.
+fn peel_meta(expr: &RcExpr) -> &RcExpr {
+    match &*expr.inner {
+        Expr::Meta(_, inner, _) => peel_meta(inner),
+        _ => expr,
+    }
+}
+
+/// Flatten a nested application spine into `(head, prefix_args)`.
+///
+/// Given `App(App(f, xs), ys)`, returns `(f, xs)` (without `ys`). The
+/// caller is responsible for appending `ys` (the outer args) to get the
+/// full argument list.
+///
+/// This handles pipelined branchers such as `x then(a, b)` which cook to
+/// `App(App(then, [a, b]), [x])`: flattening yields `head = then`,
+/// `prefix_args = [a, b]`, and the caller appends `[x]` to get the
+/// full spine `[a, b, x]`.
+fn flatten_app_spine(func: &RcExpr) -> (&RcExpr, Vec<&RcExpr>) {
+    let mut head = func;
+    let mut prefix: Vec<&RcExpr> = Vec::new();
+    while let Expr::App(_, f, inner_args) = &*head.inner {
+        // Prepend inner_args (they came before the outer args).
+        let mut new_prefix: Vec<&RcExpr> = inner_args.iter().collect();
+        new_prefix.extend_from_slice(&prefix);
+        prefix = new_prefix;
+        head = f;
+    }
+    (head, prefix)
+}
+
+/// Classify a function expression as a type predicate.
+///
+/// Recognised predicates are the standard type-test functions from the prelude.
+/// Both intrinsic nodes (`IS_NUMBER`, …) and prelude-alias bound variables
+/// (`number?`, …) are recognised.
+fn classify_predicate(func: &RcExpr) -> Option<PredicateKind> {
+    match &*func.inner {
+        Expr::Intrinsic(_, name) => match name.as_str() {
+            "IS_NUMBER" | "ISNUMBER" => Some(PredicateKind::Number),
+            "IS_STRING" | "ISSTRING" => Some(PredicateKind::String),
+            "IS_SYMBOL" | "ISSYMBOL" => Some(PredicateKind::Symbol),
+            "IS_BOOL" | "ISBOOL" => Some(PredicateKind::Bool),
+            "IS_LIST" | "ISLIST" => Some(PredicateKind::List),
+            "IS_BLOCK" | "ISBLOCK" => Some(PredicateKind::Block),
+            "IS_NIL" | "ISNIL" | "NILP" => Some(PredicateKind::Nil),
+            _ => None,
+        },
+        Expr::Var(_, Var::Bound(bv)) => match bv.name.as_deref() {
+            Some("number?") => Some(PredicateKind::Number),
+            Some("string?") => Some(PredicateKind::String),
+            Some("symbol?") => Some(PredicateKind::Symbol),
+            Some("bool?") => Some(PredicateKind::Bool),
+            Some("list?") => Some(PredicateKind::List),
+            Some("block?") => Some(PredicateKind::Block),
+            Some("nil?") => Some(PredicateKind::Nil),
+            Some("non-nil?") => Some(PredicateKind::NonNil),
+            Some("null?") => Some(PredicateKind::Null),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Return `true` if `func` is the `not` function (boolean negation).
+fn is_not_func(func: &RcExpr) -> bool {
+    match &*func.inner {
+        Expr::Intrinsic(_, name) => name == "NOT",
+        Expr::Var(_, Var::Bound(bv)) => matches!(bv.name.as_deref(), Some("not" | "¬")),
+        _ => false,
+    }
+}
+
+/// Subtract `remove` from `ty`, returning the remaining type.
+///
+/// For union types, removes every variant that is a subtype of `remove`.
+/// For singleton types equal to `remove`, returns `Never`.
+/// For `any` or other opaque types, returns the original type unchanged
+/// (the gradual boundary is preserved — §A5.10).
+/// Narrow a list type to its non-empty refinement (§A6.4).
+///
+/// `List(a)` → `NonEmpty(a)`.  Any other type (including `NonEmpty`, `Tuple`,
+/// and `any`) is returned unchanged — the gradual boundary is preserved.
+fn narrow_to_nonempty(ty: &Type) -> Type {
+    match ty {
+        Type::List(elem) => Type::NonEmpty(elem.clone()),
+        other => other.clone(),
+    }
+}
+
+/// Which projection is being applied to a list/tuple.
+#[derive(Debug, Clone, Copy)]
+enum HeadTailProjection {
+    Head,
+    Tail,
+}
+
+/// Recognise `head` / `tail` applied in user code.
+///
+/// Returns `Some(projection)` for:
+/// - `Expr::Intrinsic` with name `"HEAD"` or `"TAIL"`.
+/// - `Expr::Var(Bound)` whose name is `"head"` / `"first"` / `"tail"`.
+fn is_head_or_tail(func: &RcExpr) -> Option<HeadTailProjection> {
+    match &*func.inner {
+        Expr::Intrinsic(_, name) => match name.as_str() {
+            "HEAD" => Some(HeadTailProjection::Head),
+            "TAIL" => Some(HeadTailProjection::Tail),
+            _ => None,
+        },
+        Expr::Var(_, Var::Bound(bv)) => match bv.name.as_deref() {
+            Some("head" | "first") => Some(HeadTailProjection::Head),
+            Some("tail") => Some(HeadTailProjection::Tail),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Apply a `head`/`tail` projection to a known `Tuple` type.
+///
+/// - `head(Tuple([T₀, …])) → T₀`
+/// - `tail(Tuple([T₀, T₁, …])) → Tuple([T₁, …])`
+/// - `tail(Tuple([T₀])) → List(Any)` (tail of a 1-element list is the empty list)
+///
+/// Returns `None` when `arg_type` is not a `Tuple` (caller falls through to the
+/// generic annotation path).
+fn apply_head_tail_to_tuple(proj: HeadTailProjection, arg_type: &Type) -> Option<Type> {
+    if let Type::Tuple(elems) = arg_type {
+        match proj {
+            HeadTailProjection::Head => elems.first().cloned(),
+            HeadTailProjection::Tail => {
+                if elems.len() <= 1 {
+                    // tail of a singleton (or degenerate zero-elem) tuple is the empty list.
+                    Some(Type::List(Box::new(Type::Any)))
+                } else {
+                    Some(Type::Tuple(elems[1..].to_vec()))
+                }
+            }
+        }
+    } else {
+        None
+    }
+}
+
+fn subtract_type(ty: &Type, remove: &Type) -> Type {
+    match ty {
+        Type::Union(variants) => {
+            let remaining: Vec<Type> = variants
+                .iter()
+                .filter(|v| !is_subtype(v, remove))
+                .cloned()
+                .collect();
+            match remaining.len() {
+                0 => Type::Never,
+                1 => remaining.into_iter().next().unwrap(),
+                _ => Type::Union(remaining),
+            }
+        }
+        // Exact match: subtracting the whole type gives Never.
+        t if is_subtype(t, remove) => Type::Never,
+        // Opaque or unrelated type: leave unchanged.
+        t => t.clone(),
+    }
+}
+
+/// Build a union type from two branch result types.
+///
+/// Delegates to `Type::union` which deduplicates, absorbs literals into
+/// their base types, and normalises singleton unions.
+fn make_union_type(a: Type, b: Type) -> Type {
+    Type::union([a, b])
+}
+
+/// A parsed clause from a `cond` clause list.
+enum Clause<'a> {
+    /// `condition => result` — a `__CLAUSE(condition, result)` application.
+    Case {
+        condition: &'a RcExpr,
+        result: &'a RcExpr,
+    },
+    /// Trailing bare expression (the default branch).
+    Default(&'a RcExpr),
+}
+
+/// Try to extract a static clause list from a `cond(…)` argument.
+///
+/// Returns `Some(clauses)` when the argument is a list literal (or a small
+/// tuple that is equivalent) whose elements are `__CLAUSE(c, r)` applications
+/// or a trailing default value.  Returns `None` for runtime-computed lists.
+fn extract_clause_list(expr: &RcExpr) -> Option<Vec<Clause<'_>>> {
+    let items = match &*expr.inner {
+        Expr::List(_, items) => items,
+        _ => return None,
+    };
+
+    let mut clauses = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        match &*item.inner {
+            Expr::App(_, func, args) if args.len() == 2 => {
+                if is_clause_intrinsic(func) {
+                    clauses.push(Clause::Case {
+                        condition: &args[0],
+                        result: &args[1],
+                    });
+                } else {
+                    // Non-clause app in non-trailing position — fall back to generic.
+                    if i + 1 < items.len() {
+                        return None;
+                    }
+                    clauses.push(Clause::Default(item));
+                }
+            }
+            _ => {
+                // Bare expression: OK as trailing default.
+                if i + 1 < items.len() {
+                    // Non-trailing bare expression makes list unreadable.
+                    return None;
+                }
+                clauses.push(Clause::Default(item));
+            }
+        }
+    }
+    Some(clauses)
+}
+
+/// Return `true` if `func` is the `CLAUSE` intrinsic or its prelude alias `=>`.
+fn is_clause_intrinsic(func: &RcExpr) -> bool {
+    match &*func.inner {
+        Expr::Intrinsic(_, name) => name == "CLAUSE",
+        Expr::Var(_, Var::Bound(bv)) => matches!(bv.name.as_deref(), Some("=>" | "⇒")),
+        _ => false,
+    }
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Return `true` if `ty` contains a free `Type::Var` whose name matches `name`.
+///
+/// Used by `resolve_aliases_inner` to detect self-referential aliases and
+/// decide whether to wrap the resolved body in `Type::Mu`.
+fn contains_var_named(ty: &Type, name: &str) -> bool {
+    match ty {
+        Type::Var(id) => id.0 == name,
+        Type::List(inner) | Type::IO(inner) | Type::Dict(inner) | Type::NonEmpty(inner) => {
+            contains_var_named(inner, name)
+        }
+        Type::Function(a, b) | Type::Lens(a, b) | Type::Traversal(a, b) => {
+            contains_var_named(a, name) || contains_var_named(b, name)
+        }
+        Type::Tuple(elems) => elems.iter().any(|e| contains_var_named(e, name)),
+        Type::Record { fields, .. } => fields.values().any(|v| contains_var_named(v, name)),
+        Type::Union(variants) => variants.iter().any(|v| contains_var_named(v, name)),
+        // Mu: the binder name `x` is bound, not free — stop if it shadows `name`.
+        Type::Mu(x, body) => x.0 != name && contains_var_named(body, name),
+        _ => false,
+    }
+}
 
 /// Synthesise the type for a primitive literal.
 fn synthesise_primitive(prim: &Primitive) -> Type {
     match prim {
         Primitive::Num(_) => Type::Number,
-        Primitive::Str(_) => Type::String,
+        Primitive::Str(s) => Type::LiteralString(s.clone()),
         Primitive::Sym(name) => Type::LiteralSymbol(name.clone()),
         Primitive::Bool(_) => Type::Bool,
         Primitive::Null => Type::Null,
     }
 }
 
-/// Build the list element type from a `Vec` of synthesised element types.
+/// Maximum number of elements for which a non-empty list literal synthesises
+/// as a `Tuple` (§A6.3).  Beyond this cap the type becomes `NonEmpty`.
+const LIST_TUPLE_CAP: usize = 16;
+
+/// Synthesise the type of a list literal from its element types.
 ///
-/// - Empty list → `[never]`
-/// - All same type → `[T]`
-/// - Mixed types → `[T1 | T2 | … | Tn]` (deduplicated)
-fn synthesise_list_type(types: Vec<Type>) -> Type {
-    let mut seen: Vec<Type> = Vec::new();
-    for ty in types {
-        if is_informative(&ty) && !seen.contains(&ty) {
-            seen.push(ty);
-        }
+/// Rules (§A6.3):
+/// - `[]` → `List(never)` — definitively empty; `head` on it always warns.
+/// - 1..=`LIST_TUPLE_CAP` elements → `Tuple(elem_types)` (preserves positions).
+/// - >`LIST_TUPLE_CAP` elements → `NonEmpty(<deduplicated element union>)`.
+///
+/// Every non-empty result is a subtype of `NonEmpty`, so `head`/`tail` accept it.
+fn synthesise_list_literal(elem_types: Vec<Type>) -> Type {
+    let n = elem_types.len();
+    if n == 0 {
+        // `[]` is definitively empty — its element type is `Never`.
+        // This causes `head([])` to synthesise `Never`, which is not
+        // consistent with any concrete annotation → triggers a warning.
+        Type::List(Box::new(Type::Never))
+    } else if n <= LIST_TUPLE_CAP {
+        // Precise tuple: preserves arity and per-position types.
+        Type::Tuple(elem_types)
+    } else {
+        // Beyond the cap: lose positional information but keep non-emptiness.
+        Type::NonEmpty(Box::new(Type::union(elem_types)))
     }
-
-    let elem_type = match seen.len() {
-        0 => Type::Any, // Empty list is polymorphic — compatible with any element type
-        1 => seen.into_iter().next().unwrap(),
-        _ => Type::Union(seen),
-    };
-
-    Type::List(Box::new(elem_type))
 }
 
+/// Synthesise a homogeneous list type from a collection of element types.
+///
+/// Used by paths that produce a `List` without knowing its length
+/// (e.g. the result of `map`).  Element types are unioned; an empty
+/// collection gives `List(any)`.
 /// Extract a string value from a core expression.
 ///
 /// Handles two forms:
@@ -1088,6 +2190,46 @@ fn extract_plain_str(expr: &RcExpr) -> Option<String> {
         Some(s.clone())
     } else {
         None
+    }
+}
+
+/// Extract the `__type_hint` string and inner value from a `Meta` node.
+///
+/// Returns `(hint_str, inner)` when `expr` is `Meta(_, inner, {__type_hint: "..."})`,
+/// `None` otherwise.  Used by the §A10 monadic bind element-type pre-pass.
+fn extract_monad_hint_inner(expr: &RcExpr) -> Option<(String, &RcExpr)> {
+    if let Expr::Meta(_, inner, meta) = &*expr.inner {
+        if let Expr::Block(_, block) = &*meta.inner {
+            if let Some(hint_expr) = block.get("__type_hint") {
+                if let Some(hint_str) = extract_string_literal(hint_expr) {
+                    return Some((hint_str, inner));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Normalise a homogeneous `Tuple` to a `List` of the common element type.
+///
+/// Replicates the logic in `synthesise_meta`'s `is_hint` branch so that
+/// `[1, 2, 3]`, which synthesises as `Tuple([number, number, number])`, is
+/// treated as `List(number)` when matching against a monad wrapper type `[a]`.
+///
+/// Heterogeneous tuples become `List(union(elems))`.  Non-tuple types are
+/// returned unchanged.
+fn normalise_tuple_to_list(ty: Type) -> Type {
+    match &ty {
+        Type::Tuple(elems) if !elems.is_empty() => {
+            let first = &elems[0];
+            if elems.iter().all(|e| e == first) {
+                Type::List(Box::new(first.clone()))
+            } else {
+                let elem_type = Type::union(elems.iter().cloned());
+                Type::List(Box::new(elem_type))
+            }
+        }
+        _ => ty,
     }
 }
 
@@ -1136,6 +2278,12 @@ pub struct TypeCheckResult {
     /// name collisions between different lambdas with the same param
     /// names.
     pub lambda_params: HashMap<Smid, Vec<(String, Type)>>,
+    /// Type alias definitions registered during type checking.
+    ///
+    /// Maps alias name (e.g. `"Point"`) to its resolved `Type`.  Used
+    /// by the LSP hover provider to show the resolved type for alias
+    /// references in `type:` annotation strings.
+    pub aliases: HashMap<String, Type>,
 }
 
 /// Run the type checker over `expr` and return all warnings found.
@@ -1150,6 +2298,53 @@ pub fn type_check_full(expr: &RcExpr) -> TypeCheckResult {
     let mut checker = Checker::new();
     checker.check_expr(expr);
     checker.into_results()
+}
+
+/// Extract type alias definitions from `expr` without running full type checking.
+///
+/// Walks all `Meta` nodes and registers any `types:` block entries found,
+/// then returns the alias map.  Cheaper than `type_check_full` — intended
+/// for use on the pre-pruned expression where aliases may be stripped by
+/// dead-code elimination before the full type-check pass.
+pub fn extract_aliases(expr: &RcExpr) -> HashMap<String, Type> {
+    let mut checker = Checker::new();
+    checker.walk_meta_for_aliases(expr);
+    checker.aliases
+}
+
+impl Checker {
+    /// Walk `expr` recursively, registering any `types:` aliases found in
+    /// `Meta` nodes.  Does not perform type inference — only alias collection.
+    fn walk_meta_for_aliases(&mut self, expr: &RcExpr) {
+        match &*expr.inner {
+            Expr::Meta(_, inner, meta) => {
+                self.register_aliases_from_meta(meta);
+                self.walk_meta_for_aliases(inner);
+                self.walk_meta_for_aliases(meta);
+            }
+            Expr::Let(_, scope, _) => {
+                for (_, value) in &scope.pattern {
+                    self.walk_meta_for_aliases(value);
+                }
+                self.walk_meta_for_aliases(&scope.body);
+            }
+            Expr::App(_, f, args) => {
+                self.walk_meta_for_aliases(f);
+                for a in args {
+                    self.walk_meta_for_aliases(a);
+                }
+            }
+            Expr::Lam(_, _, scope) => {
+                self.walk_meta_for_aliases(&scope.body);
+            }
+            Expr::Block(_, bindings) => {
+                for e in bindings.values() {
+                    self.walk_meta_for_aliases(e);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -1210,8 +2405,13 @@ mod tests {
 
     #[test]
     fn synthesise_string_literal() {
+        // String literals now synthesise their literal type (LiteralString),
+        // not the base String type — consistent with how symbols work.
         let mut c = Checker::new();
-        assert_eq!(c.synthesise(&str_lit("hello")), Type::String);
+        assert_eq!(
+            c.synthesise(&str_lit("hello")),
+            Type::LiteralString("hello".to_string())
+        );
     }
 
     #[test]
@@ -1238,19 +2438,26 @@ mod tests {
     // ── List synthesis ──────────────────────────────────────────────────────
 
     #[test]
-    fn empty_list_is_polymorphic() {
+    fn empty_list_has_never_element_type() {
+        // `[]` synthesises as `List(Never)` — definitively empty.
+        // This ensures `head([])` triggers a type warning rather than
+        // silently returning `Any`.
         let mut c = Checker::new();
-        assert_eq!(c.synthesise(&list(vec![])), Type::List(Box::new(Type::Any)));
+        assert_eq!(
+            c.synthesise(&list(vec![])),
+            Type::List(Box::new(Type::Never))
+        );
     }
 
     #[test]
     fn small_list_synthesises_as_tuple() {
         let mut c = Checker::new();
-        // 2-4 element lists synthesise as tuples (more informative)
+        // 2-4 element lists synthesise as tuples (more informative).
+        // String literals now synthesise as LiteralString.
         let l2 = list(vec![num_lit(1), str_lit("hello")]);
         assert_eq!(
             c.synthesise(&l2),
-            Type::Tuple(vec![Type::Number, Type::String])
+            Type::Tuple(vec![Type::Number, Type::LiteralString("hello".to_string())])
         );
         let l3 = list(vec![num_lit(1), num_lit(2), num_lit(3)]);
         assert_eq!(
@@ -1260,17 +2467,24 @@ mod tests {
     }
 
     #[test]
-    fn large_list_synthesises_as_list() {
+    fn large_list_synthesises_as_tuple_or_nonempty() {
         let mut c = Checker::new();
-        // 5+ element lists synthesise as homogeneous lists
-        let l = list(vec![
+        // 5-element list: within LIST_TUPLE_CAP (16) → Tuple.
+        let l5 = list(vec![
             num_lit(1),
             num_lit(2),
             num_lit(3),
             num_lit(4),
             num_lit(5),
         ]);
-        assert_eq!(c.synthesise(&l), Type::List(Box::new(Type::Number)));
+        assert_eq!(c.synthesise(&l5), Type::Tuple(vec![Type::Number; 5]));
+
+        // >16-element list: beyond cap → NonEmpty(element union).
+        let l17: Vec<_> = (0..17).map(|_| num_lit(1)).collect();
+        assert_eq!(
+            c.synthesise(&list(l17)),
+            Type::NonEmpty(Box::new(Type::Number))
+        );
     }
 
     // ── Unknown variable is any ──────────────────────────────────────────────
@@ -1299,7 +2513,8 @@ mod tests {
         let warnings = c.into_warnings();
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].expected.as_deref() == Some("number"));
-        assert!(warnings[0].found.as_deref() == Some("string"));
+        // String literals now synthesise as LiteralString — display as "\"hello\"".
+        assert!(warnings[0].found.as_deref() == Some("\"hello\""));
     }
 
     #[test]
@@ -1315,6 +2530,28 @@ mod tests {
         let mut c = Checker::new();
         let expr = meta_with_hint(num_lit(1), "number");
         assert_eq!(c.synthesise(&expr), Type::Number);
+    }
+
+    /// Regression: synthesise_meta heterogeneous-tuple branch must route
+    /// through Type::union (not Type::Union directly) so that a literal
+    /// string mixed with the base String type is absorbed to just `string`.
+    ///
+    /// Before the fix the element type was `LiteralString("a") | string`
+    /// (un-normalised).  After the fix Type::union absorbs the literal into
+    /// its base type, yielding `string`.
+    #[test]
+    fn meta_type_hint_heterogeneous_tuple_normalises_union() {
+        let mut c = Checker::new();
+        // Build [str_lit("a"), x_annotated_string] where the second element
+        // is annotated `type: "string"` so it synthesises as base String.
+        // The resulting list has tuple type (LiteralString("a"), String).
+        let elem_a = str_lit("a");
+        let elem_b = meta_with_type(str_lit("b"), "string"); // synthesises String
+        let lst = list(vec![elem_a, elem_b]);
+        // Wrap in __type_hint to trigger the is_hint code path.
+        let expr = meta_with_hint(lst, "[string]");
+        // Must be List(String), not List(LiteralString("a") | String).
+        assert_eq!(c.synthesise(&expr), Type::List(Box::new(Type::String)));
     }
 
     #[test]
@@ -1379,7 +2616,8 @@ mod tests {
         let warnings = c.into_warnings();
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0].expected.as_deref(), Some("number"));
-        assert_eq!(warnings[0].found.as_deref(), Some("string"));
+        // String literal "oops" synthesises as LiteralString.
+        assert_eq!(warnings[0].found.as_deref(), Some("\"oops\""));
     }
 
     #[test]
@@ -1770,11 +3008,12 @@ mod tests {
                 fields: {
                     let mut m = std::collections::BTreeMap::new();
                     m.insert("age".to_string(), Type::Number);
-                    m.insert("name".to_string(), Type::String);
+                    // String literals synthesise as LiteralString.
+                    m.insert("name".to_string(), Type::LiteralString("Alice".to_string()));
                     m
                 },
                 open: true,
-                row: None,
+                rows: vec![],
             }
         );
     }
@@ -1801,7 +3040,7 @@ mod tests {
                     m
                 },
                 open: true,
-                row: None,
+                rows: vec![],
             }
         );
     }
@@ -1827,7 +3066,7 @@ mod tests {
                     m
                 },
                 open: true,
-                row: None,
+                rows: vec![],
             }),
         );
         c.push_scope(frame);
@@ -1847,7 +3086,7 @@ mod tests {
             mono(Type::Record {
                 fields: std::collections::BTreeMap::new(),
                 open: true,
-                row: None,
+                rows: vec![],
             }),
         );
         c.push_scope(frame);
@@ -1872,7 +3111,7 @@ mod tests {
                     m
                 },
                 open: false,
-                row: None,
+                rows: vec![],
             }),
         );
         c.push_scope(frame);
@@ -2074,5 +3313,119 @@ mod tests {
         // Falls back to name lookup, which finds "x" in the single frame.
         let result = c.lookup_bound(&bv);
         assert_eq!(result, Type::Number);
+    }
+
+    // ── §A10: Monadic bound-variable element-type hints ──────────────────────
+
+    /// Helper: make `App(Name("bind"), [Meta(inner, {__type_hint: hint}), Lam(x, body)])`
+    /// which is the shape produced by `desugar_monadic_block`.
+    fn monadic_bind_app(hint: &str, inner: RcExpr, lam_body: RcExpr) -> RcExpr {
+        use crate::core::expr::core;
+        let hint_val = core::str(Smid::default(), hint);
+        let meta_block = core::block(Smid::default(), [("__type_hint".to_string(), hint_val)]);
+        let value = core::meta(Smid::default(), inner, meta_block);
+        let lam = RcExpr::from(Expr::Lam(
+            Smid::default(),
+            false,
+            crate::core::expr::LamScope {
+                pattern: vec!["x".to_string()],
+                body: lam_body,
+            },
+        ));
+        let bind_fn = RcExpr::from(Expr::Name(Smid::default(), "bind".to_string()));
+        RcExpr::from(Expr::App(Smid::default(), bind_fn, vec![value, lam]))
+    }
+
+    #[test]
+    fn a10_infer_elem_type_from_list_hint() {
+        // `infer_elem_type_from_hint_str("[a]", List(number))` → `Some(number)`.
+        let mut c = Checker::new();
+        let val_type = Type::List(Box::new(Type::Number));
+        let result = c.infer_elem_type_from_hint_str("[a]", &val_type);
+        assert_eq!(result, Some(Type::Number));
+    }
+
+    #[test]
+    fn a10_infer_elem_type_from_io_hint() {
+        // `infer_elem_type_from_hint_str("IO(a)", IO(string))` → `Some(string)`.
+        let mut c = Checker::new();
+        let val_type = Type::IO(Box::new(Type::String));
+        let result = c.infer_elem_type_from_hint_str("IO(a)", &val_type);
+        assert_eq!(result, Some(Type::String));
+    }
+
+    #[test]
+    fn a10_infer_elem_type_no_match() {
+        // Hint wrapper does not match concrete type → `None`.
+        let mut c = Checker::new();
+        // Hint says "[a]" (list) but val_type is number — unification fails.
+        let result = c.infer_elem_type_from_hint_str("[a]", &Type::Number);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn a10_normalise_homogeneous_tuple_to_list() {
+        // `[1, 2, 3]` synthesises as `Tuple([number, number, number])`.
+        // `normalise_tuple_to_list` should give `List(number)`.
+        let tuple = Type::Tuple(vec![Type::Number, Type::Number, Type::Number]);
+        assert_eq!(
+            normalise_tuple_to_list(tuple),
+            Type::List(Box::new(Type::Number))
+        );
+    }
+
+    #[test]
+    fn a10_normalise_non_tuple_unchanged() {
+        // Non-tuple types pass through unchanged.
+        assert_eq!(
+            normalise_tuple_to_list(Type::List(Box::new(Type::Number))),
+            Type::List(Box::new(Type::Number))
+        );
+        assert_eq!(normalise_tuple_to_list(Type::Number), Type::Number);
+    }
+
+    #[test]
+    fn a10_monadic_bind_lambda_params_recorded() {
+        // The A10 pre-pass should record `x: number` in `lambda_params` when
+        // the monadic bind pattern is `App(bind, [Meta([1,2,3], {__type_hint: "[a]"}), Lam(x, body)])`.
+        let mut c = Checker::new();
+        // Use `num_lit(0)` as the body — its synthesis doesn't affect param recording.
+        let inner = list(vec![num_lit(1), num_lit(2), num_lit(3)]);
+        let app = monadic_bind_app("[a]", inner, num_lit(0));
+        c.synthesise(&app);
+
+        // The lambda's Smid is Smid::default() (from our helper).
+        let lam_smid = Smid::default();
+        let params = c.lambda_params.get(&lam_smid);
+        assert!(
+            params.is_some(),
+            "lambda_params should be recorded for the monadic lambda"
+        );
+        let params = params.unwrap();
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0].0, "x");
+        assert_eq!(params[0].1, Type::Number, "x should be inferred as number");
+    }
+
+    #[test]
+    fn contains_var_named_in_nonempty() {
+        // NonEmpty(X) should detect X as a free variable.
+        let ty = Type::NonEmpty(Box::new(Type::Var(TypeVarId("X".to_string()))));
+        assert!(contains_var_named(&ty, "X"));
+        assert!(!contains_var_named(&ty, "Y"));
+    }
+
+    #[test]
+    fn a10_extract_monad_hint_inner_basic() {
+        // `extract_monad_hint_inner(Meta(num, {__type_hint: "[a]"}))` → `Some(("[a]", num))`.
+        let meta_expr = {
+            let hint_val = core::str(Smid::default(), "[a]");
+            let meta_block = core::block(Smid::default(), [("__type_hint".to_string(), hint_val)]);
+            core::meta(Smid::default(), num_lit(42), meta_block)
+        };
+        let result = extract_monad_hint_inner(&meta_expr);
+        assert!(result.is_some(), "should extract hint from Meta node");
+        let (hint, _inner) = result.unwrap();
+        assert_eq!(hint, "[a]");
     }
 }

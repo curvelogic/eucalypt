@@ -39,6 +39,8 @@ pub enum DataConstructor {
     IoAction = 14,
     /// IO monad: failure — (world, error)
     IoFail = 15,
+    /// Cond clause — (condition, result) pair built by the `=>` operator
+    Clause = 16,
 }
 
 impl fmt::Display for DataConstructor {
@@ -60,6 +62,7 @@ impl fmt::Display for DataConstructor {
             DataConstructor::IoBind => write!(f, "io-bind"),
             DataConstructor::IoAction => write!(f, "io-action"),
             DataConstructor::IoFail => write!(f, "io-fail"),
+            DataConstructor::Clause => write!(f, "clause"),
         }
     }
 }
@@ -87,6 +90,7 @@ impl DataConstructor {
             DataConstructor::IoBind => 3,
             DataConstructor::IoAction => 2,
             DataConstructor::IoFail => 2,
+            DataConstructor::Clause => 2,
         }
     }
 }
@@ -133,6 +137,7 @@ impl TryFrom<Tag> for DataConstructor {
             value if value == DataConstructor::IoBind as Tag => Ok(DataConstructor::IoBind),
             value if value == DataConstructor::IoAction as Tag => Ok(DataConstructor::IoAction),
             value if value == DataConstructor::IoFail as Tag => Ok(DataConstructor::IoFail),
+            value if value == DataConstructor::Clause as Tag => Ok(DataConstructor::Clause),
             _ => Err(()),
         }
     }

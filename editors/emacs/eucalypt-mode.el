@@ -46,6 +46,8 @@
 (declare-function yaml-mode "yaml-mode" ())
 (declare-function json-mode "json-mode" ())
 (declare-function sp-local-pair "smartparens" (modes open close &rest keys))
+(defvar treesit-fold-range-alist)
+(declare-function treesit-fold-range-seq "treesit-fold" (node offset))
 
 ;;; Group
 
@@ -241,7 +243,7 @@ Set via file-local variables, e.g.:
    :language 'eucalypt
    :feature 'prelude
    '(((identifier) @font-lock-builtin-face
-      (:match "^\\(cons\\|head\\|tail\\|first\\|second\\|map\\|filter\\|foldl\\|foldr\\|and\\|or\\|not\\|merge\\|concat\\|identity\\|const\\|compose\\|take\\|drop\\|take-while\\|drop-while\\|all\\|any\\|all-true\\?\\|any-true\\?\\|keys\\|values\\|lookup\\|has\\|range\\|repeat\\|iterate\\|cycle\\|zip\\|zip-with\\|reverse\\|remove\\|mapcat\\|group-by\\|qsort\\|partition\\|negate\\|inc\\|dec\\|floor\\|ceiling\\|max\\|min\\|abs\\|num\\|panic\\|assert\\|append\\|prepend\\|head-or\\|tail-or\\|second-or\\|flip\\|apply\\|scanl\\|scanr\\)$"
+      (:match "^\\(cons\\|head\\|tail\\|first\\|second\\|map\\|filter\\|foldl\\|foldr\\|and\\|or\\|not\\|merge\\|concat\\|identity\\|const\\|compose\\|take\\|drop\\|take-while\\|drop-while\\|all\\|any\\|all-true\\?\\|any-true\\?\\|keys\\|values\\|lookup\\|has\\|range\\|repeat\\|iterate\\|cycle\\|zip\\|zip-with\\|reverse\\|remove\\|mapcat\\|group-by\\|qsort\\|partition\\|negate\\|inc\\|dec\\|floor\\|ceiling\\|max\\|min\\|abs\\|num\\|panic\\|assert\\|append\\|prepend\\|head-or\\|tail-or\\|second-or\\|flip\\|apply\\|scanl\\|scanr\\|deep-merge\\|merge-all\\|elements\\|block\\|lookup-in\\|lookup-or\\|lookup-or-in\\|lookup-alts\\|lookup-across\\|lookup-path\\|complement\\|curry\\|uncurry\\|juxt\\|fnil\\|with-meta\\|meta\\|merge-meta\\|assertions\\|split-at\\|take-until\\|drop-until\\|split-after\\|split-when\\|nth\\|count\\|last\\|map2\\|zip-apply\\|window\\|over-sliding-pairs\\|differences\\|discriminate\\|key\\|value\\|bimap\\|map-first\\|map-second\\|map-kv\\|map-as-block\\|pair\\|zip-kv\\|with-keys\\|map-values\\|map-keys\\|filter-items\\|by-key\\|by-key-name\\|by-key-match\\|by-value\\|match-filter-values\\|filter-values\\|alter-value\\|update-value\\|alter\\|update\\|update-value-or\\|set-value\\|tongue\\|merge-at\\|nil\\?\\|zero\\?\\|pos\\?\\|neg\\?\\|any\\?\\|non-nil\\?\\|block\\?\\|bool\\?\\|list\\?\\|number\\?\\|string\\?\\|symbol\\?\\|is-array\\?\\|match\\?\\|max-of\\|min-of\\|max-of-by\\|max-of-or\\|min-of-by\\|min-of-or\\|sym\\|ch\\|str\\|arr\\|monad\\|random\\|vec\\|render\\|render-as\\|parse-as\\|parse-args\\|deep-transform\\|deep-fold\\|deep-find\\|deep-find-first\\|deep-find-paths\\|deep-query\\|deep-query-first\\|deep-query-fold\\|deep-query-paths\\|deep-merge-at\\|sort-by\\|sort-by-num\\|sort-by-str\\|sort-by-zdt\\|sort-keys\\|sort-nums\\|sort-strs\\|sort-zdts\\|kv-block\\|map-elements\\|coalesce\\|group-consecutive\\|group-consecutive-by\\|iota\\|reduce\\|rotate\\|tails\\|update-nth\\|update-first\\|interleave\\|unzip\\|butlast\\|ints-from\\|snoc\\|cross\\|sum\\|product\\|running-sum\\|running-max\\|running-min\\|nub-by\\|uniq\\|partition-all\\|window-all\\|div\\|mod\\|rem\\|quot\\|pow\\|dbg\\|eu\\|io\\|cal\\|iosm\\)$"
               @font-lock-builtin-face)))
 
    :language 'eucalypt
@@ -633,6 +635,29 @@ region is active.  Skips replacements inside strings and comments."
 ;; Disable smartparens auto-pairing for ` in eucalypt buffers.
 (with-eval-after-load 'smartparens
   (sp-local-pair 'eucalypt-mode "`" nil :actions nil))
+
+;;; Code folding (treesit-fold)
+;;
+;; When the optional `treesit-fold' package is available, register fold
+;; ranges for the main structural node types.  Install via:
+;;   (package-install 'treesit-fold)     ; MELPA
+;; or:
+;;   (use-package treesit-fold :ensure t)
+;;
+;; Foldable constructs:
+;;   block       — { declarations }
+;;   list        — [ elements ]
+;;   bracket_expr — ⟦ ... ⟧  (custom bracket pairs, including monadic blocks)
+
+(defvar eucalypt-mode--treesit-fold-ranges
+  '((block        . treesit-fold-range-seq)
+    (list         . treesit-fold-range-seq)
+    (bracket_expr . treesit-fold-range-seq))
+  "Fold range rules for `eucalypt-mode', keyed by tree-sitter node type.")
+
+(with-eval-after-load 'treesit-fold
+  (add-to-list 'treesit-fold-range-alist
+               (cons 'eucalypt-mode eucalypt-mode--treesit-fold-ranges)))
 
 ;;; Markdown highlighting within docstrings
 

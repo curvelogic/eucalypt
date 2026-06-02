@@ -6,6 +6,7 @@
 //! and notifications.
 
 mod actions;
+pub mod alias_index;
 mod completion;
 mod diagnostics;
 mod folding;
@@ -76,6 +77,10 @@ struct CachedPipeline {
     /// Imported files resolved by the pipeline, for building symbol
     /// tables with proper source locations.
     imports: Vec<ImportedFile>,
+    /// Type alias definitions registered during type checking.
+    ///
+    /// Passed to `hover_for_alias` so hover can show the resolved type.
+    alias_types: HashMap<String, Type>,
 }
 
 /// A pipeline error with a message and optional source location.
@@ -836,13 +841,18 @@ fn on_goto_definition(
     let text = state.store.get(uri)?;
     let parse = crate::syntax::rowan::parse_unit(text);
     let root = parse.syntax_node();
+    let position = &params.text_document_position_params.position;
+
+    // Check for alias reference inside a `type:` string first (§A7).
+    let alias_idx = alias_index::build_alias_index(text, &root, uri);
+    if let Some(result) =
+        alias_index::goto_definition_for_alias(text, &root, position, &alias_idx, uri)
+    {
+        return Some(result);
+    }
+
     let table = state.build_symbol_table(uri, text);
-    navigation::goto_definition(
-        text,
-        &root,
-        &params.text_document_position_params.position,
-        &table,
-    )
+    navigation::goto_definition(text, &root, position, &table)
 }
 
 /// Handle textDocument/hover — return hover information for the symbol at cursor.
@@ -851,15 +861,18 @@ fn on_hover(state: &ServerState, params: lsp_types::HoverParams) -> Option<Hover
     let text = state.store.get(uri)?;
     let parse = crate::syntax::rowan::parse_unit(text);
     let root = parse.syntax_node();
+    let position = &params.text_document_position_params.position;
+
+    // Check for alias reference inside a `type:` string first (§A7).
+    let alias_idx = alias_index::build_alias_index(text, &root, uri);
+    let alias_types = state.cached.get(uri).map(|c| &c.alias_types);
+    if let Some(h) = alias_index::hover_for_alias(text, &root, position, &alias_idx, alias_types) {
+        return Some(h);
+    }
+
     let table = state.build_symbol_table(uri, text);
     let type_env = state.type_env_for(uri);
-    hover::hover(
-        text,
-        &root,
-        &params.text_document_position_params.position,
-        &table,
-        type_env,
-    )
+    hover::hover(text, &root, position, &table, type_env)
 }
 
 /// Handle textDocument/references — find all references to the symbol at cursor.
@@ -992,13 +1005,17 @@ fn on_rename(state: &ServerState, params: lsp_types::RenameParams) -> Option<Wor
     let text = state.store.get(uri)?;
     let parse = crate::syntax::rowan::parse_unit(text);
     let root = parse.syntax_node();
-    rename::rename(
-        text,
-        &root,
-        &params.text_document_position.position,
-        &params.new_name,
-        uri,
-    )
+    let position = &params.text_document_position.position;
+
+    // If cursor is on an alias reference inside a type: string, rename the alias (§A7).
+    let alias_idx = alias_index::build_alias_index(text, &root, uri);
+    if let Some(edit) =
+        alias_index::rename_alias(text, &root, position, &params.new_name, &alias_idx, uri)
+    {
+        return Some(edit);
+    }
+
+    rename::rename(text, &root, position, &params.new_name, uri)
 }
 
 /// Handle textDocument/prepareRename — validate the rename target.
@@ -1150,6 +1167,13 @@ fn run_pipeline(
     let mut type_env = TypeEnv::new();
     extract_top_level_bindings(&loader.core().expr, &mut type_env);
 
+    // Extract type aliases BEFORE dead-code elimination.  Dead-code
+    // elimination (prune) removes unreferenced bindings, which may include
+    // declarations that carry `types:` metadata used only for annotations.
+    // We walk all Meta nodes in the cooked expression to collect aliases that
+    // would otherwise be lost before the type checker runs on the pruned expr.
+    let alias_types_pre = crate::core::typecheck::check::extract_aliases(&loader.core().expr);
+
     if let Err(e) = loader.eliminate() {
         return Err(make_pipeline_error(&loader, &e));
     }
@@ -1218,6 +1242,12 @@ fn run_pipeline(
 
     let (_, source_map, _) = loader.complete();
 
+    // Merge pre-elimination aliases with post-elimination aliases.
+    // Post-elimination aliases (from the type-check pass) take priority
+    // since they are more precisely resolved against the inferred types.
+    let mut alias_types = alias_types_pre;
+    alias_types.extend(result.aliases);
+
     Ok(CachedPipeline {
         uri: uri.clone(),
         type_env,
@@ -1225,6 +1255,7 @@ fn run_pipeline(
         warnings: result.warnings,
         source_map,
         imports,
+        alias_types,
     })
 }
 
