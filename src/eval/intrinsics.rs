@@ -999,11 +999,6 @@ lazy_static! {
             ty: function(vec![any(), bool_()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 190
-            name: "ZEROP",
-            ty: function(vec![num(), bool_()]).unwrap(),
-            strict: vec![0],
-    },
     ];
 }
 

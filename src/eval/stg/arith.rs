@@ -1251,41 +1251,6 @@ impl StgIntrinsic for Clz {
 
 impl CallGlobal1 for Clz {}
 
-/// ZEROP(n) — test whether a number is zero.
-///
-/// Replaces `zero?:  = 0` in the prelude.  The old definition created a
-/// Let-binding for the literal 0 and then dispatched through the full
-/// polymorphic EQ wrapper on every call.  ZEROP skips all of that:
-/// after unboxing the argument the execute method does a single
-/// integer/float comparison against zero.
-pub struct ZeroP;
-
-impl StgIntrinsic for ZeroP {
-    fn name(&self) -> &str {
-        "ZEROP"
-    }
-
-    fn execute(
-        &self,
-        machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'_>,
-        _emitter: &mut dyn Emitter,
-        args: &[Ref],
-    ) -> Result<(), ExecutionError> {
-        let n = num_arg(machine, view, &args[0])?;
-        let is_zero = n.as_i64().map_or_else(
-            || {
-                n.as_u64()
-                    .map_or_else(|| n.as_f64() == Some(0.0), |u| u == 0)
-            },
-            |i| i == 0,
-        );
-        machine_return_bool(machine, view, is_zero)
-    }
-}
-
-impl CallGlobal1 for ZeroP {}
-
 #[cfg(test)]
 pub mod tests {
 
