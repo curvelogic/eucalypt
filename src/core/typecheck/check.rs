@@ -148,8 +148,18 @@ enum PredicateKind {
     Bool,
     List,
     Block,
-    Nil,    // nil? or null? — tests for null / empty list
-    NotNil, // not-nil? — positive = non-null, negative = null
+    /// `nil?` — empty-list check (`= []`).
+    /// Positive branch: no structural narrowing (empty is `[a]`).
+    /// Negative branch: `List(a) → NonEmpty(a)` (§A6.4).
+    Nil,
+    /// `non-nil?` — non-empty list check.
+    /// Positive branch: `List(a) → NonEmpty(a)` (§A6.4).
+    /// Negative branch: no structural narrowing.
+    NonNil,
+    /// `null?` — null check (`= null`).
+    /// Positive branch: `Type::Null`.
+    /// Negative branch: subtract `Null` from union.
+    Null,
 }
 
 // ── Alias table ──────────────────────────────────────────────────────────────
@@ -600,18 +610,14 @@ impl Checker {
 
             // ── List ─────────────────────────────────────────────────────────
             //
-            // Small fixed-length list literals (2-4 elements) synthesise as
-            // tuples since tuples are subtypes of lists and carry more
-            // information.  Single-element lists stay as lists (not 1-tuples)
-            // and large lists stay as lists for practicality.
+            // Non-empty list literals synthesise as `Tuple` up to a
+            // practicality cap (`LIST_TUPLE_CAP`), preserving element positions
+            // for precise head/tail typing (§A6.3).  Beyond the cap the tuple
+            // would become unwieldy so we fall back to `NonEmpty(<elem union>)`,
+            // which still captures non-emptiness. The empty literal is `[any]`.
             Expr::List(_, items) => {
                 let elem_types: Vec<Type> = items.iter().map(|e| self.synthesise(e)).collect();
-                let n = elem_types.len();
-                if (2..=4).contains(&n) {
-                    Type::Tuple(elem_types)
-                } else {
-                    synthesise_list_type(elem_types)
-                }
+                synthesise_list_literal(elem_types)
             }
 
             // ── Block ─────────────────────────────────────────────────────────
@@ -905,6 +911,54 @@ impl Checker {
                 }
             }
             // Wrong arity (partial application) — fall through to generic path.
+        }
+
+        // ── HEAD/TAIL-on-Tuple precise typing (§A6.8) ────────────────────────
+        //
+        // When `head` or `tail` is applied to a `Tuple` argument, override the
+        // annotation result with precise element-type information:
+        //   head(Tuple([T₀,…,Tₙ])) → T₀
+        //   tail(Tuple([T₀,T₁,…])) → Tuple([T₁,…])   (1-elem → List(any))
+        //
+        // Also: head/tail on `List(Never)` (the empty literal `[]`) returns
+        // `Never`, ensuring the annotation check warns (AC2).
+        //
+        // This is checked AFTER branch recognition (which takes priority) and
+        // only fires when there is exactly one argument.
+        if spine_args.len() == 1 {
+            if let Some(proj) = is_head_or_tail(head) {
+                let arg_type = self.synthesise(spine_args[0]);
+                if let Some(result) = apply_head_tail_to_tuple(proj, &arg_type) {
+                    return result;
+                }
+                // Empty list literal: `[]` synthesises as `List(Never)`.
+                // `head`/`tail` on an empty list always panics at runtime —
+                // emit a direct type warning so the user is alerted even if
+                // the call site annotation is `any`.  Return `Any` so that
+                // downstream checks can continue without cascading errors.
+                if matches!(&arg_type, Type::List(e) if matches!(e.as_ref(), Type::Never)) {
+                    let proj_name = match proj {
+                        HeadTailProjection::Head => "head",
+                        HeadTailProjection::Tail => "tail",
+                    };
+                    let smid = func.smid();
+                    let warning = TypeWarning::new(format!("{proj_name} of empty list"))
+                        .at(smid)
+                        .with_note(format!(
+                            "guard against empty lists with 'nil?', e.g. \
+                         'if(xs nil?, default, xs {proj_name})'"
+                        ))
+                        .with_note(
+                            "'head' and 'tail' are only defined on non-empty lists; \
+                         use 'nth(0, xs)' or pattern matching if the list may be empty"
+                                .to_string(),
+                        );
+                    self.warnings.push(warning);
+                    return Type::Any;
+                }
+                // Not a Tuple or empty — fall through to generic path which uses
+                // the NonEmpty([a]) annotation.
+            }
         }
 
         // Extract the function name for use in warning messages.
@@ -1403,8 +1457,13 @@ impl Checker {
                 },
                 Type::Any,
             ),
-            PredicateKind::Nil => (Type::Null, subtract_type(&current_ty, &Type::Null)),
-            PredicateKind::NotNil => (subtract_type(&current_ty, &Type::Null), Type::Null),
+            // `nil?` narrows to NonEmpty in the NEGATIVE branch (§A6.4).
+            // Positive branch: no useful narrowing — leave as Any (suppressed).
+            PredicateKind::Nil => (Type::Any, narrow_to_nonempty(&current_ty)),
+            // `non-nil?` narrows to NonEmpty in the POSITIVE branch (§A6.4).
+            PredicateKind::NonNil => (narrow_to_nonempty(&current_ty), Type::Any),
+            // `null?` narrows to Null (positive) / subtracts Null (negative).
+            PredicateKind::Null => (Type::Null, subtract_type(&current_ty, &Type::Null)),
         };
 
         let mut positive = NarrowFrame::new();
@@ -1716,7 +1775,7 @@ fn classify_predicate(func: &RcExpr) -> Option<PredicateKind> {
             "IS_BOOL" | "ISBOOL" => Some(PredicateKind::Bool),
             "IS_LIST" | "ISLIST" => Some(PredicateKind::List),
             "IS_BLOCK" | "ISBLOCK" => Some(PredicateKind::Block),
-            "IS_NIL" | "ISNIL" => Some(PredicateKind::Nil),
+            "IS_NIL" | "ISNIL" => Some(PredicateKind::Nil), // eucalypt nil? = empty list
             _ => None,
         },
         Expr::Var(_, Var::Bound(bv)) => match bv.name.as_deref() {
@@ -1726,8 +1785,9 @@ fn classify_predicate(func: &RcExpr) -> Option<PredicateKind> {
             Some("bool?") => Some(PredicateKind::Bool),
             Some("list?") => Some(PredicateKind::List),
             Some("block?") => Some(PredicateKind::Block),
-            Some("nil?" | "null?") => Some(PredicateKind::Nil),
-            Some("not-nil?") => Some(PredicateKind::NotNil),
+            Some("nil?") => Some(PredicateKind::Nil),
+            Some("non-nil?") => Some(PredicateKind::NonNil),
+            Some("null?") => Some(PredicateKind::Null),
             _ => None,
         },
         _ => None,
@@ -1749,6 +1809,71 @@ fn is_not_func(func: &RcExpr) -> bool {
 /// For singleton types equal to `remove`, returns `Never`.
 /// For `any` or other opaque types, returns the original type unchanged
 /// (the gradual boundary is preserved — §A5.10).
+/// Narrow a list type to its non-empty refinement (§A6.4).
+///
+/// `List(a)` → `NonEmpty(a)`.  Any other type (including `NonEmpty`, `Tuple`,
+/// and `any`) is returned unchanged — the gradual boundary is preserved.
+fn narrow_to_nonempty(ty: &Type) -> Type {
+    match ty {
+        Type::List(elem) => Type::NonEmpty(elem.clone()),
+        other => other.clone(),
+    }
+}
+
+/// Which projection is being applied to a list/tuple.
+#[derive(Debug, Clone, Copy)]
+enum HeadTailProjection {
+    Head,
+    Tail,
+}
+
+/// Recognise `head` / `tail` applied in user code.
+///
+/// Returns `Some(projection)` for:
+/// - `Expr::Intrinsic` with name `"HEAD"` or `"TAIL"`.
+/// - `Expr::Var(Bound)` whose name is `"head"` / `"first"` / `"tail"`.
+fn is_head_or_tail(func: &RcExpr) -> Option<HeadTailProjection> {
+    match &*func.inner {
+        Expr::Intrinsic(_, name) => match name.as_str() {
+            "HEAD" => Some(HeadTailProjection::Head),
+            "TAIL" => Some(HeadTailProjection::Tail),
+            _ => None,
+        },
+        Expr::Var(_, Var::Bound(bv)) => match bv.name.as_deref() {
+            Some("head" | "first") => Some(HeadTailProjection::Head),
+            Some("tail") => Some(HeadTailProjection::Tail),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Apply a `head`/`tail` projection to a known `Tuple` type.
+///
+/// - `head(Tuple([T₀, …])) → T₀`
+/// - `tail(Tuple([T₀, T₁, …])) → Tuple([T₁, …])`
+/// - `tail(Tuple([T₀])) → List(Any)` (tail of a 1-element list is the empty list)
+///
+/// Returns `None` when `arg_type` is not a `Tuple` (caller falls through to the
+/// generic annotation path).
+fn apply_head_tail_to_tuple(proj: HeadTailProjection, arg_type: &Type) -> Option<Type> {
+    if let Type::Tuple(elems) = arg_type {
+        match proj {
+            HeadTailProjection::Head => elems.first().cloned(),
+            HeadTailProjection::Tail => {
+                if elems.len() <= 1 {
+                    // tail of a singleton (or degenerate zero-elem) tuple is the empty list.
+                    Some(Type::List(Box::new(Type::Any)))
+                } else {
+                    Some(Type::Tuple(elems[1..].to_vec()))
+                }
+            }
+        }
+    } else {
+        None
+    }
+}
+
 fn subtract_type(ty: &Type, remove: &Type) -> Type {
     match ty {
         Type::Union(variants) => {
@@ -1872,22 +1997,39 @@ fn synthesise_primitive(prim: &Primitive) -> Type {
     }
 }
 
-/// Build the list element type from a `Vec` of synthesised element types.
+/// Maximum number of elements for which a non-empty list literal synthesises
+/// as a `Tuple` (§A6.3).  Beyond this cap the type becomes `NonEmpty`.
+const LIST_TUPLE_CAP: usize = 16;
+
+/// Synthesise the type of a list literal from its element types.
 ///
-/// - Empty list → `[never]`
-/// - All same type → `[T]`
-/// - Mixed types → `[T1 | T2 | … | Tn]` (deduplicated)
-fn synthesise_list_type(types: Vec<Type>) -> Type {
-    let informative: Vec<Type> = types.into_iter().filter(is_informative).collect();
-    let elem_type = if informative.is_empty() {
-        // Empty list is polymorphic — compatible with any element type.
-        Type::Any
+/// Rules (§A6.3):
+/// - `[]` → `List(never)` — definitively empty; `head` on it always warns.
+/// - 1..=`LIST_TUPLE_CAP` elements → `Tuple(elem_types)` (preserves positions).
+/// - >`LIST_TUPLE_CAP` elements → `NonEmpty(<deduplicated element union>)`.
+///
+/// Every non-empty result is a subtype of `NonEmpty`, so `head`/`tail` accept it.
+fn synthesise_list_literal(elem_types: Vec<Type>) -> Type {
+    let n = elem_types.len();
+    if n == 0 {
+        // `[]` is definitively empty — its element type is `Never`.
+        // This causes `head([])` to synthesise `Never`, which is not
+        // consistent with any concrete annotation → triggers a warning.
+        Type::List(Box::new(Type::Never))
+    } else if n <= LIST_TUPLE_CAP {
+        // Precise tuple: preserves arity and per-position types.
+        Type::Tuple(elem_types)
     } else {
-        Type::union(informative)
-    };
-    Type::List(Box::new(elem_type))
+        // Beyond the cap: lose positional information but keep non-emptiness.
+        Type::NonEmpty(Box::new(Type::union(elem_types)))
+    }
 }
 
+/// Synthesise a homogeneous list type from a collection of element types.
+///
+/// Used by paths that produce a `List` without knowing its length
+/// (e.g. the result of `map`).  Element types are unioned; an empty
+/// collection gives `List(any)`.
 /// Extract a string value from a core expression.
 ///
 /// Handles two forms:
@@ -2080,9 +2222,15 @@ mod tests {
     // ── List synthesis ──────────────────────────────────────────────────────
 
     #[test]
-    fn empty_list_is_polymorphic() {
+    fn empty_list_has_never_element_type() {
+        // `[]` synthesises as `List(Never)` — definitively empty.
+        // This ensures `head([])` triggers a type warning rather than
+        // silently returning `Any`.
         let mut c = Checker::new();
-        assert_eq!(c.synthesise(&list(vec![])), Type::List(Box::new(Type::Any)));
+        assert_eq!(
+            c.synthesise(&list(vec![])),
+            Type::List(Box::new(Type::Never))
+        );
     }
 
     #[test]
@@ -2103,17 +2251,24 @@ mod tests {
     }
 
     #[test]
-    fn large_list_synthesises_as_list() {
+    fn large_list_synthesises_as_tuple_or_nonempty() {
         let mut c = Checker::new();
-        // 5+ element lists synthesise as homogeneous lists
-        let l = list(vec![
+        // 5-element list: within LIST_TUPLE_CAP (16) → Tuple.
+        let l5 = list(vec![
             num_lit(1),
             num_lit(2),
             num_lit(3),
             num_lit(4),
             num_lit(5),
         ]);
-        assert_eq!(c.synthesise(&l), Type::List(Box::new(Type::Number)));
+        assert_eq!(c.synthesise(&l5), Type::Tuple(vec![Type::Number; 5]));
+
+        // >16-element list: beyond cap → NonEmpty(element union).
+        let l17: Vec<_> = (0..17).map(|_| num_lit(1)).collect();
+        assert_eq!(
+            c.synthesise(&list(l17)),
+            Type::NonEmpty(Box::new(Type::Number))
+        );
     }
 
     // ── Unknown variable is any ──────────────────────────────────────────────

@@ -1965,3 +1965,23 @@ pub fn test_typecheck_046_narrowing_then_no_warn() {
 pub fn test_typecheck_047_narrowing_user_brancher() {
     run_typecheck_test("047_narrowing_user_brancher.eu");
 }
+
+#[test]
+pub fn test_typecheck_048_nonempty_list_literal_tuple() {
+    run_typecheck_test("048_nonempty_list_literal_tuple.eu");
+}
+
+#[test]
+pub fn test_typecheck_049_nonempty_nil_narrowing() {
+    run_typecheck_test("049_nonempty_nil_narrowing.eu");
+}
+
+#[test]
+pub fn test_typecheck_050_nonempty_head_tuple_precise() {
+    run_typecheck_test("050_nonempty_head_tuple_precise.eu");
+}
+
+#[test]
+pub fn test_typecheck_051_nonempty_empty_head_warns() {
+    run_typecheck_test("051_nonempty_empty_head_warns.eu");
+}
