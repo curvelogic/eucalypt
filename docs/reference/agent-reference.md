@@ -145,6 +145,7 @@ origin: { x: 0, y: 0 }
 | `number`, `string`, `symbol`, `bool`, `null`, `datetime` | primitives |
 | `any`              | gradual/unknown — no type errors       |
 | `[T]`              | list of T                              |
+| `NonEmpty([T])`    | non-empty list of T                    |
 | `(A, B)`           | tuple                                  |
 | `{{k: T, ..}}`     | open record (at least k: T)            |
 | `{{k: T, ..r}}`    | named row variable (extra fields in r) |
@@ -166,6 +167,14 @@ string interpolation. Always escape with `{{` and `}}`:
 `"{{name: string, ..}} -> string"` not `"{name: string, ..} -> string"`.
 Types without braces (`"number -> number"`, `"IO(T)"`) need no escaping.
 Literal string types (`"value"`) need `\"` escaping inside annotation strings.
+
+**Flow-sensitive narrowing**: when a type-predicate test (`number?`,
+`string?`, `bool?`, `null?`, `list?`, `block?`, `symbol?`) on an
+annotated variable is used as the condition of `if`, `and`, `or`,
+`cond`, or a structural wrapper (e.g. `then(t,f,c): if(c,t,f)`), the
+checker narrows the variable's type in each branch.  Non-structural
+wrappers (e.g. `my-if(c,t,_f): t`) are not recognised as branchers
+and do not trigger narrowing.
 
 See [Type Checking](../guide/type-checking.md) for the full guide.
 
@@ -566,6 +575,17 @@ Patterns: bare `foo` = `**.foo`; `*` = one level; `**` = any depth.
 See also: `identity(v)`, `const(k, _)`, `compose(f, g, x)`,
 `flip(f, x, y)`, `complement(p?)`, `curry(f, x, y)`,
 `uncurry(f, l)`, `cond(l, d)`.
+
+`cond` takes a list of clauses built with `=>` / `⇒` (precedence 15)
+and a default value.  Each clause is `condition => result`; the first
+true clause wins:
+
+```eu,notest
+classify(n): cond[n < 0 => "negative", n > 100 => "huge", "normal"]
+```
+
+Flow-sensitive narrowing applies inside each `cond` clause when the
+condition is a type-predicate test on an annotated variable.
 
 ### 3.5 Type Predicates
 

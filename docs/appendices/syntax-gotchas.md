@@ -505,6 +505,51 @@ are fine as-is:
 ` { type-def: "Point" }                  # fine — just a name, no braces
 ```
 
+## Flow-Sensitive Narrowing and User-Defined Branchers
+
+### `=>` (Clause) vs `//=>` (Assertion)
+
+The `=>` / `⇒` operator (precedence 15) builds a `cond` clause
+(`condition => result`).  It looks similar to the assertion meta-operator
+`//=>` (precedence 5) but has a completely different purpose:
+
+```eu,notest
+# CLAUSE — builds a cond branch; result is a list element
+cond[x > 0 => "positive", "non-positive"]
+
+# ASSERTION — checks a value equals the RHS at meta-evaluation time
+` { result //=> "positive" }
+result: "positive"
+```
+
+Mixing these up produces confusing type or parse errors.
+
+### Non-Structural Brancher Wrappers Disable Narrowing
+
+Flow-sensitive narrowing only applies when the checker can verify that
+a user function is a **structural pass-through** of `if` — i.e. its
+body is exactly `if(condition, true-branch, false-branch)` with
+arguments forwarded in order.  A wrapper that ignores one branch, reorders
+arguments, or adds logic is treated as an opaque function:
+
+```eu,notest
+# STRUCTURAL — recognised as If-shaped; narrowing fires
+my-if(c, t, f): if(c, t, f)
+
+` { type: "(number | string) → number" }
+safe-add(x): my-if(x number?, x + 1, 0)   # no warning
+
+# NON-STRUCTURAL — not a brancher; narrowing does NOT fire
+always-true(c, t, _f): t
+
+` { type: "(number | string) → number" }
+safe2(x): always-true(x number?, x + 1, 0)   # x is still number|string in body
+```
+
+The second example does not produce false-positive warnings because
+`always-true` is not narrowing-aware — `x` retains its declared type
+`number | string` throughout the body, which is type-safe here.
+
 ---
 
 ## Future Improvements
