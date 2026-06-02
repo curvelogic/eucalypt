@@ -753,7 +753,7 @@ abs(n): if(n < 0, 0 - n, n)
 
 ` { doc: "`zero?(n)` - return true if and only if number `n` is 0."
     type: "number → bool" }
-zero?: = 0
+zero?: __ZEROP
 
 ` { doc: "`pos?(n)` - return true if and only if number `n` is strictly positive."
     type: "number → bool" }

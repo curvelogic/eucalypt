@@ -196,6 +196,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(arith::PopCount));
     rt.add(Box::new(arith::Ctz));
     rt.add(Box::new(arith::Clz));
+    rt.add(Box::new(arith::ZeroP));
     rt.add(Box::new(running::RunningMax));
     rt.add(Box::new(running::RunningMin));
     rt.add(Box::new(running::RunningSum));
