@@ -32,7 +32,7 @@ Don't mix idioms on the same context. If you use `second(xs)`, use `first(xs)` n
 ### Multi-way conditionals: `cond`
 
 Use `cond` for three or more branches instead of nesting `if`. The `=>`
-operator (precedence 15, right-associative; Unicode alias `⇒`) builds a
+operator (precedence 15, left-associative; Unicode alias `⇒`) builds a
 clause pair. The last list element is the default:
 
 ```eu,notest
