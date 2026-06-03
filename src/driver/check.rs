@@ -8,8 +8,8 @@
 //!
 //! 2. **Bidirectional type check** — load files through the pipeline, then
 //!    run the type checker.  The prelude is checked once per process and the
-//!    result cached; user files are checked in standalone mode, seeded with
-//!    the cached prelude summary (§B7).
+//!    result cached; user files are seeded with the cached prelude types,
+//!    avoiding redundant prelude re-checking on every file.
 //!
 //! Type issues are always warnings unless `--strict` is passed.
 
@@ -59,10 +59,10 @@ fn get_or_build_prelude_summary() -> Option<&'static PreludeSummary> {
     PRELUDE_CACHE.get()
 }
 
-/// Build the prelude summary by running the standalone pipeline.
+/// Build the prelude summary by running the prelude through the pipeline.
 ///
 /// Loads the prelude resource, translates, merges, and cooks it (no
-/// eliminate step — every prelude binding is a root in standalone mode),
+/// eliminate step — every prelude binding must be retained for caching),
 /// then runs `type_check_for_prelude` to capture binding type schemes,
 /// aliases, and branch shapes.
 fn build_prelude_summary() -> Result<PreludeSummary, EucalyptError> {
@@ -80,7 +80,7 @@ fn build_prelude_summary() -> Result<PreludeSummary, EucalyptError> {
     loader.merge_units(&inputs)?;
     loader.cook()?;
     // Deliberately NO eliminate — every prelude binding is a root when
-    // checking standalone, so eliminating would lose type information.
+    // Every prelude binding must be retained for caching — eliminating would lose type information.
 
     let core_expr = loader.core().expr.clone();
     let (_, summary) = type_check_for_prelude(&core_expr);
@@ -226,10 +226,11 @@ pub struct PathCheckResult {
 /// Run the type checker on a single eucalypt source file, returning both
 /// warnings and the inferred type environment.
 ///
-/// Uses the standalone seeded pipeline (§B7): the prelude is checked once
-/// per process and cached; the user file is checked in isolation, seeded
-/// with the cached prelude summary.  Falls back to the merged pipeline if
-/// the prelude cache cannot be built.
+/// Uses the prelude-cached pipeline: the prelude is checked once per
+/// process and cached; user files are checked seeded with the cached
+/// prelude types.  User-file imports are still resolved normally — only
+/// the prelude is cached.  Falls back to the merged pipeline if the
+/// prelude cache cannot be built.
 ///
 /// If the pipeline fails at any stage, returns a single warning
 /// explaining which stage failed rather than silently producing no
@@ -245,7 +246,7 @@ pub fn type_check_path_full(path: &Path) -> PathCheckResult {
         source_map: crate::common::sourcemap::SourceMap::new(),
     };
 
-    // ── Attempt standalone seeded check (§B7 fast path) ───────────────────
+    // ── Attempt prelude-cached check (fast path) ──────────────────────────
     if let Some(summary) = get_or_build_prelude_summary() {
         return type_check_path_with_seed(path, summary, pipeline_error);
     }
@@ -254,7 +255,7 @@ pub fn type_check_path_full(path: &Path) -> PathCheckResult {
     type_check_path_merged(path, pipeline_error)
 }
 
-/// Check a single user file in standalone mode, seeded with a prelude
+/// Check a single user file seeded with a cached prelude
 /// summary (§B7 fast path).
 fn type_check_path_with_seed(
     path: &Path,
