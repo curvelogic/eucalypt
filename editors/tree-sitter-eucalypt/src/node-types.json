@@ -506,6 +506,10 @@
         {
           "type": "symbol",
           "named": true
+        },
+        {
+          "type": "t_string",
+          "named": true
         }
       ]
     }
@@ -764,6 +768,21 @@
     }
   },
   {
+    "type": "t_string",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": false,
+      "types": [
+        {
+          "type": "t_string_content",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "unit_metadata",
     "named": true,
     "fields": {},
@@ -853,6 +872,14 @@
   {
     "type": "r\"",
     "named": false
+  },
+  {
+    "type": "t\"",
+    "named": false
+  },
+  {
+    "type": "t_string_content",
+    "named": true
   },
   {
     "type": "{",
