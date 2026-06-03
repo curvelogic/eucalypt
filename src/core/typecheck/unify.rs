@@ -20,7 +20,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::core::typecheck::types::{kind_of, unfold_mu, Kind, Type, TypeScheme, TypeVarId};
+use crate::core::typecheck::types::{
+    kind_of, unfold_mu, Constraint, Kind, Type, TypeScheme, TypeVarId,
+};
 
 /// A mapping from type variable identifiers to their concrete types.
 pub type Substitution = HashMap<TypeVarId, Type>;
@@ -460,6 +462,40 @@ pub fn freshen(scheme: &TypeScheme, counter: &mut u32) -> Type {
     }
 
     apply_subst(&scheme.body, &rename)
+}
+
+/// Instantiate a polymorphic scheme, renaming type variables to fresh names
+/// throughout both the body type **and** any constraints.
+///
+/// The same rename map is applied to both, so that constraint variables
+/// (`a` in `<(a, a) => a -> a -> a`) refer to the same fresh variables as
+/// the body parameters.  This is the entry point for schemes that carry
+/// operator constraints (B2).
+pub fn freshen_with_constraints(scheme: &TypeScheme, counter: &mut u32) -> (Type, Vec<Constraint>) {
+    if scheme.vars.is_empty() {
+        let body = scheme.body.clone();
+        let constraints = scheme.constraints.clone();
+        return (body, constraints);
+    }
+
+    let mut rename: Substitution = HashMap::new();
+    for var in &scheme.vars {
+        let fresh = TypeVarId(format!("_t{}", *counter));
+        *counter += 1;
+        rename.insert(var.clone(), Type::var(fresh));
+    }
+
+    let body = apply_subst(&scheme.body, &rename);
+    let constraints = scheme
+        .constraints
+        .iter()
+        .map(|c| Constraint {
+            function: c.function.clone(),
+            args: c.args.iter().map(|a| apply_subst(a, &rename)).collect(),
+        })
+        .collect();
+
+    (body, constraints)
 }
 
 /// Instantiate a `Forall` node by replacing its binders with fresh variables.

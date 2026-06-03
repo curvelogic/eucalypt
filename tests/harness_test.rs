@@ -2184,3 +2184,18 @@ pub fn test_typecheck_079_b9_merge_row_field_type_mismatch() {
 pub fn test_typecheck_080_b9_non_block_param_no_row_var() {
     run_typecheck_test("080_b9_non_block_param_no_row_var.eu");
 }
+
+#[test]
+pub fn test_typecheck_081_b2_constraint_satisfied() {
+    run_typecheck_test("081_b2_constraint_satisfied.eu");
+}
+
+#[test]
+pub fn test_typecheck_082_b2_constraint_violated() {
+    run_typecheck_test("082_b2_constraint_violated.eu");
+}
+
+#[test]
+pub fn test_typecheck_083_b2_constraint_gradual_any() {
+    run_typecheck_test("083_b2_constraint_gradual_any.eu");
+}

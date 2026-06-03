@@ -35,7 +35,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use super::types::{Kind, Type, TypeVarId};
+use super::types::{Constraint, Kind, Type, TypeVarId};
 
 // ── Error type ──────────────────────────────────────────────────────────────
 
@@ -1013,6 +1013,143 @@ impl<'a> Parser<'a> {
     }
 }
 
+// ── Constraint parsing helpers ───────────────────────────────────────────────
+
+/// Find the byte position of the first top-level `=>` sequence (not inside
+/// `()`, `[]`, or `{}`).  Returns `None` if no such sequence exists.
+fn find_top_level_fat_arrow(input: &str) -> Option<usize> {
+    let bytes = input.as_bytes();
+    let mut depth: usize = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        // UTF-8: continuation bytes (0x80–0xBF) never match ASCII punctuation,
+        // so byte-level scanning is safe here.
+        match bytes[i] {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+            b'=' if depth == 0 && bytes.get(i + 1) == Some(&b'>') => {
+                return Some(i);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Split `input` on commas that are NOT inside any `()`, `[]`, or `{}`.
+fn split_top_level_commas(input: &str) -> Vec<&str> {
+    let bytes = input.as_bytes();
+    let mut parts: Vec<&str> = Vec::new();
+    let mut depth: usize = 0;
+    let mut start = 0usize;
+    for i in 0..bytes.len() {
+        match bytes[i] {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+            b',' if depth == 0 => {
+                parts.push(&input[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&input[start..]);
+    parts
+}
+
+/// Parse a single constraint such as `<(a, a)` or `str.of(a)`.
+///
+/// The operator name is everything before the opening `(`, trimmed of
+/// whitespace.  The argument list is the comma-separated type sequence
+/// inside the parentheses.  The `base_offset` is the byte position of
+/// `input` within the original annotation string, used for error positions.
+fn parse_single_constraint(input: &str, base_offset: usize) -> Result<Constraint, ParseError> {
+    // Locate the opening parenthesis
+    let paren_pos = input.find('(').ok_or_else(|| {
+        ParseError::new(base_offset, format!("expected '(' in constraint '{input}'"))
+    })?;
+
+    let func_name = input[..paren_pos].trim().to_string();
+    if func_name.is_empty() {
+        return Err(ParseError::new(
+            base_offset,
+            "constraint operator name cannot be empty",
+        ));
+    }
+
+    // Find the matching close parenthesis
+    let after_open = &input[paren_pos + 1..];
+    let mut depth = 1usize;
+    let mut close_pos: Option<usize> = None;
+    for (i, b) in after_open.bytes().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    close_pos = Some(i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let close = close_pos.ok_or_else(|| {
+        ParseError::new(
+            base_offset + paren_pos,
+            "unclosed '(' in constraint argument list",
+        )
+    })?;
+
+    // Ensure no unexpected trailing characters after the closing paren
+    let trailing = after_open[close + 1..].trim();
+    if !trailing.is_empty() {
+        return Err(ParseError::new(
+            base_offset + paren_pos + 1 + close + 1,
+            format!("unexpected trailing input after constraint: '{trailing}'"),
+        ));
+    }
+
+    // Parse the comma-separated argument types
+    let arg_str = &after_open[..close];
+    let arg_parts = split_top_level_commas(arg_str);
+    let mut args: Vec<Type> = Vec::new();
+    for part in arg_parts {
+        let part = part.trim();
+        if !part.is_empty() {
+            let ty = parse_type(part)
+                .map_err(|e| ParseError::new(base_offset + e.position, e.message))?;
+            args.push(ty);
+        }
+    }
+
+    Ok(Constraint {
+        function: func_name,
+        args,
+    })
+}
+
+/// Parse a comma-separated list of constraints (the part before `=>`).
+fn parse_constraint_list(input: &str, base_offset: usize) -> Result<Vec<Constraint>, ParseError> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Split on top-level commas that separate individual constraints
+    let parts = split_top_level_commas(trimmed);
+    let mut constraints: Vec<Constraint> = Vec::new();
+    let mut offset = base_offset;
+    for part in parts {
+        let trimmed_part = part.trim();
+        if !trimmed_part.is_empty() {
+            constraints.push(parse_single_constraint(trimmed_part, offset)?);
+        }
+        offset += part.len() + 1; // +1 for the comma
+    }
+    Ok(constraints)
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /// Parse a type annotation string into a `Type`.
@@ -1035,6 +1172,50 @@ impl<'a> Parser<'a> {
 pub fn parse_type(input: &str) -> Result<Type, ParseError> {
     let mut parser = Parser::new(input);
     parser.parse_type_toplevel()
+}
+
+/// Parse a type-annotation string that may include an operator constraint prefix.
+///
+/// The constraint DSL (B2) allows annotations of the form:
+///
+/// ```text
+/// <(a, a) => a -> a -> a
+/// <(a, a), +(a, a) => a -> a -> a
+/// str.of(a) => [a] -> [string]
+/// ```
+///
+/// A comma-separated list of constraints precedes `=>`.  Each constraint is
+/// `operator_name(type, …)`.  If no `=>` is present at the top level (i.e. not
+/// inside parentheses/brackets/braces), the string is parsed as a plain type.
+///
+/// Returns `(body_type, constraints)`.
+///
+/// # Examples
+///
+/// ```
+/// use eucalypt::core::typecheck::parse::parse_scheme;
+/// use eucalypt::core::typecheck::types::Type;
+///
+/// let (ty, constraints) = parse_scheme("<(a, a) => a -> a -> a").unwrap();
+/// assert!(matches!(ty, Type::Function(_, _)));
+/// assert_eq!(constraints.len(), 1);
+/// assert_eq!(constraints[0].function, "<");
+///
+/// let (ty2, cs2) = parse_scheme("number -> number").unwrap();
+/// assert_eq!(ty2, Type::Function(Box::new(Type::Number), Box::new(Type::Number)));
+/// assert!(cs2.is_empty());
+/// ```
+pub fn parse_scheme(input: &str) -> Result<(Type, Vec<Constraint>), ParseError> {
+    if let Some(arrow_pos) = find_top_level_fat_arrow(input) {
+        let constraint_part = &input[..arrow_pos];
+        let body_part = input[arrow_pos + 2..].trim();
+        let constraints = parse_constraint_list(constraint_part, 0)?;
+        let body = parse_type(body_part)?;
+        Ok((body, constraints))
+    } else {
+        let ty = parse_type(input)?;
+        Ok((ty, Vec::new()))
+    }
 }
 
 /// Parse a type-annotation string and return all alias references found.
@@ -1825,5 +2006,64 @@ mod tests {
         // {..} -> [(symbol, any)]
         let ty = parse_type("{..} -> [(symbol, any)]").unwrap();
         assert!(matches!(ty, Type::Function(_, _)));
+    }
+
+    // ── Constraint parsing (B2) ─────────────────────────────────────────────
+
+    #[test]
+    fn parse_scheme_no_constraints() {
+        let (ty, cs) = super::parse_scheme("number -> number").unwrap();
+        assert_eq!(
+            ty,
+            Type::Function(Box::new(Type::Number), Box::new(Type::Number))
+        );
+        assert!(cs.is_empty());
+    }
+
+    #[test]
+    fn parse_scheme_single_constraint() {
+        let (ty, cs) = super::parse_scheme("<(a, a) => a -> a -> a").unwrap();
+        assert!(matches!(ty, Type::Function(_, _)));
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs[0].function, "<");
+        assert_eq!(cs[0].args.len(), 2);
+        assert_eq!(cs[0].args[0], var("a"));
+        assert_eq!(cs[0].args[1], var("a"));
+    }
+
+    #[test]
+    fn parse_scheme_two_constraints() {
+        let (ty, cs) = super::parse_scheme("<(a, a), +(a, a) => a -> a -> a").unwrap();
+        assert!(matches!(ty, Type::Function(_, _)));
+        assert_eq!(cs.len(), 2);
+        assert_eq!(cs[0].function, "<");
+        assert_eq!(cs[1].function, "+");
+    }
+
+    #[test]
+    fn parse_scheme_dotted_operator_name() {
+        let (ty, cs) = super::parse_scheme("str.of(a) => [a] -> [string]").unwrap();
+        assert!(matches!(ty, Type::Function(_, _)));
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs[0].function, "str.of");
+        assert_eq!(cs[0].args[0], var("a"));
+    }
+
+    #[test]
+    fn parse_scheme_unicode_arrow_body() {
+        // The `=>` separator and the `→` body arrow must not interfere.
+        let (ty, cs) = super::parse_scheme(">(a, a) => a → a → a").unwrap();
+        assert!(matches!(ty, Type::Function(_, _)));
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs[0].function, ">");
+    }
+
+    #[test]
+    fn parse_scheme_arrow_inside_parens_not_fat_arrow() {
+        // `=>` inside parentheses should NOT be treated as the constraint separator.
+        // This annotation has no constraints — just a plain function type.
+        let (ty, cs) = super::parse_scheme("number -> number").unwrap();
+        assert!(matches!(ty, Type::Function(_, _)));
+        assert!(cs.is_empty());
     }
 }

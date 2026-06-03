@@ -18,9 +18,11 @@ use std::path::Path;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use crate::core::cook::fixity::extract_operator_type_strings;
 use crate::core::typecheck::{
     check::{
-        type_check, type_check_for_prelude, type_check_full, type_check_with_seed, PreludeSummary,
+        parse_operator_overloads, type_check, type_check_for_prelude, type_check_full,
+        type_check_with_operator_overloads, type_check_with_seed, PreludeSummary,
     },
     parse,
 };
@@ -78,12 +80,19 @@ fn build_prelude_summary() -> Result<PreludeSummary, EucalyptError> {
         loader.translate(input)?;
     }
     loader.merge_units(&inputs)?;
+
+    // Extract operator type annotations BEFORE cook strips them (see note in
+    // run_type_checker for why this is necessary).
+    let operator_type_strings = extract_operator_type_strings(&loader.core().expr);
+    let operator_overloads = parse_operator_overloads(&operator_type_strings);
+
     loader.cook()?;
     // Deliberately NO eliminate — every prelude binding is a root when
     // Every prelude binding must be retained for caching — eliminating would lose type information.
 
     let core_expr = loader.core().expr.clone();
-    let (_, summary) = type_check_for_prelude(&core_expr);
+    let (_, mut summary) = type_check_for_prelude(&core_expr);
+    summary.operator_overloads = operator_overloads;
     Ok(summary)
 }
 
@@ -205,7 +214,7 @@ pub fn annotation_syntax_errors(source: &str) -> Vec<(usize, String, String)> {
     let annotations = collect_annotations_from_unit(&unit, source);
     let mut errors = vec![];
     for ann in annotations {
-        if let Err(e) = parse::parse_type(&ann.value) {
+        if let Err(e) = parse::parse_scheme(&ann.value).map(|_| ()) {
             errors.push((ann.source_offset, ann.decl_name.clone(), e.to_string()));
         }
     }
@@ -365,15 +374,29 @@ fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eucaly
     // Merge into a single expression.
     loader.merge_units(&inputs)?;
 
+    // Extract operator type annotations BEFORE cook strips them.
+    //
+    // The `distribute_fixities` step in cook removes `Meta` wrappers from
+    // operator definitions (e.g. `(l < r): ...`) to move fixity info to call
+    // sites.  This erases the `type:` annotation from operators.  We capture
+    // them here, before cook, so that constraint discharge can verify that
+    // e.g. `<(a, a) => a → a → a` is satisfiable for the argument types.
+    let operator_type_strings = extract_operator_type_strings(&loader.core().expr);
+    let operator_overloads = parse_operator_overloads(&operator_type_strings);
+
     // Cook (resolve operator precedence).
     loader.cook()?;
 
     // Eliminate dead bindings.
     loader.eliminate()?;
 
-    // Run the type checker.
+    // Run the type checker, seeded with the pre-cook operator overloads.
     let core_expr = loader.core().expr.clone();
-    let warnings = type_check(&core_expr);
+    let warnings = if operator_overloads.is_empty() {
+        type_check(&core_expr)
+    } else {
+        type_check_with_operator_overloads(&core_expr, operator_overloads)
+    };
     let (files, source_map, _) = loader.complete();
     Ok(PipelineCheckResult {
         warnings,
@@ -402,7 +425,7 @@ fn check_annotation_syntax(filename: &str, source: &str, strict: bool) -> usize 
     for ann in annotations {
         // Strip leading `!` (asserted annotation marker) before parsing
         let type_str = ann.value.strip_prefix('!').unwrap_or(&ann.value).trim();
-        if let Err(e) = parse::parse_type(type_str) {
+        if let Err(e) = parse::parse_scheme(type_str).map(|_| ()) {
             let severity = if strict { "error" } else { "warning" };
             let line_col = byte_offset_to_line_col(source, ann.source_offset);
             eprintln!(

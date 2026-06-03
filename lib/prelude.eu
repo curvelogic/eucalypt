@@ -900,8 +900,8 @@ sum(l): foldl(+, 0, l)
     type: "[number] → number" }
 product(l): foldl(*, 1, l)
 
-` { doc: "`max(l, r)` - return max of numbers `l` and `r`."
-    type: "number → number → number" }
+` { doc: "`max(l, r)` - return max of `l` and `r` by `>`."
+    type: ">(a, a) => a → a → a" }
 max(l, r): if(l > r, l, r)
 
 ` "`max-of(l) - return max element in list of numbers `l` - error if empty`"
@@ -925,8 +925,8 @@ max-map(f, l): l map(f) max-of
 ` "`max-of-or(d, l)` - return max element in list `l`, or default `d` if empty."
 max-of-or(d, l): l nil? then(d, max-of(l))
 
-` { doc: "`min(l, r)` - return min of numbers `l` and `r`."
-    type: "number → number → number" }
+` { doc: "`min(l, r)` - return min of `l` and `r` by `<`."
+    type: "<(a, a) => a → a → a" }
 min(l, r): if(l < r, l, r)
 
 ` "`min-of(l) - return min element in list of numbers `l` - error if empty`"
