@@ -35,7 +35,7 @@ use crate::{
             parse,
             subtype::{is_consistent, is_subtype},
             types::{Type, TypeScheme},
-            unify::{apply_subst, freshen, infer_scheme, unify, Substitution},
+            unify::{apply_subst, freshen, freshen_forall, infer_scheme, unify, Substitution},
         },
     },
 };
@@ -1189,6 +1189,24 @@ impl Checker {
 
                 let arg_type = self.synthesise(arg);
 
+                // A small list literal (≤ LIST_TUPLE_CAP items) synthesises as a tuple
+                // type rather than a list type.  When the parameter expects a constructor
+                // application — e.g. `[a]`, `IO(a)`, or an HKT variable `m a` — widen a
+                // homogeneous tuple to a list so that calls like `hk-id([1, 2, 3])` do
+                // not produce a spurious type mismatch.  Heterogeneous tuples are widened
+                // to `List(union)` to avoid masking head/tail precision elsewhere.
+                let arg_type = match (&arg_type, &param_applied) {
+                    (Type::Tuple(elems), Type::App(_, _)) if !elems.is_empty() => {
+                        let first = &elems[0];
+                        if elems.iter().all(|e| e == first) {
+                            Type::list(first.clone())
+                        } else {
+                            Type::list(Type::union(elems.iter().cloned()))
+                        }
+                    }
+                    _ => arg_type,
+                };
+
                 if !is_informative(&arg_type) || !is_informative(&param_applied) {
                     // Gradual boundary — no warning.
                     return apply_subst(&result_type, subst);
@@ -1263,6 +1281,18 @@ impl Checker {
                     // RHS is not a record: can't reason about the merge result.
                     _ => Type::Any,
                 }
+            }
+
+            // Polymorphic function — instantiate then apply.
+            //
+            // A `forall (m :: * -> *). m a → ...` type is encountered when a
+            // field is accessed on a value whose type contains an explicit
+            // `Forall` node (e.g. from a `monad()` annotation).  Freshen the
+            // binders (allocating fresh unification variables) and recurse so
+            // that the instantiated `Function` arm fires.
+            Type::Forall(binders, body) => {
+                let instantiated = freshen_forall(&binders, &body, &mut self.var_counter);
+                self.apply_one_with_subst(smid, instantiated, arg, subst, func_name)
             }
 
             // Unknown function type — recurse into arg to collect sub-warnings.

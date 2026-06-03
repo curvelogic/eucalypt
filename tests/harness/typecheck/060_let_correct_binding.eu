@@ -1,0 +1,4 @@
+# B8: let monad explicit identity-monad annotation.
+# In { :let x: 42 }, x has type number (from identity bind: a → (a → b) → b).
+# x + 1 is a correct use — no warning expected.
+result: { :let x: 42 }.(x + 1)

@@ -291,6 +291,16 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
         }
 
         // ── Constructor application ──────────────────────────────────────────
+        //
+        // When both sides are Apps and the left head is an unresolved HKT
+        // variable — treat as gradual.  This avoids false positives when the
+        // constructor variable `m` (from `forall (m :: * -> *). m a → m b`)
+        // is freshened independently across call sites and remains unbound
+        // at the consistency check.  Crucially, this rule requires BOTH sides
+        // to be Apps; concrete types such as `number` are not suppressed.
+        (Type::App(f, _), Type::App(_, _)) if matches!(&**f, Type::Var(_, _)) => true,
+        // Symmetric: right head is Var.
+        (Type::App(_, _), Type::App(f, _)) if matches!(&**f, Type::Var(_, _)) => true,
         (Type::App(_, _), Type::App(_, _)) => is_app_consistent(s, t),
 
         // ── Tuple ─────────────────────────────────────────────────────────────

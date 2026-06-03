@@ -2070,3 +2070,28 @@ pub fn test_typecheck_057_hkt_forall_annotation_parse() {
 pub fn test_typecheck_058_hkt_kind_annotation_parse() {
     run_typecheck_test("058_hkt_kind_annotation_parse.eu");
 }
+
+#[test]
+pub fn test_typecheck_059_user_monad_hkt_map_type() {
+    run_typecheck_test("059_user_monad_hkt_map_type.eu");
+}
+
+#[test]
+pub fn test_typecheck_060_let_correct_binding() {
+    run_typecheck_test("060_let_correct_binding.eu");
+}
+
+#[test]
+pub fn test_typecheck_061_let_wrong_type() {
+    run_typecheck_test("061_let_wrong_type.eu");
+}
+
+#[test]
+pub fn test_typecheck_062_for_correct_binding() {
+    run_typecheck_test("062_for_correct_binding.eu");
+}
+
+#[test]
+pub fn test_typecheck_063_for_wrong_binding() {
+    run_typecheck_test("063_for_wrong_binding.eu");
+}

@@ -1,0 +1,3 @@
+# B8: :for block with non-list binding — warning expected.
+# x: 42 is not a list — the :for monad requires [a] as the action type.
+result: { :for x: 42 }.(x)

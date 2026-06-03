@@ -1,0 +1,4 @@
+# B8: let monad explicit annotation catches type mismatches.
+# In { :let x: "hello" }, x has type string (identity bind: a → (a → b) → b).
+# negate(x) is incorrect — negate expects number, but x is a string — warning expected.
+result: { :let x: "hello" }.(negate(x))
