@@ -162,8 +162,21 @@ origin: { x: 0, y: 0 }
 | `forall a. T`      | explicit quantification over kind-`*` variable |
 | `forall (m :: * -> *) a. T` | explicit quantification with kind annotation |
 | `IO(T)`            | IO action producing T                  |
+| `Random(T)`        | random action producing T              |
+| `State(T)`         | state action producing T               |
 | `Lens(a, b)`       | lens                                   |
 | `Traversal(a, b)`  | traversal                              |
+
+**User-defined monads**: `monad({ bind(m,f): ..., return(v): ... })`
+derives the standard combinators (`map`, `then`, `and-then`, `join`,
+`sequence`, `map-m`, `filter-m`) and annotates them with
+`forall (m :: * -> *)` types.  The type checker understands them
+polymorphically, so passing the wrong type triggers a warning:
+
+```eu,notest
+my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
+[1, 2, 3] my-for.map(true)   # warning: expected a → b, found bool
+```
 
 **Important**: record braces (`{`) in type strings trigger eucalypt
 string interpolation. Always escape with `{{` and `}}`:
