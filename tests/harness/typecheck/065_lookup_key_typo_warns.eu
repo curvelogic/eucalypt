@@ -1,0 +1,7 @@
+# lookup(:naem, person) where person has a closed record type {name: string, age: number}
+# — `:naem` is a typo for `:name`, should produce a key-not-found warning.
+
+` { type: "!{{name: string, age: number}}" }
+person: { name: "Alice", age: 30 }
+
+result: lookup(:naem, person)

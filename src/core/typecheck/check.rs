@@ -260,6 +260,15 @@ pub struct Checker {
     /// inserted as `None` (tentative) is treated as "not a brancher" if
     /// re-encountered during its own classification.
     branch_shapes: HashMap<BoundKey, Option<BranchShape>>,
+
+    /// Memoised ProjectionShape classification per binding (§B6.3).
+    ///
+    /// `None` = classified, not a projection.
+    /// `Some(index)` = tuple-element projector at position `index`.
+    ///   index 0 = first element (head), index 1 = second (head∘tail), etc.
+    ///
+    /// Populated eagerly during Let synthesis alongside `binding_bodies`.
+    projection_shapes: HashMap<BoundKey, Option<usize>>,
 }
 
 impl Default for Checker {
@@ -280,6 +289,7 @@ impl Checker {
             narrowing: Vec::new(),
             binding_bodies: HashMap::new(),
             branch_shapes: HashMap::new(),
+            projection_shapes: HashMap::new(),
         }
     }
 
@@ -674,25 +684,29 @@ impl Checker {
 
                 self.push_scope(frame);
 
-                // BranchShape classification (§A5.3): store binding bodies and
-                // eagerly classify each binding as a branch combinator so that
-                // later uses of the binding (even user-defined wrappers like
-                // `my-if(c,t,e): if(c,t,f)`) are recognised during synthesis.
+                // BranchShape + ProjectionShape classification.
+                //
+                // Eagerly classify each binding as a branch combinator (§A5.3)
+                // and/or a tuple-element projector (§B6.3) so that later uses
+                // are recognised during synthesis.
                 //
                 // anchored = scope_stack.len() - 1 (the newly-pushed innermost frame).
                 let anchored = self.scope_stack.len() - 1;
                 for (name, value) in &scope.pattern {
                     let key: BoundKey = (anchored, name.clone());
-                    // Tentative `None` entry doubles as a recursion guard: if
+                    // Tentative `None` entries double as recursion guards: if
                     // classification recurses back to this binding, it sees
-                    // "not a brancher" and terminates.
+                    // "not a brancher/projector" and terminates.
                     self.branch_shapes.insert(key.clone(), None);
+                    self.projection_shapes.insert(key.clone(), None);
                     // Store the body for later structural analysis.
                     let body = peel_meta(value).clone();
                     self.binding_bodies.insert(key.clone(), body.clone());
                     // Classify and update.
                     let shape = self.classify_binding_shape(&body, self.scope_stack.len());
-                    self.branch_shapes.insert(key, shape);
+                    self.branch_shapes.insert(key.clone(), shape);
+                    let proj = self.classify_projection_body(&body, self.scope_stack.len());
+                    self.projection_shapes.insert(key, proj);
                 }
 
                 // Pass 2: synthesise each binding value — triggers consistency
@@ -934,6 +948,28 @@ impl Checker {
             // Wrong arity (partial application) — fall through to generic path.
         }
 
+        // ── LOOKUP literal-key typed access (§B6.2) ─────────────────────────
+        //
+        // When `lookup` / `LOOKUP` is applied to a literal-symbol key and a
+        // known record type, return the precise field type (or warn on a key
+        // typo in a closed record).  This fires before the generic annotation
+        // path so that the precise field type overrides the `Dict(a) → a`
+        // annotation.
+        //
+        // The type checker runs before inlining, so the head may be either:
+        // - `Expr::Intrinsic(_, "LOOKUP")` — the raw intrinsic (post-inline context)
+        // - `Expr::Var(Bound, "lookup" | "lookup-in")` — the prelude alias
+        if spine_args.len() == 2 && is_lookup_fn(head) {
+            let key_type = self.synthesise(spine_args[0]);
+            if let Type::LiteralSymbol(key) = key_type {
+                let block_type = self.synthesise(spine_args[1]);
+                let smid = spine_args[0].smid();
+                return self.synthesise_lookup_with_literal_key(&key, &block_type, smid);
+            }
+            // Non-literal key — gradual (key may be absent at runtime).
+            return Type::Any;
+        }
+
         // ── HEAD/TAIL-on-Tuple precise typing (§A6.8) ────────────────────────
         //
         // When `head` or `tail` is applied to a `Tuple` argument, override the
@@ -979,6 +1015,34 @@ impl Checker {
                 }
                 // Not a Tuple or empty — fall through to generic path which uses
                 // the NonEmpty([a]) annotation.
+            }
+        }
+
+        // ── ProjectionShape precise tuple typing (§B6.3) ─────────────────────
+        //
+        // When a bound variable function has a ProjectionShape of index `i` and
+        // is applied to a `Tuple([T₀,…,Tₙ])`, return `Tᵢ` precisely.
+        // This handles `second(Tuple([K,V])) → V`, `value(Tuple([K,V])) → V`, etc.
+        //
+        // Head/first/key at index 0 are already handled by is_head_or_tail above;
+        // this path covers index ≥ 1 (and also 0 for completeness via bound vars).
+        if spine_args.len() == 1 {
+            if let Some(index) = self.recognise_projection_index(head) {
+                let arg_type = self.synthesise(spine_args[0]);
+                if let Type::Tuple(ref elems) = arg_type {
+                    if let Some(ty) = elems.get(index) {
+                        return ty.clone();
+                    } else {
+                        // Out-of-range index — warn and return any.
+                        let smid = head.smid();
+                        let warning = TypeWarning::new(format!("tuple index {index} out of range"))
+                            .at(smid)
+                            .with_note(format!("tuple has {} elements", elems.len()));
+                        self.warnings.push(warning);
+                        return Type::Any;
+                    }
+                }
+                // Not a Tuple — fall through to generic annotation path.
             }
         }
 
@@ -1845,6 +1909,165 @@ impl Checker {
             .with_types(humanise(expected).to_string(), humanise(found).to_string());
         self.warnings.push(warning);
     }
+
+    // ── LOOKUP literal-key resolution (§B6.2) ────────────────────────────────
+
+    /// Resolve `LOOKUP(LiteralSymbol(key), block_type)` to the precise field type.
+    ///
+    /// | block_type | key present | key absent | result |
+    /// |------------|------------|------------|--------|
+    /// | closed `Record` | yes | — | field type |
+    /// | closed `Record` | — | yes | `any` + key-typo warning |
+    /// | open `Record` or row-variable `Record` | — | yes | `any`, no warning |
+    /// | `Dict(v)` | — | — | `v` |
+    /// | other | — | — | `any` |
+    fn synthesise_lookup_with_literal_key(
+        &mut self,
+        key: &str,
+        block_type: &Type,
+        smid: Smid,
+    ) -> Type {
+        match block_type {
+            Type::Record { fields, open, rows } => {
+                if let Some(field_type) = fields.get(key) {
+                    field_type.clone()
+                } else if !open && rows.is_empty() {
+                    // Closed record without the key — key typo warning.
+                    let known: Vec<String> = fields.keys().map(|k| format!(":{k}")).collect();
+                    let note = if known.is_empty() {
+                        "the record has no known fields".to_string()
+                    } else {
+                        format!("known fields: {}", known.join(", "))
+                    };
+                    let warning = TypeWarning::new(format!("unknown record key :{key}"))
+                        .at(smid)
+                        .with_note(note);
+                    self.warnings.push(warning);
+                    Type::Any
+                } else {
+                    // Open record or has row variables — key may be in the tail.
+                    Type::Any
+                }
+            }
+            other => {
+                if let Some(val_type) = other.as_dict() {
+                    val_type.clone()
+                } else {
+                    Type::Any
+                }
+            }
+        }
+    }
+
+    // ── ProjectionShape recognition (§B6.3) ──────────────────────────────────
+
+    /// Look up the `ProjectionShape` index for an expression in head position.
+    ///
+    /// Returns `Some(n)` when the function is a recognised tuple projector
+    /// at index `n`.  Like `recognise_brancher`, this covers:
+    /// - Bound variables whose `projection_shapes` entry is `Some(n)`.
+    ///
+    /// `head`/`first`/`key` at index 0 are already handled by `is_head_or_tail`
+    /// earlier in `synthesise_app`; this function covers index ≥ 1 (e.g.
+    /// `second`/`value`) and any user-defined projectors.
+    fn recognise_projection_index(&self, func: &RcExpr) -> Option<usize> {
+        match &*func.inner {
+            Expr::Var(_, Var::Bound(bv)) => {
+                let name = bv.name.as_deref()?;
+                // head/first/key at index 0 — covered by is_head_or_tail, but
+                // included here for completeness so the classifier is self-contained.
+                match name {
+                    "head" | "first" | "key" => Some(0),
+                    _ => {
+                        let idx = bv.scope as usize;
+                        let anchored = self.scope_stack.len().saturating_sub(1 + idx);
+                        let key = (anchored, name.to_string());
+                        *self.projection_shapes.get(&key)?
+                    }
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Classify a binding body as a tuple projector and return its index.
+    ///
+    /// Classification cases (§B6.3):
+    /// - `HEAD` intrinsic → index 0.
+    /// - Bound variable named `"head"` / `"first"` / `"key"` → index 0.
+    /// - Bound variable with a stored `projection_shapes` entry → inherited index.
+    /// - Single-parameter lambda whose body matches `HEAD(TAIL^n(param))` → index n.
+    ///
+    /// Returns `None` for anything else (not a recognised projector).
+    fn classify_projection_body(&self, body: &RcExpr, stack_len: usize) -> Option<usize> {
+        let peeled = peel_meta(body);
+        match &*peeled.inner {
+            // Direct alias of HEAD intrinsic → index 0.
+            Expr::Intrinsic(_, name) if name == "HEAD" => Some(0),
+            // Alias of a bound variable: inherit from projection_shapes or classify by name.
+            Expr::Var(_, Var::Bound(bv)) => {
+                let name = bv.name.as_deref()?;
+                match name {
+                    "head" | "first" | "key" => Some(0),
+                    _ => {
+                        let anchored = stack_len.checked_sub(1 + bv.scope as usize)?;
+                        let key = (anchored, name.to_string());
+                        // Returns None if the binding hasn't been classified yet
+                        // (the tentative-None recursion guard handles this).
+                        *self.projection_shapes.get(&key)?
+                    }
+                }
+            }
+            // Single-parameter lambda — inspect body for HEAD(TAIL^n(param)).
+            Expr::Lam(_, _, scope) if scope.pattern.len() == 1 => {
+                let param_name = &scope.pattern[0];
+                self.classify_proj_lam_body(param_name, &scope.body)
+            }
+            _ => None,
+        }
+    }
+
+    /// Classify a single-param lambda body as a projection of its parameter.
+    ///
+    /// Matches `HEAD_fn(TAIL_fn^n(param))` and returns the index `n`.
+    fn classify_proj_lam_body(&self, param_name: &str, body: &RcExpr) -> Option<usize> {
+        let peeled = peel_meta(body);
+        // Body must be App(head_fn, [inner]).
+        let (app_head, app_args) = match &*peeled.inner {
+            Expr::App(_, h, a) if a.len() == 1 => (h, a),
+            _ => return None,
+        };
+        if !is_head_fn(peel_meta(app_head)) {
+            return None;
+        }
+        // inner must be TAIL^n(param).
+        self.count_tail_wraps_to_param(&app_args[0], param_name)
+    }
+
+    /// Count the number of TAIL wraps leading to `param_name`.
+    ///
+    /// - Returns `Some(0)` when `expr` IS the parameter variable.
+    /// - Returns `Some(n)` when `expr` is `TAIL_fn(TAIL_fn(…(param)…))` with `n` tails.
+    /// - Returns `None` when the pattern does not match.
+    fn count_tail_wraps_to_param(&self, expr: &RcExpr, param_name: &str) -> Option<usize> {
+        let peeled = peel_meta(expr);
+        // Base case: the expression is the parameter itself.
+        if let Expr::Var(_, Var::Bound(bv)) = &*peeled.inner {
+            if bv.scope == 0 && bv.name.as_deref() == Some(param_name) {
+                return Some(0);
+            }
+        }
+        // Recursive case: App(tail_fn, [inner]).
+        let (app_head, app_args) = match &*peeled.inner {
+            Expr::App(_, h, a) if a.len() == 1 => (h, a),
+            _ => return None,
+        };
+        if !is_tail_fn(peel_meta(app_head)) {
+            return None;
+        }
+        let inner_count = self.count_tail_wraps_to_param(&app_args[0], param_name)?;
+        Some(inner_count + 1)
+    }
 }
 
 // ── Flow-sensitive narrowing — free functions ─────────────────────────────────
@@ -1982,7 +2205,7 @@ enum HeadTailProjection {
 ///
 /// Returns `Some(projection)` for:
 /// - `Expr::Intrinsic` with name `"HEAD"` or `"TAIL"`.
-/// - `Expr::Var(Bound)` whose name is `"head"` / `"first"` / `"tail"`.
+/// - `Expr::Var(Bound)` whose name is `"head"` / `"first"` / `"key"` / `"tail"`.
 fn is_head_or_tail(func: &RcExpr) -> Option<HeadTailProjection> {
     match &*func.inner {
         Expr::Intrinsic(_, name) => match name.as_str() {
@@ -1991,12 +2214,38 @@ fn is_head_or_tail(func: &RcExpr) -> Option<HeadTailProjection> {
             _ => None,
         },
         Expr::Var(_, Var::Bound(bv)) => match bv.name.as_deref() {
-            Some("head" | "first") => Some(HeadTailProjection::Head),
+            Some("head" | "first" | "key") => Some(HeadTailProjection::Head),
             Some("tail") => Some(HeadTailProjection::Tail),
             _ => None,
         },
         _ => None,
     }
+}
+
+/// Return `true` when `expr` is the lookup function.
+///
+/// Matches:
+/// - `Expr::Intrinsic(_, "LOOKUP")` — the raw intrinsic.
+/// - `Expr::Var(Bound, "lookup" | "lookup-in")` — the prelude aliases.
+fn is_lookup_fn(expr: &RcExpr) -> bool {
+    let peeled = peel_meta(expr);
+    match &*peeled.inner {
+        Expr::Intrinsic(_, name) => name == "LOOKUP",
+        Expr::Var(_, Var::Bound(bv)) => matches!(bv.name.as_deref(), Some("lookup" | "lookup-in")),
+        _ => false,
+    }
+}
+
+/// Return `true` when `expr` is a HEAD-like function (HEAD intrinsic or a bound
+/// variable named `"head"`, `"first"`, or `"key"`).
+fn is_head_fn(expr: &RcExpr) -> bool {
+    matches!(is_head_or_tail(expr), Some(HeadTailProjection::Head))
+}
+
+/// Return `true` when `expr` is a TAIL-like function (TAIL intrinsic or a bound
+/// variable named `"tail"`).
+fn is_tail_fn(expr: &RcExpr) -> bool {
+    matches!(is_head_or_tail(expr), Some(HeadTailProjection::Tail))
 }
 
 /// Apply a `head`/`tail` projection to a known `Tuple` type.
