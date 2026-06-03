@@ -1385,6 +1385,16 @@ impl Checker {
                     return apply_subst(&result_type, subst);
                 }
 
+                // B5.3 — Partial argument in total parameter position.
+                // When the caller passes a partial result (`T?`) where the function
+                // expects a total value, warn.  The Union consistency rule would
+                // otherwise suppress the warning.
+                if is_partial_type(&arg_type) && !is_partial_type(&param_applied) {
+                    let message = build_arg_mismatch_message(func_name);
+                    self.emit_type_mismatch(smid, &param_applied, &arg_type, &message);
+                    return apply_subst(&result_type, subst);
+                }
+
                 match unify(&param_applied, &arg_type, subst) {
                     Ok(()) => apply_subst(&result_type, subst),
                     Err(_) => {
@@ -1833,6 +1843,27 @@ impl Checker {
         let found = self.synthesise(expr);
 
         if !is_informative(&found) {
+            return;
+        }
+
+        // B5.3 — Partial type in total position.
+        //
+        // The Union consistency rule allows `T | ExecutionError ~ T` (consistent,
+        // because the `T` variant is consistent with `T`).  However, when a caller
+        // has explicitly annotated a *total* return type and the expression actually
+        // returns a partial result, we want to warn so that the annotation is honest.
+        //
+        // We detect this by checking: if `found` is a partial type (union containing
+        // ExecutionError) and `expected` is *not* partial (and not `any`), emit a
+        // warning instead of relying on the consistency check which would silently
+        // succeed.
+        if is_partial_type(&found) && !is_partial_type(expected) && is_informative(expected) {
+            self.emit_type_mismatch(
+                smid,
+                expected,
+                &found,
+                "expression type does not match annotation",
+            );
             return;
         }
 
@@ -2667,6 +2698,19 @@ fn normalise_tuple_to_list(ty: Type) -> Type {
 /// - `never` represents empty or unreachable code.
 fn is_informative(ty: &Type) -> bool {
     !matches!(ty, Type::Any | Type::Never)
+}
+
+/// Returns `true` when `ty` is a partial type — i.e. a union that includes
+/// `ExecutionError` at the top level.
+///
+/// Used by `check_against` to warn when a partial result flows into a position
+/// annotated with a total type (§B5.3).
+fn is_partial_type(ty: &Type) -> bool {
+    if let Type::Union(variants) = ty {
+        variants.contains(&Type::ExecutionError)
+    } else {
+        false
+    }
 }
 
 /// Build the type-mismatch warning message for a single-argument call.

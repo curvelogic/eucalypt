@@ -404,11 +404,52 @@ and `State` all have kind `* -> *`.  `Lens` and `Traversal` have kind
 
 ### Special types
 
-| Type    | Meaning                                               |
-|---------|-------------------------------------------------------|
-| `any`   | gradual/dynamic — no errors involving `any`           |
-| `top`   | supertype of everything — nothing useful can be done with it |
-| `never` | bottom type — unreachable code, empty collections     |
+| Type             | Meaning                                               |
+|------------------|-------------------------------------------------------|
+| `any`            | gradual/dynamic — no errors involving `any`           |
+| `top`            | supertype of everything — nothing useful can be done with it |
+| `never`          | bottom type — unreachable code, empty collections     |
+| `ExecutionError` | the type of a raised runtime error (see Partial types below) |
+
+### Partial types
+
+Some functions can fail at runtime — for example `nth` raises an error
+when the index is out of range, and `parse-as` raises an error when the
+string is not valid in the given format.  These are called **partial
+functions**.
+
+Partial functions use the postfix `?` sugar in their type signatures:
+
+```
+nth      : number → [a] → a?         # may raise an error if index out of range
+parse-as : symbol → string → any?    # may raise an error if string is not valid
+lookup   : symbol → Dict(a) → a?     # may raise an error if key not found
+```
+
+`T?` is display sugar for `T | ExecutionError`.  The two forms are
+completely interchangeable in type annotations:
+
+```eu,notest
+` { type: "number → [a] → a?" }
+safe-nth(n, l): l nth(n)       # explicitly partial
+
+` { type: "number → [a] → a | ExecutionError" }
+also-safe-nth(n, l): l nth(n)  # identical — same type, different spelling
+```
+
+**Gradual self-limiting**: a partial result flowing into unannotated
+(`any`) code is **silent** — `ExecutionError <: any`.  A warning fires
+only when a partial result is used in a position that has been explicitly
+annotated as total:
+
+```eu,notest
+` { type: "number" }
+result: [1, 2, 3] nth(0)   # warning: expected number, found number?
+```
+
+Functions that A6 made total by input refinement (`head`/`tail` require
+`NonEmpty([a])`) are **not** partial — they keep their total types.
+`T?` documents the *residual* partiality that refinement cannot remove.
 
 ---
 

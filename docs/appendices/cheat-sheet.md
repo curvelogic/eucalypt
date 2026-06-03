@@ -535,6 +535,8 @@ origin: { x: 0, y: 0 }
 | `Name` (capitalised) | type alias — defined via `types: { Name: "..." }` |
 | `"value"`          | literal string type (subtype of `string`); in annotation string: `\"value\"` |
 | `:name`            | literal symbol type (subtype of `symbol`)      |
+| `T?`               | partial — sugar for `T \| ExecutionError`; marks functions that may raise an error |
+| `ExecutionError`   | the type of a raised runtime error     |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
 | `a`, `b`, `s`      | type variable, kind `*` (lowercase)    |

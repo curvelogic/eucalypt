@@ -110,6 +110,10 @@ enum Token {
     DotDot,     // ..
     Dot,        // . (for forall binders: `forall a.`)
     Star,       // *  (kind)
+    // The ExecutionError nullary type (written as `ExecutionError` or implied by `T?`)
+    ExecutionError,
+    // Postfix `?` — sugar for `| ExecutionError`
+    Question,
     // Literal string value (e.g. `"read"` in type position)
     StringLit(String),
     // End of input
@@ -208,6 +212,10 @@ impl<'a> Lexer<'a> {
                 self.pos += 1;
                 Ok((Token::Star, start))
             }
+            '?' => {
+                self.pos += 1;
+                Ok((Token::Question, start))
+            }
             '-' => {
                 if self.remaining().starts_with("->") {
                     self.pos += 2;
@@ -288,6 +296,7 @@ impl<'a> Lexer<'a> {
                     "Lens" => Token::Lens,
                     "Traversal" => Token::Traversal,
                     "NonEmpty" => Token::NonEmpty,
+                    "ExecutionError" => Token::ExecutionError,
                     other => Token::Ident(other.to_string()),
                 };
                 Ok((tok, start))
@@ -518,15 +527,21 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// `application ::= primary primary*`  (left-associative)
+    /// `application ::= primary primary* '?'?`
     ///
     /// Juxtaposition applies a type constructor to its arguments:
     /// `m a` → `App(m, a)`, `m a b` → `App(App(m, a), b)`.
+    ///
+    /// A trailing `?` desugars to `| ExecutionError`:
+    /// `T?` → `T | ExecutionError`.
     fn parse_application(&mut self) -> Result<Type, ParseError> {
         let head = self.parse_primary()?;
         let mut result = head;
         loop {
-            if self.can_start_primary()? {
+            if self.peek()? == &Token::Question {
+                self.advance()?;
+                result = Type::partial(result);
+            } else if self.can_start_primary()? {
                 let arg = self.parse_primary()?;
                 result = Type::App(Box::new(result), Box::new(arg));
             } else {
@@ -581,6 +596,7 @@ impl<'a> Parser<'a> {
             Token::Any => Ok(Type::Any),
             Token::Top => Ok(Type::Top),
             Token::Never => Ok(Type::Never),
+            Token::ExecutionError => Ok(Type::ExecutionError),
             Token::Set => Ok(Type::Set),
             Token::Vec => Ok(Type::Vec),
             Token::Array => Ok(Type::Array),
