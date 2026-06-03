@@ -1,0 +1,7 @@
+# B9: use-driven detection — non-block parameters must NOT acquire spurious
+# row variables.  `x` and `y` are used arithmetically, not as blocks, so
+# they stay `any` and no type warning is emitted.
+g(x, y): x + y
+result: g(1, 2)
+` { type: "number" }
+check: result

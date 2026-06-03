@@ -10,6 +10,86 @@ pub fn distribute(expr: RcExpr) -> Result<RcExpr, CoreError> {
     Distributor::default().dist(expr)
 }
 
+/// Extract type annotation strings for operator bindings from the raw
+/// (pre-cook) expression.
+///
+/// Before `distribute_fixities` (which strips `Meta` wrappers from operator
+/// definitions), this function collects the `type:` annotation associated with
+/// each operator binding so the type checker can use them for constraint
+/// discharge even after cook has removed the metadata.
+///
+/// Returns a map from operator name (e.g. `"<"`, `">"`) to annotation string.
+pub fn extract_operator_type_strings(expr: &RcExpr) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    collect_operator_type_strings(expr, &mut map);
+    map
+}
+
+fn collect_operator_type_strings(expr: &RcExpr, out: &mut HashMap<String, String>) {
+    match &*expr.inner {
+        Expr::Let(_, scope, _) => {
+            // Walk bindings: check each value for an operator with type annotation.
+            // We only open one Let level shallowly here because `dist()` is called
+            // on the closed form; the body (which may contain nested Lets from user
+            // files merged with the prelude) is walked recursively.
+            for (name, value) in &scope.pattern {
+                if let Some(type_str) = extract_op_type_string(value) {
+                    out.insert(name.clone(), type_str);
+                }
+            }
+            // Recurse into the Let body (may contain nested Lets).
+            collect_operator_type_strings(&scope.body, out);
+        }
+        // Peek through Meta wrappers — the merged expression is wrapped in a
+        // unit-level Meta node before the outer prelude Let.
+        Expr::Meta(_, inner, _) => collect_operator_type_strings(inner, out),
+        _ => {}
+    }
+}
+
+/// Given a binding value, extract its `type:` annotation if it wraps an
+/// operator definition (`Operator` node inside zero or more `Meta` layers).
+fn extract_op_type_string(value: &RcExpr) -> Option<String> {
+    match &*value.inner {
+        Expr::Meta(_, inner, meta_block) => {
+            // If the inner expression is (or contains) an Operator, extract
+            // the type: string from this Meta block.
+            if contains_operator(inner) {
+                extract_type_str_from_block(meta_block).or_else(|| extract_op_type_string(inner))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Returns `true` if `expr` is, or wraps (via Meta layers), an `Operator` node.
+fn contains_operator(expr: &RcExpr) -> bool {
+    match &*expr.inner {
+        Expr::Operator(_, _, _, _) => true,
+        Expr::Meta(_, inner, _) => contains_operator(inner),
+        _ => false,
+    }
+}
+
+/// Extract the value of the `type:` key from a block expression, if present.
+fn extract_type_str_from_block(block_expr: &RcExpr) -> Option<String> {
+    let block = match &*block_expr.inner {
+        Expr::Block(_, b) => b,
+        _ => return None,
+    };
+    let type_expr = block.get("type")?;
+    extract_str_literal(type_expr)
+}
+
+fn extract_str_literal(expr: &RcExpr) -> Option<String> {
+    match &*expr.inner {
+        Expr::Literal(_, Primitive::Str(s)) => Some(s.clone()),
+        _ => None,
+    }
+}
+
 type Binding = (String, RcExpr);
 type OpMeta = (Smid, Fixity, Precedence);
 type Frame = HashMap<String, OpMeta>;

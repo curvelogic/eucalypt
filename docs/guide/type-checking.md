@@ -297,6 +297,26 @@ with a named row in its type is applied to a concrete record, the
 checker unifies the known fields and binds the row variable to the
 remaining fields.
 
+#### Inference for unannotated block combinators (B9)
+
+When a lambda parameter is **used as a block** — projected (`.field`),
+merged (`merge`/`over`), or passed to a block-typed function — the
+checker allocates a fresh row variable for it automatically, even
+without an explicit `type:` annotation.
+
+```eu,notest
+# No annotation needed — f infers {..r} -> {..s} -> {..r, ..s}
+f(a, b): a merge(b)
+
+base: { x: 1 }
+ext: { y: "hello" }
+result: base f(ext)   # result : {x: number, y: string}
+```
+
+The checker uses a **use-driven** approach: only parameters that appear
+in a block position acquire row variables. Parameters used arithmetically
+(`x + y`) stay `any`, avoiding spurious warnings.
+
 ### Functions
 
 Arrow `->` is right-associative. Multi-argument functions are curried:

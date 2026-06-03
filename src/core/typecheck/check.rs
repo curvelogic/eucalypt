@@ -34,8 +34,11 @@ use crate::{
             error::TypeWarning,
             parse,
             subtype::{is_consistent, is_subtype},
-            types::{Kind, Type, TypeScheme, TypeVarId},
-            unify::{apply_subst, freshen, freshen_forall, infer_scheme, unify, Substitution},
+            types::{Constraint, Kind, Type, TypeScheme, TypeVarId},
+            unify::{
+                apply_subst, freshen, freshen_forall, freshen_with_constraints, infer_scheme,
+                unify, Substitution,
+            },
         },
     },
 };
@@ -209,6 +212,15 @@ pub struct PreludeSummary {
     /// code.  `recognise_brancher` consults this map when the head is a
     /// free variable so that `if`, `then`, `and`, etc. are still recognised.
     pub branch_shapes: HashMap<String, BranchShape>,
+
+    /// Pre-cook operator type overloads for constraint discharge (§B2).
+    ///
+    /// Operator definitions (e.g. `(l < r): __LT(l, r)`) have their `Meta`
+    /// wrapper stripped by cook, making their type annotations invisible to
+    /// the type checker.  This map captures the annotations before cook and
+    /// allows `discharge_constraint` to verify operator constraints even when
+    /// the scope-stack entry for the operator is `Any`.
+    pub operator_overloads: HashMap<String, TypeScheme>,
 }
 
 // ── Checker ─────────────────────────────────────────────────────────────────
@@ -311,6 +323,17 @@ pub struct Checker {
     /// `check_expr` returns.  Always `false` in user-file checks.
     keep_root_scope: bool,
 
+    /// Pre-cook operator overload types for constraint discharge (§B2).
+    ///
+    /// Populated from type annotations extracted from the raw (pre-cook)
+    /// expression before `distribute_fixities` strips `Meta` wrappers from
+    /// operator definitions.  Cook strips these wrappers, leaving operators
+    /// with `mono(any)` in the scope stack.  `discharge_constraint` consults
+    /// this map as a fallback when the scope lookup returns `Any`.
+    ///
+    /// Keyed by operator name (e.g. `"<"`, `">"`, `"+"`).
+    operator_overloads: HashMap<String, TypeScheme>,
+
     /// BranchShape classification seeded from a pre-checked prelude (§B7).
     ///
     /// Maps prelude binding name → `BranchShape`.  Consulted by
@@ -340,6 +363,7 @@ impl Checker {
             projection_shapes: HashMap::new(),
             keep_root_scope: false,
             seed_branch_shapes: HashMap::new(),
+            operator_overloads: HashMap::new(),
         }
     }
 
@@ -359,6 +383,7 @@ impl Checker {
         let mut checker = Checker::new();
         checker.aliases = summary.aliases.clone();
         checker.seed_branch_shapes = summary.branch_shapes.clone();
+        checker.operator_overloads = summary.operator_overloads.clone();
         // Push prelude bindings at the back (outermost) so user-file
         // frames pushed via push_front sit in front and shadow them.
         let frame: HashMap<String, TypeScheme> = summary.bindings.clone();
@@ -395,6 +420,7 @@ impl Checker {
             bindings,
             aliases: self.aliases.clone(),
             branch_shapes,
+            operator_overloads: self.operator_overloads.clone(),
         }
     }
 
@@ -518,6 +544,108 @@ impl Checker {
         // outside the checker's root (e.g. prelude globals).  Fall back to
         // name-based search which covers pre-seeded outer scopes.
         self.lookup_name(name)
+    }
+
+    // ── Constraint support (B2) ──────────────────────────────────────────────
+
+    /// Look up the raw (unfrenshened) `TypeScheme` for a simple named
+    /// variable expression without consuming `self.var_counter`.
+    ///
+    /// Returns `None` when the expression is not a simple variable (e.g. it is
+    /// a nested application or a literal), or when the name is not in scope.
+    fn lookup_scheme_for_expr(&self, expr: &RcExpr) -> Option<TypeScheme> {
+        match &*expr.inner {
+            Expr::Var(_, Var::Free(name)) | Expr::Name(_, name) => self
+                .scope_stack
+                .iter()
+                .find_map(|frame| frame.get(name))
+                .cloned(),
+            Expr::Var(_, Var::Bound(bv)) => {
+                let name = bv.name.as_deref()?;
+                let idx = bv.scope as usize;
+                if let Some(frame) = self.scope_stack.get(idx) {
+                    frame.get(name).cloned()
+                } else {
+                    // Out-of-range scope index — fall back to name search.
+                    self.scope_stack.iter().find_map(|f| f.get(name)).cloned()
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Discharge an operator constraint after all arguments have been applied.
+    ///
+    /// A constraint `op(T₁, …, Tₙ)` is discharged as follows:
+    ///
+    /// - If any `Tᵢ` (after applying `subst`) is `any`: vacuously satisfied.
+    /// - If any `Tᵢ` is still an unbound type variable: the constraint is not
+    ///   yet concrete — skip silently (constrained polymorphism; the outer
+    ///   scheme carries it forward).
+    /// - Otherwise: look up `op`'s declared type and check that some overload
+    ///   accepts `(T₁, …, Tₙ)`.  Emit a warning if none match.
+    fn discharge_constraint(&mut self, constraint: &Constraint, subst: &Substitution, smid: Smid) {
+        let resolved: Vec<Type> = constraint
+            .args
+            .iter()
+            .map(|a| apply_subst(a, subst))
+            .collect();
+
+        // Gradual: `any` arg means we cannot say anything — stay silent.
+        if resolved.iter().any(|a| matches!(a, Type::Any)) {
+            return;
+        }
+
+        // Not yet concrete — constraint propagates.
+        if resolved.iter().any(|a| matches!(a, Type::Var(_, _))) {
+            return;
+        }
+
+        // Look up the operator's declared type (body without freshening).
+        // First check the scope stack; if the scope gives `Any` (because cook
+        // stripped the operator's Meta annotation), fall back to the pre-cook
+        // operator overload map which was populated before distribute_fixities.
+        let op_type_from_scope = self
+            .scope_stack
+            .iter()
+            .find_map(|f| f.get(&constraint.function))
+            .cloned()
+            .map(|s| s.body.clone());
+
+        let op_type = match op_type_from_scope {
+            Some(Type::Any) | None => {
+                // Scope has no useful type — try the pre-cook overload registry.
+                self.operator_overloads
+                    .get(&constraint.function)
+                    .map(|s| s.body.clone())
+            }
+            other => other,
+        };
+
+        let Some(op_type) = op_type else {
+            // Unknown operator — cannot verify, stay silent (gradual).
+            return;
+        };
+
+        // Gradual: if the overload itself is Any, stay silent.
+        if matches!(op_type, Type::Any) {
+            return;
+        }
+
+        // Check whether any overload of the operator accepts the resolved args.
+        if !constraint_overload_matches(&op_type, &resolved) {
+            let args_str = resolved
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let warning = TypeWarning::new(format!(
+                "`{}` does not accept ({})",
+                constraint.function, args_str
+            ))
+            .at(smid);
+            self.warnings.push(warning);
+        }
     }
 
     // ── Alias management ────────────────────────────────────────────────────
@@ -701,7 +829,7 @@ impl Checker {
     /// - `is_hint`: came from `__type_hint` (monad binding) — the
     ///   annotation is for checking only, not for overriding the
     ///   synthesised type
-    fn extract_annotation(&self, meta: &RcExpr) -> Option<(Type, bool, bool)> {
+    fn extract_annotation(&self, meta: &RcExpr) -> Option<(Type, Vec<Constraint>, bool, bool)> {
         let block = match &*meta.inner {
             Expr::Block(_, b) => b,
             _ => return None,
@@ -734,7 +862,8 @@ impl Checker {
             };
             let derived = self.derive_monad_block_type(&pattern_str)?;
             // Asserted (body not verified) and not a hint (type IS authoritative).
-            return Some((derived, true, false));
+            // No operator constraints on monad-derived types.
+            return Some((derived, Vec::new(), true, false));
         } else {
             return None;
         };
@@ -746,8 +875,13 @@ impl Checker {
             (type_str, false)
         };
 
-        let parsed = parse::parse_type(&type_str).ok()?;
-        Some((self.resolve_aliases_in_type(parsed), asserted, is_hint))
+        let (parsed, constraints) = parse::parse_scheme(&type_str).ok()?;
+        Some((
+            self.resolve_aliases_in_type(parsed),
+            constraints,
+            asserted,
+            is_hint,
+        ))
     }
 
     /// Derive the block type for a monad namespace from its `monad:` pattern string.
@@ -918,7 +1052,11 @@ impl Checker {
     fn annotation_scheme_of(&self, value: &RcExpr) -> Option<TypeScheme> {
         if let Expr::Meta(_, _, meta) = &*value.inner {
             self.extract_annotation(meta)
-                .map(|(ty, _asserted, _is_hint)| infer_scheme(ty))
+                .map(|(ty, constraints, _asserted, _is_hint)| {
+                    let mut scheme = infer_scheme(ty);
+                    scheme.constraints = constraints;
+                    scheme
+                })
         } else {
             None
         }
@@ -1019,7 +1157,7 @@ impl Checker {
                         // Use the explicit `type:` annotation if given; otherwise
                         // the synthesised type (inferred from the value shape).
                         let alias_ty = if let Expr::Meta(_, _, meta) = &*value.inner {
-                            self.extract_annotation(meta).map(|(ty, _, _)| ty)
+                            self.extract_annotation(meta).map(|(ty, _, _, _)| ty)
                         } else {
                             None
                         }
@@ -1034,9 +1172,10 @@ impl Checker {
             }
 
             // ── Lambda ────────────────────────────────────────────────────────
-            // Cannot synthesise without knowing parameter types.  Return `any`
-            // and let `check_against` handle the case where the type is known.
-            Expr::Lam(_, _, _) => Type::Any,
+            // B9: attempt row-variable inference for unannotated lambdas whose
+            // parameters are used as blocks.  Falls back to `any` when no
+            // block usage is detected (preserving the gradual boundary).
+            Expr::Lam(_, _, scope) => self.synthesise_lam(scope),
 
             // ── Application ──────────────────────────────────────────────────
             Expr::App(smid, func, args) => self.synthesise_app(*smid, func, args),
@@ -1087,7 +1226,9 @@ impl Checker {
         // the annotation itself can reference freshly-declared aliases.
         self.register_aliases_from_meta(meta);
 
-        if let Some((annotated_type, asserted, is_hint)) = self.extract_annotation(meta) {
+        if let Some((annotated_type, _constraints, asserted, is_hint)) =
+            self.extract_annotation(meta)
+        {
             let scheme = infer_scheme(annotated_type);
             let working_type = freshen(&scheme, &mut self.var_counter);
             // Asserted annotations (prefixed with `!`) are trusted without
@@ -1224,13 +1365,13 @@ impl Checker {
     /// Spine flattening: `x then(a, b)` cooks to `App(App(then, [a,b]), [x])`.
     /// We flatten `func` into `(head, prefix_args)` and prepend to `args` so
     /// the full argument list `[a, b, x]` is visible for recognition.
-    fn synthesise_app(&mut self, _smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
+    fn synthesise_app(&mut self, smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
         // ── Spine flattening + branch recognition (§A5.2, §A5.3) ─────────────
         //
         // Flatten the function spine to find the outermost head and the full
         // argument list.  Required for pipelined branchers like `x then(a,b)`.
         let (head, prefix_args) = flatten_app_spine(func);
-        let spine_args: Vec<&RcExpr> = prefix_args.into_iter().chain(args.iter()).collect();
+        let spine_args: Vec<&RcExpr> = prefix_args.iter().copied().chain(args.iter()).collect();
 
         if let Some(shape) = self.recognise_brancher(head) {
             if spine_args.len() == shape.arity {
@@ -1402,7 +1543,45 @@ impl Checker {
             }
         }
 
-        let func_type = self.synthesise(func);
+        // ── Constraint extraction (B2) ────────────────────────────────────────
+        //
+        // If the head of the application spine has a constrained scheme
+        // (e.g. `<(a, a) => a -> a -> a`), freshen the constraints with the
+        // same rename map as the body so that constraint variables unify
+        // correctly with the accumulated substitution.
+        //
+        // When the head has no constraints (the common case), fall back to the
+        // ordinary `synthesise(func)` path.
+        let (func_type, pending_constraints): (Type, Vec<Constraint>) = {
+            let head_scheme = self.lookup_scheme_for_expr(head);
+            if let Some(ref scheme) = head_scheme {
+                if !scheme.constraints.is_empty() {
+                    // Freshen head scheme body and constraints together so
+                    // they share the same rename map.
+                    let (head_body, constraints) =
+                        freshen_with_constraints(scheme, &mut self.var_counter);
+                    // Apply any prefix args (from the flattened spine) to the
+                    // freshened head body to arrive at the partially-applied
+                    // type that `synthesise(func)` would normally produce.
+                    let mut pre_subst = Substitution::new();
+                    let ft = prefix_args.iter().fold(head_body, |t, a| {
+                        self.apply_one_with_subst(
+                            a.smid(),
+                            t,
+                            a,
+                            &mut pre_subst,
+                            func_name.as_deref(),
+                        )
+                    });
+                    (apply_subst(&ft, &pre_subst), constraints)
+                } else {
+                    (self.synthesise(func), Vec::new())
+                }
+            } else {
+                (self.synthesise(func), Vec::new())
+            }
+        };
+
         let mut subst = Substitution::new();
         let mut current_type = func_type;
 
@@ -1417,6 +1596,16 @@ impl Checker {
                 &mut subst,
                 func_name.as_deref(),
             );
+        }
+
+        // ── Constraint discharge (B2) ─────────────────────────────────────────
+        //
+        // After all arguments have been applied, the accumulated substitution
+        // `subst` maps fresh type variables to their concrete types.  Discharge
+        // each pending constraint: if the operator does not accept the resolved
+        // argument types, emit a type warning.
+        for constraint in &pending_constraints {
+            self.discharge_constraint(constraint, &subst, smid);
         }
 
         // Apply the accumulated substitution to resolve any remaining vars.
@@ -2095,6 +2284,60 @@ impl Checker {
         self.pop_scope();
     }
 
+    // ── B9: Row-variable inference at lambda boundaries ──────────────────────
+
+    /// Synthesise a type for an unannotated lambda using use-driven row-variable
+    /// inference (§B9).
+    ///
+    /// Scans the lambda body to identify which parameters are "used as a block"
+    /// (appear in a projection or merge/over argument position).  Block-shaped
+    /// parameters receive a fresh open record type `{..rN}` instead of `any`.
+    ///
+    /// If no parameter is block-shaped, falls back to `any` immediately,
+    /// preserving the existing gradual boundary for non-block lambdas.
+    fn synthesise_lam(&mut self, scope: &crate::core::expr::LamScope<RcExpr>) -> Type {
+        let block_flags = detect_block_params(scope);
+
+        // Fast path: no block-shaped params → keep `any` (unchanged behaviour).
+        if block_flags.iter().all(|&b| !b) {
+            return Type::Any;
+        }
+
+        // Allocate a fresh open record type for each block-shaped parameter,
+        // `any` for the rest.
+        let param_types: Vec<Type> = block_flags
+            .iter()
+            .map(|&is_block| {
+                if is_block {
+                    let row_id = TypeVarId(format!("_r{}", self.var_counter));
+                    self.var_counter += 1;
+                    Type::Record {
+                        fields: BTreeMap::new(),
+                        open: true,
+                        rows: vec![row_id],
+                    }
+                } else {
+                    Type::Any
+                }
+            })
+            .collect();
+
+        // Push a scope frame with the allocated parameter types and synthesise
+        // the body under them.
+        let mut frame: HashMap<String, TypeScheme> = HashMap::new();
+        for (name, ty) in scope.pattern.iter().zip(param_types.iter()) {
+            frame.insert(name.clone(), TypeScheme::mono(ty.clone()));
+        }
+        self.push_scope(frame);
+        let body_type = self.synthesise(&scope.body);
+        self.pop_scope();
+
+        // Build a curried function type: T₀ → T₁ → … → body_type.
+        param_types.into_iter().rev().fold(body_type, |acc, param| {
+            Type::Function(Box::new(param), Box::new(acc))
+        })
+    }
+
     // ── BranchShape recognition (§A5.3) ─────────────────────────────────────
 
     /// Look up the `BranchShape` for an expression in the head position of an
@@ -2465,6 +2708,128 @@ fn flatten_app_spine(func: &RcExpr) -> (&RcExpr, Vec<&RcExpr>) {
         head = f;
     }
     (head, prefix)
+}
+
+// ── B9: use-driven block-parameter detection ──────────────────────────────────
+
+/// Scan a lambda scope to determine which parameters are "used as a block"
+/// — i.e. appear in a projection (`Lookup`) or as arguments to `merge`/`over`
+/// in the body.
+///
+/// Returns a `Vec<bool>` of length `scope.pattern.len()`.  `true` at index `i`
+/// means parameter `i` is block-shaped and should receive a fresh row-variable
+/// record type during synthesis.
+fn detect_block_params(scope: &crate::core::expr::LamScope<RcExpr>) -> Vec<bool> {
+    let n = scope.pattern.len();
+    let mut flags = vec![false; n];
+    collect_block_uses(&scope.body, 0, &mut flags);
+    flags
+}
+
+/// Recursively scan `expr` for block usages of the parameters introduced by
+/// the lambda that `flags` belongs to.
+///
+/// `depth` is the number of additional lambda scopes that have been entered
+/// since the original lambda boundary.  The original parameters are referenced
+/// by `Var::Bound { scope: depth, binder: i }` inside nested lambdas.
+fn collect_block_uses(expr: &RcExpr, depth: usize, flags: &mut Vec<bool>) {
+    match &*expr.inner {
+        // Projection: the object expression is used as a block.
+        Expr::Lookup(_, obj, _, fallback) => {
+            mark_block_param(obj, depth, flags);
+            collect_block_uses(obj, depth, flags);
+            if let Some(f) = fallback {
+                collect_block_uses(f, depth, flags);
+            }
+        }
+
+        // Application: if the function spine resolves to `merge` or `over`,
+        // every argument in the full spine is used as a block.
+        Expr::App(_, func, args) => {
+            let (head, prefix_args) = flatten_app_spine(func);
+            if is_merge_or_over_expr(head) {
+                for arg in &prefix_args {
+                    mark_block_param(arg, depth, flags);
+                }
+                for arg in args {
+                    mark_block_param(arg, depth, flags);
+                }
+            }
+            collect_block_uses(func, depth, flags);
+            for arg in args {
+                collect_block_uses(arg, depth, flags);
+            }
+        }
+
+        // Nested lambda: increase depth so outer parameters are still found.
+        Expr::Lam(_, _, inner_scope) => {
+            collect_block_uses(&inner_scope.body, depth + 1, flags);
+        }
+
+        // Let binding: values are at the current depth; the body is at depth+1.
+        Expr::Let(_, inner_scope, _) => {
+            for (_, val) in &inner_scope.pattern {
+                collect_block_uses(val, depth, flags);
+            }
+            collect_block_uses(&inner_scope.body, depth + 1, flags);
+        }
+
+        // Meta wrappers: recurse through both.
+        Expr::Meta(_, inner, meta) => {
+            collect_block_uses(inner, depth, flags);
+            collect_block_uses(meta, depth, flags);
+        }
+
+        // Block literal: scan field values.
+        Expr::Block(_, fields) => {
+            for (_, val) in fields.iter() {
+                collect_block_uses(val, depth, flags);
+            }
+        }
+
+        // List literal: scan elements.
+        Expr::List(_, items) => {
+            for item in items {
+                collect_block_uses(item, depth, flags);
+            }
+        }
+
+        // Variables and primitives: nothing to do.
+        _ => {}
+    }
+}
+
+/// If `expr` is a direct `Var::Bound` reference to one of the lambda's own
+/// parameters (at de Bruijn `scope == depth`), set the corresponding flag.
+fn mark_block_param(expr: &RcExpr, depth: usize, flags: &mut [bool]) {
+    let peeled = peel_meta(expr);
+    if let Expr::Var(_, Var::Bound(bv)) = &*peeled.inner {
+        if bv.scope as usize == depth {
+            let idx = bv.binder as usize;
+            if idx < flags.len() {
+                flags[idx] = true;
+            }
+        }
+    }
+}
+
+/// Return `true` if `expr` refers to `merge` or `over` — either as a free
+/// variable (pre-varify), a named bound variable (post-varify), or an
+/// intrinsic node (post-inline).
+fn is_merge_or_over_expr(expr: &RcExpr) -> bool {
+    let peeled = peel_meta(expr);
+    match &*peeled.inner {
+        Expr::Var(_, Var::Free(name)) => {
+            matches!(name.as_str(), "merge" | "over")
+        }
+        Expr::Var(_, Var::Bound(bv)) => {
+            matches!(bv.name.as_deref(), Some("merge" | "over"))
+        }
+        Expr::Intrinsic(_, name) => {
+            matches!(name.as_str(), "MERGE" | "OVER")
+        }
+        _ => false,
+    }
 }
 
 /// Classify a function expression as a type predicate.
@@ -2918,6 +3283,34 @@ fn build_overload_mismatch_message(func_name: Option<&str>) -> String {
     }
 }
 
+// ── Constraint discharge helpers ─────────────────────────────────────────────
+
+/// Return `true` if any overload of `op_type` accepts `args` as positional
+/// parameters.
+///
+/// - `Union` types are tried variant-by-variant (any match succeeds).
+/// - `Function(p, rest)` checks that `args[0]` is consistent with `p`, then
+///   recurses with `args[1..]` and `rest`.
+/// - An empty `args` slice is vacuously satisfied by any type.
+fn constraint_overload_matches(op_type: &Type, args: &[Type]) -> bool {
+    use crate::core::typecheck::subtype::is_consistent;
+    match op_type {
+        Type::Union(variants) => variants
+            .iter()
+            .any(|v| constraint_overload_matches(v, args)),
+        Type::Function(param, rest) => {
+            if args.is_empty() {
+                return true;
+            }
+            if !is_consistent(param, &args[0]) {
+                return false;
+            }
+            constraint_overload_matches(rest, &args[1..])
+        }
+        _ => args.is_empty(),
+    }
+}
+
 // ── Public entry point ───────────────────────────────────────────────────────
 
 /// Result of running the type checker: warnings and the inferred type environment.
@@ -2982,6 +3375,38 @@ pub fn type_check_with_seed(expr: &RcExpr, summary: &PreludeSummary) -> Vec<Type
     let mut checker = Checker::with_seed(summary);
     checker.check_expr(expr);
     checker.into_warnings()
+}
+
+/// Run the type checker over `expr` with pre-cook operator type overloads.
+///
+/// `operator_overloads` maps operator names (e.g. `"<"`, `">"`) to their
+/// annotated `TypeScheme`s, extracted from the raw (pre-cook) expression.
+/// The checker consults this map in `discharge_constraint` when the normal
+/// scope-stack lookup returns `Any` (because cook stripped the operator's
+/// `Meta` annotation).
+pub fn type_check_with_operator_overloads(
+    expr: &RcExpr,
+    operator_overloads: HashMap<String, TypeScheme>,
+) -> Vec<TypeWarning> {
+    let mut checker = Checker::new();
+    checker.operator_overloads = operator_overloads;
+    checker.check_expr(expr);
+    checker.into_warnings()
+}
+
+/// Parse a map of operator name → annotation string into TypeSchemes.
+///
+/// Strings that fail to parse are silently skipped (the constraint will
+/// stay gradual for those operators).
+pub fn parse_operator_overloads(raw: &HashMap<String, String>) -> HashMap<String, TypeScheme> {
+    raw.iter()
+        .filter_map(|(name, type_str)| {
+            let (ty, constraints) = parse::parse_scheme(type_str).ok()?;
+            let mut scheme = infer_scheme(ty);
+            scheme.constraints = constraints;
+            Some((name.clone(), scheme))
+        })
+        .collect()
 }
 
 /// Extract type alias definitions from `expr` without running full type checking.

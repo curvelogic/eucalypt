@@ -20,7 +20,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::core::typecheck::types::{kind_of, unfold_mu, Kind, Type, TypeScheme, TypeVarId};
+use crate::core::typecheck::types::{
+    kind_of, unfold_mu, Constraint, Kind, Type, TypeScheme, TypeVarId,
+};
 
 /// A mapping from type variable identifiers to their concrete types.
 pub type Substitution = HashMap<TypeVarId, Type>;
@@ -204,6 +206,13 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
             }
 
             // Greedy row variable absorption.
+            //
+            // When both sides have no extra fields and one side has a single
+            // bare row variable, bind that variable directly to the other side's
+            // row variable (as a plain `Var`) rather than wrapping it in a
+            // `Record`.  This prevents circular substitutions of the form
+            // `{..r2} ↦ {..r1}` and `{..r1} ↦ {..r2}` which would cause
+            // `apply_subst` to loop indefinitely.
             for r1 in &rows1 {
                 let r1_resolved = apply_subst(&Type::var(r1.clone()), subst);
                 if matches!(r1_resolved, Type::Var(_, _)) {
@@ -212,10 +221,17 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
                         .filter(|(k, _)| !f1.contains_key(*k))
                         .map(|(k, v)| (k.clone(), apply_subst(v, subst)))
                         .collect();
-                    let extra_ty = Type::Record {
-                        fields: extra,
-                        open: !rows2.is_empty(),
-                        rows: rows2.clone(),
+                    // When the extra fields are empty and the other side has
+                    // exactly one bare row variable, alias directly to avoid
+                    // circular Record substitutions.
+                    let extra_ty = if extra.is_empty() && rows2.len() == 1 {
+                        Type::var(rows2[0].clone())
+                    } else {
+                        Type::Record {
+                            fields: extra,
+                            open: !rows2.is_empty(),
+                            rows: rows2.clone(),
+                        }
                     };
                     if !occurs(r1, &extra_ty) {
                         subst.insert(r1.clone(), extra_ty);
@@ -223,6 +239,19 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
                 }
             }
             for r2 in &rows2 {
+                // Skip if this row variable is already covered by a direct
+                // alias added in the rows1 loop — binding it again would
+                // create a cycle (e.g. `_t2 ↦ Var(r1)` then `r1 ↦ Var(_t2)`).
+                let covered = rows1.iter().any(|r| {
+                    subst
+                        .get(r)
+                        .map(|t| *t == Type::var(r2.clone()))
+                        .unwrap_or(false)
+                });
+                if covered {
+                    continue;
+                }
+
                 let r2_resolved = apply_subst(&Type::var(r2.clone()), subst);
                 if matches!(r2_resolved, Type::Var(_, _)) {
                     let extra: std::collections::BTreeMap<String, Type> = f1
@@ -230,10 +259,14 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
                         .filter(|(k, _)| !f2.contains_key(*k))
                         .map(|(k, v)| (k.clone(), apply_subst(v, subst)))
                         .collect();
-                    let extra_ty = Type::Record {
-                        fields: extra,
-                        open: !rows1.is_empty(),
-                        rows: rows1.clone(),
+                    let extra_ty = if extra.is_empty() && rows1.len() == 1 {
+                        Type::var(rows1[0].clone())
+                    } else {
+                        Type::Record {
+                            fields: extra,
+                            open: !rows1.is_empty(),
+                            rows: rows1.clone(),
+                        }
                     };
                     if !occurs(r2, &extra_ty) {
                         subst.insert(r2.clone(), extra_ty);
@@ -429,6 +462,40 @@ pub fn freshen(scheme: &TypeScheme, counter: &mut u32) -> Type {
     }
 
     apply_subst(&scheme.body, &rename)
+}
+
+/// Instantiate a polymorphic scheme, renaming type variables to fresh names
+/// throughout both the body type **and** any constraints.
+///
+/// The same rename map is applied to both, so that constraint variables
+/// (`a` in `<(a, a) => a -> a -> a`) refer to the same fresh variables as
+/// the body parameters.  This is the entry point for schemes that carry
+/// operator constraints (B2).
+pub fn freshen_with_constraints(scheme: &TypeScheme, counter: &mut u32) -> (Type, Vec<Constraint>) {
+    if scheme.vars.is_empty() {
+        let body = scheme.body.clone();
+        let constraints = scheme.constraints.clone();
+        return (body, constraints);
+    }
+
+    let mut rename: Substitution = HashMap::new();
+    for var in &scheme.vars {
+        let fresh = TypeVarId(format!("_t{}", *counter));
+        *counter += 1;
+        rename.insert(var.clone(), Type::var(fresh));
+    }
+
+    let body = apply_subst(&scheme.body, &rename);
+    let constraints = scheme
+        .constraints
+        .iter()
+        .map(|c| Constraint {
+            function: c.function.clone(),
+            args: c.args.iter().map(|a| apply_subst(a, &rename)).collect(),
+        })
+        .collect();
+
+    (body, constraints)
 }
 
 /// Instantiate a `Forall` node by replacing its binders with fresh variables.
