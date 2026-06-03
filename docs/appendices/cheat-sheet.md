@@ -537,7 +537,10 @@ origin: { x: 0, y: 0 }
 | `:name`            | literal symbol type (subtype of `symbol`)      |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
-| `a`, `b`, `s`      | type variable (lowercase)              |
+| `a`, `b`, `s`      | type variable, kind `*` (lowercase)    |
+| `m a`              | constructor application (`m :: * -> *` applied to `a`) |
+| `forall a. T`      | explicit quantification (kind-`*`)     |
+| `forall (m :: * -> *) a. T` | explicit quantification with kind annotation |
 | `IO(T)`            | IO action producing T                  |
 | `Lens(a, b)`       | lens focusing on b within a            |
 | `Traversal(a, b)`  | traversal over b's within a            |
