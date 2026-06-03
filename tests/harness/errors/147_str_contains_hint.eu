@@ -1,0 +1,3 @@
+# Error: using 'str.includes' — 'str.contains?' is the correct eucalypt function
+text: "hello world"
+result: text str.includes("hello")

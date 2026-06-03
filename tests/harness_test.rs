@@ -1553,6 +1553,26 @@ pub fn test_error_143() {
 }
 
 #[test]
+pub fn test_error_144() {
+    run_error_test(&error_opts("144_str_replace_hint.eu"));
+}
+
+#[test]
+pub fn test_error_145() {
+    run_error_test(&error_opts("145_str_starts_with_hint.eu"));
+}
+
+#[test]
+pub fn test_error_146() {
+    run_error_test(&error_opts("146_str_ends_with_hint.eu"));
+}
+
+#[test]
+pub fn test_error_147() {
+    run_error_test(&error_opts("147_str_contains_hint.eu"));
+}
+
+#[test]
 pub fn test_error_135() {
     run_error_test(&error_opts("135_head_empty_list.eu"));
 }
