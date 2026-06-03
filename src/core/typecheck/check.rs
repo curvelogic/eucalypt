@@ -128,7 +128,7 @@ enum BranchKind {
 /// For `BranchKind::Cond`, `condition` is unused; `branches[0]` is the
 /// clause-list argument index.
 #[derive(Debug, Clone)]
-struct BranchShape {
+pub struct BranchShape {
     /// Total number of arguments when fully applied.
     arity: usize,
     /// Index into the flattened argument list for the condition expression.
@@ -177,6 +177,38 @@ enum PredicateKind {
 /// `Type::Var` nodes whose name is in this map are replaced with the stored
 /// concrete type before type variables are erased to `any`.
 type AliasMap = HashMap<String, Type>;
+
+// ── Prelude summary ──────────────────────────────────────────────────────────
+
+/// Cached result of type-checking the prelude in standalone mode (§B7).
+///
+/// Produced once per process by running the prelude through the full
+/// pipeline (load → translate → cook, **no eliminate**), then running
+/// `type_check_for_prelude` which preserves the root scope after checking.
+///
+/// Seeded into fresh `Checker` instances via `Checker::with_seed` when
+/// checking user files in standalone mode, avoiding a full re-walk of the
+/// ~2 200-line prelude on every check.
+#[derive(Clone, Default)]
+pub struct PreludeSummary {
+    /// Exported binding name → its type scheme.
+    ///
+    /// Polymorphic schemes are preserved so that every use-site freshens
+    /// the type variables independently.
+    pub bindings: HashMap<String, TypeScheme>,
+
+    /// Type aliases the prelude registers (from `type-def:` / `types:`
+    /// metadata).  User-file annotations can reference these alias names.
+    pub aliases: AliasMap,
+
+    /// BranchShape classification for recognised brancher combinators,
+    /// keyed by binding *name* (not `BoundKey`) for `Var::Free` lookup.
+    ///
+    /// In standalone mode, prelude functions appear as `Var::Free` in user
+    /// code.  `recognise_brancher` consults this map when the head is a
+    /// free variable so that `if`, `then`, `and`, etc. are still recognised.
+    pub branch_shapes: HashMap<String, BranchShape>,
+}
 
 // ── Checker ─────────────────────────────────────────────────────────────────
 
@@ -260,6 +292,21 @@ pub struct Checker {
     /// inserted as `None` (tentative) is treated as "not a brancher" if
     /// re-encountered during its own classification.
     branch_shapes: HashMap<BoundKey, Option<BranchShape>>,
+
+    /// When `true`, the outermost scope frame is preserved rather than
+    /// popped when `synthesise(Let)` would otherwise call `pop_scope`.
+    ///
+    /// Set during standalone prelude checking so that
+    /// `extract_prelude_summary` can read the root frame after
+    /// `check_expr` returns.  Always `false` in user-file checks.
+    keep_root_scope: bool,
+
+    /// BranchShape classification seeded from a pre-checked prelude (§B7).
+    ///
+    /// Maps prelude binding name → `BranchShape`.  Consulted by
+    /// `recognise_brancher` and `classify_lam_body` when the head
+    /// expression is a `Var::Free` in standalone-mode user-file checks.
+    seed_branch_shapes: HashMap<String, BranchShape>,
 }
 
 impl Default for Checker {
@@ -280,6 +327,63 @@ impl Checker {
             narrowing: Vec::new(),
             binding_bodies: HashMap::new(),
             branch_shapes: HashMap::new(),
+            keep_root_scope: false,
+            seed_branch_shapes: HashMap::new(),
+        }
+    }
+
+    /// Create a checker pre-seeded with a prelude summary (§B7).
+    ///
+    /// Installs the prelude's binding type schemes into the outermost
+    /// scope frame (pushed at the back of `scope_stack` so that user
+    /// bindings pushed at the front shadow them), pre-populates the
+    /// alias map, and seeds `seed_branch_shapes` for `Var::Free`
+    /// recognition of prelude combinators.
+    ///
+    /// Used when checking a user file in standalone mode — the user
+    /// file's own Let frame is pushed on top during normal synthesis,
+    /// and `Var::Free` references to prelude names resolve via the
+    /// `lookup_bound` → `lookup_name` fallback.
+    pub fn with_seed(summary: &PreludeSummary) -> Self {
+        let mut checker = Checker::new();
+        checker.aliases = summary.aliases.clone();
+        checker.seed_branch_shapes = summary.branch_shapes.clone();
+        // Push prelude bindings at the back (outermost) so user-file
+        // frames pushed via push_front sit in front and shadow them.
+        let frame: HashMap<String, TypeScheme> = summary.bindings.clone();
+        checker.scope_stack.push_back(frame);
+        checker
+    }
+
+    /// Extract a `PreludeSummary` from the current checker state.
+    ///
+    /// Intended to be called after `check_expr` when `keep_root_scope`
+    /// was `true`, ensuring the root scope frame is still present in
+    /// `scope_stack`.
+    pub fn extract_prelude_summary(&self) -> PreludeSummary {
+        // Collect type schemes from all frames (there should be exactly
+        // one frame — the root prelude Let frame — when keep_root_scope).
+        let bindings: HashMap<String, TypeScheme> = self
+            .scope_stack
+            .iter()
+            .flat_map(|frame| frame.iter().map(|(k, v)| (k.clone(), v.clone())))
+            .collect();
+
+        // Extract named branch shapes, discarding the BoundKey's
+        // anchored-index component — only the name matters for Free-var
+        // lookups during standalone user-file checks.
+        let branch_shapes: HashMap<String, BranchShape> = self
+            .branch_shapes
+            .iter()
+            .filter_map(|((_, name), opt_shape)| {
+                opt_shape.as_ref().map(|s| (name.clone(), s.clone()))
+            })
+            .collect();
+
+        PreludeSummary {
+            bindings,
+            aliases: self.aliases.clone(),
+            branch_shapes,
         }
     }
 
@@ -327,6 +431,11 @@ impl Checker {
     }
 
     fn pop_scope(&mut self) {
+        // When keep_root_scope is set, preserve the last remaining frame so
+        // that extract_prelude_summary can read it after check_expr returns.
+        if self.keep_root_scope && self.scope_stack.len() == 1 {
+            return;
+        }
         self.scope_stack.pop_front();
     }
 
@@ -1731,6 +1840,11 @@ impl Checker {
                 // Flatten Option<Option<BranchShape>> via and_then.
                 self.branch_shapes.get(&key).and_then(|opt| opt.clone())
             }
+            // Free variable — occurs in standalone user-file checks where
+            // prelude references have not been merged in.  Check the seed
+            // branch shapes populated from the cached prelude summary.
+            Expr::Var(_, Var::Free(name)) => intrinsic_branch_shape(name)
+                .or_else(|| self.seed_branch_shapes.get(name.as_str()).cloned()),
             _ => None,
         }
     }
@@ -1796,6 +1910,10 @@ impl Checker {
                 let key = (anchored, name.to_string());
                 self.branch_shapes.get(&key)?.clone()?
             }
+            // Head is a free variable — in standalone mode, prelude
+            // branchers such as `if`, `then`, `and` are Var::Free.
+            Expr::Var(_, Var::Free(name)) => intrinsic_branch_shape(name)
+                .or_else(|| self.seed_branch_shapes.get(name.as_str()).cloned())?,
             _ => return None,
         };
 
@@ -1940,6 +2058,20 @@ fn classify_predicate(func: &RcExpr) -> Option<PredicateKind> {
             Some("null?") => Some(PredicateKind::Null),
             _ => None,
         },
+        // Free variable — occurs in standalone user-file checks where
+        // prelude predicates have not been merged in (§B7).
+        Expr::Var(_, Var::Free(name)) => match name.as_str() {
+            "number?" => Some(PredicateKind::Number),
+            "string?" => Some(PredicateKind::String),
+            "symbol?" => Some(PredicateKind::Symbol),
+            "bool?" => Some(PredicateKind::Bool),
+            "list?" => Some(PredicateKind::List),
+            "block?" => Some(PredicateKind::Block),
+            "nil?" => Some(PredicateKind::Nil),
+            "non-nil?" => Some(PredicateKind::NonNil),
+            "null?" => Some(PredicateKind::Null),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -1949,6 +2081,8 @@ fn is_not_func(func: &RcExpr) -> bool {
     match &*func.inner {
         Expr::Intrinsic(_, name) => name == "NOT",
         Expr::Var(_, Var::Bound(bv)) => matches!(bv.name.as_deref(), Some("not" | "¬")),
+        // Free variable — standalone mode (§B7).
+        Expr::Var(_, Var::Free(name)) => matches!(name.as_str(), "not" | "¬"),
         _ => false,
     }
 }
@@ -1983,6 +2117,7 @@ enum HeadTailProjection {
 /// Returns `Some(projection)` for:
 /// - `Expr::Intrinsic` with name `"HEAD"` or `"TAIL"`.
 /// - `Expr::Var(Bound)` whose name is `"head"` / `"first"` / `"tail"`.
+/// - `Expr::Var(Free)` with the same names (standalone mode, §B7).
 fn is_head_or_tail(func: &RcExpr) -> Option<HeadTailProjection> {
     match &*func.inner {
         Expr::Intrinsic(_, name) => match name.as_str() {
@@ -1993,6 +2128,12 @@ fn is_head_or_tail(func: &RcExpr) -> Option<HeadTailProjection> {
         Expr::Var(_, Var::Bound(bv)) => match bv.name.as_deref() {
             Some("head" | "first") => Some(HeadTailProjection::Head),
             Some("tail") => Some(HeadTailProjection::Tail),
+            _ => None,
+        },
+        // Free variable — standalone mode (§B7).
+        Expr::Var(_, Var::Free(name)) => match name.as_str() {
+            "head" | "first" => Some(HeadTailProjection::Head),
+            "tail" => Some(HeadTailProjection::Tail),
             _ => None,
         },
         _ => None,
@@ -2111,6 +2252,8 @@ fn is_clause_intrinsic(func: &RcExpr) -> bool {
     match &*func.inner {
         Expr::Intrinsic(_, name) => name == "CLAUSE",
         Expr::Var(_, Var::Bound(bv)) => matches!(bv.name.as_deref(), Some("=>" | "⇒")),
+        // Free variable — standalone mode (§B7).
+        Expr::Var(_, Var::Free(name)) => matches!(name.as_str(), "=>" | "⇒"),
         _ => false,
     }
 }
@@ -2333,6 +2476,36 @@ pub fn type_check_full(expr: &RcExpr) -> TypeCheckResult {
     let mut checker = Checker::new();
     checker.check_expr(expr);
     checker.into_results()
+}
+
+/// Check a prelude expression in standalone mode, returning both the
+/// full type-check result and a `PreludeSummary` capturing the root scope.
+///
+/// The checker's `keep_root_scope` flag is set so that the outermost
+/// Let frame is not popped on exit, allowing `extract_prelude_summary`
+/// to read the binding type schemes.
+///
+/// Used to build the per-process prelude cache (§B7).
+pub fn type_check_for_prelude(expr: &RcExpr) -> (Vec<TypeWarning>, PreludeSummary) {
+    let mut checker = Checker::new();
+    checker.keep_root_scope = true;
+    checker.check_expr(expr);
+    let summary = checker.extract_prelude_summary();
+    let warnings = checker.into_warnings();
+    (warnings, summary)
+}
+
+/// Check `expr` seeded with a pre-built prelude summary (§B7).
+///
+/// The summary's bindings populate the outermost scope frame and its
+/// aliases seed the alias map, so `Var::Free` references to prelude
+/// names resolve correctly without merging the prelude expression.
+///
+/// Returns only the warnings for the user expression (not the prelude).
+pub fn type_check_with_seed(expr: &RcExpr, summary: &PreludeSummary) -> Vec<TypeWarning> {
+    let mut checker = Checker::with_seed(summary);
+    checker.check_expr(expr);
+    checker.into_warnings()
 }
 
 /// Extract type alias definitions from `expr` without running full type checking.

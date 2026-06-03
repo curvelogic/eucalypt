@@ -1,0 +1,10 @@
+# Behaviour preservation (§B7): user-defined brancher wrapping a free-var prelude call.
+# `my-if(c, t, f): if(c, t, f)` — in standalone mode, `if` in the body is Var::Free.
+# classify_lam_body must handle Var::Free heads via seed_branch_shapes (§B7).
+# Without this, my-if would not be classified as a brancher and narrowing fails.
+my-if(c, t, f): if(c, t, f)
+
+` { type: "(number | string) → number" }
+safe-add(x): my-if(x number?, x + 1, 0)
+
+result: safe-add(7)
