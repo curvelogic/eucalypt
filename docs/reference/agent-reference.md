@@ -157,7 +157,10 @@ origin: { x: 0, y: 0 }
 | `:name`            | literal symbol — subtype of `symbol`   |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
-| `a`, `b`           | type variable                          |
+| `a`, `b`           | type variable (kind `*`)               |
+| `m a`              | constructor application (`m` of kind `* -> *` applied to `a`) |
+| `forall a. T`      | explicit quantification over kind-`*` variable |
+| `forall (m :: * -> *) a. T` | explicit quantification with kind annotation |
 | `IO(T)`            | IO action producing T                  |
 | `Lens(a, b)`       | lens                                   |
 | `Traversal(a, b)`  | traversal                              |
