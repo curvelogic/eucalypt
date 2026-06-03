@@ -312,14 +312,14 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `drop(n)` | Remove first n |
 | `zip` | Pair elements from two lists |
 | `zip-with(f)` | Combine elements with function |
-| `flatten` | Flatten nested lists one level |
+| `concat` | Flatten nested lists one level (use `concat`, not `flatten` — does not exist) |
 | `reverse` | Reverse a list |
 | `count` | Number of elements |
 | `range(a, b)` | Integers from a to b-1 |
 | `nil?` | Is the list empty? |
-| `any?(p?)` | Does any element match? |
-| `all?(p?)` | Do all elements match? |
-| `unique` | Remove duplicates |
+| `any(p?)` | Does any element match? |
+| `all(p?)` | Do all elements match? |
+| `nub-by(f)` | Deduplicate by key function (no `unique` in prelude) |
 
 ### Blocks
 
@@ -333,8 +333,7 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `elements` | List of `{key, value}` pairs |
 | `map-keys(f)` | Transform keys |
 | `map-values(f)` | Transform values |
-| `select(keys)` | Keep only listed keys |
-| `dissoc(keys)` | Remove listed keys |
+| `filter-items(p?)` | Keep entries matching predicate (use with `by-key`, `by-value`) |
 | `merge(b)` | Shallow merge |
 | `deep-merge(b)` | Deep recursive merge |
 | `sort-keys` | Sort by key name |

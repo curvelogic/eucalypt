@@ -29,6 +29,29 @@ Don't mix idioms on the same context. If you use `second(xs)`, use `first(xs)` n
   }.(ok ∧ result > 0)
   ```
 
+### Multi-way conditionals: `cond`
+
+Use `cond` for three or more branches instead of nesting `if`. The `=>`
+operator (precedence 15, right-associative; Unicode alias `⇒`) builds a
+clause pair. The last list element is the default:
+
+```eu,notest
+# Prefer: cond for multi-way dispatch
+classify(n): cond[n < 0 => "negative", n > 100 => "huge", "normal"]
+
+# Avoid: nested if
+classify(n): if(n < 0, "negative", if(n > 100, "huge", "normal"))
+```
+
+Rules:
+- Use `cond` when there are **three or more branches**.
+- Use `if` or `then` for a single two-way test.
+- Use `when` for a **conditional transform** (pass-through if condition is false).
+- `cond` integrates with the type checker's flow-sensitive narrowing: each
+  clause condition narrows the variable's type within that branch.
+- The `⇒` Unicode alias is accepted everywhere `=>` is (input via `>>` in
+  the eucalypt input method).
+
 ## Catenation precedence
 
 Catenation (juxtaposition / pipeline application) has the **lowest** operator precedence (20). ALL infix operators bind tighter, including `∧` (35), `∨` (30), `=` (40), `+` (75), etc. This means infix operators steal adjacent atoms from catenation pipelines:
