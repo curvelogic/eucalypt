@@ -24,6 +24,12 @@
 (r_string "r\"" @string)
 (r_string "\"" @string)
 
+; T-strings (ZDT / zoned date-time literals) - no interpolation, no escapes
+(t_string) @string.special
+(t_string_content) @string.special
+(t_string "t\"" @string.special)
+(t_string "\"" @string.special)
+
 ; Symbols
 (symbol
   ":" @constant

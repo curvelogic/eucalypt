@@ -150,6 +150,9 @@ Set via file-local variables, e.g.:
      ;; Raw strings
      (r_string) @font-lock-string-face
      (r_string_content) @font-lock-string-face
+     ;; T-strings (ZDT / zoned date-time literals — no interpolation)
+     (t_string) @font-lock-constant-face
+     (t_string_content) @font-lock-constant-face
      ;; Brace escapes ({{ and }} in plain/raw strings)
      (brace_escape) @font-lock-escape-face)
 
@@ -329,7 +332,7 @@ and applies syntax class 15 (string fence) to the opening and closing
 quote characters.  This allows `syntax-ppss' to detect string context
 without relying on the buffer syntax table."
   (let ((root (treesit-buffer-root-node)))
-    (dolist (type '("string" "c_string" "r_string"))
+    (dolist (type '("string" "c_string" "r_string" "t_string"))
       (dolist (node (treesit-query-capture
                      root
                      (format "((%s) @s)" type)
@@ -339,10 +342,10 @@ without relying on the buffer syntax table."
                (ne (treesit-node-end n)))
           ;; Find the opening quote (last " before content)
           (when (>= ne start)
-            ;; Opening quote: for c" and r", the quote is at ns+1; for plain ", at ns
+            ;; Opening quote: for c", r", t", the quote is at ns+1; for plain ", at ns
             (let ((q-start (save-excursion
                              (goto-char ns)
-                             (if (memq (char-after) '(?c ?r))
+                             (if (memq (char-after) '(?c ?r ?t))
                                  (1+ ns)
                                ns))))
               (put-text-property q-start (1+ q-start)

@@ -313,6 +313,7 @@ module.exports = grammar({
       $.string,
       $.c_string,
       $.r_string,
+      $.t_string,
       $.symbol,
     ),
 
@@ -355,6 +356,17 @@ module.exports = grammar({
       )),
       '"',
     ),
+
+    // T-string: ZDT (zoned date-time) literal — no interpolation, no escape processing.
+    // Examples: t"2024-03-15", t"2024-03-15T14:30:00Z", t"2024-03-15T14:30:00+05:00"
+    // The entire token is opaque — just a prefix + quoted date/time string.
+    t_string: $ => seq(
+      't"',
+      optional($.t_string_content),
+      '"',
+    ),
+
+    t_string_content: $ => token.immediate(prec(1, /[^"]+/)),
 
     // String content rules use token.immediate() to prevent extras
     // (especially comments starting with #) from being injected inside
