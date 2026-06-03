@@ -147,8 +147,8 @@ block) as `.name`, `.(expr)`, or `.[list]`.
 | Tag | Monad | Action type | Element type |
 |-----|-------|-------------|--------------|
 | `:io` | IO effects | `IO(a)` | `a` |
-| `:random` | Random state | `Random(a)` | `a` |
-| `:state` | Block state (import `state.eu`) | `State(a)` | `a` |
+| `:random` | Random state | `stream → {value: a, rest: stream}` | `a` |
+| `:state` | Block state (import `state.eu`) | `state → {value: a, state: state}` | `a` |
 | `:let` | Identity (sequential bindings) | any | same |
 | `:for` | List (comprehensions) | `[a]` | `a` |
 
@@ -542,8 +542,6 @@ origin: { x: 0, y: 0 }
 | `forall a. T`      | explicit quantification (kind-`*`)     |
 | `forall (m :: * -> *) a. T` | explicit quantification with kind annotation |
 | `IO(T)`            | IO action producing T                  |
-| `Random(T)`        | random action producing T              |
-| `State(T)`         | state action producing T               |
 | `Lens(a, b)`       | lens focusing on b within a            |
 | `Traversal(a, b)`  | traversal over b's within a            |
 | `set`              | ordered set of primitives              |

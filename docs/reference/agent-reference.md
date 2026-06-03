@@ -162,8 +162,6 @@ origin: { x: 0, y: 0 }
 | `forall a. T`      | explicit quantification over kind-`*` variable |
 | `forall (m :: * -> *) a. T` | explicit quantification with kind annotation |
 | `IO(T)`            | IO action producing T                  |
-| `Random(T)`        | random action producing T              |
-| `State(T)`         | state action producing T               |
 | `Lens(a, b)`       | lens                                   |
 | `Traversal(a, b)`  | traversal                              |
 
