@@ -2169,3 +2169,18 @@ pub fn test_typecheck_076_b5_partial_warns_in_total_position() {
 pub fn test_typecheck_077_b5_partial_silent_in_any() {
     run_typecheck_test("077_b5_partial_silent_in_any.eu");
 }
+
+#[test]
+pub fn test_typecheck_078_b9_merge_row_inference_no_warn() {
+    run_typecheck_test("078_b9_merge_row_inference_no_warn.eu");
+}
+
+#[test]
+pub fn test_typecheck_079_b9_merge_row_field_type_mismatch() {
+    run_typecheck_test("079_b9_merge_row_field_type_mismatch.eu");
+}
+
+#[test]
+pub fn test_typecheck_080_b9_non_block_param_no_row_var() {
+    run_typecheck_test("080_b9_non_block_param_no_row_var.eu");
+}

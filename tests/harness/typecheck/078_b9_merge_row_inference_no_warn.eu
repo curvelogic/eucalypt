@@ -1,0 +1,9 @@
+# B9: unannotated merge combinator — correct field access produces no warning.
+# B9 should infer `f : {..r} -> {..s} -> {..r, ..s}` and propagate row vars
+# through the concrete blocks so that `result.x` is known to be `number`.
+f(a, b): a merge(b)
+base: { x: 1 }
+ext: { y: "hello" }
+result: base f(ext)
+` { type: "number" }
+check: result.x
