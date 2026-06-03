@@ -278,13 +278,12 @@ fn pap_syn(
     supplied: usize,
     pending: usize,
 ) -> Result<RefPtr<HeapSyn>, ExecutionError> {
-    let mut args = Vec::with_capacity(supplied + pending);
+    let mut arg_array = Array::with_capacity(&view, supplied + pending);
     for i in 0..supplied {
-        args.push(Ref::L(pending + i + 1));
+        arg_array.push(&view, Ref::L(pending + i + 1));
     }
     for i in 0..pending {
-        args.push(Ref::L(i));
+        arg_array.push(&view, Ref::L(i));
     }
-    let arg_array = Array::from_slice(&view, args.as_slice());
     Ok(view.app(Ref::L(pending), arg_array)?.as_ptr())
 }
