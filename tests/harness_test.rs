@@ -2169,3 +2169,18 @@ pub fn test_typecheck_076_b5_partial_warns_in_total_position() {
 pub fn test_typecheck_077_b5_partial_silent_in_any() {
     run_typecheck_test("077_b5_partial_silent_in_any.eu");
 }
+
+#[test]
+pub fn test_typecheck_078_b2_constraint_satisfied() {
+    run_typecheck_test("078_b2_constraint_satisfied.eu");
+}
+
+#[test]
+pub fn test_typecheck_079_b2_constraint_violated() {
+    run_typecheck_test("079_b2_constraint_violated.eu");
+}
+
+#[test]
+pub fn test_typecheck_080_b2_constraint_gradual_any() {
+    run_typecheck_test("080_b2_constraint_gradual_any.eu");
+}
