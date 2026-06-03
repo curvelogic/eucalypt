@@ -1583,6 +1583,11 @@ pub fn test_error_149() {
 }
 
 #[test]
+pub fn test_error_150() {
+    run_error_test(&error_opts("150_bad_timezone_source_loc.eu"));
+}
+
+#[test]
 pub fn test_error_135() {
     run_error_test(&error_opts("135_head_empty_list.eu"));
 }
