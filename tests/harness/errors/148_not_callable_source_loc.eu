@@ -1,0 +1,4 @@
+# Error: calling a number as a function — source location should point to call site
+x: 42
+result: x(10)
+RESULT: result

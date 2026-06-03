@@ -46,6 +46,9 @@ pub struct HeapNavigator<'scope> {
     globals: ScopedPtr<'scope, EnvFrame>,
     /// Mutator view of heap
     pub(crate) view: MutatorHeapView<'scope>,
+    /// Current source annotation, used to attach source locations to errors
+    /// raised during navigation (e.g. NotCallable, NotValue).
+    annotation: Smid,
 }
 
 impl HeapNavigator<'_> {
@@ -85,7 +88,7 @@ impl HeapNavigator<'_> {
             Ref::L(index) => self.get(*index),
             Ref::G(index) => self.global(*index),
             Ref::V(n) => Err(ExecutionError::NotCallable(
-                Smid::default(),
+                self.annotation,
                 n.type_description().to_string(),
             )),
         }
@@ -137,7 +140,7 @@ impl HeapNavigator<'_> {
             HeapSyn::Atom { .. } => "an atom",
         };
         Err(ExecutionError::NotValue(
-            Smid::default(),
+            self.annotation,
             description.to_string(),
         ))
     }
@@ -1049,6 +1052,7 @@ impl IntrinsicMachine for MachineState {
             locals: view.scoped(self.env(view)),
             globals: view.scoped(self.globals),
             view,
+            annotation: self.annotation,
         }
     }
 
@@ -1358,6 +1362,7 @@ impl IntrinsicMachine for MachineBifContext<'_, '_> {
             locals: view.scoped(self.state.env(view)),
             globals: view.scoped(self.state.globals),
             view,
+            annotation: self.state.annotation,
         }
     }
 
