@@ -65,9 +65,8 @@ fn native_type(native: &Native) -> IntrinsicType {
         Native::Zdt(_) => IntrinsicType::ZonedDateTime,
         Native::NdArray(_) => IntrinsicType::Array,
         Native::Vec(_) => IntrinsicType::Vec,
-        Native::Index(_) | Native::Set(_) | Native::Prng(_) | Native::Producer(_) => {
-            IntrinsicType::Unknown
-        }
+        Native::Set(_) => IntrinsicType::Set,
+        Native::Index(_) | Native::Prng(_) | Native::Producer(_) => IntrinsicType::Unknown,
     }
 }
 
@@ -519,6 +518,7 @@ pub fn resolve_native_unboxing(
 
 /// Convert a Native value to a set Primitive
 pub fn native_to_set_primitive(
+    smid: Smid,
     view: MutatorHeapView,
     native: &Native,
 ) -> Result<crate::eval::memory::set::Primitive, ExecutionError> {
@@ -527,9 +527,11 @@ pub fn native_to_set_primitive(
         Native::Num(n) => Ok(SetPrim::from_number(n)),
         Native::Str(s) => Ok(SetPrim::Str(view.scoped(*s).as_str().to_string())),
         Native::Sym(id) => Ok(SetPrim::Sym(*id)),
-        _ => Err(ExecutionError::Panic(
-            Smid::default(),
-            "only numbers, strings, and symbols can be set elements".to_string(),
+        _ => Err(ExecutionError::TypeMismatch(
+            smid,
+            Box::new(crate::eval::types::IntrinsicType::Set),
+            Box::new(native_type(native)),
+            None,
         )),
     }
 }
@@ -561,13 +563,15 @@ pub fn set_arg<'guard>(
     view: MutatorHeapView<'guard>,
     arg: &Ref,
 ) -> Result<ScopedPtr<'guard, HeapSet>, ExecutionError> {
-    let native = machine.nav(view).resolve_native(arg)?;
+    let native = resolve_native_unboxing(machine, view, arg)?;
     if let Native::Set(ptr) = native {
         Ok(view.scoped(ptr))
     } else {
-        Err(ExecutionError::Panic(
-            Smid::default(),
-            "expected set argument".to_string(),
+        Err(ExecutionError::TypeMismatch(
+            machine.annotation(),
+            Box::new(crate::eval::types::IntrinsicType::Set),
+            Box::new(native_type(&native)),
+            describe_native(&native, machine, view),
         ))
     }
 }

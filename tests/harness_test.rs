@@ -1553,6 +1553,16 @@ pub fn test_error_143() {
 }
 
 #[test]
+pub fn test_error_151() {
+    run_error_test(&error_opts("151_set_add_non_set.eu"));
+}
+
+#[test]
+pub fn test_error_152() {
+    run_error_test(&error_opts("152_set_element_type_mismatch.eu"));
+}
+
+#[test]
 pub fn test_error_135() {
     run_error_test(&error_opts("135_head_empty_list.eu"));
 }

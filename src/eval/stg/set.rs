@@ -130,7 +130,11 @@ impl StgIntrinsic for SetFromList {
             match &*code {
                 HeapSyn::Atom { evaluand } => {
                     let native = item_closure.navigate_local_native(&view, evaluand.clone());
-                    primitives.push(native_to_set_primitive(view, &native)?);
+                    primitives.push(native_to_set_primitive(
+                        machine.annotation(),
+                        view,
+                        &native,
+                    )?);
                 }
                 HeapSyn::Cons {
                     tag: _,
@@ -144,7 +148,11 @@ impl StgIntrinsic for SetFromList {
                         )
                     })?;
                     let native = item_closure.navigate_local_native(&view, inner_ref.clone());
-                    primitives.push(native_to_set_primitive(view, &native)?);
+                    primitives.push(native_to_set_primitive(
+                        machine.annotation(),
+                        view,
+                        &native,
+                    )?);
                 }
                 _ => {
                     return Err(ExecutionError::Panic(
@@ -264,7 +272,7 @@ impl StgIntrinsic for SetAdd {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let native = resolve_native_unboxing(machine, view, &args[0])?;
-        let prim = native_to_set_primitive(view, &native)?;
+        let prim = native_to_set_primitive(machine.annotation(), view, &native)?;
         let set = set_arg(machine, view, &args[1])?;
         machine_return_set(machine, view, set.with_added(prim))
     }
@@ -292,7 +300,7 @@ impl StgIntrinsic for SetRemove {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let native = resolve_native_unboxing(machine, view, &args[0])?;
-        let prim = native_to_set_primitive(view, &native)?;
+        let prim = native_to_set_primitive(machine.annotation(), view, &native)?;
         let set = set_arg(machine, view, &args[1])?;
         machine_return_set(machine, view, set.with_removed(&prim))
     }
@@ -328,7 +336,7 @@ impl StgIntrinsic for SetContains {
             Ok(n) => n,
             Err(_) => return machine_return_bool(machine, view, false),
         };
-        let prim = match native_to_set_primitive(view, &native) {
+        let prim = match native_to_set_primitive(machine.annotation(), view, &native) {
             Ok(p) => p,
             Err(_) => return machine_return_bool(machine, view, false),
         };

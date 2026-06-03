@@ -65,14 +65,15 @@ fn resolve_list_ref(
 /// boxed constructor closures (`Cons { BoxedNumber | BoxedString | … }`).
 fn extract_primitive(
     item_closure: &SynClosure,
-    _machine: &mut dyn IntrinsicMachine,
+    machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
 ) -> Result<Primitive, ExecutionError> {
+    let smid = machine.annotation();
     let code = view.scoped(item_closure.code());
     match &*code {
         HeapSyn::Atom { evaluand } => {
             let native = item_closure.navigate_local_native(&view, evaluand.clone());
-            native_to_set_primitive(view, &native)
+            native_to_set_primitive(smid, view, &native)
         }
         HeapSyn::Cons { args: cargs, .. } => {
             // Handle boxed values (BoxedNumber, BoxedString, BoxedSymbol, BoxedZdt)
@@ -80,7 +81,7 @@ fn extract_primitive(
                 ExecutionError::Panic(Smid::default(), "empty boxed value in vec".to_string())
             })?;
             let native = item_closure.navigate_local_native(&view, inner_ref.clone());
-            native_to_set_primitive(view, &native)
+            native_to_set_primitive(smid, view, &native)
         }
         _ => Err(ExecutionError::Panic(
             Smid::default(),
