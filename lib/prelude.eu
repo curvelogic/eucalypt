@@ -26,17 +26,7 @@ eu: {
 }
 
 ` { doc: "IO related declarations. The io namespace is a monad: io.bind, io.return, io.sequence, io.map-m, io.filter-m, io.then, io.join are derived automatically."
-    monad: "IO(a)"
-    type: "!{{bind:      IO(a) → (a → IO(b)) → IO(b),
-               return:    a → IO(a),
-               map:       (a → b) → IO(a) → IO(b),
-               then:      IO(a) → IO(b) → IO(b),
-               and-then:  (a → IO(b)) → IO(a) → IO(b),
-               join:      IO(IO(a)) → IO(a),
-               sequence:  [IO(a)] → IO([a]),
-               map-m:     (a → IO(b)) → [a] → IO([b]),
-               filter-m:  (a → IO(bool)) → [a] → IO([a]),
-               ..}}" }
+    monad: "IO(a)" }
 io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
   ` { doc: "Read access to environment variables at time of launch." }
   env: __io.ENV
@@ -164,12 +154,7 @@ random-bind(m, f, stream): {
 }
 
 ` { doc: "Monadic random: namespace. Each operation is a state-monad action: a function from stream to a value/rest block. Use random.stream(seed) to create the initial stream, then run actions by calling them with the stream."
-    monad: "stream → {{value: a, rest: stream}}"
-    type: "!{{bind:   (stream → {{value: a, rest: stream}})
-                      → (a → stream → {{value: b, rest: stream}})
-                      → stream → {{value: b, rest: stream}},
-               return: a → stream → {{value: a, rest: stream}},
-               ..}}" }
+    monad: "stream → {{value: a, rest: stream}}" }
 random: monad{bind: random-bind, return: random-ret} {
   ` { doc: "random.stream(seed) - create an opaque PRNG stream from integer seed."
       type: "number → any" }
@@ -2146,16 +2131,7 @@ graph: {
 ##
 
 ` { doc: "Identity monad for sequential let-bindings. Use :let blocks for sequential evaluation without the self-reference gotcha."
-    monad: true
-    type: "!{{bind: a → (a → b) → b,
-               return: a → a,
-               map: (a → b) → a → b,
-               then: b → a → b,
-               and-then: (a → b) → a → b,
-               join: a → a,
-               sequence: [a] → [a],
-               map-m: (a → b) → [a] → [b],
-               filter-m: (a → bool) → [a] → [a]}}" }
+    monad: true }
 let: monad({bind(m, f): f(m), return: identity})
 
 ##
@@ -2163,16 +2139,7 @@ let: monad({bind(m, f): f(m), return: identity})
 ##
 
 ` { doc: "List monad for list comprehensions. Each binding draws from a list; subsequent bindings can depend on earlier ones. Use [x] filter(pred?) for guards."
-    monad: "[a]"
-    type: "!{{bind:      [a] → (a → [b]) → [b],
-               return:    a → [a],
-               map:       (a → b) → [a] → [b],
-               then:      [a] → [b] → [b],
-               and-then:  (a → [b]) → [a] → [b],
-               join:      [[a]] → [a],
-               sequence:  [[a]] → [[a]],
-               map-m:     (a → [b]) → [a] → [[b]],
-               filter-m:  (a → [bool]) → [a] → [[a]]}}" }
+    monad: "[a]" }
 for: monad({bind(m, f): m mapcat(f), return(v): [v]})
 
 ##

@@ -2169,3 +2169,18 @@ pub fn test_typecheck_076_b5_partial_warns_in_total_position() {
 pub fn test_typecheck_077_b5_partial_silent_in_any() {
     run_typecheck_test("077_b5_partial_silent_in_any.eu");
 }
+
+#[test]
+pub fn test_typecheck_078_random_correct_binding() {
+    run_typecheck_test("078_random_correct_binding.eu");
+}
+
+#[test]
+pub fn test_typecheck_079_random_wrong_binding() {
+    run_typecheck_test("079_random_wrong_binding.eu");
+}
+
+#[test]
+pub fn test_typecheck_080_user_monad_with_monad_meta() {
+    run_typecheck_test("080_user_monad_with_monad_meta.eu");
+}
