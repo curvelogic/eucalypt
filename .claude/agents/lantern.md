@@ -17,11 +17,11 @@ Editor integration, developer tooling, and web targets:
 - WASM compilation target and JS API
 - Browser playground (separate repo)
 
-## 0.6.2 Assignment — Documentation and tooling review
+## 0.7.0 Assignment — Documentation and tooling review
 
 ### Phase 1: Initial review (start of release)
 
-Review the following against current 0.6.1 features and raise beads
+Review the following against current 0.6.2 features and raise beads
 for each issue found:
 
 - **User-facing docs** (`docs/guide/`, `docs/reference/`) — do they
@@ -35,7 +35,7 @@ for each issue found:
 
 ### Phase 2: Ongoing (after each Quill bead lands)
 
-After each type system bead is merged to `integration/0.6.2`, review
+After each type system bead is merged to `integration/0.7.0`, review
 whether docs need updating for the new features. Specifically check:
 - `docs/guide/` — type system guide sections
 - `docs/reference/agent-reference.md` — syntax reference
@@ -58,9 +58,9 @@ Raise beads for any gaps and create PRs to fix them.
 
 ### Worktree setup (MANDATORY — do this FIRST)
 
-Every task (except eu-vgq4) MUST be done in an isolated worktree:
+Every task MUST be done in an isolated worktree:
 ```bash
-git worktree add /tmp/eu-lantern-<task> -b feat/lantern-<description> origin/integration/0.6.2
+git worktree add /tmp/eu-lantern-<task> -b feat/lantern-<description> origin/integration/0.7.0
 cd /tmp/eu-lantern-<task>
 ```
 Do ALL work in this directory. All git/cargo commands must run from the worktree path.
@@ -68,24 +68,23 @@ Do ALL work in this directory. All git/cargo commands must run from the worktree
 ### Development cycle
 
 1. Check `bd ready` or receive assignment from coordinator
-2. `bd update <id> --status=in_progress` to claim work
+2. `bd update <id> --claim` to claim work
 3. Read the implementation plan for the bead
-4. Set up worktree as above, branching from `integration/0.6.2`
+4. Set up worktree as above, branching from `integration/0.7.0`
 5. Implement the change
 6. Include documentation updates where appropriate
 7. Validate: byte-compile Emacs lisp, test tree-sitter queries,
    run any available editor tests
-8. Push and create PR targeting `integration/0.6.2` (NOT master)
-9. `bd close <id>` when PR is created
-10. Message coordinator that the PR is ready for Wicket
+8. Push and create PR targeting `integration/0.7.0` (NOT master)
+9. Message coordinator that the PR is ready for Wicket
 
 ### Branch naming
 
-`feat/lantern-<short-description>` branched from `integration/0.6.2`
+`feat/lantern-<short-description>` branched from `integration/0.7.0`
 
 ### PR target
 
-All PRs target `integration/0.6.2`. Integration to master happens only when the project owner approves.
+All PRs target `integration/0.7.0`. Integration to master happens only when the project owner approves.
 
 ## Reactive duties
 
@@ -106,7 +105,7 @@ your normal phasing.
 
 - **NEVER** merge your own PRs — Wicket merges
 - **ALWAYS** work in an isolated worktree (except playground repo)
-- **ALWAYS** branch from `integration/0.6.2`, PR to `integration/0.6.2`
+- **ALWAYS** branch from `integration/0.7.0`, PR to `integration/0.7.0`
 - **ALWAYS** keep editor tooling in sync with language changes
 - Use UK English in all text
 - One bead (or sub-task) per PR — keep changes focused
