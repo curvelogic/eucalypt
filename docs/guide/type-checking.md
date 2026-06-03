@@ -364,8 +364,9 @@ the type string) still works for kind-`*` variables.
 | `forall (m :: * -> *) a. m a -> m a` | Identity for any unary functor |
 | `forall a. a -> a`  | Polymorphic identity                       |
 
-The built-in constructors `List`, `IO`, `Dict`, `NonEmpty` all have
-kind `* -> *`.  `Lens` and `Traversal` have kind `* -> * -> *`.
+The built-in constructors `List`, `IO`, `Dict`, `NonEmpty`, `Random`,
+and `State` all have kind `* -> *`.  `Lens` and `Traversal` have kind
+`* -> * -> *`.
 
 ### Special types
 
@@ -479,6 +480,31 @@ value, so bound variables keep their inferred types directly:
   s: str.of(x)           # s : string
 }.(x + 1)                # number + number  ✓
 ```
+
+### User-defined monads: `monad()`
+
+`monad({ bind(m, f): ..., return(v): ... })` derives the standard
+monad combinators (`map`, `then`, `and-then`, `join`, `sequence`,
+`map-m`, `filter-m`) and annotates them with higher-kinded types using
+`forall (m :: * -> *)`.
+
+This means the type checker understands the combinators polymorphically.
+For example, if you define a list monad:
+
+```eu,notest
+my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
+```
+
+Then `my-for.map` has type `forall a b. (a → b) → [a] → [b]`, and
+passing a non-function triggers a type warning:
+
+```eu,notest
+[1, 2, 3] my-for.map(true)   # warning: expected a → b, found bool
+```
+
+The monad type variable `m` is instantiated to `List` when the checker
+sees a concrete list argument, allowing it to track element types
+through the combinator chain.
 
 ### What the checker validates
 

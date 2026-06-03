@@ -99,8 +99,16 @@ io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
 ` :suppress
 list-map: map
 
-` { doc: "monad(m) - derive standard monad combinators from a block m with bind and return fields. Returns a block with bind, return, map, then, join, sequence, map-m, and filter-m."
-    type: "{{..}} → {{..}}" }
+` { doc: "monad(m) - derive standard monad combinators from a block m with bind and return fields. Returns a block with bind, return, map, then, and-then, join, sequence, map-m, and filter-m."
+    type: "!forall (m :: * -> *). {{..}} → {{bind: forall a b. m a → (a → m b) → m b,
+               return: forall a. a → m a,
+               map: forall a b. (a → b) → m a → m b,
+               then: forall a b. m b → m a → m b,
+               and-then: forall a b. (a → m b) → m a → m b,
+               join: forall a. m (m a) → m a,
+               sequence: forall a. [m a] → m [a],
+               map-m: forall a b. (a → m b) → [a] → m [b],
+               filter-m: forall a. (a → m bool) → [a] → m [a]}}" }
 monad(m): {
   ` "Sequence two monadic actions: run action and pass its result to continuation."
   bind: m.bind
@@ -2138,7 +2146,16 @@ graph: {
 ##
 
 ` { doc: "Identity monad for sequential let-bindings. Use :let blocks for sequential evaluation without the self-reference gotcha."
-    monad: true }
+    monad: true
+    type: "!{{bind: a → (a → b) → b,
+               return: a → a,
+               map: (a → b) → a → b,
+               then: b → a → b,
+               and-then: (a → b) → a → b,
+               join: a → a,
+               sequence: [a] → [a],
+               map-m: (a → b) → [a] → [b],
+               filter-m: (a → bool) → [a] → [a]}}" }
 let: monad({bind(m, f): f(m), return: identity})
 
 ##

@@ -75,7 +75,7 @@ impl fmt::Display for Kind {
 /// Return the kind of a built-in named type constructor, or `None` for unknown.
 pub fn constructor_kind(name: &str) -> Option<Kind> {
     match name {
-        "List" | "IO" | "Dict" | "NonEmpty" => Some(Kind::star_to_star()),
+        "List" | "IO" | "Dict" | "NonEmpty" | "Random" | "State" => Some(Kind::star_to_star()),
         "Lens" | "Traversal" => Some(Kind::star_to_star_to_star()),
         _ => None,
     }
@@ -554,6 +554,8 @@ fn fmt_app(f: &mut fmt::Formatter<'_>, head: &Type, arg: &Type) -> fmt::Result {
             "IO" => return write!(f, "IO({arg})"),
             "Dict" => return write!(f, "Dict({arg})"),
             "NonEmpty" => return write!(f, "NonEmpty([{arg}])"),
+            "Random" => return write!(f, "Random({arg})"),
+            "State" => return write!(f, "State({arg})"),
             _ => {}
         }
     }
