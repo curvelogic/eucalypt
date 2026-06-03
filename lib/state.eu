@@ -50,18 +50,7 @@ mod-at(lens, f, s): { value: null, state: over(lens, f, s) }
 # ─── Namespace (enables { :state ... } blocks) ───────────────────────────────
 
 ` { doc: "State monad namespace.  Each declaration in a colon-state block is a monadic bind step."
-    monad: "state → {{value: a, state: state}}"
-    type: "!{{bind:      (s → {{value: a, state: s}})
-                         → (a → s → {{value: b, state: s}})
-                         → s → {{value: b, state: s}},
-               return:    a → s → {{value: a, state: s}},
-               map:       (a → b) → (s → {{value: a, state: s}}) → s → {{value: b, state: s}},
-               then:      (s → {{value: b, state: s}}) → (s → {{value: a, state: s}}) → s → {{value: b, state: s}},
-               and-then:  (a → s → {{value: b, state: s}}) → (s → {{value: a, state: s}}) → s → {{value: b, state: s}},
-               join:      (s → {{value: s → {{value: a, state: s}}, state: s}}) → s → {{value: a, state: s}},
-               sequence:  [s → {{value: a, state: s}}] → s → {{value: [a], state: s}},
-               map-m:     (a → s → {{value: b, state: s}}) → [a] → s → {{value: [b], state: s}},
-               filter-m:  (a → s → {{value: bool, state: s}}) → [a] → s → {{value: [a], state: s}}}}" }
+    monad: "state → {{value: a, state: state}}" }
 state: monad{bind: state-bind, return: state-ret} {
 
   ` "state.get - action returning the whole state as the value."

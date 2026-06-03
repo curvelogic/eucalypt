@@ -34,7 +34,7 @@ use crate::{
             error::TypeWarning,
             parse,
             subtype::{is_consistent, is_subtype},
-            types::{Constraint, Type, TypeScheme, TypeVarId},
+            types::{Constraint, Kind, Type, TypeScheme, TypeVarId},
             unify::{
                 apply_subst, freshen, freshen_forall, freshen_with_constraints, infer_scheme,
                 unify, Substitution,
@@ -839,6 +839,31 @@ impl Checker {
             (extract_string_literal(e)?, false)
         } else if let Some(e) = block.get("__type_hint") {
             (extract_string_literal(e)?, true)
+        } else if let Some(e) = block.get("monad") {
+            // `monad:` metadata — derive the full monad combinator block type.
+            // Accepts a string pattern like `"[a]"` or `"IO(a)"`, or the
+            // boolean `true` for the Identity monad.
+            //
+            // `monad: true` in eucalypt metadata desugars to a Var reference
+            // pointing at the prelude's `true` binding (not a raw bool literal).
+            // We detect it by checking for a bound/free var named "true", as
+            // well as the literal form (in case the metadata is constructed
+            // programmatically).
+            let is_monad_true = matches!(&*e.inner, Expr::Literal(_, Primitive::Bool(true)))
+                || matches!(&*e.inner,
+                    Expr::Var(_, Var::Bound(bv)) if bv.name.as_deref() == Some("true"))
+                || matches!(&*e.inner, Expr::Var(_, Var::Free(name)) if name == "true");
+            let pattern_str = if let Some(s) = extract_string_literal(e) {
+                s
+            } else if is_monad_true {
+                "true".to_string()
+            } else {
+                return None;
+            };
+            let derived = self.derive_monad_block_type(&pattern_str)?;
+            // Asserted (body not verified) and not a hint (type IS authoritative).
+            // No operator constraints on monad-derived types.
+            return Some((derived, Vec::new(), true, false));
         } else {
             return None;
         };
@@ -857,6 +882,165 @@ impl Checker {
             asserted,
             is_hint,
         ))
+    }
+
+    /// Derive the block type for a monad namespace from its `monad:` pattern string.
+    ///
+    /// Given a string like `"[a]"` (List monad), `"IO(a)"` (IO monad),
+    /// `"stream → {value: a, rest: stream}"` (state monad), or `"true"`
+    /// (Identity monad), derives the full `{bind, return, map, then,
+    /// and-then, join, sequence, map-m, filter-m}` block type by
+    /// instantiating the generic monad combinator types.
+    ///
+    /// The convention is that `a` is the element type variable in the pattern.
+    /// For the identity monad (`monad: true`), `m a = a` (identity function).
+    /// Single-pass structural substitution: replace `var` with `concrete`
+    /// throughout `pattern` without recursing into `concrete`.
+    ///
+    /// Unlike `apply_subst`, this function does NOT re-apply the substitution
+    /// to `concrete` after placing it.  This is essential for `derive_monad_block_type`
+    /// where `concrete` may itself contain `var` (e.g. `m [a]` when `var = a`),
+    /// which would cause `apply_subst` to infinite-loop.
+    fn structural_subst(pattern: &Type, var: &TypeVarId, concrete: &Type) -> Type {
+        match pattern {
+            Type::Var(id, _) if id == var => concrete.clone(),
+            Type::Var(_, _) => pattern.clone(),
+            Type::App(f, x) => Type::App(
+                Box::new(Self::structural_subst(f, var, concrete)),
+                Box::new(Self::structural_subst(x, var, concrete)),
+            ),
+            Type::Con(_) => pattern.clone(),
+            Type::Function(a, b) => Type::Function(
+                Box::new(Self::structural_subst(a, var, concrete)),
+                Box::new(Self::structural_subst(b, var, concrete)),
+            ),
+            Type::Record { fields, open, rows } => Type::Record {
+                fields: fields
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Self::structural_subst(v, var, concrete)))
+                    .collect(),
+                open: *open,
+                rows: rows.clone(),
+            },
+            Type::Union(vs) => Type::Union(
+                vs.iter()
+                    .map(|v| Self::structural_subst(v, var, concrete))
+                    .collect(),
+            ),
+            Type::Tuple(elems) => Type::Tuple(
+                elems
+                    .iter()
+                    .map(|e| Self::structural_subst(e, var, concrete))
+                    .collect(),
+            ),
+            Type::Forall(binders, body) => {
+                if binders.iter().any(|(id, _)| id == var) {
+                    // `var` is bound here — do not substitute inside.
+                    pattern.clone()
+                } else {
+                    Type::Forall(
+                        binders.clone(),
+                        Box::new(Self::structural_subst(body, var, concrete)),
+                    )
+                }
+            }
+            Type::Mu(x, body) => {
+                if x == var {
+                    pattern.clone()
+                } else {
+                    Type::Mu(
+                        x.clone(),
+                        Box::new(Self::structural_subst(body, var, concrete)),
+                    )
+                }
+            }
+            other => other.clone(),
+        }
+    }
+
+    fn derive_monad_block_type(&self, pattern_str: &str) -> Option<Type> {
+        let elem_id = TypeVarId("a".to_string());
+        let ret_id = TypeVarId("b".to_string());
+
+        // Parse the monad pattern — the type representing `m(a)`.
+        let monad_pattern: Type = if pattern_str == "true" {
+            // Identity monad: m a = a
+            Type::Var(elem_id.clone(), Kind::Star)
+        } else {
+            let parsed = parse::parse_type(pattern_str).ok()?;
+            self.resolve_aliases_in_type(parsed)
+        };
+
+        // Substitute elem_id with `concrete` in the monad pattern.
+        // Uses structural_subst (not apply_subst) to avoid infinite recursion
+        // when `concrete` itself contains `elem_id` (e.g. m([a]) = [[a]]).
+        let apply_m = |concrete: &Type| -> Type {
+            Self::structural_subst(&monad_pattern, &elem_id, concrete)
+        };
+
+        // Convenience: right-associative function arrow.
+        let arrow = |a: Type, b: Type| -> Type { Type::Function(Box::new(a), Box::new(b)) };
+
+        let a = Type::Var(elem_id.clone(), Kind::Star);
+        let b = Type::Var(ret_id.clone(), Kind::Star);
+
+        let m_a = apply_m(&a);
+        let m_b = apply_m(&b);
+        // m (m a) — used for join
+        let m_m_a = apply_m(&m_a);
+        // m [a] — used for sequence
+        let m_list_a = apply_m(&Type::list(a.clone()));
+        // m [b] — used for map-m
+        let m_list_b = apply_m(&Type::list(b.clone()));
+        // m bool — used for filter-m
+        let m_bool = apply_m(&Type::Bool);
+        // [m a] — used for sequence
+        let list_m_a = Type::list(m_a.clone());
+
+        // bind:       m a → (a → m b) → m b
+        let bind = arrow(
+            m_a.clone(),
+            arrow(arrow(a.clone(), m_b.clone()), m_b.clone()),
+        );
+        // return:     a → m a
+        let ret = arrow(a.clone(), m_a.clone());
+        // map:        (a → b) → m a → m b
+        let map = arrow(arrow(a.clone(), b.clone()), arrow(m_a.clone(), m_b.clone()));
+        // then:       m b → m a → m b   (first arg = continuation, second = receiver)
+        let then = arrow(m_b.clone(), arrow(m_a.clone(), m_b.clone()));
+        // and-then:   (a → m b) → m a → m b
+        let and_then = arrow(
+            arrow(a.clone(), m_b.clone()),
+            arrow(m_a.clone(), m_b.clone()),
+        );
+        // join:       m (m a) → m a
+        let join = arrow(m_m_a, m_a.clone());
+        // sequence:   [m a] → m [a]
+        let sequence = arrow(list_m_a, m_list_a.clone());
+        // map-m:      (a → m b) → [a] → m [b]
+        let map_m = arrow(
+            arrow(a.clone(), m_b),
+            arrow(Type::list(a.clone()), m_list_b),
+        );
+        // filter-m:   (a → m bool) → [a] → m [a]
+        let filter_m = arrow(arrow(a.clone(), m_bool), arrow(Type::list(a), m_list_a));
+
+        let mut fields = BTreeMap::new();
+        fields.insert("and-then".to_string(), and_then);
+        fields.insert("bind".to_string(), bind);
+        fields.insert("filter-m".to_string(), filter_m);
+        fields.insert("join".to_string(), join);
+        fields.insert("map".to_string(), map);
+        fields.insert("map-m".to_string(), map_m);
+        fields.insert("return".to_string(), ret);
+        fields.insert("sequence".to_string(), sequence);
+        fields.insert("then".to_string(), then);
+
+        Some(Type::Record {
+            fields,
+            open: true,
+            rows: vec![],
+        })
     }
 
     /// Try to extract a `TypeScheme` from a binding value's `Meta` wrapper.

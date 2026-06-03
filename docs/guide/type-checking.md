@@ -601,6 +601,31 @@ The monad type variable `m` is instantiated to `List` when the checker
 sees a concrete list argument, allowing it to track element types
 through the combinator chain.
 
+#### Declaring the functor pattern with `monad:`
+
+To give the checker precise information about your monad's action type
+(and enable warnings on wrong-type `:mymonad` block bindings), annotate
+the declaration with `monad:` metadata:
+
+```eu,notest
+` { monad: "[a]" }
+my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
+```
+
+The `monad:` value is a type-string pattern where `a` stands for the
+result element type.  The checker derives all combinator types from
+this pattern, so `my-for.bind` gets type `[a] → (a → [b]) → [b]`,
+`my-for.map` gets `(a → b) → [a] → [b]`, and so on.
+
+The pattern can be any constructor application:
+
+| Annotation | Monad | bind first-arg type |
+|------------|-------|---------------------|
+| `monad: "[a]"` | list | `[a]` |
+| `monad: "IO(a)"` | IO | `IO(a)` |
+| `monad: "stream → {value: a, rest: stream}"` | state | `stream → {value: a, rest: stream}` |
+| `monad: true` | identity | `a` (any value) |
+
 ### What the checker validates
 
 `eu check` reports a warning when:

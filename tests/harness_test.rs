@@ -2199,3 +2199,18 @@ pub fn test_typecheck_082_b2_constraint_violated() {
 pub fn test_typecheck_083_b2_constraint_gradual_any() {
     run_typecheck_test("083_b2_constraint_gradual_any.eu");
 }
+
+#[test]
+pub fn test_typecheck_084_random_correct_binding() {
+    run_typecheck_test("084_random_correct_binding.eu");
+}
+
+#[test]
+pub fn test_typecheck_085_random_wrong_binding() {
+    run_typecheck_test("085_random_wrong_binding.eu");
+}
+
+#[test]
+pub fn test_typecheck_086_user_monad_with_monad_meta() {
+    run_typecheck_test("086_user_monad_with_monad_meta.eu");
+}
