@@ -5,6 +5,7 @@
   "patterns": [
     { "include": "#comment" },
     { "include": "#docstring" },
+    { "include": "#t-string" },
     { "include": "#c-string" },
     { "include": "#raw-string" },
     { "include": "#string" },
@@ -46,6 +47,19 @@
         { "include": "#brace-escape" },
         { "include": "#markdown-inline" }
       ]
+    },
+
+    "t-string": {
+      "comment": "T-string: ZDT (zoned date-time) literal — no interpolation, no escapes. E.g. t\"2024-03-15\", t\"2024-03-15T14:30:00Z\"",
+      "name": "constant.other.datetime.eucalypt",
+      "begin": "t\"",
+      "end": "\"",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.eucalypt" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.eucalypt" }
+      }
     },
 
     "c-string": {
