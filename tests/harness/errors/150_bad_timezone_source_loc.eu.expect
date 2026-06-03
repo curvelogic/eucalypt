@@ -1,0 +1,2 @@
+exit: 1
+stderr: "150_bad_timezone_source_loc"

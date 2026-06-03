@@ -522,18 +522,17 @@ fn arithmetic_wrapper(index: usize) -> LambdaForm {
 /// Ordering comparison between two numbers, trying i64, u64, then f64
 /// representations. Returns the `std::cmp::Ordering` or an error if
 /// the numbers cannot be compared.
-fn num_ord(x: &Number, y: &Number) -> Result<std::cmp::Ordering, ExecutionError> {
+fn num_ord(smid: Smid, x: &Number, y: &Number) -> Result<std::cmp::Ordering, ExecutionError> {
     if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
         Ok(l.cmp(&r))
     } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
         Ok(l.cmp(&r))
     } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
-        l.partial_cmp(&r).ok_or_else(|| {
-            ExecutionError::NumericDomainError(Smid::default(), x.clone(), y.clone())
-        })
+        l.partial_cmp(&r)
+            .ok_or_else(|| ExecutionError::NumericDomainError(smid, x.clone(), y.clone()))
     } else {
         Err(ExecutionError::NumericDomainError(
-            Smid::default(),
+            smid,
             x.clone(),
             y.clone(),
         ))
@@ -552,7 +551,9 @@ fn ordered_cmp(
     let x = machine.nav(view).resolve_native(&args[0])?;
     let y = machine.nav(view).resolve_native(&args[1])?;
     match (x, y) {
-        (Native::Num(ref nx), Native::Num(ref ny)) => Ok(pred(num_ord(nx, ny)?)),
+        (Native::Num(ref nx), Native::Num(ref ny)) => {
+            Ok(pred(num_ord(machine.annotation(), nx, ny)?))
+        }
         (Native::Str(sx), Native::Str(sy)) => {
             let ls = &*view.scoped(sx);
             let rs = &*view.scoped(sy);
