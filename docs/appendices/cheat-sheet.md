@@ -144,13 +144,13 @@ block) as `.name`, `.(expr)`, or `.[list]`.
 
 **Built-in monadic namespaces:**
 
-| Tag | Monad | Result type |
-|-----|-------|-------------|
-| `:io` | IO effects | IO action |
-| `:random` | Random state | Random action |
-| `:state` | Block state (import `state.eu`) | State action |
-| `:let` | Identity (sequential bindings) | Value |
-| `:for` | List (comprehensions) | List |
+| Tag | Monad | Action type | Element type |
+|-----|-------|-------------|--------------|
+| `:io` | IO effects | `IO(a)` | `a` |
+| `:random` | Random state | `Random(a)` | `a` |
+| `:state` | Block state (import `state.eu`) | `State(a)` | `a` |
+| `:let` | Identity (sequential bindings) | any | same |
+| `:for` | List (comprehensions) | `[a]` | `a` |
 
 ```eu,notest
 # List comprehension: cartesian product with filter
@@ -542,8 +542,18 @@ origin: { x: 0, y: 0 }
 | `forall a. T`      | explicit quantification (kind-`*`)     |
 | `forall (m :: * -> *) a. T` | explicit quantification with kind annotation |
 | `IO(T)`            | IO action producing T                  |
+| `Random(T)`        | random action producing T              |
+| `State(T)`         | state action producing T               |
 | `Lens(a, b)`       | lens focusing on b within a            |
 | `Traversal(a, b)`  | traversal over b's within a            |
 | `set`              | ordered set of primitives              |
 | `vec`              | flat vector of primitives              |
 | `array`            | n-dimensional number array             |
+
+### User-defined monads
+
+`monad({ bind(m,f): ..., return(v): ... })` derives the standard
+combinators (`map`, `then`, `and-then`, `join`, `sequence`, `map-m`,
+`filter-m`) annotated with `forall (m :: * -> *)` types.  The type
+checker understands them polymorphically — passing a non-function to
+`my-monad.map` triggers a warning.
