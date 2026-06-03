@@ -34,7 +34,7 @@ use crate::{
             error::TypeWarning,
             parse,
             subtype::{is_consistent, is_subtype},
-            types::{Type, TypeScheme},
+            types::{Type, TypeScheme, TypeVarId},
             unify::{apply_subst, freshen, freshen_forall, infer_scheme, unify, Substitution},
         },
     },
@@ -851,9 +851,10 @@ impl Checker {
             }
 
             // ── Lambda ────────────────────────────────────────────────────────
-            // Cannot synthesise without knowing parameter types.  Return `any`
-            // and let `check_against` handle the case where the type is known.
-            Expr::Lam(_, _, _) => Type::Any,
+            // B9: attempt row-variable inference for unannotated lambdas whose
+            // parameters are used as blocks.  Falls back to `any` when no
+            // block usage is detected (preserving the gradual boundary).
+            Expr::Lam(_, _, scope) => self.synthesise_lam(scope),
 
             // ── Application ──────────────────────────────────────────────────
             Expr::App(smid, func, args) => self.synthesise_app(*smid, func, args),
@@ -1912,6 +1913,60 @@ impl Checker {
         self.pop_scope();
     }
 
+    // ── B9: Row-variable inference at lambda boundaries ──────────────────────
+
+    /// Synthesise a type for an unannotated lambda using use-driven row-variable
+    /// inference (§B9).
+    ///
+    /// Scans the lambda body to identify which parameters are "used as a block"
+    /// (appear in a projection or merge/over argument position).  Block-shaped
+    /// parameters receive a fresh open record type `{..rN}` instead of `any`.
+    ///
+    /// If no parameter is block-shaped, falls back to `any` immediately,
+    /// preserving the existing gradual boundary for non-block lambdas.
+    fn synthesise_lam(&mut self, scope: &crate::core::expr::LamScope<RcExpr>) -> Type {
+        let block_flags = detect_block_params(scope);
+
+        // Fast path: no block-shaped params → keep `any` (unchanged behaviour).
+        if block_flags.iter().all(|&b| !b) {
+            return Type::Any;
+        }
+
+        // Allocate a fresh open record type for each block-shaped parameter,
+        // `any` for the rest.
+        let param_types: Vec<Type> = block_flags
+            .iter()
+            .map(|&is_block| {
+                if is_block {
+                    let row_id = TypeVarId(format!("_r{}", self.var_counter));
+                    self.var_counter += 1;
+                    Type::Record {
+                        fields: BTreeMap::new(),
+                        open: true,
+                        rows: vec![row_id],
+                    }
+                } else {
+                    Type::Any
+                }
+            })
+            .collect();
+
+        // Push a scope frame with the allocated parameter types and synthesise
+        // the body under them.
+        let mut frame: HashMap<String, TypeScheme> = HashMap::new();
+        for (name, ty) in scope.pattern.iter().zip(param_types.iter()) {
+            frame.insert(name.clone(), TypeScheme::mono(ty.clone()));
+        }
+        self.push_scope(frame);
+        let body_type = self.synthesise(&scope.body);
+        self.pop_scope();
+
+        // Build a curried function type: T₀ → T₁ → … → body_type.
+        param_types.into_iter().rev().fold(body_type, |acc, param| {
+            Type::Function(Box::new(param), Box::new(acc))
+        })
+    }
+
     // ── BranchShape recognition (§A5.3) ─────────────────────────────────────
 
     /// Look up the `BranchShape` for an expression in the head position of an
@@ -2282,6 +2337,128 @@ fn flatten_app_spine(func: &RcExpr) -> (&RcExpr, Vec<&RcExpr>) {
         head = f;
     }
     (head, prefix)
+}
+
+// ── B9: use-driven block-parameter detection ──────────────────────────────────
+
+/// Scan a lambda scope to determine which parameters are "used as a block"
+/// — i.e. appear in a projection (`Lookup`) or as arguments to `merge`/`over`
+/// in the body.
+///
+/// Returns a `Vec<bool>` of length `scope.pattern.len()`.  `true` at index `i`
+/// means parameter `i` is block-shaped and should receive a fresh row-variable
+/// record type during synthesis.
+fn detect_block_params(scope: &crate::core::expr::LamScope<RcExpr>) -> Vec<bool> {
+    let n = scope.pattern.len();
+    let mut flags = vec![false; n];
+    collect_block_uses(&scope.body, 0, &mut flags);
+    flags
+}
+
+/// Recursively scan `expr` for block usages of the parameters introduced by
+/// the lambda that `flags` belongs to.
+///
+/// `depth` is the number of additional lambda scopes that have been entered
+/// since the original lambda boundary.  The original parameters are referenced
+/// by `Var::Bound { scope: depth, binder: i }` inside nested lambdas.
+fn collect_block_uses(expr: &RcExpr, depth: usize, flags: &mut Vec<bool>) {
+    match &*expr.inner {
+        // Projection: the object expression is used as a block.
+        Expr::Lookup(_, obj, _, fallback) => {
+            mark_block_param(obj, depth, flags);
+            collect_block_uses(obj, depth, flags);
+            if let Some(f) = fallback {
+                collect_block_uses(f, depth, flags);
+            }
+        }
+
+        // Application: if the function spine resolves to `merge` or `over`,
+        // every argument in the full spine is used as a block.
+        Expr::App(_, func, args) => {
+            let (head, prefix_args) = flatten_app_spine(func);
+            if is_merge_or_over_expr(head) {
+                for arg in &prefix_args {
+                    mark_block_param(arg, depth, flags);
+                }
+                for arg in args {
+                    mark_block_param(arg, depth, flags);
+                }
+            }
+            collect_block_uses(func, depth, flags);
+            for arg in args {
+                collect_block_uses(arg, depth, flags);
+            }
+        }
+
+        // Nested lambda: increase depth so outer parameters are still found.
+        Expr::Lam(_, _, inner_scope) => {
+            collect_block_uses(&inner_scope.body, depth + 1, flags);
+        }
+
+        // Let binding: values are at the current depth; the body is at depth+1.
+        Expr::Let(_, inner_scope, _) => {
+            for (_, val) in &inner_scope.pattern {
+                collect_block_uses(val, depth, flags);
+            }
+            collect_block_uses(&inner_scope.body, depth + 1, flags);
+        }
+
+        // Meta wrappers: recurse through both.
+        Expr::Meta(_, inner, meta) => {
+            collect_block_uses(inner, depth, flags);
+            collect_block_uses(meta, depth, flags);
+        }
+
+        // Block literal: scan field values.
+        Expr::Block(_, fields) => {
+            for (_, val) in fields.iter() {
+                collect_block_uses(val, depth, flags);
+            }
+        }
+
+        // List literal: scan elements.
+        Expr::List(_, items) => {
+            for item in items {
+                collect_block_uses(item, depth, flags);
+            }
+        }
+
+        // Variables and primitives: nothing to do.
+        _ => {}
+    }
+}
+
+/// If `expr` is a direct `Var::Bound` reference to one of the lambda's own
+/// parameters (at de Bruijn `scope == depth`), set the corresponding flag.
+fn mark_block_param(expr: &RcExpr, depth: usize, flags: &mut [bool]) {
+    let peeled = peel_meta(expr);
+    if let Expr::Var(_, Var::Bound(bv)) = &*peeled.inner {
+        if bv.scope as usize == depth {
+            let idx = bv.binder as usize;
+            if idx < flags.len() {
+                flags[idx] = true;
+            }
+        }
+    }
+}
+
+/// Return `true` if `expr` refers to `merge` or `over` — either as a free
+/// variable (pre-varify), a named bound variable (post-varify), or an
+/// intrinsic node (post-inline).
+fn is_merge_or_over_expr(expr: &RcExpr) -> bool {
+    let peeled = peel_meta(expr);
+    match &*peeled.inner {
+        Expr::Var(_, Var::Free(name)) => {
+            matches!(name.as_str(), "merge" | "over")
+        }
+        Expr::Var(_, Var::Bound(bv)) => {
+            matches!(bv.name.as_deref(), Some("merge" | "over"))
+        }
+        Expr::Intrinsic(_, name) => {
+            matches!(name.as_str(), "MERGE" | "OVER")
+        }
+        _ => false,
+    }
 }
 
 /// Classify a function expression as a type predicate.
