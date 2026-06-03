@@ -2055,3 +2055,18 @@ pub fn test_typecheck_054_io_elem_type_correct() {
 pub fn test_typecheck_055_user_monad_elem_type() {
     run_typecheck_test("055_user_monad_elem_type.eu");
 }
+
+#[test]
+pub fn test_typecheck_056_hkt_list_app_no_warning() {
+    run_typecheck_test("056_hkt_list_app_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_057_hkt_forall_annotation_parse() {
+    run_typecheck_test("057_hkt_forall_annotation_parse.eu");
+}
+
+#[test]
+pub fn test_typecheck_058_hkt_kind_annotation_parse() {
+    run_typecheck_test("058_hkt_kind_annotation_parse.eu");
+}

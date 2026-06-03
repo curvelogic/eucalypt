@@ -2,6 +2,19 @@
 //!
 //! This module defines the `Type` enum covering all type forms from the
 //! gradual typing spec, plus `TypeScheme` for polymorphic types.
+//!
+//! ## Higher-kinded types (B1)
+//!
+//! Parametric type constructors (`List`, `IO`, `Dict`, …) are now represented
+//! uniformly via `Con` + `App` rather than dedicated enum variants.  The smart
+//! constructors (`Type::list`, `Type::io`, …) build the applied form; `Display`
+//! re-sugars it back to the familiar notation.
+//!
+//! A `Kind` tracks the arity of each constructor.  Type variables carry a kind
+//! (`Var(id, kind)`) so that higher-kinded variables (`m :: * → *`) can be
+//! distinguished from ordinary type variables (`a :: *`).
+//!
+//! `Type::Forall` provides explicit, potentially rank-N quantification.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -16,11 +29,98 @@ impl fmt::Display for TypeVarId {
     }
 }
 
-/// A constraint on a type variable (reserved for future use).
+// ── Kind ─────────────────────────────────────────────────────────────────────
+
+/// The kind of a type or type constructor.
 ///
-/// Currently unused — constraints are always an empty `Vec`. Included
-/// in `TypeScheme` so the representation is future-proof without
-/// breaking changes.
+/// `*` is the kind of ordinary types.
+/// `k₁ → k₂` is the kind of a type constructor.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Kind {
+    /// The kind of ordinary types (`*`).
+    Star,
+    /// The kind of a type constructor (`k₁ → k₂`).
+    Arrow(Box<Kind>, Box<Kind>),
+}
+
+impl Kind {
+    /// Convenience: `* → *`.
+    pub fn star_to_star() -> Self {
+        Kind::Arrow(Box::new(Kind::Star), Box::new(Kind::Star))
+    }
+
+    /// Convenience: `* → * → *`.
+    pub fn star_to_star_to_star() -> Self {
+        Kind::Arrow(Box::new(Kind::Star), Box::new(Kind::star_to_star()))
+    }
+}
+
+impl fmt::Display for Kind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Kind::Star => write!(f, "*"),
+            Kind::Arrow(lhs, rhs) => {
+                if matches!(lhs.as_ref(), Kind::Arrow(_, _)) {
+                    write!(f, "({lhs}) → {rhs}")
+                } else {
+                    write!(f, "{lhs} → {rhs}")
+                }
+            }
+        }
+    }
+}
+
+// ── Kind table for built-in constructors ──────────────────────────────────────
+
+/// Return the kind of a built-in named type constructor, or `None` for unknown.
+pub fn constructor_kind(name: &str) -> Option<Kind> {
+    match name {
+        "List" | "IO" | "Dict" | "NonEmpty" => Some(Kind::star_to_star()),
+        "Lens" | "Traversal" => Some(Kind::star_to_star_to_star()),
+        _ => None,
+    }
+}
+
+/// Compute the kind of a type expression.
+pub fn kind_of(ty: &Type) -> Kind {
+    match ty {
+        Type::Number
+        | Type::String
+        | Type::Symbol
+        | Type::Bool
+        | Type::Null
+        | Type::DateTime
+        | Type::Any
+        | Type::Top
+        | Type::Never
+        | Type::Set
+        | Type::Vec
+        | Type::Array
+        | Type::LiteralSymbol(_)
+        | Type::LiteralString(_)
+        | Type::Record { .. }
+        | Type::Function(_, _)
+        | Type::Tuple(_)
+        | Type::Union(_)
+        | Type::Mu(_, _) => Kind::Star,
+
+        Type::Con(name) => constructor_kind(name).unwrap_or(Kind::Star),
+
+        // App(f, _): if f :: k1 → k2, result is k2.
+        Type::App(f, _) => match kind_of(f) {
+            Kind::Arrow(_, result) => *result,
+            Kind::Star => Kind::Star,
+        },
+
+        Type::Var(_, k) => k.clone(),
+
+        Type::Forall(_, _) => Kind::Star,
+    }
+}
+
+// ── Constraint ───────────────────────────────────────────────────────────────
+
+/// A constraint on a type variable (reserved for future use).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Constraint {
     pub function: String,
@@ -70,6 +170,8 @@ impl fmt::Display for TypeScheme {
     }
 }
 
+// ── Type ──────────────────────────────────────────────────────────────────────
+
 /// All type forms in eucalypt's gradual type system.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
@@ -89,121 +191,204 @@ pub enum Type {
 
     // ── Special ─────────────────────────────────────────────────────────────
     /// Gradual/dynamic — consistent with every type in both directions.
-    /// The checker does not flag errors involving `any`.
     Any,
-    /// Supertype of all types — accepts any value, but nothing can be done
-    /// with it without narrowing first.
+    /// Supertype of all types.
     Top,
-    /// Bottom type — subtype of all types. Represents unreachable code or
-    /// empty collections.
+    /// Bottom type — subtype of all types.
     Never,
 
-    // ── Composite ───────────────────────────────────────────────────────────
-    /// Homogeneous list: `[T]`.
-    List(Box<Type>),
-    /// Tuple: `(A, B)` or the 1-tuple `(A,)`.
-    Tuple(Vec<Type>),
+    // ── Opaque collection singletons (nullary, kind `*`) ────────────────────
     /// Ordered set of primitives.
     Set,
-    /// Flat vector of primitives (O(1) indexed access).
+    /// Flat vector of primitives.
     Vec,
     /// N-dimensional array of numbers (floats).
     Array,
-    /// IO action producing a value of type `T`.
-    IO(Box<Type>),
-    /// Lens focusing on a `B` within an `A`.
-    Lens(Box<Type>, Box<Type>),
-    /// Traversal over zero or more `B`s within an `A`.
-    Traversal(Box<Type>, Box<Type>),
-    /// Record type.
+
+    // ── Constructor representation ───────────────────────────────────────────
+    /// A named type constructor.
     ///
-    /// `open = true` means at least the listed fields are present (open record
-    /// — the `{k: T, ..}` form). `open = false` means exactly those fields
-    /// (closed record — the `{k: T}` form).
+    /// Built-in constructors: `List`, `IO`, `Dict`, `NonEmpty`, `Lens`,
+    /// `Traversal`.  User-defined constructors may also appear here.
+    Con(String),
+
+    /// Constructor application: `App(f, x)` — the type `f` applied to `x`.
     ///
-    /// `rows` holds named row variables (the `..r` tail variables).  Each entry
-    /// represents one row variable capturing extra fields.  Substituting a row
-    /// variable with a concrete record type merges those fields in.
-    ///
-    /// - `rows: []` — no named row variables (anonymous open or closed).
-    /// - `rows: [r]` — single named row: `{k: T, ..r}`.
-    /// - `rows: [r, s]` — row concatenation: `{..r, ..s}` (as in `merge`'s
-    ///   return type).  After substitution, fields from both `r` and `s` are
-    ///   merged in.
-    ///
-    /// Non-empty `rows` implies `open = true`.
+    /// `List(a)` is `App(Con("List"), a)`.
+    /// `Lens(a, b)` is `App(App(Con("Lens"), a), b)`.
+    App(Box<Type>, Box<Type>),
+
+    // ── Composite ───────────────────────────────────────────────────────────
+    /// Tuple: `(A, B)` or the 1-tuple `(A,)`.
+    Tuple(Vec<Type>),
+
+    /// Record type (open or closed, with optional named row variables).
     Record {
         fields: BTreeMap<String, Type>,
         open: bool,
-        /// Named row variables — the `..r` tail form.  Usually 0 or 1 entries;
-        /// 2 entries represent row concatenation `{..r, ..s}`.
+        /// Named row variables — the `..r` tail form.  Usually 0 or 1 entries.
         rows: Vec<TypeVarId>,
     },
-    /// Homogeneous block: arbitrary symbol keys, every value of type `T`.
-    ///
-    /// Distinct from `Record` (which names individual fields).  `Dict(T)`
-    /// is the honest type of `map-values`, `group-by`, `values`, `keys`,
-    /// and `lookup` — any block whose values all share a common type.
-    ///
-    /// Display: `Dict(T)`.
-    Dict(Box<Type>),
+
     /// Function type: `A -> B`.
     Function(Box<Type>, Box<Type>),
+
     /// Union type: `A | B`.
     Union(Vec<Type>),
 
     // ── Literal types ────────────────────────────────────────────────────────
     /// Literal symbol type: a specific symbol value (e.g. `:active`).
-    ///
-    /// `LiteralSymbol(s)` is a subtype of `Symbol`.
     LiteralSymbol(String),
     /// Literal string type: a specific string value (e.g. `"read"`).
-    ///
-    /// `LiteralString(s)` is a subtype of `String`.
     LiteralString(String),
 
-    // ── Refinement types ─────────────────────────────────────────────────────
-    /// Non-empty list refinement: `NonEmpty([a])`.
-    ///
-    /// `NonEmpty(a)` is a subtype of `List(a)` — any non-empty list satisfies
-    /// it.  Used by flow-sensitive narrowing to express "this variable is known
-    /// not to be `nil`" after a negative `nil?` test.
-    ///
-    /// Display: `NonEmpty([a])`.
-    NonEmpty(Box<Type>),
-
     // ── Variables ────────────────────────────────────────────────────────────
-    /// Type variable (lowercase identifier, e.g. `a`, `b`, `result`).
-    Var(TypeVarId),
+    /// Type variable with an explicit kind.
+    ///
+    /// Ordinary type variables have kind `Kind::Star`.
+    /// Higher-kinded variables (e.g. `m :: * → *`) carry `Kind::Arrow`.
+    Var(TypeVarId, Kind),
 
     // ── Recursive types ──────────────────────────────────────────────────────
     /// Equirecursive type: `Mu(x, body)` ≡ `body[x := Mu(x, body)]`.
-    ///
-    /// References to `x` inside `body` are `Type::Var(x)` — the recursion
-    /// variable.  This arises *only* from self-referential type aliases
-    /// (e.g. `Json = "number | [Json] | Dict(Json)"`); there is no user-
-    /// visible `μ` syntax.
-    ///
-    /// Display: the alias name `x` (never the unfolded body — printing is
-    /// always finite).  `apply_subst` recurses into the body but **skips**
-    /// substituting `x` because it is bound, not a free unification variable.
     Mu(TypeVarId, Box<Type>),
+
+    // ── Explicit quantification ───────────────────────────────────────────────
+    /// Explicit, potentially rank-N quantification.
+    ///
+    /// `Forall([(m, * → *), (a, *)], m a → m a)` quantifies `m` at kind
+    /// `* → *` and `a` at kind `*`.
+    Forall(Vec<(TypeVarId, Kind)>, Box<Type>),
 }
+
+// ── Smart constructors ────────────────────────────────────────────────────────
+
+impl Type {
+    /// `[inner]` — homogeneous list.
+    pub fn list(inner: Type) -> Self {
+        Type::App(Box::new(Type::Con("List".into())), Box::new(inner))
+    }
+
+    /// `IO(inner)` — IO action producing `inner`.
+    pub fn io(inner: Type) -> Self {
+        Type::App(Box::new(Type::Con("IO".into())), Box::new(inner))
+    }
+
+    /// `Dict(inner)` — homogeneous block with values of type `inner`.
+    pub fn dict(inner: Type) -> Self {
+        Type::App(Box::new(Type::Con("Dict".into())), Box::new(inner))
+    }
+
+    /// `NonEmpty([inner])` — non-empty list.
+    pub fn non_empty(inner: Type) -> Self {
+        Type::App(Box::new(Type::Con("NonEmpty".into())), Box::new(inner))
+    }
+
+    /// `Lens(a, b)` — a lens focusing on `b` within `a`.
+    pub fn lens(a: Type, b: Type) -> Self {
+        Type::App(
+            Box::new(Type::App(Box::new(Type::Con("Lens".into())), Box::new(a))),
+            Box::new(b),
+        )
+    }
+
+    /// `Traversal(a, b)` — a traversal over `b`s within `a`.
+    pub fn traversal(a: Type, b: Type) -> Self {
+        Type::App(
+            Box::new(Type::App(
+                Box::new(Type::Con("Traversal".into())),
+                Box::new(a),
+            )),
+            Box::new(b),
+        )
+    }
+
+    /// Star-kinded type variable (the common case).
+    pub fn var(id: TypeVarId) -> Self {
+        Type::Var(id, Kind::Star)
+    }
+
+    /// Higher-kinded type variable.
+    pub fn hk_var(id: TypeVarId, kind: Kind) -> Self {
+        Type::Var(id, kind)
+    }
+}
+
+// ── Decomposition helpers ─────────────────────────────────────────────────────
+
+impl Type {
+    /// If `self` is `App(Con(name), inner)`, return `(name, inner)`.
+    pub fn as_applied_single(&self) -> Option<(&str, &Type)> {
+        if let Type::App(f, inner) = self {
+            if let Type::Con(name) = f.as_ref() {
+                return Some((name.as_str(), inner.as_ref()));
+            }
+        }
+        None
+    }
+
+    /// If `self` is `App(App(Con(name), a), b)`, return `(name, a, b)`.
+    pub fn as_applied_two(&self) -> Option<(&str, &Type, &Type)> {
+        if let Type::App(outer, b) = self {
+            if let Type::App(f, a) = outer.as_ref() {
+                if let Type::Con(name) = f.as_ref() {
+                    return Some((name.as_str(), a.as_ref(), b.as_ref()));
+                }
+            }
+        }
+        None
+    }
+
+    /// If `self` is `App(Con("List"), inner)`, return `inner`.
+    pub fn as_list(&self) -> Option<&Type> {
+        self.as_applied_single()
+            .filter(|(n, _)| *n == "List")
+            .map(|(_, t)| t)
+    }
+
+    /// If `self` is `App(Con("IO"), inner)`, return `inner`.
+    pub fn as_io(&self) -> Option<&Type> {
+        self.as_applied_single()
+            .filter(|(n, _)| *n == "IO")
+            .map(|(_, t)| t)
+    }
+
+    /// If `self` is `App(Con("Dict"), inner)`, return `inner`.
+    pub fn as_dict(&self) -> Option<&Type> {
+        self.as_applied_single()
+            .filter(|(n, _)| *n == "Dict")
+            .map(|(_, t)| t)
+    }
+
+    /// If `self` is `App(Con("NonEmpty"), inner)`, return `inner`.
+    pub fn as_non_empty(&self) -> Option<&Type> {
+        self.as_applied_single()
+            .filter(|(n, _)| *n == "NonEmpty")
+            .map(|(_, t)| t)
+    }
+
+    /// If `self` is a single-argument built-in constructor application
+    /// (List, IO, Dict, or NonEmpty), return the inner type.
+    pub fn as_unary_con_inner(&self) -> Option<&Type> {
+        self.as_applied_single()
+            .filter(|(n, _)| matches!(*n, "List" | "IO" | "Dict" | "NonEmpty"))
+            .map(|(_, t)| t)
+    }
+}
+
+// ── union smart constructor ───────────────────────────────────────────────────
 
 impl Type {
     /// Canonical union constructor implementing the §6.1 smart-constructor algorithm.
     ///
     /// Steps (in order):
-    ///
-    /// 1. **Flatten** — splice nested `Union(vs)` into the flat list.
-    /// 2. **Absorb `Any`** — if any member is `Any`, return `Any`.
-    /// 3. **Drop `Never`** — remove all `Never` members.
-    /// 4. **Deduplicate** — drop structurally identical members (preserve order).
-    /// 5. **Absorb literals into bases** — drop `LiteralSymbol(v)` when
-    ///    `Symbol` is present; drop `LiteralString(v)` when `String` is present.
-    /// 6. **Normalise** — empty → `Never`; singleton → unwrap; else `Union`.
+    /// 1. Flatten nested unions.
+    /// 2. Absorb `Any` — if any member is `Any`, return `Any`.
+    /// 3. Drop `Never`.
+    /// 4. Deduplicate.
+    /// 5. Absorb literals into bases.
+    /// 6. Normalise — empty → `Never`; singleton → unwrap; else `Union`.
     pub fn union(types: impl IntoIterator<Item = Type>) -> Type {
-        // Step 1: flatten nested unions.
         let mut flat: Vec<Type> = Vec::new();
         for ty in types {
             match ty {
@@ -212,15 +397,12 @@ impl Type {
             }
         }
 
-        // Step 2: absorb Any.
         if flat.iter().any(|t| matches!(t, Type::Any)) {
             return Type::Any;
         }
 
-        // Step 3: drop Never.
         flat.retain(|t| !matches!(t, Type::Never));
 
-        // Step 4: deduplicate (preserve first-seen order).
         let mut seen: Vec<Type> = Vec::new();
         for ty in flat {
             if !seen.contains(&ty) {
@@ -228,7 +410,6 @@ impl Type {
             }
         }
 
-        // Step 5: absorb literals into their base types.
         let has_symbol = seen.iter().any(|t| matches!(t, Type::Symbol));
         let has_string = seen.iter().any(|t| matches!(t, Type::String));
         if has_symbol || has_string {
@@ -238,7 +419,6 @@ impl Type {
             });
         }
 
-        // Step 6: normalise.
         match seen.len() {
             0 => Type::Never,
             1 => seen.remove(0),
@@ -246,6 +426,8 @@ impl Type {
         }
     }
 }
+
+// ── Display ───────────────────────────────────────────────────────────────────
 
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -264,13 +446,17 @@ impl fmt::Display for Type {
             Type::Array => write!(f, "array"),
             Type::LiteralSymbol(name) => write!(f, ":{name}"),
             Type::LiteralString(s) => {
-                // Escape embedded double-quotes and backslashes.
                 let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
                 write!(f, "\"{escaped}\"")
             }
-            Type::NonEmpty(inner) => write!(f, "NonEmpty([{inner}])"),
-            Type::Var(v) => write!(f, "{v}"),
-            Type::List(inner) => write!(f, "[{inner}]"),
+            Type::Var(v, _) => write!(f, "{v}"),
+
+            // Re-sugar known constructors; generic application by juxtaposition.
+            Type::App(head, inner) => fmt_app(f, head, inner),
+
+            // Bare constructor name.
+            Type::Con(name) => write!(f, "{name}"),
+
             Type::Tuple(elems) => {
                 write!(f, "(")?;
                 match elems.as_slice() {
@@ -287,9 +473,6 @@ impl fmt::Display for Type {
                 }
                 Ok(())
             }
-            Type::IO(inner) => write!(f, "IO({inner})"),
-            Type::Lens(a, b) => write!(f, "Lens({a}, {b})"),
-            Type::Traversal(a, b) => write!(f, "Traversal({a}, {b})"),
             Type::Record { fields, open, rows } => {
                 write!(f, "{{")?;
                 let mut any_written = false;
@@ -300,7 +483,6 @@ impl fmt::Display for Type {
                     write!(f, "{k}: {v}")?;
                     any_written = true;
                 }
-                // Print named row variables as `..r`, `..s`, …
                 for r in rows {
                     if any_written {
                         write!(f, ", ")?;
@@ -308,8 +490,6 @@ impl fmt::Display for Type {
                     write!(f, "..{r}")?;
                     any_written = true;
                 }
-                // Print anonymous open tail `..` if the record is anonymously open
-                // (independently of any named row variables).
                 if *open {
                     if any_written {
                         write!(f, ", ")?;
@@ -318,15 +498,9 @@ impl fmt::Display for Type {
                 }
                 write!(f, "}}")
             }
-            Type::Dict(inner) => write!(f, "Dict({inner})"),
             // Recursive type: print just the alias name — never unfold.
             Type::Mu(x, _) => write!(f, "{x}"),
             Type::Function(a, b) => {
-                // Parenthesise LHS if it is itself a function or a union, to
-                // avoid ambiguity: `(a -> b) -> c` and `(a | b) -> c` must
-                // be distinct from the un-parenthesised forms which parse
-                // differently. Parenthesise RHS if it is a union, because
-                // `a -> b | c` parses as `(a -> b) | c`, not `a -> (b | c)`.
                 let lhs_needs_parens = matches!(a.as_ref(), Type::Function(_, _) | Type::Union(_));
                 let rhs_needs_parens = matches!(b.as_ref(), Type::Union(_));
                 match (lhs_needs_parens, rhs_needs_parens) {
@@ -346,9 +520,48 @@ impl fmt::Display for Type {
                 }
                 Ok(())
             }
+            Type::Forall(binders, body) => {
+                write!(f, "forall")?;
+                for (id, kind) in binders {
+                    if *kind == Kind::Star {
+                        write!(f, " {id}")?;
+                    } else {
+                        write!(f, " ({id} :: {kind})")?;
+                    }
+                }
+                write!(f, ". {body}")
+            }
         }
     }
 }
+
+/// Format a constructor application, re-sugaring known constructors.
+fn fmt_app(f: &mut fmt::Formatter<'_>, head: &Type, arg: &Type) -> fmt::Result {
+    // Two-arg constructors: `App(App(Con("Lens"), a), b)` → `Lens(a, b)`
+    if let Type::App(inner_head, a) = head {
+        if let Type::Con(name) = inner_head.as_ref() {
+            match name.as_str() {
+                "Lens" => return write!(f, "Lens({a}, {arg})"),
+                "Traversal" => return write!(f, "Traversal({a}, {arg})"),
+                _ => {}
+            }
+        }
+    }
+    // Single-arg constructors.
+    if let Type::Con(name) = head {
+        match name.as_str() {
+            "List" => return write!(f, "[{arg}]"),
+            "IO" => return write!(f, "IO({arg})"),
+            "Dict" => return write!(f, "Dict({arg})"),
+            "NonEmpty" => return write!(f, "NonEmpty([{arg}])"),
+            _ => {}
+        }
+    }
+    // Generic application by juxtaposition.
+    write!(f, "{head} {arg}")
+}
+
+// ── humanise ─────────────────────────────────────────────────────────────────
 
 /// Replace internal unification variables (`_t0`, `_t1`, etc.) with
 /// user-friendly names (`a`, `b`, `c`, ...) for display in diagnostics.
@@ -360,18 +573,20 @@ pub fn humanise(ty: &Type) -> Type {
 
     fn collect_fresh_vars(ty: &Type, seen: &mut Vec<String>) {
         match ty {
-            Type::Var(v) if v.0.starts_with("_t") && !seen.contains(&v.0) => {
+            Type::Var(v, _) if v.0.starts_with("_t") && !seen.contains(&v.0) => {
                 seen.push(v.0.clone());
             }
-            Type::List(inner) | Type::IO(inner) | Type::Dict(inner) => {
+            Type::App(f, inner) => {
+                collect_fresh_vars(f, seen);
                 collect_fresh_vars(inner, seen);
             }
+            Type::Con(_) => {}
             Type::Tuple(elems) => {
                 for e in elems {
                     collect_fresh_vars(e, seen);
                 }
             }
-            Type::Function(a, b) | Type::Lens(a, b) | Type::Traversal(a, b) => {
+            Type::Function(a, b) => {
                 collect_fresh_vars(a, seen);
                 collect_fresh_vars(b, seen);
             }
@@ -379,7 +594,6 @@ pub fn humanise(ty: &Type) -> Type {
                 for v in fields.values() {
                     collect_fresh_vars(v, seen);
                 }
-                // Row variables with `_t` prefix are fresh vars to be renamed.
                 for r in rows {
                     if r.0.starts_with("_t") && !seen.contains(&r.0) {
                         seen.push(r.0.clone());
@@ -391,9 +605,10 @@ pub fn humanise(ty: &Type) -> Type {
                     collect_fresh_vars(v, seen);
                 }
             }
-            // Mu: recurse into the body; the binder id is NOT a fresh unification
-            // variable (it is a user alias name, not a `_t`-prefixed fresh var).
             Type::Mu(_, body) => {
+                collect_fresh_vars(body, seen);
+            }
+            Type::Forall(_, body) => {
                 collect_fresh_vars(body, seen);
             }
             _ => {}
@@ -402,26 +617,21 @@ pub fn humanise(ty: &Type) -> Type {
 
     fn replace(ty: &Type, mapping: &HashMap<String, String>) -> Type {
         match ty {
-            Type::Var(v) => {
+            Type::Var(v, kind) => {
                 if let Some(replacement) = mapping.get(&v.0) {
-                    Type::Var(TypeVarId(replacement.clone()))
+                    Type::Var(TypeVarId(replacement.clone()), kind.clone())
                 } else {
                     ty.clone()
                 }
             }
-            Type::List(inner) => Type::List(Box::new(replace(inner, mapping))),
-            Type::NonEmpty(inner) => Type::NonEmpty(Box::new(replace(inner, mapping))),
-            Type::IO(inner) => Type::IO(Box::new(replace(inner, mapping))),
-            Type::Dict(inner) => Type::Dict(Box::new(replace(inner, mapping))),
+            Type::App(f, inner) => Type::App(
+                Box::new(replace(f, mapping)),
+                Box::new(replace(inner, mapping)),
+            ),
+            Type::Con(_) => ty.clone(),
             Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| replace(e, mapping)).collect()),
             Type::Function(a, b) => {
                 Type::Function(Box::new(replace(a, mapping)), Box::new(replace(b, mapping)))
-            }
-            Type::Lens(a, b) => {
-                Type::Lens(Box::new(replace(a, mapping)), Box::new(replace(b, mapping)))
-            }
-            Type::Traversal(a, b) => {
-                Type::Traversal(Box::new(replace(a, mapping)), Box::new(replace(b, mapping)))
             }
             Type::Record { fields, open, rows } => Type::Record {
                 fields: fields
@@ -443,9 +653,10 @@ pub fn humanise(ty: &Type) -> Type {
             Type::Union(variants) => {
                 Type::Union(variants.iter().map(|v| replace(v, mapping)).collect())
             }
-            // Mu: replace inside the body, but do NOT rename the binder itself
-            // (it is the alias name, never a `_t`-prefixed fresh variable).
             Type::Mu(x, body) => Type::Mu(x.clone(), Box::new(replace(body, mapping))),
+            Type::Forall(binders, body) => {
+                Type::Forall(binders.clone(), Box::new(replace(body, mapping)))
+            }
             _ => ty.clone(),
         }
     }
@@ -471,37 +682,26 @@ pub fn humanise(ty: &Type) -> Type {
     replace(ty, &mapping)
 }
 
+// ── unfold_mu ─────────────────────────────────────────────────────────────────
+
 /// One-step unfolding of a `Mu` type.
 ///
 /// Substitutes `replacement` for every free occurrence of `x` in `ty`.
-/// Used for equirecursive subtyping and unification.
-///
-/// To unfold `Mu(x, body)` once, call `unfold_mu(&x, &body, &Type::Mu(x, body))`.
-/// The result is `body` with all occurrences of the recursive variable `x`
-/// replaced by the full `Mu` type — one step of coinductive unrolling.
 pub fn unfold_mu(x: &TypeVarId, ty: &Type, replacement: &Type) -> Type {
     match ty {
-        Type::Var(id) if id == x => replacement.clone(),
-        // Binder shadowing: if we enter another Mu that binds the same name,
-        // stop substituting (the inner binder shadows x).
+        Type::Var(id, _) if id == x => replacement.clone(),
+        // Binder shadowing.
         Type::Mu(y, _) if y == x => ty.clone(),
         Type::Mu(y, body) => Type::Mu(y.clone(), Box::new(unfold_mu(x, body, replacement))),
-        Type::List(inner) => Type::List(Box::new(unfold_mu(x, inner, replacement))),
-        Type::NonEmpty(inner) => Type::NonEmpty(Box::new(unfold_mu(x, inner, replacement))),
-        Type::IO(inner) => Type::IO(Box::new(unfold_mu(x, inner, replacement))),
-        Type::Dict(inner) => Type::Dict(Box::new(unfold_mu(x, inner, replacement))),
+        Type::App(f, inner) => Type::App(
+            Box::new(unfold_mu(x, f, replacement)),
+            Box::new(unfold_mu(x, inner, replacement)),
+        ),
+        Type::Con(_) => ty.clone(),
         Type::Tuple(elems) => {
             Type::Tuple(elems.iter().map(|e| unfold_mu(x, e, replacement)).collect())
         }
         Type::Function(a, b) => Type::Function(
-            Box::new(unfold_mu(x, a, replacement)),
-            Box::new(unfold_mu(x, b, replacement)),
-        ),
-        Type::Lens(a, b) => Type::Lens(
-            Box::new(unfold_mu(x, a, replacement)),
-            Box::new(unfold_mu(x, b, replacement)),
-        ),
-        Type::Traversal(a, b) => Type::Traversal(
             Box::new(unfold_mu(x, a, replacement)),
             Box::new(unfold_mu(x, b, replacement)),
         ),
@@ -519,16 +719,25 @@ pub fn unfold_mu(x: &TypeVarId, ty: &Type, replacement: &Type) -> Type {
                 .map(|v| unfold_mu(x, v, replacement))
                 .collect(),
         ),
+        Type::Forall(binders, body) => {
+            Type::Forall(binders.clone(), Box::new(unfold_mu(x, body, replacement)))
+        }
         other => other.clone(),
     }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn var(name: &str) -> Type {
-        Type::Var(TypeVarId(name.to_string()))
+        Type::var(TypeVarId(name.to_string()))
+    }
+
+    fn hk_var(name: &str) -> Type {
+        Type::hk_var(TypeVarId(name.to_string()), Kind::star_to_star())
     }
 
     #[test]
@@ -553,13 +762,81 @@ mod tests {
             Type::LiteralSymbol("active".to_string()).to_string(),
             ":active"
         );
-        assert_eq!(Type::LiteralSymbol("foo".to_string()).to_string(), ":foo");
     }
 
     #[test]
     fn display_list() {
-        let t = Type::List(Box::new(Type::Number));
-        assert_eq!(t.to_string(), "[number]");
+        assert_eq!(Type::list(Type::Number).to_string(), "[number]");
+    }
+
+    #[test]
+    fn display_io() {
+        assert_eq!(Type::io(Type::String).to_string(), "IO(string)");
+    }
+
+    #[test]
+    fn display_dict() {
+        assert_eq!(Type::dict(Type::Number).to_string(), "Dict(number)");
+    }
+
+    #[test]
+    fn display_non_empty() {
+        assert_eq!(
+            Type::non_empty(Type::Number).to_string(),
+            "NonEmpty([number])"
+        );
+    }
+
+    #[test]
+    fn display_lens() {
+        let t = Type::lens(
+            Type::Record {
+                fields: BTreeMap::new(),
+                open: true,
+                rows: vec![],
+            },
+            Type::Any,
+        );
+        assert_eq!(t.to_string(), "Lens({..}, any)");
+    }
+
+    #[test]
+    fn display_traversal() {
+        let t = Type::traversal(Type::list(var("a")), var("a"));
+        assert_eq!(t.to_string(), "Traversal([a], a)");
+    }
+
+    #[test]
+    fn display_generic_app() {
+        let t = Type::App(Box::new(hk_var("m")), Box::new(var("a")));
+        assert_eq!(t.to_string(), "m a");
+    }
+
+    #[test]
+    fn display_forall_star() {
+        let t = Type::Forall(
+            vec![
+                (TypeVarId("a".into()), Kind::Star),
+                (TypeVarId("b".into()), Kind::Star),
+            ],
+            Box::new(Type::Function(Box::new(var("a")), Box::new(var("b")))),
+        );
+        assert_eq!(t.to_string(), "forall a b. a → b");
+    }
+
+    #[test]
+    fn display_forall_hk() {
+        let m = TypeVarId("m".into());
+        let a = TypeVarId("a".into());
+        let m_a = Type::App(
+            Box::new(Type::Var(m.clone(), Kind::star_to_star())),
+            Box::new(Type::Var(a.clone(), Kind::Star)),
+        );
+        let t = Type::Forall(
+            vec![(m, Kind::star_to_star()), (a, Kind::Star)],
+            Box::new(Type::Function(Box::new(m_a.clone()), Box::new(m_a))),
+        );
+        assert_eq!(t.to_string(), "forall (m :: * → *) a. m a → m a");
     }
 
     #[test]
@@ -593,25 +870,6 @@ mod tests {
     }
 
     #[test]
-    fn display_io() {
-        let t = Type::IO(Box::new(Type::String));
-        assert_eq!(t.to_string(), "IO(string)");
-    }
-
-    #[test]
-    fn display_lens() {
-        let t = Type::Lens(
-            Box::new(Type::Record {
-                fields: BTreeMap::new(),
-                open: true,
-                rows: vec![],
-            }),
-            Box::new(Type::Any),
-        );
-        assert_eq!(t.to_string(), "Lens({..}, any)");
-    }
-
-    #[test]
     fn display_closed_record() {
         let mut fields = BTreeMap::new();
         fields.insert("name".to_string(), Type::String);
@@ -621,7 +879,6 @@ mod tests {
             open: false,
             rows: vec![],
         };
-        // BTreeMap is sorted alphabetically
         assert_eq!(t.to_string(), "{age: number, name: string}");
     }
 
@@ -662,8 +919,8 @@ mod tests {
             Type::Function(
                 Box::new(Type::Function(Box::new(var("a")), Box::new(var("b")))),
                 Box::new(Type::Function(
-                    Box::new(Type::List(Box::new(var("a")))),
-                    Box::new(Type::List(Box::new(var("b")))),
+                    Box::new(Type::list(var("a"))),
+                    Box::new(Type::list(var("b"))),
                 )),
             ),
         );
@@ -673,8 +930,8 @@ mod tests {
     #[test]
     fn humanise_replaces_fresh_vars() {
         let ty = Type::Function(
-            Box::new(var("_t0")),
-            Box::new(Type::List(Box::new(var("_t1")))),
+            Box::new(Type::Var(TypeVarId("_t0".into()), Kind::Star)),
+            Box::new(Type::list(Type::Var(TypeVarId("_t1".into()), Kind::Star))),
         );
         let h = humanise(&ty);
         assert_eq!(h.to_string(), "a → [b]");
@@ -690,11 +947,13 @@ mod tests {
     #[test]
     fn humanise_mixed_vars() {
         let ty = Type::Function(
-            Box::new(var("_t5")),
-            Box::new(Type::Function(Box::new(var("x")), Box::new(var("_t5")))),
+            Box::new(Type::Var(TypeVarId("_t5".into()), Kind::Star)),
+            Box::new(Type::Function(
+                Box::new(var("x")),
+                Box::new(Type::Var(TypeVarId("_t5".into()), Kind::Star)),
+            )),
         );
         let h = humanise(&ty);
-        // _t5 becomes 'a', x stays 'x', second _t5 also becomes 'a'
         assert_eq!(h.to_string(), "a → x → a");
     }
 
@@ -705,31 +964,21 @@ mod tests {
         assert_eq!(h.to_string(), "number → string");
     }
 
-    // ── Dict display ────────────────────────────────────────────────────────
-
     #[test]
     fn display_dict_number() {
-        let t = Type::Dict(Box::new(Type::Number));
-        assert_eq!(t.to_string(), "Dict(number)");
-    }
-
-    #[test]
-    fn display_dict_string() {
-        let t = Type::Dict(Box::new(Type::String));
-        assert_eq!(t.to_string(), "Dict(string)");
+        assert_eq!(Type::dict(Type::Number).to_string(), "Dict(number)");
     }
 
     #[test]
     fn display_dict_list() {
-        let t = Type::Dict(Box::new(Type::List(Box::new(Type::Number))));
-        assert_eq!(t.to_string(), "Dict([number])");
+        assert_eq!(
+            Type::dict(Type::list(Type::Number)).to_string(),
+            "Dict([number])"
+        );
     }
-
-    // ── Row variable display ────────────────────────────────────────────────
 
     #[test]
     fn display_single_row_var() {
-        // open: false — the named row var is the only extension
         let t = Type::Record {
             fields: BTreeMap::new(),
             open: false,
@@ -742,7 +991,6 @@ mod tests {
     fn display_row_var_with_fields() {
         let mut fields = BTreeMap::new();
         fields.insert("x".to_string(), Type::Number);
-        // open: false — the named row var captures the extension
         let t = Type::Record {
             fields,
             open: false,
@@ -753,7 +1001,6 @@ mod tests {
 
     #[test]
     fn display_two_row_vars() {
-        // open: false — both named row vars together capture the extension
         let t = Type::Record {
             fields: BTreeMap::new(),
             open: false,
@@ -764,7 +1011,6 @@ mod tests {
 
     #[test]
     fn display_row_var_and_anon_open() {
-        // open: true AND rows: [r] — row var plus extra anonymous tail
         let t = Type::Record {
             fields: BTreeMap::new(),
             open: true,
@@ -772,8 +1018,6 @@ mod tests {
         };
         assert_eq!(t.to_string(), "{..r, ..}");
     }
-
-    // ── Type::union constructor ─────────────────────────────────────────────
 
     #[test]
     fn union_empty_is_never() {
@@ -791,29 +1035,29 @@ mod tests {
         assert_eq!(u, Type::Union(vec![Type::Number, Type::String]));
     }
 
-    // ── Humanise Dict ───────────────────────────────────────────────────────
-
     #[test]
     fn humanise_dict_with_fresh_var() {
-        let ty = Type::Dict(Box::new(var("_t0")));
+        let ty = Type::dict(Type::Var(TypeVarId("_t0".into()), Kind::Star));
         let h = humanise(&ty);
         assert_eq!(h.to_string(), "Dict(a)");
     }
 
-    // ── Mu (recursive types) ────────────────────────────────────────────────
-
     #[test]
     fn display_mu_shows_binder_name() {
-        // Mu(Json, body) displays as "Json" — never unfolds
-        let body = Type::Union(vec![Type::Number, Type::Var(TypeVarId("Json".to_string()))]);
+        let body = Type::Union(vec![
+            Type::Number,
+            Type::Var(TypeVarId("Json".to_string()), Kind::Star),
+        ]);
         let mu = Type::Mu(TypeVarId("Json".to_string()), Box::new(body));
         assert_eq!(mu.to_string(), "Json");
     }
 
     #[test]
     fn display_mu_in_function_type() {
-        // A -> Mu(Json, _) displays as "A -> Json"
-        let body = Type::Union(vec![Type::Number, Type::Var(TypeVarId("Json".to_string()))]);
+        let body = Type::Union(vec![
+            Type::Number,
+            Type::Var(TypeVarId("Json".to_string()), Kind::Star),
+        ]);
         let mu = Type::Mu(TypeVarId("Json".to_string()), Box::new(body));
         let func = Type::Function(Box::new(Type::String), Box::new(mu));
         assert_eq!(func.to_string(), "string → Json");
@@ -821,13 +1065,15 @@ mod tests {
 
     #[test]
     fn humanise_mu_body_renames_fresh_vars() {
-        // Mu(Tree, {value: _t0, left: Mu(Tree,_)}) — _t0 should become `a`
         let tree_id = TypeVarId("Tree".to_string());
         let body = Type::Record {
             fields: {
                 let mut m = BTreeMap::new();
-                m.insert("value".to_string(), var("_t0"));
-                m.insert("left".to_string(), Type::Var(tree_id.clone()));
+                m.insert(
+                    "value".to_string(),
+                    Type::Var(TypeVarId("_t0".into()), Kind::Star),
+                );
+                m.insert("left".to_string(), Type::Var(tree_id.clone(), Kind::Star));
                 m
             },
             open: false,
@@ -835,7 +1081,85 @@ mod tests {
         };
         let mu = Type::Mu(tree_id, Box::new(body));
         let h = humanise(&mu);
-        // Mu still displays as its name, but inner structure is renamed
         assert_eq!(h.to_string(), "Tree");
+    }
+
+    // ── Kind tests ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn kind_of_primitives_is_star() {
+        assert_eq!(kind_of(&Type::Number), Kind::Star);
+        assert_eq!(kind_of(&Type::String), Kind::Star);
+        assert_eq!(kind_of(&Type::Any), Kind::Star);
+    }
+
+    #[test]
+    fn kind_of_con_list_is_star_to_star() {
+        assert_eq!(kind_of(&Type::Con("List".into())), Kind::star_to_star());
+        assert_eq!(kind_of(&Type::Con("IO".into())), Kind::star_to_star());
+        assert_eq!(kind_of(&Type::Con("Dict".into())), Kind::star_to_star());
+    }
+
+    #[test]
+    fn kind_of_applied_list_is_star() {
+        assert_eq!(kind_of(&Type::list(Type::Number)), Kind::Star);
+    }
+
+    #[test]
+    fn kind_of_var_star() {
+        assert_eq!(kind_of(&var("a")), Kind::Star);
+    }
+
+    #[test]
+    fn kind_of_hk_var() {
+        assert_eq!(kind_of(&hk_var("m")), Kind::star_to_star());
+    }
+
+    #[test]
+    fn kind_of_partially_applied_lens() {
+        // App(Con("Lens"), a) :: * → *  (Lens is * → * → *, applied to one arg)
+        let partial = Type::App(Box::new(Type::Con("Lens".into())), Box::new(Type::Any));
+        assert_eq!(kind_of(&partial), Kind::star_to_star());
+    }
+
+    #[test]
+    fn smart_constructors_produce_applied_form() {
+        assert_eq!(
+            Type::list(var("a")),
+            Type::App(Box::new(Type::Con("List".into())), Box::new(var("a")))
+        );
+        assert_eq!(
+            Type::lens(var("a"), var("b")),
+            Type::App(
+                Box::new(Type::App(
+                    Box::new(Type::Con("Lens".into())),
+                    Box::new(var("a"))
+                )),
+                Box::new(var("b"))
+            )
+        );
+    }
+
+    #[test]
+    fn decomposition_helpers() {
+        let list_n = Type::list(Type::Number);
+        assert_eq!(list_n.as_list(), Some(&Type::Number));
+        assert!(list_n.as_io().is_none());
+        assert_eq!(list_n.as_applied_single(), Some(("List", &Type::Number)));
+
+        let lens_ab = Type::lens(var("a"), var("b"));
+        assert_eq!(
+            lens_ab.as_applied_two(),
+            Some(("Lens", &var("a"), &var("b")))
+        );
+    }
+
+    #[test]
+    fn kind_display() {
+        assert_eq!(Kind::Star.to_string(), "*");
+        assert_eq!(Kind::star_to_star().to_string(), "* → *");
+        assert_eq!(Kind::star_to_star_to_star().to_string(), "* → * → *");
+        let k = Kind::Arrow(Box::new(Kind::star_to_star()), Box::new(Kind::Star));
+        assert_eq!(k.to_string(), "(* → *) → *");
     }
 }
