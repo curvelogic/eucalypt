@@ -131,6 +131,16 @@ impl<'guard> ScopedAllocator<'guard> for MutatorHeapView<'guard> {
     fn alloc_bytes(&self, size_bytes: usize) -> Result<std::ptr::NonNull<u8>, ExecutionError> {
         self.heap_ref().alloc_bytes(size_bytes).map_err(Into::into)
     }
+
+    /// Allocate a region of bytes without zero-initialisation
+    fn alloc_bytes_uninit(
+        &self,
+        size_bytes: usize,
+    ) -> Result<std::ptr::NonNull<u8>, ExecutionError> {
+        self.heap_ref()
+            .alloc_bytes_uninit(size_bytes)
+            .map_err(Into::into)
+    }
 }
 
 /// Build an indexed branch table from tagged branch pairs

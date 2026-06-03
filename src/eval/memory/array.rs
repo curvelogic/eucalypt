@@ -128,7 +128,7 @@ impl<T: Sized> RawArray<T> {
                 .checked_mul(size_of::<T>())
                 .ok_or(ExecutionError::AllocationError)?;
             Ok(RefPtr::new(
-                mem.alloc_bytes(capacity_bytes)?.as_ptr() as *mut T
+                mem.alloc_bytes_uninit(capacity_bytes)?.as_ptr() as *mut T
             ))
         }
     }
