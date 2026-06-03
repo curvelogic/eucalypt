@@ -93,6 +93,7 @@ pub fn kind_of(ty: &Type) -> Kind {
         | Type::Any
         | Type::Top
         | Type::Never
+        | Type::ExecutionError
         | Type::Set
         | Type::Vec
         | Type::Array
@@ -196,6 +197,10 @@ pub enum Type {
     Top,
     /// Bottom type — subtype of all types.
     Never,
+    /// The type of a raised `ExecutionError` — produced by partial functions.
+    ///
+    /// `T?` is display sugar for `T | ExecutionError`.
+    ExecutionError,
 
     // ── Opaque collection singletons (nullary, kind `*`) ────────────────────
     /// Ordered set of primitives.
@@ -301,6 +306,11 @@ impl Type {
             )),
             Box::new(b),
         )
+    }
+
+    /// `T?` — `T | ExecutionError` (partial function return type).
+    pub fn partial(inner: Type) -> Self {
+        Type::Union(vec![inner, Type::ExecutionError])
     }
 
     /// Star-kinded type variable (the common case).
@@ -441,6 +451,7 @@ impl fmt::Display for Type {
             Type::Any => write!(f, "any"),
             Type::Top => write!(f, "top"),
             Type::Never => write!(f, "never"),
+            Type::ExecutionError => write!(f, "ExecutionError"),
             Type::Set => write!(f, "set"),
             Type::Vec => write!(f, "vec"),
             Type::Array => write!(f, "array"),
@@ -511,6 +522,15 @@ impl fmt::Display for Type {
                 }
             }
             Type::Union(variants) => {
+                // Re-sugar `T | ExecutionError` or `ExecutionError | T` → `T?`.
+                if variants.len() == 2 {
+                    if variants[1] == Type::ExecutionError {
+                        return write!(f, "{}?", variants[0]);
+                    }
+                    if variants[0] == Type::ExecutionError {
+                        return write!(f, "{}?", variants[1]);
+                    }
+                }
                 let mut iter = variants.iter();
                 if let Some(first) = iter.next() {
                     write!(f, "{first}")?;

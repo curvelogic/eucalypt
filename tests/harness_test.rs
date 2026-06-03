@@ -2149,3 +2149,23 @@ pub fn test_typecheck_072_b7_user_brancher_wrapping_free() {
 pub fn test_typecheck_073_b7_head_tail_free() {
     run_typecheck_test("073_b7_head_tail_free.eu");
 }
+
+#[test]
+pub fn test_typecheck_074_b5_partial_type_parses() {
+    run_typecheck_test("074_b5_partial_type_parses.eu");
+}
+
+#[test]
+pub fn test_typecheck_075_b5_execution_error_type() {
+    run_typecheck_test("075_b5_execution_error_type.eu");
+}
+
+#[test]
+pub fn test_typecheck_076_b5_partial_warns_in_total_position() {
+    run_typecheck_test("076_b5_partial_warns_in_total_position.eu");
+}
+
+#[test]
+pub fn test_typecheck_077_b5_partial_silent_in_any() {
+    run_typecheck_test("077_b5_partial_silent_in_any.eu");
+}

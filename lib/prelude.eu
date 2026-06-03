@@ -421,11 +421,11 @@ block: __BLOCK
 has(s, b): b map-values(const(true)) lookup-or(s, false)
 
 ` { doc: "`lookup(s, b)` - look up symbol `s` in block `b`, error if not found."
-    type: "symbol → Dict(a) → a" }
+    type: "symbol → Dict(a) → a?" }
 lookup(s, b): __LOOKUP(s, b)
 
 ` { doc: "`lookup-in(b, s)` - look up symbol `s` in block `b`, error if not found."
-    type: "{{..}} → symbol → any" }
+    type: "{{..}} → symbol → any?" }
 lookup-in(b, s): __LOOKUP(s, b)
 
 ` { doc: "`lookup-or(s, d, b)` - look up symbol `s` in block `b`, default `d` if not found."
@@ -1112,7 +1112,7 @@ render(value): __RENDER_TO_STRING(value, :yaml)
 render-as(fmt, value): __RENDER_TO_STRING(value, fmt)
 
 ` { doc: "parse-as(fmt, str) - parse a string of structured data in the named format and return eucalypt data. The inverse of render-as. Supported formats: :json, :yaml, :toml, :csv, :xml, :edn, :jsonl. Content is parsed as inert data; embedded eucalypt expressions (e.g. YAML !eu tags) are never evaluated."
-    type: "symbol → string → any" }
+    type: "symbol → string → any?" }
 parse-as(fmt, str): __PARSE_STRING(fmt, str)
 
 ##
@@ -1376,7 +1376,7 @@ split-after(p?, l): {
 split-when(p?, l): split-after(p? complement, l)
 
 ` { doc: "`nth(n, l)` - return `n`th item of list if it exists, otherwise error."
-    type: "number → [a] → a" }
+    type: "number → [a] → a?" }
 nth(n, l): l drop(n) head
 
 ` "`update-nth(n, f, l)` - apply `f` to element at index `n` in list `l`.
