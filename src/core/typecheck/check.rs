@@ -424,7 +424,7 @@ impl Checker {
     /// `Type::Mu(name, body)` to form an equirecursive type.
     fn resolve_aliases_inner(&self, ty: Type, resolving: &mut Vec<String>) -> Type {
         match ty {
-            Type::Var(ref v) => {
+            Type::Var(ref v, _) => {
                 if let Some(alias_ty) = self.aliases.get(&v.0) {
                     if resolving.contains(&v.0) {
                         // Cycle detected: return the bare Var as a back-reference.
@@ -446,34 +446,25 @@ impl Checker {
                     ty
                 }
             }
-            Type::List(inner) => {
-                Type::List(Box::new(self.resolve_aliases_inner(*inner, resolving)))
-            }
+            Type::App(f, x) => Type::App(
+                Box::new(self.resolve_aliases_inner(*f, resolving)),
+                Box::new(self.resolve_aliases_inner(*x, resolving)),
+            ),
+            Type::Con(_) => ty,
+            Type::Forall(binders, body) => Type::Forall(
+                binders,
+                Box::new(self.resolve_aliases_inner(*body, resolving)),
+            ),
             Type::Tuple(elems) => Type::Tuple(
                 elems
                     .into_iter()
                     .map(|e| self.resolve_aliases_inner(e, resolving))
                     .collect(),
             ),
-            Type::IO(inner) => Type::IO(Box::new(self.resolve_aliases_inner(*inner, resolving))),
-            Type::Lens(a, b) => Type::Lens(
-                Box::new(self.resolve_aliases_inner(*a, resolving)),
-                Box::new(self.resolve_aliases_inner(*b, resolving)),
-            ),
-            Type::Traversal(a, b) => Type::Traversal(
-                Box::new(self.resolve_aliases_inner(*a, resolving)),
-                Box::new(self.resolve_aliases_inner(*b, resolving)),
-            ),
             Type::Function(a, b) => Type::Function(
                 Box::new(self.resolve_aliases_inner(*a, resolving)),
                 Box::new(self.resolve_aliases_inner(*b, resolving)),
             ),
-            Type::Dict(inner) => {
-                Type::Dict(Box::new(self.resolve_aliases_inner(*inner, resolving)))
-            }
-            Type::NonEmpty(inner) => {
-                Type::NonEmpty(Box::new(self.resolve_aliases_inner(*inner, resolving)))
-            }
             Type::Record { fields, open, rows } => Type::Record {
                 fields: fields
                     .into_iter()
@@ -827,13 +818,13 @@ impl Checker {
                             let first = &elems[0];
                             if elems.iter().all(|e| e == first) {
                                 // Homogeneous tuple → list of element type
-                                Type::List(Box::new(first.clone()))
+                                Type::list(first.clone())
                             } else {
                                 // Heterogeneous tuple → list of union
                                 // Type::union deduplicates and normalises
                                 // (absorbs LiteralString into String, etc.)
                                 let elem_type = Type::union(elems.iter().cloned());
-                                Type::List(Box::new(elem_type))
+                                Type::list(elem_type)
                             }
                         }
                         _ => inner_type,
@@ -966,7 +957,7 @@ impl Checker {
                 // emit a direct type warning so the user is alerted even if
                 // the call site annotation is `any`.  Return `Any` so that
                 // downstream checks can continue without cascading errors.
-                if matches!(&arg_type, Type::List(e) if matches!(e.as_ref(), Type::Never)) {
+                if arg_type.as_list().is_some_and(|e| matches!(e, Type::Never)) {
                     let proj_name = match proj {
                         HeadTailProjection::Head => "head",
                         HeadTailProjection::Tail => "tail",
@@ -1100,10 +1091,16 @@ impl Checker {
         let freshened = freshen(&scheme, &mut self.var_counter);
 
         // Extract the inner type variable from the freshened wrapper.
-        let inner = match &freshened {
-            Type::List(i) | Type::IO(i) | Type::Dict(i) | Type::NonEmpty(i) => *i.clone(),
-            _ => return None,
-        };
+        // Accepts List, IO, Dict, and NonEmpty containers — all represented as
+        // App(Con("X"), T) in the new HKT representation.
+        // Accepts List, IO, Dict, and NonEmpty containers — all represented as
+        // App(Con("X"), T) in the new HKT representation.
+        let inner = freshened
+            .as_list()
+            .or_else(|| freshened.as_io())
+            .or_else(|| freshened.as_dict())
+            .or_else(|| freshened.as_non_empty())
+            .cloned()?;
 
         // Unify the freshened wrapper with the concrete value type.
         let mut subst = Substitution::new();
@@ -1114,7 +1111,7 @@ impl Checker {
 
         // Return the element type only if it is concrete (informative and not
         // an unresolved type variable, which would give no useful information).
-        if is_informative(&elem) && !matches!(&elem, Type::Var(_)) {
+        if is_informative(&elem) && !matches!(&elem, Type::Var(_, _)) {
             Some(elem)
         } else {
             None
@@ -1175,7 +1172,9 @@ impl Checker {
                         for param in &scope.pattern {
                             if let Type::Function(p, r) = remaining {
                                 let resolved = apply_subst(&p, subst);
-                                if is_informative(&resolved) && !matches!(&resolved, Type::Var(_)) {
+                                if is_informative(&resolved)
+                                    && !matches!(&resolved, Type::Var(_, _))
+                                {
                                     params.push((param.clone(), resolved));
                                 }
                                 remaining = *r;
@@ -1567,8 +1566,8 @@ impl Checker {
             PredicateKind::Symbol => (Type::Symbol, subtract_type(&current_ty, &Type::Symbol)),
             PredicateKind::Bool => (Type::Bool, subtract_type(&current_ty, &Type::Bool)),
             PredicateKind::List => (
-                Type::List(Box::new(Type::Any)),
-                subtract_type(&current_ty, &Type::List(Box::new(Type::Any))),
+                Type::list(Type::Any),
+                subtract_type(&current_ty, &Type::list(Type::Any)),
             ),
             PredicateKind::Block => (
                 Type::Record {
@@ -1935,9 +1934,10 @@ fn is_not_func(func: &RcExpr) -> bool {
 /// `List(a)` → `NonEmpty(a)`.  Any other type (including `NonEmpty`, `Tuple`,
 /// and `any`) is returned unchanged — the gradual boundary is preserved.
 fn narrow_to_nonempty(ty: &Type) -> Type {
-    match ty {
-        Type::List(elem) => Type::NonEmpty(elem.clone()),
-        other => other.clone(),
+    if let Some(elem) = ty.as_list() {
+        Type::non_empty(elem.clone())
+    } else {
+        ty.clone()
     }
 }
 
@@ -1984,7 +1984,7 @@ fn apply_head_tail_to_tuple(proj: HeadTailProjection, arg_type: &Type) -> Option
             HeadTailProjection::Tail => {
                 if elems.len() <= 1 {
                     // tail of a singleton (or degenerate zero-elem) tuple is the empty list.
-                    Some(Type::List(Box::new(Type::Any)))
+                    Some(Type::list(Type::Any))
                 } else {
                     Some(Type::Tuple(elems[1..].to_vec()))
                 }
@@ -2093,13 +2093,18 @@ fn is_clause_intrinsic(func: &RcExpr) -> bool {
 /// decide whether to wrap the resolved body in `Type::Mu`.
 fn contains_var_named(ty: &Type, name: &str) -> bool {
     match ty {
-        Type::Var(id) => id.0 == name,
-        Type::List(inner) | Type::IO(inner) | Type::Dict(inner) | Type::NonEmpty(inner) => {
-            contains_var_named(inner, name)
+        Type::Var(id, _) => id.0 == name,
+        Type::App(f, x) => contains_var_named(f, name) || contains_var_named(x, name),
+        Type::Con(_) => false,
+        Type::Forall(binders, body) => {
+            // Binders shadow the name — if any binder matches, it's not free.
+            if binders.iter().any(|(b, _)| b.0 == name) {
+                false
+            } else {
+                contains_var_named(body, name)
+            }
         }
-        Type::Function(a, b) | Type::Lens(a, b) | Type::Traversal(a, b) => {
-            contains_var_named(a, name) || contains_var_named(b, name)
-        }
+        Type::Function(a, b) => contains_var_named(a, name) || contains_var_named(b, name),
         Type::Tuple(elems) => elems.iter().any(|e| contains_var_named(e, name)),
         Type::Record { fields, .. } => fields.values().any(|v| contains_var_named(v, name)),
         Type::Union(variants) => variants.iter().any(|v| contains_var_named(v, name)),
@@ -2138,13 +2143,13 @@ fn synthesise_list_literal(elem_types: Vec<Type>) -> Type {
         // `[]` is definitively empty — its element type is `Never`.
         // This causes `head([])` to synthesise `Never`, which is not
         // consistent with any concrete annotation → triggers a warning.
-        Type::List(Box::new(Type::Never))
+        Type::list(Type::Never)
     } else if n <= LIST_TUPLE_CAP {
         // Precise tuple: preserves arity and per-position types.
         Type::Tuple(elem_types)
     } else {
         // Beyond the cap: lose positional information but keep non-emptiness.
-        Type::NonEmpty(Box::new(Type::union(elem_types)))
+        Type::non_empty(Type::union(elem_types))
     }
 }
 
@@ -2223,10 +2228,10 @@ fn normalise_tuple_to_list(ty: Type) -> Type {
         Type::Tuple(elems) if !elems.is_empty() => {
             let first = &elems[0];
             if elems.iter().all(|e| e == first) {
-                Type::List(Box::new(first.clone()))
+                Type::list(first.clone())
             } else {
                 let elem_type = Type::union(elems.iter().cloned());
-                Type::List(Box::new(elem_type))
+                Type::list(elem_type)
             }
         }
         _ => ty,
@@ -2443,10 +2448,7 @@ mod tests {
         // This ensures `head([])` triggers a type warning rather than
         // silently returning `Any`.
         let mut c = Checker::new();
-        assert_eq!(
-            c.synthesise(&list(vec![])),
-            Type::List(Box::new(Type::Never))
-        );
+        assert_eq!(c.synthesise(&list(vec![])), Type::list(Type::Never));
     }
 
     #[test]
@@ -2481,10 +2483,7 @@ mod tests {
 
         // >16-element list: beyond cap → NonEmpty(element union).
         let l17: Vec<_> = (0..17).map(|_| num_lit(1)).collect();
-        assert_eq!(
-            c.synthesise(&list(l17)),
-            Type::NonEmpty(Box::new(Type::Number))
-        );
+        assert_eq!(c.synthesise(&list(l17)), Type::non_empty(Type::Number));
     }
 
     // ── Unknown variable is any ──────────────────────────────────────────────
@@ -2551,7 +2550,7 @@ mod tests {
         // Wrap in __type_hint to trigger the is_hint code path.
         let expr = meta_with_hint(lst, "[string]");
         // Must be List(String), not List(LiteralString("a") | String).
-        assert_eq!(c.synthesise(&expr), Type::List(Box::new(Type::String)));
+        assert_eq!(c.synthesise(&expr), Type::list(Type::String));
     }
 
     #[test]
@@ -2662,8 +2661,8 @@ mod tests {
         let scheme = TypeScheme::poly(
             vec![TypeVarId("a".to_string())],
             Type::Function(
-                Box::new(Type::Var(TypeVarId("a".to_string()))),
-                Box::new(Type::Var(TypeVarId("a".to_string()))),
+                Box::new(Type::var(TypeVarId("a".to_string()))),
+                Box::new(Type::var(TypeVarId("a".to_string()))),
             ),
         );
         let mut frame = HashMap::new();
@@ -2691,12 +2690,12 @@ mod tests {
             vec![a.clone(), b.clone()],
             Type::Function(
                 Box::new(Type::Function(
-                    Box::new(Type::Var(a.clone())),
-                    Box::new(Type::Var(b.clone())),
+                    Box::new(Type::var(a.clone())),
+                    Box::new(Type::var(b.clone())),
                 )),
                 Box::new(Type::Function(
-                    Box::new(Type::List(Box::new(Type::Var(a.clone())))),
-                    Box::new(Type::List(Box::new(Type::Var(b.clone())))),
+                    Box::new(Type::list(Type::var(a.clone()))),
+                    Box::new(Type::list(Type::var(b.clone()))),
                 )),
             ),
         );
@@ -2719,7 +2718,7 @@ mod tests {
         let app = RcExpr::from(Expr::App(Smid::default(), map_var, vec![double_var, nums]));
 
         let result = c.synthesise(&app);
-        assert_eq!(result, Type::List(Box::new(Type::Number)));
+        assert_eq!(result, Type::list(Type::Number));
         assert!(c.into_warnings().is_empty());
     }
 
@@ -2733,12 +2732,12 @@ mod tests {
             vec![a.clone(), b.clone()],
             Type::Function(
                 Box::new(Type::Function(
-                    Box::new(Type::Var(a.clone())),
-                    Box::new(Type::Var(b.clone())),
+                    Box::new(Type::var(a.clone())),
+                    Box::new(Type::var(b.clone())),
                 )),
                 Box::new(Type::Function(
-                    Box::new(Type::List(Box::new(Type::Var(a.clone())))),
-                    Box::new(Type::List(Box::new(Type::Var(b.clone())))),
+                    Box::new(Type::list(Type::var(a.clone()))),
+                    Box::new(Type::list(Type::var(b.clone()))),
                 )),
             ),
         );
@@ -3237,12 +3236,12 @@ mod tests {
         // Outer scope: list map
         let list_map_type = Type::Function(
             Box::new(Type::Function(
-                Box::new(Type::Var(TypeVarId("a".into()))),
-                Box::new(Type::Var(TypeVarId("b".into()))),
+                Box::new(Type::var(TypeVarId("a".into()))),
+                Box::new(Type::var(TypeVarId("b".into()))),
             )),
             Box::new(Type::Function(
-                Box::new(Type::List(Box::new(Type::Var(TypeVarId("a".into()))))),
-                Box::new(Type::List(Box::new(Type::Var(TypeVarId("b".into()))))),
+                Box::new(Type::list(Type::var(TypeVarId("a".into())))),
+                Box::new(Type::list(Type::var(TypeVarId("b".into())))),
             )),
         );
         let mut outer = HashMap::new();
@@ -3340,7 +3339,7 @@ mod tests {
     fn a10_infer_elem_type_from_list_hint() {
         // `infer_elem_type_from_hint_str("[a]", List(number))` → `Some(number)`.
         let mut c = Checker::new();
-        let val_type = Type::List(Box::new(Type::Number));
+        let val_type = Type::list(Type::Number);
         let result = c.infer_elem_type_from_hint_str("[a]", &val_type);
         assert_eq!(result, Some(Type::Number));
     }
@@ -3349,7 +3348,7 @@ mod tests {
     fn a10_infer_elem_type_from_io_hint() {
         // `infer_elem_type_from_hint_str("IO(a)", IO(string))` → `Some(string)`.
         let mut c = Checker::new();
-        let val_type = Type::IO(Box::new(Type::String));
+        let val_type = Type::io(Type::String);
         let result = c.infer_elem_type_from_hint_str("IO(a)", &val_type);
         assert_eq!(result, Some(Type::String));
     }
@@ -3368,18 +3367,15 @@ mod tests {
         // `[1, 2, 3]` synthesises as `Tuple([number, number, number])`.
         // `normalise_tuple_to_list` should give `List(number)`.
         let tuple = Type::Tuple(vec![Type::Number, Type::Number, Type::Number]);
-        assert_eq!(
-            normalise_tuple_to_list(tuple),
-            Type::List(Box::new(Type::Number))
-        );
+        assert_eq!(normalise_tuple_to_list(tuple), Type::list(Type::Number));
     }
 
     #[test]
     fn a10_normalise_non_tuple_unchanged() {
         // Non-tuple types pass through unchanged.
         assert_eq!(
-            normalise_tuple_to_list(Type::List(Box::new(Type::Number))),
-            Type::List(Box::new(Type::Number))
+            normalise_tuple_to_list(Type::list(Type::Number)),
+            Type::list(Type::Number)
         );
         assert_eq!(normalise_tuple_to_list(Type::Number), Type::Number);
     }
@@ -3410,7 +3406,7 @@ mod tests {
     #[test]
     fn contains_var_named_in_nonempty() {
         // NonEmpty(X) should detect X as a free variable.
-        let ty = Type::NonEmpty(Box::new(Type::Var(TypeVarId("X".to_string()))));
+        let ty = Type::non_empty(Type::var(TypeVarId("X".to_string())));
         assert!(contains_var_named(&ty, "X"));
         assert!(!contains_var_named(&ty, "Y"));
     }

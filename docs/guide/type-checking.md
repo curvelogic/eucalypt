@@ -334,6 +334,39 @@ At call sites, type variables are instantiated from the argument types.
 `map(str.of, [1, 2])` instantiates `a = number, b = string`, giving
 result type `[string]`.
 
+### Higher-kinded type variables
+
+Type variables can range over *type constructors* (types that take
+arguments), not just ordinary types.  A **kind** describes the arity
+of a type constructor:
+
+- `*` — an ordinary type (e.g. `number`, `[string]`)
+- `* -> *` — a unary type constructor (e.g. `List`, `IO`)
+- `* -> * -> *` — a binary type constructor (e.g. `Lens`, `Dict`)
+
+Declare a constructor variable with a kind annotation using `::`:
+
+```eu,notest
+` { type: "forall (m :: * -> *) a. m a -> m a" }
+hk-id: ...
+```
+
+Without a kind annotation, type variables default to kind `*` (ordinary
+types).  The `forall` keyword makes quantification explicit and allows
+kind annotations.  Implicit quantification (writing `a` directly in
+the type string) still works for kind-`*` variables.
+
+**Constructor application** uses juxtaposition:
+
+| Annotation          | Meaning                                   |
+|---------------------|-------------------------------------------|
+| `m a`               | Apply constructor variable `m` to type `a` |
+| `forall (m :: * -> *) a. m a -> m a` | Identity for any unary functor |
+| `forall a. a -> a`  | Polymorphic identity                       |
+
+The built-in constructors `List`, `IO`, `Dict`, `NonEmpty` all have
+kind `* -> *`.  `Lens` and `Traversal` have kind `* -> * -> *`.
+
 ### Special types
 
 | Type    | Meaning                                               |
@@ -686,6 +719,9 @@ checker for flow-sensitive narrowing through each clause.
 | Literal string type      | `"value"` (`\"value\"` in annotation string)     |
 | Literal symbol type      | `:name`                                           |
 | Type variable            | lowercase identifier: `a`, `b`, `s`              |
+| Explicit quantification  | `forall a. T` or `forall (m :: * -> *) a. T`    |
+| Constructor variable     | `m :: * -> *` in a `forall` binder               |
+| Constructor application  | `m a` (juxtaposition in type expressions)        |
 | Union type               | `A \| B`                              |
 | NonEmpty list            | `NonEmpty([a])`                       |
 | Empty list literal       | `[]` synthesises as `List(Never)`     |
