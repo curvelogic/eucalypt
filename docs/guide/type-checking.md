@@ -760,6 +760,32 @@ checker for flow-sensitive narrowing through each clause.
 
 ---
 
+## Prelude type cache
+
+The checker builds the prelude's type information once per process and
+caches it.  Every subsequent file is checked in **standalone mode** —
+only the user file is loaded, and the cached prelude summary (binding
+types, type aliases, branch-shape classification) is seeded into the
+checker before it begins.
+
+This means:
+
+- The prelude is **fully checked** on the first call — every prelude
+  binding is a root in standalone mode, unlike the merged-then-pruned
+  path which only ever checks the subset reachable from the user file.
+- Each subsequent LSP re-check or `eu check` invocation **skips the
+  ~2 200-line prelude entirely**, giving a measurably faster response.
+- Results are identical to the merged check: prelude references resolve
+  to the same types, predicate narrowing fires on `number?`/`string?`/
+  etc., and user-defined brancher wrappers around prelude combinators
+  are recognised.
+
+The cache is keyed on the embedded prelude source and lives in process
+memory — it persists for the lifetime of the `eu` or LSP server process
+but is not written to disk.
+
+---
+
 ## Summary
 
 | What                     | How                                              |

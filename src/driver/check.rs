@@ -6,27 +6,86 @@
 //!    find all `type:` metadata annotations, and validate them against the
 //!    type grammar.  This is fast and requires no pipeline processing.
 //!
-//! 2. **Bidirectional type check** — load source files through the full
-//!    eucalypt pipeline (parse → desugar → cook → eliminate), then run
-//!    `Checker` over the resulting core expression and report any
-//!    `TypeWarning`s.
+//! 2. **Bidirectional type check** — load files through the pipeline, then
+//!    run the type checker.  The prelude is checked once per process and the
+//!    result cached; user files are checked in standalone mode, seeded with
+//!    the cached prelude summary (§B7).
 //!
 //! Type issues are always warnings unless `--strict` is passed.
 
 use std::fs;
 use std::path::Path;
+use std::sync::OnceLock;
 use std::time::Instant;
 
 use crate::core::typecheck::{
-    check::{type_check, type_check_full},
+    check::{
+        type_check, type_check_for_prelude, type_check_full, type_check_with_seed, PreludeSummary,
+    },
     parse,
 };
 use crate::driver::error::EucalyptError;
 use crate::driver::options::EucalyptOptions;
 use crate::driver::source::SourceLoader;
+use crate::syntax::input::{Input, Locator};
 use crate::syntax::rowan::ast::{self, Block, Declaration, Element, HasSoup};
 use crate::syntax::rowan::parse_unit;
 use rowan::ast::AstNode;
+
+// ── Prelude type-summary cache (§B7) ────────────────────────────────────────
+
+/// In-memory cache for the prelude type summary.
+///
+/// The prelude is embedded in the binary and fixed for a given build, so
+/// the cache is effectively constant per process.  It is populated on the
+/// first check call and reused for every subsequent file.
+static PRELUDE_CACHE: OnceLock<PreludeSummary> = OnceLock::new();
+
+/// Return a reference to the cached prelude summary, building it on first call.
+///
+/// Runs the prelude through load → translate → cook (no eliminate) once,
+/// then calls `type_check_for_prelude` to capture the root scope.
+/// All subsequent calls return the cached value immediately.
+fn get_or_build_prelude_summary() -> Option<&'static PreludeSummary> {
+    if let Some(cached) = PRELUDE_CACHE.get() {
+        return Some(cached);
+    }
+
+    let summary = build_prelude_summary().ok()?;
+    // OnceLock::get_or_init would race; use set to avoid re-computing when
+    // two threads initialise simultaneously.  If set fails the other thread
+    // already won — just return what was stored.
+    let _ = PRELUDE_CACHE.set(summary);
+    PRELUDE_CACHE.get()
+}
+
+/// Build the prelude summary by running the standalone pipeline.
+///
+/// Loads the prelude resource, translates, merges, and cooks it (no
+/// eliminate step — every prelude binding is a root in standalone mode),
+/// then runs `type_check_for_prelude` to capture binding type schemes,
+/// aliases, and branch shapes.
+fn build_prelude_summary() -> Result<PreludeSummary, EucalyptError> {
+    let prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
+    let inputs = vec![prelude];
+
+    let mut loader = SourceLoader::new(vec![]);
+
+    for input in &inputs {
+        loader.load(input)?;
+    }
+    for input in &inputs {
+        loader.translate(input)?;
+    }
+    loader.merge_units(&inputs)?;
+    loader.cook()?;
+    // Deliberately NO eliminate — every prelude binding is a root when
+    // checking standalone, so eliminating would lose type information.
+
+    let core_expr = loader.core().expr.clone();
+    let (_, summary) = type_check_for_prelude(&core_expr);
+    Ok(summary)
+}
 
 // ── Phase 1: Annotation syntax check ────────────────────────────────────────
 
@@ -167,12 +226,16 @@ pub struct PathCheckResult {
 /// Run the type checker on a single eucalypt source file, returning both
 /// warnings and the inferred type environment.
 ///
+/// Uses the standalone seeded pipeline (§B7): the prelude is checked once
+/// per process and cached; the user file is checked in isolation, seeded
+/// with the cached prelude summary.  Falls back to the merged pipeline if
+/// the prelude cache cannot be built.
+///
 /// If the pipeline fails at any stage, returns a single warning
 /// explaining which stage failed rather than silently producing no
 /// results.
 pub fn type_check_path_full(path: &Path) -> PathCheckResult {
     use crate::core::typecheck::error::TypeWarning;
-    use crate::syntax::input::{Input, Locator};
 
     let pipeline_error = |stage: &str, err: &dyn std::fmt::Display| PathCheckResult {
         warnings: vec![TypeWarning::new(format!(
@@ -182,6 +245,59 @@ pub fn type_check_path_full(path: &Path) -> PathCheckResult {
         source_map: crate::common::sourcemap::SourceMap::new(),
     };
 
+    // ── Attempt standalone seeded check (§B7 fast path) ───────────────────
+    if let Some(summary) = get_or_build_prelude_summary() {
+        return type_check_path_with_seed(path, summary, pipeline_error);
+    }
+
+    // ── Fallback: merged pipeline (prelude cache could not be built) ───────
+    type_check_path_merged(path, pipeline_error)
+}
+
+/// Check a single user file in standalone mode, seeded with a prelude
+/// summary (§B7 fast path).
+fn type_check_path_with_seed(
+    path: &Path,
+    summary: &PreludeSummary,
+    pipeline_error: impl Fn(&str, &dyn std::fmt::Display) -> PathCheckResult,
+) -> PathCheckResult {
+    let file = Input::new(Locator::Fs(path.to_path_buf()), None, "eu");
+    let inputs = vec![file];
+
+    let mut loader = SourceLoader::new(vec![]);
+
+    if let Err(e) = loader.load(&inputs[0]) {
+        return pipeline_error("load", &e);
+    }
+    if let Err(e) = loader.translate(&inputs[0]) {
+        return pipeline_error("desugar", &e);
+    }
+    if let Err(e) = loader.merge_units(&inputs) {
+        return pipeline_error("merge", &e);
+    }
+    if let Err(e) = loader.cook() {
+        return pipeline_error("cook", &e);
+    }
+    if let Err(e) = loader.eliminate() {
+        return pipeline_error("eliminate", &e);
+    }
+
+    let core_expr = loader.core().expr.clone();
+    let warnings = type_check_with_seed(&core_expr, summary);
+    let (_, source_map, _) = loader.complete();
+    PathCheckResult {
+        warnings,
+        types: std::collections::HashMap::new(),
+        source_map,
+    }
+}
+
+/// Check a file using the original merged pipeline (fallback when the
+/// prelude cache is unavailable).
+fn type_check_path_merged(
+    path: &Path,
+    pipeline_error: impl Fn(&str, &dyn std::fmt::Display) -> PathCheckResult,
+) -> PathCheckResult {
     let prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
     let file = Input::new(Locator::Fs(path.to_path_buf()), None, "eu");
     let inputs = vec![prelude, file];

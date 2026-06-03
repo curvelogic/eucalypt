@@ -2127,3 +2127,25 @@ pub fn test_typecheck_068_projection_second_correct() {
 pub fn test_typecheck_069_projection_value_type_mismatch() {
     run_typecheck_test("069_projection_value_type_mismatch.eu");
 }
+
+// ── B7: Prelude type-summary cache — behaviour preservation ──────────────────
+
+#[test]
+pub fn test_typecheck_070_b7_predicate_narrowing() {
+    run_typecheck_test("070_b7_predicate_narrowing.eu");
+}
+
+#[test]
+pub fn test_typecheck_071_b7_then_brancher() {
+    run_typecheck_test("071_b7_then_brancher.eu");
+}
+
+#[test]
+pub fn test_typecheck_072_b7_user_brancher_wrapping_free() {
+    run_typecheck_test("072_b7_user_brancher_wrapping_free.eu");
+}
+
+#[test]
+pub fn test_typecheck_073_b7_head_tail_free() {
+    run_typecheck_test("073_b7_head_tail_free.eu");
+}
