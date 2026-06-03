@@ -2095,3 +2095,35 @@ pub fn test_typecheck_062_for_correct_binding() {
 pub fn test_typecheck_063_for_wrong_binding() {
     run_typecheck_test("063_for_wrong_binding.eu");
 }
+
+// ── B6: Dependent record indexed access ────────────────────────────────────
+
+#[test]
+pub fn test_typecheck_064_lookup_literal_key_correct() {
+    run_typecheck_test("064_lookup_literal_key_correct.eu");
+}
+
+#[test]
+pub fn test_typecheck_065_lookup_key_typo_warns() {
+    run_typecheck_test("065_lookup_key_typo_warns.eu");
+}
+
+#[test]
+pub fn test_typecheck_066_lookup_open_record_no_warning() {
+    run_typecheck_test("066_lookup_open_record_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_067_lookup_dict_value_type() {
+    run_typecheck_test("067_lookup_dict_value_type.eu");
+}
+
+#[test]
+pub fn test_typecheck_068_projection_second_correct() {
+    run_typecheck_test("068_projection_second_correct.eu");
+}
+
+#[test]
+pub fn test_typecheck_069_projection_value_type_mismatch() {
+    run_typecheck_test("069_projection_value_type_mismatch.eu");
+}

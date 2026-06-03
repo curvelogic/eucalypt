@@ -199,6 +199,20 @@ discriminate: ...
 [42, "hello"] tail head  # type: string
 ```
 
+The named pair accessors `first`/`key` (index 0) and `second`/`value` (index 1)
+are also precise on `Tuple` — the checker recognises their `head ∘ tail^n`
+composition as a **projection** and returns the exact element type:
+
+```eu,notest
+pair: ["alice", 42]
+pair key    # type: string  (index 0)
+pair value  # type: number  (index 1)
+second(pair) # type: number  (index 1)
+```
+
+Any user-defined function whose body is `xs tail head` (or `xs tail tail head`,
+etc.) acquires the same precise projection typing automatically.
+
 ### Records
 
 Records describe the shape of blocks:
@@ -218,6 +232,26 @@ greet-person(p): "Hello, {p.name}!"
 
 Open records are more commonly useful — most block-processing functions
 don't require a specific shape.
+
+#### `lookup` with a literal key
+
+When `lookup(:key, block)` is called with a **literal symbol** key, the checker
+resolves the field type precisely:
+
+```eu,notest
+` { type: "!{{name: string, age: number}}" }
+person: { name: "Alice", age: 30 }
+
+lookup(:name, person)   # type: string  (precise)
+lookup(:age, person)    # type: number  (precise)
+lookup(:naem, person)   # warning: unknown record key :naem (key typo in closed record)
+```
+
+- **Closed record + known key** → exact field type.
+- **Closed record + absent key** → `any` + a static warning (key typo caught before runtime).
+- **Open record + absent key** → `any`, no warning (the key may be present at runtime).
+- **`Dict(V)` + any literal key** → `V`.
+- **Non-literal key** → `any` (key value unknown at check time; may fail at runtime).
 
 ### Dict
 
