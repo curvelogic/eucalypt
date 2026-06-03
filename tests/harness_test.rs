@@ -1573,6 +1573,16 @@ pub fn test_error_147() {
 }
 
 #[test]
+pub fn test_error_148() {
+    run_error_test(&error_opts("148_not_callable_source_loc.eu"));
+}
+
+#[test]
+pub fn test_error_149() {
+    run_error_test(&error_opts("149_not_value_source_loc.eu"));
+}
+
+#[test]
 pub fn test_error_135() {
     run_error_test(&error_opts("135_head_empty_list.eu"));
 }
