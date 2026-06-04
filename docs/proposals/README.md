@@ -61,7 +61,7 @@ single-threaded lazy-pure runtime, the tool-first framing, and UK English.
 
 | # | Proposal | Class | Horizon |
 |---|----------|:-----:|:-------:|
-| [0001](0001-v1-charter.md) | The eucalypt 1.0 charter: stability, semver, **editions**, deprecation | W★ | 0.8 |
+| [0001](0001-v1-charter.md) | Versioning & stability discipline: semver, `requires` guard, opt-in prelude v2 | W★ | 0.8 |
 | [0002](0002-gradual-typing-boundary-policy.md) | Gradual-typing soundness & boundary policy for 1.0 | P | 0.9 |
 | [0003](0003-conformance-testing-fuzzing.md) | Conformance suite, property testing & fuzzing; VM correctness-in-CI | W | 0.8–1.0 |
 

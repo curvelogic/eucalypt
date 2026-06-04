@@ -1,441 +1,348 @@
-# 0001 — The eucalypt 1.0 charter: stability, semver, editions, deprecation
+# 0001 — Versioning & stability discipline
 
 - **Status:** Draft proposal for review
 - **Track:** A — v1.0 readiness & process
 - **Classification:** Whitespace
 - **Suggested horizon:** 0.8
-- **Related:** ADR-001 (`docs/development/architectural-decisions.md`), open-question 1 (`docs/development/type-system-evolution.md` §5); H18 per-file profiles (ibid. §H18); sibling proposals [0002](0002-gradual-typing-boundary-policy.md), [0003](0003-conformance-testing-fuzzing.md), [0004](0004-compiled-unit-caching.md), [0005](0005-generational-gc.md), [0011](0011-typeclasses-without-classes.md)
+- **Related:** siblings [0002](0002-gradual-typing-boundary-policy.md) (type-system soundness tier), [0003](0003-conformance-testing-fuzzing.md) (the corpus that pins stable surfaces), [0004](0004-compiled-unit-caching.md) (prelude cache keying), [0011](0011-typeclasses-without-classes.md)/[0012](0012-algebraic-subtyping-fork.md)/[0013](0013-type-dsl-embedding.md) (how experimental the type DSL stays); open-question 1 (`docs/development/type-system-evolution.md` §5)
 
 ## Summary
 
-1.0 is not a feature set; it is a **commitment**. This document proposes what
-eucalypt 1.0 would guarantee, and — more importantly — the machinery that keeps
-those guarantees *keepable* as the language keeps moving. The central proposal
-is a Rust-style **editions** mechanism that lives in **unit metadata**
-(`{ edition: "2026" }`), so that necessary breaking changes — one is pending and
-another just shipped, in 0.6.2, with no migration path at all — can land as new
-defaults without invalidating files written against an older edition. Around it sit three supporting pieces: an enumeration
-of **stable surfaces** and their tiers; a **semver interpretation** suited to a
-language-plus-tool whose "API" is its syntax, prelude and output rather than a
-set of function signatures; and a **deprecation lifecycle** built on the
-warning/diagnostic and LSP code-action infrastructure that already exists. The
-thesis throughout: config and `.eu` files are durable infrastructure artefacts,
-checked into other people's repositories and CI; backward compatibility matters
-*more* here than for a typical library, and the cost of getting it wrong is paid
-by users who did not change anything.
+This proposal asks for *proportionate* versioning discipline, not a heavyweight
+stability charter. Three pieces, sized for a project with one serious maintainer
+and a small user base:
+
+1. **Real semver from 1.0** — replace the current continuous-delivery,
+   four-part build number with meaningful `major.minor.patch`, and say what each
+   field means for a language-plus-tool.
+2. **`requires` as a version guard** — `__REQUIRES` already parses full semver
+   ranges; once versions *mean* something, a unit can pin the range it tolerates
+   and **fail loud** on a binary that has moved past it, rather than silently
+   re-rendering wrong. This is the cheap substitute for the one genuinely useful
+   property an editions system would have given us.
+3. **Opt-in prelude versioning** — let a frozen prelude v1 coexist with an
+   in-development v2, selected per-unit, so the heaviest stable surface can
+   *evolve* without a flag-day break.
+
+Plus a lightweight **deprecation lifecycle** for retiring prelude functions in
+good order. The explicit non-goal is a Rust-style **editions** mechanism: at
+current scale it is over-commitment for a recurring cost (every old semantic
+path carried in the front-end forever), and the cheaper pieces above cover the
+real need.
 
 ## Motivation
 
-Eucalypt is in "early phase of development and subject to change"
-(`docs/welcome/index.md:33`), yet it is already used the way config languages
-are used: a `.eu` or annotated `.yaml` file is committed, rendered in CI, and
-left alone for months. The people who feel a breaking change are not following
-the changelog. They are the ones for whom *nothing changed* except the version
-of `eu` their pipeline picked up.
+The honest framing first. Eucalypt is not yet a language with a large body of
+deployed `.eu` files in other people's repositories. It has one serious user.
+That changes the calculus from the usual "libraries must not break downstream":
+because the maintainer controls essentially every call site, eucalypt currently
+has *more* freedom to break things than a typical library — the `cond` rewrite
+below is the proof. The risk worth managing is therefore **not** "an
+unmodified third-party file breaks" but the narrower, real one: **a file
+silently changes behaviour on a binary upgrade and nobody notices**. The
+machinery here targets exactly that, and nothing heavier.
 
-There is no document today that says what 1.0 will *not* break. Worse, the
-present versioning is not what it appears. `build.eu` derives the version from
-`Cargo.toml` as `major.minor.patch`, defaulting `patch` to the symbol `:dev`
-locally (`build.eu:7-13`), then appends the CI run number as a fourth component
-to produce the released tag `major.minor.patch.build` (`build.eu:59-62`,
-`build-meta.yaml`). Releases are cut continuously from `master` as **draft**
-GitHub releases (`.github/workflows/build-rust.yaml:391-402`); the tag is
-whatever `eu -e eu.build.version` reports at build time. So eucalypt practises
-*continuous delivery with a four-part build number*, not semantic versioning —
-the `0.7.0` in `Cargo.toml:3` is a human-set prefix, and the fourth field
-carries no compatibility meaning at all. That is fine for a 0.x tool. It is not
-a 1.0 promise.
+There is, today, no statement of what 1.0 means, and the versioning is not what
+it appears. `build.eu` derives the version from `Cargo.toml` as
+`major.minor.patch`, defaulting `patch` to `:dev` locally (`build.eu:7-13`),
+then appends the CI run number as a fourth component to produce the released tag
+`major.minor.patch.build` (`build.eu:59-62`). Releases are cut continuously from
+`master` as **draft** GitHub releases (`.github/workflows/build-rust.yaml:391-402`).
+So eucalypt practises *continuous delivery with a four-part build number*, not
+semantic versioning — the `0.7.0` in `Cargo.toml:3` is a human-set prefix and
+the fourth field carries no compatibility meaning at all. Fine for a 0.x tool;
+not a basis for any 1.0 promise, however modest.
 
-Meanwhile breaking changes are demonstrably real and *already happening* — one
-shipped a few days ago:
+That the version conveys nothing is not academic. **A genuine breaking change
+shipped in 0.6.2**: the `cond` multi-way conditional went from
+`cond(list_of_pairs, default)` to a clause form — `cond([[c1,v1],[c2,v2]], default)`
+"must be rewritten as `cond[c1 => v1, c2 => v2, default]`" — introducing a new
+`=>` clause operator and `__COND`/`__CLAUSE` intrinsics (`CHANGELOG.md:57`;
+`lib/prelude.eu:1168,1172`). Eucalypt's own callers (`max-of`, `min-of`,
+`parse-args`) were fixed by hand (`lib/prelude.eu:895-897,920-922,2226-2227`);
+any user file calling the old `cond` simply breaks on upgrade, in a
+patch-looking release, with no signal in the version number. (Two more such
+changes are on the books: the pending deep-merge-as-default for block catenation
+— `docs/welcome/index.md:320` — and the already-shipped 0.5.3 lookup/scoping
+change — `CHANGELOG.md:190-192`.)
 
-- **A breaking API change that just shipped (0.6.2).** The `cond` multi-way
-  conditional was rewritten from `cond(list_of_pairs, default)` to a clause form:
-  the old `cond([[c1, v1], [c2, v2]], default)` "must be rewritten as
-  `cond[c1 => v1, c2 => v2, default]`", introducing a new `=>` clause operator
-  (precedence 15) and `__COND`/`__CLAUSE` intrinsics (`CHANGELOG.md:57`;
-  `lib/prelude.eu:1168,1172`). This is the clearest possible illustration of the
-  problem. It is a genuine source-incompatible change to a Stable-tier surface (a
-  prelude function's calling convention), and it shipped with **no edition
-  mechanism and no migration note for users** — eucalypt's own internal callers
-  (`max-of`, `min-of`, `parse-args`) were rewritten by hand
-  (`lib/prelude.eu:895-897,920-922,2226-2227`), but any user file that called the
-  old `cond` simply breaks on upgrade. This is exactly the kind of semantic break
-  an edition is meant to gate, and exactly the failure mode — silent breakage of
-  an unedited file — this charter exists to prevent.
-- **A pending default change.** "It is possible that a deep merge will become
-  the default for block catenation in future" (`docs/welcome/index.md:320`).
-  Block catenation `{a:1} {b:2}` is one of the first things every user learns
-  (ibid. §Example 2). Flipping shallow→deep silently would change the output of
-  files that nobody edited — the canonical infrastructure-artefact failure.
-- **A semantic precedent already shipped (0.5.3).** 0.5.3 changed simple-lookup
-  semantics so that `.name` is "consistently key lookup restricted to block
-  bindings, never extending to outer scope. Previously, `.name` on a static block
-  literal resolved through the block scope and fell through to outer scope"
-  (`CHANGELOG.md:190`), and changed monadic-block scoping and associativity in
-  generalised lookup (`CHANGELOG.md:191-192`). Like the `cond` break, these are
-  exactly the kind of *semantic* change an edition is meant to gate.
-
-The language even ships a primitive that anticipates this need: `requires`
-(`lib/prelude.eu:15-17`) calls the `__REQUIRES` intrinsic
-(`src/eval/stg/version.rs`), which parses a semver constraint and asserts the
-running `eu` satisfies it, raising `VersionRequirementFailed`
-(`src/eval/error.rs:679`) otherwise. A file can already say "I need `eu >=
-0.6.0`". What it cannot say is "interpret me under the *2026* semantics" — which
-is the strictly more useful guarantee.
+The language already ships the primitive that makes the proportionate fix
+possible: `requires` (`lib/prelude.eu:15-17`) calls `__REQUIRES`
+(`src/eval/stg/version.rs`), which parses a semver constraint and raises
+`VersionRequirementFailed` (`src/eval/error.rs:679`) if the running `eu` does
+not satisfy it. Crucially it parses with **`semver::VersionReq`**
+(`version.rs:31`) — the full constraint grammar, so `requires("^0.7")` or
+`requires(">=0.7, <0.8")` already work today. What is missing is not the
+mechanism but the *meaning*: with no real semver, a `requires` upper bound
+guards nothing.
 
 ## Prior art & landscape
 
-Three reference points, each chosen because eucalypt's peers are
-configuration/data languages, not general-purpose ones.
+Eucalypt's peers are configuration/data languages, so the references are theirs.
 
-**Rust editions (RFC 2052).** The load-bearing precedent. A crate opts into an
-edition in its manifest (`edition = "2021"`); the *same compiler* supports all
-editions and a dependency graph "may involve several different editions
-simultaneously. Thus, editions do not split the ecosystem nor do they break
-existing code." The hard invariant — "Warning-free code on edition N must
-compile on edition N+1 and have the same behavior" — is precisely the property
-config files need. Crucially, an edition is *crate-local*: it "cannot impose new
-requirements or semantics on external crates", which maps cleanly onto
-eucalypt's per-unit model. Migration is mechanical: `rustfix` applies edition
-lints' suggestions, while the RFC is honest that it "will never be perfect".
+**Semantic Versioning 2.0.0** and **Rust RFC 1105 (API evolution).** The
+baseline: a version that actually predicts breakage, and the useful nuance that
+"all major changes are breaking, but not all breaking changes are major" — a
+change that only affects an explicitly-not-covered surface is not MAJOR.
 
-**Dhall's standard versioning.** Dhall versions the *language standard*
-separately from any implementation, with a sharp rule: a MAJOR bump is
-backwards-incompatible, a MINOR adds a backwards-compatible feature, and a PATCH
-is "no semantic change" (documentation, grammar-terminal renames). An
-implementation "MUST support the latest version" and, if it supports an older
-one, "MUST do so 'as a whole' … MUST NOT mix and match functionality from
-different releases." That whole-or-nothing rule is the right discipline for an
-edition: a unit is interpreted entirely under one edition's semantics, never a
-pick-and-mix.
+**Dhall's standard versioning.** A sharp three-field rule — MAJOR
+backwards-incompatible, MINOR backwards-compatible feature, PATCH "no semantic
+change" — and the discipline that an implementation interprets a unit "as a
+whole" under one version, never mixing. The right mental model for what a
+eucalypt version number should promise.
 
-**CUE's `language.version`.** The closest structural analogue to this proposal.
-CUE records a mandatory `language.version` *inside the module file*, which lets
-language designers "support old syntax and repurpose it" and makes the evaluator
-*error* when a module declares a version newer than the evaluator understands —
-because it "cannot know what semantics apply to the newer version." This is the
-read-side of what eucalypt's `requires` already does on the write-side, and it
-validates putting the version declaration in the artefact itself rather than in
-a flag.
+**CUE's `language.version`.** CUE records a version *inside the module file* and
+**errors** when a module declares a version the evaluator does not understand.
+That is exactly the read-side of `requires`, and it validates putting the
+version contract in the artefact rather than in a flag.
 
-What eucalypt should borrow: per-unit opt-in (Rust/CUE), one binary supporting
-all editions (Rust), whole-edition interpretation (Dhall), and the
-artefact-embedded version (CUE). What it should *not* borrow: Rust's full
-multi-edition trait/coherence machinery (eucalypt has no traits), and Dhall's
-separate-standard-document overhead (premature for one implementation).
+**Rust editions** are the obvious thing to reach for and the one to **not**
+adopt — see Alternatives. They earn their keep when a single compiler must keep
+*many third-party crates* working across breaking changes. Eucalypt has neither
+the third-party crates nor the appetite to carry every old semantic lowering in
+the desugarer indefinitely.
 
 ## Proposed design
 
 ### 1. Stable surfaces and their tiers
 
-1.0 commits, per surface, to one of three tiers: **Stable** (breaking changes
-only across an edition boundary, with migration support), **Unstable**
-(explicitly experimental; may change in a MINOR), and **Not covered** (no
-compatibility promise at all).
+State, per surface, how much 1.0 promises. Three tiers: **Stable** (won't break
+except in a MAJOR, with a changelog entry and — for the prelude — a deprecation
+path), **Experimental** (may change in a MINOR; opt-in or advisory), **Not
+covered** (no promise). This is documented *intent*, not a frozen legal
+contract — appropriate to the scale.
 
 | Surface | Tier at 1.0 | Notes |
 |---|---|---|
-| Core syntax (catenation, blocks, lists, operators, anaphora, metadata) | **Stable** | The non-negotiable conservatism guarantee. New syntax is itself an edition-gated event. |
-| Prelude API (~200 functions, `lib/prelude.eu`) | **Stable** | The largest and heaviest commitment — see below. |
-| Block-merge / lookup *semantics* | **Stable, edition-gated** | The deep-merge flip and the 0.5.3 lookup change are the motivating cases. |
-| Type-annotation DSL (`type:` strings, `src/core/typecheck/parse.rs`) | **Stable (advisory)** | The grammar has grown through 0.6.2/0.7.0 — `forall` quantification, an explicit `Kind` system (`*`, `* -> *`), `Con`/`App` constructor application, and structural operator constraints (`parse.rs:9-10,471-486,533-546,1016-1061`). Annotations are documentation; their *grammar* is stable to write against, but a type warning appearing/disappearing is **not** a breaking change (it has no runtime effect). |
-| CLI surface (`eu` subcommands + flags) | **Stable** | `run`, `test`, `dump`, `version`, `explain`, `list-targets`, `fmt`, `lsp`, `check` (`src/driver/options.rs:85-105`); flags such as `-x/-j/-o/-t/-e/-Q` (ibid. `RunArgs`). |
-| Import/export formats (YAML, JSON, TOML, EDN, XML, CSV, text in; YAML/JSON/TOML/EDN/text/eu out) | **Stable** | The *contract* of these formats; see open-question 1 below for the export-shape nuance. |
-| WASM / embedding API (`src/wasm.rs`) | **Stable** | `evaluate`, `evaluate_expr`, `formats` and the `EvalResult` JSON envelope. |
-| LSP behaviours | **Unstable** | Protocol conformance is stable; *which* hovers/actions/hints appear is best-effort and will keep improving. |
-| Per-file `type-extensions` / `type-profile` (H18) | **Unstable** | Explicitly the opt-in experimental channel (`type-system-evolution.md:1159-1163`). |
-| Internal representations: core IR, STG, GC behaviour, heap layout, `dump` output | **Not covered** | These are debugging aids; `eu dump` is for us, not a contract. |
-| Performance, exact error *text*, exact warning *wording* | **Not covered** | Error *codes/locations* and exit codes are stable; prose is not. |
+| Core syntax (catenation, blocks, lists, operators, anaphora, metadata) | **Stable** | The conservatism guarantee. New syntax is additive. |
+| Prelude **v1** API | **Stable (frozen)** | Frozen at 1.0; *evolves via opt-in v2*, not in place (§4). |
+| Block-merge / lookup semantics | **Stable** | The deep-merge flip becomes a MAJOR (or a v2-prelude/​`requires`-guarded change), not a silent default flip. |
+| CLI surface (`eu` subcommands + flags) | **Stable** | `run`, `test`, `dump`, `version`, `explain`, `list-targets`, `fmt`, `lsp`, `check` (`src/driver/options.rs:85-105`). |
+| Import/export formats | **Stable** | The format contracts (YAML/JSON/TOML/EDN/XML/CSV in; YAML/JSON/TOML/EDN/text/eu out). |
+| WASM / embedding API (`src/wasm.rs`) | **Stable** | `evaluate`, `evaluate_expr`, `formats`, the `EvalResult` envelope. |
+| **Type-annotation DSL & checker** (`type:` strings) | **Experimental** | *Provisional tier.* The DSL grammar is still growing fast — `forall`/`Kind`/`Con`/`App`/structural constraints all landed across 0.6.2–0.7.0 — and several open questions (boundary policy [0002], MLsub fork [0012], embedding [0013], constraint maturation [0011]) are live. Types are advisory, so this tier does **not** gate lang/prelude 1.0. Promote to Stable only once those settle. |
+| LSP behaviours; per-file `type-extensions`/`type-profile` (H18) | **Experimental** | Protocol conformance stable; specifics best-effort. |
+| Internal IR / STG / GC / heap layout / `dump` output | **Not covered** | Debugging aids, not a contract. |
+| Performance; exact error/warning *prose* | **Not covered** | Error *codes/locations* and exit codes are stable; wording is not. |
 
-The prelude commitment deserves a flag of its own. ~200 annotated functions
-(`CHANGELOG.md`, 0.6.0; ≈228 top-level declarations in `lib/prelude.eu`) is a
-*large* stable surface — far larger than most config languages expose. Freezing
-it forbids freely renaming a function, re-ordering arguments (as 0.6.0 did for
-`arr.slice`/`arr.neighbours`), changing a calling convention (as 0.6.2 just did
-for `cond`), or deleting a misfeature without an edition + deprecation cycle.
-The `cond` rewrite is the live proof that this tax is being paid *informally*
-today: a Stable-surface break shipped in a PATCH-looking release. This is a real,
-ongoing tax the maintainer should accept deliberately and route through the
-edition machinery instead. Pragmatic softener: tier the prelude itself — a **core**
-subset (arithmetic, comparison, string, list, block, `io`) at Stable, newer
-namespaces (`arr`, `set`, `state`, lens internals) held at Unstable until 1.1 —
-shrinking the frozen footprint without weakening the promise where it matters.
+The point of decoupling the type system (its own row, Experimental) is that
+**lang + prelude can reach 1.0 without the type system being "done"** — which it
+is not, and need not be, since it is advisory. That removes the single biggest
+false blocker to a 1.0.
 
 ### 2. Semver for a language-plus-tool
 
-Adopt true semver from 1.0 (semver.org), dropping the fourth build component
-from the *public* version (it can persist as build metadata, `1.2.3+build.456`,
-which semver ignores for precedence). Interpret the three fields against
-eucalypt's actual API — syntax + prelude + rendered output:
+Adopt true semver at 1.0 (semver.org), moving the build number to metadata
+(`1.2.3+build.456`, which semver ignores for precedence). Interpret the fields
+against eucalypt's real API — syntax + prelude + rendered output:
 
 | Bump | Means | Examples |
 |---|---|---|
-| **MAJOR** | A change to *default* semantics or a removal that an unmodified file can observe. | Making deep-merge the default outside an edition; removing a prelude function past its deprecation window; changing a prelude calling convention (the 0.6.2 `cond` rewrite, had it happened post-1.0); changing default render shape. |
-| **MINOR** | Backwards-compatible addition. | A new prelude function; a new export format; a **new edition**; a new CLI flag/subcommand; a new advisory type-warning. |
-| **PATCH** | No observable semantic change. | Bug fixes (including diagnostics), performance, error-text wording, internal refactors. |
+| **MAJOR** | A change an *unmodified* file can observe in its output, or a removal from the Stable surface. | Deep-merge as the default; removing/renaming a Stable prelude function past deprecation; changing a calling convention (the 0.6.2 `cond` rewrite, had it been post-1.0); changing default render shape. |
+| **MINOR** | Backwards-compatible addition. | A new prelude function; a new export format; a new CLI flag/subcommand; **a new opt-in prelude version**; a change to an Experimental surface. |
+| **PATCH** | No observable semantic change. | Bug fixes, performance, error-text wording, internal refactors. |
 
-This mirrors Dhall's rule and is sharpened by RFC 1105: "all major changes are
-breaking, but not all breaking changes are major" — a change that breaks only
-code relying on Not-covered surfaces (`dump` output, exact error prose) is *not*
-MAJOR. The edition mechanism is what lets a genuinely-breaking *language* change
-ship in a MINOR: the new behaviour exists only for units that opt in, so the
-binary stays backwards-compatible for everyone else — the bargain Rust strikes
-(RFC 2052: editions ship in normal releases yet "do not break existing code").
+This is Dhall's rule, sharpened by RFC 1105: a change touching only Not-covered
+surfaces is not MAJOR.
 
-### 3. Editions in metadata (the key proposal)
+### 3. `requires` as a version guard
 
-A unit declares its edition in its **unit metadata** — the first block
-expression at the top of the file, the same channel that already carries
-`import:` (`docs/appendices/syntax-gotchas.md:439-457`; e.g.
-`tests/harness/027_unit_import.eu:2`):
+`requires` already does more than it is used for. Because it parses
+`semver::VersionReq`, a unit can pin not just a floor but a *range*:
 
 ```eu,notest
-{ edition: "2026"
-  import: ["lens.eu", "state.eu"] }
-
-# … unit body. Block catenation here uses 2026 semantics (deep merge),
-# the 2025 lookup rules, and whatever else the 2026 edition pins.
-result: defaults config   # deep merge under edition 2026
+{ requires: ">=0.7, <0.8" }   # written against 0.7 semantics; refuse 0.8+
 ```
 
-Semantics:
+Once §2 makes versions meaningful, this is the proportionate replacement for
+editions' one real benefit. When deep-merge-default lands in (say) 0.8, a unit
+that pinned `^0.7` **fails loud** with `VersionRequirementFailed` instead of
+silently producing different YAML. You then edit the file and re-pin — which, at
+this scale, you would do anyway.
 
-- **Default is the *oldest* edition.** A unit with no `edition:` is interpreted
-  under edition `"2025"` (the pre-editions baseline — current shallow-merge,
-  current lookup rules). Existing files therefore never change behaviour.
-  This is the inverse of CUE's "newest by default" and is the safer choice for
-  artefacts already in the wild.
-- **One binary, all editions.** The `eu` binary supports every published
-  edition; the desugarer selects edition-specific lowerings from the unit
-  metadata. Per Rust's invariant, a clean file valid under edition N is valid
-  with identical output under the binary that also supports N+1.
-- **Whole-unit, never mixed.** Following Dhall, a unit is interpreted entirely
-  under one edition. Editions compose at unit boundaries only: an imported unit
-  carries *its own* edition, so a 2026 file may import a 2025 library safely —
-  which matters because imports are how eucalypt reuses code today.
-- **Forward-reference is an error.** A unit declaring an edition newer than the
-  binary knows fails fast with a clear diagnostic — exactly CUE's behaviour, and
-  trivially built on the existing `VersionRequirementFailed` path.
+Concretely:
 
-**Why metadata, not a flag day or a CLI switch.** Three reasons, in priority
-order. (i) *Syntactic conservatism* (non-negotiable #1): editions add **no new
-syntax** — `edition:` is an ordinary symbol-keyed entry in an ordinary metadata
-block, no keyword, no pragma form. H18 already proposes exactly this shape for
-`type-extensions: [:hkt, :rec, :flow]` (`type-system-evolution.md:1159-1163`),
-so editions reuse an *already-blessed* pattern rather than inventing one. (ii)
-*The artefact is the unit of truth.* A CLI flag (`--edition`) cannot express
-that *this file* wants new semantics while *that one* keeps the old — and config
-repos routinely mix old and new files. CUE's rationale applies verbatim: putting
-the version in the artefact lets the evaluator apply the right semantics
-per-file. (iii) *No flag day.* A flag day (bump the binary, everyone's output
-changes at once) is precisely the infrastructure-artefact catastrophe this
-charter exists to prevent. Editions let the deep-merge default *land in the
-language* — new files written with `{ edition: "2026" }` get it immediately —
-while every existing file is untouched until its author opts in and migrates.
+- **Convention:** shared/published units declare a `requires` range. (The
+  library units — `lens.eu`, `state.eu` — can model it.)
+- **Tooling (small):** `eu` can report the minimum version a file needs, and
+  the LSP/`eu check` can hint when a version-sensitive feature is used without a
+  `requires` pin. No new runtime mechanism — `__REQUIRES` already raises.
+- **Honest limitation:** this is *fail-loud*, not *keeps-working*, and only
+  protects files that opted in. Both are the right trade here; "keeps-working
+  forever for files I can't touch" is the property we are consciously declining.
 
-**Migration assistance.** The breaking delta of an edition is published as a set
-of edition lints, surfaced through the existing warning/diagnostic
-infrastructure (`Diagnostic::warning()`, `DiagnosticSeverity::WARNING`,
-`CHANGELOG.md` 0.6.0). The LSP already emits structural rewrites as
-`WorkspaceEdit`/`TextEdit` code actions — "wrap as namespace", "promote/demote
-metadata shortcuts", "add metadata fields"
-(`src/driver/lsp/actions.rs:27,86,151-165`). An "Upgrade unit to edition 2026"
-code action is the same machinery: insert/update the `edition:` key and apply
-the mechanical fixes (e.g. rewrite an affected `{...} {...}` to an explicit
-shallow `merge(...)` where the author wants the *old* behaviour under the new
-edition). As with `rustfix`, this will not be perfect — laziness and dynamic key
-construction defeat static rewriting — and the migration UX should say so.
+### 4. Opt-in prelude versioning ("prelude swap")
 
-### 4. Deprecation lifecycle
+The prelude is the heaviest Stable surface (~228 declarations) and the one most
+likely to want cleanup — renamed functions, fixed signatures, dropped
+misfeatures. Freezing it shouldn't mean it can never improve. The mechanism is
+cheap because **the prelude is already a named, embedded, swappable resource**:
+`resources.rs:14-18` holds it in a `HashMap` keyed `"prelude"`, it is already
+suppressible (`-Q`/`--no-prelude`, `options.rs:58`), and it is injected by the
+same unit-metadata-driven path that handles `import:` (`source.rs`).
 
-Deprecation is how a Stable surface element reaches an edition boundary in good
-order. The lifecycle for a prelude function, operator, or default behaviour:
+So: ship a frozen **prelude v1** and an in-development **prelude v2** as two
+embedded resources, and let a unit select:
 
-1. **Annotate.** Mark the element with `deprecated:` metadata carrying a reason
-   and a suggested replacement — a new symbol-keyed metadata field, no new
-   syntax (`` ` { deprecated: "use `window-all`", replaced-by: :window-all } ``).
-2. **Warn.** Using a deprecated element emits a `DiagnosticSeverity::WARNING`
-   (CLI and LSP) — never an error under the default advisory policy
-   (non-negotiable #3), so nothing that worked stops working. `eu check`
-   reports it; `--strict` promotes it (`CHANGELOG.md` 0.6.0).
-3. **Code-action.** The LSP offers a "replace with <replacement>" quick-fix,
-   reusing `actions.rs`.
-4. **Remove at an edition boundary only.** The element remains callable in every
-   edition that predated its removal; it is absent only from the edition that
-   removes it (and later). Removal that an *unmodified* file could observe is a
-   MAJOR change; gated behind an edition it is a MINOR.
+```eu,notest
+{ prelude: :v2 }     # opt in; default (absent) is the frozen v1
+```
 
-This ties deprecation timelines to editions rather than to wall-clock: an
-element deprecated during the 2026 line is removable no earlier than the 2027
-edition, giving users a full edition's notice and a mechanical path forward.
+- **Default is v1.** Existing files are untouched.
+- **v2 develops opt-in** across MINOR releases (a new prelude version is a MINOR
+  addition, §2). When/if it stabilises, a future MAJOR may make it the default,
+  or it may stay opt-in indefinitely. `requires` (§3) lets a v2 file pin the
+  range where v2 has the shape it expects.
+- **Why this is *not* editions:** a prelude is a *unit merged in*, not semantic
+  lowering rules in the desugarer. Shipping two preludes is two `include_bytes!`
+  + a selector keyed off metadata the loader already reads. There is no forked
+  desugarer, no per-construct semantic gating, no migration-lint engine. New
+  intrinsics a v2 needs are additive to the binary; functions v2 drops still
+  exist in v1 — which is the whole point.
+- **One real cost:** the prelude type-summary cache (TS-B7,
+  `src/driver/check.rs:51,70` `get_or_build_prelude`/`build_prelude`, the
+  `PRELUDE_CACHE` `OnceLock`) must key on the selected version rather than
+  assume one prelude. Small, and noted for [0004](0004-compiled-unit-caching.md).
 
-### 5. The 0.x → 1.0 gate
+This is deliberately narrower than general editions: it buys "evolve the big
+library surface without breaking v1" — the one place the evolve-without-breaking
+problem actually bites — and nothing else.
 
-1.0 ships when the following are all true. Several are owned by sibling
-proposals; this charter sets the bar, they do the work.
+### 5. Deprecation lifecycle
 
-- **G1 — Editions live.** At least the `2025` baseline and one successor edition
-  exist, the deep-merge default has *landed under the successor* edition (closing
-  `docs/welcome/index.md:320`), and the "upgrade edition" code action ships.
-- **G2 — Stable surfaces frozen and documented.** The table in §1 is ratified,
-  the prelude tiering decided, and a `requires`-style declaration is the
-  sanctioned way to pin a minimum `eu`.
-- **G3 — Conformance bar met ([0003](0003-conformance-testing-fuzzing.md)).** A
-  conformance suite pins the stable surfaces, including a *per-edition* golden
-  corpus proving edition N output is unchanged by a binary that also supports
-  N+1 — the executable form of the Rust invariant.
-- **G4 — Type-system surface ratified ([0011](0011-typeclasses-without-classes.md),
-  roadmap Stages A–B).** This gate has largely *landed*: Stage A "close the
-  existing system" (`type-system-evolution.md:1263-1282`) shipped in 0.6.2
-  (`Dict`, equirecursive `Mu`, literal types, flow narrowing, `NonEmpty`,
-  first-class alias references) and Stage B including HKT shipped in 0.7.0
-  (`forall`/`Kind`/`Con`/`App`, higher-order pattern unification, structural
-  operator constraints, `Partial(T)`, full row inference — `CHANGELOG.md`, 0.7.0).
-  The annotation DSL is now coherent and rich enough to *declare Stable* rather
-  than to wait on; what remains for 1.0 is **ratifying the shipped surface** (the
-  §1 row) and freezing its grammar, not delivering it. 1.0 never *required* a
-  complete checker — types are advisory — so any residual incompleteness is not a
-  blocker; the work here is policy, not implementation.
-- **G5 — Boundary policy fixed ([0002](0002-gradual-typing-boundary-policy.md)).**
-  The answer to open-question 6 (silent / opt-in / mandatory boundary checks) is
-  chosen and documented, because "what soundness 1.0 guarantees" is part of the
-  commitment.
-- **G6 — Performance & UX baselines
-  ([0004](0004-compiled-unit-caching.md), [0005](0005-generational-gc.md)).** A
-  published, regression-gated baseline (notably the ~500–700 ms cold-compile
-  latency that 0004 targets) so 1.0 has a *floor* it will not silently drop
-  below — without promising specific numbers (performance stays Not-covered as a
-  *compatibility* surface).
+For retiring a Stable prelude function or operator in good order (no editions
+required):
+
+1. **Annotate** with `deprecated:` metadata — a reason and a replacement, a new
+   symbol-keyed field, no new syntax
+   (`` ` { deprecated: "use `window-all`", replaced-by: :window-all } ``).
+2. **Warn** on use — `DiagnosticSeverity::WARNING` in CLI and LSP, never an
+   error under the advisory default; `eu check` reports it, `--strict` promotes
+   it.
+3. **Quick-fix** — the LSP offers "replace with `<replacement>`", reusing the
+   existing `WorkspaceEdit` code-action machinery (`src/driver/lsp/actions.rs`).
+4. **Remove** in a MAJOR (with a changelog entry) — or, better, simply omit it
+   from **prelude v2** while v1 keeps it (§4), so removal never breaks a v1 file
+   at all.
+
+The `deprecated:`/`replaced-by:` metadata + quick-fix is a small, self-contained
+feature worth shipping on its own merits, independent of the rest.
 
 ## Interaction with the existing roadmap
 
-This proposal is **process whitespace** — there is no roadmap entry for
-stability. It depends on, and amplifies, the H18 per-file-profile idea
-(`type-system-evolution.md:1148-1163`): editions and `type-extensions` share the
-unit-metadata channel and should share a parser/representation. It is the
-*precondition* the other Track-A proposals assume: [0002](0002-gradual-typing-boundary-policy.md)
-and [0003](0003-conformance-testing-fuzzing.md) define *what* is guaranteed and
-*how* it is tested; this defines the *contract and the lever* (editions) those
-guarantees hang from. It supersedes nothing. It does not touch the
-single-threaded lazy-pure runtime (non-negotiable #4) or ADR-001 — editions are
-a front-end/desugar concern.
-
-On **open-question 1** ("is 'no nominal' inviolable?", `type-system-evolution.md:1383`),
-light touch only — [0011](0011-typeclasses-without-classes.md) owns it. The
-stability angle: a 1.0 *export contract* (the shape a unit promises to render) is
-a structural promise that structural typing already expresses. Were a small
-opt-in nominal newtype ever admitted for export contracts, it would itself be an
-edition-gated change — so editions *contain* that decision rather than give a
-reason to pre-empt it here.
+Process whitespace — there is no roadmap entry for versioning. The prelude-swap
+selector shares the unit-metadata-driven loading path with `import:` and, like
+H18's `type-extensions`, lives in metadata. It interacts most with
+[0004](0004-compiled-unit-caching.md) (the prelude cache must key on prelude
+version) and with the type-system proposals
+([0002](0002-gradual-typing-boundary-policy.md),
+[0011](0011-typeclasses-without-classes.md),
+[0012](0012-algebraic-subtyping-fork.md),
+[0013](0013-type-dsl-embedding.md)): the **Experimental** tier for the type DSL
+is provisional, and those proposals decide when (if ever) it is promoted to
+Stable. It supersedes nothing and does not touch the runtime (non-negotiable #4).
 
 ## Implementation sketch
 
-Phased, front-end-only, low runtime risk.
+Front-end/loader and policy only; low runtime risk.
 
-1. **Edition plumbing (`src/core/`, ~M).** Read `edition:` from unit metadata in
-   desugar; thread an `Edition` enum through the desugar/cook passes; default to
-   `2025`; forward-reference error via the existing `VersionRequirementFailed`
-   path. No STG, VM, GC, or type-checker changes.
-2. **First edition delta (`src/core/desugar/`, ~M).** Implement deep-merge-as-
-   default *gated on edition ≥ 2026* for block catenation lowering; leave 2025
-   shallow. Re-home the 0.5.3 lookup change retroactively as a 2025-vs-pre rule
-   if desired (it shipped without an edition; documenting it as the 2025 baseline
-   costs nothing).
-3. **Deprecation metadata (`lib/prelude.eu`, diagnostics, ~S).** `deprecated:` /
-   `replaced-by:` fields + a warning when a flagged name resolves.
-4. **LSP migration actions (`src/driver/lsp/actions.rs`, ~M).** "Upgrade unit to
-   edition" and "replace deprecated" code actions, reusing the existing
-   `WorkspaceEdit` machinery.
-5. **Charter + conformance (`docs/`, [0003](0003-conformance-testing-fuzzing.md),
-   ~M).** Write the stable-surface table as ratified policy; add the per-edition
-   golden corpus.
-
-Risk concentrates in (2): block-merge semantics are pervasive, and proving the
-2025 path is bit-identical post-change is exactly what G3's corpus is for.
+1. **Semver policy + build plumbing (`build.eu`, release flow, `docs/`, ~S).**
+   Decide the field meanings (§2), publish them, and move the build number to
+   `+build.N` metadata at 1.0.
+2. **`requires` usage + tooling (`docs/`, small `src/`, ~S).** Document the
+   range-pin convention; optionally add an `eu`/LSP "minimum version / missing
+   pin" hint. The runtime path already exists.
+3. **Prelude versioning (`resources.rs`, `source.rs`, `check.rs`, ~M).** Add a
+   second embedded prelude resource; read `prelude:` from unit metadata in the
+   loader (beside `import:`); default to v1; key the prelude type cache on the
+   selection.
+4. **Deprecation metadata (`lib/prelude.eu`, diagnostics, LSP, ~S).**
+   `deprecated:`/`replaced-by:` fields, a use-site warning, and the quick-fix.
 
 ## Alternatives considered
 
-- **CLI flag (`--edition 2026`).** Rejected: cannot vary per-file in a mixed
-  repo; the artefact, not the invocation, must carry the contract (CUE's
-  reasoning).
-- **Newest-edition-by-default (CUE-style).** Rejected for eucalypt: with files
-  already deployed, defaulting to *newest* changes their behaviour on a binary
-  upgrade — the opposite of the goal. Default to *oldest*.
-- **Flag day with a major bump.** Rejected: a synchronous output change for
-  every unmodified file is the precise failure mode this charter exists to
-  prevent.
-- **Separate language-standard document (Dhall-style).** Deferred: valuable once
-  there is a *second* implementation; overhead without payoff for one.
-- **Do nothing; stay perpetually 0.x.** A legitimate option — but it forecloses
-  the adoption that depends on a stability promise, and leaves the pending
-  deep-merge change with no safe way to ship at all.
+- **Rust-style editions (metadata-gated semantic lowering).** *Rejected as
+  premature.* Editions let one binary interpret old files under old *semantics*
+  forever — valuable with many untouchable third-party files, but it forces the
+  desugarer to carry every historical semantic path indefinitely. At current
+  scale the cost is real and the benefit hypothetical. §3 (`requires` guard) +
+  §4 (prelude swap) cover the concrete needs (don't misbehave silently; evolve
+  the prelude) far more cheaply. Revisit only if a real third-party ecosystem of
+  deployed `.eu` files appears.
+- **Newest-version-by-default (CUE-style).** Rejected: defaulting changed
+  semantics onto existing files is the silent-misbehaviour failure we want to
+  avoid. Defaults stay conservative; change is opt-in (`prelude:`/`requires`).
+- **Freeze the prelude outright.** Rejected: it makes the largest surface
+  unimprovable. §4 is the escape valve.
+- **Do nothing; stay perpetually 0.x.** Legitimate, and cheaper still — but it
+  forgoes any version signal at all, and the `cond`-in-a-patch-release problem
+  recurs every time.
 
 ## Risks & what would kill this
 
-- **Edition proliferation / fragmentation.** Too many editions, or large deltas,
-  recreate the ecosystem split editions exist to prevent. Mitigation: editions
-  are *rare* and *small*; an edition with no breaking delta is not minted.
-- **Migration tooling underdelivers.** If laziness/dynamic keys defeat the code
-  actions for common patterns, "automated migration" is hollow. Mitigation:
-  measure code-action coverage on the conformance corpus as a G3 sub-bar; be
-  honest, as RFC 2052 is, that it is best-effort.
-- **The prelude freeze is too expensive.** If freezing ~200 functions blocks
-  needed evolution, the promise becomes a millstone. Mitigation: the core/Unstable
-  prelude tiering in §1; revisit at 1.1.
-- **Premature 1.0.** Declaring stability before the surfaces are actually stable
-  burns credibility. With Stages A and B now shipped (0.6.2/0.7.0), the type DSL
-  has largely settled and G4 is close to met — but the *other* gates are not, and
-  ratifying a surface (G2/G4) is precisely the discipline that stops "it compiles"
-  from being mistaken for "it is promised". The G1–G6 gate is the guard; G1
-  (editions live) and G3 (the per-edition conformance corpus) remain the long
-  poles.
+- **Two preludes drift / double maintenance.** v1 frozen + v2 evolving means
+  fixes may need porting. Mitigation: v1 is *frozen* (security/critical fixes
+  only); feature work happens only in v2; keep v2 a strict evolution, not a fork
+  of philosophy.
+- **Premature 1.0.** Declaring stability before the Stable surfaces have
+  actually settled burns the (small) credibility there is. Mitigation: the gate
+  below, and especially keeping the type system Experimental so it is not mistaken
+  for promised.
+- **`requires` pins rot.** Convention-dependent guards are only as good as the
+  discipline of adding them. Mitigation: the optional "missing pin" hint; model
+  it in the shipped library units.
 
-Falsifier: if, on a representative corpus, the deep-merge edition delta cannot be
-migrated mechanically for a clear majority of affected files, the
-metadata-edition story is weaker than advertised and a flag day with a long
-deprecation window should be reconsidered.
+## The 0.x → 1.0 gate
+
+1.0 ships when:
+
+- **G1 — Versioning in place.** Real semver adopted (§2); the `requires`-range
+  convention documented (§3); the prelude-version selector working with v1 as
+  default (§4).
+- **G2 — Stable surfaces documented.** The §1 table ratified, including the
+  prelude tiering and the **Experimental type system** call.
+- **G3 — Conformance bar met ([0003](0003-conformance-testing-fuzzing.md)).** A
+  corpus pins the Stable surfaces (and proves a v1-prelude file is unchanged by a
+  binary that also ships v2).
+- **G4 — Boundary policy fixed ([0002](0002-gradual-typing-boundary-policy.md)).**
+  What soundness 1.0 claims (or explicitly does not) is decided — even if the
+  answer is "the type system is Experimental and makes no 1.0 promise."
+- **G5 — Performance/UX floor ([0004](0004-compiled-unit-caching.md),
+  [0005](0005-generational-gc.md)).** A regression-gated baseline (notably the
+  ~500–700 ms cold-compile latency 0004 targets), without promising specific
+  numbers.
+
+Type-system *completeness* is deliberately absent from the gate: it is
+advisory and Experimental, and does not block a lang/prelude 1.0.
 
 ## Success criteria
 
-- A binary upgrade across an edition boundary produces **byte-identical** output
-  for every unit in the conformance corpus that does not opt in (G3 corpus
-  green).
-- The deep-merge default ships **without a single** unmodified-file behaviour
-  change reported.
-- "Upgrade unit to edition" mechanically migrates a clear majority of corpus
-  files; the remainder get a precise, located diagnostic.
-- Every Stable-tier element has a defined deprecation→removal path, and no
-  Stable element is ever removed except across an edition.
-- A published `1.0.0` (true semver, build metadata as `+build.N`) with a written
-  charter a downstream user can rely on.
+- A published `1.0.0` with real semver (`+build.N` as metadata) and a written,
+  one-page statement of the §1 tiers.
+- The deep-merge default, when it lands, ships either as a MAJOR or behind
+  `prelude: :v2` — never as a silent default flip; a `requires("^0.7")` file
+  errors clearly on the binary that changes it.
+- Prelude v2 exists and is opt-in, with v1 frozen and unaffected.
+- Every Stable prelude element has a deprecation→removal path; the type DSL is
+  labelled Experimental and no one mistakes it for a 1.0 promise.
 
 ## References
 
-**Eucalypt:** `docs/welcome/index.md:320` (pending deep-merge default);
-`CHANGELOG.md:57` + `lib/prelude.eu:1168,1172,895-897,920-922` (0.6.2 breaking
-`cond` API change, `=>` clause operator, `__COND`/`__CLAUSE`, rewritten internal
-callers); `CHANGELOG.md:190-192` (0.5.3 lookup/scoping change); `build.eu:7-13,59-62` and
-`.github/workflows/build-rust.yaml:391-402` (current version scheme & draft
-release flow); `lib/prelude.eu:15-17` + `src/eval/stg/version.rs` +
-`src/eval/error.rs:679` (`requires`/`__REQUIRES`/`VersionRequirementFailed`);
-`src/driver/options.rs:85-105` (CLI surface); `src/wasm.rs` (embedding API);
-`src/driver/lsp/actions.rs:27,86,151-165` (code-action infrastructure);
-`docs/appendices/syntax-gotchas.md:439-457` (unit-metadata mechanics);
-`docs/appendices/migration.md` (existing v0.2→v0.3 migration note);
-`docs/development/type-system-evolution.md` §H18 (`:1148-1163`, per-file
-profiles/extensions), §5 (`:1383`, open-question 1), Stage A (`:1263-1282`);
-ADR-001 (`docs/development/architectural-decisions.md:6`).
+**Eucalypt:** `CHANGELOG.md:57` + `lib/prelude.eu:1168,1172,895-897,920-922`
+(0.6.2 breaking `cond` change); `CHANGELOG.md:190-192` (0.5.3 lookup change);
+`docs/welcome/index.md:320` (pending deep-merge default); `build.eu:7-13,59-62`
++ `.github/workflows/build-rust.yaml:391-402` (version scheme & release flow);
+`lib/prelude.eu:15-17` + `src/eval/stg/version.rs:31` + `src/eval/error.rs:679`
+(`requires`/`__REQUIRES`/`semver::VersionReq`/`VersionRequirementFailed`);
+`src/driver/resources.rs:14-18` (embedded prelude resource);
+`src/driver/options.rs:58,85-105` (`-Q/--no-prelude`, CLI surface);
+`src/driver/check.rs:51,70` (`get_or_build_prelude`/`build_prelude`, prelude
+cache); `src/driver/lsp/actions.rs` (code-action machinery); `src/wasm.rs`
+(embedding API); `docs/development/type-system-evolution.md` §H18, §5.
 
 **External:** [Semantic Versioning 2.0.0](https://semver.org/);
-Rust RFC 2052, *Epochs/Editions*
-(https://rust-lang.github.io/rfcs/2052-epochs.html) — opt-in, one-compiler-all-
-editions, "do not split the ecosystem nor break existing code"; Rust RFC 1105,
-*API evolution* (https://rust-lang.github.io/rfcs/1105-api-evolution.html) —
-"all major changes are breaking, but not all breaking changes are major";
-[The Rust Edition Guide](https://doc.rust-lang.org/edition-guide/editions/);
+Rust RFC 1105, *API evolution*
+(https://rust-lang.github.io/rfcs/1105-api-evolution.html);
 Dhall standard *versioning.md*
-(https://github.com/dhall-lang/dhall-lang/blob/master/standard/versioning.md) —
-MAJOR/MINOR/PATCH rules; whole-version interpretation;
-[CUE language version](https://cuelang.org/docs/concept/cue-language-version/) —
-per-module `language.version`, error on newer-than-evaluator.
+(https://github.com/dhall-lang/dhall-lang/blob/master/standard/versioning.md);
+[CUE language version](https://cuelang.org/docs/concept/cue-language-version/).
