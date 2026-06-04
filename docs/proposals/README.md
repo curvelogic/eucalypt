@@ -13,7 +13,9 @@ words) and to support a yes / no / defer decision.
 
 For how the documents are written, see [`_house-style.md`](_house-style.md).
 For a recommended ordering across releases and the dependencies between
-proposals, see [`SEQUENCING.md`](SEQUENCING.md).
+proposals, see [`SEQUENCING.md`](SEQUENCING.md). For high-priority **fixes** to
+land before/alongside these proposals (surfaced during review, written
+bead-ready for import), see [`0000-priority-fixes.md`](0000-priority-fixes.md).
 
 ---
 
