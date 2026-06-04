@@ -45,7 +45,7 @@ immediately after marking". Both are false. The code implements:
   (`BumpBlock::analyze_density`, `src/eval/memory/bump.rs:457`) and picks
   `MarkInPlace` below 10% fragmentation, `SelectiveEvacuation` from 10–30%, and
   `DefragmentationSweep` above 30% (`heap.rs:1885`).
-- **Emergency collection.** `find_space` (`heap.rs:2319`) falls back to an
+- **Emergency collection.** `find_space` (`heap.rs:2354`) falls back to an
   emergency collection on allocation failure; the `.expect("aargh")` panic the
   stale doc cites no longer exists.
 
@@ -54,11 +54,11 @@ the *generational* dimension".
 
 ### Mark cost dominates, and it is wasted on the old generation
 
-Marking resets every block's line map (`reset_region_marks`, `heap.rs:2558`;
+Marking resets every block's line map (`reset_region_marks`, `heap.rs:2593`;
 `LineMap::reset`, `bump.rs:77`) and re-traces the entire reachable graph from
-roots on **every** collection (`collect.rs:417`). The header carries a single
+roots on **every** collection (`collect.rs:414`). The header carries a single
 mark bit interpreted against a per-heap mark state that flips after each cycle
-(`flip_mark_state`, `heap.rs:1716`; `is_marked`, `heap.rs:2622`), so "live"
+(`flip_mark_state`, `heap.rs:1716`; `is_marked`, `heap.rs:2657`), so "live"
 means "mark bit equals current state" — there is no notion of age, no
 remembered set, and no way to *skip* an object known to be long-lived.
 
@@ -76,7 +76,7 @@ that the old generation is still alive.**
 ### The trigger is crude
 
 The VM checks for collection on a countdown of 500 steps (`gc_check_freq`,
-`src/eval/machine/vm.rs:1739`), then calls `policy_requires_collection`
+`src/eval/machine/vm.rs:1760`), then calls `policy_requires_collection`
 (`heap.rs:1771`). That predicate returns **`false` whenever no `--heap-limit-mib`
 is set** — and the CLI default is a 32 GiB managed limit, so in practice short
 programs never collect until termination, and long ones collect on a
@@ -178,7 +178,7 @@ Introduce a **minor collection** alongside the existing full collection:
   the remembered set *without flipping the mark state*. Any nursery object it
   marks survives and is thereby tenured (its mark bit now matches the persistent
   major-collection state). This reuses `mark_object`/`is_marked` unchanged
-  (`heap.rs:2633`, `heap.rs:2622`); only the *flip discipline* changes.
+  (`heap.rs:2668`, `heap.rs:2657`); only the *flip discipline* changes.
 - **Major collection** is today's behaviour: flip the mark state
   (`heap.rs:1716`) and trace everything.
 
@@ -191,9 +191,9 @@ old/young distinction once minor collections stop flipping it. (An explicit
 
 The single mutation site is `EnvironmentFrame::update`
 (`src/eval/machine/env.rs:361`), reached from `MachineState::update`
-(`vm.rs:526`) when an `Update` continuation (`src/eval/machine/cont.rs:52`)
+(`vm.rs:540`) when an `Update` continuation (`src/eval/machine/cont.rs:53`)
 fires and overwrites an environment slot — replacing the black hole
-(`HeapSyn::BlackHole`, written at `vm.rs:424`) with the computed closure. This is
+(`HeapSyn::BlackHole`, written at `vm.rs:438`) with the computed closure. This is
 where an old-generation frame can come to hold a young pointer.
 
 Two viable disciplines, mirroring GHC:
@@ -342,13 +342,13 @@ generational rewrite needs. A new `EU_GC_VERIFY` checkpoint should assert the
 **Eucalypt source.** `heap.rs` (8 — single-threaded invariant; 87 — stubbed
 DefragmentationSweep TODO; 358 — `HeapState`; 674/680 — defer/lazy sweep; 1716 —
 `flip_mark_state`; 1771 — `policy_requires_collection`; 1782/1885 — strategy
-selection; 2319 — emergency `find_space`; 2558 — `reset_region_marks`;
-2622/2633 — mark/is_marked); `collect.rs` (298 — `evacuate`; 388 — `collect`;
-465 — `collect_with_evacuation`; 530 — update phase; 1312/1515 — evacuation-bug
+selection; 2354 — emergency `find_space`; 2593 — `reset_region_marks`;
+2657/2668 — is_marked/mark_object); `collect.rs` (298 — `evacuate`; 388 — `collect`;
+465 — `collect_with_evacuation`; 536 — update phase; 1323/1515 — evacuation-bug
 tests); `bump.rs` (77 — `LineMap::reset`; 457 — `analyze_density`); `header.rs`
-(106 — `set_forwarded`; 141 — 16-byte header); `vm.rs` (424 — black-hole write;
-526 — `update`; 1739 — GC countdown); `env.rs` (361 — the barrier site);
-`cont.rs` (52 — `Update` continuation); `metrics.rs` (13 — `ThreadOccupation`);
+(106 — `set_forwarded`; 141 — 16-byte header); `vm.rs` (438 — black-hole write;
+540 — `update`; 1760 — GC countdown); `env.rs` (361 — the barrier site);
+`cont.rs` (53 — `Update` continuation); `metrics.rs` (13 — `ThreadOccupation`);
 all under `src/eval/`. Also `docs/development/architectural-decisions.md`
 (ADR-001); `docs/development/gc-implementation.md` (stale); benches
 `tests/harness/bench/{004_generations,007_short_lived,008_long_lived_graph,009_fragmentation}.eu`.

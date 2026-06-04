@@ -16,7 +16,7 @@
 
 Every invocation of eucalypt, and every LSP keystroke, recomputes the
 whole front end from scratch — parse, desugar, cook, eliminate,
-type-check — over the prelude *and* the open files. The 0.6.1 LSP gained
+type-check — over the prelude *and* the open files. The 0.7.0 LSP uses
 a background "pipeline backend" running this on a worker thread with a
 300 ms debounce and per-document cancellation, but it is not incremental
 in the demand-driven sense: each run builds a fresh `SourceLoader` and
@@ -47,16 +47,16 @@ side (an on-disk `StgSyn` cache for the prelude); this is its
 where the recompute happens dozens of times a second.
 
 The LSP is where the cost bites hardest. On every change,
-`on_document_changed` (`src/driver/lsp/mod.rs:726`) re-parses, diffs the
-Rowan green node for an actual change (`mod.rs:748`), then spawns
-`run_pipeline` (`mod.rs:1102`). That function constructs a brand-new
-`SourceLoader::new(vec![])` (`mod.rs:1129`) and re-runs **load →
+`on_document_changed` (`src/driver/lsp/mod.rs:731`) re-parses, diffs the
+Rowan green node for an actual change (`mod.rs:753`), then spawns
+`run_pipeline` (`mod.rs:1119`). That function constructs a brand-new
+`SourceLoader::new(vec![])` (`mod.rs:1146`) and re-runs **load →
 translate → merge → cook → eliminate → `type_check_full`**
-(`mod.rs:1131–1158`) over `[prelude, document]` — the ~2,200-line
+(`mod.rs:1148–1182`) over `[prelude, document]` — the ~2,200-line
 prelude included — for a single edited file. The only concession to
 incrementality is the *text* sync (`apply_content_change`,
-`mod.rs:241`) and the green-node change-detector that suppresses no-op
-re-runs (`mod.rs:748`). Everything downstream of "did the tree change?"
+`mod.rs:246`) and the green-node change-detector that suppresses no-op
+re-runs (`mod.rs:753`). Everything downstream of "did the tree change?"
 is recomputed wholesale.
 
 The result is the latency profile the recon flags for the CLI
@@ -71,19 +71,28 @@ writing eucalypt* … LSP responsiveness is its main job."
 
 ### Point caches are partial answers a query core generalises
 
-Two specced caches each remove one fixed stage from the hot path:
+One shipped cache and one specced cache each remove one fixed stage from the hot path:
 
-| Cache | Stage removed | Scope | Where |
-|---|---|---|---|
-| TS-B7 prelude type summary | type-check(prelude) | prelude only | `prelude-type-cache-spec.md` |
-| [0004] compiled-unit cache | compile(prelude)→`StgSyn` | prelude only | `0004` |
+| Cache | Stage removed | Scope | Status | Where |
+|---|---|---|---|---|
+| TS-B7 prelude type summary | type-check(prelude) | prelude only | **Shipped 0.7.0** | `src/driver/check.rs:44` |
+| [0004] compiled-unit cache | compile(prelude)→`StgSyn` | prelude only | Specced | `0004` |
 
-Both are sound precisely because the prelude is **fixed, merged first,
-and self-contained** (B7 §B7.1; 0004 "Why the prelude is the ideal
-target"). Both stop there for the same honest reason: a *user* unit's
-exported types are not stable under positional merge-override (B7 §B7.9),
-so caching user units soundly needs a composition model neither spec
-pins down. A query core is the structure that *makes user-unit
+TS-B7 **shipped in 0.7.0**: the prelude is type-checked once per
+process via `build_prelude_summary` and the result stored in a
+`static PRELUDE_CACHE: OnceLock<PreludeSummary>`
+(`src/driver/check.rs:44`); subsequent checks seed a fresh `Checker`
+from the cached `PreludeSummary` via `Checker::with_seed`
+(`src/core/typecheck/check.rs:382`), skipping the ~2,200-line prelude
+re-walk entirely. This is concrete proof the demand-driven caching thesis
+is correct here — it pays off, it is sound, and it has shipped.
+
+Both caches are sound for the same reason: the prelude is **fixed,
+merged first, and self-contained** (B7 §B7.1; 0004 "Why the prelude is
+the ideal target"). Both stop there for the same honest reason: a *user*
+unit's exported types are not stable under positional merge-override (B7
+§B7.9), so caching user units soundly needs a composition model neither
+cache pins down. A query core is the structure that *makes user-unit
 incrementality tractable* — it tracks, per query, exactly which inputs
 were read, so it can invalidate precisely rather than reason about
 stability up front. The two point caches then become two **base-case
@@ -174,7 +183,7 @@ else is a pure derived query. Keys are **content hashes**, not paths or
 mtimes — the discipline 0004 adopts from Unison, so a cache hit is
 *semantically* guaranteed. Editing a string literal changes the hash and
 correctly invalidates (matching today's green-node check at
-`mod.rs:748`); editing whitespace the lexer discards does not.
+`mod.rs:753`); editing whitespace the lexer discards does not.
 
 **Inter-unit dependencies reuse the import graph.** The dependency edges
 between unit-level queries are exactly those already computed by
@@ -190,14 +199,15 @@ root, leaving siblings green. Cycle rejection already exists
 ### Scope the front end first; the prelude is the proof
 
 The first deliverable is the **analysis** subset above, with the prelude
-as the canonical high-durability input. This *subsumes* TS-B7 and the
-analysis half of 0004 without re-deriving them: the prelude's
+as the canonical high-durability input. This *generalises* the shipped
+TS-B7 and the analysis half of 0004: the prelude's
 `parse`/`desugar`/`cook`/`check` results are queries whose input
 (prelude bytes) never changes within a build, so they compute once and
-stay green for the life of the process — precisely B7's "compute the
-summary once per process" (B7 §B7.4), now emergent rather than a bespoke
-`HashMap`. The LSP's existing per-URI `cached` and `last_green`
-(`mod.rs:272`, `:275`) are the embryo of this database; the work is to
+stay green for the life of the process — precisely what B7 achieves
+with `OnceLock<PreludeSummary>` (`src/driver/check.rs:44`), but now
+emergent from the query graph rather than a bespoke static. The LSP's
+existing per-URI `cached` and `last_green`
+(`mod.rs:277`, `:280`) are the embryo of this database; the work is to
 generalise them from "one cached blob per file" to a graph of
 fine-grained, individually-invalidated results, and to make the prelude
 a shared root rather than re-loaded per document (`mod.rs:1128`).
@@ -224,12 +234,17 @@ this proposal commits only to the analysis front end.
 
 ## Interaction with the existing roadmap
 
-- **TS-B7** is *generalised*, not duplicated. B7 can ship first as the
-  point solution (it is "ready to implement"); the query core later
-  reframes the `PreludeSummary` as the memoised value of the
-  `check(prelude)` query. The behaviour-preservation property B7 makes
-  load-bearing (§B7.7) becomes the correctness oracle for the query
-  port: a query result must equal the from-scratch result.
+- **TS-B7** *shipped in 0.7.0* and is the query core's first concrete
+  predecessor: the `OnceLock<PreludeSummary>` at
+  `src/driver/check.rs:44` is a bespoke, single-stage query result.
+  The query core generalises it — the `PreludeSummary` becomes the
+  memoised value of the `check(prelude)` query, and the same
+  dependency-tracking that makes user-unit invalidation tractable makes
+  the prelude result *emergently* green forever. The
+  behaviour-preservation property B7 already validates (§B7.7 — the
+  from-scratch merged-pipeline fallback at `src/driver/check.rs:307`)
+  becomes the correctness oracle for the query port: a query result must
+  equal the from-scratch result.
 - **[0004]** is the cross-process sibling: it persists the prelude's
   compiled `StgSyn` to disk; this proposal keeps the prelude's *analysis*
   results live in memory. They share the content-hash keying discipline
@@ -271,8 +286,9 @@ time** so the migration is itself incremental:
 2. **Analysis queries (0.9).** Wrap `desugar`, `cook`, and
    `type_check_full` (`check.rs:1149`) as derived queries keyed by
    content + import-closure hashes. Re-point the LSP `run_pipeline`
-   (`mod.rs:1102`) at the database so an edit re-executes only the dirty
-   queries; the prelude stays green. Subsumes B7.
+   (`mod.rs:1119`) at the database so an edit re-executes only the dirty
+   queries; the prelude stays green. Supersedes B7's bespoke
+   `OnceLock` (`check.rs:44`) with an emergent query result.
 3. **Editor surfaces on the graph (1.0).** Serve hover/inlay/completion
    /diagnostics (`src/driver/lsp/*`) from query results, with multi-file
    projects sharing one database so cross-file navigation and
@@ -285,7 +301,7 @@ time** so the migration is itself incremental:
 and are off the critical path for batch `eu` (the straight-line pipeline
 can remain the CLI default until the query path is proven). The main
 risks are `salsa`'s `'static`/`Send` requirements colliding with
-existing non-`Send` types (the comment at `mod.rs:1072` notes
+existing non-`Send` types (the comment at `mod.rs:1089` notes
 `SourceLoader` is not `Send`) and the discipline of threading hashes
 through pass boundaries.
 
@@ -293,12 +309,13 @@ through pass boundaries.
 
 ## Alternatives considered
 
-- **Keep extending point caches.** Ship TS-B7 and 0004 and stop. This is
-  the cheap path and genuinely removes the dominant prelude cost. It does
-  **not** make *user-file* and *multi-file* analysis incremental, which
-  is where large-project LSP latency will live once the prelude is
-  cached. The point caches are necessary but not sufficient; a query core
-  is what makes user-unit invalidation sound rather than out-of-scope.
+- **Keep extending point caches.** TS-B7 has shipped and 0004 will
+  complete the pair; stopping there is the cheap path and genuinely
+  removes the dominant prelude cost. It does **not** make *user-file*
+  and *multi-file* analysis incremental, which is where large-project
+  LSP latency will live once the prelude is cached. The point caches are
+  necessary but not sufficient; a query core is what makes user-unit
+  invalidation sound rather than out-of-scope.
 - **Hand-rolled memoisation in the LSP.** Extend the existing `cached`
   map with manual invalidation keyed on the import graph. Feasible for a
   few stages, but re-implements red-green badly; the value of Salsa is
@@ -315,11 +332,12 @@ through pass boundaries.
 
 ## Risks & what would kill this
 
-1. **The LSP is already "fast enough".** With B7 + 0004 caching the
-   prelude, single-file edits may be imperceptible without a query core,
-   making this over-engineering for a config tool. *Falsifier:* measure
-   re-check latency on a realistic multi-file project (10–20 imported
-   units) after B7/0004 land; if it is already < ~30 ms, defer 0014.
+1. **The LSP is already "fast enough".** B7 shipped in 0.7.0 and 0004
+   will cache the compiled prelude; single-file edits may be
+   imperceptible without a query core, making this over-engineering for
+   a config tool. *Falsifier:* measure re-check latency on a realistic
+   multi-file project (10–20 imported units) with B7 live and 0004 in
+   place; if it is already < ~30 ms, defer 0014.
 2. **`salsa` impedance mismatch.** Its derive-macro model and `'static`
    bounds may not sit well with `RcExpr`/Rowan/`SourceLoader`; the
    adaptation cost could exceed an in-house engine. *Mitigation:*
@@ -358,19 +376,27 @@ through pass boundaries.
 - `src/driver/prepare.rs:24` — straight-line CLI pipeline, no cross-run reuse.
 - `src/driver/source.rs:97,120` — `SourceLoader` is fresh per run;
   `:64–70` — per-loader `asts`/`cores`/`translation_units` memo maps.
-- `src/driver/lsp/mod.rs` — `:726` `on_document_changed`; `:748`
-  green-node change detection; `:1044–1064` 300 ms debounce; `:1102–1158`
-  `run_pipeline` rebuilds a fresh `SourceLoader` over `[prelude,
-  document]`; `:272,275` per-URI `cached`/`last_green` (the embryonic
-  database); `:241` `apply_content_change` text sync.
+- `src/driver/check.rs:44` — `static PRELUDE_CACHE: OnceLock<PreludeSummary>`
+  (TS-B7 shipped point solution); `:51` `get_or_build_prelude_summary`;
+  `:70` `build_prelude_summary`; `:259` fast-path prelude-cached check;
+  `:307` fallback merged-pipeline (behaviour-preservation oracle).
+- `src/core/typecheck/check.rs:197` — `PreludeSummary` struct; `:382`
+  `Checker::with_seed` (seeding a user-file check from cached prelude).
+- `src/driver/lsp/mod.rs` — `:731` `on_document_changed`; `:753`
+  green-node change detection; `:1060–1081` `spawn_pipeline` 300 ms
+  debounce; `:1119–1182` `run_pipeline` rebuilds a fresh `SourceLoader`
+  over `[prelude, document]`; `:277,280` per-URI `cached`/`last_green`
+  (the embryonic database); `:246` `apply_content_change` text sync;
+  `:1089` `SourceLoader` is not `Send` (threading constraint).
 - `src/syntax/import.rs` — `:18,83,93,117,118` `ImportGraph`: cycle
   check, `unit_inputs` BFS closure, locator-keyed diamond dedup.
 - `src/core/typecheck/check.rs:1149` — `type_check_full`.
 - `src/eval/memory/heap.rs:8–11` — single-threaded non-`Sync`
   `UnsafeCell` heap (why eval resists the model).
 - `docs/development/prelude-type-cache-spec.md` (TS-B7) — prelude-only
-  type-summary cache; §B7.1 LSP-responsiveness framing; §B7.7
-  behaviour-preservation; §B7.9 user-unit out-of-scope rationale.
+  type-summary cache (spec that preceded the 0.7.0 implementation);
+  §B7.1 LSP-responsiveness framing; §B7.7 behaviour-preservation;
+  §B7.9 user-unit out-of-scope rationale.
 - [0004 — compiled-unit & prelude caching](0004-compiled-unit-caching.md);
   [0015 — parser error-recovery](0015-parser-error-recovery.md);
   [0008 — parallel & speculative evaluation](0008-parallel-evaluation.md);
