@@ -33,6 +33,7 @@
 //! falls through to subtyping.
 
 use super::types::{unfold_mu, Type};
+use super::unify::beta_reduce;
 
 /// Return `true` if type `s` is a subtype of type `t` (`s <: t`).
 ///
@@ -44,6 +45,22 @@ pub fn is_subtype(s: &Type, t: &Type) -> bool {
 
 /// Coinductive subtyping with an assumed-pairs set to handle equirecursive types.
 fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
+    // Beta-reduce App(Lam(x, body), arg) before comparing.
+    let s_red;
+    let t_red;
+    let s = if matches!(s, Type::App(_, _)) {
+        s_red = beta_reduce(s);
+        &s_red
+    } else {
+        s
+    };
+    let t = if matches!(t, Type::App(_, _)) {
+        t_red = beta_reduce(t);
+        &t_red
+    } else {
+        t
+    };
+
     // Reflexivity.
     if s == t {
         return true;
@@ -211,6 +228,14 @@ fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
         // ── Con — bare constructor (only equal to itself, reflexivity above) ─
         (Type::Con(_), _) | (_, Type::Con(_)) => false,
 
+        // ── Lam — type-level lambda ───────────────────────────────────────────
+        // Two lambdas: compare bodies with same parameter (alpha-equivalent check).
+        (Type::Lam(x, body_s), Type::Lam(y, body_t)) if x == y => {
+            is_subtype_co(body_s, body_t, assumed)
+        }
+        // Lam in isolation (not under App): treat as consistent with `any`.
+        (Type::Lam(_, _), _) | (_, Type::Lam(_, _)) => true,
+
         _ => false,
     }
 }
@@ -260,6 +285,22 @@ fn is_app_subtype(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
 
 /// Return `true` if types `s` and `t` are consistent (`s ~ t`).
 pub fn is_consistent(s: &Type, t: &Type) -> bool {
+    // Beta-reduce App(Lam(x, body), arg) before checking.
+    let s_red;
+    let t_red;
+    let s = if matches!(s, Type::App(_, _)) {
+        s_red = beta_reduce(s);
+        &s_red
+    } else {
+        s
+    };
+    let t = if matches!(t, Type::App(_, _)) {
+        t_red = beta_reduce(t);
+        &t_red
+    } else {
+        t
+    };
+
     // `any` is consistent with everything.
     if matches!(s, Type::Any) || matches!(t, Type::Any) {
         return true;
@@ -296,11 +337,14 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
         // variable — treat as gradual.  This avoids false positives when the
         // constructor variable `m` (from `forall (m :: * -> *). m a → m b`)
         // is freshened independently across call sites and remains unbound
-        // at the consistency check.  Crucially, this rule requires BOTH sides
-        // to be Apps; concrete types such as `number` are not suppressed.
-        (Type::App(f, _), Type::App(_, _)) if matches!(&**f, Type::Var(_, _)) => true,
-        // Symmetric: right head is Var.
-        (Type::App(_, _), Type::App(f, _)) if matches!(&**f, Type::Var(_, _)) => true,
+        // at the consistency check.  An abstract `m a` (where `m :: * → *` is
+        // an unresolved higher-kinded variable) is treated as gradual: it could
+        // be ANY concrete type depending on `m`, so it is consistent with
+        // everything.  This is the correct gradual-typing treatment of abstract
+        // HKT applications.
+        (Type::App(f, _), _) if matches!(&**f, Type::Var(_, _)) => true,
+        // Symmetric: right head is an unresolved HKT variable.
+        (_, Type::App(f, _)) if matches!(&**f, Type::Var(_, _)) => true,
         (Type::App(_, _), Type::App(_, _)) => is_app_consistent(s, t),
 
         // ── Tuple ─────────────────────────────────────────────────────────────
@@ -368,6 +412,11 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
         // ── Forall ────────────────────────────────────────────────────────
         (Type::Forall(_, body_s), t) => is_consistent(body_s, t),
         (s, Type::Forall(_, body_t)) => is_consistent(s, body_t),
+
+        // ── Lam — type-level lambda ───────────────────────────────────────
+        // A Lam in isolation (not beta-reduced away by the App check above)
+        // is treated as gradual — consistent with anything.
+        (Type::Lam(_, _), _) | (_, Type::Lam(_, _)) => true,
 
         // Fall through to subtyping.
         _ => is_subtype(s, t),

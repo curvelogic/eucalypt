@@ -24,6 +24,92 @@ use crate::core::typecheck::types::{
     kind_of, unfold_mu, Constraint, Kind, Type, TypeScheme, TypeVarId,
 };
 
+// ── Beta reduction ────────────────────────────────────────────────────────────
+
+/// Perform one step of beta reduction on `App(Lam(x, body), arg)`.
+///
+/// Returns the reduced type if `ty` is a beta-redex, otherwise returns
+/// `ty.clone()`.  Does not recurse — callers must apply this after
+/// substitution for full normalisation.
+pub fn beta_reduce(ty: &Type) -> Type {
+    if let Type::App(f, arg) = ty {
+        if let Type::Lam(x, body) = f.as_ref() {
+            return structural_subst(body, x, arg);
+        }
+    }
+    ty.clone()
+}
+
+/// Single-pass structural substitution: replace every free occurrence of `var`
+/// in `pattern` with `concrete`, WITHOUT re-applying to `concrete`.
+///
+/// Unlike `apply_subst`, this does not recurse into `concrete` after placing it.
+/// This is required for beta reduction of `Lam` bodies where `concrete` may
+/// itself contain `var` (e.g. `m [a]` when `var = a`).
+pub fn structural_subst(pattern: &Type, var: &TypeVarId, concrete: &Type) -> Type {
+    match pattern {
+        Type::Var(id, _) if id == var => concrete.clone(),
+        Type::Var(_, _) => pattern.clone(),
+        Type::App(f, x) => {
+            let new_f = structural_subst(f, var, concrete);
+            let new_x = structural_subst(x, var, concrete);
+            // After substitution, check for a new beta-redex.
+            beta_reduce(&Type::App(Box::new(new_f), Box::new(new_x)))
+        }
+        Type::Con(_) => pattern.clone(),
+        Type::Function(a, b) => Type::Function(
+            Box::new(structural_subst(a, var, concrete)),
+            Box::new(structural_subst(b, var, concrete)),
+        ),
+        Type::Record { fields, open, rows } => Type::Record {
+            fields: fields
+                .iter()
+                .map(|(k, v)| (k.clone(), structural_subst(v, var, concrete)))
+                .collect(),
+            open: *open,
+            rows: rows.clone(),
+        },
+        Type::Union(vs) => Type::Union(
+            vs.iter()
+                .map(|v| structural_subst(v, var, concrete))
+                .collect(),
+        ),
+        Type::Tuple(elems) => Type::Tuple(
+            elems
+                .iter()
+                .map(|e| structural_subst(e, var, concrete))
+                .collect(),
+        ),
+        Type::Forall(binders, body) => {
+            if binders.iter().any(|(id, _)| id == var) {
+                // `var` is bound here — do not substitute inside.
+                pattern.clone()
+            } else {
+                Type::Forall(
+                    binders.clone(),
+                    Box::new(structural_subst(body, var, concrete)),
+                )
+            }
+        }
+        Type::Mu(x, body) => {
+            if x == var {
+                pattern.clone()
+            } else {
+                Type::Mu(x.clone(), Box::new(structural_subst(body, var, concrete)))
+            }
+        }
+        Type::Lam(x, body) => {
+            if x == var {
+                // `var` is bound by this Lam — do not substitute inside.
+                pattern.clone()
+            } else {
+                Type::Lam(x.clone(), Box::new(structural_subst(body, var, concrete)))
+            }
+        }
+        other => other.clone(),
+    }
+}
+
 /// A mapping from type variable identifiers to their concrete types.
 pub type Substitution = HashMap<TypeVarId, Type>;
 
@@ -63,6 +149,58 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
 
         // Identical types.
         (t1, t2) if t1 == t2 => Ok(()),
+
+        // ── Higher-order pattern unification ────────────────────────────────
+        //
+        // When one side is `App(Var(m, * → *), Var(x, *))` and `m` is unsolved,
+        // and the other side is a CONCRETE structural type (Function, Record,
+        // Con, Tuple, Union — NOT a plain Var or App), construct `Lam(x, rhs)`
+        // and bind `m = Lam(x, rhs)`.
+        //
+        // We specifically exclude `Var` from the rhs because an uninstantiated
+        // variable on the rhs may later unify with a concrete type that would
+        // give us better information.  Binding eagerly against a Var would fix
+        // the functor as a constant (λ_. a) which is almost always wrong.
+        //
+        // This is the Miller pattern fragment: the argument must be a Var
+        // (guarantees decidability and most-general unifiers).
+        (Type::App(lhs_f, lhs_x), rhs)
+            if !matches!(rhs, Type::App(_, _) | Type::Var(_, _))
+                && matches!(lhs_f.as_ref(), Type::Var(_, Kind::Arrow(_, _)))
+                && matches!(lhs_x.as_ref(), Type::Var(_, Kind::Star))
+                && matches!(lhs_f.as_ref(), Type::Var(m, _) if !subst.contains_key(m)) =>
+        {
+            let (m, x) = match (lhs_f.as_ref(), lhs_x.as_ref()) {
+                (Type::Var(m, _), Type::Var(x, _)) => (m.clone(), x.clone()),
+                _ => unreachable!(),
+            };
+            let rhs = rhs.clone();
+            if occurs(&m, &rhs) {
+                return Err(UnifyError::OccursCheck(m, rhs));
+            }
+            let lam = Type::Lam(x, Box::new(rhs));
+            subst.insert(m, lam);
+            Ok(())
+        }
+        // Symmetric: rhs is App(Var(m, * → *), Var(x, *)) and lhs is a concrete structural type.
+        (lhs, Type::App(rhs_f, rhs_x))
+            if !matches!(lhs, Type::App(_, _) | Type::Var(_, _))
+                && matches!(rhs_f.as_ref(), Type::Var(_, Kind::Arrow(_, _)))
+                && matches!(rhs_x.as_ref(), Type::Var(_, Kind::Star))
+                && matches!(rhs_f.as_ref(), Type::Var(m, _) if !subst.contains_key(m)) =>
+        {
+            let (m, x) = match (rhs_f.as_ref(), rhs_x.as_ref()) {
+                (Type::Var(m, _), Type::Var(x, _)) => (m.clone(), x.clone()),
+                _ => unreachable!(),
+            };
+            let lhs = lhs.clone();
+            if occurs(&m, &lhs) {
+                return Err(UnifyError::OccursCheck(m, lhs));
+            }
+            let lam = Type::Lam(x, Box::new(lhs));
+            subst.insert(m, lam);
+            Ok(())
+        }
 
         // Type variable on the left — bind it (kind-aware).
         (Type::Var(id, kind), rhs) => {
@@ -364,10 +502,12 @@ pub fn apply_subst(ty: &Type, subst: &Substitution) -> Type {
                 ty.clone()
             }
         }
-        Type::App(f, inner) => Type::App(
-            Box::new(apply_subst(f, subst)),
-            Box::new(apply_subst(inner, subst)),
-        ),
+        Type::App(f, inner) => {
+            let new_f = apply_subst(f, subst);
+            let new_inner = apply_subst(inner, subst);
+            // After applying substitution, check for a beta-redex.
+            beta_reduce(&Type::App(Box::new(new_f), Box::new(new_inner)))
+        }
         Type::Con(_) => ty.clone(),
         Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| apply_subst(e, subst)).collect()),
         Type::Function(a, b) => Type::Function(
@@ -443,12 +583,24 @@ pub fn apply_subst(ty: &Type, subst: &Substitution) -> Type {
             }
             Type::Forall(binders.clone(), Box::new(apply_subst(body, &inner_subst)))
         }
+        Type::Lam(x, body) => {
+            // The parameter `x` is bound inside the Lam body — remove it
+            // from the substitution when recursing into the body.
+            let mut inner_subst = subst.clone();
+            inner_subst.remove(x);
+            Type::Lam(x.clone(), Box::new(apply_subst(body, &inner_subst)))
+        }
         other => other.clone(),
     }
 }
 
 /// Instantiate a polymorphic type scheme by replacing each quantified variable
 /// with a fresh type variable.
+///
+/// The fresh variables preserve the kind of the original variable by scanning
+/// the scheme body for the first occurrence of each variable.  This ensures
+/// that higher-kinded variables (`m :: * → *`) are freshened as `* → *` rather
+/// than defaulting to `*`.
 pub fn freshen(scheme: &TypeScheme, counter: &mut u32) -> Type {
     if scheme.vars.is_empty() {
         return scheme.body.clone();
@@ -456,9 +608,10 @@ pub fn freshen(scheme: &TypeScheme, counter: &mut u32) -> Type {
 
     let mut rename: Substitution = HashMap::new();
     for var in &scheme.vars {
+        let kind = var_kind_in_type(var, &scheme.body);
         let fresh = TypeVarId(format!("_t{}", *counter));
         *counter += 1;
-        rename.insert(var.clone(), Type::var(fresh));
+        rename.insert(var.clone(), Type::hk_var(fresh, kind));
     }
 
     apply_subst(&scheme.body, &rename)
@@ -480,9 +633,10 @@ pub fn freshen_with_constraints(scheme: &TypeScheme, counter: &mut u32) -> (Type
 
     let mut rename: Substitution = HashMap::new();
     for var in &scheme.vars {
+        let kind = var_kind_in_type(var, &scheme.body);
         let fresh = TypeVarId(format!("_t{}", *counter));
         *counter += 1;
-        rename.insert(var.clone(), Type::var(fresh));
+        rename.insert(var.clone(), Type::hk_var(fresh, kind));
     }
 
     let body = apply_subst(&scheme.body, &rename);
@@ -510,6 +664,81 @@ pub fn freshen_forall(binders: &[(TypeVarId, Kind)], body: &Type, counter: &mut 
         rename.insert(id.clone(), Type::hk_var(fresh, kind.clone()));
     }
     apply_subst(body, &rename)
+}
+
+/// Look up the kind of a free type variable by scanning the type body.
+///
+/// Returns the kind of the first occurrence of `var` found in `ty`.
+/// Falls back to `Kind::Star` if the variable is not found (should not happen
+/// when `var` is known to be free in `ty`).
+pub fn var_kind_in_type(var: &TypeVarId, ty: &Type) -> Kind {
+    match ty {
+        Type::Var(id, kind) if id == var => kind.clone(),
+        Type::App(f, x) => {
+            let k = var_kind_in_type(var, f);
+            if k != Kind::Star {
+                return k;
+            }
+            var_kind_in_type(var, x)
+        }
+        Type::Function(a, b) => {
+            let k = var_kind_in_type(var, a);
+            if k != Kind::Star {
+                return k;
+            }
+            var_kind_in_type(var, b)
+        }
+        Type::Record { fields, .. } => {
+            for v in fields.values() {
+                let k = var_kind_in_type(var, v);
+                if k != Kind::Star {
+                    return k;
+                }
+            }
+            Kind::Star
+        }
+        Type::Tuple(elems) => {
+            for e in elems {
+                let k = var_kind_in_type(var, e);
+                if k != Kind::Star {
+                    return k;
+                }
+            }
+            Kind::Star
+        }
+        Type::Union(variants) => {
+            for v in variants {
+                let k = var_kind_in_type(var, v);
+                if k != Kind::Star {
+                    return k;
+                }
+            }
+            Kind::Star
+        }
+        Type::Forall(binders, body) => {
+            if binders.iter().any(|(b, _)| b == var) {
+                // var is bound — not free here.
+                Kind::Star
+            } else {
+                var_kind_in_type(var, body)
+            }
+        }
+        Type::Mu(x, body) => {
+            if x == var {
+                Kind::Star
+            } else {
+                var_kind_in_type(var, body)
+            }
+        }
+        Type::Lam(x, body) => {
+            if x == var {
+                Kind::Star
+            } else {
+                var_kind_in_type(var, body)
+            }
+        }
+        _ => Kind::Star,
+    }
 }
 
 /// Lift a `Type` into a `TypeScheme` by collecting all free type variables.
@@ -576,6 +805,12 @@ fn collect_free_vars(ty: &Type, vars: &mut Vec<TypeVarId>, seen: &mut HashSet<Ty
             }
             collect_free_vars(body, vars, &mut inner_seen);
         }
+        Type::Lam(x, body) => {
+            // The parameter `x` is bound in the body.
+            let mut inner_seen = seen.clone();
+            inner_seen.insert(x.clone());
+            collect_free_vars(body, vars, &mut inner_seen);
+        }
         _ => {}
     }
 }
@@ -600,6 +835,10 @@ fn occurs(id: &TypeVarId, ty: &Type) -> bool {
             } else {
                 occurs(id, body)
             }
+        }
+        Type::Lam(x, body) => {
+            // x is bound — if id == x it doesn't occur free.
+            x != id && occurs(id, body)
         }
         _ => false,
     }
@@ -980,5 +1219,85 @@ mod tests {
         let rhs = Type::list(Type::Number);
         // The forall is instantiated to [_t0], then unified with [number]
         assert!(unify(&forall, &rhs, &mut s).is_ok());
+    }
+
+    // ── Higher-order pattern unification ─────────────────────────────────────
+
+    #[test]
+    fn ho_rule_fires_app_hk_var_vs_con() {
+        // App(Var(m, * → *), Var(a, *)) unified with Type::Number
+        // The HO rule should fire and bind m = Lam(a, number).
+        let m = TypeVarId("m".to_string());
+        let a = TypeVarId("a".to_string());
+        let lhs = Type::App(
+            Box::new(Type::hk_var(m.clone(), Kind::star_to_star())),
+            Box::new(Type::var(a.clone())),
+        );
+        let rhs = Type::Number;
+        let mut s = Substitution::new();
+        assert!(unify(&lhs, &rhs, &mut s).is_ok(), "HO rule should succeed");
+        let bound = s.get(&m).expect("m should be bound");
+        assert!(
+            matches!(bound, Type::Lam(x, _) if x == &a),
+            "m should be Lam(a, ...), got {bound:?}"
+        );
+        // beta reduce: (Lam(a, number)) applied to anything should give number
+        let result = apply_subst(&lhs, &s);
+        assert_eq!(
+            result,
+            Type::Number,
+            "App after substitution should beta-reduce to number"
+        );
+    }
+
+    #[test]
+    fn freshen_preserves_hk_kind() {
+        // Scheme: poly([m], App(Var(m, * → *), Var(a, *)))
+        // The body is `m a` where m :: * → *.
+        // After freshen, the fresh var should have kind * → *.
+        let m = TypeVarId("m".to_string());
+        let a = TypeVarId("a".to_string());
+        let m_ty = Type::hk_var(m.clone(), Kind::star_to_star());
+        let a_ty = Type::var(a.clone());
+        let body = Type::App(Box::new(m_ty), Box::new(a_ty));
+        let scheme = TypeScheme::poly(vec![m.clone()], body);
+        let mut counter = 10u32;
+        let freshened = freshen(&scheme, &mut counter);
+        // The freshened type should be App(Var(_t10, * → *), Var(a, *))
+        if let Type::App(f, _) = &freshened {
+            assert!(
+                matches!(f.as_ref(), Type::Var(_, Kind::Arrow(_, _))),
+                "freshened HK var should have kind * → *, got {f:?}"
+            );
+        } else {
+            panic!("expected App after freshen, got {freshened:?}");
+        }
+    }
+
+    #[test]
+    fn ho_rule_does_not_fire_for_var_rhs() {
+        // App(Var(m, * → *), Var(a, *)) unified with Var(b, *)
+        // HO rule should NOT fire — rhs is a Var.
+        // Instead, the normal App decomposition should fire, binding m = Var(m_fresh) ...
+        // Actually this case goes to App vs Var which doesn't match. Let's just check
+        // that unification produces SOME result (binding m and a to b's constructor info).
+        // The key is no panic and m is NOT bound to a Lam.
+        let m = TypeVarId("m".to_string());
+        let a = TypeVarId("a".to_string());
+        let b = TypeVarId("b".to_string());
+        let lhs = Type::App(
+            Box::new(Type::hk_var(m.clone(), Kind::star_to_star())),
+            Box::new(Type::var(a.clone())),
+        );
+        let rhs = Type::var(b.clone());
+        let mut s = Substitution::new();
+        // This should succeed (bind b = App(m, a) or bind m = Var(b_con))
+        // What matters: m is NOT bound to a Lam.
+        let _ = unify(&lhs, &rhs, &mut s);
+        let m_bound = s.get(&m);
+        assert!(
+            !matches!(m_bound, Some(Type::Lam(_, _))),
+            "m should NOT be bound to a Lam when rhs is a Var, got {m_bound:?}"
+        );
     }
 }

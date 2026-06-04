@@ -2214,3 +2214,8 @@ pub fn test_typecheck_085_random_wrong_binding() {
 pub fn test_typecheck_086_user_monad_with_monad_meta() {
     run_typecheck_test("086_user_monad_with_monad_meta.eu");
 }
+
+#[test]
+pub fn test_typecheck_087_for_wrong_element_type() {
+    run_typecheck_test("087_for_wrong_element_type.eu");
+}
