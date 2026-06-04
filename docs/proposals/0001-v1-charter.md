@@ -12,9 +12,9 @@
 eucalypt 1.0 would guarantee, and — more importantly — the machinery that keeps
 those guarantees *keepable* as the language keeps moving. The central proposal
 is a Rust-style **editions** mechanism that lives in **unit metadata**
-(`{ edition: "2026" }`), so that necessary breaking changes — there is already
-one pending — can land as new defaults without invalidating files written
-against an older edition. Around it sit three supporting pieces: an enumeration
+(`{ edition: "2026" }`), so that necessary breaking changes — one is pending and
+another just shipped, in 0.6.2, with no migration path at all — can land as new
+defaults without invalidating files written against an older edition. Around it sit three supporting pieces: an enumeration
 of **stable surfaces** and their tiers; a **semver interpretation** suited to a
 language-plus-tool whose "API" is its syntax, prelude and output rather than a
 set of function signatures; and a **deprecation lifecycle** built on the
@@ -42,30 +42,45 @@ to produce the released tag `major.minor.patch.build` (`build.eu:59-62`,
 GitHub releases (`.github/workflows/build-rust.yaml:391-402`); the tag is
 whatever `eu -e eu.build.version` reports at build time. So eucalypt practises
 *continuous delivery with a four-part build number*, not semantic versioning —
-the `0.6.1` in `Cargo.toml:3` is a human-set prefix, and the fourth field
+the `0.7.0` in `Cargo.toml:3` is a human-set prefix, and the fourth field
 carries no compatibility meaning at all. That is fine for a 0.x tool. It is not
 a 1.0 promise.
 
-Meanwhile breaking changes are demonstrably real and *already happening*:
+Meanwhile breaking changes are demonstrably real and *already happening* — one
+shipped a few days ago:
 
+- **A breaking API change that just shipped (0.6.2).** The `cond` multi-way
+  conditional was rewritten from `cond(list_of_pairs, default)` to a clause form:
+  the old `cond([[c1, v1], [c2, v2]], default)` "must be rewritten as
+  `cond[c1 => v1, c2 => v2, default]`", introducing a new `=>` clause operator
+  (precedence 15) and `__COND`/`__CLAUSE` intrinsics (`CHANGELOG.md:57`;
+  `lib/prelude.eu:1168,1172`). This is the clearest possible illustration of the
+  problem. It is a genuine source-incompatible change to a Stable-tier surface (a
+  prelude function's calling convention), and it shipped with **no edition
+  mechanism and no migration note for users** — eucalypt's own internal callers
+  (`max-of`, `min-of`, `parse-args`) were rewritten by hand
+  (`lib/prelude.eu:895-897,920-922,2226-2227`), but any user file that called the
+  old `cond` simply breaks on upgrade. This is exactly the kind of semantic break
+  an edition is meant to gate, and exactly the failure mode — silent breakage of
+  an unedited file — this charter exists to prevent.
 - **A pending default change.** "It is possible that a deep merge will become
   the default for block catenation in future" (`docs/welcome/index.md:320`).
   Block catenation `{a:1} {b:2}` is one of the first things every user learns
   (ibid. §Example 2). Flipping shallow→deep silently would change the output of
   files that nobody edited — the canonical infrastructure-artefact failure.
-- **A precedent already shipped.** 0.5.3 changed simple-lookup semantics so that
-  `.name` is "consistently key lookup restricted to block bindings, never
-  extending to outer scope. Previously, `.name` on a static block literal
-  resolved through the block scope and fell through to outer scope"
-  (`CHANGELOG.md:128`), and changed monadic-block scoping and associativity in
-  generalised lookup (`CHANGELOG.md:129-130`). These are exactly the kind of
-  *semantic* change an edition is meant to gate.
+- **A semantic precedent already shipped (0.5.3).** 0.5.3 changed simple-lookup
+  semantics so that `.name` is "consistently key lookup restricted to block
+  bindings, never extending to outer scope. Previously, `.name` on a static block
+  literal resolved through the block scope and fell through to outer scope"
+  (`CHANGELOG.md:190`), and changed monadic-block scoping and associativity in
+  generalised lookup (`CHANGELOG.md:191-192`). Like the `cond` break, these are
+  exactly the kind of *semantic* change an edition is meant to gate.
 
 The language even ships a primitive that anticipates this need: `requires`
 (`lib/prelude.eu:15-17`) calls the `__REQUIRES` intrinsic
 (`src/eval/stg/version.rs`), which parses a semver constraint and asserts the
 running `eu` satisfies it, raising `VersionRequirementFailed`
-(`src/eval/error.rs:677`) otherwise. A file can already say "I need `eu >=
+(`src/eval/error.rs:679`) otherwise. A file can already say "I need `eu >=
 0.6.0`". What it cannot say is "interpret me under the *2026* semantics" — which
 is the strictly more useful guarantee.
 
@@ -124,7 +139,7 @@ compatibility promise at all).
 | Core syntax (catenation, blocks, lists, operators, anaphora, metadata) | **Stable** | The non-negotiable conservatism guarantee. New syntax is itself an edition-gated event. |
 | Prelude API (~200 functions, `lib/prelude.eu`) | **Stable** | The largest and heaviest commitment — see below. |
 | Block-merge / lookup *semantics* | **Stable, edition-gated** | The deep-merge flip and the 0.5.3 lookup change are the motivating cases. |
-| Type-annotation DSL (`type:` strings, `src/core/typecheck/parse.rs`) | **Stable (advisory)** | Annotations are documentation; their *grammar* is stable, but a type warning appearing/disappearing is **not** a breaking change (it has no runtime effect). |
+| Type-annotation DSL (`type:` strings, `src/core/typecheck/parse.rs`) | **Stable (advisory)** | The grammar has grown through 0.6.2/0.7.0 — `forall` quantification, an explicit `Kind` system (`*`, `* -> *`), `Con`/`App` constructor application, and structural operator constraints (`parse.rs:9-10,471-486,533-546,1016-1061`). Annotations are documentation; their *grammar* is stable to write against, but a type warning appearing/disappearing is **not** a breaking change (it has no runtime effect). |
 | CLI surface (`eu` subcommands + flags) | **Stable** | `run`, `test`, `dump`, `version`, `explain`, `list-targets`, `fmt`, `lsp`, `check` (`src/driver/options.rs:85-105`); flags such as `-x/-j/-o/-t/-e/-Q` (ibid. `RunArgs`). |
 | Import/export formats (YAML, JSON, TOML, EDN, XML, CSV, text in; YAML/JSON/TOML/EDN/text/eu out) | **Stable** | The *contract* of these formats; see open-question 1 below for the export-shape nuance. |
 | WASM / embedding API (`src/wasm.rs`) | **Stable** | `evaluate`, `evaluate_expr`, `formats` and the `EvalResult` JSON envelope. |
@@ -134,12 +149,15 @@ compatibility promise at all).
 | Performance, exact error *text*, exact warning *wording* | **Not covered** | Error *codes/locations* and exit codes are stable; prose is not. |
 
 The prelude commitment deserves a flag of its own. ~200 annotated functions
-(`CHANGELOG.md`, 0.6.0; ≈229 top-level declarations in `lib/prelude.eu`) is a
+(`CHANGELOG.md`, 0.6.0; ≈228 top-level declarations in `lib/prelude.eu`) is a
 *large* stable surface — far larger than most config languages expose. Freezing
 it forbids freely renaming a function, re-ordering arguments (as 0.6.0 did for
-`arr.slice`/`arr.neighbours`), or deleting a misfeature without an
-edition + deprecation cycle. This is a real, ongoing tax the maintainer should
-accept deliberately. Pragmatic softener: tier the prelude itself — a **core**
+`arr.slice`/`arr.neighbours`), changing a calling convention (as 0.6.2 just did
+for `cond`), or deleting a misfeature without an edition + deprecation cycle.
+The `cond` rewrite is the live proof that this tax is being paid *informally*
+today: a Stable-surface break shipped in a PATCH-looking release. This is a real,
+ongoing tax the maintainer should accept deliberately and route through the
+edition machinery instead. Pragmatic softener: tier the prelude itself — a **core**
 subset (arithmetic, comparison, string, list, block, `io`) at Stable, newer
 namespaces (`arr`, `set`, `state`, lens internals) held at Unstable until 1.1 —
 shrinking the frozen footprint without weakening the promise where it matters.
@@ -153,7 +171,7 @@ eucalypt's actual API — syntax + prelude + rendered output:
 
 | Bump | Means | Examples |
 |---|---|---|
-| **MAJOR** | A change to *default* semantics or a removal that an unmodified file can observe. | Making deep-merge the default outside an edition; removing a prelude function past its deprecation window; changing default render shape. |
+| **MAJOR** | A change to *default* semantics or a removal that an unmodified file can observe. | Making deep-merge the default outside an edition; removing a prelude function past its deprecation window; changing a prelude calling convention (the 0.6.2 `cond` rewrite, had it happened post-1.0); changing default render shape. |
 | **MINOR** | Backwards-compatible addition. | A new prelude function; a new export format; a **new edition**; a new CLI flag/subcommand; a new advisory type-warning. |
 | **PATCH** | No observable semantic change. | Bug fixes (including diagnostics), performance, error-text wording, internal refactors. |
 
@@ -267,12 +285,18 @@ proposals; this charter sets the bar, they do the work.
   conformance suite pins the stable surfaces, including a *per-edition* golden
   corpus proving edition N output is unchanged by a binary that also supports
   N+1 — the executable form of the Rust invariant.
-- **G4 — Type-system completeness ([0011](0011-typeclasses-without-classes.md),
-  roadmap Stage A).** Stage A "close the existing system"
-  (`type-system-evolution.md:1263-1282`) is delivered: the advisory checker is
-  coherent enough that its annotation DSL can be declared Stable. 1.0 does **not**
-  wait on Stage B/HKT — types are advisory, so an incomplete-but-sound checker
-  does not block a language-stability promise.
+- **G4 — Type-system surface ratified ([0011](0011-typeclasses-without-classes.md),
+  roadmap Stages A–B).** This gate has largely *landed*: Stage A "close the
+  existing system" (`type-system-evolution.md:1263-1282`) shipped in 0.6.2
+  (`Dict`, equirecursive `Mu`, literal types, flow narrowing, `NonEmpty`,
+  first-class alias references) and Stage B including HKT shipped in 0.7.0
+  (`forall`/`Kind`/`Con`/`App`, higher-order pattern unification, structural
+  operator constraints, `Partial(T)`, full row inference — `CHANGELOG.md`, 0.7.0).
+  The annotation DSL is now coherent and rich enough to *declare Stable* rather
+  than to wait on; what remains for 1.0 is **ratifying the shipped surface** (the
+  §1 row) and freezing its grammar, not delivering it. 1.0 never *required* a
+  complete checker — types are advisory — so any residual incompleteness is not a
+  blocker; the work here is policy, not implementation.
 - **G5 — Boundary policy fixed ([0002](0002-gradual-typing-boundary-policy.md)).**
   The answer to open-question 6 (silent / opt-in / mandatory boundary checks) is
   chosen and documented, because "what soundness 1.0 guarantees" is part of the
@@ -360,8 +384,12 @@ Risk concentrates in (2): block-merge semantics are pervasive, and proving the
   needed evolution, the promise becomes a millstone. Mitigation: the core/Unstable
   prelude tiering in §1; revisit at 1.1.
 - **Premature 1.0.** Declaring stability before the surfaces are actually stable
-  (e.g. while the type DSL is still churning) burns credibility. The G1–G6 gate,
-  and especially G4's "Stage A done", is the guard.
+  burns credibility. With Stages A and B now shipped (0.6.2/0.7.0), the type DSL
+  has largely settled and G4 is close to met — but the *other* gates are not, and
+  ratifying a surface (G2/G4) is precisely the discipline that stops "it compiles"
+  from being mistaken for "it is promised". The G1–G6 gate is the guard; G1
+  (editions live) and G3 (the per-edition conformance corpus) remain the long
+  poles.
 
 Falsifier: if, on a representative corpus, the deep-merge edition delta cannot be
 migrated mechanically for a clear majority of affected files, the
@@ -385,10 +413,12 @@ deprecation window should be reconsidered.
 ## References
 
 **Eucalypt:** `docs/welcome/index.md:320` (pending deep-merge default);
-`CHANGELOG.md:128-130` (0.5.3 lookup/scoping change); `build.eu:7-13,59-62` and
+`CHANGELOG.md:57` + `lib/prelude.eu:1168,1172,895-897,920-922` (0.6.2 breaking
+`cond` API change, `=>` clause operator, `__COND`/`__CLAUSE`, rewritten internal
+callers); `CHANGELOG.md:190-192` (0.5.3 lookup/scoping change); `build.eu:7-13,59-62` and
 `.github/workflows/build-rust.yaml:391-402` (current version scheme & draft
 release flow); `lib/prelude.eu:15-17` + `src/eval/stg/version.rs` +
-`src/eval/error.rs:677` (`requires`/`__REQUIRES`/`VersionRequirementFailed`);
+`src/eval/error.rs:679` (`requires`/`__REQUIRES`/`VersionRequirementFailed`);
 `src/driver/options.rs:85-105` (CLI surface); `src/wasm.rs` (embedding API);
 `src/driver/lsp/actions.rs:27,86,151-165` (code-action infrastructure);
 `docs/appendices/syntax-gotchas.md:439-457` (unit-metadata mechanics);

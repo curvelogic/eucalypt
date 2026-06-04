@@ -42,15 +42,16 @@ That means every numeric and structural operation pays for dynamic dispatch it
 may not need. Consider `+`. The prelude binds it to the `ADD` intrinsic
 (`lib/prelude.eu:644`: `(l + r): __ADD(l, r)`; intrinsic name at
 `src/eval/intrinsics.rs:123`). Its STG wrapper, `binary_wrapper`
-(`src/eval/stg/arith.rs:518`, body from `:535`), is a nested `case` dispatching
-on each argument's boxing tag — `BoxedNumber`, `BoxedString`, `BoxedSymbol`,
-`BoxedZdt` — with separate boxed and native paths, forcing and unboxing each
-operand before the BIF call. The intrinsic body (`Add::execute`, `:88-138`) then
-re-checks at runtime: resolves each operand to a `Native`, tests
-`matches!(a, Native::NdArray(_))`, and falls through `as_i64` → `as_u64` →
-`as_f64`. For an expression the checker has *already proven* is
-`number -> number -> number`, all of this — the tag `case`, the force/unbox
-dance, the `NdArray` test, the numeric ladder — is redundant. The STG already
+(`src/eval/stg/arith.rs:452`), is a nested `case` dispatching on each
+argument's boxing tag — `BoxedNumber`, `BoxedString`, `BoxedSymbol`, `BoxedZdt`
+— with a boxed path (force/unbox) and a native/native fast path that skips
+unpacking when both operands are already unboxed. Even on the fast path the
+dispatch overhead is unavoidable: the `case` itself must be evaluated. The
+intrinsic body (`Add::execute`, `:88-138`) then re-checks at runtime: resolves
+each operand to a `Native`, tests `matches!(a, Native::NdArray(_))`, and falls
+through `as_i64` → `as_u64` → `as_f64`. For an expression the checker has
+*already proven* is `number -> number -> number`, all of this — the `case`
+dispatch, the `NdArray` test, the numeric ladder — is redundant. The STG already
 has the unboxed target representation, `Native::Num(Number)` alongside `Sym`,
 `Str`, `Zdt`, `NdArray` (`src/eval/memory/syntax.rs:37-51`). What is missing is
 *permission*, derived from a type, to take the direct path.
@@ -69,7 +70,7 @@ them honestly:
 | Item | What it does | Verdict |
 |---|---|---|
 | **H11a** unboxing | Compile a proven `number`-typed pipeline to a primitive-arithmetic path skipping box/force/dispatch. STG already has `Native` (`syntax.rs:37`). | **Take.** Largest single win; ~5–10× on tight arithmetic per the doc. |
-| **H11f** direct intrinsic dispatch | A typed `+`/`<`/`length` compiles straight to its intrinsic with the tag `case` of `binary_wrapper` removed. | **Take.** Cheapest; complements H11a (unboxing is what makes the BIF call legal without re-checking). |
+| **H11f** direct intrinsic dispatch | A typed `+`/`<`/`min`/`max`/`length` compiles straight to its intrinsic with the tag `case` of `binary_wrapper` removed. As of 0.7.0, `min` and `max` carry structural operator constraints (`"<(a, a) => a → a → a"`, `">(a, a) => a → a → a"`, `lib/prelude.eu:916,891`), expanding the set of annotated numeric targets for this optimisation. | **Take.** Cheapest; complements H11a (unboxing is what makes the BIF call legal without re-checking). |
 | **H11c** IO flattening | Collapse a statically-all-`IO(T)` bind-chain into a direct-style tagged sequence, cutting one heap constructor per step (`io.rs`, `io_run.rs`). | **Take.** Allocation win on IO-heavy renders; ties to [0005](0005-generational-gc.md). |
 | **H11e** dead-branch elimination | `if(x = :foo, A, B)` with `x : LiteralSymbol(:foo)` reduces to `A`. | **Take.** Nearly free; synergises with literal types (H16). Must key on the *brancher set* (`if`/`then`/`cond`/`‖`), not the name `if` — see H15's "branching is not syntax". |
 | **H11b** lens fusion | Compose `at(:a) ∘ at(:b)` to a direct two-step access instead of allocating an intermediate metadata-carrying function. | **Drop (defer).** Elegant, but lens-heavy code is rare; the doc parks it. |
@@ -314,8 +315,9 @@ why the boundary policy is load-bearing.
 **Eucalypt source**
 - `src/bin/eu.rs:112-146` — type-check is advisory, then the untyped evaluand is run
 - `src/driver/eval.rs` (`try_execute`) — `stg::compile` receives core with no type info
-- `src/eval/stg/arith.rs:88-138` (`Add::execute`), `:518`/`:535` (`binary_wrapper`) — runtime tag-check dispatch
+- `src/eval/stg/arith.rs:88-138` (`Add::execute`), `:452` (`binary_wrapper`) — runtime tag-check dispatch
 - `src/eval/memory/syntax.rs:37-51` — `Native` unboxed value representation
+- `lib/prelude.eu:891-892` (`max`, `>(a, a)` constraint), `:916-917` (`min`, `<(a, a)` constraint) — structural operator constraints shipped in 0.7.0, adding to the annotated numeric targets for H11f
 - `src/eval/stg/io.rs:47-65` — `IoBind` constructor; `src/driver/io_run.rs:1217-1244` — heap-walking interpreter
 - `src/core/inline/reduce.rs`; `src/driver/source.rs:459` — inliner entry (`reduce::inline_pass`)
 - `lib/prelude.eu:644`; `src/eval/intrinsics.rs:123` — `+` → `ADD` intrinsic

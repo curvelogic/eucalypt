@@ -34,12 +34,12 @@ already imply strictness in their arguments).
 
 Every `let`-binding in eucalypt core that reaches the STG compiler without a
 WHNF witness is compiled as a `Thunk` `LambdaForm`
-(`src/eval/stg/syntax.rs:218–244`).  At runtime the VM:
+(`src/eval/stg/syntax.rs:213–225`).  At runtime the VM:
 
 1. Allocates an `EnvFrame` entry for the closure (heap pressure).
 2. On first entry, overwrites the slot with a `BlackHole` to catch cycles
-   (`src/eval/machine/vm.rs:424–434`).
-3. Pushes an `Update` continuation (`src/eval/machine/vm.rs:429–435`).
+   (`src/eval/machine/vm.rs:434–441`).
+3. Pushes an `Update` continuation (`src/eval/machine/vm.rs:443–449`).
 4. Evaluates the thunk body.
 5. Returns through the `Update` continuation, writing the WHNF result back
    into the slot.
@@ -49,7 +49,7 @@ WHNF witness is compiled as a `Thunk` `LambdaForm`
 Steps 1–6 happen on *every* binding unless the compiler can prove the binding
 is either already in WHNF (`StgSyn::is_whnf`, `src/eval/stg/syntax.rs:143`)
 or used at most once (the `single_use` flag,
-`src/eval/stg/compiler.rs:499–516`).
+`src/eval/stg/compiler.rs:499–517`).
 
 In traversal-heavy workloads — list maps, block transforms, recursive
 conditionals — the mark phase dominates VM time.  Every unnecessary thunk kept
@@ -57,13 +57,21 @@ on the heap adds a reachable object to the mark queue.  The GC benchmark
 (`benches/gc.rs`) already measures mark cost directly through the
 `gc_collect_with_survivors` family.
 
+One allocation site has already been addressed: as of 0.6.2, arithmetic
+operations return native atoms directly rather than boxing the result
+(`CHANGELOG.md: "Arithmetic native returns"`), saving one heap allocation per
+arithmetic result.  This is a concrete partial win on the same allocation
+pressure described here; the broader opportunity — compile let-bindings as
+`Value` rather than `Thunk` wherever the demand analysis permits — remains
+open and is what this proposal addresses.
+
 ### The existing hand-rolled heuristics
 
 The codebase already has two partial escape valves, each addressing a specific
 observed pain point:
 
 **`single_use` on let bodies and strict args.**  The
-`ProtoSyntax::take_lambda_form` method (`src/eval/stg/compiler.rs:505–517`)
+`ProtoSyntax::take_lambda_form` method (`src/eval/stg/compiler.rs:506–517`)
 checks `self.single_use()` before deciding whether to emit a `Thunk` or a
 `Value`.  Let-body expressions are always compiled as `single_use: true`
 (`src/eval/stg/compiler.rs:1205–1209`) because a let body is evaluated exactly
@@ -79,7 +87,7 @@ then- and else-branches (indices 1 and 2) as single-use
 `switch_suppress` case expression (`src/eval/stg/boolean.rs:150`) whose
 `suppress_update: true` field instructs the VM to skip the `Update` push when
 entering a branch whose body is a bare local atom
-(`src/eval/machine/vm.rs:270–276`, `src/eval/stg/syntax.rs:96–99`).  Without
+(`src/eval/machine/vm.rs:273–279`, `src/eval/stg/syntax.rs:95–99`).  Without
 this, tail-recursive conditional loops such as
 `countdown(n) = if(n = 0, 0, countdown(n-1))` accumulate an O(N) stack of
 `Update` continuations — one per iteration — before any can be popped.
@@ -214,10 +222,10 @@ at most two passes over the group).
 
 The analysis annotates each let-binding with a `DemandAnnotation` before STG
 compilation.  The STG compiler's `compile_binding` function
-(`src/eval/stg/compiler.rs:1245–1270`) then consults this annotation: if
+(`src/eval/stg/compiler.rs:1245–1251`) then consults this annotation: if
 the demand is `U1` or `SU1`, it calls `dsl::value(…)` rather than
 `dsl::thunk(…)`.  This is a two-line change in `take_lambda_form`
-(`src/eval/stg/compiler.rs:511–515`) — the analysis result replaces the
+(`src/eval/stg/compiler.rs:512–514`) — the analysis result replaces the
 `self.single_use()` heuristic rather than adding to it.
 
 ### Safety condition
@@ -299,7 +307,7 @@ post-1.0 as per the README portfolio.
 
 ### Phase 2 — Compiler integration (tiny)
 
-- Modify `ProtoSyntax::take_lambda_form` in `src/eval/stg/compiler.rs:511–517`
+- Modify `ProtoSyntax::take_lambda_form` in `src/eval/stg/compiler.rs:506–517`
   to consult the annotation.
 - Retire the `single_use` fields on `ProtoApp`, `ProtoInline`, and
   `ProtoAppGroup` in favour of the analysis result (or keep them as overrides
@@ -388,7 +396,7 @@ the body as `L` unless proven otherwise) is correct.
 ## Success criteria
 
 1. **Fewer thunk allocations in benchmark runs.**  Measure
-   `metrics.alloc(bindings.len())` in `vm.rs:487` (currently totalled as
+   `metrics.alloc(bindings.len())` in `vm.rs:501` (currently totalled as
    allocation count) before and after.  A 20 % reduction in allocation count
    on representative corpus programs (prelude-heavy block transforms) is the
    target.
@@ -415,20 +423,20 @@ the body as `L` unless proven otherwise) is correct.
 
 ## References
 
-- `src/eval/stg/syntax.rs:213–276` — `LambdaForm` variants (`Thunk`, `Value`,
-  `Lambda`) and `StgSyn::is_whnf`.
-- `src/eval/stg/compiler.rs:474–538` — `Compiler`, `ProtoSyntax`,
+- `src/eval/stg/syntax.rs:213–225` — `LambdaForm` variants (`Thunk`, `Value`,
+  `Lambda`); `src/eval/stg/syntax.rs:143` — `StgSyn::is_whnf`.
+- `src/eval/stg/compiler.rs:477–538` — `Compiler`, `ProtoSyntax`,
   `take_lambda_form`, `single_use` decision.
-- `src/eval/stg/compiler.rs:920–952` — `single_use_args` propagation for
+- `src/eval/stg/compiler.rs:924–952` — `single_use_args` propagation for
   intrinsic argument compilation.
 - `src/eval/machine/intrinsic.rs:119–126` — `StgIntrinsic::single_use_args`.
 - `src/eval/stg/boolean.rs:133–159` — `If` intrinsic: `single_use_args`
   override and `switch_suppress` wrapper.
-- `src/eval/machine/vm.rs:270–276` — `suppress_next_update` field: rationale
+- `src/eval/machine/vm.rs:273–279` — `suppress_next_update` field: rationale
   and VM-level suppression of `Update` push.
-- `src/eval/machine/vm.rs:396–435` — Thunk entry: blackholing and `Update`
+- `src/eval/machine/vm.rs:409–449` — Thunk entry: blackholing and `Update`
   continuation push.
-- `src/eval/stg/mod.rs:281–301` — `StgSettings::suppress_updates`.
+- `src/eval/stg/mod.rs:286–305` — `StgSettings::suppress_updates`.
 - `benches/gc.rs` — GC mark cost benchmarks.
 - Sergey, Vytiniotis, Peyton Jones. *"Modular, Higher-Order Cardinality
   Analysis in Theory and Practice."* POPL 2014.
