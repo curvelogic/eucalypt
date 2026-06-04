@@ -111,14 +111,14 @@ and a deliberately tiny surface. Per the non-negotiables (`_house-style.md` §1)
 2. **Thunk update + blackholing — THE parallel-laziness hazard.** On forcing a
    thunk the VM overwrites its environment slot with a `BlackHole` closure to
    catch cyclic re-entry, then an `Update` continuation overwrites it with the
-   result (`src/eval/machine/vm.rs:419-431`; the `BlackHole` error path is
-   `vm.rs:519`). Single-threaded, this is a sentinel. With two workers it is a
+   result (`src/eval/machine/vm.rs:434-449`; the `BlackHole` error path is
+   `vm.rs:533`). Single-threaded, this is a sentinel. With two workers it is a
    *race*: both may find an un-blackholed thunk and duplicate (or, worse,
    corrupt) the update. This needs the Harris/Marlow treatment — an atomic
    claim on the thunk header, a lock-free fast path, and a block-and-wake slow
    path for the rare genuine collision. Touches the hottest code in the VM.
 3. **`Rc` is not `Send`.** Core and the STG backend use `Rc` pervasively:
-   `RcExpr` wraps `Rc<Expr<Self>>` (`src/core/expr.rs:1127`,
+   `RcExpr` wraps `Rc<Expr<Self>>` (`src/core/expr.rs:479`,
    `CoreExpr = Expr<RcExpr>` at `expr.rs:357`), and `StgSyn` uses `Rc<StgSyn>`
    throughout (70 occurrences in `src/eval/stg/syntax.rs`). None of this can
    cross a thread boundary. Note this affects *compiled programs*, not the
@@ -139,14 +139,14 @@ and a deliberately tiny surface. Per the non-negotiables (`_house-style.md` §1)
   evaluates — the textbook speculation case, available *for free* semantically.
 - **The continuation stack is off-heap.** Machine state is a `(closure, stack)`
   pair: `closure: SynClosure` plus `stack: Vec<Continuation>` "stored inline,
-  not on the eucalypt heap" (`vm.rs:251-255`). A spark is therefore a
+  not on the eucalypt heap" (`vm.rs:250-258`). A spark is therefore a
   **self-contained, relocatable unit** — a closure to force plus its own fresh
   stack — exactly the shape a work-stealing scheduler wants. The machinery for
   suspending and resuming such stacks already exists for the IO loop
-  (`suspended_stacks`, `vm.rs:292`).
+  (`suspended_stacks`, `vm.rs:295`).
 - **IO is already isolated.** Effects live entirely in the driver's IO-monad
   interpret loop (`src/driver/io_run.rs:1-11`): the STG machine evaluates to
-  WHNF and *yields* on an IO constructor (`io_yielded()`, `vm.rs:1858`); the
+  WHNF and *yields* on an IO constructor (`io_yielded()`, `vm.rs:1879`); the
   driver runs the effect and re-enters. The pure evaluator could parallelise
   *without touching effect ordering at all*, because it never performs effects.
   This cleanly sidesteps the hardest part of parallelising an impure language.
@@ -210,9 +210,9 @@ Indicative only; not for scheduling before 1.0.
 - **Phase 0 (now, cheap): document & preserve invariants.** Land an
   `ADR-00x: enabling invariants for future parallelism` recording the four
   facts that, if quietly broken, would slam the door: (a) the
-  `(closure, off-heap stack)` machine-state shape (`vm.rs:251-255`); (b) total
+  `(closure, off-heap stack)` machine-state shape (`vm.rs:250-258`); (b) total
   IO isolation in the driver (`io_run.rs`); (c) the thunk-update/blackhole
-  protocol as the designated synchronisation point (`vm.rs:419-431`); (d) that
+  protocol as the designated synchronisation point (`vm.rs:434-449`); (d) that
   `if` and friends stay ordinary functions with independent operands. Add a
   CI-visible note so future heap/VM changes consider parallel-friendliness.
   *Cost: documentation only.*
@@ -221,7 +221,7 @@ Indicative only; not for scheduling before 1.0.
 - **Phase 2: atomic thunk-claim / blackhole-locking.** Header CAS on force,
   lock-free fast path, block-and-wake slow path (Harris/Marlow 2005).
 - **Phase 3: sparks + work-stealing scheduler.** Each spark is a
-  `(closure, fresh stack)`; reuse `suspended_stacks` machinery (`vm.rs:292`).
+  `(closure, fresh stack)`; reuse `suspended_stacks` machinery (`vm.rs:295`).
 - **Phase 4: Strategies + GC spark-pruning + the advisory surface.** The
   Marlow 2010 `Eval`-monad discipline, then `//parallel` / `strategy:`.
 
@@ -277,10 +277,10 @@ spend the effort elsewhere.
 
 **Eucalypt source (verified):**
 `src/eval/memory/heap.rs:8-11,1196-1198,1716-1717` (non-`Sync`,
-single-threaded heap; non-atomic mark bit) · `src/eval/machine/vm.rs:251-255`
-(off-heap `(closure, stack)` machine state) · `vm.rs:292` (`suspended_stacks`) ·
-`vm.rs:419-431,519` (blackhole / `Update`) · `vm.rs:1858` (`io_yielded`) ·
-`src/core/expr.rs:357,1127` (`RcExpr`) · `src/eval/stg/syntax.rs` (`Rc<StgSyn>`)
+single-threaded heap; non-atomic mark bit) · `src/eval/machine/vm.rs:250-258`
+(off-heap `(closure, stack)` machine state) · `vm.rs:295` (`suspended_stacks`) ·
+`vm.rs:434-449,533` (blackhole / `Update`) · `vm.rs:1879` (`io_yielded`) ·
+`src/core/expr.rs:357,479` (`RcExpr`) · `src/eval/stg/syntax.rs` (`Rc<StgSyn>`)
 · `src/driver/io_run.rs:1-11` (IO isolated in the driver) ·
 `src/eval/machine/crash.rs:9`, `src/eval/memory/gc_debug.rs:27` (only crash /
 debug atomics) · `src/bin/eu.rs:26-34` (single 64 MiB worker thread) · ADR-001
