@@ -11,11 +11,13 @@ the connective tissue: which depend on which, what to do in which release, where
 the genuinely hard forks are, and which decisions the maintainer must take before
 the rest can move. It recommends a path; it does not assume one.
 
-A reminder of the frame. 0.7 is **already planned** — it delivers HKT and the
-rest of type-system Phase B; nothing here displaces that. These proposals start
-influencing **0.8 onward**. Everything respects the non-negotiables (syntactic
-conservatism, structural-over-nominal, the single-threaded lazy-pure runtime,
-the tool-first framing).
+A reminder of the frame. 0.7 has **shipped** — it delivered HKT and the rest of
+type-system Phase B (2026-06-04), and 0.6.2 delivered Stage A. The type-system
+roadmap these proposals were written around is now largely *built*, which only
+sharpens their point: the remaining 1.0 work is mostly the whitespace they
+target. These proposals start at **0.8 onward**. Everything respects the
+non-negotiables (syntactic conservatism, structural-over-nominal, the
+single-threaded lazy-pure runtime, the tool-first framing).
 
 ---
 
@@ -41,7 +43,7 @@ The edges that actually constrain ordering:
   it through `any`. So the soundness contract must be decided before the runtime
   starts relying on it.
 - **0009 (contracts) is the runtime dual of 0002**, reuses the type-DSL
-  vocabulary (so it rides type-system Phase A: rows, `Dict(T)`, literals), and
+  vocabulary (reusing the shipped Phase-A shapes: rows, `Dict(T)`, literals), and
   feeds 0019 (an ingested schema *is* a contract).
 - **0004, 0014 and TS-B7 are one family.** TS-B7 caches prelude *types*; 0004
   caches compiled *code*; 0014 generalises both into a demand-driven query graph.
@@ -51,7 +53,7 @@ The edges that actually constrain ordering:
   *sequenced, not parallelised*.
 - **0015 Phase 1 (delete the parser shim) unblocks** better diagnostics and the
   resilient front-end that 0014 wants.
-- **0011 rides Phase B** (HKT/B1 for typed `monad()`, B2 constraints); it is
+- **0011 builds on the now-shipped Phase B** (HKT-typed `monad()`, structural constraints); it is
   mostly a *position* to ratify, not new machinery.
 - **0017 leans on 0004** (per-prompt latency) and **0014** (reactive notebook).
 - **0019 leans on 0009, 0016, and recursive types (A3).**
@@ -99,7 +101,7 @@ The substantive engineering release.
 - **0017 (Phase 1)** — `eu watch` (Unison-style); a thin REPL over the cache.
 - **0003 (bar met)** — per-edition golden corpus green; property tests and the
   three fuzz targets running.
-- **Type-system Phase A/B** delivered as already planned (0.6.2 / 0.7); **0011**
+- **Type-system Stage A/B** already shipped (0.6.2 / 0.7.0); **0011**
   ratified as the standing position on ad-hoc polymorphism.
 
 ### post-1.0 — the big bets and the breadth
@@ -121,7 +123,7 @@ all be done at once, and most are post-1.0.**
 | **0020** persistent blocks / GC finalisation | O(log n) blocks for large/merge-heavy configs | Second GC item; only after 0005, and only if O(n) blocks demonstrably bite. |
 | **0007** type-directed compilation | 5–10× on typed numeric code; types become a runtime asset | Post-1.0; gated on 0002 and on caring about perf (Q4). |
 | **0008** parallel evaluation | Multi-core for big maps/multi-doc renders | Post-1.0, furthest out; needs a Send/Sync heap — a GC rebuild in its own right. |
-| **0012** MLsub core swap | Principal types; rows/unions/constraints "for free" | **Probably never** — conflicts with HKT (the 0.7 keystone). Reassess only if the hand-rolled core visibly creaks. |
+| **0012** MLsub core swap | Principal types; rows/unions/constraints "for free" | **Probably never** — conflicts with the now-shipped HKT. Reassess only if the hand-rolled core visibly creaks. |
 
 The throughline: **invest the scarce systems effort in the GC (0005, then maybe
 0020) before 1.0**, and treat 0007/0008/0012 as mutually-exclusive post-1.0 bets

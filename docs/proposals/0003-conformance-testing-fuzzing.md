@@ -12,7 +12,7 @@
 
 ## Summary
 
-Eucalypt 0.6.1 already has an unusually thorough test suite for a language of
+Eucalypt 0.7.0 already has an unusually thorough test suite for a language of
 its size: 315+ numbered harness tests, 11 GC-specific tests, 24 type-checker
 tests, doc-example extraction, AddressSanitizer and GC-stress CI jobs, and a
 WASM smoke-test gate. The gaps that matter for a 1.0 stability commitment are

@@ -85,7 +85,7 @@ Then:
    show it living in metadata/symbols/operators. Be precise about semantics.
 5. **Interaction with the existing roadmap** — relate to Stage A/B/C and the
    relevant H-hypotheses and TS-beads. State dependencies, what it supersedes,
-   and any conflicts. Do not duplicate work already specced — build on it.
+   and any conflicts. Do not duplicate work already specced or shipped — build on it.
 6. **Implementation sketch** — which components change (`src/core/...`,
    `src/eval/...`, `src/driver/lsp/...`), rough size/risk, and a sequencing
    into phases. Honest about cost.
@@ -163,13 +163,19 @@ where the language goes after) but must be tagged as such.
 A compressed digest of the reconnaissance, for orientation only — **confirm
 each point in the code before citing it**:
 
-- Current version **0.6.1**. 0.6.2 = type-system Phase A (specced, not
-  implemented). 0.7 = Phase B incl. HKT (specced). All "in-flight" type work is
-  **documentation only** today.
-- Pipeline: parse (LALRPOP + a newer Rowan parser) → desugar → cook (shunting
-  yard) → eliminate → inline ×2 → fuse → eliminate/compress → verify →
-  **[type-check, advisory, erased]** → STG compile → STG optimise → load to
-  heap → STG VM.
+- Current version **0.7.0**. The type-system roadmap is now **shipped**: Stage A
+  landed in **0.6.2** (`Dict`, equirecursive `Mu`, literal-string types, flow
+  narrowing, `NonEmpty`, first-class alias references, `cond[...]` + the `=>`
+  clause operator, and a **breaking `cond` API change**); Stage B + **HKT** in
+  **0.7.0** (`Con`/`App`/`Kind`/`forall`, higher-order pattern unification,
+  HKT-typed `monad()`, dependent indexed access, the prelude type-summary cache,
+  `Partial(T)`/`T?`, full row inference, **structural operator constraints** — so
+  `min`/`max` now carry `"<(a, a) => …"` annotations). See `CHANGELOG.md`. These
+  proposals therefore build on a *shipped* type system, not a specced one.
+- Pipeline: parse (**Rowan** — the LALRPOP parser is retired; Rowan is the sole
+  parser) → desugar → cook (shunting yard) → eliminate → inline ×2 → fuse →
+  eliminate/compress → verify → **[type-check, advisory, erased]** → STG compile
+  → STG optimise → load to heap → STG VM.
 - VM: STG machine, `src/eval/machine/vm.rs`; 5 continuation kinds; off-heap
   `Vec` continuation stack; ~181 intrinsics; single worker thread w/ 64 MiB
   stack.
@@ -179,8 +185,12 @@ each point in the code before citing it**:
   is crude (every 500 steps vs a block-count limit). Excellent verify/stress
   debug infrastructure (`EU_GC_VERIFY`, `EU_GC_STRESS`, `EU_GC_POISON`).
 - Type checker: bidirectional, freshen-and-unify with subtyping; advisory;
-  `src/core/typecheck/` (8 files); rank-1 prenex; record/row representation
-  present; `TypeScheme.constraints` reserved-but-unused.
+  `src/core/typecheck/`. As of 0.7.0 the `Type` representation is **`Con`/`App`
+  constructor application** with an explicit `Kind` system and `forall`
+  quantification (the dedicated `List`/`IO`/`Dict`/`NonEmpty`/`Lens`/`Traversal`
+  variants were folded into `Con`/`App`); `Mu` for equirecursive types;
+  `Type::Lam` + Miller-pattern unification; and `TypeScheme.constraints` is now
+  **live** (structural operator constraints). Verify specifics in `types.rs`.
 - Tooling that already exists (do **not** propose greenfield): LSP (hover,
   completion, nav, diagnostics, inlay hints, code actions, folding, formatting,
   incremental sync), tree-sitter grammar, Emacs mode, VS Code extension, WASM

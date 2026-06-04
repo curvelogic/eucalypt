@@ -227,7 +227,7 @@ existing `run` pipeline; it adds no new runtime semantics.
 
 ```
 $ eu repl data.yaml
-eucalypt 0.6.1 — :help for help, :quit to exit
+eucalypt 0.7.0 — :help for help, :quit to exit
 data loaded: data.yaml (1.2 MB, 4123 items)
 
 >> items filter(active?)

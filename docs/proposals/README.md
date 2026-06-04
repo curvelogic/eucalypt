@@ -2,7 +2,7 @@
 
 - **Status:** Draft portfolio for review
 - **Date:** 2026-06-01
-- **Baseline:** eucalypt 0.6.1 (0.6.2 = type-system Phase A, specced; 0.7 = Phase B incl. HKT, specced)
+- **Baseline:** eucalypt 0.7.0 (type-system Stage A shipped in 0.6.2; Stage B + HKT shipped in 0.7.0)
 
 This directory collects twenty strategic proposals for how eucalypt should
 evolve over the next few minor versions on the road to **1.0**, and where it
@@ -23,19 +23,23 @@ Eucalypt is a **tool first** — for generating, templating and transforming
 YAML/JSON/TOML — and a lazy, pure, functional language second. Its peers are
 configuration/data languages (Jsonnet, Dhall, CUE, Nickel, Pkl, KCL, Starlark),
 not general-purpose languages. It already has a great deal: a gradual type
-checker (0.6.x), a rich LSP, an Immix-style GC, an STG VM, a tree-sitter
+checker with higher-kinded types (0.7.0), a rich LSP, an Immix-style GC, an STG VM, a tree-sitter
 grammar, and editor support.
 
 Two facts shape this portfolio:
 
-1. **The type system already has a detailed, specced roadmap.** The
-   nineteen-hypothesis [`type-system-evolution.md`](../development/type-system-evolution.md),
-   its [`type-system-bead-plan.md`](../development/type-system-bead-plan.md), and
-   the per-feature specs lay out Stage A (0.6.2, "close the system"), Stage B
-   (0.7, "expressiveness", incl. HKT), and a sketched Stage C ("radical
-   options"). These proposals therefore **build on and around** that roadmap —
-   they do not re-derive it — and they engage the seven open questions the
-   maintainer left in §5 of that document.
+1. **The type-system roadmap is now largely shipped.** Stage A landed in
+   **0.6.2** (`Dict`, equirecursive types, literal types, flow narrowing,
+   `NonEmpty`, first-class alias references) and Stage B + **HKT** in **0.7.0**
+   (`Con`/`App` kinds, HKT-typed `monad()`, dependent indexed access, the prelude
+   type cache, `Partial(T)`, full row inference, structural operator
+   constraints). The nineteen-hypothesis
+   [`type-system-evolution.md`](../development/type-system-evolution.md) and its
+   [`type-system-bead-plan.md`](../development/type-system-bead-plan.md) are now a
+   *delivered* plan, with a sketched Stage C ("radical options") remaining. These
+   proposals therefore **build on a shipped type system**, and engage the seven
+   open questions the maintainer left in §5 of that document — several of which
+   the delivered work now informs.
 2. **The largest gaps are not in the type system.** There is no definition of
    what "1.0" commits to; no package/module system beyond file imports; no
    doc-generation; no concurrency story; an unresolved O(n)-block / GC-finalisation

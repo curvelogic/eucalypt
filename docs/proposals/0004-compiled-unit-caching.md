@@ -4,7 +4,7 @@
 - **Track:** B — performance, runtime & concurrency
 - **Classification:** Whitespace
 - **Suggested horizon:** 0.8
-- **Related:** TS-B7 (prelude-type-cache-spec.md), sibling proposals
+- **Related:** TS-B7 (shipped 0.7.0, `src/driver/check.rs`), sibling proposals
   [0014 — incremental, query-based core](0014-incremental-query-core.md),
   [0005 — generational GC](0005-generational-gc.md)
 
@@ -17,13 +17,17 @@ entire prelude from source, despite the prelude being a fixed,
 binary-embedded asset that never changes within a given build. For a
 CLI config tool used repeatedly in CI and scripts, this ~500–700 ms
 compile-pipeline overhead dominates wall-clock time for small queries on
-large data, dwarfing actual VM execution. This proposal specifies a
-content-addressed on-disk cache of compiled units — the prelude first —
-keyed on source hash, compiler version, and edition, serialising the
-`StgSyn` intermediate representation. It also describes a path toward a
-persistent process (daemon/server) as the more ambitious form of
-caching, and proposes eliminating the redundant headless→RENDER_DOC
-double-compilation that currently afflicts all plain-document programs.
+large data, dwarfing actual VM execution. In 0.7.0 the *type-side* of
+this gap was closed: the prelude type-summary cache (TS-B7) now caches
+the checker's `PreludeSummary` in `src/driver/check.rs` so that type
+checking never re-walks the prelude. This proposal is the compiled-*code*
+analogue — the remaining half of the caching story — and specifies a
+content-addressed on-disk cache of compiled units keyed on source hash,
+compiler version, and edition, serialising the `StgSyn` intermediate
+representation. It also describes a path toward a persistent process
+(daemon/server) as the more ambitious form of caching, and proposes
+eliminating the redundant headless→RENDER_DOC double-compilation that
+currently afflicts all plain-document programs.
 
 ---
 
@@ -75,11 +79,22 @@ These are exactly the properties that make it a sound cache target:
   the prelude's parse and cook phases (parse = ~120 ms, cook = ~190 ms
   over ~2,200 lines of prelude + headers).
 
-This is the same argument TS-B7 (`docs/development/prelude-type-cache-spec.md`)
-makes for the *type-checking* side: "prelude-only is the sound subset
-and ~all the cost saving." B7 (TS-B7) caches the type-checker's
-`PreludeSummary`; this proposal caches the *compiled code* side —
-the two are analogous and share the same keying rationale.
+This is precisely the argument TS-B7 made for the *type-checking* side —
+and TS-B7 shipped in 0.7.0 (`src/driver/check.rs:44`):
+
+```rust
+static PRELUDE_CACHE: OnceLock<PreludeSummary> = OnceLock::new();
+```
+
+The type-side cache avoids re-walking the ~2,200-line prelude on every
+`eu check` invocation. This proposal caches the *compiled code* side;
+the two are direct analogues and share the same keying rationale.
+The runtime re-parse/cook/STG-compile path through `src/driver/eval.rs`
+is entirely separate from the type-checker path and remains uncached:
+`stg::compile` at `src/driver/eval.rs:187` runs unconditionally on every
+invocation. The 0.7.0 HeapSyn-clone avoidance (~9% faster VM execution)
+is orthogonal — it accelerates the VM tick loop, not the compile pipeline,
+and does not reduce the ~500–700 ms startup overhead this proposal targets.
 
 ### The double-compilation problem
 
@@ -87,10 +102,10 @@ For plain-document programs (the overwhelmingly common case), `eu`
 currently calls `stg::compile` twice (`src/driver/eval.rs:187` and
 `src/driver/eval.rs:282`): once headless to detect IO versus
 pure-document, and then again with `RenderType::RenderDoc` on a fresh
-machine. The comment at line 272 explains the reason — stale string
-pointers from the first run cause GC crashes — but the recompilation
-is itself ~90 ms of avoidable cost. Any caching scheme must be aware
-of this; the fix is addressed in the design below.
+machine. The comment at `eval.rs:271–275` explains the reason — stale
+string pointers from the first run cause GC crashes — but the
+recompilation is itself ~90 ms of avoidable cost. Any caching scheme
+must be aware of this; the fix is addressed in the design below.
 
 ---
 
@@ -187,7 +202,7 @@ into a `SymbolPool`, and allocates `HeapString` objects — the result
 is inextricably bound to a live GC heap. Serialising or reusing
 `HeapSyn` across process boundaries would reintroduce exactly the
 stale-pointer hazards that motivated the `fresh machine` pattern in
-`src/driver/eval.rs:272–287`.
+`src/driver/eval.rs:271–287`.
 
 `StgSyn` (`src/eval/stg/syntax.rs`) is an `Rc`-based tree with no raw
 pointers. It can be serialised with `serde` + a binary format (e.g.
@@ -227,7 +242,7 @@ risk (provided atomic rename is used on write).
 
 ### Eliminating the double-compile
 
-The headless→RENDER_DOC double-compile (`src/driver/eval.rs:163–289`)
+The headless→RENDER_DOC double-compile (`src/driver/eval.rs:163–295`)
 exists because re-running the existing machine after IO detection causes
 GC crashes from stale string pointers. With a cached `StgSyn` the fix
 is straightforward: store both the headless-compiled and RenderDoc-compiled
@@ -277,17 +292,22 @@ makes it unsuitable as the primary deliverable for 0.8. The on-disk
 
 ## Interaction with the existing roadmap
 
-**TS-B7 (prelude type-summary cache)**: B7 caches the type-checker's
-`PreludeSummary` (binding types + aliases); this proposal caches the
-compiled `StgSyn`. They are parallel caches for parallel pipeline
-stages. The natural question is whether they should share a keying
-scheme. The answer is yes: both use `sha256(prelude_source) ∥
+**TS-B7 (prelude type-summary cache — shipped 0.7.0)**: B7 landed in
+0.7.0 as `static PRELUDE_CACHE: OnceLock<PreludeSummary>` in
+`src/driver/check.rs:44`. It caches the type-checker's `PreludeSummary`
+(binding types + aliases); this proposal caches the compiled `StgSyn`.
+They are parallel caches for parallel pipeline stages, and the shipped
+TS-B7 implementation sets a direct keying-discipline precedent: the
+cache is process-scoped, built once on first use, and keyed implicitly
+on the binary (same prelude bytes, same build). The natural question for
+the on-disk `StgSyn` cache is whether they can share a formal key
+struct. The answer is yes: both would use `sha256(prelude_source) ∥
 eu_version ∥ edition`. A shared `PreludeCacheKey` struct in
-`src/driver/` would serve both, and the two cache files could sit
-alongside each other under the same hash prefix. Neither depends on the
-other at the API level: B7 serves the type-checker path; this proposal
-serves the eval path. They should be implemented independently but
-coordinate on the key format.
+`src/driver/` would serve both, and the two on-disk cache files could
+sit alongside each other under the same hash prefix. Neither depends on
+the other at the API level: TS-B7 serves the type-checker path;
+this proposal serves the eval path. They are implemented independently
+but should coordinate on the key format.
 
 **0014 — incremental, query-based core**: 0014 proposes a Salsa-style
 query engine for the LSP and re-evaluation. The prelude cache proposed
@@ -425,15 +445,16 @@ the same steady-state performance with simpler build machinery.
 
 - `docs/development/deep-find-performance-baseline.md` — pipeline timing
   table (Parse ~120, Cook ~190, Eliminate ~110, STG ~90 ms).
-- `docs/development/prelude-type-cache-spec.md` (TS-B7) — type-side
-  prelude cache; keying rationale and out-of-scope analysis apply here too.
+- `src/driver/check.rs:44` — `static PRELUDE_CACHE: OnceLock<PreludeSummary>`:
+  the shipped TS-B7 type-side prelude cache (0.7.0); keying rationale
+  and out-of-scope analysis apply directly to this proposal.
 - `src/driver/resources.rs:16` — `include_bytes!("../../lib/prelude.eu")`.
-- `src/driver/eval.rs:163–289` — headless→RENDER_DOC double-compilation
-  and the "stale string pointers" comment.
+- `src/driver/eval.rs:163–295` — headless→RENDER_DOC double-compilation
+  and the "stale string pointers" comment at `eval.rs:271–275`.
 - `src/eval/memory/loader.rs` — `load()`: `StgSyn` → `HeapSyn`
   translation, symbol interning, `HeapString` allocation; explains why
   `HeapSyn` cannot be cached across processes.
-- `src/eval/stg/mod.rs:307–321` — `stg::compile` signature; takes
+- `src/eval/stg/mod.rs:310–324` — `stg::compile` signature; takes
   `RcExpr` and `&dyn Runtime`, returns `Rc<StgSyn>`.
 - Rustc developer guide — "Incremental compilation in detail":
   https://rustc-dev-guide.rust-lang.org/queries/incremental-compilation-in-detail.html

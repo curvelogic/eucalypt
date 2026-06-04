@@ -4,7 +4,7 @@
 - **Track:** E — ecosystem, interop & safety
 - **Classification:** Whitespace
 - **Suggested horizon:** post-1.0 (JSON Schema core: 1.0-adjacent)
-- **Related:** TS-A2 (Dict types), TS-A3 (recursive types),
+- **Related:** TS-A2 (Dict types, shipped 0.6.2), TS-A3 (recursive types, shipped 0.6.2),
   [0009 — structural contracts & runtime schema validation](0009-structural-contracts-validation.md),
   [0016 — `eu doc`](0016-eu-doc.md),
   [0018 — module & package system](0018-module-package-system.md)
@@ -59,8 +59,9 @@ conversation* those ecosystems have with each other.
 
 The type system is already structurally well-suited to bridge this gap. Closed
 and open records (`{k: T}`, `{k: T, ..}`), union types (`A | B`), list types
-(`[T]`), homogeneous blocks (`Dict(T)`, bead TS-A2), literal symbol types
-(`:name`), and — once bead TS-A3 lands — recursive type aliases all map
+(`[T]`), homogeneous blocks (`Dict(T)`, shipped in 0.6.2), literal symbol types
+(`:name`), literal string types (also shipped 0.6.2), `NonEmpty` refinement
+(shipped 0.6.2), and equirecursive type aliases via `Mu` (shipped 0.6.2) all map
 naturally to JSON Schema constructs. This is a genuine advantage over
 nominal-typed configuration languages: structural types compose with JSON Schema
 structurally, without an impedance mismatch.
@@ -172,12 +173,14 @@ top-level binding that has a `type:` annotation, emits a JSON Schema object.
 | `[T]` | `{"type": "array", "items": <T>}` |
 | `{k: T}` (closed record) | `{"type": "object", "properties": {...}, "additionalProperties": false, "required": [...]}` |
 | `{k: T, ..}` (open record) | `{"type": "object", "properties": {...}}` |
-| `Dict(T)` (bead TS-A2) | `{"type": "object", "additionalProperties": <T>}` |
+| `Dict(T)` (shipped 0.6.2) | `{"type": "object", "additionalProperties": <T>}` |
 | `A \| B` | `{"anyOf": [<A>, <B>]}` |
+| `"hello"` (literal string, 0.6.2) | `{"const": "hello"}` |
+| `NonEmpty([T])` (shipped 0.6.2) | `{"type": "array", "items": <T>, "minItems": 1}` |
 | `any` | `{}` *(accept anything)* |
 | `never` | `{"not": {}}` |
 | `datetime` | `{"type": "string", "format": "date-time"}` |
-| Recursive alias (bead TS-A3) | `{"$defs": {...}, "$ref": "#/$defs/Name"}` |
+| Recursive alias via `Mu` (shipped 0.6.2) | `{"$defs": {...}, "$ref": "#/$defs/Name"}` |
 
 Records are the most direct mapping. A closed record `{name: string, age: number}`
 becomes an `object` with `"additionalProperties": false` and both fields in
@@ -190,16 +193,14 @@ Union types map to `anyOf`. Literal symbols map to `const`, enabling
 discriminated unions (tagged variants) that JSON Schema and TypeScript both
 handle well.
 
-**Recursive types (TS-A3 dependency).** Without recursive types, schemas for
-JSON-shaped or tree-shaped data cannot be expressed as type aliases today — a
-self-referential alias causes the checker to infinite-loop
-(`src/core/typecheck/check.rs`, noted in the recursive-types spec at
-`docs/development/recursive-types-spec.md:17–24`). Once TS-A3 lands, the
-`$defs` / `$ref` mechanism in JSON Schema maps directly to the `Mu` form: each
-named recursive alias becomes a `$def`, and all self-references become `$ref`
-pointers. `eu schema export` should gate recursive-alias support on TS-A3 being
-present and emit a diagnostic if a self-referential alias is encountered without
-it.
+**Recursive types (shipped 0.6.2).** Equirecursive types via the `Mu` binder
+landed in 0.6.2, enabling self-referential aliases such as
+`type-def: { Json: "number | string | bool | null | [Json] | Dict(Json)" }`
+with coinductive subtyping (`CHANGELOG.md:44–46`). The `$defs` / `$ref`
+mechanism in JSON Schema maps directly to the `Mu` form: each named recursive
+alias becomes a `$def`, and all self-references become `$ref` pointers.
+Nested and recursive JSON Schema ↔ eucalypt-type round-tripping is no longer
+blocked — the `Mu` binder is available now.
 
 **Example.** Given:
 
@@ -303,8 +304,8 @@ schema import` populates the alias map; [0009] enforces it at the boundary.
 
 | Dependency | Nature |
 |---|---|
-| **TS-A2** (Dict types, bead) | Required for `Dict(T)` ↔ `additionalProperties` mapping |
-| **TS-A3** (recursive types, bead) | Required for `$ref`/`$defs` round-tripping and JSON-shaped schemas |
+| **TS-A2** (Dict types, shipped 0.6.2) | Provides `Dict(T)` ↔ `additionalProperties` mapping |
+| **TS-A3** (recursive types, shipped 0.6.2) | Provides `Mu`-based `$ref`/`$defs` round-tripping and JSON-shaped schemas |
 | **[0009]** structural contracts | `--contracts` mode wraps imported aliases in runtime assertions |
 | **[0016]** `eu doc` | Both `eu doc` and `eu schema export` walk the same annotated type information; the AST traversal is shared infrastructure |
 | **[0018]** module & package system | Imported schemas could be versioned packages (`eu schema import pkg://...`) once [0018] lands |
@@ -324,9 +325,11 @@ builds — avoids duplicating that logic across two pipeline entry points in
 New module `src/driver/schema.rs`, new `Schema` variant in
 `src/driver/options.rs:Commands`. Collect `type:` annotations, resolve aliases
 via the existing `check.rs` alias map, fold the `Type` enum
-(`src/core/typecheck/types.rs:75–151`) into `serde_json::Value`. No heap, no
-VM. `serde_json` is already present (`src/export/json.rs`). Recursive alias
-support gated on TS-A3.
+(`src/core/typecheck/types.rs`) into `serde_json::Value`. No heap, no VM.
+`serde_json` is already present (`src/export/json.rs`). Recursive alias
+support via `Type::Mu` is available now (shipped 0.6.2); the `Con`/`App`
+constructor-application representation of `Dict`, `NonEmpty`, and other
+parametric types (`src/core/typecheck/types.rs:1–17`) is the current form.
 
 **Phase 2 — JSON Schema import (~Medium, moderate risk).**
 New module `src/driver/schema_import.rs`. Read JSON Schema with `serde_json`,
@@ -376,11 +379,12 @@ output is auditable and can be reviewed in pull requests.
 
 ## Risks & what would kill this
 
-1. **TS-A2 and TS-A3 slip.** Without `Dict(T)` and recursive types, the type
-   DSL cannot express the schemas that actually appear in Kubernetes CRDs (which
-   are both homogeneous and recursive). Phase 1 can ship without them — the
-   mapping table degrades gracefully to `any` for unsupported forms — but the
-   feature is materially less useful. This is the primary sequencing risk.
+1. **Type-system foundation.** `Dict(T)` and equirecursive `Mu` types (TS-A2,
+   TS-A3) both shipped in 0.6.2, so the type DSL can now express the schemas
+   that appear in Kubernetes CRDs (homogeneous and recursive). The primary
+   sequencing risk from an earlier draft of this proposal has resolved. The
+   remaining implementation risk is the JSON Schema edge-case coverage described
+   in risk 2.
 
 2. **JSON Schema version fragmentation.** JSON Schema has five major drafts in
    active use (draft-04, draft-06, draft-07, draft-2019-09, draft-2020-12) with
@@ -425,19 +429,22 @@ output is auditable and can be reviewed in pull requests.
 ## References
 
 **Eucalypt sources verified:**
-- `src/driver/options.rs:86–105` — current driver subcommands (no schema)
-- `src/driver/options.rs:128–134` — export type flag (`-x yaml|json|toml|...`)
+- `src/driver/options.rs` — current driver subcommands (no schema subcommand as of 0.7.0)
 - `src/export/json.rs:1–30` — JSON export via `serde_json`; crate already present
 - `src/import/` — CSV, EDN, TOML, XML, YAML, JSON-lines, text; no schema format
-- `src/core/typecheck/types.rs:75–151` — `Type` enum: all type forms
+- `src/core/typecheck/types.rs:1–17` — module doc explaining `Con`/`App` as the
+  uniform representation for parametric constructors (`Dict`, `NonEmpty`, `List`, …)
+  replacing the old dedicated enum variants (changed in 0.7.0)
+- `src/core/typecheck/types.rs:73–82` — `constructor_kind`: `Dict`, `NonEmpty`,
+  `List`, `IO` registered as `* → *` constructors
+- `src/core/typecheck/types.rs:106` — `Type::Mu` in the `kind_of` match (equirecursive,
+  shipped 0.6.2)
 - `src/core/typecheck/parse.rs:1–28` — type DSL grammar summary
-- `src/core/typecheck/types.rs:128–136` — `Record` variant with `open`/`row` fields
-- `docs/development/type-system-evolution.md:965–988` — H14 recursive types,
-  `Type::Mu` proposal, `Dict(Json)` motivating example
-- `docs/development/type-system-bead-plan.md:44–45,94–95,133–145` — TS-A2 (Dict),
-  TS-A3 (recursive types) bead specs
-- `docs/development/recursive-types-spec.md:1–24` — equirecursive design, latent
-  infinite-loop bug in alias resolution
+- `CHANGELOG.md:40–65` — 0.6.2: `Dict(a)`, equirecursive `Mu`, literal string types,
+  `NonEmpty`, flow narrowing all shipped
+- `CHANGELOG.md:5–39` — 0.7.0: `Con`/`App`/`Kind`/`forall` HKT; six dedicated
+  variants (`List`, `IO`, `Dict`, `NonEmpty`, `Lens`, `Traversal`) folded into
+  `Con`/`App`
 
 **External references:**
 - Pkl code generation: https://pkl-lang.org/main/current/kotlin-binding/codegen.html ;
