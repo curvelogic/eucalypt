@@ -21,13 +21,12 @@ options for either keeping or replacing that design, argues that the
 string DSL is the right long-term form for 1.0, and states the concrete
 evidence that would justify revisiting that decision after 1.0. The
 central finding is that **TS-A7** (first-class alias references via LSP
-span indexing — already planned for Stage A) resolves the most
-practically painful tooling friction without touching the string
-boundary; the remaining friction points (escaping, phase separation) are
-real but modest, and the costs of crossing into an embedded form are
-higher than the evolution document acknowledges. Open question 2 gets a
-direct answer: keep the string DSL indefinitely, with TS-A7 as the
-investment.
+span indexing — shipped in 0.6.2) resolves the most practically painful
+tooling friction without touching the string boundary; the remaining
+friction points (escaping, phase separation) are real but modest, and
+the costs of crossing into an embedded form are higher than the evolution
+document acknowledges. Open question 2 gets a direct answer: keep the
+string DSL indefinitely, with TS-A7's delivery as the vindication.
 
 ---
 
@@ -39,8 +38,11 @@ The type DSL is a completely separate language parsed by
 `src/core/typecheck/parse.rs`. Its public entry point, `parse_type`
 (`parse.rs:669`), accepts a string and returns a `Type` AST. The grammar
 covers primitives, function arrows, union (`|`), lists, tuples, open and
-closed record types, named row variables, literal symbols, and opaque
-type constructors (`IO(T)`, `Lens(a,b)`, `Traversal(a,b)`). Capitalised
+closed record types, named row variables, literal symbols, opaque type
+constructors (`IO(T)`, `Lens(a,b)`, `Traversal(a,b)`), and — as of 0.7.0
+— `forall (m :: * -> *)` higher-kinded quantification, kind annotations,
+equirecursive `Mu` aliases, and structural operator constraints
+(`<(a, a) => …`). Capitalised
 identifiers are parsed to `Type::Var` and resolved by the checker against
 an `AliasMap` (`check.rs:57`, `check.rs:105`) populated by walking
 `types:` sub-blocks in metadata expressions
@@ -68,11 +70,17 @@ io: monad{ ... }
 ```
 (`lib/prelude.eu:30–39`)
 
-**2. No editor support inside type strings.** `Person` in `"Person ->
-[Person]"` is an alias reference. Today, hovering or going to definition
-on `Person` does nothing — the LSP sees a string literal, not a named
-reference. Renames do not propagate. This is the friction most likely to
-be noticed by a user who relies on the type system for documentation.
+**2. Editor support inside type strings — resolved in 0.6.2 by TS-A7.**
+`Person` in `"Person -> [Person]"` is an alias reference. Prior to 0.6.2,
+hovering or going to definition on `Person` did nothing — the LSP saw a
+string literal, not a named reference, and renames did not propagate. This
+was the friction most likely to be noticed by a user who relied on the
+type system for documentation. TS-A7 resolved it: alias references now
+have LSP hover (showing the resolved type), go-to-definition, and rename
+support (`CHANGELOG.md` 0.6.2). The friction point remains in this list
+as historical context and as the primary evidence for the recommendation
+— its resolution by TS-A7 (without touching the string boundary) is
+exactly the argument for keeping the string DSL.
 
 **3. Aliases are not in the eucalypt value scope.** A type alias declared
 in `{ types: { Point: "{x: number, y: number}" } }` cannot be imported by
@@ -149,11 +157,12 @@ the checker adds zero runtime overhead.
 
 ## Proposed design
 
-No new syntax. The recommendation is **status quo plus TS-A7**.
+No new syntax. The recommendation is **status quo** — TS-A7 has already
+delivered the key improvement.
 
-The string DSL remains the sole form for type annotations. What changes in
-Stage A is the tooling layer, per the already-specced TS-A7 (see
-`docs/development/alias-reference-tooling-spec.md`):
+The string DSL remains the sole form for type annotations. TS-A7, shipped
+in 0.6.2 (see `docs/development/alias-reference-tooling-spec.md`),
+delivered the tooling layer that resolves the principal friction:
 
 1. `parse_type_with_refs` records byte spans for capitalised alias-name
    tokens (A7.1 — `parse.rs`).
@@ -164,30 +173,38 @@ Stage A is the tooling layer, per the already-specced TS-A7 (see
 4. Go-to-definition, hover, and rename work for alias references inside
    type strings (A7.4 — `src/driver/lsp/`).
 
-TS-A7 is explicitly a tooling bead, not a type-theory bead. It touches
+TS-A7 was explicitly a tooling bead, not a type-theory bead. It touched
 only `parse.rs` (span recording) and `src/driver/lsp/` (LSP handlers).
 The checker, the alias map, the type representation, and the string DSL
-are all unchanged. This is the cheapest path that addresses the second
-friction point (no editor support) while leaving the architecture clean.
+were all unchanged. This is the cheapest path that addressed the second
+friction point (editor support) while leaving the architecture clean — and
+it shipped without touching core syntax, confirming the design thesis.
 
 The remaining friction — `{{..}}` escaping — is addressed by a single
 documentation note rather than a language change: the escape is mechanical
 once learnt (the error message explains it), it is confined to annotations
 that contain record types inside IO or function positions, and there is no
 form of the grammar that would eliminate it without changing the surface
-syntax of strings (which this language does not do).
+syntax of strings (which this language does not do). That the string DSL
+has continued to absorb substantial new expressiveness in 0.7.0 (`forall`
+quantification, kind annotations, `Mu` recursive aliases, structural
+operator constraints) without any new core-syntax additions is mild
+further evidence that the form scales, though the added constructs do
+introduce more annotation surface where escaping pressure could grow —
+worth monitoring.
 
 ---
 
 ## Interaction with the existing roadmap
 
-**TS-A7 (Stage A, already specced).** This proposal endorses TS-A7 as
-the right investment. TS-A7 is already on the bead plan; this document
-provides the strategic rationale for not going further in Stage A or B.
+**TS-A7 (Stage A, shipped in 0.6.2).** This proposal endorses TS-A7 as
+the right investment — and TS-A7 has now validated that bet. This document
+provides the strategic rationale for not going further in Stage B or beyond.
 
 **H12a (the "corrected" form).** H12 §H12a in `type-system-evolution.md`
-already names TS-A7 as the implementation. This proposal confirms that
-H12a is not only the cheapest option but the correct one for 1.0.
+names TS-A7 as the implementation. TS-A7 has shipped. This proposal
+confirms that H12a is not only the cheapest option but the correct one for
+1.0, and that its delivery removes the main argument for going further.
 
 **H12b (symbolic/block form).** Dropped. The evolution document is right:
 brutally verbose, no readability gain, no constituency. The only
@@ -206,10 +223,19 @@ evaluator for the type sub-language, which is H12c plus an additional
 constant-folding pass — a non-trivial engineering commitment. It is not
 blocked permanently, but the cost is understated in earlier notes.
 
+**`cond[...]` and `=>` operator (shipped 0.6.2).** A tangentially relevant
+data point: `cond[c1 => r1, c2 => r2, default]` is a new surface
+construct that rides the existing operator channel (`=>` at precedence 15)
+and idiot-bracket mechanism (`cond[...]`), with no new keywords or
+statement forms. This illustrates the general conservatism principle: new
+surface constructs can be added through the established channels. It does
+not change the type-embedding analysis, but it reinforces that the
+constraint on syntax is productive, not merely restrictive.
+
 **Open question 2 (type-system-evolution.md §5.2).** This proposal's
 direct answer: the metadata DSL is acceptable indefinitely for 1.0, and
-TS-A7 covers the friction that matters most. The question should be
-re-examined post-1.0 if the evidence trigger in §9 fires.
+TS-A7's delivery covers the friction that matters most. The question
+should be re-examined post-1.0 if the evidence trigger in §9 fires.
 
 **0009 (structural contracts).** Contracts live in the same metadata
 channel as type annotations. A decision to keep the string DSL applies
@@ -217,15 +243,18 @@ there too: contract expressions are strings parsed by the contract
 checker. There is no conflict.
 
 **0011 (typeclasses without classes).** Structural constraint annotations
-(`<(a, a) => a -> a -> a`) are part of the type DSL string. They stay
-there. H12a's span recording will cover constraint identifiers as well.
+(`<(a, a) => a -> a -> a`) are part of the type DSL string — and shipped
+as part of the 0.7.0 type grammar, demonstrating that the string form can
+absorb new constraint syntax without touching core syntax. They stay
+there. TS-A7's span recording covers constraint identifiers as well.
 
 ---
 
 ## Implementation sketch
 
-TS-A7 is fully specced and costed in
-`docs/development/alias-reference-tooling-spec.md`. The summary:
+TS-A7 was specced in `docs/development/alias-reference-tooling-spec.md`
+and shipped in 0.6.2. For the record, the actual scope matched the
+estimate:
 
 | File | Change | Size estimate |
 |---|---|---|
@@ -233,15 +262,16 @@ TS-A7 is fully specced and costed in
 | `src/driver/lsp/` | String-offset ↔ source-position mapping; alias definition indexer; go-to-def / hover / rename handlers | ~200 lines across 3–4 files |
 | `tests/` | Parser span unit tests; LSP alias-reference integration tests | ~80 lines |
 
-Risk: low. TS-A7 is read-only for the checker path; the existing
-`parse_type` call sites are unchanged. The LSP rename handler is the
-only write-path addition and is guarded to plain, unescaped string
-literals (interpolated type strings degrade gracefully with no crash).
-Span arithmetic for sub-string offsets is straightforward given the
-existing `Smid`/`SourceMap` infrastructure.
+Risk: realised as low. TS-A7 was read-only for the checker path; the
+existing `parse_type` call sites were unchanged. The LSP rename handler
+was the only write-path addition and is guarded to plain, unescaped
+string literals (interpolated type strings degrade gracefully with no
+crash). Span arithmetic for sub-string offsets was straightforward given
+the existing `Smid`/`SourceMap` infrastructure.
 
-No changes to `src/core/typecheck/check.rs`, the `AliasMap`, the `Type`
-enum, or any downstream consumer.
+No changes were made to `src/core/typecheck/check.rs`, the `AliasMap`,
+the `Type` enum, or any downstream consumer. No further implementation
+work is needed for H12a.
 
 ---
 
@@ -318,19 +348,19 @@ annotations harder to write than a more integrated form — that is
 falsifying evidence. The counter-evidence today is that the prelude's 326
 annotations are mostly clear and that the escape pattern is mechanical.
 
-**Risk 2: TS-A7 does not deliver enough.** If, after TS-A7 lands, users
+**Risk 2: TS-A7 does not deliver enough.** TS-A7 has shipped. If users
 still report that alias go-to-definition and rename are insufficient —
-for example, because they need import-able alias names or doc-generation
+for example, because they need importable alias names or doc-generation
 from alias definitions — that signals a need for H12c rather than H12a.
 
 **Risk 3: Record type friction is worse than measured.** The 63 `{{..}}`
 instances in the prelude (`lib/prelude.eu:30, 63, 67, 71, 75, 79, 85,
 103, 360, 364, 368, 399, 403, 407, 411, 415, 419, 423, 440, 448`)
 represent types where the argument *or* return position is an open
-block. If Stage B's new features (row polymorphism, `Dict(T)`) reduce
+block. Row polymorphism and `Dict(T)` shipped in 0.6.2 and may reduce
 the need for bare `{..}` in function positions — because `Dict(T)` can
-substitute — the escaping problem may shrink naturally. Monitor actual
-annotation patterns after Stage A.
+substitute — so the escaping problem may shrink naturally. Monitor actual
+annotation patterns as these features are adopted.
 
 **Risk 4: TS-A7's span arithmetic is incorrect for edge cases.** The A7
 spec notes that interpolated or escaped type strings degrade gracefully
@@ -342,13 +372,15 @@ coverage question, not an architecture question.
 
 ## Success criteria
 
-1. **TS-A7 shipped in Stage A (0.6.2 / 0.8):** go-to-definition, hover,
-   and rename work for alias references inside `type:` strings in the
-   VS Code extension and Emacs mode.
+1. **TS-A7 shipped in 0.6.2:** go-to-definition, hover, and rename work
+   for alias references inside `type:` strings in the VS Code extension
+   and Emacs mode. *This criterion is met.*
 
 2. **No new escaping friction reported:** no filed issue citing `{{..}}`
    escaping as a blocker or significant pain in the six months following
-   Stage A.
+   0.6.2. The 0.7.0 grammar additions (`forall`, `Mu`, structural
+   constraints) expand the annotation surface and should be monitored for
+   any uptick in escaping complaints.
 
 3. **Open question 2 closed:** the maintainer records a decision — in
    this document or in `type-system-evolution.md` — that the string DSL
@@ -369,17 +401,19 @@ coverage question, not an architecture question.
 
 ### Code
 
-- `src/core/typecheck/parse.rs:669` — `parse_type` public API
-- `src/core/typecheck/parse.rs:367–376` — alias reference parsing:
-  capitalised `Token::Ident` → `Type::Var`; the comment at line 368
-  is the canonical statement of the alias/variable duality
-- `src/core/typecheck/check.rs:57` — `AliasMap` type alias
-- `src/core/typecheck/check.rs:105` — `aliases` field on `Checker`
-- `src/core/typecheck/check.rs:294–317` — `register_aliases_from_meta`:
-  walks `types:` sub-blocks and populates the alias table
-- `src/core/typecheck/check.rs:332` — `type-def:` alias extraction
-- `src/core/typecheck/check.rs:1059` — comment documenting the
-  `{{…}}`-escape / JOIN static-eval path
+- `src/core/typecheck/parse.rs:1172` — `parse_type` public API
+- `src/core/typecheck/parse.rs:1242` — `parse_type_with_refs` entry point (TS-A7)
+- `src/core/typecheck/parse.rs:631–648` — alias reference parsing:
+  capitalised `Token::Ident` → `Type::Var`; the comment at line 632
+  is the canonical statement of the alias/variable duality; `AliasRef`
+  span recording (A7.1) is at lines 643–646
+- `src/core/typecheck/check.rs:182` — `AliasMap` type alias
+- `src/core/typecheck/check.rs:206` — `aliases` field on `Checker`
+- `src/core/typecheck/check.rs:749–798` — `register_aliases_from_meta`
+  and `register_aliases_from_types_expr`: walk `types:` sub-blocks and
+  populate the alias table
+- `src/core/typecheck/check.rs:800–813` — `extract_type_def_name`:
+  `type-def:` alias extraction
 - `src/core/error.rs:116` — user-facing double-brace escape hint
 - `lib/prelude.eu:30–39` — `io` namespace monad annotation (multi-line
   `{{..}}` usage)
