@@ -63,7 +63,7 @@ single-threaded lazy-pure runtime, the tool-first framing, and UK English.
 |---|----------|:-----:|:-------:|
 | [0001](0001-v1-charter.md) | Versioning & stability discipline: semver, `requires` guard, opt-in prelude v2 | W★ | 0.8 |
 | [0002](0002-gradual-typing-boundary-policy.md) | Gradual-typing soundness & boundary policy for 1.0 | P | 0.9 |
-| [0003](0003-conformance-testing-fuzzing.md) | Conformance suite, property testing & fuzzing; VM correctness-in-CI | W | 0.8–1.0 |
+| [0003](0003-conformance-testing-fuzzing.md) | Testing for 1.0: harness-as-conformance-contract, property tests, fuzzing | W | 0.8–1.0 |
 
 ### Track B — performance, runtime & concurrency
 
@@ -106,6 +106,12 @@ single-threaded lazy-pure runtime, the tool-first framing, and UK English.
 value-provenance); streaming & large-data scaling; distribution & packaging
 (nixpkgs / Homebrew / WASM CDN); homoiconicity & macros; first-class type
 values; algebraic effect-rows.
+
+**Planned additions (not yet drafted):** an **alternative-backends** proposal —
+core→WASM compilation and other execution targets — is forthcoming. These are
+genuinely independent implementations, so they are the consumer of 0003's
+conformance contract; they also interact with
+[0008](0008-parallel-evaluation.md) and [0019](0019-host-language-interop.md).
 
 ---
 
