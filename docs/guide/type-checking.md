@@ -601,30 +601,46 @@ The monad type variable `m` is instantiated to `List` when the checker
 sees a concrete list argument, allowing it to track element types
 through the combinator chain.
 
-#### Declaring the functor pattern with `monad:`
+#### How combinator types are inferred
 
-To give the checker precise information about your monad's action type
-(and enable warnings on wrong-type `:mymonad` block bindings), annotate
-the declaration with `monad:` metadata:
+Monad combinator types are inferred automatically via higher-order
+pattern unification — no `monad:` annotation is needed for type
+checking.  When `monad()` is called with a concrete `bind`
+implementation, the checker unifies the `bind` argument type against
+the polymorphic `m a → (a → m b) → m b` signature.  If `m` is applied
+to a variable (the Miller pattern fragment), the unifier constructs a
+type-level lambda: for example, a `bind` whose first argument has type
+`stream → {value: a, rest: stream}` causes the checker to infer
+`m = λa. stream → {value: a, rest: stream}` and propagate that
+instantiation through all nine derived combinators.
+
+Named constructors (`List`, `IO`) are handled by the existing
+first-order rule: `m a` against `[a]` decomposes as `m = List`.
+
+No annotation is required:
+
+```eu,notest
+my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
+```
+
+`my-for.bind` is inferred as `[a] → (a → [b]) → [b]`, `my-for.map`
+as `(a → b) → [a] → [b]`, and so on.
+
+#### `monad:` metadata for LSP hints
+
+The `monad:` metadata key is **not** used for type checking.  It is
+retained solely for A10 LSP element-type hints: when the language
+server displays inlay hints inside a monadic block, `monad:` tells it
+which element type to show next to each bound variable (e.g.
+`x: number` instead of `x: [number]`).
 
 ```eu,notest
 ` { monad: "[a]" }
 my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
 ```
 
-The `monad:` value is a type-string pattern where `a` stands for the
-result element type.  The checker derives all combinator types from
-this pattern, so `my-for.bind` gets type `[a] → (a → [b]) → [b]`,
-`my-for.map` gets `(a → b) → [a] → [b]`, and so on.
-
-The pattern can be any constructor application:
-
-| Annotation | Monad | bind first-arg type |
-|------------|-------|---------------------|
-| `monad: "[a]"` | list | `[a]` |
-| `monad: "IO(a)"` | IO | `IO(a)` |
-| `monad: "stream → {value: a, rest: stream}"` | state | `stream → {value: a, rest: stream}` |
-| `monad: true` | identity | `a` (any value) |
+Omitting `monad:` does not affect type checking; it only suppresses
+the LSP element-type inlay hints.
 
 ### What the checker validates
 
