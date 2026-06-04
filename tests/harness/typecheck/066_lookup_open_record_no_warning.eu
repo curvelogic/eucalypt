@@ -1,0 +1,6 @@
+# lookup(:missing, open_block) where open_block is an unannotated block literal
+# (synthesised as an open record) — no warning expected since the key may be
+# present at runtime.
+
+open-block: { name: "Alice", age: 30 }
+result: lookup(:missing, open-block)

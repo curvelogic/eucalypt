@@ -26,17 +26,7 @@ eu: {
 }
 
 ` { doc: "IO related declarations. The io namespace is a monad: io.bind, io.return, io.sequence, io.map-m, io.filter-m, io.then, io.join are derived automatically."
-    monad: "IO(a)"
-    type: "!{{bind:      IO(a) → (a → IO(b)) → IO(b),
-               return:    a → IO(a),
-               map:       (a → b) → IO(a) → IO(b),
-               then:      IO(a) → IO(b) → IO(b),
-               and-then:  (a → IO(b)) → IO(a) → IO(b),
-               join:      IO(IO(a)) → IO(a),
-               sequence:  [IO(a)] → IO([a]),
-               map-m:     (a → IO(b)) → [a] → IO([b]),
-               filter-m:  (a → IO(bool)) → [a] → IO([a]),
-               ..}}" }
+    monad: "IO(a)" }
 io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
   ` { doc: "Read access to environment variables at time of launch." }
   env: __io.ENV
@@ -99,8 +89,16 @@ io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
 ` :suppress
 list-map: map
 
-` { doc: "monad(m) - derive standard monad combinators from a block m with bind and return fields. Returns a block with bind, return, map, then, join, sequence, map-m, and filter-m."
-    type: "{{..}} → {{..}}" }
+` { doc: "monad(m) - derive standard monad combinators from a block m with bind and return fields. Returns a block with bind, return, map, then, and-then, join, sequence, map-m, and filter-m."
+    type: "!forall (m :: * -> *). {{..}} → {{bind: forall a b. m a → (a → m b) → m b,
+               return: forall a. a → m a,
+               map: forall a b. (a → b) → m a → m b,
+               then: forall a b. m b → m a → m b,
+               and-then: forall a b. (a → m b) → m a → m b,
+               join: forall a. m (m a) → m a,
+               sequence: forall a. [m a] → m [a],
+               map-m: forall a b. (a → m b) → [a] → m [b],
+               filter-m: forall a. (a → m bool) → [a] → m [a]}}" }
 monad(m): {
   ` "Sequence two monadic actions: run action and pass its result to continuation."
   bind: m.bind
@@ -156,12 +154,7 @@ random-bind(m, f, stream): {
 }
 
 ` { doc: "Monadic random: namespace. Each operation is a state-monad action: a function from stream to a value/rest block. Use random.stream(seed) to create the initial stream, then run actions by calling them with the stream."
-    monad: "stream → {{value: a, rest: stream}}"
-    type: "!{{bind:   (stream → {{value: a, rest: stream}})
-                      → (a → stream → {{value: b, rest: stream}})
-                      → stream → {{value: b, rest: stream}},
-               return: a → stream → {{value: a, rest: stream}},
-               ..}}" }
+    monad: "stream → {{value: a, rest: stream}}" }
 random: monad{bind: random-bind, return: random-ret} {
   ` { doc: "random.stream(seed) - create an opaque PRNG stream from integer seed."
       type: "number → any" }
@@ -207,10 +200,12 @@ random: monad{bind: random-bind, return: random-ret} {
   ` { doc: "random.shuffle(list) - state-monad action returning a shuffled copy of list."
       type: "[a] → any → {{..}}" }
   shuffle(lst): {
+    ` { type: "![a] → number → [a] → any → {{..}}" }
     shuffle-impl(remaining, n, acc, stream):
       if(n = 0,
         { value: acc, rest: stream },
         shuffle-step(remaining, n, acc, stream))
+    ` { type: "![a] → number → [a] → any → {{..}}" }
     shuffle-step(remaining, n, acc, stream): {
       r: int(n, stream)
       picked: remaining nth(r.value)
@@ -413,11 +408,11 @@ block: __BLOCK
 has(s, b): b map-values(const(true)) lookup-or(s, false)
 
 ` { doc: "`lookup(s, b)` - look up symbol `s` in block `b`, error if not found."
-    type: "symbol → Dict(a) → a" }
+    type: "symbol → Dict(a) → a?" }
 lookup(s, b): __LOOKUP(s, b)
 
 ` { doc: "`lookup-in(b, s)` - look up symbol `s` in block `b`, error if not found."
-    type: "{{..}} → symbol → any" }
+    type: "{{..}} → symbol → any?" }
 lookup-in(b, s): __LOOKUP(s, b)
 
 ` { doc: "`lookup-or(s, d, b)` - look up symbol `s` in block `b`, default `d` if not found."
@@ -892,8 +887,8 @@ sum(l): foldl(+, 0, l)
     type: "[number] → number" }
 product(l): foldl(*, 1, l)
 
-` { doc: "`max(l, r)` - return max of numbers `l` and `r`."
-    type: "number → number → number" }
+` { doc: "`max(l, r)` - return max of `l` and `r` by `>`."
+    type: ">(a, a) => a → a → a" }
 max(l, r): if(l > r, l, r)
 
 ` "`max-of(l) - return max element in list of numbers `l` - error if empty`"
@@ -917,8 +912,8 @@ max-map(f, l): l map(f) max-of
 ` "`max-of-or(d, l)` - return max element in list `l`, or default `d` if empty."
 max-of-or(d, l): l nil? then(d, max-of(l))
 
-` { doc: "`min(l, r)` - return min of numbers `l` and `r`."
-    type: "number → number → number" }
+` { doc: "`min(l, r)` - return min of `l` and `r` by `<`."
+    type: "<(a, a) => a → a → a" }
 min(l, r): if(l < r, l, r)
 
 ` "`min-of(l) - return min element in list of numbers `l` - error if empty`"
@@ -1104,7 +1099,7 @@ render(value): __RENDER_TO_STRING(value, :yaml)
 render-as(fmt, value): __RENDER_TO_STRING(value, fmt)
 
 ` { doc: "parse-as(fmt, str) - parse a string of structured data in the named format and return eucalypt data. The inverse of render-as. Supported formats: :json, :yaml, :toml, :csv, :xml, :edn, :jsonl. Content is parsed as inert data; embedded eucalypt expressions (e.g. YAML !eu tags) are never evaluated."
-    type: "symbol → string → any" }
+    type: "symbol → string → any?" }
 parse-as(fmt, str): __PARSE_STRING(fmt, str)
 
 ##
@@ -1368,7 +1363,7 @@ split-after(p?, l): {
 split-when(p?, l): split-after(p? complement, l)
 
 ` { doc: "`nth(n, l)` - return `n`th item of list if it exists, otherwise error."
-    type: "number → [a] → a" }
+    type: "number → [a] → a?" }
 nth(n, l): l drop(n) head
 
 ` "`update-nth(n, f, l)` - apply `f` to element at index `n` in list `l`.
@@ -2146,16 +2141,7 @@ let: monad({bind(m, f): f(m), return: identity})
 ##
 
 ` { doc: "List monad for list comprehensions. Each binding draws from a list; subsequent bindings can depend on earlier ones. Use [x] filter(pred?) for guards."
-    monad: "[a]"
-    type: "!{{bind:      [a] → (a → [b]) → [b],
-               return:    a → [a],
-               map:       (a → b) → [a] → [b],
-               then:      [a] → [b] → [b],
-               and-then:  (a → [b]) → [a] → [b],
-               join:      [[a]] → [a],
-               sequence:  [[a]] → [[a]],
-               map-m:     (a → [b]) → [a] → [[b]],
-               filter-m:  (a → [bool]) → [a] → [[a]]}}" }
+    monad: "[a]" }
 for: monad({bind(m, f): m mapcat(f), return(v): [v]})
 
 ##

@@ -2,6 +2,41 @@
 
 All notable changes to eucalypt are documented here.
 
+## [0.7.0] - 2026-06-04
+
+### Added
+
+- **Higher-kinded type variables** — type-constructor variables (`m :: * -> *`) with `Type::Con`/`Type::App`, explicit `Kind` system (`*`, `* -> *`), `forall` quantification, and kind annotations in the type DSL
+- **Higher-order pattern unification** — `Type::Lam` (type-level lambda) and Miller-pattern unification: when a `* -> *` variable is applied to a type variable and unified against a concrete type, the unifier abstracts the variable out to construct a type-level function. This makes `monad()` work for any monad — including those with non-constructor action types like `stream -> {value: a, rest: stream}` — via pure unification, with no special-casing
+- **Monad namespace typing via HKT** — `monad()` carries a `forall (m :: * -> *)` type; calling it with `{bind: ..., return: ...}` infers `m` automatically and derives all nine combinator types (`map`, `then`, `join`, `sequence`, `map-m`, `filter-m`, etc.)
+- **Dependent record indexed access** — `lookup(:k, b)` with a literal symbol returns the exact field type; absent key produces a static warning; non-literal key falls back to `any`. `ProjectionShape` classifier for `head`/`tail` on tuples
+- **Prelude type-summary cache** — the prelude is type-checked once per process and cached; user files are seeded with the cached types, improving LSP responsiveness
+- **Partial(T) / T? opaque type** — `ExecutionError` type and `T?` postfix sugar for fallible functions; warning when partial results flow into total positions; `nth`, `lookup`, `lookup-in`, `parse-as` annotated
+- **Full row-variable inference** — unannotated parameters used as blocks infer row-polymorphic types instead of `any`
+- **Structural operator constraints** — `<(a, a) => a -> a -> a` syntax constraining type variables by operator requirements; gradual when arguments are `any`
+- **Tree-sitter t-string support** — `t"..."` ZDT literal rule in grammar, with Emacs and VS Code highlighting
+- **VS Code type annotation snippets** — comprehensive snippet set for type annotations
+
+### Changed
+
+- **Monad namespaces no longer carry explicit type annotations** — `io`, `for`, `random`, `let`, `state` inherit their types from `monad()` via HKT unification. The `monad:` metadata is retained only for LSP element-type hints
+- **Type representation** — six dedicated type variants (`List`, `IO`, `Dict`, `NonEmpty`, `Lens`, `Traversal`) replaced by `Con`/`App` constructor application
+
+### Performance
+
+- **HeapSyn clone avoidance** — raw pointer reference replaces 56-byte clone per VM tick (~9% faster on compute-heavy workloads)
+- **Uninitialised array backing** — skip redundant zero-fill in `RawArray` allocation (~10% faster on allocation micro-benchmarks)
+- **Partial application Vec elimination** — direct `Array` push replaces temporary `Vec` (~7.5% faster on curried calls)
+
+### Fixed
+
+- **Misleading string function hints** — `str.replace`, `str.starts-with?`, `str.ends-with?`, `str.contains?` all exist; error hints now point to them correctly
+- **NotCallable / NotValue source locations** — errors now include the source span instead of a synthetic location
+- **NumericDomainError source location** — NaN comparison errors now include the source span
+- **BadTimeZone source location** — timezone parse errors now include the source span
+- **Set type errors** — `Panic` replaced with proper `TypeMismatch` for set element and argument errors
+- **Broken bench tests** — `fib(500)` overflow and `deep-find-perf` symbol/string key mismatch corrected
+
 ## [0.6.2] - 2026-06-02
 
 ### Added

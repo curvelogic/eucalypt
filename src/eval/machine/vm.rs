@@ -46,6 +46,9 @@ pub struct HeapNavigator<'scope> {
     globals: ScopedPtr<'scope, EnvFrame>,
     /// Mutator view of heap
     pub(crate) view: MutatorHeapView<'scope>,
+    /// Current source annotation, used to attach source locations to errors
+    /// raised during navigation (e.g. NotCallable, NotValue).
+    annotation: Smid,
 }
 
 impl HeapNavigator<'_> {
@@ -85,7 +88,7 @@ impl HeapNavigator<'_> {
             Ref::L(index) => self.get(*index),
             Ref::G(index) => self.global(*index),
             Ref::V(n) => Err(ExecutionError::NotCallable(
-                Smid::default(),
+                self.annotation,
                 n.type_description().to_string(),
             )),
         }
@@ -137,7 +140,7 @@ impl HeapNavigator<'_> {
             HeapSyn::Atom { .. } => "an atom",
         };
         Err(ExecutionError::NotValue(
-            Smid::default(),
+            self.annotation,
             description.to_string(),
         ))
     }
@@ -373,8 +376,19 @@ impl MachineState {
         _intrinsics: &[&'guard dyn StgIntrinsic],
         metrics: &mut Metrics,
     ) -> Result<(), ExecutionError> {
-        // Load "op code"
-        let code = (*view.scoped(self.closure.code())).clone();
+        // Load "op code" as a reference to avoid cloning 56 bytes of HeapSyn on every tick.
+        //
+        // SAFETY:
+        // - `self.closure.code()` is a `NonNull<HeapSyn>` pointing into the GC-managed heap.
+        // - GC can only run between ticks (in the main `run()` loop before each call to
+        //   `handle_instruction`), never *during* `handle_instruction`.  No allocation path
+        //   reachable from here triggers an inline collection.
+        // - `scan_and_update()` updates `self.closure.code()` before every tick, so the pointer
+        //   is always current when we enter this function.
+        // - The HeapSyn object is immutable once compiled; no mutation occurs to it here or in
+        //   any function called from this scope.
+        // - The reference lifetime is bounded to this function call.
+        let code: &HeapSyn = unsafe { &*self.closure.code().as_ptr() };
         let environment = self.closure.env();
         let remaining_arity = self.closure.arity();
 
@@ -399,7 +413,7 @@ impl MachineState {
                 let suppress_update = std::mem::replace(&mut self.suppress_next_update, false);
                 match evaluand {
                     Ref::L(i) => {
-                        self.closure = self.nav(view).get(i)?;
+                        self.closure = self.nav(view).get(*i)?;
                         let is_thunk = self.closure.update();
                         let updateable = is_thunk && !suppress_update;
                         // When suppress_update is active but the loaded closure is
@@ -424,22 +438,22 @@ impl MachineState {
                             let hole = view.alloc(HeapSyn::BlackHole)?;
                             let black_hole = SynClosure::new(hole.as_ptr(), environment);
                             let cont_env = view.scoped(environment);
-                            cont_env.update(&view, i, black_hole)?;
+                            cont_env.update(&view, *i, black_hole)?;
 
                             self.push(
                                 view,
                                 Continuation::Update {
                                     environment,
-                                    index: i,
+                                    index: *i,
                                 },
                             )?;
                         }
                     }
                     Ref::G(i) => {
-                        self.closure = self.nav(view).global(i)?;
+                        self.closure = self.nav(view).global(*i)?;
                     }
                     Ref::V(v) => {
-                        self.return_native(view, &v)?;
+                        self.return_native(view, v)?;
                     }
                 }
             }
@@ -453,18 +467,18 @@ impl MachineState {
                 self.push(
                     view,
                     Continuation::Branch {
-                        min_tag,
-                        branch_table,
-                        fallback,
+                        min_tag: *min_tag,
+                        branch_table: branch_table.clone(),
+                        fallback: *fallback,
                         environment,
                         annotation: self.annotation,
-                        suppress_update: case_suppress,
+                        suppress_update: *case_suppress,
                     },
                 )?;
-                self.closure = SynClosure::new(scrutinee, environment);
+                self.closure = SynClosure::new(*scrutinee, environment);
             }
             HeapSyn::Cons { tag, args } => {
-                self.return_data(view, tag, args.as_slice())?;
+                self.return_data(view, *tag, args.as_slice())?;
             }
             HeapSyn::App { callable, args } => {
                 let array = view.create_arg_array(args.as_slice(), environment)?;
@@ -475,31 +489,31 @@ impl MachineState {
                         annotation: self.annotation,
                     },
                 )?;
-                self.closure = self.nav(view).resolve_callable(&callable)?;
+                self.closure = self.nav(view).resolve_callable(callable)?;
             }
             HeapSyn::Bif { intrinsic, args } => {
                 // Defer BIF execution to Machine::step() so that the full
                 // Machine is available (needed for evaluate_to_whnf).
                 // Clone the args: Ref is cheap to clone (indices or small natives).
-                self.pending_bif = Some((intrinsic, args.as_slice().to_vec()));
+                self.pending_bif = Some((*intrinsic, args.as_slice().to_vec()));
             }
             HeapSyn::Let { bindings, body } => {
                 metrics.alloc(bindings.len());
                 let new_env = view.from_let(bindings.as_slice(), environment, self.annotation)?;
-                self.closure = SynClosure::new(body, new_env);
+                self.closure = SynClosure::new(*body, new_env);
             }
             HeapSyn::LetRec { bindings, body } => {
                 metrics.alloc(bindings.len());
                 let new_env =
                     view.from_letrec(bindings.as_slice(), environment, self.annotation)?;
-                self.closure = SynClosure::new(body, new_env);
+                self.closure = SynClosure::new(*body, new_env);
             }
             HeapSyn::Ann { smid, body } => {
-                self.annotation = smid;
-                self.closure = SynClosure::new(body, environment);
+                self.annotation = *smid;
+                self.closure = SynClosure::new(*body, environment);
             }
             HeapSyn::Meta { meta, body } => {
-                self.return_meta(view, &meta, &body)?;
+                self.return_meta(view, meta, body)?;
             }
             HeapSyn::DeMeta {
                 scrutinee,
@@ -509,12 +523,12 @@ impl MachineState {
                 self.push(
                     view,
                     Continuation::DeMeta {
-                        handler,
-                        or_else,
+                        handler: *handler,
+                        or_else: *or_else,
                         environment,
                     },
                 )?;
-                self.closure = SynClosure::new(scrutinee, environment);
+                self.closure = SynClosure::new(*scrutinee, environment);
             }
             HeapSyn::BlackHole => return Err(ExecutionError::BlackHole(self.annotation)),
         }
@@ -1049,6 +1063,7 @@ impl IntrinsicMachine for MachineState {
             locals: view.scoped(self.env(view)),
             globals: view.scoped(self.globals),
             view,
+            annotation: self.annotation,
         }
     }
 
@@ -1358,6 +1373,7 @@ impl IntrinsicMachine for MachineBifContext<'_, '_> {
             locals: view.scoped(self.state.env(view)),
             globals: view.scoped(self.state.globals),
             view,
+            annotation: self.state.annotation,
         }
     }
 

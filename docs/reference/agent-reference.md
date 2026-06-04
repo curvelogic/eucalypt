@@ -157,16 +157,51 @@ origin: { x: 0, y: 0 }
 | `:name`            | literal symbol — subtype of `symbol`   |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
-| `a`, `b`           | type variable                          |
+| `T?`               | partial — sugar for `T \| ExecutionError` |
+| `ExecutionError`   | the type of a raised runtime error     |
+| `a`, `b`           | type variable (kind `*`)               |
+| `m a`              | constructor application (`m` of kind `* -> *` applied to `a`) |
+| `forall a. T`      | explicit quantification over kind-`*` variable |
+| `forall (m :: * -> *) a. T` | explicit quantification with kind annotation |
 | `IO(T)`            | IO action producing T                  |
 | `Lens(a, b)`       | lens                                   |
 | `Traversal(a, b)`  | traversal                              |
+
+**User-defined monads**: `monad({ bind(m,f): ..., return(v): ... })`
+derives the standard combinators (`map`, `then`, `and-then`, `join`,
+`sequence`, `map-m`, `filter-m`) and annotates them with
+`forall (m :: * -> *)` types.  The type checker understands them
+polymorphically, so passing the wrong type triggers a warning:
+
+```eu,notest
+my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
+[1, 2, 3] my-for.map(true)   # warning: expected a → b, found bool
+```
 
 **Important**: record braces (`{`) in type strings trigger eucalypt
 string interpolation. Always escape with `{{` and `}}`:
 `"{{name: string, ..}} -> string"` not `"{name: string, ..} -> string"`.
 Types without braces (`"number -> number"`, `"IO(T)"`) need no escaping.
 Literal string types (`"value"`) need `\"` escaping inside annotation strings.
+
+**Partial functions**: functions that may raise a runtime error use the
+`T?` postfix sugar — equivalent to `T | ExecutionError`.  Several
+prelude functions are partial by nature:
+
+```
+nth      : number → [a] → a?         # out-of-range index
+parse-as : symbol → string → any?    # invalid input format
+lookup   : symbol → Dict(a) → a?     # key not found
+```
+
+A partial result flowing into `any` (unannotated code) is **silent** —
+a warning fires only when the receiving position is explicitly annotated
+as total:
+
+```eu,notest
+` { type: "number" }
+result: [1, 2, 3] nth(0)   # warning: expected number, found number?
+```
 
 **Flow-sensitive narrowing**: when a type-predicate test (`number?`,
 `string?`, `bool?`, `null?`, `list?`, `block?`, `symbol?`) on an
@@ -339,6 +374,7 @@ From highest (tightest) to lowest binding:
 | 35 | bool-prod | left | `&&`, `∧` | Logical AND |
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
+| 15 | clause | left | `=>`, `⇒` | Cond clause builder (`condition => result`) |
 | 10 | apply | left | `@` | Function application |
 | 5 | meta | left | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//=?>`, `//!` | Metadata and assertions |
 

@@ -2293,6 +2293,41 @@ impl Allocator for Heap {
         }
     }
 
+    /// Allocate a region of bytes without zero-initialisation.
+    ///
+    /// Callers must ensure every byte is written before it is read.  The GC
+    /// never scans beyond the `length` field stored in the owning `Array<T>`,
+    /// so capacity bytes beyond `length` are never traversed, making it safe to
+    /// leave them uninitialised.
+    fn alloc_bytes_uninit(&self, size_bytes: usize) -> Result<NonNull<u8>, HeapError> {
+        if size_bytes > u32::MAX as usize {
+            return Err(HeapError::InvalidAllocationSize {
+                requested_size: size_bytes,
+                max_size: u32::MAX as usize,
+            });
+        }
+
+        let header_size = size_of::<AllocHeader>();
+        let alloc_size = Self::alloc_size_of(header_size + size_bytes);
+        let size_class = SizeClass::for_size(alloc_size);
+
+        let space = self.find_space(alloc_size)?;
+
+        let header = AllocHeader::new_with_mark_state(size_bytes as u32, self.mark_state());
+
+        // Update allocation metrics (lightweight - just counters)
+        self.update_allocation_counters_fast(alloc_size, size_class);
+
+        // SAFETY: Memory layout is the same as alloc_bytes.  No zero-fill is
+        // performed; the caller is responsible for initialising all bytes it
+        // will subsequently read.
+        unsafe {
+            write(space as *mut AllocHeader, header);
+            let array_space = space.add(header_size);
+            Ok(NonNull::new_unchecked(array_space as *mut u8))
+        }
+    }
+
     /// Get header from object pointer
     fn get_header<T>(&self, object: NonNull<T>) -> NonNull<AllocHeader> {
         // SAFETY: Pointer arithmetic is valid because:

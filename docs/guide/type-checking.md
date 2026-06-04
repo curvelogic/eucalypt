@@ -199,6 +199,20 @@ discriminate: ...
 [42, "hello"] tail head  # type: string
 ```
 
+The named pair accessors `first`/`key` (index 0) and `second`/`value` (index 1)
+are also precise on `Tuple` — the checker recognises their `head ∘ tail^n`
+composition as a **projection** and returns the exact element type:
+
+```eu,notest
+pair: ["alice", 42]
+pair key    # type: string  (index 0)
+pair value  # type: number  (index 1)
+second(pair) # type: number  (index 1)
+```
+
+Any user-defined function whose body is `xs tail head` (or `xs tail tail head`,
+etc.) acquires the same precise projection typing automatically.
+
 ### Records
 
 Records describe the shape of blocks:
@@ -218,6 +232,26 @@ greet-person(p): "Hello, {p.name}!"
 
 Open records are more commonly useful — most block-processing functions
 don't require a specific shape.
+
+#### `lookup` with a literal key
+
+When `lookup(:key, block)` is called with a **literal symbol** key, the checker
+resolves the field type precisely:
+
+```eu,notest
+` { type: "!{{name: string, age: number}}" }
+person: { name: "Alice", age: 30 }
+
+lookup(:name, person)   # type: string  (precise)
+lookup(:age, person)    # type: number  (precise)
+lookup(:naem, person)   # warning: unknown record key :naem (key typo in closed record)
+```
+
+- **Closed record + known key** → exact field type.
+- **Closed record + absent key** → `any` + a static warning (key typo caught before runtime).
+- **Open record + absent key** → `any`, no warning (the key may be present at runtime).
+- **`Dict(V)` + any literal key** → `V`.
+- **Non-literal key** → `any` (key value unknown at check time; may fail at runtime).
 
 ### Dict
 
@@ -262,6 +296,26 @@ Row variables propagate through function applications: if a function
 with a named row in its type is applied to a concrete record, the
 checker unifies the known fields and binds the row variable to the
 remaining fields.
+
+#### Inference for unannotated block combinators (B9)
+
+When a lambda parameter is **used as a block** — projected (`.field`),
+merged (`merge`/`over`), or passed to a block-typed function — the
+checker allocates a fresh row variable for it automatically, even
+without an explicit `type:` annotation.
+
+```eu,notest
+# No annotation needed — f infers {..r} -> {..s} -> {..r, ..s}
+f(a, b): a merge(b)
+
+base: { x: 1 }
+ext: { y: "hello" }
+result: base f(ext)   # result : {x: number, y: string}
+```
+
+The checker uses a **use-driven** approach: only parameters that appear
+in a block position acquire row variables. Parameters used arithmetically
+(`x + y`) stay `any`, avoiding spurious warnings.
 
 ### Functions
 
@@ -334,13 +388,88 @@ At call sites, type variables are instantiated from the argument types.
 `map(str.of, [1, 2])` instantiates `a = number, b = string`, giving
 result type `[string]`.
 
+### Higher-kinded type variables
+
+Type variables can range over *type constructors* (types that take
+arguments), not just ordinary types.  A **kind** describes the arity
+of a type constructor:
+
+- `*` — an ordinary type (e.g. `number`, `[string]`)
+- `* -> *` — a unary type constructor (e.g. `List`, `IO`)
+- `* -> * -> *` — a binary type constructor (e.g. `Lens`, `Dict`)
+
+Declare a constructor variable with a kind annotation using `::`:
+
+```eu,notest
+` { type: "forall (m :: * -> *) a. m a -> m a" }
+hk-id: ...
+```
+
+Without a kind annotation, type variables default to kind `*` (ordinary
+types).  The `forall` keyword makes quantification explicit and allows
+kind annotations.  Implicit quantification (writing `a` directly in
+the type string) still works for kind-`*` variables.
+
+**Constructor application** uses juxtaposition:
+
+| Annotation          | Meaning                                   |
+|---------------------|-------------------------------------------|
+| `m a`               | Apply constructor variable `m` to type `a` |
+| `forall (m :: * -> *) a. m a -> m a` | Identity for any unary functor |
+| `forall a. a -> a`  | Polymorphic identity                       |
+
+The built-in constructors `List`, `IO`, `Dict`, `NonEmpty`, `Random`,
+and `State` all have kind `* -> *`.  `Lens` and `Traversal` have kind
+`* -> * -> *`.
+
 ### Special types
 
-| Type    | Meaning                                               |
-|---------|-------------------------------------------------------|
-| `any`   | gradual/dynamic — no errors involving `any`           |
-| `top`   | supertype of everything — nothing useful can be done with it |
-| `never` | bottom type — unreachable code, empty collections     |
+| Type             | Meaning                                               |
+|------------------|-------------------------------------------------------|
+| `any`            | gradual/dynamic — no errors involving `any`           |
+| `top`            | supertype of everything — nothing useful can be done with it |
+| `never`          | bottom type — unreachable code, empty collections     |
+| `ExecutionError` | the type of a raised runtime error (see Partial types below) |
+
+### Partial types
+
+Some functions can fail at runtime — for example `nth` raises an error
+when the index is out of range, and `parse-as` raises an error when the
+string is not valid in the given format.  These are called **partial
+functions**.
+
+Partial functions use the postfix `?` sugar in their type signatures:
+
+```
+nth      : number → [a] → a?         # may raise an error if index out of range
+parse-as : symbol → string → any?    # may raise an error if string is not valid
+lookup   : symbol → Dict(a) → a?     # may raise an error if key not found
+```
+
+`T?` is display sugar for `T | ExecutionError`.  The two forms are
+completely interchangeable in type annotations:
+
+```eu,notest
+` { type: "number → [a] → a?" }
+safe-nth(n, l): l nth(n)       # explicitly partial
+
+` { type: "number → [a] → a | ExecutionError" }
+also-safe-nth(n, l): l nth(n)  # identical — same type, different spelling
+```
+
+**Gradual self-limiting**: a partial result flowing into unannotated
+(`any`) code is **silent** — `ExecutionError <: any`.  A warning fires
+only when a partial result is used in a position that has been explicitly
+annotated as total:
+
+```eu,notest
+` { type: "number" }
+result: [1, 2, 3] nth(0)   # warning: expected number, found number?
+```
+
+Functions that A6 made total by input refinement (`head`/`tail` require
+`NonEmpty([a])`) are **not** partial — they keep their total types.
+`T?` documents the *residual* partiality that refinement cannot remove.
 
 ---
 
@@ -446,6 +575,78 @@ value, so bound variables keep their inferred types directly:
   s: str.of(x)           # s : string
 }.(x + 1)                # number + number  ✓
 ```
+
+### User-defined monads: `monad()`
+
+`monad({ bind(m, f): ..., return(v): ... })` derives the standard
+monad combinators (`map`, `then`, `and-then`, `join`, `sequence`,
+`map-m`, `filter-m`) and annotates them with higher-kinded types using
+`forall (m :: * -> *)`.
+
+When `monad()` is called with a concrete `bind` and `return`, the type
+checker instantiates `m :: * → *` as a fresh higher-kinded variable and
+runs higher-order pattern unification: it unifies `m a` against the
+concrete first-argument type of `bind`.  For named constructors such as
+`List` (`[a]`) this decomposes via the first-order rule; for anonymous
+type constructors (e.g. `stream → {value: a, rest: stream}`) the
+Miller pattern fragment fires and binds `m` to a type-level lambda.
+No annotation is required — the binding is inferred entirely from the
+`bind` implementation.
+
+For example, a list monad:
+
+```eu,notest
+my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
+```
+
+The checker unifies `m a` against `[a]`, infers `m = List`, and gives
+`my-for.map` type `forall a b. (a → b) → [a] → [b]`.  Passing a
+non-function triggers a type warning:
+
+```eu,notest
+[1, 2, 3] my-for.map(true)   # warning: expected a → b, found bool
+```
+
+#### How combinator types are inferred
+
+Monad combinator types are inferred automatically via higher-order
+pattern unification — no `monad:` annotation is needed for type
+checking.  When `monad()` is called with a concrete `bind`
+implementation, the checker unifies the `bind` argument type against
+the polymorphic `m a → (a → m b) → m b` signature.  If `m` is applied
+to a variable (the Miller pattern fragment), the unifier constructs a
+type-level lambda: for example, a `bind` whose first argument has type
+`stream → {value: a, rest: stream}` causes the checker to infer
+`m = λa. stream → {value: a, rest: stream}` and propagate that
+instantiation through all nine derived combinators.
+
+Named constructors (`List`, `IO`) are handled by the existing
+first-order rule: `m a` against `[a]` decomposes as `m = List`.
+
+No annotation is required:
+
+```eu,notest
+my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
+```
+
+`my-for.bind` is inferred as `[a] → (a → [b]) → [b]`, `my-for.map`
+as `(a → b) → [a] → [b]`, and so on.
+
+#### `monad:` metadata for LSP hints
+
+The `monad:` metadata key is **not** used for type checking.  It is
+retained solely for A10 LSP element-type hints: when the language
+server displays inlay hints inside a monadic block, `monad:` tells it
+which element type to show next to each bound variable (e.g.
+`x: number` instead of `x: [number]`).
+
+```eu,notest
+` { monad: "[a]" }
+my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
+```
+
+Omitting `monad:` does not affect type checking; it only suppresses
+the LSP element-type inlay hints.
 
 ### What the checker validates
 
@@ -667,6 +868,32 @@ checker for flow-sensitive narrowing through each clause.
 
 ---
 
+## Prelude type cache
+
+The checker builds the prelude's type information once per process and
+caches it.  Every subsequent file is checked in **standalone mode** —
+only the user file is loaded, and the cached prelude summary (binding
+types, type aliases, branch-shape classification) is seeded into the
+checker before it begins.
+
+This means:
+
+- The prelude is **fully checked** on the first call — every prelude
+  binding is a root in standalone mode, unlike the merged-then-pruned
+  path which only ever checks the subset reachable from the user file.
+- Each subsequent LSP re-check or `eu check` invocation **skips the
+  ~2 200-line prelude entirely**, giving a measurably faster response.
+- Results are identical to the merged check: prelude references resolve
+  to the same types, predicate narrowing fires on `number?`/`string?`/
+  etc., and user-defined brancher wrappers around prelude combinators
+  are recognised.
+
+The cache is keyed on the embedded prelude source and lives in process
+memory — it persists for the lifetime of the `eu` or LSP server process
+but is not written to disk.
+
+---
+
 ## Summary
 
 | What                     | How                                              |
@@ -686,6 +913,9 @@ checker for flow-sensitive narrowing through each clause.
 | Literal string type      | `"value"` (`\"value\"` in annotation string)     |
 | Literal symbol type      | `:name`                                           |
 | Type variable            | lowercase identifier: `a`, `b`, `s`              |
+| Explicit quantification  | `forall a. T` or `forall (m :: * -> *) a. T`    |
+| Constructor variable     | `m :: * -> *` in a `forall` binder               |
+| Constructor application  | `m a` (juxtaposition in type expressions)        |
 | Union type               | `A \| B`                              |
 | NonEmpty list            | `NonEmpty([a])`                       |
 | Empty list literal       | `[]` synthesises as `List(Never)`     |

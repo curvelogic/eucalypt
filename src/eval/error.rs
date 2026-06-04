@@ -313,22 +313,23 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
              e.g. 'text str.to-lower'"
                 .to_string()]
         }
-        "replace" | "sub" | "gsub" => vec!["eucalypt has no 'replace' function; \
-             use 'str.matches-of(re, s)' to find matches, or construct a replacement \
-             by splitting and re-joining: 's str.split-on(re) str.join-on(replacement)'"
-            .to_string()],
+        "replace" | "sub" | "gsub" => vec![
+            "use 'str.replace(pattern, replacement, s)' to replace all regex matches, \
+             e.g. 'text str.replace(\"foo\", \"bar\")'"
+                .to_string(),
+        ],
         "strip" | "trim" | "rstrip" | "lstrip" => vec!["eucalypt has no 'trim'/'strip' function; \
              to remove surrounding whitespace use a regex: \
              'text str.extract(\"^\\\\s*(.*?)\\\\s*$\")'"
             .to_string()],
         "startswith" | "starts_with" | "startsWith" | "hasPrefix" => vec![
-            "to test if a string starts with a prefix, use 'str.matches?(re, s)' \
-             with an anchored regex, e.g. 'text str.matches?(\"^prefix\")'"
+            "use 'str.starts-with?(re, s)' to test if a string starts with a pattern, \
+             e.g. 'text str.starts-with?(\"prefix\")'"
                 .to_string(),
         ],
         "endswith" | "ends_with" | "endsWith" | "hasSuffix" => vec![
-            "to test if a string ends with a suffix, use 'str.matches?(re, s)' \
-             with an anchored regex, e.g. 'text str.matches?(\"suffix$\")'"
+            "use 'str.ends-with?(re, s)' to test if a string ends with a pattern, \
+             e.g. 'text str.ends-with?(\"suffix\")'"
                 .to_string(),
         ],
         "find" | "index" | "indexOf" | "indexof" => {
@@ -344,17 +345,18 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
              e.g. 'str.fmt(x, \"%.2f\")' for two decimal places"
             .to_string()],
         "contains?" | "contains" | "includes?" | "includes" => vec![
-            "to test if a string contains a pattern, use 'str.matches?', \
-             e.g. `text str.matches?(\"pattern\")`"
+            "use 'str.contains?(pattern, s)' to test if a string contains a pattern, \
+             e.g. 'text str.contains?(\"word\")'"
                 .to_string(),
-            "note: 'str.matches?' uses a regular expression, so special \
+            "note: 'str.contains?' uses a regular expression, so special \
              characters like '.', '+', '*' must be escaped with '\\'"
                 .to_string(),
         ],
-        "replace-all" | "substitute" => vec!["eucalypt has no 'replace' function; \
-             use 'str.matches-of(re, s)' to find matches, or construct a replacement \
-             by splitting and re-joining: 's str.split-on(re) str.join-on(replacement)'"
-            .to_string()],
+        "replace-all" | "substitute" => vec![
+            "use 'str.replace(pattern, replacement, s)' to replace all regex matches, \
+             e.g. 'text str.replace(\"foo\", \"bar\")'"
+                .to_string(),
+        ],
         "substring" | "substr" => vec!["eucalypt has no substring function; \
              use 'str.extract(re)' with a capturing regex to extract a portion of a string"
             .to_string()],

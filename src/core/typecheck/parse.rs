@@ -6,32 +6,36 @@
 //!
 //! Grammar (summary):
 //! ```text
-//! type       ::= union
-//! union      ::= arrow ( '|' arrow )*
-//! arrow      ::= primary ( '->' primary )*         # right-associative
-//! primary    ::= 'number' | 'string' | 'symbol' | 'bool' | 'null'
+//! type        ::= forall | union
+//! forall      ::= 'forall' binder+ '.' type         # rank-N quantification
+//! binder      ::= IDENT | '(' IDENT '::' kind ')'
+//! kind        ::= '*' | kind '->' kind | '(' kind ')'
+//! union       ::= arrow ( '|' arrow )*
+//! arrow       ::= application ( '->' application )*  # right-associative
+//! application ::= primary primary*                   # left-associative HKT app
+//! primary     ::= 'number' | 'string' | 'symbol' | 'bool' | 'null'
 //!              | 'datetime' | 'any' | 'top' | 'never'
 //!              | 'set' | 'vec' | 'array'
-//!              | LOWER_IDENT                        # type variable
+//!              | LOWER_IDENT                        # type variable (Star kind)
 //!              | '"' STRING '"'                     # literal string type
-//!              | '[' type ']'                       # list
-//!              | 'IO' '(' type ')'
-//!              | 'Lens' '(' type ',' type ')'
-//!              | 'Traversal' '(' type ',' type ')'
+//!              | '[' type ']'                       # list sugar → App(Con("List"), T)
+//!              | 'IO' '(' type ')'                  # IO sugar  → App(Con("IO"), T)
+//!              | 'Lens' '(' type ',' type ')'       # Lens sugar → App(App(Con("Lens"), A), B)
+//!              | 'Traversal' '(' type ',' type ')'  # Traversal sugar
 //!              | '{' row '}'                        # record
 //!              | '(' paren_body ')'                 # grouping / tuple
-//! paren_body ::= type
+//! paren_body  ::= type
 //!              | type ','
 //!              | type ( ',' type )+ ','?
-//! row        ::= field ( ',' field )* ( ',' ('..' IDENT?)? )?
+//! row         ::= field ( ',' field )* ( ',' ('..' IDENT?)? )?
 //!              | '..' IDENT?
-//! field      ::= IDENT ':' type
+//! field       ::= IDENT ':' type
 //! ```
 
 use std::collections::BTreeMap;
 use std::fmt;
 
-use super::types::{Type, TypeVarId};
+use super::types::{Constraint, Kind, Type, TypeVarId};
 
 // ── Error type ──────────────────────────────────────────────────────────────
 
@@ -82,6 +86,7 @@ enum Token {
     Vec,
     Array,
     Block,
+    Forall,
     // Type constructors
     Io,
     Lens,
@@ -91,17 +96,24 @@ enum Token {
     // Identifiers (type variables and record field names)
     Ident(String),
     // Punctuation
-    LBracket, // [
-    RBracket, // ]
-    LParen,   // (
-    RParen,   // )
-    LBrace,   // {
-    RBrace,   // }
-    Arrow,    // ->
-    Pipe,     // |
-    Colon,    // :
-    Comma,    // ,
-    DotDot,   // ..
+    LBracket,   // [
+    RBracket,   // ]
+    LParen,     // (
+    RParen,     // )
+    LBrace,     // {
+    RBrace,     // }
+    Arrow,      // ->
+    Pipe,       // |
+    Colon,      // :
+    ColonColon, // ::
+    Comma,      // ,
+    DotDot,     // ..
+    Dot,        // . (for forall binders: `forall a.`)
+    Star,       // *  (kind)
+    // The ExecutionError nullary type (written as `ExecutionError` or implied by `T?`)
+    ExecutionError,
+    // Postfix `?` — sugar for `| ExecutionError`
+    Question,
     // Literal string value (e.g. `"read"` in type position)
     StringLit(String),
     // End of input
@@ -175,8 +187,13 @@ impl<'a> Lexer<'a> {
                 Ok((Token::Pipe, start))
             }
             ':' => {
-                self.pos += 1;
-                Ok((Token::Colon, start))
+                if self.remaining().starts_with("::") {
+                    self.pos += 2;
+                    Ok((Token::ColonColon, start))
+                } else {
+                    self.pos += 1;
+                    Ok((Token::Colon, start))
+                }
             }
             ',' => {
                 self.pos += 1;
@@ -187,11 +204,17 @@ impl<'a> Lexer<'a> {
                     self.pos += 2;
                     Ok((Token::DotDot, start))
                 } else {
-                    Err(ParseError::new(
-                        start,
-                        "unexpected character '.' (did you mean '..'?)".to_string(),
-                    ))
+                    self.pos += 1;
+                    Ok((Token::Dot, start))
                 }
+            }
+            '*' => {
+                self.pos += 1;
+                Ok((Token::Star, start))
+            }
+            '?' => {
+                self.pos += 1;
+                Ok((Token::Question, start))
             }
             '-' => {
                 if self.remaining().starts_with("->") {
@@ -267,11 +290,13 @@ impl<'a> Lexer<'a> {
                     "vec" => Token::Vec,
                     "array" => Token::Array,
                     "block" => Token::Block,
+                    "forall" => Token::Forall,
                     "IO" => Token::Io,
                     "Dict" => Token::Dict,
                     "Lens" => Token::Lens,
                     "Traversal" => Token::Traversal,
                     "NonEmpty" => Token::NonEmpty,
+                    "ExecutionError" => Token::ExecutionError,
                     other => Token::Ident(other.to_string()),
                 };
                 Ok((tok, start))
@@ -364,7 +389,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a complete type expression and verify no trailing input remains.
     fn parse_type_toplevel(&mut self) -> Result<Type, ParseError> {
-        let ty = self.parse_union()?;
+        let ty = self.parse_type()?;
         let (tok, pos) = self.advance()?;
         if tok != Token::Eof {
             return Err(ParseError::new(
@@ -373,6 +398,102 @@ impl<'a> Parser<'a> {
             ));
         }
         Ok(ty)
+    }
+
+    /// `type ::= forall | union`
+    fn parse_type(&mut self) -> Result<Type, ParseError> {
+        if self.peek()? == &Token::Forall {
+            self.parse_forall()
+        } else {
+            self.parse_union()
+        }
+    }
+
+    /// `forall ::= 'forall' binder+ '.' type`
+    ///
+    /// binder ::= IDENT | '(' IDENT '::' kind ')'
+    fn parse_forall(&mut self) -> Result<Type, ParseError> {
+        let pos = self.pos();
+        self.advance()?; // consume 'forall'
+
+        let mut binders: Vec<(TypeVarId, Kind)> = Vec::new();
+
+        // Parse at least one binder before the dot
+        loop {
+            match self.peek()? {
+                Token::Dot => {
+                    // Consumed the '.', move on to the body
+                    self.advance()?;
+                    break;
+                }
+                Token::Ident(_) => {
+                    // Simple binder with inferred Star kind
+                    let (tok, _) = self.advance()?;
+                    if let Token::Ident(name) = tok {
+                        binders.push((TypeVarId(name), Kind::Star));
+                    }
+                }
+                Token::LParen => {
+                    // `( IDENT :: kind )`
+                    self.advance()?; // consume '('
+                    let (tok, binder_pos) = self.advance()?;
+                    let name = if let Token::Ident(name) = tok {
+                        name
+                    } else {
+                        return Err(ParseError::new(
+                            binder_pos,
+                            "expected a type variable name in forall binder",
+                        ));
+                    };
+                    self.expect(&Token::ColonColon)?;
+                    let kind = self.parse_kind()?;
+                    self.expect(&Token::RParen)?;
+                    binders.push((TypeVarId(name), kind));
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+
+        if binders.is_empty() {
+            return Err(ParseError::new(
+                pos,
+                "forall requires at least one type variable binder",
+            ));
+        }
+
+        let body = self.parse_type()?;
+        Ok(Type::Forall(binders, Box::new(body)))
+    }
+
+    /// `kind ::= kind_atom ( '->' kind )*`  (right-associative)
+    fn parse_kind(&mut self) -> Result<Kind, ParseError> {
+        let lhs = self.parse_kind_atom()?;
+        if self.peek()? == &Token::Arrow {
+            self.advance()?;
+            let rhs = self.parse_kind()?;
+            Ok(Kind::Arrow(Box::new(lhs), Box::new(rhs)))
+        } else {
+            Ok(lhs)
+        }
+    }
+
+    /// `kind_atom ::= '*' | '(' kind ')'`
+    fn parse_kind_atom(&mut self) -> Result<Kind, ParseError> {
+        let (tok, tok_pos) = self.advance()?;
+        match tok {
+            Token::Star => Ok(Kind::Star),
+            Token::LParen => {
+                let k = self.parse_kind()?;
+                self.expect(&Token::RParen)?;
+                Ok(k)
+            }
+            other => Err(ParseError::new(
+                tok_pos,
+                format!("expected a kind ('*' or '(...)'), got {other:?}"),
+            )),
+        }
     }
 
     /// `union ::= arrow ( '|' arrow )*`
@@ -393,9 +514,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// `arrow ::= primary ( '->' primary )*`  (right-associative)
+    /// `arrow ::= application ( '->' application )*`  (right-associative)
     fn parse_arrow(&mut self) -> Result<Type, ParseError> {
-        let lhs = self.parse_primary()?;
+        let lhs = self.parse_application()?;
         if self.peek()? == &Token::Arrow {
             self.advance()?;
             // Right-associative: recurse via parse_arrow
@@ -404,6 +525,62 @@ impl<'a> Parser<'a> {
         } else {
             Ok(lhs)
         }
+    }
+
+    /// `application ::= primary primary* '?'?`
+    ///
+    /// Juxtaposition applies a type constructor to its arguments:
+    /// `m a` → `App(m, a)`, `m a b` → `App(App(m, a), b)`.
+    ///
+    /// A trailing `?` desugars to `| ExecutionError`:
+    /// `T?` → `T | ExecutionError`.
+    fn parse_application(&mut self) -> Result<Type, ParseError> {
+        let head = self.parse_primary()?;
+        let mut result = head;
+        loop {
+            if self.peek()? == &Token::Question {
+                self.advance()?;
+                result = Type::partial(result);
+            } else if self.can_start_primary()? {
+                let arg = self.parse_primary()?;
+                result = Type::App(Box::new(result), Box::new(arg));
+            } else {
+                break;
+            }
+        }
+        Ok(result)
+    }
+
+    /// Returns true if the next token can begin a `primary` type expression.
+    fn can_start_primary(&mut self) -> Result<bool, ParseError> {
+        Ok(matches!(
+            self.peek()?,
+            Token::Number
+                | Token::String
+                | Token::Symbol
+                | Token::Bool
+                | Token::Null
+                | Token::Datetime
+                | Token::Any
+                | Token::Top
+                | Token::Never
+                | Token::Set
+                | Token::Vec
+                | Token::Array
+                | Token::Block
+                | Token::Io
+                | Token::Lens
+                | Token::Traversal
+                | Token::Dict
+                | Token::NonEmpty
+                | Token::Ident(_)
+                | Token::LBracket
+                | Token::LParen
+                | Token::LBrace
+                | Token::Colon
+                | Token::StringLit(_)
+                | Token::Star
+        ))
     }
 
     /// Parse a primary type expression.
@@ -419,6 +596,7 @@ impl<'a> Parser<'a> {
             Token::Any => Ok(Type::Any),
             Token::Top => Ok(Type::Top),
             Token::Never => Ok(Type::Never),
+            Token::ExecutionError => Ok(Type::ExecutionError),
             Token::Set => Ok(Type::Set),
             Token::Vec => Ok(Type::Vec),
             Token::Array => Ok(Type::Array),
@@ -430,18 +608,25 @@ impl<'a> Parser<'a> {
             Token::Dict => {
                 // `Dict` `(` type `)`
                 self.expect(&Token::LParen)?;
-                let inner = self.parse_union()?;
+                let inner = self.parse_type()?;
                 self.expect(&Token::RParen)?;
-                Ok(Type::Dict(Box::new(inner)))
+                Ok(Type::dict(inner))
             }
             Token::NonEmpty => {
                 // `NonEmpty` `(` `[` type `]` `)`
                 self.expect(&Token::LParen)?;
                 self.expect(&Token::LBracket)?;
-                let inner = self.parse_union()?;
+                let inner = self.parse_type()?;
                 self.expect(&Token::RBracket)?;
                 self.expect(&Token::RParen)?;
-                Ok(Type::NonEmpty(Box::new(inner)))
+                Ok(Type::non_empty(inner))
+            }
+            Token::Star => {
+                // `*` as a type (used only in kind annotations — but if it
+                // appears in a type position here it means a kind-level `*`
+                // was parsed as a primary; treat as Con("*") so kind checker
+                // can report a sensible error).
+                Ok(Type::Con("*".to_string()))
             }
             Token::Ident(name) => {
                 // Type variable (lowercase) or type alias reference (uppercase).
@@ -460,7 +645,7 @@ impl<'a> Parser<'a> {
                             name: name.clone(),
                         });
                     }
-                    Ok(Type::Var(TypeVarId(name)))
+                    Ok(Type::var(TypeVarId(name)))
                 } else {
                     Err(ParseError::new(
                         tok_pos,
@@ -470,36 +655,36 @@ impl<'a> Parser<'a> {
             }
             Token::LBracket => {
                 // `[` type `]`
-                let inner = self.parse_union()?;
+                let inner = self.parse_type()?;
                 self.expect(&Token::RBracket)?;
-                Ok(Type::List(Box::new(inner)))
+                Ok(Type::list(inner))
             }
             Token::LParen => self.parse_paren_body(tok_pos),
             Token::LBrace => self.parse_record(tok_pos),
             Token::Io => {
                 // `IO` `(` type `)`
                 self.expect(&Token::LParen)?;
-                let inner = self.parse_union()?;
+                let inner = self.parse_type()?;
                 self.expect(&Token::RParen)?;
-                Ok(Type::IO(Box::new(inner)))
+                Ok(Type::io(inner))
             }
             Token::Lens => {
                 // `Lens` `(` type `,` type `)`
                 self.expect(&Token::LParen)?;
-                let a = self.parse_union()?;
+                let a = self.parse_type()?;
                 self.expect(&Token::Comma)?;
-                let b = self.parse_union()?;
+                let b = self.parse_type()?;
                 self.expect(&Token::RParen)?;
-                Ok(Type::Lens(Box::new(a), Box::new(b)))
+                Ok(Type::lens(a, b))
             }
             Token::Traversal => {
                 // `Traversal` `(` type `,` type `)`
                 self.expect(&Token::LParen)?;
-                let a = self.parse_union()?;
+                let a = self.parse_type()?;
                 self.expect(&Token::Comma)?;
-                let b = self.parse_union()?;
+                let b = self.parse_type()?;
                 self.expect(&Token::RParen)?;
-                Ok(Type::Traversal(Box::new(a), Box::new(b)))
+                Ok(Type::traversal(a, b))
             }
             Token::StringLit(s) => {
                 // Literal string type: `"some value"` in type position.
@@ -528,10 +713,12 @@ impl<'a> Parser<'a> {
                     Token::Vec => "vec".to_string(),
                     Token::Array => "array".to_string(),
                     Token::Block => "block".to_string(),
+                    Token::Forall => "forall".to_string(),
                     Token::Io => "IO".to_string(),
                     Token::Dict => "Dict".to_string(),
                     Token::Lens => "Lens".to_string(),
                     Token::Traversal => "Traversal".to_string(),
+                    Token::NonEmpty => "NonEmpty".to_string(),
                     _ => {
                         return Err(ParseError::new(
                             next_pos,
@@ -567,7 +754,7 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        let first = self.parse_union()?;
+        let first = self.parse_type()?;
 
         match self.peek()? {
             Token::RParen => {
@@ -588,7 +775,7 @@ impl<'a> Parser<'a> {
                             break;
                         }
                         _ => {
-                            elems.push(self.parse_union()?);
+                            elems.push(self.parse_type()?);
                             match self.peek()? {
                                 Token::Comma => {
                                     self.advance()?;
@@ -788,7 +975,7 @@ impl<'a> Parser<'a> {
                         _ => unreachable!(),
                     };
                     self.expect(&Token::Colon)?;
-                    let field_type = self.parse_union()?;
+                    let field_type = self.parse_type()?;
                     if fields.contains_key(&field_name) {
                         return Err(ParseError::new(
                             field_pos,
@@ -826,6 +1013,143 @@ impl<'a> Parser<'a> {
     }
 }
 
+// ── Constraint parsing helpers ───────────────────────────────────────────────
+
+/// Find the byte position of the first top-level `=>` sequence (not inside
+/// `()`, `[]`, or `{}`).  Returns `None` if no such sequence exists.
+fn find_top_level_fat_arrow(input: &str) -> Option<usize> {
+    let bytes = input.as_bytes();
+    let mut depth: usize = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        // UTF-8: continuation bytes (0x80–0xBF) never match ASCII punctuation,
+        // so byte-level scanning is safe here.
+        match bytes[i] {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+            b'=' if depth == 0 && bytes.get(i + 1) == Some(&b'>') => {
+                return Some(i);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Split `input` on commas that are NOT inside any `()`, `[]`, or `{}`.
+fn split_top_level_commas(input: &str) -> Vec<&str> {
+    let bytes = input.as_bytes();
+    let mut parts: Vec<&str> = Vec::new();
+    let mut depth: usize = 0;
+    let mut start = 0usize;
+    for i in 0..bytes.len() {
+        match bytes[i] {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+            b',' if depth == 0 => {
+                parts.push(&input[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&input[start..]);
+    parts
+}
+
+/// Parse a single constraint such as `<(a, a)` or `str.of(a)`.
+///
+/// The operator name is everything before the opening `(`, trimmed of
+/// whitespace.  The argument list is the comma-separated type sequence
+/// inside the parentheses.  The `base_offset` is the byte position of
+/// `input` within the original annotation string, used for error positions.
+fn parse_single_constraint(input: &str, base_offset: usize) -> Result<Constraint, ParseError> {
+    // Locate the opening parenthesis
+    let paren_pos = input.find('(').ok_or_else(|| {
+        ParseError::new(base_offset, format!("expected '(' in constraint '{input}'"))
+    })?;
+
+    let func_name = input[..paren_pos].trim().to_string();
+    if func_name.is_empty() {
+        return Err(ParseError::new(
+            base_offset,
+            "constraint operator name cannot be empty",
+        ));
+    }
+
+    // Find the matching close parenthesis
+    let after_open = &input[paren_pos + 1..];
+    let mut depth = 1usize;
+    let mut close_pos: Option<usize> = None;
+    for (i, b) in after_open.bytes().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    close_pos = Some(i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let close = close_pos.ok_or_else(|| {
+        ParseError::new(
+            base_offset + paren_pos,
+            "unclosed '(' in constraint argument list",
+        )
+    })?;
+
+    // Ensure no unexpected trailing characters after the closing paren
+    let trailing = after_open[close + 1..].trim();
+    if !trailing.is_empty() {
+        return Err(ParseError::new(
+            base_offset + paren_pos + 1 + close + 1,
+            format!("unexpected trailing input after constraint: '{trailing}'"),
+        ));
+    }
+
+    // Parse the comma-separated argument types
+    let arg_str = &after_open[..close];
+    let arg_parts = split_top_level_commas(arg_str);
+    let mut args: Vec<Type> = Vec::new();
+    for part in arg_parts {
+        let part = part.trim();
+        if !part.is_empty() {
+            let ty = parse_type(part)
+                .map_err(|e| ParseError::new(base_offset + e.position, e.message))?;
+            args.push(ty);
+        }
+    }
+
+    Ok(Constraint {
+        function: func_name,
+        args,
+    })
+}
+
+/// Parse a comma-separated list of constraints (the part before `=>`).
+fn parse_constraint_list(input: &str, base_offset: usize) -> Result<Vec<Constraint>, ParseError> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Split on top-level commas that separate individual constraints
+    let parts = split_top_level_commas(trimmed);
+    let mut constraints: Vec<Constraint> = Vec::new();
+    let mut offset = base_offset;
+    for part in parts {
+        let trimmed_part = part.trim();
+        if !trimmed_part.is_empty() {
+            constraints.push(parse_single_constraint(trimmed_part, offset)?);
+        }
+        offset += part.len() + 1; // +1 for the comma
+    }
+    Ok(constraints)
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /// Parse a type annotation string into a `Type`.
@@ -842,12 +1166,56 @@ impl<'a> Parser<'a> {
 /// assert_eq!(parse_type("number").unwrap(), Type::Number);
 /// assert_eq!(
 ///     parse_type("[string]").unwrap(),
-///     Type::List(Box::new(Type::String))
+///     Type::list(Type::String)
 /// );
 /// ```
 pub fn parse_type(input: &str) -> Result<Type, ParseError> {
     let mut parser = Parser::new(input);
     parser.parse_type_toplevel()
+}
+
+/// Parse a type-annotation string that may include an operator constraint prefix.
+///
+/// The constraint DSL (B2) allows annotations of the form:
+///
+/// ```text
+/// <(a, a) => a -> a -> a
+/// <(a, a), +(a, a) => a -> a -> a
+/// str.of(a) => [a] -> [string]
+/// ```
+///
+/// A comma-separated list of constraints precedes `=>`.  Each constraint is
+/// `operator_name(type, …)`.  If no `=>` is present at the top level (i.e. not
+/// inside parentheses/brackets/braces), the string is parsed as a plain type.
+///
+/// Returns `(body_type, constraints)`.
+///
+/// # Examples
+///
+/// ```
+/// use eucalypt::core::typecheck::parse::parse_scheme;
+/// use eucalypt::core::typecheck::types::Type;
+///
+/// let (ty, constraints) = parse_scheme("<(a, a) => a -> a -> a").unwrap();
+/// assert!(matches!(ty, Type::Function(_, _)));
+/// assert_eq!(constraints.len(), 1);
+/// assert_eq!(constraints[0].function, "<");
+///
+/// let (ty2, cs2) = parse_scheme("number -> number").unwrap();
+/// assert_eq!(ty2, Type::Function(Box::new(Type::Number), Box::new(Type::Number)));
+/// assert!(cs2.is_empty());
+/// ```
+pub fn parse_scheme(input: &str) -> Result<(Type, Vec<Constraint>), ParseError> {
+    if let Some(arrow_pos) = find_top_level_fat_arrow(input) {
+        let constraint_part = &input[..arrow_pos];
+        let body_part = input[arrow_pos + 2..].trim();
+        let constraints = parse_constraint_list(constraint_part, 0)?;
+        let body = parse_type(body_part)?;
+        Ok((body, constraints))
+    } else {
+        let ty = parse_type(input)?;
+        Ok((ty, Vec::new()))
+    }
 }
 
 /// Parse a type-annotation string and return all alias references found.
@@ -886,7 +1254,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn var(name: &str) -> Type {
-        Type::Var(TypeVarId(name.to_string()))
+        Type::var(TypeVarId(name.to_string()))
     }
 
     // ── Primitives ──────────────────────────────────────────────────────────
@@ -948,15 +1316,12 @@ mod tests {
 
     #[test]
     fn parse_list() {
-        assert_eq!(
-            parse_type("[number]").unwrap(),
-            Type::List(Box::new(Type::Number))
-        );
+        assert_eq!(parse_type("[number]").unwrap(), Type::list(Type::Number));
     }
 
     #[test]
     fn parse_list_of_var() {
-        assert_eq!(parse_type("[a]").unwrap(), Type::List(Box::new(var("a"))));
+        assert_eq!(parse_type("[a]").unwrap(), Type::list(var("a")));
     }
 
     // ── Tuple ───────────────────────────────────────────────────────────────
@@ -1058,8 +1423,8 @@ mod tests {
             Type::Function(
                 Box::new(Type::Function(Box::new(var("a")), Box::new(var("b")))),
                 Box::new(Type::Function(
-                    Box::new(Type::List(Box::new(var("a")))),
-                    Box::new(Type::List(Box::new(var("b"))))
+                    Box::new(Type::list(var("a"))),
+                    Box::new(Type::list(var("b")))
                 ))
             )
         );
@@ -1175,17 +1540,14 @@ mod tests {
 
     #[test]
     fn parse_io() {
-        assert_eq!(
-            parse_type("IO(string)").unwrap(),
-            Type::IO(Box::new(Type::String))
-        );
+        assert_eq!(parse_type("IO(string)").unwrap(), Type::io(Type::String));
     }
 
     #[test]
     fn parse_io_record() {
         assert_eq!(
             parse_type("IO({stdout: string, stderr: string, exit-code: number})").unwrap(),
-            Type::IO(Box::new(Type::Record {
+            Type::io(Type::Record {
                 fields: {
                     let mut m = BTreeMap::new();
                     m.insert("stdout".to_string(), Type::String);
@@ -1195,7 +1557,7 @@ mod tests {
                 },
                 open: false,
                 rows: vec![],
-            }))
+            })
         );
     }
 
@@ -1203,13 +1565,13 @@ mod tests {
     fn parse_lens() {
         assert_eq!(
             parse_type("Lens({..}, any)").unwrap(),
-            Type::Lens(
-                Box::new(Type::Record {
+            Type::lens(
+                Type::Record {
                     fields: BTreeMap::new(),
                     open: true,
                     rows: vec![],
-                }),
-                Box::new(Type::Any)
+                },
+                Type::Any
             )
         );
     }
@@ -1218,7 +1580,7 @@ mod tests {
     fn parse_traversal() {
         assert_eq!(
             parse_type("Traversal([a], a)").unwrap(),
-            Type::Traversal(Box::new(Type::List(Box::new(var("a")))), Box::new(var("a")))
+            Type::traversal(Type::list(var("a")), var("a"))
         );
     }
 
@@ -1315,8 +1677,11 @@ mod tests {
 
     #[test]
     fn error_trailing_junk() {
-        let err = parse_type("number garbage").unwrap_err();
-        assert!(err.message.contains("unexpected trailing input"));
+        // `number garbage` now parses as `App(Number, Var("garbage"))` via
+        // the application level — a kind error, not a parse error. Test that
+        // genuinely non-parseable trailing input is still rejected.
+        let err = parse_type("number | ").unwrap_err();
+        assert!(err.message.contains("expected a type"));
     }
 
     #[test]
@@ -1468,20 +1833,137 @@ mod tests {
         roundtrip("{..r, ..s}");
     }
 
+    // ── Higher-kinded types (HKT) ──────────────────────────────────────────
+
+    #[test]
+    fn parse_hkt_application_juxtaposition() {
+        // `m a` → App(Var("m", Star→Star), Var("a", Star))
+        // Both vars default to Star at parse time; kind tracking happens in checker
+        let ty = parse_type("m a").unwrap();
+        assert!(matches!(&ty, Type::App(_, _)), "expected App, got {ty:?}");
+    }
+
+    #[test]
+    fn parse_hkt_application_two_args() {
+        // `f a b` → App(App(f, a), b)
+        let ty = parse_type("f a b").unwrap();
+        assert!(matches!(&ty, Type::App(_, _)));
+        if let Type::App(head, _) = &ty {
+            assert!(matches!(head.as_ref(), Type::App(_, _)));
+        }
+    }
+
+    #[test]
+    fn parse_hkt_application_in_arrow() {
+        // `m a -> m b` should parse with application binding tighter than arrow
+        let ty = parse_type("m a -> m b").unwrap();
+        assert!(
+            matches!(&ty, Type::Function(_, _)),
+            "expected Function, got {ty:?}"
+        );
+        if let Type::Function(lhs, rhs) = &ty {
+            assert!(matches!(lhs.as_ref(), Type::App(_, _)));
+            assert!(matches!(rhs.as_ref(), Type::App(_, _)));
+        }
+    }
+
+    #[test]
+    fn parse_forall_simple() {
+        use super::super::types::Kind;
+        // `forall a. a`
+        let ty = parse_type("forall a. a").unwrap();
+        assert!(
+            matches!(&ty, Type::Forall(binders, _) if binders.len() == 1),
+            "expected Forall, got {ty:?}"
+        );
+        if let Type::Forall(binders, _) = &ty {
+            assert_eq!(binders[0].0, TypeVarId("a".to_string()));
+            assert_eq!(binders[0].1, Kind::Star);
+        }
+    }
+
+    #[test]
+    fn parse_forall_multiple_vars() {
+        // `forall a b. a -> b`
+        let ty = parse_type("forall a b. a -> b").unwrap();
+        if let Type::Forall(binders, body) = &ty {
+            assert_eq!(binders.len(), 2);
+            assert!(matches!(body.as_ref(), Type::Function(_, _)));
+        } else {
+            panic!("expected Forall, got {ty:?}");
+        }
+    }
+
+    #[test]
+    fn parse_forall_with_kind_annotation() {
+        use super::super::types::Kind;
+        // `forall (m :: * -> *) a. m a`
+        let ty = parse_type("forall (m :: * -> *) a. m a").unwrap();
+        if let Type::Forall(binders, body) = &ty {
+            assert_eq!(binders.len(), 2);
+            assert_eq!(binders[0].0, TypeVarId("m".to_string()));
+            assert_eq!(
+                binders[0].1,
+                Kind::Arrow(Box::new(Kind::Star), Box::new(Kind::Star))
+            );
+            assert_eq!(binders[1].1, Kind::Star);
+            assert!(matches!(body.as_ref(), Type::App(_, _)));
+        } else {
+            panic!("expected Forall, got {ty:?}");
+        }
+    }
+
+    #[test]
+    fn parse_forall_star_to_star_to_star() {
+        use super::super::types::Kind;
+        // `forall (f :: * -> * -> *) a b. f a b`
+        let ty = parse_type("forall (f :: * -> * -> *) a b. f a b").unwrap();
+        if let Type::Forall(binders, _) = &ty {
+            assert_eq!(binders.len(), 3);
+            let expected_kind = Kind::Arrow(
+                Box::new(Kind::Star),
+                Box::new(Kind::Arrow(Box::new(Kind::Star), Box::new(Kind::Star))),
+            );
+            assert_eq!(binders[0].1, expected_kind);
+        } else {
+            panic!("expected Forall");
+        }
+    }
+
+    #[test]
+    fn parse_forall_monad_map_type() {
+        // `forall (m :: * -> *) a b. (a -> b) -> m a -> m b`
+        let ty = parse_type("forall (m :: * -> *) a b. (a -> b) -> m a -> m b").unwrap();
+        assert!(
+            matches!(&ty, Type::Forall(_, _)),
+            "expected Forall, got {ty:?}"
+        );
+    }
+
+    #[test]
+    fn roundtrip_hkt_application() {
+        roundtrip("m a");
+        roundtrip("m a b");
+    }
+
+    #[test]
+    fn roundtrip_forall() {
+        roundtrip("forall a. a");
+        roundtrip("forall a b. a -> b");
+        roundtrip("forall (m :: * -> *) a. m a -> m a");
+    }
+
     #[test]
     fn parse_dict_type() {
         assert_eq!(
             parse_type("Dict(number)").unwrap(),
-            Type::Dict(Box::new(Type::Number))
+            Type::dict(Type::Number)
         );
     }
 
     #[test]
     fn parse_dict_with_var() {
-        assert_eq!(
-            parse_type("Dict(a)").unwrap(),
-            Type::Dict(Box::new(Type::Var(TypeVarId("a".to_string()))))
-        );
+        assert_eq!(parse_type("Dict(a)").unwrap(), Type::dict(var("a")));
     }
 
     #[test]
@@ -1524,5 +2006,64 @@ mod tests {
         // {..} -> [(symbol, any)]
         let ty = parse_type("{..} -> [(symbol, any)]").unwrap();
         assert!(matches!(ty, Type::Function(_, _)));
+    }
+
+    // ── Constraint parsing (B2) ─────────────────────────────────────────────
+
+    #[test]
+    fn parse_scheme_no_constraints() {
+        let (ty, cs) = super::parse_scheme("number -> number").unwrap();
+        assert_eq!(
+            ty,
+            Type::Function(Box::new(Type::Number), Box::new(Type::Number))
+        );
+        assert!(cs.is_empty());
+    }
+
+    #[test]
+    fn parse_scheme_single_constraint() {
+        let (ty, cs) = super::parse_scheme("<(a, a) => a -> a -> a").unwrap();
+        assert!(matches!(ty, Type::Function(_, _)));
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs[0].function, "<");
+        assert_eq!(cs[0].args.len(), 2);
+        assert_eq!(cs[0].args[0], var("a"));
+        assert_eq!(cs[0].args[1], var("a"));
+    }
+
+    #[test]
+    fn parse_scheme_two_constraints() {
+        let (ty, cs) = super::parse_scheme("<(a, a), +(a, a) => a -> a -> a").unwrap();
+        assert!(matches!(ty, Type::Function(_, _)));
+        assert_eq!(cs.len(), 2);
+        assert_eq!(cs[0].function, "<");
+        assert_eq!(cs[1].function, "+");
+    }
+
+    #[test]
+    fn parse_scheme_dotted_operator_name() {
+        let (ty, cs) = super::parse_scheme("str.of(a) => [a] -> [string]").unwrap();
+        assert!(matches!(ty, Type::Function(_, _)));
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs[0].function, "str.of");
+        assert_eq!(cs[0].args[0], var("a"));
+    }
+
+    #[test]
+    fn parse_scheme_unicode_arrow_body() {
+        // The `=>` separator and the `→` body arrow must not interfere.
+        let (ty, cs) = super::parse_scheme(">(a, a) => a → a → a").unwrap();
+        assert!(matches!(ty, Type::Function(_, _)));
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs[0].function, ">");
+    }
+
+    #[test]
+    fn parse_scheme_arrow_inside_parens_not_fat_arrow() {
+        // `=>` inside parentheses should NOT be treated as the constraint separator.
+        // This annotation has no constraints — just a plain function type.
+        let (ty, cs) = super::parse_scheme("number -> number").unwrap();
+        assert!(matches!(ty, Type::Function(_, _)));
+        assert!(cs.is_empty());
     }
 }

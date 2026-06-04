@@ -15,6 +15,7 @@ pub enum IntrinsicType {
     ZonedDateTime,
     Array,
     Vec,
+    Set,
     List(Box<IntrinsicType>),
     Function(Box<IntrinsicType>, Box<IntrinsicType>),
     Record(HashMap<String, IntrinsicType>),
@@ -33,6 +34,7 @@ impl fmt::Display for IntrinsicType {
             IntrinsicType::ZonedDateTime => write!(f, "datetime"),
             IntrinsicType::Array => write!(f, "array"),
             IntrinsicType::Vec => write!(f, "vec"),
+            IntrinsicType::Set => write!(f, "set"),
             IntrinsicType::List(t) => write!(f, "list of {}", *t),
             IntrinsicType::Function(i, o) => write!(f, "{i} -> {o}"),
             IntrinsicType::Record(hm) => {
@@ -163,6 +165,10 @@ pub fn arr() -> Box<IntrinsicType> {
 
 pub fn vec_type() -> Box<IntrinsicType> {
     Box::new(IntrinsicType::Vec)
+}
+
+pub fn set_type() -> Box<IntrinsicType> {
+    Box::new(IntrinsicType::Set)
 }
 
 pub fn block() -> Box<IntrinsicType> {

@@ -1553,6 +1553,51 @@ pub fn test_error_143() {
 }
 
 #[test]
+pub fn test_error_144() {
+    run_error_test(&error_opts("144_str_replace_hint.eu"));
+}
+
+#[test]
+pub fn test_error_145() {
+    run_error_test(&error_opts("145_str_starts_with_hint.eu"));
+}
+
+#[test]
+pub fn test_error_146() {
+    run_error_test(&error_opts("146_str_ends_with_hint.eu"));
+}
+
+#[test]
+pub fn test_error_147() {
+    run_error_test(&error_opts("147_str_contains_hint.eu"));
+}
+
+#[test]
+pub fn test_error_148() {
+    run_error_test(&error_opts("148_not_callable_source_loc.eu"));
+}
+
+#[test]
+pub fn test_error_149() {
+    run_error_test(&error_opts("149_not_value_source_loc.eu"));
+}
+
+#[test]
+pub fn test_error_150() {
+    run_error_test(&error_opts("150_bad_timezone_source_loc.eu"));
+}
+
+#[test]
+pub fn test_error_151() {
+    run_error_test(&error_opts("151_set_add_non_set.eu"));
+}
+
+#[test]
+pub fn test_error_152() {
+    run_error_test(&error_opts("152_set_element_type_mismatch.eu"));
+}
+
+#[test]
 pub fn test_error_135() {
     run_error_test(&error_opts("135_head_empty_list.eu"));
 }
@@ -2009,4 +2054,168 @@ pub fn test_typecheck_054_io_elem_type_correct() {
 #[test]
 pub fn test_typecheck_055_user_monad_elem_type() {
     run_typecheck_test("055_user_monad_elem_type.eu");
+}
+
+#[test]
+pub fn test_typecheck_056_hkt_list_app_no_warning() {
+    run_typecheck_test("056_hkt_list_app_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_057_hkt_forall_annotation_parse() {
+    run_typecheck_test("057_hkt_forall_annotation_parse.eu");
+}
+
+#[test]
+pub fn test_typecheck_058_hkt_kind_annotation_parse() {
+    run_typecheck_test("058_hkt_kind_annotation_parse.eu");
+}
+
+#[test]
+pub fn test_typecheck_059_user_monad_hkt_map_type() {
+    run_typecheck_test("059_user_monad_hkt_map_type.eu");
+}
+
+#[test]
+pub fn test_typecheck_060_let_correct_binding() {
+    run_typecheck_test("060_let_correct_binding.eu");
+}
+
+#[test]
+pub fn test_typecheck_061_let_wrong_type() {
+    run_typecheck_test("061_let_wrong_type.eu");
+}
+
+#[test]
+pub fn test_typecheck_062_for_correct_binding() {
+    run_typecheck_test("062_for_correct_binding.eu");
+}
+
+#[test]
+pub fn test_typecheck_063_for_wrong_binding() {
+    run_typecheck_test("063_for_wrong_binding.eu");
+}
+
+// ── B6: Dependent record indexed access ────────────────────────────────────
+
+#[test]
+pub fn test_typecheck_064_lookup_literal_key_correct() {
+    run_typecheck_test("064_lookup_literal_key_correct.eu");
+}
+
+#[test]
+pub fn test_typecheck_065_lookup_key_typo_warns() {
+    run_typecheck_test("065_lookup_key_typo_warns.eu");
+}
+
+#[test]
+pub fn test_typecheck_066_lookup_open_record_no_warning() {
+    run_typecheck_test("066_lookup_open_record_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_067_lookup_dict_value_type() {
+    run_typecheck_test("067_lookup_dict_value_type.eu");
+}
+
+#[test]
+pub fn test_typecheck_068_projection_second_correct() {
+    run_typecheck_test("068_projection_second_correct.eu");
+}
+
+#[test]
+pub fn test_typecheck_069_projection_value_type_mismatch() {
+    run_typecheck_test("069_projection_value_type_mismatch.eu");
+}
+
+// ── B7: Prelude type-summary cache — behaviour preservation ──────────────────
+
+#[test]
+pub fn test_typecheck_070_b7_predicate_narrowing() {
+    run_typecheck_test("070_b7_predicate_narrowing.eu");
+}
+
+#[test]
+pub fn test_typecheck_071_b7_then_brancher() {
+    run_typecheck_test("071_b7_then_brancher.eu");
+}
+
+#[test]
+pub fn test_typecheck_072_b7_user_brancher_wrapping_free() {
+    run_typecheck_test("072_b7_user_brancher_wrapping_free.eu");
+}
+
+#[test]
+pub fn test_typecheck_073_b7_head_tail_free() {
+    run_typecheck_test("073_b7_head_tail_free.eu");
+}
+
+#[test]
+pub fn test_typecheck_074_b5_partial_type_parses() {
+    run_typecheck_test("074_b5_partial_type_parses.eu");
+}
+
+#[test]
+pub fn test_typecheck_075_b5_execution_error_type() {
+    run_typecheck_test("075_b5_execution_error_type.eu");
+}
+
+#[test]
+pub fn test_typecheck_076_b5_partial_warns_in_total_position() {
+    run_typecheck_test("076_b5_partial_warns_in_total_position.eu");
+}
+
+#[test]
+pub fn test_typecheck_077_b5_partial_silent_in_any() {
+    run_typecheck_test("077_b5_partial_silent_in_any.eu");
+}
+
+#[test]
+pub fn test_typecheck_078_b9_merge_row_inference_no_warn() {
+    run_typecheck_test("078_b9_merge_row_inference_no_warn.eu");
+}
+
+#[test]
+pub fn test_typecheck_079_b9_merge_row_field_type_mismatch() {
+    run_typecheck_test("079_b9_merge_row_field_type_mismatch.eu");
+}
+
+#[test]
+pub fn test_typecheck_080_b9_non_block_param_no_row_var() {
+    run_typecheck_test("080_b9_non_block_param_no_row_var.eu");
+}
+
+#[test]
+pub fn test_typecheck_081_b2_constraint_satisfied() {
+    run_typecheck_test("081_b2_constraint_satisfied.eu");
+}
+
+#[test]
+pub fn test_typecheck_082_b2_constraint_violated() {
+    run_typecheck_test("082_b2_constraint_violated.eu");
+}
+
+#[test]
+pub fn test_typecheck_083_b2_constraint_gradual_any() {
+    run_typecheck_test("083_b2_constraint_gradual_any.eu");
+}
+
+#[test]
+pub fn test_typecheck_084_random_correct_binding() {
+    run_typecheck_test("084_random_correct_binding.eu");
+}
+
+#[test]
+pub fn test_typecheck_085_random_wrong_binding() {
+    run_typecheck_test("085_random_wrong_binding.eu");
+}
+
+#[test]
+pub fn test_typecheck_086_user_monad_with_monad_meta() {
+    run_typecheck_test("086_user_monad_with_monad_meta.eu");
+}
+
+#[test]
+pub fn test_typecheck_087_for_wrong_element_type() {
+    run_typecheck_test("087_for_wrong_element_type.eu");
 }

@@ -144,13 +144,13 @@ block) as `.name`, `.(expr)`, or `.[list]`.
 
 **Built-in monadic namespaces:**
 
-| Tag | Monad | Result type |
-|-----|-------|-------------|
-| `:io` | IO effects | IO action |
-| `:random` | Random state | Random action |
-| `:state` | Block state (import `state.eu`) | State action |
-| `:let` | Identity (sequential bindings) | Value |
-| `:for` | List (comprehensions) | List |
+| Tag | Monad | Action type | Element type |
+|-----|-------|-------------|--------------|
+| `:io` | IO effects | `IO(a)` | `a` |
+| `:random` | Random state | `stream → {value: a, rest: stream}` | `a` |
+| `:state` | Block state (import `state.eu`) | `state → {value: a, state: state}` | `a` |
+| `:let` | Identity (sequential bindings) | any | same |
+| `:for` | List (comprehensions) | `[a]` | `a` |
 
 ```eu,notest
 # List comprehension: cartesian product with filter
@@ -312,14 +312,14 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `drop(n)` | Remove first n |
 | `zip` | Pair elements from two lists |
 | `zip-with(f)` | Combine elements with function |
-| `flatten` | Flatten nested lists one level |
+| `concat` | Flatten nested lists one level (use `concat`, not `flatten` — does not exist) |
 | `reverse` | Reverse a list |
 | `count` | Number of elements |
 | `range(a, b)` | Integers from a to b-1 |
 | `nil?` | Is the list empty? |
-| `any?(p?)` | Does any element match? |
-| `all?(p?)` | Do all elements match? |
-| `unique` | Remove duplicates |
+| `any(p?)` | Does any element match? |
+| `all(p?)` | Do all elements match? |
+| `nub-by(f)` | Deduplicate by key function (no `unique` in prelude) |
 
 ### Blocks
 
@@ -333,8 +333,7 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `elements` | List of `{key, value}` pairs |
 | `map-keys(f)` | Transform keys |
 | `map-values(f)` | Transform values |
-| `select(keys)` | Keep only listed keys |
-| `dissoc(keys)` | Remove listed keys |
+| `filter-items(p?)` | Keep entries matching predicate (use with `by-key`, `by-value`) |
 | `merge(b)` | Shallow merge |
 | `deep-merge(b)` | Deep recursive merge |
 | `sort-keys` | Sort by key name |
@@ -536,12 +535,25 @@ origin: { x: 0, y: 0 }
 | `Name` (capitalised) | type alias — defined via `types: { Name: "..." }` |
 | `"value"`          | literal string type (subtype of `string`); in annotation string: `\"value\"` |
 | `:name`            | literal symbol type (subtype of `symbol`)      |
+| `T?`               | partial — sugar for `T \| ExecutionError`; marks functions that may raise an error |
+| `ExecutionError`   | the type of a raised runtime error     |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
-| `a`, `b`, `s`      | type variable (lowercase)              |
+| `a`, `b`, `s`      | type variable, kind `*` (lowercase)    |
+| `m a`              | constructor application (`m :: * -> *` applied to `a`) |
+| `forall a. T`      | explicit quantification (kind-`*`)     |
+| `forall (m :: * -> *) a. T` | explicit quantification with kind annotation |
 | `IO(T)`            | IO action producing T                  |
 | `Lens(a, b)`       | lens focusing on b within a            |
 | `Traversal(a, b)`  | traversal over b's within a            |
 | `set`              | ordered set of primitives              |
 | `vec`              | flat vector of primitives              |
 | `array`            | n-dimensional number array             |
+
+### User-defined monads
+
+`monad({ bind(m,f): ..., return(v): ... })` derives the standard
+combinators (`map`, `then`, `and-then`, `join`, `sequence`, `map-m`,
+`filter-m`) annotated with `forall (m :: * -> *)` types.  The type
+checker understands them polymorphically — passing a non-function to
+`my-monad.map` triggers a warning.

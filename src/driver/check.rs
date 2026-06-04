@@ -6,27 +6,95 @@
 //!    find all `type:` metadata annotations, and validate them against the
 //!    type grammar.  This is fast and requires no pipeline processing.
 //!
-//! 2. **Bidirectional type check** — load source files through the full
-//!    eucalypt pipeline (parse → desugar → cook → eliminate), then run
-//!    `Checker` over the resulting core expression and report any
-//!    `TypeWarning`s.
+//! 2. **Bidirectional type check** — load files through the pipeline, then
+//!    run the type checker.  The prelude is checked once per process and the
+//!    result cached; user files are seeded with the cached prelude types,
+//!    avoiding redundant prelude re-checking on every file.
 //!
 //! Type issues are always warnings unless `--strict` is passed.
 
 use std::fs;
 use std::path::Path;
+use std::sync::OnceLock;
 use std::time::Instant;
 
+use crate::core::cook::fixity::extract_operator_type_strings;
 use crate::core::typecheck::{
-    check::{type_check, type_check_full},
+    check::{
+        parse_operator_overloads, type_check, type_check_for_prelude, type_check_full,
+        type_check_with_operator_overloads, type_check_with_seed, PreludeSummary,
+    },
     parse,
 };
 use crate::driver::error::EucalyptError;
 use crate::driver::options::EucalyptOptions;
 use crate::driver::source::SourceLoader;
+use crate::syntax::input::{Input, Locator};
 use crate::syntax::rowan::ast::{self, Block, Declaration, Element, HasSoup};
 use crate::syntax::rowan::parse_unit;
 use rowan::ast::AstNode;
+
+// ── Prelude type-summary cache (§B7) ────────────────────────────────────────
+
+/// In-memory cache for the prelude type summary.
+///
+/// The prelude is embedded in the binary and fixed for a given build, so
+/// the cache is effectively constant per process.  It is populated on the
+/// first check call and reused for every subsequent file.
+static PRELUDE_CACHE: OnceLock<PreludeSummary> = OnceLock::new();
+
+/// Return a reference to the cached prelude summary, building it on first call.
+///
+/// Runs the prelude through load → translate → cook (no eliminate) once,
+/// then calls `type_check_for_prelude` to capture the root scope.
+/// All subsequent calls return the cached value immediately.
+fn get_or_build_prelude_summary() -> Option<&'static PreludeSummary> {
+    if let Some(cached) = PRELUDE_CACHE.get() {
+        return Some(cached);
+    }
+
+    let summary = build_prelude_summary().ok()?;
+    // OnceLock::get_or_init would race; use set to avoid re-computing when
+    // two threads initialise simultaneously.  If set fails the other thread
+    // already won — just return what was stored.
+    let _ = PRELUDE_CACHE.set(summary);
+    PRELUDE_CACHE.get()
+}
+
+/// Build the prelude summary by running the prelude through the pipeline.
+///
+/// Loads the prelude resource, translates, merges, and cooks it (no
+/// eliminate step — every prelude binding must be retained for caching),
+/// then runs `type_check_for_prelude` to capture binding type schemes,
+/// aliases, and branch shapes.
+fn build_prelude_summary() -> Result<PreludeSummary, EucalyptError> {
+    let prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
+    let inputs = vec![prelude];
+
+    let mut loader = SourceLoader::new(vec![]);
+
+    for input in &inputs {
+        loader.load(input)?;
+    }
+    for input in &inputs {
+        loader.translate(input)?;
+    }
+    loader.merge_units(&inputs)?;
+
+    // Extract operator type annotations BEFORE cook strips them (see note in
+    // run_type_checker for why this is necessary).
+    let operator_type_strings = extract_operator_type_strings(&loader.core().expr);
+    let operator_overloads = parse_operator_overloads(&operator_type_strings);
+
+    loader.cook()?;
+    // Deliberately NO eliminate — every prelude binding is a root when
+    // Every prelude binding must be retained for caching — eliminating would lose type information.
+
+    let core_expr = loader.core().expr.clone();
+    let (_, mut summary) = type_check_for_prelude(&core_expr);
+    summary.operator_overloads = operator_overloads;
+    Ok(summary)
+}
 
 // ── Phase 1: Annotation syntax check ────────────────────────────────────────
 
@@ -146,7 +214,7 @@ pub fn annotation_syntax_errors(source: &str) -> Vec<(usize, String, String)> {
     let annotations = collect_annotations_from_unit(&unit, source);
     let mut errors = vec![];
     for ann in annotations {
-        if let Err(e) = parse::parse_type(&ann.value) {
+        if let Err(e) = parse::parse_scheme(&ann.value).map(|_| ()) {
             errors.push((ann.source_offset, ann.decl_name.clone(), e.to_string()));
         }
     }
@@ -167,12 +235,17 @@ pub struct PathCheckResult {
 /// Run the type checker on a single eucalypt source file, returning both
 /// warnings and the inferred type environment.
 ///
+/// Uses the prelude-cached pipeline: the prelude is checked once per
+/// process and cached; user files are checked seeded with the cached
+/// prelude types.  User-file imports are still resolved normally — only
+/// the prelude is cached.  Falls back to the merged pipeline if the
+/// prelude cache cannot be built.
+///
 /// If the pipeline fails at any stage, returns a single warning
 /// explaining which stage failed rather than silently producing no
 /// results.
 pub fn type_check_path_full(path: &Path) -> PathCheckResult {
     use crate::core::typecheck::error::TypeWarning;
-    use crate::syntax::input::{Input, Locator};
 
     let pipeline_error = |stage: &str, err: &dyn std::fmt::Display| PathCheckResult {
         warnings: vec![TypeWarning::new(format!(
@@ -182,6 +255,59 @@ pub fn type_check_path_full(path: &Path) -> PathCheckResult {
         source_map: crate::common::sourcemap::SourceMap::new(),
     };
 
+    // ── Attempt prelude-cached check (fast path) ──────────────────────────
+    if let Some(summary) = get_or_build_prelude_summary() {
+        return type_check_path_with_seed(path, summary, pipeline_error);
+    }
+
+    // ── Fallback: merged pipeline (prelude cache could not be built) ───────
+    type_check_path_merged(path, pipeline_error)
+}
+
+/// Check a single user file seeded with a cached prelude
+/// summary (§B7 fast path).
+fn type_check_path_with_seed(
+    path: &Path,
+    summary: &PreludeSummary,
+    pipeline_error: impl Fn(&str, &dyn std::fmt::Display) -> PathCheckResult,
+) -> PathCheckResult {
+    let file = Input::new(Locator::Fs(path.to_path_buf()), None, "eu");
+    let inputs = vec![file];
+
+    let mut loader = SourceLoader::new(vec![]);
+
+    if let Err(e) = loader.load(&inputs[0]) {
+        return pipeline_error("load", &e);
+    }
+    if let Err(e) = loader.translate(&inputs[0]) {
+        return pipeline_error("desugar", &e);
+    }
+    if let Err(e) = loader.merge_units(&inputs) {
+        return pipeline_error("merge", &e);
+    }
+    if let Err(e) = loader.cook() {
+        return pipeline_error("cook", &e);
+    }
+    if let Err(e) = loader.eliminate() {
+        return pipeline_error("eliminate", &e);
+    }
+
+    let core_expr = loader.core().expr.clone();
+    let warnings = type_check_with_seed(&core_expr, summary);
+    let (_, source_map, _) = loader.complete();
+    PathCheckResult {
+        warnings,
+        types: std::collections::HashMap::new(),
+        source_map,
+    }
+}
+
+/// Check a file using the original merged pipeline (fallback when the
+/// prelude cache is unavailable).
+fn type_check_path_merged(
+    path: &Path,
+    pipeline_error: impl Fn(&str, &dyn std::fmt::Display) -> PathCheckResult,
+) -> PathCheckResult {
     let prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
     let file = Input::new(Locator::Fs(path.to_path_buf()), None, "eu");
     let inputs = vec![prelude, file];
@@ -248,15 +374,29 @@ fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eucaly
     // Merge into a single expression.
     loader.merge_units(&inputs)?;
 
+    // Extract operator type annotations BEFORE cook strips them.
+    //
+    // The `distribute_fixities` step in cook removes `Meta` wrappers from
+    // operator definitions (e.g. `(l < r): ...`) to move fixity info to call
+    // sites.  This erases the `type:` annotation from operators.  We capture
+    // them here, before cook, so that constraint discharge can verify that
+    // e.g. `<(a, a) => a → a → a` is satisfiable for the argument types.
+    let operator_type_strings = extract_operator_type_strings(&loader.core().expr);
+    let operator_overloads = parse_operator_overloads(&operator_type_strings);
+
     // Cook (resolve operator precedence).
     loader.cook()?;
 
     // Eliminate dead bindings.
     loader.eliminate()?;
 
-    // Run the type checker.
+    // Run the type checker, seeded with the pre-cook operator overloads.
     let core_expr = loader.core().expr.clone();
-    let warnings = type_check(&core_expr);
+    let warnings = if operator_overloads.is_empty() {
+        type_check(&core_expr)
+    } else {
+        type_check_with_operator_overloads(&core_expr, operator_overloads)
+    };
     let (files, source_map, _) = loader.complete();
     Ok(PipelineCheckResult {
         warnings,
@@ -285,7 +425,7 @@ fn check_annotation_syntax(filename: &str, source: &str, strict: bool) -> usize 
     for ann in annotations {
         // Strip leading `!` (asserted annotation marker) before parsing
         let type_str = ann.value.strip_prefix('!').unwrap_or(&ann.value).trim();
-        if let Err(e) = parse::parse_type(type_str) {
+        if let Err(e) = parse::parse_scheme(type_str).map(|_| ()) {
             let severity = if strict { "error" } else { "warning" };
             let line_col = byte_offset_to_line_col(source, ann.source_offset);
             eprintln!(

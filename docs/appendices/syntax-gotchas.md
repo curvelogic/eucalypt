@@ -26,6 +26,7 @@ The precedence hierarchy (highest to lowest):
 | 35         | bool-prod    | `∧` (and)                    |
 | 30         | bool-sum     | `∨` (or)                     |
 | 20         | cat          | catenation (juxtaposition)   |
+| 15         | clause       | `=>`, `⇒` (cond clause)      |
 | 10         | apply        |                              |
 | 5          | meta         | `` ` `` (metadata)           |
 

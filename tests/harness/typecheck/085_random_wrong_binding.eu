@@ -1,0 +1,3 @@
+# B8: :random block with non-action binding — warning expected.
+# 42 is a number, not a stream action: random monad requires a → {value: b, rest: a}.
+result: { :random x: 42 }.(x)

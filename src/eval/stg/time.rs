@@ -39,11 +39,11 @@ use super::{
 ///
 /// Accepts: numeric offsets (+02:00, -0500, +01:00:00), "Z" for UTC,
 /// and IANA timezone names (e.g. "UTC", "Europe/London") via chrono-tz.
-fn offset_from_tz_str(tz_str: &str) -> Result<FixedOffset, ExecutionError> {
+fn offset_from_tz_str(smid: Smid, tz_str: &str) -> Result<FixedOffset, ExecutionError> {
     // Try "Z" for UTC
     if tz_str == "Z" {
         return FixedOffset::east_opt(0)
-            .ok_or_else(|| ExecutionError::BadTimeZone(Smid::default(), tz_str.to_string()));
+            .ok_or_else(|| ExecutionError::BadTimeZone(smid, tz_str.to_string()));
     }
 
     // Try parsing as a numeric offset by constructing a dummy datetime
@@ -76,10 +76,7 @@ fn offset_from_tz_str(tz_str: &str) -> Result<FixedOffset, ExecutionError> {
             .fix());
     }
 
-    Err(ExecutionError::BadTimeZone(
-        Smid::default(),
-        tz_str.to_string(),
-    ))
+    Err(ExecutionError::BadTimeZone(smid, tz_str.to_string()))
 }
 
 /// ZDT(y, m, d, h, M, s, Z) - create a zoned date time
@@ -142,7 +139,7 @@ impl StgIntrinsic for Zdt {
             .ok_or_else(err)?;
 
             let datetime = NaiveDateTime::new(date, time);
-            let offset = offset_from_tz_str(&tz)?;
+            let offset = offset_from_tz_str(smid, &tz)?;
             if let LocalResult::Single(zdt) = offset.from_local_datetime(&datetime) {
                 machine_return_zdt(machine, view, zdt)
             } else {
@@ -423,19 +420,19 @@ pub mod tests {
     #[test]
     pub fn test_tz_parse() {
         assert_eq!(
-            offset_from_tz_str("-02:00").unwrap(),
+            offset_from_tz_str(Smid::default(), "-02:00").unwrap(),
             FixedOffset::west_opt(2 * 60 * 60).unwrap()
         );
         assert_eq!(
-            offset_from_tz_str("+02:00").unwrap(),
+            offset_from_tz_str(Smid::default(), "+02:00").unwrap(),
             FixedOffset::east_opt(2 * 60 * 60).unwrap()
         );
         assert_eq!(
-            offset_from_tz_str("UTC").unwrap(),
+            offset_from_tz_str(Smid::default(), "UTC").unwrap(),
             FixedOffset::east_opt(0).unwrap()
         );
         assert_eq!(
-            offset_from_tz_str("Z").unwrap(),
+            offset_from_tz_str(Smid::default(), "Z").unwrap(),
             FixedOffset::east_opt(0).unwrap()
         );
     }

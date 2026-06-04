@@ -23,8 +23,13 @@ pub trait Allocator {
     where
         T: StgObject;
 
-    /// Allocate a region of bytes
+    /// Allocate a region of bytes (zero-initialised)
     fn alloc_bytes(&self, size_bytes: usize) -> Result<NonNull<u8>, HeapError>;
+
+    /// Allocate a region of bytes without zero-initialisation.
+    ///
+    /// Callers must ensure every byte is written before it is read.
+    fn alloc_bytes_uninit(&self, size_bytes: usize) -> Result<NonNull<u8>, HeapError>;
 
     /// Get header from object
     fn get_header<T>(&self, object: NonNull<T>) -> NonNull<AllocHeader>;
@@ -82,6 +87,14 @@ pub trait ScopedAllocator<'guard> {
     where
         T: StgObject;
 
-    /// Allocate a region of bytes
+    /// Allocate a region of bytes (zero-initialised)
     fn alloc_bytes(&self, size_bytes: usize) -> Result<NonNull<u8>, ExecutionError>;
+
+    /// Allocate a region of bytes without zero-initialisation.
+    ///
+    /// Callers must ensure every byte is written before it is read.
+    /// The default implementation falls back to the zeroing path.
+    fn alloc_bytes_uninit(&self, size_bytes: usize) -> Result<NonNull<u8>, ExecutionError> {
+        self.alloc_bytes(size_bytes)
+    }
 }

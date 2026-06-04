@@ -27,10 +27,10 @@ services: {
 # --- deep-find: find all hosts (should be 40: 20 direct + 20 nested) ---
 
 ` :suppress
-all-hosts: deep-find("host", services)
+all-hosts: deep-find(:host, services)
 
 ` :suppress
-host-count: all-hosts foldl(0, {n: •, _: •}.n + 1)
+host-count: all-hosts count
 
 # --- deep-query: find config.host values ---
 
@@ -38,20 +38,20 @@ host-count: all-hosts foldl(0, {n: •, _: •}.n + 1)
 config-hosts: deep-query("config.host", services)
 
 ` :suppress
-config-host-count: config-hosts foldl(0, {n: •, _: •}.n + 1)
+config-host-count: config-hosts count
 
 # --- deep-find-first ---
 
 ` :suppress
-first-host: deep-find-first("host", "none", services)
+first-host: deep-find-first(:host, "none", services)
 
-# --- deep-query with wildcard ---
+# --- deep-query with wildcard (should be 40: ** normalisation descends all blocks, then * expands one level, then :host matches) ---
 
 ` :suppress
 star-hosts: deep-query("*.host", services)
 
 ` :suppress
-star-host-count: star-hosts foldl(0, {n: •, _: •}.n + 1)
+star-host-count: star-hosts count
 
 ` { target: :bench-deep-find-perf }
 bench-deep-find-perf: {
@@ -62,7 +62,7 @@ bench-deep-find-perf: {
   RESULT: if(host-count = 40,
              if(config-host-count = 20,
                 if(first-host = "10.0.0.0",
-                   if(star-host-count = 20, :PASS, :FAIL),
+                   if(star-host-count = 40, :PASS, :FAIL),
                    :FAIL),
                 :FAIL),
              :FAIL)

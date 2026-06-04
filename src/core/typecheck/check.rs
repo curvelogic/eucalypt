@@ -34,8 +34,11 @@ use crate::{
             error::TypeWarning,
             parse,
             subtype::{is_consistent, is_subtype},
-            types::{Type, TypeScheme},
-            unify::{apply_subst, freshen, infer_scheme, unify, Substitution},
+            types::{Constraint, Type, TypeScheme, TypeVarId},
+            unify::{
+                apply_subst, freshen, freshen_forall, freshen_with_constraints, infer_scheme,
+                unify, Substitution,
+            },
         },
     },
 };
@@ -128,7 +131,7 @@ enum BranchKind {
 /// For `BranchKind::Cond`, `condition` is unused; `branches[0]` is the
 /// clause-list argument index.
 #[derive(Debug, Clone)]
-struct BranchShape {
+pub struct BranchShape {
     /// Total number of arguments when fully applied.
     arity: usize,
     /// Index into the flattened argument list for the condition expression.
@@ -177,6 +180,48 @@ enum PredicateKind {
 /// `Type::Var` nodes whose name is in this map are replaced with the stored
 /// concrete type before type variables are erased to `any`.
 type AliasMap = HashMap<String, Type>;
+
+// ── Prelude summary ──────────────────────────────────────────────────────────
+
+/// Cached result of type-checking the prelude once per process.
+///
+/// Produced by running the prelude through the full pipeline
+/// (load → translate → cook, **no eliminate**), then running
+/// `type_check_for_prelude` which preserves the root scope after checking.
+///
+/// Seeded into fresh `Checker` instances via `Checker::with_seed` when
+/// checking user files, avoiding a full re-walk of the ~2 200-line
+/// prelude on every check.  User files still go through the full
+/// pipeline with all their imports — only the prelude is cached.
+#[derive(Clone, Default)]
+pub struct PreludeSummary {
+    /// Exported binding name → its type scheme.
+    ///
+    /// Polymorphic schemes are preserved so that every use-site freshens
+    /// the type variables independently.
+    pub bindings: HashMap<String, TypeScheme>,
+
+    /// Type aliases the prelude registers (from `type-def:` / `types:`
+    /// metadata).  User-file annotations can reference these alias names.
+    pub aliases: AliasMap,
+
+    /// BranchShape classification for recognised brancher combinators,
+    /// keyed by binding *name* (not `BoundKey`) for `Var::Free` lookup.
+    ///
+    /// With prelude caching, prelude functions appear as `Var::Free` in user
+    /// code.  `recognise_brancher` consults this map when the head is a
+    /// free variable so that `if`, `then`, `and`, etc. are still recognised.
+    pub branch_shapes: HashMap<String, BranchShape>,
+
+    /// Pre-cook operator type overloads for constraint discharge (§B2).
+    ///
+    /// Operator definitions (e.g. `(l < r): __LT(l, r)`) have their `Meta`
+    /// wrapper stripped by cook, making their type annotations invisible to
+    /// the type checker.  This map captures the annotations before cook and
+    /// allows `discharge_constraint` to verify operator constraints even when
+    /// the scope-stack entry for the operator is `Any`.
+    pub operator_overloads: HashMap<String, TypeScheme>,
+}
 
 // ── Checker ─────────────────────────────────────────────────────────────────
 
@@ -260,6 +305,41 @@ pub struct Checker {
     /// inserted as `None` (tentative) is treated as "not a brancher" if
     /// re-encountered during its own classification.
     branch_shapes: HashMap<BoundKey, Option<BranchShape>>,
+
+    /// Memoised ProjectionShape classification per binding (§B6.3).
+    ///
+    /// `None` = classified, not a projection.
+    /// `Some(index)` = tuple-element projector at position `index`.
+    ///   index 0 = first element (head), index 1 = second (head∘tail), etc.
+    ///
+    /// Populated eagerly during Let synthesis alongside `binding_bodies`.
+    projection_shapes: HashMap<BoundKey, Option<usize>>,
+
+    /// When `true`, the outermost scope frame is preserved rather than
+    /// popped when `synthesise(Let)` would otherwise call `pop_scope`.
+    ///
+    /// Set during prelude cache building so that
+    /// `extract_prelude_summary` can read the root frame after
+    /// `check_expr` returns.  Always `false` in user-file checks.
+    keep_root_scope: bool,
+
+    /// Pre-cook operator overload types for constraint discharge (§B2).
+    ///
+    /// Populated from type annotations extracted from the raw (pre-cook)
+    /// expression before `distribute_fixities` strips `Meta` wrappers from
+    /// operator definitions.  Cook strips these wrappers, leaving operators
+    /// with `mono(any)` in the scope stack.  `discharge_constraint` consults
+    /// this map as a fallback when the scope lookup returns `Any`.
+    ///
+    /// Keyed by operator name (e.g. `"<"`, `">"`, `"+"`).
+    operator_overloads: HashMap<String, TypeScheme>,
+
+    /// BranchShape classification seeded from a pre-checked prelude (§B7).
+    ///
+    /// Maps prelude binding name → `BranchShape`.  Consulted by
+    /// `recognise_brancher` and `classify_lam_body` when the head
+    /// expression is a `Var::Free` in prelude-cached user-file checks.
+    seed_branch_shapes: HashMap<String, BranchShape>,
 }
 
 impl Default for Checker {
@@ -280,6 +360,67 @@ impl Checker {
             narrowing: Vec::new(),
             binding_bodies: HashMap::new(),
             branch_shapes: HashMap::new(),
+            projection_shapes: HashMap::new(),
+            keep_root_scope: false,
+            seed_branch_shapes: HashMap::new(),
+            operator_overloads: HashMap::new(),
+        }
+    }
+
+    /// Create a checker pre-seeded with a prelude summary (§B7).
+    ///
+    /// Installs the prelude's binding type schemes into the outermost
+    /// scope frame (pushed at the back of `scope_stack` so that user
+    /// bindings pushed at the front shadow them), pre-populates the
+    /// alias map, and seeds `seed_branch_shapes` for `Var::Free`
+    /// recognition of prelude combinators.
+    ///
+    /// Used when checking a user file with the prelude cache — the
+    /// user file's own Let frame is pushed on top during normal
+    /// synthesis, and `Var::Free` references to prelude names resolve
+    /// via the `lookup_bound` → `lookup_name` fallback.
+    pub fn with_seed(summary: &PreludeSummary) -> Self {
+        let mut checker = Checker::new();
+        checker.aliases = summary.aliases.clone();
+        checker.seed_branch_shapes = summary.branch_shapes.clone();
+        checker.operator_overloads = summary.operator_overloads.clone();
+        // Push prelude bindings at the back (outermost) so user-file
+        // frames pushed via push_front sit in front and shadow them.
+        let frame: HashMap<String, TypeScheme> = summary.bindings.clone();
+        checker.scope_stack.push_back(frame);
+        checker
+    }
+
+    /// Extract a `PreludeSummary` from the current checker state.
+    ///
+    /// Intended to be called after `check_expr` when `keep_root_scope`
+    /// was `true`, ensuring the root scope frame is still present in
+    /// `scope_stack`.
+    pub fn extract_prelude_summary(&self) -> PreludeSummary {
+        // Collect type schemes from all frames (there should be exactly
+        // one frame — the root prelude Let frame — when keep_root_scope).
+        let bindings: HashMap<String, TypeScheme> = self
+            .scope_stack
+            .iter()
+            .flat_map(|frame| frame.iter().map(|(k, v)| (k.clone(), v.clone())))
+            .collect();
+
+        // Extract named branch shapes, discarding the BoundKey's
+        // anchored-index component — only the name matters for Free-var
+        // lookups during prelude-cached user-file checks.
+        let branch_shapes: HashMap<String, BranchShape> = self
+            .branch_shapes
+            .iter()
+            .filter_map(|((_, name), opt_shape)| {
+                opt_shape.as_ref().map(|s| (name.clone(), s.clone()))
+            })
+            .collect();
+
+        PreludeSummary {
+            bindings,
+            aliases: self.aliases.clone(),
+            branch_shapes,
+            operator_overloads: self.operator_overloads.clone(),
         }
     }
 
@@ -327,6 +468,11 @@ impl Checker {
     }
 
     fn pop_scope(&mut self) {
+        // When keep_root_scope is set, preserve the last remaining frame so
+        // that extract_prelude_summary can read it after check_expr returns.
+        if self.keep_root_scope && self.scope_stack.len() == 1 {
+            return;
+        }
         self.scope_stack.pop_front();
     }
 
@@ -400,6 +546,108 @@ impl Checker {
         self.lookup_name(name)
     }
 
+    // ── Constraint support (B2) ──────────────────────────────────────────────
+
+    /// Look up the raw (unfrenshened) `TypeScheme` for a simple named
+    /// variable expression without consuming `self.var_counter`.
+    ///
+    /// Returns `None` when the expression is not a simple variable (e.g. it is
+    /// a nested application or a literal), or when the name is not in scope.
+    fn lookup_scheme_for_expr(&self, expr: &RcExpr) -> Option<TypeScheme> {
+        match &*expr.inner {
+            Expr::Var(_, Var::Free(name)) | Expr::Name(_, name) => self
+                .scope_stack
+                .iter()
+                .find_map(|frame| frame.get(name))
+                .cloned(),
+            Expr::Var(_, Var::Bound(bv)) => {
+                let name = bv.name.as_deref()?;
+                let idx = bv.scope as usize;
+                if let Some(frame) = self.scope_stack.get(idx) {
+                    frame.get(name).cloned()
+                } else {
+                    // Out-of-range scope index — fall back to name search.
+                    self.scope_stack.iter().find_map(|f| f.get(name)).cloned()
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Discharge an operator constraint after all arguments have been applied.
+    ///
+    /// A constraint `op(T₁, …, Tₙ)` is discharged as follows:
+    ///
+    /// - If any `Tᵢ` (after applying `subst`) is `any`: vacuously satisfied.
+    /// - If any `Tᵢ` is still an unbound type variable: the constraint is not
+    ///   yet concrete — skip silently (constrained polymorphism; the outer
+    ///   scheme carries it forward).
+    /// - Otherwise: look up `op`'s declared type and check that some overload
+    ///   accepts `(T₁, …, Tₙ)`.  Emit a warning if none match.
+    fn discharge_constraint(&mut self, constraint: &Constraint, subst: &Substitution, smid: Smid) {
+        let resolved: Vec<Type> = constraint
+            .args
+            .iter()
+            .map(|a| apply_subst(a, subst))
+            .collect();
+
+        // Gradual: `any` arg means we cannot say anything — stay silent.
+        if resolved.iter().any(|a| matches!(a, Type::Any)) {
+            return;
+        }
+
+        // Not yet concrete — constraint propagates.
+        if resolved.iter().any(|a| matches!(a, Type::Var(_, _))) {
+            return;
+        }
+
+        // Look up the operator's declared type (body without freshening).
+        // First check the scope stack; if the scope gives `Any` (because cook
+        // stripped the operator's Meta annotation), fall back to the pre-cook
+        // operator overload map which was populated before distribute_fixities.
+        let op_type_from_scope = self
+            .scope_stack
+            .iter()
+            .find_map(|f| f.get(&constraint.function))
+            .cloned()
+            .map(|s| s.body.clone());
+
+        let op_type = match op_type_from_scope {
+            Some(Type::Any) | None => {
+                // Scope has no useful type — try the pre-cook overload registry.
+                self.operator_overloads
+                    .get(&constraint.function)
+                    .map(|s| s.body.clone())
+            }
+            other => other,
+        };
+
+        let Some(op_type) = op_type else {
+            // Unknown operator — cannot verify, stay silent (gradual).
+            return;
+        };
+
+        // Gradual: if the overload itself is Any, stay silent.
+        if matches!(op_type, Type::Any) {
+            return;
+        }
+
+        // Check whether any overload of the operator accepts the resolved args.
+        if !constraint_overload_matches(&op_type, &resolved) {
+            let args_str = resolved
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let warning = TypeWarning::new(format!(
+                "`{}` does not accept ({})",
+                constraint.function, args_str
+            ))
+            .at(smid);
+            self.warnings.push(warning);
+        }
+    }
+
     // ── Alias management ────────────────────────────────────────────────────
 
     /// Register a type alias.
@@ -424,7 +672,7 @@ impl Checker {
     /// `Type::Mu(name, body)` to form an equirecursive type.
     fn resolve_aliases_inner(&self, ty: Type, resolving: &mut Vec<String>) -> Type {
         match ty {
-            Type::Var(ref v) => {
+            Type::Var(ref v, _) => {
                 if let Some(alias_ty) = self.aliases.get(&v.0) {
                     if resolving.contains(&v.0) {
                         // Cycle detected: return the bare Var as a back-reference.
@@ -446,34 +694,25 @@ impl Checker {
                     ty
                 }
             }
-            Type::List(inner) => {
-                Type::List(Box::new(self.resolve_aliases_inner(*inner, resolving)))
-            }
+            Type::App(f, x) => Type::App(
+                Box::new(self.resolve_aliases_inner(*f, resolving)),
+                Box::new(self.resolve_aliases_inner(*x, resolving)),
+            ),
+            Type::Con(_) => ty,
+            Type::Forall(binders, body) => Type::Forall(
+                binders,
+                Box::new(self.resolve_aliases_inner(*body, resolving)),
+            ),
             Type::Tuple(elems) => Type::Tuple(
                 elems
                     .into_iter()
                     .map(|e| self.resolve_aliases_inner(e, resolving))
                     .collect(),
             ),
-            Type::IO(inner) => Type::IO(Box::new(self.resolve_aliases_inner(*inner, resolving))),
-            Type::Lens(a, b) => Type::Lens(
-                Box::new(self.resolve_aliases_inner(*a, resolving)),
-                Box::new(self.resolve_aliases_inner(*b, resolving)),
-            ),
-            Type::Traversal(a, b) => Type::Traversal(
-                Box::new(self.resolve_aliases_inner(*a, resolving)),
-                Box::new(self.resolve_aliases_inner(*b, resolving)),
-            ),
             Type::Function(a, b) => Type::Function(
                 Box::new(self.resolve_aliases_inner(*a, resolving)),
                 Box::new(self.resolve_aliases_inner(*b, resolving)),
             ),
-            Type::Dict(inner) => {
-                Type::Dict(Box::new(self.resolve_aliases_inner(*inner, resolving)))
-            }
-            Type::NonEmpty(inner) => {
-                Type::NonEmpty(Box::new(self.resolve_aliases_inner(*inner, resolving)))
-            }
             Type::Record { fields, open, rows } => Type::Record {
                 fields: fields
                     .into_iter()
@@ -492,6 +731,10 @@ impl Checker {
             // the binder (it is not an alias name).
             Type::Mu(x, body) => {
                 Type::Mu(x, Box::new(self.resolve_aliases_inner(*body, resolving)))
+            }
+            // Lam: pass through, resolving inside the body.
+            Type::Lam(x, body) => {
+                Type::Lam(x, Box::new(self.resolve_aliases_inner(*body, resolving)))
             }
             other => other,
         }
@@ -590,7 +833,7 @@ impl Checker {
     /// - `is_hint`: came from `__type_hint` (monad binding) — the
     ///   annotation is for checking only, not for overriding the
     ///   synthesised type
-    fn extract_annotation(&self, meta: &RcExpr) -> Option<(Type, bool, bool)> {
+    fn extract_annotation(&self, meta: &RcExpr) -> Option<(Type, Vec<Constraint>, bool, bool)> {
         let block = match &*meta.inner {
             Expr::Block(_, b) => b,
             _ => return None,
@@ -611,8 +854,13 @@ impl Checker {
             (type_str, false)
         };
 
-        let parsed = parse::parse_type(&type_str).ok()?;
-        Some((self.resolve_aliases_in_type(parsed), asserted, is_hint))
+        let (parsed, constraints) = parse::parse_scheme(&type_str).ok()?;
+        Some((
+            self.resolve_aliases_in_type(parsed),
+            constraints,
+            asserted,
+            is_hint,
+        ))
     }
 
     /// Try to extract a `TypeScheme` from a binding value's `Meta` wrapper.
@@ -624,7 +872,11 @@ impl Checker {
     fn annotation_scheme_of(&self, value: &RcExpr) -> Option<TypeScheme> {
         if let Expr::Meta(_, _, meta) = &*value.inner {
             self.extract_annotation(meta)
-                .map(|(ty, _asserted, _is_hint)| infer_scheme(ty))
+                .map(|(ty, constraints, _asserted, _is_hint)| {
+                    let mut scheme = infer_scheme(ty);
+                    scheme.constraints = constraints;
+                    scheme
+                })
         } else {
             None
         }
@@ -683,25 +935,29 @@ impl Checker {
 
                 self.push_scope(frame);
 
-                // BranchShape classification (§A5.3): store binding bodies and
-                // eagerly classify each binding as a branch combinator so that
-                // later uses of the binding (even user-defined wrappers like
-                // `my-if(c,t,e): if(c,t,f)`) are recognised during synthesis.
+                // BranchShape + ProjectionShape classification.
+                //
+                // Eagerly classify each binding as a branch combinator (§A5.3)
+                // and/or a tuple-element projector (§B6.3) so that later uses
+                // are recognised during synthesis.
                 //
                 // anchored = scope_stack.len() - 1 (the newly-pushed innermost frame).
                 let anchored = self.scope_stack.len() - 1;
                 for (name, value) in &scope.pattern {
                     let key: BoundKey = (anchored, name.clone());
-                    // Tentative `None` entry doubles as a recursion guard: if
+                    // Tentative `None` entries double as recursion guards: if
                     // classification recurses back to this binding, it sees
-                    // "not a brancher" and terminates.
+                    // "not a brancher/projector" and terminates.
                     self.branch_shapes.insert(key.clone(), None);
+                    self.projection_shapes.insert(key.clone(), None);
                     // Store the body for later structural analysis.
                     let body = peel_meta(value).clone();
                     self.binding_bodies.insert(key.clone(), body.clone());
                     // Classify and update.
                     let shape = self.classify_binding_shape(&body, self.scope_stack.len());
-                    self.branch_shapes.insert(key, shape);
+                    self.branch_shapes.insert(key.clone(), shape);
+                    let proj = self.classify_projection_body(&body, self.scope_stack.len());
+                    self.projection_shapes.insert(key, proj);
                 }
 
                 // Pass 2: synthesise each binding value — triggers consistency
@@ -721,7 +977,7 @@ impl Checker {
                         // Use the explicit `type:` annotation if given; otherwise
                         // the synthesised type (inferred from the value shape).
                         let alias_ty = if let Expr::Meta(_, _, meta) = &*value.inner {
-                            self.extract_annotation(meta).map(|(ty, _, _)| ty)
+                            self.extract_annotation(meta).map(|(ty, _, _, _)| ty)
                         } else {
                             None
                         }
@@ -736,9 +992,10 @@ impl Checker {
             }
 
             // ── Lambda ────────────────────────────────────────────────────────
-            // Cannot synthesise without knowing parameter types.  Return `any`
-            // and let `check_against` handle the case where the type is known.
-            Expr::Lam(_, _, _) => Type::Any,
+            // B9: attempt row-variable inference for unannotated lambdas whose
+            // parameters are used as blocks.  Falls back to `any` when no
+            // block usage is detected (preserving the gradual boundary).
+            Expr::Lam(_, _, scope) => self.synthesise_lam(scope),
 
             // ── Application ──────────────────────────────────────────────────
             Expr::App(smid, func, args) => self.synthesise_app(*smid, func, args),
@@ -789,7 +1046,9 @@ impl Checker {
         // the annotation itself can reference freshly-declared aliases.
         self.register_aliases_from_meta(meta);
 
-        if let Some((annotated_type, asserted, is_hint)) = self.extract_annotation(meta) {
+        if let Some((annotated_type, _constraints, asserted, is_hint)) =
+            self.extract_annotation(meta)
+        {
             let scheme = infer_scheme(annotated_type);
             let working_type = freshen(&scheme, &mut self.var_counter);
             // Asserted annotations (prefixed with `!`) are trusted without
@@ -827,13 +1086,13 @@ impl Checker {
                             let first = &elems[0];
                             if elems.iter().all(|e| e == first) {
                                 // Homogeneous tuple → list of element type
-                                Type::List(Box::new(first.clone()))
+                                Type::list(first.clone())
                             } else {
                                 // Heterogeneous tuple → list of union
                                 // Type::union deduplicates and normalises
                                 // (absorbs LiteralString into String, etc.)
                                 let elem_type = Type::union(elems.iter().cloned());
-                                Type::List(Box::new(elem_type))
+                                Type::list(elem_type)
                             }
                         }
                         _ => inner_type,
@@ -926,13 +1185,13 @@ impl Checker {
     /// Spine flattening: `x then(a, b)` cooks to `App(App(then, [a,b]), [x])`.
     /// We flatten `func` into `(head, prefix_args)` and prepend to `args` so
     /// the full argument list `[a, b, x]` is visible for recognition.
-    fn synthesise_app(&mut self, _smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
+    fn synthesise_app(&mut self, smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
         // ── Spine flattening + branch recognition (§A5.2, §A5.3) ─────────────
         //
         // Flatten the function spine to find the outermost head and the full
         // argument list.  Required for pipelined branchers like `x then(a,b)`.
         let (head, prefix_args) = flatten_app_spine(func);
-        let spine_args: Vec<&RcExpr> = prefix_args.into_iter().chain(args.iter()).collect();
+        let spine_args: Vec<&RcExpr> = prefix_args.iter().copied().chain(args.iter()).collect();
 
         if let Some(shape) = self.recognise_brancher(head) {
             if spine_args.len() == shape.arity {
@@ -941,6 +1200,28 @@ impl Checker {
                 }
             }
             // Wrong arity (partial application) — fall through to generic path.
+        }
+
+        // ── LOOKUP literal-key typed access (§B6.2) ─────────────────────────
+        //
+        // When `lookup` / `LOOKUP` is applied to a literal-symbol key and a
+        // known record type, return the precise field type (or warn on a key
+        // typo in a closed record).  This fires before the generic annotation
+        // path so that the precise field type overrides the `Dict(a) → a`
+        // annotation.
+        //
+        // The type checker runs before inlining, so the head may be either:
+        // - `Expr::Intrinsic(_, "LOOKUP")` — the raw intrinsic (post-inline context)
+        // - `Expr::Var(Bound, "lookup" | "lookup-in")` — the prelude alias
+        if spine_args.len() == 2 && is_lookup_fn(head) {
+            let key_type = self.synthesise(spine_args[0]);
+            if let Type::LiteralSymbol(key) = key_type {
+                let block_type = self.synthesise(spine_args[1]);
+                let smid = spine_args[0].smid();
+                return self.synthesise_lookup_with_literal_key(&key, &block_type, smid);
+            }
+            // Non-literal key — gradual (key may be absent at runtime).
+            return Type::Any;
         }
 
         // ── HEAD/TAIL-on-Tuple precise typing (§A6.8) ────────────────────────
@@ -966,7 +1247,7 @@ impl Checker {
                 // emit a direct type warning so the user is alerted even if
                 // the call site annotation is `any`.  Return `Any` so that
                 // downstream checks can continue without cascading errors.
-                if matches!(&arg_type, Type::List(e) if matches!(e.as_ref(), Type::Never)) {
+                if arg_type.as_list().is_some_and(|e| matches!(e, Type::Never)) {
                     let proj_name = match proj {
                         HeadTailProjection::Head => "head",
                         HeadTailProjection::Tail => "tail",
@@ -988,6 +1269,34 @@ impl Checker {
                 }
                 // Not a Tuple or empty — fall through to generic path which uses
                 // the NonEmpty([a]) annotation.
+            }
+        }
+
+        // ── ProjectionShape precise tuple typing (§B6.3) ─────────────────────
+        //
+        // When a bound variable function has a ProjectionShape of index `i` and
+        // is applied to a `Tuple([T₀,…,Tₙ])`, return `Tᵢ` precisely.
+        // This handles `second(Tuple([K,V])) → V`, `value(Tuple([K,V])) → V`, etc.
+        //
+        // Head/first/key at index 0 are already handled by is_head_or_tail above;
+        // this path covers index ≥ 1 (and also 0 for completeness via bound vars).
+        if spine_args.len() == 1 {
+            if let Some(index) = self.recognise_projection_index(head) {
+                let arg_type = self.synthesise(spine_args[0]);
+                if let Type::Tuple(ref elems) = arg_type {
+                    if let Some(ty) = elems.get(index) {
+                        return ty.clone();
+                    } else {
+                        // Out-of-range index — warn and return any.
+                        let smid = head.smid();
+                        let warning = TypeWarning::new(format!("tuple index {index} out of range"))
+                            .at(smid)
+                            .with_note(format!("tuple has {} elements", elems.len()));
+                        self.warnings.push(warning);
+                        return Type::Any;
+                    }
+                }
+                // Not a Tuple — fall through to generic annotation path.
             }
         }
 
@@ -1054,7 +1363,45 @@ impl Checker {
             }
         }
 
-        let func_type = self.synthesise(func);
+        // ── Constraint extraction (B2) ────────────────────────────────────────
+        //
+        // If the head of the application spine has a constrained scheme
+        // (e.g. `<(a, a) => a -> a -> a`), freshen the constraints with the
+        // same rename map as the body so that constraint variables unify
+        // correctly with the accumulated substitution.
+        //
+        // When the head has no constraints (the common case), fall back to the
+        // ordinary `synthesise(func)` path.
+        let (func_type, pending_constraints): (Type, Vec<Constraint>) = {
+            let head_scheme = self.lookup_scheme_for_expr(head);
+            if let Some(ref scheme) = head_scheme {
+                if !scheme.constraints.is_empty() {
+                    // Freshen head scheme body and constraints together so
+                    // they share the same rename map.
+                    let (head_body, constraints) =
+                        freshen_with_constraints(scheme, &mut self.var_counter);
+                    // Apply any prefix args (from the flattened spine) to the
+                    // freshened head body to arrive at the partially-applied
+                    // type that `synthesise(func)` would normally produce.
+                    let mut pre_subst = Substitution::new();
+                    let ft = prefix_args.iter().fold(head_body, |t, a| {
+                        self.apply_one_with_subst(
+                            a.smid(),
+                            t,
+                            a,
+                            &mut pre_subst,
+                            func_name.as_deref(),
+                        )
+                    });
+                    (apply_subst(&ft, &pre_subst), constraints)
+                } else {
+                    (self.synthesise(func), Vec::new())
+                }
+            } else {
+                (self.synthesise(func), Vec::new())
+            }
+        };
+
         let mut subst = Substitution::new();
         let mut current_type = func_type;
 
@@ -1069,6 +1416,16 @@ impl Checker {
                 &mut subst,
                 func_name.as_deref(),
             );
+        }
+
+        // ── Constraint discharge (B2) ─────────────────────────────────────────
+        //
+        // After all arguments have been applied, the accumulated substitution
+        // `subst` maps fresh type variables to their concrete types.  Discharge
+        // each pending constraint: if the operator does not accept the resolved
+        // argument types, emit a type warning.
+        for constraint in &pending_constraints {
+            self.discharge_constraint(constraint, &subst, smid);
         }
 
         // Apply the accumulated substitution to resolve any remaining vars.
@@ -1100,10 +1457,16 @@ impl Checker {
         let freshened = freshen(&scheme, &mut self.var_counter);
 
         // Extract the inner type variable from the freshened wrapper.
-        let inner = match &freshened {
-            Type::List(i) | Type::IO(i) | Type::Dict(i) | Type::NonEmpty(i) => *i.clone(),
-            _ => return None,
-        };
+        // Accepts List, IO, Dict, and NonEmpty containers — all represented as
+        // App(Con("X"), T) in the new HKT representation.
+        // Accepts List, IO, Dict, and NonEmpty containers — all represented as
+        // App(Con("X"), T) in the new HKT representation.
+        let inner = freshened
+            .as_list()
+            .or_else(|| freshened.as_io())
+            .or_else(|| freshened.as_dict())
+            .or_else(|| freshened.as_non_empty())
+            .cloned()?;
 
         // Unify the freshened wrapper with the concrete value type.
         let mut subst = Substitution::new();
@@ -1114,7 +1477,7 @@ impl Checker {
 
         // Return the element type only if it is concrete (informative and not
         // an unresolved type variable, which would give no useful information).
-        if is_informative(&elem) && !matches!(&elem, Type::Var(_)) {
+        if is_informative(&elem) && !matches!(&elem, Type::Var(_, _)) {
             Some(elem)
         } else {
             None
@@ -1175,7 +1538,9 @@ impl Checker {
                         for param in &scope.pattern {
                             if let Type::Function(p, r) = remaining {
                                 let resolved = apply_subst(&p, subst);
-                                if is_informative(&resolved) && !matches!(&resolved, Type::Var(_)) {
+                                if is_informative(&resolved)
+                                    && !matches!(&resolved, Type::Var(_, _))
+                                {
                                     params.push((param.clone(), resolved));
                                 }
                                 remaining = *r;
@@ -1190,8 +1555,36 @@ impl Checker {
 
                 let arg_type = self.synthesise(arg);
 
+                // A small list literal (≤ LIST_TUPLE_CAP items) synthesises as a tuple
+                // type rather than a list type.  When the parameter expects a constructor
+                // application — e.g. `[a]`, `IO(a)`, or an HKT variable `m a` — widen a
+                // homogeneous tuple to a list so that calls like `hk-id([1, 2, 3])` do
+                // not produce a spurious type mismatch.  Heterogeneous tuples are widened
+                // to `List(union)` to avoid masking head/tail precision elsewhere.
+                let arg_type = match (&arg_type, &param_applied) {
+                    (Type::Tuple(elems), Type::App(_, _)) if !elems.is_empty() => {
+                        let first = &elems[0];
+                        if elems.iter().all(|e| e == first) {
+                            Type::list(first.clone())
+                        } else {
+                            Type::list(Type::union(elems.iter().cloned()))
+                        }
+                    }
+                    _ => arg_type,
+                };
+
                 if !is_informative(&arg_type) || !is_informative(&param_applied) {
                     // Gradual boundary — no warning.
+                    return apply_subst(&result_type, subst);
+                }
+
+                // B5.3 — Partial argument in total parameter position.
+                // When the caller passes a partial result (`T?`) where the function
+                // expects a total value, warn.  The Union consistency rule would
+                // otherwise suppress the warning.
+                if is_partial_type(&arg_type) && !is_partial_type(&param_applied) {
+                    let message = build_arg_mismatch_message(func_name);
+                    self.emit_type_mismatch(smid, &param_applied, &arg_type, &message);
                     return apply_subst(&result_type, subst);
                 }
 
@@ -1264,6 +1657,18 @@ impl Checker {
                     // RHS is not a record: can't reason about the merge result.
                     _ => Type::Any,
                 }
+            }
+
+            // Polymorphic function — instantiate then apply.
+            //
+            // A `forall (m :: * -> *). m a → ...` type is encountered when a
+            // field is accessed on a value whose type contains an explicit
+            // `Forall` node (e.g. from a `monad()` annotation).  Freshen the
+            // binders (allocating fresh unification variables) and recurse so
+            // that the instantiated `Function` arm fires.
+            Type::Forall(binders, body) => {
+                let instantiated = freshen_forall(&binders, &body, &mut self.var_counter);
+                self.apply_one_with_subst(smid, instantiated, arg, subst, func_name)
             }
 
             // Unknown function type — recurse into arg to collect sub-warnings.
@@ -1567,8 +1972,8 @@ impl Checker {
             PredicateKind::Symbol => (Type::Symbol, subtract_type(&current_ty, &Type::Symbol)),
             PredicateKind::Bool => (Type::Bool, subtract_type(&current_ty, &Type::Bool)),
             PredicateKind::List => (
-                Type::List(Box::new(Type::Any)),
-                subtract_type(&current_ty, &Type::List(Box::new(Type::Any))),
+                Type::list(Type::Any),
+                subtract_type(&current_ty, &Type::list(Type::Any)),
             ),
             PredicateKind::Block => (
                 Type::Record {
@@ -1634,6 +2039,27 @@ impl Checker {
             return;
         }
 
+        // B5.3 — Partial type in total position.
+        //
+        // The Union consistency rule allows `T | ExecutionError ~ T` (consistent,
+        // because the `T` variant is consistent with `T`).  However, when a caller
+        // has explicitly annotated a *total* return type and the expression actually
+        // returns a partial result, we want to warn so that the annotation is honest.
+        //
+        // We detect this by checking: if `found` is a partial type (union containing
+        // ExecutionError) and `expected` is *not* partial (and not `any`), emit a
+        // warning instead of relying on the consistency check which would silently
+        // succeed.
+        if is_partial_type(&found) && !is_partial_type(expected) && is_informative(expected) {
+            self.emit_type_mismatch(
+                smid,
+                expected,
+                &found,
+                "expression type does not match annotation",
+            );
+            return;
+        }
+
         if !is_consistent(&found, expected) {
             self.emit_type_mismatch(
                 smid,
@@ -1678,6 +2104,60 @@ impl Checker {
         self.pop_scope();
     }
 
+    // ── B9: Row-variable inference at lambda boundaries ──────────────────────
+
+    /// Synthesise a type for an unannotated lambda using use-driven row-variable
+    /// inference (§B9).
+    ///
+    /// Scans the lambda body to identify which parameters are "used as a block"
+    /// (appear in a projection or merge/over argument position).  Block-shaped
+    /// parameters receive a fresh open record type `{..rN}` instead of `any`.
+    ///
+    /// If no parameter is block-shaped, falls back to `any` immediately,
+    /// preserving the existing gradual boundary for non-block lambdas.
+    fn synthesise_lam(&mut self, scope: &crate::core::expr::LamScope<RcExpr>) -> Type {
+        let block_flags = detect_block_params(scope);
+
+        // Fast path: no block-shaped params → keep `any` (unchanged behaviour).
+        if block_flags.iter().all(|&b| !b) {
+            return Type::Any;
+        }
+
+        // Allocate a fresh open record type for each block-shaped parameter,
+        // `any` for the rest.
+        let param_types: Vec<Type> = block_flags
+            .iter()
+            .map(|&is_block| {
+                if is_block {
+                    let row_id = TypeVarId(format!("_r{}", self.var_counter));
+                    self.var_counter += 1;
+                    Type::Record {
+                        fields: BTreeMap::new(),
+                        open: true,
+                        rows: vec![row_id],
+                    }
+                } else {
+                    Type::Any
+                }
+            })
+            .collect();
+
+        // Push a scope frame with the allocated parameter types and synthesise
+        // the body under them.
+        let mut frame: HashMap<String, TypeScheme> = HashMap::new();
+        for (name, ty) in scope.pattern.iter().zip(param_types.iter()) {
+            frame.insert(name.clone(), TypeScheme::mono(ty.clone()));
+        }
+        self.push_scope(frame);
+        let body_type = self.synthesise(&scope.body);
+        self.pop_scope();
+
+        // Build a curried function type: T₀ → T₁ → … → body_type.
+        param_types.into_iter().rev().fold(body_type, |acc, param| {
+            Type::Function(Box::new(param), Box::new(acc))
+        })
+    }
+
     // ── BranchShape recognition (§A5.3) ─────────────────────────────────────
 
     /// Look up the `BranchShape` for an expression in the head position of an
@@ -1702,6 +2182,11 @@ impl Checker {
                 // Flatten Option<Option<BranchShape>> via and_then.
                 self.branch_shapes.get(&key).and_then(|opt| opt.clone())
             }
+            // Free variable — occurs in prelude-cached checks where
+            // prelude references have not been merged in.  Check the seed
+            // branch shapes populated from the cached prelude summary.
+            Expr::Var(_, Var::Free(name)) => intrinsic_branch_shape(name)
+                .or_else(|| self.seed_branch_shapes.get(name.as_str()).cloned()),
             _ => None,
         }
     }
@@ -1767,6 +2252,10 @@ impl Checker {
                 let key = (anchored, name.to_string());
                 self.branch_shapes.get(&key)?.clone()?
             }
+            // Head is a free variable — with prelude caching, prelude
+            // branchers such as `if`, `then`, `and` are Var::Free.
+            Expr::Var(_, Var::Free(name)) => intrinsic_branch_shape(name)
+                .or_else(|| self.seed_branch_shapes.get(name.as_str()).cloned())?,
             _ => return None,
         };
 
@@ -1815,6 +2304,165 @@ impl Checker {
             .at(smid)
             .with_types(humanise(expected).to_string(), humanise(found).to_string());
         self.warnings.push(warning);
+    }
+
+    // ── LOOKUP literal-key resolution (§B6.2) ────────────────────────────────
+
+    /// Resolve `LOOKUP(LiteralSymbol(key), block_type)` to the precise field type.
+    ///
+    /// | block_type | key present | key absent | result |
+    /// |------------|------------|------------|--------|
+    /// | closed `Record` | yes | — | field type |
+    /// | closed `Record` | — | yes | `any` + key-typo warning |
+    /// | open `Record` or row-variable `Record` | — | yes | `any`, no warning |
+    /// | `Dict(v)` | — | — | `v` |
+    /// | other | — | — | `any` |
+    fn synthesise_lookup_with_literal_key(
+        &mut self,
+        key: &str,
+        block_type: &Type,
+        smid: Smid,
+    ) -> Type {
+        match block_type {
+            Type::Record { fields, open, rows } => {
+                if let Some(field_type) = fields.get(key) {
+                    field_type.clone()
+                } else if !open && rows.is_empty() {
+                    // Closed record without the key — key typo warning.
+                    let known: Vec<String> = fields.keys().map(|k| format!(":{k}")).collect();
+                    let note = if known.is_empty() {
+                        "the record has no known fields".to_string()
+                    } else {
+                        format!("known fields: {}", known.join(", "))
+                    };
+                    let warning = TypeWarning::new(format!("unknown record key :{key}"))
+                        .at(smid)
+                        .with_note(note);
+                    self.warnings.push(warning);
+                    Type::Any
+                } else {
+                    // Open record or has row variables — key may be in the tail.
+                    Type::Any
+                }
+            }
+            other => {
+                if let Some(val_type) = other.as_dict() {
+                    val_type.clone()
+                } else {
+                    Type::Any
+                }
+            }
+        }
+    }
+
+    // ── ProjectionShape recognition (§B6.3) ──────────────────────────────────
+
+    /// Look up the `ProjectionShape` index for an expression in head position.
+    ///
+    /// Returns `Some(n)` when the function is a recognised tuple projector
+    /// at index `n`.  Like `recognise_brancher`, this covers:
+    /// - Bound variables whose `projection_shapes` entry is `Some(n)`.
+    ///
+    /// `head`/`first`/`key` at index 0 are already handled by `is_head_or_tail`
+    /// earlier in `synthesise_app`; this function covers index ≥ 1 (e.g.
+    /// `second`/`value`) and any user-defined projectors.
+    fn recognise_projection_index(&self, func: &RcExpr) -> Option<usize> {
+        match &*func.inner {
+            Expr::Var(_, Var::Bound(bv)) => {
+                let name = bv.name.as_deref()?;
+                // head/first/key at index 0 — covered by is_head_or_tail, but
+                // included here for completeness so the classifier is self-contained.
+                match name {
+                    "head" | "first" | "key" => Some(0),
+                    _ => {
+                        let idx = bv.scope as usize;
+                        let anchored = self.scope_stack.len().saturating_sub(1 + idx);
+                        let key = (anchored, name.to_string());
+                        *self.projection_shapes.get(&key)?
+                    }
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Classify a binding body as a tuple projector and return its index.
+    ///
+    /// Classification cases (§B6.3):
+    /// - `HEAD` intrinsic → index 0.
+    /// - Bound variable named `"head"` / `"first"` / `"key"` → index 0.
+    /// - Bound variable with a stored `projection_shapes` entry → inherited index.
+    /// - Single-parameter lambda whose body matches `HEAD(TAIL^n(param))` → index n.
+    ///
+    /// Returns `None` for anything else (not a recognised projector).
+    fn classify_projection_body(&self, body: &RcExpr, stack_len: usize) -> Option<usize> {
+        let peeled = peel_meta(body);
+        match &*peeled.inner {
+            // Direct alias of HEAD intrinsic → index 0.
+            Expr::Intrinsic(_, name) if name == "HEAD" => Some(0),
+            // Alias of a bound variable: inherit from projection_shapes or classify by name.
+            Expr::Var(_, Var::Bound(bv)) => {
+                let name = bv.name.as_deref()?;
+                match name {
+                    "head" | "first" | "key" => Some(0),
+                    _ => {
+                        let anchored = stack_len.checked_sub(1 + bv.scope as usize)?;
+                        let key = (anchored, name.to_string());
+                        // Returns None if the binding hasn't been classified yet
+                        // (the tentative-None recursion guard handles this).
+                        *self.projection_shapes.get(&key)?
+                    }
+                }
+            }
+            // Single-parameter lambda — inspect body for HEAD(TAIL^n(param)).
+            Expr::Lam(_, _, scope) if scope.pattern.len() == 1 => {
+                let param_name = &scope.pattern[0];
+                self.classify_proj_lam_body(param_name, &scope.body)
+            }
+            _ => None,
+        }
+    }
+
+    /// Classify a single-param lambda body as a projection of its parameter.
+    ///
+    /// Matches `HEAD_fn(TAIL_fn^n(param))` and returns the index `n`.
+    fn classify_proj_lam_body(&self, param_name: &str, body: &RcExpr) -> Option<usize> {
+        let peeled = peel_meta(body);
+        // Body must be App(head_fn, [inner]).
+        let (app_head, app_args) = match &*peeled.inner {
+            Expr::App(_, h, a) if a.len() == 1 => (h, a),
+            _ => return None,
+        };
+        if !is_head_fn(peel_meta(app_head)) {
+            return None;
+        }
+        // inner must be TAIL^n(param).
+        self.count_tail_wraps_to_param(&app_args[0], param_name)
+    }
+
+    /// Count the number of TAIL wraps leading to `param_name`.
+    ///
+    /// - Returns `Some(0)` when `expr` IS the parameter variable.
+    /// - Returns `Some(n)` when `expr` is `TAIL_fn(TAIL_fn(…(param)…))` with `n` tails.
+    /// - Returns `None` when the pattern does not match.
+    fn count_tail_wraps_to_param(&self, expr: &RcExpr, param_name: &str) -> Option<usize> {
+        let peeled = peel_meta(expr);
+        // Base case: the expression is the parameter itself.
+        if let Expr::Var(_, Var::Bound(bv)) = &*peeled.inner {
+            if bv.scope == 0 && bv.name.as_deref() == Some(param_name) {
+                return Some(0);
+            }
+        }
+        // Recursive case: App(tail_fn, [inner]).
+        let (app_head, app_args) = match &*peeled.inner {
+            Expr::App(_, h, a) if a.len() == 1 => (h, a),
+            _ => return None,
+        };
+        if !is_tail_fn(peel_meta(app_head)) {
+            return None;
+        }
+        let inner_count = self.count_tail_wraps_to_param(&app_args[0], param_name)?;
+        Some(inner_count + 1)
     }
 }
 
@@ -1882,6 +2530,128 @@ fn flatten_app_spine(func: &RcExpr) -> (&RcExpr, Vec<&RcExpr>) {
     (head, prefix)
 }
 
+// ── B9: use-driven block-parameter detection ──────────────────────────────────
+
+/// Scan a lambda scope to determine which parameters are "used as a block"
+/// — i.e. appear in a projection (`Lookup`) or as arguments to `merge`/`over`
+/// in the body.
+///
+/// Returns a `Vec<bool>` of length `scope.pattern.len()`.  `true` at index `i`
+/// means parameter `i` is block-shaped and should receive a fresh row-variable
+/// record type during synthesis.
+fn detect_block_params(scope: &crate::core::expr::LamScope<RcExpr>) -> Vec<bool> {
+    let n = scope.pattern.len();
+    let mut flags = vec![false; n];
+    collect_block_uses(&scope.body, 0, &mut flags);
+    flags
+}
+
+/// Recursively scan `expr` for block usages of the parameters introduced by
+/// the lambda that `flags` belongs to.
+///
+/// `depth` is the number of additional lambda scopes that have been entered
+/// since the original lambda boundary.  The original parameters are referenced
+/// by `Var::Bound { scope: depth, binder: i }` inside nested lambdas.
+fn collect_block_uses(expr: &RcExpr, depth: usize, flags: &mut Vec<bool>) {
+    match &*expr.inner {
+        // Projection: the object expression is used as a block.
+        Expr::Lookup(_, obj, _, fallback) => {
+            mark_block_param(obj, depth, flags);
+            collect_block_uses(obj, depth, flags);
+            if let Some(f) = fallback {
+                collect_block_uses(f, depth, flags);
+            }
+        }
+
+        // Application: if the function spine resolves to `merge` or `over`,
+        // every argument in the full spine is used as a block.
+        Expr::App(_, func, args) => {
+            let (head, prefix_args) = flatten_app_spine(func);
+            if is_merge_or_over_expr(head) {
+                for arg in &prefix_args {
+                    mark_block_param(arg, depth, flags);
+                }
+                for arg in args {
+                    mark_block_param(arg, depth, flags);
+                }
+            }
+            collect_block_uses(func, depth, flags);
+            for arg in args {
+                collect_block_uses(arg, depth, flags);
+            }
+        }
+
+        // Nested lambda: increase depth so outer parameters are still found.
+        Expr::Lam(_, _, inner_scope) => {
+            collect_block_uses(&inner_scope.body, depth + 1, flags);
+        }
+
+        // Let binding: values are at the current depth; the body is at depth+1.
+        Expr::Let(_, inner_scope, _) => {
+            for (_, val) in &inner_scope.pattern {
+                collect_block_uses(val, depth, flags);
+            }
+            collect_block_uses(&inner_scope.body, depth + 1, flags);
+        }
+
+        // Meta wrappers: recurse through both.
+        Expr::Meta(_, inner, meta) => {
+            collect_block_uses(inner, depth, flags);
+            collect_block_uses(meta, depth, flags);
+        }
+
+        // Block literal: scan field values.
+        Expr::Block(_, fields) => {
+            for (_, val) in fields.iter() {
+                collect_block_uses(val, depth, flags);
+            }
+        }
+
+        // List literal: scan elements.
+        Expr::List(_, items) => {
+            for item in items {
+                collect_block_uses(item, depth, flags);
+            }
+        }
+
+        // Variables and primitives: nothing to do.
+        _ => {}
+    }
+}
+
+/// If `expr` is a direct `Var::Bound` reference to one of the lambda's own
+/// parameters (at de Bruijn `scope == depth`), set the corresponding flag.
+fn mark_block_param(expr: &RcExpr, depth: usize, flags: &mut [bool]) {
+    let peeled = peel_meta(expr);
+    if let Expr::Var(_, Var::Bound(bv)) = &*peeled.inner {
+        if bv.scope as usize == depth {
+            let idx = bv.binder as usize;
+            if idx < flags.len() {
+                flags[idx] = true;
+            }
+        }
+    }
+}
+
+/// Return `true` if `expr` refers to `merge` or `over` — either as a free
+/// variable (pre-varify), a named bound variable (post-varify), or an
+/// intrinsic node (post-inline).
+fn is_merge_or_over_expr(expr: &RcExpr) -> bool {
+    let peeled = peel_meta(expr);
+    match &*peeled.inner {
+        Expr::Var(_, Var::Free(name)) => {
+            matches!(name.as_str(), "merge" | "over")
+        }
+        Expr::Var(_, Var::Bound(bv)) => {
+            matches!(bv.name.as_deref(), Some("merge" | "over"))
+        }
+        Expr::Intrinsic(_, name) => {
+            matches!(name.as_str(), "MERGE" | "OVER")
+        }
+        _ => false,
+    }
+}
+
 /// Classify a function expression as a type predicate.
 ///
 /// Recognised predicates are the standard type-test functions from the prelude.
@@ -1911,6 +2681,20 @@ fn classify_predicate(func: &RcExpr) -> Option<PredicateKind> {
             Some("null?") => Some(PredicateKind::Null),
             _ => None,
         },
+        // Free variable — occurs in prelude-cached checks where
+        // prelude predicates have not been merged in (§B7).
+        Expr::Var(_, Var::Free(name)) => match name.as_str() {
+            "number?" => Some(PredicateKind::Number),
+            "string?" => Some(PredicateKind::String),
+            "symbol?" => Some(PredicateKind::Symbol),
+            "bool?" => Some(PredicateKind::Bool),
+            "list?" => Some(PredicateKind::List),
+            "block?" => Some(PredicateKind::Block),
+            "nil?" => Some(PredicateKind::Nil),
+            "non-nil?" => Some(PredicateKind::NonNil),
+            "null?" => Some(PredicateKind::Null),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -1920,6 +2704,8 @@ fn is_not_func(func: &RcExpr) -> bool {
     match &*func.inner {
         Expr::Intrinsic(_, name) => name == "NOT",
         Expr::Var(_, Var::Bound(bv)) => matches!(bv.name.as_deref(), Some("not" | "¬")),
+        // Free variable — prelude-cached mode.
+        Expr::Var(_, Var::Free(name)) => matches!(name.as_str(), "not" | "¬"),
         _ => false,
     }
 }
@@ -1935,9 +2721,10 @@ fn is_not_func(func: &RcExpr) -> bool {
 /// `List(a)` → `NonEmpty(a)`.  Any other type (including `NonEmpty`, `Tuple`,
 /// and `any`) is returned unchanged — the gradual boundary is preserved.
 fn narrow_to_nonempty(ty: &Type) -> Type {
-    match ty {
-        Type::List(elem) => Type::NonEmpty(elem.clone()),
-        other => other.clone(),
+    if let Some(elem) = ty.as_list() {
+        Type::non_empty(elem.clone())
+    } else {
+        ty.clone()
     }
 }
 
@@ -1952,7 +2739,8 @@ enum HeadTailProjection {
 ///
 /// Returns `Some(projection)` for:
 /// - `Expr::Intrinsic` with name `"HEAD"` or `"TAIL"`.
-/// - `Expr::Var(Bound)` whose name is `"head"` / `"first"` / `"tail"`.
+/// - `Expr::Var(Bound)` whose name is `"head"` / `"first"` / `"key"` / `"tail"`.
+/// - `Expr::Var(Free)` with the same names, except `"key"` (prelude-cached mode).
 fn is_head_or_tail(func: &RcExpr) -> Option<HeadTailProjection> {
     match &*func.inner {
         Expr::Intrinsic(_, name) => match name.as_str() {
@@ -1961,12 +2749,44 @@ fn is_head_or_tail(func: &RcExpr) -> Option<HeadTailProjection> {
             _ => None,
         },
         Expr::Var(_, Var::Bound(bv)) => match bv.name.as_deref() {
-            Some("head" | "first") => Some(HeadTailProjection::Head),
+            Some("head" | "first" | "key") => Some(HeadTailProjection::Head),
             Some("tail") => Some(HeadTailProjection::Tail),
+            _ => None,
+        },
+        // Free variable — prelude-cached mode.
+        Expr::Var(_, Var::Free(name)) => match name.as_str() {
+            "head" | "first" => Some(HeadTailProjection::Head),
+            "tail" => Some(HeadTailProjection::Tail),
             _ => None,
         },
         _ => None,
     }
+}
+
+/// Return `true` when `expr` is the lookup function.
+///
+/// Matches:
+/// - `Expr::Intrinsic(_, "LOOKUP")` — the raw intrinsic.
+/// - `Expr::Var(Bound, "lookup" | "lookup-in")` — the prelude aliases.
+fn is_lookup_fn(expr: &RcExpr) -> bool {
+    let peeled = peel_meta(expr);
+    match &*peeled.inner {
+        Expr::Intrinsic(_, name) => name == "LOOKUP",
+        Expr::Var(_, Var::Bound(bv)) => matches!(bv.name.as_deref(), Some("lookup" | "lookup-in")),
+        _ => false,
+    }
+}
+
+/// Return `true` when `expr` is a HEAD-like function (HEAD intrinsic or a bound
+/// variable named `"head"`, `"first"`, or `"key"`).
+fn is_head_fn(expr: &RcExpr) -> bool {
+    matches!(is_head_or_tail(expr), Some(HeadTailProjection::Head))
+}
+
+/// Return `true` when `expr` is a TAIL-like function (TAIL intrinsic or a bound
+/// variable named `"tail"`).
+fn is_tail_fn(expr: &RcExpr) -> bool {
+    matches!(is_head_or_tail(expr), Some(HeadTailProjection::Tail))
 }
 
 /// Apply a `head`/`tail` projection to a known `Tuple` type.
@@ -1984,7 +2804,7 @@ fn apply_head_tail_to_tuple(proj: HeadTailProjection, arg_type: &Type) -> Option
             HeadTailProjection::Tail => {
                 if elems.len() <= 1 {
                     // tail of a singleton (or degenerate zero-elem) tuple is the empty list.
-                    Some(Type::List(Box::new(Type::Any)))
+                    Some(Type::list(Type::Any))
                 } else {
                     Some(Type::Tuple(elems[1..].to_vec()))
                 }
@@ -2081,6 +2901,8 @@ fn is_clause_intrinsic(func: &RcExpr) -> bool {
     match &*func.inner {
         Expr::Intrinsic(_, name) => name == "CLAUSE",
         Expr::Var(_, Var::Bound(bv)) => matches!(bv.name.as_deref(), Some("=>" | "⇒")),
+        // Free variable — prelude-cached mode.
+        Expr::Var(_, Var::Free(name)) => matches!(name.as_str(), "=>" | "⇒"),
         _ => false,
     }
 }
@@ -2093,18 +2915,25 @@ fn is_clause_intrinsic(func: &RcExpr) -> bool {
 /// decide whether to wrap the resolved body in `Type::Mu`.
 fn contains_var_named(ty: &Type, name: &str) -> bool {
     match ty {
-        Type::Var(id) => id.0 == name,
-        Type::List(inner) | Type::IO(inner) | Type::Dict(inner) | Type::NonEmpty(inner) => {
-            contains_var_named(inner, name)
+        Type::Var(id, _) => id.0 == name,
+        Type::App(f, x) => contains_var_named(f, name) || contains_var_named(x, name),
+        Type::Con(_) => false,
+        Type::Forall(binders, body) => {
+            // Binders shadow the name — if any binder matches, it's not free.
+            if binders.iter().any(|(b, _)| b.0 == name) {
+                false
+            } else {
+                contains_var_named(body, name)
+            }
         }
-        Type::Function(a, b) | Type::Lens(a, b) | Type::Traversal(a, b) => {
-            contains_var_named(a, name) || contains_var_named(b, name)
-        }
+        Type::Function(a, b) => contains_var_named(a, name) || contains_var_named(b, name),
         Type::Tuple(elems) => elems.iter().any(|e| contains_var_named(e, name)),
         Type::Record { fields, .. } => fields.values().any(|v| contains_var_named(v, name)),
         Type::Union(variants) => variants.iter().any(|v| contains_var_named(v, name)),
         // Mu: the binder name `x` is bound, not free — stop if it shadows `name`.
         Type::Mu(x, body) => x.0 != name && contains_var_named(body, name),
+        // Lam: the parameter `x` is bound, not free — stop if it shadows `name`.
+        Type::Lam(x, body) => x.0 != name && contains_var_named(body, name),
         _ => false,
     }
 }
@@ -2138,13 +2967,13 @@ fn synthesise_list_literal(elem_types: Vec<Type>) -> Type {
         // `[]` is definitively empty — its element type is `Never`.
         // This causes `head([])` to synthesise `Never`, which is not
         // consistent with any concrete annotation → triggers a warning.
-        Type::List(Box::new(Type::Never))
+        Type::list(Type::Never)
     } else if n <= LIST_TUPLE_CAP {
         // Precise tuple: preserves arity and per-position types.
         Type::Tuple(elem_types)
     } else {
         // Beyond the cap: lose positional information but keep non-emptiness.
-        Type::NonEmpty(Box::new(Type::union(elem_types)))
+        Type::non_empty(Type::union(elem_types))
     }
 }
 
@@ -2223,10 +3052,10 @@ fn normalise_tuple_to_list(ty: Type) -> Type {
         Type::Tuple(elems) if !elems.is_empty() => {
             let first = &elems[0];
             if elems.iter().all(|e| e == first) {
-                Type::List(Box::new(first.clone()))
+                Type::list(first.clone())
             } else {
                 let elem_type = Type::union(elems.iter().cloned());
-                Type::List(Box::new(elem_type))
+                Type::list(elem_type)
             }
         }
         _ => ty,
@@ -2240,6 +3069,19 @@ fn normalise_tuple_to_list(ty: Type) -> Type {
 /// - `never` represents empty or unreachable code.
 fn is_informative(ty: &Type) -> bool {
     !matches!(ty, Type::Any | Type::Never)
+}
+
+/// Returns `true` when `ty` is a partial type — i.e. a union that includes
+/// `ExecutionError` at the top level.
+///
+/// Used by `check_against` to warn when a partial result flows into a position
+/// annotated with a total type (§B5.3).
+fn is_partial_type(ty: &Type) -> bool {
+    if let Type::Union(variants) = ty {
+        variants.contains(&Type::ExecutionError)
+    } else {
+        false
+    }
 }
 
 /// Build the type-mismatch warning message for a single-argument call.
@@ -2260,6 +3102,34 @@ fn build_overload_mismatch_message(func_name: Option<&str>) -> String {
     match func_name {
         Some(name) => format!("type mismatch calling '{name}': no matching overload"),
         None => "argument type does not match any overload".to_string(),
+    }
+}
+
+// ── Constraint discharge helpers ─────────────────────────────────────────────
+
+/// Return `true` if any overload of `op_type` accepts `args` as positional
+/// parameters.
+///
+/// - `Union` types are tried variant-by-variant (any match succeeds).
+/// - `Function(p, rest)` checks that `args[0]` is consistent with `p`, then
+///   recurses with `args[1..]` and `rest`.
+/// - An empty `args` slice is vacuously satisfied by any type.
+fn constraint_overload_matches(op_type: &Type, args: &[Type]) -> bool {
+    use crate::core::typecheck::subtype::is_consistent;
+    match op_type {
+        Type::Union(variants) => variants
+            .iter()
+            .any(|v| constraint_overload_matches(v, args)),
+        Type::Function(param, rest) => {
+            if args.is_empty() {
+                return true;
+            }
+            if !is_consistent(param, &args[0]) {
+                return false;
+            }
+            constraint_overload_matches(rest, &args[1..])
+        }
+        _ => args.is_empty(),
     }
 }
 
@@ -2298,6 +3168,67 @@ pub fn type_check_full(expr: &RcExpr) -> TypeCheckResult {
     let mut checker = Checker::new();
     checker.check_expr(expr);
     checker.into_results()
+}
+
+/// Check the prelude expression and capture a `PreludeSummary` for caching.
+///
+/// The checker's `keep_root_scope` flag is set so that the outermost
+/// Let frame is not popped on exit, allowing `extract_prelude_summary`
+/// to read the binding type schemes.
+///
+/// Called once per process to build the prelude cache.
+pub fn type_check_for_prelude(expr: &RcExpr) -> (Vec<TypeWarning>, PreludeSummary) {
+    let mut checker = Checker::new();
+    checker.keep_root_scope = true;
+    checker.check_expr(expr);
+    let summary = checker.extract_prelude_summary();
+    let warnings = checker.into_warnings();
+    (warnings, summary)
+}
+
+/// Check `expr` seeded with a cached prelude summary.
+///
+/// The summary's bindings populate the outermost scope frame and its
+/// aliases seed the alias map, so `Var::Free` references to prelude
+/// names resolve correctly without re-checking the prelude.
+///
+/// Returns only the warnings for the user expression (not the prelude).
+pub fn type_check_with_seed(expr: &RcExpr, summary: &PreludeSummary) -> Vec<TypeWarning> {
+    let mut checker = Checker::with_seed(summary);
+    checker.check_expr(expr);
+    checker.into_warnings()
+}
+
+/// Run the type checker over `expr` with pre-cook operator type overloads.
+///
+/// `operator_overloads` maps operator names (e.g. `"<"`, `">"`) to their
+/// annotated `TypeScheme`s, extracted from the raw (pre-cook) expression.
+/// The checker consults this map in `discharge_constraint` when the normal
+/// scope-stack lookup returns `Any` (because cook stripped the operator's
+/// `Meta` annotation).
+pub fn type_check_with_operator_overloads(
+    expr: &RcExpr,
+    operator_overloads: HashMap<String, TypeScheme>,
+) -> Vec<TypeWarning> {
+    let mut checker = Checker::new();
+    checker.operator_overloads = operator_overloads;
+    checker.check_expr(expr);
+    checker.into_warnings()
+}
+
+/// Parse a map of operator name → annotation string into TypeSchemes.
+///
+/// Strings that fail to parse are silently skipped (the constraint will
+/// stay gradual for those operators).
+pub fn parse_operator_overloads(raw: &HashMap<String, String>) -> HashMap<String, TypeScheme> {
+    raw.iter()
+        .filter_map(|(name, type_str)| {
+            let (ty, constraints) = parse::parse_scheme(type_str).ok()?;
+            let mut scheme = infer_scheme(ty);
+            scheme.constraints = constraints;
+            Some((name.clone(), scheme))
+        })
+        .collect()
 }
 
 /// Extract type alias definitions from `expr` without running full type checking.
@@ -2443,10 +3374,7 @@ mod tests {
         // This ensures `head([])` triggers a type warning rather than
         // silently returning `Any`.
         let mut c = Checker::new();
-        assert_eq!(
-            c.synthesise(&list(vec![])),
-            Type::List(Box::new(Type::Never))
-        );
+        assert_eq!(c.synthesise(&list(vec![])), Type::list(Type::Never));
     }
 
     #[test]
@@ -2481,10 +3409,7 @@ mod tests {
 
         // >16-element list: beyond cap → NonEmpty(element union).
         let l17: Vec<_> = (0..17).map(|_| num_lit(1)).collect();
-        assert_eq!(
-            c.synthesise(&list(l17)),
-            Type::NonEmpty(Box::new(Type::Number))
-        );
+        assert_eq!(c.synthesise(&list(l17)), Type::non_empty(Type::Number));
     }
 
     // ── Unknown variable is any ──────────────────────────────────────────────
@@ -2551,7 +3476,7 @@ mod tests {
         // Wrap in __type_hint to trigger the is_hint code path.
         let expr = meta_with_hint(lst, "[string]");
         // Must be List(String), not List(LiteralString("a") | String).
-        assert_eq!(c.synthesise(&expr), Type::List(Box::new(Type::String)));
+        assert_eq!(c.synthesise(&expr), Type::list(Type::String));
     }
 
     #[test]
@@ -2662,8 +3587,8 @@ mod tests {
         let scheme = TypeScheme::poly(
             vec![TypeVarId("a".to_string())],
             Type::Function(
-                Box::new(Type::Var(TypeVarId("a".to_string()))),
-                Box::new(Type::Var(TypeVarId("a".to_string()))),
+                Box::new(Type::var(TypeVarId("a".to_string()))),
+                Box::new(Type::var(TypeVarId("a".to_string()))),
             ),
         );
         let mut frame = HashMap::new();
@@ -2691,12 +3616,12 @@ mod tests {
             vec![a.clone(), b.clone()],
             Type::Function(
                 Box::new(Type::Function(
-                    Box::new(Type::Var(a.clone())),
-                    Box::new(Type::Var(b.clone())),
+                    Box::new(Type::var(a.clone())),
+                    Box::new(Type::var(b.clone())),
                 )),
                 Box::new(Type::Function(
-                    Box::new(Type::List(Box::new(Type::Var(a.clone())))),
-                    Box::new(Type::List(Box::new(Type::Var(b.clone())))),
+                    Box::new(Type::list(Type::var(a.clone()))),
+                    Box::new(Type::list(Type::var(b.clone()))),
                 )),
             ),
         );
@@ -2719,7 +3644,7 @@ mod tests {
         let app = RcExpr::from(Expr::App(Smid::default(), map_var, vec![double_var, nums]));
 
         let result = c.synthesise(&app);
-        assert_eq!(result, Type::List(Box::new(Type::Number)));
+        assert_eq!(result, Type::list(Type::Number));
         assert!(c.into_warnings().is_empty());
     }
 
@@ -2733,12 +3658,12 @@ mod tests {
             vec![a.clone(), b.clone()],
             Type::Function(
                 Box::new(Type::Function(
-                    Box::new(Type::Var(a.clone())),
-                    Box::new(Type::Var(b.clone())),
+                    Box::new(Type::var(a.clone())),
+                    Box::new(Type::var(b.clone())),
                 )),
                 Box::new(Type::Function(
-                    Box::new(Type::List(Box::new(Type::Var(a.clone())))),
-                    Box::new(Type::List(Box::new(Type::Var(b.clone())))),
+                    Box::new(Type::list(Type::var(a.clone()))),
+                    Box::new(Type::list(Type::var(b.clone()))),
                 )),
             ),
         );
@@ -3237,12 +4162,12 @@ mod tests {
         // Outer scope: list map
         let list_map_type = Type::Function(
             Box::new(Type::Function(
-                Box::new(Type::Var(TypeVarId("a".into()))),
-                Box::new(Type::Var(TypeVarId("b".into()))),
+                Box::new(Type::var(TypeVarId("a".into()))),
+                Box::new(Type::var(TypeVarId("b".into()))),
             )),
             Box::new(Type::Function(
-                Box::new(Type::List(Box::new(Type::Var(TypeVarId("a".into()))))),
-                Box::new(Type::List(Box::new(Type::Var(TypeVarId("b".into()))))),
+                Box::new(Type::list(Type::var(TypeVarId("a".into())))),
+                Box::new(Type::list(Type::var(TypeVarId("b".into())))),
             )),
         );
         let mut outer = HashMap::new();
@@ -3340,7 +4265,7 @@ mod tests {
     fn a10_infer_elem_type_from_list_hint() {
         // `infer_elem_type_from_hint_str("[a]", List(number))` → `Some(number)`.
         let mut c = Checker::new();
-        let val_type = Type::List(Box::new(Type::Number));
+        let val_type = Type::list(Type::Number);
         let result = c.infer_elem_type_from_hint_str("[a]", &val_type);
         assert_eq!(result, Some(Type::Number));
     }
@@ -3349,7 +4274,7 @@ mod tests {
     fn a10_infer_elem_type_from_io_hint() {
         // `infer_elem_type_from_hint_str("IO(a)", IO(string))` → `Some(string)`.
         let mut c = Checker::new();
-        let val_type = Type::IO(Box::new(Type::String));
+        let val_type = Type::io(Type::String);
         let result = c.infer_elem_type_from_hint_str("IO(a)", &val_type);
         assert_eq!(result, Some(Type::String));
     }
@@ -3368,18 +4293,15 @@ mod tests {
         // `[1, 2, 3]` synthesises as `Tuple([number, number, number])`.
         // `normalise_tuple_to_list` should give `List(number)`.
         let tuple = Type::Tuple(vec![Type::Number, Type::Number, Type::Number]);
-        assert_eq!(
-            normalise_tuple_to_list(tuple),
-            Type::List(Box::new(Type::Number))
-        );
+        assert_eq!(normalise_tuple_to_list(tuple), Type::list(Type::Number));
     }
 
     #[test]
     fn a10_normalise_non_tuple_unchanged() {
         // Non-tuple types pass through unchanged.
         assert_eq!(
-            normalise_tuple_to_list(Type::List(Box::new(Type::Number))),
-            Type::List(Box::new(Type::Number))
+            normalise_tuple_to_list(Type::list(Type::Number)),
+            Type::list(Type::Number)
         );
         assert_eq!(normalise_tuple_to_list(Type::Number), Type::Number);
     }
@@ -3410,7 +4332,7 @@ mod tests {
     #[test]
     fn contains_var_named_in_nonempty() {
         // NonEmpty(X) should detect X as a free variable.
-        let ty = Type::NonEmpty(Box::new(Type::Var(TypeVarId("X".to_string()))));
+        let ty = Type::non_empty(Type::var(TypeVarId("X".to_string())));
         assert!(contains_var_named(&ty, "X"));
         assert!(!contains_var_named(&ty, "Y"));
     }
