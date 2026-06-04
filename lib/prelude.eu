@@ -200,10 +200,12 @@ random: monad{bind: random-bind, return: random-ret} {
   ` { doc: "random.shuffle(list) - state-monad action returning a shuffled copy of list."
       type: "[a] → any → {{..}}" }
   shuffle(lst): {
+    ` { type: "![a] → number → [a] → any → {{..}}" }
     shuffle-impl(remaining, n, acc, stream):
       if(n = 0,
         { value: acc, rest: stream },
         shuffle-step(remaining, n, acc, stream))
+    ` { type: "![a] → number → [a] → any → {{..}}" }
     shuffle-step(remaining, n, acc, stream): {
       r: int(n, stream)
       picked: remaining nth(r.value)

@@ -116,6 +116,13 @@ pub fn kind_of(ty: &Type) -> Kind {
         Type::Var(_, k) => k.clone(),
 
         Type::Forall(_, _) => Kind::Star,
+
+        // Lam(x, body) :: kind_of(x) → kind_of(body).
+        // For our usage x always has kind *, so Lam :: * → kind_of(body).
+        Type::Lam(x, body) => Kind::Arrow(
+            Box::new(kind_of(&Type::Var(x.clone(), Kind::Star))),
+            Box::new(kind_of(body)),
+        ),
     }
 }
 
@@ -264,6 +271,15 @@ pub enum Type {
     /// `Forall([(m, * → *), (a, *)], m a → m a)` quantifies `m` at kind
     /// `* → *` and `a` at kind `*`.
     Forall(Vec<(TypeVarId, Kind)>, Box<Type>),
+
+    // ── Type-level lambda ─────────────────────────────────────────────────────
+    /// Type-level lambda: `λx. body`.
+    ///
+    /// Constructed by higher-order pattern unification when an unsolved
+    /// `* → *` variable is unified against a concrete non-App type.
+    /// Eliminated by beta reduction: `App(Lam(x, body), arg)` reduces to
+    /// `structural_subst(body, x, arg)`.
+    Lam(TypeVarId, Box<Type>),
 }
 
 // ── Smart constructors ────────────────────────────────────────────────────────
@@ -551,6 +567,8 @@ impl fmt::Display for Type {
                 }
                 write!(f, ". {body}")
             }
+            // Type-level lambda: display as λx. body.
+            Type::Lam(x, body) => write!(f, "λ{x}. {body}"),
         }
     }
 }
@@ -633,6 +651,9 @@ pub fn humanise(ty: &Type) -> Type {
             Type::Forall(_, body) => {
                 collect_fresh_vars(body, seen);
             }
+            Type::Lam(_, body) => {
+                collect_fresh_vars(body, seen);
+            }
             _ => {}
         }
     }
@@ -679,6 +700,7 @@ pub fn humanise(ty: &Type) -> Type {
             Type::Forall(binders, body) => {
                 Type::Forall(binders.clone(), Box::new(replace(body, mapping)))
             }
+            Type::Lam(x, body) => Type::Lam(x.clone(), Box::new(replace(body, mapping))),
             _ => ty.clone(),
         }
     }
@@ -743,6 +765,14 @@ pub fn unfold_mu(x: &TypeVarId, ty: &Type, replacement: &Type) -> Type {
         ),
         Type::Forall(binders, body) => {
             Type::Forall(binders.clone(), Box::new(unfold_mu(x, body, replacement)))
+        }
+        Type::Lam(param, body) => {
+            if param == x {
+                // x is bound by the Lam — do not substitute inside.
+                ty.clone()
+            } else {
+                Type::Lam(param.clone(), Box::new(unfold_mu(x, body, replacement)))
+            }
         }
         other => other.clone(),
     }
