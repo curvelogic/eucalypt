@@ -583,23 +583,29 @@ monad combinators (`map`, `then`, `and-then`, `join`, `sequence`,
 `map-m`, `filter-m`) and annotates them with higher-kinded types using
 `forall (m :: * -> *)`.
 
-This means the type checker understands the combinators polymorphically.
-For example, if you define a list monad:
+When `monad()` is called with a concrete `bind` and `return`, the type
+checker instantiates `m :: * → *` as a fresh higher-kinded variable and
+runs higher-order pattern unification: it unifies `m a` against the
+concrete first-argument type of `bind`.  For named constructors such as
+`List` (`[a]`) this decomposes via the first-order rule; for anonymous
+type constructors (e.g. `stream → {value: a, rest: stream}`) the
+Miller pattern fragment fires and binds `m` to a type-level lambda.
+No annotation is required — the binding is inferred entirely from the
+`bind` implementation.
+
+For example, a list monad:
 
 ```eu,notest
 my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
 ```
 
-Then `my-for.map` has type `forall a b. (a → b) → [a] → [b]`, and
-passing a non-function triggers a type warning:
+The checker unifies `m a` against `[a]`, infers `m = List`, and gives
+`my-for.map` type `forall a b. (a → b) → [a] → [b]`.  Passing a
+non-function triggers a type warning:
 
 ```eu,notest
 [1, 2, 3] my-for.map(true)   # warning: expected a → b, found bool
 ```
-
-The monad type variable `m` is instantiated to `List` when the checker
-sees a concrete list argument, allowing it to track element types
-through the combinator chain.
 
 #### How combinator types are inferred
 
