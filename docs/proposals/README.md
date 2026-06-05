@@ -4,7 +4,7 @@
 - **Date:** 2026-06-01
 - **Baseline:** eucalypt 0.7.0 (type-system Stage A shipped in 0.6.2; Stage B + HKT shipped in 0.7.0)
 
-This directory collects twenty strategic proposals for how eucalypt should
+This directory collects the strategic proposals for how eucalypt should
 evolve over the next few minor versions on the road to **1.0**, and where it
 should head afterwards. They are written to be reviewed *as a set* when
 deciding the next stages of the language's evolution after 0.7. Each is an
@@ -76,6 +76,7 @@ single-threaded lazy-pure runtime, the tool-first framing, and UK English.
 | [0006](0006-strictness-analysis.md) | Strictness & demand analysis (cut thunk churn) | W | 0.9 |
 | [0007](0007-type-directed-compilation.md) | Type-directed compilation (H11) — types as a runtime asset | F | post-1.0 |
 | [0008](0008-parallel-evaluation.md) | Parallel & speculative evaluation: the concurrency roadmap | F | post-1.0 |
+| [0021](0021-separate-compilation.md) | Separate compilation & unit linking (beyond `rebody`) — enables 0004 | F | 0.9 → post-1.0 |
 
 ### Track C — type system & language (beyond the roadmap)
 
