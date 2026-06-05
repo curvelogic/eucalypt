@@ -18,8 +18,9 @@ linking** — compiling a unit independently, leaving cross-unit free variables 
 *unresolved externals*, and resolving (*linking*) them afterwards — and finds:
 the model is already proven internally (the type checker does it), the
 **prelude-only floor is a Medium-effort, high-value target**, and **arbitrary-unit
-separate compilation is gated almost entirely on one change** — making operator
-fixity resolution per-unit via exported operator interfaces. The recommendation
+separate compilation is gated almost entirely on one change** — making
+desugar+cook per-unit, seeded from dependency interfaces that export operators
+*and* monad registrations. The recommendation
 is to take the prelude floor (it unlocks the embedded prelude + most of the
 compile-latency win with no on-disk security surface) and treat general-unit
 separate compilation as a deliberate, well-scoped post-1.0 fork.
@@ -90,21 +91,42 @@ shadowing, lexical freeze of each unit's internal references, metadata/target
 composition, and laziness. They differ in the *linking mechanism*; they share one
 obstacle.
 
-### The common wall: operator fixity is resolved across units, at cook
+### The wall: declaration-site metadata that changes how dependents desugar/cook
 
-Cook (`src/core/cook/fixity.rs:143`) walks the whole merged `let`-nest,
-recording each operator's fixity/precedence by name and rewriting operator
-*uses* into `Expr::Operator` nodes the shunting-yard can then precedence-resolve
-(`shunt.rs:253`); a use whose operator isn't in scope is left as a plain value
-and **mis-parses to catenation** (`fill.rs:56`), or errors at STG compile where a
-surviving `Var::Free` is fatal (`compiler.rs:1031`). **Verified:** with `+` out
-of scope, `2 + 3` fails "unresolved variable '+'". So **an operator must be in
-scope at cook time**, and a unit may use operators *its dependencies define*.
-This is why separate compilation is gated on cook — and it bites even the prelude
-floor, because user code uses ~55 prelude operators pervasively. The escape is to
-make a unit's **operator interface** (names + fixity + precedence — already
-first-class on `Expr::Operator`) part of what a dependency exports, and to seed
-cook from dependency interfaces rather than only from enclosing `let`s.
+The obstacle is not one feature but a *class*: **metadata at a unit's declaration
+site that changes how a *dependent* unit is desugared or cooked**, and which a
+dependency can therefore supply across an import. Two members:
+
+**Operators (cook).** Cook (`src/core/cook/fixity.rs:143`) walks the whole merged
+`let`-nest, recording each operator's fixity/precedence by name and rewriting
+operator *uses* into `Expr::Operator` nodes the shunting-yard precedence-resolves
+(`shunt.rs:253`); a use whose operator isn't in scope mis-parses to catenation
+(`fill.rs:56`) or errors at STG compile where a surviving `Var::Free` is fatal
+(`compiler.rs:1031`). **Verified:** with `+` out of scope, `2 + 3` fails
+"unresolved variable '+'". So an operator must be in scope *at cook time*, and a
+unit may use operators its dependencies define.
+
+**Monad registrations (desugar).** Monad blocks resolve against the desugarer's
+monad registry (`desugarer.rs:140-186`), populated from definition-site `monad:` /
+`:monad` metadata. A bracket do-block (`⟦ a: …; b: … ⟧`) **hard-errors
+`NoMonadSpec`** if the pair's bind/return spec isn't registered
+(`rowan_ast.rs:1502`); a namespace block (`{ :io … }`) is desugared as a
+bind-chain **only if** the namespace is registered, else silently falls through to
+a *plain block* (`rowan_ast.rs:1348-1369`) — a silent semantic divergence, nastier
+than the operator error. The built-in monads (`io`/`for`/`let`/`state`/`random`)
+are registered from the prelude / `state.eu`.
+
+**Not in the class: plain idiot brackets.** A plain bracket *use* desugars to
+`App(Var::Free(pair_name), inner)` (`rowan_ast.rs:1468`) — a free-var application;
+bracket characters are recognised structurally by the parser. Using an imported
+bracket pair is an ordinary link-resolved reference, *not* a wall.
+
+The escape, for both members, is identical: make a unit's **interface** export its
+operator table *and* its monad registrations, and **seed desugar+cook from
+dependency interfaces** rather than only from enclosing `let`s. It bites even the
+prelude floor (user code uses ~55 prelude operators and the `:io`/`:for`/… monads
+pervasively) — but there it is bounded, because both tables are fixed and
+build-time-known (and the type checker already extracts the operator set).
 
 ### A. Stable-global-prefix (the prelude-only floor)
 
@@ -172,10 +194,12 @@ solving the operator wall, not instead of it. Biggest change; long-horizon.
    fixed indices (`compiler.rs`, `machine/mod.rs:55`, `vm.rs:79`).
 2. **Deferred externals (B3).** Let the compiler emit a symbolic external for
    prelude refs instead of erroring (`compiler.rs:1031`); add a link step.
-3. **Operator seeding (B2 — the real work).** Teach cook to accept a *seeded
-   operator environment* (the prelude's fixed table, already extracted on the
-   type side at `check.rs:86`) so user bodies cook correctly without the prelude
-   `let` in scope (`fixity.rs:143`).
+3. **Operator + monad-registry seeding (B2 — the real work).** Teach cook to
+   accept a *seeded operator environment* (the prelude's fixed table, already
+   extracted on the type side at `check.rs:86`) and the desugarer a *seeded monad
+   registry* (the built-in namespaces + any prelude monadic brackets), so user
+   bodies desugar and cook correctly without the prelude `let` in scope
+   (`fixity.rs:143`, `desugarer.rs:140`).
 4. **Compile-then-link driver path (B4).** A parallel loader path that compiles
    the user unit against the cached prelude interface and links — the type
    checker's seed path (`check.rs:269`) is the structural template.
@@ -183,11 +207,12 @@ solving the operator wall, not instead of it. Biggest change; long-horizon.
    `build-meta.yaml`) with a build-time source-hash check.
 
 **General units (B/C/D), Hard — the gating change:**
-6. **Per-unit cook with operator interfaces (C1).** Export each unit's operators
-   + fixity in its interface; resolve a dependent's operator uses against its
-   dependencies' interfaces rather than the whole merged tree. This is the single
-   change that unlocks arbitrary-unit separate compilation; everything else
-   (interfaces, externals, link) has working analogues.
+6. **Per-unit desugar+cook with dependency interfaces (C1).** Export each unit's
+   operators+fixity **and its monad registrations** in its interface; resolve a
+   dependent's operator uses and monad blocks against its dependencies' interfaces
+   rather than the whole merged tree. This is the change that unlocks
+   arbitrary-unit separate compilation; everything else (interfaces, externals,
+   link) has working analogues.
 
 ## Alternatives considered
 
@@ -202,11 +227,13 @@ solving the operator wall, not instead of it. Biggest change; long-horizon.
 
 ## Risks & what would kill this
 
-- **The operator wall doesn't yield cleanly (highest).** If per-unit cook with
-  operator interfaces proves to entangle with the dynamic features, *arbitrary*
-  separate compilation stalls — and we land on the prelude floor (the
-  pre-authorised fallback). The floor itself still needs operator *seeding*, which
-  is bounded because the prelude's set is fixed and already extracted.
+- **The wall — operators + monad registrations — doesn't yield cleanly
+  (highest).** If making desugar+cook per-unit (seeded from dependency interfaces
+  carrying operators and monad specs) entangles with the dynamic features,
+  *arbitrary* separate compilation stalls — and we land on the prelude floor (the
+  pre-authorised fallback). The floor still needs *seeding* of both tables,
+  bounded because the prelude's sets are fixed and the operator set is already
+  extracted.
 - **Lost cross-unit inlining (high).** Today's whole-program inline/DCE
   (`prepare.rs`) crosses the prelude/user boundary; separating units makes it more
   conservative (a compiled prelude can't be DCE'd against an unknown user — it
