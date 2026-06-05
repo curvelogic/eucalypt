@@ -85,7 +85,7 @@ single-threaded lazy-pure runtime, the tool-first framing, and UK English.
 | [0010](0010-capability-determinism-types.md) | Capability & determinism types for reproducible rendering (H6c) | F | post-1.0 |
 | [0011](0011-typeclasses-without-classes.md) | "Typeclasses without classes" maturation (beyond H10) | E | 0.7+ |
 | [0012](0012-algebraic-subtyping-fork.md) | The algebraic-subtyping fork (H8 MLsub/MLstruct): decision dossier | F | post-1.0 |
-| [0013](0013-type-dsl-embedding.md) | Embedded vs string type-DSL & metadata-DSL friction (H12) | E | 0.9 |
+| [0013](0013-type-dsl-embedding.md) | String type-DSL for 1.0 (H12); reserved type brackets (H12e) reopened by 0009's value-context refs | E | 0.9 / post-1.0 |
 
 ### Track D — tooling
 
