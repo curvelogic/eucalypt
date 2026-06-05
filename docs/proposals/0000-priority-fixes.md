@@ -57,4 +57,57 @@ fix that can land first.
 
 ---
 
+## F2 — Block-style idiot brackets are per-file (don't compose across imports)
+
+- **Priority:** P1 / high
+- **Type:** bug (correctness — silent mis-parse across the import boundary)
+- **Status:** open
+
+**Description.** Whether a user bracket pair `⟦ … ⟧` parses its contents as a
+**block** (declarations) or a **soup/expression** is decided at **parse time**
+from a **per-file** `BracketRegistry`, populated by a pre-scan of *the same
+file's* tokens for `⟦{}⟧: …` / `(⟦{}⟧): …` declarations
+(`prescan_bracket_declarations`, `src/syntax/rowan/parse.rs:45,100`; consulted at
+`:516-518`). There is **no cross-file seeding** of this registry — in pointed
+contrast to the monad-namespace registry, which *does* expose
+`seed`/`drain_monad_namespace_registry` (`src/core/desugar/desugarer.rs:171-177`).
+Because each file is parsed independently and imports are resolved *after* parse,
+a block-style bracket pair **defined in an imported file** is invisible to the
+importing file's pre-scan, so its uses there default to soup/expr mode — a wrong
+parse or error. A program that works with the definition and its uses in one file
+**silently breaks** when the definition is moved to a library and imported. This
+violates the import model (definitions should compose across files) and is a
+silent correctness hazard — it is a bug *today*, independent of separate
+compilation.
+
+**Repro (shape).** `lib.eu` declares a block bracket (`⟦{}⟧: …`); `main.eu` does
+`{ import: "lib.eu" }` and uses `⟦ a: x  b: y ⟧`; the use mis-parses in `main.eu`
+because its pre-scan never saw `lib.eu`'s declaration. Capture as a concrete
+failing case in the bead.
+
+**Fix directions** (the deciding info is cross-file, but the decision is at parse —
+a phase-ordering problem):
+- **(a)** Make parse import-aware for bracket declarations — but parse currently
+  precedes import resolution, so this is a phase change.
+- **(b)** *Defer the block-vs-soup decision past parse* to an import-aware stage
+  (desugar), parsing bracket contents generically and resolving content-mode
+  against a *seedable* registry — the mechanism the monad namespaces already use
+  (`desugarer.rs:171`). Cleanest, and aligns with separate compilation.
+- **(c)** Signal block-mode syntactically at the use site (no registry).
+
+**Interaction with [0021](0021-separate-compilation.md).** This is a *parse-time*
+cross-unit dependency. Fix (b) keeps brackets out of the separate-compilation
+"wall" (the decision moves to the seedable desugar registry); fix (a) would make
+bracket content-mode a parse-time wall — the hardest kind. The fix choice and the
+separate-compilation architecture are therefore coupled; prefer (b).
+
+**References.** `src/syntax/rowan/parse.rs:45,100,500-525`;
+`src/syntax/rowan/brackets.rs:35-52`; `src/core/desugar/desugarer.rs:171-177` (the
+analogous seedable registry brackets lack).
+
+**Relationships.** relates-to 0021 (fix direction couples to separate
+compilation); independent of F1.
+
+---
+
 <!-- Add further high-priority fixes below as the review surfaces them. -->

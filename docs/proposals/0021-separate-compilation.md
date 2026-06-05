@@ -125,7 +125,10 @@ parse (`parse.rs:516`). A block-mode bracket pair must therefore be declared in
 the same file as its uses, and its monad spec is registered and resolved within
 that file. So brackets are self-contained per unit — they need **nothing** in a
 unit interface. A plain bracket *use* is just `App(Var::Free(pair_name), inner)`
-(`rowan_ast.rs:1468`) — an ordinary link-resolved reference.
+(`rowan_ast.rs:1468`) — an ordinary link-resolved reference. (That per-file
+behaviour is itself a bug — [0000](0000-priority-fixes.md) F2 — whose recommended
+fix defers the block/soup decision to the seedable desugar stage, keeping brackets
+out of this wall.)
 
 **Net:** the genuine remaining wall is **operators**. Monad namespaces are
 already seedable and brackets are per-file, so the "export-an-interface,
