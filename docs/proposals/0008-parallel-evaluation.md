@@ -1,300 +1,249 @@
-# 0008 — Parallel & speculative evaluation: the concurrency roadmap
+# 0008 — Parallelism: isolated workers first, the shared-heap fork later
 
 - **Status:** Draft proposal for review
 - **Track:** B — performance, runtime & concurrency
-- **Classification:** Stage-C-Fork
-- **Suggested horizon:** post-1.0
-- **Related:** H4/H6c (type-system-evolution.md), ADR-001, sibling proposals [0005](0005-generational-gc.md), [0012](0012-algebraic-subtyping-fork.md), [0020](0020-persistent-blocks-gc-finalisation.md)
+- **Classification:** Stage-C-Fork (model B); model A is near-ish, post-0004
+- **Suggested horizon:** A post-1.0 (near); B post-1.0 / maybe-never
+- **Related:** [0004](0004-compiled-unit-caching.md) (cheap worker startup — *enables A*), [0005](0005-generational-gc.md) (the GC rebuild *B* needs), [0010](0010-capability-determinism-types.md) (parallelism must stay unobservable), ADR-001
 
 ## Summary
 
-Eucalypt has no concurrency today and cannot acquire it cheaply: the heap is an
-`UnsafeCell`-based structure that is *deliberately* not `Sync`, sound only under
-stop-the-world, single-threaded access (`src/eval/memory/heap.rs:8`). Yet the
-language's three defining properties — purity, laziness and a fully isolated IO
-layer — are *precisely* the substrate on which data-parallel and speculative
-evaluation pay off. This is the GHC setting. This document is the honest
-strategic roadmap: what parallelism would buy a configuration/data tool, the
-major heap/GC rebuild it requires, why it is firmly **post-1.0**, and — the only
-actionable part today — which enabling invariants to record and preserve now so
-the door stays open. It is a "could", deliberately not a "should-soon".
+Eucalypt has no concurrency, and acquiring it the *obvious* way is expensive: the
+heap is an `UnsafeCell` structure deliberately not `Sync`
+(`src/eval/memory/heap.rs:8-11`), so a shared-memory thread model means a major
+heap/GC rebuild **and** an uncertain tax on the single-threaded common case. But
+there are **two** models, and the proposal should lead with the cheap one:
+
+- **A — Isolated workers (the JavaScript / Web Worker model).** Separate
+  evaluator instances, each keeping its own single-threaded heap exactly as it
+  is, communicating by passing *serialised data*. No shared heap → **no
+  single-threaded tax**. Eucalypt's purity and isolated IO make it safe by
+  construction, and 0004's embedded prelude makes a worker *cheap to spawn*. It
+  serves the real use cases — batches of files, and data-parallel `map`/`fold`
+  via scatter-gather. **Its cost is paid at the *interface*** (parallel work must
+  be expressed as serialisable-data → addressable-transform → serialisable-data),
+  which is the design crux and where friction lives.
+- **B — Shared-heap threads (the GHC sparks model).** Transparent, fine-grained
+  parallelism on one `Send`/`Sync` heap + concurrent GC + blackhole-locking. Its
+  unique value is what A *can't* express — fine-grained shared-thunk speculation —
+  but it is the big rebuild with the unpredictable single-threaded tax. High-risk;
+  reach for it only if A proves insufficient.
+
+The recommendation: pursue **A** as the pragmatic path; keep **B** documented as
+the hard fork. Both stay advisory and deterministic — *parallelism*, never
+observable *concurrency*; no new syntax.
 
 ## Motivation
 
-Eucalypt evaluation is single-threaded by construction, and the constraint is
-load-bearing, not incidental. The heap's safety model states it outright:
-`Heap` is not `Sync`, "all heap access occurs on a single thread", and "the
-mutator and collector never run concurrently"
-(`src/eval/memory/heap.rs:9-11`). The mark bit that drives collection is a
-plain `bool` (`heap.rs:1198`) with the comment "Plain bool suffices as each
-Heap is used from a single thread" (`heap.rs:1197`); it is flipped by a
-non-atomic `self.mark_state = !self.mark_state` between collections
-(`heap.rs:1716-1717`). There is essentially no threading anywhere in
-`src/eval/`: the only atomics are in the crash-diagnostics ring buffer
-(`src/eval/machine/crash.rs:9`, single-writer mutator thread) and the debug
-flag cache (`src/eval/memory/gc_debug.rs:27`). One worker thread runs
-everything, on a 64 MiB stack (`src/bin/eu.rs:26-34`).
+For a tool that renders a 200-line YAML file in milliseconds, parallelism is pure
+overhead — that stays true. The motivating cases are specific and real:
 
-This is not a problem to fix for its own sake. For a tool that renders a 200-line
-YAML file in milliseconds, parallelism is pure overhead. The motivation is
-strategic and forward-looking: as eucalypt is pushed at *larger* workloads —
-hundred-document fan-outs, large generated manifests, heavy `map` over big
-imported datasets — single-core throughput becomes the ceiling, and eucalypt
-happens to sit in the exact language class where parallelism is *safe by
-construction*. The purpose of this proposal is to state honestly what that would
-cost and to protect the option, not to schedule it.
+- **Batches of files.** Rendering or transforming many independent inputs is
+  *embarrassingly parallel*, yet today it is sequential. This is the clearest win
+  and needs nothing shared.
+- **Data-parallel work inside one program.** A `map`/`fold` over a large list (a
+  big imported dataset; an Advent-of-Code search space) can run wide if the
+  per-element work is independent — which, in a pure language, it is.
 
-## Prior art & landscape
+Eucalypt sits in the language class where parallelism is *safe by construction*:
+referential transparency makes evaluation order unobservable, and **all effects
+are isolated in the driver's IO loop** (`src/driver/io_run.rs`), so the pure
+evaluator never races on state. The open question for the *shared-heap* model (B)
+is its **single-threaded tax** — atomic refcounts, synchronised allocation,
+memory barriers, a non-atomic mark bit (`heap.rs:1198`) made atomic — paid by the
+99% single-threaded case, and genuinely hard to predict without building it. The
+isolated model (A) makes that question *moot* by not sharing a heap at all, which
+is the strongest reason to lead with it.
 
-The reference design is **Glasgow Parallel Haskell**, because the problem is
-identical: parallelising a lazy, pure, graph-reducing runtime.
+## Model A — Isolated workers (recommended)
 
-- **Evaluation Strategies** (Trinder, Loidl, Hammond et al., 1998) separate
-  *what* is computed from *how much* and *in what order* it is evaluated, built
-  on two primitives: `seq` (sequence) and `par` (spark a parallel evaluation to
-  WHNF). `x \`par\` y` sparks `x` and returns `y`; sparks sit in a queue and the
-  runtime promotes one to a real thread only when a core is idle. Crucially,
-  parallelism is *advisory*: strategies never change a program's result, only
-  its timing. This maps cleanly onto eucalypt's stance that types and metadata
-  are advisory, and that evaluation order is unobservable.
-- **"Seq no more: Better Strategies for Parallel Haskell"** (Marlow, Maier,
-  Loidl, Aswad, Trinder, Haskell Symposium 2010) is the document to internalise
-  before writing a line of code. It replaces `seq`-based strategies with an
-  **`Eval` evaluation-order monad** and fixes a subtle but ruinous *space leak*:
-  the original strategies retained the entire structure being evaluated,
-  defeating speculation. The new formulation lets the **garbage collector prune
-  sparks** whose results are no longer needed — essential for *speculative*
-  parallelism, where most sparked work may turn out to be unwanted. The lesson
-  for eucalypt is sharp: speculation without GC-level spark pruning is a memory
-  bug, not a feature.
-- **"Haskell on a Shared-Memory Multiprocessor"** (Harris, Marlow, Peyton Jones,
-  2005) is the canonical treatment of *the* parallel-laziness hazard and is
-  directly relevant below: when two threads force the same thunk, the runtime
-  must coordinate so the work happens once. GHC uses a largely lock-free scheme
-  with proper locking only on the rare path where a thread genuinely blocks on
-  another's in-progress thunk — "blocking is rare", so the fast path stays cheap.
+Each worker is a full evaluator with its **own heap**; they coordinate by passing
+*serialised values*, not pointers. The pattern is **scatter-gather**: partition
+the immutable input into chunks, hand each chunk to a worker that applies a pure
+transform, merge the results.
 
-As contrasts, two strict-functional systems took different roads:
+**Why it fits eucalypt.** Purity means there is no mutable state to share and the
+merge is order-independent. IO-isolation means each worker's effects are
+independent. And — crucially — **0004's embedded prelude removes the startup
+cost** that makes process parallelism look heavyweight today: you don't need to
+*share* across workers, you just *spawn* them cheaply. For "process lots of files"
+each worker reads *different* files, so there is nothing to share at all.
 
-- **Multicore OCaml (OCaml 5)** retrofitted parallelism onto a mature runtime
-  (Sivaramakrishnan et al., "Retrofitting Parallelism onto OCaml", ICFP 2020).
-  It separates *concurrency* (effect handlers) from *parallelism* (**domains**,
-  mapped to OS threads) and rebuilt the GC: a stop-the-world *parallel* minor
-  collection plus a *mostly-concurrent* mark-and-sweep major collection. It is
-  the proof that a single-threaded managed runtime *can* be made parallel — and
-  the proof of how much GC surgery that costs.
-- **Manticore / Parallel ML** (Fluet, Rainey, Reppy, Shaw, ICFP 2008) offers
-  *implicitly-threaded* parallel forms (parallel tuples, arrays, comprehensions)
-  whose semantics are *sequential* — they are hints the compiler may ignore.
-  This is the most eucalypt-shaped surface: no new control flow, just a marker
-  that some independent work *may* go wide.
+**What it serves, and what it doesn't.** It covers the file batch (one chunk per
+worker) and data-parallel `map`/`fold` over a big list — a large fraction of
+realistic large-workload and AoC cases. It does **not** cover *fine-grained*
+parallelism that shares thunks across workers (speculatively forcing both `if`
+branches of one computation; parallel graph reduction over a deeply-shared
+structure) — that is B's niche.
 
-What eucalypt should borrow: the **advisory, deterministic, strategy/spark**
-model (Strategies + `Eval`), and the **GC-prunes-speculation** discipline. What
-it should *not* borrow: GHC's `MVar`/`forkIO` *concurrency* (a different feature
-with observable nondeterminism — out of scope here), and any surface that adds
-control-flow keywords.
+**Prior art.** JavaScript **Web Workers** (isolated heaps, `postMessage`, no
+shared mutable memory) are the direct model. **Starlark** is the config-space
+precedent: it parallelises module loading precisely by making shared data
+immutable — eucalypt's purity gives it the same opening. The compute pattern is
+classic **scatter-gather / map-reduce**.
 
-## Proposed design
+### The interface to eucalypt code — the crux
 
-The honest design has two parts: a long enabling sequence (mostly invisible),
-and a deliberately tiny surface. Per the non-negotiables (`_house-style.md` §1),
-**no new syntax** is introduced.
+A's whole cost lands here: a shared-heap model parallelises *transparently*
+(closures and lazy graphs just work because the heap is shared); an isolated
+model requires the parallel work to be **expressible across a serialisation
+boundary**. Four frictions, with their mitigants:
 
-### The blockers (what must change first)
+1. **The boundary is data-only and strict.** Only serialisable values cross —
+   numbers, strings, symbols, blocks, lists: *exactly what eucalypt already
+   renders and parses*. Closures, lenses (metadata-carrying functions), IO
+   actions, and lazy/infinite structures do **not** cross. So data crossing the
+   boundary must be **forced** to serialisable normal form — parallelism induces
+   strictness at the boundary. *Mitigant:* eucalypt is a data tool; the values
+   you actually fan out over are already plain data, and `render-as`/`parse-as`
+   already exist. *Friction that remains:* you cannot scatter an infinite/streaming
+   structure, and a chunk built lazily from a large context must be forced first.
+2. **The transform must be addressable, not an arbitrary closure.** A worker has
+   its own heap and re-instantiates the program; it applies a transform
+   identified by **name** (a top-level binding) or as an **evaluand** (an
+   expression over the chunk), not a closure capturing non-serialisable runtime
+   state. *Mitigant — the key one:* eucalypt's **existing model already is this
+   contract.** `eu -e <transform> <chunk>` *is* a worker: compile the program,
+   apply a named transform to data input, render data output. The IO driver
+   already spawns and manages subprocess workers for `io.exec`
+   (`src/driver/io_run.rs`). So the worker interface is not new machinery — it is
+   the CLI evaluand-on-data model, parallelised. *Friction that remains:* a
+   transform that closes over large *runtime-computed* context (not reconstructable
+   from source + chunk) doesn't fit cleanly.
+3. **Effects across workers.** Each worker's IO is independent (IO-isolation
+   helps), but if the transform performs effects, ordering and merging need care.
+   *Mitigant:* restrict parallel work to **pure** transforms (the common,
+   recommended case); deterministic merge of pure results preserves
+   reproducibility ([0010](0010-capability-determinism-types.md)).
+4. **Serialisation cost.** Round-tripping chunks through a wire format has
+   overhead; granularity must be coarse enough to amortise it (chunk, don't
+   per-element). *Mitigant:* an internal binary form (the same `StgSyn`/value
+   serialisation 0004 considers) rather than YAML for the in-process case.
 
-1. **The `UnsafeCell`, non-`Sync` heap.** Sound parallel mutation/collection
-   requires either a `Send`+`Sync` heap with synchronised allocation and a
-   parallel-or-concurrent collector, or per-domain heaps with a careful
-   cross-heap pointer policy. Either is a *major* rewrite of
-   `src/eval/memory/`. This is the long pole.
-2. **Thunk update + blackholing — THE parallel-laziness hazard.** On forcing a
-   thunk the VM overwrites its environment slot with a `BlackHole` closure to
-   catch cyclic re-entry, then an `Update` continuation overwrites it with the
-   result (`src/eval/machine/vm.rs:434-449`; the `BlackHole` error path is
-   `vm.rs:533`). Single-threaded, this is a sentinel. With two workers it is a
-   *race*: both may find an un-blackholed thunk and duplicate (or, worse,
-   corrupt) the update. This needs the Harris/Marlow treatment — an atomic
-   claim on the thunk header, a lock-free fast path, and a block-and-wake slow
-   path for the rare genuine collision. Touches the hottest code in the VM.
-3. **`Rc` is not `Send`.** Core and the STG backend use `Rc` pervasively:
-   `RcExpr` wraps `Rc<Expr<Self>>` (`src/core/expr.rs:479`,
-   `CoreExpr = Expr<RcExpr>` at `expr.rs:357`), and `StgSyn` uses `Rc<StgSyn>`
-   throughout (70 occurrences in `src/eval/stg/syntax.rs`). None of this can
-   cross a thread boundary. Note this affects *compiled programs*, not the
-   runtime graph: the VM's live data is raw-pointer (`RefPtr`) heap closures
-   (`vm.rs:249-255`), so a runtime spark need not carry `Rc`. But sharing
-   compiled code across workers would require `Arc` (or load-once-per-worker).
-4. **Non-atomic mark bit.** `mark_state: bool` (`heap.rs:1198`) and per-object
-   header marks must become atomic, or marking must be partitioned per domain.
+**The honest trade:** model A moves the cost from the *runtime* (B's heap-tax,
+paid always) to the *interface* (paid only when you parallelise, and only in
+expressiveness). For a **data** tool this is a far better trade than for a
+general-purpose language — values are already serialisable data and the
+evaluand-on-data contract already exists — but it is **not zero-friction**: you
+give up transparent parallelisation of arbitrary closures and lazy graphs, and
+the user must structure parallel work as data → named-transform → data. Whether
+that friction is acceptable is the thing to prototype on a real fan-out.
 
-### The enablers (why the door is worth keeping open)
+**Surface (no new syntax).** A `par-map` / `par-fold`-style prelude combinator
+that scatters a list (in chunks) to workers applying a named transform and merges
+results — restricted to serialisable elements and an addressable transform, with
+a clear diagnostic when given a non-serialisable value or a non-addressable
+closure. Orchestration lives in the IO driver. Advisory: on a one-element list or
+a single-core/`--no-parallel` build it is identity; semantics never change, only
+timing.
 
-- **Referential transparency makes evaluation order unobservable.** The pure
-  core performs no effects; result equals result regardless of *when* a thunk is
-  forced. This is the precondition Strategies depends on, and eucalypt has it.
-- **`if` is a function with independent branches.** It is an ordinary intrinsic,
-  not control-flow syntax. Both arms are self-contained expressions, so a
-  speculative worker could begin forcing the unlikely branch while the predicate
-  evaluates — the textbook speculation case, available *for free* semantically.
-- **The continuation stack is off-heap.** Machine state is a `(closure, stack)`
-  pair: `closure: SynClosure` plus `stack: Vec<Continuation>` "stored inline,
-  not on the eucalypt heap" (`vm.rs:250-258`). A spark is therefore a
-  **self-contained, relocatable unit** — a closure to force plus its own fresh
-  stack — exactly the shape a work-stealing scheduler wants. The machinery for
-  suspending and resuming such stacks already exists for the IO loop
-  (`suspended_stacks`, `vm.rs:295`).
-- **IO is already isolated.** Effects live entirely in the driver's IO-monad
-  interpret loop (`src/driver/io_run.rs:1-11`): the STG machine evaluates to
-  WHNF and *yields* on an IO constructor (`io_yielded()`, `vm.rs:1879`); the
-  driver runs the effect and re-enters. The pure evaluator could parallelise
-  *without touching effect ordering at all*, because it never performs effects.
-  This cleanly sidesteps the hardest part of parallelising an impure language.
+## Model B — Shared-heap threads (the hard fork, demoted)
 
-### The surface (deliberately minimal, no new syntax)
+The GHC **Strategies / sparks** model: `x \`par\` y` sparks parallel evaluation
+to WHNF on a *shared* heap; the runtime promotes a spark to a thread when a core
+is idle; advisory and deterministic. Its unique value over A is **fine-grained,
+shared-thunk** parallelism A cannot express. The price is a rebuild of the most
+delicate code in the tree:
 
-When (if ever) the runtime supports it, the user-facing surface is one prelude
-combinator and/or one metadata hint — never a keyword:
-
-```eu
-# Advisory: this map's element computations are independent and may go wide.
-big-list map(expensive) //parallel
-
-# Or via metadata on a binding whose value is an independent fan-out:
-` { strategy: :parallel }
-manifests: documents map(render)
-```
-
-Here `//parallel` is a hypothetical prelude *combinator* (a `par`-flavoured
-strategy applied by catenation), and `strategy:` is ordinary metadata read by
-the compiler. Both are *advisory*: on a single-threaded build, or for a small
-list, they are identity. Semantics never change; only timing does. This honours
-syntactic conservatism (machinery in metadata/operators/prelude) and the
-gradual/advisory philosophy. No `par` keyword, no parallel-block form.
+- **Blockers:** the `UnsafeCell`, non-`Sync` heap (`heap.rs:8-11`) → a `Send`/`Sync`
+  heap with a parallel-or-concurrent collector (a *superset* of 0005, the OCaml-5
+  experience confirms the GC is the gating cost); **thunk-update + blackholing as
+  THE parallel-laziness hazard** (`vm.rs:434-449,533`) → an atomic thunk-claim
+  with a lock-free fast path and block-and-wake slow path (Harris/Marlow 2005);
+  `Rc` pervasive in core/STG (`expr.rs:357,479`, `Rc<StgSyn>`) not `Send`;
+  non-atomic mark bit (`heap.rs:1198`).
+- **Enablers** (why the door is worth keeping open): purity (order unobservable);
+  the off-heap `(closure, stack)` machine state (`vm.rs:250-258`) makes a spark a
+  self-contained relocatable unit, reusing `suspended_stacks` (`vm.rs:295`); IO
+  isolation. And **speculation needs GC-level spark pruning** (the space leak
+  "Seq no more", Marlow 2010, fixes) — without it, sparking the wrong `if` branch
+  and retaining it is a memory bug.
+- **The central open question:** the **single-threaded tax**. A `Send`/`Sync`
+  heap with synchronised allocation and atomic marks taxes every single-threaded
+  run; the magnitude is unpredictable and could erase the gains. *That uncertainty
+  is precisely why A — which avoids it — comes first.*
 
 ## Interaction with the existing roadmap
 
-This proposal is, candidly, a **"big rebuild" fork competing for the same scarce
-implementation effort** as the other deep-runtime bets. Three items contend for
-one budget:
-
-| Fork | Core cost | Independent? |
-|------|-----------|:------------:|
-| [0005](0005-generational-gc.md) advanced GC | nursery + trigger + defrag completion | partly |
-| [0012](0012-algebraic-subtyping-fork.md) MLsub | type-engine rewrite | yes |
-| **0008 (this)** parallel eval | `Send`/`Sync` heap + parallel GC + blackhole locking | **builds on 0005** |
-
-Crucially, **0008 depends on 0005, not the reverse.** A `Send`/`Sync`,
-parallel-or-concurrent collector is a *superset* of the generational work; doing
-0005 first and well is the natural substrate, and the OCaml 5 experience
-confirms the GC is the gating component. By contrast 0012 is orthogonal (it
-touches `src/core/typecheck/`, not the runtime) and should be sequenced on its
-own merits. There is also a soft tie to
-[0020](0020-persistent-blocks-gc-finalisation.md): both 0008 and 0020 stress the
-GC-finalisation story (ADR-001), so any heap redesign should weigh both at once.
-
-The dependency chain is therefore strict and long:
-
-> stable 1.0 runtime → advanced/parallel GC (0005, redone as `Send`+`Sync`) →
-> atomic thunk-claim / blackhole-locking in the VM → sparks + a work-stealing
-> scheduler → an `Eval`-style Strategies layer with **GC spark-pruning** →
-> the advisory prelude/metadata surface above.
-
-Each arrow is months of work and a correctness-critical change to the most
-delicate code in the tree.
+- **A depends on [0004](0004-compiled-unit-caching.md)** (embedded prelude → cheap
+  workers) and reuses the IO driver's subprocess machinery; it is near-ish and
+  carries *no* runtime risk. **B depends on [0005](0005-generational-gc.md)** (its
+  `Send`/`Sync` parallel GC is a superset of the generational work) and is the
+  long, correctness-critical chain — competing with 0005/0012/0020 for scarce
+  deep-systems effort.
+- Both must stay **advisory/deterministic** — parallelism, not concurrency — to
+  preserve reproducible rendering ([0010](0010-capability-determinism-types.md)).
 
 ## Implementation sketch
 
-Indicative only; not for scheduling before 1.0.
+**Model A (post-0004, Medium):**
+1. A value (de)serialisation form for chunks (internal binary; reuse 0004's).
+2. A `par-map`/`par-fold` prelude combinator + worker orchestration in the IO
+   driver (reuse the `io.exec` subprocess machinery); the worker applies a named
+   transform / evaluand to a chunk and returns serialised results; the driver
+   merges. Forcing-to-serialisable and the addressable-transform check at the
+   boundary, with clear diagnostics.
+3. Advisory degradation (identity when not worth it / disabled).
 
-- **Phase 0 (now, cheap): document & preserve invariants.** Land an
-  `ADR-00x: enabling invariants for future parallelism` recording the four
-  facts that, if quietly broken, would slam the door: (a) the
-  `(closure, off-heap stack)` machine-state shape (`vm.rs:250-258`); (b) total
-  IO isolation in the driver (`io_run.rs`); (c) the thunk-update/blackhole
-  protocol as the designated synchronisation point (`vm.rs:434-449`); (d) that
-  `if` and friends stay ordinary functions with independent operands. Add a
-  CI-visible note so future heap/VM changes consider parallel-friendliness.
-  *Cost: documentation only.*
-- **Phase 1: `Send`/`Sync` heap + parallel GC.** Folded into 0005. The largest,
-  riskiest phase; OCaml 5 is the template.
-- **Phase 2: atomic thunk-claim / blackhole-locking.** Header CAS on force,
-  lock-free fast path, block-and-wake slow path (Harris/Marlow 2005).
-- **Phase 3: sparks + work-stealing scheduler.** Each spark is a
-  `(closure, fresh stack)`; reuse `suspended_stacks` machinery (`vm.rs:295`).
-- **Phase 4: Strategies + GC spark-pruning + the advisory surface.** The
-  Marlow 2010 `Eval`-monad discipline, then `//parallel` / `strategy:`.
+**Model B (post-1.0 / maybe-never, High):** the strict chain — `Send`/`Sync` heap
++ parallel GC (folded into 0005) → atomic thunk-claim / blackhole-locking → sparks
++ work-stealing scheduler → `Eval`-style Strategies with GC spark-pruning → the
+advisory surface. Each arrow is months of race-prone unsafe work; the existing
+`EU_GC_VERIFY`/`STRESS`/`POISON` infrastructure is necessary but not sufficient
+(concurrency needs race detection too).
 
-Risk is **high** throughout: this is unsafe-heavy, race-prone code where bugs
-are nondeterministic. The excellent existing debug infrastructure
-(`EU_GC_VERIFY`, `EU_GC_STRESS`, `EU_GC_POISON`) is necessary but not sufficient
-— concurrency needs additional race-detection scaffolding.
+A **Phase 0 (now, free)** applies regardless: an ADR recording the enabling
+invariants that, if quietly broken, slam the door on *both* models — the
+`(closure, off-heap stack)` shape, total IO isolation, the thunk-update/blackhole
+protocol as the designated sync point, and `if`-as-an-ordinary-function.
 
 ## Alternatives considered
 
-- **Process-level parallelism (do nothing in-runtime).** Run N independent `eu`
-  invocations across N input files from a shell or build system. For the
-  multi-document case this captures most of the realisable win at *zero* runtime
-  risk, and is the right answer for the foreseeable future. The in-runtime story
-  only beats it for *intra-document* parallelism (one big `map`, one expensive
-  field) — a genuinely narrower case.
-- **Async/effects-style concurrency (à la OCaml domains + effects, or `forkIO`).**
-  Rejected: introduces *observable* nondeterminism, contradicting deterministic
-  rendering and the capability/determinism direction
-  ([0010](0010-capability-determinism-types.md)). Eucalypt wants *parallelism*
-  (unobservable), not *concurrency* (observable).
+- **Lead with the shared-heap rebuild (the prior framing).** Rejected: it pays an
+  always-on single-threaded tax for a fine-grained case eucalypt rarely needs,
+  when A serves the actual use cases at far lower risk.
+- **Async / effects-style concurrency** (`forkIO`, OCaml domains+effects).
+  Rejected: observable nondeterminism, contradicting deterministic rendering.
 - **GPU/SIMD data-parallelism.** Wrong shape for irregular, pointer-heavy graph
   reduction over heterogeneous structured data.
 
 ## Risks & what would kill this
 
-- **The cost/benefit never closes for a config tool.** If real workloads stay
-  small, parallelism is permanent overhead. *This is the most likely outcome*,
-  and it is why the recommendation is "preserve the option", not "build it".
-- **Speculation leaks space.** Sparking the wrong `if` branch and retaining it is
-  the exact bug Marlow 2010 fixed; without GC spark-pruning, speculation is a
-  liability.
-- **Amdahl + spark overhead dominate.** If sparks are too fine-grained the
-  scheduler costs more than it saves; granularity control is itself hard.
-- **It starves higher-value work.** Every month here is a month not spent on
-  0004 (caching), 0005 (GC), or the type-system roadmap — all of which help
-  *every* user, not the large-workload minority.
-
-Falsification: a prototype `Send`/`Sync` heap that shows the synchronisation tax
-erases parallel gains on representative workloads would settle the question
-against proceeding.
+- **A's interface friction is too high.** If real parallel work routinely closes
+  over non-serialisable runtime context, or the forcing-at-the-boundary defeats
+  the laziness users rely on, A's ergonomics fail. *Falsifier:* prototype `par-map`
+  on a representative fan-out (a file batch and one large data-parallel `map`); if
+  expressing it is awkward or the serialisation cost dominates, rethink the surface.
+- **B's single-threaded tax erases its gains.** A `Send`/`Sync`-heap prototype
+  showing the synchronisation tax wiping out parallel speedup on representative
+  workloads settles B against proceeding.
+- **It starves higher-value work.** Every month on B is a month not on 0004/0005
+  or the type system — which help *every* user. (A is cheap enough to dodge this.)
+- **Speculation leaks space** (B only): without GC spark-pruning, the Marlow-2010
+  bug.
 
 ## Success criteria
 
-Should this ever be pursued, success is narrow and measurable: **>1.5× speedup**
-on a genuinely parallel benchmark (large-list `map`, multi-document render) on
-4+ cores, with **zero** change to single-threaded results, **no** regression in
-small-config latency (advisory hints must be free when unused), and **no** new
-nondeterminism. Absent those, the correct outcome is to keep the door open and
-spend the effort elsewhere.
+- **A:** **>1.5×** on a file batch and on one large data-parallel `map` across 4+
+  cores; **zero** single-threaded cost; deterministic, identical results; and —
+  the real test — an interface a user reaches for without contortion.
+- **B:** pursued only if A demonstrably cannot serve a compute-heavy
+  *intra-program* case **and** a heap prototype shows the single-threaded tax is
+  acceptable. Absent both, keep the door open and spend the effort elsewhere.
 
 ## References
 
-**Eucalypt source (verified):**
-`src/eval/memory/heap.rs:8-11,1196-1198,1716-1717` (non-`Sync`,
-single-threaded heap; non-atomic mark bit) · `src/eval/machine/vm.rs:250-258`
-(off-heap `(closure, stack)` machine state) · `vm.rs:295` (`suspended_stacks`) ·
-`vm.rs:434-449,533` (blackhole / `Update`) · `vm.rs:1879` (`io_yielded`) ·
-`src/core/expr.rs:357,479` (`RcExpr`) · `src/eval/stg/syntax.rs` (`Rc<StgSyn>`)
-· `src/driver/io_run.rs:1-11` (IO isolated in the driver) ·
-`src/eval/machine/crash.rs:9`, `src/eval/memory/gc_debug.rs:27` (only crash /
-debug atomics) · `src/bin/eu.rs:26-34` (single 64 MiB worker thread) · ADR-001
-(`docs/development/architectural-decisions.md`).
+**Eucalypt source (verified):** `src/eval/memory/heap.rs:8-11,1196-1198,1716-1717`
+(non-`Sync`, single-threaded heap; non-atomic mark bit) · `src/eval/machine/vm.rs:250-258`
+(off-heap `(closure, stack)` state), `:295` (`suspended_stacks`), `:434-449,533`
+(blackhole/`Update`), `:1879` (`io_yielded`) · `src/core/expr.rs:357,479` (`RcExpr`)
+· `src/eval/stg/syntax.rs` (`Rc<StgSyn>`) · `src/driver/io_run.rs` (IO isolated;
+subprocess worker machinery for `io.exec`) · `src/bin/eu.rs:26-34` (single worker
+thread) · ADR-001.
 
-**Papers / systems:** Trinder, Loidl, Hammond et al., *Algorithm + Strategy =
-Parallelism* (1998) · Marlow, Maier, Loidl, Aswad, Trinder, *Seq no more: Better
-Strategies for Parallel Haskell* (Haskell Symposium 2010) · Harris, Marlow,
-Peyton Jones, *Haskell on a Shared-Memory Multiprocessor* (Haskell Workshop
-2005) · Sivaramakrishnan et al., *Retrofitting Parallelism onto OCaml* (ICFP
-2020) · Fluet, Rainey, Reppy, Shaw, *Implicitly-threaded Parallelism in
-Manticore* (ICFP 2008).
-
-**Sibling proposals:** [0005 — generational GC](0005-generational-gc.md),
-[0010 — capability & determinism types](0010-capability-determinism-types.md),
-[0012 — algebraic-subtyping fork](0012-algebraic-subtyping-fork.md),
-[0020 — persistent blocks & GC-finalisation](0020-persistent-blocks-gc-finalisation.md).
+**Papers / systems:** Trinder et al., *Algorithm + Strategy = Parallelism* (1998)
+· Marlow et al., *Seq no more* (2010) · Harris, Marlow, Peyton Jones, *Haskell on
+a Shared-Memory Multiprocessor* (2005) · Sivaramakrishnan et al., *Retrofitting
+Parallelism onto OCaml* (ICFP 2020) · Fluet et al., *Implicitly-threaded
+Parallelism in Manticore* (ICFP 2008) · MDN, *Web Workers* · Bazel, *Starlark*
+(parallel loading via immutability).
