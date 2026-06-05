@@ -81,7 +81,7 @@ single-threaded lazy-pure runtime, the tool-first framing, and UK English.
 
 | # | Proposal | Class | Horizon |
 |---|----------|:-----:|:-------:|
-| [0009](0009-structural-contracts-validation.md) | Structural contracts & runtime schema validation | W | 1.0 |
+| [0009](0009-structural-contracts-validation.md) | Structural contracts/spec: unify `match?`, types & runtime validation (Clojure-spec model) | W | 1.0 |
 | [0010](0010-capability-determinism-types.md) | Capability & determinism types for reproducible rendering (H6c) | F | post-1.0 |
 | [0011](0011-typeclasses-without-classes.md) | "Typeclasses without classes" maturation (beyond H10) | E | 0.7+ |
 | [0012](0012-algebraic-subtyping-fork.md) | The algebraic-subtyping fork (H8 MLsub/MLstruct): decision dossier | F | post-1.0 |
