@@ -197,6 +197,11 @@ solving the operator wall, not instead of it. Biggest change; long-horizon.
 
 ## Implementation sketch
 
+This builds on the **Unit Interface** unification tracked as
+[0000](0000-priority-fixes.md) F3 — an independently valuable cleanup (it removes
+the operator-table redundancy and fixes F2) that should land first; separate
+compilation is then "build the interface, seed dependents, link" on top.
+
 **Prelude floor (A/restricted-B), Medium:**
 1. **Global slots (B1).** Extend the `Ref::G` region with a prelude block at
    fixed indices (`compiler.rs`, `machine/mod.rs:55`, `vm.rs:79`).

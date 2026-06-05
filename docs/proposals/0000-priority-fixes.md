@@ -110,4 +110,57 @@ compilation); independent of F1.
 
 ---
 
+## F3 — Unify cross-unit compilation contributions into a single Unit Interface
+
+- **Priority:** P2 / medium (code-cleanliness refactor; subsumes F2; foundation for 0021)
+- **Type:** refactor / architecture
+- **Status:** open
+
+**Description.** A dependency makes several *source-level contributions* to the
+compilation of a dependent unit, currently handled by **four separate,
+inconsistent mechanisms** across phases:
+
+| Phase | Contribution | Today |
+|---|---|---|
+| Parse | bracket content-modes (block/soup) | per-file `BracketRegistry`, no seeding (**F2 bug**) |
+| Desugar | monad namespace registry | `seed`/`drain_monad_namespace_registry` (`desugarer.rs:160-177`) |
+| Cook | operator table (fixity/precedence) | rediscovered from the merged tree, no seeding |
+| Typecheck | schemes, aliases, branch shapes, **operator overloads** | `PreludeSummary` + `with_seed` (`check.rs:197,382`) |
+| Link | exported binding names → slots | not present (0021 territory) |
+
+Some are seedable, some per-file, one is a bug — and **operators are captured
+twice** (in `PreludeSummary` for typecheck *and* rediscovered at cook). Refactor
+these into a single per-unit **Unit Interface** (à la a GHC `.hi` / ML signature;
+`PreludeSummary` is already a partial one) with one consistent pattern: *build a
+unit's interface once; seed each phase of a dependent from its dependencies'
+interfaces.*
+
+**Independently valuable** (before any separate-compilation work): one mechanism
+instead of four; removes the operator-table redundancy (extract once, serve both
+cook and typecheck); **fixes F2** (brackets gain a slot and the seeding they
+lack); and makes the cross-unit surface explicit and testable.
+
+**Also the shared foundation later:** separate compilation
+([0021](0021-separate-compilation.md)), caching
+([0004](0004-compiled-unit-caching.md)), and incremental tooling
+([0014](0014-incremental-query-core.md)) all consume exactly this interface.
+
+**Design wrinkles.** Parse is the awkward phase — desugar/cook/typecheck run
+*after* import resolution (clean to seed), but parse runs first, so the
+bracket-mode contribution needs F2 fix (b) (defer the block/soup decision past
+parse) to join the interface cleanly. Interfaces build bottom-up over the import
+DAG (the diamond-dedup graph exists); mutual recursion *across* units is the
+residual hard case.
+
+**References.** `src/syntax/rowan/parse.rs:45` (brackets);
+`src/core/desugar/desugarer.rs:160-177` (monad seed/drain);
+`src/core/cook/fixity.rs:143` (operator rediscovery);
+`src/core/typecheck/check.rs:197,382` (`PreludeSummary`/`with_seed` — the partial
+interface to generalise).
+
+**Relationships.** subsumes F2's fix; foundation for 0021 (and 0004 / 0014);
+independent of F1.
+
+---
+
 <!-- Add further high-priority fixes below as the review surfaces them. -->
