@@ -26,20 +26,26 @@ tooling friction without touching the string boundary; the remaining
 friction points (escaping, phase separation) are real but modest, and
 the costs of crossing into an embedded form are higher than the evolution
 document acknowledges. Open question 2 gets a direct answer: keep the
-string DSL **for 1.0**, with TS-A7's delivery as the vindication.
+string DSL **for 1.0** — refined by one minimal string-prefix addition
+(`s"…"`), not replaced by an embedded form — with TS-A7's delivery as the
+vindication.
 
-**One live exception has since surfaced and is recorded below.**
+**One refinement has since surfaced and is recorded below.**
 [0009](0009-structural-contracts-validation.md) needs to reference type
-aliases from **value** positions (its `as-spec(:Server)` reifier) — which
-is precisely this proposal's own §9 evidence-trigger firing ("users need to
-reference type aliases as values"). A bare-symbol-plus-magical-function
-surface for that crossing is unsatisfying, and it motivates a **new option
-not in the original H12 set — H12e: a dedicated, *reserved* type-expression
-bracket** that threads between the rejected first-class-values (H12c) and
-idiot-bracket (H12d) roads, dodging both their fatal flaws. The string DSL
-stays right for 1.0; **H12e is the leading post-1.0 candidate** for
-de-magicking the type/value crossing and, as a by-product, retiring
-`{{..}}` escaping. See the new Alternatives §H12e.
+aliases from **value** positions (to reify a named type into a runtime
+spec) — precisely this proposal's own §9 evidence-trigger firing ("users
+need to reference type aliases as values"). A bare-symbol-plus-magical-
+function surface for that crossing is unsatisfying. The resolution is the
+**`s"…"` prefix** (§H12e): one new variant on the lexer's existing
+string-prefix family (`c"`/`r"`/`t"`) that turns interpolation off and
+parses its content to a `Type` at parse time. Crucially it is **still a
+string** — a *refinement* of the string DSL this document keeps, not the
+embedded form it rejects — so it preserves the phase boundary and TS-A7
+tooling while killing `{{..}}` escaping and giving 0009 its value-position
+reference. As a string-form refinement rather than new grammar, it is a
+**1.0** change, not a deferral; the heavier *reserved-bracket* form
+(§H12e's earlier draft) is recorded as rejected. See the revised
+Alternatives §H12e.
 
 ---
 
@@ -170,8 +176,12 @@ the checker adds zero runtime overhead.
 
 ## Proposed design
 
-No new syntax. The recommendation is **status quo** — TS-A7 has already
-delivered the key improvement.
+Keep the string DSL — and add one minimal refinement to it. TS-A7 has
+already delivered the key *tooling* improvement; the only language change
+is the **`s"…"` prefix** (§H12e), a string-form addition (not an embedded
+form) that retires `{{..}}` escaping and serves 0009's value-position
+references. The string boundary, the phase separation, and the erasure
+guarantee are all preserved.
 
 The string DSL remains the sole form for type annotations. TS-A7, shipped
 in 0.6.2 (see `docs/development/alias-reference-tooling-spec.md`),
@@ -193,18 +203,19 @@ were all unchanged. This is the cheapest path that addressed the second
 friction point (editor support) while leaving the architecture clean — and
 it shipped without touching core syntax, confirming the design thesis.
 
-The remaining friction — `{{..}}` escaping — is addressed by a single
-documentation note rather than a language change: the escape is mechanical
-once learnt (the error message explains it), it is confined to annotations
-that contain record types inside IO or function positions, and there is no
-form of the grammar that would eliminate it without changing the surface
-syntax of strings (which this language does not do). That the string DSL
-has continued to absorb substantial new expressiveness in 0.7.0 (`forall`
-quantification, kind annotations, `Mu` recursive aliases, structural
-operator constraints) without any new core-syntax additions is mild
-further evidence that the form scales, though the added constructs do
-introduce more annotation surface where escaping pressure could grow —
-worth monitoring.
+The remaining friction — `{{..}}` escaping — is **retired** by the `s"…"`
+prefix rather than merely documented: because `s"…"` lexes with
+interpolation **off** (like `t"…"`), record braces inside it are literal,
+so `s"{host: string}"` needs no doubling. This is *not* a change to the
+surface syntax of ordinary strings (which this language does not do) — it
+is a new prefix on the existing string-prefix channel (`c"`/`r"`/`t"`),
+the same conservative move by which other constructs have been added. The
+plain `"…"` form is retained and stays valid (the escape rule still
+applies there); `s"…"` is the de-escaped form authors reach for. That the
+string DSL has continued to absorb substantial new expressiveness in 0.7.0
+(`forall` quantification, kind annotations, `Mu` recursive aliases,
+structural operator constraints) without any new *core* syntax is further
+evidence that the form scales.
 
 ---
 
@@ -246,20 +257,23 @@ not change the type-embedding analysis, but it reinforces that the
 constraint on syntax is productive, not merely restrictive.
 
 **Open question 2 (type-system-evolution.md §5.2).** This proposal's
-direct answer: the metadata DSL is acceptable indefinitely for 1.0, and
-TS-A7's delivery covers the friction that matters most. The question
-should be re-examined post-1.0 if the evidence trigger in §9 fires.
+direct answer: the metadata DSL is the right form for 1.0 — kept, and
+refined by the `s"…"` prefix (§H12e), which retires the escaping friction
+and serves 0009's value-position references without leaving the string
+form. TS-A7 covers the tooling friction. Only H12c (arbitrary *computed*
+type values) stays deferred post-1.0.
 
 **0009 (structural contracts).** *This interaction has changed since both
-documents were first drafted.* 0009 no longer posits separate "contract
-strings"; it reuses the **type** vocabulary — reifying named type aliases
-into runtime specs via `as-spec` (with value-pattern predicates living
+documents were first drafted, and is now resolved.* 0009 no longer posits
+separate "contract strings"; it reuses the **type** vocabulary — reifying
+named type aliases into runtime specs (with value-pattern predicates living
 outside the type world). That puts type expressions in **value** positions
-for the first time, which is exactly the trigger for **H12e** above. So the
-string-vs-embedded decision and 0009's contract surface are now **coupled**,
-not independent: keep strings for 1.0 (0009 ships `as-spec`, no new syntax);
-adopt H12e post-1.0 to de-magic the value-position crossing. No conflict —
-but no longer orthogonal.
+for the first time, which is exactly the trigger for **H12e** above. The two
+decisions are **coupled** and now aligned: the value-position surface is the
+**`s"…"` prefix** (§H12e), a string-form refinement adopted at 1.0 — so both
+documents land on *keep, and minimally refine, the string DSL*. 0009 ships
+the reification mechanism; `s"…"` is its surface; no reserved bracket, no
+embedded form, no conflict.
 
 **0011 (typeclasses without classes).** Structural constraint annotations
 (`<(a, a) => a -> a -> a`) are part of the type DSL string — and shipped
@@ -356,77 +370,77 @@ H12d is not ruled out permanently. If H12c becomes worth doing (see §9),
 H12d is a natural surface form on top of it. As an independent option, it
 is not viable.
 
-### H12e — dedicated, reserved type-expression brackets (reopened by 0009)
+### H12e — de-magicking value-position references: the `s"…"` prefix (adopted)
 
 This option is **not** in the original H12 set. It is surfaced by
 [0009](0009-structural-contracts-validation.md), which needs to reference
-type aliases from value positions (`as-spec(:Server)` reifies a named type
-into a runtime spec). That bare-symbol-in-a-magical-function surface is
+type aliases from value positions (to reify a named type into a runtime
+spec). A bare-symbol-in-a-magical-function surface (`as-spec(:Server)`) is
 unsatisfying: nothing on the page signals that `:Server` crosses into the
-type world. H12e is the de-magicked surface — a **reserved** bracket pair,
-used *exclusively* for type expressions (explicitly **not** the
-user-definable idiot brackets `⟦⟧`; glyph and ASCII fallback are an open
-sub-decision), into which the lexer **mode-switches the existing type
-sub-grammar** (`parse_type`) and emits a `Type` node directly in the main
-AST:
+type world.
+
+**The adopted surface is the `s"…"` prefix** — one new variant on the
+lexer's existing string-prefix family (`c"`/`r"`/`t"`,
+`src/syntax/rowan/lex.rs:36-43`). Like `t"…"` (the ZDT literal) it lexes
+with interpolation **off** and parses its content to a typed value at parse
+time — here a `Type`, via `parse_type`:
 
 ```
-` { type: ⟬ Server -> number ⟭ }          # annotation position: checker reads the Type
-config: load-config validate(⟬ Server ⟭)   # value position: compile-time-reified spec
-shape:  ⟬ {host: string, port: number} ⟭   # inline; no {{..}} escaping — not inside a string
+` { type: s"Server -> number" }            # annotation: checker reads the Type
+config: load-config validate(s"Server")    # value: compile-time-reified spec
+shape:  s"{host: string, port: number}"    # inline; interpolation off, no {{..}}
 ```
 
-**Why H12e threads between the two roads this proposal rejected.** It takes
-the value-reference benefit of H12c and the inline-syntax benefit of H12d
-*without* either's fatal flaw:
+In annotation position the checker reads the `Type` and it erases; in value
+position the node is lowered by the same compile-time reification 0009
+specifies (resolve the alias, lower the `Type` to predicate core). 0009's
+`as-spec` is the explicit transform `s"…"` feeds, and consumers auto-lower a
+literal, so `validate(s"Server")` needs no wrapping call.
 
-- **Not H12d's phasing problem.** Idiot brackets desugar to *runtime
-  function applications* the checker cannot see. A **reserved** bracket is
-  not a function call — it emits a `Type` node at **parse time**, exactly as
-  a `"…"` type string is re-parsed into a `Type` today, only inline.
-  Checker-visible in annotation position; the type sub-language never reaches
-  the STG VM.
-- **Not H12c's termination problem.** The bracket body is the **fixed type
-  sub-grammar**, not arbitrary eucalypt — it is *parsed*, never *evaluated*.
-  There is no user computation to diverge. In value position the node is
-  lowered by the same compile-time reification 0009 specifies for `as-spec`
-  (resolve the alias, lower the `Type` to predicate core), so it stays a
-  bounded, terminating compile step.
+**Why a prefix, not the reserved bracket.** An earlier draft of this
+section proposed a dedicated *reserved* bracket pair (`⟬Server⟭`) the lexer
+would mode-switch into the type sub-grammar. It reached the same parse-time
+`Type` node, but at a real price: a new core delimiter carved out of
+bracket-space, a sub-parser wired into the main grammar (LALRPOP/Rowan),
+plus tree-sitter, LSP, and editor-mode work — and it **abandons the string
+boundary this document concludes to keep**. The `s"…"` prefix reaches the
+*identical* parse-time `Type` node for one `StringPrefix` variant and **no**
+new grammar, and the type content stays a string, so TS-A7's span-indexed
+alias tooling keeps working unchanged. The prefix dominates the bracket on
+every axis but raw visual distinctiveness — not worth a grammar carve-out.
+
+**Not H12d's phasing problem, not H12c's termination problem.** `s"…"` is
+not an idiot bracket: it is not a runtime function application the checker
+cannot see — it emits a `Type` at **parse time**, exactly as a `"…"` type
+string is parsed today, only marked and interpolation-free. And its body is
+the **fixed type sub-grammar**, *parsed* never *evaluated*, so there is no
+user computation to diverge (the hazard that defers H12c). A
+*runtime-computed* type name — the genuinely H12c-shaped case — stays out of
+scope and deferred; `s"…"` is a literal.
 
 **What it buys.** One surface across both contexts (annotation *and* value
-reference); the `{{..}}` escaping (friction point 1, ~19 % of prelude
-annotations) disappears because record braces are no longer inside a string;
-full first-class tooling — highlighting, structural editing, accurate error
-spans — for free because the type expression lives in the main syntax tree
-rather than behind TS-A7's string-offset arithmetic; `as-spec(:Server)`
-de-magicked to `⟬Server⟭`; and the 0009 asymmetry made **visible on the
-page** — inside the brackets is the type world (dual-use, structural),
-outside is the value world (`refine { … }`, runtime-only predicates).
+reference); `{{..}}` escaping (friction point 1, ~19 % of prelude
+annotations) gone, because record braces are no longer interpolation sites;
+TS-A7 tooling retained, because the content is still a string; the
+bare-symbol magic removed; and the 0009 asymmetry visible on the page —
+inside `s"…"` is the type world (dual-use, structural), outside is the value
+world (`refine { … }`, runtime-only predicates).
 
-**The honest cost.** H12e **is new core syntax** — the one thing this
-language most resists, and the reason every other surface construct
-(`cond[…]`, structural constraints, contracts) has been routed through
-existing channels. It needs: a reserved glyph pair with an ASCII fallback
-that collides with neither idiot brackets nor the operator lexicon;
-integration of `parse_type` as a sub-parser invoked at the delimiter in the
-main grammar (LALRPOP/Rowan), plus tree-sitter, LSP, and the Emacs/VS Code
-modes; and a migration story (the string form is retained for back-compat
-and stays valid — coexistence like TypeScript's JSDoc-vs-`.ts`, except here
-the **string** is the legacy form). This is a genuine, bounded commitment,
-not a free ride — but unlike H12c/H12d it is not *blocked* by a phase or
-termination hazard; the barrier is purely the cost and the conservatism
-budget.
+**The honest cost.** `s"…"` *is* new surface syntax — the thing this
+language most resists — but the smallest possible form of it: a new
+string-prefix letter on a channel that already carries three
+(`c"`/`r"`/`t"`), with no new grammar, operator, or keyword, so it sits
+within non-negotiable #1. The plain `"…"` annotation form is retained for
+back-compat. It is a bounded commitment (a lexer variant + the compile-time
+reification 0009 already specifies + tree-sitter/LSP prefix recognition),
+not the grammar-integration project the bracket would have been.
 
-**Recommendation.** Defer to **post-1.0**, but note the de-risking: 0009
-ships the *mechanism* (compile-time reification behind `as-spec`) with **no
-new syntax**, and H12e is merely a cleaner *surface* over that same
-mechanism. So the surface can be added later without re-architecting — the
-bracket lowers to exactly what `as-spec` already lowers to. The sequencing
-is therefore: ship `as-spec` (0009, 1.0-compatible, no syntax) → adopt H12e
-post-1.0 once the glyph and grammar-integration sub-questions are settled →
-`as-spec` becomes the explicit/desugared form the bracket sugar expands to.
-This is the path that respects both the conservatism budget *and* the
-maintainer's view that the magical surface should not be the permanent one.
+**Recommendation.** Adopt at **1.0**, as a refinement of the string DSL —
+not a deferral. 0009 ships the *mechanism* (compile-time reification) and
+`s"…"` is its surface; the two are one change, and `as-spec` is the explicit
+form the literal feeds. The reserved bracket is **rejected** — cost without
+benefit over the prefix. H12c (arbitrary *computed* type values) remains
+deferred on the termination hazard.
 
 ---
 
@@ -483,14 +497,16 @@ coverage question, not an architecture question.
    JSON Schema that emits `types:` blocks dynamically), *or* (b) a
    measured count of `{{..}}` escapes in user-authored code (outside the
    prelude) exceeding 20 % of type annotations over more than 50
-   annotation sites. If either trigger fires, H12c should be re-evaluated
-   as a post-1.0 Stage C item. *Status: trigger (a) has plausibly fired* —
-   [0009](0009-structural-contracts-validation.md)'s `as-spec` is exactly
-   "reference type aliases as values". The right response, however, is
-   **H12e** (reserved type brackets), **not** H12c (arbitrary type values):
-   H12e meets the value-reference need without the termination hazard that
-   defers H12c, because its bracket body is the parsed type sub-grammar, not
-   an evaluated expression.
+   annotation sites. *Status: the value-**reference** need (trigger a) has
+   fired* — [0009](0009-structural-contracts-validation.md) references type
+   aliases as values — *and is met at 1.0 by the `s"…"` prefix* (§H12e), a
+   string-form refinement, **not** by H12c. The distinction is load-bearing:
+   `s"…"` is a parsed type **literal**, so it carries no termination hazard;
+   **H12c proper** — *computed* type values from arbitrary expressions
+   (including a runtime-resolved alias name) — remains deferred on exactly
+   that hazard, to be re-evaluated post-1.0 if a concrete codegen need
+   appears. Trigger (b) is dissolved: `s"…"` retires the `{{..}}` escape it
+   measures.
 
 ---
 
