@@ -13,11 +13,17 @@ emits warnings, and is discarded — the same untyped core proceeds to STG
 compilation unchanged (`src/bin/eu.rs:123-146`). Eucalypt therefore pays the
 full cost of designing, specifying and implementing a gradual type system and
 banks **none** of its runtime value. This proposal argues for closing that gap:
-**use** the synthesised types to drive code generation. The wins are concrete —
-unbox numeric pipelines (H11a, ~5–10× on tight arithmetic per the evolution
-doc), dispatch typed arithmetic straight to its intrinsic with no tag check
-(H11f), flatten `IO` bind-chains (H11c), and fold away branches discriminated by
-literal types (H11e). This is what converts the type system from a correctness
+**use** the synthesised types to drive code generation. **Coverage depends on the
+workload.** Eucalypt's primary use — *generating* JSON/YAML — works with
+eucalypt-native data (literals, interpolations, computed blocks) that the checker
+*synthesises concrete types for*, so the optimisations have real coverage there;
+the *import-transform* case is `any`-dominated and depends on contracts
+([0009](0009-structural-contracts-validation.md)) concretising data at ingress.
+And the wins are honestly an **aggregate of modest dispatch/branch eliminations**
+for generation — typed-intrinsic dispatch (H11f), literal-symbol branch folding
+(H11e), and specialising the per-interpolation value→string dispatch — with
+numeric unboxing (H11a, the ~5–10× headline) the *narrower* case, since generation
+is string/block-heavy, not arithmetic-heavy. This is what converts the type system from a correctness
 aid into a performance asset, and it is the strategic answer to "why invest in
 types at all" for a rendering tool. It is a **Stage-C fork**: large, post-1.0,
 and gated on two maintainer decisions — whether runtime performance matters
@@ -61,6 +67,15 @@ The same shape recurs for IO: a `{ :io … }` block desugars to a chain of
 walks one node at a time (`src/driver/io_run.rs:1217-1244`). Every step allocates
 a constructor that exists only to be interpreted away.
 
+And — the case that matters most for *generation* — every `"{x}"` interpolation
+converts its value to a string through a runtime `match` on the `Native` tag
+(`src/eval/stg/string.rs:125-135`: `Sym → resolve`, `Str → as_str`, `Num →
+format!`, …). A synthesised type for `x` could compile straight to the selected
+arm, skipping the dispatch. The win per interpolation is modest — the `format!`
+and the string allocation it guards dominate and remain — but templating is
+interpolation-*dense*, so this is the most *pervasive* (if not the largest)
+type-directed win in generation.
+
 ### The opportunities (H11 sub-items)
 
 The evolution doc's H11 enumerates six candidates. The recommended package
@@ -69,10 +84,11 @@ them honestly:
 
 | Item | What it does | Verdict |
 |---|---|---|
-| **H11a** unboxing | Compile a proven `number`-typed pipeline to a primitive-arithmetic path skipping box/force/dispatch. STG already has `Native` (`syntax.rs:37`). | **Take.** Largest single win; ~5–10× on tight arithmetic per the doc. |
+| **H11a** unboxing | Compile a proven `number`-typed pipeline to a primitive-arithmetic path skipping box/force/dispatch. STG already has `Native` (`syntax.rs:37`). | **Take, but narrow.** ~5–10× on tight arithmetic — yet generation is string/block-heavy, so this is the *least*-covered win, not the lead. |
 | **H11f** direct intrinsic dispatch | A typed `+`/`<`/`min`/`max`/`length` compiles straight to its intrinsic with the tag `case` of `binary_wrapper` removed. As of 0.7.0, `min` and `max` carry structural operator constraints (`"<(a, a) => a → a → a"`, `">(a, a) => a → a → a"`, `lib/prelude.eu:916,891`), expanding the set of annotated numeric targets for this optimisation. | **Take.** Cheapest; complements H11a (unboxing is what makes the BIF call legal without re-checking). |
 | **H11c** IO flattening | Collapse a statically-all-`IO(T)` bind-chain into a direct-style tagged sequence, cutting one heap constructor per step (`io.rs`, `io_run.rs`). | **Take.** Allocation win on IO-heavy renders; ties to [0005](0005-generational-gc.md). |
 | **H11e** dead-branch elimination | `if(x = :foo, A, B)` with `x : LiteralSymbol(:foo)` reduces to `A`. | **Take.** Nearly free; synergises with literal types (H16). Must key on the *brancher set* (`if`/`then`/`cond`/`‖`), not the name `if` — see H15's "branching is not syntax". |
+| **(new)** interpolation conversion | Specialise the per-`"{x}"` value→string dispatch (`string.rs:125`) to the arm the synthesised type selects. | **Take.** *Most pervasive* generation win (templating is interpolation-dense), though modest per instance — `format!`/alloc dominates. |
 | **H11b** lens fusion | Compose `at(:a) ∘ at(:b)` to a direct two-step access instead of allocating an intermediate metadata-carrying function. | **Drop (defer).** Elegant, but lens-heavy code is rare; the doc parks it. |
 | **H11d** block field offset | Compile `b.x` on a known closed record to a fixed-offset read. | **Drop.** Needs a parallel typed-block representation; most eucalypt blocks are dynamically constructed cons-lists (ADR-001), so the runtime fork rarely pays. |
 
