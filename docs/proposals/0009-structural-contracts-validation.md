@@ -107,7 +107,7 @@ config: imported-data validate(:Server)   # blame points at the source, not a de
 server(raw): raw
 ```
 
-The high-value integration is making the ingress functions *contract-aware* — an optional shape argument on `parse-as`, the import path (`src/import/`), and `parse-args` — so users get validation without remembering to call `validate`. Because `parse-args` already coerces values against the `defaults` block (`lib/prelude.eu:2172-2174`, via `parse-as`) and raises on unknown options, contract-checking its output extends behaviour it half-performs today.
+Integration must respect **fixed arity** — eucalypt has no optional or variadic arguments, so there is no "add a shape argument to `parse-as`". Two routes instead. **Composition is the default and needs no new function:** because `validate` returns its data unchanged on success, it threads straight through a pipeline — `raw-string parse-as(:json) validate(:Server)`. **A fused form is justified only where it buys better blame:** a separate `validate` step cannot see the parse's *source span*, so to carry "this came from `config.json` line 12" into the failure we add a *new, distinctly-named* fixed-arity function (e.g. `parse-checked(format, shape, string)` — arity 3), never an overloaded `parse-as`. For CLI, no new arity is needed at all: the contract rides in the `defaults` block's field metadata that `parse-args` already coerces against (`lib/prelude.eu:2172-2174`, via `parse-as`; it already raises on unknown options), so validating its output extends behaviour it half-performs today.
 
 ### Structural, not nominal; and semantics
 
@@ -145,7 +145,7 @@ It must **not** become the H13b sound-cast road [0002] rejects: specs fire only 
 - **Structured blame** — extend `src/eval/error.rs` (which already builds `codespan_reporting` diagnostics with `help:` hints and "available keys" suggestions, `:5, 277-287`) with a `ContractViolation` variant carrying failed path, expected shape, actual kind, and ingress span. The make-or-break work (below).
 - **Registry** — name resolution over the existing alias/`types:` mechanism; no new global state if alias references suffice.
 - **`gen`** — sample-data generation for the structural/type-DSL subset; `with-gen` for bare predicates. Pairs with [0003]; can land later.
-- **Ingress integration** — optional shape arguments on `parse-as`, `src/import/`, and `parse-args`; behaviour-preserving when omitted.
+- **Ingress integration** — primarily *composition* (`parse-as … validate …`; no new function); optionally a *new, distinctly-named* fixed-arity fused form (e.g. `parse-checked`) where carrying the ingress source span into blame matters; `parse-args` reads contracts from the `defaults`-block metadata it already coerces against. No optional/variadic arguments — eucalypt is fixed-arity.
 - **No STG/GC/typecheck-core change.** Specs are ordinary evaluated core; erasure and the [0002] boundary guarantee are untouched.
 
 Sequencing: promote `match?` → `valid?` and land `validate` + the path-carrying engine + structured blame first (self-contained, testable with `//=`); add `conform` + the `contract:`/`check:` annotation; wire ingress integration; add `gen` (with [0003]); fold in H7 refinements as they arrive.
