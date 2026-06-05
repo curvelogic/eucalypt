@@ -87,7 +87,29 @@ The gradual split falls out cleanly: **everything is a runtime spec; the subset 
 
 ### Named specs & a registry
 
-The registry need not be new machinery: named bindings, the `types:` metadata block, and 0.7.0's first-class alias references already give one. A spec can be **named** and **referenced** by symbol (`:Server`), and named specs compose. The proposal formalises that a referenced name resolves **uniformly** whether it is used as a static type, a runtime contract, or a match/dispatch pattern — the one-name-three-consumers property is what makes unification pay.
+The registry need not be new machinery: named bindings, the `types:` metadata block, and 0.7.0's first-class alias references already give one. A spec can be **named** and **referenced** by symbol (`:Server`), and named specs compose. The proposal formalises that a referenced name resolves **uniformly** whether it is used as a static type, a runtime contract, or a match/dispatch pattern — the one-name-three-consumers property is what makes unification pay:
+
+```eu,notest
+# define once — a named shape in the type-DSL vocabulary
+{ types: { Server: "{{ host: string, port: number, replicas: number }}" } }
+
+# use as a TYPE (static, advisory — works today)
+` { type: "Server -> number" }
+replica-count(s): s.replicas
+
+# use as a CONTRACT (runtime, with blame — what this proposal adds)
+config: load-config validate(:Server)
+```
+
+The `Server` alias is the single source of truth: the annotation references it as a capitalised identifier resolved through the checker's alias map (`src/core/typecheck/parse.rs:632-643`; `docs/guide/type-checking.md:353` shows a `types:` alias used inside a `type:` string), and `validate(:Server)` resolves the *same* name to the *same* `Type` and runs it as a runtime predicate-with-blame. **The duality is an asymmetry, not free interconversion.** A type-DSL shape *lowers* to a predicate, so it is genuinely dual-use; a bare predicate does **not** generally *lift* to a type, so `match?` value-patterns and `check:` predicates are **runtime-only**, with no static reading. "Define once, use as both" therefore means precisely: *write the structural shape in the type DSL once* — one alias serving the checker and the contract engine — while arbitrary predicates stay in the runtime tier. A constraint the DSL cannot name (e.g. "port in `1..65535`", absent any range refinement — H7 adds only `Positive`/`Nonzero`) is expressed as a runtime-only `check:` predicate alongside the dual-use structural alias:
+
+```eu,notest
+` { type: "Server -> Server"                                              # structural: dual-use
+    check: [ [((_.port > 0) ∧ (_.port < 65536)), "port out of range"] ] } # range: runtime-only
+server(raw): raw validate(:Server)
+```
+
+The status quo this closes: **today there is no single definition usable as both** — `match?` takes value-patterns, the checker takes type strings, and the two never meet. Unifying them on the named-alias is the core of this proposal.
 
 ### Surfaces (metadata-first, conservative)
 
