@@ -117,14 +117,36 @@ The status quo this closes: **today there is no single definition usable as both
 
 ### One canonical form — why the type↔contract relationship is not circular
 
-Three arrows now relate types, contracts and values, which can look circular: `as-spec` (type → contract value), `type-def` (a declaration → the *inferred* type of its value, `docs/guide/type-checking.md:727-746`), and the dual-use alias (one shape → type *and* contract). It is a **DAG**, not a cycle, because the arrows act on different objects and the only back-arrow is **lossy**. A contract is a *value* (a predicate); `type-def` over a contract value yields the predicate's *function* type (`a -> bool`) — **not** the shape it validates — so `contract → type-def` cannot reconstruct a shape and the loop never closes. The shape lives only in its **canonical definitional form**: a type-DSL string (`types: { Server: … }`) or a canonical value whose inferred type is named (`type-def`). Everything else is a **forward projection** of that one form — the checker reads it as a type; `as-spec` lowers it to a contract.
+Three arrows now relate types, contracts and values, which can look circular: `as-spec` (type → contract value), `type-def` (a declaration → the *inferred* type of its value, `docs/guide/type-checking.md:727-746`), and the dual-use alias (one shape → type *and* contract). It is a **DAG**, not a cycle, because the arrows act on different objects and the only back-arrow is **lossy**. A contract is a *value* (a predicate); `type-def` over a contract value yields the predicate's *function* type (`a -> bool`) — **not** the shape it validates — so `contract → type-def` cannot reconstruct a shape and the loop never closes. The shape lives only in its **canonical definitional form** — the structural shape itself — supplied either as a type-DSL string (`types: { Server: … }`) or derived from a canonical value whose inferred type is named (`type-def`). Everything else is a **forward projection** of that one form — the checker reads it as a type; `as-spec` lowers it to a contract.
 
-Two "define once, get both" routes therefore fall out with **no new mechanism**:
+Two "define once, get both" *spellings* of that one canonical form therefore fall out with **no new mechanism**:
 
-- **type-string canonical:** `types: { Server: "…" }` → static type + `as-spec(:Server)` contract.
-- **value canonical (example-as-schema):** a canonical instance under `` ` { type-def: "Point" } `` → inferred type + `as-spec(:Point)` contract. The pipeline is value → *(infer)* → type → *(`as-spec`)* → contract — forward and lossy, never a loop. Writing the example *is* writing the schema.
+- **type-string spelling:** `types: { Server: "…" }` → static type + `as-spec(:Server)` contract.
+- **value spelling (example-as-schema):** a canonical instance under `` ` { type-def: "Point" } `` → inferred type + `as-spec(:Point)` contract. The pipeline is value → *(infer)* → type → *(`as-spec`)* → contract — forward and lossy, never a loop. Writing the example *is* writing the schema.
 
 The discipline that *keeps* it acyclic is two prohibitions: **never lift an arbitrary predicate to a type** (undecidable, and self-referential if the predicate names the type — so predicate-built contracts stay runtime-only, per the asymmetry above); and the compile-time reifier must **reject the one real cycle** — reifying a `type-def` alias *inside the very declaration that defines it* (`origin: … validate(as-spec(:Point))` under `` ` { type-def: "Point" } ``), where the alias's type depends on a value that depends on the alias.
+
+### Decorating a shape with runtime predicates
+
+The dual-use canonical form above is **structural-only**, and unavoidably so: a *type alias* cannot carry an arbitrary predicate like "`port` in `1..65535`" — types are erased, decidable and advisory, so there is nothing to attach a runtime check *to*. Worse, the `check:` predicates on a declaration (below) are stranded on *that binding*; they do not travel when the shape is reused via `as-spec(:Server)` elsewhere. So the reusable named shape, as described so far, validates structure but not refinements — the gap that makes a structural mirror less than a real contract.
+
+The resolution keeps the asymmetry honest: **predicates live in *spec values*, not in type aliases.** A value-pattern already carries predicates (`match?` applies unsaturated functions), so the only addition is a combinator — `refine` / `and-spec` — that conjoins the dual-use structural core with a predicate-carrying value-pattern into one reusable spec **value**:
+
+```eu,notest
+{ types: { Server: "{{ host: string, port: number, replicas: number }}" } }   # structural core (dual-use)
+
+# a named spec VALUE: structure + predicates, travels wherever it is used
+valid-server: as-spec(:Server) refine { port: (_ > 0) ∧ (_ < 65536), replicas: (_ >= 1) }
+```
+
+`valid-server` carries structure *and* predicates and is reusable (`validate(valid-server, x)`). The static reading it keeps is the structural core (`Server`); the predicate layer is **runtime-only** — not a defect but the asymmetry applied consistently, and exactly Clojure spec's situation (`s/and pos-int? …`: spec predicates are not types). If you want **the name itself** to carry both — so a bare `as-spec(:Server)` already includes the refinements — co-locate them beside the alias in metadata, which the checker ignores and the reifier reads:
+
+```eu,notest
+{ types:       { Server: "{{ host: string, port: number, replicas: number }}" }
+  refinements: { Server: { port: (_ > 0) ∧ (_ < 65536) } } }
+```
+
+Either way the structure is defined once (dual-use); the predicates are a runtime-only refinement layer that is *bound into a named value* (or co-located on the name) so it travels — never an attempt to push predicates into the erased type, which the asymmetry forbids.
 
 ### Surfaces (metadata-first, conservative)
 
@@ -179,7 +201,8 @@ It must **not** become the H13b sound-cast road [0002] rejects: specs fire only 
 
 - **Spec engine — generalise `match?`, do not replace it.** Lift the existing recursive `mv?`/`mb?`/`ml?` (`lib/prelude.eu:538-553`) into a `check(spec, value) -> Result` that (a) accepts a parsed `Type` (from `parse.rs`) as well as a value-pattern, and (b) accumulates a path + reason rather than collapsing to a bool. Medium size; the interpretive core already exists and is tested.
 - **`as-spec` reifier — the one type→value bridge.** Resolve a *literal* alias name (or inline type string) against the alias map and lower the resolved `Type` to a spec value. Preferably a **compile-time** pass (alias resolution + lowering to core), so it runs independently of `--type-check` and retains no runtime type-DSL parser; this is the single new crossing between the type and value worlds, and the only place a bare symbol is interpreted as anything but a literal value. Everything downstream is ordinary core.
-- **Prelude surface** — `validate`, `valid?` (= promoted `match?`), `conform`, and the refinement predicates (`positive?`, `non-empty?`, …). Small.
+- **Prelude surface** — `validate`, `valid?` (= promoted `match?`), `conform`; the spec combinators `refine`/`and-spec` (conjoin a structural core with predicate refinements — Clojure spec's `s/and`) and `or-spec` (union); and the refinement predicates (`positive?`, `non-empty?`, …). Small; combinators are ordinary functions over spec values.
+- **Co-located refinements (optional)** — `as-spec` reads a `refinements: { Name: { field: pred } }` sibling of `types:` so a named shape carries runtime predicates that the checker ignores and the reifier conjoins. Small; opt-in.
 - **Structured blame** — extend `src/eval/error.rs` (which already builds `codespan_reporting` diagnostics with `help:` hints and "available keys" suggestions, `:5, 277-287`) with a `ContractViolation` variant carrying failed path, expected shape, actual kind, and ingress span. The make-or-break work (below).
 - **Registry** — `as-spec` name resolution over the existing alias/`types:` mechanism; no new global state if alias references suffice.
 - **`gen`** — sample-data generation for the structural/type-DSL subset; `with-gen` for bare predicates. Pairs with [0003]; can land later.
