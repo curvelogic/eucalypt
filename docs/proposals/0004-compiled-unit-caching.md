@@ -270,7 +270,7 @@ threat-modelled — only if exact-re-run caching is wanted.
 - **Lost cross-unit inlining (high).** The monolith inlines across the
   prelude/user boundary; separating units makes inline/DCE more conservative (a
   compiled prelude can't be DCE'd against an unknown user). Mitigation: carry
-  inline-able defs in the interface (GHC unfoldings); the latency win should
+  inline-able defs *and strictness signatures* in the interface (GHC's `.hi` carries both); the latency win should
   dominate, but it is the benchmark to watch.
 - **Cache/server security (if §3/§4 pursued).** See the threat model; the
   embedded-prelude path avoids it for the dominant cost.

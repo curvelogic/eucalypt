@@ -162,4 +162,48 @@ independent of F1.
 
 ---
 
+## F4 — Unify the thunk/update/strictness heuristics behind one demand annotation
+
+- **Priority:** P2 / medium (code-cleanliness refactor; foundation for 0006's analysis; complements F3)
+- **Type:** refactor / architecture
+- **Status:** open
+
+**Description.** Eucalypt has ~half a dozen separate, hand-rolled mechanisms that
+all decide *`Value`-vs-`Thunk` / skip-`Update`* from facets of one question — *is
+this binding used-at-most-once / strict / already-WHNF?*:
+
+| Mechanism | Decides | Where |
+|---|---|---|
+| `LambdaForm::Value` vs `Thunk` | the underlying distinction | `src/eval/memory/syntax.rs:747` |
+| per-intrinsic `strict_args` | hand-listed args to force before a BIF | `src/eval/intrinsics.rs:15,27` |
+| per-intrinsic `single_use_args` | hand-listed args to compile as `value` | `src/eval/machine/intrinsic.rs:124` |
+| `suppress_update`/`suppress_next_update` | bespoke `IF`→`Case`→`Branch` threading to skip `Update` | `src/eval/machine/vm.rs:276-431`, `cont.rs:49` |
+| `is_whnf` | "already a value" check | `src/eval/memory/syntax.rs:284` |
+| `--suppress-updates` | global call-by-name escape hatch | `src/eval/stg/mod.rs:286` |
+
+Two are *per-intrinsic hand lists*; one is bespoke threading for `IF` alone.
+Unify them behind **one demand annotation per binding** (cardinality + strictness
++ WHNF) as the single representation the `Value`-vs-`Thunk` and update-suppression
+decisions consult. The existing heuristics populate it today; a real demand
+analysis ([0006](0006-strictness-analysis.md)) populates it more completely later.
+
+**Independently valuable** (before any analysis): one decision point instead of
+six — testable and consistent. The strictness/update analogue of F3's registry
+unification.
+
+**Interaction with separate compilation ([0004](0004-compiled-unit-caching.md)).**
+The demand annotation on an *exported* binding is a **strictness signature** a
+dependent needs to optimise cross-unit calls — exactly what GHC ships in `.hi`. So
+this annotation is another field of the **Unit Interface** (F3). *Not* a wall:
+unlike operators, a missing signature only costs optimisation (the boundary
+degrades to conservative-but-correct).
+
+**References.** the table above; `src/eval/stg/compiler.rs:924-952` (`single_use`
+propagation); `src/eval/stg/boolean.rs:133-159` (`If` `single_use_args`).
+
+**Relationships.** foundation for 0006; complements F3 (its annotation is interface
+payload for 0004); subsumes the listed heuristics; independent of F1.
+
+---
+
 <!-- Add further high-priority fixes below as the review surfaces them. -->

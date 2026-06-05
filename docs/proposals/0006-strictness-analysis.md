@@ -26,6 +26,16 @@ result connects directly to 0005 (fewer thunks mean a smaller nursery working
 set) and is partly superseded, for annotated code, by 0007 (type annotations
 already imply strictness in their arguments).
 
+There are in fact **two** wins here, and the second is as important as the first.
+Beyond the *new coverage* the analysis brings, it gives a **principled home for
+the ~half-dozen disparate, hand-rolled mechanisms** eucalypt already uses for
+facets of the same question — `single_use`, per-intrinsic `single_use_args` and
+`strict_args`, the `IF` `suppress_update` threading, `is_whnf`: a real analysis
+derives them all as **one demand annotation per binding**. That unification pays
+off *even before* the analysis is sophisticated — introduce the single annotation,
+have the existing heuristics populate it, then progressively replace them — so it
+is tracked as a standalone cleanup ([0000](0000-priority-fixes.md) F4).
+
 ---
 
 ## Motivation
@@ -291,6 +301,20 @@ analysis is type-independent: it works on unannotated eucalypt code, which is
 the common case for configuration scripts and the prelude.  The two should be
 scheduled sequentially: demand analysis in 0.9, type-directed compilation
 post-1.0 as per the README portfolio.
+
+**[0004](0004-compiled-unit-caching.md) — separate compilation.** The demand
+annotation on an *exported* binding is a cross-unit contribution: to keep
+optimising a *call* to an imported function (force a strict argument eagerly
+rather than thunking it), a dependent needs that function's **strictness
+signature** — exactly what GHC carries in its `.hi` interface files. So the
+unified demand annotation ([0000](0000-priority-fixes.md) F4) is another field of
+the **Unit Interface** (F3) that 0004's separate compilation builds and seeds.
+Crucially this is **not a wall**: unlike operators (which mis-parse without their
+fixity), a missing strictness signature only costs *optimisation* — the boundary
+degrades to conservative (lazy) but correct. The embedded prelude should therefore
+ship its bindings' strictness signatures so user code still optimises prelude
+calls; analysis runs bottom-up over the import DAG, with cross-unit mutual
+recursion the residual hard case.
 
 ---
 
