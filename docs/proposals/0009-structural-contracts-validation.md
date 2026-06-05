@@ -139,14 +139,9 @@ The resolution keeps the asymmetry honest: **predicates live in *spec values*, n
 valid-server: as-spec(:Server) refine { port: (_ > 0) ∧ (_ < 65536), replicas: (_ >= 1) }
 ```
 
-`valid-server` carries structure *and* predicates and is reusable (`validate(valid-server, x)`). The static reading it keeps is the structural core (`Server`); the predicate layer is **runtime-only** — not a defect but the asymmetry applied consistently, and exactly Clojure spec's situation (`s/and pos-int? …`: spec predicates are not types). If you want **the name itself** to carry both — so a bare `as-spec(:Server)` already includes the refinements — co-locate them beside the alias in metadata, which the checker ignores and the reifier reads:
+`valid-server` carries structure *and* predicates and is reusable (`validate(valid-server, x)`). The static reading it keeps is the structural core (`Server`); the predicate layer is **runtime-only** — not a defect but the asymmetry applied consistently, and exactly Clojure spec's situation (`s/and pos-int? …`: spec predicates are not types).
 
-```eu,notest
-{ types:       { Server: "{{ host: string, port: number, replicas: number }}" }
-  refinements: { Server: { port: (_ > 0) ∧ (_ < 65536) } } }
-```
-
-Either way the structure is defined once (dual-use); the predicates are a runtime-only refinement layer that is *bound into a named value* (or co-located on the name) so it travels — never an attempt to push predicates into the erased type, which the asymmetry forbids.
+Deliberately, refinements are **not** attached to the type-alias name. The same object legitimately needs **different specs in different contexts** — a lenient ingress spec, a stricter export spec, a test spec — so binding one refinement set to `:Server` would conflate "the structural type" with "one particular contract on it". Instead `refine` produces *distinct, separately-named* spec values (`ingress-server`, `export-server`, …) that all share the single structural core via `as-spec(:Server)`. The type is defined once and stays a clean structural mirror; the contracts are as many as the contexts demand, each a named value — never an attempt to push predicates into the erased type, which the asymmetry forbids.
 
 ### Surfaces (metadata-first, conservative)
 
@@ -201,8 +196,7 @@ It must **not** become the H13b sound-cast road [0002] rejects: specs fire only 
 
 - **Spec engine — generalise `match?`, do not replace it.** Lift the existing recursive `mv?`/`mb?`/`ml?` (`lib/prelude.eu:538-553`) into a `check(spec, value) -> Result` that (a) accepts a parsed `Type` (from `parse.rs`) as well as a value-pattern, and (b) accumulates a path + reason rather than collapsing to a bool. Medium size; the interpretive core already exists and is tested.
 - **`as-spec` reifier — the one type→value bridge.** Resolve a *literal* alias name (or inline type string) against the alias map and lower the resolved `Type` to a spec value. Preferably a **compile-time** pass (alias resolution + lowering to core), so it runs independently of `--type-check` and retains no runtime type-DSL parser; this is the single new crossing between the type and value worlds, and the only place a bare symbol is interpreted as anything but a literal value. Everything downstream is ordinary core.
-- **Prelude surface** — `validate`, `valid?` (= promoted `match?`), `conform`; the spec combinators `refine`/`and-spec` (conjoin a structural core with predicate refinements — Clojure spec's `s/and`) and `or-spec` (union); and the refinement predicates (`positive?`, `non-empty?`, …). Small; combinators are ordinary functions over spec values.
-- **Co-located refinements (optional)** — `as-spec` reads a `refinements: { Name: { field: pred } }` sibling of `types:` so a named shape carries runtime predicates that the checker ignores and the reifier conjoins. Small; opt-in.
+- **Prelude surface** — `validate`, `valid?` (= promoted `match?`), `conform`; the spec combinators `refine`/`and-spec` (conjoin a structural core with predicate refinements into a distinct named spec value — Clojure spec's `s/and`) and `or-spec` (union); and the refinement predicates (`positive?`, `non-empty?`, …). Small; combinators are ordinary functions over spec values.
 - **Structured blame** — extend `src/eval/error.rs` (which already builds `codespan_reporting` diagnostics with `help:` hints and "available keys" suggestions, `:5, 277-287`) with a `ContractViolation` variant carrying failed path, expected shape, actual kind, and ingress span. The make-or-break work (below).
 - **Registry** — `as-spec` name resolution over the existing alias/`types:` mechanism; no new global state if alias references suffice.
 - **`gen`** — sample-data generation for the structural/type-DSL subset; `with-gen` for bare predicates. Pairs with [0003]; can land later.
