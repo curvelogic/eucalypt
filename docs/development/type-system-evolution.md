@@ -893,6 +893,20 @@ H12b/c/d unless evidence appears that the string DSL is genuinely
 slowing users down. The string form is honest about being a separate
 language and that honesty has value.
 
+**Update — resolved in [0013](../proposals/0013-type-dsl-embedding.md).**
+The evidence H12 asked for has appeared, and the surface is settled.
+[0009](../proposals/0009-structural-contracts-validation.md) needs to
+reference type aliases from **value** positions (reifying a named type into
+a runtime spec). The chosen surface is **not** a bracket but the **`s"…"`
+prefix** — one new variant on the existing string-prefix family
+(`c"`/`r"`/`t"`) that lexes interpolation-off and parses its content to a
+`Type` at parse time. It is a *refinement of H12a* — the type content stays
+a string, so the phase boundary and TS-A7 tooling are preserved — adopted
+at **1.0**, and it retires the `{{..}}` escaping noted against strings
+above. H12d (idiot brackets) stays rejected on the phasing problem; H12c
+(arbitrary *computed* type values) stays deferred on termination. See 0013
+§H12e.
+
 **Prior art.** Racket contracts (DSL inside `#:contract` annotations
 that uses Racket syntax), TypeScript JSDoc types in strings vs `.ts`
 embedded, Idris quoted types, Lean term/syntax distinction, Haskell
@@ -1309,8 +1323,9 @@ These are mutually substitutable; pick at most one or two.
   runtime gains
 - H8: replace the inference core with an MLsub/MLstruct-style algorithm
 - H6c: capability/determinism tracking for rendering
-- H12d: lightweight embedded type bracket pair (only if string DSL is
-  visibly costing)
+- H12d: embedded type bracket — **dropped**; value-position references
+  are served by the `s"…"` prefix instead (0013 §H12e), and idiot-bracket
+  embedding stays rejected on the phasing problem
 - H18: per-file profiles
 
 The choice between H8 and "keep extending the current core" is the
@@ -1349,7 +1364,8 @@ types (H7) require explicit "widen on contact" semantics.
 **Syntactic conservatism is a feature.** It forces every extension to
 either reuse existing syntax (blocks, symbols, strings) or live in
 metadata. This keeps the language small. The only marginal cost is
-DSL friction for type annotations (H12a fixes most of it).
+DSL friction for type annotations — H12a fixed the tooling side, and the
+`s"…"` prefix (0013) retires the escaping.
 
 ---
 
