@@ -1,33 +1,33 @@
-# 0004 — Compiled-unit & prelude caching (CLI latency)
+# 0004 — Compile latency: separate compilation, prelude embedding & (optional) caching
 
 - **Status:** Draft proposal for review
-- **Track:** B — performance, runtime & concurrency
-- **Classification:** Whitespace
-- **Suggested horizon:** 0.8
-- **Related:** TS-B7 (shipped 0.7.0, `src/driver/check.rs`), sibling proposals
-  [0014 — incremental, query-based core](0014-incremental-query-core.md),
-  [0005 — generational GC](0005-generational-gc.md)
+- **Track:** B — performance, runtime & (compiler) architecture
+- **Classification:** Stage-C-Fork (foundational; the prelude floor is Medium effort)
+- **Suggested horizon:** prelude floor 0.9; general units / cache post-1.0
+- **Related:** [0000](0000-priority-fixes.md) F1 (double compile), F2 (bracket bug), F3 (Unit Interface — the foundation); TS-B7 (shipped prelude *type* interface, `src/driver/check.rs`); [0014](0014-incremental-query-core.md) (incremental); [0005](0005-generational-gc.md) (GC, competes for deep-systems effort); [0018](0018-module-package-system.md) (content-addressing); the forthcoming alternative-backends proposal.
 
 ---
 
 ## Summary
 
-Every invocation of `eu` re-parses, re-cooks, and re-compiles the
-entire prelude from source, despite the prelude being a fixed,
-binary-embedded asset that never changes within a given build. For a
-CLI config tool used repeatedly in CI and scripts, this ~500–700 ms
-compile-pipeline overhead dominates wall-clock time for small queries on
-large data, dwarfing actual VM execution. In 0.7.0 the *type-side* of
-this gap was closed: the prelude type-summary cache (TS-B7) now caches
-the checker's `PreludeSummary` in `src/driver/check.rs` so that type
-checking never re-walks the prelude. This proposal is the compiled-*code*
-analogue — the remaining half of the caching story — and specifies a
-content-addressed on-disk cache of compiled units keyed on source hash,
-compiler version, and edition, serialising the `StgSyn` intermediate
-representation. It also describes a path toward a persistent process
-(daemon/server) as the more ambitious form of caching, and proposes
-eliminating the redundant headless→RENDER_DOC double-compilation that
-currently afflicts all plain-document programs.
+Every `eu` invocation re-parses, re-cooks and re-compiles the entire prelude from
+source — ~500–700 ms of fixed pipeline overhead that, for a CLI config tool run
+repeatedly in CI and scripts, dwarfs the actual work. The obvious fix — "cache
+the prelude's compiled form on disk" — does **not** work as the architecture
+stands, because there *is* no per-unit compiled artifact: the prelude, imports
+and CLI inputs are spliced into one monolith by `rebody` and compiled in a single
+pass. The real fix is therefore **separate compilation**: compile the prelude
+*independently* (against a unit interface), **embed the compiled prelude in the
+binary**, and link user code against it — eliminating prelude compilation at
+runtime with **no on-disk cache and no security surface**. This rests on the
+**Unit Interface** refactor ([0000](0000-priority-fixes.md) F3) and pairs with the
+**double-compile fix** ([0000](0000-priority-fixes.md) F1). An *optional* on-disk
+cache of the whole compiled evaluand (for exact re-runs) and a daemon/server
+remain possible, but are demoted, threat-modelled, and post-1.0 — they are not
+the win.
+
+> This proposal supersedes and absorbs the earlier "separate compilation & unit
+> linking" proposal (formerly 0021); separate compilation is the substance here.
 
 ---
 
@@ -35,9 +35,9 @@ currently afflicts all plain-document programs.
 
 ### Measured pipeline overhead
 
-The compile pipeline is constant regardless of query complexity. From
-`docs/development/deep-find-performance-baseline.md`, measured on a
-release build against ~1 MB fixtures:
+The compile pipeline is constant regardless of query complexity
+(`docs/development/deep-find-performance-baseline.md`, release build, ~1 MB
+fixtures):
 
 | Phase | Time |
 |-------|------|
@@ -45,422 +45,271 @@ release build against ~1 MB fixtures:
 | Cook | ~190 ms |
 | Eliminate | ~110 ms |
 | STG compile | ~90 ms |
-| **Total pipeline** | **~500–700 ms** |
+| **Total** | **~500–700 ms** |
 
-A simple lookup (`data.total`) on a 1.15 MB input runs the VM in 1 ms.
-The 500+ ms of compile overhead is therefore 500× the cost of the work
-itself. For a CI pipeline that invokes `eu` ten times over a large
-configuration tree, this is several seconds of wall-clock time that
-carries no information.
+A simple lookup on a 1.15 MB input runs the VM in ~1 ms — so ~500× of the
+wall-clock is compile overhead carrying no information, paid on *every* run.
 
-### Why the prelude is the ideal target
+### Why "cache the prelude" doesn't work today — and what does
 
-The prelude (`lib/prelude.eu`, ~2,264 lines) is included verbatim in
-every binary via `include_bytes!` in `src/driver/resources.rs:16`:
+The prelude (`lib/prelude.eu`, embedded via `include_bytes!`,
+`src/driver/resources.rs:16`) is fixed, self-contained, and the dominant cost
+(parse + cook over ~2,200 lines). It *looks* like an ideal cache target — and
+TS-B7 already caches its **types** (`PreludeSummary`, `src/driver/check.rs:44`).
+But the *code* side cannot be cached the same way, because **the prelude has no
+independent compiled form**: every input is spliced into one core expression by
+`rebody` (`src/core/expr.rs:548`, `:1073`) *before* STG compilation, and
+`stg::compile` runs once on the whole merged evaluand (`src/driver/eval.rs:187`).
+So caching the prelude's `StgSyn` keyed on prelude bytes is caching something that
+doesn't exist; the only thing cacheable as-is is the *whole merged evaluand* keyed
+on the entire input set — a hit only on exact re-runs (§ optional cache).
 
-```rust
-content.insert(
-    "prelude".to_string(),
-    String::from_utf8(include_bytes!("../../lib/prelude.eu").to_vec())
-        …
-);
-```
+The fix is to give the prelude an independent compiled form — i.e. **separate
+compilation** — and then *embed* it. That is the core of this proposal.
 
-It is loaded as `Locator::Resource("prelude")`, merged first as the
-base of every invocation, and its bindings reference only the prelude
-itself — no user file can rebind what the prelude's own definitions see.
-These are exactly the properties that make it a sound cache target:
+### The double-compilation problem (F1)
 
-- **Fixed**: same bytes for a given binary; cannot change between
-  invocations.
-- **Self-contained**: the prelude's compiled output does not depend on
-  the user's input files.
-- **Dominant cost**: ~half the total pipeline budget is attributable to
-  the prelude's parse and cook phases (parse = ~120 ms, cook = ~190 ms
-  over ~2,200 lines of prelude + headers).
-
-This is precisely the argument TS-B7 made for the *type-checking* side —
-and TS-B7 shipped in 0.7.0 (`src/driver/check.rs:44`):
-
-```rust
-static PRELUDE_CACHE: OnceLock<PreludeSummary> = OnceLock::new();
-```
-
-The type-side cache avoids re-walking the ~2,200-line prelude on every
-`eu check` invocation. This proposal caches the *compiled code* side;
-the two are direct analogues and share the same keying rationale.
-The runtime re-parse/cook/STG-compile path through `src/driver/eval.rs`
-is entirely separate from the type-checker path and remains uncached:
-`stg::compile` at `src/driver/eval.rs:187` runs unconditionally on every
-invocation. The 0.7.0 HeapSyn-clone avoidance (~9% faster VM execution)
-is orthogonal — it accelerates the VM tick loop, not the compile pipeline,
-and does not reduce the ~500–700 ms startup overhead this proposal targets.
-
-### The double-compilation problem
-
-For plain-document programs (the overwhelmingly common case), `eu`
-currently calls `stg::compile` twice (`src/driver/eval.rs:187` and
-`src/driver/eval.rs:282`): once headless to detect IO versus
-pure-document, and then again with `RenderType::RenderDoc` on a fresh
-machine. The comment at `eval.rs:271–275` explains the reason — stale
-string pointers from the first run cause GC crashes — but the
-recompilation is itself ~90 ms of avoidable cost. Any caching scheme
-must be aware of this; the fix is addressed in the design below.
+For plain documents (the common case) `eu` compiles twice — headless to classify
+IO-vs-document, then again with `RENDER_DOC` on a fresh machine
+(`eval.rs:187`/`:282`), because rendering the headless result in place crashes the
+GC on stale string pointers (`eval.rs:271-275`). The ~90 ms second compile is pure
+overhead. The fix (make in-place render GC-safe → one compile) is tracked as
+[0000](0000-priority-fixes.md) **F1**; it is orthogonal to and complements this
+proposal (F1 removes the *second* compile; separate compilation removes the
+*prelude* compile).
 
 ---
 
 ## Prior art & landscape
 
-### Rustc incremental compilation (query system)
+**Separate compilation (the core).** GHC compiles each module to an object file
+plus an **interface (`.hi`)** carrying exports *and unfoldings* for cross-module
+inlining — the lesson being that an interface must carry inline-able definitions
+or you lose the inlining a monolith gets. ML **functors / 1ML / Backpack** compile
+a module as a function of its imports' signatures (separate compilation falls
+out). **Unison** identifies definitions by content hash, so linking/caching are
+free (radical; ties to [0018](0018-module-package-system.md)). And eucalypt
+already has **internal precedents**: TS-B7's `PreludeSummary` + `with_seed`
+(`check.rs:197,382`) is a shipped *type* interface, and the desugarer's
+`drain`/`seed_monad_namespace_registry` (`desugarer.rs:171`) is a shipped
+*monad* interface — exactly the "build a unit interface, seed the dependent"
+pattern, proven twice (see [0000](0000-priority-fixes.md) F3).
 
-Rustc's incremental backend (rustc-dev-guide §"Incremental compilation")
-builds a dependency graph of queries: every access between query
-functions is recorded, so the compiler knows exactly which cached
-results are still valid. On re-run it replays the dep-graph, re-executes
-only changed queries, and reads everything else from an on-disk
-compilation database (the `incremental/` directory). The key insight is
-the **red-green** algorithm: a query result is "green" (reusable) if
-none of its transitive inputs changed hash.
+**Caching (for the optional on-disk part).** rustc's red-green incremental cache
+and Bazel's action cache teach *content-addressed keying* (inputs hash + tool
+version → outputs); Bloop teaches that a long-running daemon removes the
+serialisation round-trip; Unison teaches that a content hash makes hits
+*semantically* guaranteed.
 
-What to borrow: the content-addressed key scheme (source hash + version
-metadata) and the discipline of marking cache entries with a compiler
-version to prevent silent stale-result bugs. What *not* to borrow: the
-full query DAG is overkill for eucalypt's current architecture. The
-prelude is the only unit that is genuinely stable across invocations;
-user units change constantly. A simplified scheme that caches only the
-prelude achieves most of the gain.
-
-### Bazel action cache
-
-Bazel computes a digest over an action's inputs (source files, command
-line, environment) and looks up the result in a content-addressed store
-(CAS). Matching entries are downloaded rather than recomputed; the CAS
-can be remote (shared across a CI fleet) or local. The design is
-explicitly build-tool-agnostic and has been standardised as the Remote
-Execution API (REAPI).
-
-What to borrow: the concept of the *action key* — (inputs hash +
-tool/version identity + flags) → serialised outputs — maps directly
-onto (prelude source hash + `eu` binary version + edition flag) →
-serialised `StgSyn`. What *not* to borrow: remote CAS and REAPI
-infrastructure are far beyond the scope of a CLI config tool's needs.
-A local `~/.cache/eucalypt/` directory is sufficient.
-
-### Bloop (Scala build server)
-
-Bloop is a long-running daemon that keeps compiled Scala modules in
-memory across multiple tool invocations. The first compile pays the
-full cost; subsequent invocations (from the IDE, the CLI, or CI) reuse
-the in-memory result. It communicates over the Build Server Protocol
-(BSP). The daemon approach delivers sub-millisecond re-evaluation for
-unchanged modules.
-
-What to borrow: the observation that a long-running process eliminates
-the serialisation round-trip entirely. Eucalypt's LSP server already
-holds pipeline state across file changes; the same idea applies to a
-`eu daemon` or `eu server` mode. This is the more ambitious path and is
-addressed in the design below as Phase 2.
-
-### Unison: the codebase *is* the cache
-
-Unison's most radical idea is that definitions are identified by the
-hash of their AST, and the "codebase" is a content-addressed store of
-already-typechecked, already-compiled definitions. Because names are
-just labels attached to hashes, renaming never invalidates the cache;
-because definitions are identified by content, you never compile the
-same code twice — ever, across all users and machines. The compilation
-cache is not a build artefact; it *is* the program.
-
-What to borrow: the insight that the cache key should be the *content
-hash*, not the file path or a timestamp, so that cache hits are
-semantically guaranteed, not merely "probably still valid". Eucalypt
-should adopt content-hash keying rather than mtime-based invalidation.
-What *not* to borrow (for now): making the cache the primary source of
-truth for code identity would require eucalypt to adopt content-addressed
-imports and a codebase-format store. That is a viable path but it is a
-major architectural commitment, properly scoped to
-[0018 — module & package system](0018-module-package-system.md) rather
-than this proposal. Eucalypt should borrow Unison's *keying discipline*
-without adopting its *storage model*.
+**Security (for the threat model).** Python's `.pyc` lives *next to the source*
+and is *validated against it* (timestamp, or PEP 552 source-hash) — co-located and
+checked, not a central cache of executable blobs. A writable cache of executable
+artifacts is an RCE vector; the lesson informs the threat model below.
 
 ---
 
 ## Proposed design
 
-### Cache representation: StgSyn, not HeapSyn
+### 0. Foundation: the Unit Interface ([0000](0000-priority-fixes.md) F3)
 
-There are two candidate serialisation targets:
+Separate compilation needs each unit to expose its cross-unit contributions
+(operators, monad registry, bracket modes, type schemes, exported bindings→slots)
+as one **interface**. Unifying today's four scattered registries into that
+interface is an independently-valuable cleanup tracked as F3; it is the
+prerequisite this design builds on.
 
-| Representation | Pros | Cons |
-|---|---|---|
-| `HeapSyn` (in-heap, post-load) | One load step saved | Heap-bound; contains raw pointers; GC-tied; not serialisable |
-| `StgSyn` (off-heap, `Rc<StgSyn>`) | Serialisable; GC-independent; avoids stale-pointer hazard | Must still load into heap on each run (~10 ms, acceptable) |
+### 1. Separately compile and embed the prelude (the win)
 
-`HeapSyn` is unsuitable: `src/eval/memory/loader.rs` shows that loading
-converts `StgSyn` references into raw heap pointers, interns symbols
-into a `SymbolPool`, and allocates `HeapString` objects — the result
-is inextricably bound to a live GC heap. Serialising or reusing
-`HeapSyn` across process boundaries would reintroduce exactly the
-stale-pointer hazards that motivated the `fresh machine` pattern in
-`src/driver/eval.rs:271–287`.
+Compile the prelude *independently* to a compiled form whose cross-unit references
+are unresolved externals, and link user code against it. Four mechanisms, floor to
+radical:
 
-`StgSyn` (`src/eval/stg/syntax.rs`) is an `Rc`-based tree with no raw
-pointers. It can be serialised with `serde` + a binary format (e.g.
-`bincode` or `postcard`). Cache retrieval replaces parse → translate →
-merge → cook → eliminate → inline → STG-compile; the loader step
-(`src/eval/memory/loader.rs::load`) still runs per invocation,
-taking the clean `StgSyn` and building a fresh heap — preserving
-GC safety and the `SymbolPool` contract.
+- **A. Stable-global-prefix (the prelude-only floor).** Keep `rebody` semantics
+  but compile the prelude once to a fixed global-slot layout (its de Bruijn
+  indices are already body-independent — it is the outermost `let`), and compile
+  user bodies to reference those slots. The `Ref::G` global region is already
+  position-stable (`syntax.rs:43-58`) — it just holds intrinsics today, not
+  prelude bindings.
+- **B. Symbolic externals + link** (GHC `.o`+`.hi`): emit named externals
+  (today a free var is fatal at compile, `compiler.rs:1031`), link against unit
+  interfaces. Carries inline-able defs (the GHC lesson). Generalises A to arbitrary
+  units.
+- **C. Units-as-functions** (ML functors / lambda-lift): a unit is `λimports.
+  body`; composition is application. The most eucalypt-idiomatic (blocks are
+  records), at the cost of import-record plumbing and cross-unit recursion.
+- **D. Content-addressed definitions** (Unison): hash-identified definitions;
+  linking/caching free. Radical; unifies with [0018](0018-module-package-system.md).
 
-### Cache key
+**The one genuine wall is operators.** Cook discovers operators from the merged
+`let`-nest and mis-parses an out-of-scope operator (`fixity.rs:143`, `fill.rs:56`;
+verified: `-Q` + `2 + 3` → "unresolved variable '+'"). There is **no seeding
+mechanism today** — so cooking a unit independently of its dependencies' operators
+is the load-bearing change. The *other* cross-unit inputs are already handled:
+monad namespaces are drainable/seedable (`desugarer.rs:171`), and bracket
+content-mode is per-file (modulo the F2 bug). User code uses ~55 prelude operators
+pervasively, so this bites even the floor — but there it is bounded: the prelude's
+operator set is fixed and **already extracted** on the type side (`check.rs:86`).
 
-```
-key = sha256(prelude_source_bytes)
-    ∥ eu_version_string          # from build-meta.yaml
-    ∥ edition_flag               # "default" until 0001 lands
-```
+**Then embed.** With a separately-compiled prelude, **embed its compiled form in
+the binary** — mirroring how `build-meta.yaml` is a generated-by-`eu` artifact
+embedded via `include_bytes!` (`resources.rs`), with a build-time hash check that
+it matches `lib/prelude.eu`. This delivers the latency win with **no on-disk
+cache, no poisoning surface, and automatic versioning** (it *is* the binary's
+prelude). The earlier "build-time embedding entangles the build" objection is
+minor next to "removes the RCE surface."
 
-All three fields must match. A mismatch on any field is a cache miss,
-triggering a full recompile and a new cache write. The source hash
-alone would guard against stale prelude bytes; the version string
-guards against compiler changes that alter `StgSyn` semantics or
-serialised shape without touching the prelude source.
+**Verdict:** the prelude floor (A, with operator seeding) is **Medium effort,
+feasible**; arbitrary-unit separate compilation (B/C/D) is **Hard**, gated on
+giving cook a seeded operator interface, and is the post-1.0 fork.
 
-### On-disk layout
+### 2. Eliminate the double compile ([0000](0000-priority-fixes.md) F1)
 
-```
-~/.cache/eucalypt/compiled-units/
-  <key-hex>.stgsyn        # serialised StgSyn
-  <key-hex>.meta          # JSON: {version, edition, source_hash, created_at}
-```
+Land F1 (GC-safe in-place render → one compile) alongside. Independent of the
+embed, but together they remove both the prelude compile and the second compile.
 
-The meta file enables inspection and programmatic pruning. No locking
-protocol is required for the prelude cache: the prelude is immutable
-within a build, so two concurrent `eu` processes writing the same key
-are writing identical bytes — the last writer wins with no corruption
-risk (provided atomic rename is used on write).
+### 3. Optional on-disk cache (demoted, threat-modelled)
 
-### Eliminating the double-compile
+After F1 + the embedded prelude, the *only* remaining cacheable thing is the
+**whole merged evaluand** keyed on the full input set — a hit on **exact re-runs**
+(e.g. CI running `eu config.eu` unchanged); it dedupes nothing and is the part
+that carries a **security surface**. If pursued: serialise **`StgSyn`** (off-heap,
+`Rc`-based, pointer-free; *not* `HeapSyn`, which is GC-heap-bound — `loader.rs`),
+keyed `sha256(inputs) ∥ eu_version ∥ edition`, advisory (any miss/corruption →
+clean recompile, never wrong output). This is a marginal, post-1.0 add — **only if
+exact-re-run caching proves worth the surface.**
 
-The headless→RENDER_DOC double-compile (`src/driver/eval.rs:163–295`)
-exists because re-running the existing machine after IO detection causes
-GC crashes from stale string pointers. With a cached `StgSyn` the fix
-is straightforward: store both the headless-compiled and RenderDoc-compiled
-variants under the same key, so on the next invocation neither
-`stg::compile` call is needed. In practice, a given `eu` invocation
-for a given input always follows the same path (IO or plain document);
-the second compile disappears from the hot path after the first run.
-A deeper restructure — removing the two-mode scheme entirely by using a
-sentinel value — is a separate improvement the cache design should
-accommodate but not require.
+#### Threat model (for §3 and §4)
 
-### `--no-cache` and cache-dir configuration
+A cache of *compiled* units is **executable content**; loading one trusts whoever
+could write it. **Content-hash keying guards staleness, not tampering** — if the
+cache value under a key is attacker-controlled, you execute attacker bytes; the
+only defences are filesystem permissions or authentication.
 
-- `--no-cache`: bypass cache reads and writes entirely. Useful for
-  debugging or when the cache directory is on a slow filesystem.
-- `--cache-dir <path>`: override `~/.cache/eucalypt/`. Useful in CI
-  environments where `$HOME` is ephemeral but a shared cache volume is
-  mounted elsewhere.
-- `EU_CACHE_DIR` environment variable: equivalent to `--cache-dir` for
-  scripting.
-- Cache entries are never automatically evicted (the prelude is tiny
-  serialised); a `eu cache clean` subcommand provides manual control.
+- **Assets:** the executable cache blobs; the cache dir; (server) the socket.
+- **Trust boundary:** loading an entry trusts whoever can write the cache dir.
+  *Stated assumption:* a user-private `0700` dir, and **the cache refuses to load
+  from a group/world-writable directory.**
+- **Threats:** poisoning → RCE; untrusted deserialisation (serde memory-safety +
+  panics/DoS on malformed blobs + malicious-but-valid `StgSyn`); **CI cache
+  restore** (a restored cache is untrusted input — the high-value attack);
+  multi-user/network-home dirs; (server) unauthenticated local RPC = RCE-as-you,
+  DoS, version skew.
+- **Mitigations:** user-private permissioned dir (verify before trusting); advisory
+  cache (recompile on any mismatch/perm-failure); **never trust a shared/restored
+  cache without authentication**; *embedding the prelude (§1) avoids this entirely
+  for the dominant cost.* Out of scope: an attacker who can already run as you.
 
-### Phase 2: persistent process (daemon/server)
+### 4. Daemon/server (deferred)
 
-A daemon that loads and compiles the prelude once on first connect, then
-serves subsequent invocations over a socket (similar to Bloop), would
-eliminate even the `StgSyn` deserialisation step. The `eu` CLI would
-act as a thin client: send source bytes, receive rendered output. The
-in-memory prelude `StgSyn` (and potentially the loaded `HeapSyn`) would
-persist across invocations.
-
-The LSP server (`src/driver/lsp/`) already holds pipeline state across
-edits — it is effectively already a long-running process serving
-incremental re-evaluations. The daemon mode would generalise this to
-CLI usage, sharing the same infrastructure. See
-[0014 — incremental, query-based core](0014-incremental-query-core.md)
-for the fuller vision; the prelude cache proposed here is a prerequisite
-and a natural precursor.
-
-The daemon introduces operational complexity (process lifecycle,
-socket hygiene, CI environments that do not persist across steps) that
-makes it unsuitable as the primary deliverable for 0.8. The on-disk
-`StgSyn` cache is the pragmatic first step.
+A long-running process (Bloop-style; the LSP already holds pipeline state) would
+remove even deserialisation, but it is a **local RCE-as-you service** if
+unauthenticated. If ever pursued: **Unix-domain socket at `0600`** in a
+user-private dir (not TCP localhost — any local user reaches it), client auth, a
+version handshake, and resource limits. Deferred; see
+[0014](0014-incremental-query-core.md) for the incremental vision.
 
 ---
 
 ## Interaction with the existing roadmap
 
-**TS-B7 (prelude type-summary cache — shipped 0.7.0)**: B7 landed in
-0.7.0 as `static PRELUDE_CACHE: OnceLock<PreludeSummary>` in
-`src/driver/check.rs:44`. It caches the type-checker's `PreludeSummary`
-(binding types + aliases); this proposal caches the compiled `StgSyn`.
-They are parallel caches for parallel pipeline stages, and the shipped
-TS-B7 implementation sets a direct keying-discipline precedent: the
-cache is process-scoped, built once on first use, and keyed implicitly
-on the binary (same prelude bytes, same build). The natural question for
-the on-disk `StgSyn` cache is whether they can share a formal key
-struct. The answer is yes: both would use `sha256(prelude_source) ∥
-eu_version ∥ edition`. A shared `PreludeCacheKey` struct in
-`src/driver/` would serve both, and the two on-disk cache files could
-sit alongside each other under the same hash prefix. Neither depends on
-the other at the API level: TS-B7 serves the type-checker path;
-this proposal serves the eval path. They are implemented independently
-but should coordinate on the key format.
-
-**0014 — incremental, query-based core**: 0014 proposes a Salsa-style
-query engine for the LSP and re-evaluation. The prelude cache proposed
-here is a simpler, non-incremental subset: it caches one unit (the
-prelude) whose content never changes within a session. When 0014 lands,
-the prelude cache becomes one entry in the broader query database — the
-prelude's compiled form is the base case of the incremental graph.
-There is no conflict; this proposal creates a cache entry that 0014
-will eventually subsume.
-
-**0005 — generational GC**: the GC work does not interact with the
-cache directly. However, if the compile-pipeline overhead falls by
-500 ms via caching, the remaining cost profile shifts toward VM
-execution, making 0005's GC improvements proportionally more visible.
-Implement 0004 first, then profile to confirm 0005 targets correctly.
-
-**0001 — 1.0 charter / editions**: the edition field in the cache key
-anticipates the edition mechanism from 0001. Until editions exist the
-field is a constant (`"default"`); it is reserved so that the key
-format does not need to change when 0001 ships.
-
----
+- **[0000](0000-priority-fixes.md) F1/F3** are the prerequisites: F3 (Unit
+  Interface) is the foundation; F1 (double compile) lands alongside. F2 (bracket
+  bug) is fixed as a side-effect of F3.
+- **TS-B7** is the shipped type-interface precedent and template.
+- **[0014](0014-incremental-query-core.md):** unit interfaces are the natural
+  incremental-cache unit; the embedded prelude is the base case of its graph.
+- **[0005](0005-generational-gc.md):** competes for the same deep-systems effort
+  (per `SEQUENCING.md` §4); once compile latency falls, GC cost becomes
+  proportionally more visible.
+- **[0018](0018-module-package-system.md) / alternative backends:** option D
+  (content-addressing) and any independent backend consume exactly this
+  interface + separately-compiled artifacts.
 
 ## Implementation sketch
 
-### Phase 1: on-disk StgSyn cache (0.8)
+**Prelude floor (A), Medium — the recommended target:**
+1. **F3 Unit Interface** ([0000](0000-priority-fixes.md)) — the foundation.
+2. **Global slots (B1):** a prelude block at fixed `Ref::G` indices
+   (`compiler.rs`, `machine/mod.rs:55`, `vm.rs:79`).
+3. **Operator seeding (the real work):** cook accepts a seeded operator
+   environment (the prelude's fixed, already-extracted table, `check.rs:86`) — the
+   one cross-unit input lacking a mechanism; monad seeding already exists.
+4. **Deferred externals + link:** emit symbolic externals (`compiler.rs:1031`),
+   resolve against the prelude interface (the type checker's seed path,
+   `check.rs:269`, is the template).
+5. **Embed** the compiled prelude (`resources.rs`) with a build-time source-hash
+   check; land **F1** alongside.
 
-**Files changed:**
+**General units (B/C/D), Hard, post-1.0:** export each unit's operators+fixity in
+its interface and seed a dependent's cook from its dependencies' — the one change
+that unlocks arbitrary-unit separate compilation.
 
-| File | Change |
-|------|--------|
-| `Cargo.toml` | Add `serde` feature on `stg::syntax` types; add `bincode` or `postcard` |
-| `src/eval/stg/syntax.rs` | Derive `Serialize`, `Deserialize` on `StgSyn`, `LambdaForm`, `Ref`, `Native` |
-| `src/driver/cache.rs` *(new)* | `CacheKey` struct; `CompiledUnitCache`: read/write `StgSyn` to `~/.cache/eucalypt/`; atomic write via temp-file rename |
-| `src/driver/eval.rs` | Before `stg::compile`, check cache; on miss, compile and write; on hit, deserialise and skip pipeline |
-| `src/driver/options.rs` | Add `--no-cache`, `--cache-dir` flags |
-
-**Risk**: `StgSyn` serialisation is the main unknown. The type is
-`Rc`-shared, so a serialisation library must handle DAG structure
-(shared nodes). `bincode` does not; `serde` with a custom visitor or
-`postcard` with index-based flattening can. The simplest approach is to
-clone into a tree (no sharing) before serialising — acceptable given the
-prelude is small. Estimate: 3–5 days for a working prototype; 1–2 weeks
-to production quality with tests.
-
-**Size/risk rating**: medium. The cache logic is self-contained and
-off the critical path when disabled; failure modes are a slow
-`--no-cache` fallback, never a crash.
-
-### Phase 2: daemon mode (post-0.8)
-
-Extend the LSP server infrastructure in `src/driver/lsp/` to accept
-non-LSP evaluation requests. Add `eu daemon start/stop/status` and a
-thin client protocol. Estimate: 2–4 weeks; gated on 0014's query
-infrastructure.
-
----
+**Optional cache (§3), post-1.0:** `StgSyn` serde + `src/driver/cache.rs`, advisory,
+threat-modelled — only if exact-re-run caching is wanted.
 
 ## Alternatives considered
 
-**Mtime-based invalidation**: simpler to implement but fragile — a
-file copied from a build artefact has a new mtime without changed
-content; a prelude that is regenerated to identical bytes would
-invalidate the cache. Content hashing costs one `sha256` call (~1 ms
-for 2,200 lines) and is strictly more correct.
-
-**Caching user units as well**: user files are typically short, the
-savings are small, and soundness is harder to establish under positional
-merge-override (the same argument TS-B7 makes for excluding user units
-from the type-summary cache). Exclude for now; revisit when 0014's
-module graph makes per-unit stability analysable.
-
-**Caching `CoreExpr` (post-cook, pre-STG)**: saves the STG-compile
-step but not parse/cook, which dominate. `CoreExpr` is also larger and
-harder to serialise than `StgSyn`. Not worth the trade-off.
-
-**Build-time embedding**: compute the prelude's `StgSyn` at `cargo build`
-time and embed via `include_bytes!`. Attractive in principle but
-entangles the build system with the runtime serialisation format and
-requires re-embedding on every toolchain update. An on-disk cache gives
-the same steady-state performance with simpler build machinery.
-
----
+- **On-disk cache of the prelude `StgSyn`** (this proposal's original framing):
+  rejected as the primary path — there is no standalone prelude `StgSyn` to cache,
+  and embedding (§1) is strictly better (no surface, auto-versioned).
+- **Whole-evaluand on-disk cache as the headline:** rejected — exact-re-run only,
+  carries the security surface; demoted to optional §3.
+- **Daemon as the primary deliverable:** rejected — operational + security
+  complexity; deferred §4.
+- **Among separate-compilation mechanisms:** A is the floor (mechanism-agnostic,
+  safe first step); B closest to the shipped precedents; C most idiomatic; D most
+  powerful but largest.
 
 ## Risks & what would kill this
 
-1. **StgSyn serialisation complexity**: if the `Rc`-sharing in `StgSyn`
-   is pervasive enough that a tree clone is semantically wrong (e.g.
-   back-references or cycles), the naive clone approach fails. Audit
-   `src/eval/stg/syntax.rs` before committing to this approach.
-
-2. **Cache poisoning / correctness**: a serialisation bug that produces
-   a subtly wrong `StgSyn` could cause silent incorrect output. Mitigate
-   with a round-trip test suite: serialise, deserialise, compare against
-   the freshly-compiled result.
-
-3. **Key collision**: SHA-256 truncated to a filename is collision-free
-   in practice; use the full 32 bytes (64 hex chars) to be safe.
-
-4. **CI cache isolation**: many CI systems run jobs in ephemeral
-   containers with no shared home directory. The on-disk cache delivers
-   no benefit unless the cache directory is on a persisted or shared
-   volume. Document this explicitly; the `EU_CACHE_DIR` override is the
-   escape hatch.
-
-5. **The double-compile does not disappear automatically**: caching
-   `StgSyn` allows caching the headless-compiled and RenderDoc-compiled
-   variants separately, but the trigger logic in `src/driver/eval.rs`
-   must be updated to use the cache for the second compile. If that
-   change is not made, the second `stg::compile` call remains.
-
----
+- **The operator wall doesn't yield cleanly (highest).** If a seeded operator
+  interface entangles with the dynamic features, arbitrary-unit separate
+  compilation stalls and we land on the prelude floor (the pre-authorised
+  fallback). The floor still needs operator seeding — bounded, fixed, already
+  extracted.
+- **Lost cross-unit inlining (high).** The monolith inlines across the
+  prelude/user boundary; separating units makes inline/DCE more conservative (a
+  compiled prelude can't be DCE'd against an unknown user). Mitigation: carry
+  inline-able defs in the interface (GHC unfoldings); the latency win should
+  dominate, but it is the benchmark to watch.
+- **Cache/server security (if §3/§4 pursued).** See the threat model; the
+  embedded-prelude path avoids it for the dominant cost.
+- **Complexity for a small project.** The floor is the proportionate bet; general
+  separate compilation and the cache/server are justified only by demonstrated
+  need (large multi-file projects, exact-re-run CI, alternative backends).
 
 ## Success criteria
 
-- **Latency**: repeated `eu` invocations on a fixed input and fixed
-  binary show ≥ 400 ms wall-clock reduction (from ~600 ms to ≤ 200 ms)
-  after the first (cache-priming) run, measured with `hyperfine` on a
-  release build.
-- **Correctness**: all harness tests (`cargo test --test harness_test`)
-  pass identically with the cache enabled and disabled. A dedicated
-  round-trip test confirms `deserialise(serialise(stgsyn)) == stgsyn`
-  for the prelude.
-- **Cache safety**: `--no-cache` disables the cache entirely; the
-  output is bit-for-bit identical to the cached path.
-- **Key integrity**: changing a single byte of `lib/prelude.eu`
-  (without a binary rebuild) causes a cache miss, not a silent stale
-  hit.
-- **Daemon mode (Phase 2)**: first invocation after daemon start
-  ≤ 50 ms for a trivial query on a 1 MB input, measured with `hyperfine`.
-
----
+- **The prelude is compiled zero times at runtime** for a normal run
+  (embedded/linked), output byte-identical across the harness; cold-compile
+  latency drops by the prelude's share — **with no on-disk executable cache.**
+- User files link against the prelude interface with prelude **operators**
+  resolving (the verified failure mode is gone).
+- F1 lands: a plain-document run performs exactly one STG compile.
+- *If* §3 ships: cache is advisory (recompile on any mismatch), refuses a
+  world/group-writable dir, and is never trusted across a restore without
+  authentication.
 
 ## References
 
-- `docs/development/deep-find-performance-baseline.md` — pipeline timing
-  table (Parse ~120, Cook ~190, Eliminate ~110, STG ~90 ms).
-- `src/driver/check.rs:44` — `static PRELUDE_CACHE: OnceLock<PreludeSummary>`:
-  the shipped TS-B7 type-side prelude cache (0.7.0); keying rationale
-  and out-of-scope analysis apply directly to this proposal.
-- `src/driver/resources.rs:16` — `include_bytes!("../../lib/prelude.eu")`.
-- `src/driver/eval.rs:163–295` — headless→RENDER_DOC double-compilation
-  and the "stale string pointers" comment at `eval.rs:271–275`.
-- `src/eval/memory/loader.rs` — `load()`: `StgSyn` → `HeapSyn`
-  translation, symbol interning, `HeapString` allocation; explains why
-  `HeapSyn` cannot be cached across processes.
-- `src/eval/stg/mod.rs:310–324` — `stg::compile` signature; takes
-  `RcExpr` and `&dyn Runtime`, returns `Rc<StgSyn>`.
-- Rustc developer guide — "Incremental compilation in detail":
-  https://rustc-dev-guide.rust-lang.org/queries/incremental-compilation-in-detail.html
-- Bazel remote caching — action cache and CAS:
-  https://bazel.build/remote/caching
-- Bloop build server:
-  https://scalacenter.github.io/bloop/
-- Unison — the big idea (codebase as cache):
-  https://www.unison-lang.org/docs/the-big-idea/
+**Compilation/composition:** `src/core/expr.rs:548,1073` (`rebody`);
+`src/driver/prepare.rs:24`, `src/driver/eval.rs:187` (one-pass compile of the
+merged evaluand), `:163-295`/`:271-275` (double compile + stale-string comment, F1);
+`src/eval/stg/compiler.rs:1031` (free var fatal), `:452` (`Context::lookup`);
+`src/eval/stg/syntax.rs:43-58` (`Ref::G`); `src/eval/machine/vm.rs:79`,
+`mod.rs:55`; `src/eval/intrinsics.rs:45` (stable global region);
+`src/core/cook/fixity.rs:143`, `shunt.rs:253`, `fill.rs:56` (operators);
+`src/core/typecheck/check.rs:197,269,382,86` (`PreludeSummary`/seed — the shipped
+type interface); `src/core/desugar/desugarer.rs:171` (monad seed/drain — the
+shipped monad interface); `src/eval/memory/loader.rs` (StgSyn→HeapSyn, why HeapSyn
+isn't cacheable); `src/driver/resources.rs:16` (embedded prelude; the
+`build-meta.yaml` precedent); `src/driver/check.rs:44` (TS-B7 cache);
+`docs/development/deep-find-performance-baseline.md` (timings).
+
+**External:** [GHC separate compilation & `.hi`](https://ghc.gitlab.haskell.org/ghc/doc/users_guide/separate_compilation.html) ·
+[Unison: the big idea](https://www.unison-lang.org/docs/the-big-idea/) ·
+[1ML — first-class modules](https://dl.acm.org/doi/10.1145/2858949.2784738) ·
+[Lambda lifting](https://en.wikipedia.org/wiki/Lambda_lifting) ·
+[rustc incremental](https://rustc-dev-guide.rust-lang.org/queries/incremental-compilation-in-detail.html) ·
+[Bazel remote caching](https://bazel.build/remote/caching) ·
+[Python `.pyc` / PEP 552 hash-based invalidation](https://peps.python.org/pep-0552/).

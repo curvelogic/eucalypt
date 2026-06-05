@@ -71,12 +71,11 @@ single-threaded lazy-pure runtime, the tool-first framing, and UK English.
 
 | # | Proposal | Class | Horizon |
 |---|----------|:-----:|:-------:|
-| [0004](0004-compiled-unit-caching.md) | Compiled-unit & prelude caching (CLI latency) | W★ | 0.8 |
+| [0004](0004-compiled-unit-caching.md) | Compile latency: separate compilation, prelude embedding & (optional) caching | F★ | 0.9 → post-1.0 |
 | [0005](0005-generational-gc.md) | Generational nursery & GC trigger/Immix-defrag completion | W★ | 0.9 |
 | [0006](0006-strictness-analysis.md) | Strictness & demand analysis (cut thunk churn) | W | 0.9 |
 | [0007](0007-type-directed-compilation.md) | Type-directed compilation (H11) — types as a runtime asset | F | post-1.0 |
 | [0008](0008-parallel-evaluation.md) | Parallel & speculative evaluation: the concurrency roadmap | F | post-1.0 |
-| [0021](0021-separate-compilation.md) | Separate compilation & unit linking (beyond `rebody`) — enables 0004 | F | 0.9 → post-1.0 |
 
 ### Track C — type system & language (beyond the roadmap)
 

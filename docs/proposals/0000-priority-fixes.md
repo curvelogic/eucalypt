@@ -95,7 +95,7 @@ a phase-ordering problem):
   (`desugarer.rs:171`). Cleanest, and aligns with separate compilation.
 - **(c)** Signal block-mode syntactically at the use site (no registry).
 
-**Interaction with [0021](0021-separate-compilation.md).** This is a *parse-time*
+**Interaction with [0004](0004-compiled-unit-caching.md)'s separate compilation.** This is a *parse-time*
 cross-unit dependency. Fix (b) keeps brackets out of the separate-compilation
 "wall" (the decision moves to the seedable desugar registry); fix (a) would make
 bracket content-mode a parse-time wall — the hardest kind. The fix choice and the
@@ -105,14 +105,14 @@ separate-compilation architecture are therefore coupled; prefer (b).
 `src/syntax/rowan/brackets.rs:35-52`; `src/core/desugar/desugarer.rs:171-177` (the
 analogous seedable registry brackets lack).
 
-**Relationships.** relates-to 0021 (fix direction couples to separate
-compilation); independent of F1.
+**Relationships.** relates-to 0004 (fix direction couples to its separate
+compilation work); independent of F1.
 
 ---
 
 ## F3 — Unify cross-unit compilation contributions into a single Unit Interface
 
-- **Priority:** P2 / medium (code-cleanliness refactor; subsumes F2; foundation for 0021)
+- **Priority:** P2 / medium (code-cleanliness refactor; subsumes F2; foundation for 0004's separate compilation)
 - **Type:** refactor / architecture
 - **Status:** open
 
@@ -126,7 +126,7 @@ inconsistent mechanisms** across phases:
 | Desugar | monad namespace registry | `seed`/`drain_monad_namespace_registry` (`desugarer.rs:160-177`) |
 | Cook | operator table (fixity/precedence) | rediscovered from the merged tree, no seeding |
 | Typecheck | schemes, aliases, branch shapes, **operator overloads** | `PreludeSummary` + `with_seed` (`check.rs:197,382`) |
-| Link | exported binding names → slots | not present (0021 territory) |
+| Link | exported binding names → slots | not present (0004 separate-compilation territory) |
 
 Some are seedable, some per-file, one is a bug — and **operators are captured
 twice** (in `PreludeSummary` for typecheck *and* rediscovered at cook). Refactor
@@ -140,10 +140,9 @@ instead of four; removes the operator-table redundancy (extract once, serve both
 cook and typecheck); **fixes F2** (brackets gain a slot and the seeding they
 lack); and makes the cross-unit surface explicit and testable.
 
-**Also the shared foundation later:** separate compilation
-([0021](0021-separate-compilation.md)), caching
-([0004](0004-compiled-unit-caching.md)), and incremental tooling
-([0014](0014-incremental-query-core.md)) all consume exactly this interface.
+**Also the shared foundation later:** separate compilation and caching
+([0004](0004-compiled-unit-caching.md)) and incremental tooling
+([0014](0014-incremental-query-core.md)) consume exactly this interface.
 
 **Design wrinkles.** Parse is the awkward phase — desugar/cook/typecheck run
 *after* import resolution (clean to seed), but parse runs first, so the
@@ -158,7 +157,7 @@ residual hard case.
 `src/core/typecheck/check.rs:197,382` (`PreludeSummary`/`with_seed` — the partial
 interface to generalise).
 
-**Relationships.** subsumes F2's fix; foundation for 0021 (and 0004 / 0014);
+**Relationships.** subsumes F2's fix; foundation for 0004 (separate compilation/caching) and 0014;
 independent of F1.
 
 ---
