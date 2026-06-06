@@ -4,7 +4,9 @@
 - **Track:** D — tooling
 - **Classification:** Whitespace
 - **Suggested horizon:** 0.9–1.0
-- **Related:** TS-B7 (prelude-type-cache-spec.md); sibling proposals
+- **Related:** **[0000](0000-priority-fixes.md) F3 — the Unit Interface**
+  (the cross-unit foundation this consumes); TS-B7 (prelude-type-cache-spec.md);
+  sibling proposals
   [0004 — compiled-unit & prelude caching](0004-compiled-unit-caching.md),
   [0015 — parser error-recovery & resilient front-end](0015-parser-error-recovery.md),
   [0008 — parallel & speculative evaluation](0008-parallel-evaluation.md);
@@ -23,7 +25,7 @@ in the demand-driven sense: each run builds a fresh `SourceLoader` and
 redoes everything. This proposal argues for re-architecting the analysis
 front end as **memoised, dependency-tracked queries** in the style of
 Salsa (rust-analyzer/rustc) and Adapton, keyed by content hash and
-connected by the existing import graph. The payoff is instant LSP
+connected by the import graph and [0000] F3's per-unit Unit Interface. The payoff is instant LSP
 feedback on large projects, incremental type-checking, and a foundation
 for a responsive REPL — and eucalypt's **purity makes it an unusually
 good fit**: referential transparency means a query's output is a pure
@@ -163,6 +165,17 @@ The proposal touches **no surface syntax** — it is an internal
 re-architecture of `src/driver/` and the analysis passes. Nothing in
 this document adds a keyword, operator or metadata key.
 
+**Scope: the compilation *front end* (parse → desugar → cook → check), for
+both the editor and the CLI — not eval.** The query core memoises the same
+passes the CLI runs; and because [0000] F3's Unit Interface is shared by
+0004 (CLI caching) and this proposal (tooling), the front-end graph is the
+*shared* pipeline front end, with the CLI a cached consumer rather than a
+parallel path (they converge on one long-running process — see [0004]
+Phase 2). The **back end** — evaluation/rendering — stays out of scope: the
+GC heap resists memoising VM values (§4, stretch goal). So the aim is the
+whole *front-end* pipeline, tooling-first but not tooling-only; runtime
+incrementality is deferred.
+
 ### The query graph over the front end
 
 Model the analysis front end as derived queries over content-hashed
@@ -195,6 +208,45 @@ the diamond case (`lens=lens.eu`, `optics=lens.eu` → one node,
 edit to a leaf import dirties only the units on the path back to the
 root, leaving siblings green. Cycle rejection already exists
 (`import.rs:83`).
+
+### The cross-unit dependency is the Unit Interface ([0000] F3)
+
+The import edge above is necessary but **not sufficient**. A dependency
+makes *source-level contributions* to a dependent's compilation through
+several cross-cutting registries the content+closure keying does not
+capture — enumerated in [0000](0000-priority-fixes.md) **F3**:
+
+| Phase | Cross-unit contribution | Today |
+|---|---|---|
+| Parse | bracket content-modes (block/soup) | per-file, **no seeding — the F2 bug** |
+| Desugar | monad-namespace registry | seedable (`seed`/`drain`) |
+| Cook | operator fixity/precedence table | **rediscovered from the whole merged tree** |
+| Typecheck | schemes, aliases, operator overloads | `PreludeSummary` (a *partial* interface) |
+
+Two consequences bite the cache key directly. **Cook depends on a *global*
+operator table** (`cook/fixity.rs:143` rediscovers it from the merged tree),
+so `cook`/`check` of a unit depend on *every* merged unit's operator
+declarations, not just its import closure — a fixity edit dirties cook
+broadly, breaking the "siblings stay green" promise for that class of edit.
+And **parse's bracket modes do not compose across imports today** (F2, a
+live P1 bug), so a query core over today's parse would faithfully reproduce
+the mis-parse. A fully sound key for `check(unit)` is therefore (own
+content) + (import closure) + (operator-table) + (bracket-registry) +
+(monad-registry) + (merge order) — the five-mechanism tangle.
+
+**[0000] F3 is the foundation that makes this tractable.** Its **Unit
+Interface** (à la a GHC `.hi` / ML signature — *build a unit's interface
+once; seed each phase of a dependent from its dependencies' interfaces*)
+collapses those four mechanisms into **one per-unit, hashable, seedable
+interface**. That is the dependency edge this query core should key on:
+**one Unit-Interface hash per import**, not raw content+closure plus four
+ad-hoc registry lookups. F3 already names 0014 as a consumer, so this
+proposal **depends on F3** — and on F2's fix (b) (the seedable desugar
+bracket registry) for the `parse`/`desugar` queries to be sound across
+imports. Until F3 lands, a query core can cache the *prelude* front end
+soundly (it is fixed and merged first), but **user-unit** incrementality
+rests on the Unit Interface existing — exactly the boundary B7/0004 already
+draw.
 
 ### Scope the front end first; the prelude is the proof
 
@@ -234,6 +286,14 @@ this proposal commits only to the analysis front end.
 
 ## Interaction with the existing roadmap
 
+- **[0000] F3 (the Unit Interface)** is the load-bearing foundation. The
+  cross-unit dependency this query core tracks *is* F3's per-unit interface
+  (bracket modes, monad namespaces, operator table, schemes/aliases/
+  overloads — today four inconsistent mechanisms, one of them the F2 bug).
+  F3 collapses them into one hashable, seedable interface and *names 0014 as
+  a consumer*; without it the query keys degrade into the five-mechanism
+  tangle above. **0014 depends on F3** (and F2's fix (b)); sequence F3
+  first.
 - **TS-B7** *shipped in 0.7.0* and is the query core's first concrete
   predecessor: the `OnceLock<PreludeSummary>` at
   `src/driver/check.rs:44` is a bespoke, single-stage query result.
@@ -338,10 +398,15 @@ through pass boundaries.
    a config tool. *Falsifier:* measure re-check latency on a realistic
    multi-file project (10–20 imported units) with B7 live and 0004 in
    place; if it is already < ~30 ms, defer 0014.
-2. **`salsa` impedance mismatch.** Its derive-macro model and `'static`
-   bounds may not sit well with `RcExpr`/Rowan/`SourceLoader`; the
-   adaptation cost could exceed an in-house engine. *Mitigation:*
-   spike Phase 1 on `parse`+`imports` only before committing.
+2. **`salsa` impedance mismatch — the core IR is `Rc`-based.** Salsa's
+   derive-macro model wants `'static` (and, for parallel queries, `Send +
+   Sync`) query values, but the core IR `RcExpr` is `Rc`-based and
+   **non-`Send`** (as is `SourceLoader`, `mod.rs:1089`). So memoising the
+   analysis values constrains salsa to **single-threaded** operation, or
+   forces an `Rc`→`Arc` migration of the core IR — a real ripple. (Rowan
+   green nodes are fine — built for rust-analyzer + salsa; the Rc-based core
+   is the constraint.) *Mitigation:* spike Phase 1 on `parse`+`imports` only
+   before committing.
 3. **Correctness drift.** A stale query served when it should have been
    invalidated yields wrong diagnostics silently. *Mitigation:* B7's
    behaviour-preservation oracle (§B7.7) generalised — a debug mode that
