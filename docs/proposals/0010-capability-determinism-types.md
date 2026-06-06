@@ -1,4 +1,4 @@
-# 0010 — A determinism lint for reproducible rendering (H6c)
+# 0010 — Hermetic mode for reproducible rendering (H6c)
 
 - **Status:** Draft proposal for review
 - **Track:** C — type system & language (beyond the roadmap)
@@ -23,13 +23,13 @@ gap: a render that silently varies between invocations undermines caching,
 diffability, and supply-chain trust. H6c in the type-system evolution
 document proposes tracking these capabilities as opaque type constructors —
 `Random(T)`, `Time(T)`, `Env(T)`, `IO(T)` — mirroring the `IO(T)` monad.
-**This proposal declines that route.** It argues for a cheap *lint*
-(`--require-deterministic`) that flags the capability sources directly, and
-records the capability-**type** layer as **won't-do**: under eucalypt's
-gradual, erased typing the types could only ever be advisory — never a
-hermeticity *guarantee* — and the lint already delivers that value without
-the annotation burden. The rationale is below (*Capability types —
-won't-do*).
+**This proposal declines that route.** It argues for a cheap **hermetic
+mode** (`--require-deterministic`) that intercepts the unrepeatable startup
+data at its source, and records the capability-**type** layer as
+**won't-do**: under eucalypt's gradual, erased typing the types could only
+ever be advisory — never a hermeticity *guarantee* — and the guard already
+delivers that value without the annotation burden. The rationale is below
+(*Capability types — won't-do*).
 
 ---
 
@@ -169,7 +169,7 @@ The capability-constructor route — `Random(T)`, `Time(T)`, `Env(T)` as
 opaque wrappers, threaded like `IO(T)` — is strictly narrower than effect
 rows and consistent with the existing idiom. But it too is **declined**
 here (see *Capability types — won't-do*): being advisory and erased it
-gives no guarantee, and the lint covers the same ground. It is recorded for
+gives no guarantee, and the guard covers the same ground. It is recorded for
 completeness, not adopted.
 
 ### The "opaque > transparent" principle
@@ -187,33 +187,86 @@ capability brands would only ever be passive, advisory labels.
 
 ## Proposed design
 
-### The lint: `--require-deterministic`
+### Hermetic mode: intercept the unrepeatable startup data
 
-The proposal is a *lint* that inspects the inlined core expression and
-flags uses of the four capability sources — no type machinery needed. The lint runs after the `inline` pass
-(`src/core/inline/`), where the tree is maximally simplified and uses of
-`io.epoch-time`, `io.RANDOM_SEED`, `io.env`, and `IoAction` constructors
-are directly visible.
+The four unrepeatable sources are all created in **one place** — the `__io`
+pseudo-block assembled at launch by `create_io_pseudoblock`
+(`src/driver/io.rs:82-88`): `EPOCHTIME` (the wall clock), `RANDOM_SEED`
+(system entropy unless `--seed` is given), `ENV`, and `TZ`. They are
+*startup data*, not values fetched on demand. So the guard does not need to
+*find* their uses after the fact — it intercepts them **at the source**:
+under `--require-deterministic`, `create_io_pseudoblock` injects a **poison
+thunk** for each unrepeatable field instead of the live value. A poison
+thunk renders nothing; it raises an `ExecutionError` the moment it is
+**forced**.
 
 ```
 eu --require-deterministic render.eu
-# error: render.eu uses io.epoch-time — output is not reproducible
-# error: render.eu uses io.env — output depends on environment variables
+# error: render.eu forced io.epoch-time under --require-deterministic;
+#        its output would not be reproducible
 ```
 
-The flag can also be expressed as metadata on a target:
+This is strictly better than a static lint over the inlined tree:
 
-```
-` { deterministic: true }
-my-output: { ... }
-```
+- **No marker-survival problem.** The guard owns the single chokepoint; it
+  never has to recognise `__io.EPOCHTIME` after inlining has folded block
+  lookups into bare literals. (That fragility is what sank the lint
+  formulation — see *Alternatives*.)
+- **Laziness flags exactly the output-relevant uses.** A poison thunk fires
+  iff it is forced, and a value is forced iff the computation demands it —
+  which, for a render, means *it flows into the output*. So the guard
+  catches precisely the capability uses that affect output and ignores dead
+  or unforced references, which do not affect determinism anyway — *more*
+  precise than a reachability lint's over-approximation.
+- **Seed-awareness for free.** The chokepoint already knows whether `--seed`
+  was explicit (`random_seed(explicit_seed)`, `io.rs:65-73`): it poisons
+  `RANDOM_SEED` only when there is **no** explicit seed, and injects the
+  seed normally otherwise, because seeded randomness *is* reproducible. A
+  post-hoc lint, blind to the runtime flag, could not draw that line.
+- **It is a guarantee, not advice.** A render that *completes* under the
+  flag provably did not depend, in its output, on unrepeatable startup data
+  — any such dependency would have forced a poison thunk and aborted. The
+  guarantee is scoped to the render that ran, which is the right scope: you
+  render anyway, and the render forces everything its output needs.
 
-The linter checks only the reachable expression graph of `my-output`. A
-file can contain non-deterministic helpers that are not reachable from the
-target.
+**Poison, never substitute.** The injected thunk must *raise*, not stand in
+a plausible default (`epoch-time → 0`): a silent default would emit
+deterministic-but-wrong output and hide the dependency we are policing.
 
-This lint is implementable entirely in `src/core/` without touching the
-type checker. It is cheap, high-value, and appropriate for 1.0.
+**On-demand IO is already gated.** `io.shell`/`io.exec` are not in `__io` —
+they are `IoAction`s on the IO monad, behind the existing `--allow-io` gate
+(off by default, `options.rs:193`). A hermetic render therefore has IO off
+already; `--require-deterministic` covers the startup data, `--allow-io`
+covers on-demand effects. Clean division, no overlap.
+
+**Granularity is per-boundary, not per-use.** Rather than scattering
+opt-out annotations at use sites, you *declare your non-hermetic inputs at
+the boundary* — e.g. an env allowlist that injects only the named variables
+and poisons the rest. That is the Starlark/Bazel "declare your inputs"
+discipline, and it reads better than per-use ignores. The flag is
+per-invocation (the whole render is hermetic or not); per-target checks are
+just separate invocations.
+
+### What is *not* a capability: `__build`
+
+Eucalypt prepends a second startup block, `__build`
+(`src/wasm_pipeline.rs:194-210`), structurally a sibling of `__io` — but a
+**different determinism class**, and the guard must leave it alone.
+`__build` is **embedded at compile time** from `build-meta.yaml` baked into
+the binary: `version`, `commit`, `url`, `banner` (`build.eu:64-72`),
+concrete strings fixed at build, with no run-time clock. It is therefore
+**identical across every run of a given binary** — reproducible-*given*-the-
+binary. Embedding `build.version` or `build.commit` is deterministic, and is
+in fact the canonical member of the reproducibility contract this proposal
+already states — *output reproduced from inputs **and the eu binary
+version***. Pinning the binary pins `__build`.
+
+(A separate axis — *reproducible builds of `eu` itself*, rebuilding from
+source to a byte-identical `build-meta` — is out of scope here; it turns on
+whether the build pipeline stamps a number/timestamp into `eu-build:`, not
+on render determinism. A stricter "output independent of the tool version"
+mode could poison `__build` too, but that contradicts the default contract,
+so it stays a noted option, not the default.)
 
 ### Capability types (the fuller H6c route) — won't-do
 
@@ -229,12 +282,12 @@ proposal **declines** that layer. The reasoning:
   (`any → T` trusted and erased; [0002]). So capability types could only
   ever be *advisory* — documentation with a checker's blessing, not a
   guarantee — the same degradation `IO(T)` already lives with.
-- **The lint already operationalises the same information**, more cheaply:
+- **The guard already operationalises the same information**, more cheaply:
   it distinguishes the four sources, propagates by reachability from a
   target, and supports binding-level scope via `deterministic:` metadata —
   with no annotation burden and no prelude annotations to keep correct.
 - **The one thing types add — capability info in a *published signature***
-  — only matters across an **opaque boundary**, where a whole-program lint
+  — only matters across an **opaque boundary**, where a whole-program check
   cannot see the body (a precompiled module, [0018]; a generated host
   binding, [0019]). Even there it is advisory, and a **capability manifest
   on module exports** (`capabilities: [:time, :env]`, lint-checked at the
@@ -244,7 +297,7 @@ proposal **declines** that layer. The reasoning:
   by types.
 
 Net: capability types would be annotation burden for advisory documentation
-the lint already provides. Should a hard, *enforced* hermeticity guarantee
+the guard already provides. Should a hard, *enforced* hermeticity guarantee
 ever be wanted, that is a different and larger project (sound effect
 tracking, which H6d rejects for eucalypt) — not these opaque brands.
 
@@ -259,9 +312,11 @@ property the conformance suite can test** (see
 > byte-for-byte identical output.
 
 This is already testable today (the proptest "render determinism" property
-in [0003](0003-conformance-testing-fuzzing.md) covers it), but the lint
-sharpens it: any render that fails determinism *and* passes the lint is a
-bug in the linter.
+in [0003](0003-conformance-testing-fuzzing.md) covers it), but hermetic
+mode sharpens it into a *guarantee*: a render that completes under
+`--require-deterministic` cannot depend, in its output, on unrepeatable
+startup data — so a non-deterministic render that completes under the flag
+is a bug in the guard.
 
 ### Relation to [0018] hermetic imports and [0019] host-language interop
 
@@ -285,33 +340,38 @@ type brand; see *Capability types — won't-do*.
 
 This proposal engages H6c's *goal* (reproducibility) but **declines H6c's
 type mechanism**, consistent with H6d's rejection of algebraic effect rows
-— eucalypt tracks the determinism capabilities with a lint, not the type
+— eucalypt tracks the determinism capabilities with a runtime guard, not the type
 system. H6c placed the capability-type work in Stage C ("radical options,
 24+ months", §2, "gather data before committing",
 `type-system-evolution.md:1308–1310`); this proposal resolves that fork as
-**won't-do** for the types and **1.0** for the lint.
+**won't-do** for the types and **1.0** for the guard.
 
-The lint has no dependency on Stage A or B type work — it operates on the
-inlined core expression tree, not on types. It could be implemented between
-now and 1.0 as a standalone `src/core/verify/` (or `src/driver/`) check.
-There is no interaction with H8 (MLsub) or the rest of the checker: the lint
-never touches types.
+The guard has no dependency on Stage A or B type work — it intercepts the
+`__io` pseudo-block at construction (`src/driver/io.rs`), not anything in
+the checker. It could be implemented between now and 1.0. There is no
+interaction with H8 (MLsub) or the rest of the checker: it never touches
+types.
 
 ---
 
 ## Implementation sketch
 
-### The lint (1.0)
+### The hermetic-mode guard (1.0)
 
-- **`src/core/verify/`** — new pass `determinism_check.rs`. Walk the inlined
-  core expression graph and collect uses of `__io.EPOCHTIME`, `__io.ENV`,
-  `__io.RANDOM_SEED`, and `IoAction` data constructors. Emit a `Diagnostic`
-  (warning or error per `--require-deterministic`) for each.
-- **`src/driver/options.rs`** — add `--require-deterministic` / `-D` flag
-  (alongside the existing `--allow-io` / `-I` at `options.rs:193`).
-- **`lib/prelude.eu`** — add a `deterministic: true` metadata key that the
-  driver reads from a target block before the lint.
-- **Size:** ~200–300 lines of Rust in a new file; one new CLI flag. Low risk.
+- **`src/driver/io.rs`** — when `--require-deterministic` is set,
+  `create_io_pseudoblock` injects a **poison thunk** (a core expression that
+  raises an `ExecutionError` on force) for `EPOCHTIME`, `TZ`, and `ENV`, and
+  for `RANDOM_SEED` **only when no explicit `--seed`** is present; otherwise
+  it injects the live values as today.
+- **`src/driver/options.rs`** — add the `--require-deterministic` / `-D`
+  flag (alongside the existing `--allow-io` / `-I` at `options.rs:193`);
+  on-demand IO (`io.shell`/`io.exec`) is already blocked by `--allow-io`
+  being off.
+- **Error quality** — the poison thunk names the capability and says the
+  output would not be reproducible (and, for random, that `--seed` makes it
+  deterministic). Reuse the `src/eval/error.rs` diagnostic path.
+- **Size:** ~50–100 lines in `io.rs` plus the flag. Low risk; no new pass,
+  no type-checker or inliner involvement.
 
 ### Capability types
 
@@ -323,10 +383,12 @@ this proposal.
 
 ## Alternatives considered
 
-**Remove the capabilities entirely (Starlark approach).** This would make
-eucalypt deterministic by construction but would remove `io.shell`,
-`io.epoch-time`, and `io.env` — features users already rely on. Not viable
-without breaking existing use cases and abandoning the tool-first positioning.
+**Remove the capabilities entirely (Starlark approach).** Removing
+`io.shell`, `io.epoch-time`, and `io.env` *unconditionally* would make
+eucalypt deterministic by construction but would break features users rely
+on — not viable. The adopted design is the *conditional* form of exactly
+this: under `--require-deterministic` the unrepeatable startup data is
+withheld (poisoned), and present otherwise. Starlark-when-you-ask-for-it.
 
 **Koka-style algebraic effect rows (H6d).** Considered and rejected in the
 evolution document. Full effect rows require annotating every function arrow,
@@ -336,44 +398,49 @@ poor for a data-transformation language.
 **A runtime `--check-deterministic` flag that re-runs and compares.**
 Running `eu` twice and diffing is a blunt instrument: it catches
 non-determinism only when it *happens* to manifest between the two runs
-(clocks incrementing between runs, random seed varying). Static analysis is
-strictly more reliable.
+(clocks incrementing, seed varying). The interception guard is strictly
+more reliable — it catches the dependency directly, in a single run, the
+moment a poisoned value is forced, rather than waiting for chance to expose
+it.
 
-**Tagging the `__io` pseudo-block structurally.** The `__io` pseudo-block
-is injected as a plain core block (`src/driver/io.rs:82–88`). One could add
-a structural tag to each field (e.g. `{:time 1234567890}` instead of
-`1234567890`) and check for those tags at the lint level. This works for the
-lint but does not attempt cross-boundary capability propagation (which
-*Capability types — won't-do* declines).
+**Tagging the `__io` pseudo-block, then scanning for the tags.** A static
+cousin of the adopted design: tag each field at injection (e.g. `{:time
+1234567890}`) and have a pass scan for the tags. The adopted interception
+goes further with less — it withholds the value entirely (poison), so
+*forcing* does the detection and no scan-and-survive pass is needed. Tagging
+would only be worth revisiting if a *static*, without-rendering pre-check
+were ever wanted; the guard already covers the property at render time.
 
 ---
 
 ## Risks & what would kill this
 
-**The lint finds too many false positives.** A render that reads
-`io.env.'CI'` to choose a log level is technically non-deterministic but
-in practice stable across all CI runs. If the lint flags this, users will
-disable it immediately. Mitigation: allow per-binding suppression via
-metadata (`deterministic-ignore: true`); document the distinction between
-"environment-parametric" and "non-reproducible".
+**The guard errors on benign capability use.** A render that reads
+`io.env.'CI'` to choose a log level is technically non-deterministic but in
+practice stable across CI runs; under the flag it would abort. Mitigation:
+*declare it as an input at the boundary* — an env allowlist that injects the
+named variables and poisons the rest — rather than blanket-poisoning `ENV`.
+This keeps the "environment-parametric vs non-reproducible" distinction
+explicit and at the invocation, not scattered at use sites.
 
 **Low demand.** If eucalypt users primarily run `eu` for one-off renders and
 do not use CI-cached outputs, the reproducibility problem is not felt. The
-lint is a low-cost probe for exactly that: if nobody ever sets
+guard is a low-cost probe for exactly that: if nobody ever sets
 `--require-deterministic`, the determinism story needs no further investment.
 
 ---
 
 ## Success criteria
 
-1. **Lint shipped by 1.0:** `--require-deterministic` flags all four
-   capability sources; zero false positives on the existing harness tests
-   (which do not use `io.epoch-time` or `io.env` in their assertions).
+1. **Hermetic mode shipped by 1.0:** under `--require-deterministic` a
+   render aborts iff its output depends on unrepeatable startup data
+   (`epoch-time`, unseeded `random`, `env`, `TZ`); the existing harness
+   tests still pass unchanged under the flag.
 2. **Conformance property added (0003):** The property "render with
    `--require-deterministic` and fixed `--seed` produces identical output
    on repeated runs" is added to the property test suite and passes.
 3. **Demand evidence:** At least one reported real-world use case (CI
-   caching, output diff, supply-chain audit) where the lint caught a
+   caching, output diff, supply-chain audit) where the guard caught a
    non-determinism bug — confirming the determinism story earns its keep.
 
 ---
