@@ -4,7 +4,7 @@
 - **Track:** C — type system & language (beyond the roadmap)
 - **Classification:** Extends-Roadmap
 - **Suggested horizon:** 0.8+
-- **Related:** H1 (HKT) and H10 (structural operator constraints) (`docs/development/type-system-evolution.md`); TS-B2, TS-B8 (`docs/development/operator-constraints-and-monad-types-spec.md`); TS-B1 (`docs/development/higher-kinded-types-spec.md`); open-questions 1 & 3 (`type-system-evolution.md` §5); sibling proposals [0001](0001-v1-charter.md), [0012](0012-algebraic-subtyping-fork.md)
+- **Related:** H1 (HKT) and H10 (structural operator constraints) (`docs/development/type-system-evolution.md`); TS-B2, TS-B8 (`docs/development/operator-constraints-and-monad-types-spec.md`); TS-B1 (`docs/development/higher-kinded-types-spec.md`); open-questions 1 & 3 (`type-system-evolution.md` §5); sibling proposals [0001](0001-v1-charter.md), [0009](0009-structural-contracts-validation.md), [0012](0012-algebraic-subtyping-fork.md), [0013](0013-type-dsl-embedding.md)
 
 ## Summary
 
@@ -119,8 +119,9 @@ in 0.8+, and name a hard stop.
 ### 1. The mechanism, as shipped (B2 + B8)
 
 A constrained scheme is a comma-separated constraint list before `=>`, then a
-body type, all inside a `type:` string (so no surface-syntax change; records
-inside use escaped braces, per the DSL). The DSL parses these today
+body type, all inside a `type:` string — or, per [0013], an `s"…"` literal,
+which (interpolation off) lets record types inside drop the `{{..}}`
+brace-doubling the plain string needs. The DSL parses these today
 (`parse::parse_scheme`, `src/core/typecheck/parse.rs:1208`):
 
 ```
@@ -134,7 +135,10 @@ inside use escaped braces, per the DSL). The DSL parses these today
 
 - **Overload set.** The set of `Function` types `name` is annotated with — one
   `Function` is one overload, a `Union` of them is several. Read from `name`'s
-  binding, reusing the existing union machinery (`apply_union`, `check.rs`).
+  binding by **flat name** (`discharge_constraint` keys the overload map on the
+  binding name, `check.rs:608-621`; the map is built from Let-binding names,
+  `cook/fixity.rs:35-37`), reusing the existing union machinery (`apply_union`).
+  This flat-name lookup is why a *dotted* head needs an extension (§2).
 - **Discharge.** When the scheme is instantiated and the constraint's `args`
   resolve to concrete types, `discharge_constraint` (`check.rs:587`) succeeds iff
   some overload accepts them (`is_consistent`); else a **warning** (never an
@@ -172,18 +176,33 @@ These deepen the shipped idiom without crossing into nominal territory:
   (`parse.rs:1208`, tested at `parse.rs:2036`). This is the structural analogue
   of `MultiParamTypeClasses`, minus the class; the maturation work is exercising
   it across the prelude rather than building new machinery.
-- **Namespace-function constraints.** `"str.of(a) =>"`, `"io.bind(m) =>"`. The
-  constraint references a dotted prelude path, not a class membership — a clean
-  generalisation that types `map(str.of)`-shaped functions honestly. The DSL
-  already parses dotted constraint heads (`parse.rs:2045`); this proposal endorses
-  promoting it from an available edge to a *first-class*, exercised use.
+- **Namespace-function constraints (parse-only today — needs a discharge
+  extension).** `"str.of(a) =>"`, `"io.bind(m) =>"`. The constraint references a
+  dotted prelude path, not a class membership — a clean generalisation that types
+  `map(str.of)`-shaped functions honestly. But it is **not yet wired up.** The DSL
+  *parses* a dotted head into `function: "str.of"` (`parse.rs:2045,2048`), yet
+  `discharge_constraint` resolves the overload set by **flat binding name**
+  (`check.rs:608-621`) and that map is keyed by Let-binding names, never by a
+  dotted path (`cook/fixity.rs:35-37`). So today a dotted constraint finds no
+  overload set and falls through to the silent "unknown operator" branch
+  (`check.rs:625-628`) — it is **vacuously satisfied**, checking nothing. Maturing
+  it requires real (if small) work: teach discharge to resolve a dotted head to
+  the namespace block's field type. This is the one place the "bulk has shipped,
+  residual is exercise-only" framing over-claims.
 - **Constraint aliases (new, optional, 0.8+).** A recurring conjunction —
-  say `"<(a,a), >(a,a), =(a,a)"` — could earn a DSL-level *alias*, e.g. a
-  `constraints:` metadata entry binding `Ord(a)` to that conjunction, expanded
-  by the parser. This is **textual abbreviation only**: it introduces no class,
-  no membership, no instance; `Ord(a)` is sugar that expands to the same
-  finite-enumeration checks. It buys readability for the handful of multi-op
-  numeric/comparison routines and nothing more. *Recommended only if real
+  say `"<(a,a), >(a,a), =(a,a)"` — could earn a DSL-level *alias*: a
+  `constraints:` metadata entry binding, say, `Comparable(a)` to that
+  conjunction, expanded by the parser. This is **textual abbreviation only**: it
+  introduces no class, no membership, no instance; the alias is sugar that expands
+  to the same finite-enumeration checks. **Avoid class-famous names** (`Ord`,
+  `Eq`, `Num`): they maximally invite the "this is a type class" misreading this
+  document fights — pick a plainly descriptive name. Note too that a constraint
+  alias is a **distinct kind** from a type/spec alias: a constraint is a predicate
+  over type *variables*, so — unlike a [0009] type alias — it is **not reifiable**
+  (there is no `validate(s"Comparable(a)", x)`; you cannot run a constraint over a
+  value). That is exactly why `constraints:` is a separate namespace from `types:`,
+  not a redundant third alias channel. It buys readability for the handful of
+  multi-op numeric/comparison routines and nothing more. *Recommended only if real
   annotations show the conjunctions repeating;* skip otherwise.
 
 ### 3. The hard boundary — what eucalypt must NOT add
@@ -248,14 +267,17 @@ interchangeable with a `Timeout` though both are `number`) and a stable contract
 name. It would *cost* the first nominal entity in the language — which at once
 raises "where are its instances declared?", reopening every coherence/orphan
 question just closed — plus an edition-gated breaking surface (per 0001) and a
-second, fragmenting way to model data. And the benefit is reachable structurally:
-a literal-symbol-tagged record `{tag: :port, value: number}`, or a `Dict`/record
-contract, gives a distinguishable *shape* without a name, while 0001's editions
-supply the stability lever. The newtype's *only* irreducible gain is
+second, fragmenting way to model data. And the benefit is reachable
+structurally — now concretely, via [0009]: an export contract *is* a structural
+spec, so a `Port` is a refined spec (an `s"number"` plus a `refine` predicate for
+the valid range) validated at the boundary, and a literal-symbol-tagged record
+`{tag: :port, value: number}` gives a distinguishable *shape* without a name.
+[0001]'s editions supply the stability lever. The newtype's *only* irreducible gain is
 **distinctness without a discriminator field** — nice, but not worth being the
 thin end of nominal typing. Keep it structural; if boundary distinctness becomes a
-measured pain, revisit as an edition-gated, instance-free *opaque alias* (a name,
-no class), never a class system.
+measured pain, revisit as an edition-gated, instance-free *opaque alias* — a
+name, no class, in practice a named [0009] spec / [0013] `s"…"` alias — never a
+class system.
 
 ### Open question 3 — encourage user-defined monads? (HKT in the user's lap)
 
@@ -297,10 +319,13 @@ This proposal's *own* residual additions are small:
 2. **Constraint aliases (~S, deferred, optional).** A `constraints:`-metadata
    expansion in the DSL parser (`src/core/typecheck/parse.rs`), purely textual.
    Build only on evidence of repetition.
-3. **Exercise the shipped idiom across the prelude (~S).** `min`/`max` already
-   carry constraints; extend honest annotations to the remaining namespace-generic
-   functions (`map(str.of)`-shaped) and keep `state` documented as *the* user-monad
-   worked example.
+3. **Dotted-constraint discharge, then exercise across the prelude (~S–M).**
+   `min`/`max` already carry (operator) constraints. *Namespace*-generic
+   annotations (`map(str.of)`-shaped) first need discharge taught to resolve a
+   dotted head to the namespace block's field type (see §2) — until then they
+   parse but check nothing. Then extend honest annotations across the prelude and
+   keep `state` documented as *the* user-monad worked example. Annotations are
+   written as [0013] `s"…"` literals (no `{{..}}` doubling).
 
 Risk is now low: the representation rewrite that carried it (`Con`/`App`/`Forall`)
 is done and tested. No STG/VM/GC change; types stay erased.
@@ -356,8 +381,9 @@ gets correct derived-combinator types with no user-written HKT annotation, with
 `io`/`for`/`let`/`random`/`state` all assembled from it). The maturation bar for
 0.8+ is:
 
-- Comparison- and namespace-generic functions beyond `min`/`max` carry honest
-  constraint annotations and `eu check lib/prelude.eu` is clean.
+- Comparison-generic functions beyond `min`/`max` carry honest constraint
+  annotations and `eu check lib/prelude.eu` is clean; *namespace*-generic
+  constraints discharge for real (not vacuously) once dotted resolution lands.
 - A user function that *propagates* a constraint type-checks; `min(blockA,
   blockB)` warns; an existing union-overload annotation still works (regression
   coverage holds).
