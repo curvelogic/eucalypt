@@ -1,9 +1,9 @@
-# 0010 — Capability & determinism types for reproducible rendering (H6c)
+# 0010 — A determinism lint for reproducible rendering (H6c)
 
 - **Status:** Draft proposal for review
 - **Track:** C — type system & language (beyond the roadmap)
-- **Classification:** Stage-C-Fork
-- **Suggested horizon:** post-1.0
+- **Classification:** Extends-Roadmap
+- **Suggested horizon:** 1.0
 - **Related:** H6c (type-system-evolution.md §1), sibling proposals
   [0003](0003-conformance-testing-fuzzing.md) (conformance testing),
   [0009](0009-structural-contracts-validation.md) (structural contracts),
@@ -22,11 +22,14 @@ a configuration and data generator for CI/CD pipelines, this is a strategic
 gap: a render that silently varies between invocations undermines caching,
 diffability, and supply-chain trust. H6c in the type-system evolution
 document proposes tracking these capabilities as opaque type constructors —
-`Random(T)`, `Time(T)`, `Env(T)`, `IO(T)` — exactly mirroring the
-idiom already in place for the `IO(T)` monad. This proposal argues that a
-*lint* (cheaply checkable today) should precede full *capability types*
-(heavier, post-1.0), and presents the design fork for the maintainer's
-decision.
+`Random(T)`, `Time(T)`, `Env(T)`, `IO(T)` — mirroring the `IO(T)` monad.
+**This proposal declines that route.** It argues for a cheap *lint*
+(`--require-deterministic`) that flags the capability sources directly, and
+records the capability-**type** layer as **won't-do**: under eucalypt's
+gradual, erased typing the types could only ever be advisory — never a
+hermeticity *guarantee* — and the lint already delivers that value without
+the annotation burden. The rationale is below (*Capability types —
+won't-do*).
 
 ---
 
@@ -163,26 +166,31 @@ conservatism: there is no surface to attach effect annotations to function
 arrows without new syntax.
 
 The capability-constructor route — `Random(T)`, `Time(T)`, `Env(T)` as
-opaque wrappers, threaded like `IO(T)` — is strictly narrower, consistent
-with the existing idiom, and requires no new syntax.
+opaque wrappers, threaded like `IO(T)` — is strictly narrower than effect
+rows and consistent with the existing idiom. But it too is **declined**
+here (see *Capability types — won't-do*): being advisory and erased it
+gives no guarantee, and the lint covers the same ground. It is recorded for
+completeness, not adopted.
 
 ### The "opaque > transparent" principle
 
 The cross-cutting theme in `type-system-evolution.md §3` is that complex
 abstractions should be opaque: the user sees the interface type, not the
 encoding. `IO`, `Lens`, `Traversal`, and `Partial` (H6b) follow this
-principle. Capability constructors are the next natural member of this
-family. The implementation is free to change; the type contract is not.
+principle, and capability constructors *would* have been the next natural
+member of the family — which is why H6c is tempting. The reason this
+proposal still declines them (*Capability types — won't-do*) is that the
+members above all earn their place as *interfaces you compute with*, whereas
+capability brands would only ever be passive, advisory labels.
 
 ---
 
 ## Proposed design
 
-### Phase 1 (lint, no new types): `--require-deterministic`
+### The lint: `--require-deterministic`
 
-The cheapest useful step is a *lint* that inspects the inlined core
-expression and flags uses of the four capability sources before any type
-machinery is needed. The lint runs after the `inline` pass
+The proposal is a *lint* that inspects the inlined core expression and
+flags uses of the four capability sources — no type machinery needed. The lint runs after the `inline` pass
 (`src/core/inline/`), where the tree is maximally simplified and uses of
 `io.epoch-time`, `io.RANDOM_SEED`, `io.env`, and `IoAction` constructors
 are directly visible.
@@ -207,64 +215,38 @@ target.
 This lint is implementable entirely in `src/core/` without touching the
 type checker. It is cheap, high-value, and appropriate for 1.0.
 
-### Phase 2 (capability types, post-1.0): opaque constructors
+### Capability types (the fuller H6c route) — won't-do
 
-The full design adds four opaque type constructors to the type system,
-threaded exactly as `IO(T)` is threaded today:
+H6c's fuller proposal is to add opaque constructors `Random(T)`, `Time(T)`,
+`Env(T)` (mirroring `IO(T)`), so a function that touches the clock carries
+`Time(...)` in its return type and the taint propagates to call sites. This
+proposal **declines** that layer. The reasoning:
 
-| Constructor | Source | Example annotation |
-|-------------|--------|--------------------|
-| `Random(T)` | `io.random`, `random.stream` | `"stream -> Random(number)"` |
-| `Time(T)` | `io.epoch-time`, `io.TZ` | `"Time(number)"` |
-| `Env(T)` | `io.env`, `io.env.'KEY'` | `"Env(string)"` |
-| `IO(T)` | `io.shell`, `io.exec` | `"IO({{..}})"` (already present) |
+- **It cannot give the guarantee that would justify it.** The valuable
+  property is *"the checker proves this render is hermetic."* A proof needs
+  **soundness** — no `Time(number)` may silently become a plain `number`.
+  Eucalypt's gradual typing is deliberately unsound at the boundary
+  (`any → T` trusted and erased; [0002]). So capability types could only
+  ever be *advisory* — documentation with a checker's blessing, not a
+  guarantee — the same degradation `IO(T)` already lives with.
+- **The lint already operationalises the same information**, more cheaply:
+  it distinguishes the four sources, propagates by reachability from a
+  target, and supports binding-level scope via `deterministic:` metadata —
+  with no annotation burden and no prelude annotations to keep correct.
+- **The one thing types add — capability info in a *published signature***
+  — only matters across an **opaque boundary**, where a whole-program lint
+  cannot see the body (a precompiled module, [0018]; a generated host
+  binding, [0019]). Even there it is advisory, and a **capability manifest
+  on module exports** (`capabilities: [:time, :env]`, lint-checked at the
+  import boundary) would carry the same information without a type-system
+  extension. So the only niche that could justify capability types is both
+  contingent on [0018]/[0019] *and* arguably better served by metadata than
+  by types.
 
-In the type DSL (metadata strings), these are parsed like the existing
-`IO(T)` — `src/core/typecheck/parse.rs` already handles one-argument opaque
-constructors. Adding four more is a parse-table addition.
-
-The prelude annotations for the non-deterministic bindings would become:
-
-```
-` { doc: "Seconds since the Unix epoch at launch time."
-    type: "Time(number)" }
-epoch-time: __io.EPOCHTIME
-
-` "Opaque random stream seeded from system entropy or --seed flag."
-` { type: "Random(stream)" }
-random: __STREAM_NEW(io.RANDOM_SEED)
-
-` { doc: "Read access to environment variables at time of launch."
-    type: "Env({{string}})" }
-env: __io.ENV
-```
-
-A function that uses `io.epoch-time` propagates `Time(...)` in its return
-type; the type checker then surfaces this at the call site. A render target
-annotated `"number"` will generate a type warning if it evaluates to
-`Time(number)`. This is identical to the way `IO(T)` already prevents using
-an IO action as a plain value.
-
-### Capability-passing idiom: no new syntax
-
-The threading idiom is the same as for `IO(T)`: pass the capability
-explicitly. A eucalypt program that needs both a random stream and the
-current time would be written as:
-
-```
-make-config(rng, ts): {
-  id: rng random.next-int(1000000) head
-  generated-at: ts
-}
-
-config: make-config(io.random, io.epoch-time)
-```
-
-The type of `make-config` would be `"stream -> number -> {{..}}"` (where
-`rng` carries the `Random` brand through the stream type and `ts` carries
-`Time`). There is no new syntax: capability passing is ordinary function
-argument passing. The `Random`/`Time`/`Env` constructors appear only in
-return-type annotations, not in call syntax.
+Net: capability types would be annotation burden for advisory documentation
+the lint already provides. Should a hard, *enforced* hermeticity guarantee
+ever be wanted, that is a different and larger project (sound effect
+tracking, which H6d rejects for eucalypt) — not these opaque brands.
 
 ### Determinism as a testable property (link to [0003])
 
@@ -277,9 +259,9 @@ property the conformance suite can test** (see
 > byte-for-byte identical output.
 
 This is already testable today (the proptest "render determinism" property
-in [0003](0003-conformance-testing-fuzzing.md) covers it), but the lint and
-capability types sharpen it: any render that fails determinism *and* passes
-the lint is a bug in the linter.
+in [0003](0003-conformance-testing-fuzzing.md) covers it), but the lint
+sharpens it: any render that fails determinism *and* passes the lint is a
+bug in the linter.
 
 ### Relation to [0018] hermetic imports and [0019] host-language interop
 
@@ -292,41 +274,34 @@ and the capability graph (0010), and a CI pipeline that enforces both can
 make a strong "this output is reproducible from these inputs" claim.
 
 [0019](0019-host-language-interop.md) covers code generation and schema
-interop. The capability types are directly useful there: a generated binding
-for a time-reading function should carry a `Time(T)` annotation, not `T`,
-so that host-language users see the non-determinism.
+interop. If cross-boundary capability information is ever wanted there (a
+generated binding advertising that it reads the clock), the right carrier is
+a capability *manifest* on the binding — lint-checked at the boundary — not a
+type brand; see *Capability types — won't-do*.
 
 ---
 
 ## Interaction with the existing roadmap
 
-This proposal engages H6c directly and follows H6d's rejection of algebraic
-effect rows. It is a Stage C item — the type-system evolution document
-places H6c in Stage C ("radical options, 24+ months", §2) with the note
-"interesting … gather data before committing"
-(`type-system-evolution.md:1308–1310`). The classification here as
-`Stage-C-Fork` is faithful to that framing.
+This proposal engages H6c's *goal* (reproducibility) but **declines H6c's
+type mechanism**, consistent with H6d's rejection of algebraic effect rows
+— eucalypt tracks the determinism capabilities with a lint, not the type
+system. H6c placed the capability-type work in Stage C ("radical options,
+24+ months", §2, "gather data before committing",
+`type-system-evolution.md:1308–1310`); this proposal resolves that fork as
+**won't-do** for the types and **1.0** for the lint.
 
-The lint (Phase 1) has no dependency on Stage A or B type work — it
-operates on the inlined core expression tree, not on types. It could be
-implemented between now and 1.0 as a standalone `src/driver/` or
-`src/core/verify/` check.
-
-The capability types (Phase 2) depend on:
-- H6b (`Partial(T)`) landing first — it exercises the opaque-constructor
-  path in the checker and validates the pattern.
-- The prelude being sufficiently annotated (Stage A) so that capability
-  propagation is visible without user annotations.
-
-There is no conflict with H8 (MLsub): the capability constructors are
-opaque and do not participate in subtyping beyond the standard
-`any`-consistent rule.
+The lint has no dependency on Stage A or B type work — it operates on the
+inlined core expression tree, not on types. It could be implemented between
+now and 1.0 as a standalone `src/core/verify/` (or `src/driver/`) check.
+There is no interaction with H8 (MLsub) or the rest of the checker: the lint
+never touches types.
 
 ---
 
 ## Implementation sketch
 
-### Phase 1: lint (1.0 or shortly before)
+### The lint (1.0)
 
 - **`src/core/verify/`** — new pass `determinism_check.rs`. Walk the inlined
   core expression graph and collect uses of `__io.EPOCHTIME`, `__io.ENV`,
@@ -338,18 +313,11 @@ opaque and do not participate in subtyping beyond the standard
   driver reads from a target block before the lint.
 - **Size:** ~200–300 lines of Rust in a new file; one new CLI flag. Low risk.
 
-### Phase 2: capability types (post-1.0)
+### Capability types
 
-- **`src/core/typecheck/parse.rs`** — add `Random`, `Time`, `Env` to the
-  opaque constructor table (same path as `IO`, `Lens`, `Traversal`).
-- **`src/core/typecheck/types.rs`** — four new `OpaqueConstructor` variants
-  or string-keyed (the latter is already how `IO` is stored — verify).
-- **`lib/prelude.eu`** — update the `type:` annotations on `epoch-time`,
-  `env`, `RANDOM_SEED`, `random`.
-- **`src/core/typecheck/check.rs`** — add subtyping rules: `Random(T) <: any`
-  (consistent with existing opaque behaviour), propagation through application.
-- **Size:** ~150–200 lines across three files. Medium risk (careful interaction
-  with existing opaque-constructor logic needed).
+Not pursued — see *Capability types (the fuller H6c route) — won't-do*. No
+type-checker, `parse.rs`, `types.rs`, or prelude-annotation work is part of
+this proposal.
 
 ---
 
@@ -375,7 +343,8 @@ strictly more reliable.
 is injected as a plain core block (`src/driver/io.rs:82–88`). One could add
 a structural tag to each field (e.g. `{:time 1234567890}` instead of
 `1234567890`) and check for those tags at the lint level. This works for the
-lint but does not give the type propagation of Phase 2.
+lint but does not attempt cross-boundary capability propagation (which
+*Capability types — won't-do* declines).
 
 ---
 
@@ -388,24 +357,10 @@ disable it immediately. Mitigation: allow per-binding suppression via
 metadata (`deterministic-ignore: true`); document the distinction between
 "environment-parametric" and "non-reproducible".
 
-**Capability types interact poorly with gradual typing.** If `any → Time(T)`
-is trusted silently (the current policy for opaque constructors), then a user
-who passes `42` where `Time(number)` is expected gets no warning. This is the
-same trade-off as `IO(T)` today and is acceptable: the capability types are
-documentation and lint triggers, not sound guards. They degrade gracefully
-under gradual typing exactly as `IO(T)` does.
-
 **Low demand.** If eucalypt users primarily run `eu` for one-off renders and
 do not use CI-cached outputs, the reproducibility problem is not felt. The
-maintainer should collect data from real use cases before committing Phase 2.
-The lint is a low-cost probe: if nobody ever sets `--require-deterministic`,
-capability types are not worth implementing.
-
-**Naming collision.** `Time(T)` is a common type name in other systems.
-Within the type-DSL it is unambiguous (it is parsed from a metadata string
-and looked up in the opaque-constructor table), but in documentation it may
-cause confusion. Alternative names: `Clocked(T)`, `Dated(T)`. This is a
-minor decision best deferred to implementation.
+lint is a low-cost probe for exactly that: if nobody ever sets
+`--require-deterministic`, the determinism story needs no further investment.
 
 ---
 
@@ -419,12 +374,7 @@ minor decision best deferred to implementation.
    on repeated runs" is added to the property test suite and passes.
 3. **Demand evidence:** At least one reported real-world use case (CI
    caching, output diff, supply-chain audit) where the lint caught a
-   non-determinism bug. This is the gate for committing Phase 2.
-4. **Phase 2 (post-1.0):** `Random(T)`, `Time(T)`, `Env(T)` type-check
-   correctly in the existing harness; the prelude annotations propagate
-   capability types to callers without user annotation; a render target
-   annotated `"{..}"` (not `IO({..})`) generates a type warning when
-   `io.shell` is in its transitive use.
+   non-determinism bug — confirming the determinism story earns its keep.
 
 ---
 

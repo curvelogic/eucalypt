@@ -82,7 +82,7 @@ single-threaded lazy-pure runtime, the tool-first framing, and UK English.
 | # | Proposal | Class | Horizon |
 |---|----------|:-----:|:-------:|
 | [0009](0009-structural-contracts-validation.md) | Structural contracts/spec: unify `match?`, types & runtime validation (Clojure-spec model) | W | 1.0 |
-| [0010](0010-capability-determinism-types.md) | Capability & determinism types for reproducible rendering (H6c) | F | post-1.0 |
+| [0010](0010-capability-determinism-types.md) | A determinism lint for reproducible rendering (H6c); capability types won't-do | E | 1.0 |
 | [0011](0011-typeclasses-without-classes.md) | "Typeclasses without classes" maturation (beyond H10) | E | 0.7+ |
 | [0012](0012-algebraic-subtyping-fork.md) | The algebraic-subtyping fork (H8 MLsub/MLstruct): decision dossier | F | post-1.0 |
 | [0013](0013-type-dsl-embedding.md) | String type-DSL for 1.0 (H12), refined by the `s"…"` prefix (H12e) for 0009's value-context refs; reserved bracket rejected | E | 0.9 / 1.0 |
