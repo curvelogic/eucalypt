@@ -8,7 +8,8 @@
   (alias-reference-tooling-spec.md), open question 2
   (type-system-evolution.md §5), siblings
   [0011 — typeclasses-without-classes](0011-typeclasses-without-classes.md),
-  [0009 — structural-contracts-validation](0009-structural-contracts-validation.md)
+  [0009 — structural-contracts-validation](0009-structural-contracts-validation.md),
+  [0012 — algebraic-subtyping-fork](0012-algebraic-subtyping-fork.md)
 
 ---
 
@@ -280,6 +281,13 @@ embedded form, no conflict.
 as part of the 0.7.0 type grammar, demonstrating that the string form can
 absorb new constraint syntax without touching core syntax. They stay
 there. TS-A7's span recording covers constraint identifiers as well.
+
+**0012 (algebraic-subtyping fork).** Decided **won't-do**: the inference
+*engine* is not being rebuilt either. So both halves of the type-system
+question are now settled in the conservative direction — 0013 keeps the
+*surface* a string DSL (refined by `s"…"`), and 0012 keeps the *engine* the
+predictable hand-rolled core. The string DSL is therefore the long-term form
+on a stable engine, not merely a 1.0 holding position.
 
 ---
 
