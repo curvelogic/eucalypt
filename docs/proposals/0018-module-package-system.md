@@ -7,7 +7,10 @@
 - **Related:** sibling proposals [0001](0001-v1-charter.md) (editions &
   stability), [0010](0010-capability-determinism-types.md) (hermetic
   reproducibility), [0019](0019-host-language-interop.md) (host-language &
-  schema interop); `docs/development/unit-visibility-spec.md`
+  schema interop); [0000](0000-priority-fixes.md) F3 (the Unit Interface —
+  the export/link contribution) and [0004](0004-compiled-unit-caching.md) /
+  [0014](0014-incremental-query-core.md) (the shared content hash);
+  `docs/development/unit-visibility-spec.md`
   (`export: :internal`); ADR-001 (`docs/development/architectural-decisions.md`)
 
 ## Summary
@@ -22,11 +25,13 @@ third-party import**. This proposal sequences a module/package system whose
 1.0-essential core is small and conservative — **integrity-checked imports**
 (Dhall's semantic-hash model), a **manifest plus lockfile expressed in
 eucalypt's own block syntax**, and **namespace isolation** — followed by
-**versioned dependencies** and an optional **hermetic mode**, with a hosted
-**registry** argued explicitly *out* of 1.0 as a large social-and-infra
-commitment best deferred. The thesis: integrity + manifest + namespacing is
-the minimal cut that makes third-party `.eu` libraries safe and reproducible;
-everything else is post-1.0.
+**versioned dependencies** and an optional **hermetic mode**. A hosted
+**registry is explicitly won't-do** — eucalypt has no ecosystem to centralise,
+and a registry is a standing social-and-infra liability; **git repositories
+(GitHub/GitLab) are the sole distribution mechanism**, made safe by content
+hashes rather than by a trusted host. The thesis: integrity + manifest +
+namespacing over plain git is the minimal cut that makes third-party `.eu`
+libraries safe and reproducible — no registry, now or later.
 
 ## Motivation
 
@@ -116,7 +121,7 @@ canonical parsed-and-pretty-printed form of the imported unit): integrity and
 caching, but *not* Dhall's insensitivity to whitespace. An acceptable 1.0
 trade; a semantic variant could follow for the pure subset.
 
-### Go modules — minimal version selection, `go.sum`, proxy (borrow selectively)
+### Go modules — registry-free, VCS-direct: MVS + `go.sum` (the primary model)
 
 Go's design (Russ Cox, "Go & Versioning", research.swtch.com, 2018) is the
 reference for *boring, reproducible* dependency management. **Minimal Version
@@ -129,10 +134,14 @@ database** (`sum.golang.org`) is a global transparency log so everyone observes
 the same hash for a given version; **`GOPROXY`** decouples fetching from the
 origin VCS.
 
-**Borrow:** MVS's philosophy (deterministic, no surprise upgrades) and the
-`go.sum`-style lockfile as the integrity ledger. **Don't borrow (for 1.0):**
-the proxy and global checksum-transparency-log are *registry-scale*
-infrastructure — they belong with the deferred registry, not the 1.0 core.
+**Borrow — and Go is the *primary* model precisely because it is
+registry-free:** a module *is* its VCS path, fetched **directly from
+GitHub/GitLab**; there is no central package registry. Take MVS's philosophy
+(deterministic, no surprise upgrades), the `go.sum`-style lockfile as the
+integrity ledger, and the VCS-direct fetch. **Reject outright** (not defer):
+the module proxy and the global checksum-transparency-log — *registry-scale*
+services eucalypt will not run. Git plus the lockfile's hashes give the
+integrity a transparency log would attest, without the service.
 
 ### Unison Share — content-addressed code (instructive, not adoptable)
 
@@ -183,6 +192,29 @@ Dhall-style "pin + verify content hash" applied to the bytes; it gives
 tamper-evidence and a content-addressed cache key with no version solver and no
 registry. It is the highest safety-per-line change available.
 
+**Scope of the hash — per-file, so transitivity is an open sub-decision.**
+A `sha256:` hashes *one unit's* canonical source: tamper-evidence for that
+file, but **not** for what it transitively imports. Dhall's guarantee is
+transitive only because its hash is *semantic*, over the fully-resolved
+normal form; a per-file source hash is not — a pinned `json-tools.eu` that
+does `import: "helper.eu"` leaves `helper.eu` unverified, so an author
+pinning only direct imports has a shallow guarantee. End-to-end integrity
+needs one of two routes (not mutually exclusive), and this proposal must
+pick:
+
+- **(i) Merkle hash over the import DAG** — a unit's hash folds in its
+  imports' hashes, so one pin covers the whole closure (Dhall-like;
+  `eu freeze` walks the already-acyclic, diamond-deduped DAG). One opaque
+  number, re-frozen on any deep change.
+- **(ii) closure-complete lockfile** — every unit in the closure carries its
+  own `sha256:` in (b), Go/Cargo-style: an explicit, diffable ledger; then
+  (a)'s inline pin is per-file convenience and the *security* boundary is the
+  lockfile.
+
+This bears directly on the '(a)+(b)+(c) minimal safe cut' below: whichever
+route is chosen is what actually carries transitivity — `(a)`'s inline pins
+alone do not.
+
 ### (b) Manifest + lockfile in eucalypt block syntax (1.0)
 
 Declare a project's dependencies as **a eucalypt block** — deps are data, and
@@ -212,6 +244,22 @@ introduced, honouring syntactic conservatism completely. The driver resolves
 `deps` names to import roots, so `{ import: "json-tools" }` in source resolves
 through the manifest rather than the bare lib-path.
 
+**Discovery — how the driver finds the manifest when you run an arbitrary
+file.** This is the project-root problem (`Cargo.toml` / `go.mod` /
+`package.json` all solve it). For `eu sub/foo.eu`, the driver searches
+**upward from the invoked file's directory** for the conventional manifest
+name (`project.eu`), falling back to the CWD for stdin / `-e` — anchored on
+the *file* because `eu` is invoked with explicit paths and already resolves
+imports importer-relative (`source.rs:259-270`). The first manifest found
+defines the project root; its `deps` govern named-import resolution.
+Crucially, this **degrades to today's behaviour**: with no manifest in the
+ancestry, resolution is exactly the current lib-path/relative model — so a
+one-off `.eu` in a folder with no project runs unchanged, and the manifest
+takes effect only when present. An explicit `--manifest <path>` overrides
+discovery, and `--hermetic` (e) *requires* a manifest and makes it the
+closure root. The convention is opt-in: no filename is load-bearing until a
+project chooses to have one.
+
 ### (c) Namespace isolation — building on `export: :internal` (1.0)
 
 A library that exposes a curated surface and hides its helpers is the
@@ -226,7 +274,10 @@ declare its public surface as an explicit allowlist, so "what this package
 exports" is a reviewable data declaration, not an accident of which helpers
 clash. Named imports (`cfg=config.eu`) remain the per-import namespacing tool;
 `:internal` is the per-*library* one. No new syntax: one metadata value plus a
-manifest key.
+manifest key. This package export surface is also exactly the *Link*
+contribution in [0000](0000-priority-fixes.md) F3's Unit-Interface table
+(exported binding names → slots): the allowlist is what a unit *publishes* —
+the same data a separate-compilation interface records.
 
 ### (d) Versioned dependencies — start minimal (1.0-if-affordable, else 1.1)
 
@@ -257,21 +308,23 @@ binary" — the supply-chain property [0010] §Summary motivates. Implementation
 is mostly *subtraction* in the `SourceLoader` resolution path (disable the
 fallbacks in `read_fs_input`/`resolve_fs_path` under the flag), so it is cheap.
 
-### The registry question — explicitly post-1.0
+### No registry — git repositories are the distribution mechanism
 
-A hosted registry (discovery, publication, a `sum.golang.org`-style
-transparency log, an `eu add acme/json-tools` UX) is where this ultimately
-goes, and Unison Share / Go's proxy show its value. It is **deliberately
-excluded from 1.0**. A registry is a *social and infrastructural* commitment —
-hosting, naming policy, moderation, availability SLAs, security response — not
-merely code, and it is irreversible in a way language features are not. The
-1.0-essential insight is that **you do not need a registry to get the safety**:
-integrity hashes (a) make *any* fetch backend — git, a tarball URL, a vendored
-directory — tamper-evident, and the manifest/lockfile (b) makes the dependency
-set explicit and reproducible. Registry-scale pieces (proxy, global checksum
-log) attach later *without* changing the on-disk artefact, because the lockfile
-already carries the hashes a transparency log would attest. The minimal 1.0
-cut is therefore **(a) + (b) + (c)**: integrity, manifest, namespacing.
+Eucalypt will **not** build a hosted registry — not in 1.0, not later. There
+is no ecosystem to centralise, and a registry (discovery, publication, a
+`sum.golang.org`-style transparency log, an `eu add …` UX) is a *standing
+social and infrastructural liability* — hosting, naming policy, moderation,
+availability SLAs, security response — irreversible in a way language features
+are not. **Distribution is plain git: GitHub/GitLab (or any) repositories,
+referenced by URL + ref, made safe by content hashes — not by trusting a
+host.** This is Go's registry-free, VCS-direct model (above), and it suffices:
+integrity hashes make *any* git fetch tamper-evident (per unit, and
+transitively via the (a) decision), and the manifest/lockfile (b) makes the
+dependency set explicit and reproducible. The lockfile already carries every
+hash a transparency log would attest — so the safety a registry would add is
+obtained without the service. The complete distribution story is therefore
+**(a) integrity + (b) manifest/lockfile + (c) namespacing, over git** — and
+that is the whole of it, not a stepping stone to a registry.
 
 ## Interaction with the existing roadmap
 
@@ -287,13 +340,17 @@ imports" as a top-tier 1.0 gap (`docs/proposals/README.md:40`).
   how a *graph* of units pins what it depends on. They must share the
   metadata-schema parser.
 - **[0010] (capability/determinism).** Hermetic mode (e) is the import-graph
-  half of the reproducibility story; [0010] is the capability-graph half. 0010
-  already names 0018 as its complement (`0010-…:284-292`); this proposal
-  reciprocates. Neither subsumes the other.
-- **[0004] (compiled-unit caching).** 0004 already points at 0018
-  (`0004-…:167`): a content hash (a) is the natural, collision-free cache key
-  for a compiled unit. The integrity hash and the compile cache want the *same*
-  digest — they should share one canonicalisation.
+  half of the reproducibility story; [0010]'s **hermetic mode** (capability
+  interception — its capability *types* were dropped as won't-do) is the
+  capability-graph half. 0010 already names 0018 as its complement; this
+  proposal reciprocates. Neither subsumes the other.
+- **[0004] (compiled-unit caching) and [0014] (query core).** 0004 already
+  points at 0018 (`0004-…:167`): a content hash (a) is the natural,
+  collision-free cache key for a compiled unit; [0014]'s query graph keys on
+  the same content hash. Integrity (0018), the compile cache (0004), and the
+  query keys (0014) all want the *same* digest — one shared canonicalisation,
+  whose substrate is `eu fmt`'s reformat-**idempotence**
+  (`src/syntax/export/format.rs`). Get it byte-stable once, for all three.
 - **[0019] (host-language interop).** Schema/CRD ingest produces `.eu`
   artefacts that want to be *published* like any library; the manifest format
   is what they would be published *as*.
@@ -342,8 +399,11 @@ worth solving once, carefully.
 - **Full SemVer range solver (npm/Cargo style).** Rejected for 1.0 in favour of
   MVS: solvers bring backtracking, lockfile churn, and "minimal version
   selection avoids" the surprise-upgrade failure mode. MVS is a graph walk.
-- **A registry first.** Rejected: largest cost, irreversible, and unnecessary
-  for the safety win — integrity + manifest deliver reproducibility without it.
+- **A registry, ever.** Won't-do (not merely "not first"): largest cost,
+  irreversible, and unnecessary — git repos + integrity + manifest/lockfile
+  deliver trust and reproducibility with no host to run. Eucalypt has no
+  ecosystem to justify centralising, and would not take on the standing
+  liability if it did.
 - **Do nothing (status quo file/git imports).** Forecloses a library ecosystem
   and leaves third-party imports untrustworthy at exactly the moment 1.0 invites
   people to depend on them.
@@ -373,8 +433,10 @@ integrity model needs the heavier semantic-hash route before 1.0 — and the
 ## Success criteria
 
 1. **Integrity shipped by 1.0:** a hash-pinned import that has been tampered
-   with fails loudly; an untampered one loads and populates a content-addressed
-   cache; `eu freeze` round-trips on the harness corpus.
+   with fails loudly — **including a tampered *transitive* import** (via the
+   Merkle root or the closure-complete lockfile, per the (a) sub-decision); an
+   untampered one loads and populates a content-addressed cache; `eu freeze`
+   round-trips on the harness corpus.
 2. **Manifest/lockfile shipped:** a project with a `:package` manifest resolves
    and pins its deps; the lockfile is a committable `.eu` block; re-resolution
    with no change is a no-op (byte-identical lockfile).
@@ -386,8 +448,9 @@ integrity model needs the heavier semantic-hash route before 1.0 — and the
 5. **Versioning (if in 1.0, else 1.1):** MVS selects the minimal satisfying
    version across a two-level dependency graph; a conflicting-major graph is
    reported, not silently resolved.
-6. **Registry remains absent** from 1.0, with the lockfile shown to carry every
-   hash a future transparency log would attest — proving the deferral is safe.
+6. **No registry** — git (GitHub/GitLab) plus the lockfile is the complete
+   distribution story; the lockfile carries every hash a transparency log would
+   attest, proving a registry is unnecessary, not merely deferred.
 
 ## References
 
