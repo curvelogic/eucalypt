@@ -206,4 +206,70 @@ payload for 0004); subsumes the listed heuristics; independent of F1.
 
 ---
 
+## F5 — Restore git imports (regression; dropped in the Haskell→Rust rewrite)
+
+- **Priority:** P1 / high (documented feature absent; silent mis-behaviour; a
+  third-party-sharing gap at exactly the moment 1.0 invites it)
+- **Type:** regression / feature restoration
+- **Status:** open
+
+**Description.** `{ import: { git: …, commit: …, import: … } }` is **documented
+as working** (`docs/guide/imports-and-modules.md:183-207`,
+`docs/reference/import-formats.md:87-114`) but does nothing in the Rust
+implementation. It was a *real, shipped feature of the Haskell eucalypt* —
+added 2019-03-05 (PR #115, `6e56dc5c`, "Add import direct from git repo
+capability": `src/Eucalypt/Driver/Git.hs` cloned a repo at a commit into a
+local cache under `.eucalypt.d`) — and was dropped wholesale in the rewrite
+("Remove Haskell implementation", 2021-05-10 `6217817f`), never re-ported. The
+docs survived the rewrite (the "doc fixes for rust impl" PR missed this
+section), so the guide has promised a non-existent feature for ~4 years. Today
+`scrape_rowan_imports` (`src/syntax/import.rs:259-293`) matches only string and
+list elements; a `{ git: … }` block is an `Element::Block` and is **silently
+dropped** (the `_ => {}` arm), so the import never happens and the user gets a
+downstream "unbound name", not a clear "git imports unsupported". There is no
+`Git` variant in `Locator` (`src/syntax/input.rs:17`), no git dependency in
+`Cargo.toml`, and the `Url` locator parses but the loader has no fetch arm for
+it either.
+
+**Repro.** A file does `{ import: { git: "https://github.com/u/r", commit:
+"<sha>", import: "lib.eu" } }` and uses a binding from it; the binding is
+unresolved, despite the guide saying this works.
+
+**Fix — restore it *consistent with [0018]*, not as the bare 2019 form.** Don't
+just re-port the Haskell mechanism; implement git as a **fetch backend beneath
+a content hash**, which is exactly [0018]'s git-only distribution model:
+
+- teach `scrape_rowan_imports` the **block form** (the same change [0018] (a)
+  and F3 also need) — read `git:`/`commit:`/`import:` plus an optional
+  `sha256:`;
+- add a git-capable locator + clone-and-cache at the pinned commit (the Haskell
+  `.eucalypt.d` cache is the reference design), keyed by commit SHA;
+- verify the optional `sha256:` **content** hash on the fetched bytes ([0018]
+  (a)): the commit SHA pins the ref; the content hash additionally defends
+  against a force-push / rewritten history a bare ref cannot.
+
+This makes the regression-fix the **foundation [0018] builds on** rather than a
+throwaway: [0018]'s manifest/lockfile (b) and MVS (d) then layer over a git
+backend that already exists and is already hash-verified. One move restores both
+the docs' promise and the [0018] approach.
+
+**Interaction.** Implements the fetch half of [0018] (d) and the integrity half
+of [0018] (a); shares the block-scraper change with F2/F3; the unwired `Url`
+locator is the same loader gap and can be closed alongside. Until this lands the
+git-import docs are actively wrong — either fix the code (this F5) or, as an
+interim, mark the docs not-yet-implemented.
+
+**References.** `src/syntax/import.rs:259-293` (`scrape_rowan_imports`, block
+ignored); `src/syntax/input.rs:17` (`Locator` — no `Git`; `Url` parses but
+unwired in `src/driver/source.rs`); `docs/guide/imports-and-modules.md:183-207`,
+`docs/reference/import-formats.md:87-114` (the stale promise); Haskell prior art
+`6e56dc5c` (`src/Eucalypt/Driver/Git.hs`), removed in `6217817f`;
+[0018](0018-module-package-system.md) §(a),(d).
+
+**Relationships.** regression of the Haskell feature; foundation for 0018
+(d)/(a); shares the block-scraper change with F2/F3; relates-to the `Url`-locator
+gap.
+
+---
+
 <!-- Add further high-priority fixes below as the review surfaces them. -->

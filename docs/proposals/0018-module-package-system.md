@@ -291,8 +291,12 @@ needs only a graph walk over `ImportGraph` and gives stable, surprise-free
 builds. The lockfile records the outcome. This deliberately omits SemVer
 *range solving* with backtracking; if two deps demand incompatible majors, the
 tool reports it rather than searching. Honest scope: even "minimal" versioning
-needs a fetch-and-cache step for git refs (finishing what the docs already
-promise), so this is the stage most likely to slip to 1.1 if 1.0 must be lean.
+needs a fetch-and-cache step for git refs — but that **git-fetch backend is
+restored ahead of (d) as the prioritised regression-fix [0000] F5** (the docs
+already promise git imports; they worked in Haskell, PR #115, and were dropped
+in the rewrite), already content-hash-verified per (a). So (d) layers MVS over
+a backend that already exists; the residual risk that may slip to 1.1 is the
+version *solving*, not the fetch.
 
 ### (e) Hermetic mode — declared inputs only (1.0 flag, ties to [0010])
 
