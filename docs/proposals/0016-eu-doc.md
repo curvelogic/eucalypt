@@ -6,6 +6,7 @@
 - **Suggested horizon:** 0.9
 - **Related:** sibling proposals [0003](0003-conformance-testing-fuzzing.md) (conformance & doctest),
   [0009](0009-structural-contracts-validation.md) (structural contracts & schema),
+  [0013](0013-type-dsl-embedding.md) (the `s"…"` type-DSL surface it reads),
   [0019](0019-host-language-interop.md) (host-language & schema interop)
 
 ---
@@ -142,9 +143,11 @@ particular force.
 eu doc [OPTIONS] [FILES...]
 ```
 
-The subcommand accepts the same file/input syntax as `eu run`. It evaluates the
-pipeline up to (but not beyond) the verify phase, walks the top-level
-declarations in declaration order, and for each declaration extracts:
+The subcommand accepts the same file/input syntax as `eu run`. It **parses
+the unit and reads declaration metadata directly off the syntax tree** — the
+same source-level extraction the LSP performs (`extract_documentation` walks
+the parsed `Declaration`, no evaluation, `symbol_table.rs:334`) — walking the
+top-level declarations in declaration order, and for each extracts:
 
 | Field | Source |
 |-------|--------|
@@ -211,15 +214,20 @@ take: __TAKE
 
 When `--doctest` is passed, `eu doc` extracts the `example:` strings (and fenced
 `eu` blocks in `doc:` strings), writes each to a temporary file, and executes
-them via the existing `eu` binary. Failure is a non-zero exit code. This is the
-same pattern as `scripts/test-doc-examples.py` but driven from the source rather
-than from prose docs, and using the `//=>` assert-and-pass-through operator
-rather than testing exit codes alone.
+them via the existing `eu` binary **in test mode** (as `eu test` runs). Failure
+is a non-zero exit code. This is the same pattern as
+`scripts/test-doc-examples.py` but driven from the source rather than from prose
+docs, and using the `//=>` assert-and-pass-through operator rather than testing
+exit codes alone.
 
-The `//=>` operator already satisfies the assertion semantics: it returns the
-left-hand value on success and panics with a diagnostic on failure
-(`lib/prelude.eu:1269`). A doctest runner needs only to write the example to a
-file and run `eu` on it.
+The `//=>` operator already satisfies the assertion semantics, and its
+behaviour is **mode-dependent** (`__EXPECT`, `lib/prelude.eu:1256-1266`): it
+returns the left-hand value on success, and on failure it **emits a clean
+diagnostic to stderr and returns `false` in test mode** — only *normal* mode
+panics. The doctest runner should therefore run examples in test mode, so a
+failing example produces a structured diagnostic and a non-zero result rather
+than a Rust panic (consistent with the project's panic policy). The runner
+needs only to write each example to a file and run it in test mode.
 
 This connects directly to [0003 — conformance suite](0003-conformance-testing-fuzzing.md):
 doctest examples in the prelude become part of the conformance corpus, so any
@@ -274,9 +282,12 @@ to emit a JSON Schema fragment:
 This is not a full schema compiler, but it is a natural extension of the JSON
 output format. The `type:` DSL parser already lives in
 `src/core/typecheck/parse.rs`; the JSON output pass can call it to map primitive
-type expressions (`string`, `number`, `bool`, `[a]`, `{{..}}`) to JSON Schema
-vocabulary. Complex polymorphic types (`a → b → c`) are rendered as `{}` (any)
-with a note, rather than blocking the output.
+type expressions (`string`, `number`, `bool`, `[a]`, record types) to JSON
+Schema vocabulary. Complex polymorphic types (`a → b → c`) are rendered as `{}`
+(any) with a note, rather than blocking the output. (Per [0013], type
+annotations are written as `s"…"` literals — so record types read as
+`s"{host: string}"` without the `{{..}}` doubling; `eu doc` reads the same DSL
+through `parse.rs` either way.)
 
 This shares machinery with [0019 — host-language interop](0019-host-language-interop.md)
 (which proposes ingesting JSON Schema and emitting eucalypt types) and complements
@@ -302,8 +313,10 @@ Dependencies:
   it is not blocked on 0015.
 - **0003 — conformance suite**: doctest mode makes prelude examples part of the
   conformance corpus. This is additive, not a dependency.
-- **0004 — compiled-unit caching**: `eu doc` runs the pipeline to the verify
-  phase; caching will reduce its latency, but is not required.
+- **0004 — compiled-unit caching**: `eu doc` only **parses** (it reads
+  metadata off the tree, not evaluated values), so it is largely independent of
+  0004; the parse-result query in [0014] would reduce its latency, but neither
+  is required.
 - **0009, 0019**: the JSON Schema output is an optional extension, sequenced
   after the core extraction.
 
