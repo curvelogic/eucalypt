@@ -7,6 +7,7 @@
 - **Related:** H-none; ADR-001 (`docs/development/architectural-decisions.md`);
   sibling proposals [0004 — compiled-unit & prelude caching](0004-compiled-unit-caching.md),
   [0014 — incremental, query-based core](0014-incremental-query-core.md),
+  [0015 — parser error-recovery](0015-parser-error-recovery.md),
   [0016 — `eu doc`](0016-eu-doc.md)
 
 ---
@@ -205,25 +206,33 @@ A `eu repl` command that:
 
 1. Presents a `>> ` prompt and reads a line of eucalypt declarations or
    an expression prefixed with `:eval`.
-2. Accumulates declarations in an in-memory source string.
-3. On each `:eval expr` or bare expression, evaluates the accumulated
-   source + the new expression by calling the existing pipeline, starting
-   a fresh machine each time.
+2. Accumulates declarations as an ordered **list of units** (one per `:let`),
+   not a single concatenated source string — see the redefinition note below.
+3. On each `:eval expr` or bare expression, **merges** the accumulated units
+   in order plus the new expression and evaluates via the existing pipeline,
+   starting a fresh machine each time.
 4. Prints the result and prompts again.
-5. Named data files loaded at startup (`eu repl data.yaml other.eu`)
-   are re-loaded from disk on each evaluation — fresh but cheap for
-   small data.
+5. Named data files loaded at startup (`eu repl data.yaml other.eu`) are
+   re-loaded and re-parsed from disk on each evaluation. Cheap for small data,
+   but **re-paid every prompt**: for large inputs (the 1.2 MB example below)
+   the *data* parse, not the prelude compile, becomes the per-prompt floor.
+   [0004]'s prelude cache does not help here; the relevant enabler is
+   [0014]'s cached *input* query (parse the data once, reuse across prompts).
 
 The critical design choice: **do not attempt to persist heap state across
-prompts.** Each prompt runs a fresh machine (`src/driver/eval.rs:287`)
-over the accumulated source text. This avoids the stale-string GC hazards
-(`src/driver/eval.rs:274`) entirely, at the cost of re-paying the compile
-overhead on every prompt — until [0004]'s prelude cache lands, at which
-point the marginal cost per prompt drops to ~10 ms (loader) + VM.
+prompts.** Each prompt runs a fresh machine (`src/driver/eval.rs:287`) over
+the merged session units — keeping the REPL stateless, with the *source*
+(not the heap) as the only session state, so there is no long-lived session
+heap to manage. (This is independent of the intra-evaluation
+stale-string/double-compile bug at `eval.rs:271-275`, a scoped issue [0000]
+F1 / [0004] §2 are fixing by eliminating the double compile — not a
+constraint the REPL must design around.) The cost is re-paying the compile
+overhead per prompt — until [0004]'s prelude cache lands, at which point the
+marginal cost per prompt drops to ~10 ms (loader) + VM.
 
-Session state (`history`, loaded bindings as source text) is stored as a
-`String`, not on the heap. The REPL is purely a thin loop over the
-existing `run` pipeline; it adds no new runtime semantics.
+Session state (`history`, loaded bindings) is held as **source text — an
+ordered list of units**, not on the heap. The REPL is purely a thin loop over
+the existing `run` pipeline; it adds no new runtime semantics.
 
 ```
 $ eu repl data.yaml
@@ -249,10 +258,20 @@ data loaded: data.yaml (1.2 MB, 4123 items)
 [...]
 ```
 
-`:let` adds a named binding to the accumulated source without evaluating.
-Bare expressions evaluate in the context of all prior `:let` bindings plus
-the loaded data. `:load file.eu` merges an additional source file.
-`:reset` clears accumulated bindings.
+`:let` adds a named binding as a **new unit** in the session's merge list
+(not appended to one source string). Bare expressions evaluate in the
+context of all prior `:let` bindings plus the loaded data. `:load file.eu`
+merges an additional source file. `:reset` clears accumulated bindings.
+
+**Redefinition must use merge, not concatenation.** Eucalypt is *first-wins
+within a unit*: a single source with `x: 1` then `x: 2` evaluates `x` to `1`
+(verified). So concatenating `:let`s into one source string would make
+redefining a binding silently keep the *old* value — the opposite of REPL
+semantics. The fix is the existing **cross-unit merge, which is last-wins**
+(`eu a.eu b.eu` with `x` in both yields `2`, verified): each `:let` is its
+own unit and the session merges them in order, so redefining `x` shadows the
+earlier binding for free — via the same override the prelude+user merge
+already uses, with the loaded data file as simply the first unit in the list.
 
 The output shows intermediate WHNF where evaluation is partial (e.g. a
 partially-applied function). This aids exploration: the user can see that
@@ -303,7 +322,15 @@ cell model. Without [0014], the browser notebook re-evaluates the whole
 document on every cell edit (correct, but O(n) in document size).
 [0014]'s Salsa-style dependency graph makes it O(changed cells +
 transitive dependents). Phase 3 can ship without [0014] as a "fast
-batch" notebook and upgrade to reactive when [0014] lands.
+batch" notebook and upgrade to reactive when [0014] lands. Separately,
+[0014]'s cached *input* query also helps **Phase 2**: it keeps a large
+loaded data file parsed across prompts, removing the per-prompt data
+re-parse (which [0004]'s prelude cache does not address).
+
+**[0015 — parser error-recovery]**: every editing surface here (watch-file
+lines, REPL prompts, notebook cells) is the mid-edit/partial-input case
+0015 makes resilient — a broken cell or prompt should not blank the others'
+output. Phase 3 (notebook) wants it most; sequence 0015 alongside.
 
 **[0016 — `eu doc`]**: orthogonal but complementary. A REPL with `:doc
 name` that calls the `eu doc` pipeline and prints the extracted
@@ -379,16 +406,19 @@ on [0014].
 ## Alternatives considered
 
 **Full persistent-heap REPL**: retaining the heap across prompts would
-eliminate the re-parse overhead but requires solving the stale-string GC
-hazard (`src/driver/eval.rs:274`), the per-machine `SymbolPool`
-lifecycle (`src/eval/memory/symbol.rs:39`), and the stop-the-world
-`UnsafeCell` heap soundness constraint (`src/eval/memory/heap.rs:8–11`).
-None of these is impossible, but together they constitute a significant
-GC and runtime engineering project. The honest assessment: a persistent
-heap REPL would be the right end-state but is gated on either resolving
-ADR-001's GC-finalisation wall (see [0020]) or accepting that the REPL
-is the only long-lived heap consumer (a viable but constrained
-architecture). Deferred to post-1.0.
+eliminate the re-parse overhead but is gated on the *real* GC constraint —
+**ADR-001's GC-finalisation wall** (see [0020]) — together with the
+per-machine `SymbolPool` lifecycle (`src/eval/memory/symbol.rs:39`) and the
+stop-the-world `UnsafeCell` heap soundness invariant
+(`src/eval/memory/heap.rs:8–11`). (This is *not* gated on the
+stale-string/double-compile hazard at `eval.rs:271-275` — that is a scoped
+bug being fixed by [0000] F1 / [0004] §2, not a persistent-heap blocker.)
+None of the real constraints is impossible, but together they constitute a
+significant GC and runtime engineering project. The honest assessment: a
+persistent-heap REPL would be the right end-state but is gated on resolving
+the finalisation wall ([0020]) or accepting that the REPL is the only
+long-lived heap consumer (a viable but constrained architecture). Deferred
+to post-1.0.
 
 **Daemon/server mode**: [0004] sketches a daemon that keeps the compiled
 prelude in memory across invocations, serving the CLI as a thin client.
@@ -478,7 +508,8 @@ scope.
 - `src/driver/options.rs:86–104` — `Commands` enum: current subcommands,
   confirming no `repl` or `watch` exists.
 - `src/driver/eval.rs:163–295` — headless→RENDER_DOC double-compile,
-  fresh-machine pattern, stale-string GC hazard comment at line 274.
+  fresh-machine pattern, stale-string comment at line 274 (the scoped
+  double-compile bug — [0000] F1 / [0004] §2, not a fundamental GC limit).
 - `src/eval/memory/heap.rs:1–11` — `UnsafeCell` heap, single-threaded
   stop-the-world GC constraint.
 - `src/eval/memory/symbol.rs:3,39` — per-machine `SymbolPool` with
