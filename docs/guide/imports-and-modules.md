@@ -181,6 +181,12 @@ projects that rely on `-L` continue to work without modification.
 
 ## Git Imports
 
+> **Note — not currently implemented.** Git imports were available in the
+> original (Haskell) eucalypt but are **not yet supported** by the current
+> implementation: a `{ git: … }` import block is presently ignored rather than
+> fetched. Restoration is planned and prioritised; the form below documents the
+> intended design.
+
 Import eucalypt code directly from a git repository. This is useful
 for sharing libraries without manually managing local copies:
 
