@@ -4,7 +4,9 @@
 - **Track:** D — tooling
 - **Classification:** Whitespace
 - **Suggested horizon:** 0.8
-- **Related:** TS-A7 (alias-reference tooling), ADR-001, sibling proposals
+- **Related:** TS-A7 (alias-reference tooling), ADR-001,
+  [0000](0000-priority-fixes.md) F2 (block-bracket content-mode — couples with
+  Phase 2 bracket recovery), sibling proposals
   [0014 — incremental-query-core](0014-incremental-query-core.md),
   [0016 — eu-doc](0016-eu-doc.md)
 
@@ -15,17 +17,20 @@
 Eucalypt already has a Rowan-based lossless-syntax-tree parser
 (`src/syntax/rowan/`) that is the **sole** front-end path for the LSP and
 for all compilation; the earlier LALRPOP infrastructure has been fully
-retired.  However, the Rowan parser currently fails on any parse error:
-`src/syntax/parser.rs:22` returns `Err(ParserError::ParseErrors(…))` and
-discards the partial tree, so the LSP gets no tree at all from erroneous
-documents.  This means completion, hover, go-to-definition, inlay hints,
-folding, and semantic tokens all silently return nothing while the user is
-typing.  The proposal is to promote the parser to a **genuinely resilient**
-front-end: one that always returns a best-effort lossless tree and a
-structured error list, never a hard failure, so that every LSP feature
-continues to work on incomplete or broken code.  This is a pre-requisite
-for the incremental query core (0014) and directly enables precise alias
-spans for TS-A7.
+retired.  However, the all-or-nothing compatibility shim (`src/syntax/parser.rs:22`)
+discards the tree and returns `Err(ParserError::ParseErrors(…))` the moment a
+parse error appears — but only **on the pipeline path**. The LSP's
+*syntactic* features (completion, hover, folding, go-to-definition, semantic
+tokens) call the Rowan parser directly (`src/driver/lsp/mod.rs:805` ff.) and
+already get a best-effort tree, so they keep working mid-edit. What the shim
+suppresses is everything behind the pipeline: **type diagnostics, type-based
+inlay hints, and import resolution** abort at the first parse error — exactly
+while the user is typing. The proposal is to promote the front-end to
+**genuinely resilient**: always return a best-effort lossless tree and a
+structured error list, never a hard failure, so the *type-aware* features
+keep working on incomplete code too.  This is a pre-requisite for the
+incremental query core (0014) and directly enables precise alias spans for
+TS-A7.
 
 ---
 
@@ -178,23 +183,30 @@ recovery set, wrap them in an `ERROR` node, and return to the parent.
 
 ## Proposed design
 
-### Phase 1 — Remove the all-or-nothing shim (0.8, low risk)
+### Phase 1 — Dissolve the all-or-nothing shim (0.8)
 
-Change `src/syntax/parser.rs:parse_unit` and `parse_expression` to return
-the Rowan `Parse<T>` directly, preserving errors alongside the tree.  Update
-`src/driver/source.rs:316-320` to store `ParsedAst::Unit(unit)` from the
-partial tree even when errors are present, and pass the error list to the
-diagnostic channel.  The pipeline then continues to desugar and type-check
-a best-effort tree — the desugarer already handles missing or stub nodes
-gracefully in several places (the `BlockEventSink::complete` orphaned
-declaration path at `src/syntax/rowan/parse.rs:1198-1203`).
+This has two sub-steps of different risk, which earlier drafts conflated.
 
-This change eliminates the LSP's stale-pipeline problem with zero change to
-the parser itself.  It is the highest-leverage, lowest-risk step.
+**Phase 1a — stop aborting; expose tree + errors (low risk).** Change
+`src/syntax/parser.rs:parse_unit`/`parse_expression` to return the Rowan
+`Parse<T>` directly, preserving errors alongside the tree, and update
+`src/driver/source.rs:316-320` to keep the partial tree and route the error
+list to the diagnostic channel instead of aborting. The syntactic LSP
+features already hold the tree (direct Rowan calls), so 1a's specific win is
+that the *pipeline* no longer hard-stops at the shim boundary. Removing the
+residual dead code — the `SyntaxError` variants in `src/syntax/error.rs`
+never constructed by the live parser — belongs in this batch.
 
-The residual dead code — `SyntaxError` variants in `src/syntax/error.rs`
-that are never constructed by the live parser — should be removed in the
-same batch.
+**Phase 1b — desugar the best-effort tree (medium risk).** Letting the
+pipeline *continue* into desugar/type-check on a partial tree is what
+actually delivers type diagnostics and type-based inlay hints mid-edit — but
+it feeds malformed nodes to the desugarer, which today pattern-matches on
+well-formed AST (see Risks, and Phase 2). The desugarer already tolerates
+some stubs (the `BlockEventSink::complete` orphaned-declaration path,
+`src/syntax/rowan/parse.rs:1198-1203`), but 1b is **gated on the desugar
+panic-conversion below**. If 1b proves hard, **1a stands alone** — better
+diagnostics, with the pipeline still skipping desugar/type-check while parse
+errors are present — which is the safe fallback.
 
 ### Phase 2 — Systematic error recovery in the Rowan parser (0.8, medium risk)
 
@@ -219,6 +231,16 @@ this accounting.
 by `CLOSE_SQUARE`; soup by any closing bracket or end-of-input.  Each
 recovery loop should be bounded by the appropriate set so it does not consume
 a token that terminates a parent construct.
+
+**Coupling with [0000](0000-priority-fixes.md) F2 (block-style idiot
+brackets).** A user bracket pair `⟦ … ⟧` whose *content-mode* (block vs soup)
+is decided at parse time depends on the per-file `BracketRegistry`, which
+today does not compose across imports (F2, a live P1 bug). 0015's bracket
+recovery and F2's fix touch the same parse path: if F2 is fixed by deferring
+the block/soup decision past parse to a seedable desugar registry (F2 fix
+(b)), the parser will parse bracket contents *generically* — which
+*simplifies* recovery here (one generic bracket-content rule, not two
+mode-specific ones). Sequence the two together; prefer F2 (b).
 
 ### Phase 3 — Span-enriched diagnostics feeding the Clarion programme (0.9)
 
@@ -344,8 +366,14 @@ after each recovery addition; the assertion fires in debug builds.
 on typed AST nodes (e.g. `rowan_ast::Declaration`, `rowan_ast::Block`).
 If recovery produces structurally unexpected nodes — an empty `DECL_BODY`
 where a `SOUP` is expected — the desugarer may panic or produce incorrect
-core expressions.  Mitigation: audit desugar code paths for `unwrap()` and
-`expect()` calls on Rowan-node accessors before landing Phase 2.
+core expressions.  Mitigation: per the project panic policy (a `panic!` /
+`expect()` in user-reachable code is a P1 bug, never deferred), **convert**
+desugar node-accessor `unwrap()`/`expect()` calls into proper `CoreError`
+diagnostics, each with a regression test exercising the malformed construct —
+not merely audit them. This conversion is the **gating work for Phase 1b and
+Phase 2**: until a malformed tree can reach desugar without panicking, the
+pipeline stays on the 1a path — expose the tree and errors, but skip
+desugar/type-check while parse errors are present.
 
 **Stale type environment from partial trees.**  The LSP caches the type
 environment in `CachedPipeline` (`src/driver/lsp/mod.rs:65`); inlay hints
