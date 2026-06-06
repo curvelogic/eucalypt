@@ -1,4 +1,4 @@
-# 0012 — The algebraic-subtyping fork (H8 MLsub/MLstruct): a decision dossier
+# 0012 — The algebraic-subtyping fork (H8 MLsub/MLstruct): won't-do
 
 - **Status:** Draft proposal for review
 - **Track:** C — type system & language (beyond the roadmap)
@@ -8,7 +8,7 @@
 
 ## Summary
 
-Eucalypt's type checker is a hand-rolled Hindley–Milner-with-subtyping engine: freshen a scheme, walk the two types, unify structurally, and run subtyping as a side-check. As of 0.7.0 it has grown a real kind system, higher-kinded constructor application, higher-rank quantification, and higher-order (Miller-pattern) unification — all on that same predictable spine. H8 asks whether to **replace that core wholesale** with an MLsub/MLstruct-style *algebraic-subtyping* algorithm, under which type variables carry *bounds* rather than equalities, every term has a principal type, and rows, unions/intersections, and structural constraints "fall out for free." This is the single biggest type-system fork on the table. This dossier lays out the case for, the case against, the cost (a year of careful engineering), and a recommendation — framed as the maintainer's call. The short answer is **probably not before 1.0, and likely not after** — and now that the HKT keystone has *shipped* rather than merely being specced, the swap would mean tearing out working higher-rank/HKT machinery, which strengthens the case against. The document states precisely the evidence that would change that.
+Eucalypt's type checker is a hand-rolled Hindley–Milner-with-subtyping engine: freshen a scheme, walk the two types, unify structurally, and run subtyping as a side-check. As of 0.7.0 it has grown a real kind system, higher-kinded constructor application, higher-rank quantification, and higher-order (Miller-pattern) unification — all on that same predictable spine. H8 asks whether to **replace that core wholesale** with an MLsub/MLstruct-style *algebraic-subtyping* algorithm, under which type variables carry *bounds* rather than equalities, every term has a principal type, and rows, unions/intersections, and structural constraints "fall out for free." This is the single biggest type-system fork on the table. This dossier lays out the case for, the case against, the cost (a year of careful engineering), and the decision. **The decision is won't-do:** algebraic subtyping is too cutting-edge in combination with HKT — it does not extend cleanly to the higher-rank/higher-kinded machinery that *shipped* in 0.7.0, so the swap would mean tearing out the working keystone eucalypt's flagship monad story is built on. The document records the (research-grade) evidence that would have to land before this could even be reopened.
 
 ## Motivation
 
@@ -70,7 +70,7 @@ These three cannot all be done at once; arguably no two can. H8 is the *least* a
 
 ## Recommendation
 
-**Keep the predictable hand-rolled core through 1.0, and probably beyond. Phase A/B are now built on it — leave them there.** Specifically:
+**Decision: won't-do. Keep the predictable hand-rolled core — Phase A/B are built on it, and leave them there.** Specifically:
 
 1. **Phase A (rows, `Dict`, recursive types, narrowing, literals — 0.6.2) and Phase B (HKT/B1, operator constraints/H10, `Partial` — 0.7.0) have *shipped* on the current engine.** They were specced against it and they fit it; the bet that the hand-rolled core could carry them has paid off.
 2. **Do not begin any MLsub work to displace that shipped foundation.** The information needed to make this call now *does* exist — Phase B is in users' hands — and it points away from a rebuild, not towards one.
@@ -78,7 +78,7 @@ These three cannot all be done at once; arguably no two can. H8 is the *least* a
 4. **If ever pursued, target MLstruct, not classic MLsub** — it is the only variant that even gestures at the structural richness (unions/intersections) eucalypt wants, and start from SimpleSub's ~500-line presentation for comprehensibility. Even then, treat the HKT incompatibility as a *first-class research risk* to be retired *before* committing, not discovered mid-rebuild.
 5. **Treat H8 as one of three competing big rebuilds** ([0007], [0008]). If runtime performance is the priority, [0007] dominates; if expressiveness, the current core has *already delivered* Phase B's expressiveness, so the marginal case for a rebuild is correspondingly thin. H8 wins only in a world where the *internal* maintainability of the checker has become the binding constraint — which is not today's world and is unlikely to be 1.0's.
 
-So: **probably not.** The precise evidence that would change that verdict is in the next section.
+So: **won't-do.** The narrow, research-grade conditions under which it could ever be reopened are in the next section.
 
 ## Alternatives considered
 
@@ -88,20 +88,20 @@ So: **probably not.** The precise evidence that would change that verdict is in 
 
 ## Risks & what would kill this
 
-The bet *against* H8 is falsified — i.e. H8 becomes worth its year — if, **now that Phase B has shipped**, all of these hold:
+This is **won't-do**. The only path that could *reopen* it — i.e. make H8 worth its year — requires **all** of the following to hold, and the dominant one (3) is a research result that does not yet exist:
 
 1. **The core is creaking measurably.** The narrowing/overload special cases in `synthesise_app` (the `apply_union` path, `check.rs:1694`, plus H15's brancher-classification and the `discharge_constraint` path) have grown into a tangle that is *generating wrong or unprincipled warnings* users complain about — not merely "large code." (The 0.7.0 shipping is itself early evidence *against* this: the additions integrated cleanly.)
 2. **Principality is being missed in practice.** Concrete cases arise where the hand-rolled synthesiser infers a *non-principal* type and a user is bitten (e.g. an annotation accepted in one position, rejected in an equivalent one), and these are *not* fixable by local patches.
 3. **The HKT conflict has been retired.** Someone (ideally upstream MLscript work) has shown a *checked, annotation-driven* higher-rank/HKT extension of algebraic subtyping that preserves B1's `Forall` discipline. Until this exists, H8 is **ruled out**, full stop — it would now mean ripping out 0.7.0's *shipped, working* keystone (`Forall`/`Lam`/Miller-pattern unification, HKT-typed `monad()`), not merely complicating a planned one.
 4. **The runtime-performance fork ([0007]) has been judged not worth it**, freeing the single "big type-system rebuild" slot.
 
-If any one of (1)–(3) fails, keep the current core. (3) is the dominant gate: it is currently *open against* H8, and the shipping of HKT has raised the stakes of failing it — the swap now destroys working capability rather than merely deferring a feature.
+If any one of (1)–(3) fails, keep the current core. (3) is the dominant gate: it is currently *open against* H8, which is **why the decision is won't-do, not merely deferred** — and the shipping of HKT has raised the stakes of failing it, since the swap now destroys working capability rather than merely deferring a feature.
 
 The open questions this touches: **§5 Q5** ("invest in algebraic subtyping as a long-term core replacement, or stay with HM-with-subtyping forever?") — answered here as *stay, pending the triggers*; **§5 Q4** (how much we care about runtime performance) — which, if "a lot," redirects the budget to [0007]; **§5 Q3** (encourage user-defined monads, pulling in HKT) — which, if "yes," *hardens* the case against H8.
 
 ## Success criteria
 
-Because the recommendation is "defer/decline," success is measured as **a correctly-made non-decision**:
+Because the decision is **won't-do**, success is measured as a correctly-made and correctly-recorded decline:
 
 - Phase A and Phase B (including B1/HKT) have *shipped* on the hand-rolled core (0.6.2/0.7.0) and pass the existing harness and `eu check lib/prelude.eu` — this criterion is now *met*, which is the strongest single argument against the rebuild.
 - No MLsub engineering is started before the four triggers are evaluated against the now-shipped Phase B reality.

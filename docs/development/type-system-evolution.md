@@ -575,10 +575,14 @@ Caveats:
   user-facing type *language* could stay the same; only the inference
   engine changes.
 
-**Recommendation.** Keep this on the radar. Reassess in Stage C once
-H1, H3, H10 are in. If complexity is creaking, look at MLstruct as a
-rebuild target. If not, leave the current engine alone — it's
-predictable.
+**Recommendation — won't-do (decided; see [0012](../proposals/0012-algebraic-subtyping-fork.md)).**
+Phase A/B (H1/H3/H10 plus HKT) have *shipped* on the current engine, and the
+HKT caveat above is decisive: MLsub does not extend cleanly to the
+higher-rank/HKT machinery 0.7.0 is built on, so a swap would tear out the
+working keystone. The engine absorbed rows, unions, constraints, and HKT
+without creaking. Leave it alone; reopen only if 0012's research-grade
+triggers are met — chiefly a *checked, annotation-driven* higher-rank/HKT
+extension of algebraic subtyping, which does not yet exist.
 
 **Prior art.** Dolan & Mycroft "Polymorphism, Subtyping, and Type
 Inference in MLsub" (2017), Dolan's PhD thesis, Parreaux "The Simple
@@ -1321,15 +1325,18 @@ These are mutually substitutable; pick at most one or two.
 
 - H11a + H11c + H11e + H11f: type-directed compilation for measurable
   runtime gains
-- H8: replace the inference core with an MLsub/MLstruct-style algorithm
+- H8: replace the inference core with an MLsub/MLstruct-style algorithm —
+  **declined (0012)**: too cutting-edge with HKT; would tear out the shipped
+  keystone
 - H6c: capability/determinism tracking for rendering
 - H12d: embedded type bracket — **dropped**; value-position references
   are served by the `s"…"` prefix instead (0013 §H12e), and idiot-bracket
   embedding stays rejected on the phasing problem
 - H18: per-file profiles
 
-The choice between H8 and "keep extending the current core" is the
-biggest fork. Reassess after Stage B.
+The choice between H8 and "keep extending the current core" was the
+biggest fork. **Reassessed after Stage B: keep the current core — H8
+declined ([0012](../proposals/0012-algebraic-subtyping-fork.md)).**
 
 ---
 
@@ -1413,7 +1420,8 @@ These should be decided before committing to a stage plan.
 
 5. **Do we want to invest in algebraic subtyping** (H8) as a long-term
    core replacement, or stay with HM-with-subtyping forever? (Big
-   fork at Stage C.)
+   fork at Stage C.) **Answered: stay — H8 is won't-do ([0012]); algebraic
+   subtyping is too cutting-edge in combination with HKT.**
 
 6. **What is the policy on boundary unsoundness?** Forever silent
    (H13a), opt-in checks (H13c), or eventually mandatory checks
