@@ -7,7 +7,8 @@
 - **Related:** TS-A2 (Dict types, shipped 0.6.2), TS-A3 (recursive types, shipped 0.6.2),
   [0009 — structural contracts & runtime schema validation](0009-structural-contracts-validation.md),
   [0016 — `eu doc`](0016-eu-doc.md),
-  [0018 — module & package system](0018-module-package-system.md)
+  [0018 — module & package system](0018-module-package-system.md),
+  [0021 — optional record fields](0021-optional-record-fields.md) (prerequisite for faithful CRD import)
 
 ---
 
@@ -379,12 +380,17 @@ output is auditable and can be reviewed in pull requests.
 
 ## Risks & what would kill this
 
-1. **Type-system foundation.** `Dict(T)` and equirecursive `Mu` types (TS-A2,
-   TS-A3) both shipped in 0.6.2, so the type DSL can now express the schemas
-   that appear in Kubernetes CRDs (homogeneous and recursive). The primary
-   sequencing risk from an earlier draft of this proposal has resolved. The
-   remaining implementation risk is the JSON Schema edge-case coverage described
-   in risk 2.
+1. **Type-system foundation — one remaining prerequisite: optional fields.**
+   `Dict(T)` and equirecursive `Mu` types (TS-A2, TS-A3) shipped in 0.6.2, so
+   the type DSL can express the homogeneous and recursive schemas in Kubernetes
+   CRDs. But records cannot yet express **optional (may-be-absent) fields** —
+   the dominant CRD shape (`required` vs `properties`). Faithful CRD import
+   therefore depends on [0021 — optional record fields](0021-optional-record-fields.md)
+   (`name?: T`, the required/optional partition, and the mapping to JSON
+   Schema's `required` set); with it, the record-mapping rows above carry
+   presence, and without it import must approximate optional fields as open
+   records or all-required, gutting the K8s use case. The other remaining risk
+   is the JSON Schema edge-case coverage described in risk 2.
 
 2. **JSON Schema version fragmentation.** JSON Schema has five major drafts in
    active use (draft-04, draft-06, draft-07, draft-2019-09, draft-2020-12) with

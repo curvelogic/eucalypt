@@ -103,6 +103,7 @@ single-threaded lazy-pure runtime, the tool-first framing, and UK English.
 | [0018](0018-module-package-system.md) | Module & package system: versioned, content-addressed, hermetic imports | W★ | 1.0 |
 | [0019](0019-host-language-interop.md) | Host-language & schema interop: codegen + JSON-Schema/CRD ingest | W | post-1.0 |
 | [0020](0020-persistent-blocks-gc-finalisation.md) | Persistent O(log n) blocks & resolving the GC-finalisation wall (ADR-001) | W | 0.9 |
+| [0021](0021-optional-record-fields.md) | Optional (presence-annotated) record fields (`name?: T`) — prerequisite for 0019, enrichment for 0009 | E | 1.0 |
 
 **Bench (alternates that can swap in):** debugging a lazy language (DAP /
 value-provenance); streaming & large-data scaling; distribution & packaging
