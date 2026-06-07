@@ -48,7 +48,7 @@ These are resolved, and recorded so they are not re-litigated.
 
 | Decision | Resolution |
 |---|---|
-| **Stability & editions** | 1.0 commits to a frozen, enumerated stable surface. Breaking changes ride **editions** (`{ edition: "2026" }`); a `requires` guard enforces version compatibility. (The *plumbing* and the *freeze* are scheduled; the commitment is settled here.) |
+| **Versioning & stability** | Adopt real semver at 1.0 (the four-part build number becomes `+build.N` metadata). 1.0 freezes an enumerated stable surface in tiers — Stable / Experimental / Not-covered — with the **type system Experimental**, so it does not block a lang/prelude 1.0. Breaking changes need a **MAJOR**; the `requires` guard fails loud on an incompatible binary. The prelude evolves via an **opt-in v2** (frozen v1 coexists), not in place. Pending breaking changes (e.g. deep-merge-as-default) ship as a MAJOR or behind prelude v2, never a silent default flip. **No editions** (see Non-goals). |
 | **Boundary soundness** | Types stay **advisory by default** (silent `any → T`); whole-program checking is **opt-in** via `eu check --strict`. No blame-tracked casts, no whole-program sound-cast guarantee. |
 | **String type-DSL** | Keep the `s"…"` metadata type-DSL through 1.0. No reserved type bracket; the metadata-string surface is the committed form. |
 | **Ad-hoc polymorphism** | "Typeclasses without classes": structural operator constraints over shapes and functions, no named classes. This is the standing position. |
@@ -66,7 +66,12 @@ These are resolved, and recorded so they are not re-litigated.
   the committed core; an MLsub swap conflicts with HKT. Reassess only if the
   current core visibly creaks.
 - **Nominal types / classes.** Stay structural. A nominal newtype, if ever, would
-  itself be edition-gated.
+  itself be opt-in (a MAJOR or prelude v2), never a default.
+- **Rust-style editions.** Carrying every old semantic lowering in the desugarer
+  forever is over-commitment at current scale, for a benefit the ecosystem does
+  not warrant — there is no body of deployed third-party `.eu` files to keep
+  working across breaking changes. The `requires` guard and opt-in prelude v2
+  cover the real need; revisit only if such an ecosystem appears.
 
 ## The six families (what groups with what, and why)
 
@@ -79,7 +84,7 @@ Releases group along six commonalities — the real reason items sit together.
 | **GC / memory** | **0005**, 0020, F6 | Generational nursery first; then persistent blocks and vec-of-values on the GC-scannable-array machinery. One scarce skill set — *sequence, never parallelise*. |
 | **Strictness / demand** | F4, 0006, 0007 | One demand annotation (F4) feeds the analysis (0006) feeds type-directed compilation (0007, post-1.0). |
 | **Types-as-validation** | 0009, 0021, 0016, 0019 | The `s"…"` type vocabulary is reused by runtime validation, presence-typed fields, doc/schema extraction and schema interop. |
-| **1.0 commitment** | 0001, 0003, 0010 | Editions, a conformance corpus, reproducibility — what "1.0" *means* and how it is *proven*. |
+| **1.0 commitment** | 0001, 0003, 0010 | Versioning & stable-surface tiers, a conformance corpus, reproducibility — what "1.0" *means* and how it is *proven*. |
 
 ## The dependency spine
 
@@ -116,11 +121,13 @@ stands alone.
 Each release is a theme, the engineering it ships, and a **gate** — what "done"
 means.
 
-### 0.8 — "Editions, foundations & front-end hygiene"
+### 0.8 — "Versioning, foundations & front-end hygiene"
 *Design-heavy, front-end, low-risk. Make 1.0's shape real and stop the obvious pain.*
 
-- **0001** — implement edition plumbing and the first edition delta
-  (deep-merge-as-default gated on `{ edition: "2026" }`).
+- **0001** — versioning & stability discipline: adopt real semver (build number
+  → `+build.N` metadata), document the `requires` range-pin guard, ship opt-in
+  prelude versioning (frozen **v1** + in-development **v2**, selected per-unit),
+  add the deprecation lifecycle, and ratify the stable-surface tiers.
 - **0015 (Phase 1)** — delete the all-or-nothing parser shim; always surface the
   Rowan partial tree (~150 lines; immediate diagnostic win).
 - **0003 (begin)** — stand up a conformance corpus from the existing harness;
@@ -128,8 +135,9 @@ means.
 - **F1** — one compile per plain document.
 - **F3** (with **F2**) — one cross-unit interface mechanism instead of four.
 
-**Gate:** editions work and the first delta ships gated; a partial parse tree is
-always available; CI runs under GC verification; plain documents compile once.
+**Gate:** real semver in force and the `requires` guard fails loud; the
+prelude-v2 selector works with v1 as default; a partial parse tree is always
+available; CI runs under GC verification; plain documents compile once.
 
 ### 0.9 — "Compile latency, docs & incremental groundwork"
 *Cheap-to-medium. Attack the most visible perf problem and the authoring surface.*
@@ -192,10 +200,12 @@ hermetic mode.
   + namespace isolation (on **F5**, **F3**). No registry.
 - **0017 (Phase 1)** — `eu watch` (Unison-style) + a thin REPL over the cache (on
   **0004**, **0014**).
-- **0003 (bar met)** — per-edition golden corpus green; property tests and the
-  fuzz targets running.
-- **0001 (freeze)** — freeze the enumerated stable surface per the editions
-  policy; enforce the `requires` guard.
+- **0003 (bar met)** — golden corpus green (incl. that a v1-prelude file is
+  unchanged by a binary that also ships v2); property tests and the fuzz targets
+  running.
+- **0001 (freeze)** — freeze the enumerated stable surface at the ratified tiers;
+  real semver in force; the `requires` guard enforced; prelude v1 frozen (v2
+  opt-in).
 
 **Gate:** the 1.0 commitments hold; conformance is green; modules are hermetic and
 shareable by git URL + hash, with no registry.
@@ -261,14 +271,14 @@ Settled decisions and non-goals are excluded.
 
 | Bucket | Items |
 |---|---|
-| **Cheap & high-leverage** (design-heavy, do early) | F1, 0001 (plumbing), 0004 (prelude floor), 0015, 0016 |
+| **Cheap & high-leverage** (design-heavy, do early) | F1, 0001 (versioning), 0004 (prelude floor), 0015, 0016 |
 | **High-leverage, real engineering** | F3, 0005, 0009, 0014, 0018, 0020 |
 | **Worthwhile, medium** | F4, F5, F6, 0006, 0010, 0017, 0021 |
 | **Big bets / forks** (deliberate, post-1.0, one at a time) | 0007, 0008, 0019 |
 
 ## The critical path, in one line
 
-**0001 (editions) + F1/F3 (cheap latency + the interface) → 0004 (latency) → 0005
+**0001 (versioning) + F1/F3 (cheap latency + the interface) → 0004 (latency) → 0005
 (the runtime) → 0009 + 0018 (data-correctness + ecosystem floor, on F5) → 0003
 green (prove it) → ship 1.0.** Everything else is a cheap win that slots
 alongside, or a curated post-1.0 bet.
@@ -283,7 +293,7 @@ alongside, or a curated post-1.0 bet.
 | F4 | Demand annotation | 0.9 |
 | F5 | Restore git imports | 0.10 |
 | F6 | `vec` of arbitrary values | 0.11 |
-| 0001 | Editions & stable-surface freeze | 0.8 plumbing → 1.0 freeze |
+| 0001 | Versioning & stability discipline | 0.8 → 1.0 freeze |
 | 0015 | Parser error-recovery | 0.8 (Ph1) / 0.9 (Ph2) |
 | 0003 | Conformance, property tests, fuzzing | 0.8 begin → 1.0 bar |
 | 0004 | Compiled-unit / prelude caching | 0.9 floor → post-1.0 full |
