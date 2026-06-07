@@ -13,13 +13,6 @@ enhancements, `FN` for foundational fixes) are stable handles; their long-form
 design write-ups live in a separate working set and are deliberately *not* part
 of this document.
 
-Two kinds of thing appear below and they are kept apart:
-
-- **Decisions & policies** — settled positions (what 1.0 commits to, the
-  soundness stance, the non-goals). These are *logged, not scheduled*: they
-  govern the work but are not assigned to a release.
-- **Engineering work** — the deliverables, each assigned to a release.
-
 ## The frame
 
 0.7 completed the gradual type system the earlier roadmap was built toward, so
@@ -27,11 +20,9 @@ the road to 1.0 is mostly *outside* the type system: define what 1.0 commits to,
 latency and GC cost, give the config use case a validation-and-reproducibility
 story, and build the tooling/ecosystem surface adoption needs.
 
-**There is no decimal constraint.** The 0-series runs **0.8, 0.9, 0.10, 0.11,
-0.12 …** for as many minor releases as the work needs. This roadmap uses that
-headroom: the scarce deep-systems effort — the garbage collector above all — is
-the binding constraint, so each release carries **at most one** big-systems
-thrust plus cheaper wins, rather than overloading a single milestone.
+The scarce deep-systems effort — the garbage collector above all — is the
+binding constraint, so each release carries **at most one** big-systems thrust
+plus cheaper wins, rather than overloading a single milestone.
 
 ### Principles (non-negotiable)
 
@@ -50,12 +41,10 @@ thrust plus cheaper wins, rather than overloading a single milestone.
 5. **Tool-first.** Eucalypt generates, templates and transforms YAML/JSON/TOML
    before it is a language. Its peers are configuration/data languages. Weigh
    every idea against that use.
-6. **UK English** throughout.
 
-## Decisions & policies (settled — not scheduled)
+## Decisions & policies
 
-These are resolved. They are recorded so they are not re-litigated, and so the
-release plan can stay purely about engineering.
+These are resolved, and recorded so they are not re-litigated.
 
 | Decision | Resolution |
 |---|---|
@@ -125,7 +114,7 @@ stands alone.
 ## The release plan
 
 Each release is a theme, the engineering it ships, and a **gate** — what "done"
-means. (Decisions and policies above are assumed, not repeated here.)
+means.
 
 ### 0.8 — "Editions, foundations & front-end hygiene"
 *Design-heavy, front-end, low-risk. Make 1.0's shape real and stop the obvious pain.*
