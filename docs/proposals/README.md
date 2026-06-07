@@ -17,10 +17,9 @@ sequencing analysis, and the `0000` fixes into one plan. This index and the
 proposals remain the detailed rationale behind it.
 
 For how the documents are written, see [`_house-style.md`](_house-style.md).
-For the longer-form dependency analysis the roadmap distils, see
-[`SEQUENCING.md`](SEQUENCING.md). For high-priority **fixes** to
-land before/alongside these proposals (surfaced during review, written
-bead-ready for import), see [`0000-priority-fixes.md`](0000-priority-fixes.md).
+For high-priority **fixes** to land before/alongside these proposals (surfaced
+during review, written bead-ready for import), see
+[`0000-priority-fixes.md`](0000-priority-fixes.md).
 
 ---
 
@@ -148,4 +147,4 @@ conformance contract; they also interact with
   and 0013 forks.
 - Deciding **the adoption surface**: 0014 → 0015 → 0016 → 0017 → 0018 → 0019.
 
-`SEQUENCING.md` proposes a concrete release-by-release ordering.
+[`ROADMAP.md`](ROADMAP.md) gives the concrete release-by-release plan.

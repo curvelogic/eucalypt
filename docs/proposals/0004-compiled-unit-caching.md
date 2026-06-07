@@ -219,8 +219,8 @@ version handshake, and resource limits. Deferred; see
 - **[0014](0014-incremental-query-core.md):** unit interfaces are the natural
   incremental-cache unit; the embedded prelude is the base case of its graph.
 - **[0005](0005-generational-gc.md):** competes for the same deep-systems effort
-  (per `SEQUENCING.md` §4); once compile latency falls, GC cost becomes
-  proportionally more visible.
+  (see [`ROADMAP.md`](ROADMAP.md), "The GC line"); once compile latency falls, GC
+  cost becomes proportionally more visible.
 - **[0018](0018-module-package-system.md) / alternative backends:** option D
   (content-addressing) and any independent backend consume exactly this
   interface + separately-compiled artifacts.

@@ -231,6 +231,23 @@ shareable by git URL + hash, with no registry.
 - **alternative-backends** (core→WASM and friends) — the consumer of 0003's
   conformance contract.
 
+## Candidates not yet planned
+
+Areas worth a proposal but not yet drafted — recorded so they are not forgotten,
+and able to swap into the plan if priorities shift. (The **alternative-backends**
+work — core→WASM and other targets — is the most developed of these and is noted
+under post-1.0 above.)
+
+- **Debugging a lazy language** — a DAP server / value-provenance for stepping
+  lazy evaluation.
+- **Streaming & large-data scaling** — bounded-memory processing of inputs that
+  don't fit the heap.
+- **Distribution & packaging** — nixpkgs / Homebrew / a WASM CDN build.
+- **Homoiconicity & macros** — compile-time metaprogramming over the core.
+- **First-class type values** — types as ordinary values, beyond the `s"…"`
+  surface.
+- **Algebraic effect-rows** — typed effects beyond the IO monad.
+
 ## The GC line, and the curated rebuilds
 
 Five efforts each want sustained, expert, deep-systems work drawing on the same
@@ -247,6 +264,18 @@ happen at once**, and most are post-1.0.
 
 The throughline: **spend the scarce systems effort on the GC (0005, then 0020)
 before 1.0**, and take 0007/0008 as one-at-a-time post-1.0 bets.
+
+## Leverage vs cost
+
+A second lens on the same work — bang-for-buck, orthogonal to release order.
+Settled decisions and non-goals are excluded.
+
+| Bucket | Items |
+|---|---|
+| **Cheap & high-leverage** (design-heavy, do early) | F1, 0001 (plumbing), 0004 (prelude floor), 0015, 0016 |
+| **High-leverage, real engineering** | F3, 0005, 0009, 0014, 0018, 0020 |
+| **Worthwhile, medium** | F4, F5, F6, 0006, 0010, 0017, 0021 |
+| **Big bets / forks** (deliberate, post-1.0, one at a time) | 0007, 0008, 0019 |
 
 ## The critical path, in one line
 
