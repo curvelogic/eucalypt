@@ -11,9 +11,14 @@ deciding the next stages of the language's evolution after 0.7. Each is an
 argument, not a commitment; each is sized to be read in one sitting (~2,000
 words) and to support a yes / no / defer decision.
 
+**The consolidated plan of record is [`ROADMAP.md`](ROADMAP.md)** — the
+release-by-release schedule (0.8 → 1.0 → post-1.0) that folds this portfolio, the
+sequencing analysis, and the `0000` fixes into one plan. This index and the
+proposals remain the detailed rationale behind it.
+
 For how the documents are written, see [`_house-style.md`](_house-style.md).
-For a recommended ordering across releases and the dependencies between
-proposals, see [`SEQUENCING.md`](SEQUENCING.md). For high-priority **fixes** to
+For the longer-form dependency analysis the roadmap distils, see
+[`SEQUENCING.md`](SEQUENCING.md). For high-priority **fixes** to
 land before/alongside these proposals (surfaced during review, written
 bead-ready for import), see [`0000-priority-fixes.md`](0000-priority-fixes.md).
 

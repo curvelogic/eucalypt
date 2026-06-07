@@ -1,6 +1,11 @@
 # Sequencing — a route through the twenty proposals
 
-- **Status:** Draft synthesis for review
+> **Consolidated into [`ROADMAP.md`](ROADMAP.md)** (the plan of record). This
+> document remains the longer-form dependency analysis the roadmap distils; where
+> the two differ on a release assignment, ROADMAP.md wins (it re-spaces these
+> horizons across more minor releases, and folds in 0021 and the `0000` fixes).
+
+- **Status:** Draft synthesis for review (superseded as the schedule by ROADMAP.md)
 - **Date:** 2026-06-01
 - **Reads:** [`README.md`](README.md) (the portfolio), the twenty proposals, and
   [`type-system-evolution.md`](../development/type-system-evolution.md) (the
