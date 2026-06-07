@@ -22,8 +22,8 @@ Two kinds of thing appear below and they are kept apart:
 
 ## The frame
 
-0.7 completed the type system the language was built toward, so the road to 1.0
-is mostly *outside* the type system: define what 1.0 commits to, pay down compile
+0.7 completed the gradual type system the earlier roadmap was built toward, so
+the road to 1.0 is mostly *outside* the type system: define what 1.0 commits to, pay down compile
 latency and GC cost, give the config use case a validation-and-reproducibility
 story, and build the tooling/ecosystem surface adoption needs.
 
@@ -100,7 +100,7 @@ The edges that actually constrain ordering (`→` = "must precede"):
 - **F4** (demand annotation) **→ 0006**.
 - **F5** (git import backend) **→ 0018**.
 - **0005** (generational GC) **→ 0020** (same scarce GC expertise; 0005's nursery
-  also makes the persistent map's short-lived nodes cheap).
+  also makes the persistent structures' short-lived nodes cheap).
 - **0021** (presence) **→ 0019**; and it **enriches 0009** (the optional `match?`
   arm).
 - **0009, 0016 → 0019** (an ingested schema *is* a contract; doc extraction feeds
@@ -143,7 +143,7 @@ means. (Decisions and policies above are assumed, not repeated here.)
 always available; CI runs under GC verification; plain documents compile once.
 
 ### 0.9 — "Compile latency, docs & incremental groundwork"
-*Cheap-to-medium. Attack the most *visible* perf problem and the authoring surface.*
+*Cheap-to-medium. Attack the most visible perf problem and the authoring surface.*
 
 - **0004 (prelude floor)** — prelude/compiled-unit cache (on **F3**); attacks the
   ~500–700 ms cold-compile cost head-on.
@@ -257,32 +257,32 @@ alongside, or a curated post-1.0 bet.
 
 ## Index — every item, where it lands
 
-| # | Item | Family | Release |
-|---|------|:------:|:-------:|
-| F1 | Eliminate double STG compile | caching | 0.8 |
-| F2 | Bracket content-mode across imports | x-unit | 0.8 (via F3) |
-| F3 | Unit Interface | x-unit | 0.8 |
-| F4 | Demand annotation | strictness | 0.9 |
-| F5 | Restore git imports | x-unit | 0.10 |
-| F6 | `vec` of arbitrary values | GC | 0.11 |
-| 0001 | Editions & stable-surface freeze | 1.0-commit | 0.8 plumbing → 1.0 freeze |
-| 0015 | Parser error-recovery | tooling | 0.8 (Ph1) / 0.9 (Ph2) |
-| 0003 | Conformance, property tests, fuzzing | 1.0-commit | 0.8 begin → 1.0 bar |
-| 0004 | Compiled-unit / prelude caching | caching | 0.9 floor → post-1.0 full |
-| 0014 | Incremental query core | caching | 0.9 begin → post-1.0 full |
-| 0016 | `eu doc` | types-valid. | 0.9 |
-| 0005 | Generational GC | GC | 0.10 |
-| 0006 | Strictness/demand analysis | strictness | 0.10 |
-| 0020 | Persistent O(log n) blocks | GC | 0.11 |
-| 0021 | Optional record fields | types-valid. | 0.11 (inference post-1.0) |
-| 0009 | Structural contracts / validation | types-valid. | 0.12 |
-| 0010 | Hermetic mode | 1.0-commit | 0.12 |
-| 0018 | Module & package system (no registry) | x-unit | 1.0 |
-| 0017 | REPL / notebook | caching | 1.0 (Ph1) → post-1.0 |
-| 0019 | Host-language & schema interop | types-valid. | post-1.0 |
-| 0007 | Type-directed compilation | strictness | post-1.0 (curated) |
-| 0008 | Parallel evaluation | GC | post-1.0 (curated) |
-| 0002 | Gradual-typing boundary policy | 1.0-commit | *decision (settled)* |
-| 0011 | Typeclasses without classes | types-valid. | *decision (settled)* |
-| 0013 | `s"…"` string type-DSL | types-valid. | *decision (settled)* |
-| 0012 | Algebraic-subtyping fork | — | *won't-do* |
+| # | Item | Release |
+|---|------|:-------:|
+| F1 | Eliminate double STG compile | 0.8 |
+| F2 | Bracket content-mode across imports | 0.8 (via F3) |
+| F3 | Unit Interface | 0.8 |
+| F4 | Demand annotation | 0.9 |
+| F5 | Restore git imports | 0.10 |
+| F6 | `vec` of arbitrary values | 0.11 |
+| 0001 | Editions & stable-surface freeze | 0.8 plumbing → 1.0 freeze |
+| 0015 | Parser error-recovery | 0.8 (Ph1) / 0.9 (Ph2) |
+| 0003 | Conformance, property tests, fuzzing | 0.8 begin → 1.0 bar |
+| 0004 | Compiled-unit / prelude caching | 0.9 floor → post-1.0 full |
+| 0014 | Incremental query core | 0.9 begin → post-1.0 full |
+| 0016 | `eu doc` | 0.9 |
+| 0005 | Generational GC | 0.10 |
+| 0006 | Strictness/demand analysis | 0.10 |
+| 0020 | Persistent O(log n) blocks | 0.11 |
+| 0021 | Optional record fields | 0.11 (inference post-1.0) |
+| 0009 | Structural contracts / validation | 0.12 |
+| 0010 | Hermetic mode | 0.12 |
+| 0018 | Module & package system (no registry) | 1.0 |
+| 0017 | REPL / notebook | 1.0 (Ph1) → post-1.0 |
+| 0019 | Host-language & schema interop | post-1.0 |
+| 0007 | Type-directed compilation | post-1.0 (curated) |
+| 0008 | Parallel evaluation | post-1.0 (curated) |
+| 0002 | Gradual-typing boundary policy | *decision (settled)* |
+| 0011 | Typeclasses without classes | *decision (settled)* |
+| 0013 | `s"…"` string type-DSL | *decision (settled)* |
+| 0012 | Algebraic-subtyping fork | *won't-do* |
