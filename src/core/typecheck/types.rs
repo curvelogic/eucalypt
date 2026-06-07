@@ -128,7 +128,9 @@ pub fn kind_of(ty: &Type) -> Kind {
 
 // ── Constraint ───────────────────────────────────────────────────────────────
 
-/// A constraint on a type variable (reserved for future use).
+/// A structural operator constraint on a type variable, e.g. `<(a, a)`: the
+/// named `function` must accept `args`. Discharged at instantiation against the
+/// operator's declared overloads (gradual — vacuously satisfied against `any`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Constraint {
     pub function: String,
@@ -139,7 +141,8 @@ pub struct Constraint {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeScheme {
     pub vars: Vec<TypeVarId>,
-    /// Reserved for future constraint support — always empty for now.
+    /// Structural operator constraints carried by the scheme (e.g. `<(a, a)`),
+    /// discharged when the scheme is instantiated; empty for unconstrained schemes.
     pub constraints: Vec<Constraint>,
     pub body: Type,
 }

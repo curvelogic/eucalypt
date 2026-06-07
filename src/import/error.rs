@@ -12,8 +12,8 @@ use codespan_reporting::{
 };
 use thiserror::Error;
 
-/// An error forming the AST in semantic action, often wrapped by
-/// LALRPOP parse error
+/// Parse and format errors for foreign data formats (YAML, JSON, TOML,
+/// XML, EDN, CSV, …) loaded as eucalypt sources.
 #[derive(Debug, Error)]
 pub enum SourceError {
     #[error("invalid yaml or json syntax {0}")]

@@ -5,8 +5,8 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 use std::io;
 use thiserror::Error;
 
-/// An error forming the AST in semantic action, often wrapped by
-/// LALRPOP parse error
+/// A syntax error encountered while parsing source and forming the AST,
+/// typically wrapped in a `ParserError`.
 #[derive(Eq, PartialEq, Debug, Clone, Error)]
 pub enum SyntaxError {
     #[error("unexpected character {1} found in input")]
