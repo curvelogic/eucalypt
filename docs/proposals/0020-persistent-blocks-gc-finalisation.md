@@ -288,10 +288,12 @@ object that marks, evacuates, and sweeps like everything else.
 `vec.rs:14`) is a *flat* array with **O(1)** indexed access — deliberately not a
 trie — and must stay that way; it should **not** be folded into the order
 sequence's persistent vector, which would regress its defining property. What
-`vec` and the new structures genuinely share is, again, the scannable
-array-of-refs. Lifting `vec`'s primitive-only restriction (`Vec<Primitive>` → an
-`Array<Ref>`, so `vec` can hold arbitrary values) is a small, **separate** cleanup
-riding on the same machinery — worth doing, but a generalisation, not a structure
+`vec` and the new structures genuinely share is, again, the GC-managed scannable
+`Array`. Lifting `vec`'s primitive-only restriction so it can hold arbitrary
+values is a small, **separate** cleanup riding on that machinery — the backing
+becomes an `Array<Closure>` (*not* `Array<Ref>`: a `Ref` cannot name a
+block/list/lambda, so the precedent is the env frame's `Array<C>`,
+`env.rs:196`). It is worked up as **0000 F6** — a generalisation, not a structure
 merge.
 
 ### (d) Switch to a `Drop`-supporting GC strategy

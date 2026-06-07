@@ -272,4 +272,92 @@ gap.
 
 ---
 
+## F6 — Generalise `vec` to hold arbitrary values (GC-traced `Array<Closure>`)
+
+- **Priority:** P2 / medium (expressiveness limit + a minor latent leak; gated on
+  whether random-access-over-records is a near-term target)
+- **Type:** enhancement (expressiveness) + bug (latent GC leak)
+- **Status:** open
+
+**Description.** `vec` — the only O(1)-indexed sequence — can hold **only
+primitive scalars** (`Num`/`Str`/`Sym`), because its backing is `Vec<Primitive>`
+(`src/eval/memory/vec.rs:14`; `Primitive` at `src/eval/memory/set.rs:20`) and
+`VEC.OF` rejects anything else (`extract_primitive` panics,
+`src/eval/stg/vec.rs:86`; `native_to_set_primitive` → `TypeMismatch`,
+`src/eval/stg/support.rs:530`). So you **cannot** get indexed/random access to a
+sequence of **records (blocks) or nested lists** — the canonical "array of
+objects" shape of CSV/JSON/YAML inputs — and must fall back to O(n) cons-lists.
+
+The reason "non-primitive" is non-trivial: there is **no
+`Native::Block`/`List`/`Closure`** (`src/eval/memory/syntax.rs:37–58`) — blocks,
+lists and lambdas are `HeapSyn` *closures with environments*, not native values.
+So an element cannot be a richer `Native`, nor a bare `Ref` (which needs an env);
+it must be a **closure** (code + captured env), exactly as list elements are. The
+right backing is therefore a GC-managed **`Array<Closure>`**, not `Array<Ref>`.
+
+**This is well-precedented.** A GC-traced, evacuation-safe array of heterogeneous
+closures already exists as the **environment frame** (`EnvFrame { bindings:
+Array<C> }`, `src/eval/machine/env.rs:196`; `impl GcScannable`, `:498`), and
+`HeapString` is the template for a native that owns a GC-managed backing and is
+properly traced (`src/eval/memory/string.rs`; pushed for scanning at
+`syntax.rs:333`). The change is essentially "re-shape `HeapVec` to follow
+`EnvFrame`."
+
+**Secondary benefit (a real fix).** Today `Native::Vec` is *marked but never
+scanned* (`syntax.rs:343,380` — only `marker.mark`), and its `Vec<Primitive>`
+buffer (plus contained `String`s) lives on the **Rust heap** — so a reclaimed
+vec's backing **leaks** (the bump allocator never runs `Drop`), the same class as
+ADR-001/0020, tolerated only because vecs are rare. Moving to a GC-managed
+`Array` *fixes* that leak.
+
+**Surface (localised; sets, ndarrays, and the collector core untouched).**
+- `vec.rs`: `Vec<Primitive>` → `Array<Closure>`; small API rewrite.
+- `syntax.rs`: **(correctness-critical)** push `Native::Vec` for scanning and
+  handle it in the forward-pointer update (today both only mark, `:343`/`:380`);
+  add `impl GcScannable for HeapVec` mirroring `EnvFrame`.
+- `stg/vec.rs`: rework the 7 intrinsics — **most simplify** (the `Primitive`
+  round-trip goes): `VEC.OF` stores the head `SynClosure` it already resolves
+  (`:151`) instead of extracting a primitive (and can drop the `SeqList`
+  deep-force); `VEC.NTH` returns the stored closure (no `Boxed*` re-wrap,
+  `:247–257`); `VEC.TO_LIST` drops the box-tag match (`:469–479`);
+  `SLICE`/`SAMPLE`/`SHUFFLE` permute element handles.
+- `emit.rs`: `emit_vec` routes each element through the normal per-element value
+  render (as lists do), not `set_primitive_to_render_primitive` (`:105–118`).
+
+**Semantics decisions (none blocking).**
+- *Strictness:* store source element closures as-is and drop `VEC.OF`'s
+  deep-force → vec inherits list laziness; O(1) is about *index*, not evaluation.
+- *Equality:* `Native::Vec` stays pointer-identity (`syntax.rs:71`, unaffected);
+  the element-compare `HeapVec: PartialEq` is test-only; structural value-`=` over
+  vecs is out of scope.
+- *Render:* a vec renders as a sequence of rendered values.
+
+**Acceptance criteria.**
+- A vec can be constructed from, and round-trip (`vec.of` → `vec.to-list`), a list
+  of **blocks** and of **nested lists**, preserving order and element identity.
+- `vec.nth` over a vec of blocks returns the block (indexable further) in O(1).
+- A non-primitive vec renders identically to the equivalent list across the
+  harness (golden output).
+- Full harness passes under `EU_GC_VERIFY=2`, `EU_GC_POISON=1`,
+  `EU_GC_STRESS=1`; **a use-after-free under poison falsifies it.**
+- GC-churn benches show no regression; the prior Rust-heap vec-backing leak is
+  gone.
+- Regression test: a vec-of-records program exercised under GC verification.
+
+**References.** `src/eval/memory/vec.rs:14`; `src/eval/memory/set.rs:20`;
+`src/eval/memory/syntax.rs:37–58,71,333–336,343,380`;
+`src/eval/machine/env.rs:196,498` (the `Array<Closure>` template);
+`src/eval/memory/string.rs` (GC-traced-native template);
+`src/eval/stg/vec.rs:86,151,247–257,469–479`; `src/eval/stg/support.rs:530`;
+`src/eval/stg/emit.rs:105–118`; `lib/prelude.eu:1949–1990` (vec API).
+
+**Relationships.** relates-to 0020 (shares the GC-scannable-array machinery; it
+**refines** 0020's note, which mis-stated the backing as `Array<Ref>` — it must be
+`Array<Closure>`); **independent** of 0020's CHAMP work (can land before or
+after); independent of F1–F5. Gating question: worth banking now if **random
+access over arrays-of-records** is a near-term target; otherwise a clean post-1.0
+enhancement.
+
+---
+
 <!-- Add further high-priority fixes below as the review surfaces them. -->
