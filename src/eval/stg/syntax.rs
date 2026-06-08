@@ -458,7 +458,15 @@ pub mod dsl {
         LambdaForm::value(body)
     }
 
-    /// Case statement, evaluate scrutinee then branch
+    /// Case statement with a native fallback, evaluate scrutinee then branch.
+    ///
+    /// Use `case` when the scrutinee may be a raw native value (e.g. a
+    /// number from `machine_return_num`).  The fallback receives the
+    /// native at `local(0)`.
+    ///
+    /// Use `switch` (no fallback) only when the scrutinee is guaranteed
+    /// to be a data constructor (booleans, list structure, block
+    /// structure, etc.) and never a raw native atom.
     pub fn case(
         scrutinee: Rc<StgSyn>,
         branches: Vec<(Tag, Rc<StgSyn>)>,
@@ -472,7 +480,16 @@ pub mod dsl {
         })
     }
 
-    /// Case statement without default
+    /// Case statement without a native fallback.
+    ///
+    /// **Only safe when the scrutinee is always a data constructor** —
+    /// booleans (`BoolTrue`/`BoolFalse`), list cells (`ListCons`/`ListNil`),
+    /// block structures (`Block`/`BlockPair`/`BlockKvList`), etc.
+    ///
+    /// If the scrutinee could be a raw native value (any user-provided
+    /// number, string, symbol, or datetime), use `case` with a native
+    /// fallback instead.  Missing the fallback causes a
+    /// `NoBranchForDataTag` error at runtime.
     pub fn switch(scrutinee: Rc<StgSyn>, branches: Vec<(Tag, Rc<StgSyn>)>) -> Rc<StgSyn> {
         Rc::new(StgSyn::Case {
             scrutinee,
