@@ -247,18 +247,18 @@ Work groups along six commonalities — the real reason items sit together.
 
 | Family | Members | The shared thing |
 |---|---|---|
-| **Cross-unit interface** | W3, W6, W7, W18 | One *Unit Interface* (W3) exposes each unit's cross-unit contributions; separate compilation, incremental queries and module imports all consume it. |
-| **Compile latency & incrementality** | W2, W6, W7 | Eliminate redundant compiles, cache/embed the prelude, then a demand-driven query graph. One cache-key discipline. |
+| **Cross-unit interface** | W2, W6, W7, W18 | One *Unit Interface* (W2) exposes each unit's cross-unit contributions; separate compilation, incremental queries and module imports all consume it. |
+| **Compile latency & incrementality** | W1, W6, W7 | Eliminate redundant compiles, cache/embed the prelude, then a demand-driven query graph. One cache-key discipline. |
 | **GC / memory** | W10, W13, W14 | Generational nursery first; then persistent blocks and vec-of-values on the GC-scannable-array machinery. One scarce skill set — *sequence, never parallelise*. |
 | **Strictness / demand** | W9, W11, W20 | One demand annotation (W9) feeds the analysis (W11) feeds type-directed compilation (W20). |
 | **Types-as-validation** | W16, W15, W8, W22 | The `s"…"` type vocabulary is reused by runtime validation, presence-typed fields, doc/schema extraction and schema interop. |
-| **1.0 commitment** | W1, W5, W17 | Versioning & stable-surface tiers, a conformance corpus, reproducibility — what "1.0" *means* and how it is *proven*. |
+| **1.0 commitment** | W3, W5, W17 | Versioning & stable-surface tiers, a conformance corpus, reproducibility — what "1.0" *means* and how it is *proven*. |
 
 ### 6.2 The dependency spine
 
 The edges that constrain ordering (`→` = "must precede"):
 
-- **W3** (Unit Interface) **→ W6, W7, W18**; W3 also subsumes the cross-import
+- **W2** (Unit Interface) **→ W6, W7, W18**; W2 also subsumes the cross-import
   bracket fix.
 - **W9** (demand annotation) **→ W11** (the analysis that populates it fully).
 - **W12** (git fetch backend) **→ W18** (modules).
@@ -294,8 +294,8 @@ A second lens, orthogonal to release order (decisions and non-goals excluded):
 
 | Bucket | Items |
 |---|---|
-| **Cheap & high-leverage** (design-heavy, do early) | W1, W2, W4, W6, W8 |
-| **High-leverage, real engineering** | W3, W5, W7, W10, W13, W16, W18 |
+| **Cheap & high-leverage** (design-heavy, do early) | W1, W3, W4, W6, W8 |
+| **High-leverage, real engineering** | W2, W5, W7, W10, W13, W16, W18 |
 | **Worthwhile, medium** | W9, W11, W12, W14, W15, W17, W19 |
 | **Big bets / forks** (deliberate, post-1.0, one at a time) | W20, W21, W22 |
 
@@ -303,12 +303,13 @@ A second lens, orthogonal to release order (decisions and non-goals excluded):
 
 | Release | Theme | Items |
 |---|---|---|
-| **0.8** | Versioning, foundations & front-end hygiene | W1–W5 |
+| **0.7.1** | Two correctness fixes | W1–W2 |
+| **0.8** | Versioning, foundations & front-end hygiene | W3–W5 |
 | **0.9** | Compile latency, docs & incremental groundwork | W6–W9 |
 | **0.10** | The runtime: GC & demand | W10–W12 |
 | **0.11** | Blocks, value model & presence types | W13–W15 |
 | **0.12** | Data-correctness & reproducibility | W16–W17 |
-| **1.0** | Ecosystem floor, prove & freeze | W18–W19 (+ W5 bar, W1 freeze) |
+| **1.0** | Ecosystem floor, prove & freeze | W18–W19 (+ W5 bar, W3 freeze) |
 | **post-1.0** | Breadth & curated bets | W20–W22, candidates |
 
 ## 7. The work
@@ -320,11 +321,83 @@ releases keep one number with phase notes.
 
 ---
 
+### 0.7.1 — Two correctness fixes
+
+*Two latent bugs, shipped as a patch before the 0.8 line begins: a wasted compile
+on every plain document, and a silent cross-import mis-parse. Fixing the second
+properly means building the Unit Interface the later releases depend on, so it
+lands here as the foundation it is.*
+
+#### W1. Eliminate the double STG compile of plain documents
+
+**Problem.** For a plain (non-IO) document — the common case — `try_execute`
+compiles the prelude-plus-unit evaluand to STG **twice**: once headless to
+classify IO-vs-document, then again under `RenderType::RenderDoc` on a *fresh*
+machine to render (`src/driver/eval.rs:178-295`). The second compile (~90 ms, and
+not even timed) exists only as a workaround: rendering the headless result in
+place via `render_headless_result` (`src/driver/io_run.rs:1602`) crashes the GC on
+stale string pointers left by the first run (`eval.rs:272-275`). The IO paths
+already render in place safely; only the pure-document path recompiles.
+
+**Design.** Fix the stale-string hazard so the pure-document result renders in
+place like the IO cases → **one compile, one machine** on every plain-document
+run, and a known heap-lifecycle landmine removed. Independent of, and complementary
+to, the prelude embedding in W6 (W1 removes the *second* compile; W6 removes the
+*prelude* compile).
+
+**Implementation.** `src/driver/eval.rs:163-302`, `src/driver/io_run.rs:1602`.
+Small but touches heap lifecycle — validate under `EU_GC_VERIFY=2` +
+`EU_GC_STRESS=1`. P1 / high priority.
+
+**Success.** A plain-document run performs exactly one STG compile (verifiable via
+the `stg-compile` timing); the headless result renders in place; no GC crash under
+verification across the harness; a regression test exercises it.
+
+#### W2. The Unit Interface (and the cross-import bracket fix)
+
+**Problem.** A dependency makes several *source-level contributions* to a dependent
+unit's compilation, handled today by **four separate, inconsistent mechanisms**:
+bracket content-modes (per-file `BracketRegistry`, no cross-file seeding —
+`src/syntax/rowan/parse.rs:45`); the monad-namespace registry (seedable —
+`src/core/desugar/desugarer.rs:171`); the operator table (rediscovered from the
+merged tree at cook, no seeding — `src/core/cook/fixity.rs:143`); and type schemes
+(`PreludeSummary`/`with_seed` — `src/core/typecheck/check.rs:197,382`). Operators
+are even captured twice (typecheck *and* cook). One of these is an outright bug:
+because a block-style idiot-bracket pair is decided per-file at parse, a pair
+**defined in an imported file is invisible** to the importing file's pre-scan, so
+its uses there default to soup/expr mode — a program that works in one file
+**silently mis-parses** when the definition is moved to a library.
+
+**Prior art.** A GHC `.hi` interface / ML signature: build a unit's interface once;
+seed each phase of a dependent from its dependencies' interfaces. `PreludeSummary`
+is already a partial one.
+
+**Design.** Refactor the four contributions into a single per-unit **Unit
+Interface** with one consistent pattern. This **fixes the bracket bug** (brackets
+gain a slot and the seeding they lack — the block-vs-soup decision is deferred past
+parse to the seedable desugar stage), removes the operator-table redundancy
+(extract once, serve both cook and typecheck), and makes the cross-unit surface
+explicit and testable. It is independently valuable *before* any separate
+compilation, and is the foundation W6 (separate compilation), W7 (incremental) and
+W18 (modules) all consume; demand signatures (W9) and exported-binding slots become
+further fields of the same interface.
+
+**Implementation.** `parse.rs:45` (brackets), `desugarer.rs:160-177` (the seedable
+template), `fixity.rs:143` (operator rediscovery), `check.rs:197,382`
+(`PreludeSummary` to generalise). Parse is the awkward phase (it runs *before*
+import resolution), which is exactly why the bracket contribution must move to the
+seedable desugar stage. Interfaces build bottom-up over the import DAG; mutual
+recursion across units is the residual hard case. Medium / architecture.
+
+**Success.** One mechanism instead of four; the imported-bracket repro parses
+correctly; operators are extracted once; the interface is a documented, testable
+artefact.
+
 ### 0.8 — Versioning, foundations & front-end hygiene
 
-*Design-heavy, front-end, low-risk: make 1.0's shape real and stop the obvious pain.*
+*Design-heavy, front-end, low-risk: make 1.0's shape real.*
 
-#### W1. Versioning & stability discipline
+#### W3. Versioning & stability discipline
 
 **Problem.** Eucalypt practises continuous delivery with a four-part build number
 (`build.eu:7-13,59-62`); the `0.7.0` in `Cargo.toml` is a human-set prefix and the
@@ -373,71 +446,6 @@ prelude v2 exists opt-in with v1 frozen; every Stable prelude element has a
 deprecation→removal path; the deep-merge default, when it lands, ships as a MAJOR
 or behind `prelude: :v2`, never a silent flip.
 
-#### W2. Eliminate the double STG compile of plain documents
-
-**Problem.** For a plain (non-IO) document — the common case — `try_execute`
-compiles the prelude-plus-unit evaluand to STG **twice**: once headless to
-classify IO-vs-document, then again under `RenderType::RenderDoc` on a *fresh*
-machine to render (`src/driver/eval.rs:178-295`). The second compile (~90 ms, and
-not even timed) exists only as a workaround: rendering the headless result in
-place via `render_headless_result` (`src/driver/io_run.rs:1602`) crashes the GC on
-stale string pointers left by the first run (`eval.rs:272-275`). The IO paths
-already render in place safely; only the pure-document path recompiles.
-
-**Design.** Fix the stale-string hazard so the pure-document result renders in
-place like the IO cases → **one compile, one machine** on every plain-document
-run, and a known heap-lifecycle landmine removed. Independent of, and complementary
-to, the prelude embedding in W6 (W2 removes the *second* compile; W6 removes the
-*prelude* compile).
-
-**Implementation.** `src/driver/eval.rs:163-302`, `src/driver/io_run.rs:1602`.
-Small but touches heap lifecycle — validate under `EU_GC_VERIFY=2` +
-`EU_GC_STRESS=1`. P1 / high priority.
-
-**Success.** A plain-document run performs exactly one STG compile (verifiable via
-the `stg-compile` timing); the headless result renders in place; no GC crash under
-verification across the harness; a regression test exercises it.
-
-#### W3. The Unit Interface (and the cross-import bracket fix)
-
-**Problem.** A dependency makes several *source-level contributions* to a dependent
-unit's compilation, handled today by **four separate, inconsistent mechanisms**:
-bracket content-modes (per-file `BracketRegistry`, no cross-file seeding —
-`src/syntax/rowan/parse.rs:45`); the monad-namespace registry (seedable —
-`src/core/desugar/desugarer.rs:171`); the operator table (rediscovered from the
-merged tree at cook, no seeding — `src/core/cook/fixity.rs:143`); and type schemes
-(`PreludeSummary`/`with_seed` — `src/core/typecheck/check.rs:197,382`). Operators
-are even captured twice (typecheck *and* cook). One of these is an outright bug:
-because a block-style idiot-bracket pair is decided per-file at parse, a pair
-**defined in an imported file is invisible** to the importing file's pre-scan, so
-its uses there default to soup/expr mode — a program that works in one file
-**silently mis-parses** when the definition is moved to a library.
-
-**Prior art.** A GHC `.hi` interface / ML signature: build a unit's interface once;
-seed each phase of a dependent from its dependencies' interfaces. `PreludeSummary`
-is already a partial one.
-
-**Design.** Refactor the four contributions into a single per-unit **Unit
-Interface** with one consistent pattern. This **fixes the bracket bug** (brackets
-gain a slot and the seeding they lack — the block-vs-soup decision is deferred past
-parse to the seedable desugar stage), removes the operator-table redundancy
-(extract once, serve both cook and typecheck), and makes the cross-unit surface
-explicit and testable. It is independently valuable *before* any separate
-compilation, and is the foundation W6 (separate compilation), W7 (incremental) and
-W18 (modules) all consume; demand signatures (W9) and exported-binding slots become
-further fields of the same interface.
-
-**Implementation.** `parse.rs:45` (brackets), `desugarer.rs:160-177` (the seedable
-template), `fixity.rs:143` (operator rediscovery), `check.rs:197,382`
-(`PreludeSummary` to generalise). Parse is the awkward phase (it runs *before*
-import resolution), which is exactly why the bracket contribution must move to the
-seedable desugar stage. Interfaces build bottom-up over the import DAG; mutual
-recursion across units is the residual hard case. Medium / architecture.
-
-**Success.** One mechanism instead of four; the imported-bracket repro parses
-correctly; operators are extracted once; the interface is a documented, testable
-artefact.
-
 #### W4. Resilient parser front-end & error recovery
 
 **Problem.** The syntactic LSP features already work by calling the Rowan parser
@@ -453,7 +461,7 @@ always surface the Rowan partial tree (~150 lines; immediate diagnostic
 improvement). **Phase 2 (0.9):** real error-recovery in the parser — synchronising
 on block/list boundaries and producing typed error nodes — so a malformed region
 is isolated and the rest of the file still parses, cooks and checks. Bracket
-recovery couples to W3 (the deferred block/soup decision).
+recovery couples to W2 (the deferred block/soup decision).
 
 **Implementation.** `src/syntax/rowan/`. Phase 1 small/low; Phase 2 medium. Honour
 the panic policy — odd input yields a clean diagnostic, never a panic.
@@ -531,7 +539,7 @@ artifacts is an RCE vector — keep it co-located and validated (PEP 552), or av
 it.
 
 **Design.** The real fix is **separate compilation** on top of the Unit Interface
-(W3): give the prelude an independent compiled form whose cross-unit references are
+(W2): give the prelude an independent compiled form whose cross-unit references are
 unresolved externals, then **embed the compiled prelude in the binary** (mirroring
 how `build-meta.yaml` is embedded via `include_bytes!`, with a build-time hash
 check against `lib/prelude.eu`). This eliminates prelude compilation at runtime
@@ -545,7 +553,7 @@ today. User code uses ~55 prelude operators pervasively, so cooking a unit
 independently of its dependencies' operators is the load-bearing change — but for
 the prelude floor it is bounded (the prelude's operator set is fixed and already
 extracted on the type side, `check.rs:86`). Monad namespaces are already seedable
-and bracket modes are handled by W3.
+and bracket modes are handled by W2.
 
 Four mechanisms, floor to radical: **(A)** stable-global-prefix — compile the
 prelude once to a fixed `Ref::G` global-slot layout (its de Bruijn indices are
@@ -557,7 +565,7 @@ eucalypt-idiomatic since blocks are records); **(D)** content-addressed definiti
 recommended, Medium-effort 1.0 target; arbitrary-unit separate compilation
 (B/C/D) is Hard and post-1.0.**
 
-**An on-disk cache is explicitly demoted.** After W2 + the embedded prelude, the
+**An on-disk cache is explicitly demoted.** After W1 + the embedded prelude, the
 only remaining cacheable thing is the *whole merged evaluand* keyed on the full
 input set — a hit only on exact re-runs, deduping nothing, and carrying a real
 security surface (a cache of compiled units is executable content; content-hash
@@ -569,10 +577,11 @@ group/world-writable dir. A long-running daemon (Bloop-style) is deferred likewi
 (a Unix-domain socket at `0600`, authenticated). Embedding avoids all of this for
 the dominant cost.
 
-**Implementation.** W3 (interface) → fixed global slots
+**Implementation.** W2 (interface) → fixed global slots
 (`compiler.rs`, `machine/mod.rs:55`) → **operator seeding** of cook (the real work)
 → deferred externals + link (`compiler.rs:1031`; the type checker's seed path is the
-template) → embed with a build-time source-hash check; land W2 alongside. Prelude
+template) → embed with a build-time source-hash check. (W1 has already removed the
+*second* compile in 0.7.1; embedding removes the *prelude* compile.) Prelude
 floor (A): **Medium, feasible.** General units (B/C/D), the on-disk cache and the
 daemon: **post-1.0**, gated on demonstrated need.
 
@@ -585,8 +594,7 @@ benchmark to watch.
 **Success.** The prelude is compiled **zero times at runtime**, output
 byte-identical across the harness, cold latency down by the prelude's share, **with
 no on-disk executable cache**; prelude operators resolve in separately-compiled
-user code (the verified failure mode is gone); W2 lands (one STG compile per plain
-document).
+user code (the verified failure mode is gone).
 
 #### W7. Incremental, query-based core
 
@@ -598,7 +606,7 @@ across the CLI/editor boundary; re-evaluation re-runs the whole front-end.
 content-hashed inputs and memoised, invalidation-tracked derived queries — the same
 discipline rustc's red-green incremental cache and Bazel's action cache use.
 
-**Design.** Wrap the front-end passes as **queries** over the Unit Interface (W3):
+**Design.** Wrap the front-end passes as **queries** over the Unit Interface (W2):
 parse, the per-unit interface, cook, check, compile become memoised nodes keyed on
 content hashes, so an edit re-runs only the affected sub-graph. The embedded prelude
 (W6) is the base case of the graph; the cache-key discipline is shared with W6.
@@ -608,9 +616,9 @@ constraint: `RcExpr` and much of core/STG are `Rc`-based and **not `Send`**, so 
 query store is single-threaded for now (it shares the runtime's threading posture).
 
 **Implementation.** A query layer over `src/core/*` and `src/driver/*`, consuming
-W3's interfaces. Begin in 0.9 (wrap the passes); the cache key must account for the
-cross-unit inputs W3 exposes (brackets, operators, monad namespaces, schemes) — the
-reason W3 is the prerequisite. Medium.
+W2's interfaces. Begin in 0.9 (wrap the passes); the cache key must account for the
+cross-unit inputs W2 exposes (brackets, operators, monad namespaces, schemes) — the
+reason W2 is the prerequisite. Medium.
 
 **Success.** An edit to one unit re-runs only its dependents' affected queries;
 LSP latency on large workspaces drops; the same graph serves CLI re-compiles.
@@ -630,8 +638,8 @@ metadata under the test harness (ties to W5). Regenerate the hand-written prelud
 reference from the prelude itself.
 
 **Implementation.** `src/driver/` new subcommand + the LSP extraction; render to
-Markdown/JSON-schema. Small-to-medium, low risk. Reads W1's `deprecated:` metadata
-and W3's interface where cross-unit.
+Markdown/JSON-schema. Small-to-medium, low risk. Reads W3's `deprecated:` metadata
+and W2's interface where cross-unit.
 
 **Success.** The prelude reference is generated and matches the code; a unit's
 `type:`/`doc:` metadata produces a schema and a doc page; doctests run in CI.
@@ -653,7 +661,7 @@ update-suppression decisions consult. The existing heuristics populate it today;
 the analysis (W11) populates it more completely later. This pays off *before* any
 analysis — one decision point instead of six, testable and consistent — and the
 annotation on an *exported* binding is a **strictness signature** the Unit Interface
-(W3) carries for W6 (a missing signature only costs optimisation, never
+(W2) carries for W6 (a missing signature only costs optimisation, never
 correctness — unlike operators, it is not a wall).
 
 **Implementation.** A demand annotation on core bindings; `take_lambda_form`
@@ -780,7 +788,7 @@ never results — so the first implementation is conservative (when in doubt, `T
 **Implementation.** A new `src/core/analyse/demand.rs` (~300–400 lines) wired
 between fuse and STG compile; `take_lambda_form` consults the annotation (~10
 lines); P3 is the LetRec fixed point (the fiddly part). The signature on an exported
-binding rides in the Unit Interface (W3/W9) for W6.
+binding rides in the Unit Interface (W2/W9) for W6.
 
 **Risks.** A soundness slip duplicates expensive work (mitigate: conservative
 default; property-test analysis results against a call-by-name run). Compile-time
@@ -808,7 +816,7 @@ the feature not-yet-implemented has shipped.)
 
 **Design.** Restore it **consistent with the module system (W18), not as the bare
 2019 form** — implement git as a **fetch backend beneath a content hash**: teach
-the scraper the **block form** (the same change W3 and W18 need — read
+the scraper the **block form** (the same change W2 and W18 need — read
 `git:`/`commit:`/`import:` plus an optional `sha256:`); add a git-capable locator +
 clone-and-cache at the pinned commit (keyed by commit SHA, the `.eucalypt.d` cache
 the reference); and verify the optional `sha256:` **content** hash on the fetched
@@ -818,7 +826,7 @@ W18 builds on** rather than a throwaway. The unwired `Url` locator is the same
 loader gap and can be closed alongside. P1 (the docs are otherwise wrong).
 
 **Implementation.** `src/syntax/import.rs:259-293` (block scraper, shared with
-W3/W18), `src/syntax/input.rs:17` (a `Git` locator), a git dependency + cache, the
+W2/W18), `src/syntax/input.rs:17` (a `Git` locator), a git dependency + cache, the
 `Url` fetch arm in `src/driver/source.rs`. Medium.
 
 **Success.** The documented git-import form fetches, pins by commit, verifies the
@@ -1062,19 +1070,19 @@ versions by MVS — proves you can have a real package ecosystem with **no centr
 index**. Unison's content-addressing makes identity and caching intrinsic.
 
 **Design.** Build on the git fetch backend (**W12**) and the Unit Interface
-(**W3**). The 1.0 **core cut**: **content-addressed git imports** (fetch a repo at a
+(**W2**). The 1.0 **core cut**: **content-addressed git imports** (fetch a repo at a
 pinned commit, verify a `sha256:` content hash on the fetched bytes); an
 **eucalypt-syntax manifest** discovered by upward search from the invoked file's
 directory (degrading to today's behaviour, with a `--manifest` override); and
-**namespace isolation** so imported units don't collide (consuming W3's interface).
+**namespace isolation** so imported units don't collide (consuming W2's interface).
 Transitive integrity is recorded in a **lockfile that pins the closure** (the Go
 `go.sum` model; a Merkle-tree hash over the import DAG is the noted alternative if
 per-file hashes prove insufficient). **No registry** — distribution is git +
 GitHub/GitLab alone. Deeper **version selection (MVS) and lockfile depth are
 post-1.0** (W18-depth).
 
-**Implementation.** The block-form scraper (shared with W3/W12), manifest discovery
-+ parsing in `src/driver/source.rs`, namespace isolation over W3's interface, the
+**Implementation.** The block-form scraper (shared with W2/W12), manifest discovery
++ parsing in `src/driver/source.rs`, namespace isolation over W2's interface, the
 lockfile. Real engineering; the fetch/integrity halves are W12.
 
 **Success.** A unit can depend on another repo by URL pinned to a commit + content
@@ -1095,7 +1103,7 @@ data exploration.
 and a **thin REPL over the cache**, leaning on the embedded prelude/cache (W6) for
 per-prompt latency and the incremental query core (W7) for reactive re-evaluation.
 Phase 1 deliberately avoids holding fragile cross-prompt heap state: the
-stale-string hazard is fixed separately (W2), and richer persistent-session state
+stale-string hazard is fixed separately (W1), and richer persistent-session state
 is the post-1.0 full notebook. **Full notebook is post-1.0.**
 
 **Implementation.** A driver surface over W6/W7; `src/driver/`. Medium.
@@ -1104,7 +1112,7 @@ is the post-1.0 full notebook. **Full notebook is post-1.0.**
 evaluates expressions against a loaded unit over the cache.
 
 *(Also at 1.0: **W5** reaches its bar — golden corpus green, property + fuzz
-running; **W1** freezes the enumerated stable surface under real semver.)*
+running; **W3** freezes the enumerated stable surface under real semver.)*
 
 ---
 
@@ -1238,7 +1246,7 @@ and able to swap into the plan if priorities shift.
 
 ## 8. The critical path
 
-**W1 (versioning) + W2/W3 (cheap latency + the interface) → W6 (latency) → W10 (the
+**W1/W2 (the two fixes + the Unit Interface) + W3 (versioning) → W6 (latency) → W10 (the
 runtime) → W16 + W18 (data-correctness + ecosystem floor, on W12) → W5 green (prove
 it) → ship 1.0.** Everything else is a cheap win that slots alongside, or a curated
 post-1.0 bet.
@@ -1247,9 +1255,9 @@ post-1.0 bet.
 
 | # | Item | Release |
 |---|------|:-------:|
-| W1 | Versioning & stability discipline | 0.8 → 1.0 freeze |
-| W2 | Eliminate the double STG compile | 0.8 |
-| W3 | The Unit Interface (+ cross-import bracket fix) | 0.8 |
+| W1 | Eliminate the double STG compile | 0.7.1 |
+| W2 | The Unit Interface (+ cross-import bracket fix) | 0.7.1 |
+| W3 | Versioning & stability discipline | 0.8 → 1.0 freeze |
 | W4 | Resilient parser front-end & error recovery | 0.8 (Ph1) / 0.9 (Ph2) |
 | W5 | Conformance corpus, property tests, fuzzing | 0.8 begin → 1.0 bar |
 | W6 | Compiled-unit & prelude caching (separate compilation) | 0.9 floor → post-1.0 full |
