@@ -184,15 +184,62 @@ in the final letrec may not match the order assumed by `var_refs`.
 If compile_block's entries are interleaved or prepended, the indices
 shift.
 
+## Findings from Sonnet investigation (agent 3)
+
+### Key finding 1: format specifier is the trigger
+
+Plain `"{i}"` interpolation works. Adding any format spec like
+`"{i:%02d}"` causes the error. This suggests the FMT intrinsic
+wrapper inlining (ProtoInline) is where the index goes wrong.
+
+### Key finding 2: `zip(iota(1))` vs manual pairs
+
+The bug also manifests with `zip(iota(1))` even with fewer bindings.
+Manual `[[1, elem], ...]` works but `zip(iota(1))` fails in the same
+position. This suggests the issue may be related to lazy evaluation
+of zip pairs, not purely a compile-time index problem.
+
+### Key finding 3: NoBranchForNative is the error path
+
+`return_native` at vm.rs:619 fires when a native value (Num/Str/Sym)
+arrives at a `Branch` continuation WITHOUT a fallback. The FMT wrapper
+body uses `case local(0) of Num → ...` — when the wrong value arrives
+(a structured value like a Cons cell), it evaluates to a native number
+from inside the cell, which then hits a branch expecting structured
+data.
+
+### Key finding 4: ProtoInline and FMT wrapper
+
+The FMT intrinsic is inlined via ProtoInline. The wrapper body
+contains `lambda(2, let_([...], ...))` where L(0)=value, L(1)=format
+string. When inlined, these positions may not match what the let
+binder actually places there, especially when nested inside a
+block-dot's letrec.
+
+### Key finding 5: env_from_data_args and zip
+
+`env_from_data_args` creates a new env frame for data constructor
+arguments. When `zip` creates pairs, the pair's fields are accessed
+via this frame. The chain from the branch body back to the enclosing
+lambda's `pair` argument may be disrupted.
+
 ## Approach for fix
 
+The investigation suggests the issue is in ProtoInline's index
+mapping when the FMT wrapper is inlined inside a letrec that has
+been extended by compile_block. The format-specifier path triggers
+ProtoInline; the no-format path uses a simpler STR call that
+doesn't inline.
+
 Investigate by:
-1. Adding debug prints in `into_stg` to see the final binding order
-2. Tracing what `✳6` resolves to step by step through Context::lookup
-3. Comparing the good (2 binding) and bad (3 binding) cases at the
-   Context level, not just the STG output
+1. Compare STG dump for `"{i}"` (works) vs `"{i:%02d}"` (fails) in
+   the nested case — the difference is ProtoInline for FMT
+2. Check how ProtoInline::take_syntax maps its arg indices when
+   the context includes block structure entries
+3. Check if the issue is compile-time (wrong STG) or runtime (correct
+   STG, wrong env frame chain)
 
 The fix likely involves one of:
-- Compile the block body in a nested binder (not the same one as the Let)
-- Adjust var_refs after compile_block adds entries
-- Change compile_block to not share the Let's binder
+- Fix ProtoInline's index mapping for the FMT wrapper
+- Compile the block body in a nested binder (not the same one as Let)
+- Fix env_from_data_args for lazy zip pairs
