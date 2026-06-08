@@ -24,10 +24,7 @@ use super::{
         machine_return_str_list, machine_return_sym, str_arg, str_arg_ref, str_list_arg,
     },
     syntax::{
-        dsl::{
-            atom, box_str, case, data, force, lambda, let_, local, lref, str, switch, unbox_str,
-            value,
-        },
+        dsl::{atom, box_str, case, data, force, lambda, let_, local, lref, str, unbox_str, value},
         LambdaForm,
     },
     tags::DataConstructor,
@@ -325,10 +322,44 @@ impl StgIntrinsic for Fmt {
     }
 
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        // Helper: given unboxed x at local(0) and fmtstring at an offset,
+        // unbox the format string (handling both BoxedString and raw native)
+        // then call the FMT BIF.
+        //
+        // `fmtstring_offset` is the de Bruijn index of the original fmtstring
+        // argument relative to the current environment.
+        //
+        // For a boxed x branch: env is [x_inner] [x fmtstring], so after
+        // force(local(0)) we get [x_raw] [x_inner] [x fmtstring] and
+        // fmtstring is at local(3).
+        //
+        // For the native x fallback: env is [x_native] [x fmtstring] and
+        // fmtstring is at local(2).
+        let unbox_fmt_and_call =
+            |fmtstring_idx: usize, x_raw_idx: usize| -> std::rc::Rc<super::syntax::StgSyn> {
+                // Dispatch on fmtstring: if BoxedString, unbox; if raw native
+                // string, use directly.
+                case(
+                    local(fmtstring_idx),
+                    vec![(
+                        DataConstructor::BoxedString.tag(),
+                        // [fmt_inner] ... env grows by 1
+                        force(
+                            local(0),
+                            // [fmt_raw] [fmt_inner] ...
+                            call::bif::fmt(lref(x_raw_idx + 2), lref(0)),
+                        ),
+                    )],
+                    // Native fallback: fmtstring is already a raw native string.
+                    // case puts the native at local(0), pushing x_raw up by 1.
+                    call::bif::fmt(lref(x_raw_idx + 1), lref(0)),
+                )
+            };
+
         lambda(
             2, // [x fmtstring]
             let_(
-                vec![value(switch(
+                vec![value(case(
                     local(0),
                     vec![
                         (
@@ -337,18 +368,7 @@ impl StgIntrinsic for Fmt {
                             force(
                                 local(0),
                                 // [n'] [n] [x fmtstring]
-                                switch(
-                                    local(3),
-                                    vec![(
-                                        DataConstructor::BoxedString.tag(),
-                                        // [fmt] [n'] [n] [x fmtstring]
-                                        force(
-                                            local(0),
-                                            // [fmt'] [fmt] [n'] [n] [x fmtstring]
-                                            call::bif::fmt(lref(2), lref(0)),
-                                        ),
-                                    )],
-                                ),
+                                unbox_fmt_and_call(3, 0),
                             ),
                         ),
                         (
@@ -357,44 +377,26 @@ impl StgIntrinsic for Fmt {
                             force(
                                 local(0),
                                 // [k'] [k] [x fmtstring]
-                                switch(
-                                    local(3),
-                                    vec![(
-                                        DataConstructor::BoxedString.tag(),
-                                        // [fmt] [k'] [k] [x fmtstring]
-                                        force(
-                                            local(0),
-                                            // [fmt'] [fmt] [k'] [k] [x fmtstring]
-                                            call::bif::fmt(lref(2), lref(0)),
-                                        ),
-                                    )],
-                                ),
+                                unbox_fmt_and_call(3, 0),
                             ),
                         ),
                         (
                             DataConstructor::BoxedString.tag(),
-                            // [k] [x fmtstring]
+                            // [s] [x fmtstring]
                             force(
                                 local(0),
                                 // [s'] [s] [x fmtstring]
-                                switch(
-                                    local(3),
-                                    vec![(
-                                        DataConstructor::BoxedString.tag(),
-                                        // [fmt] [s'] [s] [x fmtstring]
-                                        force(
-                                            local(0),
-                                            // [fmt'] [fmt] [s'] [s] [x fmtstring]
-                                            call::bif::fmt(lref(2), lref(0)),
-                                        ),
-                                    )],
-                                ),
+                                unbox_fmt_and_call(3, 0),
                             ),
                         ),
                         (DataConstructor::BoolFalse.tag(), atom(str("false"))),
                         (DataConstructor::BoolTrue.tag(), atom(str("true"))),
                         (DataConstructor::Unit.tag(), atom(str("null"))),
                     ],
+                    // Native x fallback: x is already a raw native value.
+                    // case puts it at local(0); env is [x_native] [x fmtstring]
+                    // so fmtstring is at local(2).
+                    unbox_fmt_and_call(2, 0),
                 ))],
                 data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
             ),
@@ -580,3 +582,203 @@ impl StgIntrinsic for Trim {
 }
 
 impl CallGlobal1 for Trim {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::eval::{
+        intrinsics,
+        stg::tags::DataConstructor,
+        stg::{arith::Add, panic::Panic, runtime::Runtime, syntax::dsl::*, testing},
+    };
+
+    fn runtime() -> Box<dyn Runtime> {
+        testing::runtime(vec![
+            Box::new(Str),
+            Box::new(Fmt),
+            Box::new(Add),
+            Box::new(Panic),
+        ])
+    }
+
+    // ── STR wrapper tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_str_boxed_num() {
+        // STR called through the wrapper with a boxed number
+        let syntax = letrec_(
+            vec![value(box_num(42))],
+            // STR returns BoxedString; unbox to get the raw string
+            case(
+                Str.global(lref(0)),
+                vec![(DataConstructor::BoxedString.tag(), local(0))],
+                unit(),
+            ),
+        );
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(200)).unwrap();
+        assert_eq!(m.string_return(), Some("42".to_string()));
+    }
+
+    #[test]
+    fn test_str_native_num() {
+        // STR called through the wrapper with a raw native number
+        // (simulates the result of machine_return_num, e.g. from arithmetic)
+        let syntax = case(
+            Str.global(num(42)),
+            vec![(DataConstructor::BoxedString.tag(), local(0))],
+            unit(),
+        );
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(200)).unwrap();
+        assert_eq!(m.string_return(), Some("42".to_string()));
+    }
+
+    #[test]
+    fn test_str_native_from_arithmetic() {
+        // A number produced by ADD (which uses machine_return_num, yielding
+        // a raw native) is then passed to STR through the wrapper.
+        let syntax = letrec_(
+            vec![
+                // [0]: result of ADD via BIF — raw native num
+                value(app_bif(intrinsics::index_u8("ADD"), vec![num(40), num(2)])),
+            ],
+            case(
+                Str.global(lref(0)),
+                vec![(DataConstructor::BoxedString.tag(), local(0))],
+                unit(),
+            ),
+        );
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(200)).unwrap();
+        assert_eq!(m.string_return(), Some("42".to_string()));
+    }
+
+    // ── FMT wrapper tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_fmt_boxed_num_boxed_fmtstr() {
+        // FMT with both arguments boxed (the traditional path)
+        let syntax = letrec_(
+            vec![value(box_num(42)), value(box_str("%04d"))],
+            case(
+                Fmt.global(lref(0), lref(1)),
+                vec![(DataConstructor::BoxedString.tag(), local(0))],
+                unit(),
+            ),
+        );
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(200)).unwrap();
+        assert_eq!(m.string_return(), Some("0042".to_string()));
+    }
+
+    #[test]
+    fn test_fmt_native_num_boxed_fmtstr() {
+        // FMT with a raw native number and a boxed format string.
+        // This is the bug case: the outer switch had no native fallback.
+        let syntax = letrec_(
+            vec![value(box_str("%04d"))],
+            case(
+                Fmt.global(num(42), lref(0)),
+                vec![(DataConstructor::BoxedString.tag(), local(0))],
+                unit(),
+            ),
+        );
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(200)).unwrap();
+        assert_eq!(m.string_return(), Some("0042".to_string()));
+    }
+
+    #[test]
+    fn test_fmt_boxed_num_native_fmtstr() {
+        // FMT with a boxed number and a raw native format string.
+        // Tests the inner format-string dispatch fallback.
+        let syntax = letrec_(
+            vec![value(box_num(42))],
+            case(
+                Fmt.global(lref(0), str("%04d")),
+                vec![(DataConstructor::BoxedString.tag(), local(0))],
+                unit(),
+            ),
+        );
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(200)).unwrap();
+        assert_eq!(m.string_return(), Some("0042".to_string()));
+    }
+
+    #[test]
+    fn test_fmt_native_num_native_fmtstr() {
+        // FMT with both arguments as raw natives.
+        // Both the outer and inner fallbacks are exercised.
+        let syntax = case(
+            Fmt.global(num(42), str("%04d")),
+            vec![(DataConstructor::BoxedString.tag(), local(0))],
+            unit(),
+        );
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(200)).unwrap();
+        assert_eq!(m.string_return(), Some("0042".to_string()));
+    }
+
+    #[test]
+    fn test_fmt_arithmetic_result() {
+        // A number produced by ADD (raw native) formatted through FMT wrapper.
+        // This reproduces the real-world scenario from eu-ynhu.
+        let syntax = letrec_(
+            vec![
+                value(app_bif(intrinsics::index_u8("ADD"), vec![num(40), num(2)])),
+                value(box_str("%02d")),
+            ],
+            case(
+                Fmt.global(lref(0), lref(1)),
+                vec![(DataConstructor::BoxedString.tag(), local(0))],
+                unit(),
+            ),
+        );
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(200)).unwrap();
+        assert_eq!(m.string_return(), Some("42".to_string()));
+    }
+
+    #[test]
+    fn test_fmt_bool_false() {
+        // FMT with a boolean false — returns "false" regardless of format string.
+        let syntax = letrec_(
+            vec![value(f())],
+            case(
+                Fmt.global(lref(0), str("%s")),
+                vec![(DataConstructor::BoxedString.tag(), local(0))],
+                unit(),
+            ),
+        );
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(200)).unwrap();
+        assert_eq!(m.string_return(), Some("false".to_string()));
+    }
+
+    #[test]
+    fn test_fmt_unit() {
+        // FMT with unit — returns "null".
+        let syntax = letrec_(
+            vec![value(unit())],
+            case(
+                Fmt.global(lref(0), str("%s")),
+                vec![(DataConstructor::BoxedString.tag(), local(0))],
+                unit(),
+            ),
+        );
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(200)).unwrap();
+        assert_eq!(m.string_return(), Some("null".to_string()));
+    }
+}
