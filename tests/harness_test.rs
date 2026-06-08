@@ -1678,6 +1678,11 @@ pub fn test_harness_153() {
 }
 
 #[test]
+pub fn test_harness_154() {
+    run_test(&opts("154_interp_block_debruijn.eu"));
+}
+
+#[test]
 pub fn test_target_symbol_shortcut_alpha() {
     let output = std::process::Command::new(eu_binary())
         .args(["-t", "alpha", "tests/harness/148_symbol_target_shortcut.eu"])

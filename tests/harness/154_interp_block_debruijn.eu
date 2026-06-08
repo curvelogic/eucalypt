@@ -1,0 +1,77 @@
+"154 string interpolation de Bruijn index — block with 3+ bindings (eu-ynhu regression)"
+
+# Regression test for eu-ynhu: string interpolation in a block body should
+# correctly resolve the interpolated variable regardless of how many bindings
+# precede it in the same block.
+#
+# The bug: compile_block adds Pair/Cons entries to the same LetBinder used by
+# the binding values. With 3+ bindings, the letrec indices for the block
+# structure entries shift past the value entries, causing interpolation
+# variable references (resolved as de Bruijn indices) to point at the wrong
+# letrec entry at runtime.
+
+` { target: :test }
+test: {
+
+  # --- 3-binding case (minimal reproduction from the bug report) ---
+  f-three(pair): {
+    i: pair first
+    x: 42
+    result: "component_{i:%02d}"
+  }.result
+
+  three-ok: f-three([1, "a"]) = "component_01"
+
+  # --- Works via map too ---
+  map-ok: [[1, "a"], [2, "b"]] map(f-three) //= ["component_01", "component_02"]
+
+  # --- 4 bindings: interpolation should still reach the right variable ---
+  f-four(n): {
+    val: n
+    a: 10
+    b: 20
+    label: "item_{val}"
+  }.label
+
+  four-ok: f-four(5) = "item_5"
+  four-map-ok: [7, 8, 9] map(f-four) //= ["item_7", "item_8", "item_9"]
+
+  # --- Interpolation of a later binding (not just the first) ---
+  f-mid(pair): {
+    prefix: "x"
+    idx: pair first
+    suffix: "z"
+    result: "{prefix}_{idx}_{suffix}"
+  }.result
+
+  mid-ok: f-mid([3, "q"]) = "x_3_z"
+
+  # --- Format spec with 3+ bindings ---
+  f-fmt(n): {
+    val: n
+    pad1: 0
+    pad2: 0
+    s: "{val:%03d}"
+  }.s
+
+  fmt-ok: f-fmt(7) = "007"
+  fmt-map-ok: [1, 2, 3] map(f-fmt) //= ["001", "002", "003"]
+
+  # --- 2-binding case still works (baseline) ---
+  f-two(pair): {
+    i: pair first
+    result: "pair_{i}"
+  }.result
+
+  two-ok: f-two([42, "x"]) = "pair_42"
+
+  RESULT: [ three-ok
+          , map-ok
+          , four-ok
+          , four-map-ok
+          , mid-ok
+          , fmt-ok
+          , fmt-map-ok
+          , two-ok
+          ] all-true? then(:PASS, :FAIL)
+}
