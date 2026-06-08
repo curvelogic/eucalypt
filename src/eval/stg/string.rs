@@ -24,17 +24,15 @@ use super::{
         machine_return_str_list, machine_return_sym, str_arg, str_arg_ref, str_list_arg,
     },
     syntax::{
-        dsl::{
-            atom, box_str, case, data, force, lambda, let_, local, lref, str, switch, unbox_str,
-            value,
-        },
-        LambdaForm,
+        dsl::{atom, box_str, case, data, force, lambda, let_, local, lref, str, unbox_str, value},
+        LambdaForm, StgSyn,
     },
     tags::DataConstructor,
 };
 
 use regex::Regex;
 use serde_json::Number;
+use std::rc::Rc;
 
 /// Get (or store and get) regex from machine rcache
 ///
@@ -325,10 +323,32 @@ impl StgIntrinsic for Fmt {
     }
 
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        // Unbox fmtstring, then call FMT BIF with unboxed value and
+        // format string.  `val_idx` is the local index of the
+        // already-unboxed value; `fmt_idx` is the local index of the
+        // (possibly boxed) format string.
+        //
+        // After BoxedString branch for fmt: [fmt_inner] ...prev
+        //   force: [fmt'] [fmt_inner] ...prev
+        //   FMT(val_idx+2, 0)
+        // Native fmt fallback: [fmt_native] ...prev
+        //   FMT(val_idx+1, 0)
+        fn unbox_fmt_and_call(val_idx: usize, fmt_idx: usize) -> Rc<StgSyn> {
+            case(
+                atom(lref(fmt_idx)),
+                vec![(
+                    DataConstructor::BoxedString.tag(),
+                    force(local(0), call::bif::fmt(lref(val_idx + 2), lref(0))),
+                )],
+                // native fmtstring fallback
+                call::bif::fmt(lref(val_idx + 1), lref(0)),
+            )
+        }
+
         lambda(
             2, // [x fmtstring]
             let_(
-                vec![value(switch(
+                vec![value(case(
                     local(0),
                     vec![
                         (
@@ -337,18 +357,8 @@ impl StgIntrinsic for Fmt {
                             force(
                                 local(0),
                                 // [n'] [n] [x fmtstring]
-                                switch(
-                                    local(3),
-                                    vec![(
-                                        DataConstructor::BoxedString.tag(),
-                                        // [fmt] [n'] [n] [x fmtstring]
-                                        force(
-                                            local(0),
-                                            // [fmt'] [fmt] [n'] [n] [x fmtstring]
-                                            call::bif::fmt(lref(2), lref(0)),
-                                        ),
-                                    )],
-                                ),
+                                // val at L(0), fmt at L(3)
+                                unbox_fmt_and_call(0, 3),
                             ),
                         ),
                         (
@@ -357,44 +367,26 @@ impl StgIntrinsic for Fmt {
                             force(
                                 local(0),
                                 // [k'] [k] [x fmtstring]
-                                switch(
-                                    local(3),
-                                    vec![(
-                                        DataConstructor::BoxedString.tag(),
-                                        // [fmt] [k'] [k] [x fmtstring]
-                                        force(
-                                            local(0),
-                                            // [fmt'] [fmt] [k'] [k] [x fmtstring]
-                                            call::bif::fmt(lref(2), lref(0)),
-                                        ),
-                                    )],
-                                ),
+                                unbox_fmt_and_call(0, 3),
                             ),
                         ),
                         (
                             DataConstructor::BoxedString.tag(),
-                            // [k] [x fmtstring]
+                            // [s] [x fmtstring]
                             force(
                                 local(0),
                                 // [s'] [s] [x fmtstring]
-                                switch(
-                                    local(3),
-                                    vec![(
-                                        DataConstructor::BoxedString.tag(),
-                                        // [fmt] [s'] [s] [x fmtstring]
-                                        force(
-                                            local(0),
-                                            // [fmt'] [fmt] [s'] [s] [x fmtstring]
-                                            call::bif::fmt(lref(2), lref(0)),
-                                        ),
-                                    )],
-                                ),
+                                unbox_fmt_and_call(0, 3),
                             ),
                         ),
                         (DataConstructor::BoolFalse.tag(), atom(str("false"))),
                         (DataConstructor::BoolTrue.tag(), atom(str("true"))),
                         (DataConstructor::Unit.tag(), atom(str("null"))),
                     ],
+                    // native x fallback — raw native at local(0)
+                    // [x_native] [x fmtstring]
+                    // val at L(0), fmt at L(2)
+                    unbox_fmt_and_call(0, 2),
                 ))],
                 data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
             ),
