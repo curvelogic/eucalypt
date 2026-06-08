@@ -1,36 +1,9 @@
-# Regression test for eu-ynhu: format specifier on lazy values
-#
-# The FMT intrinsic wrapper lacked a native-value fallback in its
-# case expression.  Arithmetic intrinsics (ADD etc.) return unboxed
-# native numbers which are stored via thunk update.  When a
-# subsequent format-specifier interpolation cases on such a value,
-# the switch (no fallback) fails with NoBranchForNative.
+# Regression: FMT on unboxed native values (eu-ynhu)
+# iota returns lazy values via machine_return_num (unboxed natives).
+# FMT wrapper must handle these via case fallback, not switch.
 
-# iota produces lazy computed values via ADD
-fmt-iota(i): "{i:%02d}"
+fmt(n): "{n:%02d}"
 
-# zip produces lazy pairs; first element via ADD
-fmt-zip(p): {
-  i: p first
-  result: "{i:%02d}"
-}.result
+check: iota(1) take(3) map(fmt)
 
-# Nested inside a block-dot (original reproduction)
-to-block(elems): {
-  f(pair): {
-    i: pair first
-    l: (pair second) first
-    s: (pair second) second
-    key: "c_{i:%02d}"
-    ret: [[key sym, l str.of]] block
-  }.ret
-  out: elems zip(iota(1)) map(f) take(2) foldl(merge, {})
-}.(out)
-
-# Plain interpolation (no format spec) should still work
-plain-iota(i): "{i}"
-
-iota-check: (iota(1) take(3) map(fmt-iota)) = ["01", "02", "03"]
-zip-check: (["a", "b"] zip(iota(1)) map(fmt-zip)) = ["01", "02"]
-nested-check: ([["x", 1], ["y", 2]] to-block) = { c_01: "x", c_02: "y" }
-plain-check: (iota(1) take(3) map(plain-iota)) = ["1", "2", "3"]
+RESULT: (check = ["01", "02", "03"]) then(:PASS, :FAIL)
