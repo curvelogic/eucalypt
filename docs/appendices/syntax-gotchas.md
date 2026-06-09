@@ -576,14 +576,28 @@ non-emptiness.
 
 ---
 
-## Future Improvements
+## Monad Bracket Restrictions
 
-These gotchas highlight areas where the language could benefit from:
+### Empty Monad Brackets Are an Error
 
-1. **Better Error Messages**: More specific error messages when
-   precedence issues occur
-2. **Linting Rules**: Static analysis to catch common precedence
-   mistakes
-3. **IDE Support**: Syntax highlighting and warnings for ambiguous
-   expressions
-4. **Documentation**: Better examples showing correct precedence usage
+Monad brackets (e.g. `⟦⟧`) **cannot** be empty. An empty monadic block
+has no declarations to bind, so it is meaningless. The desugarer
+produces an `EmptyMonadicBlock` error:
+
+```eu,notest
+# ERROR — empty monad brackets
+result: ⟦⟧.42
+
+# CORRECT — at least one declaration required
+result: ⟦ x: some-action ⟧.x
+```
+
+This also applies to block-metadata monadic blocks:
+
+```eu,notest
+# ERROR — empty monadic block
+result: { :io }.42
+
+# CORRECT
+result: { :io r: io.return(42) }.r
+```

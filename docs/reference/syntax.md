@@ -296,10 +296,12 @@ for an explicit return:
 result: ⟦ a: ma  b: mb ⟧.return_expr
 ```
 
-The parser determines the parse mode from a registry built by pre-scanning the
-source file for `⟦{}⟧:` declarations.  Only bracket pairs explicitly declared
-in this way are parsed as block-mode; other bracket pairs are always
-expression-mode regardless of their content.
+The parser determines the parse mode from the bracket content itself using a
+**colon heuristic**: if the top-level content contains colons, the brackets are
+parsed as block-mode (declarations); if not, they are parsed as expression-mode
+(catenated items collected into a list).  Empty brackets are expression-mode.
+This means the same bracket pair can be used in either mode depending on the
+content.
 
 If no `.return_expr` follows, the block uses **implicit return**: the desugarer
 synthesises `return({ a: a, b: b })` automatically, collecting all bound names

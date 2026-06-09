@@ -89,6 +89,22 @@ x: 42 # inline comment
 | Postfix operator | `(x op): expr` | Unary postfix |
 | Idiot bracket | `⟦ xs ⟧: expr` | Custom Unicode bracket pair |
 
+## Declaration Visibility
+
+```eu,notest
+# Suppress from output (still visible to importers)
+` :suppress
+secret: 42
+
+# Internal — invisible to importers AND output (unit-private)
+` :internal
+private-data: "unit only"
+
+# Structured form
+` { export: :internal }
+also-private: "hidden"
+```
+
 ## Idiot Brackets
 
 Idiot brackets allow custom Unicode bracket pairs that collect their
@@ -127,12 +143,6 @@ bind chain.
 # Bracket pair definition — namespace reference
 ⟦{}⟧: { :monad namespace: my-monad }
 
-# Block metadata forms (all followed by .return_expr):
-{ :name decls }.expr                          # Form 1: bare symbol namespace
-{ { monad: name } decls }.expr               # Form 2: monad key
-{ { :monad namespace: name } decls }.expr    # Form 3: tagged namespace
-{ { :monad bind: f return: r } decls }.expr  # Form 4: explicit inline
-
 # ⟦ a: ma  b: mb ⟧.return_expr
 # desugars to: bind(ma, (a): bind(mb, (b): return(return_expr)))
 result: ⟦ a: ma  b: mb ⟧.(a + b)
@@ -141,6 +151,9 @@ result: ⟦ a: ma  b: mb ⟧.(a + b)
 All declarations are bind steps whose names are in scope for later declarations
 and the return expression.  The return expression follows the closing bracket (or
 block) as `.name`, `.(expr)`, or `.[list]`.
+
+**Restrictions:** monad brackets **cannot be empty** (at least one
+declaration required) and **cannot contain block metadata**.
 
 **Built-in monadic namespaces:**
 
@@ -174,8 +187,12 @@ name: value
 a: 1
 ```
 
-**Special metadata keys**: `:target`, `:suppress`, `:main`,
+**Special metadata keys**: `:target`, `:suppress`, `:internal`, `:main`,
 `associates`, `precedence`, `import`.
+
+**Declaration visibility (`export:`)**: `:normal` (default, rendered and
+importable), `:suppress` (hidden from output, still importable),
+`:internal` (hidden from output AND importers — unit-private).
 
 ## Function Application
 

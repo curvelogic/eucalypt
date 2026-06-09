@@ -1,8 +1,8 @@
 # Eucalypt — Roadmap to 1.0
 
 - **Status:** Plan of record
-- **Date:** 2026-06-08
-- **Baseline:** eucalypt 0.7.0
+- **Date:** 2026-06-09
+- **Baseline:** eucalypt 0.7.1
 
 ---
 
@@ -303,7 +303,7 @@ A second lens, orthogonal to release order (decisions and non-goals excluded):
 
 | Release | Theme | Items |
 |---|---|---|
-| **0.7.1** | Two correctness fixes | W1–W2 |
+| **0.7.1** ✓ | Two correctness fixes + export :internal | W1–W2 |
 | **0.8** | Versioning, foundations & front-end hygiene | W3–W5 |
 | **0.9** | Compile latency, docs & incremental groundwork | W6–W9 |
 | **0.10** | The runtime: GC & demand | W10–W12 |
@@ -321,12 +321,12 @@ releases keep one number with phase notes.
 
 ---
 
-### 0.7.1 — Two correctness fixes
+### 0.7.1 — Two correctness fixes ✓ (shipped 2026-06-09)
 
-*Two latent bugs, shipped as a patch before the 0.8 line begins: a wasted compile
-on every plain document, and a silent cross-import mis-parse. Fixing the second
-properly means building the Unit Interface the later releases depend on, so it
-lands here as the foundation it is.*
+*Two latent bugs plus `export: :internal` declaration visibility, shipped as a
+patch before the 0.8 line begins. The cross-import bracket fix required building
+the Unit Interface the later releases depend on, so it lands here as the
+foundation it is.*
 
 #### W1. Eliminate the double STG compile of plain documents
 

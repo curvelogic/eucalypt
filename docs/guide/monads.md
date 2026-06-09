@@ -103,6 +103,10 @@ metadata:
 result: ⟦ x: some-action  y: other-action(x) ⟧.(x + y)
 ```
 
+**Restrictions:** monad brackets cannot be empty (at least one
+declaration is required), and cannot contain block metadata — the monad
+tag goes on the outer block or in the bracket pair definition.
+
 See the [syntax reference](../reference/syntax.md) for full details on
 bracket pair definitions.
 

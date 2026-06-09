@@ -73,7 +73,8 @@ helper(x): x + 1
 
 Key metadata properties:
 - `doc` -- documentation string
-- `export: :suppress` -- hide from output
+- `export: :suppress` -- hide from output (still visible to importers)
+- `export: :internal` -- hide from output AND importers (unit-private)
 - `target` -- mark as an export target
 - `import` -- import other files
 - `associates` / `precedence` -- operator fixity (see

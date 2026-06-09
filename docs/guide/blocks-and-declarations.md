@@ -206,7 +206,8 @@ A bare string is shorthand for documentation metadata.
 
 Some metadata keys activate special behaviour:
 
-- `:suppress` -- hides the declaration from output
+- `:suppress` -- hides the declaration from output (still visible to importers)
+- `:internal` -- hides from output AND importers (unit-private)
 - `:target` -- marks the declaration as an export target
 - `:main` -- marks the default target
 - Any other bare symbol -- marks a named target
