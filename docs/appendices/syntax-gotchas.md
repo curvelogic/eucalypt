@@ -576,30 +576,6 @@ non-emptiness.
 
 ---
 
-## Bracket Content Mode: The Colon Heuristic
-
-The parser determines how to parse the content of an idiot bracket pair
-based on the **presence of colons** at the top level of the bracket
-content:
-
-- **Colons present** → block mode (content is declarations)
-- **No colons** → soup mode (content is catenated expressions collected
-  into a list)
-- **Empty** → soup mode (empty list)
-
-This means the same bracket pair can be used in both modes depending on
-the content:
-
-```eu,notest
-# Block mode (colons present → declarations)
-⟦ x: action1  y: action2 ⟧.(x + y)
-
-# Soup mode (no colons → list of expressions)
-⟦ 1 2 3 ⟧    # collects as [1, 2, 3]
-```
-
----
-
 ## Monad Bracket Restrictions
 
 ### Empty Monad Brackets Are an Error

@@ -143,12 +143,6 @@ bind chain.
 # Bracket pair definition — namespace reference
 ⟦{}⟧: { :monad namespace: my-monad }
 
-# Block metadata forms (all followed by .return_expr):
-{ :name decls }.expr                          # Form 1: bare symbol namespace
-{ { monad: name } decls }.expr               # Form 2: monad key
-{ { :monad namespace: name } decls }.expr    # Form 3: tagged namespace
-{ { :monad bind: f return: r } decls }.expr  # Form 4: explicit inline
-
 # ⟦ a: ma  b: mb ⟧.return_expr
 # desugars to: bind(ma, (a): bind(mb, (b): return(return_expr)))
 result: ⟦ a: ma  b: mb ⟧.(a + b)
