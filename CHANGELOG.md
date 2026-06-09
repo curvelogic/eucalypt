@@ -7,18 +7,20 @@ All notable changes to eucalypt are documented here.
 ### Added
 
 - **`export: :internal` declaration visibility** — mark declarations as unit-private with `export: :internal` metadata (or the `` ` :internal `` shorthand). Internal bindings remain accessible within their own unit but are invisible to importers, mergers, and rendered output. Two units with same-named internal helpers no longer conflict
-- **Unit Interface** — replaces four separate cross-unit mechanisms (BracketRegistry, monad registries, operator table, PreludeSummary) with a single `UnitInterface` struct. Operators are now extracted once and served to both cook and the type checker
 
 ### Changed
 
-- **Bracket colon heuristic** — the parser now determines block vs soup mode for idiot bracket content from the content itself (colons → block mode, no colons → soup mode) rather than consulting a per-file `BracketRegistry`. This fixes the cross-import bracket bug where a bracket pair defined in an imported file was invisible to the importing file's parser
-- **Empty block-mode brackets are now an error** — a user-defined monad bracket pair (e.g. `⟦{}⟧:`) used with no declarations produces `EmptyMonadicBlock` instead of silently misbehaving.  Block-mode bracket content must contain at least one declaration
-- **Double compile eliminated** — plain (non-IO) documents now render in place on a single STG compile pass instead of compiling twice. Removes ~90 ms of redundant work per plain-document evaluation
+- **Cross-import bracket pairs** — bracket pairs defined in an imported file now work correctly in the importing file. Previously, a block-mode bracket pair (e.g. `⟦{}⟧:`) defined in a library was silently mis-parsed when used in a file that imported it
+- **Empty block-mode brackets are now an error** — a block-mode bracket pair used with no declarations produces a clear error instead of silently misbehaving
+
+### Performance
+
+- **Plain-document evaluation** — plain (non-IO) documents now evaluate ~15–20% faster by eliminating a redundant compilation pass
 
 ### Fixed
 
-- **FMT native fallback** — format specifiers (`{value:%.2f}`) now work correctly on unboxed native values that bypass the normal boxing path
-- **Panic → error conversions** — three `rowan_ast.rs` panics (consecutive metadata blocks, stray tokens in declarations, empty metadata blocks) and two `compiler.rs` panics (unsupported core expressions) now produce proper diagnostic errors instead of thread panics
+- **Format specifiers on arithmetic results** — `"{n:%02d}"` now works correctly when `n` is the result of arithmetic (e.g. from `iota`)
+- **Several internal panics converted to proper errors** — malformed expressions that previously crashed the process now produce diagnostic error messages with source locations
 
 ## [0.7.0] - 2026-06-04
 
