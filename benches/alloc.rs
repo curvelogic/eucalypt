@@ -1,4 +1,10 @@
 //! STG allocation benchmarks
+//!
+//! Each benchmark group gets its own fresh `Heap` so that GC pressure from one
+//! group cannot contaminate the measurements of another.  Previously all
+//! benchmarks shared a single heap: as `alloc_let` filled it, `alloc_letrec`
+//! ran against a heap with higher occupancy, causing phantom regressions of
+//! ±30–80% in criterion comparisons.
 
 use std::iter;
 
@@ -59,7 +65,7 @@ fn fake_env_stack(
     base
 }
 
-/// Allocate a letrec of identify function bindings
+/// Allocate a let frame of identity function bindings
 fn alloc_let(
     view: MutatorHeapView,
     empty: RefPtr<EnvFrame>,
@@ -68,7 +74,7 @@ fn alloc_let(
     view.from_let(bindings, empty, Smid::default()).unwrap()
 }
 
-/// Allocate a letrec of identify function bindings
+/// Allocate a letrec frame of identity function bindings
 fn alloc_letrec(
     view: MutatorHeapView,
     empty: RefPtr<EnvFrame>,
@@ -100,7 +106,7 @@ fn create_and_saturate_lambda(view: MutatorHeapView, empty: RefPtr<EnvFrame>) {
     view.saturate(&lambda, args.as_slice()).unwrap();
 }
 
-/// Create an identity lambda and saturate it
+/// Create a two-argument lambda, partially apply it, then saturate
 fn create_partially_apply_and_saturate_lambda(view: MutatorHeapView, empty: RefPtr<EnvFrame>) {
     let lambda = SynClosure::close(
         &LambdaForm::new(2, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
@@ -114,30 +120,55 @@ fn create_partially_apply_and_saturate_lambda(view: MutatorHeapView, empty: RefP
 }
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    let heap = Heap::new();
-    let view = MutatorHeapView::new(&heap);
-    let empty = view.alloc(EnvFrame::default()).unwrap().as_ptr();
-    let bindings = fake_bindings(view, 10);
-    let env_stack = fake_env_stack(view, empty, 20, 4);
-    c.bench_function("alloc_let", |b| {
-        b.iter(|| alloc_let(view, empty, &bindings))
-    });
-    c.bench_function("alloc_letrec", |b| {
-        b.iter(|| alloc_letrec(view, empty, &bindings))
-    });
-    c.bench_function("deep_env_access", |b| {
-        b.iter(|| access(view, env_stack, black_box(73)))
-    });
-    c.bench_function("deep_env_update", |b| {
-        b.iter(|| update(view, empty, env_stack, black_box(73)))
-    });
+    // alloc_let — isolated heap so its GC pressure does not affect alloc_letrec.
+    {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let empty = view.alloc(EnvFrame::default()).unwrap().as_ptr();
+        let bindings = fake_bindings(view, 10);
+        c.bench_function("alloc_let", |b| {
+            b.iter(|| black_box(alloc_let(view, empty, &bindings)))
+        });
+    }
 
-    c.bench_function("create_and_saturate_lambda", |b| {
-        b.iter(|| create_and_saturate_lambda(view, empty))
-    });
-    c.bench_function("create_partially_apply_and_saturate_lambda", |b| {
-        b.iter(|| create_partially_apply_and_saturate_lambda(view, empty))
-    });
+    // alloc_letrec — fresh heap, GC state independent of alloc_let run above.
+    {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let empty = view.alloc(EnvFrame::default()).unwrap().as_ptr();
+        let bindings = fake_bindings(view, 10);
+        c.bench_function("alloc_letrec", |b| {
+            b.iter(|| black_box(alloc_letrec(view, empty, &bindings)))
+        });
+    }
+
+    // deep env access / update — share one heap; env_stack is read-only for
+    // access, and update only writes within the existing allocation.
+    {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let empty = view.alloc(EnvFrame::default()).unwrap().as_ptr();
+        let env_stack = fake_env_stack(view, empty, 20, 4);
+        c.bench_function("deep_env_access", |b| {
+            b.iter(|| access(view, env_stack, black_box(73)))
+        });
+        c.bench_function("deep_env_update", |b| {
+            b.iter(|| update(view, empty, env_stack, black_box(73)))
+        });
+    }
+
+    // lambda construction — isolated heap.
+    {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let empty = view.alloc(EnvFrame::default()).unwrap().as_ptr();
+        c.bench_function("create_and_saturate_lambda", |b| {
+            b.iter(|| create_and_saturate_lambda(view, empty))
+        });
+        c.bench_function("create_partially_apply_and_saturate_lambda", |b| {
+            b.iter(|| create_partially_apply_and_saturate_lambda(view, empty))
+        });
+    }
 }
 
 criterion_group!(benches, criterion_benchmark);

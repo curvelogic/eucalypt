@@ -1,0 +1,6 @@
+# Error: monad-in-static-lookup combined with //= leaves Expr::Soup
+# unresolved, which reaches the STG compiler's compile_body() wildcard arm.
+# Before fix: panic!("bad core syntax during compile")
+# After fix: CompileError::UnexpectedExpression (exit 1, proper error)
+id: { bind(ma, f): f(ma) return(a): a }
+a: {x: 99}.{ { :monad namespace: id } r: 42 }.r //= 42

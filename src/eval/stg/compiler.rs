@@ -43,6 +43,8 @@ pub enum CompileError {
     BadSoupExpression(Smid),
     #[error("encountered an uncompileable expression (arg tuple)")]
     BadArgTupleExpression(Smid),
+    #[error("internal compiler error: unexpected expression during STG compilation")]
+    UnexpectedExpression(Smid),
 }
 
 impl HasSmid for CompileError {
@@ -53,6 +55,7 @@ impl HasSmid for CompileError {
             FreeVar(s, _) => s,
             BadSoupExpression(s) => s,
             BadArgTupleExpression(s) => s,
+            UnexpectedExpression(s) => s,
             _ => Smid::default(),
         }
     }
@@ -1246,9 +1249,7 @@ impl<'rt> Compiler<'rt> {
                 Ok(Box::new(Holder::new(dsl::with_meta(m, b))))
             }
             Expr::Operator(_, _, _, body) => self.compile_body(binder, body.clone()),
-            x => {
-                panic!("bad core syntax during compile: {x:?}")
-            }
+            x => Err(CompileError::UnexpectedExpression(x.smid())),
         }
     }
 
@@ -1308,9 +1309,7 @@ impl<'rt> Compiler<'rt> {
             Expr::ArgTuple(s, _) => Err(CompileError::BadArgTupleExpression(*s)),
             Expr::Soup(s, _, _) => Err(CompileError::BadSoupExpression(*s)),
             Expr::Operator(s, _, _, body) => self.compile_binding(binder, body.clone(), *s, false),
-            _ => {
-                panic!("bad core syntax during compile")
-            }
+            _ => Err(CompileError::UnexpectedExpression(expr.smid())),
         }
     }
 
