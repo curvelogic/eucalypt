@@ -77,10 +77,10 @@ pub enum TraceSpec {
 ```
 
 Normalisation rules in `normalise_metadata()`:
-- Bare `:trace` symbol already normalises to `{ target: :trace }` via
-  the existing symbol-to-target path — this needs special-casing.
-  Instead, detect `:trace` before the target fallback and normalise to
-  `{ trace: :lazy }`.
+- Add `:trace` as a named case alongside `:suppress`, `:internal`,
+  and `:target` — before the wildcard `_ if decl_name.is_some()`
+  fallback that converts unrecognised symbols to targets. Normalise
+  to `{ trace: :lazy }`.
 - `{ trace: :lazy }`, `{ trace: :strict }`, `{ trace: :exit }`,
   `{ trace: :strict-exit }` pass through as-is.
 
@@ -173,14 +173,15 @@ declarations into `{ target: <symbol> }`. The `:trace` symbol must be
 intercepted before this fallback. Add a check:
 
 ```rust
-// In normalise_metadata():
-if sym == "trace" {
-    return block_with_entry("trace", sym_expr("lazy"));
-}
+// In normalise_metadata(), add alongside "suppress" | "internal" | "target":
+"trace" => core::block(
+    *smid,
+    [("trace".to_string(), core::sym(*smid, "lazy"))].iter().cloned(),
+),
 ```
 
-This ensures `` ` :trace `` becomes `{ trace: :lazy }` rather than
-`{ target: :trace }`.
+This follows the same pattern as `:suppress` → `{ export: :suppress }`
+and `:target` → `{ target: <name> }`.
 
 ## Scope Exclusions
 
