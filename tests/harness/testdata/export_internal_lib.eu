@@ -1,0 +1,14 @@
+{ doc: "Library for export:internal tests." }
+
+` { export: :internal }
+lib-helper(x): x + 1
+
+` :internal
+lib-helper-alt(x): x * 2
+
+lib-public: lib-helper(41)
+
+# Uses the :internal shorthand helper
+lib-public-alt: lib-helper-alt(21)
+
+lib-extra: 99

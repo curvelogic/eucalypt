@@ -1,0 +1,4 @@
+{ doc: "Transitivity test: imports lib, exposes derived value from lib-public."
+  import: "export_internal_lib.eu" }
+
+trans-val: lib-public + 100

@@ -2726,9 +2726,13 @@ impl Desugarable for rowan_ast::Block {
             .map(|decl| rowan_declaration_to_binding(&decl, desugarer))
             .collect::<Result<Vec<_>, CoreError>>()?;
 
-        // Create block body mapping names to variables
+        // Create block body mapping names to variables.
+        // Internal bindings (export: :internal) are excluded from the block-value
+        // field list so they are invisible to importers and to rendered output (M2).
+        // They remain in the let scope so that sibling bindings can still use them.
         let body_elements: BlockMap<RcExpr> = bindings
             .iter()
+            .filter(|(_, expr)| !has_internal_export(expr))
             .map(|(name, expr)| (name.clone(), core::var(expr.smid(), name.clone())))
             .collect();
 
@@ -2869,9 +2873,13 @@ impl Desugarable for rowan_ast::Unit {
             .map(|decl| rowan_declaration_to_binding(&decl, desugarer))
             .collect::<Result<Vec<_>, CoreError>>()?;
 
-        // Create unit body mapping names to variables
+        // Create unit body mapping names to variables.
+        // Internal bindings (export: :internal) are excluded from the block-value
+        // field list so they are invisible to importers and to rendered output (M2).
+        // They remain in the let scope so that sibling bindings can still use them.
         let body_elements: BlockMap<RcExpr> = bindings
             .iter()
+            .filter(|(_, expr)| !has_internal_export(expr))
             .map(|(name, expr)| (name.clone(), core::var(expr.smid(), name.clone())))
             .collect();
 

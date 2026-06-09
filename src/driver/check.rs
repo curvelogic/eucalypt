@@ -82,8 +82,9 @@ fn build_prelude_interface() -> Result<UnitInterface, EucalyptError> {
     }
     loader.merge_units(&inputs)?;
 
-    // Extract operator metadata BEFORE cook strips Meta wrappers.
+    // Extract operator metadata and visibility BEFORE cook strips Meta wrappers.
     loader.extract_operators();
+    loader.extract_visibility();
 
     loader.cook()?;
     // Deliberately NO eliminate — every prelude binding must be retained for
@@ -388,6 +389,7 @@ fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eucaly
     // them here, before cook, so that constraint discharge can verify that
     // e.g. `<(a, a) => a → a → a` is satisfiable for the argument types.
     loader.extract_operators();
+    loader.extract_visibility();
     let operator_type_strings = loader.unit_interface().operator_type_strings();
     let operator_overloads = parse_operator_overloads(&operator_type_strings);
 

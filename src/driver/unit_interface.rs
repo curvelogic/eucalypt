@@ -28,7 +28,7 @@ use crate::{
     common::sourcemap::Smid,
     core::{
         desugar::desugarer::MonadSpec,
-        expr::{Expr, Fixity, Precedence, Primitive, RcExpr},
+        expr::{has_internal_export, Expr, Fixity, Precedence, Primitive, RcExpr},
         typecheck::check::PreludeSummary,
     },
 };
@@ -157,6 +157,17 @@ impl UnitInterface {
         collect_operator_info(expr, &mut self.operators);
     }
 
+    /// Walk `expr` and record each binding's visibility in `self.visibility`.
+    ///
+    /// Bindings with `export: :internal` metadata are recorded as
+    /// `Visibility::Internal`; all others default to `Visibility::Public`.
+    ///
+    /// Should be called on the pre-cook merged expression (at the same time as
+    /// `extract_operators_from_expr`) so that the `Meta` wrappers are still present.
+    pub fn extract_visibility_from_expr(&mut self, expr: &RcExpr) {
+        collect_visibility(expr, &mut self.visibility);
+    }
+
     /// Build a `HashMap<String, String>` of operator name → raw `type:` annotation
     /// from `self.operators`, suitable for `parse_operator_overloads`.
     pub fn operator_type_strings(&self) -> HashMap<String, String> {
@@ -234,5 +245,26 @@ fn extract_str_literal(expr: &RcExpr) -> Option<String> {
     match &*expr.inner {
         Expr::Literal(_, Primitive::Str(s)) => Some(s.clone()),
         _ => None,
+    }
+}
+
+// ── Visibility extraction helpers ────────────────────────────────────────────
+
+/// Recursively collect `Visibility` for all bindings in `expr`.
+fn collect_visibility(expr: &RcExpr, out: &mut HashMap<String, Visibility>) {
+    match &*expr.inner {
+        Expr::Let(_, scope, _) => {
+            for (name, value) in &scope.pattern {
+                let vis = if has_internal_export(value) {
+                    Visibility::Internal
+                } else {
+                    Visibility::Public
+                };
+                out.insert(name.clone(), vis);
+            }
+            collect_visibility(&scope.body, out);
+        }
+        Expr::Meta(_, inner, _) => collect_visibility(inner, out),
+        _ => {}
     }
 }

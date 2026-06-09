@@ -1,0 +1,7 @@
+{ doc: "Second library for export:internal collision test." }
+
+# Same name as lib's internal helper — should not conflict (AC5)
+` { export: :internal }
+lib-helper(x): x * 10
+
+lib2-public: lib-helper(5)

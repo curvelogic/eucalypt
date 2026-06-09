@@ -5,7 +5,7 @@ use std::{convert::TryInto, rc::Rc};
 use crate::core::binding::{BoundVar, Var};
 use crate::{
     common::sourcemap::{HasSmid, Smid, SourceMap},
-    core::expr::{BlockMap, Expr, LamScope, LetScope, Primitive, RcExpr},
+    core::expr::{BlockMap, Expr, LamScope, LetScope, Primitive, RcExpr, INTERNAL_FREE_VAR_PREFIX},
     eval::{
         intrinsics,
         machine::intrinsic::{CallGlobal1, CallGlobal3, Const, StgIntrinsic},
@@ -63,6 +63,18 @@ impl CompileError {
         let diag = source_map.diagnostic(self);
         match self {
             CompileError::FreeVar(_, name) => {
+                // Detect bindings that are internal to their unit (marked
+                // `export: :internal`) and give a specific error message.
+                if let Some(real_name) = name.strip_prefix(INTERNAL_FREE_VAR_PREFIX) {
+                    let friendly_diag = source_map
+                        .diagnostic(self)
+                        .with_message(format!("unresolved variable '{}'", real_name));
+                    return friendly_diag.with_notes(vec![format!(
+                        "note: '{}' is marked `export: :internal` in its unit and \
+                         cannot be accessed by importers",
+                        real_name
+                    )]);
+                }
                 let mut notes = vec!["check that the variable is defined and in scope".to_string()];
                 // Detect mangled anaphoric parameter names that indicate a '_' was used
                 // in a context where it is out of scope (e.g. inside function call

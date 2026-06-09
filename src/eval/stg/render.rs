@@ -15,7 +15,7 @@ use crate::{
 
 use super::{
     block::LookupOr,
-    boolean::{And, Not},
+    boolean::{And, Not, Or},
     emit::EmitNative,
     eq::Eq,
     panic::Panic,
@@ -335,8 +335,16 @@ impl StgIntrinsic for Suppresses {
                                 lref(2),
                                 lref(3),
                             ),
-                            // [boxsym] [xs index] [:normal] [arg]
-                            Eq.global(lref(0), sym("suppress")),
+                            // [export_sym] [xs index] [:normal] [arg]
+                            // Suppress if export is :suppress or :internal (M4).
+                            let_(
+                                vec![
+                                    value(Eq.global(lref(0), sym("suppress"))),
+                                    value(Eq.global(lref(0), sym("internal"))),
+                                ],
+                                // [eq_internal(0) eq_suppress(1) export_sym(2) ...]
+                                Or.global(lref(0), lref(1)),
+                            ),
                         ),
                     )],
                     f(),
@@ -482,6 +490,7 @@ pub mod tests {
             Box::new(eq::Eq),
             Box::new(panic::Panic),
             Box::new(boolean::And),
+            Box::new(boolean::Or),
             Box::new(boolean::Not),
             Box::new(boolean::True),
             Box::new(boolean::False),

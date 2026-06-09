@@ -42,7 +42,7 @@ pub fn normalise_metadata(expr: &RcExpr, decl_name: Option<&str>) -> RcExpr {
                 core::block(*smid, [("doc".to_string(), expr.clone())].iter().cloned())
             }
             Primitive::Sym(s) => match s.as_ref() {
-                "suppress" => core::block(
+                "suppress" | "internal" => core::block(
                     *smid,
                     [("export".to_string(), expr.clone())].iter().cloned(),
                 ),
