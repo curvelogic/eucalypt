@@ -45,7 +45,7 @@ pub enum CoreError {
     TargetNotFound(String),
     #[error("target {0} could not be referenced")]
     BadTarget(String),
-    #[error("block-style content inside bracket pair '{0}' — this bracket accepts expressions, not declarations")]
+    #[error("block-style content inside non-monad bracket pair '{0}' — this bracket accepts expressions, not declarations")]
     NoMonadSpec(String, Smid),
     /// Expression content (no colons) was used inside a monad bracket pair that
     /// requires declarations.  The colon heuristic parsed it as a soup bracket,
