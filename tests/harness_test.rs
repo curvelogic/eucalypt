@@ -1713,6 +1713,16 @@ pub fn test_error_154() {
 }
 
 #[test]
+pub fn test_error_155() {
+    run_error_test(&error_opts("155_block_content_in_soup_bracket.eu"));
+}
+
+#[test]
+pub fn test_error_156() {
+    run_error_test(&error_opts("156_soup_content_in_monad_bracket.eu"));
+}
+
+#[test]
 pub fn test_target_symbol_shortcut_alpha() {
     let output = std::process::Command::new(eu_binary())
         .args(["-t", "alpha", "tests/harness/148_symbol_target_shortcut.eu"])

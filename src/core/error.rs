@@ -45,8 +45,13 @@ pub enum CoreError {
     TargetNotFound(String),
     #[error("target {0} could not be referenced")]
     BadTarget(String),
-    #[error("monadic block used without a monad spec — bracket pair '{0}' has no 'bind'/'return' metadata")]
+    #[error("block-style content inside non-monad bracket pair '{0}' — this bracket accepts expressions, not declarations")]
     NoMonadSpec(String, Smid),
+    /// Expression content (no colons) was used inside a monad bracket pair that
+    /// requires declarations.  The colon heuristic parsed it as a soup bracket,
+    /// but the bracket is registered as a monad.
+    #[error("expression content inside monad bracket '{0}' — this bracket requires declarations ('name: value' bindings)")]
+    SoupContentInMonadBracket(String, Smid),
     #[error("monadic block must contain at least one declaration")]
     EmptyMonadicBlock(Smid),
     #[error("bracket block definition body must be marked with ':monad' — use '{{ :monad bind: {0} return: {1} }}'")]
@@ -80,6 +85,7 @@ impl HasSmid for CoreError {
             UnresolvedVariable(s, _) => s,
             RedeclaredVariable(s, _) => s,
             NoMonadSpec(_, s) => s,
+            SoupContentInMonadBracket(_, s) => s,
             EmptyMonadicBlock(s) => s,
             MonadSpecMissingMarker(_, _, s) => s,
             InvalidStringInterpolation(s) => s,
@@ -115,6 +121,44 @@ impl CoreError {
                         .to_string(),
                     "if you want a literal brace in a string, escape it by doubling: {{ and }}"
                         .to_string(),
+                ])
+            }
+            CoreError::NoMonadSpec(pair_name, _) => source_map.diagnostic(self).with_notes(vec![
+                format!(
+                    "'{}' is an expression bracket — it accepts soup expressions, not 'name: value' declarations",
+                    pair_name
+                ),
+                "the ':' inside the brackets triggered block-mode parsing".to_string(),
+                format!(
+                    "to pass a block literal as content, wrap it: '{} {{key: value}} {}'",
+                    pair_name.chars().next().unwrap_or('?'),
+                    pair_name.chars().last().unwrap_or('?')
+                ),
+                format!(
+                    "to declare a monad bracket: '{}{{}}{}': {{ :monad bind(m, f): f(m)  return(a): a }}",
+                    pair_name.chars().next().unwrap_or('?'),
+                    pair_name.chars().last().unwrap_or('?')
+                ),
+            ]),
+            CoreError::SoupContentInMonadBracket(pair_name, _) => {
+                source_map.diagnostic(self).with_notes(vec![
+                    format!(
+                        "'{}' is a monad bracket — its content must contain at least one 'name: value' binding",
+                        pair_name
+                    ),
+                    "no ':' colon was found inside the brackets, so the content was parsed as expressions".to_string(),
+                    format!(
+                        "example: '{} x: expr {}'.x, or '{} x: e1  y: x + 1 {}'.y",
+                        pair_name.chars().next().unwrap_or('?'),
+                        pair_name.chars().last().unwrap_or('?'),
+                        pair_name.chars().next().unwrap_or('?'),
+                        pair_name.chars().last().unwrap_or('?')
+                    ),
+                    format!(
+                        "to use expression content, declare without '{{}}': '{} x {}': x",
+                        pair_name.chars().next().unwrap_or('?'),
+                        pair_name.chars().last().unwrap_or('?')
+                    ),
                 ])
             }
             _ => source_map.diagnostic(self),
