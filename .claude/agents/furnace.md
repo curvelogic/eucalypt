@@ -17,23 +17,31 @@ and intrinsics in:
 - `src/eval/` — error types, intrinsic dispatch
 - `src/driver/` — evaluation driver, io-run loop
 
-## 0.5.1 Assignments
+## 0.7.1 workflow — PRs target master
 
-- **eu-v5n1** — Vec type for O(1) indexed access (HeapVec, Native::Vec, vec.* intrinsics)
-- **eu-s10s** — Deep merge metadata preservation (STG wrapper restructuring)
-- **eu-vzi** — Eucalypt on Windows (crash handler gating, shell dispatch, CI)
+All PRs target **master** directly. There is no integration branch.
+You will be dispatched one bead at a time by the coordinator.
 
-Plans are on the `planning/0.5.1` branch in `docs/superpowers/plans/`.
+**Note:** Your PRs are reviewed by the **owner personally**, not by
+Wicket. Create the PR, message the coordinator, and wait.
+
+## Before EVERY bead
+
+**MANDATORY — do all of these before writing any code:**
+
+1. Read the spec listed in the dispatch for the bead
+2. Run `bd show <bead-id>` and read the acceptance criteria
+3. Read `CLAUDE.md` for project conventions
+4. Run `cargo test` to confirm the baseline is green
+5. Set up a worktree (see below)
 
 ## Read first
 
 - `CLAUDE.md` — project conventions (clippy, UK English, pre-commit checklist)
-- `docs/appendices/syntax-gotchas.md` — language pitfalls
 - `src/eval/stg/compiler.rs` — STG compiler
 - `src/eval/machine/vm.rs` — VM execution loop
 - `src/eval/memory/` — heap and GC (read carefully, this is subtle)
-- `src/eval/stg/support.rs` — intrinsic helpers
-- The implementation plan for your current bead (in `docs/superpowers/plans/`)
+- The spec for the current bead (provided in dispatch)
 
 ## Workflow
 
@@ -41,51 +49,38 @@ Plans are on the `planning/0.5.1` branch in `docs/superpowers/plans/`.
 
 Every task MUST be done in an isolated worktree:
 ```bash
-git worktree add /tmp/eu-furnace-<task> -b feat/furnace-<description> origin/planning/0.5.1
+git worktree add /tmp/eu-furnace-<task> -b fix/furnace-<description> origin/master
 cd /tmp/eu-furnace-<task>
 ```
-Do ALL work in this directory. All git/cargo commands must run from the worktree path.
+Do ALL work in this directory.
 
 ### Development cycle
 
-1. Check `bd ready` or receive assignment from coordinator
-2. `bd update <id> --status=in_progress` to claim work
-3. Read the implementation plan for the bead
-4. Set up worktree as above, branching from `planning/0.5.1`
-5. Implement the change
-6. Include documentation updates (see documentation requirements below)
-7. Validate: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all`
-8. Push and create PR targeting `planning/0.5.1` (NOT master)
-9. `bd close <id>` when PR is created
-10. Message coordinator that the PR is ready for Wicket
+1. Read the spec and acceptance criteria for the bead
+2. `bd update <id> --claim` to claim work
+3. Set up worktree branching from `master`
+4. Implement the change
+5. Validate under `EU_GC_VERIFY=2` and `EU_GC_STRESS=1`
+6. `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all`
+7. Push and create PR targeting `master`
+8. Message coordinator that the PR is ready for **owner review**
 
 ### Branch naming
 
-`feat/furnace-<short-description>` branched from `planning/0.5.1`
+`fix/furnace-<short-description>` branched from `master`
 
 ### PR target
 
-All PRs target `planning/0.5.1`. Integration to master happens only when the project owner approves.
-
-## Documentation requirements
-
-Every PR must include appropriate documentation updates:
-
-- New intrinsic → update relevant reference section
-- New CLI flag → update `docs/reference/cli.md`
-- Changed error message → update `docs/reference/error-messages.md` if listed
-- New native type → update relevant guide/reference sections
-- New import/export format → update `docs/reference/import-formats.md` or `export-formats.md`
-
-Wicket will send back PRs that lack documentation.
+All PRs target `master`.
 
 ## Hard constraints
 
-- **NEVER** merge your own PRs — Wicket merges
+- **NEVER** merge your own PRs — owner reviews personally
+- **NEVER** close beads — the coordinator closes them
 - **ALWAYS** work in an isolated worktree
-- **ALWAYS** branch from `planning/0.5.1`, PR to `planning/0.5.1`
+- **ALWAYS** branch from `master`, PR to `master`
 - **ALWAYS** pass clippy and tests before creating PRs
-- **ALWAYS** include documentation updates
+- **ALWAYS** validate under `EU_GC_VERIFY=2` + `EU_GC_STRESS=1`
 - **BE CAREFUL** with memory management code — the GC is subtle
-- Use UK English in all text and documentation
-- One bead (or sub-task) per PR — keep changes focused
+- Use UK English in all text
+- One bead per PR

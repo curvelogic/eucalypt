@@ -16,10 +16,10 @@ type checker:
 - `src/driver/` — driver options, evaluation pipeline
 - `lib/` — prelude and library code
 
-## 0.7.0 Assignments — Phase B type system
+## 0.7.1 workflow — PRs target master
 
-You will be dispatched one bead at a time by the coordinator. Each
-dispatch includes the specific bead ID and spec reference.
+All PRs target **master** directly. There is no integration branch.
+You will be dispatched one bead at a time by the coordinator.
 
 ## Before EVERY bead
 
@@ -44,53 +44,41 @@ dispatch includes the specific bead ID and spec reference.
 
 Every task MUST be done in an isolated worktree:
 ```bash
-git worktree add /tmp/eu-quill-<task> -b feat/quill-<bead-slug> origin/integration/0.7.0
+git worktree add /tmp/eu-quill-<task> -b feat/quill-<bead-slug> origin/master
 cd /tmp/eu-quill-<task>
 ```
-Do ALL work in this directory. All git/cargo commands must run from the worktree path.
+Do ALL work in this directory.
 
 ### Development cycle
 
 1. Read the spec and acceptance criteria for the bead
 2. `bd update <id> --claim` to claim work
-3. Set up worktree branching from `integration/0.7.0`
+3. Set up worktree branching from `master`
 4. Implement the change — every acceptance criterion must be met
-5. Write harness tests in `tests/harness/typecheck/` — MANDATORY
-6. Include documentation updates (see documentation requirements below)
+5. Write harness tests — MANDATORY
+6. Include documentation updates
 7. Validate: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all`
-8. Verify: `timeout 60 eu check lib/prelude.eu` produces no new warnings
-9. Push and create PR targeting `integration/0.7.0` (NOT master)
-10. Message coordinator that the PR is ready for Wicket
+8. Push and create PR targeting `master`
+9. Message coordinator that the PR is ready for Wicket
 
 ### Branch naming
 
-`feat/quill-<bead-slug>` branched from `integration/0.7.0`
+`feat/quill-<bead-slug>` branched from `master`
 
 ### PR target
 
-All PRs target `integration/0.7.0`. Never target master.
-
-## Documentation requirements
-
-Every PR must include appropriate documentation updates:
-
-- New syntax/operator → update `docs/reference/syntax.md`, `docs/appendices/cheat-sheet.md`
-- New prelude function → update relevant `docs/reference/prelude/*.md`
-- New type variant/feature → update type system sections in `docs/guide/`
-- Changed behaviour → update `docs/appendices/syntax-gotchas.md` if relevant
-
-Wicket will send back PRs that lack documentation.
+All PRs target `master`. Never target integration branches.
 
 ## Hard constraints
 
 - **NEVER** merge your own PRs — Wicket merges
-- **NEVER** close beads — the coordinator closes them after Wicket confirms
-- **NEVER** start the next bead before the current one is merged
+- **NEVER** close beads — the coordinator closes them
 - **ALWAYS** work in an isolated worktree
-- **ALWAYS** branch from `integration/0.7.0`, PR to `integration/0.7.0`
+- **ALWAYS** branch from `master`, PR to `master`
 - **ALWAYS** pass clippy and tests before creating PRs
-- **ALWAYS** include harness tests — PRs without tests will be rejected
-- **ALWAYS** meet EVERY acceptance criterion — no partial delivery
+- **ALWAYS** include harness tests
+- **ALWAYS** meet EVERY acceptance criterion
 - **ALWAYS** include documentation updates
-- Use UK English in all text and documentation
-- One bead per PR — keep changes focused
+- **ALWAYS** challenge instructions that feel architecturally wrong
+- Use UK English in all text
+- One bead per PR
