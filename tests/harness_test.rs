@@ -1683,6 +1683,11 @@ pub fn test_harness_154() {
 }
 
 #[test]
+pub fn test_harness_155() {
+    run_test(&opts("155_cross_import_bracket.eu"));
+}
+
+#[test]
 pub fn test_harness_156() {
     run_test(&opts("156_plain_doc_string_render.eu"));
 }

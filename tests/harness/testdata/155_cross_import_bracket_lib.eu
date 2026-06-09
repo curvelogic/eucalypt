@@ -1,0 +1,4 @@
+"Library defining a block-mode bracket pair for the cross-import bracket test."
+
+# Identity monad — block content binds each element into scope in turn.
+⟦{}⟧: { :monad bind(m, f): f(m)  return(a): a }
