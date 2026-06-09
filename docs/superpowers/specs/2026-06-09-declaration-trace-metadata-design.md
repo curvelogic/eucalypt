@@ -24,11 +24,15 @@ a declaration, re-runs, and sees what arrives.
 | Annotation                    | Entry | Exit | Args forced? |
 |-------------------------------|-------|------|--------------|
 | `` ` :trace ``                | yes   | no   | no           |
+| `` ` { trace: :lazy } ``     | yes   | no   | no           |
 | `` ` { trace: :strict } ``   | yes   | no   | yes          |
 | `` ` { trace: :exit } ``     | yes   | yes  | no           |
 | `` ` { trace: :strict-exit } `` | yes | yes  | yes          |
 
-**Lazy mode** (`:trace`, `:exit`): arguments that have already been
+`` ` :trace `` and `` ` { trace: :lazy } `` are equivalent — the bare
+symbol form is shorthand for the block form.
+
+**Lazy mode** (`:trace`/`:lazy`, `:exit`): arguments that have already been
 evaluated are rendered; unevaluated thunks display as `<thunk>`.
 No forcing occurs — evaluation semantics are unchanged.
 
@@ -77,8 +81,8 @@ Normalisation rules in `normalise_metadata()`:
   the existing symbol-to-target path — this needs special-casing.
   Instead, detect `:trace` before the target fallback and normalise to
   `{ trace: :lazy }`.
-- `{ trace: :strict }`, `{ trace: :exit }`, `{ trace: :strict-exit }`
-  pass through as-is.
+- `{ trace: :lazy }`, `{ trace: :strict }`, `{ trace: :exit }`,
+  `{ trace: :strict-exit }` pass through as-is.
 
 Read the `trace` key via `ReadMetadata` / `Extract` traits, producing
 `Option<TraceSpec>`. Strip the key after extraction (same pattern as
