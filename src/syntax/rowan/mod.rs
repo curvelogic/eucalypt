@@ -215,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_bracket_registry_block_mode() {
+    pub fn test_bracket_colon_heuristic_block_mode() {
         use crate::syntax::rowan::kind::{EucalyptLanguage, SyntaxKind};
         use crate::syntax::rowan::parse_unit;
 

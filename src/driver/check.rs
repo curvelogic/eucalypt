@@ -18,56 +18,57 @@ use std::path::Path;
 use std::sync::OnceLock;
 use std::time::Instant;
 
-use crate::core::cook::fixity::extract_operator_type_strings;
 use crate::core::typecheck::{
     check::{
         parse_operator_overloads, type_check, type_check_for_prelude, type_check_full,
-        type_check_with_operator_overloads, type_check_with_seed, PreludeSummary,
+        type_check_with_operator_overloads, type_check_with_seed,
     },
     parse,
 };
 use crate::driver::error::EucalyptError;
 use crate::driver::options::EucalyptOptions;
 use crate::driver::source::SourceLoader;
+use crate::driver::unit_interface::UnitInterface;
 use crate::syntax::input::{Input, Locator};
 use crate::syntax::rowan::ast::{self, Block, Declaration, Element, HasSoup};
 use crate::syntax::rowan::parse_unit;
 use rowan::ast::AstNode;
 
-// ── Prelude type-summary cache (§B7) ────────────────────────────────────────
+// ── Prelude interface cache (§B7) ────────────────────────────────────────────
 
-/// In-memory cache for the prelude type summary.
+/// In-memory cache for the prelude's compiled `UnitInterface`.
 ///
 /// The prelude is embedded in the binary and fixed for a given build, so
 /// the cache is effectively constant per process.  It is populated on the
 /// first check call and reused for every subsequent file.
-static PRELUDE_CACHE: OnceLock<PreludeSummary> = OnceLock::new();
+static PRELUDE_CACHE: OnceLock<UnitInterface> = OnceLock::new();
 
-/// Return a reference to the cached prelude summary, building it on first call.
+/// Return a reference to the cached prelude `UnitInterface`, building it on
+/// first call.
 ///
 /// Runs the prelude through load → translate → cook (no eliminate) once,
 /// then calls `type_check_for_prelude` to capture the root scope.
 /// All subsequent calls return the cached value immediately.
-fn get_or_build_prelude_summary() -> Option<&'static PreludeSummary> {
+fn get_or_build_prelude_interface() -> Option<&'static UnitInterface> {
     if let Some(cached) = PRELUDE_CACHE.get() {
         return Some(cached);
     }
 
-    let summary = build_prelude_summary().ok()?;
+    let ui = build_prelude_interface().ok()?;
     // OnceLock::get_or_init would race; use set to avoid re-computing when
     // two threads initialise simultaneously.  If set fails the other thread
     // already won — just return what was stored.
-    let _ = PRELUDE_CACHE.set(summary);
+    let _ = PRELUDE_CACHE.set(ui);
     PRELUDE_CACHE.get()
 }
 
-/// Build the prelude summary by running the prelude through the pipeline.
+/// Build the prelude `UnitInterface` by running the prelude through the pipeline.
 ///
-/// Loads the prelude resource, translates, merges, and cooks it (no
-/// eliminate step — every prelude binding must be retained for caching),
-/// then runs `type_check_for_prelude` to capture binding type schemes,
-/// aliases, and branch shapes.
-fn build_prelude_summary() -> Result<PreludeSummary, EucalyptError> {
+/// Loads the prelude resource, translates, merges, extracts operators (once,
+/// before cook), and cooks it (no eliminate step — every prelude binding must
+/// be retained for caching), then runs `type_check_for_prelude` to capture
+/// binding type schemes, aliases, and branch shapes.
+fn build_prelude_interface() -> Result<UnitInterface, EucalyptError> {
     let prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
     let inputs = vec![prelude];
 
@@ -81,19 +82,25 @@ fn build_prelude_summary() -> Result<PreludeSummary, EucalyptError> {
     }
     loader.merge_units(&inputs)?;
 
-    // Extract operator type annotations BEFORE cook strips them (see note in
-    // run_type_checker for why this is necessary).
-    let operator_type_strings = extract_operator_type_strings(&loader.core().expr);
-    let operator_overloads = parse_operator_overloads(&operator_type_strings);
+    // Extract operator metadata BEFORE cook strips Meta wrappers.
+    loader.extract_operators();
 
     loader.cook()?;
-    // Deliberately NO eliminate — every prelude binding is a root when
-    // Every prelude binding must be retained for caching — eliminating would lose type information.
+    // Deliberately NO eliminate — every prelude binding must be retained for
+    // caching so that type information is not lost.
 
     let core_expr = loader.core().expr.clone();
     let (_, mut summary) = type_check_for_prelude(&core_expr);
+
+    // Populate operator_overloads in the type summary from the pre-cook
+    // operator info stored in unit_interface.
+    let operator_type_strings = loader.unit_interface().operator_type_strings();
+    let operator_overloads = parse_operator_overloads(&operator_type_strings);
     summary.operator_overloads = operator_overloads;
-    Ok(summary)
+
+    let mut ui = loader.unit_interface().clone();
+    ui.type_summary = summary;
+    Ok(ui)
 }
 
 // ── Phase 1: Annotation syntax check ────────────────────────────────────────
@@ -256,19 +263,18 @@ pub fn type_check_path_full(path: &Path) -> PathCheckResult {
     };
 
     // ── Attempt prelude-cached check (fast path) ──────────────────────────
-    if let Some(summary) = get_or_build_prelude_summary() {
-        return type_check_path_with_seed(path, summary, pipeline_error);
+    if let Some(ui) = get_or_build_prelude_interface() {
+        return type_check_path_with_seed(path, ui, pipeline_error);
     }
 
     // ── Fallback: merged pipeline (prelude cache could not be built) ───────
     type_check_path_merged(path, pipeline_error)
 }
 
-/// Check a single user file seeded with a cached prelude
-/// summary (§B7 fast path).
+/// Check a single user file seeded with a cached prelude interface (§B7 fast path).
 fn type_check_path_with_seed(
     path: &Path,
-    summary: &PreludeSummary,
+    ui: &UnitInterface,
     pipeline_error: impl Fn(&str, &dyn std::fmt::Display) -> PathCheckResult,
 ) -> PathCheckResult {
     let file = Input::new(Locator::Fs(path.to_path_buf()), None, "eu");
@@ -293,7 +299,7 @@ fn type_check_path_with_seed(
     }
 
     let core_expr = loader.core().expr.clone();
-    let warnings = type_check_with_seed(&core_expr, summary);
+    let warnings = type_check_with_seed(&core_expr, &ui.type_summary);
     let (_, source_map, _) = loader.complete();
     PathCheckResult {
         warnings,
@@ -374,14 +380,15 @@ fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eucaly
     // Merge into a single expression.
     loader.merge_units(&inputs)?;
 
-    // Extract operator type annotations BEFORE cook strips them.
+    // Extract operator metadata BEFORE cook strips Meta wrappers.
     //
     // The `distribute_fixities` step in cook removes `Meta` wrappers from
     // operator definitions (e.g. `(l < r): ...`) to move fixity info to call
     // sites.  This erases the `type:` annotation from operators.  We capture
     // them here, before cook, so that constraint discharge can verify that
     // e.g. `<(a, a) => a → a → a` is satisfiable for the argument types.
-    let operator_type_strings = extract_operator_type_strings(&loader.core().expr);
+    loader.extract_operators();
+    let operator_type_strings = loader.unit_interface().operator_type_strings();
     let operator_overloads = parse_operator_overloads(&operator_type_strings);
 
     // Cook (resolve operator precedence).

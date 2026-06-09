@@ -1683,6 +1683,11 @@ pub fn test_harness_154() {
 }
 
 #[test]
+pub fn test_harness_155() {
+    run_test(&opts("155_cross_import_bracket.eu"));
+}
+
+#[test]
 pub fn test_target_symbol_shortcut_alpha() {
     let output = std::process::Command::new(eu_binary())
         .args(["-t", "alpha", "tests/harness/148_symbol_target_shortcut.eu"])
