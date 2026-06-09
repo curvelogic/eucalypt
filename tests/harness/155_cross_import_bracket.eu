@@ -1,5 +1,5 @@
 { doc: "Cross-import bracket: a block-mode bracket defined in an imported file."
-  import: "155_cross_import_bracket_lib.eu" }
+  import: "testdata/155_cross_import_bracket_lib.eu" }
 
 ` :main
 tests: {
