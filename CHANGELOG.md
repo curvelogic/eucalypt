@@ -2,6 +2,14 @@
 
 All notable changes to eucalypt are documented here.
 
+## [0.8.0] - Unreleased
+
+### Added
+
+### Changed
+
+### Fixed
+
 ## [0.7.1] - 2026-06-09
 
 ### Added
