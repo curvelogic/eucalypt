@@ -1598,6 +1598,11 @@ pub fn test_error_152() {
 }
 
 #[test]
+pub fn test_error_153() {
+    run_error_test(&error_opts("153_unexpected_expr_stg_compiler.eu"));
+}
+
+#[test]
 pub fn test_error_135() {
     run_error_test(&error_opts("135_head_empty_list.eu"));
 }
@@ -1690,6 +1695,11 @@ pub fn test_harness_155() {
 #[test]
 pub fn test_harness_156() {
     run_test(&opts("156_plain_doc_string_render.eu"));
+}
+
+#[test]
+pub fn test_harness_157() {
+    run_test(&opts("157_static_lookup_branches.eu"));
 }
 
 #[test]
