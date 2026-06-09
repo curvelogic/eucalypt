@@ -429,6 +429,19 @@ reference `x` without the self-reference gotcha that affects ordinary block
 bindings (`{ x: expr  y: x + 1 }` would make `x` and `y` mutually
 self-referential).
 
+A `:let` binding may even **reuse a name from the enclosing scope** — the one
+case where `name: name …` is not self-reference — because its right-hand side
+is evaluated in the outer scope, before the new binding takes effect:
+
+```eu
+normalise(xs): { :let xs: xs map(_ + 1) }.xs
+shifted: normalise([1, 2, 3])   # => [2, 3, 4]
+```
+
+This is the idiom to reach for when an ordinary `{ name: name … }` would
+self-reference — common when a renderer maps over a parameter it would rather
+keep calling by its own name.
+
 **Why this matters**: Before `let` was defined as a prelude name, attempts to
 write `let x: 1 in x + 2` gave a diagnostic error "eucalypt has no 'let'
 expression". That specific hint is no longer raised; the error now falls through

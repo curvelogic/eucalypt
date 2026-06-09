@@ -131,6 +131,16 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
     helper(x): f(x) + 1
   }.(xs map(helper))
   ```
+- **Reuse a name with `:let`**: an ordinary block binding sees *itself* on its
+  right-hand side, so `{ xs: xs map(f) }` is self-reference — `xs` is the new
+  binding, not an outer `xs` — which errors with "binding refers to itself" (or
+  loops when the shadowed name is in function position, e.g. `{ f: f(x) }`). To
+  transform a value and keep its name, use a sequential **`:let`** block, whose
+  RHS sees the *outer* scope and prior bindings, not itself:
+  ```eu,notest
+  normalise(xs): { :let xs: xs map(clean) }.xs   # RHS xs is the parameter
+  ```
+  Otherwise just pick a different local name: `{ cleaned: xs map(clean) }.cleaned`.
 
 ## Prefer `when` over `if` for conditional transforms
 
