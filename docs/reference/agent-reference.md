@@ -102,7 +102,29 @@ report: { total: 42 }
 # Mark as main (default) target
 ` :main
 main: { result: 42 }
+
+# Mark as unit-internal (invisible to importers and output)
+` :internal
+helper(x): x + 1
+
+# Structured form of internal visibility
+` { export: :internal }
+another-helper(x): x * 2
 ```
+
+**Declaration visibility (`export:`)**: controls whether a declaration
+appears in rendered output and is visible to importers:
+
+| Value | Rendered | Visible to importers | Shorthand |
+|-------|----------|---------------------|-----------|
+| `:normal` (default) | yes | yes | — |
+| `:suppress` | **no** | yes | `` ` :suppress `` |
+| `:internal` | **no** | **no** | `` ` :internal `` |
+
+`:internal` makes a binding completely private to its unit — it stays
+accessible to sibling declarations within the same file but is invisible
+to any importing unit and absent from rendered output. Two units with
+same-named internal helpers do not conflict.
 
 **Unit-level metadata**: if the first item in a file is an expression
 (not a declaration), it becomes metadata for the entire unit:

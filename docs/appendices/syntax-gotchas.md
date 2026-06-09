@@ -576,6 +576,80 @@ non-emptiness.
 
 ---
 
+## Bracket Content Mode: The Colon Heuristic
+
+The parser determines how to parse the content of an idiot bracket pair
+based on the **presence of colons** at the top level of the bracket
+content:
+
+- **Colons present** → block mode (content is declarations)
+- **No colons** → soup mode (content is catenated expressions collected
+  into a list)
+- **Empty** → soup mode (empty list)
+
+This means the same bracket pair can be used in both modes depending on
+the content:
+
+```eu,notest
+# Block mode (colons present → declarations)
+⟦ x: action1  y: action2 ⟧.(x + y)
+
+# Soup mode (no colons → list of expressions)
+⟦ 1 2 3 ⟧    # collects as [1, 2, 3]
+```
+
+The colon heuristic replaced the earlier `BracketRegistry` mechanism,
+which required bracket content modes to be known at parse time — causing
+a cross-import bug where bracket pairs defined in imported files were
+invisible to the importing file's parser.
+
+---
+
+## Monad Bracket Restrictions
+
+### Empty Monad Brackets Are an Error
+
+Monad brackets (e.g. `⟦⟧`) **cannot** be empty. An empty monadic block
+has no declarations to bind, so it is meaningless. The desugarer
+produces an `EmptyMonadicBlock` error:
+
+```eu,notest
+# ERROR — empty monad brackets
+result: ⟦⟧.(42)
+
+# CORRECT — at least one declaration required
+result: ⟦ x: some-action ⟧.(x)
+```
+
+This also applies to block-metadata monadic blocks:
+
+```eu,notest
+# ERROR — empty monadic block
+result: { :io }.(42)
+
+# CORRECT
+result: { :io r: io.return(42) }.(r)
+```
+
+### No Block Metadata Inside Monad Brackets
+
+The monad tag (`:for`, `:io`, etc.) goes on the **outer block
+declaration**, not inside the bracket content. Bracket content is
+parsed as declarations (when colons are present) or as soup
+expressions (when no colons are present). Block metadata inside
+bracket content is not supported:
+
+```eu,notest
+# WRONG — block metadata inside brackets
+result: ⟦ { :io } r: io.shell("echo") ⟧.(r)
+
+# CORRECT — monad tag on the outer block or in the bracket definition
+⟦{}⟧: { :monad namespace: io }
+result: ⟦ r: io.shell("echo") ⟧.(r)
+```
+
+---
+
 ## Future Improvements
 
 These gotchas highlight areas where the language could benefit from:

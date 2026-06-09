@@ -89,6 +89,22 @@ x: 42 # inline comment
 | Postfix operator | `(x op): expr` | Unary postfix |
 | Idiot bracket | `⟦ xs ⟧: expr` | Custom Unicode bracket pair |
 
+## Declaration Visibility
+
+```eu,notest
+# Suppress from output (still visible to importers)
+` :suppress
+helper(x): x + 1
+
+# Internal — invisible to importers AND output (unit-private)
+` :internal
+private-helper(x): x * 2
+
+# Structured form
+` { export: :internal }
+also-private(x): x - 1
+```
+
 ## Idiot Brackets
 
 Idiot brackets allow custom Unicode bracket pairs that collect their
@@ -142,6 +158,10 @@ All declarations are bind steps whose names are in scope for later declarations
 and the return expression.  The return expression follows the closing bracket (or
 block) as `.name`, `.(expr)`, or `.[list]`.
 
+**Restrictions:** monad brackets **cannot be empty** (at least one
+declaration required) and **cannot contain block metadata** (the monad
+tag goes on the outer block or in the bracket definition).
+
 **Built-in monadic namespaces:**
 
 | Tag | Monad | Action type | Element type |
@@ -174,8 +194,12 @@ name: value
 a: 1
 ```
 
-**Special metadata keys**: `:target`, `:suppress`, `:main`,
+**Special metadata keys**: `:target`, `:suppress`, `:internal`, `:main`,
 `associates`, `precedence`, `import`.
+
+**Declaration visibility (`export:`)**: `:normal` (default, rendered and
+importable), `:suppress` (hidden from output, still importable),
+`:internal` (hidden from output AND importers — unit-private).
 
 ## Function Application
 
