@@ -48,6 +48,7 @@ use std::{collections::HashMap, path::Path};
 use std::{fs, iter};
 
 use super::io::{create_args_pseudoblock, create_io_pseudoblock};
+use super::unit_interface::UnitInterface;
 
 /// A loader for source code that stores the bytes for error reporting
 /// and manages the evolution of code through parse, translation to
@@ -78,20 +79,12 @@ pub struct SourceLoader {
     args: Vec<String>,
     /// Seed for random number generation
     seed: Option<i64>,
-    /// Persisted monad namespace registry across translation units.
+    /// Cross-unit compilation interface.
     ///
-    /// The desugarer's monad_namespace_registry records which namespaces
-    /// have `monad: true` metadata.  Since each translation unit gets a
-    /// fresh Desugarer, registrations from the prelude would be lost when
-    /// desugaring `-e` expressions.  This field carries them forward.
-    monad_namespace_registry:
-        std::collections::HashMap<String, crate::core::desugar::desugarer::MonadSpec>,
-    /// Persisted monad wrapper types across translation units.
-    ///
-    /// Records `monad: "<type>"` metadata (e.g. `"[a]"`, `"IO(a)"`) from
-    /// namespace declarations so that the desugarer can inject `__type_hint`
-    /// annotations on monadic block binding values.
-    monad_type_registry: std::collections::HashMap<String, String>,
+    /// Carries monad registries, operator metadata, and type schemes forward
+    /// across translation units.  Replaces the former separate
+    /// `monad_namespace_registry` and `monad_type_registry` fields.
+    unit_interface: UnitInterface,
 }
 
 impl Default for SourceLoader {
@@ -109,8 +102,7 @@ impl Default for SourceLoader {
             lib_path: Vec::new(),
             args: Vec::new(),
             seed: None,
-            monad_namespace_registry: std::collections::HashMap::new(),
-            monad_type_registry: std::collections::HashMap::new(),
+            unit_interface: UnitInterface::default(),
         }
     }
 }
@@ -131,8 +123,7 @@ impl SourceLoader {
             lib_path,
             args: Vec::new(),
             seed: None,
-            monad_namespace_registry: std::collections::HashMap::new(),
-            monad_type_registry: std::collections::HashMap::new(),
+            unit_interface: UnitInterface::default(),
         }
     }
 
@@ -427,14 +418,12 @@ impl SourceLoader {
         // Seed the desugarer with the persisted monad namespace registry
         // so that `-e` expressions see `monad: true` from the prelude.
         let mut desugarer = Desugarer::new(&desugarables, &mut self.source_map);
-        desugarer.seed_monad_namespace_registry(&self.monad_namespace_registry);
-        desugarer.seed_monad_type_registry(&self.monad_type_registry);
+        self.unit_interface
+            .seed_desugarer_monad_registries(&mut desugarer);
         let unit = desugarer.translate_unit(input)?;
         // Persist any newly registered monad namespaces and types for later units.
-        self.monad_namespace_registry
-            .extend(desugarer.drain_monad_namespace_registry());
-        self.monad_type_registry
-            .extend(desugarer.drain_monad_type_registry());
+        self.unit_interface
+            .drain_desugarer_monad_registries(&mut desugarer);
         self.translation_units.insert(input.clone(), unit);
         Ok(&self.translation_units[input])
     }
@@ -553,6 +542,21 @@ impl SourceLoader {
     /// Retrieve the merged, complete, core expression
     pub fn core(&self) -> &TranslationUnit {
         &self.core
+    }
+
+    /// Return a reference to the cross-unit interface.
+    pub fn unit_interface(&self) -> &UnitInterface {
+        &self.unit_interface
+    }
+
+    /// Extract operator metadata from the current merged core expression into
+    /// `unit_interface.operators`.
+    ///
+    /// Must be called BEFORE `cook()` — cook's `distribute_fixities` strips the
+    /// `Meta` wrappers that carry `type:` annotations from operator definitions.
+    pub fn extract_operators(&mut self) {
+        let expr = self.core.expr.clone();
+        self.unit_interface.extract_operators_from_expr(&expr);
     }
 
     /// Return the source text for a file by its locator.

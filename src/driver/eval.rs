@@ -7,7 +7,7 @@ use crate::{
     core::{expr::*, typecheck::error::TypeWarning},
     driver::{
         error::EucalyptError,
-        io_run::{inject_world_and_run, io_run_and_render, IoRunError},
+        io_run::{inject_world_and_run, io_run_and_render, render_headless_result, IoRunError},
         options::{ErrorFormat, EucalyptOptions},
         source::SourceLoader,
     },
@@ -160,31 +160,30 @@ impl<'a> Executor<'a> {
             println!("{}", prettify::prettify(rt.as_ref()));
             Ok(None)
         } else {
-            // Compile in headless mode so that IO constructors can yield to
-            // the io-run driver rather than being passed to RENDER_DOC.
+            // Always compile in headless mode so that IO constructors can
+            // yield to the io-run driver rather than being passed to
+            // RENDER_DOC.
             //
             // After the first run we inspect the result:
             //
             // • IO yield directly → run the io-run loop.
             //
             // • Normal termination, WHNF is a function (arity > 0) → inject
-            //   the world token and re-run.  If this yields IO, run the io-run
-            //   loop; otherwise the program is erroneous (should not happen in
-            //   well-typed code).
+            //   the world token and re-run.  If this yields IO, run the
+            //   io-run loop; otherwise the program is erroneous.
             //
             // • Normal termination, WHNF is a data value (arity = 0) → the
-            //   program is a plain document.  Re-compile WITH RENDER_DOC and
-            //   run a fresh machine so that the render is GC-safe.
-            let stg_settings_headless = StgSettings {
+            //   program is a plain document.  Build RENDER_DOC on the
+            //   existing heap and re-run the same machine — one compile,
+            //   one machine, no GC hazard.
+            let stg_settings = StgSettings {
                 render_type: RenderType::Headless,
                 ..opt.stg_settings().clone()
             };
-            // Keep normal settings for plain-document fallback
-            let stg_settings = &stg_settings_headless;
 
             let syn = {
                 let t = Instant::now();
-                let syn = stg::compile(stg_settings, self.evaluand.clone(), rt.as_ref())?;
+                let syn = stg::compile(&stg_settings, self.evaluand.clone(), rt.as_ref())?;
                 stats.timings_mut().record("stg-compile", t.elapsed());
                 syn
             };
@@ -194,7 +193,7 @@ impl<'a> Executor<'a> {
                 Ok(None)
             } else {
                 emitter.stream_start();
-                let mut machine = standard_machine(stg_settings, syn, emitter, rt.as_ref())?;
+                let mut machine = standard_machine(&stg_settings, syn, emitter, rt.as_ref())?;
 
                 let ret = {
                     let t = Instant::now();
@@ -266,32 +265,12 @@ impl<'a> Executor<'a> {
                             }
                             Ok(false) => {
                                 // Still no IO yield after world injection;
-                                // treat as a plain document.  Drop the headless
-                                // machine, reclaim the emitter, and re-compile
-                                // with RENDER_DOC for a fresh GC-safe run.
-                                // (Running render_headless_result on the
-                                // existing machine causes GC crashes because the
-                                // heap may contain stale string pointers from
-                                // the first run.)
-                                let emitter = machine.take_emitter();
-                                drop(machine);
-                                let stg_settings_render = StgSettings {
-                                    render_type: RenderType::RenderDoc,
-                                    ..opt.stg_settings().clone()
-                                };
-                                let syn_render = stg::compile(
-                                    &stg_settings_render,
-                                    self.evaluand.clone(),
-                                    rt.as_ref(),
-                                )?;
-                                let mut fresh_machine = standard_machine(
-                                    &stg_settings_render,
-                                    syn_render,
-                                    emitter,
-                                    rt.as_ref(),
-                                )?;
-                                let render_result = fresh_machine.run(None);
-                                fresh_machine.take_emitter().stream_end();
+                                // treat as a plain document.  Render in place
+                                // using RENDER_DOC on the existing machine —
+                                // one compile, one machine.
+                                let render_result = render_headless_result(&mut machine)
+                                    .map_err(io_run_error_to_execution);
+                                machine.take_emitter().stream_end();
                                 return render_result;
                             }
                             Err(e) => {
