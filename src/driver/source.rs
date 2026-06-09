@@ -559,6 +559,16 @@ impl SourceLoader {
         self.unit_interface.extract_operators_from_expr(&expr);
     }
 
+    /// Extract declaration visibility from the current merged core expression into
+    /// `unit_interface.visibility`.
+    ///
+    /// Must be called BEFORE `cook()` while `Meta` wrappers are still present.
+    /// Typically called alongside `extract_operators`.
+    pub fn extract_visibility(&mut self) {
+        let expr = self.core.expr.clone();
+        self.unit_interface.extract_visibility_from_expr(&expr);
+    }
+
     /// Return the source text for a file by its locator.
     pub fn source_text(&self, locator: &Locator) -> Option<&str> {
         self.locators

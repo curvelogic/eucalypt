@@ -1,0 +1,4 @@
+` { export: :internal }
+priv-helper(x): x + 1
+
+pub-val: priv-helper(41)

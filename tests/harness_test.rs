@@ -1703,6 +1703,16 @@ pub fn test_harness_157() {
 }
 
 #[test]
+pub fn test_harness_158() {
+    run_test(&opts("158_export_internal.eu"));
+}
+
+#[test]
+pub fn test_error_154() {
+    run_error_test(&error_opts("154_internal_import_error.eu"));
+}
+
+#[test]
 pub fn test_target_symbol_shortcut_alpha() {
     let output = std::process::Command::new(eu_binary())
         .args(["-t", "alpha", "tests/harness/148_symbol_target_shortcut.eu"])

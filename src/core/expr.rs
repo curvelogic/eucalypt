@@ -530,14 +530,31 @@ impl RcExpr {
 
     /// Replace the body of a let (or nested lets) with the specified body
     pub fn rebody(&self, new_body: RcExpr) -> RcExpr {
-        self.rebody_int(&mut SimpleEnvironment::new(), new_body)
+        let result = self.rebody_int(&mut SimpleEnvironment::new(), new_body);
+        // Collect internal binding names from the lib's let scope.  After
+        // rebody_int the importer's body is nested inside the lib's let scope,
+        // so any Var::Free("internal-name") that slipped through prepare_capture_vars
+        // would be re-bound by the cook phase's open/close-let-scope cycle.
+        // We rename them to "__eu_internal:<name>" — a name that cannot appear in
+        // user source — so that close_let_scope cannot match them, keeping them
+        // permanently free and causing a CompileError::FreeVar at STG compile time.
+        let internal_names = collect_internal_binding_names(self);
+        if internal_names.is_empty() {
+            result
+        } else {
+            mask_internal_free_vars(&internal_names, &result)
+        }
     }
 
-    /// Retrieve the bound names in a let binding so we can prepare to capture using them
+    /// Retrieve the bound names in a let binding so we can prepare to capture using them.
+    ///
+    /// Internal bindings (those with `export: :internal` metadata) are excluded
+    /// from the capture environment so that importers cannot reference them.
     fn prepare_capture_vars(scope: &LetScope<RcExpr>) -> HashMap<String, String> {
         scope
             .pattern
             .iter()
+            .filter(|(_, v)| !has_internal_export(v))
             .map(|(k, _)| (k.clone(), k.clone()))
             .collect()
     }
@@ -557,7 +574,21 @@ impl RcExpr {
                 // Use bind_free_vars (not close_expr_vars) to avoid shifting
                 // existing de Bruijn indices that are already correct from a
                 // previous merge step.
-                let names: Vec<&str> = scope.pattern.iter().map(|(n, _)| n.as_str()).collect();
+                // Position-preserving capture mask: internal bindings keep their
+                // slot (preserving de Bruijn indices for all public bindings) but
+                // are replaced with a non-matchable placeholder so that no free
+                // variable can be captured into an internal slot.
+                let names: Vec<&str> = scope
+                    .pattern
+                    .iter()
+                    .map(|(n, v)| {
+                        if has_internal_export(v) {
+                            "\x00"
+                        } else {
+                            n.as_str()
+                        }
+                    })
+                    .collect();
                 let closed_body = bind_free_vars(&names, 0, &rebodied);
                 let ret = RcExpr::from(Expr::Let(
                     *s,
@@ -1463,6 +1494,73 @@ pub fn open_expr_vars(names: &[Option<&str>], depth: u32, expr: &RcExpr) -> RcEx
         }
         _ => expr.walk(&|e| open_expr_vars(names, depth, &e)),
     }
+}
+
+/// Return `true` if `expr` has `export: :internal` in its outermost `Meta` wrapper.
+///
+/// Used by:
+/// - `rebody_int`: to build a position-preserving capture mask (M3 of the
+///   `export: :internal` spec).
+/// - Block / Unit desugaring: to exclude `:internal` bindings from the
+///   block-value field list (M2).
+pub fn has_internal_export(expr: &RcExpr) -> bool {
+    let meta_block = match &*expr.inner {
+        Expr::Meta(_, _, m) => m,
+        _ => return false,
+    };
+    let entries = match &*meta_block.inner {
+        Expr::Block(_, e) => e,
+        _ => return false,
+    };
+    entries.get("export").is_some_and(
+        |v| matches!(&*v.inner, Expr::Literal(_, Primitive::Sym(s)) if s == "internal"),
+    )
+}
+
+/// The prefix used to mangle internal binding names when they appear as free
+/// variables in an importer's body.  This ensures the cook phase cannot
+/// re-bind them via `close_let_scope` and they reach the STG compiler as
+/// genuine free variables, triggering `CompileError::FreeVar`.
+pub const INTERNAL_FREE_VAR_PREFIX: &str = "__eu_internal:";
+
+/// Collect all binding names that are marked `export: :internal` from a let
+/// expression (and its nested let bodies).  Used by `rebody` to find which
+/// names need to be masked in the imported body.
+pub fn collect_internal_binding_names(expr: &RcExpr) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_internal_binding_names_inner(expr, &mut out);
+    out
+}
+
+fn collect_internal_binding_names_inner(expr: &RcExpr, out: &mut Vec<String>) {
+    match &*expr.inner {
+        Expr::Let(_, scope, _) => {
+            for (n, v) in &scope.pattern {
+                if has_internal_export(v) {
+                    out.push(n.clone());
+                }
+            }
+            collect_internal_binding_names_inner(&scope.body, out);
+        }
+        Expr::Meta(_, e, _) => collect_internal_binding_names_inner(e, out),
+        _ => {}
+    }
+}
+
+/// Walk `expr` and rename every `Var::Free(name)` where `name` is in
+/// `internal_names` to `Var::Free("__eu_internal:<name>")`.  Only free
+/// variables are affected — bound variables (de Bruijn) are untouched.
+pub fn mask_internal_free_vars(internal_names: &[String], expr: &RcExpr) -> RcExpr {
+    expr.substs_free(&|n: &str| {
+        if internal_names.iter().any(|s| s == n) {
+            Some(RcExpr::from(Expr::Var(
+                Smid::default(),
+                Var::Free(format!("{}{}", INTERNAL_FREE_VAR_PREFIX, n)),
+            )))
+        } else {
+            None
+        }
+    })
 }
 
 /// Collect all free variable names in an expression.
