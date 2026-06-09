@@ -94,15 +94,15 @@ x: 42 # inline comment
 ```eu,notest
 # Suppress from output (still visible to importers)
 ` :suppress
-helper(x): x + 1
+secret: 42
 
 # Internal — invisible to importers AND output (unit-private)
 ` :internal
-private-helper(x): x * 2
+private-data: "unit only"
 
 # Structured form
 ` { export: :internal }
-also-private(x): x - 1
+also-private: "hidden"
 ```
 
 ## Idiot Brackets
@@ -159,8 +159,7 @@ and the return expression.  The return expression follows the closing bracket (o
 block) as `.name`, `.(expr)`, or `.[list]`.
 
 **Restrictions:** monad brackets **cannot be empty** (at least one
-declaration required) and **cannot contain block metadata** (the monad
-tag goes on the outer block or in the bracket definition).
+declaration required) and **cannot contain block metadata**.
 
 **Built-in monadic namespaces:**
 

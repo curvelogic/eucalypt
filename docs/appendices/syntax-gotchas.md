@@ -598,11 +598,6 @@ the content:
 ⟦ 1 2 3 ⟧    # collects as [1, 2, 3]
 ```
 
-The colon heuristic replaced the earlier `BracketRegistry` mechanism,
-which required bracket content modes to be known at parse time — causing
-a cross-import bug where bracket pairs defined in imported files were
-invisible to the importing file's parser.
-
 ---
 
 ## Monad Bracket Restrictions
@@ -615,49 +610,18 @@ produces an `EmptyMonadicBlock` error:
 
 ```eu,notest
 # ERROR — empty monad brackets
-result: ⟦⟧.(42)
+result: ⟦⟧.42
 
 # CORRECT — at least one declaration required
-result: ⟦ x: some-action ⟧.(x)
+result: ⟦ x: some-action ⟧.x
 ```
 
 This also applies to block-metadata monadic blocks:
 
 ```eu,notest
 # ERROR — empty monadic block
-result: { :io }.(42)
+result: { :io }.42
 
 # CORRECT
-result: { :io r: io.return(42) }.(r)
+result: { :io r: io.return(42) }.r
 ```
-
-### No Block Metadata Inside Monad Brackets
-
-The monad tag (`:for`, `:io`, etc.) goes on the **outer block
-declaration**, not inside the bracket content. Bracket content is
-parsed as declarations (when colons are present) or as soup
-expressions (when no colons are present). Block metadata inside
-bracket content is not supported:
-
-```eu,notest
-# WRONG — block metadata inside brackets
-result: ⟦ { :io } r: io.shell("echo") ⟧.(r)
-
-# CORRECT — monad tag on the outer block or in the bracket definition
-⟦{}⟧: { :monad namespace: io }
-result: ⟦ r: io.shell("echo") ⟧.(r)
-```
-
----
-
-## Future Improvements
-
-These gotchas highlight areas where the language could benefit from:
-
-1. **Better Error Messages**: More specific error messages when
-   precedence issues occur
-2. **Linting Rules**: Static analysis to catch common precedence
-   mistakes
-3. **IDE Support**: Syntax highlighting and warnings for ambiguous
-   expressions
-4. **Documentation**: Better examples showing correct precedence usage
