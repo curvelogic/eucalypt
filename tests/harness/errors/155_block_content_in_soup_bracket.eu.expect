@@ -1,0 +1,2 @@
+exit: 1
+stderr: "block-style content inside bracket pair"

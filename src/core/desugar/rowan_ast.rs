@@ -1449,6 +1449,13 @@ impl Desugarable for Element {
                     )
                 })?;
 
+                // If this bracket pair is registered as a monad, soup content is an error.
+                // The colon heuristic found no ':' and parsed as BRACKET_EXPR, but monad
+                // brackets require 'name: value' declarations.
+                if desugarer.monad_spec(&pair_name).is_some() {
+                    return Err(CoreError::SoupContentInMonadBracket(pair_name, smid));
+                }
+
                 // Idiot brackets: desugar inner soup with bracket flag.
                 //
                 // Uses desugar_rowan_soup_bracket which processes elements
