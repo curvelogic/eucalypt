@@ -12,7 +12,7 @@ All notable changes to eucalypt are documented here.
 ### Changed
 
 - **Bracket colon heuristic** — the parser now determines block vs soup mode for idiot bracket content from the content itself (colons → block mode, no colons → soup mode) rather than consulting a per-file `BracketRegistry`. This fixes the cross-import bracket bug where a bracket pair defined in an imported file was invisible to the importing file's parser
-- **Empty monad brackets are now an error** — `⟦⟧` with no declarations produces `EmptyMonadicBlock` instead of silently misbehaving. Monad bracket content must contain at least one declaration
+- **Empty block-mode brackets are now an error** — a user-defined monad bracket pair (e.g. `⟦{}⟧:`) used with no declarations produces `EmptyMonadicBlock` instead of silently misbehaving.  Block-mode bracket content must contain at least one declaration
 - **Double compile eliminated** — plain (non-IO) documents now render in place on a single STG compile pass instead of compiling twice. Removes ~90 ms of redundant work per plain-document evaluation
 
 ### Fixed
