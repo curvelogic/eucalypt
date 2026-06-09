@@ -2261,7 +2261,11 @@ fn desugar_rowan_soup_inner(
                             };
                             soup.push(fixed);
                         } else {
-                            panic!("Expected default let for static monadic lookup");
+                            return Err(CoreError::InternalCompilerError(
+                                smid,
+                                "static monadic lookup: expected block let on soup stack"
+                                    .to_string(),
+                            ));
                         }
                     }
                     lookup = PendingLookup::None;
@@ -2340,7 +2344,10 @@ fn desugar_rowan_soup_inner(
                     if let Some(dlet) = soup.pop() {
                         soup.push(core::lookup(*s, dlet, n, None));
                     } else {
-                        panic!("Expected default let for static lookup");
+                        return Err(CoreError::InternalCompilerError(
+                            *s,
+                            "static name lookup: expected block let on soup stack".to_string(),
+                        ));
                     }
                     lookup = PendingLookup::None;
                 } else if lookup == PendingLookup::Dynamic {
@@ -2385,7 +2392,10 @@ fn desugar_rowan_soup_inner(
                         };
                         soup.push(fixed_rebodied);
                     } else {
-                        panic!("Expected default let");
+                        return Err(CoreError::InternalCompilerError(
+                            expr.smid(),
+                            "static lookup: expected block let on soup stack".to_string(),
+                        ));
                     }
                     lookup = PendingLookup::None;
                 } else {

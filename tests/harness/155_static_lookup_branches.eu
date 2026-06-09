@@ -1,0 +1,36 @@
+#!/usr/bin/env eu
+
+"Static lookup — exercises the three soup-processing branches that handle
+elements encountered in PendingLookup::Static position (after a block-literal
+dot). These branches previously contained panics; they now return proper
+errors if the internal soup-stack invariant is ever violated."
+
+id: { bind(ma, f): f(ma) return(a): a }
+
+name-branch: {
+  ` "Expr::Name in PendingLookup::Static: key lookup restricted to block's
+     own bindings."
+  a: {x: 1}.x //= 1
+  b: {x: 10 y: 20}.y //= 20
+}
+
+wildcard-branch: {
+  ` "Non-Name, non-Block expression in PendingLookup::Static: the LHS block
+     is rebodied with the literal expression."
+  a: {x: 1}.2 //= 2
+  b: {x: 1 y: 2}.42 //= 42
+}
+
+` "Block with monad spec in PendingLookup::Static: monadic expression is
+   rebodied within the LHS block let context.
+   Assertions are split into separate bindings because the //= operator does
+   not compose cleanly with monad expressions in the same soup."
+monad-r1: {x: 99}.{ { :monad namespace: id } r: 42 }.r
+monad-r2: {x: 99}.{ { :monad namespace: id } r: 7 }.r
+monad-branch: {
+  a: monad-r1 //= 42
+  b: monad-r2 //= 7
+}
+
+RESULT: [name-branch values, wildcard-branch values, monad-branch values]
+  concat all-true? then(:PASS, :FAIL)
