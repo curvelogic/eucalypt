@@ -20,3 +20,5 @@ pub mod source;
 pub mod statistics;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod tester;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod unit_interface;

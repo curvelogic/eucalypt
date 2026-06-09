@@ -1,0 +1,11 @@
+{ doc: "Cross-import bracket: a block-mode bracket defined in an imported file."
+  import: "155_cross_import_bracket_lib.eu" }
+
+` :main
+tests: {
+  ` "bracket pair defined in the library parses as block mode via colon heuristic"
+  cross-block: ⟦ r: 42 ⟧.r //= 42
+
+  ` "two bindings in cross-imported block bracket"
+  cross-two: ⟦ a: 10  b: a + 5 ⟧.b //= 15
+}

@@ -193,7 +193,7 @@ type AliasMap = HashMap<String, Type>;
 /// checking user files, avoiding a full re-walk of the ~2 200-line
 /// prelude on every check.  User files still go through the full
 /// pipeline with all their imports — only the prelude is cached.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct PreludeSummary {
     /// Exported binding name → its type scheme.
     ///
