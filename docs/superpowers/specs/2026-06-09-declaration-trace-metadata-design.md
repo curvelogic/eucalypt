@@ -1,6 +1,6 @@
 # Declaration Trace Metadata
 
-**Bead:** eu-xu3e
+**Bead:** eu-yhk0.4
 **Target:** 0.8.0
 **Status:** Design
 
