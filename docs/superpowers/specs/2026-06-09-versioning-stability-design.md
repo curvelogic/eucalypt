@@ -71,24 +71,30 @@ This deliverable is about making it real:
 - **Optional hint:** `eu check` / LSP emits a "missing version pin"
   hint for units that import but don't `requires`.
 
-### 4. Opt-in prelude versioning
+### 4. Prelude selection mechanism
 
-Ship a **frozen v1** and an in-development **v2** as two embedded
-resources. The prelude is already an embedded, swappable resource
-(`src/driver/resources.rs:14-18`); two preludes is two `include_bytes!`
-plus a selector.
+Build the **ability to specify and use an alternate prelude** — the
+mechanism, not the content. The prelude is already an embedded,
+swappable resource (`src/driver/resources.rs:14-18`); the missing
+piece is a way for a unit to select which one.
 
-**Selection:** Read `{ prelude: :v2 }` from unit metadata in the
-loader (beside `import:`), default to v1.
+**Selection metadata:** Read `{ prelude: <value> }` from unit metadata
+in the loader (beside `import:`). The default (no metadata) uses the
+built-in prelude as today. The exact vocabulary of `<value>` is TBD —
+possible forms include a symbol (`:v2`), a file path, or a block with
+options. For 0.8.0, supporting at least a symbol selector for an
+alternative embedded prelude is sufficient.
 
 **Cache key:** The prelude type cache (`PreludeSummary` /
 `PRELUDE_CACHE`) must be keyed on the prelude selection, not just the
 prelude bytes. (Noted for W6.)
 
-**v1 is frozen:** Security-only fixes. Feature work happens in v2.
+**No second prelude ships yet.** The v1/v2 split happens at or near
+1.0 when the prelude is frozen. This deliverable builds the
+infrastructure so that transition is straightforward.
 
 **The deep-merge-as-default change** (when it lands) ships as a MAJOR
-or behind `prelude: :v2` — never as a silent default flip.
+or behind an alternate prelude — never as a silent default flip.
 
 ### 5. Deprecation lifecycle
 
@@ -135,7 +141,7 @@ All work is front-end/loader/docs — no runtime risk.
 
 - `build.eu` + release flow (Small)
 - `requires` docs + optional hint (Small)
-- Prelude versioning in `resources.rs`/`source.rs`/`check.rs` (Medium)
+- Prelude selection mechanism in `resources.rs`/`source.rs`/`check.rs` (Medium)
 - Deprecation metadata + diagnostics + LSP quick-fix (Small)
 - Tier table document (Small)
 
@@ -143,9 +149,9 @@ All work is front-end/loader/docs — no runtime risk.
 
 - `eu version` outputs semver-compliant string with `+` build metadata
 - `eu.requires(">=0.8")` works with `+build` metadata versions
-- `{ prelude: :v2 }` selects the v2 prelude; default selects v1
-- Two units with different prelude selections both work in the same
-  import DAG
+- `{ prelude: <selector> }` metadata is read and changes which
+  prelude is loaded; default (no metadata) uses the built-in prelude
+- The prelude type cache is correctly keyed on the selection
 - `` ` :deprecated `` emits a warning when the declaration is
   referenced
 - `{ deprecated: "msg", replaced-by: "new" }` includes both in the
@@ -158,5 +164,5 @@ All work is front-end/loader/docs — no runtime risk.
 - No automatic migration tooling beyond the LSP quick-fix
 - No `@since` version annotations
 - No runtime deprecation warnings (deferred)
-- No prelude v2 *content* — this deliverable creates the versioning
-  mechanism; populating v2 is ongoing work across releases
+- No alternate prelude *content* ships yet — this deliverable builds
+  the selection mechanism; the v1/v2 split happens at or near 1.0
