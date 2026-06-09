@@ -2261,6 +2261,14 @@ fn desugar_rowan_soup_inner(
                             };
                             soup.push(fixed);
                         } else {
+                            // UNREACHABLE in practice: PendingLookup::Static is
+                            // set in the Expr::Operator arm only when
+                            // `top.inner.is_default_let()` is true, so the
+                            // soup is guaranteed to hold [..., block_let, dot].
+                            // The first pop() removes the dot; the second pop()
+                            // must find the block_let. This guard converts the
+                            // former panic into a structured error in case a
+                            // future code change breaks the invariant.
                             return Err(CoreError::InternalCompilerError(
                                 smid,
                                 "static monadic lookup: expected block let on soup stack"
@@ -2344,6 +2352,9 @@ fn desugar_rowan_soup_inner(
                     if let Some(dlet) = soup.pop() {
                         soup.push(core::lookup(*s, dlet, n, None));
                     } else {
+                        // UNREACHABLE in practice: see comment on the monadic
+                        // block branch above — the soup invariant guarantees
+                        // [..., block_let, dot] when lookup == Static.
                         return Err(CoreError::InternalCompilerError(
                             *s,
                             "static name lookup: expected block let on soup stack".to_string(),
@@ -2392,6 +2403,9 @@ fn desugar_rowan_soup_inner(
                         };
                         soup.push(fixed_rebodied);
                     } else {
+                        // UNREACHABLE in practice: see comment on the monadic
+                        // block branch above — the soup invariant guarantees
+                        // [..., block_let, dot] when lookup == Static.
                         return Err(CoreError::InternalCompilerError(
                             expr.smid(),
                             "static lookup: expected block let on soup stack".to_string(),
