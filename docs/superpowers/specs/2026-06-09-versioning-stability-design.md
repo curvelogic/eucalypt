@@ -1,112 +1,221 @@
-# W3: Versioning & Stability Discipline
+# W3: Versioning & Stability Discipline (0.8.0 Scope)
 
 **Bead:** eu-yhk0.1
-**Target:** 0.8.0 (begin), 1.0 (freeze)
-**Roadmap ref:** W3 (Section 7, ROADMAP.md)
+**Target:** 0.8.0
 
 ## Problem
 
-Eucalypt practises continuous delivery with a four-part build number
-(`0.8.0.1685`); the version in Cargo.toml is human-set and carries no
-compatibility meaning. A genuine breaking change shipped in
-patch-looking 0.6.2 (the `cond` rewrite). There is no stability
-discipline, no deprecation mechanism, and no way to evolve the prelude
+Eucalypt uses a four-part build number (`0.8.0.1685`) that is not
+valid semver. A breaking change shipped in patch-looking 0.6.2 with
+no mechanism to detect or prevent it. There is no deprecation
+mechanism, no stability policy, and no way to evolve the prelude
 without breaking existing files.
 
-## Five Deliverables
+## Deliverable 1: Semver-compliant build versioning
 
-### 1. Semver plumbing
+### Current state
 
-**Current:** `build.eu` joins `[major, minor, patch, build_number]`
-with `.` producing `0.8.0.1685`.
+`build.eu` (lines 59-62) constructs the version:
 
-**Change:** Move build number to `+build.N` metadata per semver.org.
+```eu,notest
+new-version: [version.major,
+              version.minor,
+              version.patch,
+              build.number] map(str.of) str.join-on(".")
+```
 
-In `build.eu`, change `new-version` to:
+This produces `0.8.0.1685`. The `semver` crate rejects this as
+invalid.
 
+`version.rs:39` works around a `.dev` suffix:
+```rust
+let version_str = env!("CARGO_PKG_VERSION").replace(".dev", "");
+```
+
+### Changes
+
+**File:** `build.eu` (line 59-62)
+
+Replace `new-version` with:
 ```eu,notest
 new-version:
   "{version.major}.{version.minor}.{version.patch}+{build.number str.of}"
 ```
 
-The `semver` crate already ignores `+build` metadata during
-`VersionReq::matches()`, so `eu.requires(">=0.8")` works unchanged.
+This produces `0.8.0+1685` — valid semver where `+1685` is build
+metadata (ignored by `VersionReq::matches()`).
 
-**Field meanings** (from ROADMAP.md Section 4.1): **MAJOR** = a change
-an unmodified file can observe in its output, or a removal from the
-Stable surface. **MINOR** = backwards-compatible addition (including a
-new opt-in prelude version). **PATCH** = no observable semantic change.
+**File:** `src/eval/stg/version.rs` (line 39)
 
-**CI impact:** GitHub release tag changes from `0.8.0.1685` to
-`0.8.0+1685`. GitHub tags allow `+` characters.
+Remove the `.replace(".dev", "")` hack. `CARGO_PKG_VERSION` is
+`0.8.0` in Cargo.toml (no suffix). In CI builds where
+`build-meta.yaml` carries the `+N` version, `semver::Version::parse`
+handles `+` metadata natively.
 
-**`eu.requires()` cleanup:** Remove the `.replace(".dev", "")` hack in
-`version.rs:39` — `semver::Version` handles `+` metadata natively.
+**File:** `.github/workflows/build-rust.yaml`
 
-### 2. Stability tier table
+The release tag currently uses the four-part version string. Verify
+that the `+` character works in GitHub release tags (it does — GitHub
+URL-encodes it as `%2B` in URLs but accepts it in the API).
 
-Publish `docs/development/stability-policy.md` — a one-page statement
-of what 1.0 commits to:
+### Acceptance criteria
+
+1. `eu version` outputs a string matching `\d+\.\d+\.\d+(\+\d+)?`.
+2. `eu.requires(">=0.8")` passes against `0.8.0+1685`.
+3. `eu.requires("=0.8.0")` passes against `0.8.0+1685` (build
+   metadata is ignored per semver).
+4. CI produces a GitHub release with a `+N` tag.
+5. The `.replace(".dev", "")` hack is gone.
+
+## Deliverable 2: Stability tier table
+
+### Changes
+
+**New file:** `docs/development/stability-policy.md`
+
+A one-page document defining three tiers:
 
 | Tier | Contents | Promise |
 |------|----------|---------|
-| **Stable** | Core syntax, prelude v1 API, block-merge/lookup semantics, CLI surface, import/export formats, WASM/embedding API, error codes/locations, exit codes | Won't break except in a MAJOR, with a deprecation path for the prelude |
-| **Experimental** | Type-annotation DSL and checker | May change in a MINOR; opt-in/advisory |
+| **Stable** | Core syntax, prelude API, block-merge/lookup semantics, CLI surface, import/export formats, error codes/locations, exit codes | Won't break except in a MAJOR, with deprecation path |
+| **Experimental** | Type-annotation DSL and type checker | May change in a MINOR; opt-in/advisory |
 | **Not covered** | Internal IR/STG/GC, `dump` output, exact error prose | No promise |
 
-The type system being **Experimental** is what lets language + prelude
-reach 1.0 without the type system being "done" (it is advisory, so it
-need not be).
+The document also states the semver field meanings:
+- **MAJOR**: a change an unmodified file can observe in its output, or
+  a removal from the Stable surface.
+- **MINOR**: backwards-compatible addition.
+- **PATCH**: no observable semantic change.
 
-The tier table is **ratified at 0.8** and **frozen at 1.0**.
+This is ratified at 0.8.0. The enumerated surface is frozen at 1.0.
 
-### 3. `requires` as a guard
+### Acceptance criteria
 
-The runtime path already exists (`__REQUIRES` / `semver::VersionReq`).
-This deliverable is about making it real:
+1. `docs/development/stability-policy.md` exists and is linked from
+   the main documentation.
+2. The tier table covers syntax, prelude, CLI, exports, types, and
+   internals.
 
-- **Document** the range-pin convention in the language reference.
-- **Model** it in shipped library units (`lib/lens.eu`,
-  `lib/state.eu`) so users see the pattern.
-- **Optional hint:** `eu check` / LSP emits a "missing version pin"
-  hint for units that import but don't `requires`.
+## Deliverable 3: `requires` documentation and modelling
 
-### 4. Prelude selection mechanism
+### Current state
 
-Build the **ability to specify and use an alternate prelude** — the
-mechanism, not the content. The prelude is already an embedded,
-swappable resource (`src/driver/resources.rs:14-18`); the missing
-piece is a way for a unit to select which one.
+The runtime mechanism works: `__REQUIRES` in `version.rs` parses
+`semver::VersionReq` and checks against `CARGO_PKG_VERSION`. The
+`eu.requires(constraint)` prelude function calls it. But no shipped
+library uses it, and it is not documented as a convention.
 
-**Selection metadata:** Read `{ prelude: <value> }` from unit metadata
-in the loader (beside `import:`). The default (no metadata) uses the
-built-in prelude as today. The exact vocabulary of `<value>` is TBD —
-possible forms include a symbol (`:v2`), a file path, or a block with
-options. For 0.8.0, supporting at least a symbol selector for an
-alternative embedded prelude is sufficient.
+### Changes
 
-**Cache key:** The prelude type cache (`PreludeSummary` /
-`PRELUDE_CACHE`) must be keyed on the prelude selection, not just the
-prelude bytes. (Noted for W6.)
+**File:** `docs/reference/agent-reference.md` (or appropriate guide
+chapter)
 
-**No second prelude ships yet.** The v1/v2 split happens at or near
-1.0 when the prelude is frozen. This deliverable builds the
-infrastructure so that transition is straightforward.
+Document the convention: every `.eu` file that depends on specific
+language features should include `eu.requires(">=0.8")` (or
+appropriate range) near the top.
 
-**The deep-merge-as-default change** (when it lands) ships as a MAJOR
-or behind an alternate prelude — never as a silent default flip.
+**Files:** `lib/lens.eu`, `lib/state.eu`, `lib/markup.eu`
 
-### 5. Deprecation lifecycle
+Add `eu.requires(">=0.8")` to the shipped library units as exemplars.
+These are the files users will see when looking for the pattern.
 
-Three metadata keys:
-- `` ` :deprecated `` / `` ` { deprecated: true } `` — marks a
-  declaration deprecated.
-- `` ` { deprecated: "message" } `` — with an explanation.
-- `` ` { replaced-by: "new-fn" } `` — pointer to the replacement
-  (co-occurs with `deprecated:`).
+### Acceptance criteria
 
-**Metadata normalisation:** Handle `:deprecated` as a special symbol
-in `normalise_metadata()` (same pattern as `:suppress`, `:trace`):
+1. `lib/lens.eu`, `lib/state.eu`, and `lib/markup.eu` each call
+   `eu.requires(">=0.8")`.
+2. Running them on 0.7.x fails with `VersionRequirementFailed`.
+3. The convention is documented in the reference.
+
+## Deliverable 4: Prelude selection mechanism
+
+### Current state
+
+The prelude is an embedded resource loaded by name:
+
+```rust
+// src/driver/resources.rs:15-16
+("prelude".to_string(), include_bytes!("../../lib/prelude.eu").to_vec()),
+```
+
+`SourceLoader::load_source()` (`src/driver/source.rs:342-351`)
+dispatches on `Locator::Resource(name)`. The prelude type cache
+(`PRELUDE_CACHE` in `check.rs:44`) is a `OnceLock<UnitInterface>` —
+exactly one prelude, cached forever.
+
+There is no mechanism for a unit to specify an alternative prelude.
+
+### Changes
+
+**File:** `src/core/metadata.rs`
+
+Add `prelude` as a recognised **block-level** metadata key in
+`DesugarPhaseBlockMetadata` (lines 161-169). Extract it as
+`Option<String>` (the symbol name, e.g. `"v2"` or a file path).
+
+Strip the key after extraction.
+
+**File:** `src/driver/source.rs`
+
+After parsing the unit's metadata block (the first block in a file,
+which already provides `import:` and `doc:`), read the `prelude` key.
+If present, use it to select which resource to load as the prelude.
+
+For 0.8.0, support two forms:
+- A symbol: `{ prelude: :name }` → look up `"name"` in `Resources`.
+- A file path: `{ prelude: "path/to/prelude.eu" }` → load from
+  filesystem.
+
+If no `prelude:` metadata, use `"prelude"` (the default).
+
+**File:** `src/driver/resources.rs`
+
+No change to the resource map itself — it still embeds only the
+default prelude. Alternative preludes are loaded from the filesystem
+or, in future, from additional embedded resources.
+
+**File:** `src/driver/check.rs`
+
+The `PRELUDE_CACHE` (`OnceLock<UnitInterface>`, line 44) can only
+hold one prelude. Change to a `Mutex<HashMap<String, UnitInterface>>`
+(or `OnceLock<HashMap<...>>` built lazily) keyed on the prelude
+identifier (resource name or file path hash).
+
+`get_or_build_prelude_interface()` (lines 52-63) takes a prelude
+identifier parameter and looks up or builds the interface for that
+specific prelude.
+
+### Acceptance criteria
+
+1. A file with no `prelude:` metadata loads the default prelude
+   (no regression).
+2. A file with `{ prelude: "tests/fixtures/alt-prelude.eu" }` loads
+   that file as its prelude instead of the built-in one.
+3. A file with `{ prelude: :nonexistent }` produces a clear error
+   message.
+4. Two files with different `prelude:` selections can coexist in the
+   same `eu` invocation (e.g. via imports) without cache corruption.
+5. `eu check` works correctly with alternative preludes (the type
+   cache is keyed per prelude).
+
+## Deliverable 5: Deprecation metadata
+
+### Current state
+
+There is no deprecation mechanism. Type warnings exist
+(`src/core/typecheck/error.rs:13-24`, `TypeWarning`) and are rendered
+with `DiagnosticSeverity::WARNING`. The binding verification pass
+(`src/core/verify/content.rs`) collects `CoreError`s (hard errors),
+not warnings. `eu check --strict` turns type warnings into exit
+code 1 (`check.rs:192`).
+
+### Changes
+
+**File:** `src/core/metadata.rs`
+
+Add `deprecated` as a recognised declaration metadata key in
+`DesugarPhaseDeclarationMetadata`. Add `:deprecated` as a special
+symbol in `normalise_metadata()` (alongside `:suppress`,
+`:internal`, `:target`, `:trace`):
 
 ```rust
 "deprecated" => core::block(
@@ -115,54 +224,89 @@ in `normalise_metadata()` (same pattern as `:suppress`, `:trace`):
 ),
 ```
 
-**Compile-time behaviour:** During desugaring, extract the
-`deprecated` and `replaced-by` keys. During binding verification
-(`src/core/verify/`), check references against the deprecated set and
-emit warnings:
+Also recognise `replaced-by` as a metadata key (string value).
+
+Extract both via `ReadMetadata`, producing:
+```rust
+pub struct DeprecationSpec {
+    pub message: Option<String>,   // from { deprecated: "msg" }
+    pub replacement: Option<String>, // from { replaced-by: "new-fn" }
+}
+```
+
+Strip both keys after extraction.
+
+**File:** `src/core/desugar/rowan_ast.rs`
+
+During declaration processing (where `record_doc()`, `record_target()`
+etc. are called), extract `DeprecationSpec` and store it in a new
+`HashMap<String, DeprecationSpec>` on the `Desugarer` struct (same
+pattern as `docs`, `targets`, `monad_registry`).
+
+**File:** `src/core/verify/content.rs` (or a new
+`src/core/verify/deprecation.rs`)
+
+Add a deprecation check pass. After desugaring, walk the core
+expression looking for references to deprecated names. For each
+reference, emit a warning.
+
+The warning type reuses `TypeWarning` (which already renders as
+`DiagnosticSeverity::WARNING`) or introduces a parallel
+`DeprecationWarning` type with the same rendering. The message format:
 
 ```
-warning: 'old-fn' is deprecated: use new-fn instead
+warning: 'old-fn' is deprecated
   --> file.eu:12:5
+  = help: use 'new-fn' instead
 ```
 
-Warnings are **never errors under the advisory default**. Under
-`eu check --strict`, deprecation warnings become errors.
+The `help:` line appears only when `replaced-by:` is present.
 
-**LSP quick-fix:** Reuse the existing `WorkspaceEdit` machinery
-(`src/driver/lsp/actions.rs`) to offer a quick-fix that replaces a
-deprecated name with its `replaced-by:` value.
+**Integration with `--strict`:**
 
-**Lifecycle:** `deprecated:` + WARNING → LSP quick-fix → removal in a
-MAJOR or simply omitted from prelude v2.
+**File:** `src/driver/check.rs`
 
-## Implementation Notes
+The existing logic (lines 188-202) counts type warnings and sets
+exit code 1 under `--strict`. Deprecation warnings feed into the same
+count. No special handling needed — they are warnings, and `--strict`
+makes all warnings into failures.
 
-All work is front-end/loader/docs — no runtime risk.
+**File:** `src/driver/lsp/actions.rs`
 
-- `build.eu` + release flow (Small)
-- `requires` docs + optional hint (Small)
-- Prelude selection mechanism in `resources.rs`/`source.rs`/`check.rs` (Medium)
-- Deprecation metadata + diagnostics + LSP quick-fix (Small)
-- Tier table document (Small)
+Add a quick-fix code action for deprecation warnings. When the cursor
+is on a deprecated name and `replaced-by:` metadata exists, offer a
+`CodeAction` with `CodeActionKind::QUICKFIX` that replaces the name
+with the replacement. Use the existing `TextEdit` / `WorkspaceEdit`
+pattern (modelled on `collect_qualify_name_actions()`, lines 857-902).
 
-## Testing
+The quick-fix is triggered by matching the diagnostic source (e.g.
+`"eucalypt-deprecation"`) and extracting the replacement from the
+diagnostic's data or related information.
 
-- `eu version` outputs semver-compliant string with `+` build metadata
-- `eu.requires(">=0.8")` works with `+build` metadata versions
-- `{ prelude: <selector> }` metadata is read and changes which
-  prelude is loaded; default (no metadata) uses the built-in prelude
-- The prelude type cache is correctly keyed on the selection
-- `` ` :deprecated `` emits a warning when the declaration is
-  referenced
-- `{ deprecated: "msg", replaced-by: "new" }` includes both in the
-  warning
-- `eu check --strict` fails on deprecation warnings
-- LSP quick-fix replaces deprecated name with replacement
+### Acceptance criteria
+
+1. `` ` :deprecated f(x): x `` — referencing `f` produces a warning
+   on stderr (non-strict mode: exit 0; strict mode: exit 1).
+2. `` ` { deprecated: "use g instead" } f(x): x `` — warning
+   includes the message text.
+3. `` ` { deprecated: "use g", replaced-by: "g" } f(x): x `` —
+   warning includes `help: use 'g' instead`.
+4. `eu check --strict` fails (exit 1) when deprecated names are
+   referenced.
+5. `eu check` (non-strict) succeeds (exit 0) with deprecation
+   warnings on stderr.
+6. LSP offers a quick-fix to replace `f` with `g` when
+   `replaced-by: "g"` is present.
+7. Deprecated declarations still **work** — deprecation is a warning,
+   never a hard error. The declaration's value is unaffected.
+8. Harness test covering all forms: bare `:deprecated`, with message,
+   with `replaced-by`.
 
 ## Scope Exclusions
 
-- No automatic migration tooling beyond the LSP quick-fix
-- No `@since` version annotations
-- No runtime deprecation warnings (deferred)
-- No alternate prelude *content* ships yet — this deliverable builds
-  the selection mechanism; the v1/v2 split happens at or near 1.0
+- No alternate prelude *content* — the selection mechanism is built
+  but no second prelude ships.
+- No `@since` annotations.
+- No runtime deprecation warnings (all checking is compile-time).
+- No `eu check` hint for missing `requires` pins (deferred).
+- No automatic migration tooling beyond the LSP quick-fix.

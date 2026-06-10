@@ -196,35 +196,28 @@ These are explicitly out of scope for this iteration:
 
 All could be added later without breaking this design.
 
-## Testing
+## Acceptance Criteria
 
-**New harness test:** `tests/harness/NNN_trace.eu`
+1. `` ` :trace f(x, y): x + y `` — calling `f(1, 2)` prints
+   `→ f(x: <thunk>, y: <thunk>)` to stderr. The result is `3`
+   (trace does not affect output).
+2. `` ` { trace: :lazy } `` behaves identically to `` ` :trace ``.
+3. `` ` { trace: :strict } f(x, y): x + y `` — calling `f(1, 2)`
+   prints `→ f(x: 1, y: 2)` to stderr (args forced and rendered).
+4. `` ` { trace: :exit } f(x, y): x + y `` — calling `f(1, 2)`
+   prints both `→ f(x: <thunk>, y: <thunk>)` and `← f: <thunk>`
+   (or the evaluated value if it has been forced by the caller).
+5. `` ` { trace: :strict-exit } f(x, y): x + y `` — calling
+   `f(1, 2)` prints `→ f(x: 1, y: 2)` and `← f: 3`.
+6. Lazy mode does not force thunks: a traced function with a
+   side-effecting argument that is never used by the body must NOT
+   trigger the side effect.
+7. Property declarations (no args): `` ` :trace x: 42 `` prints
+   `→ x()` (entry with no arguments).
+8. Multiple traced declarations print in evaluation order.
+9. `:trace` in metadata normalisation does not become
+   `{ target: :trace }` — it becomes `{ trace: :lazy }`.
+10. The existing harness passes unchanged (no regression).
 
-Test cases:
-1. `` ` :trace `` on a function — verify `→` line appears on stderr
-   with `<thunk>` placeholders.
-2. `` ` { trace: :strict } `` — verify args are rendered with values.
-3. `` ` { trace: :exit } `` — verify both `→` and `←` lines appear.
-4. `` ` { trace: :strict-exit } `` — verify both lines with forced values.
-5. Lazy mode does not force thunks — a side-effecting thunk must not
-   fire when traced lazily.
-6. Property declarations (no args) — verify entry trace shows just the
-   name with no arguments.
-7. Multiple traced declarations — verify ordering matches evaluation
-   order.
-
-**Stderr matching:** The harness already supports `.expect` files with
-`stderr:` regex patterns for error tests. Trace tests will use the
-same mechanism, or a new `trace-stderr:` pattern if the existing one
-is too restrictive.
-
-## Future Directions
-
-- **Conditional tracing**: `{ trace: { when: _(x) > 10 } }` — only
-  trace when a predicate holds.
-- **CLI activation**: `--trace f,g` to enable tracing without source
-  edits.
-- **Depth tracking**: thread-local counter for nested `→`/`←` with
-  indentation.
-- **Editor integration**: Emacs/VS Code gutter annotations showing
-  trace status.
+**Test file:** `tests/harness/NNN_trace.eu` with `.expect` sidecar
+using `stderr:` regex patterns to verify trace output.
