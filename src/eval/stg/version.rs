@@ -35,9 +35,8 @@ impl StgIntrinsic for Requires {
             )
         })?;
 
-        // Strip any ".dev" suffix from the Cargo package version
-        let version_str = env!("CARGO_PKG_VERSION").replace(".dev", "");
-        let version = semver::Version::parse(&version_str).map_err(|e| {
+        let version_str = env!("CARGO_PKG_VERSION");
+        let version = semver::Version::parse(version_str).map_err(|e| {
             ExecutionError::Panic(
                 smid,
                 format!("failed to parse eucalypt version \"{version_str}\": {e}"),
