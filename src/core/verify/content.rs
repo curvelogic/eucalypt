@@ -93,10 +93,8 @@ impl Verifier {
                 // walking into the scope body.
                 for (binder, (name, value)) in scope.pattern.iter().enumerate() {
                     if is_trivially_self_referential(value, binder as u32) {
-                        self.errors.push(CoreError::TrivialSelfAssignment(
-                            value.smid(),
-                            name.clone(),
-                        ));
+                        self.errors
+                            .push(CoreError::TrivialSelfAssignment(value.smid(), name.clone()));
                     }
                 }
                 expr.walk_safe(&mut |x| self.verify(x))
@@ -109,10 +107,7 @@ impl Verifier {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{
-        common::sourcemap::Smid,
-        core::expr::acore::*,
-    };
+    use crate::{common::sourcemap::Smid, core::expr::acore::*};
 
     #[test]
     pub fn test_verify_pseudo_ops() {
@@ -145,10 +140,7 @@ pub mod tests {
     pub fn test_verify_self_assignment_direct() {
         // Simulates desugaring `{ x: x }`: after close_let_scope, the FreeVar("x")
         // in the binding value becomes BoundVar(scope=0, binder=0).
-        let expr = let_(
-            vec![("x".to_string(), var(free("x")))],
-            block(vec![]),
-        );
+        let expr = let_(vec![("x".to_string(), var(free("x")))], block(vec![]));
         let errors = verify(expr).unwrap();
         assert_eq!(errors.len(), 1, "expected 1 error, got {errors:?}");
         assert!(
@@ -162,10 +154,7 @@ pub mod tests {
         // Simulates desugaring `{ f: f(1) }`: after close_let_scope the head
         // FreeVar("f") becomes BoundVar(scope=0, binder=0).
         let expr = let_(
-            vec![(
-                "f".to_string(),
-                app(var(free("f")), vec![num(1)]),
-            )],
+            vec![("f".to_string(), app(var(free("f")), vec![num(1)]))],
             block(vec![]),
         );
         let errors = verify(expr).unwrap();

@@ -19,6 +19,7 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::Instant;
 
+use crate::core::error::CoreError;
 use crate::core::typecheck::{
     check::{
         parse_operator_overloads, type_check, type_check_for_prelude, type_check_full,
@@ -26,7 +27,6 @@ use crate::core::typecheck::{
     },
     parse,
 };
-use crate::core::error::CoreError;
 use crate::core::verify::deprecation::check_deprecated_references;
 use crate::driver::error::EucalyptError;
 use crate::driver::options::EucalyptOptions;
