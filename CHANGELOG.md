@@ -6,9 +6,25 @@ All notable changes to eucalypt are documented here.
 
 ### Added
 
+- **Declaration trace metadata** — annotate declarations with `` ` :trace ``, `{ trace: :strict }`, `{ trace: :exit }`, or `{ trace: :strict-exit }` to trace entry arguments and/or exit values to stderr. Lazy mode peeks without forcing; strict mode forces arguments to WHNF before rendering
+- **Deprecation metadata** — mark declarations deprecated with `` ` :deprecated ``, `{ deprecated: "message" }`, and optionally `{ replaced-by: "new-fn" }`. Emits compile-time warnings visible in `eu check` and LSP; `--strict` mode treats them as errors
+- **Prelude selection mechanism** — units can specify an alternative prelude via `{ prelude: "path/to/alt.eu" }` metadata. The prelude type cache is keyed per selection
+- **`eu.requires` convention** — shipped library units (`lens.eu`, `state.eu`, `markup.eu`) now call `eu.requires(">=0.8")` as an exemplar for version pinning. Convention documented in the reference
+- **Stability policy** — published `docs/development/stability-policy.md` defining three tiers (Stable, Experimental, Not covered) and semver field meanings
+- **Conformance corpus** — `tests/conform/` directory with 20 conformance files and `.golden` sidecars pinning rendered output bytes across all export formats. Separate `conform_test.rs` runner with `BLESS=1` regeneration and unified diff on mismatch
+- **GC-verified CI job** — full harness under `EU_GC_VERIFY=2` + `EU_GC_STRESS=1` + `EU_GC_POISON=1` on x86-64
+- **Static self-assignment diagnostic** — `eu check` now flags always-divergent self-referential bindings (`{ x: x }`, `{ f: f(...) }`) as errors. Argument-position self-reference (`ones: cons(1, ones)`) is not flagged
+- **`select` prelude function** — `block select([:a, :c])` returns a sub-block containing only the listed keys
+
 ### Changed
 
+- **Semver-compliant build versioning** — CI build number moved from fourth dot-segment (`0.8.0.1685`) to `+build` metadata (`0.8.0+1685`) per semver.org
+- **Resilient parser pipeline** — the all-or-nothing parse shim is removed; a file with syntax errors now produces a partial tree that reaches the desugarer, type-checker, and `eu dump` commands. Valid declarations in a file with errors still get diagnostics
+- **`eu dump ast` shows Rowan syntax tree** — default output is now the indented Rowan node tree (kinds, ranges, token text) instead of re-rendered source. `--embed` gives the old behaviour
+
 ### Fixed
+
+- **Black-holing in function position** — `{ f: f(1) }` now correctly raises "infinite loop detected" instead of hanging until heap exhaustion. The `App` handler mirrors the `Atom` handler's black-hole logic for local-ref callables
 
 ## [0.7.1] - 2026-06-09
 

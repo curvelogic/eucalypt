@@ -1765,6 +1765,11 @@ match-filter-values(re, b): b filter-items(by-key-match(re)) map(value)
     type: "(any → bool) → {{..}} → [any]" }
 filter-values(p?, b): b values filter(p?)
 
+` { doc: "`select(ks, b)` - return block containing only keys listed in `ks`. `b select([:a, :c])` returns a sub-block with just those keys."
+    type: "[symbol] → {{..}} → {{..}}" }
+select(ks, b):
+  b filter-items(by-key(∈ set.from-list(ks))) block
+
 _block: {
   ` "If `k` satisfies `k?` then `v!` else `v`"
   alter?(k?, v!, k, v): [k, if(k k?, v!, v)]

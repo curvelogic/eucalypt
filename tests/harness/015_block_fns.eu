@@ -126,11 +126,22 @@ map-elements-checks: {
 
 prefix-key(k): "pre-{k}" sym
 
+select-checks: {
+  trues: [
+    ({ a: 1, b: 2, c: 3 } select([:a, :c])) = { a: 1, c: 3 },
+    ({ a: 1, b: 2, c: 3 } select([:a, :b, :c])) = { a: 1, b: 2, c: 3 },
+    ({ a: 1, b: 2, c: 3 } select([])) = {},
+    ({ a: 1, b: 2, c: 3 } select([:z])) = {},
+    ({ a: 1, b: 2, c: 3 } select([:b])) = { b: 2 }
+  ]
+}
+
 pass: [ checks.trues values all-true?
       , merging.checks.trues all-true?
       , lookups.checks.trues all-true?
       , deep-merge.pass
       , map-elements-checks.trues all-true?
+      , select-checks.trues all-true?
       ] all-true?
 
 RESULT: if(pass, :PASS, :FAIL)
