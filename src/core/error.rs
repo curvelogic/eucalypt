@@ -71,6 +71,16 @@ pub enum CoreError {
     /// was eliminated during dead code elimination.
     #[error("internal compiler error: {1}")]
     InternalCompilerError(Smid, String),
+    /// A binding whose value is trivially self-referential in a way that is
+    /// *always* divergent:
+    ///
+    /// - **direct**: `x: x`
+    /// - **function/operator position**: `x: x(...)`, `x: a x b`
+    ///
+    /// Argument-position self-reference (e.g. `ones: cons(1, ones)`) is NOT
+    /// flagged — that is legitimate lazy / fixpoint usage.
+    #[error("binding '{1}' refers to itself — this will always diverge")]
+    TrivialSelfAssignment(Smid, String),
 }
 
 impl HasSmid for CoreError {
@@ -90,6 +100,7 @@ impl HasSmid for CoreError {
             MonadSpecMissingMarker(_, _, s) => s,
             InvalidStringInterpolation(s) => s,
             InternalCompilerError(s, _) => s,
+            TrivialSelfAssignment(s, _) => s,
             _ => Smid::default(),
         }
     }
@@ -159,6 +170,12 @@ impl CoreError {
                         pair_name.chars().next().unwrap_or('?'),
                         pair_name.chars().last().unwrap_or('?')
                     ),
+                ])
+            }
+            CoreError::TrivialSelfAssignment(_, name) => {
+                source_map.diagnostic(self).with_notes(vec![
+                    format!("the binding `{name}: {name}` (or `{name}: {name}(…)`) always loops"),
+                    "if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`".to_string(),
                 ])
             }
             _ => source_map.diagnostic(self),

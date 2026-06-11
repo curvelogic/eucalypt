@@ -1,0 +1,2 @@
+# Trivial self-assignment: x: x always diverges.
+out: { x: x }

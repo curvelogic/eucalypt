@@ -26,6 +26,7 @@ use crate::core::typecheck::{
     },
     parse,
 };
+use crate::core::error::CoreError;
 use crate::core::verify::deprecation::check_deprecated_references;
 use crate::driver::error::EucalyptError;
 use crate::driver::options::EucalyptOptions;
@@ -160,15 +161,16 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
     }
     let phase1_elapsed = t_phase1.elapsed();
 
-    // ── Phase 2: bidirectional type check via pipeline ─────────────────────
+    // ── Phase 2: bidirectional type check + content verifier via pipeline ─────
     let t_phase2 = Instant::now();
-    let type_warning_count = match run_type_checker(opt) {
+    let (type_warning_count, content_error_count) = match run_type_checker(opt) {
         Ok(result) => {
-            let count = result.warnings.len();
             let writer = codespan_reporting::term::termcolor::StandardStream::stderr(
                 codespan_reporting::term::termcolor::ColorChoice::Auto,
             );
             let config = codespan_reporting::term::Config::default();
+
+            // Emit type warnings.
             for w in &result.warnings {
                 let diag = w.to_diagnostic(&result.source_map);
                 // Ignore render errors — best effort
@@ -179,13 +181,25 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
                     &diag,
                 );
             }
-            count
+
+            // Emit content verifier errors (e.g. trivial self-assignment).
+            for e in &result.core_errors {
+                let diag = e.to_diagnostic(&result.source_map);
+                let _ = codespan_reporting::term::emit(
+                    &mut writer.lock(),
+                    &config,
+                    &result.files,
+                    &diag,
+                );
+            }
+
+            (result.warnings.len(), result.core_errors.len())
         }
         Err(e) => {
             // Pipeline failure is not a type error — log at debug level and
             // continue with the annotation syntax results only.
             eprintln!("eu check: pipeline warning: {e}");
-            0
+            (0, 0)
         }
     };
     let phase2_elapsed = t_phase2.elapsed();
@@ -199,14 +213,16 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
         );
     }
 
-    let total_issues = syntax_errors + type_warning_count;
+    let total_issues = syntax_errors + type_warning_count + content_error_count;
 
     if total_issues == 0 {
         Ok(0)
-    } else if opt.check_strict() {
+    } else if opt.check_strict() || content_error_count > 0 {
+        // Content verifier errors (e.g. always-divergent bindings) are always
+        // hard errors, regardless of --strict.
         Ok(1)
     } else {
-        // Warnings never cause non-zero exit unless --strict.
+        // Type warnings never cause non-zero exit unless --strict.
         // Annotation *syntax* errors are always real errors, though.
         if syntax_errors > 0 {
             Ok(1)
@@ -421,6 +437,8 @@ fn type_check_path_merged(
 /// Result of running the type checker through the full pipeline.
 struct PipelineCheckResult {
     warnings: Vec<crate::core::typecheck::error::TypeWarning>,
+    /// Static errors detected by the content verifier (e.g. trivial self-assignment).
+    core_errors: Vec<CoreError>,
     files: codespan_reporting::files::SimpleFiles<String, String>,
     source_map: crate::common::sourcemap::SourceMap,
 }
@@ -487,9 +505,14 @@ fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eucaly
         type_check_with_operator_overloads(&core_expr, operator_overloads)
     };
     warnings.extend(deprecation_warnings);
+
+    // Run content verifier to catch static errors (e.g. trivial self-assignment).
+    let core_errors = loader.verify().unwrap_or_default();
+
     let (files, source_map, _) = loader.complete();
     Ok(PipelineCheckResult {
         warnings,
+        core_errors,
         files,
         source_map,
     })
