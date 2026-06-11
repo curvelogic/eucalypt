@@ -999,6 +999,19 @@ lazy_static! {
             ty: function(vec![any(), bool_()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 190
+            name: "TRACE_ENTRY",
+            // name_str -> args_list -> strict_bool -> unit
+            ty: function(vec![str_(), list(), bool_(), unit()]).unwrap(),
+            strict: vec![0, 1, 2],
+    },
+    Intrinsic { // 191
+            name: "TRACE_EXIT",
+            // name_str -> value -> strict_bool -> value
+            // value (arg 1) is NOT strict — kept lazy so peek mode works
+            ty: function(vec![str_(), unk(), bool_(), unk()]).unwrap(),
+            strict: vec![0, 2],
+    },
     ];
 }
 
