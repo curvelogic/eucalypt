@@ -7,6 +7,7 @@ use crate::driver::source::ParsedAst;
 use crate::driver::source::SourceLoader;
 use crate::syntax::export::embed::Embed;
 use crate::syntax::export::pretty::express;
+use crate::syntax::input::{Input, Locator};
 use crate::syntax::rowan::kind::SyntaxNode;
 use crate::{common::prettify::prettify, core::export};
 use rowan::ast::AstNode;
@@ -30,6 +31,13 @@ pub fn prepare(
 ) -> Result<Command, EucalyptError> {
     let inputs = opt.inputs();
 
+    // Before the main load loop, check the explicit inputs for a `prelude:`
+    // metadata key.  If found, the alternative prelude is loaded and stored
+    // as a prelude override.  This pre-pass runs before any other loading so
+    // that the override only applies to the primary invocation — not to
+    // re-imports triggered by the test harness's validate phase.
+    loader.detect_and_load_prelude_override(opt.explicit_inputs())?;
+
     {
         let t = Instant::now();
         let mut parse_errors: Vec<EucalyptError> = Vec::new();
@@ -50,6 +58,35 @@ pub fn prepare(
         }
     }
 
+    // If any loaded unit requested a prelude override, substitute it in the
+    // inputs list for the translate and merge phases.  The default prelude
+    // (`Resource("prelude")`) is replaced by the user-specified prelude.
+    // If no default prelude was present (--no-prelude mode), the override is
+    // prepended so it is still available for merging.
+    let effective_inputs: Vec<Input> =
+        if let Some(override_input) = loader.prelude_override().cloned() {
+            let default_prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
+            let mut replaced = false;
+            let mut result: Vec<Input> = inputs
+                .iter()
+                .map(|i| {
+                    if i == &default_prelude && !replaced {
+                        replaced = true;
+                        override_input.clone()
+                    } else {
+                        i.clone()
+                    }
+                })
+                .collect();
+            if !replaced {
+                // --no-prelude was in effect; prepend the override so it participates in merge.
+                result.insert(0, override_input);
+            }
+            result
+        } else {
+            inputs.clone()
+        };
+
     // If we're dumping parses, dump every file read during the load
     if opt.parse_only() {
         for (loc, ast) in loader.asts() {
@@ -64,7 +101,7 @@ pub fn prepare(
         let t = Instant::now();
         let mut translate_errors: Vec<EucalyptError> = Vec::new();
 
-        for i in &inputs {
+        for i in &effective_inputs {
             if let Err(e) = loader.translate(i) {
                 translate_errors.push(e);
             }
@@ -83,15 +120,18 @@ pub fn prepare(
         let t = Instant::now();
 
         if let Some(collection_name) = opt.collection() {
+            // For collection mode, substitute prelude in each segment.
+            let eff_prologue =
+                apply_prelude_override(opt.prologue_inputs(), loader.prelude_override());
             loader.collect_and_merge_units(
                 collection_name,
                 opt.name_inputs(),
-                opt.prologue_inputs(),
+                &eff_prologue,
                 opt.explicit_inputs(),
                 opt.epilogue_inputs(),
             )?;
         } else {
-            loader.merge_units(&inputs)?;
+            loader.merge_units(&effective_inputs)?;
         }
 
         stats.record("merge", t.elapsed());
@@ -297,6 +337,27 @@ fn diagnose_additional(loader: &SourceLoader, errors: &[EucalyptError]) {
         let diag = e.to_diagnostic(loader.source_map());
         loader.diagnose_to_stderr(&diag);
     }
+}
+
+/// Apply a prelude override to a slice of inputs, replacing the default
+/// `Resource("prelude")` entry if present.
+fn apply_prelude_override(inputs: &[Input], override_input: Option<&Input>) -> Vec<Input> {
+    let Some(override_input) = override_input else {
+        return inputs.to_vec();
+    };
+    let default_prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
+    let mut replaced = false;
+    inputs
+        .iter()
+        .map(|i| {
+            if i == &default_prelude && !replaced {
+                replaced = true;
+                override_input.clone()
+            } else {
+                i.clone()
+            }
+        })
+        .collect()
 }
 
 /// Format the target list

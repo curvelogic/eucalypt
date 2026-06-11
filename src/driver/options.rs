@@ -1023,7 +1023,9 @@ impl EucalyptOptions {
 
     /// Prepend an input if it is not already in the input list
     fn prepend_input(&mut self, input: Input) {
-        if !self.explicit_inputs.iter().any(|i| i == &input) {
+        if !self.explicit_inputs.iter().any(|i| i == &input)
+            && !self.prologue_inputs.iter().any(|i| i == &input)
+        {
             self.prologue_inputs.insert(0, input);
         }
     }
