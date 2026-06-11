@@ -148,18 +148,27 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
             },
         )?;
 
-    // 3. Parse user source — mode determines the parser entry point
+    // 3. Parse user source — mode determines the parser entry point.
+    //
+    // Use `into_parts()` to always obtain the partial tree even when there are
+    // parse errors.  ERROR_STOWAWAYS nodes in the partial tree produce
+    // `ErrEliminated` sentinels during desugaring; DCE removes them so clean
+    // sub-expressions still evaluate.  If an `ErrEliminated` node survives to
+    // STG compilation a `CompileError` is returned.  Parse errors are collected
+    // and included as notes on any downstream `PipelineError` so the caller
+    // sees the full diagnostic picture.  Unlike the prelude (Step 1), a broken
+    // user input is not fatal — the partial tree is always used.
     let source_file_id = files.add("<input>".to_string(), source.to_string());
-    let source_ast: Box<dyn Desugarable> = match mode {
+    let (source_ast, parse_notes): (Box<dyn Desugarable>, Vec<String>) = match mode {
         ParseMode::Unit => {
-            let parse = rowan::parse_unit(source);
-            check_parse_errors(parse.errors(), source_file_id, &files)?;
-            Box::new(parse.tree())
+            let (tree, errors) = rowan::parse_unit(source).into_parts();
+            let notes = format_parse_error_notes(&errors, source_file_id, &files);
+            (Box::new(tree), notes)
         }
         ParseMode::Expr => {
-            let parse = rowan::parse_expr(source);
-            check_parse_errors(parse.errors(), source_file_id, &files)?;
-            Box::new(parse.tree())
+            let (tree, errors) = rowan::parse_expr(source).into_parts();
+            let notes = format_parse_error_notes(&errors, source_file_id, &files);
+            (Box::new(tree), notes)
         }
     };
 
@@ -256,7 +265,17 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
 
     let rt = make_standard_runtime(&mut source_map);
     let syn = stg::compile(&stg_settings, expr, rt.as_ref())
-        .map_err(|e| execution_error_to_pipeline_error(e.into(), &files, &source_map))?;
+        .map_err(|e| {
+            // Include any parse errors as notes so the caller sees the full
+            // diagnostic picture when an ErrEliminated node survives to here.
+            let mut pe = execution_error_to_pipeline_error(e.into(), &files, &source_map);
+            if !parse_notes.is_empty() {
+                pe.notes
+                    .get_or_insert_with(Vec::new)
+                    .extend(parse_notes.iter().cloned());
+            }
+            pe
+        })?;
 
     // 13. Run the machine, capturing output via SharedWriter.
     let output_buf: Rc<RefCell<Vec<u8>>> = Rc::new(RefCell::new(Vec::new()));
@@ -289,30 +308,6 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
     String::from_utf8(output).map_err(|e| PipelineError {
         message: format!("Output encoding error: {e}"),
         location: None,
-        notes: None,
-    })
-}
-
-// ── Parse error checking ─────────────────────────────────────────────────────
-
-fn check_parse_errors(
-    errors: &[crate::syntax::rowan::ParseError],
-    source_file_id: usize,
-    files: &SimpleFiles<String, String>,
-) -> Result<(), PipelineError> {
-    if errors.is_empty() {
-        return Ok(());
-    }
-    let first_error = &errors[0];
-    let location = extract_parse_error_location(first_error, source_file_id, files);
-    let message = errors
-        .iter()
-        .map(|e| e.to_string())
-        .collect::<Vec<_>>()
-        .join("; ");
-    Err(PipelineError {
-        message: format!("Parse error: {message}"),
-        location,
         notes: None,
     })
 }
@@ -366,6 +361,27 @@ fn extract_diagnostic_location(
         end_line: end.line_number,
         end_column: end.column_number,
     })
+}
+
+/// Format parse errors as human-readable strings with source locations.
+fn format_parse_error_notes(
+    errors: &[crate::syntax::rowan::ParseError],
+    file_id: usize,
+    files: &SimpleFiles<String, String>,
+) -> Vec<String> {
+    errors
+        .iter()
+        .map(|e| {
+            if let Some(loc) = extract_parse_error_location(e, file_id, files) {
+                format!(
+                    "{}:{}: parse error: {e}",
+                    loc.line, loc.column
+                )
+            } else {
+                format!("parse error: {e}")
+            }
+        })
+        .collect()
 }
 
 /// Extract source location from a rowan parse error's text range.
