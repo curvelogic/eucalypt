@@ -7,7 +7,7 @@ conform: {
   zipped: [1, 2, 3] zip([4, 5, 6])
   head-val: [10, 20, 30] head
   tail-val: [10, 20, 30] tail
-  nth-val: nth(1, [10, 20, 30])
+  nth-val: [10, 20, 30] nth(1)
   dropped: [1, 2, 3, 4, 5] drop(2)
   product-val: [1, 2, 3, 4] product
 }

@@ -6,6 +6,6 @@ conform: {
   not-positive: -3 pos?
   negative: -3 neg?
   not-negative: 5 neg?
-  inc-val: inc(4)
-  dec-val: dec(4)
+  inc-val: 4 inc
+  dec-val: 4 dec
 }

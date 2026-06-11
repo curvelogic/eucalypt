@@ -5,8 +5,8 @@ conform: {
   product: 4 * 7
   quotient: 10 / 3
   remainder: 10 % 3
-  negation: negate(7)
-  absolute: abs(-5)
+  negation: 7 negate
+  absolute: -5 abs
   max-val: max(3, 7)
   min-val: min(3, 7)
 }

@@ -1,8 +1,8 @@
 ` { target: :conform format: :yaml }
 conform: {
-  cons-cell: cons(1, [2, 3])
+  cons-cell: [2, 3] cons(1)
   range-val: range(0, 5)
-  iota-prefix: take(5, iota(0))
+  iota-prefix: 0 iota take(5)
   reverse-val: [1, 2, 3] reverse
   concat-val: [1, 2] ++ [3, 4]
   length: [1, 2, 3, 4, 5] count

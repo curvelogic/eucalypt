@@ -4,8 +4,8 @@ conform: {
   and-false: true ∧ false
   or-true: false ∨ true
   or-false: false ∨ false
-  not-true: not(true)
-  not-false: not(false)
+  not-true: true not
+  not-false: false not
   nil-check: [] nil?
   non-nil: [1] nil?
   number-pred: 42 number?
