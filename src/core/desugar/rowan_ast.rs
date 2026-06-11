@@ -2634,8 +2634,12 @@ fn rowan_declaration_to_binding(
     // be bound when the lambda closes over them.
     //
     // Design:
-    //   entry-only  →  __TRACE_ENTRY(name, arg_pairs, is_strict, body)
-    //   entry+exit  →  __TRACE_EXIT(name, __TRACE_ENTRY(name, arg_pairs, is_strict, body), is_strict)
+    //   entry-only  →  TRACE_ENTRY(name, arg_pairs, is_strict, body)
+    //   entry+exit  →  TRACE_ENTRY(name, arg_pairs, is_strict, TRACE_EXIT(name, body, is_strict))
+    //
+    // TRACE_ENTRY fires first (it is the outer call) then returns its 4th arg.
+    // For entry+exit mode the 4th arg is TRACE_EXIT(…), which fires when the
+    // result is forced.  This guarantees entry is always logged before exit.
     if let Some(ref trace_spec) = metadata.trace {
         let smid = desugarer.new_smid(components.span);
         let name_str = core::str(smid, &components.name);
@@ -2652,21 +2656,21 @@ fn rowan_declaration_to_binding(
         let with_exit = matches!(trace_spec, TraceSpec::Exit | TraceSpec::StrictExit);
         let strict_bool = core::bool_(smid, is_strict);
 
-        // __TRACE_ENTRY(name, arg_pairs, is_strict, body)
-        expr = core::app(
-            smid,
-            core::bif(smid, "__TRACE_ENTRY"),
-            vec![name_str.clone(), arg_pairs_list, strict_bool.clone(), expr],
-        );
-
-        // __TRACE_EXIT(name, traced_body, is_strict)
+        // For entry+exit: wrap body in TRACE_EXIT first, then wrap in TRACE_ENTRY.
         if with_exit {
             expr = core::app(
                 smid,
-                core::bif(smid, "__TRACE_EXIT"),
-                vec![name_str, expr, strict_bool],
+                core::bif(smid, "TRACE_EXIT"),
+                vec![name_str.clone(), expr, strict_bool.clone()],
             );
         }
+
+        // TRACE_ENTRY(name, arg_pairs, is_strict, body_or_exit_wrapped_body)
+        expr = core::app(
+            smid,
+            core::bif(smid, "TRACE_ENTRY"),
+            vec![name_str, arg_pairs_list, strict_bool, expr],
+        );
     }
 
     // Wrap in lambda if there are arguments

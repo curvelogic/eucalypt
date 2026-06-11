@@ -13,13 +13,13 @@ use crate::eval::{
     error::ExecutionError,
     machine::{
         env::SynClosure,
-        intrinsic::{CallGlobal1, CallGlobal3, IntrinsicMachine, StgIntrinsic},
+        intrinsic::{CallGlobal1, CallGlobal3, CallGlobal4, IntrinsicMachine, StgIntrinsic},
     },
     memory::{
         mutator::MutatorHeapView,
         syntax::{HeapSyn, Native, Ref},
     },
-    stg::support::{machine_return_str, machine_return_unit, str_arg},
+    stg::support::{machine_return_str, str_arg},
 };
 
 use crate::common::sourcemap::Smid;
@@ -421,7 +421,15 @@ fn get_list_element_at(
                                 "malformed TRACE args_list cons cell (missing tail)".to_string(),
                             )
                         })?;
-                        current = current.navigate_local(&view, t_ref.clone());
+                        current = machine
+                            .nav(view)
+                            .resolve_in_closure(&current, t_ref.clone())
+                            .ok_or_else(|| {
+                                ExecutionError::Panic(
+                                    Smid::default(),
+                                    "TRACE args_list: invalid tail ref in cons cell".to_string(),
+                                )
+                            })?;
                     }
                     Ok(DataConstructor::ListNil) => {
                         return Err(ExecutionError::Panic(
@@ -459,7 +467,15 @@ fn get_list_element_at(
                             "malformed TRACE args_list cons cell (missing head)".to_string(),
                         )
                     })?;
-                    Ok(current.navigate_local(&view, h_ref.clone()))
+                    machine
+                        .nav(view)
+                        .resolve_in_closure(&current, h_ref.clone())
+                        .ok_or_else(|| {
+                            ExecutionError::Panic(
+                                Smid::default(),
+                                "TRACE args_list: invalid head ref in cons cell".to_string(),
+                            )
+                        })
                 }
                 Ok(DataConstructor::ListNil) => Err(ExecutionError::Panic(
                     Smid::default(),
@@ -501,7 +517,15 @@ fn count_list_elements(
                                 "malformed cons cell in TRACE args_list".to_string(),
                             )
                         })?;
-                        current = current.navigate_local(&view, t_ref.clone());
+                        current = machine
+                            .nav(view)
+                            .resolve_in_closure(&current, t_ref.clone())
+                            .ok_or_else(|| {
+                                ExecutionError::Panic(
+                                    Smid::default(),
+                                    "TRACE args_list: invalid tail ref in cons cell".to_string(),
+                                )
+                            })?;
                     }
                     _ => {
                         return Err(ExecutionError::Panic(
@@ -522,16 +546,16 @@ fn count_list_elements(
     Ok(count)
 }
 
-/// `__TRACE_ENTRY(name, args_list, strict)` — print a function entry trace to stderr.
+/// `TRACE_ENTRY(name, args_list, strict, body)` — print a function entry trace to
+/// stderr, then return `body` transparently.
 ///
 /// - `name`: string — the declaration name.
 /// - `args_list`: cons-list alternating `[arg_name, value, arg_name, value, …]`.
 /// - `strict`: bool — if `true`, force each value to WHNF before rendering;
 ///   if `false`, peek (render already-evaluated values, show `<thunk>` for the rest).
+/// - `body`: the declaration body expression — returned unchanged.
 ///
 /// Output format: `→ name(arg1: repr1, arg2: repr2)`
-///
-/// Returns unit (null) so that `seq` can discard it.
 pub struct TraceEntry;
 
 impl StgIntrinsic for TraceEntry {
@@ -549,6 +573,7 @@ impl StgIntrinsic for TraceEntry {
         // args[0] = name (strict string)
         // args[1] = args_list (strict cons-list structure, values may be thunks)
         // args[2] = strict_bool (strict bool)
+        // args[3] = body (lazy — returned transparently after printing)
         let name = str_arg(machine, view, &args[0])?;
         let strict = resolve_bool(machine, view, &args[2]);
 
@@ -587,11 +612,13 @@ impl StgIntrinsic for TraceEntry {
             .collect();
         eprintln!("\u{2192} {name}({})", arg_strs.join(", "));
 
-        machine_return_unit(machine, view)
+        // Return the body unchanged.
+        let body = machine.nav(view).resolve(&args[3])?;
+        machine.set_closure(body)
     }
 }
 
-impl CallGlobal3 for TraceEntry {}
+impl CallGlobal4 for TraceEntry {}
 
 /// `__TRACE_EXIT(name, value, strict)` — print a function exit trace to stderr and
 /// return `value` transparently.
