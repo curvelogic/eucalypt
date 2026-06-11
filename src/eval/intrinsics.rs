@@ -1001,8 +1001,8 @@ lazy_static! {
     },
     Intrinsic { // 190
             name: "TRACE_ENTRY",
-            // name_str -> args_list -> strict_bool -> unit
-            ty: function(vec![str_(), list(), bool_(), unit()]).unwrap(),
+            // name_str -> args_list -> strict_bool -> body -> body
+            ty: function(vec![str_(), list(), bool_(), unk(), unk()]).unwrap(),
             strict: vec![0, 1, 2],
     },
     Intrinsic { // 191

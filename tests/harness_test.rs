@@ -1707,6 +1707,61 @@ pub fn test_harness_158() {
     run_test(&opts("158_export_internal.eu"));
 }
 
+/// Run a trace test: execute via the `eu` binary, check exit code 0 and verify
+/// that every pattern in `expected_stderr` appears somewhere in stderr output.
+fn run_trace_test(filename: &str, expected_stderr: &[&str]) {
+    let path = format!("tests/harness/{filename}");
+    let output = std::process::Command::new(eu_binary())
+        .arg(&path)
+        .output()
+        .unwrap_or_else(|e| panic!("failed to run eu for {filename}: {e}"));
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(
+        exit_code, 0,
+        "trace test {filename} exited with code {exit_code}\nstderr:\n{stderr}"
+    );
+
+    for pattern in expected_stderr {
+        assert!(
+            stderr.contains(pattern),
+            "stderr for {filename} does not contain {pattern:?}\nactual stderr:\n{stderr}"
+        );
+    }
+}
+
+/// Trace entry only (lazy): args shown as `<thunk>`.
+#[test]
+pub fn test_harness_159() {
+    run_trace_test("159_trace_lazy.eu", &["→ add(x: <thunk>, y: <thunk>)"]);
+}
+
+/// Trace entry only (strict): args forced before logging.
+#[test]
+pub fn test_harness_160() {
+    run_trace_test("160_trace_strict.eu", &["→ add(x: 1, y: 2)"]);
+}
+
+/// Trace entry and exit (lazy): result shown as `<thunk>`.
+#[test]
+pub fn test_harness_161() {
+    run_trace_test(
+        "161_trace_exit.eu",
+        &["→ add(x: <thunk>, y: <thunk>)", "← add: <thunk>"],
+    );
+}
+
+/// Trace entry and exit (strict): args and result forced before logging.
+#[test]
+pub fn test_harness_162() {
+    run_trace_test(
+        "162_trace_strict_exit.eu",
+        &["→ add(x: 1, y: 2)", "← add: 3"],
+    );
+}
+
 #[test]
 pub fn test_error_154() {
     run_error_test(&error_opts("154_internal_import_error.eu"));

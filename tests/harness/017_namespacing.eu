@@ -10,7 +10,7 @@ refs: {
   env: fn.ref("EnvironmentName")
 }
 
-` :trace
+` :result
 env: refs.env
 
 checks: {

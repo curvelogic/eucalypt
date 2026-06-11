@@ -8,7 +8,7 @@ use super::{
 };
 use crate::core::metadata::{
     normalise_metadata, strip_desugar_phase_metadata, DesugarPhaseBlockMetadata,
-    DesugarPhaseDeclarationMetadata, ReadMetadata,
+    DesugarPhaseDeclarationMetadata, ReadMetadata, TraceSpec,
 };
 use crate::{
     common::sourcemap::{HasSmid, Smid},
@@ -2625,6 +2625,53 @@ fn rowan_declaration_to_binding(
         // Body is already desugared and variable resolution was done during soup processing
         components.body
     };
+
+    // Wrap body in trace calls if trace metadata was specified.
+    //
+    // The wrapping happens BEFORE lambda creation so that the
+    // `__TRACE_ENTRY` call sits inside the lambda body and has access
+    // to the argument values via the free variable references that will
+    // be bound when the lambda closes over them.
+    //
+    // Design:
+    //   entry-only  →  TRACE_ENTRY(name, arg_pairs, is_strict, body)
+    //   entry+exit  →  TRACE_ENTRY(name, arg_pairs, is_strict, TRACE_EXIT(name, body, is_strict))
+    //
+    // TRACE_ENTRY fires first (it is the outer call) then returns its 4th arg.
+    // For entry+exit mode the 4th arg is TRACE_EXIT(…), which fires when the
+    // result is forced.  This guarantees entry is always logged before exit.
+    if let Some(ref trace_spec) = metadata.trace {
+        let smid = desugarer.new_smid(components.span);
+        let name_str = core::str(smid, &components.name);
+
+        // Build the arg-pairs list: ["arg1", arg1, "arg2", arg2, ...]
+        let arg_pairs: Vec<RcExpr> = components
+            .args
+            .iter()
+            .flat_map(|arg_name| [core::str(smid, arg_name), core::var(smid, arg_name.clone())])
+            .collect();
+        let arg_pairs_list = core::list(smid, arg_pairs);
+
+        let is_strict = matches!(trace_spec, TraceSpec::Strict | TraceSpec::StrictExit);
+        let with_exit = matches!(trace_spec, TraceSpec::Exit | TraceSpec::StrictExit);
+        let strict_bool = core::bool_(smid, is_strict);
+
+        // For entry+exit: wrap body in TRACE_EXIT first, then wrap in TRACE_ENTRY.
+        if with_exit {
+            expr = core::app(
+                smid,
+                core::bif(smid, "TRACE_EXIT"),
+                vec![name_str.clone(), expr, strict_bool.clone()],
+            );
+        }
+
+        // TRACE_ENTRY(name, arg_pairs, is_strict, body_or_exit_wrapped_body)
+        expr = core::app(
+            smid,
+            core::bif(smid, "TRACE_ENTRY"),
+            vec![name_str, arg_pairs_list, strict_bool, expr],
+        );
+    }
 
     // Wrap in lambda if there are arguments
     if !components.args.is_empty() {
