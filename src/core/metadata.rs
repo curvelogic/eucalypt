@@ -12,6 +12,36 @@ pub trait ReadMetadata<M> {
     fn read_metadata(&mut self) -> Result<M, CoreError>;
 }
 
+/// Specifies the tracing behaviour for a declaration.
+///
+/// Set via backtick metadata: `` ` :trace `` (shorthand for lazy) or
+/// `` ` { trace: :strict } `` etc.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TraceSpec {
+    /// Trace entry only; argument values are not forced before logging.
+    Lazy,
+    /// Trace entry only; argument values are forced (evaluated to WHNF) before logging.
+    Strict,
+    /// Trace both entry and exit; argument values are not forced.
+    Exit,
+    /// Trace both entry and exit; argument values are forced before logging.
+    StrictExit,
+}
+
+/// Extract a `TraceSpec` from a core expression.
+///
+/// Accepts the symbol variants `:lazy`, `:strict`, `:exit`, `:strict-exit`.
+fn extract_trace_spec(expr: &RcExpr) -> Option<TraceSpec> {
+    let s: Option<String> = (expr as &dyn Extract<String>).extract();
+    s.and_then(|s| match s.as_str() {
+        "lazy" => Some(TraceSpec::Lazy),
+        "strict" => Some(TraceSpec::Strict),
+        "exit" => Some(TraceSpec::Exit),
+        "strict-exit" => Some(TraceSpec::StrictExit),
+        _ => None,
+    })
+}
+
 /// Extract a function name from a metadata value.
 ///
 /// Accepts:
@@ -45,6 +75,12 @@ pub fn normalise_metadata(expr: &RcExpr, decl_name: Option<&str>) -> RcExpr {
                 "suppress" | "internal" => core::block(
                     *smid,
                     [("export".to_string(), expr.clone())].iter().cloned(),
+                ),
+                "trace" => core::block(
+                    *smid,
+                    [("trace".to_string(), core::sym(*smid, "lazy"))]
+                        .iter()
+                        .cloned(),
                 ),
                 "target" => {
                     if let Some(name) = decl_name {
@@ -85,6 +121,7 @@ pub fn strip_desugar_phase_metadata(expr: &RcExpr) -> RcExpr {
                             | "import"
                             | "embedding"
                             | "parse-embed"
+                            | "trace"
                     )
                 })
                 .map(|(k, v)| (k.clone(), v.clone()))
@@ -122,6 +159,8 @@ pub struct DesugarPhaseDeclarationMetadata {
     pub doc: Option<String>,
     /// Embedding - describes how / what is embedded (e.g. core quote-embed)
     pub embedding: Option<String>,
+    /// Trace specification — controls entry/exit tracing of this declaration.
+    pub trace: Option<TraceSpec>,
 }
 
 /// Public wrapper for extract_function_name for use in other modules.
@@ -144,6 +183,7 @@ impl ReadMetadata<DesugarPhaseDeclarationMetadata> for RcExpr {
                 imports: imap.get("import").and_then(|e| e.extract()),
                 doc: imap.get("doc").and_then(|e| e.extract()),
                 embedding: imap.get("embedding").and_then(|e| e.extract()),
+                trace: imap.get("trace").and_then(extract_trace_spec),
             }),
             Expr::Let(_, _, _) => {
                 self.inner = self.clone().instantiate_lets().inner;
