@@ -574,6 +574,33 @@ safe-head(xs): if(xs nil?, 0, xs head)   # xs is NonEmpty([number]) in the false
 Or annotate the input as `NonEmpty([T])` when the caller guarantees
 non-emptiness.
 
+## `:suppress` Leaks Through References
+
+`` ` :suppress `` hides a binding from output, but the flag travels with
+the binding's **value**. Reference that value somewhere else and the field
+it lands in silently disappears too.
+
+```eu,notest
+# WRONG — log4j is suppressed, so the @id field it feeds is dropped
+` :suppress
+log4j: "pkg:maven/log4j-core@2.17.1"
+
+entry: { '@id': log4j }     # renders as {} — @id silently gone
+```
+
+Suppress a **block** rather than a value you reference; members looked up
+out of it are clean:
+
+```eu,notest
+` :suppress
+purls: { log4j: "pkg:maven/log4j-core@2.17.1" }
+
+entry: { '@id': purls.log4j }   # => { "@id": "pkg:maven/log4j-core@2.17.1" }
+```
+
+**Rule**: only `` ` :suppress `` a binding you don't reference elsewhere; to
+hide values you *do* reference, group them in a block and suppress that.
+
 ---
 
 ## Future Improvements
