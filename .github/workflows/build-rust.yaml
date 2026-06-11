@@ -68,6 +68,21 @@ jobs:
           python3 scripts/test-doc-examples.py --eu ./target/release/eu --timeout 30
 
 
+  test-gc-verified:
+    name: GC-verified harness (x86-64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release
+      - name: Run harness under GC verification
+        run: ./target/release/eu test --allow-io tests/harness
+        env:
+          EU_GC_VERIFY: "2"
+          EU_GC_STRESS: "1"
+          EU_GC_POISON: "1"
+
   test-aarch64-sequential:
     name: Sequential harness (aarch64 release)
     runs-on: ubuntu-24.04-arm

@@ -1,0 +1,9 @@
+` { target: :conform format: :yaml }
+conform: {
+  flat: { a: 1 } << { b: 2 }
+  nested: { a: { x: 1 } } << { a: { y: 2 } }
+  override-leaf: { a: { x: 1 } } << { a: { x: 99 } }
+  adds-key: { a: 1 } << { b: 2 c: 3 }
+  empty-lhs: {} << { a: 1 }
+  empty-rhs: { a: 1 } << {}
+}

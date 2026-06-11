@@ -1,0 +1,13 @@
+classify(n): cond([n < 0 => "negative", n = 0 => "zero", "positive"])
+
+grade(n): cond([n >= 90 => "A", n >= 80 => "B", n >= 70 => "C", "F"])
+
+` { target: :conform format: :yaml }
+conform: {
+  neg: classify(-5)
+  zero: classify(0)
+  pos: classify(3)
+  grade-a: grade(95)
+  grade-b: grade(85)
+  grade-f: grade(55)
+}

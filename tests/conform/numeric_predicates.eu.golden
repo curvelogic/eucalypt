@@ -1,0 +1,9 @@
+---
+zero-true: true
+zero-false: false
+positive: true
+not-positive: false
+negative: true
+not-negative: false
+inc-val: 5
+dec-val: 3

@@ -1,0 +1,10 @@
+---
+sum: 3
+difference: 2
+product: 28
+quotient: 3
+remainder: 1
+negation: -7
+absolute: 5
+max-val: 7
+min-val: 3

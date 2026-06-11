@@ -1,0 +1,17 @@
+---
+basic:
+  a: 1
+  b: 2
+override-right:
+  a: 1
+  b: 99
+triple:
+  a: 1
+  b: 2
+  c: 3
+add-key:
+  x: 10
+  y: 20
+  z: 30
+shadow:
+  k: replaced

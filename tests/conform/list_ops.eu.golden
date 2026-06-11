@@ -1,0 +1,27 @@
+---
+doubled:
+  - 2
+  - 4
+  - 6
+evens:
+  - 2
+  - 4
+total: 15
+joined: "1, 2, 3"
+zipped:
+  - - 4
+    - 1
+  - - 5
+    - 2
+  - - 6
+    - 3
+head-val: 10
+tail-val:
+  - 20
+  - 30
+nth-val: 20
+dropped:
+  - 3
+  - 4
+  - 5
+product-val: 24

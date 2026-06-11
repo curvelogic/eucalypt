@@ -1,0 +1,13 @@
+` { target: :conform format: :yaml }
+conform: {
+  string-val: "hello"
+  number-val: 42
+  bool-true: true
+  bool-false: false
+  null-val: null
+  list-val: [1, 2, 3]
+  nested: {
+    inner: "value"
+    count: 7
+  }
+}

@@ -1,0 +1,7 @@
+` { target: :conform format: :edn }
+conform: {
+  name: "eucalypt"
+  count: 42
+  items: [1, 2, 3]
+  flag: true
+}

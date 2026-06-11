@@ -1,0 +1,16 @@
+` { target: :conform format: :yaml }
+conform: {
+  and-true: true ∧ true
+  and-false: true ∧ false
+  or-true: false ∨ true
+  or-false: false ∨ false
+  not-true: not(true)
+  not-false: not(false)
+  nil-check: [] nil?
+  non-nil: [1] nil?
+  number-pred: 42 number?
+  string-pred: "hi" string?
+  bool-pred: true bool?
+  block-pred: { a: 1 } block?
+  list-pred: [1, 2] list?
+}

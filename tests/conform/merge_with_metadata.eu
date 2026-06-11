@@ -1,0 +1,7 @@
+` { target: :conform format: :yaml }
+conform: {
+  shallow-merge: { a: 1 } { b: 2 }
+  override: { a: 1 b: 2 } { a: 100 }
+  three-way: { a: 1 } { b: 2 } { c: 3 }
+  deep-merge: { a: { x: 1 } } << { a: { y: 2 } }
+}

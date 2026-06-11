@@ -1,0 +1,14 @@
+{
+  "config": {
+    "format": "json",
+    "pretty": true
+  },
+  "enabled": true,
+  "name": "eucalypt",
+  "tags": [
+    "fast",
+    "functional",
+    "data"
+  ],
+  "version": 1
+}

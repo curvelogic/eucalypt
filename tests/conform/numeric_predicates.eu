@@ -1,0 +1,11 @@
+` { target: :conform format: :yaml }
+conform: {
+  zero-true: 0 zero?
+  zero-false: 1 zero?
+  positive: 5 pos?
+  not-positive: -3 pos?
+  negative: -3 neg?
+  not-negative: 5 neg?
+  inc-val: inc(4)
+  dec-val: dec(4)
+}

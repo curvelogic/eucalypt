@@ -1,0 +1,14 @@
+---
+and-true: true
+and-false: false
+or-true: true
+or-false: false
+not-true: false
+not-false: true
+nil-check: true
+non-nil: false
+number-pred: true
+string-pred: true
+bool-pred: true
+block-pred: true
+list-pred: true

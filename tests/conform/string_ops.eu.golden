@@ -1,0 +1,12 @@
+---
+replaced: hello eucalypt
+split-result:
+  - a
+  - b
+  - c
+joined: x-y-z
+trimmed: hello
+contains: true
+starts: true
+ends: true
+length: 5
