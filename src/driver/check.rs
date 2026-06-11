@@ -433,6 +433,15 @@ fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eucaly
         loader.load(input)?;
     }
 
+    // Report parse errors as diagnostics but do not abort — the partial tree
+    // (with ERROR_STOWAWAYS nodes) allows the type checker to run on the
+    // syntactically valid portions.
+    let parse_errors = loader.drain_parse_errors();
+    for e in &parse_errors {
+        let diag = e.to_diagnostic(loader.source_map());
+        loader.diagnose_to_stderr(&diag);
+    }
+
     // Translate each input to core.
     for input in &inputs {
         loader.translate(input)?;

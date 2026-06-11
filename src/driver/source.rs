@@ -34,6 +34,7 @@ impl Desugarable for ParsedAst {
         }
     }
 }
+use crate::syntax::error::ParserError;
 use crate::syntax::import::ImportGraph;
 use crate::syntax::input::Input;
 use crate::syntax::input::Locator;
@@ -88,6 +89,12 @@ pub struct SourceLoader {
     /// across translation units.  Replaces the former separate
     /// `monad_namespace_registry` and `monad_type_registry` fields.
     unit_interface: UnitInterface,
+    /// Parse errors collected during `load_eucalypt`.
+    ///
+    /// Parse errors no longer abort loading — the partial tree (possibly
+    /// containing `ERROR_STOWAWAYS` nodes) is always stored.  Callers drain
+    /// this list via `drain_parse_errors` and decide how to surface them.
+    pending_parse_errors: Vec<EucalyptError>,
 }
 
 impl Default for SourceLoader {
@@ -107,6 +114,7 @@ impl Default for SourceLoader {
             seed: None,
             prelude_override: None,
             unit_interface: UnitInterface::default(),
+            pending_parse_errors: Vec::new(),
         }
     }
 }
@@ -129,6 +137,7 @@ impl SourceLoader {
             seed: None,
             prelude_override: None,
             unit_interface: UnitInterface::default(),
+            pending_parse_errors: Vec::new(),
         }
     }
 
@@ -388,10 +397,18 @@ impl SourceLoader {
         }
 
         let ast = if matches!(locator, Locator::Cli(_)) {
-            let soup = parser::parse_expression(&self.files, id)?;
+            let (soup, errors) = parser::parse_expression(&self.files, id);
+            if !errors.is_empty() {
+                self.pending_parse_errors
+                    .push(EucalyptError::Parser(ParserError::ParseErrors(id, errors)));
+            }
             ParsedAst::Soup(soup)
         } else {
-            let unit = parser::parse_unit(&self.files, id)?;
+            let (unit, errors) = parser::parse_unit(&self.files, id);
+            if !errors.is_empty() {
+                self.pending_parse_errors
+                    .push(EucalyptError::Parser(ParserError::ParseErrors(id, errors)));
+            }
             ParsedAst::Unit(unit)
         };
         self.asts.insert(id, ast);
@@ -719,6 +736,16 @@ impl SourceLoader {
     /// Access to source map for creating diagnostics
     pub fn source_map(&self) -> &SourceMap {
         &self.source_map
+    }
+
+    /// Drain and return any parse errors accumulated during `load_eucalypt`.
+    ///
+    /// Parse errors no longer abort loading — the partial tree is always
+    /// stored.  Call this after loading all inputs to collect the errors and
+    /// decide how to surface them (e.g. diagnose to stderr, or abort the
+    /// pipeline with a structured error).
+    pub fn drain_parse_errors(&mut self) -> Vec<EucalyptError> {
+        std::mem::take(&mut self.pending_parse_errors)
     }
 
     /// Access the file store for error location resolution.

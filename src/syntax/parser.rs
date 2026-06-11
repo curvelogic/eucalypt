@@ -7,42 +7,37 @@ pub use crate::syntax::rowan::{
 use crate::syntax::{error::ParserError, rowan};
 use codespan_reporting::files::SimpleFiles;
 
-/// Parse a unit - returns Rowan AST Unit directly
+/// Parse a unit — always returns the Rowan AST Unit together with any parse errors.
+///
+/// The all-or-nothing shim has been removed: parse errors no longer discard
+/// the tree.  The caller receives the partial tree (which may contain
+/// `ERROR_STOWAWAYS` nodes) alongside the error list and decides how to
+/// handle them.
 pub fn parse_unit<N, T>(
     files: &SimpleFiles<N, T>,
     id: usize,
-) -> Result<rowan::ast::Unit, ParserError>
+) -> (rowan::ast::Unit, Vec<RowanParseError>)
 where
     N: AsRef<str> + Clone + std::fmt::Display,
     T: AsRef<str>,
 {
     let text = files.get(id).unwrap().source().as_ref();
-    let parse_result = rowan::parse_unit(text);
-
-    if !parse_result.errors().is_empty() {
-        return Err(ParserError::ParseErrors(id, parse_result.errors().clone()));
-    }
-
-    Ok(parse_result.tree())
+    rowan::parse_unit(text).into_parts()
 }
 
-/// Parse an expression - returns Rowan AST Soup directly
+/// Parse an expression — always returns the Rowan AST Soup together with any parse errors.
+///
+/// See `parse_unit` for the rationale.
 pub fn parse_expression<N, T>(
     files: &SimpleFiles<N, T>,
     id: usize,
-) -> Result<rowan::ast::Soup, ParserError>
+) -> (rowan::ast::Soup, Vec<RowanParseError>)
 where
     N: AsRef<str> + Clone + std::fmt::Display,
     T: AsRef<str>,
 {
     let text = files.get(id).unwrap().source().as_ref();
-    let parse_result = rowan::parse_expr(text);
-
-    if !parse_result.errors().is_empty() {
-        return Err(ParserError::ParseErrors(id, parse_result.errors().clone()));
-    }
-
-    Ok(parse_result.tree())
+    rowan::parse_expr(text).into_parts()
 }
 
 /// Parse an embedded lambda - parses syntax like "(x, y) x * y" into parameter tuple and body

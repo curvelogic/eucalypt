@@ -40,21 +40,53 @@ pub fn prepare(
 
     {
         let t = Instant::now();
-        let mut parse_errors: Vec<EucalyptError> = Vec::new();
+        let mut load_errors: Vec<EucalyptError> = Vec::new();
 
         for i in &inputs {
             if let Err(e) = loader.load(i) {
-                parse_errors.push(e);
+                // Only I/O and structural errors abort here; parse errors are
+                // collected inside the loader and drained separately below.
+                load_errors.push(e);
             }
         }
 
         stats.record("parse", t.elapsed());
 
+        if !load_errors.is_empty() {
+            diagnose_additional(loader, &load_errors);
+            return Err(load_errors.into_iter().next().unwrap());
+        }
+
+        // Drain parse errors collected while loading.  The partial tree (with
+        // ERROR_STOWAWAYS nodes) has been stored regardless of errors, so dump
+        // and check modes can access it.  For evaluation we abort after
+        // reporting all errors so the user receives complete diagnostic output.
+        let parse_errors = loader.drain_parse_errors();
         if !parse_errors.is_empty() {
-            // Diagnose all errors beyond the first; the caller will
-            // print the returned error as a diagnostic itself.
-            diagnose_additional(loader, &parse_errors);
-            return Err(parse_errors.into_iter().next().unwrap());
+            // Dump and test modes can continue with the partial tree —
+            // ErrEliminated sentinels are safe throughout the pipeline.
+            let can_continue = opt.parse_only()
+                || opt.dump_desugared()
+                || opt.dump_cooked()
+                || opt.dump_inlined()
+                || opt.dump_pruned()
+                || opt.test();
+
+            if can_continue {
+                // Report ALL errors — we're not returning one to the caller.
+                for e in &parse_errors {
+                    let diag = e.to_diagnostic(loader.source_map());
+                    loader.diagnose_to_stderr(&diag);
+                }
+            } else {
+                // Report errors beyond the first — error[0] will be printed
+                // by the caller when it handles the returned Err.
+                for e in parse_errors.iter().skip(1) {
+                    let diag = e.to_diagnostic(loader.source_map());
+                    loader.diagnose_to_stderr(&diag);
+                }
+                return Err(parse_errors.into_iter().next().unwrap());
+            }
         }
     }
 

@@ -2085,6 +2085,13 @@ impl Desugarable for rowan_ast::Soup {
         let span = text_range_to_span(self.syntax().text_range());
         let elements: Vec<Element> = self.elements().collect();
 
+        // An empty element list means the soup contained only ERROR_STOWAWAYS
+        // nodes (all were parse errors).  Return a sentinel so downstream
+        // phases can continue rather than panicking on an empty soup.
+        if elements.is_empty() {
+            return Ok(RcExpr::from(Expr::ErrEliminated));
+        }
+
         // If there's only one element, desugar it and apply variable resolution
         if elements.len() == 1 {
             let expr = elements[0].desugar(desugarer)?;
