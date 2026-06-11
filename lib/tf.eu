@@ -34,7 +34,7 @@ ref(path): { o: "${{" c: "}}" }."{o}{path}{c}"
 # references any attribute, and `.address` is the bare `type.name`
 # address used by `depends_on`.  Naming a downstream attribute through
 # the handle (`vpc.id`, `vpc.attr(:arn)`) is the ergonomic win over
-# hand-written `"${...}"` strings: a typo is an Eucalypt error.
+# hand-written `"${...}"` strings: a typo is a Eucalypt error.
 
 ` { doc: "`resource(type, name, body)` - a managed-resource node.  The
 returned handle exposes `.id`, `.attr(a)` and `.address`, and carries
@@ -80,7 +80,7 @@ blocks into one Terraform document by deep-merging them.  Nodes (from
 plain fragment blocks (from `provider`, `terraform-settings`,
 `variable`, `output`, ...) are merged as-is.  Resources of the same
 type collect under a single key." }
-document(items): foldl(deep-merge, {}, items map(to-fragment))
+document(items): items map(to-fragment) foldl(deep-merge, {})
 
 # Other top-level blocks ---------------------------------------------
 
@@ -105,12 +105,9 @@ output(name, v): { output: block[[name sym, { value: v }]] }
 name / value pairs." }
 locals(b): { locals: b }
 
-` :suppress
-node-address(node): node.address
-
 ` { doc: "`depends-on(nodes)` - a bare address list for a resource's
 `depends_on` (Terraform expects unquoted references here)." }
-depends-on(nodes): nodes map(node-address)
+depends-on(nodes): nodes map(.address)
 
 # Embedded tests -----------------------------------------------------
 

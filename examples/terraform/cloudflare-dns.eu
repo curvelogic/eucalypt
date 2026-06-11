@@ -1,17 +1,18 @@
-# Cloudflare DNS estate generated from a compact model.
-#
-# A handful of declarations below expand into a full set of
-# `cloudflare_record` resources, replicated across every zone, emitted
-# as Terraform JSON ready to `terraform apply`.
-#
-# Render:
-#   eu -j -L lib examples/terraform/cloudflare-dns.eu > main.tf.json
-#   terraform init && terraform validate
-#
-# Credentials are taken from CLOUDFLARE_API_TOKEN at apply time; no
-# secrets appear in the generated JSON.
+{ doc: "Cloudflare DNS estate generated from a compact model.
 
-{ import: ["tf=tf.eu", "cf=tf-cloudflare.eu"] }
+A handful of declarations below expand into a full set of
+`cloudflare_record` resources, replicated across every zone, emitted as
+Terraform JSON ready to `terraform apply`.
+
+Render:
+
+    eu -j -L lib examples/terraform/cloudflare-dns.eu > main.tf.json
+    terraform init && terraform validate
+
+Credentials are taken from CLOUDFLARE_API_TOKEN at apply time; no secrets
+appear in the generated JSON."
+
+  import: ["tf=tf.eu", "cf=tf-cloudflare.eu"] }
 
 # ---- Compact model -------------------------------------------------
 

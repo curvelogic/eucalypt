@@ -34,7 +34,7 @@ record: cf.a(zone, "www", "203.0.113.10")
 # record's zone_id becomes "${data.cloudflare_zone.main.id}"
 ```
 
-Typo `zone.idd` and you get an Eucalypt error — not a silently broken
+Typo `zone.idd` and you get a Eucalypt error — not a silently broken
 `${...}` string.
 
 ## Running the Cloudflare DNS example

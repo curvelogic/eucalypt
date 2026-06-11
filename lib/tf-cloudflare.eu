@@ -41,10 +41,12 @@ dns-label(name): name = "@" then("root", name str.replace("[^A-Za-z0-9]", "_"))
 ` :suppress
 local-name(prefix, ztag, name, suffix): { label: name dns-label }."{prefix}_{ztag}_{label}{suffix}"
 
+# `select` keeps only the named keys of a block; due in the prelude at 0.8.
 ` :suppress
-optionals(o): { ttl: o lookup-or(:ttl, 1) }
-  << (o has(:proxied)  then({ proxied:  o.proxied  }, {}))
-  << (o has(:priority) then({ priority: o.priority }, {}))
+select(ks, b): b filter-items(by-key(∈ set.from-list(ks))) block
+
+` :suppress
+optionals(o): { ttl: 1 } (o select[:ttl, :proxied, :priority])
 
 # Record constructors -------------------------------------------------
 
@@ -61,9 +63,6 @@ record(o): tf.resource(
   local-name(o.type str.to-lower, o.zone.name, o.name, o lookup-or(:suffix, "")),
   { zone_id: o.zone.id  name: o.name  type: o.type  value: o.value }
     << optionals(o))
-
-# NB: parameter names must differ from block field names - `{name: name}`
-# would be a self-reference, not a read of the parameter.
 
 ` { doc: "`a(zone, name, value)` - an A record." }
 a(z, n, v): record{ zone: z, name: n, type: "A", value: v }
