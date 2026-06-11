@@ -1,7 +1,7 @@
 ` { target: :conform format: :toml }
 conform: {
   name: "eucalypt"
-  version: "0.7.1"
+  level: "stable"
   count: 42
   enabled: true
   tags: ["a", "b", "c"]
