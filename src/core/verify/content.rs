@@ -16,13 +16,13 @@ fn strip_meta(expr: &RcExpr) -> &RcExpr {
     let mut e = expr;
     loop {
         match &*e.inner {
-            Expr::Meta(_, _, inner) => e = inner,
+            Expr::Meta(_, inner, _) => e = inner,
             _ => return e,
         }
     }
 }
 
-/// Return `true` if `expr` (after stripping `Meta`) is exactly
+/// Return `true` if `expr` (after stripping `Meta` wrappers) is exactly
 /// `BoundVar { scope: 0, binder }`.
 fn is_self_bv(expr: &RcExpr, binder: u32) -> bool {
     matches!(
@@ -42,7 +42,7 @@ fn is_self_bv(expr: &RcExpr, binder: u32) -> bool {
 /// `binder` at scope 0.  We flag:
 ///
 /// - **direct**: the value IS `BoundVar(scope=0, binder)`
-/// - **function/operator position**: the value is `App(head, _)` and `head`
+/// - **function-head position**: the value is `App(head, _)` and `head`
 ///   (after stripping `Meta`) IS `BoundVar(scope=0, binder)`
 ///
 /// Argument-position self-reference (`cons(1, ones)`) is NOT flagged.
@@ -173,6 +173,23 @@ pub mod tests {
         assert!(
             matches!(&errors[0], CoreError::TrivialSelfAssignment(_, n) if n == "f"),
             "expected TrivialSelfAssignment for f, got {errors:?}"
+        );
+    }
+
+    #[test]
+    pub fn test_verify_self_assignment_meta_wrapped() {
+        // A Meta wrapper around a self-referential value must still be detected.
+        // After close_let_scope the FreeVar("x") → BoundVar(scope=0, binder=0),
+        // wrapped in Meta(_, BoundVar, _).
+        let expr = let_(
+            vec![("x".to_string(), meta(var(free("x")), sym("doc")))],
+            block(vec![]),
+        );
+        let errors = verify(expr).unwrap();
+        assert_eq!(errors.len(), 1, "expected 1 error, got {errors:?}");
+        assert!(
+            matches!(&errors[0], CoreError::TrivialSelfAssignment(_, n) if n == "x"),
+            "expected TrivialSelfAssignment for meta-wrapped x, got {errors:?}"
         );
     }
 
