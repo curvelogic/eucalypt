@@ -1,7 +1,5 @@
 ---
-basic-if: "yes"
-false-branch: "no"
+basic-true: "yes"
+basic-false: "no"
 nested: greater
-then-true: "yes"
-then-false: "no"
 null-test: equal
