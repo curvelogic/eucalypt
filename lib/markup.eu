@@ -1,6 +1,8 @@
 "Facilities for working with hiccup style markup representations that
 encode XML, HTML etc."
 
+_ : eu.requires(">=0.8")
+
 # Normalise
 
 ` "When authored in eucalypt, a shorthand can be used to
