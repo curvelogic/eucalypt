@@ -134,6 +134,81 @@ same-named internal helpers do not conflict.
 result: helper(42)
 ```
 
+Unit metadata keys:
+
+| Key | Value | Effect |
+|-----|-------|--------|
+| `import` | string or list | Import files/resources |
+| `requires` | semver string | Fail at load time if version doesn't match |
+| `prelude` | string path | Use an alternative prelude |
+| `doc` | string | Unit documentation |
+
+```eu,notest
+# Version pinning — checked at load time, before evaluation
+{ requires: ">=0.8"
+  import: "helpers.eu" }
+result: helper(42)
+
+# Alternative prelude
+{ prelude: "my-prelude.eu" }
+x: custom-fn(1)
+```
+
+**Trace metadata**: annotate declarations to trace entry arguments
+and/or exit values to stderr during evaluation:
+
+```eu,notest
+# Lazy entry trace — shows <thunk> for unevaluated args
+` :trace
+f(x, y): some-pipeline x y
+# stderr: → f(x: <thunk>, y: <thunk>)
+
+# Strict entry trace — forces args to WHNF before printing
+` { trace: :strict }
+f(x, y): some-pipeline x y
+# stderr: → f(x: 42, y: [1, 2, 3])
+
+# Entry + exit trace (lazy)
+` { trace: :exit }
+f(x, y): some-pipeline x y
+# stderr: → f(x: <thunk>, y: <thunk>)
+# stderr: ← f: <thunk>
+
+# Entry + exit trace (strict) — forces both args and result
+` { trace: :strict-exit }
+f(x, y): some-pipeline x y
+# stderr: → f(x: 42, y: [1, 2, 3])
+# stderr: ← f: 3
+```
+
+Trace output goes to stderr and does not affect the program's result.
+Lazy mode (`:trace`, `:exit`) never forces evaluation — it peeks at
+values that have already been evaluated. Strict mode (`:strict`,
+`:strict-exit`) forces arguments/results to WHNF, which changes
+evaluation order.
+
+**Deprecation metadata**: mark declarations as deprecated to generate
+compile-time warnings:
+
+```eu,notest
+# Bare deprecation
+` :deprecated
+old-fn(x): x + 1
+
+# With message
+` { deprecated: "use new-fn instead" }
+old-fn(x): x + 1
+
+# With replacement pointer (enables LSP quick-fix)
+` { deprecated: "use new-fn instead"
+    replaced-by: "new-fn" }
+old-fn(x): x + 1
+```
+
+Referencing a deprecated declaration emits a warning on stderr.
+Under `eu check --strict`, deprecation warnings become errors.
+Deprecated declarations still work — deprecation is advisory.
+
 **Type annotations** (optional, advisory): add `type:` alongside `doc:`
 to annotate declarations for the type checker (`eu check`):
 
@@ -609,6 +684,14 @@ Patterns: bare `foo` = `**.foo`; `*` = one level; `**` = any depth.
 { a: { x: 1 } b: { x: 2 } } deep-query("*.x") # [1, 2]
 ```
 
+#### `select(ks, b)` — sub-block with only listed keys
+
+```
+{ a: 1 b: 2 c: 3 } select([:a, :c])   # { a: 1 c: 3 }
+{ a: 1 b: 2 } select([])               # {}
+{ a: 1 b: 2 } select([:z])             # {}
+```
+
 ### 3.3 String Functions (str namespace)
 
 #### `str.split-on(re, s)` — split string on regex
@@ -1002,8 +1085,8 @@ The following are commonly assumed but are **not** in the prelude:
 - `unique` — does not exist in prelude
 - `even?` / `odd?` — do not exist (use `x % 2 = 0`)
 - `round` / `ceil` — use `floor` and `ceiling` (or bracket notation `⌊n⌋` and `⌈n⌉`)
-- `select` / `dissoc` — do not exist (use `filter-items` with
-  `by-key`)
+- `select(ks, b)` — **exists**: `{ a: 1, b: 2, c: 3 } select([:a, :c])` → `{ a: 1, c: 3 }`
+- `dissoc` — does not exist (use `filter-items` with `by-key`)
 
 These **do exist** and are commonly available:
 

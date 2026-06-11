@@ -9,7 +9,7 @@ All notable changes to eucalypt are documented here.
 - **Declaration trace metadata** — annotate declarations with `` ` :trace ``, `{ trace: :strict }`, `{ trace: :exit }`, or `{ trace: :strict-exit }` to trace entry arguments and/or exit values to stderr. Lazy mode peeks without forcing; strict mode forces arguments to WHNF before rendering
 - **Deprecation metadata** — mark declarations deprecated with `` ` :deprecated ``, `{ deprecated: "message" }`, and optionally `{ replaced-by: "new-fn" }`. Emits compile-time warnings visible in `eu check` and LSP; `--strict` mode treats them as errors
 - **Prelude selection mechanism** — units can specify an alternative prelude via `{ prelude: "path/to/alt.eu" }` metadata. The prelude type cache is keyed per selection
-- **`eu.requires` convention** — shipped library units (`lens.eu`, `state.eu`, `markup.eu`) now call `eu.requires(">=0.8")` as an exemplar for version pinning. Convention documented in the reference
+- **`requires` unit metadata** — units can declare a minimum version via `{ requires: ">=0.8" }` in their metadata block, checked at load time before evaluation. Replaces the `_ : eu.requires(...)` binding pattern. Shipped libraries updated to use the metadata form
 - **Stability policy** — published `docs/development/stability-policy.md` defining three tiers (Stable, Experimental, Not covered) and semver field meanings
 - **Conformance corpus** — `tests/conform/` directory with 20 conformance files and `.golden` sidecars pinning rendered output bytes across all export formats. Separate `conform_test.rs` runner with `BLESS=1` regeneration and unified diff on mismatch
 - **GC-verified CI job** — full harness under `EU_GC_VERIFY=2` + `EU_GC_STRESS=1` + `EU_GC_POISON=1` on x86-64
