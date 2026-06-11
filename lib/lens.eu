@@ -22,6 +22,8 @@ bracket syntax below for a more convenient way to define paths into data
 structures using lenses.
 "
 
+_ : eu.requires(">=0.8")
+
 ` { doc: "`at(key)` defines a lens that focuses within a block on the value with key `key`."
     type: "symbol → Lens({{..r}}, a)" }
 at(key, k): {

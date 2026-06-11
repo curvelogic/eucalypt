@@ -1187,3 +1187,36 @@ Output format: `▶ <repr>` or `▶ label: <repr>`.
 
 `▶` is intentionally prominent — the Unicode triangle is hard to overlook
 in a code review.
+
+## 10. Version Requirements
+
+**Declare a minimum eucalypt version at the top of any `.eu` file that depends
+on features introduced in a specific release.**
+
+```eu
+_ : eu.requires(">=0.8")
+```
+
+`eu.requires` takes a semver constraint string.  It returns `null` on success
+and raises `VersionRequirementFailed` on failure.  Because `eu.requires`
+returns `null` it must be assigned to `_` (a discard binding) — a bare
+expression at the top level cannot reference `eu` directly.
+
+### Constraint syntax
+
+Uses [semver constraint syntax](https://docs.rs/semver/latest/semver/#requirements):
+
+| Constraint | Meaning |
+|------------|---------|
+| `">=0.8"` | Version 0.8.0 or later |
+| `"^0.8"` | Compatible with 0.8 (i.e. 0.8.x) |
+| `">=0.8, <1.0"` | 0.8.x up to but not including 1.0 |
+
+### Convention
+
+- Every shipped library file (`lib/lens.eu`, `lib/state.eu`, `lib/markup.eu`)
+  uses `_ : eu.requires(">=0.8")` near the top.
+- Place the declaration after any unit-level metadata block or file-level doc
+  string, before the first binding definition.
+- Build metadata (`+N`) is ignored by the version check — `">=0.8"` matches
+  `0.8.0+1685`.
