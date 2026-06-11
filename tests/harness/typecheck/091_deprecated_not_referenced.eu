@@ -1,0 +1,6 @@
+` :deprecated
+old-fn(x): x + 1
+
+new-fn(x): x + 1
+
+result: new-fn(5)
