@@ -1763,6 +1763,11 @@ pub fn test_harness_162() {
 }
 
 #[test]
+pub fn test_harness_159() {
+    run_test(&opts("159_prelude_selection.eu"));
+}
+
+#[test]
 pub fn test_error_154() {
     run_error_test(&error_opts("154_internal_import_error.eu"));
 }

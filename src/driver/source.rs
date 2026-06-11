@@ -79,6 +79,9 @@ pub struct SourceLoader {
     args: Vec<String>,
     /// Seed for random number generation
     seed: Option<i64>,
+    /// Prelude override: set when a loaded unit specifies `prelude:` metadata.
+    /// The `Input` replaces the default `Resource("prelude")` in the inputs list.
+    prelude_override: Option<Input>,
     /// Cross-unit compilation interface.
     ///
     /// Carries monad registries, operator metadata, and type schemes forward
@@ -102,6 +105,7 @@ impl Default for SourceLoader {
             lib_path: Vec::new(),
             args: Vec::new(),
             seed: None,
+            prelude_override: None,
             unit_interface: UnitInterface::default(),
         }
     }
@@ -123,6 +127,7 @@ impl SourceLoader {
             lib_path,
             args: Vec::new(),
             seed: None,
+            prelude_override: None,
             unit_interface: UnitInterface::default(),
         }
     }
@@ -288,6 +293,70 @@ impl SourceLoader {
             return path.parent().map(|p| p.to_path_buf());
         }
         None
+    }
+
+    /// Return the prelude override `Input` if one was set.
+    pub fn prelude_override(&self) -> Option<&Input> {
+        self.prelude_override.as_ref()
+    }
+
+    /// Read the `prelude:` key from the **first eucalypt unit file** in `inputs`.
+    ///
+    /// Only the first `.eu` file in the explicit inputs list is inspected.
+    /// Subsequent files' `prelude:` keys are intentionally ignored, which
+    /// prevents the test harness's validate phase (which re-imports the test
+    /// subject as a secondary input) from triggering a prelude override.
+    ///
+    /// If found, sets the prelude override and eagerly loads the alternative
+    /// prelude so it is ready for translate/merge.
+    pub fn detect_and_load_prelude_override(
+        &mut self,
+        inputs: &[Input],
+    ) -> Result<(), EucalyptError> {
+        // Scan explicit inputs for the first `.eu` filesystem file that carries a
+        // `prelude:` metadata key.  Scanning all inputs (not just the first) means
+        // the test harness validate phase can also pick up the override from the
+        // test subject even when the first explicit input is non-`.eu` data (e.g.
+        // `evidence.yaml`).
+        for input in inputs {
+            // Only act on user `.eu` filesystem files.
+            if !matches!(input.locator(), Locator::Fs(_) | Locator::Buffer { .. })
+                || input.format() != "eu"
+            {
+                continue;
+            }
+
+            // Parse the file's source and look for a `prelude:` key.
+            let source = match input.locator() {
+                Locator::Fs(path) => self.read_fs_input(path).ok(),
+                _ => None,
+            };
+            let Some(source) = source else {
+                continue;
+            };
+
+            let parse_result = crate::syntax::rowan::parse_unit(&source);
+            let unit = parse_result.tree();
+            let parsed = ParsedAst::Unit(unit);
+            let Some(prelude_ref) = read_prelude_from_ast(&parsed) else {
+                continue;
+            };
+
+            let prelude_input = prelude_ref_to_input(&prelude_ref);
+
+            // Verify the resource exists (gives a clear error for :nonexistent).
+            if let Locator::Resource(name) = prelude_input.locator() {
+                if self.resources.get(name).is_none() {
+                    return Err(EucalyptError::UnknownResource(name.clone()));
+                }
+            }
+
+            self.prelude_override = Some(prelude_input.clone());
+            // Load the alternative prelude now so it is ready for translate/merge.
+            self.load(&prelude_input)?;
+            return Ok(());
+        }
+        Ok(())
     }
 
     /// Load and parse the source from a source specified by locator
@@ -659,6 +728,73 @@ impl SourceLoader {
                 .expect("failed to write diagnostic to buffer");
         }
         String::from_utf8_lossy(&s).into_owned()
+    }
+}
+
+/// Read the `prelude:` value from the top-level unit metadata block.
+///
+/// Returns the raw string value (symbol name or file path) if found.
+/// Only inspects `ParsedAst::Unit` — CLI Soup expressions cannot specify
+/// a prelude override.
+#[cfg(not(target_arch = "wasm32"))]
+fn read_prelude_from_ast(ast: &ParsedAst) -> Option<String> {
+    use crate::syntax::rowan::ast::{AstToken, DeclarationKind, Element, HasSoup};
+
+    let unit = match ast {
+        ParsedAst::Unit(u) => u,
+        ParsedAst::Soup(_) => return None,
+    };
+
+    let meta = unit.meta()?;
+    let soup = meta.soup()?;
+
+    for element in soup.elements() {
+        if let Element::Block(block) = element {
+            for decl in block.declarations() {
+                let head = decl.head()?;
+                if let DeclarationKind::Property(prop) = head.classify_declaration() {
+                    if prop.text() == "prelude" {
+                        if let Some(body) = decl.body() {
+                            if let Some(body_soup) = body.soup() {
+                                for body_elem in body_soup.elements() {
+                                    if let Element::Lit(lit) = body_elem {
+                                        if let Some(val) = lit.value() {
+                                            // Accept both string literals and symbol literals
+                                            if let Some(s) = val.string_value() {
+                                                return Some(s.to_string());
+                                            }
+                                            if let Some(s) = val.symbol_name() {
+                                                return Some(s.to_string());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Convert a prelude reference string into an `Input`.
+///
+/// - If the string is a valid filesystem path (contains `/` or ends with `.eu`), use `Locator::Fs`.
+/// - Otherwise treat it as a resource name, using `Locator::Resource`.
+#[cfg(not(target_arch = "wasm32"))]
+fn prelude_ref_to_input(prelude_ref: &str) -> Input {
+    use std::path::PathBuf;
+
+    // Use filesystem path if it looks like a path (contains a directory separator
+    // or file extension).  Plain names like "v2" are treated as resource names.
+    let is_path =
+        prelude_ref.contains('/') || prelude_ref.contains('\\') || prelude_ref.ends_with(".eu");
+    if is_path {
+        Input::new(Locator::Fs(PathBuf::from(prelude_ref)), None, "eu")
+    } else {
+        Input::new(Locator::Resource(prelude_ref.to_string()), None, "eu")
     }
 }
 

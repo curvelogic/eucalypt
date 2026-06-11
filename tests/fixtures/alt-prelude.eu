@@ -1,0 +1,6 @@
+# Minimal alternative prelude for testing prelude selection.
+# Extends the standard prelude so that test.eu validation functions remain
+# available when this prelude is active during the validate phase.
+{ import: "[prelude]" }
+
+alt-hello: "hello from alt-prelude"

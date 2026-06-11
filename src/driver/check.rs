@@ -13,9 +13,10 @@
 //!
 //! Type issues are always warnings unless `--strict` is passed.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::Mutex;
 use std::time::Instant;
 
 use crate::core::typecheck::{
@@ -36,40 +37,52 @@ use rowan::ast::AstNode;
 
 // ── Prelude interface cache (§B7) ────────────────────────────────────────────
 
-/// In-memory cache for the prelude's compiled `UnitInterface`.
+/// In-memory cache for compiled `UnitInterface`s, keyed by prelude identifier.
 ///
-/// The prelude is embedded in the binary and fixed for a given build, so
-/// the cache is effectively constant per process.  It is populated on the
-/// first check call and reused for every subsequent file.
-static PRELUDE_CACHE: OnceLock<UnitInterface> = OnceLock::new();
+/// The key is the prelude resource name (e.g. `"prelude"`) or file path.
+/// Multiple entries allow different preludes to coexist without cache corruption
+/// when files in the same invocation select different preludes.
+static PRELUDE_CACHE: Mutex<Option<HashMap<String, UnitInterface>>> = Mutex::new(None);
 
-/// Return a reference to the cached prelude `UnitInterface`, building it on
-/// first call.
+/// Return a cached (or freshly built) `UnitInterface` for the given prelude key.
 ///
-/// Runs the prelude through load → translate → cook (no eliminate) once,
+/// Runs the prelude through load → translate → cook (no eliminate) once per key,
 /// then calls `type_check_for_prelude` to capture the root scope.
-/// All subsequent calls return the cached value immediately.
-fn get_or_build_prelude_interface() -> Option<&'static UnitInterface> {
-    if let Some(cached) = PRELUDE_CACHE.get() {
-        return Some(cached);
+/// Subsequent calls with the same key return the cached value immediately.
+fn get_or_build_prelude_interface_for(prelude_key: &str) -> Option<UnitInterface> {
+    {
+        let guard = PRELUDE_CACHE.lock().ok()?;
+        if let Some(ref map) = *guard {
+            if let Some(ui) = map.get(prelude_key) {
+                return Some(ui.clone());
+            }
+        }
     }
 
-    let ui = build_prelude_interface().ok()?;
-    // OnceLock::get_or_init would race; use set to avoid re-computing when
-    // two threads initialise simultaneously.  If set fails the other thread
-    // already won — just return what was stored.
-    let _ = PRELUDE_CACHE.set(ui);
-    PRELUDE_CACHE.get()
+    let ui = build_prelude_interface_for(prelude_key).ok()?;
+    let mut guard = PRELUDE_CACHE.lock().ok()?;
+    let map = guard.get_or_insert_with(HashMap::new);
+    map.entry(prelude_key.to_string())
+        .or_insert(ui)
+        .clone()
+        .into()
 }
 
-/// Build the prelude `UnitInterface` by running the prelude through the pipeline.
+/// Build the `UnitInterface` for a given prelude key.
 ///
-/// Loads the prelude resource, translates, merges, extracts operators (once,
-/// before cook), and cooks it (no eliminate step — every prelude binding must
-/// be retained for caching), then runs `type_check_for_prelude` to capture
+/// `prelude_key` is a resource name (e.g. `"prelude"`) or a filesystem path.
+/// Loads the prelude, translates, merges, extracts operators (once, before
+/// cook), and cooks it (no eliminate step — every prelude binding must be
+/// retained for caching), then runs `type_check_for_prelude` to capture
 /// binding type schemes, aliases, and branch shapes.
-fn build_prelude_interface() -> Result<UnitInterface, EucalyptError> {
-    let prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
+fn build_prelude_interface_for(prelude_key: &str) -> Result<UnitInterface, EucalyptError> {
+    use std::path::PathBuf;
+    let locator = if prelude_key.contains('/') || prelude_key.ends_with(".eu") {
+        Locator::Fs(PathBuf::from(prelude_key))
+    } else {
+        Locator::Resource(prelude_key.to_string())
+    };
+    let prelude = Input::new(locator, None, "eu");
     let inputs = vec![prelude];
 
     let mut loader = SourceLoader::new(vec![]);
@@ -264,8 +277,8 @@ pub fn type_check_path_full(path: &Path) -> PathCheckResult {
     };
 
     // ── Attempt prelude-cached check (fast path) ──────────────────────────
-    if let Some(ui) = get_or_build_prelude_interface() {
-        return type_check_path_with_seed(path, ui, pipeline_error);
+    if let Some(ui) = get_or_build_prelude_interface_for("prelude") {
+        return type_check_path_with_seed(path, &ui, pipeline_error);
     }
 
     // ── Fallback: merged pipeline (prelude cache could not be built) ───────
