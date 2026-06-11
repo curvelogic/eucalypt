@@ -1,7 +1,5 @@
-"Facilities for working with hiccup style markup representations that
-encode XML, HTML etc."
-
-_ : eu.requires(">=0.8")
+{ requires: ">=0.8"
+  doc: "Facilities for working with hiccup style markup representations that encode XML, HTML etc." }
 
 # Normalise
 

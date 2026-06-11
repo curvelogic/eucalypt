@@ -1,28 +1,5 @@
-" Lenses in Eucalypt - highly experimental and subject to change.
-
-A lens in eucalypt is a function (b -> fb) -> (a -> fa)
-where the (b -> fb) is decorated with fmap metadata and which propagates
-the :fmap metadata to the (a -> fa) function too.
-
-- (b -> fb) is a function which will be applied to the selected data
-- (a -> fa) is a function which can replace the selected data with a new value
-
-Without typeclasses (or indeed any static typing whatsover) we fall back to metadata
-to select the get vs set behaviour of the lens (a selection which in Haskell is
-determined by the Const or Identity functors).
-
-This is complex but the following examples show how to define such a
-lens entirely manually.
-
-The standard lens functions: `view` and `over` are also defined below,
-and the examples show how to use them with the manually defined lenses.
-
-Lenses may be chained into paths using standard composition, but see the
-bracket syntax below for a more convenient way to define paths into data
-structures using lenses.
-"
-
-_ : eu.requires(">=0.8")
+{ requires: ">=0.8"
+  doc: "Lenses in Eucalypt - highly experimental and subject to change." }
 
 ` { doc: "`at(key)` defines a lens that focuses within a block on the value with key `key`."
     type: "symbol → Lens({{..r}}, a)" }

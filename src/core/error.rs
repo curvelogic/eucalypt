@@ -81,6 +81,10 @@ pub enum CoreError {
     /// flagged — that is legitimate lazy / fixpoint usage.
     #[error("binding '{1}' refers to itself — this will always diverge")]
     TrivialSelfAssignment(Smid, String),
+    #[error("eucalypt version {1} does not satisfy requires: \"{2}\"")]
+    VersionRequirementFailed(Smid, String, String),
+    #[error("invalid version constraint in requires: \"{1}\": {2}")]
+    InvalidVersionConstraint(Smid, String, String),
 }
 
 impl HasSmid for CoreError {
@@ -101,6 +105,8 @@ impl HasSmid for CoreError {
             InvalidStringInterpolation(s) => s,
             InternalCompilerError(s, _) => s,
             TrivialSelfAssignment(s, _) => s,
+            VersionRequirementFailed(s, _, _) => s,
+            InvalidVersionConstraint(s, _, _) => s,
             _ => Smid::default(),
         }
     }
@@ -176,6 +182,12 @@ impl CoreError {
                 source_map.diagnostic(self).with_notes(vec![
                     format!("the binding `{name}: {name}` (or `{name}: {name}(…)`) always loops"),
                     "if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`".to_string(),
+                ])
+            }
+            CoreError::VersionRequirementFailed(_, version, constraint) => {
+                source_map.diagnostic(self).with_notes(vec![
+                    format!("this file requires eucalypt {constraint} but the current version is {version}"),
+                    "update the eucalypt binary, or relax the requires: constraint".to_string(),
                 ])
             }
             _ => source_map.diagnostic(self),

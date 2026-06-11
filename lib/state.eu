@@ -1,7 +1,6 @@
 { import: "resource:lens"
+  requires: ">=0.8"
   doc: "State monad for Eucalypt. Each state action is a function from state to a value/state block. Use state.run(action, initial) to execute a computation and state.exec / state.eval to extract just the final state or final value." }
-
-_ : eu.requires(">=0.8")
 
 # ─── Primitive bind / return ────────────────────────────────────────────────
 

@@ -174,6 +174,7 @@ pub fn strip_desugar_phase_metadata(expr: &RcExpr) -> RcExpr {
                             | "parse-embed"
                             | "trace"
                             | "prelude"
+                            | "requires"
                             | "deprecated"
                             | "replaced-by"
                     )
@@ -265,6 +266,8 @@ pub struct DesugarPhaseBlockMetadata {
     pub parse_embed: Option<String>,
     /// Prelude selection: symbol `:name` → resource name, string → file path
     pub prelude: Option<String>,
+    /// Version constraint: semver range string (e.g. ">=0.8")
+    pub requires: Option<String>,
 }
 
 impl ReadMetadata<DesugarPhaseBlockMetadata> for RcExpr {
@@ -279,6 +282,7 @@ impl ReadMetadata<DesugarPhaseBlockMetadata> for RcExpr {
                 doc: imap.get("doc").and_then(|e| e.extract()),
                 parse_embed: imap.get("parse-embed").and_then(|e| e.extract()),
                 prelude: imap.get("prelude").and_then(|e| e.extract()),
+                requires: imap.get("requires").and_then(|e| e.extract()),
             }),
             Expr::Let(_, _, _) => {
                 self.inner = self.clone().instantiate_lets().inner;

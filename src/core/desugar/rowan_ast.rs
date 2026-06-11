@@ -2906,6 +2906,23 @@ impl Desugarable for rowan_ast::Unit {
             None => DesugarPhaseBlockMetadata::default(),
         };
 
+        // Check version constraint
+        if let Some(ref constraint_str) = unit_meta.requires {
+            let smid = metadata.as_ref().map_or(Smid::default(), |m| m.smid());
+            let req = semver::VersionReq::parse(constraint_str).map_err(|e| {
+                CoreError::InvalidVersionConstraint(smid, constraint_str.clone(), e.to_string())
+            })?;
+            let version_str = env!("CARGO_PKG_VERSION");
+            let version = semver::Version::parse(version_str).expect("valid CARGO_PKG_VERSION");
+            if !req.matches(&version) {
+                return Err(CoreError::VersionRequirementFailed(
+                    smid,
+                    version.to_string(),
+                    constraint_str.clone(),
+                ));
+            }
+        }
+
         // Handle imports
         let mut imports = Vec::new();
         if let Some(inputs) = unit_meta.imports {
