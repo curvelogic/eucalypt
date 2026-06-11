@@ -7,7 +7,9 @@ use crate::driver::source::ParsedAst;
 use crate::driver::source::SourceLoader;
 use crate::syntax::export::embed::Embed;
 use crate::syntax::export::pretty::express;
+use crate::syntax::rowan::kind::SyntaxNode;
 use crate::{common::prettify::prettify, core::export};
+use rowan::ast::AstNode;
 use std::time::Instant;
 
 use super::statistics::Timings;
@@ -218,6 +220,36 @@ pub fn prepare(
     Ok(Command::Continue)
 }
 
+/// Recursively print a Rowan SyntaxNode tree with indentation.
+///
+/// Interior nodes show their kind and text range.
+/// Leaf tokens show their kind, text range, and quoted text content.
+fn print_syntax_tree(node: &SyntaxNode, indent: usize) {
+    let pad = "  ".repeat(indent);
+    let range = node.text_range();
+    println!(
+        "{pad}{:?} {}..{}",
+        node.kind(),
+        u32::from(range.start()),
+        u32::from(range.end())
+    );
+    for child in node.children_with_tokens() {
+        match child {
+            rowan::NodeOrToken::Node(n) => print_syntax_tree(&n, indent + 1),
+            rowan::NodeOrToken::Token(t) => {
+                let tr = t.text_range();
+                println!(
+                    "{pad}  {:?} {}..{} {:?}",
+                    t.kind(),
+                    u32::from(tr.start()),
+                    u32::from(tr.end()),
+                    t.text()
+                );
+            }
+        }
+    }
+}
+
 /// Dump AST expression using whatever format specified by options
 fn dump_ast(ast: &ParsedAst, opt: &EucalyptOptions) {
     if opt.quote_embed() {
@@ -234,16 +266,11 @@ fn dump_ast(ast: &ParsedAst, opt: &EucalyptOptions) {
     } else if opt.quote_debug() {
         println!("{ast:#?}");
     } else {
-        match ast {
-            ParsedAst::Unit(unit) => {
-                let embedded = unit.embed();
-                println!("{}\n", express(&embedded));
-            }
-            ParsedAst::Soup(soup) => {
-                let embedded = soup.embed();
-                println!("{}\n", express(&embedded));
-            }
-        }
+        let node = match ast {
+            ParsedAst::Unit(unit) => unit.syntax().clone(),
+            ParsedAst::Soup(soup) => soup.syntax().clone(),
+        };
+        print_syntax_tree(&node, 0);
     }
 }
 
