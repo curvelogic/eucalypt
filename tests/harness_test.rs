@@ -2329,3 +2329,23 @@ pub fn test_typecheck_086_user_monad_with_monad_meta() {
 pub fn test_typecheck_087_for_wrong_element_type() {
     run_typecheck_test("087_for_wrong_element_type.eu");
 }
+
+#[test]
+pub fn test_typecheck_088_deprecated_bare() {
+    run_typecheck_test("088_deprecated_bare.eu");
+}
+
+#[test]
+pub fn test_typecheck_089_deprecated_with_message() {
+    run_typecheck_test("089_deprecated_with_message.eu");
+}
+
+#[test]
+pub fn test_typecheck_090_deprecated_with_replacement() {
+    run_typecheck_test("090_deprecated_with_replacement.eu");
+}
+
+#[test]
+pub fn test_typecheck_091_deprecated_not_referenced() {
+    run_typecheck_test("091_deprecated_not_referenced.eu");
+}

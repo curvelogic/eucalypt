@@ -6,6 +6,18 @@ use crate::core::error::*;
 use crate::core::expr::*;
 use crate::syntax::input::*;
 
+/// Deprecation specification for a declaration.
+///
+/// Collected during desugaring and used during binding verification to
+/// emit warnings when a deprecated declaration is referenced.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DeprecationSpec {
+    /// Optional human-readable deprecation message.
+    pub message: Option<String>,
+    /// Optional name of the replacement declaration.
+    pub replacement: Option<String>,
+}
+
 /// Read typed metadata out of core expressions, mutating to persist
 /// any evaluations or transformations made along the way.
 pub trait ReadMetadata<M> {
@@ -40,6 +52,39 @@ fn extract_trace_spec(expr: &RcExpr) -> Option<TraceSpec> {
         "strict-exit" => Some(TraceSpec::StrictExit),
         _ => None,
     })
+}
+
+/// Extract a `DeprecationSpec` from a metadata block map.
+///
+/// Recognises the following patterns:
+/// - `{ deprecated: true }` — bare deprecation with no message
+/// - `{ deprecated: "message" }` — deprecation with an explanation
+/// - `{ replaced-by: "new-fn" }` — pointer to replacement (implies deprecated)
+///
+/// Returns `None` if neither `deprecated` nor `replaced-by` keys are present.
+fn extract_deprecation_spec(imap: &BlockMap<RcExpr>) -> Option<DeprecationSpec> {
+    let deprecated_val = imap.get("deprecated");
+    let replaced_by: Option<String> = imap.get("replaced-by").and_then(|e| e.extract());
+
+    match deprecated_val {
+        Some(e) => {
+            // `deprecated: "message"` — string value is the message
+            // `deprecated: true` — bool true means no message
+            let message: Option<String> = (e as &dyn Extract<String>).extract();
+            Some(DeprecationSpec {
+                message,
+                replacement: replaced_by,
+            })
+        }
+        None if replaced_by.is_some() => {
+            // `replaced-by:` alone implies deprecated
+            Some(DeprecationSpec {
+                message: None,
+                replacement: replaced_by,
+            })
+        }
+        None => None,
+    }
 }
 
 /// Extract a function name from a metadata value.
@@ -79,6 +124,12 @@ pub fn normalise_metadata(expr: &RcExpr, decl_name: Option<&str>) -> RcExpr {
                 "trace" => core::block(
                     *smid,
                     [("trace".to_string(), core::sym(*smid, "lazy"))]
+                        .iter()
+                        .cloned(),
+                ),
+                "deprecated" => core::block(
+                    *smid,
+                    [("deprecated".to_string(), core::bool_(*smid, true))]
                         .iter()
                         .cloned(),
                 ),
@@ -123,6 +174,8 @@ pub fn strip_desugar_phase_metadata(expr: &RcExpr) -> RcExpr {
                             | "parse-embed"
                             | "trace"
                             | "prelude"
+                            | "deprecated"
+                            | "replaced-by"
                     )
                 })
                 .map(|(k, v)| (k.clone(), v.clone()))
@@ -162,6 +215,8 @@ pub struct DesugarPhaseDeclarationMetadata {
     pub embedding: Option<String>,
     /// Trace specification — controls entry/exit tracing of this declaration.
     pub trace: Option<TraceSpec>,
+    /// Deprecation specification — marks this declaration as deprecated.
+    pub deprecated: Option<DeprecationSpec>,
 }
 
 /// Public wrapper for extract_function_name for use in other modules.
@@ -185,6 +240,7 @@ impl ReadMetadata<DesugarPhaseDeclarationMetadata> for RcExpr {
                 doc: imap.get("doc").and_then(|e| e.extract()),
                 embedding: imap.get("embedding").and_then(|e| e.extract()),
                 trace: imap.get("trace").and_then(extract_trace_spec),
+                deprecated: extract_deprecation_spec(imap),
             }),
             Expr::Let(_, _, _) => {
                 self.inner = self.clone().instantiate_lets().inner;

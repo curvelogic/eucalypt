@@ -6,8 +6,8 @@ use crate::{
         sourcemap::{Smid, SourceMap},
     },
     core::{
-        binding::Var, doc::DeclarationDocumentation, error::CoreError, expr::*, target::*,
-        unit::TranslationUnit,
+        binding::Var, doc::DeclarationDocumentation, error::CoreError, expr::*,
+        metadata::DeprecationSpec, target::*, unit::TranslationUnit,
     },
     syntax::input::*,
 };
@@ -46,6 +46,10 @@ pub struct Desugarer<'smap> {
     imported_targets: HashSet<Target>,
     /// Doc strings discovered (path, doc)
     docs: Vec<DeclarationDocumentation>,
+    /// Deprecated declarations discovered during desugaring.
+    ///
+    /// Maps fully-qualified declaration name to its deprecation spec.
+    deprecations: HashMap<String, DeprecationSpec>,
     /// Stack of names
     stack: Vec<String>,
     /// All parsed content for translation
@@ -118,6 +122,7 @@ impl<'smap> Desugarer<'smap> {
             targets: HashSet::new(),
             imported_targets: HashSet::new(),
             docs: Vec::new(),
+            deprecations: HashMap::new(),
             stack: vec![],
             contents,
             source_map,
@@ -229,6 +234,7 @@ impl<'smap> Desugarer<'smap> {
                 targets: self.targets.clone(),
                 own_targets,
                 docs: self.docs.clone(),
+                deprecations: self.deprecations.clone(),
             };
             self.file.pop();
             Ok(unit)
@@ -487,5 +493,13 @@ impl<'smap> Desugarer<'smap> {
             path: self.stack.iter().map(String::clone).collect(),
             doc,
         });
+    }
+
+    /// Record a deprecated declaration discovered during desugaring.
+    ///
+    /// Deprecation warnings match on the leaf declaration name; the stack
+    /// tracks nesting context but is not included in the deprecation key.
+    pub fn record_deprecation(&mut self, name: &str, spec: DeprecationSpec) {
+        self.deprecations.insert(name.to_string(), spec);
     }
 }

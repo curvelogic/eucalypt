@@ -26,6 +26,7 @@ use crate::core::typecheck::{
     },
     parse,
 };
+use crate::core::verify::deprecation::check_deprecated_references;
 use crate::driver::error::EucalyptError;
 use crate::driver::options::EucalyptOptions;
 use crate::driver::source::SourceLoader;
@@ -359,8 +360,11 @@ fn type_check_path_with_seed(
         return pipeline_error("eliminate", &e);
     }
 
+    let deprecation_warnings =
+        check_deprecated_references(&loader.core().expr, &loader.core().deprecations);
     let core_expr = loader.core().expr.clone();
-    let warnings = type_check_with_seed(&core_expr, &ui.type_summary);
+    let mut warnings = type_check_with_seed(&core_expr, &ui.type_summary);
+    warnings.extend(deprecation_warnings);
     let (_, source_map, _) = loader.complete();
     PathCheckResult {
         warnings,
@@ -401,8 +405,11 @@ fn type_check_path_merged(
         return pipeline_error("eliminate", &e);
     }
 
+    let deprecation_warnings =
+        check_deprecated_references(&loader.core().expr, &loader.core().deprecations);
     let core_expr = loader.core().expr.clone();
-    let result = type_check_full(&core_expr);
+    let mut result = type_check_full(&core_expr);
+    result.warnings.extend(deprecation_warnings);
     let (_, source_map, _) = loader.complete();
     PathCheckResult {
         warnings: result.warnings,
@@ -468,13 +475,18 @@ fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eucaly
     // Eliminate dead bindings.
     loader.eliminate()?;
 
+    // Run the deprecation reference checker before cook strips metadata.
+    let deprecation_warnings =
+        check_deprecated_references(&loader.core().expr, &loader.core().deprecations);
+
     // Run the type checker, seeded with the pre-cook operator overloads.
     let core_expr = loader.core().expr.clone();
-    let warnings = if operator_overloads.is_empty() {
+    let mut warnings = if operator_overloads.is_empty() {
         type_check(&core_expr)
     } else {
         type_check_with_operator_overloads(&core_expr, operator_overloads)
     };
+    warnings.extend(deprecation_warnings);
     let (files, source_map, _) = loader.complete();
     Ok(PipelineCheckResult {
         warnings,

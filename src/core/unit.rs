@@ -2,10 +2,11 @@
 use crate::core::doc::DeclarationDocumentation;
 use crate::core::error::CoreError;
 use crate::core::expr::RcExpr;
+use crate::core::metadata::DeprecationSpec;
 use crate::core::target::Target;
 use crate::syntax::export::embed::Embed;
 use crate::syntax::export::pretty;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::expr::acore;
 
@@ -27,6 +28,12 @@ pub struct TranslationUnit {
     pub own_targets: HashSet<Target>,
     /// Doc strings read from the unit
     pub docs: Vec<DeclarationDocumentation>,
+    /// Deprecated declarations discovered during desugaring.
+    ///
+    /// Maps declaration name to its deprecation spec.  Used during
+    /// binding verification to emit warnings when a deprecated
+    /// declaration is referenced.
+    pub deprecations: HashMap<String, DeprecationSpec>,
 }
 
 impl TranslationUnit {
@@ -43,6 +50,8 @@ impl TranslationUnit {
     /// Merge units (with bindings in self empowered to capture
     /// variables in other).)
     pub fn merge_with(self, other: Self) -> Result<TranslationUnit, CoreError> {
+        let mut deprecations = self.deprecations;
+        deprecations.extend(other.deprecations);
         Ok(TranslationUnit {
             expr: self.expr.merge_in(other.expr)?,
             targets: self.targets.union(&other.targets).cloned().collect(),
@@ -52,6 +61,7 @@ impl TranslationUnit {
                 .cloned()
                 .collect(),
             docs: other.docs, // don't include docs from prior inputs
+            deprecations,
         })
     }
 
@@ -79,6 +89,7 @@ impl TranslationUnit {
         let mut targets = HashSet::new();
         let mut own_targets = HashSet::new();
         let mut docs = vec![];
+        let mut deprecations = HashMap::new();
         let mut entries = vec![];
 
         for (k, u) in keys.iter().zip(units) {
@@ -86,6 +97,7 @@ impl TranslationUnit {
             targets.extend(u.targets.iter().map(|t| t.under(key)));
             own_targets.extend(u.own_targets.iter().map(|t| t.under(key)));
             docs.extend(u.docs.iter().map(|d| d.under(key)));
+            deprecations.extend(u.deprecations.clone());
             entries.push((key.to_string(), u.expr.clone()));
         }
 
@@ -94,6 +106,7 @@ impl TranslationUnit {
             targets,
             own_targets,
             docs,
+            deprecations,
         })
     }
 
@@ -133,7 +146,8 @@ impl TranslationUnit {
             expr: self.expr.clone().rebody(body),
             targets: self.targets.clone(),
             own_targets: self.own_targets.clone(),
-            docs: self.docs.clone(), // don't include docs from prior inputs
+            docs: self.docs.clone(),
+            deprecations: self.deprecations.clone(),
         })
     }
 }

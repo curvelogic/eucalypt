@@ -208,18 +208,21 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
         targets: HashSet::new(),
         own_targets: HashSet::new(),
         docs: Vec::new(),
+        deprecations: HashMap::new(),
     };
     let io_unit = TranslationUnit {
         expr: create_io_pseudoblock(None).apply_name(Smid::default(), "__io"),
         targets: HashSet::new(),
         own_targets: HashSet::new(),
         docs: Vec::new(),
+        deprecations: HashMap::new(),
     };
     let build_unit = TranslationUnit {
         expr: build_meta_core.apply_name(Smid::default(), "__build"),
         targets: HashSet::new(),
         own_targets: HashSet::new(),
         docs: Vec::new(),
+        deprecations: HashMap::new(),
     };
 
     // 7. Merge all units

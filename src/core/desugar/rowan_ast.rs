@@ -2557,6 +2557,11 @@ fn rowan_declaration_to_binding(
         }
     }
 
+    // Handle deprecation metadata
+    if let Some(spec) = metadata.deprecated {
+        desugarer.record_deprecation(&components.name, spec);
+    }
+
     // Handle target metadata
     if let Some(target) = &metadata.target {
         desugarer.record_target(
