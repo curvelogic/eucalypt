@@ -2349,3 +2349,18 @@ pub fn test_typecheck_090_deprecated_with_replacement() {
 pub fn test_typecheck_091_deprecated_not_referenced() {
     run_typecheck_test("091_deprecated_not_referenced.eu");
 }
+
+#[test]
+pub fn test_typecheck_092_self_assign_direct() {
+    run_typecheck_test("092_self_assign_direct.eu");
+}
+
+#[test]
+pub fn test_typecheck_093_self_assign_function_pos() {
+    run_typecheck_test("093_self_assign_function_pos.eu");
+}
+
+#[test]
+pub fn test_typecheck_094_self_assign_arg_pos_ok() {
+    run_typecheck_test("094_self_assign_arg_pos_ok.eu");
+}

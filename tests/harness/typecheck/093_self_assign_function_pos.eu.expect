@@ -1,0 +1,2 @@
+exit: 1
+stderr: "binding 'f' refers to itself"
