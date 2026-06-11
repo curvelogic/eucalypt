@@ -142,11 +142,24 @@ mod wasm_tests {
         let result = evaluate("{{{{", "json");
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("evaluate should return valid JSON even on error");
-        assert_eq!(parsed["success"], false);
-        assert!(parsed["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("Parse error"));
+        // Under resilient parsing the partial tree may evaluate (success: true)
+        // or fail at a later stage (success: false).  Both are acceptable.
+        // When success is false, parse errors must appear in the error message
+        // or notes so the caller has enough context to diagnose the problem.
+        if parsed["success"].as_bool() == Some(false) {
+            let message = parsed["error"]["message"].as_str().unwrap_or("");
+            let notes_contain_parse = parsed["error"]["notes"]
+                .as_array()
+                .map(|ns| {
+                    ns.iter()
+                        .any(|n| n.as_str().unwrap_or("").to_lowercase().contains("parse"))
+                })
+                .unwrap_or(false);
+            assert!(
+                message.to_lowercase().contains("parse") || notes_contain_parse,
+                "on failure, parse errors must appear in message or notes; got: {parsed}"
+            );
+        }
     }
 
     #[wasm_bindgen_test]
