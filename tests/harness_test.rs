@@ -2351,16 +2351,16 @@ pub fn test_typecheck_091_deprecated_not_referenced() {
 }
 
 #[test]
-pub fn test_typecheck_092_self_assign_direct() {
-    run_typecheck_test("092_self_assign_direct.eu");
+pub fn test_error_158() {
+    run_error_test(&error_opts("158_self_assign_direct.eu"));
 }
 
 #[test]
-pub fn test_typecheck_093_self_assign_function_pos() {
-    run_typecheck_test("093_self_assign_function_pos.eu");
+pub fn test_error_159() {
+    run_error_test(&error_opts("159_self_assign_function_pos.eu"));
 }
 
 #[test]
-pub fn test_typecheck_094_self_assign_arg_pos_ok() {
-    run_typecheck_test("094_self_assign_arg_pos_ok.eu");
+pub fn test_typecheck_092_self_assign_arg_pos_ok() {
+    run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }
