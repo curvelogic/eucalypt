@@ -481,6 +481,7 @@ impl MachineState {
                 self.return_data(view, *tag, args.as_slice())?;
             }
             HeapSyn::App { callable, args } => {
+                let suppress_update = std::mem::replace(&mut self.suppress_next_update, false);
                 let array = view.create_arg_array(args.as_slice(), environment)?;
                 self.push(
                     view,
@@ -489,7 +490,35 @@ impl MachineState {
                         annotation: self.annotation,
                     },
                 )?;
-                self.closure = self.nav(view).resolve_callable(callable)?;
+                // Mirror the black-holing logic from the Atom handler: when the
+                // callable is a local ref to an updateable thunk, overwrite the
+                // env slot with a BlackHole before entering the thunk body.
+                // Without this, `{ f: f(x) }` bypasses black-holing because the
+                // App handler resolves the callable directly from the env without
+                // ever going through the Atom{Ref::L} branch.
+                if let Ref::L(i) = callable {
+                    let callee = self.nav(view).get(*i)?;
+                    let is_thunk = callee.update();
+                    let updateable = is_thunk && !suppress_update;
+                    if updateable {
+                        let hole = view.alloc(HeapSyn::BlackHole)?;
+                        let black_hole = SynClosure::new(hole.as_ptr(), environment);
+                        let cont_env = view.scoped(environment);
+                        cont_env.update(&view, *i, black_hole)?;
+                        self.push(
+                            view,
+                            Continuation::Update {
+                                environment,
+                                index: *i,
+                            },
+                        )?;
+                        self.closure = callee;
+                    } else {
+                        self.closure = self.nav(view).resolve_callable(callable)?;
+                    }
+                } else {
+                    self.closure = self.nav(view).resolve_callable(callable)?;
+                }
             }
             HeapSyn::Bif { intrinsic, args } => {
                 // Defer BIF execution to Machine::step() so that the full
