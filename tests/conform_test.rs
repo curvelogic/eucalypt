@@ -35,6 +35,7 @@ fn assert_conform(eu_file: &Path) -> Result<(), String> {
     let bless = std::env::var("BLESS").as_deref() == Ok("1");
 
     let actual = run_eu_conform(eu_file)
+        .map(|s| s.replace("\r\n", "\n"))
         .map_err(|e| format!("{}: eu invocation failed — {e}", eu_file.display()))?;
 
     if bless {
