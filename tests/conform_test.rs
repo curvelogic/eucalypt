@@ -53,7 +53,8 @@ fn assert_conform(eu_file: &Path) -> Result<(), String> {
     }
 
     let golden = std::fs::read_to_string(&golden_path)
-        .unwrap_or_else(|e| panic!("failed to read {}: {e}", golden_path.display()));
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", golden_path.display()))
+        .replace("\r\n", "\n");
 
     if actual == golden {
         Ok(())
