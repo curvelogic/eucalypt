@@ -1,0 +1,120 @@
+{ doc: "Cloudflare resource constructors for the Terraform-JSON core
+(`tf.eu`).
+
+Targets the Cloudflare Terraform provider v4 (`cloudflare_record` with a
+`value` attribute).  For provider v5 the DNS resource was renamed to
+`cloudflare_dns_record` and `value` became `content` - switch the type
+string and the value key accordingly.
+
+Cloudflare configuration is almost entirely resolvable at generation
+time (DNS records, zone settings and rules are flat data), which makes
+it an especially good fit for Eucalypt: the only cross-reference needed
+is the zone id, obtained from a `zone` data-source handle."
+
+  import: "tf=tf.eu" }
+
+# Provider ------------------------------------------------------------
+
+` { doc: "`provider-config(version)` - a `terraform.required_providers`
+plus an empty `provider` block.  Credentials come from the standard
+`CLOUDFLARE_API_TOKEN` environment variable, so no secrets appear in the
+generated JSON." }
+provider-config(ver): tf.document[
+  tf.required-providers{
+    cloudflare: { source: "cloudflare/cloudflare", version: ver }
+  },
+  tf.provider("cloudflare", {}),
+]
+
+# Zone data source ----------------------------------------------------
+
+` { doc: "`zone(local-name, domain)` - look up a Cloudflare zone by
+domain name as a data source.  Use the returned handle's `.id` as the
+`zone_id` of records." }
+zone(local-name, domain): tf.data("cloudflare_zone", local-name, { name: domain })
+
+# Local-name helpers --------------------------------------------------
+
+` :suppress
+dns-label(name): name = "@" then("root", name str.replace("[^A-Za-z0-9]", "_"))
+
+` :suppress
+local-name(prefix, ztag, name, suffix): { label: name dns-label }."{prefix}_{ztag}_{label}{suffix}"
+
+` :suppress
+optionals(o): { ttl: o lookup-or(:ttl, 1) }
+  << (o has(:proxied)  then({ proxied:  o.proxied  }, {}))
+  << (o has(:priority) then({ priority: o.priority }, {}))
+
+# Record constructors -------------------------------------------------
+
+` { doc: "`record(o)` - a generic `cloudflare_record` from a block with
+keys `zone` (a zone handle), `name`, `type` and `value`, plus optional
+`ttl`, `proxied`, `priority` and `suffix`.  The Terraform local name is
+derived as `type_zone_name` (`@` becomes `root`, other punctuation
+becomes `_`).  Local names must be unique, so when several records share
+a type and name (e.g. multiple MX or round-robin A records) pass a
+distinguishing `suffix`; otherwise they collide and all but one are
+lost." }
+record(o): tf.resource(
+  "cloudflare_record",
+  local-name(o.type str.to-lower, o.zone.name, o.name, o lookup-or(:suffix, "")),
+  { zone_id: o.zone.id  name: o.name  type: o.type  value: o.value }
+    << optionals(o))
+
+# NB: parameter names must differ from block field names - `{name: name}`
+# would be a self-reference, not a read of the parameter.
+
+` { doc: "`a(zone, name, value)` - an A record." }
+a(z, n, v): record{ zone: z, name: n, type: "A", value: v }
+
+` { doc: "`aaaa(zone, name, value)` - an AAAA record." }
+aaaa(z, n, v): record{ zone: z, name: n, type: "AAAA", value: v }
+
+` { doc: "`cname(zone, name, target)` - a CNAME record." }
+cname(z, n, target): record{ zone: z, name: n, type: "CNAME", value: target }
+
+` { doc: "`txt(zone, name, value)` - a TXT record." }
+txt(z, n, v): record{ zone: z, name: n, type: "TXT", value: v }
+
+` { doc: "`mx(zone, name, priority, value)` - an MX record.  The
+priority is folded into the local name so several MX records may share a
+name." }
+mx(z, n, prio, v): record{ zone: z, name: n, type: "MX", value: v,
+                           priority: prio, suffix: "_{prio}" }
+
+# Embedded tests ------------------------------------------------------
+
+` { target: :test-record }
+test-record: {
+  z: zone("main", "example.com")
+  rec: a(z, "www", "203.0.113.10")
+  α: rec.type = "cloudflare_record"
+  β: rec.name = "a_main_www"
+  γ: rec.body.zone_id = "${{data.cloudflare_zone.main.id}}"
+  δ: rec.body = { zone_id: "${{data.cloudflare_zone.main.id}}"
+                  name: "www"  type: "A"  value: "203.0.113.10"  ttl: 1 }
+  RESULT: (α ∧ β ∧ γ ∧ δ) then(:PASS, :FAIL)
+}
+
+` { target: :test-apex-and-mx }
+test-apex-and-mx: {
+  z: zone("main", "example.com")
+  apex: a(z, "@", "203.0.113.1")
+  mail: mx(z, "@", 10, "mail.example.com")
+  α: apex.name = "a_main_root"
+  β: mail.name = "mx_main_root_10"
+  γ: mail.body.priority = 10
+  δ: mail.body.type = "MX"
+  RESULT: (α ∧ β ∧ γ ∧ δ) then(:PASS, :FAIL)
+}
+
+` { target: :test-document }
+test-document: {
+  z: zone("main", "example.com")
+  doc: tf.document[z, a(z, "www", "203.0.113.10"), cname(z, "blog", "www")]
+  α: doc.data.cloudflare_zone.main.name = "example.com"
+  β: doc.resource.cloudflare_record.a_main_www.value = "203.0.113.10"
+  γ: doc.resource.cloudflare_record.cname_main_blog.type = "CNAME"
+  RESULT: (α ∧ β ∧ γ) then(:PASS, :FAIL)
+}
