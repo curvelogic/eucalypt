@@ -49,22 +49,34 @@ pub fn prepare(
             return Err(load_errors.into_iter().next().unwrap());
         }
 
-        // Drain parse errors collected while loading.  All errors are reported
-        // as diagnostics.  The partial tree (with ERROR_STOWAWAYS nodes) has
-        // been stored regardless of errors, so `dump ast` and the LSP can
-        // access it.  For evaluation we abort after reporting all errors so
-        // the user receives complete diagnostic output.
+        // Drain parse errors collected while loading.  The partial tree (with
+        // ERROR_STOWAWAYS nodes) has been stored regardless of errors, so dump
+        // and check modes can access it.  For evaluation we abort after
+        // reporting all errors so the user receives complete diagnostic output.
         let parse_errors = loader.drain_parse_errors();
         if !parse_errors.is_empty() {
-            // Report all parse errors as diagnostics.
-            for e in &parse_errors {
-                let diag = e.to_diagnostic(loader.source_map());
-                loader.diagnose_to_stderr(&diag);
-            }
-            // If we're only dumping the parse tree, continue — the partial
-            // tree is already stored.  Otherwise abort so we don't produce
-            // garbled output from an incomplete program.
-            if !opt.parse_only() {
+            // Dump and test modes can continue with the partial tree —
+            // ErrEliminated sentinels are safe throughout the pipeline.
+            let can_continue = opt.parse_only()
+                || opt.dump_desugared()
+                || opt.dump_cooked()
+                || opt.dump_inlined()
+                || opt.dump_pruned()
+                || opt.test();
+
+            if can_continue {
+                // Report ALL errors — we're not returning one to the caller.
+                for e in &parse_errors {
+                    let diag = e.to_diagnostic(loader.source_map());
+                    loader.diagnose_to_stderr(&diag);
+                }
+            } else {
+                // Report errors beyond the first — error[0] will be printed
+                // by the caller when it handles the returned Err.
+                for e in parse_errors.iter().skip(1) {
+                    let diag = e.to_diagnostic(loader.source_map());
+                    loader.diagnose_to_stderr(&diag);
+                }
                 return Err(parse_errors.into_iter().next().unwrap());
             }
         }
