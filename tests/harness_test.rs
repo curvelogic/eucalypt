@@ -1783,6 +1783,11 @@ pub fn test_error_156() {
 }
 
 #[test]
+pub fn test_error_157() {
+    run_error_test(&error_opts("157_self_ref_function_call.eu"));
+}
+
+#[test]
 pub fn test_target_symbol_shortcut_alpha() {
     let output = std::process::Command::new(eu_binary())
         .args(["-t", "alpha", "tests/harness/148_symbol_target_shortcut.eu"])
