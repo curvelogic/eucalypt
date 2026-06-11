@@ -1,0 +1,12 @@
+` { target: :conform format: :yaml }
+conform: {
+  interpolated: "hello {1 + 1} world"
+  replaced: "hello world" str.replace("world", "eucalypt")
+  split-result: "a,b,c" str.split-on(",")
+  joined: ["x", "y", "z"] str.join-on("-")
+  trimmed: "  hello  " str.trim
+  contains: "eucalypt" str.contains?("lypt")
+  starts: "eucalypt" str.starts-with?("euca")
+  ends: "eucalypt" str.ends-with?("lypt")
+  length: "hello" str.len
+}

@@ -1,0 +1,13 @@
+` { target: :conform format: :yaml }
+conform: {
+  doubled: [1, 2, 3] map(_ * 2)
+  evens: [1, 2, 3, 4, 5] filter(_ % 2 = 0)
+  total: [1, 2, 3, 4, 5] sum
+  joined: [1, 2, 3] map(str.of) str.join-on(", ")
+  zipped: [1, 2, 3] zip([4, 5, 6])
+  head-val: [10, 20, 30] head
+  tail-val: [10, 20, 30] tail
+  nth-val: nth(1, [10, 20, 30])
+  dropped: [1, 2, 3, 4, 5] drop(2)
+  product-val: [1, 2, 3, 4] product
+}

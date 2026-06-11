@@ -1,0 +1,12 @@
+` { target: :conform format: :yaml }
+conform: {
+  sum: 1 + 2
+  difference: 5 - 3
+  product: 4 * 7
+  quotient: 10 / 3
+  remainder: 10 % 3
+  negation: negate(7)
+  absolute: abs(-5)
+  max-val: max(3, 7)
+  min-val: min(3, 7)
+}

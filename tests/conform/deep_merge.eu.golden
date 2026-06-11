@@ -1,0 +1,19 @@
+---
+flat:
+  a: 1
+  b: 2
+nested:
+  a:
+    x: 1
+    y: 2
+override-leaf:
+  a:
+    x: 99
+adds-key:
+  a: 1
+  b: 2
+  c: 3
+empty-lhs:
+  a: 1
+empty-rhs:
+  a: 1

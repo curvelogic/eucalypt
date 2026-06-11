@@ -1,0 +1,9 @@
+---
+len-hello: 5
+len-empty: 0
+contains-yes: true
+contains-no: false
+starts-with: true
+ends-with: true
+trimmed: spaces
+num-str: "42"

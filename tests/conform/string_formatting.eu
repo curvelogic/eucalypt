@@ -1,0 +1,11 @@
+` { target: :conform format: :yaml }
+conform: {
+  len-hello: "hello" str.len
+  len-empty: "" str.len
+  contains-yes: "eucalypt" str.contains?("lypt")
+  contains-no: "eucalypt" str.contains?("xyz")
+  starts-with: "eucalypt" str.starts-with?("euca")
+  ends-with: "eucalypt" str.ends-with?("lypt")
+  trimmed: "  spaces  " str.trim
+  num-str: 42 str.of
+}

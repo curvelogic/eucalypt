@@ -1,0 +1,27 @@
+---
+cons-cell:
+  - 1
+  - 2
+  - 3
+range-val:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+iota-prefix:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+reverse-val:
+  - 3
+  - 2
+  - 1
+concat-val:
+  - 1
+  - 2
+  - 3
+  - 4
+length: 5

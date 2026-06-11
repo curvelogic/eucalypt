@@ -1,0 +1,15 @@
+---
+shallow-merge:
+  a: 1
+  b: 2
+override:
+  a: 100
+  b: 2
+three-way:
+  a: 1
+  b: 2
+  c: 3
+deep-merge:
+  a:
+    x: 1
+    y: 2

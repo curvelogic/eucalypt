@@ -1,0 +1,12 @@
+double(x): x * 2
+
+add-one(x): x + 1
+
+` { target: :conform format: :yaml }
+conform: {
+  add-then-mul: (2 + 3) * 4
+  mul-then-add: 2 + (3 * 4)
+  list-sum: [1, 2, 3] sum
+  chained: [1, 2, 3] map(double) map(add-one)
+  head-of-mapped: ([1, 2, 3] map(double)) head
+}

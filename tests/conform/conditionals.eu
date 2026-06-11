@@ -1,0 +1,9 @@
+` { target: :conform format: :yaml }
+conform: {
+  basic-if: if(true, "yes", "no")
+  false-branch: if(false, "yes", "no")
+  nested: if(2 > 1, "greater", "not-greater")
+  then-true: true then("yes", "no")
+  then-false: false then("yes", "no")
+  null-test: if(null = null, "equal", "not-equal")
+}

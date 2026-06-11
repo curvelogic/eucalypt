@@ -1,0 +1,20 @@
+---
+merged:
+  a: 1
+  b: 2
+override:
+  a: 99
+  b: 2
+key-lookup: 10
+lookup-fn: 20
+lookup-default: 42
+block-keys:
+  - a
+  - b
+  - c
+block-values:
+  - 1
+  - 2
+  - 3
+has-key: true
+no-key: false

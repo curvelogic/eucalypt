@@ -1,0 +1,9 @@
+---
+add-then-mul: 20
+mul-then-add: 14
+list-sum: 6
+chained:
+  - 3
+  - 5
+  - 7
+head-of-mapped: 2

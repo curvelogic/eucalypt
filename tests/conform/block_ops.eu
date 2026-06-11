@@ -1,0 +1,12 @@
+` { target: :conform format: :yaml }
+conform: {
+  merged: { a: 1 } { b: 2 }
+  override: { a: 1 b: 2 } { a: 99 }
+  key-lookup: { x: 10 y: 20 }.x
+  lookup-fn: { x: 10 y: 20 } lookup(:y)
+  lookup-default: { x: 10 } lookup-or(:z, 42)
+  block-keys: { a: 1 b: 2 c: 3 } keys
+  block-values: { a: 1 b: 2 c: 3 } values
+  has-key: { a: 1 } has(:a)
+  no-key: { a: 1 } has(:b)
+}

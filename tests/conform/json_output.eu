@@ -1,0 +1,11 @@
+` { target: :conform format: :json }
+conform: {
+  name: "eucalypt"
+  version: 1
+  enabled: true
+  tags: ["fast", "functional", "data"]
+  config: {
+    format: "json"
+    pretty: true
+  }
+}
