@@ -32,21 +32,41 @@ pub fn prepare(
 
     {
         let t = Instant::now();
-        let mut parse_errors: Vec<EucalyptError> = Vec::new();
+        let mut load_errors: Vec<EucalyptError> = Vec::new();
 
         for i in &inputs {
             if let Err(e) = loader.load(i) {
-                parse_errors.push(e);
+                // Only I/O and structural errors abort here; parse errors are
+                // collected inside the loader and drained separately below.
+                load_errors.push(e);
             }
         }
 
         stats.record("parse", t.elapsed());
 
+        if !load_errors.is_empty() {
+            diagnose_additional(loader, &load_errors);
+            return Err(load_errors.into_iter().next().unwrap());
+        }
+
+        // Drain parse errors collected while loading.  All errors are reported
+        // as diagnostics.  The partial tree (with ERROR_STOWAWAYS nodes) has
+        // been stored regardless of errors, so `dump ast` and the LSP can
+        // access it.  For evaluation we abort after reporting all errors so
+        // the user receives complete diagnostic output.
+        let parse_errors = loader.drain_parse_errors();
         if !parse_errors.is_empty() {
-            // Diagnose all errors beyond the first; the caller will
-            // print the returned error as a diagnostic itself.
-            diagnose_additional(loader, &parse_errors);
-            return Err(parse_errors.into_iter().next().unwrap());
+            // Report all parse errors as diagnostics.
+            for e in &parse_errors {
+                let diag = e.to_diagnostic(loader.source_map());
+                loader.diagnose_to_stderr(&diag);
+            }
+            // If we're only dumping the parse tree, continue — the partial
+            // tree is already stored.  Otherwise abort so we don't produce
+            // garbled output from an incomplete program.
+            if !opt.parse_only() {
+                return Err(parse_errors.into_iter().next().unwrap());
+            }
         }
     }
 

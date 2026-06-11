@@ -3,7 +3,7 @@ use crate::core::{desugar::Desugarer, expr::*};
 use crate::import::error::SourceError;
 use crate::{
     common::sourcemap::{Smid, SourceMap},
-    syntax::parser,
+    syntax::{error::ParserError, parser},
 };
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
 use codespan::{ByteIndex, ByteOffset, Span};
@@ -317,8 +317,14 @@ impl<'smap> Receiver<'smap> {
     pub fn parse_eu(&mut self, text: String) -> Result<RcExpr, SourceError> {
         let span = Span::new(ByteIndex(0), ByteIndex(0) + ByteOffset::from_str_len(&text));
         let file_id = self.files.add(format!("yaml:[{text}]"), text);
-        let ast = parser::parse_expression(self.files, file_id)
-            .map_err(|p| SourceError::EmbeddedParserError(p, file_id, span))?;
+        let (ast, parse_errors) = parser::parse_expression(self.files, file_id);
+        if !parse_errors.is_empty() {
+            return Err(SourceError::EmbeddedParserError(
+                ParserError::ParseErrors(file_id, parse_errors),
+                file_id,
+                span,
+            ));
+        }
 
         let content = HashMap::new();
         let mut desugarer = Desugarer::new(&content, self.source_map);

@@ -70,13 +70,26 @@ impl<T: AstNode<Language = EucalyptLanguage>> Parse<T> {
         T::cast(self.syntax_node()).unwrap()
     }
 
-    /// Result as successful parse or errors
+    /// Result as successful parse or errors.
+    ///
+    /// Returns `Ok(tree)` when there are no errors, `Err(errors)` otherwise.
+    /// To always obtain the tree together with any errors, use `into_parts`.
     pub fn ok(self) -> Result<T, Vec<ParseError>> {
         if self.errors.is_empty() {
             Ok(self.tree())
         } else {
             Err(self.errors)
         }
+    }
+
+    /// Decompose into the syntax tree and accumulated parse errors.
+    ///
+    /// Unlike `ok`, this method *always* returns the tree — even when errors
+    /// are present.  The tree may contain `ERROR_STOWAWAYS` nodes wrapping the
+    /// erroneous tokens; downstream phases that iterate via `declarations()` or
+    /// `elements()` will silently skip those nodes.
+    pub fn into_parts(self) -> (T, Vec<ParseError>) {
+        (self.tree(), self.errors)
     }
 }
 
@@ -388,5 +401,31 @@ mod tests {
         // Edge case: colon immediately before close brace with no space.
         let parse = parse_unit("main: {:}");
         let _ = parse.syntax_node();
+    }
+
+    #[test]
+    fn into_parts_always_provides_tree() {
+        use super::parse_unit;
+        use rowan::ast::AstNode;
+        // A unit with a parse error should still produce a usable tree via
+        // into_parts — the partial tree carries ERROR_STOWAWAYS nodes but
+        // the valid declarations remain accessible.
+        let (tree, errors) = parse_unit("good: 42\n{ x: }").into_parts();
+        // There should be at least one parse error.
+        assert!(!errors.is_empty(), "expected parse errors from `{{ x: }}`");
+        // The tree should still be accessible — syntax_node() should not panic.
+        let node = tree.syntax();
+        assert!(
+            node.text_range().end() > rowan::TextSize::from(0u32),
+            "partial tree should be non-empty"
+        );
+        // The valid declaration `good: 42` should be accessible in the tree.
+        let has_good_decl = node
+            .descendants_with_tokens()
+            .any(|e| e.as_token().map(|t| t.text() == "good").unwrap_or(false));
+        assert!(
+            has_good_decl,
+            "valid declaration `good` should be present in partial tree"
+        );
     }
 }
