@@ -309,6 +309,11 @@ impl SourceLoader {
     ///
     /// If found, sets the prelude override and eagerly loads the alternative
     /// prelude so it is ready for translate/merge.
+    ///
+    /// On WASM the prelude is always bundled as a resource; filesystem-based
+    /// prelude overrides are not supported.  This method is a no-op stub on
+    /// that target.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn detect_and_load_prelude_override(
         &mut self,
         inputs: &[Input],
@@ -356,6 +361,16 @@ impl SourceLoader {
             self.load(&prelude_input)?;
             return Ok(());
         }
+        Ok(())
+    }
+
+    /// WASM stub: prelude overrides require filesystem access which is
+    /// unavailable on WASM.  Always returns `Ok(())`.
+    #[cfg(target_arch = "wasm32")]
+    pub fn detect_and_load_prelude_override(
+        &mut self,
+        _inputs: &[Input],
+    ) -> Result<(), EucalyptError> {
         Ok(())
     }
 

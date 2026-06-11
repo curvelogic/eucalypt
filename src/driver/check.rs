@@ -276,13 +276,60 @@ pub fn type_check_path_full(path: &Path) -> PathCheckResult {
         source_map: crate::common::sourcemap::SourceMap::new(),
     };
 
+    // Detect any prelude: override declared in the file so that the correct
+    // prelude interface is used for seeding — AC5.
+    let prelude_key = detect_prelude_key(path).unwrap_or_else(|| "prelude".to_string());
+
     // ── Attempt prelude-cached check (fast path) ──────────────────────────
-    if let Some(ui) = get_or_build_prelude_interface_for("prelude") {
+    if let Some(ui) = get_or_build_prelude_interface_for(&prelude_key) {
         return type_check_path_with_seed(path, &ui, pipeline_error);
     }
 
     // ── Fallback: merged pipeline (prelude cache could not be built) ───────
     type_check_path_merged(path, pipeline_error)
+}
+
+/// Read a eucalypt source file and return the value of its `prelude:` metadata
+/// key, if present.  Returns `None` if the file cannot be read, has no unit
+/// metadata, or carries no `prelude:` key.
+fn detect_prelude_key(path: &Path) -> Option<String> {
+    use crate::syntax::rowan::ast::{AstToken, DeclarationKind, HasSoup};
+
+    let source = fs::read_to_string(path).ok()?;
+    let parse_result = parse_unit(&source);
+    let unit = parse_result.tree();
+
+    let meta = unit.meta()?;
+    let soup = meta.soup()?;
+
+    for element in soup.elements() {
+        if let Element::Block(block) = element {
+            for decl in block.declarations() {
+                let head = decl.head()?;
+                if let DeclarationKind::Property(prop) = head.classify_declaration() {
+                    if prop.text() == "prelude" {
+                        if let Some(body) = decl.body() {
+                            if let Some(body_soup) = body.soup() {
+                                for body_elem in body_soup.elements() {
+                                    if let Element::Lit(lit) = body_elem {
+                                        if let Some(val) = lit.value() {
+                                            if let Some(s) = val.string_value() {
+                                                return Some(s.to_string());
+                                            }
+                                            if let Some(s) = val.symbol_name() {
+                                                return Some(s.to_string());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Check a single user file seeded with a cached prelude interface (§B7 fast path).

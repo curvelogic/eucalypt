@@ -1763,8 +1763,8 @@ pub fn test_harness_162() {
 }
 
 #[test]
-pub fn test_harness_159() {
-    run_test(&opts("159_prelude_selection.eu"));
+pub fn test_harness_163() {
+    run_test(&opts("163_prelude_selection.eu"));
 }
 
 #[test]
