@@ -228,6 +228,8 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(debug::DbgRepr));
     rt.add(Box::new(expect::Expect));
     rt.add(Box::new(debug::Dbg));
+    rt.add(Box::new(debug::TraceEntry));
+    rt.add(Box::new(debug::TraceExit));
     rt.add(Box::new(list::IsNumber));
     rt.add(Box::new(list::IsString));
     rt.add(Box::new(list::IsSymbol));
