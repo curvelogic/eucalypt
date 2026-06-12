@@ -329,7 +329,15 @@ impl LspTestSession {
             Position::new(start_line, start_char),
             Position::new(end_line, end_char),
         );
-        actions::code_actions(&self.content, &root, &range, &self.uri, &table)
+        actions::code_actions(
+            &self.content,
+            &root,
+            &range,
+            &self.uri,
+            &table,
+            &[],
+            &crate::common::sourcemap::SourceMap::new(),
+        )
     }
 
     /// Compute code actions for the full document.

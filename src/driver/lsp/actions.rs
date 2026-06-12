@@ -3,6 +3,7 @@
 //! Provides quick-fix code actions for common issues:
 //! - Suggest qualified prelude names for unresolved identifiers
 //!   (e.g. `split` -> `str.split`)
+//! - Replace deprecated names with their `replaced-by:` successor
 //!
 //! Provides structural editing code actions:
 //! - Wrap as namespace (property value → block)
@@ -11,6 +12,8 @@
 //! - Demote metadata (single-field block → shortcut)
 //! - Let-block toggle
 
+use crate::common::sourcemap::SourceMap;
+use crate::core::typecheck::error::TypeWarning;
 use crate::syntax::rowan::ast::{
     AstToken, Block, Declaration, DeclarationKind, DeclarationMetadata, Element, HasSoup, Unit,
 };
@@ -30,8 +33,13 @@ pub fn code_actions(
     range: &Range,
     uri: &Url,
     table: &SymbolTable,
+    warnings: &[TypeWarning],
+    source_map: &SourceMap,
 ) -> Vec<CodeAction> {
     let mut actions = Vec::new();
+
+    // Deprecation quick-fix actions (driven by type warnings, not tokens)
+    collect_deprecation_fix_actions(source, range, uri, warnings, source_map, &mut actions);
 
     // Find identifier tokens within the requested range
     for event in root.preorder_with_tokens() {
@@ -851,6 +859,79 @@ fn is_actionable_identifier(token: &SyntaxToken) -> bool {
     )
 }
 
+// ── Deprecation quick-fix ──────────────────────────────────────────────────────
+
+/// For each deprecation warning with a `replaced-by` successor whose source
+/// location overlaps `range`, emit a QUICKFIX action that substitutes the
+/// deprecated name with the replacement.
+fn collect_deprecation_fix_actions(
+    source: &str,
+    range: &Range,
+    uri: &Url,
+    warnings: &[TypeWarning],
+    source_map: &SourceMap,
+    actions: &mut Vec<CodeAction>,
+) {
+    for warning in warnings {
+        // Only process deprecation warnings that carry a replacement.
+        // The note is always of the form "use 'X' instead".
+        let replacement = match warning.notes.iter().find_map(|note| {
+            note.strip_prefix("use '")
+                .and_then(|s| s.strip_suffix("' instead"))
+        }) {
+            Some(r) => r,
+            None => continue,
+        };
+
+        // Resolve the warning's Smid to an LSP range so we can check overlap.
+        let warn_range = match source_map
+            .source_info_for_smid(warning.smid)
+            .and_then(|info| info.span)
+            .map(|span| {
+                let start = u32::from(span.start());
+                let end = u32::from(span.end());
+                let text_range =
+                    rowan::TextRange::new(rowan::TextSize::from(start), rowan::TextSize::from(end));
+                text_range_to_lsp_range(source, text_range)
+            }) {
+            Some(r) => r,
+            None => continue, // No source location — cannot offer a targeted fix
+        };
+
+        if !ranges_overlap(&warn_range, range) {
+            continue;
+        }
+
+        // Extract the deprecated name from the message: "'name' is deprecated…"
+        let deprecated_name = warning
+            .message
+            .strip_prefix('\'')
+            .and_then(|s| s.split_once('\''))
+            .map(|(name, _)| name)
+            .unwrap_or_default();
+
+        let edit = TextEdit {
+            range: warn_range,
+            new_text: replacement.to_string(),
+        };
+
+        let mut changes = HashMap::new();
+        changes.insert(uri.clone(), vec![edit]);
+
+        actions.push(CodeAction {
+            title: format!("Replace '{deprecated_name}' with '{replacement}'"),
+            kind: Some(CodeActionKind::QUICKFIX),
+            diagnostics: None,
+            edit: Some(WorkspaceEdit {
+                changes: Some(changes),
+                ..WorkspaceEdit::default()
+            }),
+            is_preferred: Some(true),
+            ..CodeAction::default()
+        });
+    }
+}
+
 /// If an identifier doesn't resolve as a top-level name but matches a
 /// child of a prelude namespace, suggest replacing it with the
 /// qualified name.
@@ -1010,7 +1091,15 @@ mod tests {
         let root = parse.syntax_node();
         let uri = lsp_types::Url::parse("file:///test.eu").unwrap();
         let table = SymbolTable::new();
-        let actions = code_actions(source, &root, &full_range(), &uri, &table);
+        let actions = code_actions(
+            source,
+            &root,
+            &full_range(),
+            &uri,
+            &table,
+            &[],
+            &SourceMap::new(),
+        );
         assert!(actions.is_empty());
     }
 
@@ -1022,7 +1111,15 @@ mod tests {
         let root = parse.syntax_node();
         let uri = lsp_types::Url::parse("file:///test.eu").unwrap();
         let table = make_table(source);
-        let actions = code_actions(source, &root, &full_range(), &uri, &table);
+        let actions = code_actions(
+            source,
+            &root,
+            &full_range(),
+            &uri,
+            &table,
+            &[],
+            &SourceMap::new(),
+        );
         // Should have no qualify-name actions (x resolves directly)
         let qualify_actions: Vec<_> = actions
             .iter()
@@ -1042,7 +1139,15 @@ mod tests {
         let root = parse.syntax_node();
         let uri = lsp_types::Url::parse("file:///test.eu").unwrap();
         let table = make_table(source);
-        let actions = code_actions(source, &root, &full_range(), &uri, &table);
+        let actions = code_actions(
+            source,
+            &root,
+            &full_range(),
+            &uri,
+            &table,
+            &[],
+            &SourceMap::new(),
+        );
         let qualify_actions: Vec<_> = actions
             .iter()
             .filter(|a| a.title.starts_with("Replace with"))
@@ -1087,5 +1192,121 @@ mod tests {
             },
         };
         assert!(!ranges_overlap(&a, &c));
+    }
+
+    #[test]
+    fn deprecation_quickfix_offered_when_replacement_available() {
+        // Source: 'f' is deprecated, replaced by 'g'.
+        // "f(x): x + 1\n" = 13 bytes (0..13)
+        // "g(x): x + 1\n" = 13 bytes (13..26)
+        // "result: f(42)\n" — 'f' is at byte 34 (26 + 8)
+        let source = "f(x): x + 1\ng(x): x + 1\nresult: f(42)\n";
+        let parse = parse_unit(source);
+        let root = parse.syntax_node();
+        let uri = lsp_types::Url::parse("file:///test.eu").unwrap();
+        let table = make_table(source);
+
+        let mut source_map = SourceMap::new();
+        let smid = source_map.add(0, codespan::Span::new(34, 35));
+
+        let warning = TypeWarning::new("'f' is deprecated")
+            .at(smid)
+            .with_note("use 'g' instead");
+
+        let actions = code_actions(
+            source,
+            &root,
+            &full_range(),
+            &uri,
+            &table,
+            &[warning],
+            &source_map,
+        );
+
+        let fix: Vec<_> = actions
+            .iter()
+            .filter(|a| a.title.contains("Replace 'f' with 'g'"))
+            .collect();
+        assert_eq!(fix.len(), 1, "expected one deprecation quick-fix action");
+        assert_eq!(fix[0].kind, Some(CodeActionKind::QUICKFIX));
+        assert_eq!(fix[0].is_preferred, Some(true));
+    }
+
+    #[test]
+    fn deprecation_quickfix_not_offered_without_replacement() {
+        // Deprecation warning with no 'replaced-by' → no quick-fix.
+        let source = "f(x): x + 1\nresult: f(42)\n";
+        let parse = parse_unit(source);
+        let root = parse.syntax_node();
+        let uri = lsp_types::Url::parse("file:///test.eu").unwrap();
+        let table = make_table(source);
+
+        let mut source_map = SourceMap::new();
+        let smid = source_map.add(0, codespan::Span::new(20, 21));
+
+        // Warning with no replacement note
+        let warning = TypeWarning::new("'f' is deprecated").at(smid);
+
+        let actions = code_actions(
+            source,
+            &root,
+            &full_range(),
+            &uri,
+            &table,
+            &[warning],
+            &source_map,
+        );
+
+        let fix: Vec<_> = actions
+            .iter()
+            .filter(|a| a.title.starts_with("Replace 'f'"))
+            .collect();
+        assert!(fix.is_empty(), "no quick-fix without a replacement");
+    }
+
+    #[test]
+    fn deprecation_quickfix_not_offered_outside_range() {
+        // Warning is on line 2 but we request actions on line 0 only.
+        let source = "f(x): x + 1\ng(x): x + 1\nresult: f(42)\n";
+        let parse = parse_unit(source);
+        let root = parse.syntax_node();
+        let uri = lsp_types::Url::parse("file:///test.eu").unwrap();
+        let table = make_table(source);
+
+        let mut source_map = SourceMap::new();
+        let smid = source_map.add(0, codespan::Span::new(34, 35));
+        let warning = TypeWarning::new("'f' is deprecated")
+            .at(smid)
+            .with_note("use 'g' instead");
+
+        // Only request actions on line 0 (the declaration line)
+        let line0_range = Range {
+            start: Position {
+                line: 0,
+                character: 0,
+            },
+            end: Position {
+                line: 0,
+                character: 100,
+            },
+        };
+        let actions = code_actions(
+            source,
+            &root,
+            &line0_range,
+            &uri,
+            &table,
+            &[warning],
+            &source_map,
+        );
+
+        let fix: Vec<_> = actions
+            .iter()
+            .filter(|a| a.title.starts_with("Replace 'f'"))
+            .collect();
+        assert!(
+            fix.is_empty(),
+            "no quick-fix when warning is outside request range"
+        );
     }
 }
