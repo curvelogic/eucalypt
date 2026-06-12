@@ -223,17 +223,36 @@ map: __MAP
 ```
 
 **Type aliases**: define reusable type names in unit metadata or via
-`type-def:` on a declaration:
+`type-def:` / `result-def:` on a declaration:
 
 ```eu,notest
 # Named aliases in unit metadata
 { types: { Point: "{x: number, y: number}"
            Person: "{name: string, age: number, email: string | null, ..}" } }
 
-# Alias derived from a canonical instance
+# Alias using binding name (shorthand — `:type-def` or `type-def: true`)
+` :type-def
+origin: { x: 0, y: 0 }
+# Registers alias `origin` = the binding's type
+
+# Alias with an explicit name
 ` { type-def: "Point" }
 origin: { x: 0, y: 0 }
+# Registers alias `Point` = the binding's type
+
+# Return-type alias for a constructor function
+` { result-def: "Count"
+    type: "string → number" }
+char-count(s): str.length(s)
+# Registers alias `Count` = the function's return type (number)
+# Equivalent shorthand: `:result-def` uses the binding name as alias name
 ```
+
+`type-def: true` (or the bare `` ` :type-def `` shorthand) uses the binding's
+own name as the alias name; `type-def: "Name"` uses an explicit name.
+`result-def` is identical in shape but registers an alias for the function's
+*return type* rather than the full function type. `result-def` on a
+non-function binding emits a warning and is skipped.
 
 **Common type forms in annotations**:
 

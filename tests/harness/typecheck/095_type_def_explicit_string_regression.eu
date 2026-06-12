@@ -1,0 +1,8 @@
+# `type-def: "Name"` (explicit string form) still works — regression check.
+` { type-def: "Color" }
+DefaultColor: { r: 0, g: 0, b: 0 }
+
+` { type: "Color → number" }
+red(c): c.r
+
+result: red(DefaultColor)

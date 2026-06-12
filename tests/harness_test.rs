@@ -2364,3 +2364,48 @@ pub fn test_error_159() {
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }
+
+#[test]
+pub fn test_typecheck_093_type_def_bare_symbol_shorthand() {
+    run_typecheck_test("093_type_def_bare_symbol_shorthand.eu");
+}
+
+#[test]
+pub fn test_typecheck_094_type_def_true_structured_metadata() {
+    run_typecheck_test("094_type_def_true_structured_metadata.eu");
+}
+
+#[test]
+pub fn test_typecheck_095_type_def_explicit_string_regression() {
+    run_typecheck_test("095_type_def_explicit_string_regression.eu");
+}
+
+#[test]
+pub fn test_typecheck_096_result_def_explicit_name() {
+    run_typecheck_test("096_result_def_explicit_name.eu");
+}
+
+#[test]
+pub fn test_typecheck_097_result_def_true_binding_name() {
+    run_typecheck_test("097_result_def_true_binding_name.eu");
+}
+
+#[test]
+pub fn test_typecheck_098_result_def_on_non_function_warns() {
+    run_typecheck_test("098_result_def_on_non_function_warns.eu");
+}
+
+#[test]
+pub fn test_typecheck_099_both_type_def_and_result_def() {
+    run_typecheck_test("099_both_type_def_and_result_def.eu");
+}
+
+#[test]
+pub fn test_typecheck_100_target_bare_symbol_regression() {
+    run_typecheck_test("100_target_bare_symbol_regression.eu");
+}
+
+#[test]
+pub fn test_typecheck_101_unrecognised_bare_symbol_target_shortcut() {
+    run_typecheck_test("101_unrecognised_bare_symbol_target_shortcut.eu");
+}
