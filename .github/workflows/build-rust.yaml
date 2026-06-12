@@ -405,14 +405,23 @@ jobs:
           echo "RELEASE_VERSION=$FULL_VERSION" >> $GITHUB_ENV
           echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
 
-      - name: Check for duplicate release tag
+      - name: Check for existing release
+        id: check_release
         run: |
-          if gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' 2>/dev/null | grep -q 'false'; then
-            echo "::error::Release tag $RELEASE_TAG already exists and is published. Bump the version in Cargo.toml before releasing."
-            exit 1
+          RELEASE_STATUS=$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' 2>/dev/null || echo "none")
+          echo "status=$RELEASE_STATUS" >> $GITHUB_OUTPUT
+          if [ "$RELEASE_STATUS" = "false" ]; then
+            echo "::warning::Release $RELEASE_TAG is already published — skipping draft creation to avoid overwriting release notes."
+          elif [ "$RELEASE_STATUS" = "none" ]; then
+            echo "No existing release for $RELEASE_TAG — will create draft."
+          else
+            echo "Draft release for $RELEASE_TAG exists — will update it."
           fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create release
+        if: steps.check_release.outputs.status != 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
