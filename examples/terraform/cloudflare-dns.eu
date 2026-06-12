@@ -71,4 +71,4 @@ all-nodes: domains elements mapcat(expand-zone)
 # ---- Document ------------------------------------------------------
 
 ` :main
-main: tf.document(cf.provider-config("~> 4") ‖ all-nodes)
+main: tf.document(cf.provider-config("~> 5") ‖ all-nodes)
