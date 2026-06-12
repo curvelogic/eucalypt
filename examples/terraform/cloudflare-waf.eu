@@ -1,0 +1,72 @@
+{ doc: "Cloudflare edge-security baseline generated from a compact
+model, targeting provider v5.
+
+A few WAF custom rules and a rate-limit rule expand into
+`cloudflare_ruleset` resources across every zone.  Rule expressions are
+*composed* from wirefilter helpers (`all-of`, `path-prefix`, `negate`,
+`country-in`, ...) rather than hand-written strings.
+
+Render:
+
+    eu -j -L lib examples/terraform/cloudflare-waf.eu > security.tf.json
+    terraform init && terraform validate"
+
+  import: ["tf=tf.eu", "cf=tf-cloudflare.eu", "waf=tf-cloudflare-waf.eu"] }
+
+# ---- Compact model, applied across every zone ----------------------
+
+domains: {
+  primary:   "example.com"
+  secondary: "example.net"
+}
+
+office-cidrs:      ["203.0.113.0/24", "198.51.100.0/24"]
+blocked-countries: ["KP", "SY"]
+
+# WAF custom rules — expressions composed from helpers, not hand-written.
+firewall-rules: [
+  waf.block{
+    ref: "admin_office_only"
+    description: "Admin area only reachable from the office network"
+    expression: waf.all-of[
+      waf.path-prefix("/admin"),
+      waf.negate(waf.ip-in-cidrs(office-cidrs)),
+    ]
+  },
+  waf.managed-challenge{
+    ref: "challenge_low_score_bots"
+    description: "Challenge low-score bots"
+    expression: "cf.bot_management.score lt 30"
+  },
+  waf.block{
+    ref: "block_high_risk_geo"
+    description: "Block high-risk countries with a custom response"
+    expression: waf.country-in(blocked-countries)
+    response: { status_code: 403, content_type: "text/plain", content: "Access denied." }
+  },
+]
+
+rate-rules: [
+  waf.rate-limit{
+    ref: "throttle_api"
+    description: "Throttle API traffic per IP"
+    expression: waf.path-prefix("/api/")
+    characteristics: ["ip.src", "cf.colo.id"]
+    requests: 100
+    period: 60
+  },
+]
+
+# ---- Expansion: per zone, the handle + its security rulesets --------
+
+zone-security([tag, domain]): {
+  z: cf.zone(tag str.of, domain)
+  nodes: [z, waf.custom-firewall(z, firewall-rules), waf.rate-limiting(z, rate-rules)]
+}.nodes
+
+all-nodes: domains elements mapcat(zone-security)
+
+# ---- Document ------------------------------------------------------
+
+` :main
+main: tf.document(cf.provider-config("~> 5") ‖ all-nodes)

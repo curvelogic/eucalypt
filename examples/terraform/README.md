@@ -13,7 +13,8 @@ loops, functions, data structures, in-place computation and typing.
 | Module                | Purpose                                                         |
 |-----------------------|----------------------------------------------------------------|
 | `lib/tf.eu`           | Provider-agnostic core: `ref`/handles, `resource`/`data` nodes, `document` assembly, and the other top-level blocks (`provider`, `terraform-settings`, `variable`, `output`, `locals`). |
-| `lib/tf-cloudflare.eu`| Cloudflare constructors (zone lookup, A/AAAA/CNAME/TXT/MX records). |
+| `lib/tf-cloudflare.eu`| Cloudflare DNS constructors (zone lookup, A/AAAA/CNAME/TXT/MX records). Provider **v5**. |
+| `lib/tf-cloudflare-waf.eu` | Cloudflare WAF / rate-limiting: `cloudflare_ruleset` constructors plus a wirefilter expression builder (`all-of`, `path-prefix`, `negate`, `country-in`, ...). |
 
 ### Generation time vs apply time
 
@@ -46,17 +47,27 @@ terraform init && terraform validate    # offline; no credentials needed
 
 `cloudflare-dns.eu` defines a handful of records once and fans them out
 across every zone in the model — two domains × eight records expands to
-sixteen `cloudflare_record` resources, each wired to the right zone via
-its handle. Credentials are read from `CLOUDFLARE_API_TOKEN` at apply
+sixteen `cloudflare_dns_record` resources, each wired to the right zone
+via its handle. Credentials are read from `CLOUDFLARE_API_TOKEN` at apply
 time; no secrets appear in the generated JSON.
 
-> The `-L lib` flag puts the Terraform modules on the import path. The
-> example targets the Cloudflare provider **v4** (`cloudflare_record`
-> with a `value` attribute); for v5 the resource is `cloudflare_dns_record`
-> and `value` became `content`.
+> The `-L lib` flag puts the Terraform modules on the import path.
+
+## Running the WAF example
+
+```sh
+eu -j -L lib examples/terraform/cloudflare-waf.eu > security.tf.json
+```
+
+`cloudflare-waf.eu` builds an edge-security baseline — WAF custom rules
+and a rate-limit rule — as `cloudflare_ruleset` resources across every
+zone. Rule expressions are *composed* from wirefilter helpers rather than
+hand-written; the admin rule, for instance, becomes:
+
+    (starts_with(http.request.uri.path, "/admin")) and (not (ip.src in {203.0.113.0/24 198.51.100.0/24}))
 
 ## Status
 
-- **Cloudflare** — implemented (DNS).
+- **Cloudflare** — DNS and WAF / rate-limiting (provider v5).
 - **GitHub, AWS** — planned. The same `lib/tf.eu` core is provider-agnostic;
   adding a provider is mostly resource-constructor data entry.

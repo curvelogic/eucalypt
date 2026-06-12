@@ -1,0 +1,178 @@
+{ doc: "Cloudflare WAF / rate-limiting constructors for the
+Terraform-JSON core (`tf.eu`), targeting provider v5.
+
+Cloudflare's modern security configuration is the unified **Rulesets**
+engine: a `cloudflare_ruleset` for a given phase holds a list of rules,
+each a wirefilter `expression` plus an `action`.  In v5 `rules` is a
+list of objects, which maps directly onto a Eucalypt list - so a compact
+rule model expands into a ruleset, and rule expressions can be *composed*
+from helpers rather than hand-written.
+
+  - all-of / any-of / negate / host-eq ...  : wirefilter expression builders
+  - block / managed-challenge / log / skip  : rule constructors
+  - rate-limit                              : a rate-limiting rule
+  - custom-firewall / rate-limiting         : zone-scoped entry-point rulesets"
+
+  import: "tf=tf.eu" }
+
+# Wirefilter expression builders --------------------------------------
+#
+# Expressions are strings in Cloudflare's wirefilter language.  Embedded
+# string literals need quotes, and set literals need braces - both of
+# which collide with Eucalypt interpolation, so the helpers below hide
+# the escaping (c-strings for `"`, doubled braces for `{` `}`).
+
+` :suppress
+parens(e): "({e})"
+
+` :suppress
+quoted(s): c"\"{s}\""
+
+` :suppress
+wf-set(items): { body: items str.join-on(" "), o: "{{", c: "}}" }."{o}{body}{c}"
+
+` { doc: "`all-of(exprs)` - conjoin wirefilter expressions with `and`." }
+all-of(es): es map(parens) str.join-on(" and ")
+
+` { doc: "`any-of(exprs)` - disjoin wirefilter expressions with `or`." }
+any-of(es): es map(parens) str.join-on(" or ")
+
+` { doc: "`negate(expr)` - logical `not` of a wirefilter expression." }
+negate(e): "not ({e})"
+
+` { doc: "`host-eq(host)` - request Host header equals `host`." }
+host-eq(h): c"http.host eq \"{h}\""
+
+` { doc: "`path-eq(path)` - request path equals `path`." }
+path-eq(p): c"http.request.uri.path eq \"{p}\""
+
+` { doc: "`path-prefix(prefix)` - request path starts with `prefix`." }
+path-prefix(p): c"starts_with(http.request.uri.path, \"{p}\")"
+
+` { doc: "`ip-in(list)` - source IP in a named Cloudflare list (`$list`)." }
+ip-in(list): "ip.src in ${list}"
+
+` { doc: "`ip-in-cidrs(cidrs)` - source IP in an inline set of CIDRs." }
+ip-in-cidrs(cidrs): { s: cidrs wf-set }."ip.src in {s}"
+
+` { doc: "`country-in(codes)` - visitor country in a set of ISO codes." }
+country-in(codes): { s: codes map(quoted) wf-set }."ip.geoip.country in {s}"
+
+# Rules ---------------------------------------------------------------
+#
+# A rule is a block { ref, description, expression, action, ... }.  `o`
+# carries at least `ref` and `expression`; `description` is optional.
+
+` :suppress
+rule(act, o): {
+  ref: o.ref
+  description: o lookup-or(:description, "")
+  expression: o.expression
+  action: act
+}
+
+` :suppress
+block-response(o): o has(:response) then({ action_parameters: { response: o.response } }, {})
+
+` { doc: "`block(o)` - block matching requests.  Optional `o.response`
+(status_code, content_type, content) sets a custom response body." }
+block(o): rule("block", o) << block-response(o)
+
+` { doc: "`managed-challenge(o)` - present a managed challenge." }
+managed-challenge(o): rule("managed_challenge", o)
+
+` { doc: "`js-challenge(o)` - present a JavaScript challenge." }
+js-challenge(o): rule("js_challenge", o)
+
+` { doc: "`interactive-challenge(o)` - present an interactive challenge." }
+interactive-challenge(o): rule("challenge", o)
+
+` { doc: "`log(o)` - log matching requests (Enterprise)." }
+log(o): rule("log", o)
+
+` { doc: "`skip(o)` - skip rules / phases / products; `o.skip` is the
+`action_parameters` block, e.g. a `phases` list or `ruleset: current`." }
+skip(o): rule("skip", o) << { action_parameters: o.skip }
+
+` { doc: "`rate-limit(o)` - a rate-limiting rule.  Keys: `ref`,
+`expression`, `characteristics`, `requests`, optional `period`
+(default 60), `timeout` (default 600) and `action` (default block)." }
+rate-limit(o): rule(o lookup-or(:action, "block"), o) << {
+  ratelimit: {
+    characteristics: o.characteristics
+    period: o lookup-or(:period, 60)
+    requests_per_period: o.requests
+    mitigation_timeout: o lookup-or(:timeout, 600)
+  }
+}
+
+# Rulesets ------------------------------------------------------------
+
+` { doc: "`ruleset(local, scope, opts)` - a `cloudflare_ruleset`.  `scope`
+gives the id key - `zone_id` from a zone handle, or `account_id`; `opts`
+keys: `name`, `phase`, optional `kind` (default zone), `description` and
+`rules`." }
+ruleset(local, scope, opts): tf.resource("cloudflare_ruleset", local, scope << {
+  name: opts.name
+  kind: opts lookup-or(:kind, "zone")
+  phase: opts.phase
+  description: opts lookup-or(:description, "")
+  rules: opts.rules
+})
+
+` { doc: "`custom-firewall(zone, rules)` - a zone's WAF custom-rules
+entry-point ruleset (phase http_request_firewall_custom)." }
+custom-firewall(zone, rs): ruleset("waf_{zone.name}", { zone_id: zone.id }, {
+  name: "Custom firewall rules"
+  phase: "http_request_firewall_custom"
+  rules: rs
+})
+
+` { doc: "`rate-limiting(zone, rules)` - a zone's rate-limiting
+entry-point ruleset (phase http_ratelimit)." }
+rate-limiting(zone, rs): ruleset("ratelimit_{zone.name}", { zone_id: zone.id }, {
+  name: "Rate limiting rules"
+  phase: "http_ratelimit"
+  rules: rs
+})
+
+# Embedded tests ------------------------------------------------------
+
+` { target: :test-expr }
+test-expr: {
+  α: all-of["a", "b"] = "(a) and (b)"
+  β: any-of["x", "y", "z"] = "(x) or (y) or (z)"
+  γ: negate("ip.src eq 1.2.3.4") = "not (ip.src eq 1.2.3.4)"
+  δ: ip-in("office") = "ip.src in $office"
+  ε: country-in["US", "GB"] = c"ip.geoip.country in \{\"US\" \"GB\"\}"
+  ζ: ip-in-cidrs["192.0.2.0/24"] = "ip.src in {{192.0.2.0/24}}"
+  RESULT: (α ∧ β ∧ γ ∧ δ ∧ ε ∧ ζ) then(:PASS, :FAIL)
+}
+
+` { target: :test-rule }
+test-rule: {
+  r: block{ ref: "r1", description: "Block one IP", expression: "ip.src eq 1.1.1.1" }
+  blocked: block{ ref: "r2", expression: "true",
+                  response: { status_code: 403, content_type: "text/plain", content: "no" } }
+  rl: rate-limit{ ref: "r3", expression: path-eq("/api"),
+                  characteristics: ["ip.src"], requests: 100 }
+  α: r.action = "block"
+  β: r.ref = "r1"
+  γ: blocked.action_parameters.response.status_code = 403
+  δ: rl.ratelimit.requests_per_period = 100
+  ε: rl.ratelimit.period = 60
+  RESULT: (α ∧ β ∧ γ ∧ δ ∧ ε) then(:PASS, :FAIL)
+}
+
+` { target: :test-ruleset }
+test-ruleset: {
+  z: { name: "main", id: "${{data.cloudflare_zone.main.id}}" }
+  rs: custom-firewall(z, [block{ ref: "r1", expression: "ip.src eq 1.1.1.1" }])
+  doc: tf.document[rs]
+  cfr: doc.resource.cloudflare_ruleset.waf_main
+  α: cfr.zone_id = "${{data.cloudflare_zone.main.id}}"
+  β: cfr.phase = "http_request_firewall_custom"
+  γ: cfr.kind = "zone"
+  δ: (cfr.rules head).action = "block"
+  RESULT: (α ∧ β ∧ γ ∧ δ) then(:PASS, :FAIL)
+}
