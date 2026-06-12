@@ -1,0 +1,916 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Type Checking - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/guide/type-checking.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="type-checking"><a class="header" href="#type-checking">Type Checking</a></h1>
+<p>Eucalypt includes an optional, advisory type checker. It never prevents
+your code from running — all existing code continues to work exactly as
+before. Think of it as a second pair of eyes that can catch common
+mistakes before they become confusing runtime errors.</p>
+<pre><code class="language-sh">eu check file.eu              # type-check, report warnings
+eu check file.eu --strict     # treat type warnings as errors
+eu --type-check file.eu       # check then evaluate
+</code></pre>
+<p>Type issues are reported as <strong>warnings</strong>, not errors. Your code runs
+regardless.</p>
+<hr />
+<h2 id="what-type-checking-catches"><a class="header" href="#what-type-checking-catches">What type checking catches</a></h2>
+<p>The checker is most useful for catching a handful of mistakes that are
+easy to make and hard to debug:</p>
+<ul>
+<li><strong>Passing an IO action where a plain value is expected.</strong> <code>io.shell</code>
+returns an <code>IO({..})</code>, not a block. Accessing <code>.stdout</code> on the action
+itself is a common mistake the checker flags immediately.</li>
+<li><strong>Accessing a missing or misspelled field on a block.</strong> If you have
+a block typed as <code>{name: string, age: number}</code>, accessing <code>.naem</code> is
+a warning.</li>
+<li><strong>Type mismatches in pipelines.</strong> Piping a <code>string</code> into a function
+expecting <code>number</code> produces a clear warning with a source location.</li>
+<li><strong>Wrong lens composition.</strong> <code>Lens(a, b)</code> composed with
+<code>Lens(c, d)</code> requires <code>b = c</code>; the checker catches the mismatch.</li>
+</ul>
+<p>The checker works through inference — it does not require any
+annotations in your code. Annotated prelude functions (like <code>map</code>,
+<code>filter</code>, <code>str.of</code>, <code>io.shell</code>, <code>at</code>, <code>view</code>) propagate types through
+your pipelines automatically.</p>
+<h2 id="what-type-checking-does-not-catch"><a class="header" href="#what-type-checking-does-not-catch">What type checking does not catch</a></h2>
+<ul>
+<li><strong>Runtime-dependent values.</strong> If a function returns <code>any</code> (because
+its type depends on a runtime value, like <code>lookup</code>), the checker
+makes no assumptions about the result. This is correct — eucalypt
+is gradual, not fully statically typed.</li>
+<li><strong>Unannotated functions.</strong> Code without <code>type:</code> annotations is
+treated as <code>any -&gt; any -&gt; ... -&gt; any</code>. The checker stays silent
+rather than guessing.</li>
+<li><strong>Dynamic block construction.</strong> <code>block(kvs)</code> constructs a block
+from a list of pairs at runtime; the checker cannot know its shape.</li>
+</ul>
+<hr />
+<h2 id="adding-type-annotations"><a class="header" href="#adding-type-annotations">Adding type annotations</a></h2>
+<p>Annotations live in declaration metadata alongside doc strings:</p>
+<pre><code class="language-eu notest">` { doc: "`double(x)` - double a number."
+    type: "number -&gt; number" }
+double(x): x * 2
+</code></pre>
+<p>The <code>type:</code> value is a string containing a type expression. You can
+annotate as much or as little as you like. Unannotated declarations
+default to <code>any</code>.</p>
+<h3 id="simple-annotations"><a class="header" href="#simple-annotations">Simple annotations</a></h3>
+<pre><code class="language-eu notest">` { type: "number -&gt; number" }
+square(x): x * x
+
+` { type: "string -&gt; string -&gt; string" }
+greet(greeting, name): "{greeting}, {name}!"
+
+` { type: "[number] -&gt; number" }
+total: fold(+, 0)
+</code></pre>
+<h3 id="operators"><a class="header" href="#operators">Operators</a></h3>
+<p>Operators use the same metadata syntax:</p>
+<pre><code class="language-eu notest">` { doc: "`x |&gt; f` - pipe x into f."
+    type: "a -&gt; (a -&gt; b) -&gt; b"
+    associates: :left
+    precedence: 20 }
+(x |&gt; f): f(x)
+</code></pre>
+<hr />
+<h2 id="the-type-language"><a class="header" href="#the-type-language">The type language</a></h2>
+<h3 id="primitives"><a class="header" href="#primitives">Primitives</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Type</th><th>Values</th></tr></thead><tbody>
+<tr><td><code>number</code></td><td>integers and floats</td></tr>
+<tr><td><code>string</code></td><td>strings</td></tr>
+<tr><td><code>symbol</code></td><td>symbolic atoms (<code>:key</code>, <code>:name</code>)</td></tr>
+<tr><td><code>bool</code></td><td><code>true</code>, <code>false</code></td></tr>
+<tr><td><code>null</code></td><td><code>null</code></td></tr>
+<tr><td><code>datetime</code></td><td>zoned date-time values</td></tr>
+<tr><td><code>any</code></td><td>unknown — consistent with all types</td></tr>
+</tbody></table>
+</div>
+<h3 id="literal-types"><a class="header" href="#literal-types">Literal types</a></h3>
+<p>A <strong>literal type</strong> represents exactly one value. Literal types are
+subtypes of their corresponding primitive:</p>
+<div class="table-wrapper"><table><thead><tr><th>Type syntax</th><th>Meaning</th><th>Subtype of</th></tr></thead><tbody>
+<tr><td><code>"value"</code></td><td>the specific string <code>"value"</code></td><td><code>string</code></td></tr>
+<tr><td><code>:name</code></td><td>the specific symbol <code>:name</code></td><td><code>symbol</code></td></tr>
+</tbody></table>
+</div>
+<p>Literal types are most useful in <strong>discriminated unions</strong> — type aliases
+where a tag field distinguishes variants:</p>
+<pre><code class="language-eu notest">{ types: { Shape: c"{{type: \"circle\", radius: number, ..}} | {{type: \"rect\", w: number, h: number, ..}}" } }
+</code></pre>
+<p>Because writing complex union types inline is verbose, defining a <code>types:</code>
+alias is the recommended approach. (Note the <code>c"..."</code> <strong>c-string</strong> — see
+<em>Writing literal types in annotation strings</em> below.)</p>
+<p><strong>Subtyping rules</strong>:</p>
+<ul>
+<li><code>"foo"</code> is consistent with <code>string</code> — a literal satisfies a string parameter</li>
+<li><code>"foo" | string</code> simplifies to <code>string</code> — the specific literal is absorbed</li>
+<li><code>:active</code> is consistent with <code>symbol</code> — same for symbols</li>
+</ul>
+<p><strong>Writing literal types in annotation strings</strong>: a literal string type is
+written <code>"value"</code>, so its quotes need escaping inside the eucalypt
+annotation string — use <strong>c-string escapes</strong>: <code>c"\"value\""</code>. (A plain
+<code>"..."</code> string does not process <code>\"</code>.) Literal <em>symbol</em> types (<code>:name</code>)
+have no quotes, so need no escaping.</p>
+<p>Mind the precedence of <code>|</code> and <code>-&gt;</code>: as in most type languages <code>-&gt;</code> binds
+tighter, so a union in <em>argument</em> position needs brackets.
+<code>"circle" | "rect" -&gt; bool</code> is the overload <code>"circle" | ("rect" -&gt; bool)</code>
+(see <em>Unions</em> below); the one-argument reading is
+<code>("circle" | "rect") -&gt; bool</code>.</p>
+<pre><code class="language-eu notest"># Literal string union as an argument: c-string escapes, bracketed union.
+` { type: c"(\"circle\" | \"rect\") -&gt; bool" }
+is-shape-name(s): s = "circle" or s = "rect"
+
+# Literal symbol union: no escaping needed, still bracketed.
+` { type: "(:ok | :err) -&gt; bool" }
+ok?(status): status = :ok
+</code></pre>
+<p>Most often you name the union in a <code>types:</code> alias, which avoids the
+bracketing at the use site — the alias name is a single token:</p>
+<pre><code class="language-eu notest">{ types: { Status: c"\"ok\" | \"err\"" } }
+
+` { type: "Status -&gt; bool" }
+ok?(s): s = "ok"
+</code></pre>
+<h3 id="lists"><a class="header" href="#lists">Lists</a></h3>
+<p><code>[T]</code> is a homogeneous list of <code>T</code>:</p>
+<pre><code class="language-eu notest">` { type: "[number] -&gt; [string]" }
+to-strings: map(str.of)
+
+` { type: "[a] -&gt; a" }
+first: head
+</code></pre>
+<p><code>NonEmpty([T])</code> is a non-empty list guaranteed to have at least one element.
+<code>head</code> and <code>tail</code> are safe on <code>NonEmpty([T])</code> without type warnings.</p>
+<h4 id="list-literal-synthesis"><a class="header" href="#list-literal-synthesis">List literal synthesis</a></h4>
+<p>The checker assigns precise types to list literals:</p>
+<div class="table-wrapper"><table><thead><tr><th>Literal</th><th>Synthesised type</th><th>Notes</th></tr></thead><tbody>
+<tr><td><code>[]</code></td><td><code>List(Never)</code></td><td>Empty — <code>head</code> on this warns</td></tr>
+<tr><td><code>[42]</code></td><td><code>Tuple([number])</code></td><td>1–16 elements → Tuple with element types</td></tr>
+<tr><td><code>[42, "hello"]</code></td><td><code>Tuple([number, string])</code></td><td>Heterogeneous; <code>head</code> gives <code>number</code></td></tr>
+<tr><td><code>[e1..e17, ...]</code></td><td><code>NonEmpty([T])</code></td><td>&gt;16 elements → non-empty homogeneous</td></tr>
+</tbody></table>
+</div>
+<p><code>cons(h, t)</code> and <code>h ‖ t</code> both return <code>NonEmpty([a])</code>.</p>
+<h3 id="tuples"><a class="header" href="#tuples">Tuples</a></h3>
+<p>Tuples use parentheses with commas:</p>
+<div class="table-wrapper"><table><thead><tr><th>Syntax</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>(A, B)</code></td><td>pair</td></tr>
+<tr><td><code>(A, B, C)</code></td><td>triple</td></tr>
+<tr><td><code>(A,)</code></td><td>1-tuple</td></tr>
+</tbody></table>
+</div>
+<p>Tuples appear naturally in lens element types and in functions like
+<code>discriminate</code> that return pairs:</p>
+<pre><code class="language-eu notest">` { type: "(a -&gt; bool) -&gt; [a] -&gt; ([a], [a])" }
+discriminate: ...
+</code></pre>
+<p><code>head</code> on a <code>Tuple([A, B, ...])</code> returns the precise first-element type <code>A</code>
+(not <code>A | B | ...</code>). <code>tail</code> returns <code>Tuple([B, ...])</code>:</p>
+<pre><code class="language-eu notest">[42, "hello"] head       # type: number
+[42, "hello"] tail head  # type: string
+</code></pre>
+<p>The named pair accessors <code>first</code>/<code>key</code> (index 0) and <code>second</code>/<code>value</code> (index 1)
+are also precise on <code>Tuple</code> — the checker recognises their <code>head ∘ tail^n</code>
+composition as a <strong>projection</strong> and returns the exact element type:</p>
+<pre><code class="language-eu notest">pair: ["alice", 42]
+pair key    # type: string  (index 0)
+pair value  # type: number  (index 1)
+second(pair) # type: number  (index 1)
+</code></pre>
+<p>Any user-defined function whose body is <code>xs tail head</code> (or <code>xs tail tail head</code>,
+etc.) acquires the same precise projection typing automatically.</p>
+<h3 id="records"><a class="header" href="#records">Records</a></h3>
+<p>Records describe the shape of blocks:</p>
+<div class="table-wrapper"><table><thead><tr><th>Syntax</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>{k: T}</code></td><td>closed record — exactly the key <code>k</code> of type <code>T</code></td></tr>
+<tr><td><code>{k: T, ..}</code></td><td>open record — at least <code>k: T</code>, may have more</td></tr>
+<tr><td><code>{k: T, ..r}</code></td><td>named row variable — <code>r</code> captures the extra fields</td></tr>
+<tr><td><code>{..r, ..s}</code></td><td>row concatenation — union of row <code>r</code> and row <code>s</code></td></tr>
+<tr><td><code>block</code></td><td>any block (no known shape)</td></tr>
+</tbody></table>
+</div>
+<pre><code class="language-eu notest">` { type: "{{name: string, age: number, ..}} -&gt; string" }
+greet-person(p): "Hello, {p.name}!"
+</code></pre>
+<p>Open records are more commonly useful — most block-processing functions
+don't require a specific shape.</p>
+<h4 id="lookup-with-a-literal-key"><a class="header" href="#lookup-with-a-literal-key"><code>lookup</code> with a literal key</a></h4>
+<p>When <code>lookup(:key, block)</code> is called with a <strong>literal symbol</strong> key, the checker
+resolves the field type precisely:</p>
+<pre><code class="language-eu notest">` { type: "!{{name: string, age: number}}" }
+person: { name: "Alice", age: 30 }
+
+lookup(:name, person)   # type: string  (precise)
+lookup(:age, person)    # type: number  (precise)
+lookup(:naem, person)   # warning: unknown record key :naem (key typo in closed record)
+</code></pre>
+<ul>
+<li><strong>Closed record + known key</strong> → exact field type.</li>
+<li><strong>Closed record + absent key</strong> → <code>any</code> + a static warning (key typo caught before runtime).</li>
+<li><strong>Open record + absent key</strong> → <code>any</code>, no warning (the key may be present at runtime).</li>
+<li><strong><code>Dict(V)</code> + any literal key</strong> → <code>V</code>.</li>
+<li><strong>Non-literal key</strong> → <code>any</code> (key value unknown at check time; may fail at runtime).</li>
+</ul>
+<h3 id="dict"><a class="header" href="#dict">Dict</a></h3>
+<p><code>Dict(T)</code> represents a homogeneous block — a block where every value has
+the same type <code>T</code>. Use this when you know what the values are but not what
+the keys are:</p>
+<pre><code class="language-eu notest">` { type: "Dict(number)" }
+scores: { alice: 95 bob: 87 carol: 92 }
+</code></pre>
+<p>Key prelude functions are annotated with <code>Dict</code> types:</p>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Type</th></tr></thead><tbody>
+<tr><td><code>map-values</code></td><td><code>(a -&gt; b) -&gt; Dict(a) -&gt; Dict(b)</code></td></tr>
+<tr><td><code>values</code></td><td><code>Dict(a) -&gt; [a]</code></td></tr>
+<tr><td><code>keys</code></td><td><code>Dict(a) -&gt; [symbol]</code></td></tr>
+<tr><td><code>group-by</code></td><td><code>(a -&gt; any) -&gt; [a] -&gt; Dict([a])</code></td></tr>
+</tbody></table>
+</div>
+<p>A closed record is a subtype of the corresponding <code>Dict</code> type when all
+its field values share a common type. An open or annotated-Dict record is
+consistent with <code>Dict(T)</code> for gradual typing purposes.</p>
+<h3 id="row-polymorphism"><a class="header" href="#row-polymorphism">Row polymorphism</a></h3>
+<p><strong>Named row variables</strong> allow functions that preserve the shape of records
+they do not inspect. The <code>merge</code> function is annotated:</p>
+<pre><code class="language-eu notest">` { type: "{{..r}} -&gt; {{..s}} -&gt; {{..r, ..s}}" }
+merge: __MERGE
+</code></pre>
+<p>Here <code>r</code> and <code>s</code> are row variables that capture the fields from each
+input. The result contains both sets of fields. In a type annotation
+string, <code>{{</code> and <code>}}</code> are literal braces (eucalypt string escaping);
+the parser sees <code>{..r}</code> and <code>{..r, ..s}</code>.</p>
+<p>Row variables propagate through function applications: if a function
+with a named row in its type is applied to a concrete record, the
+checker unifies the known fields and binds the row variable to the
+remaining fields.</p>
+<h4 id="inference-for-unannotated-block-combinators-b9"><a class="header" href="#inference-for-unannotated-block-combinators-b9">Inference for unannotated block combinators (B9)</a></h4>
+<p>When a lambda parameter is <strong>used as a block</strong> — projected (<code>.field</code>),
+merged (<code>merge</code>/<code>over</code>), or passed to a block-typed function — the
+checker allocates a fresh row variable for it automatically, even
+without an explicit <code>type:</code> annotation.</p>
+<pre><code class="language-eu notest"># No annotation needed — f infers {..r} -&gt; {..s} -&gt; {..r, ..s}
+f(a, b): a merge(b)
+
+base: { x: 1 }
+ext: { y: "hello" }
+result: base f(ext)   # result : {x: number, y: string}
+</code></pre>
+<p>The checker uses a <strong>use-driven</strong> approach: only parameters that appear
+in a block position acquire row variables. Parameters used arithmetically
+(<code>x + y</code>) stay <code>any</code>, avoiding spurious warnings.</p>
+<h3 id="functions"><a class="header" href="#functions">Functions</a></h3>
+<p>Arrow <code>-&gt;</code> is right-associative. Multi-argument functions are curried:</p>
+<pre><code class="language-eu notest"># a -&gt; b -&gt; c  means  a -&gt; (b -&gt; c)
+` { type: "a -&gt; b -&gt; a" }
+const(k, _): k
+</code></pre>
+<h3 id="unions"><a class="header" href="#unions">Unions</a></h3>
+<p><code>|</code> expresses "either type". Useful for overloaded functions:</p>
+<pre><code class="language-eu notest">` { type: "number -&gt; number | string -&gt; string" }
+to-upper-or-double: ...
+</code></pre>
+<p>Overloaded operators use union types:</p>
+<pre><code>+   : number -&gt; number -&gt; number | [a] -&gt; [a] -&gt; [a] | array -&gt; array -&gt; array
+&lt;   : number -&gt; number -&gt; bool | string -&gt; string -&gt; bool | symbol -&gt; symbol -&gt; bool
+</code></pre>
+<h3 id="recursive-types"><a class="header" href="#recursive-types">Recursive types</a></h3>
+<p>A <strong>recursive alias</strong> is an alias whose definition refers back to itself.
+The type checker resolves it to an equirecursive <code>μ</code>-type automatically —
+no special syntax is needed. Define recursive aliases with the <code>types:</code>
+metadata key:</p>
+<pre><code class="language-eu notest">{ types: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
+
+` { type: "Json → string" }
+describe: str.from
+</code></pre>
+<p><code>Json</code> unfolds to <code>number | string | bool | null | [Json] | Dict(Json)</code>,
+and any value whose type is a subtype of any variant passes without
+warning.  The type always <em>displays</em> as its alias name (<code>Json</code>) — never
+as the (infinite) unfolded form.</p>
+<p><strong>Unit metadata</strong> (the bare block at the top of a file, no <code>`</code>) is
+the natural place for type aliases shared across a whole file. Declaration
+metadata (with <code>`</code>) can also carry a <code>types:</code> block to scope aliases
+to a single binding:</p>
+<pre><code class="language-eu notest">` { types: { Tree: "{{value: number, children: [Tree]}}" } }
+root: { value: 1, children: [] }
+</code></pre>
+<p><strong>Mutual recursion</strong> — aliases that reference each other are handled:
+the first alias expanded in an annotation becomes the outer <code>μ</code> binder.</p>
+<h3 id="type-variables"><a class="header" href="#type-variables">Type variables</a></h3>
+<p>Lowercase identifiers are type variables, universally quantified at
+the declaration level:</p>
+<pre><code class="language-eu notest">` { type: "(a -&gt; b) -&gt; [a] -&gt; [b]" }
+map: ...
+</code></pre>
+<p>At call sites, type variables are instantiated from the argument types.
+<code>map(str.of, [1, 2])</code> instantiates <code>a = number, b = string</code>, giving
+result type <code>[string]</code>.</p>
+<h3 id="higher-kinded-type-variables"><a class="header" href="#higher-kinded-type-variables">Higher-kinded type variables</a></h3>
+<p>Type variables can range over <em>type constructors</em> (types that take
+arguments), not just ordinary types.  A <strong>kind</strong> describes the arity
+of a type constructor:</p>
+<ul>
+<li><code>*</code> — an ordinary type (e.g. <code>number</code>, <code>[string]</code>)</li>
+<li><code>* -&gt; *</code> — a unary type constructor (e.g. <code>List</code>, <code>IO</code>)</li>
+<li><code>* -&gt; * -&gt; *</code> — a binary type constructor (e.g. <code>Lens</code>, <code>Dict</code>)</li>
+</ul>
+<p>Declare a constructor variable with a kind annotation using <code>::</code>:</p>
+<pre><code class="language-eu notest">` { type: "forall (m :: * -&gt; *) a. m a -&gt; m a" }
+hk-id: ...
+</code></pre>
+<p>Without a kind annotation, type variables default to kind <code>*</code> (ordinary
+types).  The <code>forall</code> keyword makes quantification explicit and allows
+kind annotations.  Implicit quantification (writing <code>a</code> directly in
+the type string) still works for kind-<code>*</code> variables.</p>
+<p><strong>Constructor application</strong> uses juxtaposition:</p>
+<div class="table-wrapper"><table><thead><tr><th>Annotation</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>m a</code></td><td>Apply constructor variable <code>m</code> to type <code>a</code></td></tr>
+<tr><td><code>forall (m :: * -&gt; *) a. m a -&gt; m a</code></td><td>Identity for any unary functor</td></tr>
+<tr><td><code>forall a. a -&gt; a</code></td><td>Polymorphic identity</td></tr>
+</tbody></table>
+</div>
+<p>The built-in constructors <code>List</code>, <code>IO</code>, <code>Dict</code>, <code>NonEmpty</code>, <code>Random</code>,
+and <code>State</code> all have kind <code>* -&gt; *</code>.  <code>Lens</code> and <code>Traversal</code> have kind
+<code>* -&gt; * -&gt; *</code>.</p>
+<h3 id="special-types"><a class="header" href="#special-types">Special types</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Type</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>any</code></td><td>gradual/dynamic — no errors involving <code>any</code></td></tr>
+<tr><td><code>top</code></td><td>supertype of everything — nothing useful can be done with it</td></tr>
+<tr><td><code>never</code></td><td>bottom type — unreachable code, empty collections</td></tr>
+<tr><td><code>ExecutionError</code></td><td>the type of a raised runtime error (see Partial types below)</td></tr>
+</tbody></table>
+</div>
+<h3 id="partial-types"><a class="header" href="#partial-types">Partial types</a></h3>
+<p>Some functions can fail at runtime — for example <code>nth</code> raises an error
+when the index is out of range, and <code>parse-as</code> raises an error when the
+string is not valid in the given format.  These are called <strong>partial
+functions</strong>.</p>
+<p>Partial functions use the postfix <code>?</code> sugar in their type signatures:</p>
+<pre><code>nth      : number → [a] → a?         # may raise an error if index out of range
+parse-as : symbol → string → any?    # may raise an error if string is not valid
+lookup   : symbol → Dict(a) → a?     # may raise an error if key not found
+</code></pre>
+<p><code>T?</code> is display sugar for <code>T | ExecutionError</code>.  The two forms are
+completely interchangeable in type annotations:</p>
+<pre><code class="language-eu notest">` { type: "number → [a] → a?" }
+safe-nth(n, l): l nth(n)       # explicitly partial
+
+` { type: "number → [a] → a | ExecutionError" }
+also-safe-nth(n, l): l nth(n)  # identical — same type, different spelling
+</code></pre>
+<p><strong>Gradual self-limiting</strong>: a partial result flowing into unannotated
+(<code>any</code>) code is <strong>silent</strong> — <code>ExecutionError &lt;: any</code>.  A warning fires
+only when a partial result is used in a position that has been explicitly
+annotated as total:</p>
+<pre><code class="language-eu notest">` { type: "number" }
+result: [1, 2, 3] nth(0)   # warning: expected number, found number?
+</code></pre>
+<p>Functions that A6 made total by input refinement (<code>head</code>/<code>tail</code> require
+<code>NonEmpty([a])</code>) are <strong>not</strong> partial — they keep their total types.
+<code>T?</code> documents the <em>residual</em> partiality that refinement cannot remove.</p>
+<hr />
+<h2 id="io-actions"><a class="header" href="#io-actions">IO actions</a></h2>
+<p><code>IO(T)</code> is a proper type constructor, not a block with metadata.
+IO actions have dedicated runtime representations — they are
+genuinely distinct from the values they produce.</p>
+<p>This is the type checker's most valuable capability: catching the
+common mistake of treating an IO action as its result:</p>
+<pre><code class="language-eu notest"># WRONG: io.shell returns IO(block), not block
+result: io.shell("echo hello")
+name: result.stdout              # warning: IO(block) has no field .stdout
+
+# RIGHT: extract fields inside the monad
+name: io.shell("echo hello") io.map(_.stdout)  # IO(string) ✓
+</code></pre>
+<p>The prelude IO functions are typed:</p>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Type</th></tr></thead><tbody>
+<tr><td><code>io.shell(cmd)</code></td><td><code>string -&gt; IO(block)</code></td></tr>
+<tr><td><code>io.return(a)</code></td><td><code>a -&gt; IO(a)</code></td></tr>
+<tr><td><code>io.bind(a, c)</code></td><td><code>IO(a) -&gt; (a -&gt; IO(b)) -&gt; IO(b)</code></td></tr>
+<tr><td><code>io.map(f, a)</code></td><td><code>(a -&gt; b) -&gt; IO(a) -&gt; IO(b)</code></td></tr>
+<tr><td><code>io.fail(msg)</code></td><td><code>string -&gt; IO(a)</code></td></tr>
+</tbody></table>
+</div>
+<p><code>IO(T)</code> is opaque. The only way to work with the value inside is
+through <code>io.bind</code>, <code>io.map</code>, or the IO runner. This prevents IO
+values from leaking into pure data.</p>
+<hr />
+<h2 id="monadic-block-binding-types"><a class="header" href="#monadic-block-binding-types">Monadic block binding types</a></h2>
+<p>When <code>eu check</code> encounters a monadic block, it uses the monad's element
+type to infer the types of bound variables. Each binding in a <code>{ :ns ... }</code> block should be an action in that monad; the checker unwraps the
+monad layer and gives the bound name the result type.</p>
+<h3 id="the-list-monad--for--"><a class="header" href="#the-list-monad--for--">The list monad: <code>{ :for ... }</code></a></h3>
+<p>The <code>for</code> namespace is the list monad. Binding a name draws elements
+from a list, so the bound variable gets the list's element type:</p>
+<pre><code class="language-eu notest">{ :for x: [1, 2, 3] }.(x * 2)   # x : number  ✓
+{ :for s: ["a", "b"] }.(s)       # s : string  ✓
+</code></pre>
+<p>If you bind a non-list, <code>eu check</code> warns:</p>
+<pre><code class="language-eu notest">{ :for x: 42 }.(x)   # warning: binding in :for block must be [a], got number
+</code></pre>
+<h3 id="the-io-monad--io--"><a class="header" href="#the-io-monad--io--">The IO monad: <code>{ :io ... }</code></a></h3>
+<p>The <code>io</code> namespace is typed with <code>IO(a)</code>. Each binding must be an IO
+action; the bound variable gets the inner type:</p>
+<pre><code class="language-eu notest">{ :io
+  r: io.shell("echo hello")   # r : block  (IO(block) unwrapped)
+  _: io.check(r)
+}.(r.stdout)                  # stdout lookup on block  ✓
+</code></pre>
+<p>The most common mistake the checker catches is binding a plain value
+instead of an IO action:</p>
+<pre><code class="language-eu notest">{ :io
+  cmd: 42                     # warning: expected IO(a), got number
+}.(cmd)
+</code></pre>
+<h3 id="the-state-monad--random---and--state--"><a class="header" href="#the-state-monad--random---and--state--">The state monad: <code>{ :random ... }</code> and <code>{ :state ... }</code></a></h3>
+<p>State monads wrap actions as functions of a state value. The checker
+validates that each binding is a valid monadic action for that namespace.
+Bound variables receive the result type (the <code>value</code> component):</p>
+<pre><code class="language-eu notest">{ :random
+  d6:  random.int(6)     # d6  : number
+  d20: random.int(20)    # d20 : number
+}.[d6, d20]
+</code></pre>
+<h3 id="the-identity-monad--let--"><a class="header" href="#the-identity-monad--let--">The identity monad: <code>{ :let ... }</code></a></h3>
+<p><code>{ :let ... }</code> blocks use the identity monad — every binding is a plain
+value, so bound variables keep their inferred types directly:</p>
+<pre><code class="language-eu notest">{ :let
+  x: 1 + 1               # x : number
+  s: str.of(x)           # s : string
+}.(x + 1)                # number + number  ✓
+</code></pre>
+<h3 id="user-defined-monads-monad"><a class="header" href="#user-defined-monads-monad">User-defined monads: <code>monad()</code></a></h3>
+<p><code>monad({ bind(m, f): ..., return(v): ... })</code> derives the standard
+monad combinators (<code>map</code>, <code>then</code>, <code>and-then</code>, <code>join</code>, <code>sequence</code>,
+<code>map-m</code>, <code>filter-m</code>) and annotates them with higher-kinded types using
+<code>forall (m :: * -&gt; *)</code>.</p>
+<p>When <code>monad()</code> is called with a concrete <code>bind</code> and <code>return</code>, the type
+checker instantiates <code>m :: * → *</code> as a fresh higher-kinded variable and
+runs higher-order pattern unification: it unifies <code>m a</code> against the
+concrete first-argument type of <code>bind</code>.  For named constructors such as
+<code>List</code> (<code>[a]</code>) this decomposes via the first-order rule; for anonymous
+type constructors (e.g. <code>stream → {value: a, rest: stream}</code>) the
+Miller pattern fragment fires and binds <code>m</code> to a type-level lambda.
+No annotation is required — the binding is inferred entirely from the
+<code>bind</code> implementation.</p>
+<p>For example, a list monad:</p>
+<pre><code class="language-eu notest">my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
+</code></pre>
+<p>The checker unifies <code>m a</code> against <code>[a]</code>, infers <code>m = List</code>, and gives
+<code>my-for.map</code> type <code>forall a b. (a → b) → [a] → [b]</code>.  Passing a
+non-function triggers a type warning:</p>
+<pre><code class="language-eu notest">[1, 2, 3] my-for.map(true)   # warning: expected a → b, found bool
+</code></pre>
+<h4 id="how-combinator-types-are-inferred"><a class="header" href="#how-combinator-types-are-inferred">How combinator types are inferred</a></h4>
+<p>Monad combinator types are inferred automatically via higher-order
+pattern unification — no <code>monad:</code> annotation is needed for type
+checking.  When <code>monad()</code> is called with a concrete <code>bind</code>
+implementation, the checker unifies the <code>bind</code> argument type against
+the polymorphic <code>m a → (a → m b) → m b</code> signature.  If <code>m</code> is applied
+to a variable (the Miller pattern fragment), the unifier constructs a
+type-level lambda: for example, a <code>bind</code> whose first argument has type
+<code>stream → {value: a, rest: stream}</code> causes the checker to infer
+<code>m = λa. stream → {value: a, rest: stream}</code> and propagate that
+instantiation through all nine derived combinators.</p>
+<p>Named constructors (<code>List</code>, <code>IO</code>) are handled by the existing
+first-order rule: <code>m a</code> against <code>[a]</code> decomposes as <code>m = List</code>.</p>
+<p>No annotation is required:</p>
+<pre><code class="language-eu notest">my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
+</code></pre>
+<p><code>my-for.bind</code> is inferred as <code>[a] → (a → [b]) → [b]</code>, <code>my-for.map</code>
+as <code>(a → b) → [a] → [b]</code>, and so on.</p>
+<h4 id="monad-metadata-for-lsp-hints"><a class="header" href="#monad-metadata-for-lsp-hints"><code>monad:</code> metadata for LSP hints</a></h4>
+<p>The <code>monad:</code> metadata key is <strong>not</strong> used for type checking.  It is
+retained solely for A10 LSP element-type hints: when the language
+server displays inlay hints inside a monadic block, <code>monad:</code> tells it
+which element type to show next to each bound variable (e.g.
+<code>x: number</code> instead of <code>x: [number]</code>).</p>
+<pre><code class="language-eu notest">` { monad: "[a]" }
+my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
+</code></pre>
+<p>Omitting <code>monad:</code> does not affect type checking; it only suppresses
+the LSP element-type inlay hints.</p>
+<h3 id="what-the-checker-validates"><a class="header" href="#what-the-checker-validates">What the checker validates</a></h3>
+<p><code>eu check</code> reports a warning when:</p>
+<ul>
+<li>A binding's RHS type is inconsistent with the monad's expected action
+type (e.g. <code>number</code> in an <code>:io</code> block instead of <code>IO(a)</code>)</li>
+<li>A bound variable is used in a way inconsistent with its unwrapped type
+(e.g. calling <code>.stdout</code> on a <code>number</code>)</li>
+</ul>
+<p>The checker does <strong>not</strong> require annotations — it infers binding types
+from the monad's known type signature and the RHS expression type.</p>
+<p>When using an LSP-enabled editor, inlay hints display the inferred
+element type next to each bound variable name, e.g. <code>x: number</code> inside
+a <code>{ :for x: [...] }</code> block.</p>
+<hr />
+<h2 id="lens-and-traversal-types"><a class="header" href="#lens-and-traversal-types">Lens and traversal types</a></h2>
+<p>The lens library is typed with two opaque type constructors:</p>
+<div class="table-wrapper"><table><thead><tr><th>Type</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>Lens(a, b)</code></td><td>focuses on a single <code>b</code> within an <code>a</code></td></tr>
+<tr><td><code>Traversal(a, b)</code></td><td>focuses on zero or more <code>b</code>s within an <code>a</code></td></tr>
+</tbody></table>
+</div>
+<p><code>Lens(a, b)</code> is a subtype of <code>Traversal(a, b)</code>.</p>
+<pre><code class="language-eu notest">` { type: "symbol -&gt; Lens(block, any)" }
+at(key, k): ...
+
+` { type: "number -&gt; Lens([a], a)" }
+ix(n, k): ...
+
+` { type: "Lens(a, b) -&gt; a -&gt; b" }
+view(lens, data): ...
+
+` { type: "Lens(a, b) | Traversal(a, b) -&gt; (b -&gt; b) -&gt; a -&gt; a" }
+over(lens, fn, data): ...
+</code></pre>
+<p>Composition of lenses via <code>∘</code> chains optic types:</p>
+<ul>
+<li><code>Lens(a, b) ∘ Lens(b, c)</code> → <code>Lens(a, c)</code></li>
+<li><code>Lens(a, b) ∘ Traversal(b, c)</code> → <code>Traversal(a, c)</code></li>
+</ul>
+<p>The checker catches broken compositions:</p>
+<pre><code class="language-eu notest"># Works: a block → string → number (hypothetical)
+path: at(:name) ∘ at(:length)
+
+# Warning: Lens(block, any) ∘ ix(0) — ix expects [a], not any
+bad-path: at(:name) ∘ ix(0)
+</code></pre>
+<hr />
+<h2 id="type-aliases"><a class="header" href="#type-aliases">Type aliases</a></h2>
+<p>For complex or repeated types, define aliases at the top of your file
+using unit metadata:</p>
+<pre><code class="language-eu notest">{ import: "data.eu"
+  types: { Person: "{{name: string, age: number, email: string | null, ..}}"
+           Response: "{{status: number, body: string | null}}" } }
+
+` { type: "[Person] -&gt; [string]" }
+names: map(_.name)
+
+` { type: "Response -&gt; bool" }
+success?(r): r.status &lt; 400
+</code></pre>
+<p>Alternatively, use <code>type-def:</code> on a declaration to name the type of
+a canonical value:</p>
+<pre><code class="language-eu notest">` { type-def: "Point" }
+origin: { x: 0, y: 0 }
+# Defines: Point = {x: number, y: number, ..}
+# And: origin : Point
+
+` { type: "Point -&gt; Point -&gt; number" }
+distance(a, b): ((b.x - a.x)^2 + (b.y - a.y)^2) abs
+</code></pre>
+<p>Combine <code>type:</code> and <code>type-def:</code> to override inference:</p>
+<pre><code class="language-eu notest">` { type-def: "Person"
+    type: "{{name: string, age: number, email: string | null, ..}}" }
+nobody: { name: "", age: 0, email: null }
+</code></pre>
+<hr />
+<h2 id="a-worked-example"><a class="header" href="#a-worked-example">A worked example</a></h2>
+<p>Consider a small data processing pipeline with type annotations:</p>
+<pre><code class="language-eu notest">{ types: { Record: "{{id: number, name: string, active: bool, ..}}" } }
+
+` { type: "[Record] -&gt; [Record]" }
+active-records: filter(_.active)
+
+` { type: "[Record] -&gt; block" }
+index-by-id: group-by(_.id)
+
+` { type: "Record -&gt; string" }
+summary(r): "[{r.id}] {r.name}"
+</code></pre>
+<p>With these annotations in place, the checker can verify downstream
+code:</p>
+<pre><code class="language-eu notest"># Warning: filter expects (a -&gt; bool), but str.of has type any -&gt; string
+bad: records filter(str.of)
+
+# Fine: map over active records, produce strings
+ok: records active-records map(summary)
+</code></pre>
+<hr />
+<h2 id="open-vs-closed-records"><a class="header" href="#open-vs-closed-records">Open vs. closed records</a></h2>
+<p>An <strong>open record</strong> <code>{k: T, ..}</code> says "has at least this key", allowing
+additional fields. A <strong>closed record</strong> <code>{k: T}</code> says "has exactly this
+key".</p>
+<p>In practice, open records are more useful because eucalypt blocks
+typically have variable shapes:</p>
+<pre><code class="language-eu notest"># Open: works with any block that has a .name field
+` { type: "{{name: string, ..}} -&gt; string" }
+get-name(b): b.name
+
+# Closed: only works with blocks of exactly this shape
+` { type: "{{name: string}}" }
+exact-block: { name: "Alice" }
+</code></pre>
+<p>Width subtyping means <code>{x: number, y: number}</code> is a subtype of
+<code>{x: number, ..}</code> — a more specific block satisfies a less specific
+requirement.</p>
+<hr />
+<h2 id="namespace-typing"><a class="header" href="#namespace-typing">Namespace typing</a></h2>
+<p>Functions within namespace blocks (<code>str</code>, <code>arr</code>, <code>set</code>, etc.) are
+annotated in the same way:</p>
+<pre><code class="language-eu notest">str: {
+  ` { type: "any -&gt; string" }
+  of: __STR
+
+  ` { type: "string -&gt; number" }
+  len: __STR_LEN
+}
+</code></pre>
+<p>The checker synthesises the block's record type from its members, so
+<code>str.len</code> resolves to <code>string -&gt; number</code> via standard record field
+lookup.</p>
+<hr />
+<h2 id="flow-sensitive-narrowing"><a class="header" href="#flow-sensitive-narrowing">Flow-sensitive narrowing</a></h2>
+<p>After a recognised branch on a type predicate, the checker narrows the
+tested variable's type within each branch:</p>
+<pre><code class="language-eu notest"># x : number | string | null
+# In the true branch, x is narrowed to `null`.
+# In the false branch, x is narrowed to `number | string` (null subtracted).
+` { type: "(number | string | null) -&gt; string" }
+describe(x): if(x null?, "nothing", if(x string?, x, str(x)))
+</code></pre>
+<p>Recognised predicates: <code>number?</code>, <code>string?</code>, <code>symbol?</code>, <code>bool?</code>, <code>list?</code>,
+<code>block?</code>, <code>nil?</code>, <code>null?</code>, <code>not-nil?</code>.</p>
+<p><code>nil?</code> narrows a <code>[T]</code> to <code>NonEmpty([T])</code> in the <strong>false</strong> branch (the
+list is non-empty), enabling <code>head</code> without a type warning:</p>
+<pre><code class="language-eu notest">` { type: "[number] -&gt; number" }
+safe-head(xs): if(xs nil?, 0, xs head)   # no warning — xs is NonEmpty([number]) in false branch
+</code></pre>
+<p>Recognised branchers: <code>if</code> (three-argument), <code>and</code>, <code>or</code>, <code>cond</code>.
+A user-defined brancher that aliases or wraps one of these inherits its
+narrowing — but only if the prelude's <code>if</code>/<code>and</code>/<code>or</code>/<code>cond</code> is used,
+not a local rebinding.</p>
+<h2 id="cond--multi-way-conditional"><a class="header" href="#cond--multi-way-conditional"><code>cond</code> — multi-way conditional</a></h2>
+<p><code>cond</code> dispatches a list of <code>condition =&gt; result</code> clauses, returning the
+first result whose condition is true. A trailing bare expression is the
+default:</p>
+<pre><code class="language-eu notest">classify(n): cond[n &lt; 0 =&gt; "negative", n &gt; 100 =&gt; "huge", "normal"]
+</code></pre>
+<p>The <code>=&gt;</code> operator (precedence 15, right-associative) builds a clause pair.
+The Unicode alias <code>⇒</code> is equivalent. Both forms are recognised by the
+checker for flow-sensitive narrowing through each clause.</p>
+<hr />
+<h2 id="prelude-type-cache"><a class="header" href="#prelude-type-cache">Prelude type cache</a></h2>
+<p>The checker builds the prelude's type information once per process and
+caches it.  Every subsequent file is checked in <strong>standalone mode</strong> —
+only the user file is loaded, and the cached prelude summary (binding
+types, type aliases, branch-shape classification) is seeded into the
+checker before it begins.</p>
+<p>This means:</p>
+<ul>
+<li>The prelude is <strong>fully checked</strong> on the first call — every prelude
+binding is a root in standalone mode, unlike the merged-then-pruned
+path which only ever checks the subset reachable from the user file.</li>
+<li>Each subsequent LSP re-check or <code>eu check</code> invocation <strong>skips the
+~2 200-line prelude entirely</strong>, giving a measurably faster response.</li>
+<li>Results are identical to the merged check: prelude references resolve
+to the same types, predicate narrowing fires on <code>number?</code>/<code>string?</code>/
+etc., and user-defined brancher wrappers around prelude combinators
+are recognised.</li>
+</ul>
+<p>The cache is keyed on the embedded prelude source and lives in process
+memory — it persists for the lifetime of the <code>eu</code> or LSP server process
+but is not written to disk.</p>
+<hr />
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>What</th><th>How</th></tr></thead><tbody>
+<tr><td>Run the checker</td><td><code>eu check file.eu</code></td></tr>
+<tr><td>Treat warnings as errors</td><td><code>eu check file.eu --strict</code></td></tr>
+<tr><td>Annotate a declaration</td><td><code>` { type: "number -&gt; number" }</code></td></tr>
+<tr><td>Any block</td><td><code>block</code></td></tr>
+<tr><td>Open record</td><td><code>{k: T, ..}</code></td></tr>
+<tr><td>Closed record</td><td><code>{k: T}</code></td></tr>
+<tr><td>Named row variable</td><td><code>{k: T, ..r}</code> (<code>{{k: T, ..r}}</code> in string)</td></tr>
+<tr><td>Row concatenation</td><td><code>{..r, ..s}</code> (<code>{{..r, ..s}}</code> in string)</td></tr>
+<tr><td>Homogeneous dict</td><td><code>Dict(T)</code></td></tr>
+<tr><td>IO action</td><td><code>IO(T)</code></td></tr>
+<tr><td>Lens</td><td><code>Lens(a, b)</code></td></tr>
+<tr><td>Traversal</td><td><code>Traversal(a, b)</code></td></tr>
+<tr><td>Literal string type</td><td><code>"value"</code> — c-string escapes: <code>c"\"value\""</code></td></tr>
+<tr><td>Literal symbol type</td><td><code>:name</code></td></tr>
+<tr><td>Type variable</td><td>lowercase identifier: <code>a</code>, <code>b</code>, <code>s</code></td></tr>
+<tr><td>Explicit quantification</td><td><code>forall a. T</code> or <code>forall (m :: * -&gt; *) a. T</code></td></tr>
+<tr><td>Constructor variable</td><td><code>m :: * -&gt; *</code> in a <code>forall</code> binder</td></tr>
+<tr><td>Constructor application</td><td><code>m a</code> (juxtaposition in type expressions)</td></tr>
+<tr><td>Union type</td><td><code>A | B</code></td></tr>
+<tr><td>NonEmpty list</td><td><code>NonEmpty([a])</code></td></tr>
+<tr><td>Empty list literal</td><td><code>[]</code> synthesises as <code>List(Never)</code></td></tr>
+<tr><td>Short list literal</td><td><code>[a, b]</code> synthesises as <code>Tuple([A, B])</code> (1–16 elements)</td></tr>
+<tr><td><code>nil?</code> false-branch</td><td><code>[T]</code> narrowed to <code>NonEmpty([T])</code></td></tr>
+<tr><td>Type alias (unit meta)</td><td><code>{ types: { Name: "..." } }</code></td></tr>
+<tr><td>Type alias (declaration)</td><td><code>` { type-def: "Name" }</code></td></tr>
+<tr><td>Cond clause</td><td><code>condition =&gt; result</code></td></tr>
+<tr><td>Multi-way conditional</td><td><code>cond[c1 =&gt; r1, c2 =&gt; r2, default]</code></td></tr>
+</tbody></table>
+</div>
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../guide/state-monad.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../guide/advanced-topics.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../guide/state-monad.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../guide/advanced-topics.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>
