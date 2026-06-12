@@ -1,6 +1,6 @@
 [package]
 name = "eucalypt"
-version = "0.8.0"
+version = "0.8.1"
 authors = ["gmorpheme <github@gmorpheme.net>"]
 edition = "2021"
 
