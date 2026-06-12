@@ -2409,3 +2409,13 @@ pub fn test_typecheck_100_target_bare_symbol_regression() {
 pub fn test_typecheck_101_unrecognised_bare_symbol_target_shortcut() {
     run_typecheck_test("101_unrecognised_bare_symbol_target_shortcut.eu");
 }
+
+#[test]
+pub fn test_typecheck_102_types_alias_with_docstring() {
+    run_typecheck_test("102_types_alias_with_docstring.eu");
+}
+
+#[test]
+pub fn test_typecheck_103_interpolation_string_type() {
+    run_typecheck_test("103_interpolation_string_type.eu");
+}

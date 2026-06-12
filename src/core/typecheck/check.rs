@@ -1264,6 +1264,17 @@ impl Checker {
     /// We flatten `func` into `(head, prefix_args)` and prepend to `args` so
     /// the full argument list `[a, b, x]` is visible for recognition.
     fn synthesise_app(&mut self, smid: Smid, func: &RcExpr, args: &[RcExpr]) -> Type {
+        // ── String interpolation (JOIN) ─────────────────────────────────────
+        //
+        // The desugarer produces `App(Intrinsic("JOIN"), [List(…), sep])` for
+        // interpolated strings.  The result is always a string regardless of
+        // the interpolated values, so return `String` directly.
+        if let Expr::Intrinsic(_, name) = &*func.inner {
+            if name == "JOIN" {
+                return Type::String;
+            }
+        }
+
         // ── Spine flattening + branch recognition (§A5.2, §A5.3) ─────────────
         //
         // Flatten the function spine to find the outermost head and the full
@@ -3069,14 +3080,19 @@ fn synthesise_list_literal(elem_types: Vec<Type>) -> Type {
 ///    When every list element and the separator are string literals, the join
 ///    is evaluated at compile time and the result is returned.
 fn extract_string_literal(expr: &RcExpr) -> Option<String> {
+    // Unwrap any metadata wrapper (e.g. a docstring on a `types:` alias
+    // entry) so that `Meta(_, Literal(Str(…)), _)` is treated the same as
+    // a bare `Literal(Str(…))`.
+    let inner = unwrap_meta(expr);
+
     // Plain string literal — fast path.
-    if let Expr::Literal(_, Primitive::Str(s)) = &*expr.inner {
+    if let Expr::Literal(_, Primitive::Str(s)) = &*inner.inner {
         return Some(s.clone());
     }
 
     // JOIN([chunk, …], sep) — produced by the desugarer for interpolated
     // strings.  Evaluate it statically when all chunks are string literals.
-    if let Expr::App(_, func, args) = &*expr.inner {
+    if let Expr::App(_, func, args) = &*inner.inner {
         if let Expr::Intrinsic(_, name) = &*func.inner {
             if name == "JOIN" && args.len() == 2 {
                 let sep = extract_plain_str(&args[1])?;
@@ -3089,6 +3105,15 @@ fn extract_string_literal(expr: &RcExpr) -> Option<String> {
     }
 
     None
+}
+
+/// Unwrap any `Expr::Meta` wrappers to reach the underlying expression.
+fn unwrap_meta(expr: &RcExpr) -> &RcExpr {
+    let mut e = expr;
+    while let Expr::Meta(_, inner, _) = &*e.inner {
+        e = inner;
+    }
+    e
 }
 
 /// Extract a plain string literal (no interpolation) from a core expression.
