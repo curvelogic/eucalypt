@@ -66,8 +66,38 @@ hand-written; the admin rule, for instance, becomes:
 
     (starts_with(http.request.uri.path, "/admin")) and (not (ip.src in {203.0.113.0/24 198.51.100.0/24}))
 
-## Status
+## Roadmap
 
-- **Cloudflare** — DNS and WAF / rate-limiting (provider v5).
-- **GitHub, AWS** — planned. The same `lib/tf.eu` core is provider-agnostic;
-  adding a provider is mostly resource-constructor data entry.
+**Implemented** (Cloudflare provider v5):
+
+- DNS — zone lookup + A/AAAA/CNAME/TXT/MX (`lib/tf-cloudflare.eu`).
+- WAF / rate-limiting — `cloudflare_ruleset` + a wirefilter expression
+  builder (`lib/tf-cloudflare-waf.eu`).
+
+**Next (resume here under eu 0.8):**
+
+1. **Library-wide type pass.** Replace the prose shape descriptions with
+   checked types: `Node` / `Document` in `tf.eu`, and `Rule` / `Expr`
+   plus literal-union `action` / `phase` types in the Cloudflare modules
+   (so a typo'd action or phase is a type error). Done as one coherent
+   layer across `tf.eu` + cloudflare + waf, not module by module. While
+   here, swap the local `select` helper in `tf-cloudflare.eu` for the
+   prelude `select` that lands in 0.8.
+2. **Cloudflare dev platform** — Workers / KV / R2 / D1 / Queues / Pages.
+3. **More Cloudflare** — Zero Trust / Access, load balancing, account / ops.
+4. **Other providers** — GitHub, then AWS networking. The `tf.eu` core is
+   provider-agnostic; a new provider is mostly constructor data entry.
+
+**Tooling follow-ups** (raised, not scheduled):
+
+- A `merge-with` / `deep-merge-with` prelude primitive, and a
+  collision-detecting `document` — a duplicate resource address should be
+  a typed error, not a silently dropped resource.
+- `eu fmt` / lint enforcement of idioms (juxtaposed `f[...]` / `g{...}`
+  calls; no `:suppress` on functions) wired into CI, so style is
+  mechanically enforced rather than reviewer-caught.
+- Bake the `tf*` modules into the binary (`src/driver/resources.rs`) so
+  `{ import: "tf.eu" }` works without `-L lib`, like `state.eu`.
+- `terraform validate` in CI — needs an environment with the `terraform`
+  binary and network access; the generated JSON is currently checked
+  structurally against the v5 provider schema only.
