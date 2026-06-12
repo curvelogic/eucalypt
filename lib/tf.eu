@@ -64,14 +64,12 @@ data(t, n, b): {
 
 # Document assembly --------------------------------------------------
 
-` :suppress
 node-fragment(node): {
   named: block[[node.name sym, node.body]]
   typed: block[[node.type sym, named]]
   result: block[[node.tf_kind, typed]]
 }.result
 
-` :suppress
 to-fragment(item): item has(:tf_kind) then(node-fragment(item), item)
 
 ` { doc: "`document(items)` - assemble a list of nodes and / or fragment

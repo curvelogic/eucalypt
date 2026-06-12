@@ -33,17 +33,13 @@ zone(local-name, domain): tf.data("cloudflare_zone", local-name, { filter: { nam
 
 # Local-name helpers --------------------------------------------------
 
-` :suppress
 dns-label(name): name = "@" then("root", name str.replace("[^A-Za-z0-9]", "_"))
 
-` :suppress
 local-name(prefix, ztag, name, suffix): { label: name dns-label }."{prefix}_{ztag}_{label}{suffix}"
 
 # `select` keeps only the named keys of a block; due in the prelude at 0.8.
-` :suppress
 select(ks, b): b filter-items(by-key(∈ set.from-list(ks))) block
 
-` :suppress
 optionals(o): { ttl: 1 } (o select[:ttl, :proxied, :priority])
 
 # Record constructors -------------------------------------------------

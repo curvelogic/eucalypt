@@ -22,13 +22,10 @@ from helpers rather than hand-written.
 # which collide with Eucalypt interpolation, so the helpers below hide
 # the escaping (c-strings for `"`, doubled braces for `{` `}`).
 
-` :suppress
 parens(e): "({e})"
 
-` :suppress
 quoted(s): c"\"{s}\""
 
-` :suppress
 wf-set(items): { body: items str.join-on(" "), o: "{{", c: "}}" }."{o}{body}{c}"
 
 ` { doc: "`all-of(exprs)` - conjoin wirefilter expressions with `and`." }
@@ -63,7 +60,6 @@ country-in(codes): { s: codes map(quoted) wf-set }."ip.geoip.country in {s}"
 # A rule is a block { ref, description, expression, action, ... }.  `o`
 # carries at least `ref` and `expression`; `description` is optional.
 
-` :suppress
 rule(act, o): {
   ref: o.ref
   description: o lookup-or(:description, "")
@@ -71,7 +67,6 @@ rule(act, o): {
   action: act
 }
 
-` :suppress
 block-response(o): o has(:response) then({ action_parameters: { response: o.response } }, {})
 
 ` { doc: "`block(o)` - block matching requests.  Optional `o.response`
