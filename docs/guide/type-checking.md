@@ -132,35 +132,30 @@ alias is the recommended approach. (Note the `c"..."` **c-string** — see
 - `"foo" | string` simplifies to `string` — the specific literal is absorbed
 - `:active` is consistent with `symbol` — same for symbols
 
-**Writing literal types in annotation strings**: the type syntax uses
-`"value"` (double-quoted) for literal strings. The `"` must survive
-inside the eucalypt annotation string, so the annotation must be a
-**c-string** (`c"..."`), whose `\"` escape yields a literal quote. A plain
-`"..."` string does *not* process `\"`, so the backslashes reach the type
-parser and it errors. Literal *symbol* types (`:name`) contain no quotes,
-so they need neither escaping nor a c-string.
+**Writing literal types in annotation strings**: a literal string type is
+written `"value"`, so its quotes need escaping inside the eucalypt
+annotation string — use **c-string escapes**: `c"\"value\""`. (A plain
+`"..."` string does not process `\"`.) Literal *symbol* types (`:name`)
+have no quotes, so need no escaping.
 
-A second trap: in the type language `->` binds **tighter** than `|`
-(this is what lets overloaded function types — see *Unions* below — be
-written without parentheses). So a union in *argument* position must be
-parenthesised. `"circle" | "rect" -> bool` parses as the overload
-`"circle" | ("rect" -> bool)`; the one-argument reading is
+Mind the precedence of `|` and `->`: as in most type languages `->` binds
+tighter, so a union in *argument* position needs brackets.
+`"circle" | "rect" -> bool` is the overload `"circle" | ("rect" -> bool)`
+(see *Unions* below); the one-argument reading is
 `("circle" | "rect") -> bool`.
 
 ```eu,notest
-# Literal string union as an argument: c-string for the quotes, parens
-# around the union.
+# Literal string union as an argument: c-string escapes, bracketed union.
 ` { type: c"(\"circle\" | \"rect\") -> bool" }
 is-shape-name(s): s = "circle" or s = "rect"
 
-# Literal symbol union: no c-string needed, but still parenthesised.
+# Literal symbol union: no escaping needed, still bracketed.
 ` { type: "(:ok | :err) -> bool" }
 ok?(status): status = :ok
 ```
 
-Most often you name the union in a `types:` alias, which sidesteps both
-traps at the use site — the alias name is a single token, so no
-parentheses are needed around it:
+Most often you name the union in a `types:` alias, which avoids the
+bracketing at the use site — the alias name is a single token:
 
 ```eu,notest
 { types: { Status: c"\"ok\" | \"err\"" } }
@@ -934,7 +929,7 @@ but is not written to disk.
 | IO action                | `IO(T)`                                          |
 | Lens                     | `Lens(a, b)`                                     |
 | Traversal                | `Traversal(a, b)`                                |
-| Literal string type      | `"value"` — c-string annotation: `c"\"value\""`  |
+| Literal string type      | `"value"` — c-string escapes: `c"\"value\""`     |
 | Literal symbol type      | `:name`                                           |
 | Type variable            | lowercase identifier: `a`, `b`, `s`              |
 | Explicit quantification  | `forall a. T` or `forall (m :: * -> *) a. T`    |
