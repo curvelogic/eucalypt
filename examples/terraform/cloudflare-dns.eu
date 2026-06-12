@@ -1,0 +1,74 @@
+{ doc: "Cloudflare DNS estate generated from a compact model.
+
+A handful of declarations below expand into a full set of
+`cloudflare_record` resources, replicated across every zone, emitted as
+Terraform JSON ready to `terraform apply`.
+
+Render:
+
+    eu -j -L lib examples/terraform/cloudflare-dns.eu > main.tf.json
+    terraform init && terraform validate
+
+Credentials are taken from CLOUDFLARE_API_TOKEN at apply time; no secrets
+appear in the generated JSON."
+
+  import: ["tf=tf.eu", "cf=tf-cloudflare.eu"] }
+
+# ---- Compact model -------------------------------------------------
+
+# Every domain receives the same baseline records - change the model
+# once and it fans out across all zones.
+domains: {
+  primary:   "example.com"
+  secondary: "example.net"
+}
+
+a-records: [
+  { name: "@",   ip: "203.0.113.10" },
+  { name: "www", ip: "203.0.113.10" },
+  { name: "api", ip: "203.0.113.11" },
+]
+
+cname-records: [
+  { name: "blog", target: "www" },
+  { name: "docs", target: "api" },
+]
+
+txt-records: [
+  { name: "@", value: "v=spf1 include:_spf.example.com ~all" },
+]
+
+mx-records: [
+  { name: "@", priority: 10, value: "mail1.example.com" },
+  { name: "@", priority: 20, value: "mail2.example.com" },
+]
+
+# ---- Expansion -----------------------------------------------------
+
+# Per-record builders: each maps one model entry to a record node bound
+# to a zone handle `z`.
+make-a(z, r):     cf.a(z, r.name, r.ip)
+make-cname(z, r): cf.cname(z, r.name, r.target)
+make-txt(z, r):   cf.txt(z, r.name, r.value)
+make-mx(z, r):    cf.mx(z, r.name, r.priority, r.value)
+
+# Expand the whole model into record nodes for one zone.
+records-for(z): concat[
+  a-records     map(make-a(z)),
+  cname-records map(make-cname(z)),
+  txt-records   map(make-txt(z)),
+  mx-records    map(make-mx(z)),
+]
+
+# For each domain: a zone data-source handle plus all of its records.
+expand-zone([tag, domain]): {
+  z: cf.zone(tag str.of, domain)
+  nodes: z ‖ records-for(z)
+}.nodes
+
+all-nodes: domains elements mapcat(expand-zone)
+
+# ---- Document ------------------------------------------------------
+
+` :main
+main: tf.document(cf.provider-config("~> 4") ‖ all-nodes)

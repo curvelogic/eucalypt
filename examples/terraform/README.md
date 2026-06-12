@@ -1,0 +1,62 @@
+# Generating Terraform from Eucalypt
+
+These examples generate Terraform **JSON** configuration (`*.tf.json`)
+from a compact Eucalypt model. Terraform reads `*.tf.json` natively, so
+the rendered output can be applied directly with `terraform plan` /
+`terraform apply` — the same mechanism HashiCorp's own CDKTF uses. The
+pitch is simple: keep Terraform's runtime graph, state and providers,
+but replace HCL *authoring* with a real functional language — proper
+loops, functions, data structures, in-place computation and typing.
+
+## The libraries
+
+| Module                | Purpose                                                         |
+|-----------------------|----------------------------------------------------------------|
+| `lib/tf.eu`           | Provider-agnostic core: `ref`/handles, `resource`/`data` nodes, `document` assembly, and the other top-level blocks (`provider`, `terraform-settings`, `variable`, `output`, `locals`). |
+| `lib/tf-cloudflare.eu`| Cloudflare constructors (zone lookup, A/AAAA/CNAME/TXT/MX records). |
+
+### Generation time vs apply time
+
+The division of labour is deliberate:
+
+- Values known at **generation** time (names, counts, tags, region/zone
+  fan-out) are computed in Eucalypt and emitted as literal JSON.
+- Values that only exist after **apply** (resource ids, ARNs, ...) are
+  emitted as Terraform `${...}` references via *handles*, so they stay
+  inside Terraform's dependency graph.
+
+A constructor returns a handle, and you reference downstream attributes
+through it:
+
+```eu
+zone:   cf.zone("main", "example.com")   # data-source handle
+record: cf.a(zone, "www", "203.0.113.10")
+# record's zone_id becomes "${data.cloudflare_zone.main.id}"
+```
+
+Typo `zone.idd` and you get a Eucalypt error — not a silently broken
+`${...}` string.
+
+## Running the Cloudflare DNS example
+
+```sh
+eu -j -L lib examples/terraform/cloudflare-dns.eu > main.tf.json
+terraform init && terraform validate    # offline; no credentials needed
+```
+
+`cloudflare-dns.eu` defines a handful of records once and fans them out
+across every zone in the model — two domains × eight records expands to
+sixteen `cloudflare_record` resources, each wired to the right zone via
+its handle. Credentials are read from `CLOUDFLARE_API_TOKEN` at apply
+time; no secrets appear in the generated JSON.
+
+> The `-L lib` flag puts the Terraform modules on the import path. The
+> example targets the Cloudflare provider **v4** (`cloudflare_record`
+> with a `value` attribute); for v5 the resource is `cloudflare_dns_record`
+> and `value` became `content`.
+
+## Status
+
+- **Cloudflare** — implemented (DNS).
+- **GitHub, AWS** — planned. The same `lib/tf.eu` core is provider-agnostic;
+  adding a provider is mostly resource-constructor data entry.
