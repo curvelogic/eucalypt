@@ -397,12 +397,25 @@ jobs:
       - name: Query binary for version number
         run: |
           chmod +x eu_amd64
-          echo "RELEASE_VERSION=$(./eu_amd64 -e eu.build.version -x text)" >> $GITHUB_ENV
+          FULL_VERSION=$(./eu_amd64 -e eu.build.version -x text)
+          # Strip +build metadata for the release tag (semver build metadata
+          # is not suitable for GitHub release tags — '+' breaks download URLs
+          # and build numbers don't distinguish semantic versions).
+          RELEASE_TAG="${FULL_VERSION%%+*}"
+          echo "RELEASE_VERSION=$FULL_VERSION" >> $GITHUB_ENV
+          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
+
+      - name: Check for duplicate release tag
+        run: |
+          if gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' 2>/dev/null | grep -q 'false'; then
+            echo "::error::Release tag $RELEASE_TAG already exists and is published. Bump the version in Cargo.toml before releasing."
+            exit 1
+          fi
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.RELEASE_VERSION }}
+          tag_name: ${{ env.RELEASE_TAG }}
           draft: true
           prerelease: false
           body_path: CHANGELOG.md
