@@ -692,6 +692,15 @@ Patterns: bare `foo` = `**.foo`; `*` = one level; `**` = any depth.
 { a: 1 b: 2 } select([:z])             # {}
 ```
 
+#### `dissoc(ks, b)` — sub-block with listed keys removed
+
+```
+{ a: 1 b: 2 c: 3 } dissoc([:a, :c])   # { b: 2 }
+{ a: 1 b: 2 } dissoc([])               # { a: 1 b: 2 }
+{ a: 1 b: 2 } dissoc([:z])             # { a: 1 b: 2 }
+{ a: 1 } dissoc([:a])                  # {}
+```
+
 ### 3.3 String Functions (str namespace)
 
 #### `str.split-on(re, s)` — split string on regex
