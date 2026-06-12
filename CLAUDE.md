@@ -143,6 +143,7 @@ When writing or modifying `.eu` files, you MUST read these files first:
 - `docs/reference/agent-reference.md` — dense syntax reference, prelude functions, pipeline patterns, and common pitfalls (READ THIS FIRST)
 - `docs/appendices/syntax-gotchas.md` — critical precedence and syntax traps
 - `docs/appendices/cheat-sheet.md` — quick syntax and operator reference
+- `docs/eucalypt-style.md` — idiomatic style: pipeline/catenation over nested calls, juxtaposed `f[...]` / `g{...}` calls, `then` over `if`, `.result` over `.(...)`, point-free composition
 
 For specific topics, also consult:
 - `docs/guide/expressions-and-pipelines.md` — pipeline style and catenation
