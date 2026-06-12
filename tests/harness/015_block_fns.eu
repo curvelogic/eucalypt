@@ -136,12 +136,22 @@ select-checks: {
   ]
 }
 
+dissoc-checks: {
+  trues: [
+    ({ a: 1, b: 2, c: 3 } dissoc([:a, :c])) = { b: 2 },
+    ({ a: 1, b: 2 } dissoc([])) = { a: 1, b: 2 },
+    ({ a: 1, b: 2 } dissoc([:z])) = { a: 1, b: 2 },
+    ({ a: 1 } dissoc([:a])) = {}
+  ]
+}
+
 pass: [ checks.trues values all-true?
       , merging.checks.trues all-true?
       , lookups.checks.trues all-true?
       , deep-merge.pass
       , map-elements-checks.trues all-true?
       , select-checks.trues all-true?
+      , dissoc-checks.trues all-true?
       ] all-true?
 
 RESULT: if(pass, :PASS, :FAIL)

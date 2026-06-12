@@ -1770,6 +1770,11 @@ filter-values(p?, b): b values filter(p?)
 select(ks, b):
   b filter-items(by-key(∈ set.from-list(ks))) block
 
+` { doc: "`dissoc(ks, b)` - return block with keys listed in `ks` removed. `b dissoc([:a, :c])` returns a sub-block without those keys."
+    type: "[symbol] → {{..}} → {{..}}" }
+dissoc(ks, b):
+  b filter-items(by-key(∉ set.from-list(ks))) block
+
 _block: {
   ` "If `k` satisfies `k?` then `v!` else `v`"
   alter?(k?, v!, k, v): [k, if(k k?, v!, v)]
