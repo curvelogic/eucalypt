@@ -37,8 +37,10 @@ an unmodified file can observe in its output, or a removal from the
 Stable surface. **MINOR** = backwards-compatible addition (including a
 new opt-in prelude version). **PATCH** = no observable semantic change.
 
-**CI impact:** GitHub release tag changes from `0.8.0.1685` to
-`0.8.0+1685`. GitHub tags allow `+` characters.
+**CI impact:** GitHub release tags use the base semver version only
+(e.g. `0.8.0`). The `+build` metadata appears in `eu version` output
+but is stripped from the tag — `+` characters break GitHub download
+URLs and build numbers don't distinguish semantic versions.
 
 **`eu.requires()` cleanup:** Remove the `.replace(".dev", "")` hack in
 `version.rs:39` — `semver::Version` handles `+` metadata natively.

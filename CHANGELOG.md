@@ -8,17 +8,19 @@ All notable changes to eucalypt are documented here.
 
 - **Declaration trace metadata** — annotate declarations with `` ` :trace ``, `{ trace: :strict }`, `{ trace: :exit }`, or `{ trace: :strict-exit }` to trace entry arguments and/or exit values to stderr. Lazy mode peeks without forcing; strict mode forces arguments to WHNF before rendering
 - **Deprecation metadata** — mark declarations deprecated with `` ` :deprecated ``, `{ deprecated: "message" }`, and optionally `{ replaced-by: "new-fn" }`. Emits compile-time warnings visible in `eu check` and LSP; `--strict` mode treats them as errors
+- **Deprecation LSP quick-fix** — when a deprecated function has a `replaced-by` field, the LSP offers a code action to replace the old name with the new one
 - **Prelude selection mechanism** — units can specify an alternative prelude via `{ prelude: "path/to/alt.eu" }` metadata. The prelude type cache is keyed per selection
 - **`requires` unit metadata** — units can declare a minimum version via `{ requires: ">=0.8" }` in their metadata block, checked at load time before evaluation. Replaces the `_ : eu.requires(...)` binding pattern. Shipped libraries updated to use the metadata form
 - **Stability policy** — published `docs/development/stability-policy.md` defining three tiers (Stable, Experimental, Not covered) and semver field meanings
 - **Conformance corpus** — `tests/conform/` directory with 20 conformance files and `.golden` sidecars pinning rendered output bytes across all export formats. Separate `conform_test.rs` runner with `BLESS=1` regeneration and unified diff on mismatch
 - **GC-verified CI job** — full harness under `EU_GC_VERIFY=2` + `EU_GC_STRESS=1` + `EU_GC_POISON=1` on x86-64
 - **Static self-assignment diagnostic** — `eu check` now flags always-divergent self-referential bindings (`{ x: x }`, `{ f: f(...) }`) as errors. Argument-position self-reference (`ones: cons(1, ones)`) is not flagged
-- **`select` prelude function** — `block select([:a, :c])` returns a sub-block containing only the listed keys
+- **`select` and `dissoc` prelude functions** — `block select[:a, :c]` returns a sub-block containing only the listed keys; `block dissoc[:b]` returns a sub-block with the listed keys removed
+- **`type-def: true` shorthand** — `type-def: true` in declaration metadata uses the binding name as the type alias (instead of requiring an explicit string). Bare `:type-def` symbol expands to `{ type-def: true }`. New `result-def` metadata key registers the function's return type as a type alias
 
 ### Changed
 
-- **Semver-compliant build versioning** — CI build number moved from fourth dot-segment (`0.8.0.1685`) to `+build` metadata (`0.8.0+1685`) per semver.org
+- **Semver-compliant build versioning** — release tags now use base semver (`0.8.0`) instead of four-dot build numbers (`0.8.0.1685`). The CI build number appears as `+build` metadata in `eu version` output only. Bug fix releases bump the patch version (`0.8.1`)
 - **Resilient parser pipeline** — the all-or-nothing parse shim is removed; a file with syntax errors now produces a partial tree that reaches the desugarer, type-checker, and `eu dump` commands. Valid declarations in a file with errors still get diagnostics
 - **`eu dump ast` shows Rowan syntax tree** — default output is now the indented Rowan node tree (kinds, ranges, token text) instead of re-rendered source. `--embed` gives the old behaviour
 
