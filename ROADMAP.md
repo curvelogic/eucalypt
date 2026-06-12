@@ -637,6 +637,11 @@ surface** (§4.3) to emit schemas. A **doctest** mode runs the examples in `doc:
 metadata under the test harness (ties to W5). Regenerate the hand-written prelude
 reference from the prelude itself.
 
+**Prerequisite: the `s"…"` string prefix (§4.3).** The `s"…"` type-data literal
+must land in 0.9 before W8, so that schemas can reference types as values. This is
+a small lexer/parser addition (a new `StringPrefix::SString` alongside `c"…"`,
+`r"…"`, `t"…"`) producing a type-data value.
+
 **Implementation.** `src/driver/` new subcommand + the LSP extraction; render to
 Markdown/JSON-schema. Small-to-medium, low risk. Reads W3's `deprecated:` metadata
 and W2's interface where cross-unit.
