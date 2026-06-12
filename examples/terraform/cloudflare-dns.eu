@@ -61,7 +61,7 @@ records-for(z): concat[
 ]
 
 # For each domain: a zone data-source handle plus all of its records.
-expand-zone([tag, domain]): {
+expand-zone[tag, domain]: {
   z: cf.zone(tag str.of, domain)
   nodes: z ‖ records-for(z)
 }.nodes

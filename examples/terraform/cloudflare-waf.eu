@@ -51,15 +51,13 @@ rate-rules: [
     ref: "throttle_api"
     description: "Throttle API traffic per IP"
     expression: waf.path-prefix("/api/")
-    characteristics: ["ip.src", "cf.colo.id"]
-    requests: 100
-    period: 60
+    ratelimit: { characteristics: ["ip.src", "cf.colo.id"], requests_per_period: 100 }
   },
 ]
 
 # ---- Expansion: per zone, the handle + its security rulesets --------
 
-zone-security([tag, domain]): {
+zone-security[tag, domain]: {
   z: cf.zone(tag str.of, domain)
   nodes: [z, waf.custom-firewall(z, firewall-rules), waf.rate-limiting(z, rate-rules)]
 }.nodes

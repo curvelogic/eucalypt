@@ -90,15 +90,11 @@ log(o): rule("log", o)
 skip(o): rule("skip", o) << { action_parameters: o.skip }
 
 ` { doc: "`rate-limit(o)` - a rate-limiting rule.  Keys: `ref`,
-`expression`, `characteristics`, `requests`, optional `period`
-(default 60), `timeout` (default 600) and `action` (default block)." }
+`expression`, optional `action` (default block), and a `ratelimit` block
+(`characteristics` and `requests_per_period` required; `period` defaults
+to 60, `mitigation_timeout` to 600)." }
 rate-limit(o): rule(o lookup-or(:action, "block"), o) << {
-  ratelimit: {
-    characteristics: o.characteristics
-    period: o lookup-or(:period, 60)
-    requests_per_period: o.requests
-    mitigation_timeout: o lookup-or(:timeout, 600)
-  }
+  ratelimit: { period: 60, mitigation_timeout: 600 } << o.ratelimit
 }
 
 # Rulesets ------------------------------------------------------------
@@ -150,7 +146,7 @@ test-rule: {
   blocked: block{ ref: "r2", expression: "true",
                   response: { status_code: 403, content_type: "text/plain", content: "no" } }
   rl: rate-limit{ ref: "r3", expression: path-eq("/api"),
-                  characteristics: ["ip.src"], requests: 100 }
+                  ratelimit: { characteristics: ["ip.src"], requests_per_period: 100 } }
   α: r.action = "block"
   β: r.ref = "r1"
   γ: blocked.action_parameters.response.status_code = 403
