@@ -120,29 +120,48 @@ Literal types are most useful in **discriminated unions** — type aliases
 where a tag field distinguishes variants:
 
 ```eu,notest
-{ types: { Shape: "{{type: \"circle\", radius: number, ..}} | {{type: \"rect\", w: number, h: number, ..}}" } }
+{ types: { Shape: c"{{type: \"circle\", radius: number, ..}} | {{type: \"rect\", w: number, h: number, ..}}" } }
 ```
 
 Because writing complex union types inline is verbose, defining a `types:`
-alias is the recommended approach.
+alias is the recommended approach. (Note the `c"..."` **c-string** — see
+*Writing literal types in annotation strings* below.)
 
 **Subtyping rules**:
 - `"foo"` is consistent with `string` — a literal satisfies a string parameter
 - `"foo" | string` simplifies to `string` — the specific literal is absorbed
 - `:active` is consistent with `symbol` — same for symbols
 
-**Writing literal types in annotation strings**: the type syntax uses
-`"value"` (double-quoted) for literal strings. Since this appears inside
-a eucalypt string, the inner quotes must be escaped with `\"`:
+**Writing literal types in annotation strings**: a literal string type is
+written `"value"`, so its quotes need escaping inside the eucalypt
+annotation string — use **c-string escapes**: `c"\"value\""`. (A plain
+`"..."` string does not process `\"`.) Literal *symbol* types (`:name`)
+have no quotes, so need no escaping.
+
+Mind the precedence of `|` and `->`: as in most type languages `->` binds
+tighter, so a union in *argument* position needs brackets.
+`"circle" | "rect" -> bool` is the overload `"circle" | ("rect" -> bool)`
+(see *Unions* below); the one-argument reading is
+`("circle" | "rect") -> bool`.
 
 ```eu,notest
-# Literal string type in a type annotation — inner quotes escaped with \"
-` { type: "\"circle\" | \"rect\" -> bool" }
-is-shape-name(s): s match?("circle") or s match?("rect")
+# Literal string union as an argument: c-string escapes, bracketed union.
+` { type: c"(\"circle\" | \"rect\") -> bool" }
+is-shape-name(s): s = "circle" or s = "rect"
 
-# Literal symbol type — no escaping needed (: is not special in strings)
-` { type: ":ok | :err -> bool" }
+# Literal symbol union: no escaping needed, still bracketed.
+` { type: "(:ok | :err) -> bool" }
 ok?(status): status = :ok
+```
+
+Most often you name the union in a `types:` alias, which avoids the
+bracketing at the use site — the alias name is a single token:
+
+```eu,notest
+{ types: { Status: c"\"ok\" | \"err\"" } }
+
+` { type: "Status -> bool" }
+ok?(s): s = "ok"
 ```
 
 ### Lists
@@ -910,7 +929,7 @@ but is not written to disk.
 | IO action                | `IO(T)`                                          |
 | Lens                     | `Lens(a, b)`                                     |
 | Traversal                | `Traversal(a, b)`                                |
-| Literal string type      | `"value"` (`\"value\"` in annotation string)     |
+| Literal string type      | `"value"` — c-string escapes: `c"\"value\""`     |
 | Literal symbol type      | `:name`                                           |
 | Type variable            | lowercase identifier: `a`, `b`, `s`              |
 | Explicit quantification  | `forall a. T` or `forall (m :: * -> *) a. T`    |

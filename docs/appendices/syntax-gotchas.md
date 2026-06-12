@@ -519,6 +519,19 @@ are fine as-is:
 ` { type-def: "Point" }                  # fine — just a name, no braces
 ```
 
+### Literal Types in Annotations
+
+Two things to remember when a `type:` annotation contains literal types:
+
+- **Literal string types need c-string escapes for the quotes** —
+  `c"\"block\" | \"log\""`. A plain `"..."` string does not process `\"`.
+  (Literal *symbol* types like `:block` have no quotes, so a plain string
+  is fine.)
+- **Mind `|`/`->` precedence** — `->` binds tighter, so a disjunction in
+  argument position needs brackets: `(:block | :log) -> bool`, not
+  `:block | :log -> bool` (which is an overloaded-function type). Naming
+  the union in a `types:` alias avoids the question.
+
 ## Flow-Sensitive Narrowing and User-Defined Branchers
 
 ### `=>` (Clause) vs `//=>` (Assertion)

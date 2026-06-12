@@ -269,7 +269,7 @@ non-function binding emits a warning and is skipped.
 | `{{k: T}}`         | closed record                          |
 | `block`            | any block (no known shape)             |
 | `Dict(T)`          | homogeneous block — all values type T  |
-| `"value"`          | literal string — subtype of `string`; in annotation string: `\"value\"` |
+| `"value"`          | literal string — subtype of `string`; c-string escapes for the quotes: `c"\"value\""` |
 | `:name`            | literal symbol — subtype of `symbol`   |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
@@ -298,7 +298,9 @@ my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
 string interpolation. Always escape with `{{` and `}}`:
 `"{{name: string, ..}} -> string"` not `"{name: string, ..} -> string"`.
 Types without braces (`"number -> number"`, `"IO(T)"`) need no escaping.
-Literal string types (`"value"`) need `\"` escaping inside annotation strings.
+Literal string types (`"value"`) escape their quotes with c-string escapes:
+`c"\"value\""`. Mind `|`/`->` precedence — bracket a union in argument
+position: `c"(\"a\" | \"b\") -> bool"`.
 
 **Partial functions**: functions that may raise a runtime error use the
 `T?` postfix sugar — equivalent to `T | ExecutionError`.  Several
