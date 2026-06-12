@@ -956,7 +956,24 @@ fn on_code_action(
     let parse = crate::syntax::rowan::parse_unit(text);
     let root = parse.syntax_node();
     let table = state.build_symbol_table(uri, text);
-    let code_actions = actions::code_actions(text, &root, &params.range, uri, &table);
+
+    let empty_warnings = vec![];
+    let empty_source_map = SourceMap::new();
+    let (warnings, source_map) = state
+        .cached
+        .get(uri)
+        .map(|c| (c.warnings.as_slice(), &c.source_map))
+        .unwrap_or((&empty_warnings, &empty_source_map));
+
+    let code_actions = actions::code_actions(
+        text,
+        &root,
+        &params.range,
+        uri,
+        &table,
+        warnings,
+        source_map,
+    );
     let response: Vec<lsp_types::CodeActionOrCommand> = code_actions
         .into_iter()
         .map(lsp_types::CodeActionOrCommand::CodeAction)
