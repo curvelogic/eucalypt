@@ -519,6 +519,39 @@ are fine as-is:
 ` { type-def: "Point" }                  # fine — just a name, no braces
 ```
 
+### Literal String Types Need a C-String, and Argument Unions Need Parens
+
+A **literal string type** (`"block"`) embeds a `"` in the annotation, but a
+plain `"..."` eucalypt string does not process the `\"` escape — the
+backslash reaches the type parser and it errors (`unexpected character
+'\'`). Use a **c-string**, which does process `\"`:
+
+```eu,notest
+# WRONG — \" is not an escape in a plain string; the type parser sees the \
+` { type: "\"block\" | \"log\"" }
+
+# RIGHT — a c-string yields literal quotes for the type parser
+` { type: c"\"block\" | \"log\"" }
+```
+
+Literal *symbol* types (`:block`) contain no quotes, so a plain string is
+fine — but a union in **argument position** still needs parentheses,
+because `->` binds tighter than `|`:
+
+```eu,notest
+# WRONG — parses as the overload :block | (:log -> bool), so even a valid
+# :block argument is rejected
+` { type: ":block | :log -> bool" }
+
+# RIGHT — parenthesise the argument union
+` { type: "(:block | :log) -> bool" }
+```
+
+The unparenthesised `A | B -> C` form is intentional for *overloaded*
+function types (`number -> number | string -> string`); it just is not
+what you want for a union-typed argument. Naming the union in a `types:`
+alias avoids the trap entirely, since the alias name is a single token.
+
 ## Flow-Sensitive Narrowing and User-Defined Branchers
 
 ### `=>` (Clause) vs `//=>` (Assertion)

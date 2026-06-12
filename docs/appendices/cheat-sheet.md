@@ -550,7 +550,7 @@ origin: { x: 0, y: 0 }
 | `block`            | any block (no known shape)             |
 | `Dict(T)`          | homogeneous block — all values type T  |
 | `Name` (capitalised) | type alias — defined via `types: { Name: "..." }` |
-| `"value"`          | literal string type (subtype of `string`); in annotation string: `\"value\"` |
+| `"value"`          | literal string type (subtype of `string`); needs a c-string annotation: `c"\"value\""` |
 | `:name`            | literal symbol type (subtype of `symbol`)      |
 | `T?`               | partial — sugar for `T \| ExecutionError`; marks functions that may raise an error |
 | `ExecutionError`   | the type of a raised runtime error     |
