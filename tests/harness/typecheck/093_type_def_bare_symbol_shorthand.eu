@@ -1,0 +1,9 @@
+# `:type-def` bare-symbol shorthand registers alias from binding name.
+# normalise_metadata expands `:type-def` to `{ type-def: true }`.
+` :type-def
+Person: { name: "Alice", age: 30 }
+
+` { type: "Person → string" }
+get-name(p): p.name
+
+result: get-name(Person)

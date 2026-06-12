@@ -133,6 +133,20 @@ pub fn normalise_metadata(expr: &RcExpr, decl_name: Option<&str>) -> RcExpr {
                         .iter()
                         .cloned(),
                 ),
+                // Lone-keyword shorthand: `:type-def` ≡ `{ type-def: true }`,
+                // `:result-def` ≡ `{ result-def: true }`.
+                "type-def" => core::block(
+                    *smid,
+                    [("type-def".to_string(), core::bool_(*smid, true))]
+                        .iter()
+                        .cloned(),
+                ),
+                "result-def" => core::block(
+                    *smid,
+                    [("result-def".to_string(), core::bool_(*smid, true))]
+                        .iter()
+                        .cloned(),
+                ),
                 "target" => {
                     if let Some(name) = decl_name {
                         let target_sym = core::sym(*smid, name);

@@ -799,9 +799,12 @@ impl Checker {
 
     /// Extract the `type-def:` alias name from a binding value, if present.
     ///
-    /// Returns `Some("Name")` when the value is a `Meta` node whose metadata
-    /// block contains `type-def: "Name"`.
-    fn extract_type_def_name(value: &RcExpr) -> Option<String> {
+    /// Accepts:
+    /// - `type-def: "Name"` — returns `"Name"`.
+    /// - `type-def: true` — returns `binding_name` (the declaration's own name).
+    ///
+    /// Returns `None` when no `type-def` key is present.
+    fn extract_type_def_name(value: &RcExpr, binding_name: &str) -> Option<String> {
         let meta = match &*value.inner {
             Expr::Meta(_, _, m) => m,
             _ => return None,
@@ -810,7 +813,40 @@ impl Checker {
             Expr::Block(_, b) => b,
             _ => return None,
         };
-        block.get("type-def").and_then(extract_string_literal)
+        let type_def_val = block.get("type-def")?;
+        if let Some(s) = extract_string_literal(type_def_val) {
+            return Some(s);
+        }
+        if is_bool_true(type_def_val) {
+            return Some(binding_name.to_string());
+        }
+        None
+    }
+
+    /// Extract the `result-def:` alias name from a binding value, if present.
+    ///
+    /// Accepts:
+    /// - `result-def: "Name"` — returns `"Name"`.
+    /// - `result-def: true` — returns `binding_name` (the declaration's own name).
+    ///
+    /// Returns `None` when no `result-def` key is present.
+    fn extract_result_def_name(value: &RcExpr, binding_name: &str) -> Option<String> {
+        let meta = match &*value.inner {
+            Expr::Meta(_, _, m) => m,
+            _ => return None,
+        };
+        let block = match &*meta.inner {
+            Expr::Block(_, b) => b,
+            _ => return None,
+        };
+        let result_def_val = block.get("result-def")?;
+        if let Some(s) = extract_string_literal(result_def_val) {
+            return Some(s);
+        }
+        if is_bool_true(result_def_val) {
+            return Some(binding_name.to_string());
+        }
+        None
     }
 
     // ── Type annotation extraction ───────────────────────────────────────────
@@ -972,8 +1008,18 @@ impl Checker {
                             frame.insert(name.clone(), TypeScheme::mono(synthesised.clone()));
                         }
                     }
+                    let value_smid = value.smid();
                     // Register `type-def:` alias when present.
-                    if let Some(alias_name) = Self::extract_type_def_name(value) {
+                    if has_true_metadata_key(value, "type-def") && !is_normal_identifier(name) {
+                        // `:type-def` / `type-def: true` on an operator binding —
+                        // no meaningful alias name; warn and skip.
+                        self.warnings.push(
+                            TypeWarning::new(
+                                "`type-def: true` requires a normal-identifier binding name",
+                            )
+                            .at(value_smid),
+                        );
+                    } else if let Some(alias_name) = Self::extract_type_def_name(value, name) {
                         // Use the explicit `type:` annotation if given; otherwise
                         // the synthesised type (inferred from the value shape).
                         let alias_ty = if let Expr::Meta(_, _, meta) = &*value.inner {
@@ -981,8 +1027,40 @@ impl Checker {
                         } else {
                             None
                         }
-                        .unwrap_or(synthesised);
+                        .unwrap_or_else(|| synthesised.clone());
                         self.register_alias(alias_name, alias_ty);
+                    }
+                    // Register `result-def:` alias when present.
+                    if has_true_metadata_key(value, "result-def") && !is_normal_identifier(name) {
+                        // `result-def: true` on an operator binding — no meaningful
+                        // alias name; warn and skip.
+                        self.warnings.push(
+                            TypeWarning::new(
+                                "`result-def: true` requires a normal-identifier binding name",
+                            )
+                            .at(value_smid),
+                        );
+                    } else if let Some(alias_name) = Self::extract_result_def_name(value, name) {
+                        // Use the explicit `type:` annotation if given; otherwise
+                        // the synthesised type (inferred from the value shape).
+                        let alias_ty = if let Expr::Meta(_, _, meta) = &*value.inner {
+                            self.extract_annotation(meta).map(|(ty, _, _, _)| ty)
+                        } else {
+                            None
+                        }
+                        .unwrap_or_else(|| synthesised.clone());
+                        match final_return_type(alias_ty) {
+                            Some(return_ty) => self.register_alias(alias_name, return_ty),
+                            None => {
+                                self.warnings.push(
+                                    TypeWarning::new(
+                                        "`result-def` on a non-function binding has no return type \
+                                         to capture — use `type-def` instead",
+                                    )
+                                    .at(value_smid),
+                                );
+                            }
+                        }
                     }
                 }
 
@@ -3022,6 +3100,72 @@ fn extract_plain_str(expr: &RcExpr) -> Option<String> {
     }
 }
 
+/// Return `true` when `expr` represents the boolean value `true`.
+///
+/// Accepts two forms:
+/// - `Literal(Bool(true))` — created by `normalise_metadata` for `` ` :key `` shorthands.
+/// - A bound/free variable named `"true"` — the desugared form of `{ key: true }` written
+///   in source, where eucalypt resolves `true` as the prelude binding.
+fn is_bool_true(expr: &RcExpr) -> bool {
+    match &*expr.inner {
+        Expr::Literal(_, Primitive::Bool(true)) => true,
+        Expr::Var(_, Var::Bound(BoundVar { name: Some(n), .. })) if n == "true" => true,
+        Expr::Var(_, Var::Free(n)) if n == "true" => true,
+        _ => false,
+    }
+}
+
+/// Return `true` when a binding value's metadata block contains `key: true`.
+///
+/// Used to detect the lone-keyword shorthand (`` ` :type-def ``, etc.) which
+/// `normalise_metadata` expands to `{ key: true }`, as well as the
+/// equivalent source form `{ key: true }`.
+fn has_true_metadata_key(value: &RcExpr, key: &str) -> bool {
+    let meta = match &*value.inner {
+        Expr::Meta(_, _, m) => m,
+        _ => return false,
+    };
+    let block = match &*meta.inner {
+        Expr::Block(_, b) => b,
+        _ => return false,
+    };
+    block.get(key).is_some_and(is_bool_true)
+}
+
+/// Return `true` when `name` looks like a normal (non-operator) identifier.
+///
+/// Normal identifiers start with an alphabetic character or `_` and contain
+/// only alphanumeric characters, `_`, or `-`.  Operator names (e.g. `+`, `<=`)
+/// fail this test.
+fn is_normal_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_alphabetic() || c == '_' => {
+            chars.all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        }
+        _ => false,
+    }
+}
+
+/// Peel `Function(_, …)` layers to find the final codomain type.
+///
+/// For `a → b → c` returns `Some(c)`.  For a non-function type returns `None`.
+fn final_return_type(ty: Type) -> Option<Type> {
+    let mut current = ty;
+    let mut is_function = false;
+    loop {
+        match current {
+            Type::Function(_, ret) => {
+                current = *ret;
+                is_function = true;
+            }
+            other => {
+                return if is_function { Some(other) } else { None };
+            }
+        }
+    }
+}
+
 /// Extract the `__type_hint` string and inner value from a `Meta` node.
 ///
 /// Returns `(hint_str, inner)` when `expr` is `Meta(_, inner, {__type_hint: "..."})`,
@@ -4146,6 +4290,211 @@ mod tests {
         let ty = c.synthesise(&annotated);
         // Alias "Num" → number, erased type vars don't change it.
         assert_eq!(ty, Type::Number);
+        assert!(c.into_warnings().is_empty());
+    }
+
+    #[test]
+    fn type_def_true_registers_alias_from_binding_name() {
+        use crate::core::expr::core;
+
+        let mut c = Checker::new();
+
+        // ` :type-def  (normalised to { type-def: true })
+        // Person: { name: "Alice" }
+        let meta_block = core::block(
+            Smid::default(),
+            [("type-def".to_string(), core::bool_(Smid::default(), true))],
+        );
+        let inner_block = core::block(
+            Smid::default(),
+            [("name".to_string(), core::str(Smid::default(), "Alice"))],
+        );
+        let annotated = core::meta(Smid::default(), inner_block, meta_block);
+
+        let let_expr = core::let_(
+            Smid::default(),
+            vec![("Person".to_string(), annotated)],
+            RcExpr::from(Expr::Var(Smid::default(), Var::Free("Person".to_string()))),
+        );
+
+        c.synthesise(&let_expr);
+        // Alias "Person" should be registered (binding name used as alias name).
+        assert!(c.aliases.contains_key("Person"));
+        assert!(c.into_warnings().is_empty());
+    }
+
+    #[test]
+    fn type_def_true_on_operator_emits_warning() {
+        use crate::core::expr::core;
+
+        let mut c = Checker::new();
+
+        // ` { type-def: true } on operator binding "+"
+        let meta_block = core::block(
+            Smid::default(),
+            [("type-def".to_string(), core::bool_(Smid::default(), true))],
+        );
+        let inner = core::str(Smid::default(), "placeholder");
+        let annotated = core::meta(Smid::default(), inner, meta_block);
+
+        let let_expr = core::let_(
+            Smid::default(),
+            vec![("+".to_string(), annotated)],
+            RcExpr::from(Expr::Var(Smid::default(), Var::Free("+".to_string()))),
+        );
+
+        c.synthesise(&let_expr);
+        // No alias registered for operator binding.
+        assert!(!c.aliases.contains_key("+"));
+        // A warning should have been emitted.
+        let warnings = c.into_warnings();
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].message.contains("type-def: true"));
+    }
+
+    #[test]
+    fn result_def_registers_return_type_alias() {
+        use crate::core::expr::core;
+
+        let mut c = Checker::new();
+
+        // ` { result-def: "Thing", type: "string → {name: string}" }
+        // make-thing(name): <impl>
+        let type_val = core::str(Smid::default(), "string → {name: string}");
+        let meta_block = core::block(
+            Smid::default(),
+            [
+                (
+                    "result-def".to_string(),
+                    core::str(Smid::default(), "Thing"),
+                ),
+                ("type".to_string(), type_val),
+            ],
+        );
+        // Use a free variable as the impl — synthesises to Any, consistent with
+        // any annotation, so no spurious type-mismatch warning.
+        let inner = RcExpr::from(Expr::Var(Smid::default(), Var::Free("_impl".to_string())));
+        let annotated = core::meta(Smid::default(), inner, meta_block);
+
+        let let_expr = core::let_(
+            Smid::default(),
+            vec![("make-thing".to_string(), annotated)],
+            RcExpr::from(Expr::Var(
+                Smid::default(),
+                Var::Free("make-thing".to_string()),
+            )),
+        );
+
+        c.synthesise(&let_expr);
+        // Alias "Thing" should map to the return type {name: string}.
+        assert!(c.aliases.contains_key("Thing"));
+        assert!(c.into_warnings().is_empty());
+    }
+
+    #[test]
+    fn result_def_true_uses_binding_name() {
+        use crate::core::expr::core;
+
+        let mut c = Checker::new();
+
+        // ` { result-def: true, type: "string → {name: string}" }
+        // Thing(name): <impl>
+        let type_val = core::str(Smid::default(), "string → {name: string}");
+        let meta_block = core::block(
+            Smid::default(),
+            [
+                ("result-def".to_string(), core::bool_(Smid::default(), true)),
+                ("type".to_string(), type_val),
+            ],
+        );
+        // Use a free variable as the impl — synthesises to Any, consistent with
+        // any annotation, so no spurious type-mismatch warning.
+        let inner = RcExpr::from(Expr::Var(Smid::default(), Var::Free("_impl".to_string())));
+        let annotated = core::meta(Smid::default(), inner, meta_block);
+
+        let let_expr = core::let_(
+            Smid::default(),
+            vec![("Thing".to_string(), annotated)],
+            RcExpr::from(Expr::Var(Smid::default(), Var::Free("Thing".to_string()))),
+        );
+
+        c.synthesise(&let_expr);
+        // Alias "Thing" registered using binding name.
+        assert!(c.aliases.contains_key("Thing"));
+        assert!(c.into_warnings().is_empty());
+    }
+
+    #[test]
+    fn result_def_on_non_function_emits_warning() {
+        use crate::core::expr::core;
+
+        let mut c = Checker::new();
+
+        // ` { result-def: true }
+        // count: 42
+        let meta_block = core::block(
+            Smid::default(),
+            [("result-def".to_string(), core::bool_(Smid::default(), true))],
+        );
+        let inner = num_lit(42);
+        let annotated = core::meta(Smid::default(), inner, meta_block);
+
+        let let_expr = core::let_(
+            Smid::default(),
+            vec![("count".to_string(), annotated)],
+            RcExpr::from(Expr::Var(Smid::default(), Var::Free("count".to_string()))),
+        );
+
+        c.synthesise(&let_expr);
+        // No alias registered.
+        assert!(!c.aliases.contains_key("count"));
+        // Warning about non-function binding.
+        let warnings = c.into_warnings();
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].message.contains("result-def"));
+    }
+
+    #[test]
+    fn both_type_def_and_result_def_register_two_aliases() {
+        use crate::core::expr::core;
+
+        let mut c = Checker::new();
+
+        // ` { type-def: "MakeThing", result-def: "Thing", type: "string → {name: string}" }
+        // make-thing(name): <impl>
+        let type_val = core::str(Smid::default(), "string → {name: string}");
+        let meta_block = core::block(
+            Smid::default(),
+            [
+                (
+                    "type-def".to_string(),
+                    core::str(Smid::default(), "MakeThing"),
+                ),
+                (
+                    "result-def".to_string(),
+                    core::str(Smid::default(), "Thing"),
+                ),
+                ("type".to_string(), type_val),
+            ],
+        );
+        // Use a free variable as the impl — synthesises to Any, consistent with
+        // any annotation, so no spurious type-mismatch warning.
+        let inner = RcExpr::from(Expr::Var(Smid::default(), Var::Free("_impl".to_string())));
+        let annotated = core::meta(Smid::default(), inner, meta_block);
+
+        let let_expr = core::let_(
+            Smid::default(),
+            vec![("make-thing".to_string(), annotated)],
+            RcExpr::from(Expr::Var(
+                Smid::default(),
+                Var::Free("make-thing".to_string()),
+            )),
+        );
+
+        c.synthesise(&let_expr);
+        // Both aliases registered.
+        assert!(c.aliases.contains_key("MakeThing"));
+        assert!(c.aliases.contains_key("Thing"));
         assert!(c.into_warnings().is_empty());
     }
 
