@@ -142,6 +142,22 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
   ```
   Otherwise just pick a different local name: `{ cleaned: xs map(clean) }.cleaned`.
 
+- **Defaulting values from an options block**: to fill in specific
+  missing keys in a block from a defaults/options block, use
+  `select` + merge rather than repeated `lookup-or` calls:
+  ```eu,notest
+  # Good: select the keys you want defaulted, merge under the input
+  defaults select[:host, :port] config
+
+  # Avoid: verbose and repetitive
+  { host: config lookup-or(:host, defaults.host)
+    port: config lookup-or(:port, defaults.port)
+    db: config.db }
+  ```
+  The pattern is `defaults select[<keys-to-default>] input` — `select`
+  restricts the defaults block to the keys you want, then merge
+  applies them underneath the input (so input values win).
+
 ## Prefer `when` over `if` for conditional transforms
 
 - `when(pred?, f, x)` applies `f` when `pred?` matches, otherwise passes `x` through unchanged. Cleaner than `if(pred?(x), f(x), x)` which repeats `x`.
