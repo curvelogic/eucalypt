@@ -1,2 +1,2 @@
 exit: 1
-stderr: "internal compiler error"
+stderr: "pseudo-operators"
