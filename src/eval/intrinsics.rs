@@ -880,6 +880,11 @@ lazy_static! {
             strict: vec![0],
     },
     Intrinsic { // 166
+            name: "ISTYPEDATA",
+            ty: function(vec![any(), bool_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 167
             name: "VEC.OF",
             ty: function(vec![list(), unk()]).unwrap(),
             strict: vec![0],

@@ -106,6 +106,9 @@ pub enum SyntaxKind {
     /// ZDT (timestamp) string literal e.g. t"2023-01-15T10:30:00Z"
     T_STRING,
 
+    /// Type-data string literal e.g. s"number -> string"
+    S_STRING,
+
     /// Open token of a Unicode bracket pair (idiot bracket expression)
     BRACKET_OPEN,
     /// Close token of a Unicode bracket pair (idiot bracket expression)
@@ -141,6 +144,7 @@ impl SyntaxKind {
             || *self == C_STRING
             || *self == RAW_STRING
             || *self == T_STRING
+            || *self == S_STRING
     }
 
     pub fn is_name_terminal(&self) -> bool {

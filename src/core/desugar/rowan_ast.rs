@@ -633,6 +633,16 @@ impl Desugarable for rowan_ast::Literal {
                         ));
                     }
                 }
+                rowan_ast::LiteralValue::SStr(s) => {
+                    if let Some(text) = s.value() {
+                        Primitive::TypeData(text.to_string())
+                    } else {
+                        return Err(CoreError::InvalidEmbedding(
+                            "invalid type-data literal".to_string(),
+                            desugarer.new_smid(span),
+                        ));
+                    }
+                }
                 rowan_ast::LiteralValue::Num(n) => {
                     if let Some(num) = n.value() {
                         Primitive::Num(num)

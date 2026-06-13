@@ -314,6 +314,16 @@ fn c_lit_rowan(
                         ));
                     }
                 }
+                rowan_ast::LiteralValue::SStr(s) => {
+                    if let Some(text) = s.value() {
+                        Primitive::TypeData(text.to_string())
+                    } else {
+                        return Err(CoreError::InvalidEmbedding(
+                            "invalid type-data literal".to_string(),
+                            smid,
+                        ));
+                    }
+                }
                 rowan_ast::LiteralValue::Num(n) => {
                     if let Some(num) = n.value() {
                         Primitive::Num(num)

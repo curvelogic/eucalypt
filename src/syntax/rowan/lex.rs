@@ -33,13 +33,15 @@ fn is_punctuation_category(cat: GeneralCategory) -> bool {
     )
 }
 
-/// String prefix type for c-strings, r-strings and t-strings
+/// String prefix type for c-strings, r-strings, t-strings and s-strings
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StringPrefix {
     None,
     CString,
     RawString,
     TString,
+    /// s"..." — type-data string literal (no interpolation, no escape processing)
+    SString,
 }
 
 /// Eucalypt lexer
@@ -280,6 +282,11 @@ where
                         self.bump(); // consume the opening quote
                         return self.dquote_with_prefix(i, StringPrefix::TString);
                     }
+                    's' => {
+                        // This is an s-string (type-data literal) prefix
+                        self.bump(); // consume the opening quote
+                        return self.dquote_with_prefix(i, StringPrefix::SString);
+                    }
                     _ => {}
                 }
             }
@@ -359,6 +366,7 @@ where
                         StringPrefix::CString => C_STRING,
                         StringPrefix::RawString => RAW_STRING,
                         StringPrefix::TString => T_STRING,
+                        StringPrefix::SString => S_STRING,
                     };
                     return (kind, Span::new(prefix_start, self.location));
                 }
@@ -372,6 +380,11 @@ where
             return (T_STRING, full_span);
         }
 
+        // S-strings are type-data literals — no interpolation, no escape processing
+        if string_prefix == StringPrefix::SString {
+            return (S_STRING, full_span);
+        }
+
         // Determine the token kinds based on prefix
         let (simple_kind, pattern_start_kind, pattern_end_kind) = match string_prefix {
             StringPrefix::None => (STRING, STRING_PATTERN_START, STRING_PATTERN_END),
@@ -380,6 +393,7 @@ where
                 (RAW_STRING, RAW_STRING_PATTERN_START, RAW_STRING_PATTERN_END)
             }
             StringPrefix::TString => unreachable!(),
+            StringPrefix::SString => unreachable!(),
         };
 
         // Check if this string contains interpolation
@@ -395,6 +409,7 @@ where
                 content.contains('{') || content.contains('}')
             }
             StringPrefix::TString => unreachable!(),
+            StringPrefix::SString => unreachable!(),
         };
 
         if has_interpolation {
@@ -422,7 +437,7 @@ where
                         self.token_buffer.push_back((token_kind, span));
                     }
                 }
-                StringPrefix::TString => unreachable!(),
+                StringPrefix::TString | StringPrefix::SString => unreachable!(),
             }
 
             // Buffer the closing quote

@@ -366,6 +366,11 @@ pub mod dsl {
         data(DataConstructor::BoxedSymbol.tag(), vec![sym(s)])
     }
 
+    /// Create a boxed type-data value (s"..." literal)
+    pub fn box_type_data<T: AsRef<str>>(s: T) -> Rc<StgSyn> {
+        data(DataConstructor::BoxedTypeData.tag(), vec![str(s)])
+    }
+
     /// Create a zoned datetime
     pub fn zdt(dt: DateTime<FixedOffset>) -> Ref {
         vref(Native::Zdt(dt))
