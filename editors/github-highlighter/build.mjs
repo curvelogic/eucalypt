@@ -9,6 +9,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { generate } from "./gen-tables.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (p) => readFileSync(join(here, p), "utf8");
@@ -21,6 +22,9 @@ function strip(src) {
     .replace(/^export\s+/gm, ""); // drop export keywords
 }
 
+// Regenerate the prelude/keyword tables from the TextMate grammar, then bundle.
+generate();
+const tables = strip(read("src/grammar-tables.mjs"));
 const core = strip(read("src/eucalypt-highlight.mjs"));
 const dom = strip(read("src/github-dom.mjs"));
 const css = read("src/theme.css");
@@ -29,6 +33,8 @@ const body = `(function () {
   "use strict";
   const THEME_CSS = ${JSON.stringify(css)};
 
+// ===== grammar-tables.mjs (generated from the TextMate grammar) =====
+${tables}
 // ===== eucalypt-highlight.mjs =====
 ${core}
 // ===== github-dom.mjs =====

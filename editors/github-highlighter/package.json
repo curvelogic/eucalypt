@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Syntax highlighting for Eucalypt (.eu) files in the GitHub web UI (userscript + web extension)",
   "scripts": {
+    "gen": "node gen-tables.mjs",
     "build": "node build.mjs",
     "test": "node --test",
     "demo": "node render-demo.mjs"

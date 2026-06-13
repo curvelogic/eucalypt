@@ -50,13 +50,18 @@ Two dependency-free ES modules, bundled into the artifacts by `build.mjs`:
 | File | Role |
 |------|------|
 | `src/eucalypt-highlight.mjs` | Pure tokeniser + HTML renderer. Mirrors the canonical TextMate grammar (`editors/vscode/syntaxes/eucalypt.tmLanguage.json`) rule-for-rule. No DOM. |
+| `src/grammar-tables.mjs` | **Generated** by `gen-tables.mjs` — the prelude/keyword word lists, extracted from the TextMate grammar so they never drift. |
 | `src/github-dom.mjs` | Finds `.eu` files in GitHub's diff/blob DOM and rewrites the code cells. All GitHub selectors live in one `SELECTORS` object. |
 | `src/theme.css` | One Dark / One Light palette, following GitHub's own light/dark mode. |
 
-The tokeniser is deliberately a fifth hand-maintained grammar alongside the
-existing tree-sitter, TextMate, Emacs and LSP ones. **When the language's
-lexical syntax changes, update the `PRELUDE`/`KEYWORDS` tables and rules here
-to match the TextMate grammar.**
+The tokeniser is a regex-style port of the TextMate grammar — the same ruleset
+VS Code and Shiki use. (It is *not* a separate parser from the tree-sitter or
+LSP highlighters; Emacs and the tree-sitter editors share the tree-sitter
+grammar, and the LSP uses the compiler's Rowan parser.) **The prelude/keyword
+lists are generated from the TextMate grammar (`npm run gen`), so they track it
+automatically; a test fails if the committed `grammar-tables.mjs` goes stale.
+The structural rules — string forms, operators, declaration heads — are still
+hand-maintained here to match the grammar.**
 
 ## Develop
 

@@ -11,8 +11,12 @@
 // classed tokens and HTML. The DOM glue lives in `github-dom.mjs`, and both
 // are bundled into a userscript / web extension by `build.mjs`.
 //
-// IMPORTANT: keep this in sync with the TextMate grammar when the language
-// changes. The prelude/keyword tables below are copied from it verbatim.
+// IMPORTANT: the structural rules below (string forms, operators, declaration
+// heads, …) mirror the TextMate grammar by hand. The prelude/keyword word
+// lists are NOT hand-copied — they are generated from that grammar into
+// grammar-tables.mjs by gen-tables.mjs, so they auto-track it.
+
+import { KEYWORDS, PRELUDE } from "./grammar-tables.mjs";
 
 // ---------------------------------------------------------------------------
 // Character classes (match the TextMate grammar's identifier classes)
@@ -32,47 +36,6 @@ const ASCII_OP = /[+\-*/<>=!&|^~%@$?.\\]/;
 // Unicode bracket pairs (grammar's punctuation `bracket` patterns).
 const UNI_BRACKET =
   /[⟦⟨⟪⌈⌊⦃⦇⦉«‹【〔〖〘〚⟧⟩⟫⌉⌋⦄⦈⦊»›】〕〗〙〛]/u;
-
-const KEYWORDS = new Set([
-  "if", "then", "when", "cond", "true", "false", "null", "nil",
-]);
-
-// Standard prelude functions — copied verbatim from the TextMate grammar.
-const PRELUDE = new Set([
-  "cons", "head", "tail", "first", "second", "head-or", "tail-or", "second-or",
-  "map", "filter", "foldl", "foldr", "scanl", "scanr", "and", "or", "not",
-  "merge", "concat", "append", "prepend", "identity", "const", "compose",
-  "apply", "flip", "take", "drop", "take-while", "drop-while", "all", "any",
-  "all-true?", "any-true?", "keys", "values", "lookup", "has", "range",
-  "repeat", "iterate", "cycle", "zip", "zip-with", "reverse", "remove",
-  "mapcat", "group-by", "qsort", "partition", "negate", "inc", "dec", "floor",
-  "ceiling", "max", "min", "abs", "num", "panic", "assert", "deep-merge",
-  "merge-all", "elements", "block", "lookup-in", "lookup-or", "lookup-or-in",
-  "lookup-alts", "lookup-across", "lookup-path", "complement", "curry",
-  "uncurry", "juxt", "fnil", "with-meta", "meta", "merge-meta", "assertions",
-  "split-at", "take-until", "drop-until", "split-after", "split-when", "nth",
-  "count", "last", "map2", "zip-apply", "window", "over-sliding-pairs",
-  "differences", "discriminate", "key", "value", "bimap", "map-first",
-  "map-second", "map-kv", "map-as-block", "pair", "zip-kv", "with-keys",
-  "map-values", "map-keys", "filter-items", "by-key", "by-key-name",
-  "by-key-match", "by-value", "match-filter-values", "filter-values",
-  "alter-value", "update-value", "alter", "update", "update-value-or",
-  "set-value", "tongue", "merge-at", "nil?", "zero?", "pos?", "neg?", "any?",
-  "non-nil?", "block?", "bool?", "list?", "number?", "string?", "symbol?",
-  "is-array?", "match?", "max-of", "min-of", "max-of-by", "max-of-or",
-  "min-of-by", "min-of-or", "sym", "ch", "str", "arr", "monad", "random",
-  "vec", "render", "render-as", "parse-as", "parse-args", "deep-transform",
-  "deep-fold", "deep-find", "deep-find-first", "deep-find-paths", "deep-query",
-  "deep-query-first", "deep-query-fold", "deep-query-paths", "deep-merge-at",
-  "sort-by", "sort-by-num", "sort-by-str", "sort-by-zdt", "sort-keys",
-  "sort-nums", "sort-strs", "sort-zdts", "kv-block", "map-elements",
-  "coalesce", "group-consecutive", "group-consecutive-by", "iota", "reduce",
-  "rotate", "tails", "update-nth", "update-first", "interleave", "unzip",
-  "butlast", "ints-from", "snoc", "cross", "sum", "product", "running-sum",
-  "running-max", "running-min", "nub-by", "uniq", "partition-all",
-  "window-all", "div", "mod", "rem", "quot", "pow", "dbg", "eu", "io", "cal",
-  "iosm",
-]);
 
 // CSS class names used for each token kind. Themed in `theme.css`.
 export const CLASS = {
