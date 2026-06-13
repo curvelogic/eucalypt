@@ -1,0 +1,4 @@
+# Error test: backtick with no following colon used to panic in validate.
+# It should produce a proper error rather than a panic.
+x: { a: 1 ` }
+RESULT: x

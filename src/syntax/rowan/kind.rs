@@ -119,6 +119,8 @@ pub enum SyntaxKind {
     ERROR_STOWAWAYS,
     /// Characters (brackets and quotes) reserved for future use
     ERROR_RESERVED_CHAR,
+    /// A complete syntactic construct that failed to parse
+    ERROR,
 }
 
 use SyntaxKind::*;
@@ -154,7 +156,7 @@ impl SyntaxKind {
     }
 
     pub fn from_raw(raw: rowan::SyntaxKind) -> Self {
-        assert!(raw.0 <= SyntaxKind::ERROR_RESERVED_CHAR as u16);
+        assert!(raw.0 <= SyntaxKind::ERROR as u16);
         unsafe { std::mem::transmute::<u16, SyntaxKind>(raw.0) }
     }
 }

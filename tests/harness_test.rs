@@ -2361,6 +2361,26 @@ pub fn test_error_159() {
 }
 
 #[test]
+pub fn test_error_160() {
+    run_error_test(&error_opts("160_unclosed_block.eu"));
+}
+
+#[test]
+pub fn test_error_161() {
+    run_error_test(&error_opts("161_unclosed_list.eu"));
+}
+
+#[test]
+pub fn test_error_162() {
+    run_error_test(&error_opts("162_unclosed_paren.eu"));
+}
+
+#[test]
+pub fn test_error_163() {
+    run_error_test(&error_opts("163_malformed_decl_head.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }
