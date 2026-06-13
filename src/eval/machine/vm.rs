@@ -303,15 +303,16 @@ pub struct MachineState {
     pending_capture_start: Option<String>,
     /// Test mode flag — `__EXPECT` failures return false instead of panicking.
     test_mode: bool,
-    /// Pending BIF intrinsic execution, set by `handle_instruction` when it
+    /// Pending BIF intrinsic index, set by `handle_instruction` when it
     /// encounters a `HeapSyn::Bif` node.
     ///
     /// Rather than executing the BIF directly inside `handle_instruction`
     /// (where only `MachineState` is visible), `handle_instruction` stores
-    /// the BIF index and cloned argument refs here and returns early.
-    /// `Machine::step()` then picks this up and executes it with a
-    /// `MachineBifContext` that provides access to both state and core.
-    pending_bif: Option<(u8, Vec<Ref>)>,
+    /// just the intrinsic index here and returns early.  `Machine::step()`
+    /// re-derives the argument slice directly from `self.state.closure` — no
+    /// allocation or copy is needed because no GC can fire between
+    /// `handle_instruction` returning and the BIF being dispatched.
+    pending_bif: Option<u8>,
 }
 
 impl Default for MachineState {
@@ -520,11 +521,12 @@ impl MachineState {
                     self.closure = self.nav(view).resolve_callable(callable)?;
                 }
             }
-            HeapSyn::Bif { intrinsic, args } => {
-                // Defer BIF execution to Machine::step() so that the full
-                // Machine is available (needed for evaluate_to_whnf).
-                // Clone the args: Ref is cheap to clone (indices or small natives).
-                self.pending_bif = Some((*intrinsic, args.as_slice().to_vec()));
+            HeapSyn::Bif { intrinsic, .. } => {
+                // Defer BIF execution to Machine::step() so that the full Machine is
+                // available (needed for evaluate_to_whnf).  Store only the intrinsic
+                // index — args are re-derived from self.closure in Machine::step()
+                // without copying, since no GC fires between here and there.
+                self.pending_bif = Some(*intrinsic);
             }
             HeapSyn::Let { bindings, body } => {
                 metrics.alloc(bindings.len());
@@ -1322,12 +1324,20 @@ fn evaluate_to_whnf_impl(
             break Err(e);
         }
         // Execute any pending BIF (also with NullEmitter and a sub-MachineBifContext).
-        if let Some((intrinsic_idx, args)) = state.pending_bif.take() {
+        if let Some(intrinsic_idx) = state.pending_bif.take() {
             let bif = core.intrinsics[intrinsic_idx as usize];
             // SAFETY: core.heap lives at least as long as this stack frame.
             let bif_view = unsafe { MutatorHeapView::from_raw_heap(&core.heap as *const Heap) };
+            // Re-derive args from the closure: state.closure.code still points to the
+            // HeapSyn::Bif node set during handle_instruction.  No GC can fire between
+            // handle_instruction returning and here, so the pointer remains valid.
+            // SAFETY: same guarantees as in handle_instruction — no GC, pointer current.
+            let args: &[Ref] = match unsafe { &*state.closure.code().as_ptr() } {
+                HeapSyn::Bif { args, .. } => args.as_slice(),
+                _ => &[],
+            };
             let mut ctx = MachineBifContext { state, core };
-            if let Err(e) = bif.execute(&mut ctx, bif_view, &mut null_emitter, &args) {
+            if let Err(e) = bif.execute(&mut ctx, bif_view, &mut null_emitter, args) {
                 break Err(e);
             }
         }
@@ -1663,12 +1673,20 @@ impl<'a> Machine<'a> {
         // executing immediately (where only MachineState is visible).
         // Here we create a `MachineBifContext` with disjoint `&mut state` and
         // `&mut core` borrows — no aliasing, no raw-pointer tricks.
-        if let Some((intrinsic_idx, args)) = self.state.pending_bif.take() {
+        if let Some(intrinsic_idx) = self.state.pending_bif.take() {
             let bif = self.core.intrinsics[intrinsic_idx as usize];
             // Build view from raw ptr so that &mut core remains available for ctx.
             // SAFETY: core.heap lives as long as this Machine (same struct).
             let bif_view =
                 unsafe { MutatorHeapView::from_raw_heap(&self.core.heap as *const Heap) };
+            // Re-derive args from the closure: self.state.closure.code still points to
+            // the HeapSyn::Bif node set during handle_instruction.  No GC fires between
+            // handle_instruction returning and here, so the pointer is still valid.
+            // SAFETY: same guarantees as in handle_instruction — no GC, pointer current.
+            let args: &[Ref] = match unsafe { &*self.state.closure.code().as_ptr() } {
+                HeapSyn::Bif { args, .. } => args.as_slice(),
+                _ => &[],
+            };
             let bif_emitter: &mut dyn Emitter = if let Some(top) = self.capture_emitters.last_mut()
             {
                 top as &mut dyn Emitter
@@ -1679,7 +1697,7 @@ impl<'a> Machine<'a> {
                 state: &mut self.state,
                 core: &mut self.core,
             };
-            let bif_result = bif.execute(&mut ctx, bif_view, bif_emitter, &args);
+            let bif_result = bif.execute(&mut ctx, bif_view, bif_emitter, args);
             // On error, annotate with the BIF's source location then wrap in trace.
             if bif_result.is_err() {
                 let ann_view =
