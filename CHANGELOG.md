@@ -2,12 +2,14 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.8.1] - Unreleased
+## [0.9.0] - Unreleased
+
+## [0.8.1] - 2026-06-12
 
 ### Fixed
 
-- **Type checker: docstring on `types:` alias no longer disables the alias** — attaching metadata (e.g. a docstring) to a `types:` alias entry previously caused it to silently resolve to `any`. The `Meta` wrapper is now unwrapped before extracting the type string (#810)
-- **Type checker: string interpolation now synthesises as `string`** — a block field whose value was a string interpolation (`JOIN`) was synthesised as `any`, causing it to be dropped from the record type and producing false-positive missing-field warnings. `JOIN` applications are now correctly typed as `string` (#811)
+- **Type checker: docstrings on type aliases no longer break the alias** — adding a docstring to a `types:` alias entry previously caused the alias to silently resolve to `any`, disabling all type-checking through it (#810)
+- **Type checker: interpolated strings no longer vanish from record types** — a block field with an interpolated value was dropped from the synthesised record type, producing spurious missing-field warnings (#811)
 
 ## [0.8.0] - 2026-06-12
 
