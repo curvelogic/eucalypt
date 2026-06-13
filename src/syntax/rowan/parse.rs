@@ -722,8 +722,8 @@ impl<'text> Parser<'text> {
         surplus_events
     }
 
-    /// Expects and adds as leaf a particular token, otherwise adding
-    /// an ERROR and returning false
+    /// Expects and adds as leaf a particular token, otherwise recording
+    /// an `UnexpectedToken` error and returning false
     fn expect(&mut self, kind: SyntaxKind) -> bool {
         if let Some((k, _)) = self.next() {
             if k == kind {
