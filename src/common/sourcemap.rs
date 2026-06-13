@@ -3,12 +3,17 @@ use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
     files::{Files, SimpleFiles},
 };
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::num::NonZeroU32;
 use std::{fmt, ops::Range};
 
 /// A handle that points to a source location in a source map.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+///
+/// Serialises as a `u32` (0 = synthetic/invalid, 1.. = source positions).
+/// Pre-compiled blobs use `Smid::default()` (0) for all prelude locations.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Smid(Option<NonZeroU32>);
 
 impl Default for Smid {

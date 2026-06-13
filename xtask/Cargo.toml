@@ -1,0 +1,15 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "xtask"
+path = "src/main.rs"
+
+[dependencies]
+eucalypt = { path = ".." }
+sha2 = "0.10"
+postcard = { version = "1", features = ["alloc"] }
+anyhow = "1"

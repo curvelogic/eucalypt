@@ -1,9 +1,12 @@
 //! An implementation of a spineless tagless G-machine variant plus a
 //! compiler for core syntax that targets it.
 //!
+pub mod arena;
 pub mod arith;
 pub mod array;
 pub mod assert;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod blob;
 pub mod block;
 pub mod boolean;
 pub mod compiler;

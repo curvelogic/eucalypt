@@ -25,6 +25,8 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     common::sourcemap::{intrinsic_display_name, HasSmid, Smid},
     core::{
@@ -109,8 +111,8 @@ impl ConditionFacts {
 }
 
 /// The kind of branching construct recognised by the checker.
-#[derive(Debug, Clone, Copy)]
-enum BranchKind {
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum BranchKind {
     /// `if(condition, true_branch, false_branch)` — 3-argument form.
     If,
     /// `and(left, right)` — synthesise `right` under positive facts from `left`.
@@ -130,16 +132,16 @@ enum BranchKind {
 ///
 /// For `BranchKind::Cond`, `condition` is unused; `branches[0]` is the
 /// clause-list argument index.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BranchShape {
     /// Total number of arguments when fully applied.
-    arity: usize,
+    pub arity: usize,
     /// Index into the flattened argument list for the condition expression.
-    condition: usize,
+    pub condition: usize,
     /// Indices into the flattened argument list for the branch arms.
-    branches: Vec<usize>,
+    pub branches: Vec<usize>,
     /// Semantics — determines how narrowing is applied.
-    kind: BranchKind,
+    pub kind: BranchKind,
 }
 
 /// A type predicate recognisable from the condition expression.
@@ -193,7 +195,7 @@ type AliasMap = HashMap<String, Type>;
 /// checking user files, avoiding a full re-walk of the ~2 200-line
 /// prelude on every check.  User files still go through the full
 /// pipeline with all their imports — only the prelude is cached.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct PreludeSummary {
     /// Exported binding name → its type scheme.
     ///
