@@ -3,6 +3,7 @@
 use std::{convert::TryInto, rc::Rc};
 
 use crate::core::binding::{BoundVar, Var};
+use crate::core::demand::Demand;
 use crate::{
     common::sourcemap::{HasSmid, Smid, SourceMap},
     core::expr::{BlockMap, Expr, LamScope, LetScope, Primitive, RcExpr, INTERNAL_FREE_VAR_PREFIX},
@@ -509,22 +510,34 @@ pub struct Compiler<'rt> {
 /// Each Proto form should implement at least one of `take_lambda_form`
 /// and `take_syntax`
 pub trait ProtoSyntax {
-    /// This syntax is used only once and therefore probably will not
-    /// benefit from a thunk. Default false.
-    fn single_use(&self) -> bool {
-        false
+    /// The demand annotation for this binding.
+    ///
+    /// Used by `take_lambda_form` to decide whether to emit a `Value` or
+    /// a `Thunk`.  Defaults to `Demand::default()` (all `Unknown`), which
+    /// is conservative — the compiler emits a `Thunk` unless overridden.
+    fn demand(&self) -> Demand {
+        Demand::default()
     }
 
     /// Convert into lambda form (destroying the proto form)
     ///
-    /// Default wraps the `take_syntax` result in value or thunk
+    /// Consults the binding's `Demand` annotation and the compiled syntax's
+    /// `is_whnf()` predicate at a single decision point.  The global
+    /// `suppress_updates` flag is an escape hatch for debugging.
     fn take_lambda_form(
         &mut self,
         compiler: &Compiler,
         context: &Context,
     ) -> Result<LambdaForm, CompileError> {
         let syntax = self.take_syntax(compiler, context)?;
-        if self.single_use() || syntax.is_whnf() || compiler.suppress_updates {
+        // Unify the Value-vs-Thunk decision behind one place:
+        //   • demand.whnf — body is already in WHNF (set after compiling)
+        //   • demand.cardinality == AtMostOnce — single-use, no Update benefit
+        //   • syntax.is_whnf() — compiled form is a known WHNF value
+        //   • suppress_updates — global escape hatch
+        let demand = self.demand();
+        let skip_update = demand.skip_update() || syntax.is_whnf() || compiler.suppress_updates;
+        if skip_update {
             Ok(dsl::value(syntax))
         } else {
             Ok(dsl::thunk(syntax))
@@ -775,7 +788,12 @@ impl ProtoSyntax for ProtoLet {
         let mut binder = LetBinder::for_scope(self.expr.clone(), context);
         for (_, value) in scope.pattern.iter() {
             let annotation = value.smid();
-            let index = compiler.compile_binding(&mut binder, value.clone(), annotation, false)?;
+            let index = compiler.compile_binding(
+                &mut binder,
+                value.clone(),
+                annotation,
+                Demand::default(),
+            )?;
             binder.add_var_index(index);
         }
 
@@ -849,29 +867,32 @@ impl ProtoSyntax for ProtoRef {
 /// the context is available
 pub struct Holder {
     syntax: Option<Rc<StgSyn>>,
-    single_use: bool,
+    demand: Demand,
 }
 
 impl Holder {
     pub fn new(syntax: Rc<StgSyn>) -> Self {
         Holder {
             syntax: Some(syntax),
-            single_use: false,
+            demand: Demand::default(),
         }
     }
 
-    pub fn new_single_use(syntax: Rc<StgSyn>) -> Self {
+    /// A holder whose binding is used at most once, so no Update frame
+    /// is needed (was: `new_single_use`).
+    pub fn at_most_once(syntax: Rc<StgSyn>) -> Self {
         Holder {
             syntax: Some(syntax),
-            single_use: true,
+            demand: Demand::at_most_once(),
         }
     }
 }
 
 impl ProtoSyntax for Holder {
-    fn single_use(&self) -> bool {
-        self.single_use
+    fn demand(&self) -> Demand {
+        self.demand
     }
+
     fn take_syntax(
         &mut self,
         _compiler: &Compiler,
@@ -888,24 +909,24 @@ impl ProtoSyntax for Holder {
 pub struct ProtoAppGroup {
     f: RcExpr,
     args: Vec<RcExpr>,
-    single_use: bool,
+    demand: Demand,
     smid: Smid,
 }
 
 impl ProtoAppGroup {
-    pub fn new(f: RcExpr, args: Vec<RcExpr>, single_use: bool, smid: Smid) -> Self {
+    pub fn new(f: RcExpr, args: Vec<RcExpr>, demand: Demand, smid: Smid) -> Self {
         Self {
             f,
             args,
-            single_use,
+            demand,
             smid,
         }
     }
 }
 
 impl ProtoSyntax for ProtoAppGroup {
-    fn single_use(&self) -> bool {
-        self.single_use
+    fn demand(&self) -> Demand {
+        self.demand
     }
 
     fn take_syntax(
@@ -932,17 +953,20 @@ impl ProtoSyntax for ProtoAppGroup {
                 &mut local_binder,
                 self.f.clone(),
                 self.smid,
-                false,
+                Demand::default(),
             )?)),
         };
 
-        // Determine which args are single-use for this intrinsic
+        // Determine which args are single-use for this intrinsic (IF branches).
+        // These args will be evaluated at most once at runtime, so they get
+        // AtMostOnce cardinality to skip the Update frame.
         let single_use_args: &[usize] = intrinsic_index
             .and_then(|idx| compiler.intrinsics.get(idx))
             .map(|bif| bif.single_use_args())
             .unwrap_or(&[]);
 
-        // Get references for args, compiling into the local binder if necessary
+        // Get references for args, compiling into the local binder if necessary.
+        // Translate strict_args → Strict demand; single_use_args → AtMostOnce.
         let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
         for (i, arg) in self.args.iter().enumerate() {
             match &*arg.inner {
@@ -955,12 +979,20 @@ impl ProtoSyntax for ProtoAppGroup {
                     arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))))
                 }
                 _ => {
-                    let is_strict = strict_args.contains(&i) || single_use_args.contains(&i);
+                    let arg_demand = if strict_args.contains(&i) {
+                        // Strict argument: will definitely be evaluated.
+                        Demand::strict()
+                    } else if single_use_args.contains(&i) {
+                        // Single-use argument (e.g. IF branch): used at most once.
+                        Demand::at_most_once()
+                    } else {
+                        Demand::default()
+                    };
                     let index = compiler.compile_binding(
                         &mut local_binder,
                         arg.clone(),
                         self.smid,
-                        is_strict,
+                        arg_demand,
                     )?;
                     arg_indexes.push(Box::new(ProtoRef::new(index)));
                 }
@@ -979,7 +1011,7 @@ impl ProtoSyntax for ProtoAppGroup {
                 local_binder.set_body(Box::new(ProtoInline::new(arg_indexes, inline_body)))?;
             }
             _ => {
-                local_binder.set_body(ProtoApp::boxed(f_index, arg_indexes, self.single_use))?;
+                local_binder.set_body(ProtoApp::boxed(f_index, arg_indexes, self.demand))?;
             }
         };
 
@@ -1005,26 +1037,22 @@ impl ProtoSyntax for ProtoAppGroup {
 pub struct ProtoApp {
     f: Box<dyn ProtoReference>,
     args: Vec<Box<dyn ProtoReference>>,
-    single_use: bool,
+    demand: Demand,
 }
 
 impl ProtoApp {
     pub fn boxed(
         f: Box<dyn ProtoReference>,
         args: Vec<Box<dyn ProtoReference>>,
-        single_use: bool,
+        demand: Demand,
     ) -> Box<dyn ProtoSyntax> {
-        Box::new(ProtoApp {
-            f,
-            args,
-            single_use,
-        })
+        Box::new(ProtoApp { f, args, demand })
     }
 }
 
 impl ProtoSyntax for ProtoApp {
-    fn single_use(&self) -> bool {
-        self.single_use
+    fn demand(&self) -> Demand {
+        self.demand
     }
 
     fn take_syntax(
@@ -1190,11 +1218,21 @@ impl<'rt> Compiler<'rt> {
                 binder.set_body(body)?;
             }
             RenderType::RenderDoc => {
-                let index = self.compile_binding(&mut binder, expr.clone(), expr.smid(), false)?;
+                let index = self.compile_binding(
+                    &mut binder,
+                    expr.clone(),
+                    expr.smid(),
+                    Demand::default(),
+                )?;
                 binder.set_body(Box::new(Holder::new(RenderDoc.global(index))))?;
             }
             RenderType::RenderFragment => {
-                let index = self.compile_binding(&mut binder, expr.clone(), expr.smid(), false)?;
+                let index = self.compile_binding(
+                    &mut binder,
+                    expr.clone(),
+                    expr.smid(),
+                    Demand::default(),
+                )?;
                 binder.set_body(Box::new(Holder::new(Render.global(index))))?;
             }
         }
@@ -1218,10 +1256,11 @@ impl<'rt> Compiler<'rt> {
             Expr::Let(_, _, _) => Ok(Box::new(ProtoLet::new(expr))),
             Expr::Var(s, v) => Ok(Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone()))),
             Expr::App(s, f, args) => {
-                // single_use: true — a let body is evaluated exactly once,
-                // so no Update frame is needed. (Bindings use false because
+                // Demand::at_most_once() — a let body is evaluated exactly once,
+                // so no Update frame is needed. (Bindings use Unknown because
                 // they may be shared.)
-                let proto_app = self.compile_application(binder, *s, f, args, true)?;
+                let proto_app =
+                    self.compile_application(binder, *s, f, args, Demand::at_most_once())?;
                 Ok(proto_app)
             }
             Expr::Literal(_, n) => Ok(Box::new(Holder::new(compile_boxed_literal(n)))),
@@ -1244,8 +1283,8 @@ impl<'rt> Compiler<'rt> {
                 Ok(Box::new(lookup))
             }
             Expr::Meta(s, body, meta) => {
-                let m = self.compile_binding(binder, meta.clone(), *s, false)?;
-                let b = self.compile_binding(binder, body.clone(), *s, false)?;
+                let m = self.compile_binding(binder, meta.clone(), *s, Demand::default())?;
+                let b = self.compile_binding(binder, body.clone(), *s, Demand::default())?;
                 Ok(Box::new(Holder::new(dsl::with_meta(m, b))))
             }
             Expr::Operator(_, _, _, body) => self.compile_body(binder, body.clone()),
@@ -1254,13 +1293,17 @@ impl<'rt> Compiler<'rt> {
     }
 
     /// Compile an expression as a binding, returning index in the binder
-    /// that the final expression is located at
+    /// that the final expression is located at.
+    ///
+    /// `demand` is the demand annotation for the resulting binding — it flows
+    /// through to `ProtoAppGroup` / `ProtoApp` which use it in `take_lambda_form`
+    /// to decide Value vs. Thunk.
     pub fn compile_binding(
         &self,
         binder: &mut LetBinder,
         expr: RcExpr,
         annotation: Smid,
-        single_use: bool,
+        demand: Demand,
     ) -> Result<Ref, CompileError> {
         match &*expr.inner {
             Expr::Var(s, v) => {
@@ -1280,7 +1323,7 @@ impl<'rt> Compiler<'rt> {
                 binder.add_deferred(Box::new(self.compile_lambda(&expr, annotation)?))
             }
             Expr::App(s, f, args) => {
-                let proto_app = self.compile_application(binder, *s, f, args, single_use)?;
+                let proto_app = self.compile_application(binder, *s, f, args, demand)?;
                 binder.add_deferred(proto_app)
             }
             Expr::Literal(_, n) => binder.add(compile_boxed_literal(n)),
@@ -1302,13 +1345,15 @@ impl<'rt> Compiler<'rt> {
                 todo!()
             }
             Expr::Meta(s, body, meta) => {
-                let m = self.compile_binding(binder, meta.clone(), *s, false)?;
-                let b = self.compile_binding(binder, body.clone(), *s, false)?;
+                let m = self.compile_binding(binder, meta.clone(), *s, Demand::default())?;
+                let b = self.compile_binding(binder, body.clone(), *s, Demand::default())?;
                 binder.add(dsl::with_meta(m, b))
             }
             Expr::ArgTuple(s, _) => Err(CompileError::BadArgTupleExpression(*s)),
             Expr::Soup(s, _, _) => Err(CompileError::BadSoupExpression(*s)),
-            Expr::Operator(s, _, _, body) => self.compile_binding(binder, body.clone(), *s, false),
+            Expr::Operator(s, _, _, body) => {
+                self.compile_binding(binder, body.clone(), *s, Demand::default())
+            }
             _ => Err(CompileError::UnexpectedExpression(expr.smid())),
         }
     }
@@ -1324,24 +1369,26 @@ impl<'rt> Compiler<'rt> {
     ) -> Result<Holder, CompileError> {
         binder.ensure_recursive();
 
-        let obj = self.compile_binding(binder, obj.clone(), obj.smid(), false)?;
+        let obj = self.compile_binding(binder, obj.clone(), obj.smid(), Demand::default())?;
         let dft = match dft {
             // Dynamic generalised lookups (from dynamise) may have
             // fallback defaults referencing outer-scope variables
             // that are free at compile time. If the lookup succeeds
             // the default is unused; if it fails we panic anyway.
-            Some(expr) => match self.compile_binding(binder, expr.clone(), annotation, false) {
-                Ok(expr) => Ok(expr),
-                Err(CompileError::FreeVar(..)) => {
-                    let ann = if self.generate_annotations() {
-                        annotation
-                    } else {
-                        Smid::default()
-                    };
-                    binder.add(lookup_fail(key, obj.clone(), ann))
+            Some(expr) => {
+                match self.compile_binding(binder, expr.clone(), annotation, Demand::default()) {
+                    Ok(expr) => Ok(expr),
+                    Err(CompileError::FreeVar(..)) => {
+                        let ann = if self.generate_annotations() {
+                            annotation
+                        } else {
+                            Smid::default()
+                        };
+                        binder.add(lookup_fail(key, obj.clone(), ann))
+                    }
+                    Err(e) => Err(e),
                 }
-                Err(e) => Err(e),
-            },
+            }
             None => {
                 let ann = if self.generate_annotations() {
                     annotation
@@ -1388,7 +1435,7 @@ impl<'rt> Compiler<'rt> {
                 Some(data) => binder.add(data)?,
                 None => KEmptyList.gref(),
             };
-            let item_index = self.compile_binding(binder, item.clone(), smid, false)?;
+            let item_index = self.compile_binding(binder, item.clone(), smid, Demand::default())?;
             last_cons = Some(dsl::cons(item_index, last_index));
         }
 
@@ -1415,7 +1462,7 @@ impl<'rt> Compiler<'rt> {
                 Some(data) => binder.add(data)?,
                 None => KEmptyList.gref(),
             };
-            let item_index = self.compile_binding(binder, item.clone(), smid, false)?;
+            let item_index = self.compile_binding(binder, item.clone(), smid, Demand::default())?;
             last_cons = Some(dsl::cons(item_index, last_index));
         }
 
@@ -1436,7 +1483,7 @@ impl<'rt> Compiler<'rt> {
 
         let mut index = KEmptyList.gref();
         for (k, v) in block_map.iter().rev() {
-            let v_index = self.compile_binding(binder, v.clone(), smid, false)?;
+            let v_index = self.compile_binding(binder, v.clone(), smid, Demand::default())?;
             let kv_index = binder.add(dsl::pair(k, v_index))?;
             index = binder.add(dsl::cons(kv_index, index))?;
         }
@@ -1446,19 +1493,21 @@ impl<'rt> Compiler<'rt> {
     /// Compile a function application
     ///
     /// This may create a let binding for temporaries in function or
-    /// argument position
+    /// argument position.  `demand` is the demand annotation for the
+    /// result — carried through to `ProtoAppGroup` and consulted by
+    /// `take_lambda_form` at the single Value-vs-Thunk decision point.
     pub fn compile_application(
         &self,
         _binder: &mut LetBinder,
         smid: Smid,
         f: &RcExpr,
         args: &[RcExpr],
-        single_use: bool,
+        demand: Demand,
     ) -> Result<Box<dyn ProtoSyntax>, CompileError> {
         Ok(Box::new(ProtoAppGroup::new(
             f.clone(),
             args.to_vec(),
-            single_use,
+            demand,
             smid,
         )))
     }

@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use crate::{
     common::sourcemap::Smid,
     core::{
+        demand::Demand,
         desugar::desugarer::MonadSpec,
         expr::{has_internal_export, Expr, Fixity, Precedence, Primitive, RcExpr},
         typecheck::check::PreludeSummary,
@@ -114,6 +115,18 @@ pub struct UnitInterface {
     /// `Visibility::Public`; `export: :internal` annotations set
     /// `Visibility::Internal`.
     pub visibility: HashMap<String, Visibility>,
+
+    /// Demand (strictness) annotations for exported bindings, keyed by
+    /// binding name.
+    ///
+    /// Populated after STG compilation (W9).  Entries carry the demand the
+    /// compiler computed for each top-level binding; absent entries are
+    /// equivalent to `Demand::default()` (all `Unknown`).
+    ///
+    /// Consumed by W6's pre-compiled prelude blob and by cross-unit
+    /// compiler passes (W11).  A missing entry costs only optimisation,
+    /// never correctness.
+    pub demands: HashMap<String, Demand>,
 }
 
 impl UnitInterface {
@@ -166,6 +179,18 @@ impl UnitInterface {
     /// `extract_operators_from_expr`) so that the `Meta` wrappers are still present.
     pub fn extract_visibility_from_expr(&mut self, expr: &RcExpr) {
         collect_visibility(expr, &mut self.visibility);
+    }
+
+    /// Walk `expr` and register each exported binding in `self.demands` with
+    /// a conservative `Demand::default()` annotation.
+    ///
+    /// This establishes the demand signature slot for every exported binding.
+    /// The slot starts conservative (all `Unknown`); future analysis passes
+    /// (W11 strictness analysis) populate it with richer information.
+    ///
+    /// Call at the same pipeline stage as `extract_visibility_from_expr`.
+    pub fn extract_demands_from_expr(&mut self, expr: &RcExpr) {
+        collect_demands(expr, &mut self.demands);
     }
 
     /// Build a `HashMap<String, String>` of operator name → raw `type:` annotation
@@ -265,6 +290,26 @@ fn collect_visibility(expr: &RcExpr, out: &mut HashMap<String, Visibility>) {
             collect_visibility(&scope.body, out);
         }
         Expr::Meta(_, inner, _) => collect_visibility(inner, out),
+        _ => {}
+    }
+}
+
+/// Recursively register all exported bindings in `expr` with a conservative
+/// `Demand::default()` annotation.
+///
+/// Internal bindings (marked `export: :internal`) are excluded — they are not
+/// part of the cross-unit interface.
+fn collect_demands(expr: &RcExpr, out: &mut HashMap<String, Demand>) {
+    match &*expr.inner {
+        Expr::Let(_, scope, _) => {
+            for (name, value) in &scope.pattern {
+                if !has_internal_export(value) {
+                    out.entry(name.clone()).or_default();
+                }
+            }
+            collect_demands(&scope.body, out);
+        }
+        Expr::Meta(_, inner, _) => collect_demands(inner, out),
         _ => {}
     }
 }
