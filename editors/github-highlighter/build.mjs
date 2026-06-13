@@ -67,6 +67,7 @@ writeFileSync(
 );
 
 writeFileSync(join(here, "extension/content.js"), banner("web extension") + body);
+writeFileSync(join(here, "extension/theme.css"), css);
 
 writeFileSync(
   join(here, "extension/manifest.json"),
@@ -81,6 +82,7 @@ writeFileSync(
         {
           matches: ["https://github.com/*"],
           js: ["content.js"],
+          css: ["theme.css"],
           run_at: "document_idle",
         },
       ],

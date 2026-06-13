@@ -67,8 +67,10 @@ npm run build    # regenerate dist/ and extension/ from src/
 npm run demo     # regenerate demo-rendered.html
 ```
 
-`dist/`, `extension/content.js` and `extension/manifest.json` are generated —
-edit `src/` and rebuild, don't edit them by hand.
+`dist/` and `extension/` (`content.js`, `manifest.json`, `theme.css`) are
+generated — edit `src/` and rebuild, don't edit them by hand. The extension
+ships the theme via the manifest's `content_scripts.css` (browser-injected, so
+it's immune to page CSP); the userscript injects the same CSS from JS.
 
 ## Verifying against live GitHub
 
