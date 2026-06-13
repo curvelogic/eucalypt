@@ -408,18 +408,30 @@ jobs:
       - name: Check for existing release
         id: check_release
         run: |
-          if gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' 2>/dev/null | grep -q '^false$'; then
-            echo "published=true" >> $GITHUB_OUTPUT
-            echo "::warning::Release $RELEASE_TAG is already published — skipping draft creation to avoid overwriting release notes."
+          # Use the GitHub API directly to check release status.
+          # gh release view can fail silently in CI with default GITHUB_TOKEN.
+          HTTP_CODE=$(curl -s -o /tmp/release_response.json -w "%{http_code}" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$RELEASE_TAG")
+          if [ "$HTTP_CODE" = "200" ]; then
+            IS_DRAFT=$(cat /tmp/release_response.json | jq -r '.draft')
+            if [ "$IS_DRAFT" = "false" ]; then
+              echo "skip=true" >> $GITHUB_OUTPUT
+              echo "::warning::Release $RELEASE_TAG is already published — skipping draft creation to avoid overwriting release notes."
+            else
+              echo "skip=false" >> $GITHUB_OUTPUT
+              echo "Draft release for $RELEASE_TAG exists — will update it."
+            fi
           else
-            echo "published=false" >> $GITHUB_OUTPUT
-            echo "Release $RELEASE_TAG is not yet published — will create/update draft."
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "No existing release for $RELEASE_TAG (HTTP $HTTP_CODE) — will create draft."
           fi
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create release
-        if: steps.check_release.outputs.published == 'false'
+        if: steps.check_release.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
