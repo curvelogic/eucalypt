@@ -16,11 +16,12 @@
 //!
 //! `Type::Forall` provides explicit, potentially rank-N quantification.
 
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
 /// A unique identifier for a type variable within a `TypeScheme`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct TypeVarId(pub String);
 
 impl fmt::Display for TypeVarId {
@@ -35,7 +36,7 @@ impl fmt::Display for TypeVarId {
 ///
 /// `*` is the kind of ordinary types.
 /// `k₁ → k₂` is the kind of a type constructor.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Kind {
     /// The kind of ordinary types (`*`).
     Star,
@@ -131,14 +132,14 @@ pub fn kind_of(ty: &Type) -> Kind {
 /// A structural operator constraint on a type variable, e.g. `<(a, a)`: the
 /// named `function` must accept `args`. Discharged at instantiation against the
 /// operator's declared overloads (gradual — vacuously satisfied against `any`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Constraint {
     pub function: String,
     pub args: Vec<Type>,
 }
 
 /// A polymorphic type scheme: `forall vars. body` with optional constraints.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TypeScheme {
     pub vars: Vec<TypeVarId>,
     /// Structural operator constraints carried by the scheme (e.g. `<(a, a)`),
@@ -184,7 +185,7 @@ impl fmt::Display for TypeScheme {
 // ── Type ──────────────────────────────────────────────────────────────────────
 
 /// All type forms in eucalypt's gradual type system.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Type {
     // ── Primitives ──────────────────────────────────────────────────────────
     /// Integer and floating-point numbers.

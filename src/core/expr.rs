@@ -7,6 +7,7 @@ use crate::core::binding::{BoundVar, Scope, Var};
 use crate::core::error::CoreError;
 use crate::syntax::input::*;
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use std::collections::HashMap;
 use std::fmt;
@@ -32,7 +33,7 @@ pub enum Primitive {
 }
 
 /// Fixity of operator
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Fixity {
     Nullary,
     UnaryPrefix,

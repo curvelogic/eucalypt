@@ -2,12 +2,17 @@
 use super::tags::Tag;
 use crate::common::sourcemap::Smid;
 use chrono::{DateTime, FixedOffset};
+use serde::{Deserialize, Serialize};
 use std::{fmt, rc::Rc};
 
 /// The unboxed native (non algebraic) data types
 use serde_json::Number;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Unboxed native (non-algebraic) data types in the STG machine.
+///
+/// `Num` wraps `serde_json::Number` which serialises to a JSON number literal;
+/// `Zdt` serialises via chrono's RFC 3339 serde support.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Native {
     /// A symbol
     Sym(String),
@@ -38,8 +43,12 @@ impl fmt::Display for Native {
     }
 }
 
-/// A reference into environments or a value
-#[derive(Debug, PartialEq, Eq, Clone)]
+/// A reference into environments or a value.
+///
+/// `L(n)` is a de Bruijn index into the local environment.
+/// `G(n)` is a global slot index (intrinsics 0..INTRINSIC_COUNT, then prelude).
+/// `V(t)` is an inline native value (no heap allocation needed).
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum Reference<T: Clone> {
     /// Local index into environment
     L(usize),

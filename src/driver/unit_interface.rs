@@ -24,6 +24,8 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     common::sourcemap::Smid,
     core::{
@@ -41,7 +43,10 @@ use crate::{
 /// Extracted from the pre-cook expression (where the `Meta` wrappers are still
 /// present) so that both cook and the type checker can consume the information
 /// from a single extraction pass.
-#[derive(Debug, Clone)]
+///
+/// Included in the prelude blob so user-code cook can be seeded with prelude
+/// operator definitions without re-parsing prelude source.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OperatorInfo {
     /// Source location of the operator definition.
     pub smid: Smid,
