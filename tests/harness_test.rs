@@ -2361,6 +2361,11 @@ pub fn test_error_159() {
 }
 
 #[test]
+pub fn test_error_160() {
+    run_error_test(&error_opts("160_no_branch_native_number.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

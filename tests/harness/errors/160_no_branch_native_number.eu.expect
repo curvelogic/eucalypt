@@ -1,0 +1,2 @@
+exit: 1
+stderr: "a number was found where a block or list was expected"

@@ -999,40 +999,54 @@ impl ExecutionError {
                 data_tag_mismatch_notes(*actual, expected)
             }
             ExecutionError::NoBranchForNative(_, type_desc) => {
-                let mut notes = vec![
-                    "list operations such as 'head', 'tail', '++', 'map', 'filter' require \
-                     list arguments"
-                        .to_string(),
-                ];
-                if type_desc == "string" {
-                    // This type description arises in two common scenarios:
-                    // 1. The user passed an actual string to a list operation (e.g. '++').
-                    // 2. The user called 'head' or 'tail' on an empty list — eucalypt
-                    //    represents the empty-list sentinel internally as a string native,
-                    //    so the error message mentions "string" even though the user wrote [].
-                    notes.push(
-                        "if you called 'head' or 'tail' on an empty list '[]', that is the \
-                         likely cause — 'head' and 'tail' are only defined on non-empty lists"
-                            .to_string(),
-                    );
-                    notes.push(
-                        "guard against empty lists with 'nil?', e.g. \
-                         'if(xs nil?, default, xs head)'"
-                            .to_string(),
-                    );
-                    notes.push(
-                        "note: to concatenate strings, use string interpolation \
-                         or 'str.join-on' on a list of strings; '++' is for list append"
-                            .to_string(),
-                    );
-                } else {
-                    notes.push(
-                        "check that the value is a list before applying list operations; \
-                         use 'nil?' to test for an empty list"
-                            .to_string(),
-                    );
+                match type_desc.as_str() {
+                    "string" => {
+                        // This type description arises in two common scenarios:
+                        // 1. The user passed an actual string to a list operation (e.g. '++').
+                        // 2. The user called 'head' or 'tail' on an empty list — eucalypt
+                        //    represents the empty-list sentinel internally as a string native,
+                        //    so the error message mentions "string" even though the user wrote [].
+                        vec![
+                            "list operations such as 'head', 'tail', '++', 'map', 'filter' \
+                             require list arguments"
+                                .to_string(),
+                            "if you called 'head' or 'tail' on an empty list '[]', that is the \
+                             likely cause — 'head' and 'tail' are only defined on non-empty lists"
+                                .to_string(),
+                            "guard against empty lists with 'nil?', e.g. \
+                             'if(xs nil?, default, xs head)'"
+                                .to_string(),
+                            "note: to concatenate strings, use string interpolation \
+                             or 'str.join-on' on a list of strings; '++' is for list append"
+                                .to_string(),
+                        ]
+                    }
+                    "number" => {
+                        // A number was found where a block or list was expected.
+                        // The most common cause is using '.' for key lookup on a value
+                        // that turned out to be a number (e.g. `f(x).field` where f
+                        // returns a number).
+                        vec![
+                            "a number was found where a block or list was expected".to_string(),
+                            "if you used '.' for key lookup, check that the value before '.' is \
+                             a block — the expression to the left may be returning a number"
+                                .to_string(),
+                            "if you intended a list operation, ensure the argument is a list, \
+                             not a number"
+                                .to_string(),
+                        ]
+                    }
+                    _ => {
+                        vec![
+                            "list operations such as 'head', 'tail', '++', 'map', 'filter' \
+                             require list arguments"
+                                .to_string(),
+                            "check that the value is a list before applying list operations; \
+                             use 'nil?' to test for an empty list"
+                                .to_string(),
+                        ]
+                    }
                 }
-                notes
             }
             ExecutionError::BlackHole(_) => {
                 vec![

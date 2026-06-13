@@ -1,0 +1,6 @@
+# Error: dot-key-lookup on a number — NoBranchForNative with type "number".
+# f(42) returns 43 (a number), then .y tries a block lookup on it.
+# Previously: misleading notes about list operations.
+# After fix: notes correctly identify dot-on-non-block as the likely cause.
+f(x): x + 1
+result: f(42).y
