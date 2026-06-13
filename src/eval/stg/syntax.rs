@@ -8,18 +8,43 @@ use std::{fmt, rc::Rc};
 /// The unboxed native (non algebraic) data types
 use serde_json::Number;
 
+/// Serde helpers for `serde_json::Number`.
+///
+/// `serde_json::Number` implements `Serialize`/`Deserialize` via a
+/// format-specific path (the `is_f64` / `is_i64` / `is_u64` internal
+/// type tags) that only works correctly for JSON-like formats.  Binary
+/// formats such as postcard cannot encode it.
+///
+/// We therefore serialise numbers as their string representation and
+/// parse them back, which is unambiguous and compact.
+mod number_serde {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde_json::Number;
+    use std::str::FromStr;
+
+    pub fn serialize<S: Serializer>(n: &Number, s: S) -> Result<S::Ok, S::Error> {
+        n.to_string().serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Number, D::Error> {
+        let text = String::deserialize(d)?;
+        Number::from_str(&text).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Unboxed native (non-algebraic) data types in the STG machine.
 ///
-/// `Num` wraps `serde_json::Number` which serialises to a JSON number literal;
-/// `Zdt` serialises via chrono's RFC 3339 serde support.
+/// `Num` stores a `serde_json::Number` and serialises it as its string
+/// representation (format-independent); `Zdt` serialises via chrono's
+/// RFC 3339 serde support.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Native {
     /// A symbol
     Sym(String),
     /// A string
     Str(String),
-    /// A number
-    Num(Number),
+    /// A number (serialised as its decimal string representation)
+    Num(#[serde(with = "number_serde")] Number),
     /// A zoned datetime
     Zdt(DateTime<FixedOffset>),
 }

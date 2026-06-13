@@ -1,6 +1,7 @@
 //! An implementation of a spineless tagless G-machine variant plus a
 //! compiler for core syntax that targets it.
 //!
+pub mod arena;
 pub mod arith;
 pub mod array;
 pub mod assert;
