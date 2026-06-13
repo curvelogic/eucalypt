@@ -1,0 +1,4 @@
+# Error test: missing closing bracket in a list
+# The parser recovers at the enclosing block boundary.
+x: { y: [1, 2, 3  z: 4 }
+RESULT: x

@@ -53,6 +53,10 @@ mod support {
                 SyntaxKind::ERROR_STOWAWAYS => errors.push(ParseError::SurplusContent {
                     range: child.text_range(),
                 }),
+                // ERROR nodes represent declarations that failed to parse; the
+                // parse error was already recorded during parsing.  Do not
+                // double-report it here — just skip the node.
+                SyntaxKind::ERROR => {}
                 _ => {}
             }
         }
@@ -167,7 +171,9 @@ impl Validatable for Literal {
         if let Some(value) = self.value() {
             value.validate(errors);
         } else {
-            panic!("parse generated empty literal")
+            errors.push(ParseError::EmptyExpression {
+                range: self.syntax().text_range(),
+            });
         }
     }
 }
@@ -209,7 +215,9 @@ impl Validatable for Name {
         if let Some(value) = self.identifier() {
             value.validate(errors);
         } else {
-            panic!("parse generated empty name")
+            errors.push(ParseError::EmptyExpression {
+                range: self.syntax().text_range(),
+            });
         }
     }
 }
@@ -292,7 +300,9 @@ impl Validatable for Declaration {
                 })
             }
         } else {
-            panic!("parse created headless declaration");
+            errors.push(ParseError::MalformedDeclarationHead {
+                range: self.syntax().text_range(),
+            });
         }
 
         if let Some(b) = self.body() {
@@ -639,6 +649,9 @@ mod tests {
 
     #[test]
     pub fn test_bad_paren_commas() {
+        // Recovery in parse_paren_expression now consumes the stray comma and the
+        // matching ')' so the block closes properly.  The error set is smaller
+        // and more precise than before recovery was added.
         let errors = check("{ ` x y z foo: (,) }");
         assert_eq!(
             errors,
@@ -648,25 +661,12 @@ mod tests {
                     actual: SyntaxKind::COMMA,
                     range: TextRange::new(16.into(), 17.into())
                 },
-                ParseError::UnexpectedToken {
-                    expected: SyntaxKind::CLOSE_BRACE,
-                    actual: SyntaxKind::CLOSE_PAREN,
-                    range: TextRange::new(17.into(), 18.into())
-                },
-                ParseError::InvalidParenExpr {
-                    open_paren_range: Some(TextRange::new(15.into(), 16.into())),
-                    range: TextRange::new(15.into(), 16.into())
-                },
                 ParseError::EmptyExpression {
                     range: TextRange::new(16.into(), 16.into())
                 },
-                ParseError::UnterminatedBlock {
-                    open_brace_range: Some(TextRange::new(0.into(), 1.into())),
-                    range: TextRange::new(0.into(), 17.into()),
-                },
                 ParseError::SurplusContent {
-                    range: TextRange::new(17.into(), 20.into())
-                }
+                    range: TextRange::new(16.into(), 17.into())
+                },
             ]
         );
     }

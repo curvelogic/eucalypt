@@ -1,0 +1,4 @@
+# Error test: missing closing paren in a parenthesised expression
+# The parser recovers at the enclosing block boundary.
+x: { y: (a + b  z: 4 }
+RESULT: x

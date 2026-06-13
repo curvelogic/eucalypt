@@ -134,7 +134,16 @@ enum ParseEvent {
 - `parse_block_expression()` - `{ ... }` blocks with declarations
 - `parse_string_pattern()` - Interpolated strings
 
-The parser maintains error recovery for LSP support, collecting errors while continuing to parse.
+The parser maintains systematic error recovery for LSP support:
+- **Expression-level recovery**: missing `}`, `]`, or `)` delimiters trigger
+  `recover_to()` which advances to the next enclosing boundary, wrapping
+  consumed tokens in `ERROR_STOWAWAYS`.
+- **Declaration-level recovery**: headless declarations (e.g. a trailing
+  backtick with no following `name: value`) still produce a `DECLARATION`
+  node with an empty head. `Declaration::validate()` detects this and emits
+  a `MalformedDeclarationHead` error; the `ERROR` `SyntaxKind` is defined
+  for future use but is not yet emitted by the parser.
+- All parser panics in `validate.rs` are converted to proper errors.
 
 ### AST
 

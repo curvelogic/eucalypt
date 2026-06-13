@@ -118,11 +118,14 @@ impl<'text> Parser<'text> {
         self.sink_stack.last_mut().unwrap().as_mut()
     }
 
-    /// Pop and complete the top event sink and pass its events to the
-    /// next sink in the stack
+    /// Pop and complete the top event sink, passing its events to the
+    /// next sink in the stack and merging any sink-generated errors into
+    /// `self.errors`.
     fn finish_sink(&mut self) -> Vec<ParseEvent> {
         if let Some(mut sink) = self.sink_stack.pop() {
-            sink.as_mut().complete()
+            let (events, mut errs) = sink.as_mut().complete();
+            self.errors.append(&mut errs);
+            events
         } else {
             unreachable!()
         }
@@ -313,7 +316,14 @@ impl<'text> Parser<'text> {
                     }
                 }
                 self.add_trivia();
-                self.expect(CLOSE_SQUARE);
+                if !self.expect(CLOSE_SQUARE) {
+                    // Recovery: consume to matching ']' or a block boundary.
+                    self.recover_to(
+                        CLOSE_SQUARE,
+                        &[CLOSE_BRACE, CLOSE_PAREN, RESERVED_CLOSE, BRACKET_CLOSE],
+                        OPEN_SQUARE,
+                    );
+                }
                 self.sink().finish_node();
                 true
             } else {
@@ -371,7 +381,14 @@ impl<'text> Parser<'text> {
         self.add_trivia();
 
         self.parse_soup();
-        self.expect(CLOSE_PAREN);
+        if !self.expect(CLOSE_PAREN) {
+            // Recovery: consume to matching ')' or a block/list boundary.
+            self.recover_to(
+                CLOSE_PAREN,
+                &[CLOSE_BRACE, CLOSE_SQUARE, RESERVED_CLOSE, BRACKET_CLOSE],
+                OPEN_PAREN,
+            );
+        }
         self.sink().finish_node();
     }
 
@@ -631,7 +648,14 @@ impl<'text> Parser<'text> {
         self.add_trivia();
         self.parse_block_content();
         self.add_trivia();
-        self.expect(CLOSE_BRACE);
+        if !self.expect(CLOSE_BRACE) {
+            // Recovery: consume to matching '}' or EOF, wrapping stray tokens.
+            self.recover_to(
+                CLOSE_BRACE,
+                &[CLOSE_PAREN, CLOSE_SQUARE, RESERVED_CLOSE, BRACKET_CLOSE],
+                OPEN_BRACE,
+            );
+        }
         self.sink().finish_node();
     }
 
@@ -698,8 +722,8 @@ impl<'text> Parser<'text> {
         surplus_events
     }
 
-    /// Expects and adds as leaf a particular token, otherwise adding
-    /// an ERROR and returning false
+    /// Expects and adds as leaf a particular token, otherwise recording
+    /// an `UnexpectedToken` error and returning false
     fn expect(&mut self, kind: SyntaxKind) -> bool {
         if let Some((k, _)) = self.next() {
             if k == kind {
@@ -716,6 +740,70 @@ impl<'text> Parser<'text> {
             }
         } else {
             false
+        }
+    }
+
+    /// Consume tokens, wrapping them in `ERROR_STOWAWAYS`, until the given
+    /// closing delimiter is found (consuming it) or a higher-level boundary
+    /// (`stop_at`) is encountered (pushing it back).
+    ///
+    /// Nesting is tracked so inner delimiter pairs are consumed as a unit.
+    /// Used for expression-level error recovery on missing closing delimiters.
+    fn recover_to(&mut self, close: SyntaxKind, stop_at: &[SyntaxKind], open: SyntaxKind) {
+        let mut depth: usize = 0;
+        let mut has_stowaways = false;
+
+        loop {
+            match self.peek() {
+                None => break,
+                Some((k, _)) if k == close && depth == 0 => {
+                    // Found the matching close delimiter — consume it.
+                    self.next();
+                    if has_stowaways {
+                        self.sink().finish_node();
+                    }
+                    self.sink().token(close);
+                    return;
+                }
+                Some((k, _)) if stop_at.contains(&k) => {
+                    // Higher-level boundary: leave it for the parent parser.
+                    break;
+                }
+                Some((k, _)) => {
+                    // Track nesting.
+                    let is_open = matches!(
+                        k,
+                        OPEN_BRACE
+                            | OPEN_BRACE_APPLY
+                            | OPEN_SQUARE
+                            | OPEN_SQUARE_APPLY
+                            | OPEN_PAREN
+                            | OPEN_PAREN_APPLY
+                            | BRACKET_OPEN
+                            | RESERVED_OPEN
+                    );
+                    let is_close = matches!(
+                        k,
+                        CLOSE_BRACE | CLOSE_SQUARE | CLOSE_PAREN | BRACKET_CLOSE | RESERVED_CLOSE
+                    );
+                    if k == open || is_open {
+                        depth += 1;
+                    } else if is_close && depth > 0 {
+                        depth -= 1;
+                    }
+
+                    if !has_stowaways {
+                        self.sink().start_node(ERROR_STOWAWAYS);
+                        has_stowaways = true;
+                    }
+                    self.next();
+                    self.sink().token(k);
+                }
+            }
+        }
+
+        if has_stowaways {
+            self.sink().finish_node();
         }
     }
 
@@ -949,7 +1037,11 @@ trait EventSink {
     fn finish_node(&mut self);
     fn accept(&mut self, events: Vec<ParseEvent>);
     fn token(&mut self, kind: SyntaxKind);
-    fn complete(&mut self) -> Vec<ParseEvent>;
+    /// Complete and return `(events, additional_errors)`.
+    ///
+    /// Most sinks return an empty error vec; `BlockEventSink` also returns
+    /// errors for malformed declarations (e.g. missing colon).
+    fn complete(&mut self) -> (Vec<ParseEvent>, Vec<ParseError>);
 }
 
 #[derive(Default)]
@@ -972,10 +1064,10 @@ impl EventSink for SimpleEventSink {
         self.0.push(ParseEvent::Token(kind));
     }
 
-    fn complete(&mut self) -> Vec<ParseEvent> {
+    fn complete(&mut self) -> (Vec<ParseEvent>, Vec<ParseError>) {
         let mut ret = vec![];
         swap(&mut self.0, &mut ret);
-        ret
+        (ret, vec![])
     }
 }
 
@@ -991,6 +1083,8 @@ struct BlockEventSink {
     declaration: Option<PendingDeclaration>,
     /// Node depth so we can identify top level delimiters
     depth: usize,
+    /// Parse errors discovered while committing declarations (e.g. missing colon)
+    errors: Vec<ParseError>,
 }
 
 struct PendingDeclaration {
@@ -1124,8 +1218,8 @@ impl EventSink for BlockEventSink {
         }
     }
 
-    /// Complete the block parse and return the events
-    fn complete(&mut self) -> Vec<ParseEvent> {
+    /// Complete the block parse and return `(events, errors)`.
+    fn complete(&mut self) -> (Vec<ParseEvent>, Vec<ParseError>) {
         let mut ret = vec![];
         if !self.buffer.is_empty() {
             match self.declaration {
@@ -1147,7 +1241,9 @@ impl EventSink for BlockEventSink {
             self.commit_declaration();
         }
         swap(&mut self.committed, &mut ret);
-        ret
+        let mut errs = vec![];
+        swap(&mut self.errors, &mut errs);
+        (ret, errs)
     }
 }
 
@@ -1179,7 +1275,7 @@ impl BlockEventSink {
         }
     }
 
-    /// Pending declaration is complete, copy it to the underlying builder
+    /// Pending declaration is complete, copy it to the underlying builder.
     fn commit_declaration(&mut self) {
         if let Some(ref mut decl) = self.declaration {
             self.committed.push(ParseEvent::StartNode(DECLARATION));
