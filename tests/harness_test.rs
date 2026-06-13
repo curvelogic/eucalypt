@@ -2361,8 +2361,8 @@ pub fn test_error_159() {
 }
 
 #[test]
-pub fn test_error_160() {
-    run_error_test(&error_opts("160_no_branch_native_number.eu"));
+pub fn test_error_164() {
+    run_error_test(&error_opts("164_no_branch_native_number.eu"));
 }
 
 #[test]
