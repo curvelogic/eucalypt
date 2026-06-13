@@ -284,9 +284,14 @@ pub fn prepare(
         errors
     };
 
-    for e in errors {
-        let diag = e.to_diagnostic(loader.source_map());
-        loader.diagnose_to_stderr(&diag);
+    if !errors.is_empty() {
+        // Content verifier errors (e.g. always-divergent self-assignments) are
+        // fatal: continuing to evaluate would only produce a second, less
+        // informative runtime error (e.g. "infinite loop detected") for the
+        // same underlying problem.  Report all errors and stop.
+        let eu_errors: Vec<EucalyptError> = errors.into_iter().map(EucalyptError::Core).collect();
+        diagnose_additional(loader, &eu_errors);
+        return Err(eu_errors.into_iter().next().unwrap());
     }
 
     Ok(Command::Continue)
