@@ -1,0 +1,99 @@
+/*
+ * Eucalypt highlighter colours for the GitHub web UI.
+ *
+ * Palette is One Dark / One Light, matching the Eucalypt VS Code extension and
+ * playground. Colours follow GitHub's own theme: light by default, dark when
+ * GitHub is set to dark (data-color-mode="dark") or to auto with an OS dark
+ * preference. Plain identifiers (eu-variable) are deliberately left unstyled so
+ * they inherit GitHub's foreground colour and stay readable in any theme.
+ */
+
+:root {
+  --eu-comment: #a0a1a7;
+  --eu-string: #50a14f;
+  --eu-escape: #0184bc;
+  --eu-datetime: #0184bc;
+  --eu-symbol: #986801;
+  --eu-number: #b76b01;
+  --eu-metadata: #a626a4;
+  --eu-builtin: #0184bc;
+  --eu-keyword: #a626a4;
+  --eu-prelude: #4078f2;
+  --eu-anaphor: #b76b01;
+  --eu-function: #4078f2;
+  --eu-property: #e45649;
+  --eu-call: #4078f2;
+  --eu-operator: #0184bc;
+  --eu-punct: #383a42;
+  --eu-interp-punct: #e45649;
+  --eu-interp: #b76b01;
+  --eu-interp-fmt: #0184bc;
+}
+
+html[data-color-mode="dark"] {
+  --eu-comment: #7f848e;
+  --eu-string: #98c379;
+  --eu-escape: #56b6c2;
+  --eu-datetime: #56b6c2;
+  --eu-symbol: #e5c07b;
+  --eu-number: #d19a66;
+  --eu-metadata: #c678dd;
+  --eu-builtin: #56b6c2;
+  --eu-keyword: #c678dd;
+  --eu-prelude: #61afef;
+  --eu-anaphor: #d19a66;
+  --eu-function: #61afef;
+  --eu-property: #e06c75;
+  --eu-call: #61afef;
+  --eu-operator: #56b6c2;
+  --eu-punct: #abb2bf;
+  --eu-interp-punct: #e06c75;
+  --eu-interp: #d19a66;
+  --eu-interp-fmt: #56b6c2;
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-color-mode="auto"] {
+    --eu-comment: #7f848e;
+    --eu-string: #98c379;
+    --eu-escape: #56b6c2;
+    --eu-datetime: #56b6c2;
+    --eu-symbol: #e5c07b;
+    --eu-number: #d19a66;
+    --eu-metadata: #c678dd;
+    --eu-builtin: #56b6c2;
+    --eu-keyword: #c678dd;
+    --eu-prelude: #61afef;
+    --eu-anaphor: #d19a66;
+    --eu-function: #61afef;
+    --eu-property: #e06c75;
+    --eu-call: #61afef;
+    --eu-operator: #56b6c2;
+    --eu-punct: #abb2bf;
+    --eu-interp-punct: #e06c75;
+    --eu-interp: #d19a66;
+    --eu-interp-fmt: #56b6c2;
+  }
+}
+
+.eu-comment { color: var(--eu-comment); font-style: italic; }
+.eu-doc { color: var(--eu-comment); font-style: italic; }
+.eu-doc-code { color: var(--eu-string); }
+.eu-string { color: var(--eu-string); }
+.eu-escape { color: var(--eu-escape); }
+.eu-datetime { color: var(--eu-datetime); }
+.eu-symbol { color: var(--eu-symbol); }
+.eu-number { color: var(--eu-number); }
+.eu-metadata { color: var(--eu-metadata); font-weight: 600; }
+.eu-builtin { color: var(--eu-builtin); font-style: italic; }
+.eu-keyword { color: var(--eu-keyword); }
+.eu-prelude { color: var(--eu-prelude); }
+.eu-anaphor { color: var(--eu-anaphor); font-style: italic; }
+.eu-function { color: var(--eu-function); }
+.eu-property { color: var(--eu-property); }
+.eu-call { color: var(--eu-call); }
+.eu-operator { color: var(--eu-operator); }
+.eu-punct { color: var(--eu-punct); }
+.eu-interp-punct { color: var(--eu-interp-punct); }
+.eu-interp { color: var(--eu-interp); }
+.eu-interp-fmt { color: var(--eu-interp-fmt); }

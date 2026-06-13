@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Eucalypt GitHub highlighter — preview</title>
+<style>
+  body { margin:0; font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif; background:#f6f8fa; }
+  header { padding:16px 24px; border-bottom:1px solid #d0d7de; }
+  header h1 { margin:0 0 4px; font-size:18px; }
+  header p { margin:0; color:#57606a; font-size:13px; }
+  .panels { display:grid; grid-template-columns:1fr 1fr; gap:1px; }
+  .panel { padding:16px 24px; }
+  .panel h2 { font-size:14px; text-transform:uppercase; letter-spacing:.04em; opacity:.7; }
+  .panel h3 { font-size:12px; opacity:.6; margin:18px 0 6px; font-weight:600; }
+  table.src { border-collapse:collapse; font-family:SFMono-Regular,Consolas,Liberation Mono,monospace; font-size:12.5px; line-height:1.5; width:100%; }
+  table.src td.code { white-space:pre; padding:0 8px; }
+  table.src td.ln { text-align:right; padding:0 10px; opacity:.35; user-select:none; width:1%; }
+  table.diff td.sign { text-align:center; opacity:.5; user-select:none; width:1%; padding:0 6px; }
+  .d-add { background:var(--add); }
+  .d-del { background:var(--del); }
+  @media (max-width:900px){ .panels{ grid-template-columns:1fr; } }
+</style></head>
+<body>
+<header>
+  <h1>Eucalypt syntax highlighting for the GitHub web UI — preview</h1>
+  <p>Generated from <code>examples/sample.eu</code>. Left = GitHub dark, right = GitHub light. The userscript injects exactly this colouring into <code>.eu</code> diffs and blobs on github.com.</p>
+</header>
+<div class="panels">
+  
+<section class="panel" style="--eu-comment:#7f848e;--eu-string:#98c379;--eu-escape:#56b6c2;--eu-datetime:#56b6c2;--eu-symbol:#e5c07b;--eu-number:#d19a66;--eu-metadata:#c678dd;--eu-builtin:#56b6c2;--eu-keyword:#c678dd;--eu-prelude:#61afef;--eu-anaphor:#d19a66;--eu-function:#61afef;--eu-property:#e06c75;--eu-call:#61afef;--eu-operator:#56b6c2;--eu-punct:#abb2bf;--eu-interp-punct:#e06c75;--eu-interp:#d19a66;--eu-interp-fmt:#56b6c2; background:#0d1117; color:#e6edf3;">
+  <h2>GitHub dark</h2>
+  <h3>Blob view — examples/sample.eu</h3>
+  <table class="src"><tr><td class="ln">1</td><td class="code"><span class="eu-punct">{</span> <span class="eu-variable">doc</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">Sample Eucalypt exercising every token class the highlighter knows.</span></td></tr>
+<tr><td class="ln">2</td><td class="code"><span class="eu-string">This unit-metadata string spans several lines — a deliberate test of</span></td></tr>
+<tr><td class="ln">3</td><td class="code"><span class="eu-string">multi-line string handling, since grove docstrings look just like this and</span></td></tr>
+<tr><td class="ln">4</td><td class="code"><span class="eu-string">break naive line-by-line highlighters.</span><span class="eu-string">"</span></td></tr>
+<tr><td class="ln">5</td><td class="code">&nbsp;</td></tr>
+<tr><td class="ln">6</td><td class="code">  <span class="eu-property">requires</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">&gt;=0.8</span><span class="eu-string">"</span></td></tr>
+<tr><td class="ln">7</td><td class="code">  <span class="eu-property">import</span><span class="eu-punct">:</span> <span class="eu-punct">[</span><span class="eu-string">"</span><span class="eu-string">tf=tf.eu</span><span class="eu-string">"</span><span class="eu-punct">,</span> <span class="eu-string">"</span><span class="eu-string">aws=aws.eu</span><span class="eu-string">"</span><span class="eu-punct">]</span> <span class="eu-punct">}</span></td></tr>
+<tr><td class="ln">8</td><td class="code">&nbsp;</td></tr>
+<tr><td class="ln">9</td><td class="code"><span class="eu-comment"># A line comment.</span></td></tr>
+<tr><td class="ln">10</td><td class="code">&nbsp;</td></tr>
+<tr><td class="ln">11</td><td class="code"><span class="eu-property">region</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">eu-west-1</span><span class="eu-string">"</span></td></tr>
+<tr><td class="ln">12</td><td class="code"><span class="eu-property">ports</span><span class="eu-punct">:</span> <span class="eu-punct">[</span><span class="eu-number">22</span><span class="eu-punct">,</span> <span class="eu-number">80</span><span class="eu-punct">,</span> <span class="eu-number">443</span><span class="eu-punct">,</span> <span class="eu-number">5432</span><span class="eu-punct">]</span></td></tr>
+<tr><td class="ln">13</td><td class="code"><span class="eu-property">ratio</span><span class="eu-punct">:</span> <span class="eu-number">3.14</span></td></tr>
+<tr><td class="ln">14</td><td class="code">&nbsp;</td></tr>
+<tr><td class="ln">15</td><td class="code"><span class="eu-metadata">`</span> <span class="eu-punct">{</span> <span class="eu-variable">doc</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">`subnet-group(local, subnets)` builds an `aws_db_subnet_group`.</span><span class="eu-string">"</span></td></tr>
+<tr><td class="ln">16</td><td class="code">    <span class="eu-property">type</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">string -&gt; [Node] -&gt; Node</span><span class="eu-string">"</span> <span class="eu-punct">}</span></td></tr>
+<tr><td class="ln">17</td><td class="code"><span class="eu-function">subnet-group</span><span class="eu-punct">(</span><span class="eu-variable">local</span><span class="eu-punct">,</span> <span class="eu-variable">subnets</span><span class="eu-punct">)</span><span class="eu-punct">:</span> <span class="eu-variable">tf</span><span class="eu-operator">.</span><span class="eu-call">resource</span><span class="eu-punct">(</span><span class="eu-string">"</span><span class="eu-string">aws_db_subnet_group</span><span class="eu-string">"</span><span class="eu-punct">,</span> <span class="eu-variable">local</span><span class="eu-punct">)</span> <span class="eu-operator">@</span> <span class="eu-punct">{</span></td></tr>
+<tr><td class="ln">18</td><td class="code">  <span class="eu-property">name</span><span class="eu-punct">:</span> <span class="eu-variable">local</span></td></tr>
+<tr><td class="ln">19</td><td class="code">  <span class="eu-property">subnet_ids</span><span class="eu-punct">:</span> <span class="eu-variable">subnets</span> <span class="eu-prelude">map</span><span class="eu-punct">(</span><span class="eu-operator">.</span><span class="eu-variable">id</span><span class="eu-punct">)</span></td></tr>
+<tr><td class="ln">20</td><td class="code"><span class="eu-punct">}</span> <span class="eu-operator">&lt;&lt;</span> <span class="eu-variable">opts</span></td></tr>
+<tr><td class="ln">21</td><td class="code">&nbsp;</td></tr>
+<tr><td class="ln">22</td><td class="code"><span class="eu-comment"># Symbols, quoted symbols, anaphora, prelude, builtins, operators.</span></td></tr>
+<tr><td class="ln">23</td><td class="code"><span class="eu-property">status</span><span class="eu-punct">:</span> <span class="eu-symbol">:Enabled</span></td></tr>
+<tr><td class="ln">24</td><td class="code"><span class="eu-property">weird-key</span><span class="eu-punct">:</span> <span class="eu-punct">{</span> <span class="eu-variable">'AWS:SourceArn'</span><span class="eu-punct">:</span> <span class="eu-variable">dist</span><span class="eu-operator">.</span><span class="eu-call">attr</span><span class="eu-punct">(</span><span class="eu-symbol">:arn</span><span class="eu-punct">)</span> <span class="eu-punct">}</span></td></tr>
+<tr><td class="ln">25</td><td class="code"><span class="eu-function">doubled</span><span class="eu-punct">(</span><span class="eu-variable">x</span><span class="eu-punct">)</span><span class="eu-punct">:</span> <span class="eu-variable">x</span> <span class="eu-operator">*</span> <span class="eu-anaphor">_0</span></td></tr>
+<tr><td class="ln">26</td><td class="code"><span class="eu-property">totals</span><span class="eu-punct">:</span> <span class="eu-variable">ports</span> <span class="eu-prelude">foldl</span><span class="eu-punct">(</span><span class="eu-operator">+</span> <span class="eu-number">0</span><span class="eu-punct">)</span> <span class="eu-operator">‖</span> <span class="eu-variable">extras</span></td></tr>
+<tr><td class="ln">27</td><td class="code"><span class="eu-property">flags</span><span class="eu-punct">:</span> <span class="eu-variable">a</span> <span class="eu-operator">∧</span> <span class="eu-variable">b</span> <span class="eu-operator">∨</span> <span class="eu-operator">¬</span> <span class="eu-variable">c</span></td></tr>
+<tr><td class="ln">28</td><td class="code"><span class="eu-property">half</span><span class="eu-punct">:</span> <span class="eu-variable">total</span> <span class="eu-operator">÷</span> <span class="eu-number">2</span></td></tr>
+<tr><td class="ln">29</td><td class="code"><span class="eu-property">when-empty</span><span class="eu-punct">:</span> <span class="eu-variable">items</span> <span class="eu-prelude">nil?</span> <span class="eu-keyword">then</span><span class="eu-punct">(</span><span class="eu-symbol">:none</span><span class="eu-punct">,</span> <span class="eu-prelude">head</span><span class="eu-punct">)</span></td></tr>
+<tr><td class="ln">30</td><td class="code"><span class="eu-property">raw</span><span class="eu-punct">:</span> <span class="eu-string">r</span><span class="eu-string">"</span><span class="eu-string">no \n escapes here </span><span class="eu-interp-punct">{</span><span class="eu-interp">literal</span><span class="eu-interp-punct">}</span><span class="eu-string">"</span></td></tr>
+<tr><td class="ln">31</td><td class="code"><span class="eu-property">ctrl</span><span class="eu-punct">:</span> <span class="eu-string">c</span><span class="eu-string">"</span><span class="eu-string">tab</span><span class="eu-escape">\t</span><span class="eu-string">newline</span><span class="eu-escape">\n</span><span class="eu-string"> and </span><span class="eu-interp-punct">{</span><span class="eu-interp">value</span><span class="eu-interp-punct">}</span><span class="eu-string">"</span></td></tr>
+<tr><td class="ln">32</td><td class="code"><span class="eu-property">stamp</span><span class="eu-punct">:</span> <span class="eu-datetime">t</span><span class="eu-datetime">"</span><span class="eu-datetime">2024-03-15T14:30:00Z</span><span class="eu-datetime">"</span></td></tr>
+<tr><td class="ln">33</td><td class="code"><span class="eu-property">escaped</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">literal braces </span><span class="eu-escape">{{</span><span class="eu-string"> and </span><span class="eu-escape">}}</span><span class="eu-string"> plus </span><span class="eu-interp-punct">{</span><span class="eu-interp">interp</span><span class="eu-interp-fmt">:%.2f</span><span class="eu-interp-punct">}</span><span class="eu-string">"</span></td></tr>
+<tr><td class="ln">34</td><td class="code"><span class="eu-property">intrinsic</span><span class="eu-punct">:</span> <span class="eu-builtin">__NULL</span></td></tr>
+<tr><td class="ln">35</td><td class="code"><span class="eu-property">nodes</span><span class="eu-punct">:</span> <span class="eu-prelude">concat</span><span class="eu-punct">[</span><span class="eu-punct">[</span><span class="eu-variable">vpc</span><span class="eu-punct">]</span><span class="eu-punct">,</span> <span class="eu-variable">subnets</span><span class="eu-punct">]</span></td></tr>
+<tr><td class="ln">36</td><td class="code">&nbsp;</td></tr></table>
+  <h3>Unified diff</h3>
+  <table class="src diff" style="--add:rgba(46,160,67,.15); --del:rgba(248,81,73,.15);"><tr class="d-context"><td class="sign"> </td><td class="code"><span class="eu-property">region</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">eu-west-1</span><span class="eu-string">"</span></td></tr>
+<tr class="d-del"><td class="sign">-</td><td class="code"><span class="eu-property">ports</span><span class="eu-punct">:</span> <span class="eu-punct">[</span><span class="eu-number">22</span><span class="eu-punct">,</span> <span class="eu-number">80</span><span class="eu-punct">]</span></td></tr>
+<tr class="d-add"><td class="sign">+</td><td class="code"><span class="eu-property">ports</span><span class="eu-punct">:</span> <span class="eu-punct">[</span><span class="eu-number">22</span><span class="eu-punct">,</span> <span class="eu-number">80</span><span class="eu-punct">,</span> <span class="eu-number">443</span><span class="eu-punct">,</span> <span class="eu-number">5432</span><span class="eu-punct">]</span></td></tr>
+<tr class="d-context"><td class="sign"> </td><td class="code"><span class="eu-property">ratio</span><span class="eu-punct">:</span> <span class="eu-number">3.14</span></td></tr>
+<tr class="d-add"><td class="sign">+</td><td class="code"><span class="eu-metadata">`</span> <span class="eu-punct">{</span> <span class="eu-variable">doc</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">`instance(local, group)` — an `aws_db_instance`</span></td></tr>
+<tr class="d-add"><td class="sign">+</td><td class="code"><span class="eu-string">    placed in `group` (a DB subnet-group handle).</span><span class="eu-string">"</span> <span class="eu-punct">}</span></td></tr></table>
+</section>
+  
+<section class="panel" style="--eu-comment:#a0a1a7;--eu-string:#50a14f;--eu-escape:#0184bc;--eu-datetime:#0184bc;--eu-symbol:#986801;--eu-number:#b76b01;--eu-metadata:#a626a4;--eu-builtin:#0184bc;--eu-keyword:#a626a4;--eu-prelude:#4078f2;--eu-anaphor:#b76b01;--eu-function:#4078f2;--eu-property:#e45649;--eu-call:#4078f2;--eu-operator:#0184bc;--eu-punct:#383a42;--eu-interp-punct:#e45649;--eu-interp:#b76b01;--eu-interp-fmt:#0184bc; background:#ffffff; color:#1f2328;">
+  <h2>GitHub light</h2>
+  <h3>Blob view — examples/sample.eu</h3>
+  <table class="src"><tr><td class="ln">1</td><td class="code"><span class="eu-punct">{</span> <span class="eu-variable">doc</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">Sample Eucalypt exercising every token class the highlighter knows.</span></td></tr>
+<tr><td class="ln">2</td><td class="code"><span class="eu-string">This unit-metadata string spans several lines — a deliberate test of</span></td></tr>
+<tr><td class="ln">3</td><td class="code"><span class="eu-string">multi-line string handling, since grove docstrings look just like this and</span></td></tr>
+<tr><td class="ln">4</td><td class="code"><span class="eu-string">break naive line-by-line highlighters.</span><span class="eu-string">"</span></td></tr>
+<tr><td class="ln">5</td><td class="code">&nbsp;</td></tr>
+<tr><td class="ln">6</td><td class="code">  <span class="eu-property">requires</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">&gt;=0.8</span><span class="eu-string">"</span></td></tr>
+<tr><td class="ln">7</td><td class="code">  <span class="eu-property">import</span><span class="eu-punct">:</span> <span class="eu-punct">[</span><span class="eu-string">"</span><span class="eu-string">tf=tf.eu</span><span class="eu-string">"</span><span class="eu-punct">,</span> <span class="eu-string">"</span><span class="eu-string">aws=aws.eu</span><span class="eu-string">"</span><span class="eu-punct">]</span> <span class="eu-punct">}</span></td></tr>
+<tr><td class="ln">8</td><td class="code">&nbsp;</td></tr>
+<tr><td class="ln">9</td><td class="code"><span class="eu-comment"># A line comment.</span></td></tr>
+<tr><td class="ln">10</td><td class="code">&nbsp;</td></tr>
+<tr><td class="ln">11</td><td class="code"><span class="eu-property">region</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">eu-west-1</span><span class="eu-string">"</span></td></tr>
+<tr><td class="ln">12</td><td class="code"><span class="eu-property">ports</span><span class="eu-punct">:</span> <span class="eu-punct">[</span><span class="eu-number">22</span><span class="eu-punct">,</span> <span class="eu-number">80</span><span class="eu-punct">,</span> <span class="eu-number">443</span><span class="eu-punct">,</span> <span class="eu-number">5432</span><span class="eu-punct">]</span></td></tr>
+<tr><td class="ln">13</td><td class="code"><span class="eu-property">ratio</span><span class="eu-punct">:</span> <span class="eu-number">3.14</span></td></tr>
+<tr><td class="ln">14</td><td class="code">&nbsp;</td></tr>
+<tr><td class="ln">15</td><td class="code"><span class="eu-metadata">`</span> <span class="eu-punct">{</span> <span class="eu-variable">doc</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">`subnet-group(local, subnets)` builds an `aws_db_subnet_group`.</span><span class="eu-string">"</span></td></tr>
+<tr><td class="ln">16</td><td class="code">    <span class="eu-property">type</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">string -&gt; [Node] -&gt; Node</span><span class="eu-string">"</span> <span class="eu-punct">}</span></td></tr>
+<tr><td class="ln">17</td><td class="code"><span class="eu-function">subnet-group</span><span class="eu-punct">(</span><span class="eu-variable">local</span><span class="eu-punct">,</span> <span class="eu-variable">subnets</span><span class="eu-punct">)</span><span class="eu-punct">:</span> <span class="eu-variable">tf</span><span class="eu-operator">.</span><span class="eu-call">resource</span><span class="eu-punct">(</span><span class="eu-string">"</span><span class="eu-string">aws_db_subnet_group</span><span class="eu-string">"</span><span class="eu-punct">,</span> <span class="eu-variable">local</span><span class="eu-punct">)</span> <span class="eu-operator">@</span> <span class="eu-punct">{</span></td></tr>
+<tr><td class="ln">18</td><td class="code">  <span class="eu-property">name</span><span class="eu-punct">:</span> <span class="eu-variable">local</span></td></tr>
+<tr><td class="ln">19</td><td class="code">  <span class="eu-property">subnet_ids</span><span class="eu-punct">:</span> <span class="eu-variable">subnets</span> <span class="eu-prelude">map</span><span class="eu-punct">(</span><span class="eu-operator">.</span><span class="eu-variable">id</span><span class="eu-punct">)</span></td></tr>
+<tr><td class="ln">20</td><td class="code"><span class="eu-punct">}</span> <span class="eu-operator">&lt;&lt;</span> <span class="eu-variable">opts</span></td></tr>
+<tr><td class="ln">21</td><td class="code">&nbsp;</td></tr>
+<tr><td class="ln">22</td><td class="code"><span class="eu-comment"># Symbols, quoted symbols, anaphora, prelude, builtins, operators.</span></td></tr>
+<tr><td class="ln">23</td><td class="code"><span class="eu-property">status</span><span class="eu-punct">:</span> <span class="eu-symbol">:Enabled</span></td></tr>
+<tr><td class="ln">24</td><td class="code"><span class="eu-property">weird-key</span><span class="eu-punct">:</span> <span class="eu-punct">{</span> <span class="eu-variable">'AWS:SourceArn'</span><span class="eu-punct">:</span> <span class="eu-variable">dist</span><span class="eu-operator">.</span><span class="eu-call">attr</span><span class="eu-punct">(</span><span class="eu-symbol">:arn</span><span class="eu-punct">)</span> <span class="eu-punct">}</span></td></tr>
+<tr><td class="ln">25</td><td class="code"><span class="eu-function">doubled</span><span class="eu-punct">(</span><span class="eu-variable">x</span><span class="eu-punct">)</span><span class="eu-punct">:</span> <span class="eu-variable">x</span> <span class="eu-operator">*</span> <span class="eu-anaphor">_0</span></td></tr>
+<tr><td class="ln">26</td><td class="code"><span class="eu-property">totals</span><span class="eu-punct">:</span> <span class="eu-variable">ports</span> <span class="eu-prelude">foldl</span><span class="eu-punct">(</span><span class="eu-operator">+</span> <span class="eu-number">0</span><span class="eu-punct">)</span> <span class="eu-operator">‖</span> <span class="eu-variable">extras</span></td></tr>
+<tr><td class="ln">27</td><td class="code"><span class="eu-property">flags</span><span class="eu-punct">:</span> <span class="eu-variable">a</span> <span class="eu-operator">∧</span> <span class="eu-variable">b</span> <span class="eu-operator">∨</span> <span class="eu-operator">¬</span> <span class="eu-variable">c</span></td></tr>
+<tr><td class="ln">28</td><td class="code"><span class="eu-property">half</span><span class="eu-punct">:</span> <span class="eu-variable">total</span> <span class="eu-operator">÷</span> <span class="eu-number">2</span></td></tr>
+<tr><td class="ln">29</td><td class="code"><span class="eu-property">when-empty</span><span class="eu-punct">:</span> <span class="eu-variable">items</span> <span class="eu-prelude">nil?</span> <span class="eu-keyword">then</span><span class="eu-punct">(</span><span class="eu-symbol">:none</span><span class="eu-punct">,</span> <span class="eu-prelude">head</span><span class="eu-punct">)</span></td></tr>
+<tr><td class="ln">30</td><td class="code"><span class="eu-property">raw</span><span class="eu-punct">:</span> <span class="eu-string">r</span><span class="eu-string">"</span><span class="eu-string">no \n escapes here </span><span class="eu-interp-punct">{</span><span class="eu-interp">literal</span><span class="eu-interp-punct">}</span><span class="eu-string">"</span></td></tr>
+<tr><td class="ln">31</td><td class="code"><span class="eu-property">ctrl</span><span class="eu-punct">:</span> <span class="eu-string">c</span><span class="eu-string">"</span><span class="eu-string">tab</span><span class="eu-escape">\t</span><span class="eu-string">newline</span><span class="eu-escape">\n</span><span class="eu-string"> and </span><span class="eu-interp-punct">{</span><span class="eu-interp">value</span><span class="eu-interp-punct">}</span><span class="eu-string">"</span></td></tr>
+<tr><td class="ln">32</td><td class="code"><span class="eu-property">stamp</span><span class="eu-punct">:</span> <span class="eu-datetime">t</span><span class="eu-datetime">"</span><span class="eu-datetime">2024-03-15T14:30:00Z</span><span class="eu-datetime">"</span></td></tr>
+<tr><td class="ln">33</td><td class="code"><span class="eu-property">escaped</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">literal braces </span><span class="eu-escape">{{</span><span class="eu-string"> and </span><span class="eu-escape">}}</span><span class="eu-string"> plus </span><span class="eu-interp-punct">{</span><span class="eu-interp">interp</span><span class="eu-interp-fmt">:%.2f</span><span class="eu-interp-punct">}</span><span class="eu-string">"</span></td></tr>
+<tr><td class="ln">34</td><td class="code"><span class="eu-property">intrinsic</span><span class="eu-punct">:</span> <span class="eu-builtin">__NULL</span></td></tr>
+<tr><td class="ln">35</td><td class="code"><span class="eu-property">nodes</span><span class="eu-punct">:</span> <span class="eu-prelude">concat</span><span class="eu-punct">[</span><span class="eu-punct">[</span><span class="eu-variable">vpc</span><span class="eu-punct">]</span><span class="eu-punct">,</span> <span class="eu-variable">subnets</span><span class="eu-punct">]</span></td></tr>
+<tr><td class="ln">36</td><td class="code">&nbsp;</td></tr></table>
+  <h3>Unified diff</h3>
+  <table class="src diff" style="--add:rgba(46,160,67,.15); --del:rgba(255,129,130,.2);"><tr class="d-context"><td class="sign"> </td><td class="code"><span class="eu-property">region</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">eu-west-1</span><span class="eu-string">"</span></td></tr>
+<tr class="d-del"><td class="sign">-</td><td class="code"><span class="eu-property">ports</span><span class="eu-punct">:</span> <span class="eu-punct">[</span><span class="eu-number">22</span><span class="eu-punct">,</span> <span class="eu-number">80</span><span class="eu-punct">]</span></td></tr>
+<tr class="d-add"><td class="sign">+</td><td class="code"><span class="eu-property">ports</span><span class="eu-punct">:</span> <span class="eu-punct">[</span><span class="eu-number">22</span><span class="eu-punct">,</span> <span class="eu-number">80</span><span class="eu-punct">,</span> <span class="eu-number">443</span><span class="eu-punct">,</span> <span class="eu-number">5432</span><span class="eu-punct">]</span></td></tr>
+<tr class="d-context"><td class="sign"> </td><td class="code"><span class="eu-property">ratio</span><span class="eu-punct">:</span> <span class="eu-number">3.14</span></td></tr>
+<tr class="d-add"><td class="sign">+</td><td class="code"><span class="eu-metadata">`</span> <span class="eu-punct">{</span> <span class="eu-variable">doc</span><span class="eu-punct">:</span> <span class="eu-string">"</span><span class="eu-string">`instance(local, group)` — an `aws_db_instance`</span></td></tr>
+<tr class="d-add"><td class="sign">+</td><td class="code"><span class="eu-string">    placed in `group` (a DB subnet-group handle).</span><span class="eu-string">"</span> <span class="eu-punct">}</span></td></tr></table>
+</section>
+</div>
+<style>.eu-comment { color: var(--eu-comment); font-style: italic; }
+.eu-doc { color: var(--eu-comment); font-style: italic; }
+.eu-doc-code { color: var(--eu-string); }
+.eu-string { color: var(--eu-string); }
+.eu-escape { color: var(--eu-escape); }
+.eu-datetime { color: var(--eu-datetime); }
+.eu-symbol { color: var(--eu-symbol); }
+.eu-number { color: var(--eu-number); }
+.eu-metadata { color: var(--eu-metadata); font-weight: 600; }
+.eu-builtin { color: var(--eu-builtin); font-style: italic; }
+.eu-keyword { color: var(--eu-keyword); }
+.eu-prelude { color: var(--eu-prelude); }
+.eu-anaphor { color: var(--eu-anaphor); font-style: italic; }
+.eu-function { color: var(--eu-function); }
+.eu-property { color: var(--eu-property); }
+.eu-call { color: var(--eu-call); }
+.eu-operator { color: var(--eu-operator); }
+.eu-punct { color: var(--eu-punct); }
+.eu-interp-punct { color: var(--eu-interp-punct); }
+.eu-interp { color: var(--eu-interp); }
+.eu-interp-fmt { color: var(--eu-interp-fmt); }
+</style>
+</body></html>

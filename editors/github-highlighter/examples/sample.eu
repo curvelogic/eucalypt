@@ -1,0 +1,35 @@
+{ doc: "Sample Eucalypt exercising every token class the highlighter knows.
+This unit-metadata string spans several lines — a deliberate test of
+multi-line string handling, since grove docstrings look just like this and
+break naive line-by-line highlighters."
+
+  requires: ">=0.8"
+  import: ["tf=tf.eu", "aws=aws.eu"] }
+
+# A line comment.
+
+region: "eu-west-1"
+ports: [22, 80, 443, 5432]
+ratio: 3.14
+
+` { doc: "`subnet-group(local, subnets)` builds an `aws_db_subnet_group`."
+    type: "string -> [Node] -> Node" }
+subnet-group(local, subnets): tf.resource("aws_db_subnet_group", local) @ {
+  name: local
+  subnet_ids: subnets map(.id)
+} << opts
+
+# Symbols, quoted symbols, anaphora, prelude, builtins, operators.
+status: :Enabled
+weird-key: { 'AWS:SourceArn': dist.attr(:arn) }
+doubled(x): x * _0
+totals: ports foldl(+ 0) ‖ extras
+flags: a ∧ b ∨ ¬ c
+half: total ÷ 2
+when-empty: items nil? then(:none, head)
+raw: r"no \n escapes here {literal}"
+ctrl: c"tab\tnewline\n and {value}"
+stamp: t"2024-03-15T14:30:00Z"
+escaped: "literal braces {{ and }} plus {interp:%.2f}"
+intrinsic: __NULL
+nodes: concat[[vpc], subnets]
