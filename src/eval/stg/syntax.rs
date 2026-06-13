@@ -243,7 +243,7 @@ impl fmt::Display for StgSyn {
 /// become refs into the top environment frame which represents
 /// args and the free references become refs that point deeper
 /// into the environment stack
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LambdaForm {
     Lambda {
         bound: u8,

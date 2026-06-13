@@ -5,6 +5,7 @@ pub mod arena;
 pub mod arith;
 pub mod array;
 pub mod assert;
+pub mod blob;
 pub mod block;
 pub mod boolean;
 pub mod compiler;

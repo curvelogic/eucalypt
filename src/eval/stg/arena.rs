@@ -240,6 +240,15 @@ impl StgArena {
         }
     }
 
+    /// Flatten a [`LambdaForm`] into this arena and return its [`FormIdx`].
+    ///
+    /// The form's body is added to `self.nodes`; the form itself is added to
+    /// `self.forms`.  Used by the xtask to flatten individual prelude binding
+    /// lambda forms into a shared node pool.
+    pub fn flatten_form(&mut self, lf: &LambdaForm) -> FormIdx {
+        self.alloc_form(lf)
+    }
+
     /// Pre-allocate a form slot, recurse, then fill in.
     fn alloc_form(&mut self, lf: &LambdaForm) -> FormIdx {
         let idx = self.forms.len() as FormIdx;
