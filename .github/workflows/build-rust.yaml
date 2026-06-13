@@ -408,20 +408,18 @@ jobs:
       - name: Check for existing release
         id: check_release
         run: |
-          RELEASE_STATUS=$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' 2>/dev/null || echo "none")
-          echo "status=$RELEASE_STATUS" >> $GITHUB_OUTPUT
-          if [ "$RELEASE_STATUS" = "false" ]; then
+          if gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' 2>/dev/null | grep -q '^false$'; then
+            echo "published=true" >> $GITHUB_OUTPUT
             echo "::warning::Release $RELEASE_TAG is already published — skipping draft creation to avoid overwriting release notes."
-          elif [ "$RELEASE_STATUS" = "none" ]; then
-            echo "No existing release for $RELEASE_TAG — will create draft."
           else
-            echo "Draft release for $RELEASE_TAG exists — will update it."
+            echo "published=false" >> $GITHUB_OUTPUT
+            echo "Release $RELEASE_TAG is not yet published — will create/update draft."
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create release
-        if: steps.check_release.outputs.status != 'false'
+        if: steps.check_release.outputs.published == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
