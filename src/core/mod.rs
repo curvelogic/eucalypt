@@ -4,6 +4,7 @@ pub mod analyse;
 pub mod anaphora;
 pub mod binding;
 pub mod cook;
+pub mod demand;
 pub mod desugar;
 pub mod doc;
 pub mod error;
