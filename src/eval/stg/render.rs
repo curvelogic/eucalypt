@@ -101,6 +101,17 @@ impl StgIntrinsic for Render {
                             ),
                         ),
                         (
+                            DataConstructor::BoxedTypeData.tag(), // [str] [tagfn tag] [boxtd]
+                            case(
+                                local(2),
+                                vec![(
+                                    DataConstructor::BoxedString.tag(), // [tagstr] [str] [tagfn tag] [boxtd]
+                                    force(call::bif::emit_tag_native(lref(0), lref(1)), unit()),
+                                )],
+                                force(EmitNative.global(lref(1)), unit()), // [()] [str] [boxtd] [tagfn tag]
+                            ),
+                        ),
+                        (
                             DataConstructor::BoxedZdt.tag(), // [zdt] [tagfn tag] [boxzdt]
                             case(
                                 local(2),

@@ -207,6 +207,16 @@ impl TStr {
     }
 }
 
+ast_token!(SStr, S_STRING);
+impl SStr {
+    /// Get the raw content between quotes (without prefix, no escape processing)
+    pub fn value(&self) -> Option<&str> {
+        self.text()
+            .strip_prefix("s\"")
+            .and_then(|s| s.strip_suffix('\"'))
+    }
+}
+
 ast_token!(Num, NUMBER);
 
 impl Num {
@@ -223,6 +233,7 @@ impl Num {
 // - `CStr`: `[:a-cstr "text"]` - C-string literal (e.g. `c"hello\n"`)
 // - `RawStr`: `[:a-rstr "text"]` - Raw string literal (e.g. `r"hello\n"`)
 // - `TStr`: `[:a-tstr "text"]` - ZDT timestamp literal (e.g. `t"2023-01-15T10:30:00Z"`)
+// - `SStr`: `[:a-sstr "text"]` - Type-data literal (e.g. `s"number -> string"`)
 // - `Num`: `[:a-num value]` - Number literal (e.g. `42`, `3.14`)
 pub enum LiteralValue {
     /// A symbol e.g. :foo - Embedding: `[:a-sym "foo"]`
@@ -235,6 +246,8 @@ pub enum LiteralValue {
     RawStr(RawStr),
     /// A ZDT literal e.g. t"2023-01-15T10:30:00Z" - Embedding: `[:a-tstr "..."]`
     TStr(TStr),
+    /// A type-data literal e.g. s"number -> string" - Embedding: `[:a-sstr "..."]`
+    SStr(SStr),
     /// A number e.g. 99 - Embedding: `[:a-num 99]`
     Num(Num),
 }
@@ -247,6 +260,7 @@ impl AstToken for LiteralValue {
             SyntaxKind::C_STRING => CStr::cast(token).map(LiteralValue::CStr),
             SyntaxKind::RAW_STRING => RawStr::cast(token).map(LiteralValue::RawStr),
             SyntaxKind::T_STRING => TStr::cast(token).map(LiteralValue::TStr),
+            SyntaxKind::S_STRING => SStr::cast(token).map(LiteralValue::SStr),
             SyntaxKind::SYMBOL => Sym::cast(token).map(LiteralValue::Sym),
             _ => None,
         }
@@ -263,6 +277,7 @@ impl AstToken for LiteralValue {
                 | SyntaxKind::C_STRING
                 | SyntaxKind::RAW_STRING
                 | SyntaxKind::T_STRING
+                | SyntaxKind::S_STRING
                 | SyntaxKind::SYMBOL
         )
     }
@@ -274,6 +289,7 @@ impl AstToken for LiteralValue {
             LiteralValue::CStr(s) => s.syntax(),
             LiteralValue::RawStr(s) => s.syntax(),
             LiteralValue::TStr(s) => s.syntax(),
+            LiteralValue::SStr(s) => s.syntax(),
             LiteralValue::Sym(s) => s.syntax(),
         }
     }

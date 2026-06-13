@@ -395,6 +395,10 @@ symbol?: __ISSYMBOL
     type: "any → bool" }
 bool?: __ISBOOL
 
+` { doc: "type-data?(v) - true if and only if v is a type-data literal produced by the s prefix."
+    type: "any → bool" }
+type-data?: __ISTYPEDATA
+
 ` { doc: "`elements(b)` - expose list of elements of block `b`."
     type: "{{..}} → [(symbol, any)]" }
 elements: __ELEMENTS

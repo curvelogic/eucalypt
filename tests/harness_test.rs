@@ -1768,6 +1768,11 @@ pub fn test_harness_163() {
 }
 
 #[test]
+pub fn test_harness_164() {
+    run_test(&opts("164_s_string.eu"));
+}
+
+#[test]
 pub fn test_error_154() {
     run_error_test(&error_opts("154_internal_import_error.eu"));
 }

@@ -303,6 +303,9 @@ impl Embed for Primitive {
             Primitive::Null => {
                 b.token("null");
             }
+            Primitive::TypeData(s) => {
+                b.string(s);
+            }
         }
         b.finish()
     }

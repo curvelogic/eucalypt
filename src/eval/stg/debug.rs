@@ -66,6 +66,10 @@ fn render_debug_repr_closure(
                     .get(0)
                     .and_then(|inner| render_inner(machine, view, &env, &inner))
                     .unwrap_or_else(|| "<datetime>".to_string()),
+                Ok(DataConstructor::BoxedTypeData) => args
+                    .get(0)
+                    .and_then(|inner| render_inner_quoted(machine, view, &env, &inner))
+                    .unwrap_or_else(|| "<type-data>".to_string()),
                 Ok(DataConstructor::IoReturn) => "<io-return>".to_string(),
                 Ok(DataConstructor::IoBind) => "<io-bind>".to_string(),
                 Ok(DataConstructor::IoAction) => "<io-action>".to_string(),

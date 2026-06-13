@@ -41,6 +41,8 @@ pub enum DataConstructor {
     IoFail = 15,
     /// Cond clause — (condition, result) pair built by the `=>` operator
     Clause = 16,
+    /// Boxed type-data string (s"..." syntax) — distinct from BoxedString
+    BoxedTypeData = 17,
 }
 
 impl fmt::Display for DataConstructor {
@@ -63,6 +65,7 @@ impl fmt::Display for DataConstructor {
             DataConstructor::IoAction => write!(f, "io-action"),
             DataConstructor::IoFail => write!(f, "io-fail"),
             DataConstructor::Clause => write!(f, "clause"),
+            DataConstructor::BoxedTypeData => write!(f, "type-data"),
         }
     }
 }
@@ -91,6 +94,7 @@ impl DataConstructor {
             DataConstructor::IoAction => 2,
             DataConstructor::IoFail => 2,
             DataConstructor::Clause => 2,
+            DataConstructor::BoxedTypeData => 1,
         }
     }
 }
@@ -138,6 +142,9 @@ impl TryFrom<Tag> for DataConstructor {
             value if value == DataConstructor::IoAction as Tag => Ok(DataConstructor::IoAction),
             value if value == DataConstructor::IoFail as Tag => Ok(DataConstructor::IoFail),
             value if value == DataConstructor::Clause as Tag => Ok(DataConstructor::Clause),
+            value if value == DataConstructor::BoxedTypeData as Tag => {
+                Ok(DataConstructor::BoxedTypeData)
+            }
             _ => Err(()),
         }
     }

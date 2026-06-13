@@ -133,6 +133,7 @@ impl StgIntrinsic for Eq {
                     unary_branch(DataConstructor::BoxedString.tag()),
                     unary_branch(DataConstructor::BoxedSymbol.tag()),
                     unary_branch(DataConstructor::BoxedZdt.tag()),
+                    unary_branch(DataConstructor::BoxedTypeData.tag()),
                     // binary
                     binary_branch(DataConstructor::ListCons.tag()),
                     // block pair can be eq to block kv_list
@@ -236,6 +237,15 @@ impl StgIntrinsic for Eq {
                             force(
                                 local(0), // zdt_field
                                 // [y-native] [zdt_field] [x-eval] [x] [y]
+                                app_bif(self.index() as u8, vec![lref(2), lref(0)]),
+                            ),
+                        ),
+                        (
+                            DataConstructor::BoxedTypeData.tag(),
+                            // [str_field] [x-eval] [x] [y]
+                            force(
+                                local(0), // str_field
+                                // [y-native] [str_field] [x-eval] [x] [y]
                                 app_bif(self.index() as u8, vec![lref(2), lref(0)]),
                             ),
                         ),

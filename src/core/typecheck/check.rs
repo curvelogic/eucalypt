@@ -3035,6 +3035,8 @@ fn synthesise_primitive(prim: &Primitive) -> Type {
         Primitive::Sym(name) => Type::LiteralSymbol(name.clone()),
         Primitive::Bool(_) => Type::Bool,
         Primitive::Null => Type::Null,
+        // Type-data synthesises as String for now (no distinct type-data type in 0.9)
+        Primitive::TypeData(s) => Type::LiteralString(s.clone()),
     }
 }
 

@@ -1,0 +1,40 @@
+#!/usr/bin/env eu
+# Tests for s"..." type-data string literals
+
+# type-data? predicate identifies type-data values
+td-is-type-data: type-data?(s"number")
+
+# Plain strings are not type-data
+str-is-not-type-data: type-data?("number")
+
+# Type-data is not equal to a plain string with same content
+not-equal: not(s"number" = "number")
+
+# Two type-data values with the same content are equal
+equal-td: s"number" = s"number"
+
+# Type-data is not a plain string
+td-not-str: not(string?(s"number"))
+
+# Type-data is not a symbol
+td-not-sym: not(symbol?(s"number"))
+
+# Type-data with different content is not equal
+not-equal-td: not(s"number" = s"string")
+
+# Braces inside s"..." are literal — no interpolation, no doubling required
+literal-braces: type-data?(s"{x: number}")
+
+# Curly-brace content that looks like interpolation is still literal in s-strings
+no-interp: type-data?(s"hi {name}")
+
+RESULT: if(
+  and(td-is-type-data,
+  and(not(str-is-not-type-data),
+  and(not-equal,
+  and(equal-td,
+  and(td-not-str,
+  and(td-not-sym,
+  and(not-equal-td,
+  and(literal-braces, no-interp)))))))),
+  :PASS, :FAIL)

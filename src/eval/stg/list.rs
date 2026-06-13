@@ -362,6 +362,36 @@ impl StgIntrinsic for IsBool {
 
 impl CallGlobal1 for IsBool {}
 
+/// ISTYPEDATA(value)
+///
+/// Return true if the value is a type-data literal (s"..." syntax), false otherwise
+pub struct IsTypeData;
+
+impl StgIntrinsic for IsTypeData {
+    fn name(&self) -> &str {
+        "ISTYPEDATA"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        use crate::eval::memory::syntax;
+        let closure = machine.nav(view).resolve(&args[0])?;
+        let code = view.scoped(closure.code());
+        let result = matches!(
+            &*code,
+            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedTypeData.tag()
+        );
+        machine_return_bool(machine, view, result)
+    }
+}
+
+impl CallGlobal1 for IsTypeData {}
+
 /// SORT_NUM_LIST — sort a list of numbers in Rust
 ///
 /// The wrapper first applies SeqNumList to force and unbox all elements,

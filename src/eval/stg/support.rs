@@ -496,7 +496,8 @@ pub fn resolve_native_unboxing(
                 Ok(DataConstructor::BoxedNumber)
                 | Ok(DataConstructor::BoxedString)
                 | Ok(DataConstructor::BoxedSymbol)
-                | Ok(DataConstructor::BoxedZdt) => {
+                | Ok(DataConstructor::BoxedZdt)
+                | Ok(DataConstructor::BoxedTypeData) => {
                     let inner_ref = args.get(0).ok_or_else(|| {
                         ExecutionError::Panic(Smid::default(), "empty boxed value".to_string())
                     })?;

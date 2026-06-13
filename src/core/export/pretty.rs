@@ -39,6 +39,10 @@ impl ToPretty for Primitive {
             Primitive::Num(n) => allocator.text(format!("{n}")),
             Primitive::Bool(b) => allocator.text(if *b { "true" } else { "false" }),
             Primitive::Null => allocator.text("null"),
+            Primitive::TypeData(s) => allocator
+                .text("s\"")
+                .append(allocator.text(s))
+                .append(allocator.text("\"")),
         }
     }
 }

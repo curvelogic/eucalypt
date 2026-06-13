@@ -29,6 +29,8 @@ pub enum Primitive {
     Num(Number),
     Bool(bool),
     Null,
+    /// Type-data literal (s"..." syntax) — distinct from Str at the runtime level
+    TypeData(String),
 }
 
 /// Fixity of operator

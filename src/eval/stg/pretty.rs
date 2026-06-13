@@ -29,6 +29,7 @@ fn tag_name(tag: u8) -> String {
         Ok(DataConstructor::IoAction) => "IoAction".to_string(),
         Ok(DataConstructor::IoFail) => "IoFail".to_string(),
         Ok(DataConstructor::Clause) => "Clause".to_string(),
+        Ok(DataConstructor::BoxedTypeData) => "TypeData".to_string(),
         Err(()) => format!("#{tag}"),
     }
 }

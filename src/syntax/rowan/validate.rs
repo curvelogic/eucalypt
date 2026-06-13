@@ -135,6 +135,17 @@ impl Validatable for TStr {
     }
 }
 
+impl Validatable for SStr {
+    /// Type-data literal — only validate that it is properly closed
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        if self.text().starts_with("s\"") && !self.text().ends_with('"') {
+            errors.push(ParseError::UnclosedDoubleQuote {
+                range: self.syntax().text_range(),
+            });
+        }
+    }
+}
+
 impl Validatable for Num {}
 
 impl Validatable for LiteralValue {
@@ -145,6 +156,7 @@ impl Validatable for LiteralValue {
             LiteralValue::CStr(s) => s.validate(errors),
             LiteralValue::RawStr(s) => s.validate(errors),
             LiteralValue::TStr(s) => s.validate(errors),
+            LiteralValue::SStr(s) => s.validate(errors),
             LiteralValue::Sym(s) => s.validate(errors),
         }
     }
