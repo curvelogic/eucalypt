@@ -669,6 +669,7 @@ impl SourceLoader {
     pub fn extract_visibility(&mut self) {
         let expr = self.core.expr.clone();
         self.unit_interface.extract_visibility_from_expr(&expr);
+        self.unit_interface.extract_demands_from_expr(&expr);
     }
 
     /// Return the source text for a file by its locator.
