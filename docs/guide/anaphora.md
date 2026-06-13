@@ -156,7 +156,7 @@ Imagine you wanted a two-parameter function which placed the
 parameters in a block with keys `x` and `y`:
 
 ```eu
-f(x, y): {x: x y: y }
+f(x, y): {a: x b: y }
 ```
 
 An attempt to define this using expression anaphora would fail. This
