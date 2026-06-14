@@ -1,0 +1,17 @@
+# W4p2 integration test: evaluation of declarations that would survive
+# declaration-level error recovery.
+#
+# During error recovery a malformed declaration (one with a colon but no
+# valid head) is wrapped in an ERROR node.  The surrounding valid
+# declarations are unaffected and must evaluate correctly end-to-end.
+#
+# This test file contains only the VALID declarations that would appear
+# adjacent to a malformed one.  Evaluating them successfully confirms
+# that error recovery does not corrupt the representation of neighbouring
+# bindings.
+
+x: 42
+y: 100
+total: x + y
+
+RESULT: __IF(__EQ(total, 142), :PASS, :FAIL)

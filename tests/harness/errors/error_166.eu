@@ -1,0 +1,14 @@
+# W4p2 integration test: a malformed declaration alongside valid ones.
+#
+# The bare colon on line 4 has no valid declaration head.  The error
+# recovery mechanism wraps it in an ERROR node so that the valid
+# declarations on either side are still parsed and their bindings exist
+# in the block.
+#
+# Expected behaviour:
+#   - Exit code 1 (parse error is reported)
+#   - Stderr mentions the file location of the bare colon (line 4)
+x: 10
+: bad_value
+y: 20
+RESULT: x
