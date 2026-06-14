@@ -35,10 +35,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     core::typecheck::check::PreludeSummary,
     driver::unit_interface::OperatorInfo,
-    eval::stg::{
-        arena::{ArenaLambdaForm, ArenaStgSyn, StgArena},
-        syntax::LambdaForm,
-    },
+    eval::stg::arena::{ArenaLambdaForm, ArenaStgSyn},
 };
 
 // ── PreludeBlob ───────────────────────────────────────────────────────────────
@@ -86,19 +83,5 @@ impl PreludeBlob {
     /// Deserialise from postcard bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, postcard::Error> {
         postcard::from_bytes(bytes)
-    }
-
-    /// Reconstruct all prelude lambda forms from the arena-flattened blob.
-    ///
-    /// Returns one `LambdaForm` per entry in `bindings`, in slot order.
-    /// The i-th form corresponds to global slot `INTRINSIC_COUNT + i`.
-    pub fn to_lambda_forms(&self) -> Vec<LambdaForm> {
-        let arena = StgArena {
-            nodes: self.nodes.clone(),
-            forms: self.bindings.clone(),
-        };
-        (0..self.bindings.len() as u32)
-            .map(|i| arena.reconstruct_form(i))
-            .collect()
     }
 }
