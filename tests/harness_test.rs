@@ -2536,6 +2536,16 @@ pub fn test_doc_005_coverage_check() {
     );
 }
 
+/// `eu doc` renders all items from a `see-also: [...]` list.
+#[test]
+pub fn test_doc_007_see_also() {
+    run_doc_test(
+        "tests/harness/doc/002_see_also.eu",
+        &[],
+        &["**See also:** `k`, `identity`"],
+    );
+}
+
 /// `eu doc --prelude` runs without error and produces the prelude reference.
 #[test]
 pub fn test_doc_006_prelude() {

@@ -13,6 +13,7 @@ use std::fs;
 use std::path::Path;
 
 use rowan::ast::AstNode;
+use serde_json;
 
 use crate::driver::error::EucalyptError;
 use crate::driver::options::{DocFormat, EucalyptOptions};
@@ -104,7 +105,7 @@ impl DocEntry {
 /// Section headings are extracted from `##` comments, which may appear
 /// either at the top level of the unit or inside the unit-metadata BLOCK_META
 /// soup (between the unit doc string and the first declaration).
-pub fn extract_doc_entries(unit: &Unit, source_text: &str) -> Vec<DocEntry> {
+pub fn extract_doc_entries(unit: &Unit) -> Vec<DocEntry> {
     let mut entries = Vec::new();
     let mut current_section: Option<String> = None;
 
@@ -139,7 +140,7 @@ pub fn extract_doc_entries(unit: &Unit, source_text: &str) -> Vec<DocEntry> {
             }
             NodeOrToken::Node(node) => {
                 if let Some(decl) = ast::Declaration::cast(node) {
-                    if let Some(mut entry) = entry_from_declaration(&decl, source_text) {
+                    if let Some(mut entry) = entry_from_declaration(&decl) {
                         entry.section = current_section.clone();
                         entries.push(entry);
                     }
@@ -171,7 +172,7 @@ fn parse_section_heading(comment: &str) -> Option<String> {
 }
 
 /// Build a `DocEntry` from a single declaration node.
-fn entry_from_declaration(decl: &ast::Declaration, source_text: &str) -> Option<DocEntry> {
+fn entry_from_declaration(decl: &ast::Declaration) -> Option<DocEntry> {
     let head = decl.head()?;
     let kind = head.classify_declaration();
 
@@ -237,7 +238,7 @@ fn entry_from_declaration(decl: &ast::Declaration, source_text: &str) -> Option<
     let visibility = extract_visibility(decl);
     let example = extract_meta_str(decl, "example");
     let see_also = extract_see_also(decl);
-    let children = extract_children(decl, source_text);
+    let children = extract_children(decl);
 
     Some(DocEntry {
         name,
@@ -468,6 +469,9 @@ fn extract_visibility(decl: &ast::Declaration) -> DocVisibility {
 }
 
 /// Extract see-also references from metadata.
+///
+/// Reads `see-also: [:fn-a, :fn-b]` from backtick block metadata.
+/// The value is a eucalypt list (`Element::List`), not a block.
 fn extract_see_also(decl: &ast::Declaration) -> Vec<String> {
     let meta = match decl.meta() {
         Some(m) => m,
@@ -487,26 +491,23 @@ fn extract_see_also(decl: &ast::Declaration) -> Vec<String> {
                             if let Some(body) = inner_decl.body() {
                                 if let Some(body_soup) = body.soup() {
                                     for el in body_soup.elements() {
-                                        if let ast::Element::Block(b) = el {
-                                            // Collect symbol/string values from a list block
-                                            for item_decl in b.declarations() {
-                                                if let Some(item_body) = item_decl.body() {
-                                                    if let Some(item_soup) = item_body.soup() {
-                                                        for item_el in item_soup.elements() {
-                                                            if let ast::Element::Lit(lit) = item_el
-                                                            {
-                                                                if let Some(LiteralValue::Sym(s)) =
-                                                                    lit.value()
-                                                                {
-                                                                    if let Some(n) = s.value() {
-                                                                        return vec![n.to_string()];
-                                                                    }
-                                                                }
+                                        // see-also: [:a, :b] — value is a List
+                                        if let ast::Element::List(list) = el {
+                                            let mut refs = vec![];
+                                            for item_soup in list.items() {
+                                                for item_el in item_soup.elements() {
+                                                    if let ast::Element::Lit(lit) = item_el {
+                                                        if let Some(LiteralValue::Sym(s)) =
+                                                            lit.value()
+                                                        {
+                                                            if let Some(n) = s.value() {
+                                                                refs.push(n.to_string());
                                                             }
                                                         }
                                                     }
                                                 }
                                             }
+                                            return refs;
                                         }
                                     }
                                 }
@@ -523,7 +524,7 @@ fn extract_see_also(decl: &ast::Declaration) -> Vec<String> {
 /// Extract child entries for namespace blocks.
 ///
 /// If the declaration body is a single block, its declarations become children.
-fn extract_children(decl: &ast::Declaration, source_text: &str) -> Vec<DocEntry> {
+fn extract_children(decl: &ast::Declaration) -> Vec<DocEntry> {
     let body = match decl.body() {
         Some(b) => b,
         None => return vec![],
@@ -545,7 +546,7 @@ fn extract_children(decl: &ast::Declaration, source_text: &str) -> Vec<DocEntry>
     for element in soup.elements() {
         if let ast::Element::Block(block) = element {
             for inner_decl in block.declarations() {
-                if let Some(mut child) = entry_from_declaration(&inner_decl, source_text) {
+                if let Some(mut child) = entry_from_declaration(&inner_decl) {
                     child.namespace = namespace.clone();
                     children.push(child);
                 }
@@ -671,7 +672,6 @@ fn render_entry_markdown(entry: &DocEntry, out: &mut String, heading: &str) {
 /// are included. Functions (`T → U`) are omitted.
 pub fn render_json_schema(entries: &[DocEntry], title: &str) -> String {
     let mut properties: Vec<String> = Vec::new();
-    let defs: Vec<String> = Vec::new();
 
     for entry in entries {
         if !entry.is_public() {
@@ -700,12 +700,6 @@ pub fn render_json_schema(entries: &[DocEntry], title: &str) -> String {
     let mut out = String::from("{\n");
     out.push_str("  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n");
     out.push_str(&format!("  \"title\": {},\n", json_str(title)));
-
-    if !defs.is_empty() {
-        out.push_str("  \"$defs\": {\n");
-        out.push_str(&defs.join(",\n"));
-        out.push_str("\n  },\n");
-    }
 
     if !properties.is_empty() {
         out.push_str("  \"properties\": {\n");
@@ -763,9 +757,9 @@ fn type_str_to_json_schema(ty_str: &str) -> Option<String> {
     })
 }
 
-/// JSON-encode a string value.
+/// JSON-encode a string value (handles all escape sequences correctly).
 fn json_str(s: &str) -> String {
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    serde_json::to_string(s).unwrap_or_else(|_| format!("\"{}\"", s.replace('"', "\\\"")))
 }
 
 // ── Coverage reporting ────────────────────────────────────────────────────────
@@ -876,7 +870,7 @@ fn doc_prelude(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
 fn extract_from_source(source: &str) -> (Vec<DocEntry>, Option<String>) {
     let parse_result = parse_unit(source);
     let unit = parse_result.tree();
-    let entries = extract_doc_entries(&unit, source);
+    let entries = extract_doc_entries(&unit);
     let unit_doc = extract_unit_doc(&unit);
     (entries, unit_doc)
 }
