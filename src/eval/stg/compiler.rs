@@ -767,12 +767,25 @@ impl<'a> LetBinder<'a> {
 
 struct ProtoLet {
     expr: RcExpr,
+    /// Demand from the enclosing binding — propagated so that single-use
+    /// bindings whose values are nested let expressions are compiled as
+    /// `Value` rather than `Thunk`.
+    demand: Demand,
 }
 
 impl ProtoLet {
     pub fn new(expr: RcExpr) -> Self {
         assert!(matches!(&*expr.inner, Expr::Let(_, _, _)));
-        ProtoLet { expr }
+        ProtoLet {
+            expr,
+            demand: Demand::default(),
+        }
+    }
+
+    /// Create a `ProtoLet` with an explicit demand annotation.
+    pub fn with_demand(expr: RcExpr, demand: Demand) -> Self {
+        assert!(matches!(&*expr.inner, Expr::Let(_, _, _)));
+        ProtoLet { expr, demand }
     }
 
     /// Reference the scope inside the let expression
@@ -786,6 +799,10 @@ impl ProtoLet {
 }
 
 impl ProtoSyntax for ProtoLet {
+    fn demand(&self) -> Demand {
+        self.demand
+    }
+
     fn take_syntax(
         &mut self,
         compiler: &Compiler,
@@ -793,14 +810,10 @@ impl ProtoSyntax for ProtoLet {
     ) -> Result<Rc<StgSyn>, CompileError> {
         let scope = self.scope();
         let mut binder = LetBinder::for_scope(self.expr.clone(), context);
-        for (_, value) in scope.pattern.iter() {
-            let annotation = value.smid();
-            let index = compiler.compile_binding(
-                &mut binder,
-                value.clone(),
-                annotation,
-                Demand::default(),
-            )?;
+        for b in scope.pattern.iter() {
+            let annotation = b.expr.smid();
+            let index =
+                compiler.compile_binding(&mut binder, b.expr.clone(), annotation, b.demand)?;
             binder.add_var_index(index);
         }
 
@@ -1355,7 +1368,9 @@ impl<'rt> Compiler<'rt> {
                 }
                 Var::Free(name) => self.resolve_free_var(*s, name),
             },
-            Expr::Let(_, _, _) => binder.add_deferred(Box::new(ProtoLet::new(expr))),
+            Expr::Let(_, _, _) => {
+                binder.add_deferred(Box::new(ProtoLet::with_demand(expr, demand)))
+            }
             Expr::Lam(_, _, _) => {
                 binder.add_deferred(Box::new(self.compile_lambda(&expr, annotation)?))
             }
@@ -1703,5 +1718,146 @@ pub mod tests {
         );
 
         assert_eq!(compile(core).unwrap(), syntax);
+    }
+
+    /// A let-body application is compiled as `Value`, not `Thunk` (W9 §3.4).
+    ///
+    /// When the body of a let is an application, it is evaluated exactly once
+    /// (no sharing), so the STG compiler sets `Demand::at_most_once()` on the
+    /// corresponding synthetic binding.  This means the binding wrapping the
+    /// application result uses `value(...)` rather than `thunk(...)`.
+    ///
+    /// Concretely: `let f = λx.x in f(f)` — the body `f(f)` is compiled inside
+    /// a synthetic let.  The app binding within that let should be `Value`.
+    ///
+    /// Note: the outer letrec binding for `f` (a lambda) is always `Value` because
+    /// lambdas are WHNF.  What changes is the inner synthetic let that holds the
+    /// application result: it uses `value(app(...))` not `thunk(app(...))`.
+    #[test]
+    pub fn test_let_body_app_compiles_as_value() {
+        let f = free("f");
+        let x = free("x");
+
+        // let f = λx.x in f(f)
+        // The body `f(f)` is an App → compile_body uses Demand::at_most_once()
+        // for the synthetic binding produced by ProtoAppGroup.
+        let core = acore::let_(
+            vec![(f.clone(), acore::lam(vec![x.clone()], acore::var(x)))],
+            acore::app(acore::var(f.clone()), vec![acore::var(f)]),
+        );
+
+        let syntax = compile(core).unwrap();
+
+        // Walk the compiled STG to confirm no Thunk appears in the synthetic
+        // inner let that holds the application.
+        fn has_thunk(syn: &Rc<StgSyn>) -> bool {
+            match syn.as_ref() {
+                StgSyn::Let { bindings, body } | StgSyn::LetRec { bindings, body } => {
+                    bindings
+                        .iter()
+                        .any(|b| matches!(b, LambdaForm::Thunk { .. }))
+                        || has_thunk(body)
+                }
+                _ => false,
+            }
+        }
+
+        assert!(
+            !has_thunk(&syntax),
+            "let-body application should not produce any Thunk bindings; got:\n{syntax:?}"
+        );
+    }
+
+    /// A single-use binding is compiled as `Value` after prune sets its demand.
+    ///
+    /// The prune pass annotates bindings used exactly once with
+    /// `Cardinality::AtMostOnce`.  The STG compiler then emits `value(...)`
+    /// instead of `thunk(...)` because no Update frame is needed (W9 §8
+    /// criterion 3 — at least one binding previously Thunk is now Value).
+    ///
+    /// We verify this with an expression where a binding holds another
+    /// binding reference — a `var(y)` — which is a bound-variable atom
+    /// (WHNF), but compile it indirectly by constructing a `CoreBinding`
+    /// with explicit demands so that the non-WHNF case can be demonstrated
+    /// without needing a prune-safe inner expression.
+    ///
+    /// Concretely: `let x = λf.f(f)` used once in the body.  Without demand,
+    /// the lambda binding is always `Value` (lambdas are WHNF).  Instead we
+    /// use the prune test helper to confirm that a binding with `Unknown`
+    /// demand (the default) compiles as `Thunk` for a nested let, and with
+    /// `AtMostOnce` it compiles as `Value`.  We build the demand explicitly
+    /// using `CoreBinding::with_demand` so that `ErrEliminated` is not
+    /// introduced.
+    #[test]
+    pub fn test_single_use_binding_compiles_as_value_after_prune() {
+        use crate::common::sourcemap::Smid;
+        use crate::core::binding::{CoreBinding, Scope};
+        use crate::core::demand::Demand;
+        use crate::core::expr::{Expr, LetType, RcExpr};
+
+        // Build `let y = 3 in y` as the binding expression for `x`:
+        //   x = let y = 3 in y      ← not WHNF, so Thunk by default
+        // Outer: let x = ... in var(x)
+        //
+        // We build this using close_let_scope so de Bruijn indices are correct,
+        // then override the demand on `x` to test both paths.
+
+        let y = free("y");
+        let x = free("x");
+
+        // inner: `let y = 3 in var(y)` — this is a nested let, not WHNF.
+        let inner = acore::let_(vec![(y.clone(), acore::num(3))], acore::var(y));
+
+        // outer body uses x once.
+        let outer_body = acore::var(x.clone());
+
+        // Build scope manually so we can set demand.
+        let names = [x.clone()];
+        let name_refs: Vec<&str> = names.iter().map(|n| n.as_str()).collect();
+        let closed_inner = crate::core::expr::close_expr_vars(&name_refs, 0, &inner);
+        let closed_body = crate::core::expr::close_expr_vars(&name_refs, 0, &outer_body);
+
+        let make_let = |demand: Demand| -> RcExpr {
+            RcExpr::from(Expr::Let(
+                Smid::default(),
+                Scope {
+                    pattern: vec![CoreBinding::with_demand(
+                        x.clone(),
+                        closed_inner.clone(),
+                        demand,
+                    )],
+                    body: closed_body.clone(),
+                },
+                LetType::OtherLet,
+            ))
+        };
+
+        // Without demand (Unknown): nested let is not WHNF → Thunk.
+        let unknown_demand = compile(make_let(Demand::default())).unwrap();
+        let x_is_thunk = match unknown_demand.as_ref() {
+            StgSyn::LetRec { bindings, .. } => {
+                matches!(bindings.first(), Some(LambdaForm::Thunk { .. }))
+            }
+            _ => false,
+        };
+        assert!(
+            x_is_thunk,
+            "with Unknown demand, nested-let binding should be Thunk; got:\n{unknown_demand:?}"
+        );
+
+        // With AtMostOnce demand: prune would set this for a single-use binding.
+        // Compiler should emit Value, not Thunk (W9 §8 criterion 3).
+        let at_most_once = compile(make_let(Demand::at_most_once())).unwrap();
+        let x_is_value = match at_most_once.as_ref() {
+            StgSyn::LetRec { bindings, .. } => {
+                matches!(bindings.first(), Some(LambdaForm::Value { .. }))
+            }
+            _ => false,
+        };
+        assert!(
+            x_is_value,
+            "with AtMostOnce demand (set by prune for single-use bindings), \
+             nested-let binding should be Value; got:\n{at_most_once:?}"
+        );
     }
 }

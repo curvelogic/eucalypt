@@ -193,7 +193,11 @@ impl UnitInterface {
     /// The slot starts conservative (all `Unknown`); future analysis passes
     /// (W11 strictness analysis) populate it with richer information.
     ///
-    /// Call at the same pipeline stage as `extract_visibility_from_expr`.
+    /// Must be called AFTER the prune/eliminate pass — the prune pass populates
+    /// `CoreBinding::demand` with cardinality information that this function
+    /// reads.  Calling it before prune would always yield `Demand::default()`
+    /// (all `Unknown`) because the cardinality information has not yet been written.
+    /// Do NOT call alongside `extract_visibility_from_expr`.
     pub fn extract_demands_from_expr(&mut self, expr: &RcExpr) {
         collect_demands(expr, &mut self.demands);
     }
@@ -221,9 +225,9 @@ impl UnitInterface {
 fn collect_operator_info(expr: &RcExpr, out: &mut HashMap<String, OperatorInfo>) {
     match &*expr.inner {
         Expr::Let(_, scope, _) => {
-            for (name, value) in &scope.pattern {
-                if let Some(info) = extract_operator_info_from_value(value) {
-                    out.insert(name.clone(), info);
+            for b in &scope.pattern {
+                if let Some(info) = extract_operator_info_from_value(&b.expr) {
+                    out.insert(b.name.clone(), info);
                 }
             }
             collect_operator_info(&scope.body, out);
@@ -286,13 +290,13 @@ fn extract_str_literal(expr: &RcExpr) -> Option<String> {
 fn collect_visibility(expr: &RcExpr, out: &mut HashMap<String, Visibility>) {
     match &*expr.inner {
         Expr::Let(_, scope, _) => {
-            for (name, value) in &scope.pattern {
-                let vis = if has_internal_export(value) {
+            for b in &scope.pattern {
+                let vis = if has_internal_export(&b.expr) {
                     Visibility::Internal
                 } else {
                     Visibility::Public
                 };
-                out.insert(name.clone(), vis);
+                out.insert(b.name.clone(), vis);
             }
             collect_visibility(&scope.body, out);
         }
@@ -301,17 +305,20 @@ fn collect_visibility(expr: &RcExpr, out: &mut HashMap<String, Visibility>) {
     }
 }
 
-/// Recursively register all exported bindings in `expr` with a conservative
-/// `Demand::default()` annotation.
+/// Recursively collect `Demand` annotations for exported bindings in `expr`.
+///
+/// Reads the `demand` field directly from the `CoreBinding` entries, giving
+/// the value populated by the prune (usage-counting) pass.
 ///
 /// Internal bindings (marked `export: :internal`) are excluded — they are not
 /// part of the cross-unit interface.
 fn collect_demands(expr: &RcExpr, out: &mut HashMap<String, Demand>) {
     match &*expr.inner {
         Expr::Let(_, scope, _) => {
-            for (name, value) in &scope.pattern {
-                if !has_internal_export(value) {
-                    out.entry(name.clone()).or_default();
+            for b in &scope.pattern {
+                if !has_internal_export(&b.expr) {
+                    // Use the annotation from the binding; default if absent.
+                    out.entry(b.name.clone()).or_insert(b.demand);
                 }
             }
             collect_demands(&scope.body, out);

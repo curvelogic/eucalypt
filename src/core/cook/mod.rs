@@ -266,8 +266,8 @@ impl Cooker {
             let bindings = &scope.pattern;
             let body = &scope.body;
 
-            let all_alias = bindings.iter().all(|(_, val)| {
-                if let Expr::Var(_, Var::Free(name)) = &*val.inner {
+            let all_alias = bindings.iter().all(|b| {
+                if let Expr::Var(_, Var::Free(name)) = &*b.expr.inner {
                     anaphora_vars.contains(name)
                 } else {
                     false
@@ -284,7 +284,7 @@ impl Cooker {
                 // anaphor var name (e.g. "_b_a[…]") so that the BoundVar
                 // name field in the body agrees with the lambda pattern,
                 // keeping the binding verifier happy.
-                let let_name = bindings[0].0.clone();
+                let let_name = bindings[0].name.clone();
                 return Ok(RcExpr::from(Expr::Lam(
                     expr.smid(),
                     false,

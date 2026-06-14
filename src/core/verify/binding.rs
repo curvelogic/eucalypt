@@ -35,9 +35,9 @@ impl ScopeTracker {
         let expr = self.scopes[bound_var.scope as usize].clone();
         match &*expr.inner {
             Expr::Let(_, scope, _) => {
-                if let Some((name, _)) = scope.pattern.get(bound_var.binder as usize) {
+                if let Some(b) = scope.pattern.get(bound_var.binder as usize) {
                     assert_eq!(
-                        Some(name.as_str()),
+                        Some(b.name.as_str()),
                         bound_var.name.as_deref(),
                         "name mismatch for BV scope={} binder={}",
                         bound_var.scope,

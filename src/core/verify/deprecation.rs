@@ -46,8 +46,8 @@ fn check_expr(
             }
         }
         Expr::Let(_, scope, _) => {
-            for (_, v) in &scope.pattern {
-                check_expr(v, deprecations, warnings);
+            for b in &scope.pattern {
+                check_expr(&b.expr, deprecations, warnings);
             }
             check_expr(&scope.body, deprecations, warnings);
         }

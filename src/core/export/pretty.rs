@@ -70,11 +70,11 @@ impl ToPretty for RcExpr {
             Expr::Var(_, v) => v.pretty(allocator),
             Expr::Name(_, n) => allocator.text(n),
             Expr::Let(_, scope, _) => {
-                let binding_docs = scope.pattern.iter().map(|(name, def)| {
+                let binding_docs = scope.pattern.iter().map(|b| {
                     allocator
-                        .text(name.clone())
+                        .text(b.name.clone())
                         .append(allocator.text(" = "))
-                        .append(def.pretty(allocator))
+                        .append(b.expr.pretty(allocator))
                         .group()
                 });
 

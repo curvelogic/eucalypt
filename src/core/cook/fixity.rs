@@ -53,9 +53,9 @@ fn collect_operator_type_strings(expr: &RcExpr, out: &mut HashMap<String, String
             // We only open one Let level shallowly here because `dist()` is called
             // on the closed form; the body (which may contain nested Lets from user
             // files merged with the prelude) is walked recursively.
-            for (name, value) in &scope.pattern {
-                if let Some(type_str) = extract_op_type_string(value) {
-                    out.insert(name.clone(), type_str);
+            for b in &scope.pattern {
+                if let Some(type_str) = extract_op_type_string(&b.expr) {
+                    out.insert(b.name.clone(), type_str);
                 }
             }
             // Recurse into the Let body (may contain nested Lets).
