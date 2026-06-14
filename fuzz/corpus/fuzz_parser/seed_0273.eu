@@ -1,3 +1,0 @@
-# Stack traces with cycles (e.g. mutual recursion through prelude foldl and +)
-# should be deduplicated rather than showing the same frames repeatedly.
-result: [1, 2, 3] foldl(+, "zero")

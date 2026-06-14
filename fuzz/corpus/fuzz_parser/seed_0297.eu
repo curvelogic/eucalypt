@@ -1,8 +1,0 @@
-#!/usr/bin/env eu
-
-# Regression test for GH #785: a binding that calls itself in function
-# position (e.g. `p: p(1)`) must raise a BlackHole error rather
-# than hanging.  Previously the App handler in vm.rs did not black-hole the
-# env slot, so `resolve_callable` re-read the original thunk and looped.
-
-p: p(1)

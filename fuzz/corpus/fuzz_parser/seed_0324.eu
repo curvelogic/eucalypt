@@ -1,6 +1,0 @@
-# A function typed {x: number, ..r} -> number called with {x: "hello"}
-# should produce a type warning: string is not number.
-` { type: "{{x: number, ..r}} -> number" }
-get-x(rec): rec.x
-
-result: get-x({ x: "hello" })

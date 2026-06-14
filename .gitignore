@@ -54,3 +54,7 @@ lib/.result/
 # Emacs auto-save and lock files
 \#*\#
 .#*
+
+# Fuzz corpora and artefacts (generated from existing tests)
+fuzz/corpus/
+fuzz/artifacts/

@@ -1,3 +1,0 @@
-# Error test: using Python's capitalised 'True' instead of eucalypt's lowercase 'true'
-x: True
-RESULT: x

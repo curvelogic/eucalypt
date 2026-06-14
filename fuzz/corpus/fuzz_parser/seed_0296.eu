@@ -1,6 +1,0 @@
-# Expression content (no colons) used inside a monad bracket.
-# The colon heuristic finds no ':' in '⟦ 1 2 3 ⟧' and parses it as soup mode,
-# but '⟦{}⟧' declares a monad bracket that requires 'name: value' declarations.
-⟦{}⟧: { :monad bind(m, f): f(m)  return(a): a }
-
-result: ⟦ 1 2 3 ⟧

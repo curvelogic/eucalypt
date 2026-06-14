@@ -1,4 +1,0 @@
-# group-by annotated (a → any) → [a] → Dict([a])
-# Grouping a list by a function should produce no warning.
-items: [1, 2, 3, 4, 5, 6]
-grouped: items group-by(_ % 2)

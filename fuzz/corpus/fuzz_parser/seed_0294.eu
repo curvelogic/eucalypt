@@ -1,3 +1,0 @@
-{ import: "testdata/154_lib.eu" }
-
-result: priv-helper(1)

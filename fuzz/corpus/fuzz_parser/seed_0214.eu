@@ -1,3 +1,0 @@
-# Mistake: using sprintf for string formatting — not available in eucalypt
-name: "Alice"
-greeting: sprintf("Hello, %s!", name)

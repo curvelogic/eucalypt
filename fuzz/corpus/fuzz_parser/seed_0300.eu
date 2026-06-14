@@ -1,4 +1,0 @@
-# Error test: missing closing brace in a block
-# The parser should recover and report an unterminated block error.
-x: { y: 1
-RESULT: x

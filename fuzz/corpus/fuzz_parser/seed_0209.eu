@@ -1,3 +1,0 @@
-# Mistake: using str.lower (Python/JavaScript style) — does not exist in eucalypt
-text: "HELLO"
-result: text str.lower

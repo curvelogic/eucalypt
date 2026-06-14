@@ -1,6 +1,0 @@
-# null? narrowing. `x : number | null` — after null?(x)
-# in the true branch, x is narrowed to null; in the false branch to number.
-` { type: "(number | null) → number" }
-or-zero(x): x null? then(0, x)
-
-result: or-zero(null)

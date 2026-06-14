@@ -1,8 +1,0 @@
-{ prelude: "tests/fixtures/alt-prelude.eu" }
-
-# When prelude: metadata is specified, the named file is loaded as the
-# prelude instead of the built-in one.  The alt-prelude extends the standard
-# prelude with a single extra binding `alt-hello`.  Standard prelude functions
-# (`if`, `=`) remain available because alt-prelude imports the standard prelude.
-
-RESULT: if(alt-hello = "hello from alt-prelude", :PASS, :FAIL)

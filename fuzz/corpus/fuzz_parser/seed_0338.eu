@@ -1,8 +1,0 @@
-# A function annotated Json → string produces no type warning
-# when given a plain number (number <: Json).
-{ types: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
-
-` { type: "Json → string" }
-describe: (_ str.from)
-
-result: describe(42)

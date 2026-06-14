@@ -1,2 +1,0 @@
-# Error: comparing incompatible types with <=
-result: :foo <= 42

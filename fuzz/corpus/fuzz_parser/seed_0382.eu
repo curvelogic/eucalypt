@@ -1,6 +1,0 @@
-# B5: `ExecutionError` can be written directly in a type annotation.
-# A union `number | ExecutionError` is equivalent to `number?`.
-` { type: "number | ExecutionError" }
-maybe-num(n): n
-
-maybe-num(1)

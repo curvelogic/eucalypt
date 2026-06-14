@@ -1,2 +1,0 @@
-` { target: :result }
-result: "echo hello world" io.shell io.map(dbg{}) io.checked io.map(.stdout)

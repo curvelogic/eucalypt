@@ -1,6 +1,0 @@
-# Other bare symbols (not type-def/result-def) still become target shortcuts.
-# `:main` should expand to `{ target: :main }` (target shortcut).
-` :main
-main: "hello"
-
-result: main

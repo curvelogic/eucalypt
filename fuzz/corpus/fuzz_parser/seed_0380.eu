@@ -1,7 +1,0 @@
-# Behaviour preservation (§B7): `head` and `tail` are recognised in standalone mode.
-# In standalone mode, `head` is Var::Free — is_head_or_tail must handle it.
-# `[1, 2, 3]` has type `Tuple([number, number, number])`; `head` gives `number`.
-` { type: "[number] → number" }
-first-elem(xs): xs head
-
-result: first-elem([10, 20, 30])

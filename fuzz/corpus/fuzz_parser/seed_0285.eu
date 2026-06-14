@@ -1,3 +1,0 @@
-# Error: using camelCase 'startsWith' — 'str.starts-with?' is the correct eucalypt function
-text: "hello world"
-result: text str.startsWith("hello")

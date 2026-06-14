@@ -1,4 +1,0 @@
-# B8: :random block with correct action binding — no warning expected.
-# random.float is a stream → {value: a, rest: stream} action, which matches
-# the random monad pattern. HKT derivation from monad: metadata checks this.
-result: { :random x: random.float }.(x)

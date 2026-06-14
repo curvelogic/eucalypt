@@ -1,2 +1,0 @@
-# nth on a list beyond its length
-result: [1, 2, 3] nth(10)

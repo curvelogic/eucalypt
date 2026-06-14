@@ -1,3 +1,0 @@
-# Mistake: using return keyword (not needed in eucalypt)
-f(x): return x * 2
-result: f(5)

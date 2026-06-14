@@ -1,8 +1,0 @@
-# second([k, v]) where v is number — ProjectionShape index 1 gives number precisely.
-# Using the result in a numeric context should produce no warning.
-
-` { type: "number → number" }
-double(n): n * 2
-
-pair: ["key", 42]
-result: double(second(pair))

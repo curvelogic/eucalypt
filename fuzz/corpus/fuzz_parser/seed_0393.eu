@@ -1,6 +1,0 @@
-# B8: User-defined monad — combinator types inferred via HO pattern unification.
-# monad: metadata is retained for LSP hints only, not for type derivation.
-# my-list.map is inferred as (a → b) → [a] → [b]: passing a non-function warns.
-` { monad: "[a]" }
-my-list: monad({bind(m, f): m mapcat(f), return(v): [v]})
-result: [1, 2, 3] my-list.map(true)

@@ -1,6 +1,0 @@
-# Passing a wrong-typed value to a number-typed function still warns,
-# even when the argument is a string literal (LiteralString is not <: number).
-` { type: "number → number" }
-double: (_ * 2)
-
-result: double("hello")

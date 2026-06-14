@@ -1,3 +1,0 @@
-# B5: A partial result flowing into unannotated (any) code is silent —
-# gradual self-limiting. `nth` returns `a?` but no annotation forces total.
-result: [10, 20, 30] nth(1)

@@ -1,4 +1,0 @@
-# B8: for monad (list monad) catches wrong element type.
-# In { :for x: ["hello"] }, x has type string (from list binding via __type_hint).
-# negate(x) is incorrect — negate expects number, but x is a string — warning expected.
-result: { :for x: ["hello"] }.(negate(x))

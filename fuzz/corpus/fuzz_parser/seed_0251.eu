@@ -1,2 +1,0 @@
-# Mistake: passing an unrecognised short option to parse-args
-main: ["-x"] parse-args({})

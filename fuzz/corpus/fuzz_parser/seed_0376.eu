@@ -1,8 +1,0 @@
-# value([k, v]) where v is string — ProjectionShape index 1 gives string precisely.
-# Using the result in a numeric context should warn (expected number, found string).
-
-` { type: "number → number" }
-double(n): n * 2
-
-pair: ["key", "hello"]
-result: double(value(pair))

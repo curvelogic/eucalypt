@@ -1,4 +1,0 @@
-` { trace: :strict-exit }
-add(x, y): x + y
-
-RESULT: add(1, 2) //= 3

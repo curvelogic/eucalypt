@@ -1,8 +1,0 @@
-#!/usr/bin/env eu
-
-# Cross-type equality should return false, not error.
-# Regression test for PR #720 (native atom returns in arithmetic).
-
-checks: [1 = [1], "hello" = [:hello], :foo = 42, [] = 0, 1 = {x: 1}]
-
-RESULT: checks map(¬) all-true? then(:PASS, :FAIL)

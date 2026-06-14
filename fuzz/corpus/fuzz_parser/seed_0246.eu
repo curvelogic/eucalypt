@@ -1,2 +1,0 @@
-# Error: invalid base64 input
-result: "not valid base64!!!" str.base64-decode

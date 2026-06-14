@@ -1,3 +1,0 @@
-# Mistake: using '::' for a type annotation (Haskell/Rust style)
-x :: Int
-x: 42

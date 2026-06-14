@@ -1,1 +1,0 @@
-(symbol → bool) → (symbol, any) → bool

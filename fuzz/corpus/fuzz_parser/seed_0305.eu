@@ -1,2 +1,0 @@
-seq(x, y): "{x} then {y}"
-x: seq("a" "b")

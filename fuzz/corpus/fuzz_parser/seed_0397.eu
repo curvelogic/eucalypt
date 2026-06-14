@@ -1,6 +1,0 @@
-` { deprecated: "use new-fn", replaced-by: "new-fn" }
-old-fn(x): x + 1
-
-new-fn(x): x + 1
-
-result: old-fn(5)

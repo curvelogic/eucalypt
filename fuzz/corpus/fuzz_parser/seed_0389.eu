@@ -1,9 +1,0 @@
-# B2: Operator constraint violated — warning expected.
-# `lesser` is annotated with `<(a, a) => a -> a -> a`, meaning it needs `<`
-# to work for the argument type.  Passing blocks (which `<` does not accept)
-# violates the constraint, so a type warning should be emitted.
-` { type: "<(a, a) => a -> a -> a" }
-lesser(x, y): if(x < y, x, y)
-result: lesser({n: 1}, {n: 2})
-` { type: "number" }
-check: result

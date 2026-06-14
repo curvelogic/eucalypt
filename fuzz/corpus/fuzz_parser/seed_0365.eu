@@ -1,8 +1,0 @@
-# Higher-kinded type variable with kind annotation in forall.
-# `forall (m :: * -> *) a. m a` is a valid HKT annotation that should parse
-# without error. The checker cannot fully check HKT usage in 0.7.0 Phase B1
-# but the annotation must at least parse and not crash.
-` { type: "forall (m :: * -> *) a. m a -> m a" }
-hk-id(x): x
-
-result: hk-id([1, 2, 3])

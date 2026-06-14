@@ -1,2 +1,0 @@
-# Argument-position self-reference is a legitimate lazy fixpoint — must NOT be flagged.
-ones: cons(1, ones)

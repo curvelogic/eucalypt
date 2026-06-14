@@ -1,3 +1,0 @@
-# Error: using camelCase 'endsWith' — 'str.ends-with?' is the correct eucalypt function
-text: "hello world"
-result: text str.endsWith("world")

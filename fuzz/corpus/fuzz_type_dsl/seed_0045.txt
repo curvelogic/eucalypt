@@ -1,1 +1,0 @@
-(b → number → b) → b → array → b

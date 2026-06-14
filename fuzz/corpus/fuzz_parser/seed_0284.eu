@@ -1,3 +1,0 @@
-# Error: using Ruby/Python-style 'gsub' — 'str.replace' is the correct eucalypt function
-text: "hello world"
-result: text str.gsub("o", "0")

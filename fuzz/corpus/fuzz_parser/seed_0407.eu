@@ -1,6 +1,0 @@
-# `:target` bare-symbol shorthand still works — regression check.
-# The :target shorthand should expand to target: <binding-name> without error.
-` :target
-main: "hello"
-
-result: main

@@ -1,2 +1,0 @@
-# B8: :for block with correct list binding — no warning expected.
-result: { :for x: [1, 2, 3] }.(x * 2)

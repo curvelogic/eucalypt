@@ -1,8 +1,0 @@
-# Block catenation preserves field types from the LHS.
-# extended = base {extra: "foo"} should still have `a: number` from base.
-` { type: "number -> number" }
-inc(x): x + 1
-
-base: { a: 1 }
-extended: base { extra: "foo" }
-result: inc(extended.a)

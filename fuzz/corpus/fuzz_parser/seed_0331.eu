@@ -1,4 +1,0 @@
-# Verify for.bind with correct types produces no spurious warnings.
-# (for.bind is annotated [a] → (a → [b]) → [b])
-for.bind([1,2,3], identity)
-

@@ -1,3 +1,0 @@
-# Error: unrecognised timezone — source location should point to the cal.zdt call
-result: cal.zdt(2024, 1, 15, 10, 30, 0, "NotATimezone")
-RESULT: result

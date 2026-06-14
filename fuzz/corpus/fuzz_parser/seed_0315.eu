@@ -1,6 +1,0 @@
-# Literal symbol types — :active | :inactive
-` { type: "(:active | :inactive) → string" }
-describe(status): (status = :active) then("on", "off")
-
-good: describe(:active)
-bad: describe(:unknown)

@@ -1,4 +1,0 @@
-# B8: let monad with undetectable element type — no warning expected.
-# The let monad uses an abstract HK constructor: x's type is a fresh type
-# variable, so no false-positive mismatch is emitted when x is used.
-result: { :let x: "hello" }.(x)

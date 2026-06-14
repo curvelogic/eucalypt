@@ -1,8 +1,0 @@
-# Dict(Json) in a recursive type — a closed record of Json values
-# (here numbers, since number <: Json) is consistent with Dict(Json).
-{ types: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
-
-` { type: "Dict(Json)" }
-data: { a: 1, b: 2, c: 3 }
-
-result: data

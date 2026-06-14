@@ -1,1 +1,0 @@
-[a] → number → a | array → [number] → number

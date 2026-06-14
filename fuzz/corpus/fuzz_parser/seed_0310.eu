@@ -1,3 +1,0 @@
-# Annotation says string → string but body produces number
-` { type: "string → string" }
-greet(name): 42

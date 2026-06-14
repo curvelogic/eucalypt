@@ -1,6 +1,0 @@
-# B8: User-defined monad via monad() gets HKT-typed derived combinators.
-# my-for.map has type forall a b. (a → b) → m a → m b (with m = List).
-# Passing a non-function (bool) as the mapping function should produce a
-# type-mismatch warning.
-my-for: monad({bind(m, f): m mapcat(f), return(v): [v]})
-result: [1, 2, 3] my-for.map(true)

@@ -1,7 +1,0 @@
-# values annotated Dict(a) → [a], keys annotated Dict(a) → [symbol]
-# Accessing values and keys from a typed Dict should produce no warning.
-` { type: "Dict(number)" }
-scores: { alice: 95 bob: 87 }
-
-all-values: scores values
-all-keys: scores keys

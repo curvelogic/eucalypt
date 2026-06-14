@@ -1,7 +1,0 @@
-# B5: `T?` postfix sugar parses and round-trips through display.
-# A function annotated `number?` accepts total number but its return
-# is flagged as potentially partial.
-` { type: "number → string?" }
-stringify(n): n str
-
-stringify(42)

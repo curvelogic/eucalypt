@@ -1,3 +1,0 @@
-inner(x): str.letters(x)
-middle(x): inner(x)
-outer: middle(42)

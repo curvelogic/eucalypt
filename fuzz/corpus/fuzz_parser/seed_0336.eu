@@ -1,5 +1,0 @@
-# merge-all annotated [{..r}] → {..r}
-# When merge-all is applied to an annotated list, no warning should fire.
-` { type: "[{{..}}]" }
-blocks: [{ x: 1, y: 0 }, { x: 2, y: 3 }]
-result: blocks merge-all

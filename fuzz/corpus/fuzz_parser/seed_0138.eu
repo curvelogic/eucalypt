@@ -1,9 +1,0 @@
-# Regression: FMT on unboxed native values (eu-ynhu)
-# iota returns lazy values via machine_return_num (unboxed natives).
-# FMT wrapper must handle these via case fallback, not switch.
-
-fmt(n): "{n:%02d}"
-
-check: iota(1) take(3) map(fmt)
-
-RESULT: (check = ["01", "02", "03"]) then(:PASS, :FAIL)

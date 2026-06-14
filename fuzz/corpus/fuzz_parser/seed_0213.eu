@@ -1,3 +1,0 @@
-# io.fail should produce an error with the given message
-` { target: :main requires-io: true }
-main: io.fail("deliberate test failure")

@@ -1,5 +1,0 @@
-# Self-referential alias resolves to Mu — does NOT hang.
-# Json = number | string | bool | null | [Json] | Dict(Json)
-{ types: { Json: "number | string | bool | null | [Json] | Dict(Json)" } }
-
-result: 42

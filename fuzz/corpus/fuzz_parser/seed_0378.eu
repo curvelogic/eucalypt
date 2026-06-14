@@ -1,8 +1,0 @@
-# Behaviour preservation (§B7): `then` is recognised as a brancher in standalone mode.
-# `then` is a prelude combinator — in standalone mode it appears as Var::Free.
-# seed_branch_shapes must provide its BranchShape for narrowing to fire.
-# `x` annotated as `number | string`; `number?` narrows it, `then` propagates narrowing.
-` { type: "(number | string) → number" }
-add-one-if-num(x): x number? then(x + 1, 0)
-
-result: add-one-if-num(99)

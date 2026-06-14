@@ -1,2 +1,0 @@
-# Mistake: passing an unrecognised option to parse-args
-main: ["--unknown-flag"] parse-args({})

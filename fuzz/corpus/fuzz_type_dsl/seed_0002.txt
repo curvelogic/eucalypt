@@ -1,1 +1,0 @@
-(:active | :inactive) → string

@@ -1,8 +1,0 @@
-# String literals synthesise to their LiteralString type.
-# The :type annotation `"string"` must widen and accept a literal.
-{ types: { Mode: "\"read\" | \"write\" | \"rw\"" } }
-
-` { type: "string → number" }
-length: str.length
-
-result: length("read")

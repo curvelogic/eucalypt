@@ -1,3 +1,0 @@
-# Error test: using Python-style 'str.upper' instead of eucalypt's 'str.to-upper'
-x: "hello" str.upper
-RESULT: x

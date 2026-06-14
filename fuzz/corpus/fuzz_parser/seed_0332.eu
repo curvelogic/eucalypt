@@ -1,9 +1,0 @@
-# merge annotated {..r} → {..s} → {..r, ..s}
-# Merging two blocks should produce no type warning.
-` { type: "{x: number}" }
-base: { x: 1 }
-
-` { type: "{y: string}" }
-override: { y: "hello" }
-
-result: base merge(override)

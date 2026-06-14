@@ -1,3 +1,0 @@
-#!/usr/bin/env eu
-
-f: f(f)

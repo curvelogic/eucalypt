@@ -1,7 +1,0 @@
-# Forall annotation: type checks that a forall annotation parses without error.
-# The annotation `forall a. a -> a` is rank-1 polymorphism (identity).
-# The checker resolves the forall to the function body for checking.
-` { type: "forall a. a -> a" }
-identity(x): x
-
-result: identity(42)

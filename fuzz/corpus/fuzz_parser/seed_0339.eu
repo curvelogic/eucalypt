@@ -1,8 +1,0 @@
-# A non-recursive alias (Name = string) resolves flat — no Mu wrapper,
-# no warning when passing a string.
-{ types: { Name: "string" } }
-
-` { type: "Name → number" }
-length: str.length
-
-result: length("hello")

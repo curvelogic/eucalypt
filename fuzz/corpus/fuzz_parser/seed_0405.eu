@@ -1,5 +1,0 @@
-# `result-def` on a non-function binding warns and does not register the alias.
-` { result-def: true }
-not-a-function: 42
-
-result: not-a-function

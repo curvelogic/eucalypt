@@ -1,5 +1,0 @@
-# Error: passing a function where a primitive value is expected — source location
-# should point to the call site in user code, not inside the prelude.
-f(x): x + 1
-result: str.of(f)
-RESULT: result

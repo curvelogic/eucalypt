@@ -25,6 +25,8 @@ similar = "2"
 criterion = "0.8"
 proptest = "1"
 tempfile = "3"
+walkdir = "2"
+regex = "1"
 
 [dependencies]
 regex = "1.6.0"

@@ -1,2 +1,0 @@
-` { target: :main requires-io: true }
-main: io.bind("false" io.shell, io.check)

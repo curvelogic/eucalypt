@@ -1,4 +1,0 @@
-` { deprecated: "this function has been superseded" }
-old-fn(x): x + 1
-
-result: old-fn(5)

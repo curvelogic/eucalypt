@@ -1,6 +1,0 @@
-# A function typed {name: string, ..r} -> string should accept any record
-# that has a `name: string` field, even with extra fields.
-` { type: "{{name: string, ..r}} -> string" }
-get-name(rec): rec.name
-
-result: get-name({ name: "Alice", age: 30 })
