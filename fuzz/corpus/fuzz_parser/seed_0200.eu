@@ -1,0 +1,6 @@
+# Error test: calling 'head' on an empty list
+# This gives a confusing "received a string" error due to internal representation.
+# The improved message explains this is likely an empty list issue.
+nums: []
+result: nums head
+RESULT: result

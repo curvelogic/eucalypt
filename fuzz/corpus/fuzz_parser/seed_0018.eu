@@ -1,0 +1,33 @@
+#!/usr/bin/env eu
+
+
+f(x,y,z): x + y + z
+
+x: f(1)(2)(3)
+y: f(1,2,3)
+z: (3 (2 (1 f)))
+
+checks: {
+  trues: [x = y, y = z, z = x]
+}
+
+a: {
+  b: {
+    c(x, y, z): z - y * x
+  }
+}
+
+p: a.b.c(2)(3)(6) zero?
+q: a.b.c(2, 3, 6) zero?
+r: (6 (3 (2 a.b.c))) zero?
+
+checks2: {
+  trues: [p, q, r]
+}
+
+scoped: {
+  const: 1234
+  f(x): x + const
+}.f(4321)
+
+RESULT: if(checks.trues all-true?, :PASS, :FAIL)

@@ -1,0 +1,2 @@
+# Invalid ZDT literal — February 30 does not exist
+x: t"2023-02-30"

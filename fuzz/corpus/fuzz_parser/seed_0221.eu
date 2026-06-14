@@ -1,0 +1,2 @@
+# Out-of-bounds array access
+a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([5, 0])

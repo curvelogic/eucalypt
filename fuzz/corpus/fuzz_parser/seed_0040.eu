@@ -1,0 +1,32 @@
+ { parse-embed: :CORE }
+
+` { embedding: :core }
+CORE: [:c-let, {
+   i: [:c-lam, ["x"], [:c-var, "x"]]
+   k: [:c-lam, ["x", "y"], [:c-var, "x"]]
+   k1: [:c-lam, ["x", "y"], [:c-var, "y"]]
+   s: [:c-lam, ["f", "g", "x"], [:c-app, [:c-app, [:c-var, "f"], [[:c-var, "x"]]], [[:c-app, [:c-var, "g"], [[:c-var, "x"]]]]]]
+   compose: [:c-lam, ["f", "g", "x"], [:c-app, [:c-var, "f"], [[:c-app, [:c-var, "g"], [[:c-var, "x"]]]]]]
+   twice: [:c-lam, ["f"], [:c-app, [:c-var, "compose"], [[:c-var, "f"], [:c-var, "f"]]]]
+   box: [:c-let, { value: [:c-app, [:c-var, "i"], [[:c-lit, 5]]] }, [:c-block, {
+       value: [:c-var, "value"]
+     }]]
+   box2: [:c-let, {
+      value: [:c-app, [:c-app, [:c-var, "s"], [[:c-var, "k"], [:c-var, "k"]]], [[:c-lit, 5]]]
+    }, [:c-block, { value: [:c-var, "value"] }]]
+   RESULT: [:c-app, [:c-bif, :IF], [[:c-app, [:c-bif, :EQ], [[:c-lookup, [:c-var, "box"], "value"], [:c-lookup, [:c-var, "box2"], "value"]]], [:c-lit, :PASS], [:c-lit, :FAIL]]]
+ }, [:c-block, {
+    i: [:c-var, "i"]
+    k: [:c-var, "k"]
+    k1: [:c-var, "k1"]
+    s: [:c-var, "s"]
+    compose: [:c-var, "compose"]
+    twice: [:c-var, "twice"]
+    box: [:c-var, "box"]
+    box2: [:c-var, "box2"]
+    RESULT: [:c-var, "RESULT"]
+  }]]
+
+
+
+

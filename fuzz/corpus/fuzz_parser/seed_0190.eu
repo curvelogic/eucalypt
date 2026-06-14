@@ -1,0 +1,3 @@
+# Error test: using ++ to concatenate strings (++ is list append, not string concat)
+greeting: "Hello, " ++ "World!"
+RESULT: greeting

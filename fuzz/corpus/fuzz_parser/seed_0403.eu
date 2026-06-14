@@ -1,0 +1,10 @@
+# `result-def: "Name"` on a function registers the return type alias.
+# The return type alias can then be used in subsequent annotations.
+` { result-def: "Length"
+    type: "string → number" }
+char-count(s): str.length(s)
+
+` { type: "Length → bool" }
+is-long(n): n > 5
+
+result: is-long(char-count("hello world"))

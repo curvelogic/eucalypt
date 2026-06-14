@@ -1,0 +1,2 @@
+# Mistake: using = instead of : for declaration (Python/JS style)
+result = 42

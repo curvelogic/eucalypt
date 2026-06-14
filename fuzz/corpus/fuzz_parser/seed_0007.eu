@@ -1,0 +1,49 @@
+#!/usr/bin/env eu -B
+
+
+head: __HEAD
+tail: __TAIL
+cons: __CONS
+eq: __EQ
+and: __AND
+or: __OR
+true: __TRUE
+false: __FALSE
+if: __IF
+nil?(l): eq(l,[])
+
+left-folds: {
+
+  foldl(op, i, l): if(l nil?, i, foldl(op, op(i, l head), l tail))
+
+  trues: {
+    a: foldl(or, true, [true, true, true, false])
+    b: foldl(and, true, [true, true, true, true])
+  }
+
+  falses: {
+    a: foldl(and, true, [true, true, true, false])
+    b: foldl(or, false, [false, false, false, false])
+  }
+
+  pass: and(and(trues.a, trues.b),not(or(falses.a, falses.b)))
+}
+
+right-folds: {
+
+  foldr(op, e, l): if(l nil?, e, op(l head, foldr(op, e, l tail)))
+
+  trues: {
+    a: foldr(or, true, [false, false, false, false])
+    b: foldr(and, true, [true, true])
+  }
+
+  falses: {
+    a: foldr(or, false, [false, false, false, false])
+    b: foldr(and, false, [true, true])
+  }
+
+  pass: and(and(trues.a, trues.b),not(or(falses.a, falses.b)))
+}
+
+RESULT: if(and(left-folds.pass,right-folds.pass), :PASS, :FAIL)

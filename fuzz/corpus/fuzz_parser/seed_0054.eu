@@ -1,0 +1,30 @@
+"Tests for str.lt/gt/lte/gte and sort-keys."
+
+str-cmp-tests: {
+  α: str.lt("apple", "banana") //= true
+  β: str.gt("banana", "apple") //= true
+  γ: str.lte("apple", "apple") //= true
+  δ: str.gte("apple", "apple") //= true
+  ε: str.lt("banana", "apple") //= false
+  ζ: str.lt("", "a") //= true
+  η: str.gt("a", "") //= true
+  θ: str.lt("abc", "abd") //= true
+}
+
+sort-keys-tests: {
+  α: {z: 1, a: 2, m: 3} sort-keys keys //= [:a, :m, :z]
+  β: {b: 1, a: 2} sort-keys keys //= [:a, :b]
+  γ: {} sort-keys keys //= []
+  δ: {only: 1} sort-keys keys //= [:only]
+  ε: {a: 1, b: 2, c: 3} sort-keys keys //= [:a, :b, :c]
+}
+
+sort-keys-values: {
+  α: {z: 3, a: 1, m: 2} sort-keys //= {a: 1, m: 2, z: 3}
+}
+
+RESULT: {
+  s: str-cmp-tests values all-true?
+  k: sort-keys-tests values all-true?
+  v: sort-keys-values values all-true?
+} values all-true? then(:PASS, :FAIL)

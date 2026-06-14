@@ -1,0 +1,6 @@
+"Requires prelude. Tests that io.env provides access to environment variables."
+
+# io.env should be a non-empty block on any platform
+has-keys: io.env elements non-nil?
+
+RESULT: has-keys then(:PASS, :FAIL)

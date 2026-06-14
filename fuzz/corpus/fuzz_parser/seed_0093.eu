@@ -1,0 +1,12 @@
+"parse-as: parse a TOML string into eucalypt data."
+
+# Use render-as to produce a valid TOML string, then parse it back
+toml-str: render-as(:toml, {x: 7, y: 8})
+data: toml-str parse-as(:toml)
+
+tests: {
+  key-x: data.x //= 7
+  key-y: data.y //= 8
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

@@ -1,0 +1,6 @@
+# Block-style content (declarations with ':') used inside a soup bracket.
+# The colon heuristic parses '⟦ a: 1 ⟧' as a bracket-block (monadic mode),
+# but '⟦ x ⟧: x' declares a soup bracket with no monad spec.
+⟦ x ⟧: x
+
+result: ⟦ a: 1 ⟧

@@ -1,0 +1,10 @@
+# lookup(:name, person) where person has a closed record type returns
+# `string` precisely — used in a string context, no warning expected.
+
+` { type: "!{{name: string, age: number}}" }
+person: { name: "Alice", age: 30 }
+
+` { type: "string → string" }
+use-string(s): s
+
+result: use-string(lookup(:name, person))

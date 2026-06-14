@@ -1,0 +1,9 @@
+"Tests for prelude `discriminate`"
+
+tests: {
+  α: [3, 6, 8, 7, 4] discriminate(_ < 6) //= [[3, 4], [6, 8, 7]]
+  β: [] discriminate(pos?) //= [[], []]
+  γ: [-32, 32, -64, 64, 0] discriminate(pos?) //= [[32, 64], [-32, -64, 0]]
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

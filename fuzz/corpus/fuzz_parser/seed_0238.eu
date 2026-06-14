@@ -1,0 +1,2 @@
+# Error: division by zero — error location should point to user's / operator, not the prelude
+result: 1 / 0

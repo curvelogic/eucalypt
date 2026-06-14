@@ -1,0 +1,2 @@
+# Passing a number where map expects a function
+result: [1, 2, 3] map(42)

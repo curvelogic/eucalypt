@@ -1,0 +1,8 @@
+# `=>` operator builds cond clauses; cond evaluates the clause list.
+# This tests basic clause syntax and evaluation semantics.
+grade(score): cond[score >= 90 => "A"
+                  , score >= 80 => "B"
+                  , score >= 70 => "C"
+                  , "F"]
+
+result: grade(85)

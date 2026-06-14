@@ -1,0 +1,56 @@
+"eu-format export: render-as(:eu) produces eucalypt-syntax output with symbol preservation."
+
+tests: {
+
+  ` "render-as(:eu) on a symbol produces colon-prefixed form"
+  eu-symbol: {
+    result: :hello render-as(:eu) str.trim
+    pass: result = ":hello"
+  }
+
+  ` "render-as(:eu) on a string produces quoted form (7 chars: 5-char word + 2 quotes)"
+  eu-string: {
+    result: "world" render-as(:eu) str.trim
+    n: result str.len
+    pass: n = 7
+  }
+
+  ` "render-as(:eu) on a number"
+  eu-number: {
+    result: 42 render-as(:eu) str.trim
+    pass: result = "42"
+  }
+
+  ` "render-as(:eu) on true"
+  eu-true: {
+    result: true render-as(:eu) str.trim
+    pass: result = "true"
+  }
+
+  ` "render-as(:eu) on null"
+  eu-null: {
+    result: null render-as(:eu) str.trim
+    pass: result = "null"
+  }
+
+  ` "render-as(:eu) on a block contains key"
+  eu-block: {
+    result: {x: 1} render-as(:eu)
+    pass: result str.contains?("x:")
+  }
+
+  ` "render-as(:eu) on a list contains all elements"
+  eu-list: {
+    result: [1, 2, 3] render-as(:eu)
+    pass: (result str.contains?("1")) ∧ (result str.contains?("3"))
+  }
+
+  ` "render-as(:eu) preserves symbols as :name not as string"
+  eu-sym-not-string: {
+    result: {tag: :ok} render-as(:eu)
+    pass: result str.contains?(":ok")
+  }
+
+}
+
+RESULT: tests values map(_.pass) all-true? then(:PASS, :FAIL)

@@ -1,0 +1,4 @@
+# Error through prelude map() should show user's call site as primary location,
+# not the prelude's map internals.
+data: [1, 2, 3]
+result: data map(+ "hello")

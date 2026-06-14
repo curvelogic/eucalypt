@@ -1,0 +1,29 @@
+#!/usr/bin/env eu
+# Simple test of SKI combinators and simple functions
+
+` "I combinator: identity"
+i(x) : x
+
+` "K combinator: constantly first arg"
+k(x, y): x
+
+` "K1: constantly second arg"
+k1(x, y): y
+
+` "S combinator: apply f(x) to g(x)"
+s(f, g, x): g(x) f(x)
+
+` " f(g(x)) "
+compose(f, g, x): x g f
+
+twice(f): compose(f, f)
+
+box: {
+  value: i(5)
+}
+
+box2: {
+  value: 5 s(k, k)
+}
+
+RESULT: __IF(__EQ(box.value, box2.value), :PASS, :FAIL)

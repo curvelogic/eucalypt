@@ -1,0 +1,24 @@
+k: (1 // { note: "this is one" })
+k2: (1 + 1) // { note: "this is two" }
+
+note(v): meta(v) lookup-or(:note, "")
+
+checks: {
+  trues: [
+    note(k) = "this is one",
+    note(k2) = "this is two"
+  ]
+}
+
+assertions: {
+  a1: foldl(and, true, checks.trues) //=> true
+  a1meta: meta(a1)
+}
+
+tags: {
+  x: 9 // { tag: "!Ref" }
+}
+
+test: (1 + 1) //=> 2
+
+RESULT: if(checks.trues all-true?, :PASS, :FAIL)

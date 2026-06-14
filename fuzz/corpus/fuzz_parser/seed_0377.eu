@@ -1,0 +1,9 @@
+# Behaviour preservation (§B7): predicate narrowing works in standalone mode.
+# In standalone mode the prelude's `number?` and `if` are Var::Free references.
+# classify_predicate and recognise_brancher must handle Var::Free (§B7).
+# `x` is annotated as `number | string`; `number?` narrows it to `number`
+# in the true branch so `x + 1` produces no warning.
+` { type: "(number | string) → number" }
+safe-inc(x): if(x number?, x + 1, 0)
+
+result: safe-inc(42)

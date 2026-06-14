@@ -1,0 +1,6 @@
+# Error test: using 'import' keyword (Python/JS style) instead of eucalypt import metadata syntax
+# 'import' is not a keyword in eucalypt - this should trigger a helpful hint
+x: import
+
+result: 42
+RESULT: result

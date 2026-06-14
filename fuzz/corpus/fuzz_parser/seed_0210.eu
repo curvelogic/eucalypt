@@ -1,0 +1,3 @@
+# Mistake: using parse-num (does not exist) — the correct function is num
+s: "42"
+result: s parse-num

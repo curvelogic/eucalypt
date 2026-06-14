@@ -1,0 +1,8 @@
+# Regression: a block field whose value is a string interpolation
+# should synthesise as string, not any (GH #811).  The JOIN intrinsic
+# always produces a string.
+` { type: "{{content: string, ..}} -> symbol" }
+f(o): :ok
+
+who: "world"
+result: f({ content: "hi {who}" })

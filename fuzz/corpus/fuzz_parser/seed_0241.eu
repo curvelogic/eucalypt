@@ -1,0 +1,2 @@
+# Error: type mismatch calling str.letters(42) — error should point to user's call site
+result: str.letters(42)

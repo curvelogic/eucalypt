@@ -1,0 +1,2 @@
+# Mistake: option requires a value but none given
+main: ["--output"] parse-args({ output: "default" })

@@ -1,0 +1,10 @@
+# ! prefix asserts the type without verifying the body
+
+` { type: "!number → number" }
+magic(x): "not actually a number"
+
+# Calling with correct type — no warning
+good: magic(42)
+
+# Calling with wrong type — should still warn
+bad: magic("hello")

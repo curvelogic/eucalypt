@@ -1,0 +1,80 @@
+"String replacement, containment, trim, and escaping functions."
+
+tests: {
+
+  ` "str.replace: basic replacement"
+  replace-basic: {
+    result: "hello world" str.replace("o", "0")
+    pass: result = "hell0 w0rld"
+  }
+
+  ` "str.replace: regex replacement"
+  replace-regex: {
+    result: "foo123bar" str.replace("[0-9]+", "N")
+    pass: result = "fooNbar"
+  }
+
+  ` "str.replace: no match leaves string unchanged"
+  replace-no-match: {
+    result: "hello" str.replace("xyz", "!")
+    pass: result = "hello"
+  }
+
+  ` "str.contains?: positive"
+  contains-yes: {
+    pass: "hello world" str.contains?("world")
+  }
+
+  ` "str.contains?: negative"
+  contains-no: {
+    pass: not("hello" str.contains?("xyz"))
+  }
+
+  ` "str.contains?: regex"
+  contains-regex: {
+    pass: "foo123bar" str.contains?("[0-9]+")
+  }
+
+  ` "str.trim: whitespace"
+  trim-spaces: {
+    result: "  hello  " str.trim
+    pass: result = "hello"
+  }
+
+  ` "str.starts-with?: positive"
+  starts-yes: {
+    pass: "hello" str.starts-with?("hel")
+  }
+
+  ` "str.starts-with?: negative"
+  starts-no: {
+    pass: not("hello" str.starts-with?("llo"))
+  }
+
+  ` "str.ends-with?: positive"
+  ends-yes: {
+    pass: "hello" str.ends-with?("llo")
+  }
+
+  ` "str.ends-with?: negative"
+  ends-no: {
+    pass: not("hello" str.ends-with?("hel"))
+  }
+
+  ` "str.shell-escape: wraps in single quotes"
+  shell-simple: {
+    result: "hello" str.shell-escape
+    n: result str.len
+    pass: (result str.starts-with?("'")) ∧ (result str.ends-with?("'")) ∧ (n = 7)
+  }
+
+  ` "str.dq-escape: dollar sign is escaped (grows string)"
+  dq-dollar: {
+    result: "a$b" str.dq-escape
+    n: result str.len
+    pass: n = 4
+  }
+
+}
+
+RESULT: tests values map(_.pass) all-true? then(:PASS, :FAIL)

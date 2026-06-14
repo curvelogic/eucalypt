@@ -1,0 +1,31 @@
+"145 list monad (:for blocks)"
+
+` { target: :test }
+test: {
+  # Simple mapping
+  map-ok: ({ :for x: [1, 2, 3] }.(x * 2)) //= [2, 4, 6]
+
+  # Cartesian product
+  cart-ok: ({ :for x: [1, 2], y: [10, 20] }.(x + y)) //= [11, 21, 12, 22]
+
+  # Dependent binding
+  dep-ok: ({ :for x: [1, 2, 3], y: [x, x * 10] }.(y)) //= [1, 10, 2, 20, 3, 30]
+
+  # Filtering via [x] filter(pred?)
+  filter-ok: ({ :for x: [1, 2, 3, 4, 5], _: [x] filter(> 3) }.(x)) //= [4, 5]
+
+  # Filter and rebind
+  filter-rebind: ({ :for x: [1, "two", 3], n: [x] filter(number?) }.(n * 10)) //= [10, 30]
+
+  # Implicit return
+  implicit-ok: ({ :for x: [:a, :b] }) //= [{x: :a}, {x: :b}]
+
+  # Multi-binding implicit return
+  implicit-multi: ({ :for x: [1, 2], y: [10, 20] }) //= [{x: 1, y: 10}, {x: 1, y: 20}, {x: 2, y: 10}, {x: 2, y: 20}]
+
+  # Empty input
+  empty-ok: ({ :for x: [] }.(x)) //= []
+
+  # Derived combinators — sequence
+  seq-ok: (for.sequence[[1, 2], [3, 4]]) //= [[1, 3], [1, 4], [2, 3], [2, 4]]
+}

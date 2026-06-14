@@ -1,0 +1,15 @@
+"137 diamond import deduplication"
+
+# diamond_b.eu itself imports diamond_common.eu. This file also
+# directly imports diamond_common.eu, creating a diamond pattern.
+# The import guard ensures diamond_common.eu is only desugared once.
+
+` { import: ["testdata/diamond_b.eu", "testdata/diamond_common.eu"], target: :test }
+test: {
+  # common-val and b-val should both be accessible
+  common-accessible: common-val //= 10
+  b-accessible: b-val //= 11
+
+  # b-val correctly references common-val from its own import
+  b-derived: b-val //= (common-val + 1)
+}

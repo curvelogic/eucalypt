@@ -1,0 +1,2 @@
+# Error: parse-as with an unrecognised format symbol triggers a runtime panic.
+x: "hello" parse-as(:badformat)

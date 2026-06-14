@@ -1,0 +1,5 @@
+# Mistake: using '_' inside a nested function call when a function arg is expected.
+# `double(_)` passes an identity function to `double`, which expects a number.
+# This produces a runtime type error. Use `map(double)` instead of `map(double(_))`.
+double(x): x * 2
+result: [1, 2, 3] map(double(_))

@@ -1,0 +1,6 @@
+#!/usr/bin/env eu
+
+
+a: __IF(__FALSE, a, __FALSE)
+
+RESULT: :PASS

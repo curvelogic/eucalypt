@@ -1,0 +1,13 @@
+"parse-as: parse an EDN string into eucalypt data."
+
+# Use {{ and }} to write literal braces (not string interpolation).
+edn-str: "{{:x 1 :y 2}}"
+
+data: edn-str parse-as(:edn)
+
+tests: {
+  x-val: data.x //= 1
+  y-val: data.y //= 2
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

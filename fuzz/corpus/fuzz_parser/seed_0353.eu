@@ -1,0 +1,12 @@
+# `then` (pipeline if) is recognised as a brancher.
+# `x then(a, b)` is the idiomatic pipeline form; it cooks to
+# App(App(then, [a, b]), [x]).  Spine flattening + structural
+# BranchShape classification must recognise it as an If-shape and
+# apply the same narrowing as plain `if`.
+#
+# `x` is annotated as `number | string`.  In the true branch `x + 1`
+# would warn without narrowing; with narrowing `x` is `number` → no warn.
+` { type: "(number | string) → number" }
+add-one-if-num(x): x number? then(x + 1, 0)
+
+result: add-one-if-num(42)

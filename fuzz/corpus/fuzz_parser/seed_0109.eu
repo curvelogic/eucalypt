@@ -1,0 +1,24 @@
+"125 unified expectations"
+
+` { target: :test }
+test: {
+  ` "//= returns true on success"
+  eq-pass: (2 + 3 //= 5) //= true
+
+  ` "//= returns false on failure"
+  eq-fail: (2 + 3 //= 6) //= false
+
+  ` "//= works with strings"
+  str-pass: ("hello" //= "hello") //= true
+
+  ` "//= works with booleans"
+  bool-pass: (true //= true) //= true
+
+  ` "//! returns true when value is true"
+  true-pass: (true //!) //= true
+
+  ` "//! returns false when value is false"
+  true-fail: (false //!) //= false
+
+  RESULT: [eq-pass, eq-fail, str-pass, bool-pass, true-pass, true-fail] all-true? then(:PASS, :FAIL)
+}

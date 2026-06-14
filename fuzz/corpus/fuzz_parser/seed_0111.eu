@@ -1,0 +1,67 @@
+"Metadata preservation through merge operations."
+
+# Shallow merge (catenation) metadata tests
+shallow-merge: {
+  left: {x: 1} // {tag: :left}
+  right: {y: 2} // {tag: :right}
+  plain-l: {x: 1}
+  plain-r: {y: 2}
+
+  # RHS metadata wins when both have meta
+  both: merge(left, right)
+  both-meta-tag: both meta lookup-or(:tag, :none) //= :right
+
+  # LHS metadata preserved when only LHS has meta
+  left-only: merge(left, plain-r)
+  left-meta-tag: left-only meta lookup-or(:tag, :none) //= :left
+
+  # RHS metadata preserved when only RHS has meta
+  right-only: merge(plain-l, right)
+  right-meta-tag: right-only meta lookup-or(:tag, :none) //= :right
+
+  # No metadata when neither has meta
+  neither: merge(plain-l, plain-r)
+  neither-meta: neither meta lookup-or(:tag, :none) //= :none
+
+  # Values are correctly merged in all cases
+  both-has-x: both.x //= 1
+  both-has-y: both.y //= 2
+  left-only-x: left-only.x //= 1
+  left-only-y: left-only.y //= 2
+
+  pass: [both-meta-tag, left-meta-tag, right-meta-tag, neither-meta,
+         both-has-x, both-has-y, left-only-x, left-only-y] all-true?
+}
+
+# Deep merge (<<) metadata tests
+deep-merge: {
+  left: {x: {a: 1}} // {tag: :deep-left}
+  right: {x: {b: 2}} // {tag: :deep-right}
+  plain-l: {x: {a: 1}}
+  plain-r: {x: {b: 2}}
+
+  # RHS metadata wins for deep merge when both have non-block meta
+  both: left << right
+  both-meta-tag: both meta lookup-or(:tag, :none) //= :deep-right
+
+  # LHS meta preserved when only LHS has meta
+  left-only: left << plain-r
+  left-meta-tag: left-only meta lookup-or(:tag, :none) //= :deep-left
+
+  # RHS meta preserved when only RHS has meta
+  right-only: plain-l << right
+  right-meta-tag: right-only meta lookup-or(:tag, :none) //= :deep-right
+
+  # Neither: no meta
+  neither: plain-l << plain-r
+  neither-meta: neither meta lookup-or(:tag, :none) //= :none
+
+  # Deep merge semantics preserved: sub-block values are deep-merged
+  both-a: both.x.a //= 1
+  both-b: both.x.b //= 2
+
+  pass: [both-meta-tag, left-meta-tag, right-meta-tag, neither-meta,
+         both-a, both-b] all-true?
+}
+
+RESULT: if(shallow-merge.pass ∧ deep-merge.pass, :PASS, :FAIL)

@@ -1,0 +1,47 @@
+{ doc: "133 lens library import test"
+  import: "lens.eu" }
+
+` { target: :test }
+test: {
+  data: { server: { host: "localhost", port: 5432 } }
+
+  # view via at
+  t-view: data view(at(:server) ∘ at(:host)) //= "localhost"
+
+  # over via at
+  t-over: (data over(at(:server) ∘ at(:port), + 1000)).server.port //= 6432
+
+  # ix on lists
+  items: [10, 20, 30]
+  t-ix: items view(ix(1)) //= 20
+  t-ix-over: items over(ix(0), * 5) //= [50, 20, 30]
+
+  # path bracket syntax
+  nested: { a: [{ b: { c: 42 } }] }
+  t-path: nested view(‹:a 0 :b :c›) //= 42
+  t-path-over: ((nested over(‹:a 0 :b :c›, + 8)).a head).b.c //= 50
+
+  # to-list-of with each
+  t-each: [1, 2, 3] to-list-of(each) //= [1, 2, 3]
+  t-each-over: [1, 2, 3] over(each, * 10) //= [10, 20, 30]
+
+  # filtered
+  t-filtered: [1, 2, 3, 4, 5] to-list-of(filtered(_ > 3)) //= [4, 5]
+
+  # element with by-key
+  blk: {a: 1, b: 2, c: 3}
+  t-element: blk view(element(by-key(_ = :b)) ∘ _value) //= 2
+
+  # item with predicate
+  records: [{id: 1, v: "x"}, {id: 2, v: "y"}]
+  t-item: records view(item(_.id = 2) ∘ at(:v)) //= "y"
+
+  RESULT: [ t-view, t-over
+          , t-ix, t-ix-over
+          , t-path, t-path-over
+          , t-each, t-each-over
+          , t-filtered
+          , t-element
+          , t-item
+          ] all-true? then(:PASS, :FAIL)
+}

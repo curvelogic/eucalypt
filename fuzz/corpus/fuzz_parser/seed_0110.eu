@@ -1,0 +1,18 @@
+{ title: "126 type predicates" }
+
+` { target: :test-type-predicates }
+test-type-predicates: {
+  n: 42 number? //= true
+  s: "hello" string? //= true
+  y: :foo symbol? //= true
+  b: true bool? //= true
+  nn: "hello" number? //= false
+  ns: 42 string? //= false
+  nb: 42 bool? //= false
+  ny: "foo" symbol? //= false
+  bl: [] block? //= false
+  lb: {} list? //= false
+  bn: false number? //= false
+  bs: true string? //= false
+  RESULT: [n, s, y, b, nn, ns, nb, ny, bl, lb, bn, bs] all-true? then(:PASS, :FAIL)
+}
