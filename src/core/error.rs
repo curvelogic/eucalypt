@@ -85,6 +85,10 @@ pub enum CoreError {
     VersionRequirementFailed(Smid, String, String),
     #[error("invalid version constraint in requires: \"{1}\": {2}")]
     InvalidVersionConstraint(Smid, String, String),
+    /// An expression of the form `name = value` was detected, which looks like
+    /// an assignment from another language.  Eucalypt uses `:` for declarations.
+    #[error("assignment-style syntax: '{1} = ...' is not a valid eucalypt declaration")]
+    AssignmentStyleDeclaration(Smid, String),
 }
 
 impl HasSmid for CoreError {
@@ -107,6 +111,7 @@ impl HasSmid for CoreError {
             TrivialSelfAssignment(s, _) => s,
             VersionRequirementFailed(s, _, _) => s,
             InvalidVersionConstraint(s, _, _) => s,
+            AssignmentStyleDeclaration(s, _) => s,
             _ => Smid::default(),
         }
     }
@@ -182,6 +187,14 @@ impl CoreError {
                 source_map.diagnostic(self).with_notes(vec![
                     format!("the binding `{name}: {name}` (or `{name}: {name}(…)`) always loops"),
                     "if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`".to_string(),
+                ])
+            }
+            CoreError::AssignmentStyleDeclaration(_, name) => {
+                source_map.diagnostic(self).with_notes(vec![
+                    format!(
+                        "eucalypt uses ':' for declarations, not '='; \
+                         write '{name}: <value>' instead of '{name} = <value>'"
+                    ),
                 ])
             }
             CoreError::VersionRequirementFailed(_, version, constraint) => {

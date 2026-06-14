@@ -4,6 +4,14 @@ use crate::core::binding::{BoundVar, Var};
 use crate::core::error::CoreError;
 use crate::core::expr::*;
 
+/// Return `true` if `name` looks like a user-written identifier rather than
+/// an internal compiler-generated name (e.g. `_e_a0`, `__build`).
+///
+/// Used to suppress false-positive assignment-style hints for mangled names.
+fn is_user_identifier(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_alphabetic())
+}
+
 /// Scan the core expression for errors
 pub fn verify(expr: RcExpr) -> Result<Vec<CoreError>, CoreError> {
     let mut verifier = Verifier::default();
@@ -95,6 +103,35 @@ impl Verifier {
                     if is_trivially_self_referential(value, binder as u32) {
                         self.errors
                             .push(CoreError::TrivialSelfAssignment(value.smid(), name.clone()));
+                    }
+                }
+                expr.walk_safe(&mut |x| self.verify(x))
+            }
+            Expr::App(s, f, args) => {
+                // Detect assignment-style declarations: `name = value`.
+                //
+                // After cook (with or without the prelude blob), `name = value`
+                // produces `App(Var::Free("="), [Var::Free("name"), ...])`.  The
+                // `=` free-var may be the prelude equality operator (blob path) or
+                // an undefined function (source-prelude path); either way, the
+                // first argument being a free identifier is strong evidence of a
+                // Python/JS-style declaration mistake.
+                //
+                // We only fire when the identifier looks user-written (starts with
+                // a letter) to avoid false positives on compiler-generated names
+                // like `_e_a0` or `__build`.
+                if let Expr::Var(_, Var::Free(eq)) = &*f.inner {
+                    if eq == "=" {
+                        if let Some(first_arg) = args.first() {
+                            if let Expr::Var(_, Var::Free(name)) = &*first_arg.inner {
+                                if is_user_identifier(name) {
+                                    self.errors.push(CoreError::AssignmentStyleDeclaration(
+                                        *s,
+                                        name.clone(),
+                                    ));
+                                }
+                            }
+                        }
                     }
                 }
                 expr.walk_safe(&mut |x| self.verify(x))
