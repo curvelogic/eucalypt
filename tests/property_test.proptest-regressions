@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 7ed5f2d5a8f5e332f33b58d4056ed7175e1c20e09daf48dfd54526e2e7baff89 # shrinks to s = Union([Union([Union([App(Con("Dict"), Top), ExecutionError]), Set]), Set]), t = App(Con("Dict"), Never)
