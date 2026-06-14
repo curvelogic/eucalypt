@@ -1276,49 +1276,77 @@ impl BlockEventSink {
     }
 
     /// Pending declaration is complete, copy it to the underlying builder.
+    ///
+    /// If the declaration head is empty (i.e. `split_off_head` failed to
+    /// extract a valid head), the entire declaration is wrapped in an `ERROR`
+    /// node for declaration-level error recovery.  This isolates the malformed
+    /// binding so that surrounding valid declarations still parse correctly.
     fn commit_declaration(&mut self) {
         if let Some(ref mut decl) = self.declaration {
-            self.committed.push(ParseEvent::StartNode(DECLARATION));
-            if let Some(m) = &mut decl.meta {
-                self.committed.push(ParseEvent::StartNode(DECL_META));
+            // Determine whether the head is non-trivially populated.
+            let has_non_trivial_head = decl
+                .head
+                .iter()
+                .any(|e| !matches!(e, ParseEvent::Token(k) if k.is_trivial()));
+
+            if !has_non_trivial_head && !decl.colon.is_empty() {
+                // Malformed declaration: colon present but no valid head was
+                // extracted.  Wrap the whole thing in an ERROR node so that
+                // adjacent valid declarations are not affected.
+                self.errors.push(ParseError::MalformedDeclarationHead {
+                    range: rowan::TextRange::default(),
+                });
+                self.committed.push(ParseEvent::StartNode(ERROR));
+                if let Some(m) = &mut decl.meta {
+                    self.committed.append(m);
+                }
+                self.committed.append(&mut decl.head);
+                self.committed.append(&mut decl.colon);
+                self.committed.append(&mut decl.body);
+                self.committed.push(ParseEvent::Finish);
+            } else {
+                self.committed.push(ParseEvent::StartNode(DECLARATION));
+                if let Some(m) = &mut decl.meta {
+                    self.committed.push(ParseEvent::StartNode(DECL_META));
+                    self.committed.push(ParseEvent::StartNode(SOUP));
+                    self.committed.append(m);
+                    self.committed.push(ParseEvent::Finish);
+                    self.committed.push(ParseEvent::Finish);
+                }
+
+                self.committed.push(ParseEvent::StartNode(DECL_HEAD));
+                self.committed.append(&mut decl.head);
+                self.committed.push(ParseEvent::Finish);
+
+                self.committed.append(&mut decl.colon);
+
+                self.committed.push(ParseEvent::StartNode(DECL_BODY));
                 self.committed.push(ParseEvent::StartNode(SOUP));
-                self.committed.append(m);
-                self.committed.push(ParseEvent::Finish);
-                self.committed.push(ParseEvent::Finish);
-            }
 
-            self.committed.push(ParseEvent::StartNode(DECL_HEAD));
-            self.committed.append(&mut decl.head);
-            self.committed.push(ParseEvent::Finish);
-
-            self.committed.append(&mut decl.colon);
-
-            self.committed.push(ParseEvent::StartNode(DECL_BODY));
-            self.committed.push(ParseEvent::StartNode(SOUP));
-
-            // split trailing comma & trivia off the body
-            let mut idx = decl.body.len();
-            for e in decl.body.iter().rev() {
-                match e {
-                    ParseEvent::Token(COMMA)
-                    | ParseEvent::Token(WHITESPACE)
-                    | ParseEvent::Token(COMMENT) => {
-                        idx -= 1;
-                    }
-                    _ => {
-                        break;
+                // split trailing comma & trivia off the body
+                let mut idx = decl.body.len();
+                for e in decl.body.iter().rev() {
+                    match e {
+                        ParseEvent::Token(COMMA)
+                        | ParseEvent::Token(WHITESPACE)
+                        | ParseEvent::Token(COMMENT) => {
+                            idx -= 1;
+                        }
+                        _ => {
+                            break;
+                        }
                     }
                 }
-            }
-            let trailer = decl.body.split_off(idx);
+                let trailer = decl.body.split_off(idx);
 
-            self.committed.append(&mut decl.body);
-            self.committed.push(ParseEvent::Finish);
-            self.committed.push(ParseEvent::Finish);
-            self.committed.push(ParseEvent::Finish);
+                self.committed.append(&mut decl.body);
+                self.committed.push(ParseEvent::Finish);
+                self.committed.push(ParseEvent::Finish);
+                self.committed.push(ParseEvent::Finish);
 
-            for e in trailer {
-                self.committed.push(e);
+                for e in trailer {
+                    self.committed.push(e);
+                }
             }
         }
         self.declaration = None;
@@ -2787,6 +2815,74 @@ SOUP@0..8
         UNQUOTED_IDENTIFIER@5..7 "xs"
     CLOSE_SQUARE@7..8 "]"
 "#,
+        );
+    }
+
+    // ── W4p2: Declaration-level error recovery tests ──────────────────────────
+
+    /// A block with a leading bare colon (no head) should wrap the malformed
+    /// part in an `ERROR` node while leaving other declarations intact.
+    #[test]
+    pub fn test_error_recovery_bare_colon_wraps_in_error() {
+        let text = "{ : bad\ngood: 1 }";
+        let parse = parse_unit(text);
+
+        // There should be at least one parse error for the malformed declaration.
+        assert!(
+            !parse.errors().is_empty(),
+            "expected a parse error for the bare-colon declaration, got none"
+        );
+
+        // The tree should contain an ERROR node for the malformed declaration.
+        let debug = format!("{:#?}", parse.syntax_node());
+        assert!(
+            debug.contains("ERROR@"),
+            "expected ERROR node in parse tree for bare-colon declaration\ntree:\n{debug}"
+        );
+
+        // The valid declaration `good: 1` should still produce a DECLARATION node.
+        assert!(
+            debug.contains("DECLARATION@"),
+            "expected DECLARATION node for `good: 1` to survive error recovery\ntree:\n{debug}"
+        );
+    }
+
+    /// A block where the first declaration is malformed and three valid ones follow —
+    /// all three valid declarations should still be present in the parse tree.
+    #[test]
+    pub fn test_error_recovery_valid_siblings_survive() {
+        let text = "{ : bad\na: 1\nb: 2\nc: 3 }";
+        let parse = parse_unit(text);
+
+        let debug = format!("{:#?}", parse.syntax_node());
+
+        // All three valid bindings should be present as DECLARATION nodes.
+        let decl_count = debug.matches("DECLARATION@").count();
+        assert!(
+            decl_count >= 3,
+            "expected at least 3 DECLARATION nodes but found {decl_count}\ntree:\n{debug}"
+        );
+
+        // An ERROR node should isolate the malformed part.
+        assert!(
+            debug.contains("ERROR@"),
+            "expected ERROR node for the malformed declaration\ntree:\n{debug}"
+        );
+    }
+
+    /// When a valid declaration is sandwiched between two malformed ones, it
+    /// should still parse as a DECLARATION.
+    #[test]
+    pub fn test_error_recovery_valid_sandwiched_between_errors() {
+        let text = "{ : bad1\ngood: 42\n: bad2 }";
+        let parse = parse_unit(text);
+
+        let debug = format!("{:#?}", parse.syntax_node());
+
+        // The valid binding should survive.
+        assert!(
+            debug.contains("DECLARATION@"),
+            "expected DECLARATION node for `good: 42`\ntree:\n{debug}"
         );
     }
 }

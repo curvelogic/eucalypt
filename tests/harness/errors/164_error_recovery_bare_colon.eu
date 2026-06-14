@@ -1,0 +1,6 @@
+# W4p2 error recovery: a bare colon at the top level (no declaration head)
+# should be isolated in an ERROR node so that valid declarations still parse.
+# The invalid binding is wrapped in ERROR; valid ones produce DECLARATION nodes.
+: bad
+good: 1
+RESULT: good

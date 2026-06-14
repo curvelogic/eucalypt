@@ -2411,6 +2411,20 @@ pub fn test_error_163() {
 }
 
 #[test]
+/// W4p2: a bare colon (no head) at block level is wrapped in ERROR;
+/// surrounding valid declarations still parse.
+pub fn test_error_164() {
+    run_error_test(&error_opts("164_error_recovery_bare_colon.eu"));
+}
+
+#[test]
+/// W4p2: a malformed declaration inside a nested block is wrapped in ERROR;
+/// the outer block and sibling declarations still parse.
+pub fn test_error_165() {
+    run_error_test(&error_opts("165_error_recovery_nested_block.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

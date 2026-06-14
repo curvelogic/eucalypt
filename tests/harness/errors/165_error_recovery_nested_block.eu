@@ -1,0 +1,9 @@
+# W4p2 error recovery: malformed declaration inside a nested block.
+# The outer block should still parse; the inner block has one bad binding
+# and two good ones. Surrounding declarations survive the malformed one.
+outer: {
+  : malformed
+  a: 1
+  b: 2
+}
+RESULT: outer
