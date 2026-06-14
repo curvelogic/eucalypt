@@ -3092,6 +3092,11 @@ fn extract_string_literal(expr: &RcExpr) -> Option<String> {
         return Some(s.clone());
     }
 
+    // Type-data literal (s"...") — accepted as type annotation string.
+    if let Expr::Literal(_, Primitive::TypeData(s)) = &*inner.inner {
+        return Some(s.clone());
+    }
+
     // JOIN([chunk, …], sep) — produced by the desugarer for interpolated
     // strings.  Evaluate it statically when all chunks are string literals.
     if let Expr::App(_, func, args) = &*inner.inner {

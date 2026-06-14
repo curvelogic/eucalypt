@@ -2,7 +2,7 @@
   doc: "Lenses in Eucalypt - highly experimental and subject to change." }
 
 ` { doc: "`at(key)` defines a lens that focuses within a block on the value with key `key`."
-    type: "symbol → Lens({{..r}}, a)" }
+    type: s"symbol → Lens({..r}, a)" }
 at(key, k): {
   fmap: meta(k).fmap
   s(obj): fmap({ nv: • }.(obj alter-value(key, nv)), k(obj lookup(key)))
@@ -13,15 +13,15 @@ fmap-set: identity
 fmap-get: flip(const)
 
 ` { doc: "`view(lens, data)` - return the value within `data` focussed on by `lens`. Only valid for lenses (single focus). Using view on a traversal will error."
-    type: "Lens(a, b) → a → b" }
+    type: s"Lens(a, b) → a → b" }
 view(lens, data): data lens(identity // { fmap: fmap-get })
 
 ` { doc: "`over(lens, fn, data)` - apply fn to each focus within `data` and return the whole modified data structure. Works for both lenses and traversals."
-    type: "(Lens(a, b) | Traversal(a, b)) → (b → b) → a → a" }
+    type: s"(Lens(a, b) | Traversal(a, b)) → (b → b) → a → a" }
 over(lens, fn, data): data lens(fn // { fmap: fmap-set, pure: identity, ap: identity })
 
 ` { doc: "`to-list-of(optic, data)` - collect all foci of an optic into a flat list. Works for both lenses (returns singleton list) and traversals (returns all foci, flattened)."
-    type: "(Lens(a, b) | Traversal(a, b)) → a → [b]" }
+    type: s"(Lens(a, b) | Traversal(a, b)) → a → [b]" }
 to-list-of(optic, data): data optic((_ ‖ []) // { fmap: fmap-get, pure: -> [], ap: ++ })
 
 
@@ -56,7 +56,7 @@ example-basic: {
 
 
 ` { doc: "`ix(n)` defines a lens which focusses on a list item at index `n`."
-    type: "number → Lens([a], a)" }
+    type: s"number → Lens([a], a)" }
 ix(n, k): {
   fmap: meta(k).fmap
   s(data): fmap({ nv: • }.(data update-nth(n, ->nv)), k(data !! n))
@@ -126,7 +126,7 @@ example-paths: {
 # predicate lenses - first matching list element
 
 ` { doc: "`item(p?)` defines a lens that focuses on the first list element matching predicate `p?`."
-    type: "(a → bool) → Lens([a], a)" }
+    type: s"(a → bool) → Lens([a], a)" }
 item(p?, k): {
   fmap: meta(k).fmap
   s(data): fmap({ nv: • }.(data update-first(p?, ->nv)), k(data filter(p?) head))
@@ -145,18 +145,18 @@ example-predicate: {
 # block element lenses
 
 ` { doc: "`element(p?)` defines a lens that focuses on the first kv pair [key, value] in a block matching `p?`. Use prelude helpers like `by-key`, `by-value` to define the predicate. Compose with `_value` to focus on just the value."
-    type: "((symbol, any) → bool) → Lens({{..}}, (symbol, any))" }
+    type: s"((symbol, any) → bool) → Lens({..}, (symbol, any))" }
 element(p?, k): {
   fmap: meta(k).fmap
   s(data): fmap({ nv: • }.(data elements update-first(p?, ->nv) block), k(data filter-items(p?) head))
 }.(s // meta(k))
 
 ` { doc: "`_value` lens focuses on the value (index 1) of a kv pair [key, value]."
-    type: "Lens([a], a)" }
+    type: s"Lens([a], a)" }
 _value: ix(1)
 
 ` { doc: "`_key` lens focuses on the key (index 0) of a kv pair [key, value]."
-    type: "Lens([a], a)" }
+    type: s"Lens([a], a)" }
 _key: ix(0)
 
 ` { target: :test-element }
@@ -187,7 +187,7 @@ example-element: {
 # traversals
 
 ` { doc: "`each` traverses all elements of a list."
-    type: "Traversal([a], a)" }
+    type: s"Traversal([a], a)" }
 each(k): {
   fmap: meta(k).fmap
   pure: meta(k).pure
@@ -197,7 +197,7 @@ each(k): {
 }.(s // meta(k))
 
 ` { doc: "`filtered(p?)` traverses list elements matching predicate `p?`."
-    type: "(a → bool) → Traversal([a], a)" }
+    type: s"(a → bool) → Traversal([a], a)" }
 filtered(p?, k): {
   fmap: meta(k).fmap
   pure: meta(k).pure
@@ -211,7 +211,7 @@ filtered(p?, k): {
 # parts-of — turn a traversal into a lens on the list of foci
 
 ` { doc: "`parts-of(traversal)` turns a traversal into a lens focusing on the list of all foci. `view` collects foci into a list. `over` applies a list transformation and distributes results back."
-    type: "Traversal(a, b) → Lens(a, [b])" }
+    type: s"Traversal(a, b) → Lens(a, [b])" }
 parts-of(traversal, k): {
   fmap: meta(k).fmap
 
@@ -236,7 +236,7 @@ parts-of(traversal, k): {
 }.(s // meta(k))
 
 ` { doc: "`each-element` traverses all kv pairs of a block."
-    type: "Traversal({{..}}, (symbol, any))" }
+    type: s"Traversal({..}, (symbol, any))" }
 each-element(k): {
   fmap: meta(k).fmap
   pure: meta(k).pure
@@ -247,7 +247,7 @@ each-element(k): {
 }.(s // meta(k))
 
 ` { doc: "`filtered-elements(p?)` traverses block kv pairs matching predicate `p?`."
-    type: "((symbol, any) → bool) → Traversal({{..}}, (symbol, any))" }
+    type: s"((symbol, any) → bool) → Traversal({..}, (symbol, any))" }
 filtered-elements(p?, k): {
   fmap: meta(k).fmap
   pure: meta(k).pure
