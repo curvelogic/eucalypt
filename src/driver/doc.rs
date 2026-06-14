@@ -904,12 +904,21 @@ fn namespace_to_category(ns: &str) -> &'static str {
     }
 }
 
+/// Collected documentation for namespace blocks, keyed by namespace name.
+///
+/// When `flatten_entries` expands a namespace block, the namespace's own
+/// docstring is stored here so it can be rendered as a section intro in
+/// category pages.
+type NamespaceDocs = HashMap<String, String>;
+
 /// Flatten `DocEntry` trees into `FlatEntry` values with namespace context.
 ///
-/// Top-level entries with children (namespace blocks) are expanded; the
-/// namespace entry itself is not included in output.
-fn flatten_entries(entries: &[DocEntry]) -> Vec<FlatEntry> {
+/// Top-level entries with children (namespace blocks) are expanded.
+/// Namespace-level docstrings are collected into `ns_docs` so they can be
+/// rendered as introductory text in category pages.
+fn flatten_entries(entries: &[DocEntry]) -> (Vec<FlatEntry>, NamespaceDocs) {
     let mut flat: Vec<FlatEntry> = Vec::new();
+    let mut ns_docs: NamespaceDocs = HashMap::new();
 
     for entry in entries {
         let ns = entry.namespace.as_deref().unwrap_or("").to_string();
@@ -917,6 +926,12 @@ fn flatten_entries(entries: &[DocEntry]) -> Vec<FlatEntry> {
             !entry.children.is_empty() && KNOWN_NAMESPACES.contains(&entry.name.as_str());
 
         if is_ns_block {
+            // Preserve the namespace's own docstring
+            if let Some(ref doc) = entry.doc {
+                if !doc.is_empty() {
+                    ns_docs.insert(entry.name.clone(), doc.clone());
+                }
+            }
             // Expand namespace children
             for child in &entry.children {
                 let child_ns = child
@@ -933,7 +948,7 @@ fn flatten_entries(entries: &[DocEntry]) -> Vec<FlatEntry> {
         }
     }
 
-    flat
+    (flat, ns_docs)
 }
 
 /// Build a `FlatEntry` from a `DocEntry` with resolved namespace.
@@ -1245,6 +1260,7 @@ fn generate_category_page(
     category: &str,
     all_entries: &[&FlatEntry],
     supplements_dir: &Path,
+    ns_docs: &NamespaceDocs,
 ) -> String {
     // Category page config: title and sections
     let (title, sections): (&str, Vec<SectionConfig>) = match category {
@@ -1519,6 +1535,18 @@ fn generate_category_page(
         parts.push(format!("## {}", section_cfg.display));
         parts.push(String::new());
 
+        // If all entries in this section share a single namespace that has
+        // a docstring, render it as a section introduction.
+        if !unique.is_empty() {
+            let first_ns = &unique[0].namespace;
+            if !first_ns.is_empty() && unique.iter().all(|e| &e.namespace == first_ns) {
+                if let Some(ns_doc) = ns_docs.get(first_ns.as_str()) {
+                    parts.push(format!("> {ns_doc}"));
+                    parts.push(String::new());
+                }
+            }
+        }
+
         if !unique.is_empty() {
             parts.push(generate_table(&unique));
         }
@@ -1557,7 +1585,13 @@ fn generate_category_page(
 }
 
 /// Generate the prelude index page.
-fn generate_index_page(by_category: &HashMap<&'static str, Vec<&FlatEntry>>) -> String {
+///
+/// If `unit_doc` is provided it is rendered as the page description;
+/// otherwise a default description is used.
+fn generate_index_page(
+    by_category: &HashMap<&'static str, Vec<&FlatEntry>>,
+    unit_doc: Option<&str>,
+) -> String {
     let category_info: &[(&str, &str, &str)] = &[
         (
             "lists",
@@ -1604,15 +1638,21 @@ fn generate_index_page(by_category: &HashMap<&'static str, Vec<&FlatEntry>>) -> 
         ),
     ];
 
+    let description = if let Some(doc) = unit_doc {
+        doc.to_string()
+    } else {
+        "The eucalypt **prelude** is a standard library of functions, operators,\n\
+         and constants that is automatically loaded before your code runs.\n\n\
+         You can suppress the prelude with `-Q` if needed, though this leaves\n\
+         a very bare environment (even `true`, `false`, and `if` are defined\n\
+         in the prelude)."
+            .to_string()
+    };
+
     let mut parts = vec![
         "# Prelude Reference".to_string(),
         String::new(),
-        "The eucalypt **prelude** is a standard library of functions, operators,".to_string(),
-        "and constants that is automatically loaded before your code runs.".to_string(),
-        String::new(),
-        "You can suppress the prelude with `-Q` if needed, though this leaves".to_string(),
-        "a very bare environment (even `true`, `false`, and `if` are defined".to_string(),
-        "in the prelude).".to_string(),
+        description,
         String::new(),
         "## Categories".to_string(),
         String::new(),
@@ -1646,12 +1686,13 @@ pub fn render_prelude_multifile(
     entries: &[DocEntry],
     output_dir: &Path,
     supplements_dir: &Path,
+    unit_doc: Option<&str>,
 ) -> Result<i32, EucalyptError> {
     fs::create_dir_all(output_dir).map_err(|e| {
         EucalyptError::FileCouldNotBeRead(output_dir.display().to_string(), Some(e.to_string()))
     })?;
 
-    let flat = flatten_entries(entries);
+    let (flat, ns_docs) = flatten_entries(entries);
     let by_category = group_by_category(&flat);
 
     // All known categories in display order
@@ -1676,7 +1717,7 @@ pub fn render_prelude_multifile(
             .unwrap_or(&[])
             .to_vec();
         let public_count = cat_entries.iter().filter(|e| !e.is_suppressed).count();
-        let page = generate_category_page(cat, &cat_entries, supplements_dir);
+        let page = generate_category_page(cat, &cat_entries, supplements_dir, &ns_docs);
         let out_path = output_dir.join(format!("{cat}.md"));
         fs::write(&out_path, &page).map_err(|e| {
             EucalyptError::FileCouldNotBeRead(out_path.display().to_string(), Some(e.to_string()))
@@ -1688,7 +1729,7 @@ pub fn render_prelude_multifile(
     }
 
     // Generate index
-    let index_page = generate_index_page(&by_category);
+    let index_page = generate_index_page(&by_category, unit_doc);
     let index_path = output_dir.join("index.md");
     fs::write(&index_path, &index_page).map_err(|e| {
         EucalyptError::FileCouldNotBeRead(index_path.display().to_string(), Some(e.to_string()))
@@ -1771,7 +1812,12 @@ fn doc_prelude(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
                 output_dir.join("supplements")
             }
         };
-        return render_prelude_multifile(&entries, output_dir, &supplements_dir);
+        return render_prelude_multifile(
+            &entries,
+            output_dir,
+            &supplements_dir,
+            unit_doc.as_deref(),
+        );
     }
 
     render_and_output(&entries, "Prelude Reference", unit_doc.as_deref(), opt)
@@ -1786,25 +1832,32 @@ fn extract_from_source(source: &str) -> (Vec<DocEntry>, Option<String>) {
     (entries, unit_doc)
 }
 
-/// Extract the unit-level documentation from the unit metadata block.
+/// Extract the unit-level documentation from unit metadata.
+///
+/// Unit metadata is the first expression in a file (before any declarations).
+/// Two forms are supported:
+/// - Block with `doc:` key: `{ doc: "description" }`
+/// - Bare string: `"description"`
 fn extract_unit_doc(unit: &Unit) -> Option<String> {
-    // The first expression in the unit (if it's a block) is unit metadata.
-    for decl in unit.declarations() {
-        // Look for a bare block expression at the top (unit metadata).
-        // In Eucalypt, unit metadata is the first block-expression before declarations.
-        // It appears as a declaration with no head (just a body block).
-        if decl.head().is_none() {
-            if let Some(body) = decl.body() {
-                if let Some(soup) = body.soup() {
-                    for el in soup.elements() {
-                        if let ast::Element::Block(block) = el {
-                            if let Some(doc_str) = extract_block_str(&block, "doc") {
-                                return Some(doc_str);
-                            }
-                        }
+    // Unit metadata lives in the BLOCK_META node (accessed via unit.meta()),
+    // not in regular declarations.
+    let meta = unit.meta()?;
+    let soup = meta.soup()?;
+    for el in soup.elements() {
+        match el {
+            ast::Element::Block(block) => {
+                if let Some(doc_str) = extract_block_str(&block, "doc") {
+                    return Some(doc_str);
+                }
+            }
+            ast::Element::Lit(lit) => {
+                if let Some(ast::LiteralValue::Str(s)) = lit.value() {
+                    if let Some(v) = s.value() {
+                        return Some(v.to_string());
                     }
                 }
             }
+            _ => {}
         }
     }
     None
