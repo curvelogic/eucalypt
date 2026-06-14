@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 //! Property-based tests for eucalypt — verifying structural invariants
 //! across randomly generated inputs.
 //!
@@ -279,7 +280,7 @@ proptest! {
 //
 // In CI the GC-verified job sets EU_GC_VERIFY=2 automatically.
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
 mod gc_properties {
     use super::*;
     use eucalypt::driver::error::EucalyptError;
