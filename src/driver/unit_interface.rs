@@ -193,7 +193,11 @@ impl UnitInterface {
     /// The slot starts conservative (all `Unknown`); future analysis passes
     /// (W11 strictness analysis) populate it with richer information.
     ///
-    /// Call at the same pipeline stage as `extract_visibility_from_expr`.
+    /// Must be called AFTER the prune/eliminate pass — the prune pass populates
+    /// `CoreBinding::demand` with cardinality information that this function
+    /// reads.  Calling it before prune would always yield `Demand::default()`
+    /// (all `Unknown`) because the cardinality information has not yet been written.
+    /// Do NOT call alongside `extract_visibility_from_expr`.
     pub fn extract_demands_from_expr(&mut self, expr: &RcExpr) {
         collect_demands(expr, &mut self.demands);
     }

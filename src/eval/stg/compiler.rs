@@ -1572,7 +1572,6 @@ pub mod tests {
         eval::stg::tags::DataConstructor,
     };
 
-
     fn compile(expr: RcExpr) -> Result<Rc<StgSyn>, CompileError> {
         Compiler::new(
             true,
@@ -1754,7 +1753,9 @@ pub mod tests {
         fn has_thunk(syn: &Rc<StgSyn>) -> bool {
             match syn.as_ref() {
                 StgSyn::Let { bindings, body } | StgSyn::LetRec { bindings, body } => {
-                    bindings.iter().any(|b| matches!(b, LambdaForm::Thunk { .. }))
+                    bindings
+                        .iter()
+                        .any(|b| matches!(b, LambdaForm::Thunk { .. }))
                         || has_thunk(body)
                 }
                 _ => false,
@@ -1789,10 +1790,10 @@ pub mod tests {
     /// introduced.
     #[test]
     pub fn test_single_use_binding_compiles_as_value_after_prune() {
+        use crate::common::sourcemap::Smid;
         use crate::core::binding::{CoreBinding, Scope};
         use crate::core::demand::Demand;
         use crate::core::expr::{Expr, LetType, RcExpr};
-        use crate::common::sourcemap::Smid;
 
         // Build `let y = 3 in y` as the binding expression for `x`:
         //   x = let y = 3 in y      ← not WHNF, so Thunk by default
@@ -1820,7 +1821,11 @@ pub mod tests {
             RcExpr::from(Expr::Let(
                 Smid::default(),
                 Scope {
-                    pattern: vec![CoreBinding::with_demand(x.clone(), closed_inner.clone(), demand)],
+                    pattern: vec![CoreBinding::with_demand(
+                        x.clone(),
+                        closed_inner.clone(),
+                        demand,
+                    )],
                     body: closed_body.clone(),
                 },
                 LetType::OtherLet,
