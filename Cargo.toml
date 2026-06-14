@@ -19,6 +19,8 @@ sha2 = "0.10"
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
 similar = "2"
+proptest = "1"
+tempfile = "3"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 criterion = "0.8"

@@ -418,8 +418,13 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
         // is treated as gradual — consistent with anything.
         (Type::Lam(_, _), _) | (_, Type::Lam(_, _)) => true,
 
-        // Fall through to subtyping.
-        _ => is_subtype(s, t),
+        // Fall through to subtyping — check both directions to preserve symmetry.
+        //
+        // `is_subtype(s, t)` alone is not symmetric (e.g. `Never <: Top` but
+        // not `Top <: Never`).  Consistency should hold whenever the types are
+        // related by subtyping in *either* direction, so that, for instance,
+        // `Never ~ Top` and `Top ~ Never` both return `true`.
+        _ => is_subtype(s, t) || is_subtype(t, s),
     }
 }
 
@@ -448,8 +453,8 @@ fn is_app_consistent(s: &Type, t: &Type) -> bool {
         }
     }
 
-    // Abstract heads.
-    is_subtype(s, t)
+    // Abstract heads — check both directions to preserve symmetry.
+    is_subtype(s, t) || is_subtype(t, s)
 }
 
 #[cfg(test)]
