@@ -99,10 +99,12 @@ impl Verifier {
             Expr::Let(_, scope, _) => {
                 // Check each binding value for trivial self-assignment before
                 // walking into the scope body.
-                for (binder, (name, value)) in scope.pattern.iter().enumerate() {
-                    if is_trivially_self_referential(value, binder as u32) {
-                        self.errors
-                            .push(CoreError::TrivialSelfAssignment(value.smid(), name.clone()));
+                for (binder, b) in scope.pattern.iter().enumerate() {
+                    if is_trivially_self_referential(&b.expr, binder as u32) {
+                        self.errors.push(CoreError::TrivialSelfAssignment(
+                            b.expr.smid(),
+                            b.name.clone(),
+                        ));
                     }
                 }
                 expr.walk_safe(&mut |x| self.verify(x))

@@ -17,6 +17,7 @@ use std::iter::FromIterator;
 use std::rc::Rc;
 use std::str::FromStr;
 
+pub use crate::core::binding::CoreBinding;
 pub use crate::core::binding::Var::Free;
 
 /// Primitive types in core
@@ -274,7 +275,7 @@ where
     }
 }
 
-pub type LetScope<T> = Scope<Vec<(String, T)>, T>;
+pub type LetScope<T> = Scope<Vec<CoreBinding<T>>, T>;
 pub type LamScope<T> = Scope<Vec<String>, T>;
 
 /// The main core expression type
@@ -448,7 +449,7 @@ where
                 pattern: scope
                     .pattern
                     .iter()
-                    .map(|(n, value)| (n.clone(), V::from(value)))
+                    .map(|b| CoreBinding::with_demand(b.name.clone(), V::from(&b.expr), b.demand))
                     .collect(),
                 body: V::from(&scope.body),
             },
@@ -557,8 +558,8 @@ impl RcExpr {
         scope
             .pattern
             .iter()
-            .filter(|(_, v)| !has_internal_export(v))
-            .map(|(k, _)| (k.clone(), k.clone()))
+            .filter(|b| !has_internal_export(&b.expr))
+            .map(|b| (b.name.clone(), b.name.clone()))
             .collect()
     }
 
@@ -584,11 +585,11 @@ impl RcExpr {
                 let names: Vec<&str> = scope
                     .pattern
                     .iter()
-                    .map(|(n, v)| {
-                        if has_internal_export(v) {
+                    .map(|b| {
+                        if has_internal_export(&b.expr) {
                             "\x00"
                         } else {
-                            n.as_str()
+                            b.name.as_str()
                         }
                     })
                     .collect();
@@ -661,7 +662,9 @@ impl RcExpr {
                     pattern: scope
                         .pattern
                         .iter()
-                        .map(|(n, value)| (n.clone(), f(value.clone())))
+                        .map(|b| {
+                            CoreBinding::with_demand(b.name.clone(), f(b.expr.clone()), b.demand)
+                        })
                         .collect(),
                     body: f(scope.body.clone()),
                 },
@@ -730,8 +733,11 @@ impl RcExpr {
                 let bindings = scope
                     .pattern
                     .iter()
-                    .map(|(n, value)| f(value.clone()).map(|v| (n.clone(), v)))
-                    .collect::<Result<Vec<(String, RcExpr)>, E>>()?;
+                    .map(|b| {
+                        f(b.expr.clone())
+                            .map(|v| CoreBinding::with_demand(b.name.clone(), v, b.demand))
+                    })
+                    .collect::<Result<Vec<CoreBinding<RcExpr>>, E>>()?;
                 RcExpr::from(Expr::Let(
                     *s,
                     Scope {
@@ -847,18 +853,14 @@ impl RcExpr {
                 }
             }
             Expr::Let(s, scope, t) => {
-                let new_bindings: Vec<_> = scope
-                    .pattern
-                    .iter()
-                    .map(|(n, value)| (n, f(value)))
-                    .collect();
+                let new_exprs: Vec<RcExpr> = scope.pattern.iter().map(|b| f(&b.expr)).collect();
                 let new_body = f(&scope.body);
 
                 let bindings_same = scope
                     .pattern
                     .iter()
-                    .zip(new_bindings.iter())
-                    .all(|((_, v), (_, new_v))| v.ptr_eq(new_v));
+                    .zip(new_exprs.iter())
+                    .all(|(b, new_v)| b.expr.ptr_eq(new_v));
                 let body_same = scope.body.ptr_eq(&new_body);
 
                 if bindings_same && body_same {
@@ -867,9 +869,13 @@ impl RcExpr {
                     RcExpr::from(Expr::Let(
                         *s,
                         Scope {
-                            pattern: new_bindings
-                                .into_iter()
-                                .map(|(n, v)| (n.clone(), v))
+                            pattern: scope
+                                .pattern
+                                .iter()
+                                .zip(new_exprs)
+                                .map(|(b, new_v)| {
+                                    CoreBinding::with_demand(b.name.clone(), new_v, b.demand)
+                                })
                                 .collect(),
                             body: new_body,
                         },
@@ -996,14 +1002,18 @@ impl RcExpr {
                 }
             }
             Expr::Let(s, scope, t) => {
-                let new_bindings: Vec<_> = scope
+                let new_exprs: Vec<RcExpr> = scope
                     .pattern
                     .iter()
-                    .map(|(n, value)| f(value).map(|new_v| (n, value, new_v)))
+                    .map(|b| f(&b.expr))
                     .collect::<Result<_, E>>()?;
                 let new_body = f(&scope.body)?;
 
-                let bindings_same = new_bindings.iter().all(|(_, v, new_v)| v.ptr_eq(new_v));
+                let bindings_same = scope
+                    .pattern
+                    .iter()
+                    .zip(new_exprs.iter())
+                    .all(|(b, new_v)| b.expr.ptr_eq(new_v));
                 let body_same = scope.body.ptr_eq(&new_body);
 
                 if bindings_same && body_same {
@@ -1012,9 +1022,13 @@ impl RcExpr {
                     RcExpr::from(Expr::Let(
                         *s,
                         Scope {
-                            pattern: new_bindings
-                                .into_iter()
-                                .map(|(n, _, v)| (n.clone(), v))
+                            pattern: scope
+                                .pattern
+                                .iter()
+                                .zip(new_exprs)
+                                .map(|(b, new_v)| {
+                                    CoreBinding::with_demand(b.name.clone(), new_v, b.demand)
+                                })
                                 .collect(),
                             body: new_body,
                         },
@@ -1269,9 +1283,9 @@ pub fn free(n: &str) -> String {
 pub fn close_let_scope(bindings: Vec<(String, RcExpr)>, body: RcExpr) -> LetScope<RcExpr> {
     let names: Vec<String> = bindings.iter().map(|(n, _)| n.clone()).collect();
     let name_refs: Vec<&str> = names.iter().map(|n| n.as_str()).collect();
-    let closed_bindings: Vec<(String, RcExpr)> = bindings
+    let closed_bindings: Vec<CoreBinding<RcExpr>> = bindings
         .into_iter()
-        .map(|(n, v)| (n, close_expr_vars(&name_refs, 0, &v)))
+        .map(|(n, v)| CoreBinding::new(n, close_expr_vars(&name_refs, 0, &v)))
         .collect();
     let closed_body = close_expr_vars(&name_refs, 0, &body);
     Scope {
@@ -1296,7 +1310,7 @@ pub fn open_let_scope(scope: &LetScope<RcExpr>) -> RcExpr {
     let names: Vec<Option<&str>> = scope
         .pattern
         .iter()
-        .map(|(n, _)| Some(n.as_str()))
+        .map(|b| Some(b.name.as_str()))
         .collect();
     open_expr_vars(&names, 0, &scope.body)
 }
@@ -1313,12 +1327,12 @@ pub fn open_let_scope_full(scope: &LetScope<RcExpr>) -> (Vec<(String, RcExpr)>, 
     let names: Vec<Option<&str>> = scope
         .pattern
         .iter()
-        .map(|(n, _)| Some(n.as_str()))
+        .map(|b| Some(b.name.as_str()))
         .collect();
     let open_bindings = scope
         .pattern
         .iter()
-        .map(|(n, v)| (n.clone(), open_expr_vars(&names, 0, v)))
+        .map(|b| (b.name.clone(), open_expr_vars(&names, 0, &b.expr)))
         .collect();
     let open_body = open_expr_vars(&names, 0, &scope.body);
     (open_bindings, open_body)
@@ -1357,7 +1371,13 @@ pub fn bind_free_vars(names: &[&str], depth: u32, expr: &RcExpr) -> RcExpr {
             let new_bindings = scope
                 .pattern
                 .iter()
-                .map(|(n, v)| (n.clone(), bind_free_vars(names, depth + 1, v)))
+                .map(|b| {
+                    CoreBinding::with_demand(
+                        b.name.clone(),
+                        bind_free_vars(names, depth + 1, &b.expr),
+                        b.demand,
+                    )
+                })
                 .collect();
             let new_body = bind_free_vars(names, depth + 1, &scope.body);
             RcExpr::from(Expr::Let(
@@ -1415,7 +1435,13 @@ pub fn close_expr_vars(names: &[&str], depth: u32, expr: &RcExpr) -> RcExpr {
             let new_bindings = scope
                 .pattern
                 .iter()
-                .map(|(n, v)| (n.clone(), close_expr_vars(names, depth + 1, v)))
+                .map(|b| {
+                    CoreBinding::with_demand(
+                        b.name.clone(),
+                        close_expr_vars(names, depth + 1, &b.expr),
+                        b.demand,
+                    )
+                })
                 .collect();
             let new_body = close_expr_vars(names, depth + 1, &scope.body);
             RcExpr::from(Expr::Let(
@@ -1472,7 +1498,13 @@ pub fn open_expr_vars(names: &[Option<&str>], depth: u32, expr: &RcExpr) -> RcEx
             let new_bindings = scope
                 .pattern
                 .iter()
-                .map(|(n, v)| (n.clone(), open_expr_vars(names, depth + 1, v)))
+                .map(|b| {
+                    CoreBinding::with_demand(
+                        b.name.clone(),
+                        open_expr_vars(names, depth + 1, &b.expr),
+                        b.demand,
+                    )
+                })
                 .collect();
             let new_body = open_expr_vars(names, depth + 1, &scope.body);
             RcExpr::from(Expr::Let(
@@ -1538,9 +1570,9 @@ pub fn collect_internal_binding_names(expr: &RcExpr) -> Vec<String> {
 fn collect_internal_binding_names_inner(expr: &RcExpr, out: &mut Vec<String>) {
     match &*expr.inner {
         Expr::Let(_, scope, _) => {
-            for (n, v) in &scope.pattern {
-                if has_internal_export(v) {
-                    out.push(n.clone());
+            for b in &scope.pattern {
+                if has_internal_export(&b.expr) {
+                    out.push(b.name.clone());
                 }
             }
             collect_internal_binding_names_inner(&scope.body, out);
@@ -1580,8 +1612,8 @@ fn collect_free_vars(expr: &RcExpr, result: &mut std::collections::HashSet<Strin
         }
         Expr::Var(_, Var::Bound(_)) => {}
         Expr::Let(_, scope, _) => {
-            for (_, v) in &scope.pattern {
-                collect_free_vars(v, result);
+            for b in &scope.pattern {
+                collect_free_vars(&b.expr, result);
             }
             collect_free_vars(&scope.body, result);
         }
@@ -2055,7 +2087,13 @@ pub mod tests {
                 let new_pattern = scope
                     .pattern
                     .iter()
-                    .map(|(k, v)| (k.clone(), alpha_norm_inner(v, counter)))
+                    .map(|b| {
+                        CoreBinding::with_demand(
+                            b.name.clone(),
+                            alpha_norm_inner(&b.expr, counter),
+                            b.demand,
+                        )
+                    })
                     .collect();
                 let new_body = alpha_norm_inner(&scope.body, counter);
                 RcExpr::from(Expr::Let(
@@ -2185,12 +2223,11 @@ pub mod tests {
                 let new_bindings = scope
                     .pattern
                     .iter()
-                    .map(|(k, v)| {
-                        (
-                            k.clone(),
-                            rename_lam_params(v, old_names, new_names, depth + 1),
-                        )
-                    })
+                    .map(|b| CoreBinding::with_demand(
+                        b.name.clone(),
+                        rename_lam_params(&b.expr, old_names, new_names, depth + 1),
+                        b.demand,
+                    ))
                     .collect();
                 let new_body = rename_lam_params(&scope.body, old_names, new_names, depth + 1);
                 RcExpr::from(Expr::Let(
@@ -2238,7 +2275,13 @@ pub mod tests {
                 let new_pattern = scope
                     .pattern
                     .iter()
-                    .map(|(k, v)| (k.clone(), smid_strip_inner(v)))
+                    .map(|b| {
+                        CoreBinding::with_demand(
+                            b.name.clone(),
+                            smid_strip_inner(&b.expr),
+                            b.demand,
+                        )
+                    })
                     .collect();
                 let new_body = smid_strip_inner(&scope.body);
                 RcExpr::from(Expr::Let(

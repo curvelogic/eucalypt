@@ -256,7 +256,11 @@ impl Embed for CoreExpr {
             CoreExpr::ErrPseudoCall => EmbedBuilder::new("e-pseudocall").finish(),
             CoreExpr::ErrPseudoCat => EmbedBuilder::new("e-pseudocat").finish(),
             CoreExpr::Let(_, scope, _) => {
-                let entries: Vec<(String, RcExpr)> = scope.pattern.clone();
+                let entries: Vec<(String, RcExpr)> = scope
+                    .pattern
+                    .iter()
+                    .map(|b| (b.name.clone(), b.expr.clone()))
+                    .collect();
                 let mut b = EmbedBuilder::new("c-let");
                 b.block(&entries)?;
                 b.embed(&scope.body)?;

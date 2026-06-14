@@ -44,11 +44,14 @@ impl ScopeCompressor {
             Expr::Let(s, scope, t) => {
                 self.enter(permutation_from_let_scope(scope));
 
-                let new_bindings: Result<Vec<_>, CoreError> = scope
+                let new_bindings: Result<Vec<CoreBinding<RcExpr>>, CoreError> = scope
                     .pattern
                     .iter()
-                    .filter(|(_, value)| !matches!(*value.inner, Expr::ErrEliminated))
-                    .map(|(n, value)| self.compress(value).map(|val| (n.clone(), val)))
+                    .filter(|b| !matches!(*b.expr.inner, Expr::ErrEliminated))
+                    .map(|b| {
+                        self.compress(&b.expr)
+                            .map(|val| CoreBinding::with_demand(b.name.clone(), val, b.demand))
+                    })
                     .collect();
 
                 let new_bindings = match new_bindings {
@@ -118,8 +121,8 @@ impl ScopeCompressor {
 fn permutation_from_let_scope(scope: &LetScope<RcExpr>) -> Permutation {
     let mut perm = Vec::new();
     let mut i = 0;
-    for (_, value) in &scope.pattern {
-        if matches!(*value.inner, Expr::ErrEliminated) {
+    for b in &scope.pattern {
+        if matches!(*b.expr.inner, Expr::ErrEliminated) {
             perm.push(None);
         } else {
             perm.push(Some(i));

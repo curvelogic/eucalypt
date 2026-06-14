@@ -809,9 +809,9 @@ fn find_monad_spec_in_bindings(expr: &RcExpr) -> Option<super::desugarer::MonadS
             let mut bind_name = None;
             let mut return_name = None;
             let mut namespace = None;
-            for (key, val_expr) in &bindings {
-                let val = extract_function_name_from_expr(val_expr);
-                match key.as_str() {
+            for b in &bindings {
+                let val = extract_function_name_from_expr(&b.expr);
+                match b.name.as_str() {
                     "bind" => bind_name = val,
                     "return" => return_name = val,
                     "namespace" => namespace = val,
@@ -1273,9 +1273,9 @@ fn desugar_monadic_block_implicit(
     } else {
         // Let bindings: each value is the lambda-bound FreeVar.
         // These must NOT be closed over the Let's own names.
-        let let_bindings: Vec<(String, RcExpr)> = non_underscore
+        let let_bindings: Vec<CoreBinding<RcExpr>> = non_underscore
             .iter()
-            .map(|(name, fv)| (name.clone(), core::var(smid, fv.clone())))
+            .map(|(name, fv)| CoreBinding::new(name.clone(), core::var(smid, fv.clone())))
             .collect();
 
         // Body: Block where each key reads from the Let (BoundVar scope=0).

@@ -203,7 +203,11 @@ impl<'smap> Receiver<'smap> {
     ) -> Result<Vec<(String, RcExpr)>, SourceError> {
         match &*expr.inner {
             Expr::Let(_, scope, LetType::DefaultBlockLet) => {
-                let entries: Vec<(String, RcExpr)> = scope.pattern.clone();
+                let entries: Vec<(String, RcExpr)> = scope
+                    .pattern
+                    .iter()
+                    .map(|b| (b.name.clone(), b.expr.clone()))
+                    .collect();
                 Ok(entries)
             }
             Expr::List(_, items) => {

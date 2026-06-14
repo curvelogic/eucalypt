@@ -1109,8 +1109,8 @@ fn extract_top_level_bindings(expr: &crate::core::expr::RcExpr, type_env: &mut T
 
     match &*expr.inner {
         Expr::Let(_, scope, _) => {
-            for (name, _) in &scope.pattern {
-                type_env.entry(name.clone()).or_insert(Type::Any);
+            for b in &scope.pattern {
+                type_env.entry(b.name.clone()).or_insert(Type::Any);
             }
             // Recurse into the body to capture nested Let scopes.
             extract_top_level_bindings(&scope.body, type_env);

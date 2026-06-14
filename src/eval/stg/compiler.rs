@@ -793,14 +793,10 @@ impl ProtoSyntax for ProtoLet {
     ) -> Result<Rc<StgSyn>, CompileError> {
         let scope = self.scope();
         let mut binder = LetBinder::for_scope(self.expr.clone(), context);
-        for (_, value) in scope.pattern.iter() {
-            let annotation = value.smid();
-            let index = compiler.compile_binding(
-                &mut binder,
-                value.clone(),
-                annotation,
-                Demand::default(),
-            )?;
+        for b in scope.pattern.iter() {
+            let annotation = b.expr.smid();
+            let index =
+                compiler.compile_binding(&mut binder, b.expr.clone(), annotation, b.demand)?;
             binder.add_var_index(index);
         }
 

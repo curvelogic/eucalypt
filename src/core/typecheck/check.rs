@@ -775,10 +775,10 @@ impl Checker {
         match &*expr.inner {
             Expr::Let(_, scope, _) => {
                 // Each binding in the scope corresponds to one alias declaration.
-                for (alias_name, type_str_expr) in &scope.pattern {
-                    if let Some(type_str) = extract_string_literal(type_str_expr) {
+                for b in &scope.pattern {
+                    if let Some(type_str) = extract_string_literal(&b.expr) {
                         if let Ok(ty) = parse::parse_type(&type_str) {
-                            self.register_alias(alias_name.clone(), ty);
+                            self.register_alias(b.name.clone(), ty);
                         }
                     }
                 }
@@ -964,11 +964,11 @@ impl Checker {
                 // Pass 1: pre-seed the frame with annotation schemes (or a
                 // `mono(any)` placeholder for unannotated bindings).
                 let mut frame: HashMap<String, TypeScheme> = HashMap::new();
-                for (name, value) in &scope.pattern {
+                for b in &scope.pattern {
                     let scheme = self
-                        .annotation_scheme_of(value)
+                        .annotation_scheme_of(&b.expr)
                         .unwrap_or(TypeScheme::mono(Type::Any));
-                    frame.insert(name.clone(), scheme);
+                    frame.insert(b.name.clone(), scheme);
                 }
 
                 self.push_scope(frame);
@@ -981,15 +981,15 @@ impl Checker {
                 //
                 // anchored = scope_stack.len() - 1 (the newly-pushed innermost frame).
                 let anchored = self.scope_stack.len() - 1;
-                for (name, value) in &scope.pattern {
-                    let key: BoundKey = (anchored, name.clone());
+                for b in &scope.pattern {
+                    let key: BoundKey = (anchored, b.name.clone());
                     // Tentative `None` entries double as recursion guards: if
                     // classification recurses back to this binding, it sees
                     // "not a brancher/projector" and terminates.
                     self.branch_shapes.insert(key.clone(), None);
                     self.projection_shapes.insert(key.clone(), None);
                     // Store the body for later structural analysis.
-                    let body = peel_meta(value).clone();
+                    let body = peel_meta(&b.expr).clone();
                     self.binding_bodies.insert(key.clone(), body.clone());
                     // Classify and update.
                     let shape = self.classify_binding_shape(&body, self.scope_stack.len());
@@ -1002,7 +1002,9 @@ impl Checker {
                 // checks against any annotations.  For unannotated bindings,
                 // replace the placeholder with the synthesised mono type so
                 // later sibling bindings and the body can use it.
-                for (name, value) in &scope.pattern {
+                for b in &scope.pattern {
+                    let name = &b.name;
+                    let value = &b.expr;
                     let synthesised = self.synthesise_binding_value(value);
                     let placeholder = TypeScheme::mono(Type::Any);
                     if let Some(frame) = self.scope_stack.front_mut() {
@@ -2679,8 +2681,8 @@ fn collect_block_uses(expr: &RcExpr, depth: usize, flags: &mut Vec<bool>) {
 
         // Let binding: values are at the current depth; the body is at depth+1.
         Expr::Let(_, inner_scope, _) => {
-            for (_, val) in &inner_scope.pattern {
-                collect_block_uses(val, depth, flags);
+            for b in &inner_scope.pattern {
+                collect_block_uses(&b.expr, depth, flags);
             }
             collect_block_uses(&inner_scope.body, depth + 1, flags);
         }
@@ -3432,8 +3434,8 @@ impl Checker {
                 self.walk_meta_for_aliases(meta);
             }
             Expr::Let(_, scope, _) => {
-                for (_, value) in &scope.pattern {
-                    self.walk_meta_for_aliases(value);
+                for b in &scope.pattern {
+                    self.walk_meta_for_aliases(&b.expr);
                 }
                 self.walk_meta_for_aliases(&scope.body);
             }

@@ -43,10 +43,13 @@ fn substs_depth(
         // Descend into Let: the binding values are inside the new scope
         // boundary, so depth increases by 1.
         Expr::Let(s, scope, t) => {
-            let new_bindings: Result<Vec<_>, CoreError> = scope
+            let new_bindings: Result<Vec<CoreBinding<RcExpr>>, CoreError> = scope
                 .pattern
                 .iter()
-                .map(|(n, value)| substs_depth(value, mappings, depth + 1).map(|v| (n.clone(), v)))
+                .map(|b| {
+                    substs_depth(&b.expr, mappings, depth + 1)
+                        .map(|v| CoreBinding::with_demand(b.name.clone(), v, b.demand))
+                })
                 .collect();
             let new_body = substs_depth(&scope.body, mappings, depth + 1)?;
             Ok(RcExpr::from(Expr::Let(

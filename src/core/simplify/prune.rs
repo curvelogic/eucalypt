@@ -5,6 +5,7 @@
 //! only accessed via static `Lookup` patterns (`ns.member`), inner
 //! members that are never looked up are eliminated from the Block body.
 use crate::core::binding::{BoundVar, Scope, Var};
+use crate::core::demand::{Cardinality, Demand};
 use crate::core::expr::*;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -42,12 +43,18 @@ pub enum SeenState {
 #[derive(Default, Debug)]
 pub struct Tracker {
     seen: Cell<SeenState>,
+    /// Number of times this binding has been referenced.
+    ///
+    /// Used by Phase 3 of W9 to annotate single-use bindings with
+    /// `Cardinality::AtMostOnce`.
+    use_count: Cell<u32>,
 }
 
 impl Clone for Tracker {
     fn clone(&self) -> Self {
         Tracker {
             seen: self.seen.clone(),
+            use_count: self.use_count.clone(),
         }
     }
 }
@@ -55,6 +62,18 @@ impl Clone for Tracker {
 impl Tracker {
     pub fn seen(&self) -> SeenState {
         self.seen.get()
+    }
+
+    /// Returns the number of times this binding was referenced during traversal.
+    pub fn use_count(&self) -> u32 {
+        self.use_count.get()
+    }
+
+    /// Increment the use counter and return the new count.
+    fn increment_use(&self) -> u32 {
+        let c = self.use_count.get() + 1;
+        self.use_count.set(c);
+        c
     }
 }
 
@@ -235,10 +254,12 @@ impl<'expr> ScopeTracker<'expr> {
         if self.reachable {
             let expr = self.scopes[bound_var.scope as usize];
             if let Expr::Let(_, scope, _) = &*expr.inner {
-                let (_, rc) = &scope.pattern[bound_var.binder as usize];
+                let rc = &scope.pattern[bound_var.binder as usize].expr;
                 // Disqualify from block-level DCE on bare access
                 let id: BindingId = Rc::as_ptr(&rc.inner);
                 self.block_tracker.disqualify(id);
+                // Increment the usage counter for cardinality tracking (W9 Phase 3).
+                rc.data.increment_use();
                 if rc.mark() {
                     self.marked_count += 1
                 }
@@ -254,8 +275,10 @@ impl<'expr> ScopeTracker<'expr> {
         if self.reachable {
             let expr = self.scopes[bound_var.scope as usize];
             if let Expr::Let(_, scope, _) = &*expr.inner {
-                let (_, rc) = &scope.pattern[bound_var.binder as usize];
+                let rc = &scope.pattern[bound_var.binder as usize].expr;
                 let id: BindingId = Rc::as_ptr(&rc.inner);
+                // Increment usage counter for static lookups too (W9 Phase 3).
+                rc.data.increment_use();
                 if self.block_tracker.is_candidate(id) {
                     self.block_tracker.record_access(id, member.to_owned());
                 }
@@ -309,16 +332,16 @@ impl<'expr> ScopeTracker<'expr> {
             Expr::Let(_, scope, _) => {
                 // Register DefaultBlockLet bindings as candidates
                 // for block-level DCE
-                for (_, rc) in &scope.pattern {
-                    if rc.inner.is_default_let() {
-                        let id: BindingId = Rc::as_ptr(&rc.inner);
+                for b in &scope.pattern {
+                    if b.expr.inner.is_default_let() {
+                        let id: BindingId = Rc::as_ptr(&b.expr.inner);
                         self.block_tracker.register(id);
                     }
                 }
                 self.enter(expr);
-                for (_, rc) in &scope.pattern {
-                    self.soft_depend(rc, expr);
-                    self.traverse(rc);
+                for b in &scope.pattern {
+                    self.soft_depend(&b.expr, expr);
+                    self.traverse(&b.expr);
                 }
                 self.traverse(&scope.body);
                 self.exit();
@@ -399,6 +422,24 @@ impl<'expr> ScopeTracker<'expr> {
         }
     }
 
+    /// Compute the demand annotation for a binding after the mark phase.
+    ///
+    /// - A binding used exactly once gets `Cardinality::AtMostOnce` (W9 Phase 3):
+    ///   no memoisation benefit, so the STG compiler can skip the Update frame.
+    /// - A binding used more than once gets `Cardinality::Multi`.
+    /// - A binding not reached (use_count == 0) keeps `Unknown` (it will be
+    ///   eliminated, so the annotation is moot).
+    fn demand_from_use_count(use_count: u32) -> Demand {
+        match use_count {
+            0 => Demand::default(),
+            1 => Demand::at_most_once(),
+            _ => Demand {
+                cardinality: Cardinality::Multi,
+                ..Default::default()
+            },
+        }
+    }
+
     pub fn blank_unseen(&self, expr: &RcMarkExpr) -> RcExpr {
         RcExpr::from(match &*expr.inner {
             Expr::Let(s, scope, t) => Expr::Let(
@@ -407,15 +448,26 @@ impl<'expr> ScopeTracker<'expr> {
                     pattern: scope
                         .pattern
                         .iter()
-                        .map(|(n, value)| {
-                            if value.unseen() {
-                                (n.clone(), RcExpr::from(Expr::ErrEliminated))
+                        .map(|b| {
+                            if b.expr.unseen() {
+                                CoreBinding::new(b.name.clone(), RcExpr::from(Expr::ErrEliminated))
                             } else {
-                                let id: BindingId = Rc::as_ptr(&value.inner);
+                                // Compute demand from usage count (W9 Phase 3).
+                                let use_count = b.expr.data.use_count();
+                                let demand = Self::demand_from_use_count(use_count);
+                                let id: BindingId = Rc::as_ptr(&b.expr.inner);
                                 if let Some(members) = self.block_tracker.accessed_members(id) {
-                                    (n.clone(), self.blank_default_block_let(value, members))
+                                    CoreBinding::with_demand(
+                                        b.name.clone(),
+                                        self.blank_default_block_let(&b.expr, members),
+                                        demand,
+                                    )
                                 } else {
-                                    (n.clone(), self.blank_unseen(value))
+                                    CoreBinding::with_demand(
+                                        b.name.clone(),
+                                        self.blank_unseen(&b.expr),
+                                        demand,
+                                    )
                                 }
                             }
                         })
@@ -478,14 +530,20 @@ impl<'expr> ScopeTracker<'expr> {
         match &*expr.inner {
             Expr::Let(s, scope, LetType::DefaultBlockLet) => {
                 // Convert inner bindings normally
-                let new_bindings: Vec<_> = scope
+                let new_bindings: Vec<CoreBinding<RcExpr>> = scope
                     .pattern
                     .iter()
-                    .map(|(n, value)| {
-                        if value.unseen() {
-                            (n.clone(), RcExpr::from(Expr::ErrEliminated))
+                    .map(|b| {
+                        if b.expr.unseen() {
+                            CoreBinding::new(b.name.clone(), RcExpr::from(Expr::ErrEliminated))
                         } else {
-                            (n.clone(), self.blank_unseen(value))
+                            let use_count = b.expr.data.use_count();
+                            let demand = Self::demand_from_use_count(use_count);
+                            CoreBinding::with_demand(
+                                b.name.clone(),
+                                self.blank_unseen(&b.expr),
+                                demand,
+                            )
                         }
                     })
                     .collect();
@@ -529,6 +587,41 @@ pub mod tests {
     use crate::core::expr::acore::*;
     use crate::core::expr::RcExpr;
 
+    /// Reset all `CoreBinding::demand` fields in `expr` to `Demand::default()`.
+    ///
+    /// Used in structural-equality tests that only care about which bindings
+    /// are pruned (ErrEliminated), not about the demand annotations that the
+    /// prune pass now computes.  Demand correctness is validated separately.
+    fn strip_demands(expr: &RcExpr) -> RcExpr {
+        match &*expr.inner {
+            Expr::Let(s, scope, t) => {
+                let new_pattern = scope
+                    .pattern
+                    .iter()
+                    .map(|b| CoreBinding {
+                        name: b.name.clone(),
+                        expr: strip_demands(&b.expr),
+                        demand: Demand::default(),
+                    })
+                    .collect();
+                let new_body = strip_demands(&scope.body);
+                RcExpr::from(Expr::Let(
+                    *s,
+                    Scope {
+                        pattern: new_pattern,
+                        body: new_body,
+                    },
+                    *t,
+                ))
+            }
+            Expr::Meta(s, inner, meta) => {
+                RcExpr::from(Expr::Meta(*s, strip_demands(inner), strip_demands(meta)))
+            }
+            // All other variants: no bindings to strip
+            _ => expr.clone(),
+        }
+    }
+
     #[test]
     pub fn test_simple() {
         let x = free("x");
@@ -544,7 +637,7 @@ pub mod tests {
             var(x),
         );
 
-        assert_eq!(prune(&simple), expected)
+        assert_eq!(strip_demands(&prune(&simple)), expected)
     }
 
     #[test]
@@ -573,7 +666,7 @@ pub mod tests {
             ),
         );
 
-        assert_eq!(prune(&nested), expected)
+        assert_eq!(strip_demands(&prune(&nested)), expected)
     }
 
     #[test]
@@ -600,7 +693,7 @@ pub mod tests {
             app(bif("BLAH"), vec![var(a), var(b)]),
         );
 
-        assert_eq!(prune(&expr), expected)
+        assert_eq!(strip_demands(&prune(&expr)), expected)
     }
 
     #[test]
@@ -638,7 +731,7 @@ pub mod tests {
             var(a),
         );
 
-        assert_eq!(prune(&expr), expected)
+        assert_eq!(strip_demands(&prune(&expr)), expected)
     }
 
     // Block-level DCE tests
@@ -669,7 +762,7 @@ pub mod tests {
         // Verify the block body is filtered (only "used" member)
         match &*pruned.inner {
             Expr::Let(_, scope, _) => {
-                let (_, ref ns_val) = scope.pattern[0];
+                let ns_val = &scope.pattern[0].expr;
                 match &*ns_val.inner {
                     Expr::Let(_, inner_scope, LetType::DefaultBlockLet) => {
                         // Block body should only contain "used"
@@ -710,7 +803,7 @@ pub mod tests {
 
         let pruned = prune(&expr);
         // All members preserved (dynamic access), result used
-        assert_eq!(pruned, expr);
+        assert_eq!(strip_demands(&pruned), strip_demands(&expr));
     }
 
     #[test]
@@ -735,7 +828,7 @@ pub mod tests {
         );
 
         let pruned = prune(&expr);
-        assert_eq!(pruned, expr);
+        assert_eq!(strip_demands(&pruned), strip_demands(&expr));
     }
 
     #[test]
@@ -770,7 +863,7 @@ pub mod tests {
         // Verify block body has only "a" and "c"
         match &*pruned.inner {
             Expr::Let(_, scope, _) => {
-                let (_, ref ns_val) = scope.pattern[0];
+                let ns_val = &scope.pattern[0].expr;
                 match &*ns_val.inner {
                     Expr::Let(_, inner_scope, LetType::DefaultBlockLet) => {
                         // Block body should contain "a" and "c" only
@@ -822,7 +915,7 @@ pub mod tests {
         // Verify the block body is filtered (only "used" member)
         match &*pruned.inner {
             Expr::Let(_, scope, _) => {
-                let (_, ref ns_val) = scope.pattern[0];
+                let ns_val = &scope.pattern[0].expr;
                 match &*ns_val.inner {
                     Expr::Let(_, inner_scope, LetType::DefaultBlockLet) => {
                         match &*inner_scope.body.inner {
@@ -873,7 +966,7 @@ pub mod tests {
         // "used" is accessed — the fallback references "other", not "ns"
         match &*pruned.inner {
             Expr::Let(_, scope, _) => {
-                let (_, ref ns_val) = scope.pattern[0];
+                let ns_val = &scope.pattern[0].expr;
                 match &*ns_val.inner {
                     Expr::Let(_, inner_scope, LetType::DefaultBlockLet) => {
                         match &*inner_scope.body.inner {
@@ -916,6 +1009,6 @@ pub mod tests {
 
         let pruned = prune(&expr);
         // ns escapes bare in body block, so all members preserved
-        assert_eq!(pruned, expr);
+        assert_eq!(strip_demands(&pruned), strip_demands(&expr));
     }
 }
