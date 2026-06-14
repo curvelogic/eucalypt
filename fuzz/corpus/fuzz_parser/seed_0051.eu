@@ -1,0 +1,29 @@
+"Tests for base64 encode/decode intrinsics."
+
+encode-tests: {
+  α: str.base64-encode("hello world") //= "aGVsbG8gd29ybGQ="
+  β: str.base64-encode("") //= ""
+  γ: str.base64-encode("a") //= "YQ=="
+  δ: str.base64-encode("ab") //= "YWI="
+  ε: str.base64-encode("abc") //= "YWJj"
+}
+
+decode-tests: {
+  α: str.base64-decode("aGVsbG8gd29ybGQ=") //= "hello world"
+  β: str.base64-decode("") //= ""
+  γ: str.base64-decode("YQ==") //= "a"
+  δ: str.base64-decode("YWI=") //= "ab"
+  ε: str.base64-decode("YWJj") //= "abc"
+}
+
+roundtrip-tests: {
+  α: "test string" str.base64-encode str.base64-decode //= "test string"
+  β: "eucalypt 0.2.0" str.base64-encode str.base64-decode //= "eucalypt 0.2.0"
+  γ: "日本語" str.base64-encode str.base64-decode //= "日本語"
+}
+
+RESULT: {
+  e: encode-tests values all-true?
+  d: decode-tests values all-true?
+  r: roundtrip-tests values all-true?
+} values all-true? then(:PASS, :FAIL)

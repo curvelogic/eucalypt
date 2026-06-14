@@ -1,0 +1,14 @@
+# User-defined brancher wrapper narrows types.
+# `my-if(c, t, f): if(c, t, f)` is structurally equivalent to `if`.
+# The BranchShape classifier must recognise it as a pass-through
+# wrapper and apply the same If-shaped narrowing.
+#
+# `x` is annotated as `number | string`.  Without user-brancher
+# recognition, `x + 1` in the true branch would warn; with it, `x`
+# is narrowed to `number` → no warning.
+my-if(c, t, f): if(c, t, f)
+
+` { type: "(number | string) → number" }
+safe-add(x): my-if(x number?, x + 1, 0)
+
+result: safe-add(42)

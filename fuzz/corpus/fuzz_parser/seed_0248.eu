@@ -1,0 +1,2 @@
+# Test that errors carry source locations
+bomb: 1 / 0

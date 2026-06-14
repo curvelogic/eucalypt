@@ -1,0 +1,2 @@
+` { target: :result }
+result: "echo hello world" io.shell io.checked io.map(▶(.stdout))

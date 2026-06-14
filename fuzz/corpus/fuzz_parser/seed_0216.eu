@@ -1,0 +1,2 @@
+# Mistake: using Haskell/Scheme-style 'let...in' expression — not valid in eucalypt
+result: let x: 1 in x + 2

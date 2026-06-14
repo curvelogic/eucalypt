@@ -1,0 +1,6 @@
+# A function typed {name: string, ..r} -> string called with a record
+# that lacks the required `name` field should produce a type warning.
+` { type: "{{name: string, ..r}} -> string" }
+get-name(rec): rec.name
+
+result: get-name({ age: 30 })

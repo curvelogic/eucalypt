@@ -1,0 +1,3 @@
+# Error: dot notation on a list — error should point to user's dot expression
+xs: [1, 2, 3]
+result: xs.first

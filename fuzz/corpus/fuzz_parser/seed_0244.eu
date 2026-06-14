@@ -1,0 +1,2 @@
+# Error: comparing incompatible types with >
+result: 5 > "hello"

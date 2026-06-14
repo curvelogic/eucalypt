@@ -1,0 +1,3 @@
+# Error test: missing field in block destructuring
+f({x y}): x + y
+RESULT: f({x: 1})

@@ -1,0 +1,8 @@
+# LiteralString in the type DSL — "read" | "write" | "rw" is a valid type.
+# Passing one of the allowed literals produces no warning.
+{ types: { Mode: "\"read\" | \"write\" | \"rw\"" } }
+
+` { type: "Mode → boolean" }
+is-read: (_ = "read")
+
+result: is-read("read")

@@ -1,0 +1,10 @@
+"Tests for prelude `head-or`"
+
+head-or-tests: {
+  α: [] head-or(:none) //= :none
+  β: [:x, :y, :z] head-or(null) //= :x
+  ɣ: { colours: [:r, :o, :y, :g, :b, :i, :v] }.{ val: head-or(:x, colours) = head(colours) }.val
+  δ: [null] head //= [] head-or(null)
+}
+
+RESULT: head-or-tests values all-true? then(:PASS, :FAIL)

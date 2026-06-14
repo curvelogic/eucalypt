@@ -1,0 +1,5 @@
+# Error test: using Python's 'lambda' keyword which does not exist in eucalypt
+# Eucalypt uses anaphora or named function definitions instead.
+double: lambda x: x * 2
+result: double(5)
+RESULT: result

@@ -1,0 +1,3 @@
+# Mistake: using odd? (Python/Haskell style) — does not exist in eucalypt
+xs: [1, 2, 3, 4, 5]
+odds: xs filter(odd?)

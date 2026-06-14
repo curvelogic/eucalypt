@@ -1,0 +1,11 @@
+# `result-def: true` uses the binding name as the alias name.
+# Binding named `Count` with function type string → number:
+# result-def: true registers alias `Count = number`.
+` { result-def: true
+    type: "string → number" }
+Count(s): str.length(s)
+
+` { type: "Count → bool" }
+is-long(n): n > 5
+
+result: is-long(Count("hello world"))

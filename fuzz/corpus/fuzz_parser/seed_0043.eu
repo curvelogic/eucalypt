@@ -1,0 +1,14 @@
+"Tests for prelude `group-by`"
+
+class(n): if(n < 5, :small, :big)
+
+tests: {
+  α: [2, 4, 6, 8, 7] group-by(class) //= { small: [2, 4], big: [6, 8, 7] }
+  β: ["red", "yellow", "ruby", "rose", "blue", "beryl"]
+     group-by(sym ∘ first ∘ str.letters)
+     map-values(count)
+     //= { r: 3 y: 1 b: 2}
+  γ: [] group-by(identity) //= {}
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

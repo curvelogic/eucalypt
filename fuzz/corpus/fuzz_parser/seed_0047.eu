@@ -1,0 +1,69 @@
+` { precedence: :call }
+(∅): 42
+
+` { precedence: :call }
+(∏): 3.14159
+
+` { precedence: :sum }
+(x + y): __ADD(x, y)
+
+` { associates: :left
+   precedence: :prod }
+(x * y): __MUL(x, y)
+
+` { associates: :left
+   precedence: :eq }
+(l = r): __EQ(l, r)
+
+` { associates: :left
+   precedence: :bool-prod }
+(l ∧ r): __AND(l, r)
+
+
+basic-nullary: {
+  n: ∅
+  pass: n = 42
+}
+
+nullary-in-expression: {
+  result: ∅ + 8
+  pass: result = 50
+}
+
+multiple-nullary: {
+  result: ∅ + ∅
+  pass: result = 84
+}
+
+nullary-with-multiplication: {
+  result: ∅ * 2
+  pass: result = 84
+}
+
+two-different-nullary: {
+  result: ∅ + ∏
+  pass: result = 45.14159
+}
+
+mixed-arity: {
+  (! x): __NOT(x)
+  result: ! (∅ = 42)
+  pass: result = false
+}
+
+nullary-in-function: {
+  f(x): x + ∅
+  result: f(8)
+  pass: result = 50
+}
+
+RESULT: if(
+  basic-nullary.pass ∧
+  nullary-in-expression.pass ∧
+  multiple-nullary.pass ∧
+  nullary-with-multiplication.pass ∧
+  two-different-nullary.pass ∧
+  mixed-arity.pass ∧
+  nullary-in-function.pass,
+  :PASS,
+  :FAIL)

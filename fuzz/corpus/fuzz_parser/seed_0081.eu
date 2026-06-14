@@ -1,0 +1,66 @@
+"Idiot brackets: content items are collected into a list."
+
+` "Identity brackets: return content as a list"
+⟦ x ⟧: x
+
+` "Angle brackets: extract single item"
+⟨ x ⟩: x head
+
+` "Lookup brackets: look up symbols in a block"
+‹ xs ›: {
+  lookups: xs map(lookup)
+  f(x): lookups map(x _)
+}.f
+
+` "Coalescing brackets: first non-null"
+⌊ xs ⌋: coalesce(xs)
+
+zapp(fs, as): ((fs nil?) ∨ (as nil?)) then([], cons((fs head)(as head), zapp(fs tail, as tail)))
+
+` "Idiom brackets: apply function across lists"
+⌈ [f: lists] ⌉: foldl(zapp, repeat(f), lists)
+
+` { target: :test }
+test: {
+  # Simple items become list elements
+  id-nums: ⟦ 1 2 3 ⟧ //= [1, 2, 3]
+  id-single: ⟦ 42 ⟧ //= [42]
+  id-syms: ⟦ :a :b :c ⟧ //= [:a, :b, :c]
+
+  # Parenthesised expressions are single items (catenation preserved inside)
+  id-parens: (⟦ (1 + 2) (3 * 4) ⟧ head) = 3
+  id-parens2: (⟦ (1 + 2) (3 * 4) ⟧ second) = 12
+
+  # Sub-expressions preserve internal catenation
+  id-pipeline: (⟦ ([1, 2, 3] count) ⟧ head) = 3
+
+  # Function calls are single items (call binds tighter than catenation)
+  id-calls: (⟦ inc(1) dec(3) ⟧ head) = 2
+  id-calls2: (⟦ inc(1) dec(3) ⟧ second) = 2
+
+  # List literals are single items
+  id-lists: (⟦ [1, 2] [3, 4] ⟧ head) = [1, 2]
+
+  # Angle brackets
+  angle: ⟨ :hello ⟩ //= :hello
+
+  # Lookup brackets
+  lookup-test: { a: 1 b: 2 c: 3 d: 4 e: 5 } ‹ :a :b :e › //= [1, 2, 5]
+
+  # Coalescing
+  coal-mid: ⌊ null null 3 null ⌋ //= 3
+  coal-all-null: ⌊ null null null ⌋ //= null
+
+  # Idiom brackets with destructuring parameter
+  g(a, b, c): a + b + c
+  idiom: ⌈ g [0, 1, 2] [10, 20, 30] [100, 200, 300] ⌉ //= [110, 221, 332]
+
+  RESULT: [ id-nums, id-single, id-syms
+          , id-parens, id-parens2, id-pipeline
+          , id-calls, id-calls2, id-lists
+          , angle
+          , lookup-test
+          , coal-mid, coal-all-null
+          , idiom
+          ] all-true? then(:PASS, :FAIL)
+}

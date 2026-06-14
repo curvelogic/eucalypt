@@ -1,0 +1,3 @@
+# Mistake: using def keyword (Python/Ruby style) — not valid in eucalypt
+def square(x): x * x
+result: square(5)

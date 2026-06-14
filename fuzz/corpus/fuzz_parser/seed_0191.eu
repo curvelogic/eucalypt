@@ -1,0 +1,5 @@
+# Error test: unterminated string interpolation (no closing brace)
+# A string interpolation '{name more stuff' with no closing '}' used to
+# cause a parser assertion panic; it should produce a clear error message.
+greeting: "Hello {name more stuff"
+RESULT: greeting

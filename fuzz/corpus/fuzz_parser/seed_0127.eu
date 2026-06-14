@@ -1,0 +1,28 @@
+"143 deep-transform"
+
+# Replace all symbols in a nested structure
+replace-syms(v): if(v symbol?, :replaced, null)
+
+# Double all numbers
+double-nums(v): if(v number?, v * 2, null)
+
+` { target: :test }
+test: {
+  # Replaces symbols at any depth in lists
+  list-syms: ([1, :a, [2, :b]] deep-transform(replace-syms)) //= [1, :replaced, [2, :replaced]]
+
+  # Replaces symbols in block values (not keys)
+  block-syms: ({x: :a, y: 1} deep-transform(replace-syms)) //= {x: :replaced, y: 1}
+
+  # Nested blocks and lists
+  nested: ({a: [1, :x], b: {c: :y}} deep-transform(replace-syms)) //= {a: [1, :replaced], b: {c: :replaced}}
+
+  # Doubles numbers at any depth
+  nums: ([1, [2, 3], {x: 4}] deep-transform(double-nums)) //= [2, [4, 6], {x: 8}]
+
+  # Rule returning null everywhere leaves structure unchanged
+  identity: ({a: 1, b: [2, :c]} deep-transform(-> null)) //= {a: 1, b: [2, :c]}
+
+  # Non-matching values pass through
+  mixed: ([1, "hello", :sym, true] deep-transform(replace-syms)) //= [1, "hello", :replaced, true]
+}

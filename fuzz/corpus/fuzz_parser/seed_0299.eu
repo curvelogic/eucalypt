@@ -1,0 +1,2 @@
+# Trivial self-assignment in function position: f: f(1) always diverges.
+out: { f: f(1) }

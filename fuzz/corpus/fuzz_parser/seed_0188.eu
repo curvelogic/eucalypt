@@ -1,0 +1,4 @@
+# Mistake: using '+' to concatenate lists (Python / JavaScript style)
+a: [1, 2, 3]
+b: [4, 5]
+result: a + b

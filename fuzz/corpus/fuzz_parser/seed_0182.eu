@@ -1,0 +1,2 @@
+# Error: using == instead of = for equality
+a: 1 == 1

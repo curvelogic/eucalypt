@@ -1,0 +1,8 @@
+scans: {
+  α: scanl(+, 0, [1, 1, 1]) //= [0, 1, 2, 3]
+  β: scanr(+, 0, [1, 1, 1]) //= [3, 2, 1, 0]
+  γ: scanl(+, 0, repeat(1)) take(4) //= [0, 1, 2, 3]
+  δ: scanl(+, 0, 1 iterate(inc)) take(5) //= [0, 1, 3, 6, 10]
+}
+
+RESULT: scans values all-true? then(:PASS, :FAIL)

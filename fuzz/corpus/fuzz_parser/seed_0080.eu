@@ -1,0 +1,112 @@
+"Monadic block expressions. A bracket pair defined with an empty block as its parameter gains a monad spec. A bracket block expression desugars to nested bind and return calls. Regular blocks with monad metadata also desugar monadically."
+
+` "Identity monad: bind(ma, f) = f(ma), return(a) = a. Under the identity monad the block expressions are equivalent to let-bindings."
+id-bind(ma, f): f(ma)
+id-return(a): a
+
+⟦{}⟧: { :monad bind: id-bind  return: id-return }
+
+` "Maybe monad implemented as optional lists: Just(a) = [a], Nothing = []. bind([a], f) = f(a), bind([], f) = []. return(a) = [a]."
+maybe-bind(ma, f): if(ma = [], [], f(ma head))
+maybe-return(a): [a]
+
+⌈{}⌉: { :monad bind: maybe-bind  return: maybe-return }
+
+` "Namespace blocks for forms 1-3 and 5."
+id: { bind(ma, f): f(ma)  return(a): a }
+maybe: { bind(ma, f): if(ma = [], [], f(ma head))  return(a): [a] }
+
+` "Bracket pair definition with namespace reference (form 5)."
+⟪{}⟫: { :monad namespace: maybe }
+
+tests: {
+
+  ` "Identity monad — single declaration"
+  id-single: {
+    ` "return wraps a literal"
+    a: ⟦ r: 42 ⟧.r //= 42
+    ` "return wraps an expression"
+    b: ⟦ r: 1 + 2 ⟧.r //= 3
+  }
+
+  ` "Identity monad — two declarations"
+  id-two: {
+    ` "bind a value then return computed expression"
+    a: ⟦ x: 10  r: x + 5 ⟧.r //= 15
+    ` "bind a string and reference it"
+    b: ⟦ s: "hello"  r: s ⟧.r //= "hello"
+  }
+
+  ` "Identity monad — three declarations"
+  id-three: {
+    ` "bind two values and combine them"
+    a: ⟦ a: 1  b: 2  r: a + b ⟧.r //= 3
+    ` "bind two values and use only first"
+    b: ⟦ a: 7  b: 3  r: a ⟧.r //= 7
+  }
+
+  ` "Maybe monad — value present"
+  maybe-just: {
+    ` "bind through two Just values and return computed expression"
+    a: ⌈ x: [1]  y: [2] ⌉.(x + y) //= [3]
+  }
+
+  ` "Maybe monad — short-circuits on Nothing"
+  maybe-nothing: {
+    ` "bind with first argument Nothing"
+    a: ⌈ x: []  y: [2] ⌉.(x + y) //= []
+    ` "bind with second argument Nothing"
+    b: ⌈ x: [1]  y: [] ⌉.(x + y) //= []
+  }
+
+  ` "Form 1: bare symbol :name as block metadata — namespace reference"
+  form1-bare-symbol: {
+    ` "identity monad via bare symbol"
+    a: { :id x: 10  r: x + 5 }.r //= 15
+    ` "maybe monad — Just"
+    b: { :maybe x: [1]  y: [2] }.(x + y) //= [3]
+    ` "maybe monad — Nothing short-circuits"
+    c: { :maybe x: []  y: [2] }.(x + y) //= []
+  }
+
+  ` "Form 2: structured block metadata with monad key"
+  form2-monad-key: {
+    ` "identity monad via monad key"
+    a: { { monad: id } x: 10  r: x + 5 }.r //= 15
+    ` "maybe monad — Just"
+    b: { { monad: maybe } x: [1]  y: [2] }.(x + y) //= [3]
+    ` "maybe monad — Nothing short-circuits"
+    c: { { monad: maybe } x: []  y: [2] }.(x + y) //= []
+  }
+
+  ` "Form 3: :monad-tagged block metadata with namespace key"
+  form3-monad-namespace: {
+    ` "identity monad via namespace key"
+    a: { { :monad namespace: id } x: 10  r: x + 5 }.r //= 15
+    ` "maybe monad — Just"
+    b: { { :monad namespace: maybe } x: [1]  y: [2] }.(x + y) //= [3]
+    ` "maybe monad — Nothing short-circuits"
+    c: { { :monad namespace: maybe } x: []  y: [2] }.(x + y) //= []
+  }
+
+  ` "Form 4: inline bind/return in :monad-tagged block metadata"
+  form4-inline-bind-return: {
+    ` "identity monad via inline bind/return"
+    a: { { :monad bind: id-bind  return: id-return } x: 10  r: x + 5 }.r //= 15
+    ` "maybe monad — Just"
+    b: { { :monad bind: maybe-bind  return: maybe-return } x: [1]  y: [2] }.(x + y) //= [3]
+    ` "maybe monad — Nothing short-circuits"
+    c: { { :monad bind: maybe-bind  return: maybe-return } x: []  y: [2] }.(x + y) //= []
+  }
+
+  ` "Form 5: bracket pair definition with namespace reference"
+  form5-bracket-namespace: {
+    ` "maybe monad via namespace bracket def — Just"
+    a: ⟪ x: [1]  y: [2] ⟫.(x + y) //= [3]
+    ` "maybe monad via namespace bracket def — Nothing short-circuits"
+    b: ⟪ x: []  y: [2] ⟫.(x + y) //= []
+  }
+
+}
+
+RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)

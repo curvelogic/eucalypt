@@ -1,0 +1,6 @@
+#!/usr/bin/env eu
+
+append(x, l): __IF(__EQ(l, []), [x], __CONS(__HEAD(l), append(x, __TAIL(l))))
+list: [0,1,2,3,4] append(5)
+
+RESULT: __IF(__EQ(list, [0,1,2,3,4,5]), :PASS, :FAIL)

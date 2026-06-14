@@ -1,0 +1,89 @@
+"134 structural match? predicate"
+
+` { target: :test }
+test: {
+
+  # Block: key existence with any?
+  t-any: {host: "x", port: 8080} match?({host: any?, port: any?}) //=> true
+
+  # Block: exact literal match
+  t-lit: {port: 8080} match?({port: 8080}) //=> true
+  t-lit-miss: {port: 80} match?({port: 8080}) //=> false
+
+  # Block: boolean literal match
+  t-bool: {active: true} match?({active: true}) //=> true
+  t-bool-miss: {active: false} match?({active: true}) //=> false
+
+  # Block: value predicates
+  t-pred: {port: 8080} match?({port: (> 1000)}) //=> true
+  t-pred-miss: {port: 80} match?({port: (> 1000)}) //=> false
+
+  # Block: type predicates
+  t-type: {host: "x"} match?({host: string?}) //=> true
+  t-type-miss: {host: 42} match?({host: string?}) //=> false
+
+  # Block: extra keys ignored (open matching)
+  t-open: {a: 1, b: 2, c: 3} match?({a: any?}) //=> true
+
+  # Block: missing key fails
+  t-miss-key: {a: 1} match?({b: any?}) //=> false
+
+  # Block: empty pattern matches any block
+  t-empty-pat: {a: 1} match?({}) //=> true
+
+  # Block: nested sub-pattern
+  t-nested: {server: {host: "x", port: 8080}} match?({server: {host: any?}}) //=> true
+  t-nested-miss: {server: {port: 8080}} match?({server: {host: any?}}) //=> false
+
+  # Block: deep nesting with mixed patterns
+  t-deep: {x: 1, y: {z: "hi", p: [3, {u: 42}]}}
+    match?({y: {p: [(= 3), {u: number?}]}}) //=> true
+
+  # List: exact length with predicates
+  t-list: [1, "hello", true] match?([number?, string?, (= true)]) //=> true
+
+  # List: literal match also works
+  t-list-lit: [1, "hello", true] match?([number?, string?, true]) //=> true
+
+  # List: length mismatch
+  t-list-short: [1, 2] match?([any?, any?, any?]) //=> false
+  t-list-long: [1, 2, 3, 4] match?([any?, any?, any?]) //=> false
+
+  # List: empty pattern matches empty list
+  t-list-empty: [] match?([]) //=> true
+  t-list-empty-miss: [1] match?([]) //=> false
+
+  # Non-block target against block pattern
+  t-non-block: 42 match?({x: any?}) //=> false
+  t-null-block: null match?({x: any?}) //=> false
+  t-list-block: [1, 2] match?({x: any?}) //=> false
+
+  # Non-list target against list pattern
+  t-non-list: 42 match?([any?]) //=> false
+  t-null-list: null match?([any?]) //=> false
+
+  # String predicate
+  t-str-pred: {name: "Alice"} match?({name: str.starts-with?("A")}) //=> true
+
+  # Composition with filter
+  items: [{active: true, name: "a"}, {active: false, name: "b"}, {active: true, name: "c"}]
+  t-filter: (items filter(match?({active: true})) map(_.name)) //=> ["a", "c"]
+
+  # Composition with when and ~
+  data: {server: {host: "localhost"}}
+  t-when: (data when(match?({server: {host: any?}}), (~ :server ~ :host))) //=> "localhost"
+  t-when-miss: {other: 1} when(match?({server: any?}), (~ :server)) //=> {other: 1}
+
+  # Composition with deep-fold
+  deep-data: {
+    a: {host: "10.0.0.1", port: 8080}
+    b: {name: "cache"}
+    c: {host: "10.0.0.2", port: 5432}
+  }
+  t-deep-fold: {
+    emit(s, v): if(v match?({host: any?, port: any?}), [v ~ :host], [])
+    next(s, k): null
+  }.(deep-fold(emit, next, null, deep-data)) //=> ["10.0.0.1", "10.0.0.2"]
+
+  RESULT: :PASS
+}

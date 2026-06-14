@@ -1,0 +1,3 @@
+# Mistake: using dot notation to access a field on a string (OOP-style method call)
+s: "hello"
+result: s.length

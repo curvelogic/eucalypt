@@ -1,0 +1,6 @@
+#!/usr/bin/env eu
+
+zero: if(false, 3, 0)
+three: if(true, 3, 0)
+
+RESULT: if(zero = 0 && three = 3, :PASS, :FAIL)

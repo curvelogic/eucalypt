@@ -1,0 +1,9 @@
+# Union smart-constructor absorbs LiteralString into String.
+# "read" | string → string  (no LiteralString survives alongside its base).
+# A string-typed function accepts the result without warning.
+{ types: { Src: "\"read\" | string" } }
+
+` { type: "Src → number" }
+length: str.length
+
+result: length("anything")

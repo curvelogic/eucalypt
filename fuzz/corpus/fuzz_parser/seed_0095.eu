@@ -1,0 +1,11 @@
+"parse-as: parse an XML string into hiccup-style list [tag, attrs, children...]."
+
+# XML is parsed into hiccup-style lists: [tag-name (symbol), attrs-block, child...]
+data: "<root><item>hello</item></root>" parse-as(:xml)
+
+tests: {
+  # Root element name is the symbol :root (first element of the hiccup list)
+  root-tag: (data head) //= :root
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

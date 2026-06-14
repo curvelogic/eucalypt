@@ -1,0 +1,3 @@
+# Error through prelude foldl() should show user's call site as primary location,
+# not the prelude's foldl internals.
+result: [1, 2, 3] foldl(+, "zero")

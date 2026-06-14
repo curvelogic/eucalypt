@@ -1,0 +1,15 @@
+# Both `type-def` and `result-def` on one declaration register two distinct aliases.
+# `type-def: "Converter"` registers alias for the function type string → number.
+# `result-def: "Length"` registers alias for the return type number.
+` { type-def: "Converter"
+    result-def: "Length"
+    type: "string → number" }
+char-count(s): str.length(s)
+
+` { type: "Converter → string" }
+show-converter(f): "a Converter"
+
+` { type: "Length → bool" }
+is-long(n): n > 5
+
+result: is-long(char-count("hello"))

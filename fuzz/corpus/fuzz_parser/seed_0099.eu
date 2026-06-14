@@ -1,0 +1,18 @@
+"parse-as: data-only safety test — YAML !eu tags must produce plain strings, not evaluated expressions."
+
+# A YAML string containing a !eu tag. In data-only mode (parse-as), the !eu
+# content must be returned as a plain string, not executed as eucalypt code.
+# If the tag were evaluated, it would produce the number 42. We verify it
+# produces a string "6 * 7" instead.
+yaml-with-eu-tag: "result: !eu '6 * 7'"
+
+data: yaml-with-eu-tag parse-as(:yaml)
+
+result-val: data.result
+
+tests: {
+  # The string content must be preserved as-is (not evaluated to 42)
+  content: result-val //= "6 * 7"
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

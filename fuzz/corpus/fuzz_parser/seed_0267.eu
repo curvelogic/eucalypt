@@ -1,0 +1,6 @@
+#!/usr/bin/env eu
+
+# Type mismatch error should include the actual value in the message.
+# When "hello" is passed where a number is expected, the error
+# should say 'found string "hello"'.
+x: "hello" + 1

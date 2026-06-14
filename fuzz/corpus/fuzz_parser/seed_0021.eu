@@ -1,0 +1,4 @@
+x: repeat(:x) take(6)
+y: [:x, :x, :x, :x, :x, :x]
+
+RESULT: if(x = y, :PASS, :FAIL)

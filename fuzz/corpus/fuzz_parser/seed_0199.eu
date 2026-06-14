@@ -1,0 +1,5 @@
+# Error test: using 'fold' (from Python/Haskell/JS) which does not exist in eucalypt
+# Eucalypt uses 'foldl' and 'foldr' instead
+nums: [1, 2, 3, 4]
+result: nums fold((+), 0)
+RESULT: result

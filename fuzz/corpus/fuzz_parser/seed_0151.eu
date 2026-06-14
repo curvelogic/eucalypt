@@ -1,0 +1,6 @@
+#!/usr/bin/env eu
+
+z(s) : s
+
+# xs free:
+f: z(xs)

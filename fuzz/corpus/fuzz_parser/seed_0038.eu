@@ -1,0 +1,13 @@
+"Test that commas are accepted in places where they are optional"
+
+list-commas: {
+  α: [:x, :y, :z] = [:x, :y, :z, ]
+}
+
+block-commas: {
+  α: { x: 1 y: 2 } = { x: 1, y: 2 }
+  β: { x: 1, y: 2 } = { x: 1, y: 2, }
+  γ: { x: 1, y: 2, } = { x: 1 y: 2, }
+}
+
+RESULT: [list-commas block-commas] mapcat(values) all-true? then(:PASS, :FAIL)

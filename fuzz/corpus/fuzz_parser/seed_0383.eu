@@ -1,0 +1,4 @@
+# B5: Using a partial result where a total type is expected produces a warning.
+# `nth` returns `a?` but the annotation below expects `number`.
+` { type: "number" }
+result: [1, 2, 3] nth(0)

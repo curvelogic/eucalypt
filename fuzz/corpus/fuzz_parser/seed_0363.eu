@@ -1,0 +1,6 @@
+# Higher-kinded type: [number] annotation using sugar (parsed as App(Con("List"), number))
+# This tests that the list sugar still works correctly after the HKT refactor.
+` { type: "[number] -> number" }
+sum-sq(xs): xs map((_ * _)) sum
+
+result: sum-sq([1, 2, 3])

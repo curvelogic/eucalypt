@@ -1,0 +1,6 @@
+# Error test: trying to index a list using function-call syntax (common Python/JS idiom)
+# items[2] is parsed as calling 'items' as a function with argument 2.
+# This gives "tried to call a list as a function" - the hint should suggest 'nth'.
+items: [1, 2, 3, 4, 5]
+result: items(2)
+RESULT: result

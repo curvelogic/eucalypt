@@ -1,0 +1,2 @@
+# Type mismatch: pass block where number expected
+x: {a: 1} + 1

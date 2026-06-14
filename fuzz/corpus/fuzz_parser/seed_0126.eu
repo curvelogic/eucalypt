@@ -1,0 +1,14 @@
+# Regression test for eu-q8xb: importing state.eu and lens.eu
+# in the same import list exercises the diamond import guard and
+# the metadata pruning fix (both blocks merge into unit metadata).
+
+{ import: ["state.eu", "lens.eu"] }
+
+` { target: :test }
+test: {
+  # Verify lens functions are accessible through state.eu's import
+  lens-ok: (view(at(:x), {x: 42})) //= 42
+
+  # Verify state functions work
+  state-ok: (state.exec(state.put(:x, 1), {})).x //= 1
+}

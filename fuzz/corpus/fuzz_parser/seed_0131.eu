@@ -1,0 +1,13 @@
+# Type annotation smoke test
+#
+# Verifies that type annotations in metadata are inert — they do not
+# affect evaluation.
+
+` { type: "number → number" }
+double(x): x * 2
+
+` { type: "(a → b) → [a] → [b]" }
+my-map: map
+
+a: double(21) //= 42
+b: [1, 2, 3] my-map(double) //= [2, 4, 6]

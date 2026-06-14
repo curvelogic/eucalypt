@@ -1,0 +1,3 @@
+# Mistake: using camelCase Haskell-style takeWhile instead of eucalypt's take-while
+xs: [1, 2, 3, 4, 5]
+result: takeWhile((_ < 4), xs)

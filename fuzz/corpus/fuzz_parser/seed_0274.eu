@@ -1,0 +1,2 @@
+# Mistake: using boolean in comparison — booleans are not native values
+result: true > 5

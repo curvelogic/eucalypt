@@ -1,0 +1,3 @@
+# x in { :io x: io.shell("echo") } has element type {..} (block).
+# Using x without a type constraint — no warning expected.
+{ :io x: io.shell("echo hi") }.(x)

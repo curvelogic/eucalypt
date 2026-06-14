@@ -1,0 +1,3 @@
+pass: __NUMPARSE("1234") + __NUMPARSE("3.4") //= 1237.4
+
+RESULT: if(pass, :PASS, :FAIL)

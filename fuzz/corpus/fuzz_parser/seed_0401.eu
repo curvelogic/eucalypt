@@ -1,0 +1,9 @@
+# `type-def: true` in structured metadata registers alias using binding name.
+` { doc: "Canonical person record."
+    type-def: true }
+Person: { name: "Alice", age: 30 }
+
+` { type: "Person → string" }
+get-name(p): p.name
+
+result: get-name(Person)

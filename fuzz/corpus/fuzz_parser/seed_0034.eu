@@ -1,0 +1,20 @@
+a: {
+  b: {
+    c: {
+      f(n): { d: { value: n } }
+    }
+  }
+}
+
+x: {
+  y(n, k): {
+    value: n
+  }
+}
+
+tests: {
+  α: a.b.c.f(8).d.value //= 8
+  β: x.y(9)(:_).value //= 9
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)
