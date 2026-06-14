@@ -714,6 +714,12 @@ fn extract_monad_meta(decl: &rowan_ast::Declaration) -> Option<Option<String>> {
                                             return Some(Some(v.to_string()));
                                         }
                                     }
+                                    // monad: s"{value: a}" (type-data s-string)
+                                    if let Some(rowan_ast::LiteralValue::SStr(s)) = lit.value() {
+                                        if let Some(v) = s.value() {
+                                            return Some(Some(v.to_string()));
+                                        }
+                                    }
                                 }
                                 // monad: "{{value: a}}" (string pattern with escapes)
                                 if let rowan_ast::Element::StringPattern(pat) = &elems[0] {

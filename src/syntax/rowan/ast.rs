@@ -305,10 +305,11 @@ impl LiteralValue {
     }
 
     pub fn string_value(&self) -> Option<&str> {
-        if let LiteralValue::Str(s) = self {
-            s.value()
-        } else {
-            None
+        match self {
+            LiteralValue::Str(s) => s.value(),
+            // s"..." type-data literals are accepted as type annotation strings.
+            LiteralValue::SStr(s) => s.value(),
+            _ => None,
         }
     }
 

@@ -407,6 +407,15 @@ fn extract_meta_string(decl: &Declaration, key: &str) -> Option<String> {
                                                 {
                                                     return s.value().map(|v| v.to_string());
                                                 }
+                                                // type: s"..." (type-data s-string)
+                                                if let Some(
+                                                    crate::syntax::rowan::ast::LiteralValue::SStr(
+                                                        s,
+                                                    ),
+                                                ) = lit.value()
+                                                {
+                                                    return s.value().map(|v| v.to_string());
+                                                }
                                             }
                                             crate::syntax::rowan::ast::Element::StringPattern(
                                                 sp,
@@ -456,6 +465,13 @@ fn extract_monad_metadata(decl: &Declaration) -> (bool, Option<String>) {
                                         if let crate::syntax::rowan::ast::Element::Lit(lit) = &el {
                                             if let Some(
                                                 crate::syntax::rowan::ast::LiteralValue::Str(s),
+                                            ) = lit.value()
+                                            {
+                                                return (true, s.value().map(|v| v.to_string()));
+                                            }
+                                            // monad: s"type" (type-data s-string)
+                                            if let Some(
+                                                crate::syntax::rowan::ast::LiteralValue::SStr(s),
                                             ) = lit.value()
                                             {
                                                 return (true, s.value().map(|v| v.to_string()));
@@ -776,6 +792,27 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert!(results[0].is_monad, "should be marked as monad");
         assert_eq!(results[0].monad_type.as_deref(), Some("[a]"));
+    }
+
+    #[test]
+    fn test_monad_typed_s_string_metadata() {
+        let source = "` { monad: s\"[a]\" }\nfor: 1\n";
+        let parse = parse_unit(source);
+        let unit = parse.tree();
+        let mut table = SymbolTable::new();
+        table.add_from_unit(&unit, source, &test_uri(), SymbolSource::Local);
+
+        let results = table.lookup("for");
+        assert_eq!(results.len(), 1);
+        assert!(
+            results[0].is_monad,
+            "s-string monad should be marked as monad"
+        );
+        assert_eq!(
+            results[0].monad_type.as_deref(),
+            Some("[a]"),
+            "s-string monad type should be extracted"
+        );
     }
 
     #[test]

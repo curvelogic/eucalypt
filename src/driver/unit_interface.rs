@@ -274,6 +274,8 @@ fn extract_type_str_from_block(block_expr: &RcExpr) -> Option<String> {
 fn extract_str_literal(expr: &RcExpr) -> Option<String> {
     match &*expr.inner {
         Expr::Literal(_, Primitive::Str(s)) => Some(s.clone()),
+        // s"..." type-data literals are accepted as type annotation strings.
+        Expr::Literal(_, Primitive::TypeData(s)) => Some(s.clone()),
         _ => None,
     }
 }
