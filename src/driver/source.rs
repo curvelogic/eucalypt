@@ -716,6 +716,18 @@ impl SourceLoader {
     pub fn extract_visibility(&mut self) {
         let expr = self.core.expr.clone();
         self.unit_interface.extract_visibility_from_expr(&expr);
+    }
+
+    /// Extract demand (cardinality/strictness) annotations for exported bindings
+    /// into `unit_interface.demands`.
+    ///
+    /// Must be called AFTER the prune pass (`eliminate()`) — the prune pass
+    /// populates `CoreBinding::demand` with `Cardinality::AtMostOnce` for
+    /// single-use bindings.  Calling this before prune would always yield
+    /// `Demand::default()` (all `Unknown`) because the cardinality information
+    /// has not yet been written.
+    pub fn extract_demands(&mut self) {
+        let expr = self.core.expr.clone();
         self.unit_interface.extract_demands_from_expr(&expr);
     }
 

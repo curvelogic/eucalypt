@@ -493,6 +493,10 @@ fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eucaly
     // Eliminate dead bindings.
     loader.eliminate()?;
 
+    // Extract demand annotations AFTER eliminate so the prune pass has had a
+    // chance to populate `CoreBinding::demand` with cardinality information.
+    loader.extract_demands();
+
     // Run the deprecation reference checker before cook strips metadata.
     let deprecation_warnings =
         check_deprecated_references(&loader.core().expr, &loader.core().deprecations);

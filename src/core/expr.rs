@@ -2223,11 +2223,13 @@ pub mod tests {
                 let new_bindings = scope
                     .pattern
                     .iter()
-                    .map(|b| CoreBinding::with_demand(
-                        b.name.clone(),
-                        rename_lam_params(&b.expr, old_names, new_names, depth + 1),
-                        b.demand,
-                    ))
+                    .map(|b| {
+                        CoreBinding::with_demand(
+                            b.name.clone(),
+                            rename_lam_params(&b.expr, old_names, new_names, depth + 1),
+                            b.demand,
+                        )
+                    })
                     .collect();
                 let new_body = rename_lam_params(&scope.body, old_names, new_names, depth + 1);
                 RcExpr::from(Expr::Let(

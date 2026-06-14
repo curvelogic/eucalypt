@@ -1011,4 +1011,70 @@ pub mod tests {
         // ns escapes bare in body block, so all members preserved
         assert_eq!(strip_demands(&pruned), strip_demands(&expr));
     }
+
+    /// A single-use binding receives `Cardinality::AtMostOnce` after pruning.
+    ///
+    /// The prune pass counts references; a binding used exactly once gets
+    /// `Demand::at_most_once()`, which later causes the STG compiler to emit
+    /// a `Value` instead of a `Thunk` (W9 §3.4).
+    #[test]
+    pub fn test_single_use_binding_gets_at_most_once_cardinality() {
+        use crate::core::demand::{Cardinality, Demand};
+
+        let x = free("x");
+        let y = free("y");
+
+        // `x` is used exactly once (in the body); `y` is unused.
+        let expr = let_(vec![(x.clone(), num(42)), (y.clone(), num(0))], var(x));
+
+        let pruned = prune(&expr);
+
+        match &*pruned.inner {
+            Expr::Let(_, scope, _) => {
+                let x_binding = &scope.pattern[0];
+                assert_eq!(
+                    x_binding.demand,
+                    Demand::at_most_once(),
+                    "single-use binding should have AtMostOnce cardinality after pruning"
+                );
+
+                // The unused binding keeps the default demand.
+                let y_binding = &scope.pattern[1];
+                assert_eq!(
+                    y_binding.demand.cardinality,
+                    Cardinality::Unknown,
+                    "unused binding should keep Unknown cardinality"
+                );
+            }
+            other => panic!("expected outer Let, got: {other:?}"),
+        }
+    }
+
+    /// A binding used more than once receives `Cardinality::Multi` after pruning.
+    #[test]
+    pub fn test_multi_use_binding_gets_multi_cardinality() {
+        use crate::core::demand::Cardinality;
+
+        let x = free("x");
+
+        // `x` appears in both argument positions — used twice.
+        let expr = let_(
+            vec![(x.clone(), num(5))],
+            app(bif("ADD"), vec![var(x.clone()), var(x)]),
+        );
+
+        let pruned = prune(&expr);
+
+        match &*pruned.inner {
+            Expr::Let(_, scope, _) => {
+                let x_binding = &scope.pattern[0];
+                assert_eq!(
+                    x_binding.demand.cardinality,
+                    Cardinality::Multi,
+                    "multi-use binding should have Multi cardinality after pruning"
+                );
+            }
+            other => panic!("expected outer Let, got: {other:?}"),
+        }
+    }
 }
