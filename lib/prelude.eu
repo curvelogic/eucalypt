@@ -1,4 +1,4 @@
-"eucalypt standard prelude"
+{ doc: "The eucalypt **prelude** is a standard library of functions, operators, and constants that is automatically loaded before your code runs. You can suppress the prelude with `-Q` if needed, though this leaves a very bare environment (even `true`, `false`, and `if` are defined in the prelude)." }
 
 ##
 ## Prelude versioning and run metadata
