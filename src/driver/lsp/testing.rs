@@ -23,8 +23,8 @@ use super::highlight;
 use super::hover;
 use super::inlay_hints;
 use super::navigation;
-use super::symbol_table::{self, SymbolSource, SymbolTable};
 use super::query::{FileId, QueryStore};
+use super::symbol_table::{self, SymbolSource, SymbolTable};
 use super::{apply_content_change, CachedPipeline, PipelineError, PipelineResult, TypeEnv};
 use crate::syntax::rowan::parse_unit;
 
@@ -505,10 +505,8 @@ impl LspTestSession {
         }
 
         // Update the query store: set file text (bumps revision) and store the parse result.
-        self.queries.set_file_text(
-            file_id.clone(),
-            std::sync::Arc::new(self.content.clone()),
-        );
+        self.queries
+            .set_file_text(file_id.clone(), std::sync::Arc::new(self.content.clone()));
         self.queries
             .store_parse(file_id, new_green, parse.errors().clone());
 

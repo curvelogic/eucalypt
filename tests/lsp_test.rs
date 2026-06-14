@@ -1612,7 +1612,10 @@ fn query_store_revision_on_open() {
     assert_eq!(s.query_revision(), 0);
     s.open("x: 1");
     assert_eq!(s.query_revision(), 1);
-    assert!(s.has_parse_cache(), "parse result should be cached after open");
+    assert!(
+        s.has_parse_cache(),
+        "parse result should be cached after open"
+    );
 }
 
 /// Editing a document with identical content does NOT bump the revision.
