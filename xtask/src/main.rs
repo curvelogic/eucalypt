@@ -17,11 +17,11 @@
 //! 4. Build `name_to_slot` from the peeled binding order.
 //! 5. Compile each binding body independently with `prelude_globals` set so that
 //!    `Var::Free("name")` → `Ref::G(INTRINSIC_COUNT + slot)`.
-//! 6. Extract the single top-level `LambdaForm` from each compiled binding.
+//! 6. Wrap each compiled `Rc<StgSyn>` as a `LambdaForm::Thunk`.
 //! 7. Flatten all lambda form bodies into a shared `ArenaStgSyn` node pool.
 //! 8. Serialise the `PreludeBlob` with postcard and write `lib/prelude.blob`.
 
-use std::{collections::HashMap, path::PathBuf, rc::Rc, time::Instant};
+use std::{collections::HashMap, path::PathBuf, time::Instant};
 
 use anyhow::{bail, Context, Result};
 use eucalypt::{
@@ -34,7 +34,7 @@ use eucalypt::{
         arena::{ArenaLambdaForm, ArenaStgSyn, StgArena},
         blob::PreludeBlob,
         make_standard_runtime,
-        syntax::{LambdaForm, StgSyn},
+        syntax::LambdaForm,
     },
     syntax::input::{Input, Locator},
 };
@@ -186,25 +186,23 @@ fn cmd_prelude_compile() -> Result<()> {
     for (name, body) in &binding_bodies {
         let stg = eucalypt::eval::stg::compile(&stg_settings, body.clone(), runtime.as_ref())
             .with_context(|| format!("STG compile binding '{name}'"))?;
-        // Each compiled body produces a program with one top-level LambdaForm.
-        let binding_forms = collect_lambda_forms(&stg);
-        anyhow::ensure!(
-            binding_forms.len() == 1,
-            "expected exactly 1 LambdaForm for binding '{name}', got {}",
-            binding_forms.len()
-        );
-        forms.push(binding_forms.into_iter().next().unwrap());
+        // Wrap the compiled STG body as a 0-arity updatable thunk.
+        //
+        // Simple bindings (e.g. `x = 1 + 2`) compile to a `Let { bindings:
+        // [thunk], body: Ref::L(0,0) }` — one inner form; complex bindings
+        // (e.g. `__build = { version: ..., ... }`) compile to a `LetRec {
+        // bindings: [f0..fN], body: Ref::L(0,k) }` — many inner forms.
+        //
+        // Rather than extracting a single `LambdaForm` from the compiled tree
+        // (which fails for complex cases), we wrap the *entire* compiled
+        // `Rc<StgSyn>` as the body of a fresh `Thunk`.  When the VM forces
+        // this thunk the inner Let/LetRec allocates its local bindings normally
+        // and the slot is updated to the resulting WHNF — identical behaviour
+        // to the single-form case, with at most one extra indirection step.
+        forms.push(LambdaForm::thunk(stg));
     }
 
     println!("  STG lambda forms compiled: {}", forms.len());
-
-    // Verify form count matches binding count (should always hold now).
-    anyhow::ensure!(
-        forms.len() == binding_bodies.len(),
-        "form/binding count mismatch: {} vs {}",
-        forms.len(),
-        binding_bodies.len()
-    );
 
     // ── 7. Extract binding names for the PreludeBlob (slot order) ────────────
     let names: Vec<String> = binding_bodies.into_iter().map(|(n, _)| n).collect();
@@ -215,13 +213,21 @@ fn cmd_prelude_compile() -> Result<()> {
         .collect();
 
     // ── 8. Flatten lambda forms into a shared arena ───────────────────────────
-    let (nodes, arena_forms) = flatten_forms_to_arena(&forms);
+    let (nodes, forms_pool, binding_entries) = flatten_forms_to_arena(&forms);
+
+    println!(
+        "  arena: {} nodes, {} forms ({} bindings)",
+        nodes.len(),
+        forms_pool.len(),
+        binding_entries.len()
+    );
 
     // ── 9. Serialise and write ────────────────────────────────────────────────
     let blob = PreludeBlob {
         source_hash,
         nodes,
-        bindings: arena_forms,
+        forms_pool,
+        binding_entries,
         name_to_slot,
         operators,
         type_summary: summary,
@@ -270,6 +276,11 @@ fn peel_all_let_bindings(expr: &RcExpr, out: &mut Vec<(String, RcExpr)>) {
     let mut current = expr.clone();
     loop {
         match &*current.inner {
+            // `Expr::Let` is the only let form in the core IR — there is no
+            // separate `Expr::LetRec` variant.  All core lets are semantically
+            // recursive (any binding may reference any other in the same scope).
+            // The wildcard on `LetType` correctly handles all variants:
+            // DefaultBlockLet, OtherLet, DestructureBlockLet, DestructureListLet.
             Expr::Let(_, scope, _) => {
                 let (open_bindings, open_body) = open_let_scope_full(scope);
                 out.extend(open_bindings);
@@ -283,35 +294,28 @@ fn peel_all_let_bindings(expr: &RcExpr, out: &mut Vec<(String, RcExpr)>) {
     }
 }
 
-/// Walk the compiled `Rc<StgSyn>` tree, collecting all `LambdaForm`s from
-/// top-level `Let`/`LetRec` nodes in the order the compiler generated them.
-fn collect_lambda_forms(stg: &Rc<StgSyn>) -> Vec<LambdaForm> {
-    let mut forms: Vec<LambdaForm> = Vec::new();
-    collect_forms_inner(stg, &mut forms);
-    forms
-}
-
-fn collect_forms_inner(stg: &Rc<StgSyn>, out: &mut Vec<LambdaForm>) {
-    match &**stg {
-        StgSyn::Let { bindings, body } | StgSyn::LetRec { bindings, body } => {
-            out.extend(bindings.iter().cloned());
-            collect_forms_inner(body, out);
-        }
-        StgSyn::Ann { body, .. } => collect_forms_inner(body, out),
-        _ => {}
-    }
-}
-
-/// Flatten a list of `LambdaForm`s into a shared `StgArena`.
+/// Flatten a list of entry-level `LambdaForm`s into a shared `StgArena`.
 ///
-/// Returns `(nodes, forms)` suitable for `PreludeBlob.nodes` and
-/// `PreludeBlob.bindings`.  All form bodies index into `nodes`.
-fn flatten_forms_to_arena(forms: &[LambdaForm]) -> (Vec<ArenaStgSyn>, Vec<ArenaLambdaForm>) {
+/// Returns `(nodes, forms_pool, binding_entries)` where:
+/// - `nodes` is the complete arena node pool (`PreludeBlob.nodes`)
+/// - `forms_pool` is ALL lambda forms — entry thunks AND any inner forms
+///   allocated by `Let`/`LetRec` nodes within each thunk body
+///   (`PreludeBlob.forms_pool`)
+/// - `binding_entries` is one `FormIdx` per entry form pointing into
+///   `forms_pool` (`PreludeBlob.binding_entries`)
+///
+/// Storing `forms_pool` in full ensures that `StgArena { nodes, forms:
+/// forms_pool }` can reconstruct any form without missing inner references
+/// from complex bindings (e.g. `__build`'s 14-field block).
+fn flatten_forms_to_arena(
+    forms: &[LambdaForm],
+) -> (Vec<ArenaStgSyn>, Vec<ArenaLambdaForm>, Vec<u32>) {
     let mut arena = StgArena::default();
-    let mut arena_forms = Vec::with_capacity(forms.len());
+    let mut binding_entries: Vec<u32> = Vec::with_capacity(forms.len());
     for lf in forms {
         let form_idx = arena.flatten_form(lf);
-        arena_forms.push(arena.forms[form_idx as usize].clone());
+        binding_entries.push(form_idx);
     }
-    (arena.nodes, arena_forms)
+    // arena.forms holds ALL forms (top-level wrappers + inner LetRec forms).
+    (arena.nodes, arena.forms, binding_entries)
 }
