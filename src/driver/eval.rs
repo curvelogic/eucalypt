@@ -26,7 +26,9 @@ use crate::{
 /// - `--source-prelude` was requested
 /// - `EU_SOURCE_PRELUDE=1` is set
 #[cfg(not(target_arch = "wasm32"))]
-fn maybe_load_prelude_blob(opt: &EucalyptOptions) -> Option<crate::eval::stg::blob::PreludeBlob> {
+pub fn maybe_load_prelude_blob(
+    opt: &EucalyptOptions,
+) -> Option<crate::eval::stg::blob::PreludeBlob> {
     // Source-prelude override takes priority.
     if opt.source_prelude || std::env::var("EU_SOURCE_PRELUDE").as_deref() == Ok("1") {
         return None;

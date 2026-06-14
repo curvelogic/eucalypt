@@ -95,6 +95,14 @@ pub struct SourceLoader {
     /// containing `ERROR_STOWAWAYS` nodes) is always stored.  Callers drain
     /// this list via `drain_parse_errors` and decide how to surface them.
     pending_parse_errors: Vec<EucalyptError>,
+    /// Prelude operator metadata for seeding the cook `Distributor`.
+    ///
+    /// Set from the pre-compiled prelude blob when the blob path is active.
+    /// When `Some`, `cook()` seeds the `Distributor` with these operators so
+    /// that infix uses of prelude operators in user code resolve correctly
+    /// even though the prelude source is not present in the merged expression.
+    #[cfg(not(target_arch = "wasm32"))]
+    prelude_operators: Option<HashMap<String, crate::driver::unit_interface::OperatorInfo>>,
 }
 
 impl Default for SourceLoader {
@@ -115,6 +123,8 @@ impl Default for SourceLoader {
             prelude_override: None,
             unit_interface: UnitInterface::default(),
             pending_parse_errors: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            prelude_operators: None,
         }
     }
 }
@@ -137,6 +147,8 @@ impl SourceLoader {
             seed: None,
             prelude_override: None,
             unit_interface: UnitInterface::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            prelude_operators: None,
             pending_parse_errors: Vec::new(),
         }
     }
@@ -538,22 +550,32 @@ impl SourceLoader {
     }
 
     /// Cook the translated core to organise soup into proper
-    /// application tree and to handle expression anaphora
+    /// application tree and to handle expression anaphora.
+    ///
+    /// When the pre-compiled prelude blob is active and prelude operator metadata
+    /// has been injected via `set_prelude_operators`, the cook `Distributor` is
+    /// seeded with those operators so that infix uses of prelude functions in user
+    /// code resolve correctly even though the prelude source is absent.
     pub fn cook(&mut self) -> Result<(), EucalyptError> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(ref ops) = self.prelude_operators {
+            self.core.expr = cook::cook_with_prelude(self.core.expr.clone(), ops)?;
+            return Ok(());
+        }
         self.core.expr = cook::cook(self.core.expr.clone())?;
         Ok(())
     }
 
-    /// Cook using the blob path: seed fixity distribution with prelude operator
-    /// metadata from the blob so that infix uses of prelude operators resolve
-    /// correctly even though the prelude source is not present in the expression.
+    /// Inject prelude operator metadata for blob-path cooking.
+    ///
+    /// Must be called before `cook()` when using the pre-compiled prelude blob.
+    /// Has no effect on WASM targets (source-prelude always used there).
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn cook_with_prelude_operators(
+    pub fn set_prelude_operators(
         &mut self,
-        operators: &std::collections::HashMap<String, crate::driver::unit_interface::OperatorInfo>,
-    ) -> Result<(), EucalyptError> {
-        self.core.expr = cook::cook_with_prelude(self.core.expr.clone(), operators)?;
-        Ok(())
+        operators: HashMap<String, crate::driver::unit_interface::OperatorInfo>,
+    ) {
+        self.prelude_operators = Some(operators);
     }
 
     /// Run inliner

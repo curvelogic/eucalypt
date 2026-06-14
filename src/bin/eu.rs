@@ -106,6 +106,13 @@ fn run() -> i32 {
         .with_args(opt.args().to_vec())
         .with_seed(opt.seed());
 
+    // Inject prelude operator metadata from the blob (if active) before cooking
+    // so that infix uses of prelude operators in user code resolve correctly.
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(blob) = eucalypt::driver::eval::maybe_load_prelude_blob(&opt) {
+        loader.set_prelude_operators(blob.operators);
+    }
+
     // Load and translate to core, handling errors by printing
     // diagnostic
     let mut statistics = Statistics::default();

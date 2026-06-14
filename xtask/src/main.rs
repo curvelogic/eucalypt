@@ -8,36 +8,25 @@
 //! ## How the blob is generated
 //!
 //! 1. Load `lib/prelude.eu` through the full front-end pipeline
-//!    (parse → desugar → cook → eliminate → inline → fuse → verify → type-check).
+//!    (parse → desugar → cook → fuse → type-check).
 //! 2. Extract `OperatorInfo` (before cook strips `Meta` wrappers) and the
 //!    `PreludeSummary` from the type checker.
-//! 3. STG-compile the prelude expression independently.
-//! 4. Walk the compiled `Rc<StgSyn>` tree to extract the top-level
-//!    `LambdaForm`s in global-slot order.
-//! 5. Walk the pre-cook core expression to extract binding names in the
-//!    same order, building `name_to_slot`.
-//! 6. Flatten all lambda form bodies into a shared `ArenaStgSyn` node pool.
-//! 7. Serialise the `PreludeBlob` with postcard and write `lib/prelude.blob`.
-//!
-//! **Note on Ref::G vs Ref::L (Phase 7 prerequisite)**
-//!
-//! The blob produced by this xtask stores `Ref::L` de Bruijn indices for
-//! cross-binding references within the prelude.  These indices are correct
-//! for loading the prelude as a nested `Let`/`LetRec` block (current runtime
-//! path), but are NOT yet suitable for loading individual bindings into
-//! independent global slots.
-//!
-//! Phase 7 (STG compiler changes) will make the compiler emit `Ref::G` for
-//! prelude-name free variables.  Once Phase 7 is complete, re-running
-//! `cargo xtask prelude-compile` will produce a blob with correct `Ref::G`
-//! references that Phase 5 (runtime loading) can use directly.
+//! 3. Peel the merged `Let` expression back into individual `(name, body)` pairs
+//!    using `open_let_scope_full`, converting `Var::Bound` intra-prelude
+//!    references back to `Var::Free(name)`.
+//! 4. Build `name_to_slot` from the peeled binding order.
+//! 5. Compile each binding body independently with `prelude_globals` set so that
+//!    `Var::Free("name")` → `Ref::G(INTRINSIC_COUNT + slot)`.
+//! 6. Extract the single top-level `LambdaForm` from each compiled binding.
+//! 7. Flatten all lambda form bodies into a shared `ArenaStgSyn` node pool.
+//! 8. Serialise the `PreludeBlob` with postcard and write `lib/prelude.blob`.
 
 use std::{collections::HashMap, path::PathBuf, rc::Rc, time::Instant};
 
 use anyhow::{bail, Context, Result};
 use eucalypt::{
     core::{
-        expr::{Expr, RcExpr},
+        expr::{open_let_scope_full, Expr, RcExpr},
         typecheck::check::{parse_operator_overloads, type_check_for_prelude},
     },
     driver::source::SourceLoader,
@@ -121,10 +110,6 @@ fn cmd_prelude_compile() -> Result<()> {
     }
     loader.merge_units(&all_inputs).context("merge_units")?;
 
-    // Capture pre-cook core expression for name extraction (before cook
-    // strips Meta wrappers from operator definitions).
-    let precook_expr = loader.core().expr.clone();
-
     // Extract operators and visibility BEFORE cook strips Meta wrappers.
     loader.extract_operators();
     loader.extract_visibility();
@@ -156,66 +141,77 @@ fn cmd_prelude_compile() -> Result<()> {
     let operator_overloads = parse_operator_overloads(&operator_type_strings);
     summary.operator_overloads = operator_overloads;
 
-    // ── 4. STG-compile the prelude expression ─────────────────────────────────
-    // We suppress inlining in the STG compiler too: the STG `suppress_inlining`
-    // flag prevents the compiler from inlining intrinsic-wrapper calls, keeping
-    // each prelude binding as an independent LambdaForm.
+    // ── 4. Peel the merged Let expression into individual binding bodies ──────
+    // After merge_units + cook, the prelude is a nested Let where all
+    // intra-prelude references are Var::Bound.  The STG compiler would emit
+    // Ref::L (de Bruijn) for these, producing a blob whose forms only work
+    // when loaded as a nested Let — not as independent global slots.
     //
-    // NOTE on Ref::L vs Ref::G (Phase 7 limitation):
-    // Cross-binding references within the prelude are still compiled as
-    // Ref::L (de Bruijn indices) rather than Ref::G (global slot refs),
-    // because the merged prelude expression uses Var::Bound for internal
-    // references.  Phase 7 addresses Var::Free references in *user code*;
-    // the xtask would need a separate restructuring to produce Ref::G
-    // within the prelude blob itself.  For now, the blob stores Ref::L
-    // which is correct for the nested-Let interpretation but cannot yet
-    // be used with fully independent global slots.
+    // To produce Ref::G for intra-prelude references, we reverse the merge:
+    // repeatedly peel the outermost Let scope using open_let_scope_full, which
+    // converts Var::Bound(scope=0) back to Var::Free(name) and decrements all
+    // outer scope indices.  After peeling, each binding body has free-variable
+    // references to other prelude names rather than de Bruijn bound references.
+    //
+    // We then compile each body individually with prelude_globals set so that
+    // Var::Free("name") → Ref::G(INTRINSIC_COUNT + slot).
+    let mut binding_bodies: Vec<(String, RcExpr)> = Vec::new();
+    peel_all_let_bindings(&core_expr, &mut binding_bodies);
+
+    println!("  prelude bindings (peeled): {}", binding_bodies.len());
+
+    // ── 5. Build name→slot mapping from peeled bindings ──────────────────────
+    let name_to_slot: HashMap<String, usize> = binding_bodies
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _))| (name.clone(), i))
+        .collect();
+
+    // ── 6. Compile each binding body independently with Ref::G for peers ─────
     let mut source_map = eucalypt::common::sourcemap::SourceMap::new();
     let runtime = make_standard_runtime(&mut source_map);
 
     let stg_settings = eucalypt::eval::stg::StgSettings {
         generate_annotations: false,
         suppress_updates: false,
-        suppress_inlining: true, // keep each binding as its own LambdaForm
+        suppress_inlining: true,
         suppress_optimiser: false,
         render_type: eucalypt::eval::stg::RenderType::Headless,
+        // Resolve Var::Free references to prelude names as Ref::G.
+        prelude_globals: Some(name_to_slot.clone()),
         ..Default::default()
     };
 
-    let stg = eucalypt::eval::stg::compile(&stg_settings, core_expr, runtime.as_ref())
-        .context("STG compile")?;
-
-    // ── 5. Extract binding names from the pre-cook expression ─────────────────
-    let names = collect_binding_names(&precook_expr);
-
-    // ── 6. Extract LambdaForms from the compiled STG ──────────────────────────
-    let forms = collect_lambda_forms(&stg);
-
-    // Report counts; a mismatch is non-fatal at this stage (Phase 7 will fix it).
-    println!(
-        "  core bindings: {}, STG lambda forms: {}",
-        names.len(),
-        forms.len()
-    );
-
-    if names.len() != forms.len() {
-        eprintln!(
-            "  Warning: name/form count mismatch ({} vs {}). \
-             The blob's name_to_slot map will cover only the \
-             min({}, {}) entries. Re-run after Phase 7 compiler \
-             changes for a fully correct blob.",
-            names.len(),
-            forms.len(),
-            names.len(),
-            forms.len(),
+    let mut forms: Vec<LambdaForm> = Vec::with_capacity(binding_bodies.len());
+    for (name, body) in &binding_bodies {
+        let stg = eucalypt::eval::stg::compile(&stg_settings, body.clone(), runtime.as_ref())
+            .with_context(|| format!("STG compile binding '{name}'"))?;
+        // Each compiled body produces a program with one top-level LambdaForm.
+        let binding_forms = collect_lambda_forms(&stg);
+        anyhow::ensure!(
+            binding_forms.len() == 1,
+            "expected exactly 1 LambdaForm for binding '{name}', got {}",
+            binding_forms.len()
         );
+        forms.push(binding_forms.into_iter().next().unwrap());
     }
 
-    // ── 7. Build name→slot mapping ────────────────────────────────────────────
+    println!("  STG lambda forms compiled: {}", forms.len());
+
+    // Verify form count matches binding count (should always hold now).
+    anyhow::ensure!(
+        forms.len() == binding_bodies.len(),
+        "form/binding count mismatch: {} vs {}",
+        forms.len(),
+        binding_bodies.len()
+    );
+
+    // ── 7. Extract binding names for the PreludeBlob (slot order) ────────────
+    let names: Vec<String> = binding_bodies.into_iter().map(|(n, _)| n).collect();
     let name_to_slot: HashMap<String, usize> = names
         .iter()
-        .zip(0usize..)
-        .map(|(name, idx)| (name.clone(), idx))
+        .enumerate()
+        .map(|(i, n)| (n.clone(), i))
         .collect();
 
     // ── 8. Flatten lambda forms into a shared arena ───────────────────────────
@@ -258,39 +254,37 @@ fn workspace_root() -> Result<PathBuf> {
     bail!("could not find workspace root (no Cargo.toml in {cwd:?})")
 }
 
-/// Walk the core `Let` tree in the same order the STG compiler processes it,
-/// collecting binding names.
+/// Peel all top-level `Let` scopes from the merged prelude core expression,
+/// collecting each binding as a `(name, body)` pair where intra-prelude
+/// references are `Var::Free(name)` rather than de Bruijn `Var::Bound` indices.
 ///
-/// The STG compiler traverses `Let` scopes outer-to-inner; the names are
-/// emitted in the same order as the STG `Let.bindings` vecs.
+/// This reverses the effect of `merge_units` + `cook` on the prelude, allowing
+/// each binding to be STG-compiled independently with `prelude_globals` set so
+/// that `Var::Free("name")` → `Ref::G(INTRINSIC_COUNT + slot)`.
 ///
-/// Strips `Meta` wrappers — the pre-cook expression still has them.
-fn collect_binding_names(expr: &RcExpr) -> Vec<String> {
-    let mut names = Vec::new();
-    collect_names_inner(expr, &mut names);
-    names
-}
-
-fn collect_names_inner(expr: &RcExpr, out: &mut Vec<String>) {
-    match &*expr.inner {
-        Expr::Let(_, scope, _) => {
-            for (name, _) in &scope.pattern {
-                out.push(name.clone());
+/// The peeling uses `open_let_scope_full` which:
+/// - Converts `Var::Bound(scope=0, binder=i)` → `Var::Free(names[i])` in all positions.
+/// - Decrements scope indices of references to outer Let scopes by 1 so that
+///   after peeling each layer the remaining bound references stay consistent.
+fn peel_all_let_bindings(expr: &RcExpr, out: &mut Vec<(String, RcExpr)>) {
+    let mut current = expr.clone();
+    loop {
+        match &*current.inner {
+            Expr::Let(_, scope, _) => {
+                let (open_bindings, open_body) = open_let_scope_full(scope);
+                out.extend(open_bindings);
+                current = open_body;
             }
-            collect_names_inner(&scope.body, out);
+            Expr::Meta(_, inner, _) => {
+                current = inner.clone();
+            }
+            _ => break,
         }
-        Expr::Meta(_, inner, _) => collect_names_inner(inner, out),
-        _ => {}
     }
 }
 
 /// Walk the compiled `Rc<StgSyn>` tree, collecting all `LambdaForm`s from
 /// top-level `Let`/`LetRec` nodes in the order the compiler generated them.
-///
-/// This mirrors `collect_binding_names`: the i-th name from the core
-/// expression corresponds to the i-th lambda form extracted here.
-///
-/// Requires `LambdaForm: Clone`.
 fn collect_lambda_forms(stg: &Rc<StgSyn>) -> Vec<LambdaForm> {
     let mut forms: Vec<LambdaForm> = Vec::new();
     collect_forms_inner(stg, &mut forms);
