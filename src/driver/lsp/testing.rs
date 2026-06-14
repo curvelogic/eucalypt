@@ -24,8 +24,9 @@ use super::hover;
 use super::inlay_hints;
 use super::navigation;
 use super::symbol_table::{self, SymbolSource, SymbolTable};
+use super::query::{FileId, QueryStore};
 use super::{apply_content_change, CachedPipeline, PipelineError, PipelineResult, TypeEnv};
-use crate::syntax::rowan::{parse_unit, ParseError};
+use crate::syntax::rowan::parse_unit;
 
 /// An in-process LSP editing session for testing.
 ///
@@ -40,9 +41,8 @@ pub struct LspTestSession {
     pipeline_rx: mpsc::Receiver<PipelineResult>,
     pipeline_tx: mpsc::Sender<PipelineResult>,
     cancel: Arc<AtomicBool>,
-    last_green: Option<rowan::GreenNode>,
-    /// Parse errors from the most recent parse, cached to avoid re-parsing.
-    last_parse_errors: Vec<ParseError>,
+    /// Query store tracking parse results and the import graph.
+    queries: QueryStore,
     /// Last pipeline error, if any.
     last_pipeline_error: Option<PipelineError>,
 }
@@ -65,8 +65,7 @@ impl LspTestSession {
             pipeline_rx,
             pipeline_tx,
             cancel: Arc::new(AtomicBool::new(false)),
-            last_green: None,
-            last_parse_errors: Vec::new(),
+            queries: QueryStore::new(),
             last_pipeline_error: None,
         }
     }
@@ -122,6 +121,14 @@ impl LspTestSession {
         {
             Ok(result) => match result.result {
                 Ok(cached) => {
+                    // Update import graph in the query store.
+                    let file_id = FileId::from_url(&result.uri);
+                    let import_ids: Vec<FileId> = cached
+                        .imports
+                        .iter()
+                        .map(|imp| FileId::from_url(&imp.uri))
+                        .collect();
+                    self.queries.set_imports(&file_id, import_ids);
                     self.cached = Some(cached);
                     self.last_pipeline_error = None;
                 }
@@ -413,7 +420,9 @@ impl LspTestSession {
         // by storing it. This is a peek operation.
         // Actually, we can't peek with mpsc. Instead, check if the
         // cancel flag is still false (meaning a pipeline is running).
-        !self.cancel.load(std::sync::atomic::Ordering::SeqCst) && self.last_green.is_some()
+        let file_id = FileId::from_url(&self.uri);
+        !self.cancel.load(std::sync::atomic::Ordering::SeqCst)
+            && self.queries.last_green(&file_id).is_some()
     }
 
     /// Try to receive a pipeline result without blocking.
@@ -423,6 +432,14 @@ impl LspTestSession {
             Ok(result) => {
                 match result.result {
                     Ok(cached) => {
+                        // Update import graph in the query store.
+                        let file_id = FileId::from_url(&result.uri);
+                        let import_ids: Vec<FileId> = cached
+                            .imports
+                            .iter()
+                            .map(|imp| FileId::from_url(&imp.uri))
+                            .collect();
+                        self.queries.set_imports(&file_id, import_ids);
                         self.cached = Some(cached);
                     }
                     Err(err) => {
@@ -477,7 +494,8 @@ impl LspTestSession {
         let parse = parse_unit(&self.content);
         let new_green = parse.syntax_node().green().into_owned();
 
-        let changed = match &self.last_green {
+        let file_id = FileId::from_url(&self.uri);
+        let changed = match self.queries.last_green(&file_id) {
             Some(prev) => *prev != new_green,
             None => true,
         };
@@ -485,8 +503,14 @@ impl LspTestSession {
         if !changed {
             return;
         }
-        self.last_green = Some(new_green);
-        self.last_parse_errors = parse.errors().clone();
+
+        // Update the query store: set file text (bumps revision) and store the parse result.
+        self.queries.set_file_text(
+            file_id.clone(),
+            std::sync::Arc::new(self.content.clone()),
+        );
+        self.queries
+            .store_parse(file_id, new_green, parse.errors().clone());
 
         // Cancel any in-flight run.
         self.cancel.store(true, Ordering::SeqCst);
@@ -499,6 +523,45 @@ impl LspTestSession {
         let uri = self.uri.clone();
 
         super::spawn_pipeline(uri, text, path, tx, cancel);
+    }
+
+    // ── Query store accessors for tests ─────────────────────────────────────
+
+    /// Return the files that the primary document imports, as recorded by
+    /// the query store after the last completed pipeline run.
+    pub fn recorded_imports(&self) -> Vec<Url> {
+        let file_id = FileId::from_url(&self.uri);
+        self.queries
+            .imports_of(&file_id)
+            .map(|f| f.uri.clone())
+            .collect()
+    }
+
+    /// Return whether `importer_uri` is recorded as importing `dependency_uri`
+    /// in the query store.
+    pub fn is_recorded_importer(&self, importer_uri: &Url, dependency_uri: &Url) -> bool {
+        let dep_id = FileId::from_url(dependency_uri);
+        self.queries
+            .importers_of(&dep_id)
+            .any(|f| &f.uri == importer_uri)
+    }
+
+    /// Return the current revision of the query store.
+    pub fn query_revision(&self) -> super::query::Revision {
+        self.queries.revision()
+    }
+
+    /// Return whether the query store has a parse result for the primary document.
+    pub fn has_parse_cache(&self) -> bool {
+        let file_id = FileId::from_url(&self.uri);
+        self.queries.last_green(&file_id).is_some()
+    }
+
+    /// Return whether the parse result for the primary document is still current
+    /// (i.e. file text hash matches the stored parse hash).
+    pub fn parse_is_current(&self) -> bool {
+        let file_id = FileId::from_url(&self.uri);
+        self.queries.get_parse(&file_id).is_some()
     }
 }
 
