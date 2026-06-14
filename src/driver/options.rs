@@ -147,6 +147,10 @@ pub struct DocCliArgs {
     #[arg(long = "check")]
     pub check_coverage: bool,
 
+    /// Output directory for multi-file categorised output (implies --prelude)
+    #[arg(long = "output-dir", value_name = "DIR")]
+    pub output_dir: Option<PathBuf>,
+
     /// Files to document
     #[arg(value_name = "FILES")]
     pub files: Vec<String>,
@@ -391,6 +395,7 @@ pub struct EucalyptOptions {
     pub doc_prelude: bool,
     pub doc_format: DocFormat,
     pub doc_coverage_check: bool,
+    pub doc_output_dir: Option<PathBuf>,
 
     // Type check before evaluation
     pub type_check: bool,
@@ -616,12 +621,17 @@ impl From<EucalyptCli> for EucalyptOptions {
         };
 
         // Extract doc mode
-        let (doc_mode, doc_prelude, doc_format, doc_coverage_check) = match &cli.command {
-            Some(Commands::Doc(args)) => {
-                (true, args.prelude, args.format.clone(), args.check_coverage)
-            }
-            _ => (false, false, DocFormat::default(), false),
-        };
+        let (doc_mode, doc_prelude, doc_format, doc_coverage_check, doc_output_dir) =
+            match &cli.command {
+                Some(Commands::Doc(args)) => (
+                    true,
+                    args.prelude || args.output_dir.is_some(),
+                    args.format.clone(),
+                    args.check_coverage,
+                    args.output_dir.clone(),
+                ),
+                _ => (false, false, DocFormat::default(), false, None),
+            };
 
         // Extract heap limit and no-dce from Run command
         // 0 means unbounded; any other value is the limit in MiB
@@ -697,6 +707,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             doc_prelude,
             doc_format,
             doc_coverage_check,
+            doc_output_dir,
             type_check: match &cli.command {
                 Some(Commands::Run(run_args)) => run_args.type_check || cli.type_check,
                 _ => cli.type_check,
@@ -892,6 +903,10 @@ impl EucalyptOptions {
 
     pub fn doc_coverage_check(&self) -> bool {
         self.doc_coverage_check
+    }
+
+    pub fn doc_output_dir(&self) -> Option<&PathBuf> {
+        self.doc_output_dir.as_ref()
     }
 
     pub fn run(&self) -> bool {
