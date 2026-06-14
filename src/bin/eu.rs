@@ -6,6 +6,7 @@ use std::thread;
 use std::io::IsTerminal;
 
 use eucalypt::driver::check;
+use eucalypt::driver::doc;
 use eucalypt::driver::format;
 use eucalypt::driver::lsp;
 use eucalypt::driver::options::EucalyptOptions;
@@ -83,6 +84,17 @@ fn run() -> i32 {
     // Check mode: validate type annotations then exit
     if opt.check() {
         match check::check(&opt) {
+            Ok(exit) => return exit,
+            Err(e) => {
+                eprintln!("{e}");
+                return 2;
+            }
+        }
+    }
+
+    // Doc mode: extract and render documentation then exit
+    if opt.doc_mode() {
+        match doc::doc(&opt) {
             Ok(exit) => return exit,
             Err(e) => {
                 eprintln!("{e}");

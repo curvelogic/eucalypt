@@ -119,6 +119,31 @@ fn run_typecheck_test(filename: &str) {
     }
 }
 
+/// Run `eu doc` on a fixture file and assert that stdout contains all the given patterns.
+fn run_doc_test(path: &str, extra_args: &[&str], expected_patterns: &[&str]) {
+    let output = std::process::Command::new(eu_binary())
+        .args(["doc"])
+        .args(extra_args)
+        .arg(path)
+        .output()
+        .expect("failed to run eu doc");
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert_eq!(
+        exit_code, 0,
+        "eu doc exited with {exit_code} for {path}\nstdout: {stdout}"
+    );
+
+    for pattern in expected_patterns {
+        assert!(
+            stdout.contains(pattern),
+            "eu doc stdout for {path} does not contain {pattern:?}\nactual stdout:\n{stdout}"
+        );
+    }
+}
+
 #[test]
 pub fn test_harness_001() {
     run_test(&opts("001_ski.eu").without_prelude());
@@ -2443,4 +2468,89 @@ pub fn test_typecheck_102_types_alias_with_docstring() {
 #[test]
 pub fn test_typecheck_103_interpolation_string_type() {
     run_typecheck_test("103_interpolation_string_type.eu");
+}
+
+// ── eu doc tests ──────────────────────────────────────────────────────────────
+
+/// `eu doc` on a documented fixture produces Markdown with the expected content.
+#[test]
+pub fn test_doc_001_markdown_basic() {
+    run_doc_test(
+        "tests/harness/doc/001_documented.eu",
+        &[],
+        &[
+            "# 001_documented",
+            "## Combinators",
+            "`identity(x)`",
+            "Identity function",
+            "`k(x, y)`",
+            "Constant function",
+            "## Data",
+            "`version`",
+            "A version string.",
+        ],
+    );
+}
+
+/// `eu doc` extracts type annotations and renders them in a code block.
+#[test]
+pub fn test_doc_002_type_annotations() {
+    run_doc_test(
+        "tests/harness/doc/001_documented.eu",
+        &[],
+        &["type: a → a", "type: string"],
+    );
+}
+
+/// `eu doc` suppresses `:internal` bindings from the output.
+#[test]
+pub fn test_doc_003_internal_suppressed() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["doc", "tests/harness/doc/001_documented.eu"])
+        .output()
+        .expect("failed to run eu doc");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("_internal-helper"),
+        "eu doc should suppress :internal binding, but stdout contains _internal-helper:\n{stdout}"
+    );
+}
+
+/// `eu doc --format json` produces valid JSON with a `$schema` key.
+#[test]
+pub fn test_doc_004_json_format() {
+    run_doc_test(
+        "tests/harness/doc/001_documented.eu",
+        &["--format", "json"],
+        &["\"$schema\":", "\"title\":"],
+    );
+}
+
+/// `eu doc --check` produces a coverage report.
+#[test]
+pub fn test_doc_005_coverage_check() {
+    run_doc_test(
+        "tests/harness/doc/001_documented.eu",
+        &["--check"],
+        &["Documentation coverage", "documented"],
+    );
+}
+
+/// `eu doc --prelude` runs without error and produces the prelude reference.
+#[test]
+pub fn test_doc_006_prelude() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["doc", "--prelude"])
+        .output()
+        .expect("failed to run eu doc --prelude");
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        exit_code, 0,
+        "eu doc --prelude exited with {exit_code}\nstdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("# Prelude Reference"),
+        "eu doc --prelude should produce '# Prelude Reference'\nstdout: {stdout}"
+    );
 }

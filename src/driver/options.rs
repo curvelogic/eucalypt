@@ -44,6 +44,18 @@ impl std::fmt::Display for ErrorFormat {
     }
 }
 
+/// Output format for `eu doc`.
+#[derive(clap::ValueEnum, Debug, Clone, PartialEq, Eq, Default)]
+pub enum DocFormat {
+    /// Markdown documentation (default)
+    #[default]
+    #[value(name = "md")]
+    Markdown,
+    /// JSON Schema output
+    #[value(name = "json")]
+    Json,
+}
+
 /// Eucalypt - A functional language for structured data
 #[derive(Parser, Debug, Clone)]
 #[command(name = "eu")]
@@ -102,6 +114,8 @@ pub enum Commands {
     Lsp,
     /// Check type annotations in eucalypt source files
     Check(CheckArgs),
+    /// Extract documentation from eucalypt source files
+    Doc(DocCliArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -111,6 +125,25 @@ pub struct CheckArgs {
     pub strict: bool,
 
     /// Files to type-check
+    #[arg(value_name = "FILES")]
+    pub files: Vec<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct DocCliArgs {
+    /// Output format: md (Markdown, default) or json (JSON Schema)
+    #[arg(long = "format", value_enum, default_value = "md")]
+    pub format: DocFormat,
+
+    /// Generate documentation for the embedded prelude
+    #[arg(long = "prelude")]
+    pub prelude: bool,
+
+    /// Report documentation coverage instead of generating docs
+    #[arg(long = "check")]
+    pub check_coverage: bool,
+
+    /// Files to document
     #[arg(value_name = "FILES")]
     pub files: Vec<String>,
 }
@@ -349,6 +382,12 @@ pub struct EucalyptOptions {
     pub check: bool,
     pub check_strict: bool,
 
+    // Doc mode
+    pub doc_mode: bool,
+    pub doc_prelude: bool,
+    pub doc_format: DocFormat,
+    pub doc_coverage_check: bool,
+
     // Type check before evaluation
     pub type_check: bool,
 
@@ -400,6 +439,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             Some(Commands::Fmt(args)) => &args.files,
             Some(Commands::Version) | Some(Commands::Lsp) => &cli.files,
             Some(Commands::Check(args)) => &args.files,
+            Some(Commands::Doc(args)) => &args.files,
             None => &cli.files,
         };
 
@@ -566,6 +606,14 @@ impl From<EucalyptCli> for EucalyptOptions {
             _ => (false, false),
         };
 
+        // Extract doc mode
+        let (doc_mode, doc_prelude, doc_format, doc_coverage_check) = match &cli.command {
+            Some(Commands::Doc(args)) => {
+                (true, args.prelude, args.format.clone(), args.check_coverage)
+            }
+            _ => (false, false, DocFormat::default(), false),
+        };
+
         // Extract heap limit and no-dce from Run command
         // 0 means unbounded; any other value is the limit in MiB
         let heap_limit_mib = match &cli.command {
@@ -636,6 +684,10 @@ impl From<EucalyptCli> for EucalyptOptions {
             lsp,
             check,
             check_strict,
+            doc_mode,
+            doc_prelude,
+            doc_format,
+            doc_coverage_check,
             type_check: match &cli.command {
                 Some(Commands::Run(run_args)) => run_args.type_check || cli.type_check,
                 _ => cli.type_check,
@@ -684,6 +736,7 @@ impl EucalyptCli {
             "fmt",
             "lsp",
             "check",
+            "doc",
             "help",
         ];
         // Rewrite --version/-V to the version subcommand so the
@@ -815,6 +868,22 @@ impl EucalyptOptions {
         self.no_dce
     }
 
+    pub fn doc_mode(&self) -> bool {
+        self.doc_mode
+    }
+
+    pub fn doc_prelude(&self) -> bool {
+        self.doc_prelude
+    }
+
+    pub fn doc_format(&self) -> &DocFormat {
+        &self.doc_format
+    }
+
+    pub fn doc_coverage_check(&self) -> bool {
+        self.doc_coverage_check
+    }
+
     pub fn run(&self) -> bool {
         !self.explain
             && !self.list_targets
@@ -829,6 +898,7 @@ impl EucalyptOptions {
             && !self.format
             && !self.lsp
             && !self.check
+            && !self.doc_mode
     }
 
     pub fn target(&self) -> Option<&str> {

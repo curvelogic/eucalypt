@@ -1,0 +1,21 @@
+"A simple documented unit for eu doc tests."
+
+## Combinators
+
+` { doc: "Identity function: returns its argument unchanged."
+    type: s"a → a" }
+identity(x): x
+
+` { doc: "Constant function: always returns the first argument."
+    type: s"a → b → a"
+    example: "42 k(0)  #=> 42" }
+k(x, y): x
+
+## Data
+
+` { doc: "A version string."
+    type: s"string" }
+version: "1.0"
+
+` { export: :internal }
+_internal-helper: 99
