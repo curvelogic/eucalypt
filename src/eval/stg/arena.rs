@@ -478,14 +478,16 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_ann() {
+    fn round_trip_ann_elides() {
+        // Ann nodes are elided during reconstruction (prelude Smids are
+        // meaningless at runtime), so the reconstructed tree is the body.
         let original: Rc<StgSyn> = Rc::new(StgSyn::Ann {
             smid: Smid::default(),
             body: atom(sym("hello")),
         });
         let arena = flatten(&original);
         let reconstructed = arena.reconstruct(0);
-        assert_eq!(original, reconstructed);
+        assert_eq!(atom(sym("hello")), reconstructed);
     }
 
     #[test]
@@ -502,6 +504,8 @@ mod tests {
 
     #[test]
     fn postcard_round_trip() {
+        // Ann nodes are elided during reconstruction, so the expected
+        // output has the Ann stripped.
         let original: Rc<StgSyn> = Rc::new(StgSyn::Let {
             bindings: vec![LambdaForm::Thunk {
                 body: atom(int(99)),
@@ -511,10 +515,16 @@ mod tests {
                 body: atom(Reference::L(0)),
             }),
         });
+        let expected: Rc<StgSyn> = Rc::new(StgSyn::Let {
+            bindings: vec![LambdaForm::Thunk {
+                body: atom(int(99)),
+            }],
+            body: atom(Reference::L(0)),
+        });
         let arena = flatten(&original);
         let bytes = postcard::to_allocvec(&arena).expect("serialise");
         let restored: StgArena = postcard::from_bytes(&bytes).expect("deserialise");
         let reconstructed = restored.reconstruct(0);
-        assert_eq!(original, reconstructed);
+        assert_eq!(expected, reconstructed);
     }
 }

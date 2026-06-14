@@ -553,8 +553,8 @@ impl QueryStore {
         // Remove reverse import edges (file was being imported by others).
         self.importers.remove(file);
         // Also remove this file from others' forward import sets.
-        for set in self.importers.values_mut() {
-            set.remove(file);
+        for deps in self.imports.values_mut() {
+            deps.retain(|f| f != file);
         }
     }
 }
