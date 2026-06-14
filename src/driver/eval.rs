@@ -76,10 +76,17 @@ fn io_run_error_to_execution(e: IoRunError) -> ExecutionError {
 }
 
 /// Run the prepared core expression and output to selected emitter
-pub fn run(opt: &EucalyptOptions, loader: SourceLoader) -> Result<Statistics, EucalyptError> {
+pub fn run(opt: &EucalyptOptions, mut loader: SourceLoader) -> Result<Statistics, EucalyptError> {
     let format = determine_format(opt, &loader);
     let mut stats = Statistics::default();
+    // Extract the blob before the loader is consumed by Executor::from().
+    // The blob was loaded once in bin/eu.rs and is passed through without
+    // a second deserialisation.
+    #[cfg(not(target_arch = "wasm32"))]
+    let blob = loader.take_prelude_blob();
     let mut executor = Executor::from(loader);
+    #[cfg(not(target_arch = "wasm32"))]
+    executor.set_prelude_blob(blob);
     executor
         .execute(opt, &mut stats, format)
         .map_err(|e| EucalyptError::Execution(Box::new(e)))?;
@@ -123,6 +130,13 @@ pub struct Executor<'a> {
 
     /// Error stream
     err: Option<Box<dyn Write + 'a>>,
+
+    /// Pre-compiled prelude blob, loaded once and passed through from
+    /// the source loader.  When `Some`, the runtime global table is extended
+    /// with pre-compiled prelude `LambdaForm`s and the STG compiler resolves
+    /// prelude free variables to `Ref::G` rather than raising `CompileError::FreeVar`.
+    #[cfg(not(target_arch = "wasm32"))]
+    prelude_blob: Option<crate::eval::stg::blob::PreludeBlob>,
 }
 
 impl From<SourceLoader> for Executor<'_> {
@@ -146,7 +160,19 @@ impl<'a> Executor<'a> {
             evaluand,
             out: None,
             err: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            prelude_blob: None,
         }
+    }
+
+    /// Attach a pre-compiled prelude blob.
+    ///
+    /// Called by `run()` after extracting the blob from the `SourceLoader`
+    /// (which has already used it to seed the cook `Distributor`).
+    /// Must be called before `execute()`.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_prelude_blob(&mut self, blob: Option<crate::eval::stg::blob::PreludeBlob>) {
+        self.prelude_blob = blob;
     }
 
     /// Provide override streams to capture the output to stdout and stderr
@@ -186,17 +212,19 @@ impl<'a> Executor<'a> {
             .ok_or_else(|| ExecutionError::UnknownFormat(format.to_string()))?;
 
         // ── Pre-compiled prelude blob path ────────────────────────────────────
-        // When a valid blob is present and --source-prelude / EU_SOURCE_PRELUDE
-        // are not set, load prelude lambda forms from the blob and inject them
-        // into the runtime global table above the intrinsic slots.
-        #[cfg(not(target_arch = "wasm32"))]
-        let blob = maybe_load_prelude_blob(opt);
-
+        // The blob was loaded once in `bin/eu.rs` (or `eval::run()`) and stored
+        // on this executor via `set_prelude_blob()`.  Use it to populate the
+        // runtime global table and inject the prelude name→slot map into the
+        // STG compiler so that free prelude references resolve to Ref::G.
         let mut rt = make_standard_runtime(&mut self.source_map);
 
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some(ref b) = blob {
-            rt.set_prelude_bindings(b.nodes.clone(), b.bindings.clone());
+        if let Some(ref b) = self.prelude_blob {
+            rt.set_prelude_bindings(
+                b.nodes.clone(),
+                b.forms_pool.clone(),
+                b.binding_entries.clone(),
+            );
         }
 
         if opt.dump_runtime() {
@@ -227,7 +255,7 @@ impl<'a> Executor<'a> {
             // Inject prelude global slot map from blob so the STG compiler can
             // resolve free variable references to prelude names as Ref::G.
             #[cfg(not(target_arch = "wasm32"))]
-            if let Some(ref b) = blob {
+            if let Some(ref b) = self.prelude_blob {
                 stg_settings.prelude_globals = Some(b.name_to_slot.clone());
             }
 

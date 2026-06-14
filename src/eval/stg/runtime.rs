@@ -10,7 +10,7 @@ use crate::{
         machine::intrinsic::{IntrinsicMachine, StgIntrinsic},
         memory::{mutator::MutatorHeapView, syntax::Ref},
         stg::{
-            arena::{ArenaLambdaForm, ArenaStgSyn, StgArena},
+            arena::{ArenaLambdaForm, ArenaStgSyn, FormIdx, StgArena},
             support::call,
         },
     },
@@ -60,7 +60,12 @@ pub struct StandardRuntime {
     /// Empty on the source-prelude path.  Populated from `PreludeBlob` when
     /// the blob path is active.
     prelude_nodes: Vec<ArenaStgSyn>,
-    prelude_forms: Vec<ArenaLambdaForm>,
+    /// Complete pool of ALL lambda forms, including inner forms from
+    /// `Let`/`LetRec` nodes referenced by `FormIdx` in `prelude_nodes`.
+    prelude_forms_pool: Vec<ArenaLambdaForm>,
+    /// Index into `prelude_forms_pool` for each prelude global binding
+    /// (one entry per binding, in slot order).
+    prelude_binding_entries: Vec<FormIdx>,
 }
 
 impl Default for StandardRuntime {
@@ -73,7 +78,8 @@ impl Default for StandardRuntime {
             impls,
             annotations: None,
             prelude_nodes: Vec::new(),
-            prelude_forms: Vec::new(),
+            prelude_forms_pool: Vec::new(),
+            prelude_binding_entries: Vec::new(),
         }
     }
 }
@@ -83,9 +89,19 @@ impl StandardRuntime {
     ///
     /// Must be called before `globals()` / `prepare()` when using the blob path.
     /// Storing in arena form (no `Rc`) allows `StandardRuntime` to remain `Sync`.
-    pub fn set_prelude_bindings(&mut self, nodes: Vec<ArenaStgSyn>, forms: Vec<ArenaLambdaForm>) {
+    ///
+    /// `forms_pool` is the COMPLETE set of lambda forms (entry thunks + all inner
+    /// forms from `Let`/`LetRec` nodes).  `binding_entries` contains one `FormIdx`
+    /// per prelude binding pointing into `forms_pool`.
+    pub fn set_prelude_bindings(
+        &mut self,
+        nodes: Vec<ArenaStgSyn>,
+        forms_pool: Vec<ArenaLambdaForm>,
+        binding_entries: Vec<FormIdx>,
+    ) {
         self.prelude_nodes = nodes;
-        self.prelude_forms = forms;
+        self.prelude_forms_pool = forms_pool;
+        self.prelude_binding_entries = binding_entries;
     }
 }
 
@@ -152,13 +168,13 @@ impl Runtime for StandardRuntime {
     /// Must not be called until `prepare()` has been called.
     fn globals(&self) -> Vec<LambdaForm> {
         let mut gs = self.lambdas();
-        if !self.prelude_forms.is_empty() {
+        if !self.prelude_binding_entries.is_empty() {
             let arena = StgArena {
                 nodes: self.prelude_nodes.clone(),
-                forms: self.prelude_forms.clone(),
+                forms: self.prelude_forms_pool.clone(),
             };
-            for i in 0..self.prelude_forms.len() as u32 {
-                gs.push(arena.reconstruct_form(i));
+            for &entry_idx in &self.prelude_binding_entries {
+                gs.push(arena.reconstruct_form(entry_idx));
             }
         }
         gs

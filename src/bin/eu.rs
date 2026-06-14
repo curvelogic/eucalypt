@@ -118,11 +118,13 @@ fn run() -> i32 {
         .with_args(opt.args().to_vec())
         .with_seed(opt.seed());
 
-    // Inject prelude operator metadata from the blob (if active) before cooking
-    // so that infix uses of prelude operators in user code resolve correctly.
+    // Load the pre-compiled prelude blob once and store it in the loader.
+    // cook() will seed the Distributor with blob.operators; after prepare(),
+    // eval::run() extracts the blob and passes it to the Executor for runtime
+    // loading — no second deserialisation.
     #[cfg(not(target_arch = "wasm32"))]
     if let Some(blob) = eucalypt::driver::eval::maybe_load_prelude_blob(&opt) {
-        loader.set_prelude_operators(blob.operators);
+        loader.set_prelude_blob(blob);
     }
 
     // Load and translate to core, handling errors by printing

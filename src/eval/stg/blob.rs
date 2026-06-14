@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     core::typecheck::check::PreludeSummary,
     driver::unit_interface::OperatorInfo,
-    eval::stg::arena::{ArenaLambdaForm, ArenaStgSyn},
+    eval::stg::arena::{ArenaLambdaForm, ArenaStgSyn, FormIdx},
 };
 
 // ── PreludeBlob ───────────────────────────────────────────────────────────────
@@ -54,17 +54,26 @@ pub struct PreludeBlob {
 
     /// Shared arena node pool.
     ///
-    /// Every `ArenaLambdaForm` in `bindings` has a `body: NodeIdx` that
-    /// indexes into this `Vec`.  Reconstructing a binding is:
-    /// `StgArena { nodes: blob.nodes.clone(), forms: vec![] }.reconstruct_form(form)`.
+    /// Every `ArenaLambdaForm` in `forms_pool` has a `body: NodeIdx` that
+    /// indexes into this `Vec`.
     pub nodes: Vec<ArenaStgSyn>,
 
-    /// One serialised lambda form per prelude global slot, in slot order.
+    /// Complete pool of ALL lambda forms: top-level entry thunks AND any
+    /// inner lambda forms from `Let`/`LetRec` bindings within each thunk body.
     ///
-    /// The `i`-th entry occupies global slot `INTRINSIC_COUNT + i`.
-    pub bindings: Vec<ArenaLambdaForm>,
+    /// Nodes in `nodes` may contain `FormIdx` references into this pool.
+    /// Stored in full so that `StgArena { nodes, forms: forms_pool }` can
+    /// reconstruct any form without missing inner references.
+    pub forms_pool: Vec<ArenaLambdaForm>,
 
-    /// Binding name → index into `bindings` (= global slot − `INTRINSIC_COUNT`).
+    /// Index into `forms_pool` for the entry-level `LambdaForm` of each
+    /// prelude binding, in slot order.
+    ///
+    /// `binding_entries[i]` is the `FormIdx` in `forms_pool` for the `i`-th
+    /// prelude global (at VM global slot `INTRINSIC_COUNT + i`).
+    pub binding_entries: Vec<FormIdx>,
+
+    /// Binding name → index into `binding_entries` (= global slot − `INTRINSIC_COUNT`).
     pub name_to_slot: HashMap<String, usize>,
 
     /// Operator metadata for seeding cook's `Distributor`.

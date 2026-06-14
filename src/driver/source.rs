@@ -95,14 +95,13 @@ pub struct SourceLoader {
     /// containing `ERROR_STOWAWAYS` nodes) is always stored.  Callers drain
     /// this list via `drain_parse_errors` and decide how to surface them.
     pending_parse_errors: Vec<EucalyptError>,
-    /// Prelude operator metadata for seeding the cook `Distributor`.
+    /// Pre-compiled prelude blob, loaded once in `bin/eu.rs` before `prepare()`.
     ///
-    /// Set from the pre-compiled prelude blob when the blob path is active.
-    /// When `Some`, `cook()` seeds the `Distributor` with these operators so
-    /// that infix uses of prelude operators in user code resolve correctly
-    /// even though the prelude source is not present in the merged expression.
+    /// Stored here so it can be used in two phases without double-loading:
+    /// 1. `cook()` seeds the `Distributor` with `blob.operators`.
+    /// 2. `take_prelude_blob()` hands it to the `Executor` for runtime loading.
     #[cfg(not(target_arch = "wasm32"))]
-    prelude_operators: Option<HashMap<String, crate::driver::unit_interface::OperatorInfo>>,
+    prelude_blob: Option<crate::eval::stg::blob::PreludeBlob>,
 }
 
 impl Default for SourceLoader {
@@ -124,7 +123,7 @@ impl Default for SourceLoader {
             unit_interface: UnitInterface::default(),
             pending_parse_errors: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
-            prelude_operators: None,
+            prelude_blob: None,
         }
     }
 }
@@ -148,7 +147,7 @@ impl SourceLoader {
             prelude_override: None,
             unit_interface: UnitInterface::default(),
             #[cfg(not(target_arch = "wasm32"))]
-            prelude_operators: None,
+            prelude_blob: None,
             pending_parse_errors: Vec::new(),
         }
     }
@@ -552,30 +551,38 @@ impl SourceLoader {
     /// Cook the translated core to organise soup into proper
     /// application tree and to handle expression anaphora.
     ///
-    /// When the pre-compiled prelude blob is active and prelude operator metadata
-    /// has been injected via `set_prelude_operators`, the cook `Distributor` is
-    /// seeded with those operators so that infix uses of prelude functions in user
-    /// code resolve correctly even though the prelude source is absent.
+    /// When the pre-compiled prelude blob is active (set via `set_prelude_blob`),
+    /// the cook `Distributor` is seeded with the blob's operator metadata so that
+    /// infix uses of prelude functions in user code resolve correctly even though
+    /// the prelude source is not present in the merged expression.
     pub fn cook(&mut self) -> Result<(), EucalyptError> {
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some(ref ops) = self.prelude_operators {
-            self.core.expr = cook::cook_with_prelude(self.core.expr.clone(), ops)?;
+        if let Some(ref blob) = self.prelude_blob {
+            self.core.expr = cook::cook_with_prelude(self.core.expr.clone(), &blob.operators)?;
             return Ok(());
         }
         self.core.expr = cook::cook(self.core.expr.clone())?;
         Ok(())
     }
 
-    /// Inject prelude operator metadata for blob-path cooking.
+    /// Store the pre-compiled prelude blob for use during cooking and evaluation.
     ///
-    /// Must be called before `cook()` when using the pre-compiled prelude blob.
-    /// Has no effect on WASM targets (source-prelude always used there).
+    /// Must be called before `cook()` (for operator seeding) and before
+    /// `take_prelude_blob()` (for runtime loading).  Calling this is equivalent
+    /// to calling both `set_prelude_operators` and passing the blob to the
+    /// `Executor`, but in a single load.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn set_prelude_operators(
-        &mut self,
-        operators: HashMap<String, crate::driver::unit_interface::OperatorInfo>,
-    ) {
-        self.prelude_operators = Some(operators);
+    pub fn set_prelude_blob(&mut self, blob: crate::eval::stg::blob::PreludeBlob) {
+        self.prelude_blob = Some(blob);
+    }
+
+    /// Take the stored prelude blob out of the loader, leaving `None` behind.
+    ///
+    /// Called by `eval::run()` to pass the blob to the `Executor` without
+    /// cloning it — the loader is consumed by `Executor::from(loader)` anyway.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn take_prelude_blob(&mut self) -> Option<crate::eval::stg::blob::PreludeBlob> {
+        self.prelude_blob.take()
     }
 
     /// Run inliner
