@@ -298,7 +298,14 @@ impl StgArena {
     }
 
     fn reconstruct_node(&self, idx: NodeIdx) -> Rc<StgSyn> {
-        Rc::new(self.reconstruct_arena_syn(&self.nodes[idx as usize]))
+        let node = &self.nodes[idx as usize];
+        // Prelude Ann nodes carry Smids from the xtask's source map which
+        // are meaningless at runtime.  Elide them so they do not overwrite
+        // the user's call-site annotation in vm.annotation.
+        if let ArenaStgSyn::Ann { body, .. } = node {
+            return self.reconstruct_node(*body);
+        }
+        Rc::new(self.reconstruct_arena_syn(node))
     }
 
     fn reconstruct_arena_syn(&self, node: &ArenaStgSyn) -> StgSyn {
@@ -346,10 +353,8 @@ impl StgArena {
                     .collect(),
                 body: self.reconstruct_node(*body),
             },
-            ArenaStgSyn::Ann { smid, body } => StgSyn::Ann {
-                smid: *smid,
-                body: self.reconstruct_node(*body),
-            },
+            // Ann nodes are elided in reconstruct_node() above.
+            ArenaStgSyn::Ann { .. } => unreachable!("Ann handled in reconstruct_node"),
             ArenaStgSyn::Meta { meta, body } => StgSyn::Meta {
                 meta: meta.clone(),
                 body: body.clone(),
@@ -369,14 +374,12 @@ impl StgArena {
 
     pub fn reconstruct_form(&self, idx: FormIdx) -> LambdaForm {
         match &self.forms[idx as usize] {
-            ArenaLambdaForm::Lambda {
-                bound,
-                body,
-                annotation,
-            } => LambdaForm::Lambda {
+            ArenaLambdaForm::Lambda { bound, body, .. } => LambdaForm::Lambda {
                 bound: *bound,
                 body: self.reconstruct_node(*body),
-                annotation: *annotation,
+                // Clear xtask-sourced annotations — they are meaningless
+                // at runtime and would pollute user error locations.
+                annotation: Smid::default(),
             },
             ArenaLambdaForm::Thunk { body } => LambdaForm::Thunk {
                 body: self.reconstruct_node(*body),

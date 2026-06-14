@@ -31,6 +31,22 @@ pub fn prepare(
 ) -> Result<Command, EucalyptError> {
     let inputs = opt.inputs();
 
+    // When the pre-compiled prelude blob is active, skip loading the prelude
+    // source entirely.  The blob provides operators (for cook seeding), type
+    // summary (for type checking), and compiled globals (for STG Ref::G
+    // resolution).  Removing the prelude from the input list means it is not
+    // loaded, translated, or merged — the dominant latency saving.
+    #[cfg(not(target_arch = "wasm32"))]
+    let inputs = if loader.has_prelude_blob() {
+        let default_prelude = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
+        inputs
+            .into_iter()
+            .filter(|i| i != &default_prelude)
+            .collect()
+    } else {
+        inputs
+    };
+
     // Before the main load loop, check the explicit inputs for a `prelude:`
     // metadata key.  If found, the alternative prelude is loaded and stored
     // as a prelude override.  This pre-pass runs before any other loading so

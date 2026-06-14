@@ -576,6 +576,12 @@ impl SourceLoader {
         self.prelude_blob = Some(blob);
     }
 
+    /// Check whether a prelude blob is stored (i.e. the blob path is active).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn has_prelude_blob(&self) -> bool {
+        self.prelude_blob.is_some()
+    }
+
     /// Take the stored prelude blob out of the loader, leaving `None` behind.
     ///
     /// Called by `eval::run()` to pass the blob to the `Executor` without
