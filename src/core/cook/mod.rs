@@ -15,6 +15,24 @@ pub fn cook(expr: RcExpr) -> Result<RcExpr, CoreError> {
     Cooker::default().cook(expr)
 }
 
+/// Cook an expression, seeding fixity distribution with prelude operator metadata.
+///
+/// Used on the blob path: the prelude source is not present in `expr`, but its
+/// operator definitions must be visible so that infix uses (e.g. `a + b`) cook
+/// correctly without the prelude Let-nest.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn cook_with_prelude(
+    expr: RcExpr,
+    prelude_operators: &std::collections::HashMap<
+        String,
+        crate::driver::unit_interface::OperatorInfo,
+    >,
+) -> Result<RcExpr, CoreError> {
+    let mut cooker = Cooker::default();
+    let prepped = fixity::distribute_with_prelude(expr, prelude_operators)?;
+    cooker.cook_(prepped)
+}
+
 /// Cook state
 ///
 /// Needs to track whether we are within the scope of an

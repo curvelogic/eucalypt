@@ -544,6 +544,18 @@ impl SourceLoader {
         Ok(())
     }
 
+    /// Cook using the blob path: seed fixity distribution with prelude operator
+    /// metadata from the blob so that infix uses of prelude operators resolve
+    /// correctly even though the prelude source is not present in the expression.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn cook_with_prelude_operators(
+        &mut self,
+        operators: &std::collections::HashMap<String, crate::driver::unit_interface::OperatorInfo>,
+    ) -> Result<(), EucalyptError> {
+        self.core.expr = cook::cook_with_prelude(self.core.expr.clone(), operators)?;
+        Ok(())
+    }
+
     /// Run inliner
     pub fn inline(&mut self) -> Result<(), EucalyptError> {
         self.core.expr = tag::tag_combinators(&self.core.expr)?;

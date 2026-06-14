@@ -27,6 +27,11 @@ fn main() {
     println!("cargo:rerun-if-changed=lib/state.eu");
     println!("cargo:rerun-if-changed=build-meta.yaml");
 
+    // ── Declare custom cfg keys ───────────────────────────────────────────────
+    // Suppress the `unexpected_cfgs` lint for the two cfg flags we emit.
+    println!("cargo::rustc-check-cfg=cfg(prelude_blob_ok)");
+    println!("cargo::rustc-check-cfg=cfg(prelude_blob_stale)");
+
     // ── Prelude blob verification ─────────────────────────────────────────────
     verify_prelude_blob();
 }

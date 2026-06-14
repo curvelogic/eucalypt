@@ -1,6 +1,6 @@
 //! This module contains a compiler for translating core expressions
 //! to STG syntax for evaluation in the machine.
-use std::{convert::TryInto, rc::Rc};
+use std::{collections::HashMap, convert::TryInto, rc::Rc};
 
 use crate::core::binding::{BoundVar, Var};
 use crate::core::demand::Demand;
@@ -503,6 +503,13 @@ pub struct Compiler<'rt> {
     suppress_optimiser: bool,
     /// Intrinsics
     intrinsics: Vec<&'rt dyn StgIntrinsic>,
+    /// Prelude binding name → slot index (relative to `INTRINSIC_COUNT`).
+    ///
+    /// When set, `Var::Free(name)` references to prelude names are compiled to
+    /// `Ref::G(intrinsic_count + slot)` rather than raising `CompileError::FreeVar`.
+    /// This is how user code compiled independently of the prelude references
+    /// the pre-loaded prelude global slots.
+    prelude_globals: Option<HashMap<String, usize>>,
 }
 
 /// An item which can be converted to STG syntax once the context in known
@@ -940,7 +947,10 @@ impl ProtoSyntax for ProtoAppGroup {
 
         // Find a reference for the function
         let f_index: Box<dyn ProtoReference> = match &*self.f.inner {
-            Expr::Var(s, v) => Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())),
+            Expr::Var(s, v) => match v {
+                Var::Bound(bv) => Box::new(ProtoVar::new(bv.clone())),
+                Var::Free(name) => Box::new(ProtoRef::new(compiler.resolve_free_var(*s, name)?)),
+            },
             Expr::Intrinsic(_, bif) => {
                 intrinsic_index = intrinsics::index(bif);
                 let n =
@@ -970,9 +980,12 @@ impl ProtoSyntax for ProtoAppGroup {
         let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
         for (i, arg) in self.args.iter().enumerate() {
             match &*arg.inner {
-                Expr::Var(s, v) => {
-                    arg_indexes.push(Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())))
-                }
+                Expr::Var(s, v) => match v {
+                    Var::Bound(bv) => arg_indexes.push(Box::new(ProtoVar::new(bv.clone()))),
+                    Var::Free(name) => arg_indexes.push(Box::new(ProtoRef::new(
+                        compiler.resolve_free_var(*s, name)?,
+                    ))),
+                },
                 Expr::Intrinsic(_, bif) => {
                     let global_index = intrinsics::index(bif)
                         .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
@@ -1194,6 +1207,7 @@ impl<'rt> Compiler<'rt> {
         suppress_inlining: bool,
         suppress_optimiser: bool,
         intrinsics: Vec<&'rt dyn StgIntrinsic>,
+        prelude_globals: Option<HashMap<String, usize>>,
     ) -> Self {
         Compiler {
             generate_annotations,
@@ -1202,7 +1216,23 @@ impl<'rt> Compiler<'rt> {
             suppress_inlining,
             suppress_optimiser,
             intrinsics,
+            prelude_globals,
         }
+    }
+
+    /// Resolve a free variable name to a global slot reference.
+    ///
+    /// Called when `extract_bound_var` would fail with `CompileError::FreeVar`.
+    /// If `prelude_globals` contains the name, returns `Ref::G(intrinsic_count + slot)`.
+    /// Otherwise returns the `FreeVar` error so the caller can propagate it.
+    pub fn resolve_free_var(&self, smid: Smid, name: &str) -> Result<Ref, CompileError> {
+        if let Some(map) = &self.prelude_globals {
+            if let Some(&slot) = map.get(name) {
+                let base = intrinsics::catalogue().len();
+                return Ok(gref(base + slot));
+            }
+        }
+        Err(CompileError::FreeVar(smid, name.to_string()))
     }
 
     /// Whether to generate source annotations
@@ -1255,7 +1285,10 @@ impl<'rt> Compiler<'rt> {
     ) -> Result<Box<dyn ProtoSyntax>, CompileError> {
         match &*expr.inner {
             Expr::Let(_, _, _) => Ok(Box::new(ProtoLet::new(expr))),
-            Expr::Var(s, v) => Ok(Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone()))),
+            Expr::Var(s, v) => match v {
+                Var::Bound(bv) => Ok(Box::new(ProtoVar::new(bv.clone()))),
+                Var::Free(name) => Ok(Box::new(ProtoRef::new(self.resolve_free_var(*s, name)?))),
+            },
             Expr::App(s, f, args) => {
                 // Demand::at_most_once() — a let body is evaluated exactly once,
                 // so no Update frame is needed. (Bindings use Unknown because
@@ -1307,18 +1340,21 @@ impl<'rt> Compiler<'rt> {
         demand: Demand,
     ) -> Result<Ref, CompileError> {
         match &*expr.inner {
-            Expr::Var(s, v) => {
-                let bound_var = extract_bound_var(s, v)?.clone();
-                if bound_var.scope == 0 {
-                    if let Some(r) = binder.running_ref(bound_var.binder as usize) {
-                        Ok(r)
+            Expr::Var(s, v) => match v {
+                Var::Bound(bv) => {
+                    let bound_var = bv.clone();
+                    if bound_var.scope == 0 {
+                        if let Some(r) = binder.running_ref(bound_var.binder as usize) {
+                            Ok(r)
+                        } else {
+                            binder.add_deferred(Box::new(ProtoVar::new(bound_var)))
+                        }
                     } else {
                         binder.add_deferred(Box::new(ProtoVar::new(bound_var)))
                     }
-                } else {
-                    binder.add_deferred(Box::new(ProtoVar::new(bound_var)))
                 }
-            }
+                Var::Free(name) => self.resolve_free_var(*s, name),
+            },
             Expr::Let(_, _, _) => binder.add_deferred(Box::new(ProtoLet::new(expr))),
             Expr::Lam(_, _, _) => {
                 binder.add_deferred(Box::new(self.compile_lambda(&expr, annotation)?))
@@ -1522,7 +1558,16 @@ pub mod tests {
     };
 
     fn compile(expr: RcExpr) -> Result<Rc<StgSyn>, CompileError> {
-        Compiler::new(true, RenderType::Headless, false, false, false, vec![]).compile(expr)
+        Compiler::new(
+            true,
+            RenderType::Headless,
+            false,
+            false,
+            false,
+            vec![],
+            None,
+        )
+        .compile(expr)
     }
 
     #[test]

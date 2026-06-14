@@ -307,8 +307,15 @@ mod tests {
 
                 // Now try to compile to STG
                 let core_expr = loader.core().expr.clone();
-                let compiler =
-                    Compiler::new(false, RenderType::Headless, false, false, false, vec![]);
+                let compiler = Compiler::new(
+                    false,
+                    RenderType::Headless,
+                    false,
+                    false,
+                    false,
+                    vec![],
+                    None,
+                );
 
                 println!("\n--- STG Compilation ---");
                 match compiler.compile(core_expr) {

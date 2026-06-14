@@ -49,7 +49,7 @@ pub mod vec;
 pub mod version;
 pub mod wrap;
 
-use std::{fmt, rc::Rc, str::FromStr};
+use std::{collections::HashMap, fmt, rc::Rc, str::FromStr};
 
 use crate::{common::sourcemap::SourceMap, core::expr::RcExpr};
 
@@ -308,6 +308,12 @@ pub struct StgSettings {
     pub heap_dump_at_gc: bool,
     /// Test mode: `__EXPECT` failures return false instead of panicking
     pub test_mode: bool,
+    /// Prelude binding name → slot index (relative to `INTRINSIC_COUNT`).
+    ///
+    /// When set, `Var::Free(name)` references to prelude names are compiled to
+    /// `Ref::G(intrinsic_count + slot)` rather than `CompileError::FreeVar`.
+    /// Populated from `PreludeBlob.name_to_slot` when the blob path is active.
+    pub prelude_globals: Option<HashMap<String, usize>>,
 }
 
 /// Compile core syntax to STG ready for execution
@@ -325,6 +331,7 @@ pub fn compile(
         settings.suppress_inlining,
         settings.suppress_optimiser,
         runtime.intrinsics(),
+        settings.prelude_globals.clone(),
     );
     compiler.compile(expr)
 }

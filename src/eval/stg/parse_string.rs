@@ -87,6 +87,7 @@ impl StgIntrinsic for ParseString {
             true,   // suppress_inlining (no intrinsics to inline)
             false,  // suppress_optimiser
             vec![], // intrinsics (none needed for data literals)
+            None,   // prelude_globals (data literals have no free prelude refs)
         );
         let syntax: Rc<_> = compiler
             .compile(core_expr)

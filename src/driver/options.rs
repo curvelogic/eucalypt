@@ -58,6 +58,10 @@ pub struct EucalyptCli {
     #[arg(short = 'Q', long = "no-prelude")]
     pub no_prelude: bool,
 
+    /// Force source-prelude pipeline even when pre-compiled blob is available
+    #[arg(long = "source-prelude")]
+    pub source_prelude: bool,
+
     /// Turn on debug features
     #[arg(short = 'd', long = "debug")]
     pub debug: bool,
@@ -363,6 +367,11 @@ pub struct EucalyptOptions {
     // Optimisation flags
     pub no_dce: bool,
 
+    // Prelude path control
+    /// Force the source-prelude pipeline even when a pre-compiled blob is
+    /// available.  Equivalent to setting `EU_SOURCE_PRELUDE=1`.
+    pub source_prelude: bool,
+
     // Error format
     pub error_format: ErrorFormat,
 
@@ -647,6 +656,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             format_reformat,
             format_indent,
             no_dce,
+            source_prelude: cli.source_prelude,
             error_format,
             stg_settings: StgSettings {
                 heap_limit_mib,
