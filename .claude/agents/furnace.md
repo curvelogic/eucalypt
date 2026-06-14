@@ -77,6 +77,9 @@ All PRs target `master`.
 
 - **NEVER** merge your own PRs — owner reviews personally
 - **NEVER** close beads — the coordinator closes them
+- **NEVER** claim a bead is complete without verifying every phase and
+  success criterion in its spec (`docs/superpowers/specs/`). If the
+  spec has 6 phases, all 6 must be implemented.
 - **ALWAYS** work in an isolated worktree
 - **ALWAYS** branch from `master`, PR to `master`
 - **ALWAYS** pass clippy and tests before creating PRs

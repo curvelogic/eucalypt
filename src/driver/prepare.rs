@@ -283,6 +283,12 @@ pub fn prepare(
         stats.record("eliminate-2", t.elapsed());
     }
 
+    // Extract demand annotations AFTER the final eliminate pass so the
+    // prune pass has populated CoreBinding::demand with cardinality
+    // information.  This populates UnitInterface.demands for cross-unit
+    // strictness signatures (W9 §3.7).
+    loader.extract_demands();
+
     if opt.dump_pruned() {
         let c = loader.core();
         dump_core(c.expr.clone(), opt);

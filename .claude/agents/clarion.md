@@ -66,6 +66,9 @@ All PRs target `master`.
 - **NEVER** add notes, hints, or suggestions to error messages
 - **NEVER** merge your own PRs — owner reviews personally
 - **NEVER** close beads — the coordinator closes them
+- **NEVER** claim a bead is complete without verifying every phase and
+  success criterion in its spec (`docs/superpowers/specs/`). If the
+  spec has 6 phases, all 6 must be implemented.
 - **ALWAYS** include an error harness test with every fix
 - **ALWAYS** branch from `master`, PR to `master`
 - Use UK English in all text

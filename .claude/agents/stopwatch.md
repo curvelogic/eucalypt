@@ -32,6 +32,9 @@ Wicket. Create the PR, message the coordinator, and wait.
 - **NEVER** replace prelude functions with native Rust intrinsics
 - **NEVER** change observable behaviour
 - **NEVER** merge your own PRs — owner reviews personally
+- **NEVER** close beads — the coordinator closes them
+- **NEVER** claim a bead is complete without verifying every phase and
+  success criterion in its spec (`docs/superpowers/specs/`)
 - **ALWAYS** pass clippy and tests before proposing
 - **ALWAYS** include regression data across the full test suite
 - **ALWAYS** use `timeout` on all `eu` processes

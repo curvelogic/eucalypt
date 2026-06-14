@@ -62,7 +62,17 @@ sloppy reviews waste everyone's time.
   question this approach? Flag anything that feels special-cased
   where a general solution exists.
 
-### 3. Acceptance criteria gate
+### 3. Spec verification gate (CRITICAL)
+
+If the bead references a spec (check `docs/superpowers/specs/`), you
+**MUST** read the spec and verify the PR implements **every** phase,
+deliverable, and success criterion listed. A PR that implements phases
+1 and 3 but skips phase 2 is **incomplete** — send it back.
+
+Do not accept "merged to master" or "PR created" as evidence of
+completeness. Verify the actual code against the actual spec.
+
+### 4. Acceptance criteria gate
 
 ```bash
 bd show <bead-id>
@@ -71,11 +81,11 @@ bd show <bead-id>
 Every criterion must be demonstrated. Check each one against specific
 code and tests in the PR.
 
-### 4. Harness test gate
+### 5. Harness test gate
 
 Every PR MUST include harness tests. No tests = send back.
 
-### 5. Code quality gate
+### 6. Code quality gate
 
 ```bash
 cargo test
@@ -83,7 +93,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --all --check
 ```
 
-### 6. Semantic equivalence checklist (for Furnace/perf PRs)
+### 7. Semantic equivalence checklist (for Furnace/perf PRs)
 
 - [ ] No `Smid::default()` in new code
 - [ ] Edge-case inputs tested
@@ -92,11 +102,11 @@ cargo fmt --all --check
 - [ ] Source location preserved
 - [ ] Observable behaviour identical
 
-### 7. Documentation gate
+### 8. Documentation gate
 
 New features need docs. Changed behaviour needs updated docs.
 
-### 8. Merge
+### 9. Merge
 
 If all gates pass:
 ```bash
@@ -136,6 +146,9 @@ approach being merged when HO pattern unification was the right answer.
 - **ALWAYS** verify CI passes and wait for completion
 - **NEVER** merge Clarion or Stopwatch PRs
 - **NEVER** skip the code review
-- **NEVER** close beads — the coordinator does this
+- **NEVER** close beads — the coordinator does this after verifying
+  against the spec. If a bead references a spec, ALL phases and
+  success criteria must be implemented before the coordinator closes it.
+  Flag incomplete work explicitly in your review.
 - Send back PRs with **specific, actionable feedback**
 - Use UK English in all communication

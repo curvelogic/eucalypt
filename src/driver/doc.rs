@@ -1036,6 +1036,19 @@ fn format_description_for_table(doc: &str) -> String {
     s
 }
 
+/// Strip a leading dash separator (`-`, `—`, `–`) from a string, returning
+/// the remainder.  Returns `None` if the string does not start with a dash.
+///
+/// This handles multi-byte em-dash (U+2014) and en-dash (U+2013) correctly
+/// by advancing past the full character rather than a single byte.
+fn strip_dash_prefix(s: &str) -> Option<&str> {
+    let mut chars = s.chars();
+    match chars.next()? {
+        '-' | '\u{2014}' | '\u{2013}' => Some(chars.as_str()),
+        _ => None,
+    }
+}
+
 /// Strip a backtick-quoted signature prefix, e.g. `` `name(args)` — text ``.
 fn regex_strip_backtick_prefix(s: &str) -> String {
     // Pattern: `something` followed by [ -—–] and space
@@ -1045,9 +1058,8 @@ fn regex_strip_backtick_prefix(s: &str) -> String {
     let rest = &s[1..];
     if let Some(close) = rest.find('`') {
         let after = &rest[close + 1..].trim_start();
-        if after.starts_with(['-', '\u{2014}', '\u{2013}']) {
-            let after = &after[1..].trim_start();
-            return after.to_string();
+        if let Some(after) = strip_dash_prefix(after) {
+            return after.trim_start().to_string();
         }
     }
     String::new()
@@ -1059,8 +1071,8 @@ fn regex_strip_plain_prefix(s: &str) -> String {
     if s.starts_with('(') {
         if let Some(close) = s.find(')') {
             let after = s[close + 1..].trim_start();
-            if after.starts_with(['-', '\u{2014}', '\u{2013}']) {
-                let after = after[1..].trim_start();
+            if let Some(after) = strip_dash_prefix(after) {
+                let after = after.trim_start();
                 return after.to_string();
             }
         }
