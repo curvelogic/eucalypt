@@ -1,5 +1,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 pub mod check;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod doc;
 pub mod error;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod eval;

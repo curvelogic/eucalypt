@@ -1,0 +1,11 @@
+"A fixture for testing see-also extraction."
+
+` { doc: "Flip argument order: f(a, b) becomes f(b, a)."
+    see-also: [:k, :identity] }
+flip(f, a, b): f(b, a)
+
+` { doc: "Identity function: returns its argument unchanged." }
+identity(x): x
+
+` { doc: "Constant function: always returns the first argument." }
+k(x, y): x
