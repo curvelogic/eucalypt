@@ -1847,13 +1847,13 @@ fn extract_unit_doc(unit: &Unit) -> Option<String> {
         match el {
             ast::Element::Block(block) => {
                 if let Some(doc_str) = extract_block_str(&block, "doc") {
-                    return Some(doc_str);
+                    return Some(collapse_whitespace(&doc_str));
                 }
             }
             ast::Element::Lit(lit) => {
                 if let Some(ast::LiteralValue::Str(s)) = lit.value() {
                     if let Some(v) = s.value() {
-                        return Some(v.to_string());
+                        return Some(collapse_whitespace(v));
                     }
                 }
             }
@@ -1861,6 +1861,12 @@ fn extract_unit_doc(unit: &Unit) -> Option<String> {
         }
     }
     None
+}
+
+/// Collapse runs of whitespace (including newlines from wrapped source
+/// strings) into single spaces.
+fn collapse_whitespace(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Render and output documentation in the requested format.
