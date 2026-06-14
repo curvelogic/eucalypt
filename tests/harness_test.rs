@@ -2425,6 +2425,23 @@ pub fn test_error_165() {
 }
 
 #[test]
+/// W4p2: a malformed declaration (bare colon) alongside valid declarations
+/// reports an error with a span pointing at the bare colon, not the start
+/// of the file.
+pub fn test_error_166() {
+    run_error_test(&error_opts("error_166.eu"));
+}
+
+#[test]
+/// W4p2 integration: valid declarations structurally equivalent to those
+/// that would survive error recovery evaluate correctly end-to-end.
+/// Paired with test_error_164/165 to prove the full recovery story:
+/// malformed declarations are isolated, valid ones evaluate to correct values.
+pub fn test_166_error_recovery_eval() {
+    run_test(&opts("166_error_recovery_eval.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

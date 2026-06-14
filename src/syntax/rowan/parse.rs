@@ -113,19 +113,44 @@ impl<'text> Parser<'text> {
         ch
     }
 
+    /// Return the byte length of the most recently consumed token.
+    ///
+    /// Panics if no token has been consumed yet (`next_token == 0`).
+    fn prev_token_len(&self) -> TextSize {
+        debug_assert!(self.next_token > 0, "no token has been consumed yet");
+        TextSize::of(self.tokens[self.next_token - 1].1)
+    }
+
     /// Operate on the event sink at the top of the stack
     fn sink(&mut self) -> &mut dyn EventSink {
         self.sink_stack.last_mut().unwrap().as_mut()
     }
 
-    /// Pop and complete the top event sink, passing its events to the
-    /// next sink in the stack and merging any sink-generated errors into
-    /// `self.errors`.
-    fn finish_sink(&mut self) -> Vec<ParseEvent> {
+    /// Pop and complete the top event sink, passing its events and the total
+    /// byte length of those events' tokens to the caller.
+    ///
+    /// Also merges any sink-generated errors into `self.errors`.
+    fn finish_sink(&mut self) -> (Vec<ParseEvent>, TextSize) {
         if let Some(mut sink) = self.sink_stack.pop() {
             let (events, mut errs) = sink.as_mut().complete();
             self.errors.append(&mut errs);
-            events
+            // Compute the total byte length of all tokens in these events by
+            // counting how many Token events exist and summing their text
+            // lengths from self.tokens.
+            //
+            // The tokens in `events` correspond to a contiguous run of tokens
+            // ending at `self.next_token - 1` (unless `push_back` was called).
+            // Count Token events to find how far back to look.
+            let token_count = events
+                .iter()
+                .filter(|e| matches!(e, ParseEvent::Token(_)))
+                .count();
+            let start_idx = self.next_token.saturating_sub(token_count);
+            let total_len: TextSize = self.tokens[start_idx..self.next_token]
+                .iter()
+                .map(|(_, s)| TextSize::of(*s))
+                .sum();
+            (events, total_len)
         } else {
             unreachable!()
         }
@@ -133,7 +158,7 @@ impl<'text> Parser<'text> {
 
     /// Convert the parse events into a GreenNode
     fn build(&mut self) -> GreenNode {
-        let mut events = self.finish_sink();
+        let (mut events, _) = self.finish_sink();
         let mut surplus_events = self.read_surplus();
 
         if !surplus_events.is_empty() {
@@ -177,12 +202,13 @@ impl<'text> Parser<'text> {
 
     /// Try to parse literal, pushing token back into tokens on failure
     fn try_parse_literal(&mut self) -> bool {
-        if let Some((k, _text)) = self.next() {
+        if let Some((k, text)) = self.next() {
             if k.is_literal_terminal()
                 || k == STRING_PATTERN_START
                 || k == C_STRING_PATTERN_START
                 || k == RAW_STRING_PATTERN_START
             {
+                let start_len = TextSize::of(text);
                 match k {
                     STRING_PATTERN_START => {
                         // This is a string pattern, parse it specially
@@ -190,6 +216,7 @@ impl<'text> Parser<'text> {
                             STRING_PATTERN,
                             STRING_PATTERN_START,
                             STRING_PATTERN_END,
+                            start_len,
                         );
                         true
                     }
@@ -199,6 +226,7 @@ impl<'text> Parser<'text> {
                             C_STRING_PATTERN,
                             C_STRING_PATTERN_START,
                             C_STRING_PATTERN_END,
+                            start_len,
                         );
                         true
                     }
@@ -208,13 +236,14 @@ impl<'text> Parser<'text> {
                             RAW_STRING_PATTERN,
                             RAW_STRING_PATTERN_START,
                             RAW_STRING_PATTERN_END,
+                            start_len,
                         );
                         true
                     }
                     _ => {
                         // Regular literal
                         self.sink().start_node(LITERAL);
-                        self.sink().token(k);
+                        self.sink().token(k, start_len);
                         self.sink().finish_node();
                         true
                     }
@@ -230,10 +259,10 @@ impl<'text> Parser<'text> {
 
     /// Try to parse name, pushing token back into tokens failure
     fn try_parse_name(&mut self) -> bool {
-        if let Some((k, _)) = self.next() {
+        if let Some((k, text)) = self.next() {
             if k.is_name_terminal() {
                 self.sink().start_node(NAME);
-                self.sink().token(k);
+                self.sink().token(k, TextSize::of(text));
                 self.sink().finish_node();
                 true
             } else {
@@ -295,12 +324,12 @@ impl<'text> Parser<'text> {
     /// preceding comma), and one soup item after the `:`.  Everything else is
     /// a normal comma-separated list.
     fn try_parse_list_expression(&mut self) -> bool {
-        if let Some((k, _)) = self.next() {
+        if let Some((k, text)) = self.next() {
             if k == OPEN_SQUARE {
                 // Speculatively parse the first soup item, then decide
                 // whether this is a cons pattern or a normal list.
                 self.sink().start_node(LIST);
-                self.sink().token(k);
+                self.sink().token(k, TextSize::of(text));
                 self.add_trivia();
                 while self.try_parse_soup() {
                     if self.try_accept(COMMA) {
@@ -359,8 +388,12 @@ impl<'text> Parser<'text> {
         self.sink().start_node(SOUP);
         loop {
             match self.next() {
-                Some((WHITESPACE, _)) => self.sink().token(WHITESPACE),
-                Some((COMMENT, _)) => self.sink().token(COMMENT),
+                Some((WHITESPACE, text)) => {
+                    self.sink().token(WHITESPACE, TextSize::of(text));
+                }
+                Some((COMMENT, text)) => {
+                    self.sink().token(COMMENT, TextSize::of(text));
+                }
                 Some((_k, _s)) => {
                     self.push_back();
                     if !self.try_parse_element() {
@@ -511,32 +544,37 @@ impl<'text> Parser<'text> {
 
     /// Parse block content terminated by BRACKET_CLOSE instead of CLOSE_BRACE.
     fn parse_block_content_until_bracket_close(&mut self) {
-        self.sink_stack.push(Box::new(BlockEventSink::default()));
+        let start_offset = self.token_start_at(self.next_token);
+        self.sink_stack
+            .push(Box::new(BlockEventSink::with_start(start_offset)));
         while self.parse_protoblock_element_until_bracket_close() {}
-        let events = self.finish_sink();
-        self.sink().accept(events);
+        let (events, len) = self.finish_sink();
+        self.sink().accept(events, len);
     }
 
     /// Like `parse_protoblock_element` but stops at BRACKET_CLOSE instead of CLOSE_BRACE.
     fn parse_protoblock_element_until_bracket_close(&mut self) -> bool {
         match self.next() {
             Some((COLON, _)) => {
+                let first_colon_len = self.prev_token_len();
                 if let Some((COLON, _)) = self.peek() {
                     let range = self.prev_and_next_range();
                     self.next();
+                    let second_colon_len = self.prev_token_len();
                     self.errors.push(ParseError::InvalidDoubleColon { range });
                     self.sink().start_node(ERROR_STOWAWAYS);
-                    self.sink().token(COLON);
-                    self.sink().token(COLON);
+                    self.sink().token(COLON, first_colon_len);
+                    self.sink().token(COLON, second_colon_len);
                     self.sink().finish_node();
                 } else {
-                    self.sink().token(COLON);
+                    self.sink().token(COLON, first_colon_len);
                 }
                 self.add_trivia();
                 true
             }
-            Some((k, _)) if k == BACKTICK || k == COMMA || k == WHITESPACE || k == COMMENT => {
-                self.sink().token(k);
+            Some((k, text)) if k == BACKTICK || k == COMMA || k == WHITESPACE || k == COMMENT => {
+                let len = TextSize::of(text);
+                self.sink().token(k, len);
                 self.add_trivia();
                 true
             }
@@ -574,7 +612,8 @@ impl<'text> Parser<'text> {
             // token-accounting assertion failure.
             while let Some((k, _)) = self.next() {
                 if k == CLOSE_PAREN {
-                    self.sink().token(CLOSE_PAREN);
+                    let len = self.prev_token_len();
+                    self.sink().token(CLOSE_PAREN, len);
                     break;
                 }
                 // Don't cross block or list boundaries.
@@ -585,8 +624,9 @@ impl<'text> Parser<'text> {
                     self.push_back();
                     break;
                 }
+                let tok_len = self.prev_token_len();
                 self.sink().start_node(ERROR_STOWAWAYS);
-                self.sink().token(k);
+                self.sink().token(k, tok_len);
                 self.sink().finish_node();
             }
         }
@@ -661,10 +701,14 @@ impl<'text> Parser<'text> {
 
     /// Parse content of block or unit
     fn parse_block_content(&mut self) {
-        self.sink_stack.push(Box::new(BlockEventSink::default()));
+        // Pass the starting byte offset so the BlockEventSink can compute
+        // accurate source positions for declaration-level errors.
+        let start_offset = self.token_start_at(self.next_token);
+        self.sink_stack
+            .push(Box::new(BlockEventSink::with_start(start_offset)));
         while self.parse_protoblock_element() {}
-        let events = self.finish_sink();
-        self.sink().accept(events);
+        let (events, len) = self.finish_sink();
+        self.sink().accept(events, len);
     }
 
     /// Parse a temporary protoblock element
@@ -676,22 +720,25 @@ impl<'text> Parser<'text> {
                 // token accounting. Catch it here: wrap both tokens in an ERROR node so
                 // the BlockEventSink treats them as ordinary buffered content rather
                 // than declaration separators.
+                let first_colon_len = self.prev_token_len();
                 if let Some((COLON, _)) = self.peek() {
                     let range = self.prev_and_next_range();
                     self.next(); // consume second COLON
+                    let second_colon_len = self.prev_token_len();
                     self.errors.push(ParseError::InvalidDoubleColon { range });
                     self.sink().start_node(ERROR_STOWAWAYS);
-                    self.sink().token(COLON);
-                    self.sink().token(COLON);
+                    self.sink().token(COLON, first_colon_len);
+                    self.sink().token(COLON, second_colon_len);
                     self.sink().finish_node();
                 } else {
-                    self.sink().token(COLON);
+                    self.sink().token(COLON, first_colon_len);
                 }
                 self.add_trivia();
                 true
             }
-            Some((k, _)) if k == BACKTICK || k == COMMA || k == WHITESPACE || k == COMMENT => {
-                self.sink().token(k);
+            Some((k, text)) if k == BACKTICK || k == COMMA || k == WHITESPACE || k == COMMENT => {
+                let len = TextSize::of(text);
+                self.sink().token(k, len);
                 self.add_trivia();
                 true
             }
@@ -725,9 +772,10 @@ impl<'text> Parser<'text> {
     /// Expects and adds as leaf a particular token, otherwise recording
     /// an `UnexpectedToken` error and returning false
     fn expect(&mut self, kind: SyntaxKind) -> bool {
-        if let Some((k, _)) = self.next() {
+        if let Some((k, text)) = self.next() {
             if k == kind {
-                self.sink().token(k);
+                let len = TextSize::of(text);
+                self.sink().token(k, len);
                 true
             } else {
                 self.push_back();
@@ -756,13 +804,14 @@ impl<'text> Parser<'text> {
         loop {
             match self.peek() {
                 None => break,
-                Some((k, _)) if k == close && depth == 0 => {
+                Some((k, text)) if k == close && depth == 0 => {
                     // Found the matching close delimiter — consume it.
+                    let len = TextSize::of(text);
                     self.next();
                     if has_stowaways {
                         self.sink().finish_node();
                     }
-                    self.sink().token(close);
+                    self.sink().token(close, len);
                     return;
                 }
                 Some((k, _)) if stop_at.contains(&k) => {
@@ -797,7 +846,8 @@ impl<'text> Parser<'text> {
                         has_stowaways = true;
                     }
                     self.next();
-                    self.sink().token(k);
+                    let tok_len = self.prev_token_len();
+                    self.sink().token(k, tok_len);
                 }
             }
         }
@@ -808,9 +858,10 @@ impl<'text> Parser<'text> {
     }
 
     fn try_accept(&mut self, kind: SyntaxKind) -> bool {
-        if let Some((k, _)) = self.next() {
+        if let Some((k, text)) = self.next() {
             if k == kind {
-                self.sink().token(k);
+                let len = TextSize::of(text);
+                self.sink().token(k, len);
                 true
             } else {
                 self.push_back();
@@ -844,10 +895,11 @@ impl<'text> Parser<'text> {
     }
 
     fn add_trivia(&mut self) {
-        while let Some((k, _)) = self.peek() {
+        while let Some((k, text)) = self.peek() {
             if k.is_trivial() {
+                let len = TextSize::of(text);
                 self.next();
-                self.sink().token(k);
+                self.sink().token(k, len);
             } else {
                 break;
             }
@@ -858,56 +910,62 @@ impl<'text> Parser<'text> {
     ///
     /// The pattern_kind, start_kind, and end_kind parameters allow this method
     /// to work for plain strings, c-strings, and r-strings.
+    ///
+    /// `start_len` is the byte length of the opening delimiter token, which
+    /// was already consumed by the caller before this method is entered.
     fn parse_string_pattern(
         &mut self,
         pattern_kind: SyntaxKind,
         start_kind: SyntaxKind,
         end_kind: SyntaxKind,
+        start_len: TextSize,
     ) {
         self.sink().start_node(pattern_kind);
-        self.sink().token(start_kind); // consume opening quote
+        self.sink().token(start_kind, start_len); // emit already-consumed opening quote
 
         // Process tokens until we reach the end kind
-        while let Some((kind, _text)) = self.peek() {
+        while let Some((kind, text)) = self.peek() {
+            let tok_len = TextSize::of(text);
             if kind == end_kind {
-                self.sink().token(end_kind);
                 self.next(); // consume closing quote
+                self.sink().token(end_kind, tok_len);
                 break;
             }
 
             match kind {
                 STRING_LITERAL_CONTENT => {
-                    self.sink().start_node(STRING_LITERAL_CONTENT);
-                    self.sink().token(STRING_LITERAL_CONTENT);
                     self.next();
+                    self.sink().start_node(STRING_LITERAL_CONTENT);
+                    self.sink().token(STRING_LITERAL_CONTENT, tok_len);
                     self.sink().finish_node();
                 }
                 STRING_ESCAPED_OPEN => {
-                    self.sink().start_node(STRING_ESCAPED_OPEN);
-                    self.sink().token(STRING_ESCAPED_OPEN);
                     self.next();
+                    self.sink().start_node(STRING_ESCAPED_OPEN);
+                    self.sink().token(STRING_ESCAPED_OPEN, tok_len);
                     self.sink().finish_node();
                 }
                 STRING_ESCAPED_CLOSE => {
-                    self.sink().start_node(STRING_ESCAPED_CLOSE);
-                    self.sink().token(STRING_ESCAPED_CLOSE);
                     self.next();
+                    self.sink().start_node(STRING_ESCAPED_CLOSE);
+                    self.sink().token(STRING_ESCAPED_CLOSE, tok_len);
                     self.sink().finish_node();
                 }
                 OPEN_BRACE => {
                     // Start of interpolation — record the token index before consuming
                     let open_brace_idx = self.next_token;
                     self.sink().start_node(STRING_INTERPOLATION);
-                    self.sink().token(OPEN_BRACE);
                     self.next(); // consume {
+                    self.sink().token(OPEN_BRACE, tok_len);
 
                     // Parse interpolation content
                     self.parse_string_interpolation_content();
 
                     // Consume closing brace
-                    if let Some((CLOSE_BRACE, _)) = self.peek() {
-                        self.sink().token(CLOSE_BRACE);
+                    if let Some((CLOSE_BRACE, close_text)) = self.peek() {
+                        let close_len = TextSize::of(close_text);
                         self.next();
+                        self.sink().token(CLOSE_BRACE, close_len);
                     } else {
                         // No closing brace immediately — consume any stray
                         // interpolation tokens that the content parser did not
@@ -915,14 +973,15 @@ impl<'text> Parser<'text> {
                         // means the format spec or dotted path was merely malformed,
                         // not truly unclosed) or the end of the enclosing string.
                         let mut found_close = false;
-                        while let Some((k, _)) = self.peek() {
+                        while let Some((k, stray_text)) = self.peek() {
+                            let stray_len = TextSize::of(stray_text);
                             if k == CLOSE_BRACE {
                                 // A closing brace is present; consume it and stop.
                                 // This handles malformed-but-closed interpolations
                                 // such as `{x:.2f}` where the parser cannot parse
                                 // the full format spec.
-                                self.sink().token(CLOSE_BRACE);
                                 self.next();
+                                self.sink().token(CLOSE_BRACE, stray_len);
                                 found_close = true;
                                 break;
                             }
@@ -936,8 +995,8 @@ impl<'text> Parser<'text> {
                                 // will be consumed by the outer loop.
                                 break;
                             }
-                            self.sink().token(k);
                             self.next();
+                            self.sink().token(k, stray_len);
                         }
                         if !found_close {
                             let open_start = self.token_start_at(open_brace_idx);
@@ -975,27 +1034,30 @@ impl<'text> Parser<'text> {
             self.sink().start_node(SOUP);
 
             // Parse the first target (must exist)
-            if let Some((STRING_INTERPOLATION_TARGET, _)) = self.peek() {
-                self.sink().start_node(NAME);
-                self.sink().token(STRING_INTERPOLATION_TARGET);
+            if let Some((STRING_INTERPOLATION_TARGET, text)) = self.peek() {
+                let len = TextSize::of(text);
                 self.next();
+                self.sink().start_node(NAME);
+                self.sink().token(STRING_INTERPOLATION_TARGET, len);
                 self.sink().finish_node(); // end NAME
             }
 
             // Parse alternating dots and targets
             while let Some((OPERATOR_IDENTIFIER, text)) = self.peek() {
                 if text == "." {
+                    let dot_len = TextSize::of(text);
                     // Parse the dot
-                    self.sink().start_node(NAME);
-                    self.sink().token(OPERATOR_IDENTIFIER);
                     self.next();
+                    self.sink().start_node(NAME);
+                    self.sink().token(OPERATOR_IDENTIFIER, dot_len);
                     self.sink().finish_node(); // end NAME
 
                     // Parse the following target
-                    if let Some((STRING_INTERPOLATION_TARGET, _)) = self.peek() {
-                        self.sink().start_node(NAME);
-                        self.sink().token(STRING_INTERPOLATION_TARGET);
+                    if let Some((STRING_INTERPOLATION_TARGET, tgt_text)) = self.peek() {
+                        let tgt_len = TextSize::of(tgt_text);
                         self.next();
+                        self.sink().start_node(NAME);
+                        self.sink().token(STRING_INTERPOLATION_TARGET, tgt_len);
                         self.sink().finish_node(); // end NAME
                     } else {
                         // Malformed - dot without following target
@@ -1009,23 +1071,26 @@ impl<'text> Parser<'text> {
             self.sink().finish_node(); // end SOUP
         } else {
             // Simple case - just one target
-            if let Some((STRING_INTERPOLATION_TARGET, _)) = self.peek() {
-                self.sink().start_node(STRING_INTERPOLATION_TARGET);
-                self.sink().token(STRING_INTERPOLATION_TARGET);
+            if let Some((STRING_INTERPOLATION_TARGET, text)) = self.peek() {
+                let len = TextSize::of(text);
                 self.next();
+                self.sink().start_node(STRING_INTERPOLATION_TARGET);
+                self.sink().token(STRING_INTERPOLATION_TARGET, len);
                 self.sink().finish_node();
             }
         }
 
         // Check for format spec (colon followed by format)
-        if let Some((COLON, _)) = self.peek() {
-            self.sink().token(COLON);
+        if let Some((COLON, colon_text)) = self.peek() {
+            let colon_len = TextSize::of(colon_text);
             self.next(); // consume :
+            self.sink().token(COLON, colon_len);
 
-            if let Some((STRING_FORMAT_SPEC, _)) = self.peek() {
-                self.sink().start_node(STRING_FORMAT_SPEC);
-                self.sink().token(STRING_FORMAT_SPEC);
+            if let Some((STRING_FORMAT_SPEC, spec_text)) = self.peek() {
+                let spec_len = TextSize::of(spec_text);
                 self.next();
+                self.sink().start_node(STRING_FORMAT_SPEC);
+                self.sink().token(STRING_FORMAT_SPEC, spec_len);
                 self.sink().finish_node();
             }
         }
@@ -1035,8 +1100,19 @@ impl<'text> Parser<'text> {
 trait EventSink {
     fn start_node(&mut self, kind: SyntaxKind);
     fn finish_node(&mut self);
-    fn accept(&mut self, events: Vec<ParseEvent>);
-    fn token(&mut self, kind: SyntaxKind);
+    /// Accept events from a sub-sink.
+    ///
+    /// `len` is the total byte length of all tokens in `events`.  Sinks that
+    /// track source positions (e.g. [`BlockEventSink`]) use it to advance
+    /// their running offset; sinks that do not (e.g. [`SimpleEventSink`])
+    /// ignore it.
+    fn accept(&mut self, events: Vec<ParseEvent>, len: TextSize);
+    /// Emit a token of the given kind.
+    ///
+    /// `len` is the byte length of the token text.  Sinks that track source
+    /// positions (e.g. [`BlockEventSink`]) use it to maintain a running
+    /// offset; sinks that do not (e.g. [`SimpleEventSink`]) ignore it.
+    fn token(&mut self, kind: SyntaxKind, len: TextSize);
     /// Complete and return `(events, additional_errors)`.
     ///
     /// Most sinks return an empty error vec; `BlockEventSink` also returns
@@ -1056,11 +1132,11 @@ impl EventSink for SimpleEventSink {
         self.0.push(ParseEvent::Finish);
     }
 
-    fn accept(&mut self, events: Vec<ParseEvent>) {
+    fn accept(&mut self, events: Vec<ParseEvent>, _len: TextSize) {
         self.0.extend(events);
     }
 
-    fn token(&mut self, kind: SyntaxKind) {
+    fn token(&mut self, kind: SyntaxKind, _len: TextSize) {
         self.0.push(ParseEvent::Token(kind));
     }
 
@@ -1085,6 +1161,16 @@ struct BlockEventSink {
     depth: usize,
     /// Parse errors discovered while committing declarations (e.g. missing colon)
     errors: Vec<ParseError>,
+    /// Running byte offset into the source text, updated by every `token()` call.
+    ///
+    /// Used to compute accurate `TextRange` values for declaration-level errors
+    /// such as [`ParseError::MalformedDeclarationHead`].
+    current_offset: TextSize,
+    /// Byte offset at the start of the current pending declaration.
+    ///
+    /// Set when we first see a `COLON` token that begins a new declaration.
+    /// `None` when no declaration is being accumulated.
+    decl_start_offset: Option<TextSize>,
 }
 
 struct PendingDeclaration {
@@ -1098,6 +1184,20 @@ struct PendingDeclaration {
     body: Vec<ParseEvent>,
 }
 
+impl BlockEventSink {
+    /// Construct a `BlockEventSink` whose running offset begins at `start`.
+    ///
+    /// This should be the byte offset of the first token that will be
+    /// delivered to this sink, so that error ranges reflect absolute file
+    /// positions rather than positions relative to the block start.
+    fn with_start(start: TextSize) -> Self {
+        Self {
+            current_offset: start,
+            ..Default::default()
+        }
+    }
+}
+
 impl EventSink for BlockEventSink {
     fn start_node(&mut self, kind: SyntaxKind) {
         self.depth += 1;
@@ -1109,11 +1209,12 @@ impl EventSink for BlockEventSink {
         self.buffer.push(ParseEvent::Finish)
     }
 
-    fn accept(&mut self, events: Vec<ParseEvent>) {
+    fn accept(&mut self, events: Vec<ParseEvent>, len: TextSize) {
+        self.current_offset += len;
         self.buffer.extend(events);
     }
 
-    fn token(&mut self, kind: SyntaxKind) {
+    fn token(&mut self, kind: SyntaxKind, len: TextSize) {
         if self.depth == 0 {
             match kind {
                 BACKTICK => {
@@ -1122,6 +1223,7 @@ impl EventSink for BlockEventSink {
                             Some(ref mut d) => {
                                 swap(&mut d.body, &mut self.buffer);
                                 self.commit_declaration();
+                                self.decl_start_offset = None;
                             }
                             None => {
                                 swap(&mut self.block_meta, &mut self.buffer);
@@ -1135,6 +1237,9 @@ impl EventSink for BlockEventSink {
                         colon: vec![],
                         body: vec![],
                     });
+                    // Record the start of this declaration at the backtick.
+                    self.decl_start_offset = Some(self.current_offset);
+                    self.current_offset += len;
                     self.buffer.push(ParseEvent::Token(kind));
                 }
                 COLON => {
@@ -1151,6 +1256,7 @@ impl EventSink for BlockEventSink {
                                     // expecting body of last block
                                     swap(&mut d.body, &mut self.buffer);
                                     self.commit_declaration();
+                                    self.decl_start_offset = None;
                                 }
                             }
                             None => {
@@ -1174,6 +1280,16 @@ impl EventSink for BlockEventSink {
                         }
                     }
 
+                    // Record the start of this new declaration at the colon's
+                    // byte position, which is the current offset before we
+                    // consume the colon.  A backtick-prefixed declaration may
+                    // have set decl_start_offset already; overwrite it here so
+                    // the range always starts at the colon when no valid head
+                    // preceded it.
+                    self.decl_start_offset = Some(self.current_offset);
+
+                    self.current_offset += len;
+
                     match self.declaration {
                         Some(ref mut d) => {
                             swap(&mut head_nodes, &mut d.head);
@@ -1190,6 +1306,7 @@ impl EventSink for BlockEventSink {
                     }
                 }
                 COMMA => {
+                    self.current_offset += len;
                     // comma always tacks on the end of what we're buffering
                     self.buffer.push(ParseEvent::Token(kind));
                     match self.declaration {
@@ -1200,6 +1317,7 @@ impl EventSink for BlockEventSink {
                                 // expecting body of last block
                                 swap(&mut d.body, &mut self.buffer);
                                 self.commit_declaration();
+                                self.decl_start_offset = None;
                             }
                         }
                         None => {
@@ -1211,10 +1329,14 @@ impl EventSink for BlockEventSink {
                         }
                     }
                 }
-                _ => self.buffer.push(ParseEvent::Token(kind)),
+                _ => {
+                    self.current_offset += len;
+                    self.buffer.push(ParseEvent::Token(kind));
+                }
             }
         } else {
-            self.buffer.push(ParseEvent::Token(kind))
+            self.current_offset += len;
+            self.buffer.push(ParseEvent::Token(kind));
         }
     }
 
@@ -1293,9 +1415,15 @@ impl BlockEventSink {
                 // Malformed declaration: colon present but no valid head was
                 // extracted.  Wrap the whole thing in an ERROR node so that
                 // adjacent valid declarations are not affected.
-                self.errors.push(ParseError::MalformedDeclarationHead {
-                    range: rowan::TextRange::default(),
-                });
+                //
+                // The range covers from the declaration start (the colon or
+                // backtick that opened it) up to the current offset.  If no
+                // start was recorded (shouldn't happen), fall back to the
+                // current offset as a single-byte range.
+                let range_start = self.decl_start_offset.unwrap_or(self.current_offset);
+                let range = rowan::TextRange::new(range_start, self.current_offset);
+                self.errors
+                    .push(ParseError::MalformedDeclarationHead { range });
                 self.committed.push(ParseEvent::StartNode(ERROR));
                 if let Some(m) = &mut decl.meta {
                     self.committed.append(m);
