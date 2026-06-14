@@ -83,6 +83,19 @@ jobs:
           EU_GC_STRESS: "1"
           EU_GC_POISON: "1"
 
+  test-source-prelude:
+    name: Source-prelude harness (x86-64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release
+      - name: Run harness with source prelude
+        run: ./target/release/eu test --allow-io tests/harness
+        env:
+          EU_SOURCE_PRELUDE: "1"
+
   test-aarch64-sequential:
     name: Sequential harness (aarch64 release)
     runs-on: ubuntu-24.04-arm
