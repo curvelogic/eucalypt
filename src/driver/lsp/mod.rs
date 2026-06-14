@@ -15,6 +15,7 @@ mod highlight;
 mod hover;
 mod inlay_hints;
 mod navigation;
+pub mod query;
 mod references;
 mod rename;
 mod selection;
@@ -48,8 +49,8 @@ use lsp_types::{
 
 use crate::common::sourcemap::SourceMap;
 use crate::core::typecheck::types::Type;
-use crate::syntax::rowan::ParseError;
 
+use self::query::{FileId, QueryStore};
 use self::symbol_table::{SymbolSource, SymbolTable};
 
 /// Inferred type environment for a document, mapping binding names to types.
@@ -276,13 +277,14 @@ struct ServerState {
     /// Cached pipeline results per document URI.
     cached: HashMap<Url, CachedPipeline>,
 
-    /// Green node from the last parse per document, for change detection.
-    last_green: HashMap<Url, rowan::GreenNode>,
-
-    /// Parse errors from the most recent parse per document.
-    /// Cached so that `apply_pipeline_result` can include them without
-    /// re-parsing the document.
-    last_parse_errors: HashMap<Url, Vec<ParseError>>,
+    /// Incremental query store: tracks file texts, parse results, and the
+    /// import graph for cross-file invalidation.
+    ///
+    /// Replaces `last_green` and `last_parse_errors` with a unified,
+    /// revision-aware cache.  Pipeline results remain in `cached` for now;
+    /// future work (W7 Phases 3–5) will migrate them fully into the query
+    /// store.
+    queries: QueryStore,
 
     /// Channel for receiving pipeline results from background threads.
     pipeline_rx: mpsc::Receiver<PipelineResult>,
@@ -308,8 +310,7 @@ impl ServerState {
             store: DocumentStore::new(),
             prelude_table: symbol_table::prelude_symbols(&prelude_uri),
             cached: HashMap::new(),
-            last_green: HashMap::new(),
-            last_parse_errors: HashMap::new(),
+            queries: QueryStore::new(),
             pipeline_rx,
             pipeline_tx,
             cancel: HashMap::new(),
@@ -391,11 +392,11 @@ impl ServerState {
                     &cached.warnings,
                     &cached.source_map,
                 );
-                // Use cached parse errors from the most recent parse rather
-                // than re-parsing the document.
-                let cached_errors = self.last_parse_errors.get(&uri);
+                // Use cached parse errors from the query store rather than
+                // re-parsing the document.
+                let file_id = FileId::from_url(&uri);
                 let empty = vec![];
-                let parse_errors = cached_errors.unwrap_or(&empty);
+                let parse_errors = self.queries.last_parse_errors(&file_id).unwrap_or(&empty);
                 let mut diags = diagnostics::diagnostics_from_parse_errors(&text, parse_errors);
                 diags.extend(type_diags);
 
@@ -409,6 +410,15 @@ impl ServerState {
                     params,
                 );
                 connection.sender.send(Message::Notification(notif))?;
+
+                // Update the import graph in the query store so that future
+                // edits to imported files trigger re-checking of this file.
+                let import_file_ids: Vec<FileId> = cached
+                    .imports
+                    .iter()
+                    .map(|imp| FileId::from_url(&imp.uri))
+                    .collect();
+                self.queries.set_imports(&file_id, import_file_ids);
 
                 self.cached.insert(uri.clone(), cached);
 
@@ -433,10 +443,10 @@ impl ServerState {
                 // type information. Re-publish diagnostics with parse
                 // errors plus the pipeline error as a visible warning.
                 self.cached.remove(&uri);
+                let file_id = FileId::from_url(&uri);
                 let text = self.store.get(&uri).unwrap_or_default().to_string();
-                let cached_errors = self.last_parse_errors.get(&uri);
                 let empty = vec![];
-                let parse_errors = cached_errors.unwrap_or(&empty);
+                let parse_errors = self.queries.last_parse_errors(&file_id).unwrap_or(&empty);
                 let mut diags = diagnostics::diagnostics_from_parse_errors(&text, parse_errors);
                 // Surface the pipeline error as a diagnostic so the user
                 // can see why type checking and import resolution failed.
@@ -717,10 +727,10 @@ fn on_document_change(
 /// Handle textDocument/didClose — clean up per-document caches.
 fn on_document_close(state: &mut ServerState, params: lsp_types::DidCloseTextDocumentParams) {
     let uri = params.text_document.uri;
+    let file_id = FileId::from_url(&uri);
     state.store.close(&uri);
     state.cached.remove(&uri);
-    state.last_green.remove(&uri);
-    state.last_parse_errors.remove(&uri);
+    state.queries.remove_file(&file_id);
     if let Some(cancel) = state.cancel.remove(&uri) {
         cancel.store(true, Ordering::SeqCst);
     }
@@ -728,6 +738,13 @@ fn on_document_close(state: &mut ServerState, params: lsp_types::DidCloseTextDoc
 
 /// Common handler for document open/change: parse, detect changes,
 /// publish parse diagnostics, and spawn a background pipeline run.
+///
+/// ## Cross-file invalidation
+///
+/// After updating the file text in the query store, we look up all files that
+/// import the changed file and trigger a pipeline re-run for each of them.
+/// This ensures that edits to a library file propagate to its importers even
+/// though the importer's own text hasn't changed.
 fn on_document_changed(
     connection: &Connection,
     state: &mut ServerState,
@@ -750,7 +767,8 @@ fn on_document_changed(
     //
     // A structural-only comparison (ignoring token text) would incorrectly
     // suppress re-runs for such changes.  The current approach is correct.
-    let changed = match state.last_green.get(&uri) {
+    let file_id = FileId::from_url(&uri);
+    let changed = match state.queries.last_green(&file_id) {
         Some(prev_green) => *prev_green != new_green,
         None => true,
     };
@@ -759,11 +777,13 @@ fn on_document_changed(
         return Ok(());
     }
 
-    // Update cached green node and parse errors.
-    state.last_green.insert(uri.clone(), new_green);
+    // Update the query store: set file text (bumps revision), store parse result.
     state
-        .last_parse_errors
-        .insert(uri.clone(), parse.errors().clone());
+        .queries
+        .set_file_text(file_id.clone(), std::sync::Arc::new(text.to_string()));
+    state
+        .queries
+        .store_parse(file_id.clone(), new_green, parse.errors().clone());
 
     // Publish parse-error diagnostics immediately.
     let diags = diagnostics::diagnostics_from_parse_errors(text, parse.errors());
@@ -791,6 +811,35 @@ fn on_document_changed(
     let uri_clone = uri.clone();
 
     spawn_pipeline(uri_clone, text_owned, path, tx, cancel);
+
+    // Cross-file invalidation: trigger a pipeline re-run for all files that
+    // import the changed file.  The import graph was populated when those
+    // files' pipelines previously completed.
+    let importers: Vec<FileId> = state.queries.importers_of(&file_id).cloned().collect();
+    for importer_id in importers {
+        let importer_uri = importer_id.uri.clone();
+        // Skip if the importer is not open in the editor.
+        let importer_text = match state.store.get(&importer_uri) {
+            Some(t) => t.to_string(),
+            None => continue,
+        };
+        // Cancel any in-flight run for the importer.
+        if let Some(prev_cancel) = state.cancel.get(&importer_uri) {
+            prev_cancel.store(true, Ordering::SeqCst);
+        }
+        let importer_cancel = Arc::new(AtomicBool::new(false));
+        state
+            .cancel
+            .insert(importer_uri.clone(), importer_cancel.clone());
+        let importer_path = importer_uri.to_file_path().ok();
+        spawn_pipeline(
+            importer_uri,
+            importer_text,
+            importer_path,
+            state.pipeline_tx.clone(),
+            importer_cancel,
+        );
+    }
 
     Ok(())
 }
