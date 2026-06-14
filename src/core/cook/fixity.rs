@@ -10,6 +10,27 @@ pub fn distribute(expr: RcExpr) -> Result<RcExpr, CoreError> {
     Distributor::default().dist(expr)
 }
 
+/// Distribute fixities with a seed frame of prelude operator metadata.
+///
+/// Used on the blob path where the prelude source is not merged into the
+/// expression but its operators must still be visible during cook.  The seed
+/// frame has lower priority than operators defined in `expr` (user operators
+/// shadow prelude operators because `env.get` searches from the top of the
+/// stack, and the seed frame is pushed first / sits at the bottom).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn distribute_with_prelude(
+    expr: RcExpr,
+    prelude_operators: &HashMap<String, crate::driver::unit_interface::OperatorInfo>,
+) -> Result<RcExpr, CoreError> {
+    let mut d = Distributor::default();
+    let seed_frame: Frame = prelude_operators
+        .iter()
+        .map(|(name, info)| (name.clone(), (info.smid, info.fixity, info.precedence)))
+        .collect();
+    d.env.push(seed_frame);
+    d.dist(expr)
+}
+
 /// Extract type annotation strings for operator bindings from the raw
 /// (pre-cook) expression.
 ///

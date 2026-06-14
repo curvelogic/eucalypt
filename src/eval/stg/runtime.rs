@@ -9,7 +9,10 @@ use crate::{
         emit::Emitter,
         machine::intrinsic::{IntrinsicMachine, StgIntrinsic},
         memory::{mutator::MutatorHeapView, syntax::Ref},
-        stg::support::call,
+        stg::{
+            arena::{ArenaLambdaForm, ArenaStgSyn, StgArena},
+            support::call,
+        },
     },
 };
 
@@ -49,6 +52,15 @@ pub struct StandardRuntime {
     impls: Vec<Box<dyn StgIntrinsic>>,
     /// Annotation SMIDs to apply to globals
     annotations: Option<Vec<Smid>>,
+    /// Pre-compiled prelude lambda forms stored in arena form.
+    ///
+    /// Arena-flattened forms are `Sync` (no `Rc<StgSyn>` pointers) and are
+    /// reconstructed to `LambdaForm` on demand in `globals()`.
+    ///
+    /// Empty on the source-prelude path.  Populated from `PreludeBlob` when
+    /// the blob path is active.
+    prelude_nodes: Vec<ArenaStgSyn>,
+    prelude_forms: Vec<ArenaLambdaForm>,
 }
 
 impl Default for StandardRuntime {
@@ -60,7 +72,20 @@ impl Default for StandardRuntime {
         StandardRuntime {
             impls,
             annotations: None,
+            prelude_nodes: Vec::new(),
+            prelude_forms: Vec::new(),
         }
+    }
+}
+
+impl StandardRuntime {
+    /// Set pre-compiled prelude bindings from the blob's arena representation.
+    ///
+    /// Must be called before `globals()` / `prepare()` when using the blob path.
+    /// Storing in arena form (no `Rc`) allows `StandardRuntime` to remain `Sync`.
+    pub fn set_prelude_bindings(&mut self, nodes: Vec<ArenaStgSyn>, forms: Vec<ArenaLambdaForm>) {
+        self.prelude_nodes = nodes;
+        self.prelude_forms = forms;
     }
 }
 
@@ -119,11 +144,24 @@ impl Runtime for StandardRuntime {
         )
     }
 
-    /// Provide all global STG wrappers for the machine
+    /// Provide all global STG wrappers for the machine.
     ///
-    /// Must not be called until globals have been generated
+    /// Returns intrinsic wrappers (slots 0..INTRINSIC_COUNT) followed by
+    /// any pre-compiled prelude bindings (slots INTRINSIC_COUNT..).
+    ///
+    /// Must not be called until `prepare()` has been called.
     fn globals(&self) -> Vec<LambdaForm> {
-        self.lambdas()
+        let mut gs = self.lambdas();
+        if !self.prelude_forms.is_empty() {
+            let arena = StgArena {
+                nodes: self.prelude_nodes.clone(),
+                forms: self.prelude_forms.clone(),
+            };
+            for i in 0..self.prelude_forms.len() as u32 {
+                gs.push(arena.reconstruct_form(i));
+            }
+        }
+        gs
     }
 
     /// Provide reference to intrinsic implementations for the machine

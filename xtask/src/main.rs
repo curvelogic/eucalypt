@@ -135,8 +135,12 @@ fn cmd_prelude_compile() -> Result<()> {
     // Cook (resolve operator precedence).
     loader.cook().context("cook")?;
 
-    // Run all optimisation passes.
-    loader.inline().context("inline")?;
+    // Run destructure fusion only.
+    // NOTE: We skip `inline()` deliberately: the inline pass aggressively
+    // folds internal Let bindings into their single call site, reducing the
+    // ~295 prelude top-level bindings to only a handful in the compiled STG.
+    // Preserving all Let bindings here ensures the blob has one LambdaForm
+    // per prelude name, which Phase 5 loads into global slots INTRINSIC_COUNT+i.
     loader.fuse_destructure().context("fuse_destructure")?;
     // No eliminate — every prelude binding must be retained in the blob.
     // The type checker needs to see all bindings for their type schemes.
@@ -153,13 +157,26 @@ fn cmd_prelude_compile() -> Result<()> {
     summary.operator_overloads = operator_overloads;
 
     // ── 4. STG-compile the prelude expression ─────────────────────────────────
+    // We suppress inlining in the STG compiler too: the STG `suppress_inlining`
+    // flag prevents the compiler from inlining intrinsic-wrapper calls, keeping
+    // each prelude binding as an independent LambdaForm.
+    //
+    // NOTE on Ref::L vs Ref::G (Phase 7 limitation):
+    // Cross-binding references within the prelude are still compiled as
+    // Ref::L (de Bruijn indices) rather than Ref::G (global slot refs),
+    // because the merged prelude expression uses Var::Bound for internal
+    // references.  Phase 7 addresses Var::Free references in *user code*;
+    // the xtask would need a separate restructuring to produce Ref::G
+    // within the prelude blob itself.  For now, the blob stores Ref::L
+    // which is correct for the nested-Let interpretation but cannot yet
+    // be used with fully independent global slots.
     let mut source_map = eucalypt::common::sourcemap::SourceMap::new();
     let runtime = make_standard_runtime(&mut source_map);
 
     let stg_settings = eucalypt::eval::stg::StgSettings {
         generate_annotations: false,
         suppress_updates: false,
-        suppress_inlining: false,
+        suppress_inlining: true, // keep each binding as its own LambdaForm
         suppress_optimiser: false,
         render_type: eucalypt::eval::stg::RenderType::Headless,
         ..Default::default()

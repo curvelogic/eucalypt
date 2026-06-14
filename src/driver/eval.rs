@@ -18,6 +18,35 @@ use crate::{
     },
     export,
 };
+
+/// Try to load the pre-compiled prelude blob and return it.
+///
+/// Returns `None` when:
+/// - the blob is unavailable or stale (`cfg(prelude_blob_stale)`)
+/// - `--source-prelude` was requested
+/// - `EU_SOURCE_PRELUDE=1` is set
+#[cfg(not(target_arch = "wasm32"))]
+fn maybe_load_prelude_blob(opt: &EucalyptOptions) -> Option<crate::eval::stg::blob::PreludeBlob> {
+    // Source-prelude override takes priority.
+    if opt.source_prelude || std::env::var("EU_SOURCE_PRELUDE").as_deref() == Ok("1") {
+        return None;
+    }
+
+    #[cfg(prelude_blob_ok)]
+    {
+        let bytes = crate::driver::resources::PRELUDE_BLOB_BYTES;
+        match crate::eval::stg::blob::PreludeBlob::from_bytes(bytes) {
+            Ok(blob) => Some(blob),
+            Err(e) => {
+                eprintln!("warning: failed to load prelude blob, falling back to source: {e}");
+                None
+            }
+        }
+    }
+
+    #[cfg(not(prelude_blob_ok))]
+    None
+}
 use codespan_reporting::{
     diagnostic::Diagnostic,
     files::{Files, SimpleFiles},
@@ -154,7 +183,19 @@ impl<'a> Executor<'a> {
         let mut emitter = export::create_emitter(&format, output.as_mut())
             .ok_or_else(|| ExecutionError::UnknownFormat(format.to_string()))?;
 
-        let rt = make_standard_runtime(&mut self.source_map);
+        // ── Pre-compiled prelude blob path ────────────────────────────────────
+        // When a valid blob is present and --source-prelude / EU_SOURCE_PRELUDE
+        // are not set, load prelude lambda forms from the blob and inject them
+        // into the runtime global table above the intrinsic slots.
+        #[cfg(not(target_arch = "wasm32"))]
+        let blob = maybe_load_prelude_blob(opt);
+
+        let mut rt = make_standard_runtime(&mut self.source_map);
+
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(ref b) = blob {
+            rt.set_prelude_bindings(b.nodes.clone(), b.bindings.clone());
+        }
 
         if opt.dump_runtime() {
             println!("{}", prettify::prettify(rt.as_ref()));
@@ -176,10 +217,17 @@ impl<'a> Executor<'a> {
             //   program is a plain document.  Build RENDER_DOC on the
             //   existing heap and re-run the same machine — one compile,
             //   one machine, no GC hazard.
-            let stg_settings = StgSettings {
+            let mut stg_settings = StgSettings {
                 render_type: RenderType::Headless,
                 ..opt.stg_settings().clone()
             };
+
+            // Inject prelude global slot map from blob so the STG compiler can
+            // resolve free variable references to prelude names as Ref::G.
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(ref b) = blob {
+                stg_settings.prelude_globals = Some(b.name_to_slot.clone());
+            }
 
             let syn = {
                 let t = Instant::now();

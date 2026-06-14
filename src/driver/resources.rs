@@ -3,6 +3,13 @@
 //! These are named by Locator::Resource locators.
 use std::collections::HashMap;
 
+/// Raw bytes of the pre-compiled prelude blob, embedded at compile time.
+///
+/// Only present when `build.rs` set `cfg(prelude_blob_ok)` — i.e. when
+/// `lib/prelude.blob` exists and its hash matches `lib/prelude.eu`.
+#[cfg(prelude_blob_ok)]
+pub static PRELUDE_BLOB_BYTES: &[u8] = include_bytes!("../../lib/prelude.blob");
+
 /// A holder for resources included at compile time
 pub struct Resources {
     content: HashMap<String, String>,

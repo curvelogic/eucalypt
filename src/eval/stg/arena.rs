@@ -367,7 +367,7 @@ impl StgArena {
         }
     }
 
-    fn reconstruct_form(&self, idx: FormIdx) -> LambdaForm {
+    pub fn reconstruct_form(&self, idx: FormIdx) -> LambdaForm {
         match &self.forms[idx as usize] {
             ArenaLambdaForm::Lambda {
                 bound,
