@@ -77,7 +77,10 @@ jobs:
       - name: Build release binary
         run: cargo build --release
       - name: Regenerate prelude docs
-        run: ./target/release/eu doc --prelude --output-dir /tmp/prelude-docs/
+        run: |
+          mkdir -p /tmp/prelude-docs/
+          cp -r docs/reference/prelude/supplements /tmp/prelude-docs/supplements
+          ./target/release/eu doc --prelude --output-dir /tmp/prelude-docs/
       - name: Check docs are up to date
         run: |
           diff -r /tmp/prelude-docs/ docs/reference/prelude/ --exclude=supplements || {
