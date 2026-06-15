@@ -5,11 +5,17 @@ use crate::core::error::CoreError;
 use crate::core::expr::*;
 
 /// Return `true` if `name` looks like a user-written identifier rather than
-/// an internal compiler-generated name (e.g. `_e_a0`, `__build`).
+/// an internal compiler-generated name (e.g. `_e_a0`, `__build`) or a
+/// well-known prelude constant (e.g. `null`, `true`, `false`).
 ///
-/// Used to suppress false-positive assignment-style hints for mangled names.
+/// Used to suppress false-positive assignment-style hints for mangled names
+/// and prelude names that commonly appear in equality expressions like
+/// `(null = null)` or `(true = x)`.
 fn is_user_identifier(name: &str) -> bool {
-    name.starts_with(|c: char| c.is_alphabetic())
+    const PRELUDE_CONSTANTS: &[&str] = &[
+        "null", "nil", "true", "false", "identity", "const",
+    ];
+    name.starts_with(|c: char| c.is_alphabetic()) && !PRELUDE_CONSTANTS.contains(&name)
 }
 
 /// Scan the core expression for errors
