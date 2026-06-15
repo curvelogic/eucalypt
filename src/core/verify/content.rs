@@ -12,9 +12,7 @@ use crate::core::expr::*;
 /// and prelude names that commonly appear in equality expressions like
 /// `(null = null)` or `(true = x)`.
 fn is_user_identifier(name: &str) -> bool {
-    const PRELUDE_CONSTANTS: &[&str] = &[
-        "null", "nil", "true", "false", "identity", "const",
-    ];
+    const PRELUDE_CONSTANTS: &[&str] = &["null", "nil", "true", "false", "identity", "const"];
     name.starts_with(|c: char| c.is_alphabetic()) && !PRELUDE_CONSTANTS.contains(&name)
 }
 
