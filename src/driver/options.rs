@@ -375,6 +375,10 @@ pub struct EucalyptOptions {
     pub version: bool,
     pub list_targets: bool,
     pub test: bool,
+    /// When true, `prepare()` returns after desugaring without running
+    /// cook/eliminate/inline.  Set during test *plan analysis* (discovering
+    /// targets) and cleared for test *execution* (running each target).
+    pub plan_only: bool,
     pub parse: bool,
     pub dump_desugared: bool,
     pub dump_cooked: bool,
@@ -693,6 +697,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             version,
             list_targets,
             test,
+            plan_only: test,
             parse,
             dump_desugared,
             dump_cooked,
@@ -869,6 +874,13 @@ impl EucalyptOptions {
         self.test
     }
 
+    /// True during test plan analysis (discovering targets); false during
+    /// test execution.  When true, `prepare()` returns after desugaring
+    /// without running cook/eliminate/inline.
+    pub fn plan_only(&self) -> bool {
+        self.plan_only
+    }
+
     pub fn lsp(&self) -> bool {
         self.lsp
     }
@@ -1036,11 +1048,9 @@ impl EucalyptOptions {
             Some(target)
         };
         self.export_type = Some(format);
-        // Clear the test flag so that prepare() runs the full pipeline
-        // (cook, eliminate, inline) rather than returning early after
-        // desugaring.  The early return is correct for the test *plan*
-        // analysis phase but not for test *execution*.
-        self.test = false;
+        // Clear plan_only so that prepare() runs the full pipeline
+        // (cook, eliminate, inline) for test execution.
+        self.plan_only = false;
         self
     }
 
@@ -1092,13 +1102,6 @@ impl EucalyptOptions {
     /// Enable IO monad operations (shell execution) for this run.
     pub fn with_allow_io(mut self) -> Self {
         self.allow_io = true;
-        self
-    }
-
-    /// The test flag indicates shallow desugaring only for test plan
-    /// analysis. Actual execution requires the flag is reset.
-    pub fn without_test_flag(mut self) -> Self {
-        self.test = false;
         self
     }
 

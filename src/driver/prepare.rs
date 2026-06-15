@@ -219,8 +219,9 @@ pub fn prepare(
         return Ok(Command::Exit);
     }
 
-    // Test plan processing only needs desugaring
-    if opt.test() {
+    // Test plan analysis only needs desugaring (to discover targets).
+    // Test *execution* (plan_only = false) continues to cook and beyond.
+    if opt.plan_only() {
         return Ok(Command::Continue);
     }
 

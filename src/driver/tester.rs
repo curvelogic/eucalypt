@@ -179,7 +179,7 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
 
         print!("{}...", test.title());
 
-        let mut execution_opts = test_opts.clone().without_test_flag();
+        let mut execution_opts = test_opts.clone();
         if !test.is_error_test() {
             execution_opts = execution_opts.with_test_mode();
         }
