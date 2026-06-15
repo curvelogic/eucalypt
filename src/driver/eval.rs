@@ -75,6 +75,35 @@ fn io_run_error_to_execution(e: IoRunError) -> ExecutionError {
     }
 }
 
+/// Collect machine, GC, and heap statistics from the VM after all
+/// execution phases (eval, render, IO) have completed.
+fn collect_machine_stats(machine: &crate::eval::machine::vm::Machine<'_>, stats: &mut Statistics) {
+    use crate::eval::machine::metrics::ThreadOccupation;
+
+    // GC phase timings
+    for (k, v) in machine.clock().report() {
+        stats.timings_mut().record(k, v);
+    }
+
+    // Machine counters
+    stats.set_ticks(machine.metrics().ticks());
+    stats.set_allocs(machine.metrics().allocs());
+    stats.set_max_stack(machine.metrics().max_stack());
+
+    // Heap stats
+    let heap_stats = machine.heap_stats();
+    stats.set_blocks_allocated(heap_stats.blocks_allocated);
+    stats.set_lobs_allocated(heap_stats.lobs_allocated);
+    stats.set_blocks_used(heap_stats.used);
+    stats.set_blocks_recycled(heap_stats.recycled);
+    stats.set_collections_count(heap_stats.collections_count);
+    stats.set_peak_heap_blocks(heap_stats.peak_heap_blocks);
+
+    // Aggregate GC timings
+    stats.set_total_mark_time(machine.clock().duration(ThreadOccupation::CollectorMark));
+    stats.set_total_sweep_time(machine.clock().duration(ThreadOccupation::CollectorSweep));
+}
+
 /// Run the prepared core expression and output to selected emitter
 pub fn run(opt: &EucalyptOptions, mut loader: SourceLoader) -> Result<Statistics, EucalyptError> {
     let format = determine_format(opt, &loader);
@@ -273,61 +302,32 @@ impl<'a> Executor<'a> {
                 emitter.stream_start();
                 let mut machine = standard_machine(&stg_settings, syn, emitter, rt.as_ref())?;
 
-                let ret = {
-                    let t = Instant::now();
-                    let ret = machine.run(None);
-                    stats.timings_mut().record("stg-execute", t.elapsed());
+                let t_exec = Instant::now();
+                let ret = machine.run(None);
+                stats.timings_mut().record("stg-eval", t_exec.elapsed());
 
-                    // copy finer grained GC timings
-                    for (k, v) in machine.clock().report() {
-                        stats.timings_mut().record(k, v);
-                    }
-
-                    // copy machine stats
-
-                    stats.set_ticks(machine.metrics().ticks());
-                    stats.set_allocs(machine.metrics().allocs());
-                    stats.set_max_stack(machine.metrics().max_stack());
-
-                    // copy heap stats
-
-                    let heap_stats = machine.heap_stats();
-                    stats.set_blocks_allocated(heap_stats.blocks_allocated);
-                    stats.set_lobs_allocated(heap_stats.lobs_allocated);
-                    stats.set_blocks_used(heap_stats.used);
-                    stats.set_blocks_recycled(heap_stats.recycled);
-                    stats.set_collections_count(heap_stats.collections_count);
-                    stats.set_peak_heap_blocks(heap_stats.peak_heap_blocks);
-
-                    // copy GC phase timings
-                    use crate::eval::machine::metrics::ThreadOccupation;
-                    stats.set_total_mark_time(
-                        machine.clock().duration(ThreadOccupation::CollectorMark),
-                    );
-                    stats.set_total_sweep_time(
-                        machine.clock().duration(ThreadOccupation::CollectorSweep),
-                    );
-
-                    // The machine always runs in headless mode (no RENDER_DOC
-                    // wrapper).  After the first run, handle the three cases:
-                    //
-                    // 1. Machine yielded on an IO constructor directly → run
-                    //    the io-run loop (honours opt.allow_io).
-                    //
-                    // 2. Machine terminated normally → the top-level value is
-                    //    either an IO function (PAP waiting for world) or a
-                    //    plain document.  Inject the world token and re-run;
-                    //    then handle the result as case 1 or 3.
-                    //
-                    // 3. No IO yield after world injection → the value is a
-                    //    plain document; feed it through RENDER_DOC explicitly.
-                    if ret.is_ok() {
-                        if machine.io_yielded() {
-                            let io_result = io_run_and_render(&mut machine, opt.allow_io)
-                                .map_err(io_run_error_to_execution);
-                            machine.take_emitter().stream_end();
-                            return io_result;
-                        }
+                // The machine always runs in headless mode (no RENDER_DOC
+                // wrapper).  After the first run, handle the three cases:
+                //
+                // 1. Machine yielded on an IO constructor directly → run
+                //    the io-run loop (honours opt.allow_io).
+                //
+                // 2. Machine terminated normally → the top-level value is
+                //    either an IO function (PAP waiting for world) or a
+                //    plain document.  Inject the world token and re-run;
+                //    then handle the result as case 1 or 3.
+                //
+                // 3. No IO yield after world injection → the value is a
+                //    plain document; feed it through RENDER_DOC explicitly.
+                let result = if ret.is_ok() {
+                    if machine.io_yielded() {
+                        let t_io = Instant::now();
+                        let io_result = io_run_and_render(&mut machine, opt.allow_io)
+                            .map_err(io_run_error_to_execution);
+                        stats.timings_mut().record("io-run", t_io.elapsed());
+                        machine.take_emitter().stream_end();
+                        io_result
+                    } else {
                         // Machine terminated without yielding.  Try world
                         // injection to handle IO functions (case 2).
                         let io_yielded =
@@ -336,33 +336,41 @@ impl<'a> Executor<'a> {
                             Ok(true) => {
                                 // World injection triggered an IO yield;
                                 // proceed with the io-run loop.
+                                let t_io = Instant::now();
                                 let io_result = io_run_and_render(&mut machine, opt.allow_io)
                                     .map_err(io_run_error_to_execution);
+                                stats.timings_mut().record("io-run", t_io.elapsed());
                                 machine.take_emitter().stream_end();
-                                return io_result;
+                                io_result
                             }
                             Ok(false) => {
                                 // Still no IO yield after world injection;
                                 // treat as a plain document.  Render in place
                                 // using RENDER_DOC on the existing machine —
                                 // one compile, one machine.
+                                let t_render = Instant::now();
                                 let render_result = render_headless_result(&mut machine)
                                     .map_err(io_run_error_to_execution);
+                                stats.timings_mut().record("stg-render", t_render.elapsed());
                                 machine.take_emitter().stream_end();
-                                return render_result;
+                                render_result
                             }
                             Err(e) => {
                                 machine.take_emitter().stream_end();
-                                return Err(e);
+                                Err(e)
                             }
                         }
                     }
-
-                    ret
+                } else {
+                    machine.take_emitter().stream_end();
+                    ret?;
+                    Ok(None)
                 };
 
-                machine.take_emitter().stream_end();
-                ret
+                // Collect machine/GC statistics from all execution phases.
+                collect_machine_stats(&machine, stats);
+
+                result
             }
         }
     }
