@@ -68,6 +68,19 @@ jobs:
           python3 scripts/test-doc-examples.py --eu ./target/release/eu --timeout 30
 
 
+  docs-freshness:
+    name: Prelude docs freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release
+      - name: Regenerate prelude docs
+        run: ./target/release/eu doc --prelude --output-dir /tmp/prelude-docs/
+      - name: Check docs are up to date
+        run: diff -r /tmp/prelude-docs/ docs/reference/prelude/ --exclude=supplements || { echo "Prelude docs are stale. Run: eu doc --prelude --output-dir docs/reference/prelude/"; exit 1; }
+
   test-gc-verified:
     name: GC-verified harness (x86-64)
     runs-on: ubuntu-latest

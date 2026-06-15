@@ -7,88 +7,49 @@
 | `eu.prelude` | Metadata about this version of the standard prelude |
 | `eu.build` | Metadata about this version of the eucalypt executable |
 | `eu.requires` | Assert that the eucalypt version satisfies the given semver constraint (e.g. '>=0.2.0') |
+| `eu.os` | Operating system: linux, macos, windows, etc |
+| `eu.arch` | CPU architecture: x86_64, aarch64, etc |
 
-## Runtime IO Values
+## IO Functions
 
-| Name | Description |
-|------|-------------|
+> IO related declarations. The io namespace is a monad: io.bind, io.return, io.sequence, io.map-m, io.filter-m, io.then, io.join are derived automatically.
+
+| Function | Description |
+|----------|-------------|
 | `io.env` | Read access to environment variables at time of launch |
-| `io.epoch-time` | Unix epoch time at time of launch |
-| `io.args` | Command-line arguments passed after `--` separator |
-| `io.RANDOM_SEED` | Seed for random number generation (from `--seed` or system time) |
-| `io.random` | Opaque PRNG stream; use `random.*` actions or `random.as-list` to consume |
-
-## IO Monad
-
-The `io` namespace is a monad. Blocks tagged with `:io` are desugared
-into monadic bind chains automatically:
-
-```eu,notest
-result: { :io
-  r: io.shell("ls -la")
-  _: io.check(r)
-}.r.stdout
-```
-
-...desugars to `io.bind(io.shell("ls -la"), λr. io.bind(io.check(r), λ_. io.return(r.stdout)))`.
-
-IO operations require the `--allow-io` / `-I` flag at the command line.
-
-### Monad primitives
-
-| Function | Description |
-|----------|-------------|
-| `io.return(a)` | Wrap a pure value in the IO monad |
-| `io.bind(action, continuation)` | Sequence two IO actions |
-
-### Shell execution
-
-| Function | Description |
-|----------|-------------|
-| `io.shell(cmd)` | Run `cmd` via `sh -c`. Returns `{stdout: Str, stderr: Str, exit-code: Num}` |
-| `io.shell-with(opts, cmd)` | Run `cmd` via `sh -c` with extra options merged in (e.g. `{stdin: s, timeout: 60}`). Pipeline: `"ls" shell-with({timeout: 60})` |
-| `io.exec([cmd : args])` | Run `cmd` directly (no shell). Argument is a single list: first element is the command, rest are args |
-| `io.exec-with(opts, [cmd : args])` | Run `cmd` directly with extra options merged in. Pipeline: `["git", "rev-parse", "HEAD"] exec-with({timeout: 60})` |
-
-Default timeout is 30 seconds. Override with `{timeout: N}` in `opts`.
-Optional `{stdin: s}` pipes string `s` to the command's standard input.
-
-### Combinators
-
-| Function | Description |
-|----------|-------------|
-| `io.check(result)` | If `exit-code` is non-zero, fail with the stderr message; otherwise return the result |
-| `io.checked` | Pipeline-friendly check: bind the preceding IO action through `io.check` |
+| `io.epoch-time` | Seconds since the Unix epoch at launch time |
+| `io.args` | Command-line arguments passed after -- separator |
+| `io.RANDOM_SEED` | Seed for random number generation (from --seed or system time) |
+| `io.random` | Opaque random stream seeded from system entropy or --seed flag. Use random.* actions or random.as-list to consume |
+| `io.shell(c)` | Run a shell command via sh -c. Returns a block with stdout, stderr, and exit-code fields |
+| `io.shell-with(opts, c)` | Run a shell command via sh -c with extra options merged in. Options may include stdin and timeout |
+| `io.exec` | Run a command directly without a shell. Returns a block with stdout, stderr, and exit-code fields |
+| `io.exec-with(opts)` | Run a command directly without a shell, with extra options merged in. Options may include stdin and timeout |
+| `io.check(result)` | Check a command result: if exit-code is non-zero, fail with the stderr message; otherwise return the result |
+| `io.checked` | Pipeline-friendly check: bind the preceding IO action through check |
 | `io.fail(msg)` | Fail the IO action with the given error message |
-| `io.map(f, action)` | Apply a pure function to the result of an IO action (fmap) |
-| `io.and-then(f, action)` | Pass the result of `action` to `f` (bind with flipped args, for pipeline use) |
-| `io.then(b, a)` | Sequence two actions, discarding the result of the first. Pipeline: `a io.then(b)` |
-| `io.join(mm)` | Flatten a nested IO action |
-| `io.sequence(ms)` | Run a list of IO actions in order, collecting results into a list |
-| `io.map-m(f, xs)` | Apply `f` to each element of `xs` (producing IO actions), then sequence |
-| `io.filter-m(p, xs)` | Monadic filter: keep elements where `p` returns a truthy IO action |
-
-The combinators `map`, `then`, `join`, `sequence`, `map-m`, and
-`filter-m` are derived automatically via `monad()`. See the
-[Monads guide](../../guide/monads.md) for details on the derivation
-pattern and the [IO guide](../../guide/io.md) for practical usage.
-
-| Function | Description |
-|----------|-------------|
-| `monad(m)` | Derive standard monad combinators from `m.bind` and `m.return` |
-| `monad(m).bind` | Passed through from `m.bind` |
-| `monad(m).return` | Passed through from `m.return` |
-| `monad(m).map(f, action)` | Apply pure function `f` to the result of a monadic action (fmap) |
-| `monad(m).and-then(f, action)` | Pass the result of `action` to `f` (bind with flipped args, for pipeline use) |
-| `monad(m).then(b, a)` | Sequence two monadic actions, discarding the result of the first. Pipeline: `a m.then(b)` |
-| `monad(m).join(mm)` | Flatten a nested monadic value |
-| `monad(m).sequence(ms)` | Sequence a list of monadic actions, collecting results into a list |
-| `monad(m).map-m(f, xs)` | Apply `f` to each element of `xs` (producing actions), then sequence |
-| `monad(m).filter-m(p, xs)` | Monadic filter: apply predicate `p` (returning a monadic bool) to each element |
 
 ## Other
 
 | Function | Description |
 |----------|-------------|
+| `monad(m)` | Derive standard monad combinators from a block m with bind and return fields. Returns a block with bind, return, map, then, and-then, join, sequence, map-m, and filter-m |
+| `deep-fold(emit, next-state, s, b)` | Depth-first fold over nested blocks and lists. `emit(state, block)` returns a list of results at each block node. `next-state(state, child-key)` updates state for recursion into a child. `s` is the initial state |
+| `deep-transform(rule, data)` | Recursively transform a nested structure. At each node, call `rule(node)`. If it returns non-null, use that as the replacement (stop recursing into that node). If it returns null, recurse into children (block values and list elements) |
+| `any?` | Predicate that matches any value. For use in match? patterns |
+| `match?(pat, target)` | Structural predicate. Returns true if `target` conforms to `pattern`. Pattern values are interpreted by type: blocks and lists recurse as sub-patterns, functions are applied as predicates, literals are exact equality checks. Open matching: extra keys in target are ignored |
+| `render(value)` | Serialise value to a YAML string |
+| `render-as(fmt, value)` | Serialise value to a string in the named format. Pipeline-friendly: data render-as(:json). Supported formats: :yaml, :json, :toml, :text, :edn, :html, :eu |
+| `parse-as(fmt, str)` | Parse a string of structured data in the named format and return eucalypt data. The inverse of render-as. Supported formats: :json, :yaml, :toml, :csv, :xml, :edn, :jsonl. Content is parsed as inert data; embedded eucalypt expressions (e.g. YAML !eu tags) are never evaluated |
+| `assert(p?, s, v)` | If `v p?` is true then return `v` otherwise error with message `s` |
+| `__dbg-render(v)` | Print value `v` to stderr and return `v` unchanged. opts keys: label (string) |
+| `dbg(opts, v)` |  |
+| `__dbg-val(v)` | Debug-trace value or function. On a value, prints it to stderr and returns it. On a function, returns a wrapped version that traces each output |
+| `__dbg-after(f, x)` |  |
+| `(▶ x)` |  |
 | `alter?(k?, v!, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
 | `update?(k?, f, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
+| `is-array?(x)` | True if `x` is an n-dimensional array |
+| `let` | Identity monad for sequential let-bindings. Use :let blocks for sequential evaluation without the self-reference gotcha |
+| `for` | List monad for list comprehensions. Each binding draws from a list; subsequent bindings can depend on earlier ones. Use [x] filter(pred?) for guards |
+| `parse-args(defaults, args)` | Parse command-line argument list against a defaults block. Each key in `defaults` defines an option with its default value. Field metadata configures parsing: `short` (symbol for short flag), `doc` (description), `flag` (true for boolean toggle). Returns the `defaults` block updated with parsed values, plus an `args` key containing positional arguments as a list. Unknown options cause a runtime error. Use `--help` for auto-generated help text |

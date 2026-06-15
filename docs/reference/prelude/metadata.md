@@ -11,12 +11,9 @@ import declarations, operator definitions, and testing assertions.
 | Function | Description |
 |----------|-------------|
 | `with-meta` | Add metadata block `m` to expression `e` |
-| `meta` | Retrieve expression metadata for e |
+| `meta` | Retrieve expression metadata for `e` |
 | `raw-meta` | Retrieve immediate metadata of e without recursing into inner layers |
 | `merge-meta(m, e)` | Merge block `m` into `e`'s metadata |
-| `validator(v)` | Find the validator for a value `v` in its metadata |
-| `check(v)` | True if v is valid according to assert metadata |
-| `checked(v)` | Panic if value doesn't satisfy its validator |
 
 ## Documentation Metadata
 

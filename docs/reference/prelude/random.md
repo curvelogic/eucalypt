@@ -1,39 +1,63 @@
 # Random Numbers
 
-The `random` namespace provides pseudo-random number generation as a
-state monad over a PRNG stream.
+Eucalypt provides pseudo-random number generation through the `io.random`
+stream and a set of prelude functions.
 
-## The random stream
+## The Random Stream
 
-A random stream is provided at startup as `io.random`, seeded from
-system entropy. Each run produces different values unless you supply
-a fixed seed with `--seed`:
+The `io.random` binding is an opaque PRNG stream, seeded from system
+entropy or the `--seed` command-line flag. Use `random.*` actions to
+draw values from it, or `random.as-list` to obtain a lazy cons-list of
+floats in `[0, 1)`.
+
+```eu
+first-random: random.float(io.random).value
+```
+
+Because `io.random` is seeded from the system clock by default, it
+produces different values on each run. Use `--seed` for reproducible
+results:
 
 ```sh
 eu --seed 42 example.eu
 ```
 
-You can also create a deterministic stream directly:
+## Random Number Generation
+
+| Function | Description |
+|----------|-------------|
+| `random-stream(seed)` |  |
+| `stream-advance(n, s)` |  |
+| `random-ret(v, stream)` |  |
+| `random-bind(m, f, stream)` |  |
+| `random.stream(seed)` | Create an opaque PRNG stream from integer seed |
+| `random.as-list(s)` | Convert an opaque random stream to a lazy cons-list of floats |
+| `random.float(s)` | State-monad action returning a random float in [0,1) |
+| `random.int(n, s)` | State-monad action returning a random integer in [0,n) |
+| `random.split(s)` | State-monad action that splits the stream into two independent streams. Returns a value/rest block where value and rest are each independent streams |
+| `random.choice(lst, stream)` | State-monad action returning a random element from list |
+| `random.shuffle(lst)` | State-monad action returning a shuffled copy of list |
+| `random.sample(n, lst, stream)` | State-monad action returning n elements sampled without replacement |
+| `random.run(action, stream)` | Run a random action on a stream; returns a value/rest block |
+| `random.eval(action, stream)` | Run a random action and return only the value |
+| `random.exec(action, stream)` | Run a random action and return only the remaining stream |
+
+## Usage Pattern
+
+The `random` namespace is a state monad. A random stream is provided
+at startup as `io.random`. Each operation takes a stream and returns
+a `{value, rest}` block:
 
 ```eu,notest
-stream: random.stream(12345)
+result: random.int(6, io.random)
+die-roll: result.value    # a number from 0 to 5
 ```
 
-## Using random operations
-
-Each random operation takes a stream and returns a `{value, rest}`
-block. For a single value, pass `io.random`:
+For multiple random values, propagate `.rest` into the next call — or
+use the random monad to handle threading automatically:
 
 ```eu,notest
-roll: random.int(6, io.random).value + 1
-```
-
-For multiple values, you must propagate `.rest` into the next call —
-reusing `io.random` gives the same value each time. Use a
-`{ :random ... }` monadic block or combinators like `sequence` to
-handle this automatically:
-
-```eu,notest
+# Monadic block — no manual threading
 dice: { :random
   a: random.int(6)
   b: random.int(6)
@@ -42,24 +66,35 @@ dice: { :random
 result: dice(io.random).value
 ```
 
-Always extract `.value` before rendering — the `.rest` field is an
-infinite stream.
+`random.sequence` and `random.map-m` also handle threading:
 
-## Reference
+```eu,notest
+two-dice: random.sequence([random.int(6), random.int(6)], io.random).value
+```
 
-| Function | Description |
-|----------|-------------|
-| `random.stream(seed)` | Create a PRNG stream from an integer seed |
-| `random.bind(m, f)` | State monad bind: run action m, pass result to f, thread stream |
-| `random.return(v)` | State monad return: wrap a pure value as an action |
-| `random.float` | Action returning a random float in [0,1) |
-| `random.int(n)` | Action returning a random integer in [0,n) |
-| `random.choice(list)` | Action returning a random element from list |
-| `random.shuffle(list)` | Action returning a shuffled copy of list |
-| `random.sample(n, list)` | Action returning n elements sampled without replacement |
-| `random.map(f, action)` | Apply pure function f to the result of an action (derived) |
-| `random.then(b, a)` | Sequence two actions, discard first result (derived). Pipeline: `a random.then(b)` |
-| `random.join(mm)` | Flatten a nested action (derived) |
-| `random.sequence(ms)` | Sequence a list of actions, collect results (derived) |
-| `random.map-m(f, xs)` | Map f over list producing actions, then sequence (derived) |
-| `random.filter-m(p, xs)` | Monadic filter over a list of actions (derived) |
+## Shuffling and Sampling
+
+```eu,notest
+deck: range(1, 53)
+hand: random.shuffle(deck, io.random).value take(5)
+```
+
+```eu,notest
+colours: ["red", "green", "blue", "yellow", "purple"]
+two-colours: random.sample(2, colours, io.random).value
+```
+
+## Deterministic Seeds
+
+For reproducible output (useful in tests), use `--seed` on the
+command line or create a stream from a fixed seed:
+
+```sh
+eu --seed 42 my-template.eu
+```
+
+```eu,notest
+stream: random.stream(12345)
+x: random.int(100, stream)
+# x.value is always the same for seed 12345
+```

@@ -14,7 +14,10 @@
 | `set.union` | Return union of sets `a` and `b` |
 | `set.intersect` | Return intersection of sets `a` and `b` |
 | `set.diff` | Return elements in set `a` that are not in set `b` |
-| `(∅)` | The empty set |
+| `set.sample(k, s, stream)` | Random monad action: pick `n` random elements from set `s`. Returns value/rest block |
+| `∅` | The empty set |
+| `(l ∈ r)` | True if element `v` is a member of set `s` |
+| `(l ∉ r)` | True if element `v` is not a member of set `s` |
 
 ```eu
 s: set.from-list([1, 2, 3, 2, 1])

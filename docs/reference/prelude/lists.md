@@ -6,11 +6,14 @@
 |----------|-------------|
 | `cons` | Construct new list by prepending item `h` to list `t` |
 | `snoc(x, l)` | Append element `x` to the end of list `l` |
+| `(l ‖ r)` | Prepend element `x` to list `xs`. Right-associative cons operator |
 | `head` | Return the head item of list `xs`, panic if empty |
-| `(↑ xs)` | Return first element of list `xs`. Tight-binding prefix operator |
+| `(↑ x)` | Return first element of list `xs`. Tight-binding prefix operator |
 | `nil?` | `true` if list `xs` is empty, `false` otherwise |
 | `non-nil?` | `true` if list `xs` is non-empty, `false` otherwise |
-| `(x ✓)` | `true` if `x` is not null, `false` otherwise. Postfix not-null check (precedence 88) |
+| `null?` | `true` if `x` is null, `false` otherwise |
+| `(x ✓)` | `true` if `x` is not null, `false` otherwise. Postfix not-null check operator |
+| `coalesce(xs)` | Return the first non-null element from list `xs`, or null if all are null |
 | `head-or(d, xs)` | Return the head item of list `xs` or default `d` if empty |
 | `tail` | Return list `xs` without the head item. [] causes error |
 | `tail-or(d, xs)` | Return list `xs` without the head item or `d` for empty list |
@@ -25,7 +28,7 @@
 |----------|-------------|
 | `repeat(i)` | Return infinite list of instances of item `i` |
 | `iterate(f, i)` | Return list of `i` with subsequent repeated applications of `f` to `i` |
-| `ints-from(n)` | Return infinite list of integers from `n` upwards |
+| `ints-from` | Return infinite list of integers from `n` upwards, alias `iota` for backwards compatibility |
 | `range(b, e)` | Return list of ints from `b` to `e` (not including `e`) |
 | `cycle(l)` | Create infinite list by cycling elements of list `l` |
 
@@ -62,23 +65,21 @@
 
 | Function | Description |
 |----------|-------------|
-| `split-at(n, l)` | Split list in to at `n`th item and return pair |
+| `split-at(n, l)` | Split list into two at `n`th item and return pair |
 | `split-after(p?, l)` | Split list where `p?` becomes false and return pair |
 | `split-when(p?, l)` | Split list where `p?` becomes true and return pair |
-| `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offest `step` |
-| `window-all(n, step, l)` | Like `window` but includes the final short chunk even if smaller than `n` |
+| `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offset `step` |
 | `partition(n)` | List of lists of non-overlapping segments of list `l` of size `n` |
-| `partition-all(n)` | Non-overlapping partitions of list `l` including any final short chunk |
 | `discriminate(pred, xs)` | Return pair of `xs` for which `pred(_)` is true and `xs` for which `pred(_)` is false |
 
 ## Folds and Scans
 
 | Function | Description |
 |----------|-------------|
-| `foldl(op, i, l)` | Left fold operator `op` over list `l` starting from value `i`  |
-| `foldr(op, i, l)` | Right fold operator `op` over list `l` ending with value `i`  |
-| `scanl(op, i, l)` | Left scan operator `op` over list `l` starting from value `i`  |
-| `scanr(op, i, l)` | Right scan operator `op` over list `l` ending with value `i`  |
+| `foldl(op, i, l)` | Left fold operator `op` over list `l` starting from value `i` |
+| `foldr(op, i, l)` | Right fold operator `op` over list `l` ending with value `i` |
+| `scanl(op, i, l)` | Left scan operator `op` over list `l` starting from value `i` |
+| `scanr(op, i, l)` | Right scan operator `op` over list `l` ending with value `i` |
 
 ## Predicates
 
@@ -95,7 +96,7 @@
 |----------|-------------|
 | `group-by(k, xs)` | Group xs by key function returning block of key to subgroups, maintains order |
 | `qsort(lt, xs)` | Sort `xs` using 'less-than' function `lt` |
-| `sort-nums(xs)` | Sort list of numbers ascending |
+| `sort-nums` | Sort list of numbers ascending (Rust-level intrinsic) |
 | `sort-strs(xs)` | Sort list of strings or symbols ascending |
 | `sort-zdts(xs)` | Sort list of zoned date-times ascending |
 | `sort-by(key-fn, cmp, xs)` | Sort list `xs` by key extracted with `key-fn` using comparator `cmp` |
@@ -118,9 +119,41 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `nth(n, l)` | Return `n`th item of list if it exists, otherwise panic |
-| `(l !! n)` | Return `n`th item of list if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and delegates to `arr.get`. |
+| `nth(n, l)` | Return `n`th item of list if it exists, otherwise error |
+| `(l !! r)` | Return `n`th item of list `l` if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and !! delegates to `arr.get` |
 | `count(l)` | Return count of items in list `l` |
 | `last` | Return last element of list `l` |
 | `over-sliding-pairs(f, l)` | Apply binary fn `f` to each overlapping pair in `l` to form new list |
 | `differences` | Calculate difference between each overlapping pair in list of numbers `l` |
+
+## Other
+
+| Function | Description |
+|----------|-------------|
+| `rotate(n, l)` | Rotate list `l` left by `n` positions |
+| `transpose(rows)` | Transpose a matrix (list of lists) |
+| `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`.
+Panics if `n` is out of range |
+| `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`.
+Returns `l` unchanged if no element matches |
+| `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list |
+| `tails(l)` | Return list of successive tails of `l`: `[l, tail(l), tail(tail(l)), ...]` |
+| `iota(n)` | Return infinite list of integers from `n` upwards |
+| `ℕ` | The natural numbers: `[0, 1, 2, ...]` |
+| `butlast(l)` | Return all elements of list `l` except the last |
+| `unzip(pairs)` | List of pairs to pair of lists. Inverse of zip |
+| `interleave(a, b)` | Alternate elements from lists `a` and `b`. When one is exhausted, the remainder of the other is appended |
+| `window-all(n, step, l)` | Like window but includes the final short chunk even if smaller than `n` |
+| `partition-all(n)` | List of lists of non-overlapping segments of `l`, including any final short chunk |
+| `group-consecutive-by(f, xs)` | Group consecutive elements where `f` returns equal values into sublists |
+| `group-consecutive` | Group consecutive equal elements into sublists |
+| `uniq(xs)` | Remove consecutive duplicates from a list |
+| `nub-by(key, xs)` | Remove duplicates from `xs`, keeping the first occurrence of each distinct `key(x)` value. Unlike `uniq`, works on non-consecutive duplicates |
+| `split-on(pred, xs)` | Split list `xs` into sublists, breaking on
+elements that satisfy `pred`. Matching elements are discarded |
+| `running-max` | Running maximum over a number list.
+`[3, 1, 4, 1]` → `[3, 3, 4, 4]`. (Rust-level intrinsic) |
+| `running-min` | Running minimum over a number list.
+`[3, 1, 4, 1]` → `[3, 1, 1, 1]`. (Rust-level intrinsic) |
+| `running-sum` | Cumulative sum over a number list.
+`[3, 1, 4, 1]` → `[3, 4, 8, 9]`. (Rust-level intrinsic) |
