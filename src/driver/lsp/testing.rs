@@ -24,7 +24,7 @@ use super::highlight;
 use super::hover;
 use super::inlay_hints;
 use super::navigation;
-use super::query::{hash_many, ContentHash, FileId, PipelineCacheEntry, QueryStore};
+use super::query::{FileId, PipelineCacheEntry, QueryStore};
 use super::symbol_table::{self, SymbolSource, SymbolTable};
 use super::{apply_content_change, PipelineError, PipelineResult, TypeEnv};
 use crate::syntax::rowan::parse_unit;
@@ -130,20 +130,7 @@ impl LspTestSession {
                         .collect();
                     self.queries.set_imports(&file_id, import_ids);
                     // Compute combined input hash and store pipeline result.
-                    let file_text_hash = self
-                        .queries
-                        .file_text_hash(&file_id)
-                        .unwrap_or(entry.stage_hashes.file_text);
-                    let import_hashes: Vec<ContentHash> = self
-                        .queries
-                        .imports_of(&file_id)
-                        .filter_map(|imp| self.queries.file_text_hash(imp))
-                        .collect();
-                    let input_hash = hash_many(
-                        &std::iter::once(file_text_hash)
-                            .chain(import_hashes)
-                            .collect::<Vec<_>>(),
-                    );
+                    let input_hash = self.queries.compute_pipeline_input_hash(&file_id);
                     self.queries
                         .store_pipeline_result(file_id, entry, input_hash);
                     self.last_pipeline_error = None;
@@ -455,20 +442,7 @@ impl LspTestSession {
                             .map(|imp| FileId::from_url(&imp.uri))
                             .collect();
                         self.queries.set_imports(&file_id, import_ids);
-                        let file_text_hash = self
-                            .queries
-                            .file_text_hash(&file_id)
-                            .unwrap_or(entry.stage_hashes.file_text);
-                        let import_hashes: Vec<ContentHash> = self
-                            .queries
-                            .imports_of(&file_id)
-                            .filter_map(|imp| self.queries.file_text_hash(imp))
-                            .collect();
-                        let input_hash = hash_many(
-                            &std::iter::once(file_text_hash)
-                                .chain(import_hashes)
-                                .collect::<Vec<_>>(),
-                        );
+                        let input_hash = self.queries.compute_pipeline_input_hash(&file_id);
                         self.queries
                             .store_pipeline_result(file_id, entry, input_hash);
                     }

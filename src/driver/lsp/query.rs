@@ -711,6 +711,26 @@ impl QueryStore {
         self.entries.get(key)?.value.downcast_ref::<T>()
     }
 
+    /// Compute the pipeline input hash for `file`.
+    ///
+    /// The pipeline input hash combines the file's own text hash with the text
+    /// hashes of all files it directly imports.  This is the hash passed to
+    /// `store_pipeline_result` and compared on re-verification to decide
+    /// whether the pipeline needs re-running.
+    ///
+    /// Returns `0` if the file has no stored text (treated as empty input).
+    pub fn compute_pipeline_input_hash(&self, file: &FileId) -> ContentHash {
+        let file_text_hash = self.file_text_hash(file).unwrap_or(0);
+        let import_hashes: Vec<ContentHash> = self
+            .imports_of(file)
+            .filter_map(|imp| self.file_text_hash(imp))
+            .collect();
+        let all: Vec<ContentHash> = std::iter::once(file_text_hash)
+            .chain(import_hashes)
+            .collect();
+        hash_many(&all)
+    }
+
     // ── Import graph ──────────────────────────────────────────────────────────
 
     /// Record that `dependent` imports the files in `new_imports`.
@@ -1396,5 +1416,50 @@ mod tests {
         // get_last_result ignores revision and returns the stored value.
         let last: Option<&()> = store.get_last_result(&QueryKey::Desugar(f.clone()));
         assert!(last.is_some(), "get_last_result should return stale entry");
+    }
+
+    /// Editing an imported file (B) marks B's pipeline as stale and keeps A
+    /// registered as an importer of B, so the LSP can re-queue A for re-check.
+    #[test]
+    fn cross_file_invalidation_importer_restaged() {
+        let mut store = QueryStore::new();
+        let a = file("/a.eu");
+        let b = file("/b.eu");
+
+        store.set_file_text(a.clone(), Arc::new("x: 1".to_string()));
+        store.set_file_text(b.clone(), Arc::new("y: 2".to_string()));
+
+        // Register A as importing B.
+        store.set_imports(&a, vec![b.clone()]);
+
+        // Store pipeline results for both A and B.
+        let b_hash = hash_str("y: 2");
+        let b_entry = make_pipeline_entry("file:///b.eu", b_hash);
+        store.store_pipeline_result(b.clone(), b_entry, b_hash);
+
+        let a_input_hash = store.compute_pipeline_input_hash(&a);
+        let a_entry = make_pipeline_entry("file:///a.eu", hash_str("x: 1"));
+        store.store_pipeline_result(a.clone(), a_entry, a_input_hash);
+
+        assert!(
+            store.pipeline_result_is_current(&b),
+            "B should be current before edit"
+        );
+
+        // Edit B — advances revision and changes B's text hash.
+        store.set_file_text(b.clone(), Arc::new("y: 99".to_string()));
+
+        // B's pipeline result is now stale.
+        assert!(
+            !store.pipeline_result_is_current(&b),
+            "B's pipeline result should be stale after edit"
+        );
+
+        // importers_of(B) returns A — the mechanism the LSP uses to re-queue A.
+        let importers: Vec<FileId> = store.importers_of(&b).cloned().collect();
+        assert!(
+            importers.contains(&a),
+            "A should be registered as an importer of B"
+        );
     }
 }

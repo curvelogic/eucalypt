@@ -52,7 +52,7 @@ use crate::common::sourcemap::SourceMap;
 use crate::core::typecheck::types::Type;
 
 use self::query::{
-    hash_combine, hash_many, hash_str, ContentHash, FileId, ImportedFile, PipelineCacheEntry,
+    hash_combine, hash_str, ContentHash, FileId, ImportedFile, PipelineCacheEntry,
     PipelineStageHashes, QueryStore, TypeEnv,
 };
 use self::symbol_table::{SymbolSource, SymbolTable};
@@ -406,20 +406,7 @@ impl ServerState {
 
                 // Compute the combined input hash for this pipeline run
                 // (file text hash combined with all import hashes).
-                let file_text_hash = self
-                    .queries
-                    .file_text_hash(&file_id)
-                    .unwrap_or(entry.stage_hashes.file_text);
-                let import_hashes: Vec<ContentHash> = self
-                    .queries
-                    .imports_of(&file_id)
-                    .filter_map(|imp| self.queries.file_text_hash(imp))
-                    .collect();
-                let input_hash = hash_many(
-                    &std::iter::once(file_text_hash)
-                        .chain(import_hashes)
-                        .collect::<Vec<_>>(),
-                );
+                let input_hash = self.queries.compute_pipeline_input_hash(&file_id);
 
                 // Store the pipeline result in the query store.
                 self.queries
