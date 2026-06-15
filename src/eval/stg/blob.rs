@@ -179,6 +179,21 @@ mod tests {
     }
 
     #[test]
+    #[cfg(prelude_blob_ok)]
+    fn embedded_blob_contains_expect_operators() {
+        let bytes = crate::driver::resources::PRELUDE_BLOB_BYTES;
+        let blob = PreludeBlob::from_bytes(bytes).expect("embedded blob should deserialise");
+        let expect_ops: Vec<&String> = blob.operators.keys().filter(|k| k.contains("//")).collect();
+        eprintln!("Expect operators: {:?}", expect_ops);
+        eprintln!("Total operators: {}", blob.operators.len());
+        assert!(
+            blob.operators.contains_key("//="),
+            "prelude blob must contain //= operator; found: {:?}",
+            expect_ops
+        );
+    }
+
+    #[test]
     fn monad_type_hints_round_trip() {
         let mut blob = minimal_blob();
         blob.monad_type_hints
