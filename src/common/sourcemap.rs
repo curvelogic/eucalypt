@@ -89,6 +89,7 @@ pub trait HasSmid {
 /// As well as associating a file location with a SMID, we can
 /// associate annotations which are useful in synthetic cases where
 /// there is no source location.
+#[derive(Clone)]
 pub struct SourceInfo {
     /// usize
     pub file: Option<usize>,
@@ -99,7 +100,7 @@ pub struct SourceInfo {
 }
 
 /// Store all source info...
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SourceMap {
     source: Vec<SourceInfo>,
     /// File IDs that correspond to resources (e.g. prelude, stdlib) rather
