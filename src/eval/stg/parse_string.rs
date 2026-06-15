@@ -80,14 +80,13 @@ impl StgIntrinsic for ParseString {
         // contain no bif references (all code-execution paths are suppressed).
         // suppress_inlining=true and suppress_optimiser=false are safe choices
         // for data literals.
-        let compiler = Compiler::new(
+        let compiler = Compiler::for_testing(
             false, // generate_annotations
             RenderType::Headless,
             false,  // suppress_updates
             true,   // suppress_inlining (no intrinsics to inline)
             false,  // suppress_optimiser
             vec![], // intrinsics (none needed for data literals)
-            None,   // prelude_globals (data literals have no free prelude refs)
         );
         let syntax: Rc<_> = compiler
             .compile(core_expr)

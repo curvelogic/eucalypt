@@ -281,11 +281,13 @@ impl<'a> Executor<'a> {
                 ..opt.stg_settings().clone()
             };
 
-            // Inject prelude global slot map from blob so the STG compiler can
-            // resolve free variable references to prelude names as Ref::G.
+            // Inject prelude global slot map and combinator table from blob so
+            // the STG compiler can resolve prelude names as Ref::G and inline
+            // simple combinator wrappers as direct BIF calls.
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(ref b) = self.prelude_blob {
                 stg_settings.prelude_globals = Some(b.name_to_slot.clone());
+                stg_settings.combinators = b.combinators.clone();
             }
 
             let syn = {

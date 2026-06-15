@@ -30,6 +30,7 @@ lazy_static! {
         heap_dump_at_gc: false,
         test_mode: false,
         prelude_globals: None,
+        ..Default::default()
     };
 }
 

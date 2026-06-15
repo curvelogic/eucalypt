@@ -32,6 +32,52 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+/// Inlining metadata for a prelude binding that wraps a simple intrinsic or
+/// variable combinator.  Stored in the blob so the STG compiler can bypass the
+/// global-lookup → thunk-enter → env-frame cycle when calling these functions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CombinatorInfo {
+    /// Body is a direct intrinsic call: BIF(params[perm[0]], params[perm[1]], …)
+    ///
+    /// When the user calls `f(x, y)` and `f` compiles as this variant, emit
+    /// `BIF(args[perm[0]], args[perm[1]], …)` directly.
+    Intrinsic {
+        /// Index into the intrinsics catalogue (matches `Ref::G(intrinsic_index)`)
+        intrinsic_index: usize,
+        /// Argument permutation: `perm[i]` is which call-argument maps to BIF arg `i`
+        arg_permutation: Vec<usize>,
+    },
+    /// Body is a bare intrinsic reference with no wrapper (e.g. `if: __IF`).
+    ///
+    /// The BIF is called directly with the user's arguments in order.
+    IntrinsicAlias {
+        /// Index into the intrinsics catalogue
+        intrinsic_index: usize,
+    },
+    /// Body returns one of its parameters unchanged (e.g. `identity(v): v`).
+    Identity {
+        /// Which 0-indexed call-argument to return
+        param_index: usize,
+        /// Number of lambda parameters (= expected call-argument count).
+        ///
+        /// The optimisation is only applied when the call supplies exactly
+        /// this many arguments, preventing incorrect evaluation of partial
+        /// applications (e.g. `const(9)` must yield a function, not `9`).
+        lambda_arity: usize,
+    },
+    /// Body applies one parameter to the others (e.g. `flip(f,x,y): f(y,x)`).
+    VarApp {
+        /// Which call-argument is the function to apply
+        func_param: usize,
+        /// Argument permutation for the remaining call-arguments
+        arg_permutation: Vec<usize>,
+        /// Number of lambda parameters (= expected call-argument count).
+        ///
+        /// Guards against activating the optimisation on partial applications.
+        lambda_arity: usize,
+    },
+}
+
 use crate::{
     core::typecheck::check::PreludeSummary,
     driver::unit_interface::OperatorInfo,
@@ -92,6 +138,15 @@ pub struct PreludeBlob {
     /// Monad wrapper type hints for LSP display (e.g. `"io"` → `"IO(a)"`).
     #[serde(default)]
     pub monad_type_hints: HashMap<String, String>,
+
+    /// Combinator inlining table: prelude binding index → inlining metadata.
+    ///
+    /// Key is the index into `binding_entries` (= VM global slot − `INTRINSIC_COUNT`).
+    /// When the STG compiler sees an application of `Ref::G(INTRINSIC_COUNT + key)`,
+    /// it substitutes the corresponding BIF call directly, bypassing the
+    /// thunk-enter / env-frame overhead of the prelude wrapper.
+    #[serde(default)]
+    pub combinators: HashMap<usize, CombinatorInfo>,
 }
 
 impl PreludeBlob {
@@ -123,6 +178,7 @@ mod tests {
             type_summary: PreludeSummary::default(),
             monad_specs: HashMap::new(),
             monad_type_hints: HashMap::new(),
+            combinators: HashMap::new(),
         }
     }
 

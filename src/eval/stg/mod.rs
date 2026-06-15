@@ -314,6 +314,15 @@ pub struct StgSettings {
     /// `Ref::G(intrinsic_count + slot)` rather than `CompileError::FreeVar`.
     /// Populated from `PreludeBlob.name_to_slot` when the blob path is active.
     pub prelude_globals: Option<HashMap<String, usize>>,
+
+    /// Combinator inlining table from the prelude blob.
+    ///
+    /// Maps prelude binding index (= VM global slot − INTRINSIC_COUNT) to
+    /// `CombinatorInfo` so the compiler can emit direct BIF calls for simple
+    /// intrinsic wrappers, bypassing the thunk-enter / env-frame overhead.
+    /// Empty when the source-prelude path is active (inlining is handled by
+    /// the core inline pass in that case).
+    pub combinators: HashMap<usize, crate::eval::stg::blob::CombinatorInfo>,
 }
 
 /// Compile core syntax to STG ready for execution
@@ -324,14 +333,6 @@ pub fn compile(
     expr: RcExpr,
     runtime: &dyn Runtime,
 ) -> Result<Rc<StgSyn>, CompileError> {
-    let compiler = compiler::Compiler::new(
-        settings.generate_annotations,
-        settings.render_type,
-        settings.suppress_updates,
-        settings.suppress_inlining,
-        settings.suppress_optimiser,
-        runtime.intrinsics(),
-        settings.prelude_globals.clone(),
-    );
+    let compiler = compiler::Compiler::new(settings, runtime.intrinsics());
     compiler.compile(expr)
 }

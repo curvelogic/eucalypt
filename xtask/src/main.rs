@@ -26,15 +26,19 @@ use std::{collections::HashMap, path::PathBuf, time::Instant};
 use anyhow::{bail, Context, Result};
 use eucalypt::{
     core::{
+        binding::Var,
         expr::{open_let_scope_full, Expr, RcExpr},
         typecheck::check::{parse_operator_overloads, type_check_for_prelude},
     },
     driver::source::SourceLoader,
-    eval::stg::{
-        arena::{ArenaLambdaForm, ArenaStgSyn, StgArena},
-        blob::PreludeBlob,
-        make_standard_runtime,
-        syntax::LambdaForm,
+    eval::{
+        intrinsics,
+        stg::{
+            arena::{ArenaLambdaForm, ArenaStgSyn, StgArena},
+            blob::{CombinatorInfo, PreludeBlob},
+            make_standard_runtime,
+            syntax::LambdaForm,
+        },
     },
     syntax::input::{Input, Locator},
 };
@@ -209,7 +213,19 @@ fn cmd_prelude_compile() -> Result<()> {
 
     println!("  STG lambda forms compiled: {}", forms.len());
 
-    // ── 7. Extract binding names for the PreludeBlob (slot order) ────────────
+    // ── 7. Analyse combinators (before consuming binding_bodies) ─────────────
+    // Walk each binding body and record `CombinatorInfo` for simple wrappers.
+    // Key: binding index (= VM global slot − INTRINSIC_COUNT).
+    let mut combinators: HashMap<usize, CombinatorInfo> = HashMap::new();
+    for (i, (name, body)) in binding_bodies.iter().enumerate() {
+        if let Some(info) = analyse_combinator(body) {
+            println!("  combinator[{i}] {name}: {info:?}");
+            combinators.insert(i, info);
+        }
+    }
+    println!("  combinators detected: {}", combinators.len());
+
+    // ── 8. Extract binding names for the PreludeBlob (slot order) ────────────
     let names: Vec<String> = binding_bodies.into_iter().map(|(n, _)| n).collect();
     let name_to_slot: HashMap<String, usize> = names
         .iter()
@@ -217,7 +233,7 @@ fn cmd_prelude_compile() -> Result<()> {
         .map(|(i, n)| (n.clone(), i))
         .collect();
 
-    // ── 8. Flatten lambda forms into a shared arena ───────────────────────────
+    // ── 9. Flatten lambda forms into a shared arena ───────────────────────────
     let (nodes, forms_pool, binding_entries) = flatten_forms_to_arena(&forms);
 
     println!(
@@ -227,7 +243,7 @@ fn cmd_prelude_compile() -> Result<()> {
         binding_entries.len()
     );
 
-    // ── 9. Serialise and write ────────────────────────────────────────────────
+    // ── 10. Serialise and write ───────────────────────────────────────────────
     let blob = PreludeBlob {
         source_hash,
         nodes,
@@ -238,6 +254,7 @@ fn cmd_prelude_compile() -> Result<()> {
         type_summary: summary,
         monad_specs,
         monad_type_hints,
+        combinators,
     };
 
     let bytes = blob.to_bytes().context("serialise PreludeBlob")?;
@@ -265,6 +282,84 @@ fn workspace_root() -> Result<PathBuf> {
         return Ok(cwd);
     }
     bail!("could not find workspace root (no Cargo.toml in {cwd:?})")
+}
+
+/// Analyse a peeled binding body and return `CombinatorInfo` if it is a simple
+/// combinator that the STG compiler can inline directly.
+///
+/// A binding is a combinator if:
+/// - Its body is `Expr::Intrinsic(bif)` (bare alias, e.g. `if: __IF`)
+/// - Its body is `Expr::Lam(_, _, scope)` where the lambda body is:
+///   - `Var::Bound(scope=0, binder=k)` → `Identity { param_index: k }`
+///   - `App(Intrinsic(bif), [Var::Bound, …])` → `Intrinsic { bif_idx, perm }`
+///   - `App(Var::Bound(func), [Var::Bound, …])` → `VarApp { func_param, perm }`
+fn analyse_combinator(body: &RcExpr) -> Option<CombinatorInfo> {
+    match &*body.inner {
+        // Bare intrinsic alias: `if: __IF`
+        Expr::Intrinsic(_, bif) => {
+            let idx = intrinsics::index(bif)?;
+            Some(CombinatorInfo::IntrinsicAlias {
+                intrinsic_index: idx,
+            })
+        }
+        Expr::Lam(_, _, scope) => {
+            let lambda_arity = scope.pattern.len();
+            let lam_body = &scope.body;
+            match &*lam_body.inner {
+                // Identity: `identity(v): v` — lambda body is a bound variable.
+                // We include `lambda_arity` so that partial applications such as
+                // `const(9)` (lambda_arity=2, args=1) are NOT mis-optimised.
+                Expr::Var(_, Var::Bound(bv)) if bv.scope == 0 => Some(CombinatorInfo::Identity {
+                    param_index: bv.binder as usize,
+                    lambda_arity,
+                }),
+                // Intrinsic application or variable application
+                Expr::App(_, f, xs) => {
+                    // All args must be bound-variable refs into this lambda's scope.
+                    let all_vars = xs.iter().all(
+                        |x| matches!(&*x.inner, Expr::Var(_, Var::Bound(bv)) if bv.scope == 0),
+                    );
+                    if !all_vars {
+                        return None;
+                    }
+                    // Extract permutation: perm[i] = binder index of xs[i]
+                    let perm: Vec<usize> = xs
+                        .iter()
+                        .map(|x| match &*x.inner {
+                            Expr::Var(_, Var::Bound(bv)) => bv.binder as usize,
+                            _ => unreachable!(),
+                        })
+                        .collect();
+
+                    match &*f.inner {
+                        // Intrinsic call: `add(a, b): __ADD(a, b)`
+                        Expr::Intrinsic(_, bif) => {
+                            let idx = intrinsics::index(bif)?;
+                            Some(CombinatorInfo::Intrinsic {
+                                intrinsic_index: idx,
+                                arg_permutation: perm,
+                            })
+                        }
+                        // Variable application: `flip(f, x, y): f(y, x)`
+                        Expr::Var(_, Var::Bound(bv)) if bv.scope == 0 => {
+                            Some(CombinatorInfo::VarApp {
+                                func_param: bv.binder as usize,
+                                arg_permutation: perm,
+                                lambda_arity,
+                            })
+                        }
+                        _ => None,
+                    }
+                }
+                _ => None,
+            }
+        }
+        // Operator wrappers: peel the inner body
+        Expr::Operator(_, _, _, inner) => analyse_combinator(inner),
+        // Meta annotations: peel to the inner body
+        Expr::Meta(_, inner, _) => analyse_combinator(inner),
+        _ => None,
+    }
 }
 
 /// Peel all top-level `Let` scopes from the merged prelude core expression,

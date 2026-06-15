@@ -510,6 +510,14 @@ pub struct Compiler<'rt> {
     /// This is how user code compiled independently of the prelude references
     /// the pre-loaded prelude global slots.
     prelude_globals: Option<HashMap<String, usize>>,
+
+    /// Combinator inlining table: prelude binding index → `CombinatorInfo`.
+    ///
+    /// Populated from `PreludeBlob.combinators`.  When `ProtoAppGroup` resolves the
+    /// function as `Ref::G(slot)` with `slot >= INTRINSIC_COUNT`, it looks up
+    /// `slot - INTRINSIC_COUNT` here and, if found, emits a direct BIF call instead
+    /// of a global-reference application.
+    combinators: HashMap<usize, crate::eval::stg::blob::CombinatorInfo>,
 }
 
 /// An item which can be converted to STG syntax once the context in known
@@ -925,6 +933,28 @@ impl ProtoSyntax for Holder {
     }
 }
 
+/// Compile a single application argument into a `Ref`.
+///
+/// Simple expressions (`Var::Free`, `Expr::Intrinsic`) produce global refs
+/// directly; everything else (including `Var::Bound`) is compiled via
+/// `compile_binding`, which either maps it to a local binder slot or to an
+/// environment reference.
+fn compile_arg_to_ref(
+    compiler: &Compiler<'_>,
+    local_binder: &mut LetBinder,
+    arg: &RcExpr,
+    smid: Smid,
+    demand: Demand,
+) -> Result<Ref, CompileError> {
+    match &*arg.inner {
+        Expr::Var(s, Var::Free(name)) => compiler.resolve_free_var(*s, name),
+        Expr::Intrinsic(_, bif) => intrinsics::index(bif)
+            .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))
+            .map(gref),
+        _ => compiler.compile_binding(local_binder, arg.clone(), smid, demand),
+    }
+}
+
 /// A function application using local let bindings
 pub struct ProtoAppGroup {
     f: RcExpr,
@@ -954,30 +984,162 @@ impl ProtoSyntax for ProtoAppGroup {
         compiler: &Compiler,
         context: &Context,
     ) -> Result<Rc<StgSyn>, CompileError> {
+        use crate::eval::stg::blob::CombinatorInfo;
+
         let mut intrinsic_index = None;
-        let mut strict_args = &vec![];
+        let mut strict_args: &[usize] = &[];
         let mut local_binder = LetBinder::synthetic_let(context);
 
-        // Find a reference for the function
-        let f_index: Box<dyn ProtoReference> = match &*self.f.inner {
-            Expr::Var(s, v) => match v {
-                Var::Bound(bv) => Box::new(ProtoVar::new(bv.clone())),
-                Var::Free(name) => Box::new(ProtoRef::new(compiler.resolve_free_var(*s, name)?)),
-            },
-            Expr::Intrinsic(_, bif) => {
-                intrinsic_index = intrinsics::index(bif);
-                let n =
-                    intrinsic_index.ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
-                let info = intrinsics::intrinsic(n);
-                strict_args = info.strict_args();
-                Box::new(ProtoRef::new(gref(n)))
+        // Check if the function is a prelude global tagged as a simple combinator.
+        // If so, we can bypass the global-thunk / env-frame overhead entirely.
+        let combinator_info: Option<&CombinatorInfo> = match &*self.f.inner {
+            Expr::Var(s, Var::Free(name)) => {
+                if let Ok(Ref::G(slot)) = compiler.resolve_free_var(*s, name) {
+                    let base = intrinsics::catalogue().len();
+                    if slot >= base {
+                        compiler.combinators.get(&(slot - base))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             }
-            _ => Box::new(ProtoRef::new(compiler.compile_binding(
-                &mut local_binder,
-                self.f.clone(),
-                self.smid,
-                Demand::default(),
-            )?)),
+            _ => None,
+        };
+
+        // ── Identity combinator: return the selected call-arg directly. ──────────
+        //
+        // e.g. `identity(v): v` — when the user writes `identity(expr)`, skip the
+        // wrapper thunk and just evaluate `expr`.  Only applies when the call
+        // supplies exactly `lambda_arity` arguments; partial applications fall
+        // through to the standard path that produces a curried thunk.
+        if let Some(CombinatorInfo::Identity {
+            param_index,
+            lambda_arity,
+        }) = combinator_info
+        {
+            let idx = *param_index;
+            if self.args.len() == *lambda_arity && idx < self.args.len() {
+                let r = compile_arg_to_ref(
+                    compiler,
+                    &mut local_binder,
+                    &self.args[idx],
+                    self.smid,
+                    Demand::default(),
+                )?;
+                local_binder.set_body(Box::new(Holder::new(dsl::atom(r))))?;
+                local_binder.freeze();
+                return local_binder.into_stg(compiler);
+            }
+        }
+
+        // ── VarApp combinator: apply one call-arg as function to permuted others. ─
+        //
+        // e.g. `flip(f, x, y): f(y, x)` — when the user writes `flip(g, a, b)`,
+        // skip the wrapper and emit `g(b, a)` directly.  Only applies for exact
+        // arity matches; partial applications fall through to the standard path.
+        if let Some(CombinatorInfo::VarApp {
+            func_param,
+            arg_permutation: perm,
+            lambda_arity,
+        }) = combinator_info
+        {
+            let func_idx = *func_param;
+            if self.args.len() == *lambda_arity
+                && func_idx < self.args.len()
+                && perm.iter().all(|&i| i < self.args.len())
+            {
+                // Compile all call-args to Ref values (Clone) for flexible reordering.
+                let mut call_refs: Vec<Ref> = Vec::with_capacity(self.args.len());
+                for j in 0..self.args.len() {
+                    call_refs.push(compile_arg_to_ref(
+                        compiler,
+                        &mut local_binder,
+                        &self.args[j],
+                        self.smid,
+                        Demand::default(),
+                    )?);
+                }
+                let func_ref = call_refs[func_idx].clone();
+                let f_box: Box<dyn ProtoReference> = Box::new(ProtoRef::new(func_ref));
+                let arg_boxes: Vec<Box<dyn ProtoReference>> = perm
+                    .iter()
+                    .map(|&i| {
+                        Box::new(ProtoRef::new(call_refs[i].clone())) as Box<dyn ProtoReference>
+                    })
+                    .collect();
+                local_binder.set_body(ProtoApp::boxed(f_box, arg_boxes, self.demand))?;
+                local_binder.freeze();
+                let stg = local_binder.into_stg(compiler)?;
+                let stg = if compiler.generate_annotations() && self.smid.is_valid() {
+                    dsl::ann(self.smid, stg)
+                } else {
+                    stg
+                };
+                return Ok(stg);
+            }
+        }
+
+        // ── Intrinsic / IntrinsicAlias combinator: redirect to BIF with permuted args.
+        //
+        // e.g. `(a + b): __ADD(a, b)` — when the user writes `x + y`, emit
+        // `__ADD(y, x)` (or whatever permutation the prelude uses) directly.
+        //
+        // For IntrinsicAlias (e.g. `if: __IF`), args arrive in call order.
+        // For Intrinsic with a non-trivial permutation (e.g. `lookup-in(b, s):
+        // __LOOKUP(s, b)`), arg_permutation[bif_i] = which call-arg maps to BIF arg i.
+        //
+        // `arg_order[bif_i]` = index into `self.args` for BIF arg i.
+        let arg_order: Vec<usize> = match combinator_info {
+            Some(CombinatorInfo::Intrinsic {
+                arg_permutation: perm,
+                ..
+            }) if perm.len() == self.args.len() => perm.clone(),
+            _ => (0..self.args.len()).collect(),
+        };
+
+        // Find a reference for the function.
+        let f_index: Box<dyn ProtoReference> = match combinator_info {
+            Some(CombinatorInfo::Intrinsic {
+                intrinsic_index: bif_idx,
+                arg_permutation: perm,
+            }) if perm.len() == self.args.len() => {
+                intrinsic_index = Some(*bif_idx);
+                let info = intrinsics::intrinsic(*bif_idx);
+                strict_args = info.strict_args();
+                Box::new(ProtoRef::new(gref(*bif_idx)))
+            }
+            Some(CombinatorInfo::IntrinsicAlias {
+                intrinsic_index: bif_idx,
+            }) => {
+                intrinsic_index = Some(*bif_idx);
+                let info = intrinsics::intrinsic(*bif_idx);
+                strict_args = info.strict_args();
+                Box::new(ProtoRef::new(gref(*bif_idx)))
+            }
+            _ => match &*self.f.inner {
+                Expr::Var(s, v) => match v {
+                    Var::Bound(bv) => Box::new(ProtoVar::new(bv.clone())),
+                    Var::Free(name) => {
+                        Box::new(ProtoRef::new(compiler.resolve_free_var(*s, name)?))
+                    }
+                },
+                Expr::Intrinsic(_, bif) => {
+                    intrinsic_index = intrinsics::index(bif);
+                    let n = intrinsic_index
+                        .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
+                    let info = intrinsics::intrinsic(n);
+                    strict_args = info.strict_args();
+                    Box::new(ProtoRef::new(gref(n)))
+                }
+                _ => Box::new(ProtoRef::new(compiler.compile_binding(
+                    &mut local_binder,
+                    self.f.clone(),
+                    self.smid,
+                    Demand::default(),
+                )?)),
+            },
         };
 
         // Determine which args are single-use for this intrinsic (IF branches).
@@ -989,9 +1151,11 @@ impl ProtoSyntax for ProtoAppGroup {
             .unwrap_or(&[]);
 
         // Get references for args, compiling into the local binder if necessary.
-        // Translate strict_args → Strict demand; single_use_args → AtMostOnce.
+        // Iterate in `arg_order` (BIF-arg positions) so that `i` indexes correctly
+        // into `strict_args` and `single_use_args`.
         let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
-        for (i, arg) in self.args.iter().enumerate() {
+        for (i, &call_j) in arg_order.iter().enumerate() {
+            let arg = &self.args[call_j];
             match &*arg.inner {
                 Expr::Var(s, v) => match v {
                     Var::Bound(bv) => arg_indexes.push(Box::new(ProtoVar::new(bv.clone()))),
@@ -1025,8 +1189,7 @@ impl ProtoSyntax for ProtoAppGroup {
             }
         }
 
-        // If it's an intrinsic, check whether we should inline the
-        // wrapper
+        // If it's an intrinsic, check whether we should inline the wrapper.
         match intrinsic_index.and_then(|index| compiler.intrinsics.get(index)) {
             Some(bif)
                 if !compiler.suppress_inlining
@@ -1212,15 +1375,32 @@ impl ProtoSyntax for ProtoInline {
 }
 
 impl<'rt> Compiler<'rt> {
-    /// Temporary pending a builder pattern....
-    pub fn new(
+    /// Construct a compiler from the given `StgSettings` and intrinsic table.
+    ///
+    /// Splits the intrinsic slice out separately because it carries a lifetime
+    /// tied to the runtime and must therefore not be stored in `StgSettings`.
+    pub fn new(settings: &super::StgSettings, intrinsics: Vec<&'rt dyn StgIntrinsic>) -> Self {
+        Compiler {
+            generate_annotations: settings.generate_annotations,
+            render_type: settings.render_type,
+            suppress_updates: settings.suppress_updates,
+            suppress_inlining: settings.suppress_inlining,
+            suppress_optimiser: settings.suppress_optimiser,
+            intrinsics,
+            prelude_globals: settings.prelude_globals.clone(),
+            combinators: settings.combinators.clone(),
+        }
+    }
+
+    /// Construct a bare compiler with specific flags — used in tests and
+    /// inline data parsing where a full `StgSettings` is unavailable.
+    pub fn for_testing(
         generate_annotations: bool,
         render_type: RenderType,
         suppress_updates: bool,
         suppress_inlining: bool,
         suppress_optimiser: bool,
         intrinsics: Vec<&'rt dyn StgIntrinsic>,
-        prelude_globals: Option<HashMap<String, usize>>,
     ) -> Self {
         Compiler {
             generate_annotations,
@@ -1229,7 +1409,8 @@ impl<'rt> Compiler<'rt> {
             suppress_inlining,
             suppress_optimiser,
             intrinsics,
-            prelude_globals,
+            prelude_globals: None,
+            combinators: HashMap::new(),
         }
     }
 
@@ -1573,16 +1754,7 @@ pub mod tests {
     };
 
     fn compile(expr: RcExpr) -> Result<Rc<StgSyn>, CompileError> {
-        Compiler::new(
-            true,
-            RenderType::Headless,
-            false,
-            false,
-            false,
-            vec![],
-            None,
-        )
-        .compile(expr)
+        Compiler::for_testing(true, RenderType::Headless, false, false, false, vec![]).compile(expr)
     }
 
     #[test]
