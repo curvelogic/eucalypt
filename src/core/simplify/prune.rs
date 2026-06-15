@@ -424,15 +424,18 @@ impl<'expr> ScopeTracker<'expr> {
 
     /// Compute the demand annotation for a binding after the mark phase.
     ///
-    /// - A binding used exactly once gets `Cardinality::AtMostOnce` (W9 Phase 3):
-    ///   no memoisation benefit, so the STG compiler can skip the Update frame.
-    /// - A binding used more than once gets `Cardinality::Multi`.
-    /// - A binding not reached (use_count == 0) keeps `Unknown` (it will be
-    ///   eliminated, so the annotation is moot).
+    /// All core bindings live in recursive scopes, so syntactic reference
+    /// counting cannot soundly determine cardinality: a binding referenced
+    /// once may be evaluated many times through recursion.  We therefore
+    /// only emit `Multi` (informational) or `Unknown` (default).
+    ///
+    /// `AtMostOnce` is NOT emitted here — it is only set by the STG
+    /// compiler for genuinely single-use synthetic bindings (IF branches,
+    /// intermediate results) where the compiler has semantic knowledge
+    /// that the binding is non-recursive.
     fn demand_from_use_count(use_count: u32) -> Demand {
         match use_count {
             0 => Demand::default(),
-            1 => Demand::at_most_once(),
             _ => Demand {
                 cardinality: Cardinality::Multi,
                 ..Default::default()
@@ -1014,12 +1017,13 @@ pub mod tests {
 
     /// A single-use binding receives `Cardinality::AtMostOnce` after pruning.
     ///
-    /// The prune pass counts references; a binding used exactly once gets
-    /// `Demand::at_most_once()`, which later causes the STG compiler to emit
-    /// a `Value` instead of a `Thunk` (W9 §3.4).
+    /// The prune pass counts references but does not emit `AtMostOnce`
+    /// because core scopes are recursive — syntactic single-use does not
+    /// guarantee runtime single-use.  Both used and unused bindings get
+    /// conservative cardinality (`Multi` or `Unknown`).
     #[test]
-    pub fn test_single_use_binding_gets_at_most_once_cardinality() {
-        use crate::core::demand::{Cardinality, Demand};
+    pub fn test_prune_does_not_emit_at_most_once() {
+        use crate::core::demand::Cardinality;
 
         let x = free("x");
         let y = free("y");
@@ -1033,9 +1037,9 @@ pub mod tests {
             Expr::Let(_, scope, _) => {
                 let x_binding = &scope.pattern[0];
                 assert_eq!(
-                    x_binding.demand,
-                    Demand::at_most_once(),
-                    "single-use binding should have AtMostOnce cardinality after pruning"
+                    x_binding.demand.cardinality,
+                    Cardinality::Multi,
+                    "used binding should have Multi cardinality (conservative)"
                 );
 
                 // The unused binding keeps the default demand.
