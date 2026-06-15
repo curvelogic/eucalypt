@@ -79,7 +79,11 @@ jobs:
       - name: Regenerate prelude docs
         run: ./target/release/eu doc --prelude --output-dir /tmp/prelude-docs/
       - name: Check docs are up to date
-        run: diff -r /tmp/prelude-docs/ docs/reference/prelude/ --exclude=supplements || { echo "Prelude docs are stale. Run: eu doc --prelude --output-dir docs/reference/prelude/"; exit 1; }
+        run: |
+          diff -r /tmp/prelude-docs/ docs/reference/prelude/ --exclude=supplements || {
+            echo "Prelude docs are stale. Run: eu doc --prelude --output-dir docs/reference/prelude/"
+            exit 1
+          }
 
   test-gc-verified:
     name: GC-verified harness (x86-64)
