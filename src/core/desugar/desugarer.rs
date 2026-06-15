@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 /// Describes how monadic blocks are desugared:
 /// - `Explicit` names the bind and return functions directly.
 /// - `Namespace` refers to a block in scope that must have `bind` and `return` members.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum MonadSpec {
     /// Explicit bind/return function names (e.g. from `{ :monad bind: f return: r }`).
     Explicit {

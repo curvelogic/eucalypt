@@ -81,6 +81,17 @@ pub struct PreludeBlob {
 
     /// Type schemes, aliases, branch shapes for seeding the type checker.
     pub type_summary: PreludeSummary,
+
+    /// Monad namespace specifications (e.g. `:for` → list monad, `:random`).
+    ///
+    /// Extracted from prelude source during translate/desugar.  Seeded into
+    /// the desugarer so that `{ :for ... }` blocks are recognised as monadic.
+    #[serde(default)]
+    pub monad_specs: HashMap<String, crate::core::desugar::desugarer::MonadSpec>,
+
+    /// Monad wrapper type hints for LSP display (e.g. `"io"` → `"IO(a)"`).
+    #[serde(default)]
+    pub monad_type_hints: HashMap<String, String>,
 }
 
 impl PreludeBlob {
@@ -92,5 +103,93 @@ impl PreludeBlob {
     /// Deserialise from postcard bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, postcard::Error> {
         postcard::from_bytes(bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::desugar::desugarer::MonadSpec;
+
+    /// Build a minimal blob for testing (empty nodes/forms/bindings).
+    fn minimal_blob() -> PreludeBlob {
+        PreludeBlob {
+            source_hash: [0u8; 32],
+            nodes: vec![],
+            forms_pool: vec![],
+            binding_entries: vec![],
+            name_to_slot: HashMap::new(),
+            operators: HashMap::new(),
+            type_summary: PreludeSummary::default(),
+            monad_specs: HashMap::new(),
+            monad_type_hints: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn monad_specs_round_trip_namespace() {
+        let mut blob = minimal_blob();
+        blob.monad_specs
+            .insert("for".to_string(), MonadSpec::Namespace("for".to_string()));
+
+        let bytes = blob.to_bytes().unwrap();
+        let restored = PreludeBlob::from_bytes(&bytes).unwrap();
+
+        assert_eq!(restored.monad_specs.len(), 1);
+        assert!(matches!(
+            restored.monad_specs.get("for"),
+            Some(MonadSpec::Namespace(n)) if n == "for"
+        ));
+    }
+
+    #[test]
+    fn monad_specs_round_trip_explicit() {
+        let mut blob = minimal_blob();
+        blob.monad_specs.insert(
+            "custom".to_string(),
+            MonadSpec::Explicit {
+                bind_name: "my-bind".to_string(),
+                return_name: "my-return".to_string(),
+            },
+        );
+
+        let bytes = blob.to_bytes().unwrap();
+        let restored = PreludeBlob::from_bytes(&bytes).unwrap();
+
+        assert!(matches!(
+            restored.monad_specs.get("custom"),
+            Some(MonadSpec::Explicit { bind_name, return_name })
+                if bind_name == "my-bind" && return_name == "my-return"
+        ));
+    }
+
+    #[test]
+    #[cfg(prelude_blob_ok)]
+    fn embedded_blob_contains_monad_specs() {
+        let bytes = crate::driver::resources::PRELUDE_BLOB_BYTES;
+        let blob = PreludeBlob::from_bytes(bytes).expect("embedded blob should deserialise");
+        assert!(
+            !blob.monad_specs.is_empty(),
+            "prelude blob must contain monad specs (e.g. for, random)"
+        );
+        assert!(
+            blob.monad_specs.contains_key("for"),
+            "prelude blob must contain the :for list monad spec"
+        );
+    }
+
+    #[test]
+    fn monad_type_hints_round_trip() {
+        let mut blob = minimal_blob();
+        blob.monad_type_hints
+            .insert("io".to_string(), "IO(a)".to_string());
+
+        let bytes = blob.to_bytes().unwrap();
+        let restored = PreludeBlob::from_bytes(&bytes).unwrap();
+
+        assert_eq!(
+            restored.monad_type_hints.get("io"),
+            Some(&"IO(a)".to_string())
+        );
     }
 }

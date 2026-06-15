@@ -117,6 +117,11 @@ fn cmd_prelude_compile() -> Result<()> {
     let operator_type_strings = loader.unit_interface().operator_type_strings();
     let operators = loader.unit_interface().operators.clone();
 
+    // Extract monad specs (e.g. :for, :random) populated during translate.
+    let monad_specs = loader.unit_interface().monad_specs.clone();
+    let monad_type_hints = loader.unit_interface().monad_type_hints.clone();
+    println!("  monad specs: {}", monad_specs.len());
+
     // Cook (resolve operator precedence).
     loader.cook().context("cook")?;
 
@@ -231,6 +236,8 @@ fn cmd_prelude_compile() -> Result<()> {
         name_to_slot,
         operators,
         type_summary: summary,
+        monad_specs,
+        monad_type_hints,
     };
 
     let bytes = blob.to_bytes().context("serialise PreludeBlob")?;

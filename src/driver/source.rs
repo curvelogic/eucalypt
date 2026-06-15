@@ -573,6 +573,16 @@ impl SourceLoader {
     /// `Executor`, but in a single load.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn set_prelude_blob(&mut self, blob: crate::eval::stg::blob::PreludeBlob) {
+        // Seed monad specs from the blob so that :for/:random blocks are
+        // recognised during desugaring even when the prelude source is skipped.
+        self.unit_interface
+            .monad_specs
+            .extend(blob.monad_specs.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.unit_interface.monad_type_hints.extend(
+            blob.monad_type_hints
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone())),
+        );
         self.prelude_blob = Some(blob);
     }
 
