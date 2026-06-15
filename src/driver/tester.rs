@@ -626,6 +626,17 @@ impl Tester for InProcessTester {
                     .build();
 
                 let mut loader = SourceLoader::new(test_opts.lib_path().to_vec());
+
+                // Load the prelude blob so the test runner exercises the
+                // same code path as the default `eu` binary.  Without this,
+                // blob-specific bugs (e.g. missing monad specs) are invisible
+                // to the test suite.  EU_SOURCE_PRELUDE=1 still bypasses
+                // the blob (see maybe_load_prelude_blob).
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(blob) = eval::maybe_load_prelude_blob(&test_opts) {
+                    loader.set_prelude_blob(blob);
+                }
+
                 let mut statistics = Statistics::default();
 
                 // For error tests, catch preparation failures gracefully
@@ -658,7 +669,11 @@ impl Tester for InProcessTester {
                 let exit_code = {
                     let out = Box::new(&mut outbuf);
                     let err = Box::new(&mut errbuf);
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let blob = loader.take_prelude_blob();
                     let mut executor = eval::Executor::from(loader);
+                    #[cfg(not(target_arch = "wasm32"))]
+                    executor.set_prelude_blob(blob);
                     executor.capture_output(out, err);
                     executor.execute(&test_opts, &mut statistics, f.clone())
                 };

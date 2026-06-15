@@ -1036,6 +1036,11 @@ impl EucalyptOptions {
             Some(target)
         };
         self.export_type = Some(format);
+        // Clear the test flag so that prepare() runs the full pipeline
+        // (cook, eliminate, inline) rather than returning early after
+        // desugaring.  The early return is correct for the test *plan*
+        // analysis phase but not for test *execution*.
+        self.test = false;
         self
     }
 
