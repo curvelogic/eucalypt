@@ -27,6 +27,7 @@ use anyhow::{bail, Context, Result};
 use eucalypt::{
     core::{
         expr::{open_let_scope_full, Expr, RcExpr},
+        inline::tag::tag_combinators,
         typecheck::check::{parse_operator_overloads, type_check_for_prelude},
     },
     driver::source::SourceLoader,
@@ -165,6 +166,25 @@ fn cmd_prelude_compile() -> Result<()> {
 
     println!("  prelude bindings (peeled): {}", binding_bodies.len());
 
+    // ── 4b. Collect inlinable combinator bindings for inline_cores ────────────
+    // After peeling, intra-prelude references are Var::Free(name) rather than
+    // de Bruijn Var::Bound indices.  For combinator lambdas (bodies that are
+    // App(Intrinsic, vars) or Var), the lambda parameter references are
+    // Var::Bound(scope=0, binder=i) — still correct after peeling.  We tag and
+    // collect these so they can be injected before the user-code inline pass.
+    let mut inline_cores: Vec<(String, RcExpr)> = Vec::new();
+    for (name, body) in &binding_bodies {
+        let tagged =
+            tag_combinators(body).with_context(|| format!("tag_combinators on '{name}'"))?;
+        if matches!(&*tagged.inner, Expr::Lam(_, true, _)) {
+            inline_cores.push((name.clone(), tagged));
+        }
+    }
+    println!(
+        "  inline cores (inlinable combinators): {}",
+        inline_cores.len()
+    );
+
     // ── 5. Build name→slot mapping from peeled bindings ──────────────────────
     let name_to_slot: HashMap<String, usize> = binding_bodies
         .iter()
@@ -238,6 +258,7 @@ fn cmd_prelude_compile() -> Result<()> {
         type_summary: summary,
         monad_specs,
         monad_type_hints,
+        inline_cores,
     };
 
     let bytes = blob.to_bytes().context("serialise PreludeBlob")?;

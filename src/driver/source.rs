@@ -1,9 +1,11 @@
 use crate::common::sourcemap::*;
+use crate::core::binding::CoreBinding;
+use crate::core::binding::Scope;
 use crate::core::cook;
 use crate::core::desugar::desugarable::Desugarable;
 use crate::core::desugar::{Content, Desugarer};
 use crate::core::error::CoreError;
-use crate::core::expr::RcExpr;
+use crate::core::expr::{Expr, LetType, RcExpr};
 use crate::core::inline::reduce;
 use crate::core::inline::tag;
 use crate::core::simplify::compress;
@@ -599,6 +601,43 @@ impl SourceLoader {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn take_prelude_blob(&mut self) -> Option<crate::eval::stg::blob::PreludeBlob> {
         self.prelude_blob.take()
+    }
+
+    /// Inject inlinable prelude bindings from the blob as Let bindings wrapping
+    /// the current core expression.
+    ///
+    /// When the prelude blob is active, prelude source is not loaded, so prelude
+    /// function names appear as `Var::Free` in user code after cooking.  By
+    /// injecting the blob's combinator lambdas as a Let scope immediately before
+    /// the inline pass, the existing `distribute` and `beta_reduce` steps can
+    /// distribute them to call sites and fold `+(x, 1)` → `__ADD(x, 1)`.
+    ///
+    /// The injected Let uses `OtherLet` so the prune pass treats its bindings
+    /// as regular let-bindings; after inlining, any that are no longer referenced
+    /// are removed by the subsequent eliminate pass.
+    ///
+    /// No-op when no blob is present or when `inline_cores` is empty.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn inject_prelude_inline_cores(&mut self) {
+        let Some(ref blob) = self.prelude_blob else {
+            return;
+        };
+        if blob.inline_cores.is_empty() {
+            return;
+        }
+        let bindings: Vec<CoreBinding<RcExpr>> = blob
+            .inline_cores
+            .iter()
+            .map(|(name, expr)| CoreBinding::new(name.clone(), expr.clone()))
+            .collect();
+        self.core.expr = RcExpr::from(Expr::Let(
+            Smid::default(),
+            Scope {
+                pattern: bindings,
+                body: self.core.expr.clone(),
+            },
+            LetType::OtherLet,
+        ));
     }
 
     /// Run inliner

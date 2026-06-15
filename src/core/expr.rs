@@ -9,6 +9,26 @@ use crate::syntax::input::*;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
+
+/// Serde helpers for `serde_json::Number`.
+///
+/// `serde_json::Number` serialises via a JSON-specific path that only
+/// works for JSON-like formats.  Binary formats such as postcard cannot
+/// encode it.  We therefore serialise numbers as their string representation.
+mod number_serde {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde_json::Number;
+    use std::str::FromStr;
+
+    pub fn serialize<S: Serializer>(n: &Number, s: S) -> Result<S::Ok, S::Error> {
+        n.to_string().serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Number, D::Error> {
+        let text = String::deserialize(d)?;
+        Number::from_str(&text).map_err(serde::de::Error::custom)
+    }
+}
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Display;
@@ -24,11 +44,11 @@ pub use crate::core::binding::Var::Free;
 ///
 /// NB. Boolean and Unit ("null") are primitive in Core but user types
 /// in STG.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Primitive {
     Str(String),
     Sym(String),
-    Num(Number),
+    Num(#[serde(with = "number_serde")] Number),
     Bool(bool),
     Null,
     /// Type-data literal (s"..." syntax) — distinct from Str at the runtime level
@@ -71,7 +91,7 @@ impl Display for Fixity {
 pub type Precedence = i32;
 
 /// Blocks are implemented as insert-ordered hash map
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockMap<T>(IndexMap<String, T>);
 
 impl<T> FromIterator<(String, T)> for BlockMap<T> {
@@ -142,7 +162,7 @@ impl<T: Clone> IntoIterator for BlockMap<T> {
 ///
 /// `DestructureBlockLet` and `DestructureListLet` mark lets generated
 /// by desugaring a destructuring parameter pattern.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LetType {
     DefaultBlockLet,
     OtherLet,
@@ -153,7 +173,7 @@ pub enum LetType {
 }
 
 /// Which side of a source item are we inserting an implicit anaphor
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ImplicitAnaphorSide {
     /// Anaphor to the left of the source item
     Left,
@@ -184,7 +204,7 @@ impl Ord for ImplicitAnaphorSide {
 }
 
 /// An anaphor
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Anaphor<T, N>
 where
     T: Hash + Eq + Clone,
@@ -304,7 +324,7 @@ pub type LamScope<T> = Scope<Vec<String>, T>;
 /// - `ErrPseudoDot`: `[:e-pseudodot]` - Pseudo dot operator error
 /// - `ErrPseudoCall`: `[:e-pseudocall]` - Pseudo call operator error  
 /// - `ErrPseudoCat`: `[:e-pseudocat]` - Pseudo concatenation error
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Expr<T>
 where
     T: Clone,
@@ -482,6 +502,18 @@ where
 #[derive(Debug, Clone, PartialEq)]
 pub struct RcExpr {
     pub inner: Rc<CoreExpr>,
+}
+
+impl Serialize for RcExpr {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.inner.as_ref().serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for RcExpr {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        CoreExpr::deserialize(d).map(RcExpr::from)
+    }
 }
 
 impl From<CoreExpr> for RcExpr {
