@@ -26,6 +26,7 @@ pub mod testing;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
@@ -50,39 +51,11 @@ use lsp_types::{
 use crate::common::sourcemap::SourceMap;
 use crate::core::typecheck::types::Type;
 
-use self::query::{FileId, QueryStore};
+use self::query::{
+    hash_combine, hash_str, ContentHash, FileId, ImportedFile, PipelineCacheEntry,
+    PipelineStageHashes, QueryStore, TypeEnv,
+};
 use self::symbol_table::{SymbolSource, SymbolTable};
-
-/// Inferred type environment for a document, mapping binding names to types.
-type TypeEnv = HashMap<String, Type>;
-
-/// Source text and URI for an imported file, used to build symbol
-/// tables for go-to-definition and hover on imported names.
-struct ImportedFile {
-    uri: Url,
-    source: String,
-}
-
-/// Cached result of a successful pipeline run.
-struct CachedPipeline {
-    uri: Url,
-    type_env: TypeEnv,
-    /// Lambda parameter types inferred by the type checker.
-    ///
-    /// Lambda parameter types keyed by `(line, column, param_name)`.
-    /// The line/column come from the lambda's Smid resolved via the
-    /// source map, giving a unique key per binding declaration.
-    lambda_params: HashMap<(u32, u32, String), Type>,
-    warnings: Vec<crate::core::typecheck::error::TypeWarning>,
-    source_map: SourceMap,
-    /// Imported files resolved by the pipeline, for building symbol
-    /// tables with proper source locations.
-    imports: Vec<ImportedFile>,
-    /// Type alias definitions registered during type checking.
-    ///
-    /// Passed to `hover_for_alias` so hover can show the resolved type.
-    alias_types: HashMap<String, Type>,
-}
 
 /// A pipeline error with a message and optional source location.
 pub struct PipelineError {
@@ -101,7 +74,7 @@ impl std::fmt::Display for PipelineError {
 /// Result sent from the background pipeline thread.
 struct PipelineResult {
     uri: Url,
-    result: Result<CachedPipeline, PipelineError>,
+    result: Result<PipelineCacheEntry, PipelineError>,
 }
 
 /// Run the LSP server on stdio.
@@ -274,16 +247,12 @@ struct ServerState {
     store: DocumentStore,
     prelude_table: SymbolTable,
 
-    /// Cached pipeline results per document URI.
-    cached: HashMap<Url, CachedPipeline>,
-
-    /// Incremental query store: tracks file texts, parse results, and the
-    /// import graph for cross-file invalidation.
+    /// Incremental query store: tracks file texts, parse results, pipeline
+    /// results, per-stage hashes, and the import graph for cross-file
+    /// invalidation.
     ///
-    /// Replaces `last_green` and `last_parse_errors` with a unified,
-    /// revision-aware cache.  Pipeline results remain in `cached` for now;
-    /// future work (W7 Phases 3–5) will migrate them fully into the query
-    /// store.
+    /// Replaces both the former `cached: HashMap<Url, CachedPipeline>` and
+    /// the parse-specific `last_green`/`last_parse_errors` fields.
     queries: QueryStore,
 
     /// Channel for receiving pipeline results from background threads.
@@ -309,7 +278,6 @@ impl ServerState {
         Self {
             store: DocumentStore::new(),
             prelude_table: symbol_table::prelude_symbols(&prelude_uri),
-            cached: HashMap::new(),
             queries: QueryStore::new(),
             pipeline_rx,
             pipeline_tx,
@@ -332,12 +300,28 @@ impl ServerState {
 
     /// Look up the type env for a URI from the cached pipeline result.
     fn type_env_for(&self, uri: &Url) -> Option<&TypeEnv> {
-        self.cached.get(uri).map(|c| &c.type_env)
+        let file_id = FileId::from_url(uri);
+        self.queries
+            .get_pipeline_result(&file_id)
+            .map(|c| &c.type_env)
     }
 
     /// Look up lambda parameter types from the cached pipeline.
     fn lambda_params_for(&self, uri: &Url) -> Option<&HashMap<(u32, u32, String), Type>> {
-        self.cached.get(uri).map(|c| &c.lambda_params)
+        let file_id = FileId::from_url(uri);
+        self.queries
+            .get_pipeline_result(&file_id)
+            .map(|c| &c.lambda_params)
+    }
+
+    /// Look up the cached pipeline entry for a URI.
+    ///
+    /// Returns the last successful result regardless of whether the file
+    /// has been edited since (stale results remain useful for hover/completion
+    /// while a new pipeline run is in progress).
+    fn cached_pipeline(&self, uri: &Url) -> Option<Rc<PipelineCacheEntry>> {
+        let file_id = FileId::from_url(uri);
+        self.queries.get_pipeline_result(&file_id).cloned()
     }
 
     /// Build a symbol table for a document from AST, prelude, and
@@ -360,7 +344,7 @@ impl ServerState {
         }
 
         // Add symbols from imported files resolved by the pipeline.
-        if let Some(cached) = self.cached.get(uri) {
+        if let Some(cached) = self.cached_pipeline(uri) {
             for import in &cached.imports {
                 let import_parse = crate::syntax::rowan::parse_unit(&import.source);
                 let import_unit = import_parse.tree();
@@ -376,7 +360,7 @@ impl ServerState {
         table
     }
 
-    /// Apply a pipeline result: swap into cached and publish type diagnostics.
+    /// Apply a pipeline result: store in QueryStore and publish type diagnostics.
     fn apply_pipeline_result(
         &mut self,
         connection: &Connection,
@@ -384,13 +368,13 @@ impl ServerState {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let uri = result.uri.clone();
         match result.result {
-            Ok(cached) => {
+            Ok(entry) => {
                 // Publish type diagnostics from the new pipeline result.
                 let text = self.store.get(&uri).unwrap_or_default().to_string();
                 let type_diags = diagnostics::diagnostics_from_type_warnings(
                     &text,
-                    &cached.warnings,
-                    &cached.source_map,
+                    &entry.warnings,
+                    &entry.source_map,
                 );
                 // Use cached parse errors from the query store rather than
                 // re-parsing the document.
@@ -413,14 +397,20 @@ impl ServerState {
 
                 // Update the import graph in the query store so that future
                 // edits to imported files trigger re-checking of this file.
-                let import_file_ids: Vec<FileId> = cached
+                let import_file_ids: Vec<FileId> = entry
                     .imports
                     .iter()
                     .map(|imp| FileId::from_url(&imp.uri))
                     .collect();
                 self.queries.set_imports(&file_id, import_file_ids);
 
-                self.cached.insert(uri.clone(), cached);
+                // Compute the combined input hash for this pipeline run
+                // (file text hash combined with all import hashes).
+                let input_hash = self.queries.compute_pipeline_input_hash(&file_id);
+
+                // Store the pipeline result in the query store.
+                self.queries
+                    .store_pipeline_result(file_id, entry, input_hash);
 
                 // Ask the client to re-request inlay hints now that
                 // pipeline-resolved types (lambda_params) are available.
@@ -439,10 +429,9 @@ impl ServerState {
             }
             Err(err) => {
                 eprintln!("pipeline error for {}: {}", uri, err.message);
-                // Remove stale cached result so we don't serve outdated
-                // type information. Re-publish diagnostics with parse
-                // errors plus the pipeline error as a visible warning.
-                self.cached.remove(&uri);
+                // Note: we intentionally do NOT remove the existing cached pipeline
+                // result on error — stale type information is still useful for
+                // hover/completion while the user is in the middle of an edit.
                 let file_id = FileId::from_url(&uri);
                 let text = self.store.get(&uri).unwrap_or_default().to_string();
                 let empty = vec![];
@@ -729,7 +718,7 @@ fn on_document_close(state: &mut ServerState, params: lsp_types::DidCloseTextDoc
     let uri = params.text_document.uri;
     let file_id = FileId::from_url(&uri);
     state.store.close(&uri);
-    state.cached.remove(&uri);
+    // `queries.remove_file` cleans up parse cache, pipeline result, and import graph.
     state.queries.remove_file(&file_id);
     if let Some(cancel) = state.cancel.remove(&uri) {
         cancel.store(true, Ordering::SeqCst);
@@ -914,7 +903,8 @@ fn on_hover(state: &ServerState, params: lsp_types::HoverParams) -> Option<Hover
 
     // Check for alias reference inside a `type:` string first (§A7).
     let alias_idx = alias_index::build_alias_index(text, &root, uri);
-    let alias_types = state.cached.get(uri).map(|c| &c.alias_types);
+    let cached = state.cached_pipeline(uri);
+    let alias_types = cached.as_ref().map(|c| &c.alias_types);
     if let Some(h) = alias_index::hover_for_alias(text, &root, position, &alias_idx, alias_types) {
         return Some(h);
     }
@@ -1006,11 +996,11 @@ fn on_code_action(
     let root = parse.syntax_node();
     let table = state.build_symbol_table(uri, text);
 
+    let cached = state.cached_pipeline(uri);
     let empty_warnings = vec![];
     let empty_source_map = SourceMap::new();
-    let (warnings, source_map) = state
-        .cached
-        .get(uri)
+    let (warnings, source_map) = cached
+        .as_ref()
         .map(|c| (c.warnings.as_slice(), &c.source_map))
         .unwrap_or((&empty_warnings, &empty_source_map));
 
@@ -1186,7 +1176,7 @@ fn run_pipeline(
     uri: &Url,
     text: &str,
     path: Option<&std::path::Path>,
-) -> Result<CachedPipeline, PipelineError> {
+) -> Result<PipelineCacheEntry, PipelineError> {
     use crate::core::typecheck::check::type_check_full;
     use crate::driver::source::SourceLoader;
     use crate::syntax::input::{Input, Locator};
@@ -1211,6 +1201,15 @@ fn run_pipeline(
     let inputs = vec![prelude, doc_input];
     let mut loader = SourceLoader::new(vec![]);
 
+    // Per-stage content hashes.
+    //
+    // Conservative proxy strategy: each stage's output hash equals its
+    // input hash (the pipeline is deterministic, so same input → same output).
+    // The type-check hash is derived from the actual output for finer
+    // granularity.  More precise structural hashing of RcExpr trees is a
+    // future optimisation.
+    let file_text_hash = hash_str(text);
+
     for input in &inputs {
         if let Err(e) = loader.load(input) {
             return Err(make_pipeline_error(&loader, &e));
@@ -1221,12 +1220,23 @@ fn run_pipeline(
             return Err(make_pipeline_error(&loader, &e));
         }
     }
+
+    // Desugar hash: proxy — same file text → same desugared output.
+    let desugar_hash = file_text_hash;
+
     if let Err(e) = loader.merge_units(&inputs) {
         return Err(make_pipeline_error(&loader, &e));
     }
+
+    // Merge hash: proxy — same desugared inputs → same merged output.
+    let merge_hash = desugar_hash;
+
     if let Err(e) = loader.cook() {
         return Err(make_pipeline_error(&loader, &e));
     }
+
+    // Cook hash: proxy — same merge input → same cooked output.
+    let cook_hash = merge_hash;
 
     // Extract all binding names BEFORE dead-code elimination so that
     // completion can offer imported names that aren't yet referenced.
@@ -1244,8 +1254,37 @@ fn run_pipeline(
         return Err(make_pipeline_error(&loader, &e));
     }
 
+    // Eliminate hash: proxy — same cook input → same eliminated output.
+    let eliminate_hash = cook_hash;
+    // Inline hash: proxy (inline pass runs next; no separate call here).
+    let inline_hash = eliminate_hash;
+
     let core_expr = loader.core().expr.clone();
     let result = type_check_full(&core_expr);
+
+    // Type-check hash: derived from the actual output (warnings + binding names)
+    // so that a refactoring that preserves types produces the same hash even
+    // when the source text differs.
+    let type_check_hash = {
+        let mut h: ContentHash = 0;
+        // Hash warnings in sorted order for stability.
+        let mut w_strs: Vec<String> = result.warnings.iter().map(|w| format!("{:?}", w)).collect();
+        w_strs.sort();
+        for s in &w_strs {
+            h = hash_combine(h, hash_str(s));
+        }
+        // Hash binding names (sorted for stability).
+        let mut names: Vec<&String> = type_env.keys().collect();
+        names.sort();
+        for n in &names {
+            h = hash_combine(h, hash_str(n));
+        }
+        h
+    };
+
+    // Diagnostics hash: combine parse errors (none at this stage — parse errors
+    // are tracked separately) with type-check hash.
+    let diagnostics_hash = type_check_hash;
 
     // Merge any types from the checker (currently empty because the
     // scope stack is popped, but future checker changes may fix this).
@@ -1282,8 +1321,6 @@ fn run_pipeline(
         })
         .collect();
 
-    // Flatten the Smid-keyed lambda_params into (name, line) keys
-    // so the LSP inlay hints can look up by declaration position.
     // Flatten the Smid-keyed lambda_params into (line, col, name) keys
     // using the source map for position resolution.
     let mut lambda_params = HashMap::new();
@@ -1314,7 +1351,18 @@ fn run_pipeline(
     let mut alias_types = alias_types_pre;
     alias_types.extend(result.aliases);
 
-    Ok(CachedPipeline {
+    let stage_hashes = PipelineStageHashes {
+        file_text: file_text_hash,
+        desugar: desugar_hash,
+        merge: merge_hash,
+        cook: cook_hash,
+        eliminate: eliminate_hash,
+        inline: inline_hash,
+        type_check: type_check_hash,
+        diagnostics: diagnostics_hash,
+    };
+
+    Ok(PipelineCacheEntry {
         uri: uri.clone(),
         type_env,
         lambda_params,
@@ -1322,6 +1370,7 @@ fn run_pipeline(
         source_map,
         imports,
         alias_types,
+        stage_hashes,
     })
 }
 

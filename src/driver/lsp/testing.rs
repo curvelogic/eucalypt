@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 
@@ -23,9 +24,9 @@ use super::highlight;
 use super::hover;
 use super::inlay_hints;
 use super::navigation;
-use super::query::{FileId, QueryStore};
+use super::query::{FileId, PipelineCacheEntry, QueryStore};
 use super::symbol_table::{self, SymbolSource, SymbolTable};
-use super::{apply_content_change, CachedPipeline, PipelineError, PipelineResult, TypeEnv};
+use super::{apply_content_change, PipelineError, PipelineResult, TypeEnv};
 use crate::syntax::rowan::parse_unit;
 
 /// An in-process LSP editing session for testing.
@@ -37,11 +38,11 @@ pub struct LspTestSession {
     uri: Url,
     content: String,
     prelude_table: SymbolTable,
-    cached: Option<CachedPipeline>,
     pipeline_rx: mpsc::Receiver<PipelineResult>,
     pipeline_tx: mpsc::Sender<PipelineResult>,
     cancel: Arc<AtomicBool>,
-    /// Query store tracking parse results and the import graph.
+    /// Query store tracking parse results, pipeline results, and the
+    /// import graph.
     queries: QueryStore,
     /// Last pipeline error, if any.
     last_pipeline_error: Option<PipelineError>,
@@ -61,7 +62,6 @@ impl LspTestSession {
             uri,
             content: String::new(),
             prelude_table: symbol_table::prelude_symbols(&prelude_uri),
-            cached: None,
             pipeline_rx,
             pipeline_tx,
             cancel: Arc::new(AtomicBool::new(false)),
@@ -120,21 +120,23 @@ impl LspTestSession {
             .recv_timeout(std::time::Duration::from_secs(30))
         {
             Ok(result) => match result.result {
-                Ok(cached) => {
-                    // Update import graph in the query store.
+                Ok(entry) => {
                     let file_id = FileId::from_url(&result.uri);
-                    let import_ids: Vec<FileId> = cached
+                    // Update import graph in the query store.
+                    let import_ids: Vec<FileId> = entry
                         .imports
                         .iter()
                         .map(|imp| FileId::from_url(&imp.uri))
                         .collect();
                     self.queries.set_imports(&file_id, import_ids);
-                    self.cached = Some(cached);
+                    // Compute combined input hash and store pipeline result.
+                    let input_hash = self.queries.compute_pipeline_input_hash(&file_id);
+                    self.queries
+                        .store_pipeline_result(file_id, entry, input_hash);
                     self.last_pipeline_error = None;
                 }
                 Err(err) => {
                     eprintln!("pipeline error in test: {err}");
-                    self.cached = None;
                     self.last_pipeline_error = Some(err);
                 }
             },
@@ -255,9 +257,6 @@ impl LspTestSession {
     }
 
     /// Go-to-definition for a type alias reference inside a `type:` string (§A7).
-    ///
-    /// Returns `Some` if the cursor is on an alias name inside a plain `type:` string
-    /// and the alias is indexed in the document.
     pub fn goto_definition_for_type_alias(
         &self,
         line: u32,
@@ -282,7 +281,8 @@ impl LspTestSession {
         let root = parse.syntax_node();
         let position = Position { line, character };
         let alias_idx = super::alias_index::build_alias_index(&self.content, &root, &self.uri);
-        let alias_types = self.cached.as_ref().map(|c| &c.alias_types);
+        let cached = self.cached_pipeline();
+        let alias_types = cached.as_ref().map(|c| &c.alias_types);
         super::alias_index::hover_for_alias(
             &self.content,
             &root,
@@ -386,7 +386,7 @@ impl LspTestSession {
 
     /// Lambda param names and types in the cached pipeline (for debugging).
     pub fn lambda_param_names(&self) -> Vec<(String, String)> {
-        self.cached.as_ref().map_or(vec![], |c| {
+        self.cached_pipeline().map_or(vec![], |c| {
             c.lambda_params
                 .iter()
                 .map(|((_line, _col, name), v)| (name.clone(), format!("{v}")))
@@ -395,7 +395,12 @@ impl LspTestSession {
     }
 
     fn lambda_params(&self) -> Option<&HashMap<(u32, u32, String), Type>> {
-        self.cached.as_ref().map(|c| &c.lambda_params)
+        // Safety: Rc is not Send but this session is single-threaded.
+        // We return a reference with the same lifetime as self.
+        let file_id = FileId::from_url(&self.uri);
+        self.queries
+            .get_pipeline_result(&file_id)
+            .map(|c| &c.lambda_params)
     }
 
     /// Return the last pipeline error, if any.
@@ -405,21 +410,18 @@ impl LspTestSession {
 
     /// Check if a cached pipeline result is available.
     pub fn has_cached(&self) -> bool {
-        self.cached.is_some()
+        let file_id = FileId::from_url(&self.uri);
+        self.queries.get_pipeline_result(&file_id).is_some()
     }
 
     /// Count of imported files in the cached pipeline.
     pub fn import_count(&self) -> usize {
-        self.cached.as_ref().map_or(0, |c| c.imports.len())
+        self.cached_pipeline().map_or(0, |c| c.imports.len())
     }
 
     /// Check whether a pipeline result is pending (has been spawned
     /// but not yet received).
     pub fn has_pending_pipeline(&self) -> bool {
-        // Try a non-blocking recv — if there's a result, put it back
-        // by storing it. This is a peek operation.
-        // Actually, we can't peek with mpsc. Instead, check if the
-        // cancel flag is still false (meaning a pipeline is running).
         let file_id = FileId::from_url(&self.uri);
         !self.cancel.load(std::sync::atomic::Ordering::SeqCst)
             && self.queries.last_green(&file_id).is_some()
@@ -431,20 +433,21 @@ impl LspTestSession {
         match self.pipeline_rx.try_recv() {
             Ok(result) => {
                 match result.result {
-                    Ok(cached) => {
-                        // Update import graph in the query store.
+                    Ok(entry) => {
                         let file_id = FileId::from_url(&result.uri);
-                        let import_ids: Vec<FileId> = cached
+                        // Update import graph in the query store.
+                        let import_ids: Vec<FileId> = entry
                             .imports
                             .iter()
                             .map(|imp| FileId::from_url(&imp.uri))
                             .collect();
                         self.queries.set_imports(&file_id, import_ids);
-                        self.cached = Some(cached);
+                        let input_hash = self.queries.compute_pipeline_input_hash(&file_id);
+                        self.queries
+                            .store_pipeline_result(file_id, entry, input_hash);
                     }
                     Err(err) => {
                         eprintln!("pipeline error in test: {err}");
-                        self.cached = None;
                     }
                 }
                 true
@@ -454,8 +457,9 @@ impl LspTestSession {
     }
 
     fn type_env(&self) -> Option<&TypeEnv> {
-        self.cached
-            .as_ref()
+        let file_id = FileId::from_url(&self.uri);
+        self.queries
+            .get_pipeline_result(&file_id)
             .filter(|c| c.uri == self.uri)
             .map(|c| &c.type_env)
     }
@@ -472,8 +476,9 @@ impl LspTestSession {
         }
 
         // Add symbols from imported files resolved by the pipeline.
-        if let Some(cached) = self.cached.as_ref().filter(|c| c.uri == self.uri) {
-            for import in &cached.imports {
+        let cached = self.cached_pipeline();
+        if let Some(c) = cached.as_ref().filter(|c| c.uri == self.uri) {
+            for import in &c.imports {
                 let import_parse = parse_unit(&import.source);
                 let import_unit = import_parse.tree();
                 table.add_from_unit(
@@ -486,6 +491,12 @@ impl LspTestSession {
         }
 
         table
+    }
+
+    /// Return the last cached pipeline result for the session's URI, if any.
+    fn cached_pipeline(&self) -> Option<Rc<PipelineCacheEntry>> {
+        let file_id = FileId::from_url(&self.uri);
+        self.queries.get_pipeline_result(&file_id).cloned()
     }
 
     /// Parse and check whether the green node changed; if so, cancel
@@ -560,6 +571,18 @@ impl LspTestSession {
     pub fn parse_is_current(&self) -> bool {
         let file_id = FileId::from_url(&self.uri);
         self.queries.get_parse(&file_id).is_some()
+    }
+
+    /// Return whether the pipeline result for the primary document is still
+    /// current (i.e. computed from the current file text).
+    pub fn pipeline_result_is_current(&self) -> bool {
+        let file_id = FileId::from_url(&self.uri);
+        self.queries.pipeline_result_is_current(&file_id)
+    }
+
+    /// Return the per-stage hashes for the last completed pipeline run, if any.
+    pub fn stage_hashes(&self) -> Option<super::query::PipelineStageHashes> {
+        self.cached_pipeline().map(|c| c.stage_hashes.clone())
     }
 }
 

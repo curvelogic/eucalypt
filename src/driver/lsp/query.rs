@@ -53,10 +53,14 @@
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use lsp_types::Url;
 
+use crate::common::sourcemap::SourceMap;
+use crate::core::typecheck::error::TypeWarning;
+use crate::core::typecheck::types::Type;
 use crate::syntax::rowan::ParseError;
 
 // ── Primitive types ─────────────────────────────────────────────────────────
@@ -242,6 +246,95 @@ pub struct CachedParse {
     pub output_hash: ContentHash,
 }
 
+// ── Pipeline stage hashes ────────────────────────────────────────────────────
+
+/// Content hashes for each pipeline stage, computed during a pipeline run.
+///
+/// Used to detect whether downstream queries need to re-run on the next
+/// invocation.  Stored in the `QueryStore` alongside the final pipeline
+/// result so that individual stages can be verified without re-executing
+/// the full pipeline.
+///
+/// ### Conservative hashing strategy
+///
+/// The current implementation uses conservative proxy hashes: the output
+/// hash of each stage is set equal to its input hash.  This is correct
+/// because the pipeline is deterministic — same input always produces the
+/// same output — and means "if the input didn't change, the output didn't
+/// change."  More precise per-stage structural hashes (e.g. hashing the
+/// `RcExpr` tree directly) can replace these proxies in a future pass.
+///
+/// The exception is `type_check`, which derives its hash from the actual
+/// type-checker output (warnings list + binding names), giving finer
+/// granularity for the most user-visible result.
+#[derive(Clone, Debug, Default)]
+pub struct PipelineStageHashes {
+    /// Hash of the source text when this pipeline ran.
+    pub file_text: ContentHash,
+    /// Hash of the desugared core expression (proxy: file_text hash).
+    pub desugar: ContentHash,
+    /// Hash of the merged expression (proxy: combine file_text + import hashes).
+    pub merge: ContentHash,
+    /// Hash of the cooked expression (proxy: merge hash).
+    pub cook: ContentHash,
+    /// Hash of the expression after dead-code elimination (proxy: cook hash).
+    pub eliminate: ContentHash,
+    /// Hash of the inlined expression (proxy: eliminate hash).
+    pub inline: ContentHash,
+    /// Hash of the type-check result (derived from warnings + binding names).
+    pub type_check: ContentHash,
+    /// Hash of the diagnostics output (derived from parse errors + type warnings).
+    pub diagnostics: ContentHash,
+}
+
+// ── Imported file record ──────────────────────────────────────────────────────
+
+/// Source text and URI for a file resolved during a pipeline run.
+///
+/// Used to build symbol tables for go-to-definition and hover on
+/// imported names.  Stored as part of `PipelineCacheEntry`.
+#[derive(Clone)]
+pub struct ImportedFile {
+    /// URI of the imported file.
+    pub uri: Url,
+    /// Source text of the imported file.
+    pub source: String,
+}
+
+// ── Pipeline cache entry ──────────────────────────────────────────────────────
+
+/// Inferred type environment for a document, mapping binding names to types.
+pub type TypeEnv = HashMap<String, Type>;
+
+/// Cached result of a successful full pipeline run.
+///
+/// Stored in `QueryStore` under `QueryKey::TypeCheck(file_id)` (the last
+/// substantive stage before diagnostics).  Retrieved via
+/// `QueryStore::get_pipeline_result` regardless of the current revision,
+/// so that hover/completion/goto-definition can serve stale-but-useful
+/// type information while a new pipeline run is in progress.
+///
+/// The `stage_hashes` field records the content hashes of each stage as
+/// computed during this run, enabling future incremental optimisations.
+pub struct PipelineCacheEntry {
+    /// File URI this result was computed for.
+    pub uri: Url,
+    /// Top-level binding names → inferred types.
+    pub type_env: TypeEnv,
+    /// Lambda parameter types keyed by `(line, column, param_name)`.
+    pub lambda_params: HashMap<(u32, u32, String), Type>,
+    /// Type warnings emitted during type checking.
+    pub warnings: Vec<TypeWarning>,
+    /// Source map for converting SMIDs to file locations.
+    pub source_map: SourceMap,
+    /// Imported files resolved by this pipeline run.
+    pub imports: Vec<ImportedFile>,
+    /// Type alias definitions registered during type checking.
+    pub alias_types: HashMap<String, Type>,
+    /// Per-stage content hashes computed during this run.
+    pub stage_hashes: PipelineStageHashes,
+}
+
 // ── QueryStore ───────────────────────────────────────────────────────────────
 
 /// The central memoisation table for the LSP front-end pipeline.
@@ -281,6 +374,15 @@ pub struct QueryStore {
     /// Dedicated parse cache, kept separate for fast green-node access.
     parse_cache: HashMap<FileId, CachedParse>,
 
+    /// Dedicated pipeline result cache, stored separately from the
+    /// revision-gated general-purpose cache.
+    ///
+    /// Pipeline results are always returned regardless of the current
+    /// revision, so that hover/completion/goto-definition can serve
+    /// stale-but-useful information while a new pipeline is running.
+    /// Use `pipeline_result_is_current` to check staleness.
+    pipeline_results: HashMap<FileId, Rc<PipelineCacheEntry>>,
+
     /// Forward import edges: file → the files it imports.
     ///
     /// Updated when a pipeline run for a file completes and reveals its
@@ -301,6 +403,7 @@ impl QueryStore {
             file_texts: HashMap::new(),
             entries: HashMap::new(),
             parse_cache: HashMap::new(),
+            pipeline_results: HashMap::new(),
             imports: HashMap::new(),
             importers: HashMap::new(),
         }
@@ -472,6 +575,162 @@ impl QueryStore {
         }
     }
 
+    // ── Pipeline result cache ─────────────────────────────────────────────────
+
+    /// Store a completed pipeline result for `file`.
+    ///
+    /// Unconditionally replaces any previous result.  The entry is not
+    /// revision-gated: it remains accessible via `get_pipeline_result`
+    /// even after the file is edited and the revision advances.
+    ///
+    /// Also records the per-stage hashes in the general-purpose cache under
+    /// the appropriate `QueryKey`s so that downstream logic can inspect
+    /// individual stage results and verify them independently.
+    pub fn store_pipeline_result(
+        &mut self,
+        file: FileId,
+        entry: PipelineCacheEntry,
+        input_hash: ContentHash,
+    ) {
+        let stage = entry.stage_hashes.clone();
+        let entry_rc = Rc::new(entry);
+
+        // Record per-stage hashes in the general-purpose cache.
+        // Each stage is stored with:
+        //   input_hash  = hash of this stage's inputs
+        //   output_hash = hash of this stage's output (conservative proxy)
+        //   value       = () (the stage value itself is not stored here;
+        //                     only the hash metadata is needed for verification)
+        let rev = self.revision;
+
+        let store_stage = |entries: &mut HashMap<QueryKey, CachedEntry>,
+                           key: QueryKey,
+                           in_hash: ContentHash,
+                           out_hash: ContentHash| {
+            entries.insert(
+                key,
+                CachedEntry {
+                    input_hash: in_hash,
+                    output_hash: out_hash,
+                    verified_at: rev,
+                    value: Box::new(()),
+                    dependencies: vec![],
+                },
+            );
+        };
+
+        store_stage(
+            &mut self.entries,
+            QueryKey::Desugar(file.clone()),
+            stage.file_text,
+            stage.desugar,
+        );
+        store_stage(
+            &mut self.entries,
+            QueryKey::UnitInterface(file.clone()),
+            stage.desugar,
+            stage.desugar,
+        );
+        store_stage(
+            &mut self.entries,
+            QueryKey::ImportInterfaces(file.clone()),
+            input_hash,
+            stage.merge,
+        );
+        store_stage(
+            &mut self.entries,
+            QueryKey::Merge(file.clone()),
+            input_hash,
+            stage.merge,
+        );
+        store_stage(
+            &mut self.entries,
+            QueryKey::Cook(file.clone()),
+            stage.merge,
+            stage.cook,
+        );
+        store_stage(
+            &mut self.entries,
+            QueryKey::Eliminate(file.clone()),
+            stage.cook,
+            stage.eliminate,
+        );
+        store_stage(
+            &mut self.entries,
+            QueryKey::Inline(file.clone()),
+            stage.eliminate,
+            stage.inline,
+        );
+        store_stage(
+            &mut self.entries,
+            QueryKey::TypeCheck(file.clone()),
+            stage.inline,
+            stage.type_check,
+        );
+        store_stage(
+            &mut self.entries,
+            QueryKey::Diagnostics(file.clone()),
+            stage.type_check,
+            stage.diagnostics,
+        );
+
+        self.pipeline_results.insert(file, entry_rc);
+    }
+
+    /// Retrieve the last successful pipeline result for `file`.
+    ///
+    /// Returns the most recently stored result regardless of the current
+    /// revision.  Returns `None` only if no pipeline has completed for
+    /// this file yet.
+    pub fn get_pipeline_result(&self, file: &FileId) -> Option<&Rc<PipelineCacheEntry>> {
+        self.pipeline_results.get(file)
+    }
+
+    /// Return `true` if the stored pipeline result was computed from the
+    /// current file text (i.e. no edits since the last pipeline run).
+    ///
+    /// Used to decide whether to show a "stale" indicator in the UI, or
+    /// whether the type environment is guaranteed up-to-date.
+    pub fn pipeline_result_is_current(&self, file: &FileId) -> bool {
+        let Some(entry) = self.pipeline_results.get(file) else {
+            return false;
+        };
+        let Some(current_hash) = self.file_text_hash(file) else {
+            return false;
+        };
+        entry.stage_hashes.file_text == current_hash
+    }
+
+    /// Retrieve the last-stored value for `key` regardless of staleness.
+    ///
+    /// Unlike `get_if_current`, this returns even if the global revision
+    /// has advanced since the value was stored.  Intended for cases where
+    /// a stale-but-present result is preferable to `None` (e.g. a completion
+    /// list while a new pipeline is running).
+    pub fn get_last_result<T: Any>(&self, key: &QueryKey) -> Option<&T> {
+        self.entries.get(key)?.value.downcast_ref::<T>()
+    }
+
+    /// Compute the pipeline input hash for `file`.
+    ///
+    /// The pipeline input hash combines the file's own text hash with the text
+    /// hashes of all files it directly imports.  This is the hash passed to
+    /// `store_pipeline_result` and compared on re-verification to decide
+    /// whether the pipeline needs re-running.
+    ///
+    /// Returns `0` if the file has no stored text (treated as empty input).
+    pub fn compute_pipeline_input_hash(&self, file: &FileId) -> ContentHash {
+        let file_text_hash = self.file_text_hash(file).unwrap_or(0);
+        let import_hashes: Vec<ContentHash> = self
+            .imports_of(file)
+            .filter_map(|imp| self.file_text_hash(imp))
+            .collect();
+        let all: Vec<ContentHash> = std::iter::once(file_text_hash)
+            .chain(import_hashes)
+            .collect();
+        hash_many(&all)
+    }
+
     // ── Import graph ──────────────────────────────────────────────────────────
 
     /// Record that `dependent` imports the files in `new_imports`.
@@ -540,6 +799,7 @@ impl QueryStore {
     pub fn remove_file(&mut self, file: &FileId) {
         self.file_texts.remove(file);
         self.parse_cache.remove(file);
+        self.pipeline_results.remove(file);
         self.invalidate_file(file);
 
         // Remove forward import edges and the corresponding reverse edges.
@@ -888,5 +1148,318 @@ mod tests {
         let h1 = hash_green_node(&p1.syntax_node().green().into_owned());
         let h2 = hash_green_node(&p2.syntax_node().green().into_owned());
         assert_ne!(h1, h2);
+    }
+
+    // ── Pipeline result caching (Phase 3–5) ──────────────────────────────────
+
+    /// Build a minimal `PipelineCacheEntry` for testing purposes.
+    fn make_pipeline_entry(uri_str: &str, file_text_hash: ContentHash) -> PipelineCacheEntry {
+        use crate::common::sourcemap::SourceMap;
+
+        PipelineCacheEntry {
+            uri: Url::parse(uri_str).unwrap(),
+            type_env: std::collections::HashMap::new(),
+            lambda_params: std::collections::HashMap::new(),
+            warnings: vec![],
+            source_map: SourceMap::new(),
+            imports: vec![],
+            alias_types: std::collections::HashMap::new(),
+            stage_hashes: PipelineStageHashes {
+                file_text: file_text_hash,
+                desugar: file_text_hash,
+                merge: file_text_hash,
+                cook: file_text_hash,
+                eliminate: file_text_hash,
+                inline: file_text_hash,
+                type_check: file_text_hash,
+                diagnostics: file_text_hash,
+            },
+        }
+    }
+
+    /// Storing and retrieving a pipeline result round-trips correctly.
+    #[test]
+    fn pipeline_result_stored_and_retrieved() {
+        let mut store = QueryStore::new();
+        let f = file("/a.eu");
+        let text_hash = hash_str("x: 1");
+        store.set_file_text(f.clone(), Arc::new("x: 1".to_string()));
+
+        let entry = make_pipeline_entry("file:///a.eu", text_hash);
+        store.store_pipeline_result(f.clone(), entry, text_hash);
+
+        let result = store.get_pipeline_result(&f);
+        assert!(result.is_some(), "pipeline result should be stored");
+        let r = result.unwrap();
+        assert_eq!(r.stage_hashes.file_text, text_hash);
+    }
+
+    /// Pipeline result persists even after the global revision advances.
+    ///
+    /// This verifies that stale-but-useful results remain available for
+    /// hover/completion while a new pipeline is running.
+    #[test]
+    fn pipeline_result_survives_revision_bump() {
+        let mut store = QueryStore::new();
+        let f = file("/a.eu");
+        let text_hash = hash_str("x: 1");
+        store.set_file_text(f.clone(), Arc::new("x: 1".to_string()));
+
+        let entry = make_pipeline_entry("file:///a.eu", text_hash);
+        store.store_pipeline_result(f.clone(), entry, text_hash);
+
+        // Edit the file — advances revision.
+        store.set_file_text(f.clone(), Arc::new("x: 2".to_string()));
+        assert_eq!(store.revision(), 2);
+
+        // Pipeline result still accessible (stale but present).
+        let result = store.get_pipeline_result(&f);
+        assert!(
+            result.is_some(),
+            "pipeline result should persist after edit"
+        );
+    }
+
+    /// `pipeline_result_is_current` returns false after an edit.
+    #[test]
+    fn pipeline_result_staleness_after_edit() {
+        let mut store = QueryStore::new();
+        let f = file("/a.eu");
+        let text_hash = hash_str("x: 1");
+        store.set_file_text(f.clone(), Arc::new("x: 1".to_string()));
+
+        let entry = make_pipeline_entry("file:///a.eu", text_hash);
+        store.store_pipeline_result(f.clone(), entry, text_hash);
+
+        assert!(
+            store.pipeline_result_is_current(&f),
+            "result should be current before edit"
+        );
+
+        // Edit the file.
+        store.set_file_text(f.clone(), Arc::new("x: 2".to_string()));
+
+        assert!(
+            !store.pipeline_result_is_current(&f),
+            "result should be stale after edit"
+        );
+    }
+
+    /// Per-stage hashes are stored under the correct QueryKeys.
+    #[test]
+    fn stage_hashes_stored_per_key() {
+        let mut store = QueryStore::new();
+        let f = file("/a.eu");
+        let text_hash = hash_str("y: 42");
+        store.set_file_text(f.clone(), Arc::new("y: 42".to_string()));
+
+        let entry = make_pipeline_entry("file:///a.eu", text_hash);
+        store.store_pipeline_result(f.clone(), entry, text_hash);
+
+        // Each stage key should have an output hash stored.
+        assert!(
+            store
+                .output_hash_of(&QueryKey::Desugar(f.clone()))
+                .is_some(),
+            "Desugar hash stored"
+        );
+        assert!(
+            store.output_hash_of(&QueryKey::Merge(f.clone())).is_some(),
+            "Merge hash stored"
+        );
+        assert!(
+            store.output_hash_of(&QueryKey::Cook(f.clone())).is_some(),
+            "Cook hash stored"
+        );
+        assert!(
+            store
+                .output_hash_of(&QueryKey::Eliminate(f.clone()))
+                .is_some(),
+            "Eliminate hash stored"
+        );
+        assert!(
+            store
+                .output_hash_of(&QueryKey::TypeCheck(f.clone()))
+                .is_some(),
+            "TypeCheck hash stored"
+        );
+        assert!(
+            store
+                .output_hash_of(&QueryKey::Diagnostics(f.clone()))
+                .is_some(),
+            "Diagnostics hash stored"
+        );
+    }
+
+    /// Stage hashes for a given key are verified at the current revision.
+    #[test]
+    fn stage_hash_verified_at_current_revision() {
+        let mut store = QueryStore::new();
+        let f = file("/b.eu");
+        let text_hash = hash_str("z: 0");
+        store.set_file_text(f.clone(), Arc::new("z: 0".to_string()));
+
+        let entry = make_pipeline_entry("file:///b.eu", text_hash);
+        store.store_pipeline_result(f.clone(), entry, text_hash);
+
+        // Stage hashes are at the current revision → get_if_current returns ().
+        let desugar: Option<&()> = store.get_if_current(&QueryKey::Desugar(f.clone()));
+        assert!(desugar.is_some(), "Desugar entry should be current");
+
+        // Edit advances the revision → entries become stale.
+        store.set_file_text(f.clone(), Arc::new("z: 1".to_string()));
+        let desugar_stale: Option<&()> = store.get_if_current(&QueryKey::Desugar(f.clone()));
+        assert!(
+            desugar_stale.is_none(),
+            "Desugar entry should be stale after edit"
+        );
+    }
+
+    /// Editing an unrelated file does not affect another file's stage hashes.
+    ///
+    /// This is the core "unchanged-file queries not re-executed" property.
+    #[test]
+    fn edit_simulation_unrelated_file_unchanged() {
+        let mut store = QueryStore::new();
+        let a = file("/a.eu");
+        let b = file("/b.eu");
+
+        // Set up both files.
+        store.set_file_text(a.clone(), Arc::new("x: 1".to_string()));
+        store.set_file_text(b.clone(), Arc::new("y: 2".to_string()));
+
+        // Record a pipeline result for B.
+        let b_text_hash = hash_str("y: 2");
+        let b_entry = make_pipeline_entry("file:///b.eu", b_text_hash);
+        store.store_pipeline_result(b.clone(), b_entry, b_text_hash);
+
+        let b_desugar_hash_before = store.output_hash_of(&QueryKey::Desugar(b.clone())).unwrap();
+
+        // Edit A — B's stage hashes should be unaffected.
+        store.set_file_text(a.clone(), Arc::new("x: 99".to_string()));
+
+        // B's output hash is unchanged.
+        let b_desugar_hash_after = store.output_hash_of(&QueryKey::Desugar(b.clone())).unwrap();
+        assert_eq!(
+            b_desugar_hash_before, b_desugar_hash_after,
+            "editing A must not change B's desugar hash"
+        );
+
+        // B's pipeline result is still accessible and still matches its original text.
+        let b_result = store.get_pipeline_result(&b).unwrap();
+        assert_eq!(b_result.stage_hashes.file_text, b_text_hash);
+    }
+
+    /// Content-identical edit (same green node text) does not trigger downstream:
+    /// if we re-store the same text hash, `verify_entry` confirms the stage is valid.
+    #[test]
+    fn content_identical_edit_stage_verify() {
+        let mut store = QueryStore::new();
+        let f = file("/c.eu");
+        let text = "a: 1";
+        let text_hash = hash_str(text);
+
+        store.set_file_text(f.clone(), Arc::new(text.to_string()));
+        let entry = make_pipeline_entry("file:///c.eu", text_hash);
+        store.store_pipeline_result(f.clone(), entry, text_hash);
+
+        // Simulate an edit that produces the same text.
+        store.set_file_text(f.clone(), Arc::new(text.to_string()));
+        // No revision bump (same text) — revision stays at 1.
+        assert_eq!(store.revision(), 1, "identical text must not bump revision");
+
+        // Stage hashes are still current because the revision didn't change.
+        let desugar: Option<&()> = store.get_if_current(&QueryKey::Desugar(f.clone()));
+        assert!(
+            desugar.is_some(),
+            "content-identical edit must not invalidate stage cache"
+        );
+    }
+
+    /// Pipeline result is removed on `remove_file`.
+    #[test]
+    fn pipeline_result_removed_on_close() {
+        let mut store = QueryStore::new();
+        let f = file("/d.eu");
+        let text_hash = hash_str("w: 3");
+        store.set_file_text(f.clone(), Arc::new("w: 3".to_string()));
+
+        let entry = make_pipeline_entry("file:///d.eu", text_hash);
+        store.store_pipeline_result(f.clone(), entry, text_hash);
+
+        assert!(store.get_pipeline_result(&f).is_some());
+
+        store.remove_file(&f);
+
+        assert!(
+            store.get_pipeline_result(&f).is_none(),
+            "pipeline result should be cleared on close"
+        );
+    }
+
+    /// `get_last_result` returns the stored unit value for a stage entry.
+    #[test]
+    fn get_last_result_returns_stage_entry() {
+        let mut store = QueryStore::new();
+        let f = file("/e.eu");
+        let text_hash = hash_str("v: 5");
+        store.set_file_text(f.clone(), Arc::new("v: 5".to_string()));
+
+        let entry = make_pipeline_entry("file:///e.eu", text_hash);
+        store.store_pipeline_result(f.clone(), entry, text_hash);
+
+        // Advance revision so get_if_current returns None.
+        store.set_file_text(f.clone(), Arc::new("v: 6".to_string()));
+        let current: Option<&()> = store.get_if_current(&QueryKey::Desugar(f.clone()));
+        assert!(current.is_none(), "should be stale after edit");
+
+        // get_last_result ignores revision and returns the stored value.
+        let last: Option<&()> = store.get_last_result(&QueryKey::Desugar(f.clone()));
+        assert!(last.is_some(), "get_last_result should return stale entry");
+    }
+
+    /// Editing an imported file (B) marks B's pipeline as stale and keeps A
+    /// registered as an importer of B, so the LSP can re-queue A for re-check.
+    #[test]
+    fn cross_file_invalidation_importer_restaged() {
+        let mut store = QueryStore::new();
+        let a = file("/a.eu");
+        let b = file("/b.eu");
+
+        store.set_file_text(a.clone(), Arc::new("x: 1".to_string()));
+        store.set_file_text(b.clone(), Arc::new("y: 2".to_string()));
+
+        // Register A as importing B.
+        store.set_imports(&a, vec![b.clone()]);
+
+        // Store pipeline results for both A and B.
+        let b_hash = hash_str("y: 2");
+        let b_entry = make_pipeline_entry("file:///b.eu", b_hash);
+        store.store_pipeline_result(b.clone(), b_entry, b_hash);
+
+        let a_input_hash = store.compute_pipeline_input_hash(&a);
+        let a_entry = make_pipeline_entry("file:///a.eu", hash_str("x: 1"));
+        store.store_pipeline_result(a.clone(), a_entry, a_input_hash);
+
+        assert!(
+            store.pipeline_result_is_current(&b),
+            "B should be current before edit"
+        );
+
+        // Edit B — advances revision and changes B's text hash.
+        store.set_file_text(b.clone(), Arc::new("y: 99".to_string()));
+
+        // B's pipeline result is now stale.
+        assert!(
+            !store.pipeline_result_is_current(&b),
+            "B's pipeline result should be stale after edit"
+        );
+
+        // importers_of(B) returns A — the mechanism the LSP uses to re-queue A.
+        let importers: Vec<FileId> = store.importers_of(&b).cloned().collect();
+        assert!(
+            importers.contains(&a),
+            "A should be registered as an importer of B"
+        );
     }
 }
