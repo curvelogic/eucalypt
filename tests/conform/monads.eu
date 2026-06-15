@@ -1,0 +1,21 @@
+# Monadic block desugaring — regression test for blob monad specs.
+#
+# When the pre-compiled prelude blob is active, monad specifications
+# (:for, :random) must be included so that monadic blocks are
+# desugared correctly.  Without them, { :for ... } evaluates as a
+# plain block instead of a list monad.
+
+` { target: :conform }
+conform: {
+  # :for list monad — simple mapping
+  for-map: { :for x: [1, 2, 3] }.(x * 10)
+
+  # :for list monad — cartesian product
+  for-cart: { :for x: [1, 2], y: [10, 20] }.(x + y)
+
+  # :for list monad — implicit return (list of blocks)
+  for-implicit: { :for x: [:a, :b] }
+
+  # :for list monad — filtering
+  for-filter: { :for x: [1, 2, 3, 4, 5], _: [x] filter(> 3) }.(x)
+}
