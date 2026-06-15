@@ -81,6 +81,17 @@ pub struct PreludeBlob {
 
     /// Type schemes, aliases, branch shapes for seeding the type checker.
     pub type_summary: PreludeSummary,
+
+    /// Monad namespace specifications (e.g. `:for` → list monad, `:random`).
+    ///
+    /// Extracted from prelude source during translate/desugar.  Seeded into
+    /// the desugarer so that `{ :for ... }` blocks are recognised as monadic.
+    #[serde(default)]
+    pub monad_specs: HashMap<String, crate::core::desugar::desugarer::MonadSpec>,
+
+    /// Monad wrapper type hints for LSP display (e.g. `"io"` → `"IO(a)"`).
+    #[serde(default)]
+    pub monad_type_hints: HashMap<String, String>,
 }
 
 impl PreludeBlob {
