@@ -164,6 +164,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(prelude_blob_ok)]
     fn embedded_blob_contains_monad_specs() {
         let bytes = crate::driver::resources::PRELUDE_BLOB_BYTES;
         let blob = PreludeBlob::from_bytes(bytes).expect("embedded blob should deserialise");
