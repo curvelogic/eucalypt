@@ -144,6 +144,11 @@ fn arb_safe_string_content() -> BoxedStrategy<String> {
     "[a-zA-Z0-9 _-]{0,20}".prop_map(|s| s).boxed()
 }
 
+/// Generate a valid eucalypt identifier.
+fn arb_ident_source() -> BoxedStrategy<String> {
+    "[a-z][a-z0-9-]{0,6}".prop_map(|s| s).boxed()
+}
+
 /// Generate a simple valid eucalypt literal expression (one value).
 fn arb_literal_source() -> BoxedStrategy<String> {
     prop_oneof![
@@ -178,12 +183,114 @@ fn arb_list_source() -> BoxedStrategy<String> {
         .boxed()
 }
 
+/// Generate a binary operator.
+fn arb_operator() -> BoxedStrategy<&'static str> {
+    prop_oneof![
+        Just("+"),
+        Just("-"),
+        Just("*"),
+        Just("/"),
+        Just("="),
+        Just("!="),
+        Just("<"),
+        Just(">"),
+        Just("<="),
+        Just(">="),
+        Just("++"),
+    ]
+    .boxed()
+}
+
+/// Generate an operator section like `(+ 1)` or `(* 2)`.
+fn arb_section_source() -> BoxedStrategy<String> {
+    (arb_operator(), arb_number_source())
+        .prop_map(|(op, n)| format!("({op} {n})"))
+        .boxed()
+}
+
+/// Generate an expression anaphor like `(_ + 1)`.
+fn arb_anaphora_source() -> BoxedStrategy<String> {
+    (arb_operator(), arb_number_source())
+        .prop_map(|(op, n)| format!("(_ {op} {n})"))
+        .boxed()
+}
+
+/// Generate a function call expression like `f(x)` or `f(x, y)`.
+/// Note: NO whitespace before `(` — `f(x)` is a call, `f (x)` is catenation.
+fn arb_call_source() -> BoxedStrategy<String> {
+    (arb_ident_source(), pvec(arb_literal_source(), 1..=3))
+        .prop_map(|(name, args)| format!("{name}({})", args.join(", ")))
+        .boxed()
+}
+
+/// Generate an infix operator expression like `1 + 2`.
+fn arb_infix_source() -> BoxedStrategy<String> {
+    (arb_literal_source(), arb_operator(), arb_literal_source())
+        .prop_map(|(l, op, r)| format!("({l} {op} {r})"))
+        .boxed()
+}
+
+/// Generate a lookup expression like `.key`.
+fn arb_lookup_source() -> BoxedStrategy<String> {
+    arb_ident_source().prop_map(|key| format!(".{key}")).boxed()
+}
+
+/// Generate a catenation expression like `xs map(f)`.
+fn arb_catenation_source() -> BoxedStrategy<String> {
+    (
+        arb_literal_source(),
+        arb_ident_source(),
+        arb_literal_source(),
+    )
+        .prop_map(|(receiver, func, arg)| format!("({receiver} {func}({arg}))"))
+        .boxed()
+}
+
+/// Generate a depth-limited expression for source-level testing.
+fn arb_expr_source_at(depth: u32) -> BoxedStrategy<String> {
+    if depth == 0 {
+        return arb_literal_source();
+    }
+
+    prop_oneof![
+        4 => arb_literal_source(),
+        1 => arb_infix_source(),
+        1 => arb_section_source(),
+        1 => arb_anaphora_source(),
+        1 => arb_call_source(),
+        1 => arb_lookup_source(),
+        1 => arb_catenation_source(),
+    ]
+    .boxed()
+}
+
+/// Generate a binding whose value may be a richer expression.
+fn arb_rich_binding_source() -> BoxedStrategy<String> {
+    (arb_ident_source(), arb_expr_source_at(1))
+        .prop_map(|(key, val)| format!("{key}: {val}\n"))
+        .boxed()
+}
+
+/// Generate a block with richer bindings (including operators, calls, lookups).
+fn arb_rich_block_source() -> BoxedStrategy<String> {
+    pvec(arb_rich_binding_source(), 1..=5)
+        .prop_map(|decls| decls.join(""))
+        .boxed()
+}
+
 /// Generate a small valid eucalypt source program.
 fn arb_program_source() -> BoxedStrategy<String> {
     prop_oneof![
-        arb_literal_source(),
-        arb_list_source(),
-        arb_multi_block_source(),
+        4 => arb_literal_source(),
+        2 => arb_list_source(),
+        2 => arb_multi_block_source(),
+        1 => arb_infix_source(),
+        1 => arb_call_source(),
+        1 => arb_section_source(),
+        1 => arb_anaphora_source(),
+        1 => arb_lookup_source(),
+        1 => arb_catenation_source(),
+        1 => arb_rich_block_source(),
     ]
     .boxed()
 }
@@ -413,15 +520,28 @@ proptest! {
     /// and that the formatter is idempotent on it.
     #[test]
     fn prop_rc_expr_render_parse_round_trip(expr in arb_rc_expr()) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static TOTAL: AtomicUsize = AtomicUsize::new(0);
+        static SKIPPED: AtomicUsize = AtomicUsize::new(0);
+
+        let total = TOTAL.fetch_add(1, Ordering::Relaxed) + 1;
         let source = render_rc_expr(&expr);
         let cfg = FormatterConfig::new(80, 2, false);
 
-        // If the formatter cannot parse the source, skip — the generator
-        // produced something that renders to invalid syntax.  This is
-        // acceptable: the property only holds for renderable expressions.
         let first = match format_source(&source, &cfg) {
             Ok(s) => s,
-            Err(_) => return Ok(()),
+            Err(_) => {
+                let skipped = SKIPPED.fetch_add(1, Ordering::Relaxed) + 1;
+                // Fail if more than 50% of inputs are skipped — the
+                // generator is not producing enough parseable output.
+                if total >= 20 && skipped * 2 > total {
+                    return Err(TestCaseError::fail(format!(
+                        "too many skipped inputs: {skipped}/{total} ({:.0}%)",
+                        skipped as f64 / total as f64 * 100.0
+                    )));
+                }
+                return Ok(());
+            }
         };
 
         let second = match format_source(&first, &cfg) {
@@ -529,5 +649,36 @@ mod gc_properties {
         fn prop_gc_no_violations_block(source in arb_multi_block_source()) {
             let _ = eval_source(&source);
         }
+
+        /// Programs with function application and operators evaluate without
+        /// GC violations.  These exercise closures, application nodes, and
+        /// continuation frames — the constructs most likely to trigger GC bugs.
+        #[test]
+        fn prop_gc_no_violations_application(source in arb_application_source()) {
+            let _ = eval_source(&source);
+        }
+    }
+
+    /// Generate source programs that exercise function application,
+    /// operator evaluation, and map/filter — stressing the GC with
+    /// closure allocation and continuation frames.
+    fn arb_application_source() -> BoxedStrategy<String> {
+        prop_oneof![
+            // Infix operators: allocate continuations
+            (arb_number_source(), arb_number_source()).prop_map(|(a, b)| format!("{a} + {b}")),
+            // map over a list: allocate closures
+            pvec(arb_number_source(), 1..=8)
+                .prop_map(|ns| format!("[{}] map((+ 1))", ns.join(", "))),
+            // filter: closures + conditional evaluation
+            pvec(arb_number_source(), 1..=8)
+                .prop_map(|ns| format!("[{}] filter((> 0))", ns.join(", "))),
+            // Nested function application via let-binding
+            (arb_number_source(), arb_number_source())
+                .prop_map(|(a, b)| format!("f(x): x + 1\nresult: f({a}) + f({b})")),
+            // Recursive-style: foldl over a list
+            pvec(arb_number_source(), 1..=6)
+                .prop_map(|ns| format!("[{}] foldl((+), 0)", ns.join(", "))),
+        ]
+        .boxed()
     }
 }
