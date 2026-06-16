@@ -176,8 +176,23 @@ fn cmd_prelude_compile() -> Result<()> {
     for (name, body) in &binding_bodies {
         let tagged =
             tag_combinators(body).with_context(|| format!("tag_combinators on '{name}'"))?;
-        if matches!(&*tagged.inner, Expr::Lam(_, true, _)) {
-            inline_cores.push((name.clone(), tagged));
+        // Peel through any Meta wrappers (doc/type annotations) to reach the
+        // actual expression node, then check if it is an inlinable combinator
+        // lambda or a bare intrinsic alias (e.g. `if: __IF`).
+        //
+        // For bare intrinsic aliases we store the Meta-stripped node so that
+        // the inline pass's `inlinable()` predicate (which checks for
+        // `Expr::Lam(_, true, _) | Expr::Intrinsic(_, _)`) sees the
+        // `Intrinsic` directly rather than the outer `Meta` wrapper.
+        let inner = peel_meta(&tagged);
+        match &*inner.inner {
+            Expr::Lam(_, true, _) => {
+                inline_cores.push((name.clone(), tagged));
+            }
+            Expr::Intrinsic(_, _) => {
+                inline_cores.push((name.clone(), inner.clone()));
+            }
+            _ => {}
         }
     }
     println!(
@@ -286,6 +301,18 @@ fn workspace_root() -> Result<PathBuf> {
         return Ok(cwd);
     }
     bail!("could not find workspace root (no Cargo.toml in {cwd:?})")
+}
+
+/// Peel through `Meta` wrappers to reach the underlying expression node.
+///
+/// Prelude bindings annotated with doc strings or type signatures are wrapped
+/// in `Expr::Meta` nodes.  This helper strips those wrappers so the caller can
+/// inspect the actual expression variant.
+fn peel_meta(expr: &RcExpr) -> &RcExpr {
+    match &*expr.inner {
+        Expr::Meta(_, inner, _) => peel_meta(inner),
+        _ => expr,
+    }
 }
 
 /// Peel all top-level `Let` scopes from the merged prelude core expression,
