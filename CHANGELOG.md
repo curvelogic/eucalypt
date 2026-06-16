@@ -4,6 +4,34 @@ All notable changes to eucalypt are documented here.
 
 ## [0.9.0] - Unreleased
 
+### Added
+
+- **Pre-compiled prelude blob (W6)** — the prelude is pre-compiled at build time into a binary blob, eliminating parse/desugar/cook on every invocation. ~40% faster startup for short programs
+- **Prelude inline cores** — combinator prelude functions (arithmetic, comparisons, `if`, `head`, `tail`, etc.) are pre-expanded and injected as inlinable Let bindings, restoring direct BIF call performance on the blob path
+- **Incremental query-based LSP pipeline (W7)** — per-stage caching via `QueryStore` replaces the monolithic `CachedPipeline`. Editing file A no longer re-parses file B; cross-file invalidation triggers re-checking of importers
+- **Demand annotations on core bindings (W9)** — `CoreBinding` carries cardinality and strictness metadata through the pipeline for future update-elision optimisations
+- **`eu doc --output-dir`** — multi-file categorised documentation output with namespace docstrings, unit-level documentation, and supplement merging
+- **Prelude docs freshness CI check** — CI verifies that `docs/reference/prelude/` matches `eu doc --prelude --output-dir` output
+- **Declaration-level parser error recovery (W4)** — syntax errors in one declaration no longer prevent parsing of subsequent declarations; errors are wrapped in ERROR nodes with real token spans
+- **RcExpr property tests (W5)** — render-parse round-trip property tests for core expressions using `proptest` arbitrary generators
+- **Fuzz targets** — `cargo-fuzz` targets for parser and loader with seed corpora and regression tests
+- **`--statistics` timing for render and IO phases** — `stg-eval`, `stg-render`, and `io-run` timings now correctly reflect all execution phases (previously only the initial headless eval was timed)
+
+### Changed
+
+- **Test harness uses prelude blob** — the test runner now exercises the same blob code path as the default `eu` binary, ensuring blob-specific regressions are caught. `EU_SOURCE_PRELUDE=1` continues to test the source prelude path
+- **`test`/`plan_only` flag split** — the overloaded `test` flag is split into `test` (invocation context) and `plan_only` (skip cook in prepare), preventing the test runner from accidentally short-circuiting the pipeline
+- **Deep combinator tagging** — the inline pass's combinator detection now accepts nested intrinsic application trees (not just flat ones), capturing functions like `abs`, `max`, `min`
+- **Fixed-point inline core collection** — the blob generation iteratively discovers inlinable prelude bindings and pre-expands all free variable references at build time
+
+### Fixed
+
+- **Monad specs in prelude blob** — `:for` and `:random` monadic blocks now work correctly with the blob path. The blob carries monad namespace specifications and seeds them into the desugarer
+- **Assignment-style false positive on prelude constants** — `null = null`, `true = x` etc. no longer trigger the assignment-style declaration diagnostic
+- **Demand analysis performance regression** — the prune pass no longer emits `AtMostOnce` for core bindings (which caused catastrophic re-evaluation in recursive functions like naive fib: 6s → 60s+)
+- **`eu doc` UTF-8 panic** — multi-byte em-dash/en-dash characters in doc comments no longer cause a slice panic
+- **`UnitInterface.demands` not populated in eval path** — `extract_demands()` is now called after the final eliminate pass in the main evaluation pipeline
+
 ## [0.8.1] - 2026-06-12
 
 ### Fixed
