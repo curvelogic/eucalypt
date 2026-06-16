@@ -35,6 +35,12 @@ pub enum EucalyptError {
     /// OS-level reason (e.g. "No such file or directory", "Permission denied").
     #[error("{}", format_file_could_not_be_read(.0, .1.as_deref()))]
     FileCouldNotBeRead(String, Option<String>),
+    /// A file could not be written.
+    ///
+    /// The first field is the path. The optional second field is the
+    /// OS-level reason (e.g. "Permission denied", "No space left on device").
+    #[error("{}", format_file_could_not_be_written(.0, .1.as_deref()))]
+    FileCouldNotBeWritten(String, Option<String>),
 }
 
 /// Format a "file could not be read" error message including the OS reason when available.
@@ -42,6 +48,14 @@ fn format_file_could_not_be_read(path: &str, reason: Option<&str>) -> String {
     match reason {
         Some(r) => format!("could not read '{path}': {r}"),
         None => format!("could not read '{path}'"),
+    }
+}
+
+/// Format a "file could not be written" error message including the OS reason when available.
+fn format_file_could_not_be_written(path: &str, reason: Option<&str>) -> String {
+    match reason {
+        Some(r) => format!("could not write '{path}': {r}"),
+        None => format!("could not write '{path}'"),
     }
 }
 
