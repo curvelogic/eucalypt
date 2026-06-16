@@ -34,19 +34,8 @@ struct FlatEntry {
     is_suppressed: bool,
 }
 
-/// Known prelude namespaces that open with `name: { ... }`.
-const KNOWN_NAMESPACES: &[&str] = &[
-    "eu",
-    "io",
-    "str",
-    "cal",
-    "set",
-    "ch",
-    "assertions",
-    "_block",
-    "pb",
-    "random",
-];
+// Namespaces are detected dynamically: any entry with children is treated
+// as a namespace block. No hard-coded list needed.
 
 // ── Category mapping ─────────────────────────────────────────────────────────
 
@@ -112,8 +101,7 @@ fn flatten_entries(entries: &[DocEntry]) -> (Vec<FlatEntry>, NamespaceDocs) {
 
     for entry in entries {
         let ns = entry.namespace.as_deref().unwrap_or("").to_string();
-        let is_ns_block =
-            !entry.children.is_empty() && KNOWN_NAMESPACES.contains(&entry.name.as_str());
+        let is_ns_block = !entry.children.is_empty();
 
         if is_ns_block {
             // Preserve the namespace's own docstring
@@ -892,8 +880,9 @@ fn generate_index_page(
 
 // ── Public entry point ───────────────────────────────────────────────────────
 
-/// All known categories in display order.
-const CATEGORIES: &[&str] = &[
+/// Preferred display order for categories. Categories not in this list
+/// are appended alphabetically after the known ones.
+const CATEGORY_ORDER: &[&str] = &[
     "lists",
     "blocks",
     "strings",
@@ -925,7 +914,22 @@ pub fn render_prelude_multifile(
     let (flat, ns_docs) = flatten_entries(entries);
     let by_category = group_by_category(&flat);
 
-    for &cat in CATEGORIES {
+    // Build the category list from actual data, ordered by CATEGORY_ORDER
+    // with any new categories appended alphabetically.
+    let mut categories: Vec<&str> = CATEGORY_ORDER
+        .iter()
+        .filter(|c| by_category.contains_key(**c))
+        .copied()
+        .collect();
+    let mut extra: Vec<&str> = by_category
+        .keys()
+        .copied()
+        .filter(|k| !CATEGORY_ORDER.contains(k))
+        .collect();
+    extra.sort();
+    categories.extend(extra);
+
+    for cat in &categories {
         let cat_entries: Vec<&FlatEntry> = by_category
             .get(cat)
             .map(|v| v.as_slice())

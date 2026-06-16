@@ -38,7 +38,6 @@
 |----------|-------------|
 | `take(n, l)` | Return initial segment of integer `n` elements from list `l` |
 | `drop(n, l)` | Return result of dropping integer `n` elements from list `l` |
-| `take-while(p?, l)` | Initial elements of list `l` while `p?` is true |
 | `take-until(p?)` | Initial elements of list `l` while `p?` is false |
 | `drop-while(p?, l)` | Skip initial elements of list `l` while `p?` is true |
 | `drop-until(p?)` | Skip initial elements of list `l` while `p?` is false |
@@ -65,12 +64,8 @@
 
 | Function | Description |
 |----------|-------------|
-| `split-at(n, l)` | Split list into two at `n`th item and return pair |
-| `split-after(p?, l)` | Split list where `p?` becomes false and return pair |
 | `split-when(p?, l)` | Split list where `p?` becomes true and return pair |
-| `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offset `step` |
 | `partition(n)` | List of lists of non-overlapping segments of list `l` of size `n` |
-| `discriminate(pred, xs)` | Return pair of `xs` for which `pred(_)` is true and `xs` for which `pred(_)` is false |
 
 ## Folds and Scans
 
@@ -94,12 +89,10 @@
 
 | Function | Description |
 |----------|-------------|
-| `group-by(k, xs)` | Group xs by key function returning block of key to subgroups, maintains order |
 | `qsort(lt, xs)` | Sort `xs` using 'less-than' function `lt` |
 | `sort-nums` | Sort list of numbers ascending (Rust-level intrinsic) |
 | `sort-strs(xs)` | Sort list of strings or symbols ascending |
 | `sort-zdts(xs)` | Sort list of zoned date-times ascending |
-| `sort-by(key-fn, cmp, xs)` | Sort list `xs` by key extracted with `key-fn` using comparator `cmp` |
 | `sort-by-num(key-fn)` | Sort list `xs` ascending by numeric key extracted with `key-fn` |
 | `sort-by-str(key-fn)` | Sort list `xs` ascending by string key extracted with `key-fn` |
 | `sort-by-zdt(key-fn)` | Sort list `xs` ascending by zoned date-time key extracted with `key-fn` |
@@ -130,12 +123,6 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `rotate(n, l)` | Rotate list `l` left by `n` positions |
-| `transpose(rows)` | Transpose a matrix (list of lists) |
-| `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`.
-Panics if `n` is out of range |
-| `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`.
-Returns `l` unchanged if no element matches |
 | `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list |
 | `tails(l)` | Return list of successive tails of `l`: `[l, tail(l), tail(tail(l)), ...]` |
 | `iota(n)` | Return infinite list of integers from `n` upwards |
@@ -143,14 +130,10 @@ Returns `l` unchanged if no element matches |
 | `butlast(l)` | Return all elements of list `l` except the last |
 | `unzip(pairs)` | List of pairs to pair of lists. Inverse of zip |
 | `interleave(a, b)` | Alternate elements from lists `a` and `b`. When one is exhausted, the remainder of the other is appended |
-| `window-all(n, step, l)` | Like window but includes the final short chunk even if smaller than `n` |
 | `partition-all(n)` | List of lists of non-overlapping segments of `l`, including any final short chunk |
 | `group-consecutive-by(f, xs)` | Group consecutive elements where `f` returns equal values into sublists |
 | `group-consecutive` | Group consecutive equal elements into sublists |
 | `uniq(xs)` | Remove consecutive duplicates from a list |
-| `nub-by(key, xs)` | Remove duplicates from `xs`, keeping the first occurrence of each distinct `key(x)` value. Unlike `uniq`, works on non-consecutive duplicates |
-| `split-on(pred, xs)` | Split list `xs` into sublists, breaking on
-elements that satisfy `pred`. Matching elements are discarded |
 | `running-max` | Running maximum over a number list.
 `[3, 1, 4, 1]` → `[3, 3, 4, 4]`. (Rust-level intrinsic) |
 | `running-min` | Running minimum over a number list.

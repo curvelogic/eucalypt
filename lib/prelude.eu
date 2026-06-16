@@ -1188,14 +1188,14 @@ cond: __COND
 juxt(f, g, x): [x f, x g]
 
 #
-# Utilities
+## Utilities
 #
 ` { doc: "`fnil(f, v, x)` - return a function equivalent to f except it sees `x` instead of `null` when null is passed."
     type: s"(a → b) → a → a | null → b" }
 fnil(f, v, x): if(x = null, f(v), f(x))
 
 #
-# Metadata basics
+## Metadata basics
 #
 
 ` { doc: "`with-meta(m, e)` - add metadata block `m` to expression `e`."
@@ -1312,7 +1312,7 @@ __dbg-after(f, x): ▶(f(x))
 (▶ v): if(__SATURATED(v), __dbg-val(v), __dbg-after(v))
 
 #
-# List library functions, maps and folds
+## List library functions, maps and folds
 #
 
 ` { doc: "`take(n, l)` - return initial segment of integer `n` elements from list `l`."
@@ -1670,7 +1670,7 @@ sort-by-str(key-fn): sort-by(key-fn, <)
 sort-by-zdt(key-fn): sort-by(key-fn, <)
 
 #
-# Block library functions
+## Block library functions
 #
 
 ` { doc: "`merge-all(bs)` - merge all blocks in list `bs` together, later overriding earlier."
@@ -1791,7 +1791,7 @@ _block: {
   update?(k?, f, k, v): [k, if(k k?, v f, v)]
 }
 
-# By property alteration of blocks
+## By property alteration of blocks
 
 ` { doc: "`alter-value(k, v, b)` - alter `b.k` to value `v`."
     type: s"symbol → any → {..} → {..}" }

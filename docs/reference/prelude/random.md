@@ -28,8 +28,6 @@ eu --seed 42 example.eu
 |----------|-------------|
 | `random-stream(seed)` |  |
 | `stream-advance(n, s)` |  |
-| `random-ret(v, stream)` |  |
-| `random-bind(m, f, stream)` |  |
 | `random.stream(seed)` | Create an opaque PRNG stream from integer seed |
 | `random.as-list(s)` | Convert an opaque random stream to a lazy cons-list of floats |
 | `random.float(s)` | State-monad action returning a random float in [0,1) |

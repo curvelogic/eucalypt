@@ -170,38 +170,19 @@ pub fn extract_unit_doc(unit: &Unit) -> Option<String> {
 
 /// Known single-`#` section names that are treated as section headings.
 ///
-/// These map the same single-hash comment lines that the Python script's
-/// `SINGLE_SECTION_TO_CATEGORY` recognises.
-const KNOWN_SINGLE_HASH_SECTIONS: &[&str] = &[
-    "Utilities",
-    "Metadata basics",
-    "List library functions, maps and folds",
-    "Block library functions",
-    "By property alteration of blocks",
-];
-
 /// Parse a section heading from a comment token.
 ///
-/// Accepts `## Section Name` (double-hash) at the start of a comment line,
-/// as well as single-`#` comments whose text matches a known section name.
-/// Returns the trimmed heading text, or `None` if not a section comment.
+/// Accepts `## Section Name` (double-hash or more) at the start of a
+/// comment line. Single-`#` comments are ordinary comments, not sections.
 fn parse_section_heading(comment: &str) -> Option<String> {
     let text = comment.trim();
-    // Strip leading `#` characters
     let after_hashes = text.trim_start_matches('#');
     let leading_hashes = text.len() - after_hashes.len();
 
     if leading_hashes >= 2 && after_hashes.starts_with(' ') {
-        // Double (or more) hash — treat as section heading
         let heading = after_hashes.trim().to_string();
         if !heading.is_empty() {
             return Some(heading);
-        }
-    } else if leading_hashes == 1 && after_hashes.starts_with(' ') {
-        // Single hash — only recognised as a section heading for known names
-        let heading = after_hashes.trim();
-        if KNOWN_SINGLE_HASH_SECTIONS.contains(&heading) {
-            return Some(heading.to_string());
         }
     }
     None
