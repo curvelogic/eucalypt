@@ -33,7 +33,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    core::typecheck::check::PreludeSummary,
+    core::{expr::RcExpr, typecheck::check::PreludeSummary},
     driver::unit_interface::OperatorInfo,
     eval::stg::arena::{ArenaLambdaForm, ArenaStgSyn, FormIdx},
 };
@@ -92,6 +92,20 @@ pub struct PreludeBlob {
     /// Monad wrapper type hints for LSP display (e.g. `"io"` → `"IO(a)"`).
     #[serde(default)]
     pub monad_type_hints: HashMap<String, String>,
+
+    /// Core expressions for inlinable prelude bindings.
+    ///
+    /// Each entry is `(name, tagged_lambda)` where the lambda is tagged
+    /// `Lam(_, true, _)` (inlinable combinator).  Injected as Let bindings
+    /// before the inline pass so the existing inliner can distribute and
+    /// beta-reduce prelude calls even when the full prelude source is not
+    /// loaded (blob path).
+    ///
+    /// Bindings are self-contained: their bodies only reference intrinsics
+    /// and the lambda's own parameters.  Any remaining inter-prelude
+    /// `Var::Free` references resolve at compile time via `Ref::G`.
+    #[serde(default)]
+    pub inline_cores: Vec<(String, RcExpr)>,
 }
 
 impl PreludeBlob {
@@ -123,6 +137,7 @@ mod tests {
             type_summary: PreludeSummary::default(),
             monad_specs: HashMap::new(),
             monad_type_hints: HashMap::new(),
+            inline_cores: vec![],
         }
     }
 

@@ -249,6 +249,30 @@ pub fn prepare(
         stats.record("eliminate-1", t.elapsed());
     }
 
+    // Check for assignment-style declarations (e.g. `result = 42`) before injecting
+    // the blob's inline cores.  The final verify pass normally catches this pattern
+    // by looking for `App(Var::Free("="), [Var::Free(name), ...])`, but after
+    // injection the `=` combinator is distributed and replaced, so the pattern
+    // becomes invisible.  Running verify here, while `=` is still a free variable,
+    // preserves the helpful diagnostic.
+    {
+        let errors = loader.verify()?;
+        if !errors.is_empty() {
+            let eu_errors: Vec<EucalyptError> =
+                errors.into_iter().map(EucalyptError::Core).collect();
+            diagnose_additional(loader, &eu_errors);
+            return Err(eu_errors.into_iter().next().unwrap());
+        }
+    }
+
+    // Inject inlinable prelude combinators from blob before inline pass.
+    // In the blob path the prelude is not loaded, so prelude function names
+    // appear as Var::Free in user code.  Injecting the combinator lambdas as
+    // a Let scope gives the inline pass visible definitions to distribute.
+    // No-op when EU_SOURCE_PRELUDE=1 or no blob is active.
+    #[cfg(not(target_arch = "wasm32"))]
+    loader.inject_prelude_inline_cores();
+
     // Run inline pass
     {
         let t = Instant::now();

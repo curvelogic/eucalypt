@@ -4,6 +4,7 @@
 //! distinction, scopes, and helper operations.
 
 use crate::core::demand::Demand;
+use serde::{Deserialize, Serialize};
 
 /// A single let-binding entry: a name, its bound expression, and its demand
 /// annotation.
@@ -11,7 +12,7 @@ use crate::core::demand::Demand;
 /// The `demand` field starts at `Demand::default()` (all `Unknown`) and is
 /// refined by analysis passes.  The STG compiler reads it at
 /// `take_lambda_form` time to decide Value vs. Thunk.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoreBinding<T: Clone> {
     /// The binding name (used to resolve `Var::Free` references during scoping).
     pub name: String,
@@ -39,14 +40,14 @@ impl<T: Clone> CoreBinding<T> {
 }
 
 /// A variable reference — either free (by name) or bound (de Bruijn indexed)
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Var {
     Free(String),
     Bound(BoundVar),
 }
 
 /// A bound variable with de Bruijn indices
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BoundVar {
     /// How many enclosing scopes to skip (0 = innermost)
     pub scope: u32,
@@ -57,7 +58,7 @@ pub struct BoundVar {
 }
 
 /// A scope binding pattern `P` over body `B`
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Scope<P, B> {
     pub pattern: P,
     pub body: B,
