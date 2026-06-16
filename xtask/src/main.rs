@@ -21,13 +21,17 @@
 //! 7. Flatten all lambda form bodies into a shared `ArenaStgSyn` node pool.
 //! 8. Serialise the `PreludeBlob` with postcard and write `lib/prelude.blob`.
 
-use std::{collections::HashMap, path::PathBuf, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    time::Instant,
+};
 
 use anyhow::{bail, Context, Result};
 use eucalypt::{
     core::{
         expr::{open_let_scope_full, Expr, RcExpr},
-        inline::tag::tag_combinators,
+        inline::tag::{all_free_vars_in_set, tag_combinators},
         typecheck::check::{parse_operator_overloads, type_check_for_prelude},
     },
     driver::source::SourceLoader,
@@ -172,33 +176,81 @@ fn cmd_prelude_compile() -> Result<()> {
     // App(Intrinsic, vars) or Var), the lambda parameter references are
     // Var::Bound(scope=0, binder=i) — still correct after peeling.  We tag and
     // collect these so they can be injected before the user-code inline pass.
+    //
+    // A fixed-point iteration is used so that lambdas whose bodies reference
+    // previously collected set members (via Var::Free) are also included.
+    // Round 0 seeds the set with bare intrinsic aliases (e.g. `if: __IF`).
+    // Each subsequent round adds lambdas whose only free variables are names
+    // already in the set, repeating until no new names are added.
+    let mut inlinable_names: HashSet<String> = HashSet::new();
     let mut inline_cores: Vec<(String, RcExpr)> = Vec::new();
+
+    // Round 0: bare intrinsics (after peel_meta)
     for (name, body) in &binding_bodies {
-        let tagged =
-            tag_combinators(body).with_context(|| format!("tag_combinators on '{name}'"))?;
-        // Peel through any Meta wrappers (doc/type annotations) to reach the
-        // actual expression node, then check if it is an inlinable combinator
-        // lambda or a bare intrinsic alias (e.g. `if: __IF`).
-        //
-        // For bare intrinsic aliases we store the Meta-stripped node so that
-        // the inline pass's `inlinable()` predicate (which checks for
-        // `Expr::Lam(_, true, _) | Expr::Intrinsic(_, _)`) sees the
-        // `Intrinsic` directly rather than the outer `Meta` wrapper.
-        let inner = peel_meta(&tagged);
-        match &*inner.inner {
-            Expr::Lam(_, true, _) => {
-                inline_cores.push((name.clone(), tagged));
-            }
-            Expr::Intrinsic(_, _) => {
-                inline_cores.push((name.clone(), inner.clone()));
-            }
-            _ => {}
+        let peeled = peel_meta(body);
+        if matches!(&*peeled.inner, Expr::Intrinsic(_, _)) {
+            inlinable_names.insert(name.clone());
+            inline_cores.push((name.clone(), peeled.clone()));
         }
     }
     println!(
-        "  inline cores (inlinable combinators): {}",
+        "  inline cores round 0 (intrinsic aliases): {}",
         inline_cores.len()
     );
+
+    // Iterate: add lambdas whose Free vars are all in the set
+    loop {
+        let mut added = 0;
+        for (name, body) in &binding_bodies {
+            if inlinable_names.contains(name) {
+                continue;
+            }
+            let tagged =
+                tag_combinators(body).with_context(|| format!("tag_combinators on '{name}'"))?;
+            let peeled = peel_meta(&tagged);
+            if let Expr::Lam(_, true, scope) = &*peeled.inner {
+                if all_free_vars_in_set(&scope.body, &inlinable_names) {
+                    inlinable_names.insert(name.clone());
+                    inline_cores.push((name.clone(), peeled.clone()));
+                    added += 1;
+                }
+            }
+        }
+        if added == 0 {
+            break;
+        }
+        println!(
+            "  inline cores round: +{added} (total {})",
+            inline_cores.len()
+        );
+    }
+    println!("  inline cores total (fixed-point): {}", inline_cores.len());
+
+    // Pre-expand: substitute collected definitions into each other so the blob
+    // carries fully-resolved expressions (no Var::Free). Since the fixed-point
+    // collects in dependency order (round 0 first), a single forward pass
+    // suffices.
+    //
+    // The inline_cores are pre-expanded: all Var::Free references to other set
+    // members are substituted with their definitions at blob generation time.
+    // This means the runtime inline pass sees them as immediately closed bodies
+    // (no multi-pass resolution needed).
+    let mut resolved_map: HashMap<String, RcExpr> = HashMap::new();
+    let mut resolved_cores: Vec<(String, RcExpr)> = Vec::new();
+    for (name, body) in &inline_cores {
+        let subs: Vec<(String, RcExpr)> = resolved_map
+            .iter()
+            .map(|(n, e)| (n.clone(), e.clone()))
+            .collect();
+        let expanded = if subs.is_empty() {
+            body.clone()
+        } else {
+            body.substs(&subs)
+        };
+        resolved_map.insert(name.clone(), expanded.clone());
+        resolved_cores.push((name.clone(), expanded));
+    }
+    let inline_cores = resolved_cores;
 
     // ── 5. Build name→slot mapping from peeled bindings ──────────────────────
     let name_to_slot: HashMap<String, usize> = binding_bodies

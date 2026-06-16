@@ -1087,8 +1087,23 @@ impl RcExpr {
         })
     }
 
-    /// Substitute expression for free variables as specified by mappings.
-    /// Uses optimized try_walk to avoid unnecessary allocations.
+    /// Substitute expressions for free variables by name.
+    ///
+    /// **Not scope-aware**: replaces every `Var::Free(name)` that matches,
+    /// regardless of where it appears in the expression tree. This is
+    /// correct when used via the open/close pattern in the inline pass:
+    ///
+    /// 1. `open_let_scope_full` converts `Var::Bound(scope=0)` → `Var::Free(name)`
+    /// 2. `substs` replaces those Free names with inlined bodies
+    /// 3. `close_let_scope` converts remaining Free names → `Var::Bound(scope=0)`
+    ///
+    /// The open/close pairing ensures that only the current scope's bindings
+    /// are Free at substitution time. Any pre-existing `Var::Free` with the
+    /// same name is also replaced — this is correct when those Free vars
+    /// refer to the same definition (e.g. prelude names injected as a
+    /// wrapping Let scope). Callers must maintain this invariant.
+    ///
+    /// Uses optimised `try_walk` to avoid unnecessary allocations.
     pub fn substs(&self, mappings: &[(String, RcExpr)]) -> RcExpr {
         match &*self.inner {
             Expr::Var(_, Var::Free(name)) => match mappings.iter().find(|(n, _)| n == name) {
