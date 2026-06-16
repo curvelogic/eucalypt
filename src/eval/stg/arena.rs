@@ -34,6 +34,7 @@
 //! as a fresh node copy, which is correct: `StgSyn: PartialEq` so
 //! sharing is unobservable from the semantics.
 
+use std::fmt;
 use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
@@ -43,6 +44,30 @@ use super::{
     tags::Tag,
 };
 use crate::common::sourcemap::Smid;
+
+/// Error from reconstructing a corrupt or incompatible prelude blob.
+#[derive(Debug)]
+pub enum BlobReconstructError {
+    /// A node index is out of range.
+    BadNodeIndex { idx: u32, len: usize },
+    /// A form index is out of range.
+    BadFormIndex { idx: u32, len: usize },
+}
+
+impl fmt::Display for BlobReconstructError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::BadNodeIndex { idx, len } => {
+                write!(f, "blob node index {idx} out of range (pool size {len})")
+            }
+            Self::BadFormIndex { idx, len } => {
+                write!(f, "blob form index {idx} out of range (pool size {len})")
+            }
+        }
+    }
+}
+
+impl std::error::Error for BlobReconstructError {}
 
 // ── Index types ──────────────────────────────────────────────────────────────
 
@@ -293,23 +318,29 @@ impl StgArena {
     /// # Panics
     ///
     /// Panics if any index is out of range (indicates a malformed blob).
-    pub fn reconstruct(&self, root: NodeIdx) -> Rc<StgSyn> {
+    pub fn reconstruct(&self, root: NodeIdx) -> Result<Rc<StgSyn>, BlobReconstructError> {
         self.reconstruct_node(root)
     }
 
-    fn reconstruct_node(&self, idx: NodeIdx) -> Rc<StgSyn> {
-        let node = &self.nodes[idx as usize];
+    fn reconstruct_node(&self, idx: NodeIdx) -> Result<Rc<StgSyn>, BlobReconstructError> {
+        let node = self
+            .nodes
+            .get(idx as usize)
+            .ok_or(BlobReconstructError::BadNodeIndex {
+                idx,
+                len: self.nodes.len(),
+            })?;
         // Prelude Ann nodes carry Smids from the xtask's source map which
         // are meaningless at runtime.  Elide them so they do not overwrite
         // the user's call-site annotation in vm.annotation.
         if let ArenaStgSyn::Ann { body, .. } = node {
             return self.reconstruct_node(*body);
         }
-        Rc::new(self.reconstruct_arena_syn(node))
+        Ok(Rc::new(self.reconstruct_arena_syn(node)?))
     }
 
-    fn reconstruct_arena_syn(&self, node: &ArenaStgSyn) -> StgSyn {
-        match node {
+    fn reconstruct_arena_syn(&self, node: &ArenaStgSyn) -> Result<StgSyn, BlobReconstructError> {
+        Ok(match node {
             ArenaStgSyn::Atom { evaluand } => StgSyn::Atom {
                 evaluand: evaluand.clone(),
             },
@@ -319,12 +350,12 @@ impl StgArena {
                 fallback,
                 suppress_update,
             } => StgSyn::Case {
-                scrutinee: self.reconstruct_node(*scrutinee),
+                scrutinee: self.reconstruct_node(*scrutinee)?,
                 branches: branches
                     .iter()
-                    .map(|(tag, idx)| (*tag, self.reconstruct_node(*idx)))
-                    .collect(),
-                fallback: fallback.map(|idx| self.reconstruct_node(idx)),
+                    .map(|(tag, idx)| Ok((*tag, self.reconstruct_node(*idx)?)))
+                    .collect::<Result<_, BlobReconstructError>>()?,
+                fallback: fallback.map(|idx| self.reconstruct_node(idx)).transpose()?,
                 suppress_update: *suppress_update,
             },
             ArenaStgSyn::Cons { tag, args } => StgSyn::Cons {
@@ -343,15 +374,15 @@ impl StgArena {
                 bindings: bindings
                     .iter()
                     .map(|&idx| self.reconstruct_form(idx))
-                    .collect(),
-                body: self.reconstruct_node(*body),
+                    .collect::<Result<_, BlobReconstructError>>()?,
+                body: self.reconstruct_node(*body)?,
             },
             ArenaStgSyn::LetRec { bindings, body } => StgSyn::LetRec {
                 bindings: bindings
                     .iter()
                     .map(|&idx| self.reconstruct_form(idx))
-                    .collect(),
-                body: self.reconstruct_node(*body),
+                    .collect::<Result<_, BlobReconstructError>>()?,
+                body: self.reconstruct_node(*body)?,
             },
             // Ann nodes are elided in reconstruct_node() above.
             ArenaStgSyn::Ann { .. } => unreachable!("Ann handled in reconstruct_node"),
@@ -364,30 +395,37 @@ impl StgArena {
                 handler,
                 or_else,
             } => StgSyn::DeMeta {
-                scrutinee: self.reconstruct_node(*scrutinee),
-                handler: self.reconstruct_node(*handler),
-                or_else: self.reconstruct_node(*or_else),
+                scrutinee: self.reconstruct_node(*scrutinee)?,
+                handler: self.reconstruct_node(*handler)?,
+                or_else: self.reconstruct_node(*or_else)?,
             },
             ArenaStgSyn::BlackHole => StgSyn::BlackHole,
-        }
+        })
     }
 
-    pub fn reconstruct_form(&self, idx: FormIdx) -> LambdaForm {
-        match &self.forms[idx as usize] {
+    pub fn reconstruct_form(&self, idx: FormIdx) -> Result<LambdaForm, BlobReconstructError> {
+        let form = self
+            .forms
+            .get(idx as usize)
+            .ok_or(BlobReconstructError::BadFormIndex {
+                idx,
+                len: self.forms.len(),
+            })?;
+        Ok(match form {
             ArenaLambdaForm::Lambda { bound, body, .. } => LambdaForm::Lambda {
                 bound: *bound,
-                body: self.reconstruct_node(*body),
+                body: self.reconstruct_node(*body)?,
                 // Clear xtask-sourced annotations — they are meaningless
                 // at runtime and would pollute user error locations.
                 annotation: Smid::default(),
             },
             ArenaLambdaForm::Thunk { body } => LambdaForm::Thunk {
-                body: self.reconstruct_node(*body),
+                body: self.reconstruct_node(*body)?,
             },
             ArenaLambdaForm::Value { body } => LambdaForm::Value {
-                body: self.reconstruct_node(*body),
+                body: self.reconstruct_node(*body)?,
             },
-        }
+        })
     }
 }
 
@@ -427,7 +465,7 @@ mod tests {
         let original = atom(int(42));
         let arena = flatten(&original);
         assert_eq!(arena.nodes.len(), 1, "single atom = one node");
-        let reconstructed = arena.reconstruct(0);
+        let reconstructed = arena.reconstruct(0).unwrap();
         assert_eq!(original, reconstructed);
     }
 
@@ -442,7 +480,7 @@ mod tests {
             suppress_update: false,
         });
         let arena = flatten(&original);
-        let reconstructed = arena.reconstruct(0);
+        let reconstructed = arena.reconstruct(0).unwrap();
         assert_eq!(original, reconstructed);
     }
 
@@ -456,7 +494,7 @@ mod tests {
             body: let_body,
         });
         let arena = flatten(&original);
-        let reconstructed = arena.reconstruct(0);
+        let reconstructed = arena.reconstruct(0).unwrap();
         assert_eq!(original, reconstructed);
     }
 
@@ -473,7 +511,7 @@ mod tests {
             body: atom(Reference::L(0)),
         });
         let arena = flatten(&original);
-        let reconstructed = arena.reconstruct(0);
+        let reconstructed = arena.reconstruct(0).unwrap();
         assert_eq!(original, reconstructed);
     }
 
@@ -486,7 +524,7 @@ mod tests {
             body: atom(sym("hello")),
         });
         let arena = flatten(&original);
-        let reconstructed = arena.reconstruct(0);
+        let reconstructed = arena.reconstruct(0).unwrap();
         assert_eq!(atom(sym("hello")), reconstructed);
     }
 
@@ -498,7 +536,7 @@ mod tests {
             or_else: atom(Reference::G(0)),
         });
         let arena = flatten(&original);
-        let reconstructed = arena.reconstruct(0);
+        let reconstructed = arena.reconstruct(0).unwrap();
         assert_eq!(original, reconstructed);
     }
 
@@ -524,7 +562,7 @@ mod tests {
         let arena = flatten(&original);
         let bytes = postcard::to_allocvec(&arena).expect("serialise");
         let restored: StgArena = postcard::from_bytes(&bytes).expect("deserialise");
-        let reconstructed = restored.reconstruct(0);
+        let reconstructed = restored.reconstruct(0).unwrap();
         assert_eq!(expected, reconstructed);
     }
 }

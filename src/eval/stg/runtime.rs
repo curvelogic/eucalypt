@@ -174,7 +174,16 @@ impl Runtime for StandardRuntime {
                 forms: self.prelude_forms_pool.clone(),
             };
             for &entry_idx in &self.prelude_binding_entries {
-                gs.push(arena.reconstruct_form(entry_idx));
+                match arena.reconstruct_form(entry_idx) {
+                    Ok(form) => gs.push(form),
+                    Err(e) => {
+                        eprintln!(
+                            "warning: corrupt prelude blob ({}), falling back to source prelude",
+                            e
+                        );
+                        return self.lambdas();
+                    }
+                }
             }
         }
         gs
