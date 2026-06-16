@@ -1081,4 +1081,69 @@ pub mod tests {
             other => panic!("expected outer Let, got: {other:?}"),
         }
     }
+
+    /// `demand_from_use_count` maps zero uses to Unknown (eliminated binding)
+    /// and any positive count to Multi (conservative).
+    #[test]
+    pub fn test_demand_from_use_count_zero() {
+        let d = ScopeTracker::demand_from_use_count(0);
+        assert_eq!(
+            d.cardinality,
+            Cardinality::Unknown,
+            "zero-use binding should have Unknown cardinality"
+        );
+    }
+
+    #[test]
+    pub fn test_demand_from_use_count_one() {
+        let d = ScopeTracker::demand_from_use_count(1);
+        assert_eq!(
+            d.cardinality,
+            Cardinality::Multi,
+            "single-use binding should get Multi (conservative from prune)"
+        );
+    }
+
+    #[test]
+    pub fn test_demand_from_use_count_many() {
+        let d = ScopeTracker::demand_from_use_count(5);
+        assert_eq!(
+            d.cardinality,
+            Cardinality::Multi,
+            "multi-use binding should get Multi"
+        );
+    }
+
+    /// Demand annotations survive through nested let scopes.
+    #[test]
+    pub fn test_demand_propagation_in_nested_lets() {
+        use crate::core::demand::Cardinality;
+
+        let x = free("x");
+        let y = free("y");
+
+        // Inner let: `y` used once in body.  Outer let: `x` used twice.
+        let inner = let_(vec![(y.clone(), num(7))], var(y));
+        let expr = let_(
+            vec![(x.clone(), num(1))],
+            app(
+                bif("ADD"),
+                vec![var(x.clone()), app(bif("ADD"), vec![var(x), inner])],
+            ),
+        );
+
+        let pruned = prune(&expr);
+
+        match &*pruned.inner {
+            Expr::Let(_, scope, _) => {
+                let x_binding = &scope.pattern[0];
+                assert_eq!(
+                    x_binding.demand.cardinality,
+                    Cardinality::Multi,
+                    "x (used twice across nested lets) should have Multi"
+                );
+            }
+            other => panic!("expected outer Let, got: {other:?}"),
+        }
+    }
 }

@@ -1798,6 +1798,11 @@ pub fn test_harness_164() {
 }
 
 #[test]
+pub fn test_harness_165() {
+    run_test(&opts("165_demand_annotation.eu"));
+}
+
+#[test]
 pub fn test_error_154() {
     run_error_test(&error_opts("154_internal_import_error.eu"));
 }

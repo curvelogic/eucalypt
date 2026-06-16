@@ -92,3 +92,65 @@ pub enum Strictness {
     /// Definitely strict — will be evaluated by context.
     Strict,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_demand_does_not_skip_update() {
+        let d = Demand::default();
+        assert!(!d.skip_update(), "Unknown demand should NOT skip update");
+    }
+
+    #[test]
+    fn at_most_once_skips_update() {
+        let d = Demand::at_most_once();
+        assert!(d.skip_update(), "AtMostOnce should skip update");
+    }
+
+    #[test]
+    fn multi_does_not_skip_update() {
+        let d = Demand {
+            cardinality: Cardinality::Multi,
+            ..Default::default()
+        };
+        assert!(!d.skip_update(), "Multi cardinality should NOT skip update");
+    }
+
+    #[test]
+    fn whnf_skips_update() {
+        let d = Demand::whnf();
+        assert!(d.skip_update(), "WHNF demand should skip update");
+    }
+
+    #[test]
+    fn strict_alone_does_not_skip_update() {
+        let d = Demand::strict();
+        assert!(
+            !d.skip_update(),
+            "Strict-only demand should NOT skip update (strictness is orthogonal)"
+        );
+    }
+
+    #[test]
+    fn whnf_overrides_multi_cardinality() {
+        let d = Demand {
+            cardinality: Cardinality::Multi,
+            whnf: true,
+            ..Default::default()
+        };
+        assert!(
+            d.skip_update(),
+            "WHNF should skip update even with Multi cardinality"
+        );
+    }
+
+    #[test]
+    fn default_demand_is_conservative() {
+        let d = Demand::default();
+        assert_eq!(d.cardinality, Cardinality::Unknown);
+        assert_eq!(d.strictness, Strictness::Unknown);
+        assert!(!d.whnf);
+    }
+}

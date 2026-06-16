@@ -222,4 +222,175 @@ mod tests {
             Some(&"IO(a)".to_string())
         );
     }
+
+    #[test]
+    fn empty_blob_round_trip() {
+        let blob = minimal_blob();
+        let bytes = blob.to_bytes().unwrap();
+        let restored = PreludeBlob::from_bytes(&bytes).unwrap();
+
+        assert_eq!(restored.source_hash, [0u8; 32]);
+        assert!(restored.nodes.is_empty());
+        assert!(restored.forms_pool.is_empty());
+        assert!(restored.binding_entries.is_empty());
+        assert!(restored.name_to_slot.is_empty());
+        assert!(restored.operators.is_empty());
+        assert!(restored.monad_specs.is_empty());
+        assert!(restored.monad_type_hints.is_empty());
+        assert!(restored.inline_cores.is_empty());
+    }
+
+    #[test]
+    fn blob_with_nodes_and_bindings_round_trip() {
+        use crate::common::sourcemap::Smid;
+        use crate::eval::stg::arena::{ArenaLambdaForm, ArenaStgSyn};
+        use crate::eval::stg::syntax::Native;
+
+        let mut blob = minimal_blob();
+        blob.source_hash = [42u8; 32];
+
+        // Add some arena nodes: an Atom containing a symbol
+        blob.nodes.push(ArenaStgSyn::Atom {
+            evaluand: super::super::syntax::Ref::V(Native::Sym("hello".to_string())),
+        });
+
+        // Add a Value lambda form referencing node 0
+        blob.forms_pool.push(ArenaLambdaForm::Value { body: 0 });
+
+        // Add a Thunk lambda form referencing node 0
+        blob.forms_pool.push(ArenaLambdaForm::Thunk { body: 0 });
+
+        // Add a Lambda form
+        blob.forms_pool.push(ArenaLambdaForm::Lambda {
+            bound: 2,
+            body: 0,
+            annotation: Smid::default(),
+        });
+
+        // Binding entries point to forms_pool indices
+        blob.binding_entries.push(0);
+        blob.binding_entries.push(1);
+
+        // Name-to-slot mapping
+        blob.name_to_slot.insert("my-value".to_string(), 0);
+        blob.name_to_slot.insert("my-thunk".to_string(), 1);
+
+        let bytes = blob.to_bytes().unwrap();
+        let restored = PreludeBlob::from_bytes(&bytes).unwrap();
+
+        assert_eq!(restored.source_hash, [42u8; 32]);
+        assert_eq!(restored.nodes.len(), 1);
+        assert_eq!(restored.forms_pool.len(), 3);
+        assert_eq!(restored.binding_entries.len(), 2);
+        assert_eq!(restored.name_to_slot.get("my-value"), Some(&0));
+        assert_eq!(restored.name_to_slot.get("my-thunk"), Some(&1));
+
+        // Verify the lambda form variants survived
+        assert!(matches!(
+            &restored.forms_pool[0],
+            ArenaLambdaForm::Value { body: 0 }
+        ));
+        assert!(matches!(
+            &restored.forms_pool[1],
+            ArenaLambdaForm::Thunk { body: 0 }
+        ));
+        assert!(matches!(
+            &restored.forms_pool[2],
+            ArenaLambdaForm::Lambda {
+                bound: 2,
+                body: 0,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn blob_with_operators_round_trip() {
+        use crate::common::sourcemap::Smid;
+        use crate::core::expr::Fixity;
+        use crate::driver::unit_interface::OperatorInfo;
+
+        let mut blob = minimal_blob();
+        blob.operators.insert(
+            "+".to_string(),
+            OperatorInfo {
+                smid: Smid::default(),
+                fixity: Fixity::InfixLeft,
+                precedence: 60,
+                type_annotation: None,
+            },
+        );
+        blob.operators.insert(
+            "*".to_string(),
+            OperatorInfo {
+                smid: Smid::default(),
+                fixity: Fixity::InfixLeft,
+                precedence: 70,
+                type_annotation: None,
+            },
+        );
+
+        let bytes = blob.to_bytes().unwrap();
+        let restored = PreludeBlob::from_bytes(&bytes).unwrap();
+
+        assert_eq!(restored.operators.len(), 2);
+        let plus = restored.operators.get("+").unwrap();
+        assert_eq!(plus.fixity, Fixity::InfixLeft);
+        assert_eq!(plus.precedence, 60);
+        let times = restored.operators.get("*").unwrap();
+        assert_eq!(times.precedence, 70);
+    }
+
+    #[test]
+    fn blob_corrupted_bytes_fail_gracefully() {
+        let result = PreludeBlob::from_bytes(&[0xFF, 0xFE, 0xFD, 0x00]);
+        assert!(
+            result.is_err(),
+            "corrupted bytes should produce a deserialisation error"
+        );
+    }
+
+    #[test]
+    #[cfg(prelude_blob_ok)]
+    fn embedded_blob_has_bindings_and_slots() {
+        let bytes = crate::driver::resources::PRELUDE_BLOB_BYTES;
+        let blob = PreludeBlob::from_bytes(bytes).expect("embedded blob should deserialise");
+
+        assert!(!blob.nodes.is_empty(), "prelude blob must have arena nodes");
+        assert!(
+            !blob.forms_pool.is_empty(),
+            "prelude blob must have lambda forms"
+        );
+        assert!(
+            !blob.binding_entries.is_empty(),
+            "prelude blob must have binding entries"
+        );
+        assert!(
+            !blob.name_to_slot.is_empty(),
+            "prelude blob must have name-to-slot mappings"
+        );
+
+        // Spot-check a few well-known prelude names
+        assert!(
+            blob.name_to_slot.contains_key("map"),
+            "prelude blob must contain 'map'"
+        );
+        assert!(
+            blob.name_to_slot.contains_key("filter"),
+            "prelude blob must contain 'filter'"
+        );
+        assert!(
+            blob.name_to_slot.contains_key("head"),
+            "prelude blob must contain 'head'"
+        );
+
+        // Every binding entry must be a valid index into forms_pool
+        for (i, &entry) in blob.binding_entries.iter().enumerate() {
+            assert!(
+                (entry as usize) < blob.forms_pool.len(),
+                "binding_entries[{i}] = {entry} is out of bounds (forms_pool len = {})",
+                blob.forms_pool.len()
+            );
+        }
+    }
 }
