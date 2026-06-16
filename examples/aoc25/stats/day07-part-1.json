@@ -1,0 +1,33 @@
+{
+  "blocks_allocated": 52212,
+  "blocks_recycled": 0,
+  "blocks_used": 52210,
+  "collections_count": 2,
+  "lobs_allocated": 0,
+  "machine_allocs": 16376398,
+  "machine_max_stack": 727,
+  "machine_ticks": 44142893,
+  "peak_heap_blocks": 52212,
+  "timings": {
+    "VM-CollectorMark": 0.002615583,
+    "VM-CollectorSweep": 0.001078417,
+    "VM-Initialisation": 1.833e-6,
+    "VM-Mutator": 1.8184481670000001,
+    "VM-Total": 1.822144,
+    "cook": 0.000470709,
+    "eliminate": 0.000023667,
+    "eliminate-1": 0.000370083,
+    "eliminate-2": 0.000230333,
+    "fuse-destructure": 0.000046375,
+    "inline": 0.000464,
+    "merge": 0.000152459,
+    "parse": 0.007430208,
+    "retarget": 0.000095333,
+    "stg-compile": 0.000628292,
+    "stg-eval": 1.821100291,
+    "stg-render": 0.001062291,
+    "translate": 0.00104775
+  },
+  "total_mark_time_secs": 0.002615583,
+  "total_sweep_time_secs": 0.001078417
+}
