@@ -11,6 +11,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 eucalypt = { path = ".." }
 codespan-reporting = "0.11.1"
+tempfile = "3"
 
 # Prevent this from interfering with workspaces
 [workspace]
@@ -30,5 +31,11 @@ doc = false
 [[bin]]
 name = "fuzz_loader"
 path = "fuzz_targets/fuzz_loader.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_evaluator"
+path = "fuzz_targets/fuzz_evaluator.rs"
 test = false
 doc = false
