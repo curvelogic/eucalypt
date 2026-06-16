@@ -1,11 +1,15 @@
 //! Tag selected lambdas as inlinable for inline pass
-use crate::core::expr::{Expr, LamScope, LetType, RcExpr};
+use crate::core::{
+    binding::Var,
+    expr::{Expr, LamScope, LetType, RcExpr},
+};
 
 /// Walk the expression tagging combinators and destructuring lambdas.
 ///
 /// A lambda is tagged inlinable if:
-/// - Its body is a simple combinator form (variable or intrinsic application
-///   to variables/literals); or
+/// - Its body is a closed expression tree (every node is a lambda parameter
+///   reference, literal, intrinsic, or application of closed sub-expressions);
+///   or
 /// - It has exactly one parameter and its body is a destructuring let (a
 ///   `DestructureBlockLet` or `DestructureListLet`). This allows the inline
 ///   pass to distribute destructuring functions to their call sites so that
@@ -13,7 +17,7 @@ use crate::core::expr::{Expr, LamScope, LetType, RcExpr};
 pub fn tag_combinators(expr: &RcExpr) -> Result<RcExpr, crate::core::error::CoreError> {
     match &*expr.inner {
         Expr::Lam(s, false, scope) => {
-            if combinator(scope) || destructuring(scope) {
+            if closed_body(&scope.body) || destructuring(scope) {
                 Ok(RcExpr::from(Expr::Lam(*s, true, scope.clone())))
             } else {
                 // Recurse into the lambda body even if not itself inlinable
@@ -24,20 +28,25 @@ pub fn tag_combinators(expr: &RcExpr) -> Result<RcExpr, crate::core::error::Core
     }
 }
 
-/// A lambda is a combinator if its body is a variable or a simple
-/// intrinsic/variable application to variables and literals.
-fn combinator(lam_scope: &LamScope<RcExpr>) -> bool {
-    let body = &lam_scope.body;
-
-    match &*body.inner {
-        Expr::Var(_, _) => true,
-        Expr::App(_, f, xs) => {
-            let transposition = xs
-                .iter()
-                .all(|e| matches!(&*e.inner, Expr::Var(_, _) | Expr::Literal(_, _)));
-            let simple = matches!(&*f.inner, Expr::Intrinsic(_, _) | Expr::Var(_, _));
-            transposition && simple
-        }
+/// A lambda body is a closed expression if every node is one of:
+/// - `Var::Bound(scope=0)` — a reference to a parameter of the immediately
+///   enclosing lambda
+/// - `Literal`
+/// - `Intrinsic`
+/// - `App(closed_f, [closed_arg]*)` — application of closed sub-expressions
+///
+/// No free variables, no `Let` bindings, and no nested lambdas are permitted.
+/// This generalises the old flat `combinator` check to arbitrary-depth
+/// compositions, capturing functions such as:
+/// - `abs(n)`   → `__IF(__LT(n, 0), __SUB(0, n), n)`
+/// - `max(l,r)` → `__IF(__GT(l, r), l, r)`
+/// - `!=(l,r)`  → `__NOT(__EQ(l, r))`
+fn closed_body(expr: &RcExpr) -> bool {
+    match &*expr.inner {
+        Expr::Var(_, Var::Bound(bv)) => bv.scope == 0,
+        Expr::Literal(_, _) => true,
+        Expr::Intrinsic(_, _) => true,
+        Expr::App(_, f, xs) => closed_body(f) && xs.iter().all(closed_body),
         _ => false,
     }
 }
