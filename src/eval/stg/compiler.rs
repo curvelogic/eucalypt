@@ -1393,9 +1393,7 @@ impl<'rt> Compiler<'rt> {
                 let lookup = self.compile_lookup(binder, obj, k, d, *s)?;
                 binder.add_deferred(Box::new(lookup))
             }
-            Expr::Name(_, _) => {
-                todo!()
-            }
+            Expr::Name(s, _) => Err(CompileError::UnexpectedExpression(*s)),
             Expr::Meta(s, body, meta) => {
                 let m = self.compile_binding(binder, meta.clone(), *s, Demand::default())?;
                 let b = self.compile_binding(binder, body.clone(), *s, Demand::default())?;

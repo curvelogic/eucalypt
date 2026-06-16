@@ -65,9 +65,7 @@ fn verify_prelude_blob() {
         }
         Ok(blob_bytes) => {
             // The first 32 bytes of the postcard blob are the `source_hash` field
-            // (a `[u8; 32]` is serialised by postcard as its raw bytes with a
-            // 1-byte length prefix for the fixed-size array variant — actually
-            // postcard serialises `[u8; N]` as N raw bytes with no length prefix).
+            // (postcard serialises `[u8; N]` as N raw bytes with no length prefix).
             // We use the `postcard` crate's own deserialiser to avoid parsing
             // the full blob just for the hash.
             match read_blob_source_hash(&blob_bytes) {
