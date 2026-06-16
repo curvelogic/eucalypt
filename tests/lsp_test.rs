@@ -5,6 +5,28 @@
 
 use eucalypt::driver::lsp::testing::LspTestSession;
 
+/// Compute the UTF-16 column offset of `needle` on the given
+/// 0-based `line` of `source`.  Panics if `needle` is not found.
+fn col_of(source: &str, line: u32, needle: &str) -> u32 {
+    let line_str = source
+        .lines()
+        .nth(line as usize)
+        .unwrap_or_else(|| panic!("line {line} not found in source"));
+    let byte_offset = line_str
+        .find(needle)
+        .unwrap_or_else(|| panic!("{needle:?} not found on line {line}: {line_str:?}"));
+    line_str[..byte_offset].encode_utf16().count() as u32
+}
+
+#[test]
+fn col_of_basic() {
+    assert_eq!(col_of("main: map(negate)", 0, "map"), 6);
+    assert_eq!(col_of("line0\nline1: value", 1, "value"), 7);
+    assert_eq!(col_of("x: 10 ÷ 2", 0, "÷"), 6);
+    assert_eq!(col_of("result: ⟦ 42 ⟧", 0, "⟦"), 8);
+    assert_eq!(col_of("result: ⟦ 42 ⟧", 0, "⟧"), 13);
+}
+
 // ── Stability: single characters and tokens ──────────────────────────────────
 
 #[test]
@@ -471,8 +493,9 @@ fn multiline_with_metadata() {
 #[test]
 fn monad_tag_completion_after_colon() {
     let mut s = LspTestSession::new();
-    s.open("main: { : }");
-    let labels = s.complete_labels(0, 8);
+    let src = "main: { : }";
+    s.open(src);
+    let labels = s.complete_labels(0, col_of(src, 0, "{ :") + 2);
     assert!(
         labels.iter().any(|l| l.contains("for")),
         "should offer :for in completion, got: {labels:?}"
@@ -484,9 +507,14 @@ fn monad_tag_completion_after_colon() {
 #[test]
 fn hover_on_prelude_function() {
     let mut s = LspTestSession::new();
-    s.open("main: map(negate, [1,2,3])");
-    let text = s.hover_text(0, 6);
-    assert!(text.is_some(), "hover on 'map' should return something");
+    let src = "main: map(negate, [1,2,3])";
+    s.open(src);
+    let text = s.hover_text(0, col_of(src, 0, "map"));
+    let content = text.expect("hover on 'map' should return something");
+    assert!(
+        content.contains("map"),
+        "hover should mention 'map', got: {content}"
+    );
 }
 
 // ── Feature: inlay hints ─────────────────────────────────────────────────────
@@ -673,8 +701,9 @@ fn hover_on_imported_function() {
     s.set_uri(test_uri.as_str());
     // Use run_pipeline to wait for the background pipeline to complete
     // before checking hover — import symbols come from the pipeline now.
-    s.run_pipeline("{ import: \"import_lib.eu\" }\nmain: double(21)");
-    let text = s.hover_text(1, 6);
+    let src = "{ import: \"import_lib.eu\" }\nmain: double(21)";
+    s.run_pipeline(src);
+    let text = s.hover_text(1, col_of(src, 1, "double"));
     assert!(
         text.is_some(),
         "hover on 'double' (from import) should return something"
@@ -694,8 +723,9 @@ fn completion_includes_imported_names() {
         lsp_types::Url::from_file_path(test_dir.join("test_import.eu")).expect("valid file URI");
     s.set_uri(test_uri.as_str());
     // Wait for the pipeline to complete so import symbols are available.
-    s.run_pipeline("{ import: \"import_lib.eu\" }\nmain: d");
-    let labels = s.complete_labels(1, 7);
+    let src = "{ import: \"import_lib.eu\" }\nmain: d";
+    s.run_pipeline(src);
+    let labels = s.complete_labels(1, col_of(src, 1, "d") + 1);
     assert!(
         labels.iter().any(|l| l == "double"),
         "completion should include 'double' from import, got: {labels:?}"
@@ -722,11 +752,14 @@ fn multiple_imports() {
         lsp_types::Url::from_file_path(test_dir.join("test_import.eu")).expect("valid file URI");
     s.set_uri(test_uri.as_str());
     // Wait for the pipeline to complete so import symbols are available.
-    s.run_pipeline("{ import: [\"import_lib.eu\"] }\nmain: lib-version");
-    let text = s.hover_text(1, 6);
+    let src = "{ import: [\"import_lib.eu\"] }\nmain: lib-version";
+    s.run_pipeline(src);
+    let content = s
+        .hover_text(1, col_of(src, 1, "lib-version"))
+        .expect("hover on 'lib-version' (from import) should return something");
     assert!(
-        text.is_some(),
-        "hover on 'lib-version' (from import) should return something"
+        content.contains("lib-version"),
+        "hover should mention 'lib-version', got: {content}"
     );
 }
 
@@ -1034,10 +1067,7 @@ fn hover_on_bracket_open_delimiter() {
     let mut s = LspTestSession::new();
     let src = "⟦ x ⟧: x\nresult: ⟦ 42 ⟧\n";
     s.open(src);
-    // The second line starts with '⟦' — hover at column 8 (UTF-16)
-    // Line 1 is "result: ⟦ 42 ⟧"
-    //   r(0) e(1) s(2) u(3) l(4) t(5) :(6) (7) ⟦(8, 1 UTF-16 unit) …
-    let hover = s.hover_text(1, 8);
+    let hover = s.hover_text(1, col_of(src, 1, "⟦"));
     assert!(
         hover.is_some(),
         "hover on bracket delimiter should return information"
@@ -1056,8 +1086,9 @@ fn goto_definition_on_bracket_open_not_panic() {
     let src = "⟦ x ⟧: x\nresult: ⟦ 42 ⟧\n";
     s.open(src);
     // Just verify it does not panic — the result depends on the symbol table
-    let _hover = s.hover(1, 8);
-    let _complete = s.complete(1, 8);
+    let col = col_of(src, 1, "⟦");
+    let _hover = s.hover(1, col);
+    let _complete = s.complete(1, col);
 }
 
 /// Bracket pair definitions should appear in document symbols.
@@ -1075,9 +1106,9 @@ fn bracket_pair_in_stability_exercise() {
 #[test]
 fn document_highlight_bracket_open_highlights_pair() {
     let mut s = LspTestSession::new();
-    s.open("⟦ x ⟧: x\nresult: ⟦ 42 ⟧\n");
-    // Hover at '⟦' on line 1, UTF-16 column 8
-    let highlights = s.document_highlights(1, 8);
+    let src = "⟦ x ⟧: x\nresult: ⟦ 42 ⟧\n";
+    s.open(src);
+    let highlights = s.document_highlights(1, col_of(src, 1, "⟦"));
     assert_eq!(
         highlights.len(),
         2,
@@ -1089,10 +1120,9 @@ fn document_highlight_bracket_open_highlights_pair() {
 #[test]
 fn document_highlight_bracket_close_highlights_pair() {
     let mut s = LspTestSession::new();
-    s.open("⟦ x ⟧: x\nresult: ⟦ 42 ⟧\n");
-    // '⟧' is at UTF-16 column 13 on line 1
-    // "result: ⟦ 42 ⟧" → r(0)e(1)s(2)u(3)l(4)t(5):(6) (7)⟦(8) (9)4(10)2(11) (12)⟧(13)
-    let highlights = s.document_highlights(1, 13);
+    let src = "⟦ x ⟧: x\nresult: ⟦ 42 ⟧\n";
+    s.open(src);
+    let highlights = s.document_highlights(1, col_of(src, 1, "⟧"));
     assert_eq!(
         highlights.len(),
         2,
@@ -1113,8 +1143,9 @@ fn document_highlight_non_bracket_returns_empty() {
 #[test]
 fn document_highlight_block_mode_bracket() {
     let mut s = LspTestSession::new();
-    s.open("⟦{}⟧: id\nresult: ⟦ a: 1 ⟧\n");
-    let highlights = s.document_highlights(1, 8);
+    let src = "⟦{}⟧: id\nresult: ⟦ a: 1 ⟧\n";
+    s.open(src);
+    let highlights = s.document_highlights(1, col_of(src, 1, "⟦"));
     assert_eq!(
         highlights.len(),
         2,
@@ -1155,9 +1186,7 @@ fn goto_definition_bracket_block_binding_jumps_to_pair() {
     s.open(src);
     s.wait_for_pipeline();
     // 'a' is the binding name in "⟦ a: 1 ⟧" on line 1
-    // Line 1: "result: ⟦ a: 1 ⟧"
-    //   r(0)e(1)s(2)u(3)l(4)t(5):(6) (7)⟦(8) (9)a(10):(11) (12)1(13) (14)⟧(15)
-    let def = s.goto_definition(1, 10);
+    let def = s.goto_definition(1, col_of(src, 1, "a:"));
     assert!(
         def.is_some(),
         "go-to-def on bracket block binding should return a result"
@@ -1169,9 +1198,9 @@ fn goto_definition_bracket_block_binding_jumps_to_pair() {
 #[test]
 fn goto_definition_prelude_function_returns_file_uri() {
     let mut s = LspTestSession::new();
-    // "map" is at column 6 in "main: map(negate, [1])"
-    s.open("main: map(negate, [1])");
-    let def = s.goto_definition(0, 6);
+    let src = "main: map(negate, [1])";
+    s.open(src);
+    let def = s.goto_definition(0, col_of(src, 0, "map"));
     assert!(def.is_some(), "go-to-def on 'map' should return a result");
     // The definition should point to a file: URI (the temp prelude),
     // not resource:prelude which editors can't navigate to.
@@ -1481,16 +1510,15 @@ fn alias_goto_definition_from_type_string() {
     // Line 1: the defined binding
     // Line 2: `{ type: "Point -> number" }` — contains alias reference
     // Line 3: the annotated function
-    s.open(concat!(
+    let src = concat!(
         "` { type-def: \"Point\" }\n",
         "point: { x: 1, y: 2 }\n",
         "` { type: \"Point -> number\" }\n",
         "get-x(p): p.x\n",
-    ));
+    );
+    s.open(src);
 
-    // Cursor on "Point" inside the type: string on line 2.
-    // "` { type: \"" is 11 chars; "Point" starts at col 11.
-    let result = s.goto_definition_for_type_alias(2, 11);
+    let result = s.goto_definition_for_type_alias(2, col_of(src, 2, "Point"));
     assert!(
         result.is_some(),
         "should find definition of Point from type: string"
@@ -1506,15 +1534,15 @@ fn alias_hover_in_type_string() {
     // alias map.  A real declaration must appear between consecutive backtick
     // metadata blocks.  run_pipeline waits for the background pipeline so that
     // alias_types is populated in the cached result.
-    s.run_pipeline(concat!(
+    let src = concat!(
         "` { types: { Point: \"number\" } }\n",
         "data: 1\n",
         "` { type: \"Point -> number\" }\n",
         "get-x(p): p\n",
-    ));
+    );
+    s.run_pipeline(src);
 
-    // Cursor on "Point" in the type: string on line 2 (col 11 = after `"`).
-    let hover = s.hover_for_type_alias(2, 11);
+    let hover = s.hover_for_type_alias(2, col_of(src, 2, "Point"));
     assert!(hover.is_some(), "should produce hover for alias reference");
     if let Some(h) = hover {
         let text = match h.contents {
@@ -1539,20 +1567,15 @@ fn alias_hover_in_type_string() {
 #[test]
 fn alias_goto_definition_utf16_column() {
     let mut s = LspTestSession::new();
-    s.open(concat!(
+    let src = concat!(
         "` { type-def: \"MyType\" }\n",
         "alias-val: 42\n",
         "` { type: \"number \u{2192} MyType\" }\n",
         "get-it(p): p\n",
-    ));
+    );
+    s.open(src);
 
-    // Line 2: ` { type: "number → MyType" }
-    //          0123456789012345678901234567
-    // "number " = 7 ASCII + "→" (1 UTF-16 unit) + " " = col 9 for "MyType".
-    // String token starts at col 9 of that line (the opening quote is at
-    // position 9 in ` { type: ...), content starts col 10, so "MyType" is
-    // at col 10 + 9 = 19.  We place the cursor in the middle of "MyType".
-    let result = s.goto_definition_for_type_alias(2, 21);
+    let result = s.goto_definition_for_type_alias(2, col_of(src, 2, "MyType"));
     assert!(
         result.is_some(),
         "should find definition of MyType through a Unicode → in the type string"
@@ -1563,15 +1586,15 @@ fn alias_goto_definition_utf16_column() {
 #[test]
 fn alias_rename_updates_definition_and_references() {
     let mut s = LspTestSession::new();
-    s.open(concat!(
+    let src = concat!(
         "` { type-def: \"Point\" }\n",
         "point: { x: 1, y: 2 }\n",
         "` { type: \"Point -> number\" }\n",
         "get-x(p): p.x\n",
-    ));
+    );
+    s.open(src);
 
-    // Cursor on "Point" in the type: string on line 2.
-    let edit = s.rename_type_alias(2, 11, "Coord");
+    let edit = s.rename_type_alias(2, col_of(src, 2, "Point"), "Coord");
     assert!(edit.is_some(), "rename should produce a WorkspaceEdit");
 
     let changes = edit.unwrap().changes.unwrap();
