@@ -18,6 +18,25 @@ fn col_of(source: &str, line: u32, needle: &str) -> u32 {
     line_str[..byte_offset].encode_utf16().count() as u32
 }
 
+/// Assert that a `GotoDefinitionResponse` points to the expected line.
+fn assert_goto_def_line(response: &lsp_types::GotoDefinitionResponse, expected_line: u32) {
+    let line = match response {
+        lsp_types::GotoDefinitionResponse::Scalar(loc) => loc.range.start.line,
+        lsp_types::GotoDefinitionResponse::Array(locs) => {
+            assert!(!locs.is_empty(), "empty go-to-def array");
+            locs[0].range.start.line
+        }
+        lsp_types::GotoDefinitionResponse::Link(links) => {
+            assert!(!links.is_empty(), "empty go-to-def links");
+            links[0].target_range.start.line
+        }
+    };
+    assert_eq!(
+        line, expected_line,
+        "expected definition on line {expected_line}, got line {line}"
+    );
+}
+
 #[test]
 fn col_of_basic() {
     assert_eq!(col_of("main: map(negate)", 0, "map"), 6);
@@ -1186,11 +1205,10 @@ fn goto_definition_bracket_block_binding_jumps_to_pair() {
     s.open(src);
     s.wait_for_pipeline();
     // 'a' is the binding name in "⟦ a: 1 ⟧" on line 1
-    let def = s.goto_definition(1, col_of(src, 1, "a:"));
-    assert!(
-        def.is_some(),
-        "go-to-def on bracket block binding should return a result"
-    );
+    let def = s
+        .goto_definition(1, col_of(src, 1, "a:"))
+        .expect("go-to-def on bracket block binding should return a result");
+    assert_goto_def_line(&def, 0);
 }
 
 // ── Go-to-definition: prelude names ──────────────────────────────────────────
@@ -1518,11 +1536,10 @@ fn alias_goto_definition_from_type_string() {
     );
     s.open(src);
 
-    let result = s.goto_definition_for_type_alias(2, col_of(src, 2, "Point"));
-    assert!(
-        result.is_some(),
-        "should find definition of Point from type: string"
-    );
+    let result = s
+        .goto_definition_for_type_alias(2, col_of(src, 2, "Point"))
+        .expect("should find definition of Point from type: string");
+    assert_goto_def_line(&result, 1);
 }
 
 /// Hover on an alias reference inside a `type:` string shows the alias name and
@@ -1575,11 +1592,10 @@ fn alias_goto_definition_utf16_column() {
     );
     s.open(src);
 
-    let result = s.goto_definition_for_type_alias(2, col_of(src, 2, "MyType"));
-    assert!(
-        result.is_some(),
-        "should find definition of MyType through a Unicode → in the type string"
-    );
+    let result = s
+        .goto_definition_for_type_alias(2, col_of(src, 2, "MyType"))
+        .expect("should find definition of MyType through a Unicode → in the type string");
+    assert_goto_def_line(&result, 1);
 }
 
 /// Rename a type alias: updates both the type-def: value and the type: reference.
