@@ -1,0 +1,37 @@
+#!/usr/bin/env eu
+# Demand annotation smoke test (W9)
+#
+# Tests that bindings with different usage cardinalities produce correct
+# results.  Single-use bindings may compile to Values (skip update frame)
+# while multi-use bindings compile to Thunks (memoised).  Both must give
+# the same answer as if all were Thunks.
+
+# Single-use binding: used exactly once — may become Value
+single-use-ok: { x: 42  result: x }.result = 42
+
+# Multi-use binding: used more than once — should remain Thunk (memoised)
+multi-use-ok: { x: 7 + 3  result: x + x }.result = 20
+
+# Unused binding: should be eliminated but not cause errors
+unused-ok: { x: 99  y: 100  result: x }.result = 99
+
+# Nested single-use: inner binding used once
+nested-ok: { x: 1  y: x + 2  result: y }.result = 3
+
+# Chain of single-use bindings
+chain-ok: { a: 10  b: a + 1  c: b + 1  d: c + 1  result: d }.result = 13
+
+# Multi-use with computation (memoisation is optimisation, not semantic)
+multi-chain-ok: { x: 5 * 3  result: [x, x, x] }.result = [15, 15, 15]
+
+# Mixed: some bindings single-use, some multi-use
+mixed-ok: { a: 1  b: 2  c: a + b  d: c + c  result: d }.result = 6
+
+RESULT: if(
+  and(single-use-ok,
+  and(multi-use-ok,
+  and(unused-ok,
+  and(nested-ok,
+  and(chain-ok,
+  and(multi-chain-ok, mixed-ok)))))),
+  :PASS, :FAIL)
