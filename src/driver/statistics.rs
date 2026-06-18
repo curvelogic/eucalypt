@@ -9,7 +9,12 @@ pub struct Timings {
     timings: IndexMap<String, Duration>,
 }
 
-pub(crate) type TimingPartition = (Vec<(String, Duration)>, Vec<(String, Duration)>);
+/// Pipeline, IO, and VM timing groups.
+pub(crate) struct TimingPartition {
+    pub pipeline: Vec<(String, Duration)>,
+    pub io: Vec<(String, Duration)>,
+    pub vm: Vec<(String, Duration)>,
+}
 
 impl Timings {
     pub fn record<T: AsRef<str>>(&mut self, name: T, elapsed: Duration) {
@@ -20,20 +25,25 @@ impl Timings {
         self.timings.extend(other.timings);
     }
 
-    /// Partition timings into pipeline entries and VM entries.
+    /// Partition timings into pipeline, IO, and VM entries.
     ///
     /// VM entries have keys starting with `"VM-"`.
+    /// IO entries have the key `"io-run"`.
+    /// Everything else is a pipeline phase.
     pub(crate) fn partition(&self) -> TimingPartition {
         let mut pipeline = Vec::new();
+        let mut io = Vec::new();
         let mut vm = Vec::new();
         for (k, v) in &self.timings {
             if k.starts_with("VM-") {
                 vm.push((k.clone(), *v));
+            } else if k == "io-run" {
+                io.push((k.clone(), *v));
             } else {
                 pipeline.push((k.clone(), *v));
             }
         }
-        (pipeline, vm)
+        TimingPartition { pipeline, io, vm }
     }
 }
 
@@ -211,10 +221,10 @@ impl Statistics {
 
 impl Display for Statistics {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (pipeline, vm) = self.timings.partition();
+        let parts = self.timings.partition();
 
         // Summary bar
-        let summary = render_summary_bar(&pipeline, &vm);
+        let summary = render_summary_bar(&parts.pipeline, &parts.io, &parts.vm);
         if !summary.is_empty() {
             writeln!(f, "{summary}")?;
             writeln!(f)?;
@@ -288,16 +298,23 @@ impl Display for Statistics {
         writeln!(f)?;
 
         // Pipeline timings
-        if !pipeline.is_empty() {
+        if !parts.pipeline.is_empty() {
             writeln!(f, "{}", section_header("Pipeline"))?;
-            write!(f, "{}", render_timing_section(&pipeline))?;
+            write!(f, "{}", render_timing_section(&parts.pipeline))?;
+            writeln!(f)?;
+        }
+
+        // IO timings
+        if !parts.io.is_empty() {
+            writeln!(f, "{}", section_header("IO"))?;
+            write!(f, "{}", render_timing_section(&parts.io))?;
             writeln!(f)?;
         }
 
         // VM timings
-        if !vm.is_empty() {
+        if !parts.vm.is_empty() {
             writeln!(f, "{}", section_header("VM"))?;
-            write!(f, "{}", render_timing_section(&vm))?;
+            write!(f, "{}", render_timing_section(&parts.vm))?;
         }
 
         Ok(())
@@ -344,12 +361,19 @@ pub(crate) fn render_bar(value: f64, max_value: f64) -> String {
 /// Render a top-level summary bar showing where total time was spent.
 pub(crate) fn render_summary_bar(
     pipeline: &[(String, Duration)],
+    io: &[(String, Duration)],
     vm: &[(String, Duration)],
 ) -> String {
     let mut fractions: Vec<(String, f64)> = Vec::new();
 
     for (name, dur) in pipeline {
         fractions.push((name.clone(), dur.as_secs_f64()));
+    }
+
+    // Add IO as a single "IO" entry
+    let io_total: f64 = io.iter().map(|(_, v)| v.as_secs_f64()).sum();
+    if io_total > 0.0 {
+        fractions.push(("IO".to_string(), io_total));
     }
 
     // Add VM as a single entry (exclude the VM-Total synthetic key)
@@ -435,6 +459,13 @@ pub(crate) fn render_timing_section(entries: &[(String, Duration)]) -> String {
         .map(|(_, v)| v.as_secs_f64())
         .fold(0.0_f64, f64::max);
 
+    // Pre-compute the width of the widest formatted time so bars align.
+    let time_width = entries
+        .iter()
+        .map(|(_, v)| format!("{:.6}", v.as_secs_f64()).len())
+        .max()
+        .unwrap_or(8);
+
     let mut total = Duration::ZERO;
     let mut out = String::new();
 
@@ -447,20 +478,23 @@ pub(crate) fn render_timing_section(entries: &[(String, Duration)]) -> String {
             format!("  {bar}")
         };
         out.push_str(&format!(
-            "{:width$}  :    {:.6}s{}\n",
+            "{:name_w$}  :  {:>time_w$.6}s{}\n",
             display_names[i],
             dur.as_secs_f64(),
             bar_suffix,
-            width = display_width,
+            name_w = display_width,
+            time_w = time_width,
         ));
     }
 
-    // Subtotal right-aligned
+    // Subtotal right-aligned to match the timing column
+    let total_str = format!("{:.6}", total.as_secs_f64());
     out.push_str(&format!(
-        "{:>width$} {:.6}s\n",
+        "{:>name_w$}  {:>time_w$}s\n",
         "Total:",
-        total.as_secs_f64(),
-        width = display_width + 8,
+        total_str,
+        name_w = display_width + 2,
+        time_w = time_width,
     ));
 
     out
@@ -519,21 +553,21 @@ mod tests {
     #[test]
     fn summary_bar_single_entry() {
         let pipeline = vec![("parse".to_string(), Duration::from_millis(100))];
-        let bar = render_summary_bar(&pipeline, &[]);
+        let bar = render_summary_bar(&pipeline, &[], &[]);
         assert!(bar.contains("Total: 0.100s"));
         assert!(bar.contains("parse 100%"));
     }
 
     #[test]
     fn summary_bar_empty() {
-        assert_eq!(render_summary_bar(&[], &[]), "");
+        assert_eq!(render_summary_bar(&[], &[], &[]), "");
     }
 
     #[test]
     fn summary_bar_with_vm() {
         let pipeline = vec![("parse".to_string(), Duration::from_millis(80))];
         let vm = vec![("VM-Mutator".to_string(), Duration::from_millis(20))];
-        let bar = render_summary_bar(&pipeline, &vm);
+        let bar = render_summary_bar(&pipeline, &[], &vm);
         assert!(bar.contains("parse 80%"));
         assert!(bar.contains("VM 20%"));
     }
