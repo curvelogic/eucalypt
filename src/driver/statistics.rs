@@ -230,8 +230,12 @@ impl Display for Statistics {
             writeln!(f)?;
         }
 
+        // Compute global column widths early so all headers share the same width
+        let widths = timing_column_widths(&[&parts.pipeline, &parts.io, &parts.vm]);
+        let header_width = widths.name + 5 + widths.time + 1 + 2 + BAR_WIDTH;
+
         // Machine counters
-        writeln!(f, "{}", section_header("Machine"))?;
+        writeln!(f, "{}", section_header("Machine", header_width))?;
         writeln!(
             f,
             "Ticks          : {:>14}",
@@ -250,7 +254,7 @@ impl Display for Statistics {
         writeln!(f)?;
 
         // Heap counters
-        writeln!(f, "{}", section_header("Heap"))?;
+        writeln!(f, "{}", section_header("Heap", header_width))?;
         writeln!(
             f,
             "Blocks Allocated  : {:>10}",
@@ -279,7 +283,7 @@ impl Display for Statistics {
         writeln!(f)?;
 
         // GC counters
-        writeln!(f, "{}", section_header("GC"))?;
+        writeln!(f, "{}", section_header("GC", header_width))?;
         writeln!(
             f,
             "Collections    : {:>14}",
@@ -297,26 +301,23 @@ impl Display for Statistics {
         )?;
         writeln!(f)?;
 
-        // Compute global column widths so entries and totals align across all sections
-        let widths = timing_column_widths(&[&parts.pipeline, &parts.io, &parts.vm]);
-
         // Pipeline timings
         if !parts.pipeline.is_empty() {
-            writeln!(f, "{}", section_header("Pipeline"))?;
+            writeln!(f, "{}", section_header("Pipeline", header_width))?;
             write!(f, "{}", render_timing_section(&parts.pipeline, &widths))?;
             writeln!(f)?;
         }
 
         // IO timings
         if !parts.io.is_empty() {
-            writeln!(f, "{}", section_header("IO"))?;
+            writeln!(f, "{}", section_header("IO", header_width))?;
             write!(f, "{}", render_timing_section(&parts.io, &widths))?;
             writeln!(f)?;
         }
 
         // VM timings
         if !parts.vm.is_empty() {
-            writeln!(f, "{}", section_header("VM"))?;
+            writeln!(f, "{}", section_header("VM", header_width))?;
             write!(f, "{}", render_timing_section(&parts.vm, &widths))?;
         }
 
@@ -436,10 +437,10 @@ pub(crate) fn render_summary_bar(
     format!("Total: {:.3}s  [{}] {}", total, bar, labels.join(" │ "))
 }
 
-/// Render a section header line.
-pub(crate) fn section_header(title: &str) -> String {
+/// Render a section header line extending to `width` characters.
+pub(crate) fn section_header(title: &str, width: usize) -> String {
     let prefix = format!("── {title} ");
-    let padding = 54_usize.saturating_sub(prefix.len());
+    let padding = width.saturating_sub(prefix.len());
     format!("{}{}", prefix, "─".repeat(padding))
 }
 
@@ -607,7 +608,7 @@ mod tests {
 
     #[test]
     fn section_header_format() {
-        let h = section_header("Pipeline");
+        let h = section_header("Pipeline", 60);
         assert!(h.starts_with("── Pipeline "));
         assert!(h.contains("─────"));
     }
