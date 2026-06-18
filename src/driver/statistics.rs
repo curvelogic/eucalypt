@@ -440,7 +440,7 @@ pub(crate) fn render_summary_bar(
 /// Render a section header line extending to `width` characters.
 pub(crate) fn section_header(title: &str, width: usize) -> String {
     let prefix = format!("── {title} ");
-    let padding = width.saturating_sub(prefix.len());
+    let padding = width.saturating_sub(prefix.chars().count());
     format!("{}{}", prefix, "─".repeat(padding))
 }
 
