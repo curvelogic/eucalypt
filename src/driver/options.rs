@@ -90,6 +90,10 @@ pub struct EucalyptCli {
     #[arg(long = "type-check")]
     pub type_check: bool,
 
+    /// Limit managed heap to SIZE MiB (default: 32768, i.e. 32 GiB; use 0 for unbounded)
+    #[arg(long = "heap-limit-mib", default_value = "32768")]
+    pub heap_limit_mib: usize,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 
@@ -637,14 +641,15 @@ impl From<EucalyptCli> for EucalyptOptions {
                 _ => (false, false, DocFormat::default(), false, None),
             };
 
-        // Extract heap limit and no-dce from Run command
-        // 0 means unbounded; any other value is the limit in MiB
-        let heap_limit_mib = match &cli.command {
-            Some(Commands::Run(run_args)) => match run_args.heap_limit_mib {
-                0 => None,
-                n => Some(n),
-            },
-            _ => None,
+        // Extract heap limit: prefer the Run subcommand value when present,
+        // otherwise use the top-level CLI flag.  0 means unbounded.
+        let heap_limit_raw = match &cli.command {
+            Some(Commands::Run(run_args)) => run_args.heap_limit_mib,
+            _ => cli.heap_limit_mib,
+        };
+        let heap_limit_mib = match heap_limit_raw {
+            0 => None,
+            n => Some(n),
         };
 
         let no_dce = match &cli.command {
