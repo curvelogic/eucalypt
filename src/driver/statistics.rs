@@ -502,13 +502,15 @@ pub(crate) fn render_timing_section(
         ));
     }
 
-    // Subtotal right-aligned to match the timing column
-    let total_str = format!("{:.6}", total.as_secs_f64());
+    // Subtotal right-aligned to match the timing column.
+    // Entry format is: "{name:name_w}  :  {time:>time_w.6}s"
+    // so total needs:  "{label:>name_w+4}  {:>time_w.6}s"
+    //                   (name_w + "  : " = name_w + 4 to reach the time column)
     out.push_str(&format!(
-        "{:>name_w$}  {:>time_w$}s\n",
+        "{:>label_w$}  {:>time_w$.6}s\n",
         "Total:",
-        total_str,
-        name_w = display_width + 2,
+        total.as_secs_f64(),
+        label_w = display_width + 4,
         time_w = time_width,
     ));
 
