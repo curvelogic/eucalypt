@@ -1354,3 +1354,147 @@ impl EucalyptOptions {
         explanation
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_cli(args: &[&str]) -> EucalyptCli {
+        let mut full = vec!["eu"];
+        full.extend_from_slice(args);
+        EucalyptCli::try_parse_from(full).expect("should parse")
+    }
+
+    fn parse_opts(args: &[&str]) -> EucalyptOptions {
+        let cli = parse_cli(args);
+        EucalyptOptions::from(cli)
+    }
+
+    #[test]
+    fn run_with_file() {
+        let cli = parse_cli(&["run", "file.eu"]);
+        assert!(matches!(cli.command, Some(Commands::Run(_))));
+        if let Some(Commands::Run(args)) = cli.command {
+            assert_eq!(args.files, vec!["file.eu"]);
+        }
+    }
+
+    #[test]
+    fn run_with_eval() {
+        let cli = parse_cli(&["run", "-e", "1+1"]);
+        if let Some(Commands::Run(args)) = cli.command {
+            assert_eq!(args.evaluate.as_deref(), Some("1+1"));
+        }
+    }
+
+    #[test]
+    fn run_heap_limit_default() {
+        let opts = parse_opts(&["run", "file.eu"]);
+        assert_eq!(opts.stg_settings.heap_limit_mib, Some(32768));
+    }
+
+    #[test]
+    fn run_heap_limit_zero_is_unbounded() {
+        let opts = parse_opts(&["run", "--heap-limit-mib=0", "file.eu"]);
+        assert_eq!(opts.stg_settings.heap_limit_mib, None);
+    }
+
+    #[test]
+    fn run_heap_limit_custom() {
+        let opts = parse_opts(&["run", "--heap-limit-mib=100", "file.eu"]);
+        assert_eq!(opts.stg_settings.heap_limit_mib, Some(100));
+    }
+
+    #[test]
+    fn run_statistics_flag() {
+        let opts = parse_opts(&["run", "-S", "file.eu"]);
+        assert!(opts.statistics);
+    }
+
+    #[test]
+    fn run_debug_flag() {
+        let opts = parse_opts(&["run", "-d", "file.eu"]);
+        assert!(opts.debug);
+    }
+
+    #[test]
+    fn run_no_prelude_flag() {
+        let opts = parse_opts(&["run", "-Q", "file.eu"]);
+        assert!(opts.no_prelude);
+    }
+
+    #[test]
+    fn run_allow_io_flag() {
+        let opts = parse_opts(&["run", "-I", "file.eu"]);
+        assert!(opts.allow_io);
+    }
+
+    #[test]
+    fn run_multiple_flags() {
+        let opts = parse_opts(&["run", "-d", "-S", "--heap-limit-mib=100", "file.eu"]);
+        assert!(opts.debug);
+        assert!(opts.statistics);
+        assert_eq!(opts.stg_settings.heap_limit_mib, Some(100));
+    }
+
+    #[test]
+    fn run_export_json_shortcut() {
+        let opts = parse_opts(&["run", "-j", "file.eu"]);
+        assert!(opts.json);
+    }
+
+    #[test]
+    fn run_seed() {
+        let opts = parse_opts(&["run", "--seed=42", "file.eu"]);
+        assert_eq!(opts.seed, Some(42));
+    }
+
+    #[test]
+    fn run_no_dce() {
+        let opts = parse_opts(&["run", "--no-dce", "file.eu"]);
+        assert!(opts.no_dce);
+    }
+
+    #[test]
+    fn test_subcommand() {
+        let cli = parse_cli(&["test", "file.eu"]);
+        assert!(matches!(cli.command, Some(Commands::Test(_))));
+    }
+
+    #[test]
+    fn test_allow_io() {
+        let opts = parse_opts(&["test", "-I", "file.eu"]);
+        assert!(opts.allow_io);
+    }
+
+    #[test]
+    fn test_mode_flags() {
+        let opts = parse_opts(&["test", "file.eu"]);
+        assert!(opts.test);
+    }
+
+    #[test]
+    fn dump_stg() {
+        let opts = parse_opts(&["dump", "stg", "file.eu"]);
+        assert!(opts.dump_stg);
+    }
+
+    #[test]
+    fn check_strict() {
+        let opts = parse_opts(&["check", "--strict", "file.eu"]);
+        assert!(opts.check);
+        assert!(opts.check_strict);
+    }
+
+    #[test]
+    fn lsp_mode() {
+        let opts = parse_opts(&["lsp"]);
+        assert!(opts.lsp);
+    }
+
+    #[test]
+    fn options_from_run_has_correct_inputs() {
+        let opts = parse_opts(&["run", "file.eu"]);
+        assert_eq!(opts.explicit_inputs.len(), 1);
+    }
+}
