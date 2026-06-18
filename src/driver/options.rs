@@ -1472,4 +1472,40 @@ mod tests {
         let opts = parse_opts(&["run", "file.eu"]);
         assert_eq!(opts.explicit_inputs.len(), 1);
     }
+
+    #[test]
+    fn test_heap_limit_default() {
+        let opts = parse_opts(&["test", "file.eu"]);
+        assert_eq!(opts.stg_settings.heap_limit_mib, Some(32768));
+    }
+
+    #[test]
+    fn test_heap_limit_zero_is_unbounded() {
+        let opts = parse_opts(&["test", "--heap-limit-mib=0", "file.eu"]);
+        assert_eq!(opts.stg_settings.heap_limit_mib, None);
+    }
+
+    #[test]
+    fn test_debug_flag() {
+        let opts = parse_opts(&["test", "-d", "file.eu"]);
+        assert!(opts.debug);
+    }
+
+    #[test]
+    fn test_statistics_flag() {
+        let opts = parse_opts(&["test", "-S", "file.eu"]);
+        assert!(opts.statistics);
+    }
+
+    #[test]
+    fn test_no_prelude_flag() {
+        let opts = parse_opts(&["test", "-Q", "file.eu"]);
+        assert!(opts.no_prelude);
+    }
+
+    #[test]
+    fn test_lib_path_flag() {
+        let opts = parse_opts(&["test", "-L", "/some/path", "file.eu"]);
+        assert_eq!(opts.lib_path, vec![std::path::PathBuf::from("/some/path")]);
+    }
 }
