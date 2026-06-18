@@ -184,8 +184,12 @@ fn type_to_json_schema(ty: &Type) -> Option<String> {
         Type::DateTime => Some(r#"{"type": "string", "format": "date-time"}"#.to_string()),
         Type::Any | Type::Top => Some(r#"{}"#.to_string()),
         Type::Never => Some(r#"{"not": {}}"#.to_string()),
-        Type::LiteralString(s) => Some(format!(r#"{{"type": "string", "const": {}}}"#, json_str(s))),
-        Type::LiteralSymbol(s) => Some(format!(r#"{{"type": "string", "const": {}}}"#, json_str(s))),
+        Type::LiteralString(s) => {
+            Some(format!(r#"{{"type": "string", "const": {}}}"#, json_str(s)))
+        }
+        Type::LiteralSymbol(s) => {
+            Some(format!(r#"{{"type": "string", "const": {}}}"#, json_str(s)))
+        }
 
         // [T] is represented as App(Con("List"), T)
         Type::App(f, inner) if matches!(f.as_ref(), Type::Con(c) if c == "List") => {
@@ -239,8 +243,7 @@ fn type_to_json_schema(ty: &Type) -> Option<String> {
 
         // Union → oneOf
         Type::Union(variants) => {
-            let schemas: Vec<String> =
-                variants.iter().filter_map(type_to_json_schema).collect();
+            let schemas: Vec<String> = variants.iter().filter_map(type_to_json_schema).collect();
             if schemas.is_empty() {
                 return None;
             }
@@ -324,11 +327,20 @@ mod tests {
 
     #[test]
     fn primitives() {
-        assert_eq!(schema("string"), Some(serde_json::json!({"type": "string"})));
-        assert_eq!(schema("number"), Some(serde_json::json!({"type": "number"})));
+        assert_eq!(
+            schema("string"),
+            Some(serde_json::json!({"type": "string"}))
+        );
+        assert_eq!(
+            schema("number"),
+            Some(serde_json::json!({"type": "number"}))
+        );
         assert_eq!(schema("bool"), Some(serde_json::json!({"type": "boolean"})));
         assert_eq!(schema("null"), Some(serde_json::json!({"type": "null"})));
-        assert_eq!(schema("symbol"), Some(serde_json::json!({"type": "string"})));
+        assert_eq!(
+            schema("symbol"),
+            Some(serde_json::json!({"type": "string"}))
+        );
     }
 
     #[test]
