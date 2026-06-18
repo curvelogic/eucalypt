@@ -1827,10 +1827,14 @@ impl<'a> Machine<'a> {
             self.step()?;
         }
 
-        // Skip the final collection when the heap is unbounded — there is
-        // no memory pressure and the process is about to exit, so the
-        // mark/sweep work is pure overhead.
-        if self.heap().is_bounded() {
+        // Only collect at the end of a run() call if the heap is under
+        // memory pressure.  run() is called multiple times for IO programs
+        // (once per IO step) and also once for rendering; an unconditional
+        // collection here was the dominant source of GC overhead since it
+        // ran a full mark/sweep on every call even when no reclamation was
+        // needed.  The periodic in-loop check (every 500 steps) still
+        // triggers collection when the policy demands it.
+        if self.heap().policy_requires_collection() {
             self.collect_with_diagnostics();
         }
 
