@@ -56,12 +56,9 @@ pub enum DocFormat {
     Json,
 }
 
-/// Eucalypt - A functional language for structured data
-#[derive(Parser, Debug, Clone)]
-#[command(name = "eu")]
-#[command(about = "A functional language for structured data")]
-#[command(version)]
-pub struct EucalyptCli {
+/// Flags shared between `run` and `test` subcommands.
+#[derive(Args, Debug, Clone)]
+pub struct CommonArgs {
     /// Add directory to lib path
     #[arg(short = 'L', long = "lib-path", action = clap::ArgAction::Append)]
     pub lib_path: Vec<PathBuf>,
@@ -69,10 +66,6 @@ pub struct EucalyptCli {
     /// Don't load the standard prelude
     #[arg(short = 'Q', long = "no-prelude")]
     pub no_prelude: bool,
-
-    /// Force source-prelude pipeline even when pre-compiled blob is available
-    #[arg(long = "source-prelude")]
-    pub source_prelude: bool,
 
     /// Turn on debug features
     #[arg(short = 'd', long = "debug")]
@@ -93,6 +86,27 @@ pub struct EucalyptCli {
     /// Limit managed heap to SIZE MiB (default: 32768, i.e. 32 GiB; use 0 for unbounded)
     #[arg(long = "heap-limit-mib", default_value = "32768")]
     pub heap_limit_mib: usize,
+}
+
+impl CommonArgs {
+    /// Convert `heap_limit_mib` (0 = unbounded) to `Option<usize>`.
+    fn heap_limit(&self) -> Option<usize> {
+        match self.heap_limit_mib {
+            0 => None,
+            n => Some(n),
+        }
+    }
+}
+
+/// Eucalypt - A functional language for structured data
+#[derive(Parser, Debug, Clone)]
+#[command(name = "eu")]
+#[command(about = "A functional language for structured data")]
+#[command(version)]
+pub struct EucalyptCli {
+    /// Force source-prelude pipeline even when pre-compiled blob is available
+    #[arg(long = "source-prelude")]
+    pub source_prelude: bool,
 
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -162,6 +176,9 @@ pub struct DocCliArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct RunArgs {
+    #[command(flatten)]
+    pub common: CommonArgs,
+
     /// Target to run (identified by target metadata in eucalypt source)
     #[arg(short = 't', long = "target")]
     pub target: Option<String>,
@@ -190,30 +207,6 @@ pub struct RunArgs {
     #[arg(short = 'N', long = "name-inputs")]
     pub name_inputs: bool,
 
-    /// Add directory to lib path
-    #[arg(short = 'L', long = "lib-path", action = clap::ArgAction::Append)]
-    pub lib_path: Vec<PathBuf>,
-
-    /// Don't load the standard prelude
-    #[arg(short = 'Q', long = "no-prelude")]
-    pub no_prelude: bool,
-
-    /// Turn on debug features
-    #[arg(short = 'd', long = "debug")]
-    pub debug: bool,
-
-    /// Print metrics to stderr before exiting
-    #[arg(short = 'S', long = "statistics")]
-    pub statistics: bool,
-
-    /// Write statistics as JSON to a file
-    #[arg(long = "statistics-file")]
-    pub statistics_file: Option<PathBuf>,
-
-    /// Run the type checker before evaluation, reporting warnings to stderr
-    #[arg(long = "type-check")]
-    pub type_check: bool,
-
     /// With --type-check: treat type warnings as errors and abort before evaluation
     #[arg(long = "strict")]
     pub strict: bool,
@@ -230,10 +223,6 @@ pub struct RunArgs {
     #[arg(long = "error-format", default_value = "human")]
     pub error_format: ErrorFormat,
 
-    /// Limit managed heap to SIZE MiB (default: 32768, i.e. 32 GiB; use 0 for unbounded)
-    #[arg(long = "heap-limit-mib", default_value = "32768")]
-    pub heap_limit_mib: usize,
-
     /// Allow IO monad operations (shell execution)
     #[arg(short = 'I', long = "allow-io")]
     pub allow_io: bool,
@@ -249,6 +238,9 @@ pub struct RunArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct TestArgs {
+    #[command(flatten)]
+    pub common: CommonArgs,
+
     /// Target to test (identified by target metadata in eucalypt source)
     #[arg(short = 't', long = "target")]
     pub target: Option<String>,
@@ -448,8 +440,29 @@ pub struct EucalyptOptions {
     pub strict: bool,
 }
 
+/// Extract `CommonArgs` from whatever subcommand is active, falling
+/// back to defaults for subcommands that don't carry them.
+fn common_args(command: &Option<Commands>) -> CommonArgs {
+    match command {
+        Some(Commands::Run(args)) => args.common.clone(),
+        Some(Commands::Test(args)) => args.common.clone(),
+        _ => CommonArgs {
+            lib_path: vec![],
+            no_prelude: false,
+            debug: false,
+            statistics: false,
+            statistics_file: None,
+            type_check: false,
+            heap_limit_mib: 32768,
+        },
+    }
+}
+
 impl From<EucalyptCli> for EucalyptOptions {
     fn from(cli: EucalyptCli) -> Self {
+        // Extract common args once
+        let common = common_args(&cli.command);
+
         // Convert files to inputs
         let mut explicit_inputs = Vec::new();
         let files = match &cli.command {
@@ -471,7 +484,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             }
         }
 
-        // Extract command-specific options and override global settings
+        // Extract command-specific options
         let (
             target,
             output,
@@ -483,11 +496,6 @@ impl From<EucalyptCli> for EucalyptOptions {
             quote_embed,
             quote_debug,
             open_browser,
-            cmd_lib_path,
-            cmd_no_prelude,
-            cmd_debug,
-            cmd_statistics,
-            cmd_statistics_file,
         ) = match &cli.command {
             Some(Commands::Run(args)) => (
                 args.target.clone(),
@@ -500,11 +508,6 @@ impl From<EucalyptCli> for EucalyptOptions {
                 false,
                 false,
                 false,
-                Some(args.lib_path.clone()),
-                Some(args.no_prelude),
-                Some(args.debug),
-                Some(args.statistics),
-                args.statistics_file.clone(),
             ),
             Some(Commands::Test(args)) => (
                 args.target.clone(),
@@ -517,11 +520,6 @@ impl From<EucalyptCli> for EucalyptOptions {
                 false,
                 false,
                 args.open_browser,
-                None,
-                None,
-                None,
-                None,
-                None,
             ),
             Some(Commands::Dump(args)) => (
                 args.target.clone(),
@@ -534,20 +532,8 @@ impl From<EucalyptCli> for EucalyptOptions {
                 args.quote_embed,
                 args.quote_debug,
                 false,
-                None,
-                None,
-                None,
-                None,
-                None,
             ),
-            Some(Commands::ListTargets(_)) => (
-                None, None, None, None, false, None, false, false, false, false, None, None, None,
-                None, None,
-            ),
-            _ => (
-                None, None, None, None, false, None, false, false, false, false, None, None, None,
-                None, None,
-            ),
+            _ => (None, None, None, None, false, None, false, false, false, false),
         };
 
         // Set command type flags for backward compatibility
@@ -624,7 +610,7 @@ impl From<EucalyptCli> for EucalyptOptions {
         // Extract check mode
         let (check, check_strict) = match &cli.command {
             Some(Commands::Check(args)) => (true, args.strict),
-            Some(Commands::Run(run_args)) => (false, run_args.strict),
+            Some(Commands::Run(args)) => (false, args.strict),
             _ => (false, false),
         };
 
@@ -641,31 +627,23 @@ impl From<EucalyptCli> for EucalyptOptions {
                 _ => (false, false, DocFormat::default(), false, None),
             };
 
-        // Extract heap limit: prefer the Run subcommand value when present,
-        // otherwise use the top-level CLI flag.  0 means unbounded.
-        let heap_limit_raw = match &cli.command {
-            Some(Commands::Run(run_args)) => run_args.heap_limit_mib,
-            _ => cli.heap_limit_mib,
-        };
-        let heap_limit_mib = match heap_limit_raw {
-            0 => None,
-            n => Some(n),
-        };
+        // Heap limit from common args (0 = unbounded)
+        let heap_limit_mib = common.heap_limit();
 
         let no_dce = match &cli.command {
-            Some(Commands::Run(run_args)) => run_args.no_dce,
+            Some(Commands::Run(args)) => args.no_dce,
             _ => false,
         };
 
         // Extract seed from Run command
         let seed = match &cli.command {
-            Some(Commands::Run(run_args)) => run_args.seed,
+            Some(Commands::Run(args)) => args.seed,
             _ => None,
         };
 
         // Extract error format from Run command
         let error_format = match &cli.command {
-            Some(Commands::Run(run_args)) => run_args.error_format.clone(),
+            Some(Commands::Run(args)) => args.error_format.clone(),
             _ => ErrorFormat::default(),
         };
 
@@ -683,11 +661,11 @@ impl From<EucalyptCli> for EucalyptOptions {
         };
 
         EucalyptOptions {
-            lib_path: cmd_lib_path.unwrap_or(cli.lib_path),
-            no_prelude: cmd_no_prelude.unwrap_or(cli.no_prelude),
-            debug: cmd_debug.unwrap_or(cli.debug),
-            statistics: cmd_statistics.unwrap_or(cli.statistics),
-            statistics_file: cmd_statistics_file.or(cli.statistics_file),
+            lib_path: common.lib_path,
+            no_prelude: common.no_prelude,
+            debug: common.debug,
+            statistics: common.statistics,
+            statistics_file: common.statistics_file,
             target,
             output,
             evaluate,
@@ -718,10 +696,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             doc_format,
             doc_coverage_check,
             doc_output_dir,
-            type_check: match &cli.command {
-                Some(Commands::Run(run_args)) => run_args.type_check || cli.type_check,
-                _ => cli.type_check,
-            },
+            type_check: common.type_check,
             format,
             format_width,
             format_write,
