@@ -1827,7 +1827,12 @@ impl<'a> Machine<'a> {
             self.step()?;
         }
 
-        self.collect_with_diagnostics();
+        // Skip the final collection when the heap is unbounded — there is
+        // no memory pressure and the process is about to exit, so the
+        // mark/sweep work is pure overhead.
+        if self.heap().is_bounded() {
+            self.collect_with_diagnostics();
+        }
 
         self.core.clock.stop();
 
