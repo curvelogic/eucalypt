@@ -1768,13 +1768,6 @@ impl Heap {
         heap_state.finalise_evacuation();
     }
 
-    /// Whether this heap has a finite block limit (i.e. was created with
-    /// `with_limit`).  An unbounded heap never requires policy-driven
-    /// collection.
-    pub fn is_bounded(&self) -> bool {
-        self.limit.is_some()
-    }
-
     pub fn policy_requires_collection(&self) -> bool {
         if let Some(limit) = self.limit {
             let stats = self.stats();

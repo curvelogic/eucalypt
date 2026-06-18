@@ -7,6 +7,9 @@ use eucalypt::driver::lsp::testing::LspTestSession;
 
 /// Compute the UTF-16 column offset of `needle` on the given
 /// 0-based `line` of `source`.  Panics if `needle` is not found.
+///
+/// Returns the column of the first occurrence; if `needle` appears
+/// more than once on the line, use a longer needle to disambiguate.
 fn col_of(source: &str, line: u32, needle: &str) -> u32 {
     let line_str = source
         .lines()
