@@ -10,10 +10,10 @@ pub struct Timings {
 }
 
 /// Pipeline, IO, and VM timing groups.
-pub(crate) struct TimingPartition {
-    pub pipeline: Vec<(String, Duration)>,
-    pub io: Vec<(String, Duration)>,
-    pub vm: Vec<(String, Duration)>,
+struct TimingPartition {
+    pipeline: Vec<(String, Duration)>,
+    io: Vec<(String, Duration)>,
+    vm: Vec<(String, Duration)>,
 }
 
 impl Timings {
@@ -30,7 +30,7 @@ impl Timings {
     /// VM entries have keys starting with `"VM-"`.
     /// IO entries have the key `"io-run"`.
     /// Everything else is a pipeline phase.
-    pub(crate) fn partition(&self) -> TimingPartition {
+    fn partition(&self) -> TimingPartition {
         let mut pipeline = Vec::new();
         let mut io = Vec::new();
         let mut vm = Vec::new();
@@ -44,17 +44,6 @@ impl Timings {
             }
         }
         TimingPartition { pipeline, io, vm }
-    }
-}
-
-impl Display for Timings {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let width = self.timings.keys().map(|k| k.len()).max().unwrap_or(0) + 1;
-
-        for (k, v) in &self.timings {
-            writeln!(f, "{:width$}: {:14.9}s", k, v.as_secs_f64(), width = width)?;
-        }
-        Ok(())
     }
 }
 
@@ -326,7 +315,7 @@ impl Display for Statistics {
 }
 
 /// Format an integer with comma thousands separators.
-pub(crate) fn fmt_thousands(n: u64) -> String {
+fn fmt_thousands(n: u64) -> String {
     let s = n.to_string();
     let mut result = String::with_capacity(s.len() + s.len() / 3);
     for (i, c) in s.chars().enumerate() {
@@ -339,16 +328,16 @@ pub(crate) fn fmt_thousands(n: u64) -> String {
 }
 
 /// Format a usize with comma thousands separators.
-pub(crate) fn fmt_thousands_usize(n: usize) -> String {
+fn fmt_thousands_usize(n: usize) -> String {
     fmt_thousands(n as u64)
 }
 
-pub(crate) const BAR_WIDTH: usize = 30;
-pub(crate) const BAR_FILLED: char = '█';
-pub(crate) const BAR_EMPTY: char = '░';
+const BAR_WIDTH: usize = 30;
+const BAR_FILLED: char = '█';
+const BAR_EMPTY: char = '░';
 
 /// Render a bar of `BAR_WIDTH` characters proportional to `value / max_value`.
-pub(crate) fn render_bar(value: f64, max_value: f64) -> String {
+fn render_bar(value: f64, max_value: f64) -> String {
     if max_value <= 0.0 {
         return String::new();
     }
@@ -363,7 +352,7 @@ pub(crate) fn render_bar(value: f64, max_value: f64) -> String {
 }
 
 /// Render a top-level summary bar showing where total time was spent.
-pub(crate) fn render_summary_bar(
+fn render_summary_bar(
     pipeline: &[(String, Duration)],
     io: &[(String, Duration)],
     vm: &[(String, Duration)],
@@ -392,7 +381,7 @@ pub(crate) fn render_summary_bar(
 
     let total: f64 = fractions.iter().map(|(_, s)| s).sum();
     if total <= 0.0 {
-        return String::new();
+        return "Total: 0.000s".to_string();
     }
 
     // Sort descending, collapse entries < 5% into "other"
@@ -438,21 +427,21 @@ pub(crate) fn render_summary_bar(
 }
 
 /// Render a section header line extending to `width` characters.
-pub(crate) fn section_header(title: &str, width: usize) -> String {
+fn section_header(title: &str, width: usize) -> String {
     let prefix = format!("── {title} ");
     let padding = width.saturating_sub(prefix.chars().count());
     format!("{}{}", prefix, "─".repeat(padding))
 }
 
 /// Column widths computed globally across all timing sections.
-pub(crate) struct TimingColumnWidths {
-    pub name: usize,
-    pub time: usize,
+struct TimingColumnWidths {
+    name: usize,
+    time: usize,
 }
 
 /// Compute column widths across all timing groups so entries and totals
 /// align globally, not just within each section.
-pub(crate) fn timing_column_widths(groups: &[&[(String, Duration)]]) -> TimingColumnWidths {
+fn timing_column_widths(groups: &[&[(String, Duration)]]) -> TimingColumnWidths {
     let all_entries = groups
         .iter()
         .flat_map(|g| g.iter())
@@ -476,10 +465,7 @@ pub(crate) fn timing_column_widths(groups: &[&[(String, Duration)]]) -> TimingCo
 /// Render a group of timings with bar charts and a subtotal.
 ///
 /// `widths` ensures entries and totals align across all sections.
-pub(crate) fn render_timing_section(
-    entries: &[(String, Duration)],
-    widths: &TimingColumnWidths,
-) -> String {
+fn render_timing_section(entries: &[(String, Duration)], widths: &TimingColumnWidths) -> String {
     let entries: Vec<_> = entries.iter().filter(|(k, _)| k != "VM-Total").collect();
 
     if entries.is_empty() {
@@ -594,7 +580,7 @@ mod tests {
 
     #[test]
     fn summary_bar_empty() {
-        assert_eq!(render_summary_bar(&[], &[], &[]), "");
+        assert_eq!(render_summary_bar(&[], &[], &[]), "Total: 0.000s");
     }
 
     #[test]
