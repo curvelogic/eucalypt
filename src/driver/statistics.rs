@@ -297,24 +297,27 @@ impl Display for Statistics {
         )?;
         writeln!(f)?;
 
+        // Compute global time column width so bars align across all sections
+        let tw = max_time_width(&[&parts.pipeline, &parts.io, &parts.vm]);
+
         // Pipeline timings
         if !parts.pipeline.is_empty() {
             writeln!(f, "{}", section_header("Pipeline"))?;
-            write!(f, "{}", render_timing_section(&parts.pipeline))?;
+            write!(f, "{}", render_timing_section(&parts.pipeline, tw))?;
             writeln!(f)?;
         }
 
         // IO timings
         if !parts.io.is_empty() {
             writeln!(f, "{}", section_header("IO"))?;
-            write!(f, "{}", render_timing_section(&parts.io))?;
+            write!(f, "{}", render_timing_section(&parts.io, tw))?;
             writeln!(f)?;
         }
 
         // VM timings
         if !parts.vm.is_empty() {
             writeln!(f, "{}", section_header("VM"))?;
-            write!(f, "{}", render_timing_section(&parts.vm))?;
+            write!(f, "{}", render_timing_section(&parts.vm, tw))?;
         }
 
         Ok(())
@@ -440,8 +443,25 @@ pub(crate) fn section_header(title: &str) -> String {
     format!("{}{}", prefix, "─".repeat(padding))
 }
 
+/// Compute the width needed to format the widest time value across all
+/// entries (excluding `"VM-Total"`).
+pub(crate) fn max_time_width(groups: &[&[(String, Duration)]]) -> usize {
+    groups
+        .iter()
+        .flat_map(|g| g.iter())
+        .filter(|(k, _)| k != "VM-Total")
+        .map(|(_, v)| format!("{:.6}", v.as_secs_f64()).len())
+        .max()
+        .unwrap_or(8)
+}
+
 /// Render a group of timings with bar charts and a subtotal.
-pub(crate) fn render_timing_section(entries: &[(String, Duration)]) -> String {
+///
+/// `global_time_width` ensures bars align across sections.
+pub(crate) fn render_timing_section(
+    entries: &[(String, Duration)],
+    global_time_width: usize,
+) -> String {
     let entries: Vec<_> = entries.iter().filter(|(k, _)| k != "VM-Total").collect();
 
     if entries.is_empty() {
@@ -459,12 +479,7 @@ pub(crate) fn render_timing_section(entries: &[(String, Duration)]) -> String {
         .map(|(_, v)| v.as_secs_f64())
         .fold(0.0_f64, f64::max);
 
-    // Pre-compute the width of the widest formatted time so bars align.
-    let time_width = entries
-        .iter()
-        .map(|(_, v)| format!("{:.6}", v.as_secs_f64()).len())
-        .max()
-        .unwrap_or(8);
+    let time_width = global_time_width;
 
     let mut total = Duration::ZERO;
     let mut out = String::new();
@@ -585,7 +600,8 @@ mod tests {
             ("parse".to_string(), Duration::from_millis(100)),
             ("cook".to_string(), Duration::from_millis(10)),
         ];
-        let rendered = render_timing_section(&entries);
+        let tw = max_time_width(&[&entries]);
+        let rendered = render_timing_section(&entries, tw);
         assert!(rendered.contains("parse"));
         assert!(rendered.contains("cook"));
         assert!(rendered.contains("Total:"));
@@ -598,7 +614,8 @@ mod tests {
             ("VM-Mutator".to_string(), Duration::from_millis(50)),
             ("VM-Total".to_string(), Duration::from_millis(50)),
         ];
-        let rendered = render_timing_section(&entries);
+        let tw = max_time_width(&[&entries]);
+        let rendered = render_timing_section(&entries, tw);
         assert!(rendered.contains("Mutator"));
         assert!(!rendered.contains("VM-Mutator"));
         assert!(!rendered.contains("VM-Total"));
@@ -606,6 +623,6 @@ mod tests {
 
     #[test]
     fn timing_section_empty() {
-        assert_eq!(render_timing_section(&[]), "");
+        assert_eq!(render_timing_section(&[], 8), "");
     }
 }
