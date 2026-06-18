@@ -9,6 +9,13 @@ pub struct Timings {
     timings: IndexMap<String, Duration>,
 }
 
+/// Pipeline, IO, and VM timing groups.
+pub(crate) struct TimingPartition {
+    pub pipeline: Vec<(String, Duration)>,
+    pub io: Vec<(String, Duration)>,
+    pub vm: Vec<(String, Duration)>,
+}
+
 impl Timings {
     pub fn record<T: AsRef<str>>(&mut self, name: T, elapsed: Duration) {
         self.timings.insert(name.as_ref().to_string(), elapsed);
@@ -16,6 +23,27 @@ impl Timings {
 
     pub fn merge(&mut self, other: Timings) {
         self.timings.extend(other.timings);
+    }
+
+    /// Partition timings into pipeline, IO, and VM entries.
+    ///
+    /// VM entries have keys starting with `"VM-"`.
+    /// IO entries have the key `"io-run"`.
+    /// Everything else is a pipeline phase.
+    pub(crate) fn partition(&self) -> TimingPartition {
+        let mut pipeline = Vec::new();
+        let mut io = Vec::new();
+        let mut vm = Vec::new();
+        for (k, v) in &self.timings {
+            if k.starts_with("VM-") {
+                vm.push((k.clone(), *v));
+            } else if k == "io-run" {
+                io.push((k.clone(), *v));
+            } else {
+                pipeline.push((k.clone(), *v));
+            }
+        }
+        TimingPartition { pipeline, io, vm }
     }
 }
 
@@ -193,26 +221,428 @@ impl Statistics {
 
 impl Display for Statistics {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Machine Ticks          : {:10}", self.machine_ticks)?;
-        writeln!(f, "Machine Allocs         : {:10}", self.machine_allocs)?;
-        writeln!(f, "Machine Max Stack      : {:10}", self.machine_max_stack)?;
-        writeln!(f, "Heap Blocks Allocated  : {:10}", self.blocks_allocated)?;
-        writeln!(f, "Heap LOBs Allocated    : {:10}", self.lobs_allocated)?;
-        writeln!(f, "Heap Blocks Used       : {:10}", self.blocks_used)?;
-        writeln!(f, "Heap Blocks Recycled   : {:10}", self.blocks_recycled)?;
-        writeln!(f, "Heap Peak Blocks       : {:10}", self.peak_heap_blocks)?;
-        writeln!(f, "GC Collections         : {:10}", self.collections_count)?;
+        let parts = self.timings.partition();
+
+        // Summary bar
+        let summary = render_summary_bar(&parts.pipeline, &parts.io, &parts.vm);
+        if !summary.is_empty() {
+            writeln!(f, "{summary}")?;
+            writeln!(f)?;
+        }
+
+        // Compute global column widths early so all headers share the same width
+        let widths = timing_column_widths(&[&parts.pipeline, &parts.io, &parts.vm]);
+        let header_width = widths.name + 5 + widths.time + 1 + 2 + BAR_WIDTH;
+
+        // Machine counters
+        writeln!(f, "{}", section_header("Machine", header_width))?;
         writeln!(
             f,
-            "GC Mark Time           : {:14.9}s",
+            "Ticks          : {:>14}",
+            fmt_thousands(self.machine_ticks)
+        )?;
+        writeln!(
+            f,
+            "Allocs         : {:>14}",
+            fmt_thousands(self.machine_allocs)
+        )?;
+        writeln!(
+            f,
+            "Max Stack      : {:>14}",
+            fmt_thousands_usize(self.machine_max_stack)
+        )?;
+        writeln!(f)?;
+
+        // Heap counters
+        writeln!(f, "{}", section_header("Heap", header_width))?;
+        writeln!(
+            f,
+            "Blocks Allocated  : {:>10}",
+            fmt_thousands_usize(self.blocks_allocated)
+        )?;
+        writeln!(
+            f,
+            "LOBs Allocated    : {:>10}",
+            fmt_thousands_usize(self.lobs_allocated)
+        )?;
+        writeln!(
+            f,
+            "Blocks Used       : {:>10}",
+            fmt_thousands_usize(self.blocks_used)
+        )?;
+        writeln!(
+            f,
+            "Blocks Recycled   : {:>10}",
+            fmt_thousands_usize(self.blocks_recycled)
+        )?;
+        writeln!(
+            f,
+            "Peak Blocks       : {:>10}",
+            fmt_thousands_usize(self.peak_heap_blocks)
+        )?;
+        writeln!(f)?;
+
+        // GC counters
+        writeln!(f, "{}", section_header("GC", header_width))?;
+        writeln!(
+            f,
+            "Collections    : {:>14}",
+            fmt_thousands(self.collections_count)
+        )?;
+        writeln!(
+            f,
+            "Mark Time      : {:>11.6}s",
             self.total_mark_time.as_secs_f64()
         )?;
         writeln!(
             f,
-            "GC Sweep Time          : {:14.9}s",
+            "Sweep Time     : {:>11.6}s",
             self.total_sweep_time.as_secs_f64()
         )?;
         writeln!(f)?;
-        writeln!(f, "{}", self.timings)
+
+        // Pipeline timings
+        if !parts.pipeline.is_empty() {
+            writeln!(f, "{}", section_header("Pipeline", header_width))?;
+            write!(f, "{}", render_timing_section(&parts.pipeline, &widths))?;
+            writeln!(f)?;
+        }
+
+        // IO timings
+        if !parts.io.is_empty() {
+            writeln!(f, "{}", section_header("IO", header_width))?;
+            write!(f, "{}", render_timing_section(&parts.io, &widths))?;
+            writeln!(f)?;
+        }
+
+        // VM timings
+        if !parts.vm.is_empty() {
+            writeln!(f, "{}", section_header("VM", header_width))?;
+            write!(f, "{}", render_timing_section(&parts.vm, &widths))?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Format an integer with comma thousands separators.
+pub(crate) fn fmt_thousands(n: u64) -> String {
+    let s = n.to_string();
+    let mut result = String::with_capacity(s.len() + s.len() / 3);
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            result.push(',');
+        }
+        result.push(c);
+    }
+    result
+}
+
+/// Format a usize with comma thousands separators.
+pub(crate) fn fmt_thousands_usize(n: usize) -> String {
+    fmt_thousands(n as u64)
+}
+
+pub(crate) const BAR_WIDTH: usize = 30;
+pub(crate) const BAR_FILLED: char = '█';
+pub(crate) const BAR_EMPTY: char = '░';
+
+/// Render a bar of `BAR_WIDTH` characters proportional to `value / max_value`.
+pub(crate) fn render_bar(value: f64, max_value: f64) -> String {
+    if max_value <= 0.0 {
+        return String::new();
+    }
+    let filled = ((value / max_value) * BAR_WIDTH as f64).round() as usize;
+    let filled = filled.min(BAR_WIDTH);
+    let empty = BAR_WIDTH - filled;
+    format!(
+        "{}{}",
+        BAR_FILLED.to_string().repeat(filled),
+        BAR_EMPTY.to_string().repeat(empty),
+    )
+}
+
+/// Render a top-level summary bar showing where total time was spent.
+pub(crate) fn render_summary_bar(
+    pipeline: &[(String, Duration)],
+    io: &[(String, Duration)],
+    vm: &[(String, Duration)],
+) -> String {
+    let mut fractions: Vec<(String, f64)> = Vec::new();
+
+    for (name, dur) in pipeline {
+        fractions.push((name.clone(), dur.as_secs_f64()));
+    }
+
+    // Add IO as a single "IO" entry
+    let io_total: f64 = io.iter().map(|(_, v)| v.as_secs_f64()).sum();
+    if io_total > 0.0 {
+        fractions.push(("IO".to_string(), io_total));
+    }
+
+    // Add VM as a single entry (exclude the VM-Total synthetic key)
+    let vm_total: f64 = vm
+        .iter()
+        .filter(|(k, _)| k != "VM-Total")
+        .map(|(_, v)| v.as_secs_f64())
+        .sum();
+    if vm_total > 0.0 {
+        fractions.push(("VM".to_string(), vm_total));
+    }
+
+    let total: f64 = fractions.iter().map(|(_, s)| s).sum();
+    if total <= 0.0 {
+        return String::new();
+    }
+
+    // Sort descending, collapse entries < 5% into "other"
+    fractions.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut shown = Vec::new();
+    let mut other = 0.0;
+    for (label, secs) in &fractions {
+        let pct = secs / total * 100.0;
+        if pct >= 5.0 && shown.len() < 4 {
+            shown.push((label.clone(), pct));
+        } else {
+            other += pct;
+        }
+    }
+    if other > 0.5 {
+        shown.push(("other".to_string(), other));
+    }
+
+    // Build the proportional bar (first entry filled, rest empty)
+    let mut bar = String::with_capacity(BAR_WIDTH * 4);
+    let mut chars_used = 0;
+    for (i, (_, pct)) in shown.iter().enumerate() {
+        let chars = if i == shown.len() - 1 {
+            BAR_WIDTH - chars_used
+        } else {
+            ((pct / 100.0) * BAR_WIDTH as f64).round() as usize
+        };
+        let chars = chars.min(BAR_WIDTH - chars_used);
+        let ch = if i == 0 { BAR_FILLED } else { BAR_EMPTY };
+        for _ in 0..chars {
+            bar.push(ch);
+        }
+        chars_used += chars;
+    }
+
+    let labels: Vec<String> = shown
+        .iter()
+        .map(|(name, pct)| format!("{name} {pct:.0}%"))
+        .collect();
+
+    format!("Total: {:.3}s  [{}] {}", total, bar, labels.join(" │ "))
+}
+
+/// Render a section header line extending to `width` characters.
+pub(crate) fn section_header(title: &str, width: usize) -> String {
+    let prefix = format!("── {title} ");
+    let padding = width.saturating_sub(prefix.chars().count());
+    format!("{}{}", prefix, "─".repeat(padding))
+}
+
+/// Column widths computed globally across all timing sections.
+pub(crate) struct TimingColumnWidths {
+    pub name: usize,
+    pub time: usize,
+}
+
+/// Compute column widths across all timing groups so entries and totals
+/// align globally, not just within each section.
+pub(crate) fn timing_column_widths(groups: &[&[(String, Duration)]]) -> TimingColumnWidths {
+    let all_entries = groups
+        .iter()
+        .flat_map(|g| g.iter())
+        .filter(|(k, _)| k != "VM-Total");
+
+    let mut max_name: usize = 0;
+    let mut max_time: usize = 8;
+
+    for (k, v) in all_entries {
+        let display = k.strip_prefix("VM-").unwrap_or(k);
+        max_name = max_name.max(display.len());
+        max_time = max_time.max(format!("{:.6}", v.as_secs_f64()).len());
+    }
+
+    TimingColumnWidths {
+        name: max_name,
+        time: max_time,
+    }
+}
+
+/// Render a group of timings with bar charts and a subtotal.
+///
+/// `widths` ensures entries and totals align across all sections.
+pub(crate) fn render_timing_section(
+    entries: &[(String, Duration)],
+    widths: &TimingColumnWidths,
+) -> String {
+    let entries: Vec<_> = entries.iter().filter(|(k, _)| k != "VM-Total").collect();
+
+    if entries.is_empty() {
+        return String::new();
+    }
+
+    let display_names: Vec<String> = entries
+        .iter()
+        .map(|(k, _)| k.strip_prefix("VM-").unwrap_or(k).to_string())
+        .collect();
+
+    let max_secs = entries
+        .iter()
+        .map(|(_, v)| v.as_secs_f64())
+        .fold(0.0_f64, f64::max);
+
+    let mut total = Duration::ZERO;
+    let mut out = String::new();
+
+    for (i, (_, dur)) in entries.iter().enumerate() {
+        total += *dur;
+        let bar = render_bar(dur.as_secs_f64(), max_secs);
+        let bar_suffix = if bar.is_empty() {
+            String::new()
+        } else {
+            format!("  {bar}")
+        };
+        out.push_str(&format!(
+            "{:name_w$}  :  {:>time_w$.6}s{}\n",
+            display_names[i],
+            dur.as_secs_f64(),
+            bar_suffix,
+            name_w = widths.name,
+            time_w = widths.time,
+        ));
+    }
+
+    // Subtotal right-aligned to match the timing column.
+    // Entry format: "{name:name_w}  :  {time:>time_w.6}s"
+    //               name_w + 2 + 1 + 2 = name_w + 5 chars before time
+    // Total format: "{label:>label_w}  {time:>time_w.6}s"
+    //               label_w + 2 chars before time
+    // So label_w = name_w + 3 to get name_w + 5 total.
+    out.push_str(&format!(
+        "{:>label_w$}  {:>time_w$.6}s\n",
+        "Total:",
+        total.as_secs_f64(),
+        label_w = widths.name + 3,
+        time_w = widths.time,
+    ));
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thousands_separator_small() {
+        assert_eq!(fmt_thousands(0), "0");
+        assert_eq!(fmt_thousands(1), "1");
+        assert_eq!(fmt_thousands(999), "999");
+    }
+
+    #[test]
+    fn thousands_separator_medium() {
+        assert_eq!(fmt_thousands(1_000), "1,000");
+        assert_eq!(fmt_thousands(12_345), "12,345");
+        assert_eq!(fmt_thousands(999_999), "999,999");
+    }
+
+    #[test]
+    fn thousands_separator_large() {
+        assert_eq!(fmt_thousands(1_000_000), "1,000,000");
+        assert_eq!(fmt_thousands(1_234_567_890), "1,234,567,890");
+    }
+
+    #[test]
+    fn bar_chart_full() {
+        let bar = render_bar(100.0, 100.0);
+        assert_eq!(bar.chars().filter(|&c| c == '█').count(), BAR_WIDTH);
+        assert_eq!(bar.chars().filter(|&c| c == '░').count(), 0);
+    }
+
+    #[test]
+    fn bar_chart_empty() {
+        let bar = render_bar(0.0, 100.0);
+        assert_eq!(bar.chars().filter(|&c| c == '█').count(), 0);
+        assert_eq!(bar.chars().filter(|&c| c == '░').count(), BAR_WIDTH);
+    }
+
+    #[test]
+    fn bar_chart_half() {
+        let bar = render_bar(50.0, 100.0);
+        assert_eq!(bar.chars().filter(|&c| c == '█').count(), 15);
+        assert_eq!(bar.chars().filter(|&c| c == '░').count(), 15);
+    }
+
+    #[test]
+    fn bar_chart_zero_max() {
+        assert_eq!(render_bar(0.0, 0.0), "");
+    }
+
+    #[test]
+    fn summary_bar_single_entry() {
+        let pipeline = vec![("parse".to_string(), Duration::from_millis(100))];
+        let bar = render_summary_bar(&pipeline, &[], &[]);
+        assert!(bar.contains("Total: 0.100s"));
+        assert!(bar.contains("parse 100%"));
+    }
+
+    #[test]
+    fn summary_bar_empty() {
+        assert_eq!(render_summary_bar(&[], &[], &[]), "");
+    }
+
+    #[test]
+    fn summary_bar_with_vm() {
+        let pipeline = vec![("parse".to_string(), Duration::from_millis(80))];
+        let vm = vec![("VM-Mutator".to_string(), Duration::from_millis(20))];
+        let bar = render_summary_bar(&pipeline, &[], &vm);
+        assert!(bar.contains("parse 80%"));
+        assert!(bar.contains("VM 20%"));
+    }
+
+    #[test]
+    fn section_header_format() {
+        let h = section_header("Pipeline", 60);
+        assert!(h.starts_with("── Pipeline "));
+        assert!(h.contains("─────"));
+    }
+
+    #[test]
+    fn timing_section_with_entries() {
+        let entries = vec![
+            ("parse".to_string(), Duration::from_millis(100)),
+            ("cook".to_string(), Duration::from_millis(10)),
+        ];
+        let w = timing_column_widths(&[&entries]);
+        let rendered = render_timing_section(&entries, &w);
+        assert!(rendered.contains("parse"));
+        assert!(rendered.contains("cook"));
+        assert!(rendered.contains("Total:"));
+        assert!(rendered.contains("█"));
+    }
+
+    #[test]
+    fn timing_section_strips_vm_prefix() {
+        let entries = vec![
+            ("VM-Mutator".to_string(), Duration::from_millis(50)),
+            ("VM-Total".to_string(), Duration::from_millis(50)),
+        ];
+        let w = timing_column_widths(&[&entries]);
+        let rendered = render_timing_section(&entries, &w);
+        assert!(rendered.contains("Mutator"));
+        assert!(!rendered.contains("VM-Mutator"));
+        assert!(!rendered.contains("VM-Total"));
+    }
+
+    #[test]
+    fn timing_section_empty() {
+        let w = TimingColumnWidths { name: 8, time: 8 };
+        assert_eq!(render_timing_section(&[], &w), "");
     }
 }

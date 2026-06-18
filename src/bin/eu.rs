@@ -180,9 +180,9 @@ fn run() -> i32 {
 pub fn exit_code(opts: &EucalyptOptions, code: i32, stats: &Statistics) -> i32 {
     if opts.statistics() {
         eprintln!();
-        eprintln!("~~~~~~~~~~");
+        eprintln!("══════════════════════════════════════════════════════");
         eprintln!("STATISTICS");
-        eprintln!("~~~~~~~~~~");
+        eprintln!("══════════════════════════════════════════════════════");
         eprintln!();
         eprintln!("{stats}");
     }
