@@ -2,7 +2,27 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.9.0] - Unreleased
+## [0.9.1] - Unreleased
+
+### Added
+
+- **Enhanced statistics output** — sectioned layout (Machine, Heap, GC, Pipeline, IO, VM) with inline bar charts, thousands separators, section subtotals, and a top-level percentage summary bar
+- **`--heap-limit-mib` in test mode** — shared flags (`-d`, `-S`, `-L`, `-Q`, `--type-check`, `--heap-limit-mib`) now available in `eu test` via `CommonArgs` extraction
+- **`--heap-limit-mib` at top level** — the flag works regardless of whether the `run` subcommand is explicit
+- **JSON Schema from type parser** — `eu doc --format json` now uses the real type parser instead of naive string matching, producing correct schemas for record types, tuples, DateTime, literal types, and union types
+- **LSP test hardening** — `col_of` helper computes UTF-16 column offsets from source text, eliminating 16 magic column numbers; `assert_goto_def_line` helper for go-to-definition assertions; 3 vacuous `is_some()` assertions strengthened
+- **CLI parsing tests** — 26 characterisation tests for command-line argument parsing
+
+### Changed
+
+- **CLI options refactored** — duplicated fields between `EucalyptCli` and `RunArgs` extracted into `CommonArgs` struct; `From<EucalyptCli>` simplified by eliminating the `cmd_foo.unwrap_or(cli.foo)` reconciliation pattern
+- **Dead `strict` field removed** — `EucalyptOptions.strict` was always `false` and never read; the actual `--strict` functionality uses `check_strict`
+
+### Fixed
+
+- **GC performance** — end-of-run garbage collection was unconditional, running a full mark/sweep after every `machine.run()` call (including each IO step). Now guarded by `policy_requires_collection()` so it only runs when the heap is under memory pressure. For IO-heavy programs this eliminates the dominant source of GC overhead
+
+## [0.9.0] - 2026-06-16
 
 ### Added
 
