@@ -1,6 +1,7 @@
 //! Rendering documentation entries as Markdown, JSON Schema, and coverage reports.
 
 use super::extract::{DocEntry, DocKind};
+use crate::core::typecheck::{parse::parse_type, types::Type};
 
 // ── Markdown rendering ────────────────────────────────────────────────────────
 
@@ -161,46 +162,103 @@ pub fn render_json_schema(entries: &[DocEntry], title: &str) -> String {
 
 /// Convert a eucalypt type annotation string to a JSON Schema fragment.
 ///
-/// Returns `None` for function types (not representable in JSON Schema).
+/// Parses the type string using the real type parser and then converts
+/// the resulting `Type` to JSON Schema. Returns `None` for function types
+/// and other forms not representable in JSON Schema.
 fn type_str_to_json_schema(ty_str: &str) -> Option<String> {
-    let ty = ty_str.trim();
-    // Skip function types
-    if ty.contains('→') || ty.contains("->") {
-        return None;
-    }
-    Some(match ty {
-        "string" => r#"{"type": "string"}"#.to_string(),
-        "number" => r#"{"type": "number"}"#.to_string(),
-        "bool" | "boolean" => r#"{"type": "boolean"}"#.to_string(),
-        "null" => r#"{"type": "null"}"#.to_string(),
-        "symbol" => r#"{"type": "string"}"#.to_string(),
-        "any" => r#"{}"#.to_string(),
-        s if s.starts_with('[') && s.ends_with(']') => {
-            // [T] → array
-            let inner = &s[1..s.len() - 1];
-            if let Some(items) = type_str_to_json_schema(inner) {
-                format!(r#"{{"type": "array", "items": {items}}}"#)
+    let ty = parse_type(ty_str.trim()).ok()?;
+    type_to_json_schema(&ty)
+}
+
+/// Convert a parsed `Type` to a JSON Schema fragment string.
+///
+/// Returns `None` for types that have no JSON Schema representation
+/// (e.g. functions, IO actions).
+fn type_to_json_schema(ty: &Type) -> Option<String> {
+    match ty {
+        Type::String => Some(r#"{"type": "string"}"#.to_string()),
+        Type::Number => Some(r#"{"type": "number"}"#.to_string()),
+        Type::Bool => Some(r#"{"type": "boolean"}"#.to_string()),
+        Type::Null => Some(r#"{"type": "null"}"#.to_string()),
+        Type::Symbol => Some(r#"{"type": "string"}"#.to_string()),
+        Type::DateTime => Some(r#"{"type": "string", "format": "date-time"}"#.to_string()),
+        Type::Any | Type::Top => Some(r#"{}"#.to_string()),
+        Type::Never => Some(r#"{"not": {}}"#.to_string()),
+        Type::LiteralString(s) => Some(format!(r#"{{"type": "string", "const": {}}}"#, json_str(s))),
+        Type::LiteralSymbol(s) => Some(format!(r#"{{"type": "string", "const": {}}}"#, json_str(s))),
+
+        // [T] is represented as App(Con("List"), T)
+        Type::App(f, inner) if matches!(f.as_ref(), Type::Con(c) if c == "List") => {
+            if let Some(items) = type_to_json_schema(inner) {
+                Some(format!(r#"{{"type": "array", "items": {items}}}"#))
             } else {
-                r#"{"type": "array"}"#.to_string()
+                Some(r#"{"type": "array"}"#.to_string())
             }
         }
-        s if s.starts_with('{') && s.ends_with('}') => {
-            // {..} or {x: T, ..} → object
-            r#"{"type": "object"}"#.to_string()
+
+        // IO(T) is not representable in JSON Schema
+        Type::App(f, _) if matches!(f.as_ref(), Type::Con(c) if c == "IO") => None,
+
+        // Tuple as fixed-length array with prefixItems
+        Type::Tuple(elems) => {
+            let items: Vec<String> = elems.iter().filter_map(type_to_json_schema).collect();
+            if items.is_empty() {
+                return Some(r#"{"type": "array"}"#.to_string());
+            }
+            Some(format!(
+                r#"{{"type": "array", "prefixItems": [{}], "items": false}}"#,
+                items.join(", ")
+            ))
         }
-        s if s.contains(" | ") => {
-            // T | U → oneOf
-            let variants: Vec<String> = s
-                .split(" | ")
-                .filter_map(|v| type_str_to_json_schema(v.trim()))
+
+        // Record type → object with properties
+        Type::Record { fields, open, .. } => {
+            if fields.is_empty() {
+                if *open {
+                    return Some(r#"{"type": "object"}"#.to_string());
+                }
+                return Some(r#"{"type": "object", "additionalProperties": false}"#.to_string());
+            }
+            let props: Vec<String> = fields
+                .iter()
+                .filter_map(|(k, v)| {
+                    type_to_json_schema(v).map(|schema| format!("{}: {}", json_str(k), schema))
+                })
                 .collect();
-            if variants.is_empty() {
+            let additional = if *open {
+                String::new()
+            } else {
+                r#", "additionalProperties": false"#.to_string()
+            };
+            Some(format!(
+                r#"{{"type": "object", "properties": {{{}}}{}}}"#,
+                props.join(", "),
+                additional
+            ))
+        }
+
+        // Union → oneOf
+        Type::Union(variants) => {
+            let schemas: Vec<String> =
+                variants.iter().filter_map(type_to_json_schema).collect();
+            if schemas.is_empty() {
                 return None;
             }
-            format!(r#"{{"oneOf": [{}]}}"#, variants.join(", "))
+            Some(format!(r#"{{"oneOf": [{}]}}"#, schemas.join(", ")))
         }
-        _ => return None,
-    })
+
+        // Functions are not representable
+        Type::Function(_, _) => None,
+
+        // Type variables are unconstrained — map to any
+        Type::Var(_, _) => Some(r#"{}"#.to_string()),
+
+        // Quantifiers and recursive types — unwrap
+        Type::Forall(_, body) | Type::Mu(_, body) => type_to_json_schema(body),
+
+        // Other App/Con/Lam etc. — not representable
+        _ => None,
+    }
 }
 
 /// JSON-encode a string value (handles all escape sequences correctly).
@@ -252,5 +310,78 @@ pub fn compute_coverage(entries: &[DocEntry]) -> Coverage {
         undocumented,
         total: documented + undocumented,
         undocumented_names,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+
+    fn schema(ty_str: &str) -> Option<Value> {
+        type_str_to_json_schema(ty_str).map(|s| serde_json::from_str(&s).unwrap())
+    }
+
+    #[test]
+    fn primitives() {
+        assert_eq!(schema("string"), Some(serde_json::json!({"type": "string"})));
+        assert_eq!(schema("number"), Some(serde_json::json!({"type": "number"})));
+        assert_eq!(schema("bool"), Some(serde_json::json!({"type": "boolean"})));
+        assert_eq!(schema("null"), Some(serde_json::json!({"type": "null"})));
+        assert_eq!(schema("symbol"), Some(serde_json::json!({"type": "string"})));
+    }
+
+    #[test]
+    fn any_type() {
+        assert_eq!(schema("any"), Some(serde_json::json!({})));
+    }
+
+    #[test]
+    fn list_type() {
+        assert_eq!(
+            schema("[number]"),
+            Some(serde_json::json!({"type": "array", "items": {"type": "number"}}))
+        );
+    }
+
+    #[test]
+    fn union_type() {
+        let s = schema("string | number").unwrap();
+        let one_of = s["oneOf"].as_array().unwrap();
+        assert_eq!(one_of.len(), 2);
+    }
+
+    #[test]
+    fn function_type_returns_none() {
+        assert_eq!(schema("string -> number"), None);
+        assert_eq!(schema("string → number"), None);
+    }
+
+    #[test]
+    fn record_type() {
+        let s = schema("{x: number, y: string}").unwrap();
+        assert_eq!(s["type"], "object");
+        assert!(s["properties"]["x"].is_object());
+        assert!(s["properties"]["y"].is_object());
+    }
+
+    #[test]
+    fn datetime_type() {
+        assert_eq!(
+            schema("datetime"),
+            Some(serde_json::json!({"type": "string", "format": "date-time"}))
+        );
+    }
+
+    #[test]
+    fn never_type() {
+        assert_eq!(schema("never"), Some(serde_json::json!({"not": {}})));
+    }
+
+    #[test]
+    fn literal_string_type() {
+        let s = schema(r#""hello""#).unwrap();
+        assert_eq!(s["type"], "string");
+        assert_eq!(s["const"], "hello");
     }
 }
