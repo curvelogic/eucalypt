@@ -533,7 +533,9 @@ impl From<EucalyptCli> for EucalyptOptions {
                 args.quote_debug,
                 false,
             ),
-            _ => (None, None, None, None, false, None, false, false, false, false),
+            _ => (
+                None, None, None, None, false, None, false, false, false, false,
+            ),
         };
 
         // Set command type flags for backward compatibility
