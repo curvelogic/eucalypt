@@ -2,7 +2,18 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.9.1] - Unreleased
+## [0.9.2] - Unreleased
+
+### Added
+
+- **Statistics on interrupt** — pressing Ctrl-C during a long-running program now prints partial statistics to stderr before exiting with code 130, instead of silently terminating
+
+### Fixed
+
+- **CI release versioning** — the prelude blob is now rebuilt with the freshly regenerated `build-meta.yaml` during CI release builds, so `eu version` reports the correct version instead of a stale development string
+- **`eu version` reports correct build number** — the xtask prelude compiler now reads `build-meta.yaml` from disk rather than the compiled-in resource, so the CI-regenerated version flows through to the final binary
+
+## [0.9.1] - 2026-06-19
 
 ### Added
 
