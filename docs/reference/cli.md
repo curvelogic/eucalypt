@@ -13,6 +13,12 @@ eu --version # shows the current eu version
 eu --help # lists command line options
 ```
 
+### Global Options
+
+- `--source-prelude` - Force the source-prelude pipeline even when a pre-compiled
+  prelude blob is available. Use this when you need to trace through prelude source
+  during debugging, or when the cached blob is suspected to be stale.
+
 ## Command Structure
 
 The `eu` command uses a subcommand structure for clarity and extensibility:
@@ -25,6 +31,8 @@ eu [GLOBAL_OPTIONS] [SUBCOMMAND] [SUBCOMMAND_OPTIONS] [FILES...]
 
 - `run` (default) - Evaluate eucalypt code
 - `test` - Run tests
+- `check` - Type-check eucalypt source files
+- `doc` - Extract documentation from eucalypt source files
 - `dump` - Dump intermediate representations
 - `version` - Show version information
 - `explain` - Explain what would be executed
@@ -278,7 +286,7 @@ names which contain `.`s.
 
 ## Outputs
 
-In the current version, `eu` can only generate one output.
+`eu` produces a single output stream per invocation.
 
 ### Output format
 
@@ -437,6 +445,67 @@ eu -I -t main script.eu
 
 See the IO monad design documentation for full details of the IO API.
 
+## Statistics and Diagnostics
+
+### Performance Statistics
+
+Use `-S` / `--statistics` to print execution metrics to stderr when the run
+completes. This includes heap usage, GC cycle counts, and evaluation time:
+
+```sh
+eu -S file.eu
+```
+
+To capture statistics as machine-readable JSON:
+
+```sh
+eu --statistics-file stats.json file.eu
+```
+
+The statistics file is written regardless of whether evaluation succeeds.
+
+### Heap Limit
+
+By default, `eu` allows the managed heap to grow up to 32 GiB. To cap it at
+a lower value (e.g., for CI or resource-constrained environments):
+
+```sh
+eu --heap-limit-mib 1024 file.eu    # limit to 1 GiB
+eu --heap-limit-mib 0    file.eu    # unbounded
+```
+
+### Error Output Format
+
+By default, errors are formatted for human reading. For programmatic use:
+
+```sh
+eu --error-format json file.eu      # structured JSON errors
+eu --error-format human file.eu     # default human-readable (explicit)
+```
+
+### Type Checking
+
+Run the type checker before evaluation with `--type-check`. Type warnings
+are reported to stderr but do not abort evaluation unless `--strict` is also
+passed:
+
+```sh
+eu --type-check file.eu             # warn on type issues, then evaluate
+eu --type-check --strict file.eu    # abort on first type warning
+```
+
+For checking without evaluating, use the `check` subcommand (see below).
+
+### Debugging: Dead Code Elimination
+
+Disable the dead code elimination pass to inspect the full compiled expression:
+
+```sh
+eu --no-dce file.eu
+```
+
+This is primarily useful when investigating the output of `eu dump` passes.
+
 ## Suppressing prelude
 
 A standard *prelude* containing many functions and operators is
@@ -489,6 +558,43 @@ The formatter has two modes:
   where possible, only reformatting where necessary
 - **Reformat mode** (`--reformat`) - Full reformatting that applies
   consistent style throughout
+
+## Type Checking
+
+The `check` subcommand runs the type checker without evaluating:
+
+```sh
+eu check file.eu             # report type annotation warnings
+eu check --strict file.eu    # treat warnings as errors (exit 1 if any)
+```
+
+Type annotations in eucalypt are gradual — the checker only reports issues
+where annotations are present and their constraints are violated. Use `check`
+in CI to enforce annotation coverage across a codebase.
+
+See the [type checking guide](../guide/type-checking.md) for full syntax and
+examples.
+
+## Documentation Extraction
+
+The `doc` subcommand extracts documentation from backtick docstrings in
+eucalypt source:
+
+```sh
+eu doc file.eu                    # Markdown output to stdout
+eu doc --format json file.eu      # JSON Schema output
+eu doc --prelude                  # Document the embedded prelude
+eu doc --check file.eu            # Report documentation coverage (exit 1 if < 100%)
+eu doc --output-dir out/ file.eu  # Write categorised Markdown files to a directory
+```
+
+### Options
+
+- `--format <md|json>` - Output format: `md` (Markdown, default) or `json` (JSON Schema)
+- `--prelude` - Generate documentation for the built-in prelude
+- `--check` - Report documentation coverage rather than generating docs
+- `--output-dir <DIR>` - Write categorised multi-file Markdown output to a directory
+  (implies `--prelude`)
 
 ## Language Server Protocol
 
