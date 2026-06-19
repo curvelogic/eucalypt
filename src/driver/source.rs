@@ -181,6 +181,19 @@ impl SourceLoader {
 
     /// Load an input (and transitive imports)
     pub fn load(&mut self, input: &Input) -> Result<usize, EucalyptError> {
+        // Resolve git imports to a local cached path before any other dispatch.
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Locator::Git { url, commit, path } = input.locator() {
+            let cached_path = crate::import::git::resolve_git_import(url, commit, path)
+                .map_err(|e| EucalyptError::Source(Box::new(e)))?;
+            let resolved = Input::new(
+                Locator::Fs(cached_path),
+                input.name().clone(),
+                input.format(),
+            );
+            return self.load(&resolved);
+        }
+
         let fmt = input.format();
 
         if fmt == "eu" {

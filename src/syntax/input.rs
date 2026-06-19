@@ -33,6 +33,16 @@ pub enum Locator {
     /// registration.  Used by the LSP to feed document content from
     /// the editor buffer without requiring a save to disk.
     Buffer { path: PathBuf, text: String },
+    /// A file fetched from a git repository at a specific commit.
+    ///
+    /// The repository is cloned bare to the local cache on first access;
+    /// subsequent imports of the same (url, commit) pair are served from
+    /// cache without network access.
+    Git {
+        url: String,
+        commit: String,
+        path: String,
+    },
 }
 
 /// Any filename can be represented as a locator
@@ -77,6 +87,9 @@ impl Display for Locator {
             Locator::Cli(text) => write!(f, "'{text}'"),
             Locator::Literal(text) => write!(f, "'''{text}'''"),
             Locator::Buffer { path, .. } => write!(f, "buffer:{}", path.display()),
+            Locator::Git { url, commit, path } => {
+                write!(f, "git:{url}@{commit}:{path}")
+            }
         }
     }
 }
@@ -140,6 +153,11 @@ impl Locator {
                 .extension()
                 .and_then(|s| s.to_str())
                 .and_then(Self::ext_to_format),
+            Locator::Git { path, .. } => Path::new(path)
+                .extension()
+                .and_then(|s| s.to_str())
+                .and_then(Self::ext_to_format)
+                .or(Some(String::from("eu"))),
             _ => Some(String::from("eu")),
         }
     }
