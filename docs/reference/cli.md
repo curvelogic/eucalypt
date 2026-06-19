@@ -58,7 +58,7 @@ Inputs specify text data from:
  - files
  - stdin
  - internal resources (ignored for now)
- - (in future) HTTPS URLs or Git refs
+ - git repository files (via `{ git: … }` import blocks — see [Import Formats](import-formats.md#git-imports))
 
 ...of which the first two are the common case. In the simplest case,
 file inputs are specified by file name, stdin is specified by `-`.
