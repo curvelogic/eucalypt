@@ -163,6 +163,41 @@ impl Demand {
         }
     }
 
+    /// Scale a demand by an outer demand's cardinality.
+    ///
+    /// Used in LetRec fixed-point propagation: if binding `j` is demanded
+    /// with cardinality `outer`, and `j`'s RHS uses binding `i` with demand
+    /// `self`, then `i`'s indirect demand through `j` is `self.scale(outer)`.
+    ///
+    /// Cardinality multiplication:
+    /// - `Absent × _ = Absent` (j never evaluated → no propagation)
+    /// - `_ × Absent = Absent`
+    /// - `Multi × AtMostOnce = Multi` (j evaluated many times, each using i once)
+    /// - `AtMostOnce × Multi = Multi`
+    /// - `AtMostOnce × AtMostOnce = AtMostOnce`
+    /// - `Multi × Multi = Multi`
+    pub fn scale(self, outer: Demand) -> Demand {
+        let cardinality = match (self.cardinality, outer.cardinality) {
+            (Cardinality::Absent, _) | (_, Cardinality::Absent) => Cardinality::Absent,
+            (Cardinality::AtMostOnce, Cardinality::AtMostOnce) => Cardinality::AtMostOnce,
+            _ => Cardinality::Multi,
+        };
+        // Strictness: strict only if both are strict
+        let strictness = match (self.strictness, outer.strictness) {
+            (crate::core::demand::Strictness::Strict, crate::core::demand::Strictness::Strict) => {
+                crate::core::demand::Strictness::Strict
+            }
+            (crate::core::demand::Strictness::Lazy, _)
+            | (_, crate::core::demand::Strictness::Lazy) => crate::core::demand::Strictness::Lazy,
+            _ => crate::core::demand::Strictness::Unknown,
+        };
+        Demand {
+            cardinality,
+            strictness,
+            whnf: false,
+        }
+    }
+
     /// Sequentially combine demands: used in both `self` and `other` contexts.
     ///
     /// Unlike `lub` (which combines alternative branches), `plus` combines

@@ -266,55 +266,170 @@ impl DemandAnalyser {
         }
     }
 
-    /// Analyse a `Let` expression.
+    /// Analyse a `Let` expression using fixed-point iteration.
+    ///
+    /// All core `Let` scopes are recursive (`LetRec` in STG), so a simple
+    /// syntactic reference count is unsound — a binding used once in the
+    /// source may be evaluated many times through mutual or self-recursion.
+    ///
+    /// The algorithm:
+    /// 1. Analyse body and all RHSs once (their structure is fixed).
+    /// 2. Build an intra-scope dependency graph: edge i→j means binding i's
+    ///    RHS references binding j at scope 0.
+    /// 3. Find recursive bindings: those that can reach themselves through
+    ///    the dependency graph (direct self-loop or cycle).
+    /// 4. Propagate "tainted by recursion": if binding i is recursive and
+    ///    i→j exists, binding j is also tainted (it could be re-entered
+    ///    through i's recursion).
+    /// 5. Fixed-point demand propagation: starting from body_env, iterate
+    ///    propagating demands through RHS references until stable.
+    /// 6. Force Multi cardinality on all recursive/tainted bindings.
     fn analyse_let(
         &mut self,
         s: Smid,
         scope: &LetScope<RcExpr>,
         let_type: LetType,
     ) -> (RcExpr, DemandEnv) {
-        let num_bindings = scope.pattern.len();
+        let n = scope.pattern.len();
 
-        // 1. Analyse the body to find what demands it places on bindings
+        // Step 1: Analyse the body (fixed — doesn't depend on binding demands).
         let (new_body, body_env) = self.analyse_expr(&scope.body);
 
-        // 2. Analyse each binding's RHS and annotate with the demand
-        //    from the body (or absent if not referenced).
-        let mut new_bindings = Vec::with_capacity(num_bindings);
+        // Step 2: Analyse each RHS (fixed).
+        let mut new_rhs_exprs = Vec::with_capacity(n);
+        let mut rhs_envs: Vec<DemandEnv> = Vec::with_capacity(n);
+        for binding in &scope.pattern {
+            let (new_rhs, rhs_env) = self.analyse_expr(&binding.expr);
+            new_rhs_exprs.push(new_rhs);
+            rhs_envs.push(rhs_env);
+        }
+
+        // Step 3: Build the intra-scope dependency graph.
+        // deps[i] = set of binding indices that binding i's RHS references (at scope 0).
+        let deps: Vec<Vec<usize>> = (0..n)
+            .map(|i| {
+                (0..n)
+                    .filter(|&j| rhs_envs[i].contains_key(&(0, j as u32)))
+                    .collect()
+            })
+            .collect();
+
+        // Step 4a: Find directly recursive bindings (can reach themselves).
+        // A binding is recursive iff there is a path i → … → i in the
+        // dependency graph.  We check this with a BFS from each node.
+        let mut is_recursive = vec![false; n];
+        for start in 0..n {
+            // BFS from start's neighbours; stop if we reach start again.
+            let mut visited = vec![false; n];
+            let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
+            for &j in &deps[start] {
+                if j == start {
+                    is_recursive[start] = true;
+                    break;
+                }
+                if !visited[j] {
+                    visited[j] = true;
+                    queue.push_back(j);
+                }
+            }
+            if !is_recursive[start] {
+                'bfs: while let Some(k) = queue.pop_front() {
+                    for &j in &deps[k] {
+                        if j == start {
+                            is_recursive[start] = true;
+                            break 'bfs;
+                        }
+                        if !visited[j] {
+                            visited[j] = true;
+                            queue.push_back(j);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Step 4b: Propagate "tainted by recursion".
+        // If binding i is recursive and i→j, then j is also tainted:
+        // a recursive binding can be evaluated many times, so any binding
+        // it uses could also be evaluated many times.
+        let mut is_tainted = is_recursive.clone();
+        loop {
+            let old = is_tainted.clone();
+            for i in 0..n {
+                if is_tainted[i] {
+                    for &j in &deps[i] {
+                        is_tainted[j] = true;
+                    }
+                }
+            }
+            if old == is_tainted {
+                break;
+            }
+        }
+
+        // Step 5: Fixed-point demand propagation.
+        // Start with demands from the body, then propagate through RHS references
+        // until the demand vector stabilises.
+        let mut demands: Vec<Demand> = (0..n)
+            .map(|i| {
+                body_env
+                    .get(&(0, i as u32))
+                    .copied()
+                    .unwrap_or(Demand::absent())
+            })
+            .collect();
+
+        loop {
+            let old = demands.clone();
+            for i in 0..n {
+                // Direct demand from body (already in `demands[i]`).
+                let mut d = demands[i];
+
+                // Propagated demand: for each binding j whose RHS references i,
+                // if j is demanded with demand d_j, then i gets an additional
+                // demand of d_j scaled by the demand j's RHS places on i.
+                for j in 0..n {
+                    if let Some(&d_ji) = rhs_envs[j].get(&(0, i as u32)) {
+                        // d_ji: demand j's RHS places on i
+                        // demands[j]: how often binding j itself is demanded
+                        let contribution = d_ji.scale(demands[j]);
+                        d = d.lub(contribution);
+                    }
+                }
+
+                demands[i] = d;
+            }
+            if demands == old {
+                break;
+            }
+        }
+
+        // Step 6: Force Multi cardinality on recursive/tainted bindings
+        // that are actually used (not Absent).
+        for i in 0..n {
+            if is_tainted[i] && demands[i].cardinality != Cardinality::Absent {
+                demands[i].cardinality = Cardinality::Multi;
+            }
+        }
+
+        // Build annotated bindings and propagate demands to the outer scope.
         let mut outer_env = unshift_env(&body_env);
+        let mut new_bindings = Vec::with_capacity(n);
 
         for (i, binding) in scope.pattern.iter().enumerate() {
-            // The demand on this binding from the body
-            let mut binding_demand = body_env
-                .get(&(0, i as u32))
-                .copied()
-                .unwrap_or(Demand::absent());
+            let binding_demand = demands[i];
 
-            // All core Let scopes are recursive.  A binding referenced
-            // once syntactically may be evaluated many times through
-            // recursion (e.g. self-referential lookup fallbacks).
-            // AtMostOnce would skip the Update frame, disabling the
-            // blackhole detector that catches infinite loops.
-            // Promote AtMostOnce → Multi for safety.
-            if binding_demand.cardinality == Cardinality::AtMostOnce {
-                binding_demand.cardinality = Cardinality::Multi;
-            }
-
-            // Analyse the binding's RHS
-            let (new_rhs, rhs_env) = self.analyse_expr(&binding.expr);
-
-            // If the binding is used, its RHS's demands propagate outward,
-            // but only for non-dead bindings
+            // Propagate the RHS's outward demands for non-absent bindings.
             if binding_demand.cardinality != Cardinality::Absent
                 && binding_demand.cardinality != Cardinality::Unknown
             {
-                let shifted_rhs_env = unshift_env(&rhs_env);
-                outer_env = merge_envs(&outer_env, &shifted_rhs_env);
+                let shifted = unshift_env(&rhs_envs[i]);
+                outer_env = merge_envs(&outer_env, &shifted);
             }
 
             new_bindings.push(CoreBinding::with_demand(
                 binding.name.clone(),
-                new_rhs,
+                new_rhs_exprs[i].clone(),
                 binding_demand,
             ));
         }
@@ -482,10 +597,10 @@ mod tests {
     use crate::core::expr::acore::*;
 
     #[test]
-    fn single_use_let_binding_gets_multi() {
-        // All core Let scopes are recursive, so even a single-use
-        // binding must be Multi (not AtMostOnce) to preserve the
-        // blackhole detection for self-referential bindings.
+    fn single_use_nonrecursive_let_binding_gets_at_most_once() {
+        // A non-recursive, single-use binding should be AtMostOnce —
+        // the fixed-point correctly identifies it does not participate
+        // in any cycle and can safely skip the Update frame.
         let x = free("x");
         let expr = let_(vec![(x.clone(), num(1))], var(x));
         let (result, _sigs) = analyse_demands(&expr);
@@ -493,8 +608,84 @@ mod tests {
         match &*result.inner {
             Expr::Let(_, scope, _) => {
                 let x_binding = &scope.pattern[0];
-                assert_eq!(x_binding.demand.cardinality, Cardinality::Multi);
+                assert_eq!(x_binding.demand.cardinality, Cardinality::AtMostOnce);
                 assert_eq!(x_binding.demand.strictness, Strictness::Strict);
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn self_recursive_let_binding_gets_multi() {
+        // A binding whose RHS references itself is recursive — must stay Multi
+        // so the blackhole detection fires correctly if re-entered.
+        let x = free("x");
+        // let x = ADD(x, 1) in x  — x references itself in RHS
+        let expr = let_(
+            vec![(x.clone(), app(bif("ADD"), vec![var(x.clone()), num(1)]))],
+            var(x),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(scope.pattern[0].demand.cardinality, Cardinality::Multi);
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mutually_recursive_let_bindings_get_multi() {
+        // Mutually recursive bindings (x references y, y references x)
+        // must both be Multi — neither can skip the Update frame.
+        let x = free("x");
+        let y = free("y");
+        // let x = ADD(y, 1); y = ADD(x, 1) in ADD(x, y)
+        let expr = let_(
+            vec![
+                (x.clone(), app(bif("ADD"), vec![var(y.clone()), num(1)])),
+                (y.clone(), app(bif("ADD"), vec![var(x.clone()), num(1)])),
+            ],
+            app(bif("ADD"), vec![var(x), var(y)]),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(scope.pattern[0].demand.cardinality, Cardinality::Multi);
+                assert_eq!(scope.pattern[1].demand.cardinality, Cardinality::Multi);
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn nonrecursive_sibling_used_by_recursive_binding_gets_multi() {
+        // If a non-recursive binding `a` is used by a recursive binding `x`,
+        // `a` is tainted — it may be evaluated each time x loops, so Multi.
+        let a = free("a");
+        let x = free("x");
+        // let a = 1; x = ADD(x, a) in x
+        // a is non-recursive but x is self-recursive and uses a → a tainted
+        let expr = let_(
+            vec![
+                (a.clone(), num(1)),
+                (
+                    x.clone(),
+                    app(bif("ADD"), vec![var(x.clone()), var(a.clone())]),
+                ),
+            ],
+            var(x),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                // x is self-recursive
+                assert_eq!(scope.pattern[1].demand.cardinality, Cardinality::Multi);
+                // a is tainted by x's recursion
+                assert_eq!(scope.pattern[0].demand.cardinality, Cardinality::Multi);
             }
             other => panic!("expected Let, got: {other:?}"),
         }
