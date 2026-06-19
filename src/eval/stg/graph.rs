@@ -150,7 +150,10 @@ impl StgIntrinsic for GraphTopoSort {
         let edges = collect_num_list(machine, view, args[0].clone())?;
         let n_list = collect_num_list(machine, view, args[1].clone())?;
         let n = n_list.first().copied().ok_or_else(|| {
-            ExecutionError::Panic(Smid::default(), "graph.topo-sort: n list empty".to_string())
+            ExecutionError::Panic(
+                machine.annotation(),
+                "graph.topo-sort: n list empty".to_string(),
+            )
         })? as usize;
 
         // Build adjacency list and in-degree counts

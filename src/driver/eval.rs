@@ -71,7 +71,6 @@ fn io_run_error_to_execution(e: IoRunError) -> ExecutionError {
         IoRunError::Timeout(smid, secs) => ExecutionError::IoTimeout(smid, secs),
         IoRunError::CommandError(smid, msg) => ExecutionError::IoCommandError(smid, msg),
         IoRunError::MachineError(boxed) => *boxed,
-        other => ExecutionError::Panic(Smid::default(), other.to_string()),
     }
 }
 
