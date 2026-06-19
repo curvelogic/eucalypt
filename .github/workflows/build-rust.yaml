@@ -427,16 +427,15 @@ jobs:
         run: |
           sha256sum *.tgz eu_windows_amd64.exe > SHA256SUMS
 
-      - uses: actions/checkout@v4
-        with:
-          sparse-checkout: Cargo.toml
-          sparse-checkout-cone-mode: false
-      - name: Extract version from Cargo.toml
+      - name: Query binary for version number
         run: |
-          # Read the release version directly from Cargo.toml — the source
-          # of truth.  This avoids depending on build-meta.yaml being
-          # correctly baked into the binary.
-          RELEASE_TAG=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          chmod +x eu_amd64
+          FULL_VERSION=$(./eu_amd64 -e eu.build.version -x text)
+          # Strip +build metadata for the release tag (semver build metadata
+          # is not suitable for GitHub release tags — '+' breaks download URLs
+          # and build numbers don't distinguish semantic versions).
+          RELEASE_TAG="${FULL_VERSION%%+*}"
+          echo "RELEASE_VERSION=$FULL_VERSION" >> $GITHUB_ENV
           echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
 
       - name: Check for existing release
