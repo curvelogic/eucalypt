@@ -139,6 +139,10 @@ pub enum ImportError {
     Cycle(Box<Input>),
     #[error("unknown input {0}")]
     UnknownInput(Box<Input>),
+    #[error("git imports require a commit SHA for reproducibility")]
+    GitImportMissingCommit,
+    #[error("git import block is missing required field: {0}")]
+    GitImportMissingField(String),
 }
 
 /// Read all imports specified in the Rowan AST and add them to imports
@@ -278,6 +282,12 @@ fn scrape_rowan_imports(
                     }
                 }
             }
+            Element::Block(block) => {
+                // Try to parse as a git import block: { git: "url", commit: "sha", import: "path" }
+                if let Some(input) = parse_git_import_block(&block)? {
+                    imports.push(input);
+                }
+            }
             Element::List(list) => {
                 // Handle list of imports
                 for item in list.items() {
@@ -290,6 +300,78 @@ fn scrape_rowan_imports(
         }
     }
     Ok(())
+}
+
+/// Parse a block element as a git import descriptor.
+///
+/// Looks for `git`, `commit`, and `import` string-valued keys. Returns
+/// `None` if the block does not contain a `git` key (so it is not a git
+/// import). Returns an error if the block has a `git` key but is missing
+/// the mandatory `commit` field.
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_git_import_block(
+    block: &crate::syntax::rowan::ast::Block,
+) -> Result<Option<Input>, ImportError> {
+    use crate::syntax::input::Locator;
+    use crate::syntax::rowan::ast::{AstToken, DeclarationKind, HasSoup};
+
+    let mut url: Option<String> = None;
+    let mut commit: Option<String> = None;
+    let mut path: Option<String> = None;
+
+    for decl in block.declarations() {
+        let Some(head) = decl.head() else {
+            continue;
+        };
+        if let DeclarationKind::Property(prop) = head.classify_declaration() {
+            let key = prop.text();
+            let value = decl
+                .body()
+                .and_then(|b| b.soup())
+                .and_then(|s| extract_first_string_from_soup(&s));
+
+            match key {
+                "git" => {
+                    url = value;
+                }
+                "commit" => {
+                    commit = value;
+                }
+                "import" => {
+                    path = value;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // If there is no `git` key, this is not a git import block — ignore it.
+    let url = match url {
+        Some(u) => u,
+        None => return Ok(None),
+    };
+
+    let commit = commit.ok_or(ImportError::GitImportMissingCommit)?;
+    let path = path.ok_or_else(|| ImportError::GitImportMissingField("import path".to_string()))?;
+
+    Ok(Some(Input::from(Locator::Git { url, commit, path })))
+}
+
+/// Extract the text value of the first string literal found in a soup.
+#[cfg(not(target_arch = "wasm32"))]
+fn extract_first_string_from_soup(soup: &crate::syntax::rowan::ast::Soup) -> Option<String> {
+    use crate::syntax::rowan::ast::Element;
+
+    for element in soup.elements() {
+        if let Element::Lit(lit) = element {
+            if let Some(val) = lit.value() {
+                if let Some(s) = val.string_value() {
+                    return Some(s.to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]

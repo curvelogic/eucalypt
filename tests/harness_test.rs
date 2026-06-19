@@ -2438,6 +2438,13 @@ pub fn test_error_166() {
 }
 
 #[test]
+/// eu-9tah.3: a git import block missing the mandatory `commit` field
+/// produces a clear error message referencing the commit SHA requirement.
+pub fn test_error_167() {
+    run_error_test(&error_opts("error_167.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
