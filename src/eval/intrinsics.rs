@@ -24,7 +24,12 @@ impl Intrinsic {
         self.ty.arity().unwrap()
     }
 
-    pub fn strict_args(&self) -> &Vec<usize> {
+    /// Strict argument indices for seeding the demand signature table.
+    ///
+    /// Only used by `analyse_demand::build_intrinsic_signatures()` to
+    /// construct the demand signature table. All other callers should
+    /// use `strict_indices_for(name)` from `core::analyse_demand`.
+    pub(crate) fn strict_indices(&self) -> &[usize] {
         &self.strict
     }
 

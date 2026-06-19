@@ -51,7 +51,7 @@ pub fn build_intrinsic_signatures() -> HashMap<String, DemandSignature> {
         if arity == 0 {
             continue;
         }
-        let strict_set = info.strict_args();
+        let strict_set = info.strict_indices();
         let mut sig = Vec::with_capacity(arity);
         for i in 0..arity {
             if strict_set.contains(&i) {
@@ -110,6 +110,25 @@ pub fn build_intrinsic_signatures() -> HashMap<String, DemandSignature> {
     );
 
     sigs
+}
+
+/// Return the indices of strict arguments for the named intrinsic,
+/// derived from the demand signature table.
+///
+/// Used by `wrap.rs` to generate forcing STG wrappers, replacing the
+/// old `Intrinsic::strict_args()` consultation.
+pub fn strict_indices_for(name: &str) -> Vec<usize> {
+    use crate::core::demand::Strictness;
+    build_intrinsic_signatures()
+        .get(name)
+        .map(|sig| {
+            sig.iter()
+                .enumerate()
+                .filter(|(_, d)| d.strictness == Strictness::Strict)
+                .map(|(i, _)| i)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Remove entries for scope 0 (current scope) and decrement all
