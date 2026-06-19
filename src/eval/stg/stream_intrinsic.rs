@@ -66,7 +66,8 @@ impl StgIntrinsic for ProducerNext {
 
         // Advance the producer by one element
         let value_stg = match producer_next(handle) {
-            Some(v) => v,
+            Some(Ok(v)) => v,
+            Some(Err(e)) => return Err(e),
             None => {
                 // Producer exhausted — return Nil
                 let nil = view.nil()?;
