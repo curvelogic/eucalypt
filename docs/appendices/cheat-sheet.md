@@ -188,11 +188,33 @@ a: 1
 ```
 
 **Special metadata keys**: `:target`, `:suppress`, `:internal`, `:main`,
-`associates`, `precedence`, `import`.
+`associates`, `precedence`, `import`, `:deprecated`.
 
 **Declaration visibility (`export:`)**: `:normal` (default, rendered and
 importable), `:suppress` (hidden from output, still importable),
 `:internal` (hidden from output AND importers — unit-private).
+
+## Deprecation
+
+Mark a declaration as deprecated to emit a warning whenever it is used:
+
+```eu,notest
+# Bare deprecation (simplest form)
+` :deprecated
+old-fn(x): x
+
+# With a message
+` { deprecated: "use new-fn instead" }
+old-fn(x): x
+
+# With message and replacement hint
+` { deprecated: "use new-fn instead"
+    replaced-by: "new-fn" }
+old-fn(x): x
+```
+
+Deprecation warnings appear on stderr during evaluation and in LSP diagnostics.
+Under `eu check --strict`, deprecation warnings become errors.
 
 ## Function Application
 
@@ -495,6 +517,9 @@ eu -- arg1 arg2             # Pass arguments (io.args)
 eu check file.eu            # Type-check, report warnings
 eu check --strict file.eu   # Treat type warnings as errors
 eu --type-check file.eu     # Check then evaluate
+eu doc file.eu              # Extract documentation (Markdown)
+eu doc --format json file.eu # Extract as JSON Schema
+eu doc --check file.eu      # Report documentation coverage
 ```
 
 ## Type Checking
