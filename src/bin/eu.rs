@@ -29,6 +29,11 @@ const STACK_SIZE: usize = 64 * 1024 * 1024;
 pub fn main() {
     eucalypt::eval::machine::crash::install_crash_handler();
 
+    ctrlc::set_handler(|| {
+        eucalypt::eval::machine::vm::set_interrupted();
+    })
+    .expect("failed to set Ctrl-C handler");
+
     let exit_code = thread::Builder::new()
         .stack_size(STACK_SIZE)
         .spawn(run)
@@ -165,9 +170,10 @@ fn run() -> i32 {
     if opt.run() || opt.dump_stg() || opt.dump_runtime() {
         // run manages error reporting
         match eval::run(&opt, loader) {
-            Ok(run_stats) => {
-                statistics.merge(run_stats);
-                return exit_code(&opt, 0, &statistics);
+            Ok(result) => {
+                statistics.merge(result.stats);
+                let code = result.exit_code.map_or(0, |c| c as i32);
+                return exit_code(&opt, code, &statistics);
             }
             _ => return exit_code(&opt, 1, &statistics),
         }

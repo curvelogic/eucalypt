@@ -3,7 +3,26 @@
 //! This is in the process of morphing from something that is clearly
 //! an interpreter to something more like a VM
 
-use std::{cmp::Ordering, convert::TryInto, num::NonZeroUsize};
+use std::{
+    cmp::Ordering,
+    convert::TryInto,
+    num::NonZeroUsize,
+    sync::atomic::{AtomicBool, Ordering as AtomicOrdering},
+};
+
+/// Global flag set by the SIGINT handler.  Checked by the VM run loop
+/// every 500 steps alongside the GC check.
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+/// Check whether an interrupt has been requested.
+pub fn interrupted() -> bool {
+    INTERRUPTED.load(AtomicOrdering::Relaxed)
+}
+
+/// Set the interrupt flag (called from the signal handler).
+pub fn set_interrupted() {
+    INTERRUPTED.store(true, AtomicOrdering::Relaxed);
+}
 
 use itertools::Itertools;
 use lru::LruCache;
@@ -1298,6 +1317,11 @@ fn evaluate_to_whnf_impl(
         gc_countdown -= 1;
         if gc_countdown == 0 {
             gc_countdown = gc_check_freq;
+
+            if interrupted() {
+                break Err(ExecutionError::Interrupted);
+            }
+
             if core.heap.policy_requires_collection() {
                 collect::collect(
                     state,
@@ -1817,6 +1841,10 @@ impl<'a> Machine<'a> {
             gc_countdown -= 1;
             if gc_countdown == 0 {
                 gc_countdown = gc_check_freq;
+
+                if interrupted() {
+                    return Err(ExecutionError::Interrupted);
+                }
 
                 if self.heap().policy_requires_collection() {
                     self.collect_with_diagnostics();

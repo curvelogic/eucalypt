@@ -729,6 +729,9 @@ pub enum ExecutionError {
     HeadOfEmptyList(Smid),
     #[error("tail of empty list")]
     TailOfEmptyList(Smid),
+    /// The program was interrupted by SIGINT (Ctrl-C).
+    #[error("interrupted")]
+    Interrupted,
 }
 
 impl From<bump::AllocError> for ExecutionError {
@@ -1166,6 +1169,17 @@ impl ExecutionError {
                 format!("smid={} {file_part} {span_part} {ann_part}", smid.get())
             }
             None => format!("smid={} (no source info)", smid.get()),
+        }
+    }
+
+    /// Check whether this error represents an interrupt (SIGINT).
+    ///
+    /// Matches both bare `Interrupted` and `Traced(Interrupted, ...)`.
+    pub fn is_interrupted(&self) -> bool {
+        match self {
+            ExecutionError::Interrupted => true,
+            ExecutionError::Traced(inner, _, _) => inner.is_interrupted(),
+            _ => false,
         }
     }
 
