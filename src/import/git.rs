@@ -8,17 +8,24 @@
 //! Subsequent imports of the same (url, commit, path) triple are served
 //! directly from the cache without any network access.
 
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::PathBuf;
 use std::process::Command;
 
 use super::error::SourceError;
 
-/// Compute a stable hex directory name from a URL string.
+/// Compute a stable hex directory name from a URL string using FNV-1a.
+///
+/// `DefaultHasher` is deliberately avoided: its implementation is not
+/// guaranteed to be stable across Rust versions, which would silently
+/// orphan existing cache entries. FNV-1a is simple, dependency-free, and
+/// produces the same output on every platform and Rust version.
 fn url_hash(url: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    url.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in url.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
 }
 
 /// Return the base cache directory: `~/.eu/cache/git/`.
@@ -46,13 +53,31 @@ pub fn cached_file_path(url: &str, commit: &str, path: &str) -> Result<PathBuf, 
 
 /// Ensure the git import is cached and return the path to the local file.
 ///
-/// 1. Clones the repository bare if not already present.
-/// 2. Extracts the requested file with `git show <commit>:<path>`.
-/// 3. Writes the extracted content to the cache and returns the path.
+/// 1. Validates `commit` and `path` to prevent directory traversal.
+/// 2. Clones the repository bare if not already present.
+/// 3. Extracts the requested file with `git show <commit>:<path>`.
+/// 4. Writes the extracted content to the cache and returns the path.
 ///
 /// If the file is already cached, returns immediately without any git
 /// or network operations.
 pub fn resolve_git_import(url: &str, commit: &str, path: &str) -> Result<PathBuf, SourceError> {
+    // Reject commits that look like path traversal attempts.
+    if commit.contains("..") || commit.contains('/') || commit.contains('\\') {
+        return Err(SourceError::InvalidSource(
+            format!("invalid git commit reference: {commit:?}"),
+            0,
+        ));
+    }
+
+    // Strip a leading `/` from the path and reject traversal sequences.
+    let path = path.trim_start_matches('/');
+    if path.contains("..") {
+        return Err(SourceError::InvalidSource(
+            format!("git import path must not contain '..': {path:?}"),
+            0,
+        ));
+    }
+
     let target_file = cached_file_path(url, commit, path)?;
 
     // Fast path: already cached.

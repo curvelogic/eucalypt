@@ -478,7 +478,12 @@ impl SourceLoader {
                         .clone(),
                     Locator::StdIn => self.read_stdin()?,
                     Locator::Pseudo(_) => "(no source)".to_string(),
-                    _ => unimplemented!(),
+                    other => {
+                        return Err(EucalyptError::FileCouldNotBeRead(
+                            format!("unsupported locator: {other}"),
+                            None,
+                        ))
+                    }
                 };
 
                 // store text and map locator to fileid
