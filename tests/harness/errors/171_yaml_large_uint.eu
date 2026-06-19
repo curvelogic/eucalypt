@@ -1,0 +1,4 @@
+# Exporting a JSON u64 value that overflows i64 to YAML should produce an
+# informative error, not a silent panic with no context.
+` { target: :main output: :yaml import: "data=testdata/large_uint.json" }
+main: data.n

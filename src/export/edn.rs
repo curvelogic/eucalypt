@@ -26,7 +26,8 @@ impl FromPrimitive for Value {
                 } else if let Some(f) = n.as_f64() {
                     Value::Float(OrderedFloat(f))
                 } else {
-                    panic!("unrepresentable number")
+                    // serde_json::Number is always PosInt/NegInt/Float, so this is unreachable
+                    unreachable!("serde_json::Number {n} is neither i64 nor f64")
                 }
             }
             Primitive::ZonedDateTime(dt) => Value::Inst(*dt),

@@ -39,12 +39,18 @@ impl FromPrimitive for yaml_rust::Yaml {
                 } else if n.is_i64() {
                     yaml_rust::Yaml::Integer(metadata.into(), n.as_i64().unwrap())
                 } else if n.is_u64() {
+                    let u = n.as_u64().unwrap();
                     yaml_rust::Yaml::Integer(
                         metadata.into(),
-                        n.as_u64().unwrap().try_into().expect("unrenderable number"),
+                        u.try_into().unwrap_or_else(|_| {
+                            panic!(
+                                "number {u} is too large to represent as a YAML integer (max i64)"
+                            )
+                        }),
                     )
                 } else {
-                    panic!("unrenderable number")
+                    // serde_json::Number is always PosInt/NegInt/Float, so this is unreachable
+                    unreachable!("serde_json::Number {n} is neither f64, i64, nor u64")
                 }
             }
             Primitive::ZonedDateTime(dt) => {

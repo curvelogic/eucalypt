@@ -1,0 +1,2 @@
+exit: 101
+stderr: "too large to represent as a YAML integer"

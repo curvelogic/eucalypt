@@ -2479,6 +2479,13 @@ pub fn test_error_175() {
 }
 
 #[test]
+/// Exporting a JSON u64 value exceeding i64::MAX to YAML should produce an
+/// informative panic message including the value, not a bare "unrenderable number".
+pub fn test_error_171() {
+    run_error_test(&error_opts("171_yaml_large_uint.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
