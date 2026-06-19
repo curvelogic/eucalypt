@@ -203,7 +203,7 @@ jobs:
           eu build.eu -t build-meta > build-meta.yaml.new
           mv -f build-meta.yaml.new build-meta.yaml
 
-          cargo xtask prelude-compile
+          cargo run --package xtask -- prelude-compile
 
           echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
       - name: Build release
@@ -279,7 +279,7 @@ jobs:
           eu build.eu -t build-meta > build-meta.yaml.new
           mv -f build-meta.yaml.new build-meta.yaml
 
-          cargo xtask prelude-compile
+          cargo run --package xtask -- prelude-compile
 
           echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
       - name: Build release
@@ -325,7 +325,7 @@ jobs:
           eu build.eu -t build-meta > build-meta.yaml.new
           mv -f build-meta.yaml.new build-meta.yaml
 
-          cargo xtask prelude-compile
+          cargo run --package xtask -- prelude-compile
 
           echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
       - name: Build release
@@ -368,7 +368,7 @@ jobs:
           $env:HOSTTYPE = "x86_64"
           eu build.eu -t build-meta > build-meta.yaml.new
           Move-Item -Force build-meta.yaml.new build-meta.yaml
-          cargo xtask prelude-compile
+          cargo run --package xtask -- prelude-compile
           $tag = eu build.eu -t version
           echo "TAG_NAME=$tag" >> $env:GITHUB_ENV
       - name: Build release
