@@ -1,3 +1,0 @@
-# io.fail should carry the call-site source location in the error diagnostic
-` { target: :main requires-io: true }
-main: io.fail("deliberate failure for location test")

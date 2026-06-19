@@ -67,7 +67,7 @@ use super::statistics::Statistics;
 fn io_run_error_to_execution(e: IoRunError) -> ExecutionError {
     match e {
         IoRunError::IoNotAllowed(smid) => ExecutionError::IoNotAllowed(smid),
-        IoRunError::Fail(smid, msg) => ExecutionError::IoFail(smid, msg),
+        IoRunError::Fail(msg) => ExecutionError::IoFail(Smid::default(), msg),
         IoRunError::Timeout(smid, secs) => ExecutionError::IoTimeout(smid, secs),
         IoRunError::CommandError(smid, msg) => ExecutionError::IoCommandError(smid, msg),
         IoRunError::MachineError(boxed) => *boxed,

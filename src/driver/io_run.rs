@@ -41,8 +41,8 @@ use crate::eval::{
 /// Error from running the IO monad interpret loop
 #[derive(Debug, thiserror::Error)]
 pub enum IoRunError {
-    #[error("io.fail: {1}")]
-    Fail(Smid, String),
+    #[error("io.fail: {0}")]
+    Fail(String),
     #[error("IO operations are not permitted; use the --allow-io (-I) flag to enable")]
     IoNotAllowed(Smid),
     #[error("unknown IO action tag: {0}")]
@@ -827,7 +827,7 @@ fn evaluate_spec_block(
             .get("message")
             .and_then(|opt| opt.clone())
             .unwrap_or_else(|| "io.fail".to_string());
-        Err(IoRunError::Fail(machine.annotation(), message))
+        Err(IoRunError::Fail(message))
     } else {
         Err(IoRunError::MachineError(Box::new(ExecutionError::IoFail(
             call_smid,
@@ -1252,9 +1252,8 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                         "IoFail missing error argument".to_string(),
                     )))
                 })?;
-                let smid = machine.annotation();
                 let msg = extract_error_string(machine, &error_closure);
-                return Err(IoRunError::Fail(smid, msg));
+                return Err(IoRunError::Fail(msg));
             }
 
             Ok(DataConstructor::IoAction) => {
