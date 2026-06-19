@@ -78,8 +78,12 @@ fn cmd_prelude_compile() -> Result<()> {
     // The prelude references `__build` (from build-meta.yaml) and intrinsics
     // such as `__IO_BIND` (from the pseudo io input). These must be loaded
     // before the prelude itself so that the desugarer can resolve them.
+    // Load build-meta.yaml from disk (not the compiled-in resource) so that
+    // the blob picks up the freshly regenerated version during CI release
+    // builds, rather than the stale committed copy.
+    let build_meta_path = workspace_root.join("build-meta.yaml");
     let build_meta = Input::new(
-        Locator::Resource("build-meta".to_string()),
+        Locator::Fs(build_meta_path),
         Some("__build".to_string()),
         "yaml",
     );
