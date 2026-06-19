@@ -297,6 +297,15 @@ impl<'a> Executor<'a> {
                 stg_settings.prelude_globals = Some(b.name_to_slot.clone());
             }
 
+            // Run demand analysis on the core expression before STG compile
+            if !stg_settings.suppress_demand_analysis {
+                let t = Instant::now();
+                let (annotated, _signatures) =
+                    crate::core::analyse_demand::analyse_demands(&self.evaluand);
+                self.evaluand = annotated;
+                stats.timings_mut().record("demand-analysis", t.elapsed());
+            }
+
             let syn = {
                 let t = Instant::now();
                 let syn = stg::compile(&stg_settings, self.evaluand.clone(), rt.as_ref())?;

@@ -314,6 +314,8 @@ pub struct StgSettings {
     /// `Ref::G(intrinsic_count + slot)` rather than `CompileError::FreeVar`.
     /// Populated from `PreludeBlob.name_to_slot` when the blob path is active.
     pub prelude_globals: Option<HashMap<String, usize>>,
+    /// Suppress the demand analysis pass (all demands remain at Unknown).
+    pub suppress_demand_analysis: bool,
 }
 
 /// Compile core syntax to STG ready for execution

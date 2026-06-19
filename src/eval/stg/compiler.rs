@@ -980,16 +980,11 @@ impl ProtoSyntax for ProtoAppGroup {
             )?)),
         };
 
-        // Determine which args are single-use for this intrinsic (IF branches).
-        // These args will be evaluated at most once at runtime, so they get
-        // AtMostOnce cardinality to skip the Update frame.
-        let single_use_args: &[usize] = intrinsic_index
-            .and_then(|idx| compiler.intrinsics.get(idx))
-            .map(|bif| bif.single_use_args())
-            .unwrap_or(&[]);
-
         // Get references for args, compiling into the local binder if necessary.
-        // Translate strict_args → Strict demand; single_use_args → AtMostOnce.
+        // Strict intrinsic arguments get Strict demand; all others use default.
+        // The demand analysis pass provides finer-grained demands (AtMostOnce
+        // for IF branches, etc.) on Let-bound args; here we only set demands
+        // for args that the compiler synthesises inline.
         let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
         for (i, arg) in self.args.iter().enumerate() {
             match &*arg.inner {
@@ -1008,9 +1003,6 @@ impl ProtoSyntax for ProtoAppGroup {
                     let arg_demand = if strict_args.contains(&i) {
                         // Strict argument: will definitely be evaluated.
                         Demand::strict()
-                    } else if single_use_args.contains(&i) {
-                        // Single-use argument (e.g. IF branch): used at most once.
-                        Demand::at_most_once()
                     } else {
                         Demand::default()
                     };
