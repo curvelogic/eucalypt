@@ -11,6 +11,7 @@ use crate::core::inline::tag;
 use crate::core::simplify::compress;
 use crate::core::simplify::prune;
 use crate::core::transform::fuse;
+use crate::core::transform::hoist;
 use crate::core::unit::TranslationUnit;
 use crate::core::verify::content;
 use crate::driver::error::EucalyptError;
@@ -564,6 +565,20 @@ impl SourceLoader {
             return Ok(());
         }
         self.core.expr = cook::cook(self.core.expr.clone())?;
+        Ok(())
+    }
+
+    /// Run the namespace lambda hoisting pass.
+    ///
+    /// Hoists inlinable members of namespace `DefaultBlockLet` bindings (such
+    /// as `str`, `cal`, `vec`) to top-level `OtherLet` bindings named
+    /// `__<namespace>_<member>` and rewrites `Lookup(Var(ns), member)` to
+    /// `Var(__<namespace>_<member>)`.  This lets the inline pass work directly
+    /// on individual functions without distributing the namespace block.
+    ///
+    /// The pass is a no-op when no hoistable members are found.
+    pub fn hoist_namespaces(&mut self) -> Result<(), EucalyptError> {
+        self.core.expr = hoist::hoist(&self.core.expr)?;
         Ok(())
     }
 

@@ -2447,6 +2447,15 @@ pub fn test_166_error_recovery_eval() {
 }
 
 #[test]
+/// Namespace lambda hoisting pass (eu-398r): verifies that inlinable
+/// namespace members (str.to-upper, str.to-lower, str.of) are correctly
+/// hoisted to top-level OtherLet bindings and their call sites rewritten,
+/// while the namespace block itself remains usable as a value.
+pub fn test_167_namespace_hoisting() {
+    run_test(&opts("167_namespace_hoisting.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

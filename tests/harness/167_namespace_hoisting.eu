@@ -1,0 +1,37 @@
+#!/usr/bin/env eu
+# Tests for namespace lambda hoisting pass (eu-398r)
+#
+# The hoist pass lifts inlinable members of namespace DefaultBlockLet
+# bindings (e.g. str, cal, vec) to top-level OtherLet bindings named
+# __<namespace>_<member> and rewrites Lookup(Var(ns), member) to direct
+# Var references.  These tests exercise the hoisted paths via ordinary
+# namespace calls.
+
+# str.to-upper — intrinsic hoisted as __str_to-upper
+upper-got: "hello" str.to-upper
+upper-ok: upper-got = "HELLO"
+
+# str.to-lower — intrinsic hoisted as __str_to-lower
+lower-got: "WORLD" str.to-lower
+lower-ok: lower-got = "world"
+
+# str.of — intrinsic hoisted as __str_of
+of-got: str.of(42)
+of-ok: of-got = "42"
+
+# str.split: split(s, re) — string first, regex second
+# Using str.split-on which takes regex first (pipeline-idiomatic)
+split-got: "a,b,c" str.split-on("[,]")
+split-ok: split-got = ["a", "b", "c"]
+
+# Chained namespace calls: the result of one is passed to another
+chained-got: "hello world" str.to-upper str.to-lower
+chained-ok: chained-got = "hello world"
+
+# Namespace used as a value (block) — must still work even though
+# hoisting adds direct Var references for member calls above
+ns-is-block-ok: block?(str)
+
+RESULT: if(
+  and(upper-ok, and(lower-ok, and(of-ok, and(split-ok, and(chained-ok, ns-is-block-ok))))),
+  :PASS, :FAIL)
