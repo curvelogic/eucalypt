@@ -1001,8 +1001,9 @@ impl ProtoSyntax for ProtoAppGroup {
                 }
                 _ => {
                     let arg_demand = if strict_args.contains(&i) {
-                        // Strict argument: will definitely be evaluated.
-                        Demand::strict()
+                        // Strict intrinsic argument: evaluated exactly once.
+                        // AtMostOnce cardinality skips the Update frame.
+                        Demand::strict_once()
                     } else {
                         Demand::default()
                     };

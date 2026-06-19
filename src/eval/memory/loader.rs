@@ -130,7 +130,6 @@ pub fn load<'scope, T: ScopedAllocator<'scope>>(
             scrutinee,
             branches,
             fallback,
-            suppress_update,
         } => {
             let (min_tag, branch_table) = load_branches(view, pool, branches)?;
             view.alloc(HeapSyn::Case {
@@ -141,7 +140,6 @@ pub fn load<'scope, T: ScopedAllocator<'scope>>(
                     Some(f) => Some(load(view, pool, f.clone())?),
                     None => None,
                 },
-                suppress_update: *suppress_update,
             })
         }
         StgSyn::Cons { tag, args } => view.alloc(HeapSyn::Cons {
