@@ -86,11 +86,6 @@ it has already been specified in the command line or another unit.
 
 ### Git imports
 
-> **Note — not currently implemented.** Git imports were available in the
-> original (Haskell) eucalypt but are **not yet supported** by the current
-> implementation; a `{ git: … }` import block is presently ignored. The format
-> below documents the intended design, pending restoration.
-
 Git imports allow you to import eucalypt direct from a git repository
 at a specified commit, combining the convenience of not having to
 explicitly manage a git working copy and a library path with the

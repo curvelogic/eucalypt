@@ -11,6 +11,7 @@ use crate::core::inline::tag;
 use crate::core::simplify::compress;
 use crate::core::simplify::prune;
 use crate::core::transform::fuse;
+use crate::core::transform::hoist;
 use crate::core::unit::TranslationUnit;
 use crate::core::verify::content;
 use crate::driver::error::EucalyptError;
@@ -181,6 +182,19 @@ impl SourceLoader {
 
     /// Load an input (and transitive imports)
     pub fn load(&mut self, input: &Input) -> Result<usize, EucalyptError> {
+        // Resolve git imports to a local cached path before any other dispatch.
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Locator::Git { url, commit, path } = input.locator() {
+            let cached_path = crate::import::git::resolve_git_import(url, commit, path)
+                .map_err(|e| EucalyptError::Source(Box::new(e)))?;
+            let resolved = Input::new(
+                Locator::Fs(cached_path),
+                input.name().clone(),
+                input.format(),
+            );
+            return self.load(&resolved);
+        }
+
         let fmt = input.format();
 
         if fmt == "eu" {
@@ -465,7 +479,12 @@ impl SourceLoader {
                         .clone(),
                     Locator::StdIn => self.read_stdin()?,
                     Locator::Pseudo(_) => "(no source)".to_string(),
-                    _ => unimplemented!(),
+                    other => {
+                        return Err(EucalyptError::FileCouldNotBeRead(
+                            format!("unsupported locator: {other}"),
+                            None,
+                        ))
+                    }
                 };
 
                 // store text and map locator to fileid
@@ -564,6 +583,31 @@ impl SourceLoader {
             return Ok(());
         }
         self.core.expr = cook::cook(self.core.expr.clone())?;
+        Ok(())
+    }
+
+    /// Run the namespace lambda hoisting pass.
+    ///
+    /// Hoists inlinable members of namespace `DefaultBlockLet` bindings (such
+    /// as `str`, `cal`, `vec`) to top-level `OtherLet` bindings named
+    /// `__<namespace>_<member>` and rewrites `Lookup(Var(ns), member)` to
+    /// `Var(__<namespace>_<member>)`.  This lets the inline pass work directly
+    /// on individual functions without distributing the namespace block.
+    ///
+    /// When the prelude blob is active the namespace blocks are not present in
+    /// the user-code expression.  In that case `hoist_with_blob_globals` is
+    /// used instead: it seeds the rewrite map from the blob's `name_to_slot`
+    /// so that `Lookup(Var("str"), "upper")` is still rewritten to
+    /// `Var(Free("__str_upper"))`, which the compiler resolves to `Ref::G`.
+    ///
+    /// The pass is a no-op when no hoistable members are found.
+    pub fn hoist_namespaces(&mut self) -> Result<(), EucalyptError> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(ref blob) = self.prelude_blob {
+            self.core.expr = hoist::hoist_with_blob_globals(&self.core.expr, &blob.name_to_slot)?;
+            return Ok(());
+        }
+        self.core.expr = hoist::hoist(&self.core.expr)?;
         Ok(())
     }
 

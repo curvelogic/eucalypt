@@ -1,0 +1,3 @@
+# io.shell with no cmd field should produce a clear error, not a panic
+` { target: :main requires-io: true }
+main: io.shell({ stdin: "ignored" })

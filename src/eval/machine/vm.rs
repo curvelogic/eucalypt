@@ -289,13 +289,6 @@ pub struct MachineState {
     rcache: LruCache<String, Regex>,
     /// Interned symbol pool for fast symbol comparison
     symbol_pool: SymbolPool,
-    /// When set, suppress the next Update continuation push.
-    ///
-    /// Set by `return_data` when processing a Branch with
-    /// `suppress_update=true` and a branch body that is a bare local
-    /// atom. Prevents O(N) Update accumulation in tail-recursive
-    /// conditional loops such as countdown(n) = if(n=0, 0, countdown(n-1)).
-    suppress_next_update: bool,
     /// Stash of closures kept alive across `machine.run()` calls.
     ///
     /// The io-run driver holds closures (e.g. `cont` and `world` from an
@@ -348,7 +341,6 @@ impl Default for MachineState {
                 NonZeroUsize::new(100).expect("regex cache size must be non-zero"),
             ),
             symbol_pool: SymbolPool::new(),
-            suppress_next_update: false,
             stash: Vec::new(),
             suspended_stacks: Vec::new(),
             capture_end_pending: false,
@@ -428,29 +420,11 @@ impl MachineState {
 
         match code {
             HeapSyn::Atom { evaluand } => {
-                // Consume suppress_next_update flag set by return_data
-                // when processing a suppress_update Branch continuation.
-                let suppress_update = std::mem::replace(&mut self.suppress_next_update, false);
                 match evaluand {
                     Ref::L(i) => {
                         self.closure = self.nav(view).get(*i)?;
                         let is_thunk = self.closure.update();
-                        let updateable = is_thunk && !suppress_update;
-                        // When suppress_update is active but the loaded closure is
-                        // not itself a thunk (e.g. a synthetic value-Atom closure
-                        // created by create_arg_array), propagate the flag to the
-                        // next Atom step so the full indirection chain is covered.
-                        //
-                        // This handles the two-level case that arises when IF args
-                        // are passed via App (not inlined): the Branch body is
-                        // Atom{L(i)} in IF's arg env → value closure → Atom{L(j)}
-                        // in the caller's let env → actual thunk.  Without
-                        // propagation, only the first hop is suppressed and the
-                        // second hop pushes an unwanted Update continuation.
-                        if suppress_update && !is_thunk {
-                            self.suppress_next_update = true;
-                        }
-                        if updateable {
+                        if is_thunk {
                             // Overwrite the env slot with a BlackHole
                             // closure to catch cyclic thunk re-entry.
                             // The Update continuation will replace it
@@ -482,7 +456,6 @@ impl MachineState {
                 min_tag,
                 branch_table,
                 fallback,
-                suppress_update: case_suppress,
             } => {
                 self.push(
                     view,
@@ -492,7 +465,6 @@ impl MachineState {
                         fallback: *fallback,
                         environment,
                         annotation: self.annotation,
-                        suppress_update: *case_suppress,
                     },
                 )?;
                 self.closure = SynClosure::new(*scrutinee, environment);
@@ -501,7 +473,6 @@ impl MachineState {
                 self.return_data(view, *tag, args.as_slice())?;
             }
             HeapSyn::App { callable, args } => {
-                let suppress_update = std::mem::replace(&mut self.suppress_next_update, false);
                 let array = view.create_arg_array(args.as_slice(), environment)?;
                 self.push(
                     view,
@@ -519,8 +490,7 @@ impl MachineState {
                 if let Ref::L(i) = callable {
                     let callee = self.nav(view).get(*i)?;
                     let is_thunk = callee.update();
-                    let updateable = is_thunk && !suppress_update;
-                    if updateable {
+                    if is_thunk {
                         let hole = view.alloc(HeapSyn::BlackHole)?;
                         let black_hole = SynClosure::new(hole.as_ptr(), environment);
                         let cont_env = view.scoped(environment);
@@ -833,7 +803,6 @@ impl MachineState {
                     fallback,
                     environment,
                     annotation,
-                    suppress_update,
                 } => {
                     if let Some(body) = match_tag(tag, min_tag, branch_table.as_slice()) {
                         let env = if args.is_empty() {
@@ -842,18 +811,6 @@ impl MachineState {
                         } else {
                             self.env_from_data_args(view, args, environment)?
                         };
-                        // When suppress_update is set on this Branch and the
-                        // branch body is a bare local atom, suppress the next
-                        // Update push. This prevents O(N) Update accumulation
-                        // in tail-recursive conditionals (e.g. IF branches).
-                        if suppress_update {
-                            if let HeapSyn::Atom {
-                                evaluand: Ref::L(_),
-                            } = &*view.scoped(body)
-                            {
-                                self.suppress_next_update = true;
-                            }
-                        }
                         self.closure = SynClosure::new(body, env);
                     } else if let Some(body) = fallback {
                         self.closure = SynClosure::new(
@@ -1766,7 +1723,7 @@ impl<'a> Machine<'a> {
                 ExecutionError::Panic(Smid::default(), "no active capture emitter".to_string())
             })?;
             capture.stream_end();
-            let result_str = capture.into_string()?;
+            let result_str = capture.into_string(self.annotation())?;
             let view = MutatorHeapView::new(&self.core.heap);
             let str_ref = view.str_ref(result_str)?;
             let atom = view.alloc(HeapSyn::Atom { evaluand: str_ref })?.as_ptr();

@@ -503,6 +503,12 @@ pub struct Compiler<'rt> {
     suppress_optimiser: bool,
     /// Intrinsics
     intrinsics: Vec<&'rt dyn StgIntrinsic>,
+    /// Per-intrinsic demand signatures seeded from the demand analysis.
+    ///
+    /// Maps intrinsic name → per-argument demand vector. Used in
+    /// `compile_bif_application()` to set per-argument demands instead
+    /// of consulting `Intrinsic::strict_args()`.
+    intrinsic_demand_sigs: HashMap<String, Vec<crate::core::demand::Demand>>,
     /// Prelude binding name → slot index (relative to `INTRINSIC_COUNT`).
     ///
     /// When set, `Var::Free(name)` references to prelude names are compiled to
@@ -955,7 +961,7 @@ impl ProtoSyntax for ProtoAppGroup {
         context: &Context,
     ) -> Result<Rc<StgSyn>, CompileError> {
         let mut intrinsic_index = None;
-        let mut strict_args = &vec![];
+        let mut intrinsic_name: Option<&str> = None;
         let mut local_binder = LetBinder::synthetic_let(context);
 
         // Find a reference for the function
@@ -968,8 +974,7 @@ impl ProtoSyntax for ProtoAppGroup {
                 intrinsic_index = intrinsics::index(bif);
                 let n =
                     intrinsic_index.ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
-                let info = intrinsics::intrinsic(n);
-                strict_args = info.strict_args();
+                intrinsic_name = Some(intrinsics::intrinsic(n).name());
                 Box::new(ProtoRef::new(gref(n)))
             }
             _ => Box::new(ProtoRef::new(compiler.compile_binding(
@@ -980,16 +985,14 @@ impl ProtoSyntax for ProtoAppGroup {
             )?)),
         };
 
-        // Determine which args are single-use for this intrinsic (IF branches).
-        // These args will be evaluated at most once at runtime, so they get
-        // AtMostOnce cardinality to skip the Update frame.
-        let single_use_args: &[usize] = intrinsic_index
-            .and_then(|idx| compiler.intrinsics.get(idx))
-            .map(|bif| bif.single_use_args())
-            .unwrap_or(&[]);
+        // Look up per-argument demands from the intrinsic seed signatures.
+        // These were built by the demand analysis pass (build_intrinsic_signatures)
+        // and encode the blanket rule: strict args → (Strict, AtMostOnce), with
+        // special refinements for IF, AND/OR, LOOKUPOR, IO_BIND.
+        let arg_demands: Option<&[crate::core::demand::Demand]> = intrinsic_name
+            .and_then(|name| compiler.intrinsic_demand_sigs.get(name))
+            .map(|v| v.as_slice());
 
-        // Get references for args, compiling into the local binder if necessary.
-        // Translate strict_args → Strict demand; single_use_args → AtMostOnce.
         let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
         for (i, arg) in self.args.iter().enumerate() {
             match &*arg.inner {
@@ -1005,15 +1008,13 @@ impl ProtoSyntax for ProtoAppGroup {
                     arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))))
                 }
                 _ => {
-                    let arg_demand = if strict_args.contains(&i) {
-                        // Strict argument: will definitely be evaluated.
-                        Demand::strict()
-                    } else if single_use_args.contains(&i) {
-                        // Single-use argument (e.g. IF branch): used at most once.
-                        Demand::at_most_once()
-                    } else {
-                        Demand::default()
-                    };
+                    // Use the per-argument demand from the intrinsic signature table.
+                    // Falls back to Demand::default() for unknown intrinsics or
+                    // out-of-range argument indices.
+                    let arg_demand = arg_demands
+                        .and_then(|sigs| sigs.get(i))
+                        .copied()
+                        .unwrap_or_default();
                     let index = compiler.compile_binding(
                         &mut local_binder,
                         arg.clone(),
@@ -1222,6 +1223,7 @@ impl<'rt> Compiler<'rt> {
         intrinsics: Vec<&'rt dyn StgIntrinsic>,
         prelude_globals: Option<HashMap<String, usize>>,
     ) -> Self {
+        let intrinsic_demand_sigs = crate::core::analyse_demand::build_intrinsic_signatures();
         Compiler {
             generate_annotations,
             render_type,
@@ -1229,6 +1231,7 @@ impl<'rt> Compiler<'rt> {
             suppress_inlining,
             suppress_optimiser,
             intrinsics,
+            intrinsic_demand_sigs,
             prelude_globals,
         }
     }

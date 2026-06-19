@@ -86,6 +86,7 @@ pub fn prepare(
                 || opt.dump_cooked()
                 || opt.dump_inlined()
                 || opt.dump_pruned()
+                || opt.dump_demands()
                 || opt.test();
 
             if can_continue {
@@ -240,6 +241,21 @@ pub fn prepare(
         return Ok(Command::Exit);
     }
 
+    // Hoist inlinable namespace members to top-level bindings.
+    //
+    // This pass lifts `Lam(_, true, _)` and `Intrinsic` members of namespace
+    // `DefaultBlockLet` bindings (e.g. `str.upper`) to named top-level bindings
+    // (`__str_upper`) and rewrites `Lookup(Var(ns), member)` to direct `Var`
+    // references.  The inliner can then work on individual functions without
+    // distributing the whole namespace block.
+    {
+        let t = Instant::now();
+
+        loader.hoist_namespaces()?;
+
+        stats.record("hoist", t.elapsed());
+    }
+
     // Prune unused bindings to reduce inline overhead
     if !opt.no_dce() {
         let t = Instant::now();
@@ -317,6 +333,25 @@ pub fn prepare(
     if opt.dump_pruned() {
         let c = loader.core();
         dump_core(c.expr.clone(), opt);
+        return Ok(Command::Exit);
+    }
+
+    if opt.dump_demands() {
+        let c = loader.core();
+        let (annotated, sigs) = crate::core::analyse_demand::analyse_demands(&c.expr);
+        dump_core(annotated.clone(), opt);
+        // Print demand annotations for all let-bound names.
+        println!("\n-- demand annotations --");
+        crate::core::analyse_demand::print_demands(&annotated);
+        // Print signature table summary.
+        println!("\n-- signature table ({} entries) --", sigs.len());
+        for (key, sig) in &sigs {
+            let demands: Vec<String> = sig
+                .iter()
+                .map(|d| format!("({:?},{:?})", d.strictness, d.cardinality))
+                .collect();
+            println!("  {:016x}: [{}]", key, demands.join(", "));
+        }
         return Ok(Command::Exit);
     }
 

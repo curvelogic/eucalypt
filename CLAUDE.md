@@ -43,7 +43,7 @@ Eucalypt is a Rust-based tool and language for generating, templating, rendering
 - `cook/` - Operator precedence and fixity resolution
 - `verify/` - Binding and content verification
 - `simplify/` - Expression simplification and optimization
-- `transform/` - Various AST transformations
+- `transform/` - Various AST transformations including namespace lambda hoisting (`hoist.rs`)
 - `inline/` - Inlining and reduction passes
 - `typecheck/` - Gradual type system: type representation, parser, subtyping, bidirectional checker, polymorphic instantiation
 
@@ -108,7 +108,7 @@ Use `eu dump <phase>` to inspect intermediate representations at each pipeline s
 | `eu dump ast <file>` | Parsed syntax tree |
 | `eu dump desugared <file>` | Core expression after desugaring |
 | `eu dump cooked <file>` | Core expression after operator precedence resolution |
-| `eu dump inlined <file>` | Core expression after inlining |
+| `eu dump inlined <file>` | Core expression after namespace hoisting + inlining |
 | `eu dump pruned <file>` | Core expression after dead code elimination |
 | `eu dump stg <file>` | Compiled STG syntax |
 | `eu dump runtime <file>` | Runtime globals |

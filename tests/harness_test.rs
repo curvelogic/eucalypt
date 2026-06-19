@@ -2438,12 +2438,55 @@ pub fn test_error_166() {
 }
 
 #[test]
+/// eu-9tah.3: a git import block missing the mandatory `commit` field
+/// produces a clear error message referencing the commit SHA requirement.
+pub fn test_error_167() {
+    run_error_test(&error_opts("error_167.eu"));
+}
+
+#[test]
+/// io.shell without a cmd field should produce a proper IoFail error, not a panic.
+pub fn test_error_168() {
+    run_error_test(&io_error_opts("168_io_shell_missing_cmd.eu"));
+}
+
+#[test]
+/// Importing a malformed JSONL stream should produce a clear error, not a panic.
+pub fn test_error_169() {
+    run_error_test(&error_opts("169_malformed_jsonl_stream.eu"));
+}
+
+#[test]
+/// io.fail should carry the call-site source location in the error diagnostic.
+pub fn test_error_170() {
+    run_error_test(&io_error_opts("170_io_fail_source_location.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
 /// malformed declarations are isolated, valid ones evaluate to correct values.
 pub fn test_166_error_recovery_eval() {
     run_test(&opts("166_error_recovery_eval.eu"));
+}
+
+#[test]
+/// Namespace lambda hoisting pass (eu-398r): verifies that inlinable
+/// namespace members (str.to-upper, str.to-lower, str.of) are correctly
+/// hoisted to top-level OtherLet bindings and their call sites rewritten,
+/// while the namespace block itself remains usable as a value.
+pub fn test_167_namespace_hoisting() {
+    run_test(&opts("167_namespace_hoisting.eu"));
+}
+
+#[test]
+/// Blob namespace hoisting (eu-9tah.7): verifies that namespace member
+/// calls (str.to-upper, str.trim, str.split-on, str.join-on) are correctly
+/// resolved via the blob's hoisted globals, and that namespace blocks remain
+/// accessible as values when the blob pipeline is active.
+pub fn test_168_blob_namespace_hoisting() {
+    run_test(&opts("168_blob_namespace_hoisting.eu"));
 }
 
 #[test]

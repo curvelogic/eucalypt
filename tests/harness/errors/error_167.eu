@@ -1,0 +1,11 @@
+# Error test: git import block missing mandatory commit field.
+#
+# A git import block must include a `commit` key containing the SHA of the
+# revision to fetch.  Without a commit SHA the import cannot be made
+# reproducible or cached.
+#
+# Expected behaviour:
+#   - Exit code 1
+#   - Stderr mentions "commit SHA" or "reproducibility"
+{ import: { git: "https://github.com/example/repo.git", import: "lib/utils.eu" } }
+x: 1

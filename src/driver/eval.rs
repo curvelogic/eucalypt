@@ -67,7 +67,7 @@ use super::statistics::Statistics;
 fn io_run_error_to_execution(e: IoRunError) -> ExecutionError {
     match e {
         IoRunError::IoNotAllowed(smid) => ExecutionError::IoNotAllowed(smid),
-        IoRunError::Fail(msg) => ExecutionError::IoFail(Smid::default(), msg),
+        IoRunError::Fail(smid, msg) => ExecutionError::IoFail(smid, msg),
         IoRunError::Timeout(smid, secs) => ExecutionError::IoTimeout(smid, secs),
         IoRunError::CommandError(smid, msg) => ExecutionError::IoCommandError(smid, msg),
         IoRunError::MachineError(boxed) => *boxed,
@@ -295,6 +295,15 @@ impl<'a> Executor<'a> {
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(ref b) = self.prelude_blob {
                 stg_settings.prelude_globals = Some(b.name_to_slot.clone());
+            }
+
+            // Run demand analysis on the core expression before STG compile
+            if !stg_settings.suppress_demand_analysis {
+                let t = Instant::now();
+                let (annotated, _signatures) =
+                    crate::core::analyse_demand::analyse_demands(&self.evaluand);
+                self.evaluand = annotated;
+                stats.timings_mut().record("demand-analysis", t.elapsed());
             }
 
             let syn = {

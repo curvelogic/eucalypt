@@ -45,9 +45,6 @@ pub enum Continuation {
         environment: RefPtr<EnvFrame>,
         /// Source annotation at the point the case was pushed
         annotation: Smid,
-        /// When true, suppress the next Update push if the branch body
-        /// is a bare local atom. See StgSyn::Case::suppress_update.
-        suppress_update: bool,
     },
     /// Update thunk in environment at index i
     Update {
@@ -97,7 +94,6 @@ impl fmt::Display for Continuation {
                 min_tag,
                 branch_table,
                 fallback,
-                suppress_update,
                 ..
             } => {
                 let mut tags: Vec<String> = branch_table
@@ -109,8 +105,7 @@ impl fmt::Display for Continuation {
                     tags.push("…".to_string());
                 }
                 let desc = &tags.join(",");
-                let marker = if *suppress_update { "!" } else { "" };
-                write!(f, "⑂{marker}<{desc}>")
+                write!(f, "⑂<{desc}>")
             }
             Continuation::Update { index, .. } => {
                 write!(f, "☇[ρ,{index}]")

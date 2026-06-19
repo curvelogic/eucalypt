@@ -41,7 +41,9 @@ impl Demand {
     /// Returns `true` when the STG compiler should skip the Update frame
     /// (i.e. emit `Value` rather than `Thunk`).
     pub fn skip_update(self) -> bool {
-        self.whnf || self.cardinality == Cardinality::AtMostOnce
+        self.whnf
+            || self.cardinality == Cardinality::AtMostOnce
+            || self.cardinality == Cardinality::Absent
     }
 
     /// Convenience: a demand marking a binding as used at most once.
@@ -75,10 +77,23 @@ pub enum Cardinality {
     /// No cardinality information yet (conservative default).
     #[default]
     Unknown,
+    /// Used for unused function arguments (distinct from dead bindings).
+    Absent,
     /// Used at most once — safe to skip Update (no memoisation benefit).
     AtMostOnce,
     /// Used more than once — memoisation may be worthwhile.
     Multi,
+}
+
+impl Cardinality {
+    /// Least upper bound: combine cardinalities from alternative branches.
+    pub fn join(self, other: Cardinality) -> Cardinality {
+        match (self, other) {
+            (Cardinality::Absent, x) | (x, Cardinality::Absent) => x,
+            (Cardinality::AtMostOnce, Cardinality::AtMostOnce) => Cardinality::AtMostOnce,
+            _ => Cardinality::Multi,
+        }
+    }
 }
 
 /// Strictness status — whether the binding will definitely be evaluated.
@@ -91,6 +106,120 @@ pub enum Strictness {
     Lazy,
     /// Definitely strict — will be evaluated by context.
     Strict,
+}
+
+impl Strictness {
+    /// Least upper bound: combine strictness from alternative branches.
+    pub fn join(self, other: Strictness) -> Strictness {
+        match (self, other) {
+            (Strictness::Strict, Strictness::Strict) => Strictness::Strict,
+            _ => Strictness::Lazy,
+        }
+    }
+}
+
+impl Demand {
+    /// Least upper bound: combine demands from alternative branches.
+    pub fn lub(self, other: Demand) -> Demand {
+        Demand {
+            cardinality: self.cardinality.join(other.cardinality),
+            strictness: self.strictness.join(other.strictness),
+            whnf: self.whnf && other.whnf,
+        }
+    }
+
+    /// Conservative absent demand (unused argument).
+    pub fn absent() -> Self {
+        Self {
+            cardinality: Cardinality::Absent,
+            ..Default::default()
+        }
+    }
+
+    /// A demand marking a binding as strict and used at most once.
+    pub fn strict_once() -> Self {
+        Self {
+            strictness: Strictness::Strict,
+            cardinality: Cardinality::AtMostOnce,
+            ..Default::default()
+        }
+    }
+
+    /// A demand marking a binding as lazy and used at most once.
+    pub fn lazy_once() -> Self {
+        Self {
+            strictness: Strictness::Lazy,
+            cardinality: Cardinality::AtMostOnce,
+            ..Default::default()
+        }
+    }
+
+    /// A demand marking a binding as lazy and used multiple times.
+    pub fn lazy_multi() -> Self {
+        Self {
+            strictness: Strictness::Lazy,
+            cardinality: Cardinality::Multi,
+            ..Default::default()
+        }
+    }
+
+    /// Scale a demand by an outer demand's cardinality.
+    ///
+    /// Used in LetRec fixed-point propagation: if binding `j` is demanded
+    /// with cardinality `outer`, and `j`'s RHS uses binding `i` with demand
+    /// `self`, then `i`'s indirect demand through `j` is `self.scale(outer)`.
+    ///
+    /// Cardinality multiplication:
+    /// - `Absent × _ = Absent` (j never evaluated → no propagation)
+    /// - `_ × Absent = Absent`
+    /// - `Multi × AtMostOnce = Multi` (j evaluated many times, each using i once)
+    /// - `AtMostOnce × Multi = Multi`
+    /// - `AtMostOnce × AtMostOnce = AtMostOnce`
+    /// - `Multi × Multi = Multi`
+    pub fn scale(self, outer: Demand) -> Demand {
+        let cardinality = match (self.cardinality, outer.cardinality) {
+            (Cardinality::Absent, _) | (_, Cardinality::Absent) => Cardinality::Absent,
+            (Cardinality::AtMostOnce, Cardinality::AtMostOnce) => Cardinality::AtMostOnce,
+            _ => Cardinality::Multi,
+        };
+        // Strictness: strict only if both are strict
+        let strictness = match (self.strictness, outer.strictness) {
+            (crate::core::demand::Strictness::Strict, crate::core::demand::Strictness::Strict) => {
+                crate::core::demand::Strictness::Strict
+            }
+            (crate::core::demand::Strictness::Lazy, _)
+            | (_, crate::core::demand::Strictness::Lazy) => crate::core::demand::Strictness::Lazy,
+            _ => crate::core::demand::Strictness::Unknown,
+        };
+        Demand {
+            cardinality,
+            strictness,
+            whnf: false,
+        }
+    }
+
+    /// Sequentially combine demands: used in both `self` and `other` contexts.
+    ///
+    /// Unlike `lub` (which combines alternative branches), `plus` combines
+    /// sequential uses. Cardinalities add (once + once = multi), and
+    /// strictness takes the stricter value.
+    pub fn plus(self, other: Demand) -> Demand {
+        let cardinality = match (self.cardinality, other.cardinality) {
+            (Cardinality::Absent, x) | (x, Cardinality::Absent) => x,
+            (Cardinality::Unknown, _) | (_, Cardinality::Unknown) => Cardinality::Unknown,
+            _ => Cardinality::Multi,
+        };
+        let strictness = match (self.strictness, other.strictness) {
+            (Strictness::Strict, _) | (_, Strictness::Strict) => Strictness::Strict,
+            (Strictness::Lazy, _) | (_, Strictness::Lazy) => Strictness::Lazy,
+            _ => Strictness::Unknown,
+        };
+        Demand {
+            cardinality,
+            strictness,
+            whnf: self.whnf && other.whnf,
+        }
+    }
 }
 
 #[cfg(test)]

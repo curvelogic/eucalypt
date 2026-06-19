@@ -8,6 +8,8 @@ use self::error::SourceError;
 pub mod csv;
 pub mod edn;
 pub mod error;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod git;
 pub mod jsonl;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod stream;

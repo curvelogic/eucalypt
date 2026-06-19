@@ -112,7 +112,6 @@ pub enum ArenaStgSyn {
         scrutinee: NodeIdx,
         branches: Vec<(Tag, NodeIdx)>,
         fallback: Option<NodeIdx>,
-        suppress_update: bool,
     },
     Cons {
         tag: Tag,
@@ -191,7 +190,6 @@ impl StgArena {
                 scrutinee,
                 branches,
                 fallback,
-                suppress_update,
             } => {
                 let s_idx = self.alloc_node(scrutinee);
                 let b_idxs: Vec<(Tag, NodeIdx)> = branches
@@ -203,7 +201,6 @@ impl StgArena {
                     scrutinee: s_idx,
                     branches: b_idxs,
                     fallback: fb_idx,
-                    suppress_update: *suppress_update,
                 }
             }
             StgSyn::Cons { tag, args } => ArenaStgSyn::Cons {
@@ -348,7 +345,6 @@ impl StgArena {
                 scrutinee,
                 branches,
                 fallback,
-                suppress_update,
             } => StgSyn::Case {
                 scrutinee: self.reconstruct_node(*scrutinee)?,
                 branches: branches
@@ -356,7 +352,6 @@ impl StgArena {
                     .map(|(tag, idx)| Ok((*tag, self.reconstruct_node(*idx)?)))
                     .collect::<Result<_, BlobReconstructError>>()?,
                 fallback: fallback.map(|idx| self.reconstruct_node(idx)).transpose()?,
-                suppress_update: *suppress_update,
             },
             ArenaStgSyn::Cons { tag, args } => StgSyn::Cons {
                 tag: *tag,
@@ -477,7 +472,6 @@ mod tests {
             scrutinee: atom(Reference::L(0)),
             branches: vec![(1u8, body)],
             fallback: Some(fallback),
-            suppress_update: false,
         });
         let arena = flatten(&original);
         let reconstructed = arena.reconstruct(0).unwrap();
