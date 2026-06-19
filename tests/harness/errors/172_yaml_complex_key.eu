@@ -1,0 +1,4 @@
+# YAML mapping with a complex (sequence) key should produce a clear error,
+# not a panic. Eucalypt requires block keys to be string literals.
+` { target: :main import: "data=testdata/complex_key.yaml" }
+main: data

@@ -2486,6 +2486,13 @@ pub fn test_error_171() {
 }
 
 #[test]
+/// YAML mappings with complex (non-scalar) keys should produce a clear error,
+/// not a panic. Covers the bad-key-type path in the YAML parser.
+pub fn test_error_172() {
+    run_error_test(&error_opts("172_yaml_complex_key.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:

@@ -160,7 +160,13 @@ impl<'smap> Receiver<'smap> {
                         }
                     }
                 }
-                other => other.feed(expr),
+                other => match other.feed(expr, self.file_id) {
+                    Ok(new_exp) => new_exp,
+                    Err(err) => {
+                        self.error = Some(err);
+                        return;
+                    }
+                },
             };
             self.stack.push(new_expectation);
         } else {
@@ -400,31 +406,43 @@ impl Expectation {
         Expectation::EvenBlockAccumulation(i, Vec::new(), anchor_id)
     }
 
-    pub fn feed(self, expr: RcExpr) -> Expectation {
+    pub fn feed(self, expr: RcExpr, file_id: usize) -> Result<Expectation, SourceError> {
         match self {
             Expectation::ListAccumulation(off, mut items, anchor_id) => {
                 items.push(expr);
-                Expectation::ListAccumulation(off, items, anchor_id)
+                Ok(Expectation::ListAccumulation(off, items, anchor_id))
             }
             Expectation::EvenBlockAccumulation(off, entries, anchor_id) => {
-                if let Expr::Literal(_, prim) = &*expr.inner {
-                    let key = match prim {
-                        Primitive::Str(s) => s,
-                        Primitive::Sym(s) => s,
-                        _ => panic!("bad key type"),
-                    };
-                    Expectation::OddBlockAccumulation(off, entries, key.to_string(), anchor_id)
+                let key = if let Expr::Literal(_, prim) = &*expr.inner {
+                    match prim {
+                        Primitive::Str(s) => s.clone(),
+                        Primitive::Sym(s) => s.clone(),
+                        _ => {
+                            return Err(SourceError::InvalidBlockKey(
+                                format!("YAML mapping keys must be strings; got {:?}", prim),
+                                file_id,
+                                Span::new(off, off),
+                            ))
+                        }
+                    }
                 } else {
-                    panic!("bad key type")
-                }
+                    return Err(SourceError::InvalidBlockKey(
+                        "YAML mapping keys must be string literals".to_string(),
+                        file_id,
+                        Span::new(off, off),
+                    ));
+                };
+                Ok(Expectation::OddBlockAccumulation(
+                    off, entries, key, anchor_id,
+                ))
             }
             Expectation::OddBlockAccumulation(off, mut entries, key, anchor_id) => {
                 // Remove any existing entry with this key (allows later keys to override merged ones)
                 entries.retain(|(k, _)| k != &key);
                 entries.push((key, expr));
-                Expectation::EvenBlockAccumulation(off, entries, anchor_id)
+                Ok(Expectation::EvenBlockAccumulation(off, entries, anchor_id))
             }
-            _ => Expectation::Value(expr),
+            _ => Ok(Expectation::Value(expr)),
         }
     }
 }
