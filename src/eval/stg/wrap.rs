@@ -4,6 +4,7 @@ use std::convert::TryInto;
 
 use crate::{
     common::sourcemap::Smid,
+    core::analyse_demand::strict_indices_for,
     eval::{intrinsics, types::IntrinsicType},
 };
 
@@ -20,7 +21,9 @@ use super::{
 
 /// Basic intrinsic wrapper that evals and unboxes strict arguments
 ///
-/// Type checks? Unbox?
+/// Strict argument indices are derived from the demand signature table
+/// (via `strict_indices_for`), which is the single canonical source of
+/// intrinsic demand information per the W11 design.
 pub fn wrap(index: usize, info: &intrinsics::Intrinsic, annotation: Smid) -> LambdaForm {
     let arity = info.arity();
 
@@ -28,6 +31,10 @@ pub fn wrap(index: usize, info: &intrinsics::Intrinsic, annotation: Smid) -> Lam
     if arity == 0 {
         return value(app_bif(index.try_into().unwrap(), vec![]));
     }
+
+    // Derive strict argument indices from the demand signature table.
+    // This is the single canonical source, replacing `info.strict_args()`.
+    let strict: Vec<usize> = strict_indices_for(info.name());
 
     let return_type = info.ty().ret(arity - 1);
 
@@ -39,7 +46,7 @@ pub fn wrap(index: usize, info: &intrinsics::Intrinsic, annotation: Smid) -> Lam
     // at shallower depths.
     let mut offset = 0;
     let mut offsets = vec![0];
-    for i in info.strict_args() {
+    for i in &strict {
         match info.ty().arg(*i) {
             Some(IntrinsicType::Number)
             | Some(IntrinsicType::String)
@@ -66,7 +73,7 @@ pub fn wrap(index: usize, info: &intrinsics::Intrinsic, annotation: Smid) -> Lam
     let strict_depth = offsets[offsets.len() - 1];
     let mut counter = 1;
     for (i, arg) in args.iter_mut().enumerate().take(arity) {
-        if info.strict_args().contains(&i) {
+        if strict.contains(&i) {
             *arg = strict_depth - offsets[counter];
             counter += 1;
         } else {
@@ -129,7 +136,7 @@ pub fn wrap(index: usize, info: &intrinsics::Intrinsic, annotation: Smid) -> Lam
     // etc.
     let mut offset_iter = offsets.iter().rev();
     let _ = offset_iter.next(); // discard total offset
-    for i in info.strict_args().iter().rev() {
+    for i in strict.iter().rev() {
         let arg_offset = offset_iter.next().unwrap();
         match info.ty().arg(*i) {
             Some(IntrinsicType::Number) => {
@@ -163,19 +170,17 @@ pub fn wrap(index: usize, info: &intrinsics::Intrinsic, annotation: Smid) -> Lam
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{
-        common::sourcemap::Smid,
-        eval::{intrinsics, types},
-    };
+    use crate::{common::sourcemap::Smid, eval::intrinsics};
 
     #[test]
     pub fn test_wrapper() {
-        let intrinsic = intrinsics::Intrinsic::new(
-            "TEST",
-            types::function(vec![types::num(), types::num(), types::num()]).unwrap(),
-            vec![0, 1],
-        );
-        let wrapper = wrap(99, &intrinsic, Smid::fake(0));
+        // Use the real ADD intrinsic (num × num → num, both args strict).
+        // Strict arg indices now come from the demand signature table, not
+        // from a synthetic `strict: vec![0, 1]` field.
+        let add_index = intrinsics::index("ADD").expect("ADD must be registered");
+        let add_info = intrinsics::intrinsic(add_index);
+        let wrapper = wrap(add_index, add_info, Smid::fake(0));
+        let idx: u8 = add_index.try_into().unwrap();
         let syntax = lambda(
             2,
             unbox_num(
@@ -187,7 +192,7 @@ pub mod tests {
                         force(
                             local(0),
                             let_(
-                                vec![value(app_bif(99, vec![lref(2), lref(0)]))],
+                                vec![value(app_bif(idx, vec![lref(2), lref(0)]))],
                                 data(DataConstructor::BoxedNumber.tag(), vec![lref(0)]),
                             ),
                         ),

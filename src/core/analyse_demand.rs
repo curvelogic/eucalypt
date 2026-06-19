@@ -41,14 +41,17 @@ pub type SignatureTable = HashMap<SigKey, DemandSignature>;
 /// For each intrinsic, strict arguments get `(Strict, AtMostOnce)` per
 /// the blanket rule. Non-strict arguments get `(Lazy, Multi)`.
 /// Special refinements are applied for IF, AND, OR, LOOKUPOR, IO_BIND.
-fn build_intrinsic_signatures() -> HashMap<String, DemandSignature> {
+///
+/// This function is also called by the STG compiler to populate its
+/// per-intrinsic demand table, replacing the `strict_args` consultation.
+pub fn build_intrinsic_signatures() -> HashMap<String, DemandSignature> {
     let mut sigs = HashMap::new();
     for info in intrinsics::catalogue() {
         let arity = info.arity();
         if arity == 0 {
             continue;
         }
-        let strict_set = info.strict_args();
+        let strict_set = info.strict_indices();
         let mut sig = Vec::with_capacity(arity);
         for i in 0..arity {
             if strict_set.contains(&i) {
@@ -107,6 +110,25 @@ fn build_intrinsic_signatures() -> HashMap<String, DemandSignature> {
     );
 
     sigs
+}
+
+/// Return the indices of strict arguments for the named intrinsic,
+/// derived from the demand signature table.
+///
+/// Used by `wrap.rs` to generate forcing STG wrappers, replacing the
+/// old `Intrinsic::strict_args()` consultation.
+pub fn strict_indices_for(name: &str) -> Vec<usize> {
+    use crate::core::demand::Strictness;
+    build_intrinsic_signatures()
+        .get(name)
+        .map(|sig| {
+            sig.iter()
+                .enumerate()
+                .filter(|(_, d)| d.strictness == Strictness::Strict)
+                .map(|(i, _)| i)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Remove entries for scope 0 (current scope) and decrement all
@@ -394,6 +416,63 @@ impl DemandAnalyser {
 pub fn analyse_demands(expr: &RcExpr) -> (RcExpr, SignatureTable) {
     let analyser = DemandAnalyser::new();
     analyser.analyse(expr)
+}
+
+/// Walk the annotated core expression and print demand annotations for
+/// every let-bound name. Used by `eu dump demands`.
+pub fn print_demands(expr: &RcExpr) {
+    print_demands_inner(expr, 0);
+}
+
+fn print_demands_inner(expr: &RcExpr, depth: usize) {
+    use crate::core::demand::{Cardinality, Strictness};
+
+    match &*expr.inner {
+        Expr::Let(_, scope, _) => {
+            for b in &scope.pattern {
+                let s = match b.demand.strictness {
+                    Strictness::Strict => "Strict",
+                    Strictness::Lazy => "Lazy",
+                    Strictness::Unknown => "Unknown",
+                };
+                let c = match b.demand.cardinality {
+                    Cardinality::AtMostOnce => "AtMostOnce",
+                    Cardinality::Multi => "Multi",
+                    Cardinality::Absent => "Absent",
+                    Cardinality::Unknown => "Unknown",
+                };
+                println!("{}{}: ({}, {})", "  ".repeat(depth), b.name, s, c);
+                print_demands_inner(&b.expr, depth + 1);
+            }
+            print_demands_inner(&scope.body, depth);
+        }
+        Expr::Lam(_, _, scope) => {
+            print_demands_inner(&scope.body, depth);
+        }
+        Expr::App(_, f, args) => {
+            print_demands_inner(f, depth);
+            for a in args {
+                print_demands_inner(a, depth);
+            }
+        }
+        Expr::Lookup(_, obj, _, fb) => {
+            print_demands_inner(obj, depth);
+            if let Some(f) = fb {
+                print_demands_inner(f, depth);
+            }
+        }
+        Expr::List(_, xs) => {
+            for x in xs {
+                print_demands_inner(x, depth);
+            }
+        }
+        Expr::Block(_, bm) => {
+            for (_, v) in bm.iter() {
+                print_demands_inner(v, depth);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]

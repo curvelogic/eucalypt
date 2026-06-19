@@ -338,8 +338,20 @@ pub fn prepare(
 
     if opt.dump_demands() {
         let c = loader.core();
-        let (annotated, _sigs) = crate::core::analyse_demand::analyse_demands(&c.expr);
-        dump_core(annotated, opt);
+        let (annotated, sigs) = crate::core::analyse_demand::analyse_demands(&c.expr);
+        dump_core(annotated.clone(), opt);
+        // Print demand annotations for all let-bound names.
+        println!("\n-- demand annotations --");
+        crate::core::analyse_demand::print_demands(&annotated);
+        // Print signature table summary.
+        println!("\n-- signature table ({} entries) --", sigs.len());
+        for (key, sig) in &sigs {
+            let demands: Vec<String> = sig
+                .iter()
+                .map(|d| format!("({:?},{:?})", d.strictness, d.cardinality))
+                .collect();
+            println!("  {:016x}: [{}]", key, demands.join(", "));
+        }
         return Ok(Command::Exit);
     }
 
