@@ -1723,7 +1723,7 @@ impl<'a> Machine<'a> {
                 ExecutionError::Panic(Smid::default(), "no active capture emitter".to_string())
             })?;
             capture.stream_end();
-            let result_str = capture.into_string()?;
+            let result_str = capture.into_string(self.annotation())?;
             let view = MutatorHeapView::new(&self.core.heap);
             let str_ref = view.str_ref(result_str)?;
             let atom = view.alloc(HeapSyn::Atom { evaluand: str_ref })?.as_ptr();

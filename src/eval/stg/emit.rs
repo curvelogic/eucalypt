@@ -1,24 +1,19 @@
 //! Intrinsics for emitting data format events and debug / error
 //! tracing
 
-use crate::{
-    common::sourcemap::Smid,
-    eval::{
-        emit::{Emitter, RenderMetadata},
-        error::ExecutionError,
-        machine::intrinsic::{
-            CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic,
-        },
-        memory::{
-            self,
-            mutator::MutatorHeapView,
-            ndarray::HeapNdArray,
-            set::{HeapSet, Primitive as SetPrimitive},
-            syntax::{Ref, RefPtr},
-            vec::HeapVec,
-        },
-        primitive::Primitive,
+use crate::eval::{
+    emit::{Emitter, RenderMetadata},
+    error::ExecutionError,
+    machine::intrinsic::{CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
+    memory::{
+        self,
+        mutator::MutatorHeapView,
+        ndarray::HeapNdArray,
+        set::{HeapSet, Primitive as SetPrimitive},
+        syntax::{Ref, RefPtr},
+        vec::HeapVec,
     },
+    primitive::Primitive,
 };
 
 use super::support::machine_return_unit;
@@ -252,7 +247,7 @@ impl StgIntrinsic for EmitNative {
             memory::syntax::Native::Index(_)
             | memory::syntax::Native::Prng(_)
             | memory::syntax::Native::Producer(_) => {
-                return Err(ExecutionError::NotScalar(Smid::default()));
+                return Err(ExecutionError::NotScalar(machine.annotation()));
             }
         }
         machine_return_unit(machine, view)
@@ -307,7 +302,7 @@ impl StgIntrinsic for EmitTagNative {
             memory::syntax::Native::Index(_)
             | memory::syntax::Native::Prng(_)
             | memory::syntax::Native::Producer(_) => {
-                return Err(ExecutionError::NotScalar(Smid::default()));
+                return Err(ExecutionError::NotScalar(machine.annotation()));
             }
         }
         machine_return_unit(machine, view)

@@ -84,13 +84,13 @@ impl OwnedCaptureEmitter {
     }
 
     /// Consume the capture emitter and extract the buffered output as a
-    /// UTF-8 string.
-    pub fn into_string(mut self) -> Result<String, ExecutionError> {
+    /// UTF-8 string.  `annotation` is the call-site Smid from the machine,
+    /// used to point at the source location if the buffer is not valid UTF-8.
+    pub fn into_string(mut self, annotation: Smid) -> Result<String, ExecutionError> {
         // Drop the emitter first to end its borrow on the buffer.
         drop(self.emitter.take());
-        String::from_utf8(*self.buffer).map_err(|e| {
-            ExecutionError::Panic(Smid::default(), format!("capture not valid UTF-8: {e}"))
-        })
+        String::from_utf8(*self.buffer)
+            .map_err(|e| ExecutionError::Panic(annotation, format!("capture not valid UTF-8: {e}")))
     }
 }
 
