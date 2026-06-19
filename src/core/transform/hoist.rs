@@ -273,6 +273,84 @@ pub fn hoist(expr: &RcExpr) -> Result<RcExpr, CoreError> {
     )))
 }
 
+/// Run the namespace lambda hoisting pass with awareness of prelude blob globals.
+///
+/// Extends `hoist` for the blob-prelude path: when the blob is active the
+/// user-code core expression contains no namespace `DefaultBlockLet` blocks
+/// (they live in the blob as precompiled globals).  However user code may
+/// still contain `Lookup(Var(Free("str")), "upper")` nodes that need to be
+/// rewritten to `Var(Free("__str_upper"))` so the compiler's
+/// `resolve_free_var` can emit `Ref::G` for them.
+///
+/// This function:
+/// 1. Collects hoistable members from the user expression (may be empty).
+/// 2. Scans `prelude_globals` for names matching `__<ns>_<member>` and seeds
+///    the rewrite map from them — without adding new bindings (the blob already
+///    has them as globals).
+/// 3. Rewrites matching `Lookup` nodes to direct `Var(Free(...))` references.
+/// 4. Wraps any locally-hoisted members (from user code) in an `OtherLet`,
+///    as `hoist` does.
+///
+/// When `prelude_globals` is empty this behaves identically to `hoist`.
+pub fn hoist_with_blob_globals(
+    expr: &RcExpr,
+    prelude_globals: &HashMap<String, usize>,
+) -> Result<RcExpr, CoreError> {
+    let hoistable = collect_all_hoistable(expr);
+
+    // Build lookup map: (ns, member) → generated name.
+    let mut hoisted_map: HashMap<(String, String), String> = HashMap::new();
+    let mut bindings: Vec<CoreBinding<RcExpr>> = Vec::new();
+
+    // Register locally hoistable members (from user code, e.g. when EU_SOURCE_PRELUDE=1).
+    for h in hoistable {
+        let gen_name = hoisted_name(&h.ns, &h.member);
+        hoisted_map.entry((h.ns, h.member)).or_insert_with(|| {
+            bindings.push(CoreBinding::new(gen_name.clone(), h.expr));
+            gen_name.clone()
+        });
+    }
+
+    // Seed the rewrite map from blob globals that match `__<ns>_<member>`.
+    // These already exist as prelude globals, so no new bindings are needed.
+    // Splitting on the first `_` after `__` extracts (ns, member).  Eucalypt
+    // namespace names and member names use hyphens, not underscores, so the
+    // first `_` in the remainder is reliably the separator.
+    for name in prelude_globals.keys() {
+        if let Some(rest) = name.strip_prefix("__") {
+            if let Some(sep) = rest.find('_') {
+                let ns = &rest[..sep];
+                let member = &rest[sep + 1..];
+                if !ns.is_empty() && !member.is_empty() {
+                    let key = (ns.to_string(), member.to_string());
+                    hoisted_map.entry(key).or_insert_with(|| name.clone());
+                }
+            }
+        }
+    }
+
+    if hoisted_map.is_empty() {
+        return Ok(expr.clone());
+    }
+
+    // Rewrite Lookup nodes in the expression.
+    let rewritten = rewrite_lookups(expr, &hoisted_map)?;
+
+    if bindings.is_empty() {
+        // All rewrites point to blob globals; no new local bindings needed.
+        return Ok(rewritten);
+    }
+
+    // Wrap locally hoisted members in an OtherLet scope (same as `hoist`).
+    let binding_pairs: Vec<(String, RcExpr)> =
+        bindings.into_iter().map(|b| (b.name, b.expr)).collect();
+    Ok(RcExpr::from(Expr::Let(
+        Smid::default(),
+        close_let_scope(binding_pairs, rewritten),
+        LetType::OtherLet,
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

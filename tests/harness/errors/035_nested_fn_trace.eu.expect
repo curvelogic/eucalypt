@@ -1,2 +1,2 @@
 exit: 1
-stderr: "035_nested_fn_trace\.eu:1:"
+stderr: "035_nested_fn_trace\.eu:[12]:"

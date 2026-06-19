@@ -1,0 +1,35 @@
+#!/usr/bin/env eu
+# Tests for namespace hoisting in the prelude blob pipeline (eu-9tah.7)
+#
+# When the blob is active, namespace blocks (str, cal, vec, etc.) are not
+# present in user code — they are precompiled globals.  The blob hoisting
+# pass ensures that namespace member lookups like `str.to-upper` are
+# rewritten to direct Var references (→ Ref::G) rather than runtime LookupOr
+# calls.  These tests verify correct behaviour across several namespaces.
+
+# str.to-upper — hoisted as __str_to-upper
+upper-got: "eucalypt" str.to-upper
+upper-ok: upper-got = "EUCALYPT"
+
+# str.to-lower — hoisted as __str_to-lower
+lower-got: "EUCALYPT" str.to-lower
+lower-ok: lower-got = "eucalypt"
+
+# str.trim — hoisted as __str_trim
+trim-got: "  hello  " str.trim
+trim-ok: trim-got = "hello"
+
+# str.split-on — hoisted as __str_split-on
+split-got: "a:b:c" str.split-on("[:]")
+split-ok: split-got = ["a", "b", "c"]
+
+# str.join-on — hoisted as __str_join-on
+join-got: ["x", "y", "z"] str.join-on("-")
+join-ok: join-got = "x-y-z"
+
+# Namespace block still accessible as a value after hoisting
+ns-block-ok: block?(str)
+
+RESULT: if(
+  and(upper-ok, and(lower-ok, and(trim-ok, and(split-ok, and(join-ok, ns-block-ok))))),
+  :PASS, :FAIL)
