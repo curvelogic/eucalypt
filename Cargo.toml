@@ -68,6 +68,7 @@ serde = { version = "1", features = ["derive"] }
 libc = "0.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ctrlc = "3"
 clap = { version = "4.5", features = ["derive"] }
 dirs = "4.0.0"
 webbrowser = "0.8.0"

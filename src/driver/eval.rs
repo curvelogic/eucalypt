@@ -105,7 +105,16 @@ fn collect_machine_stats(machine: &crate::eval::machine::vm::Machine<'_>, stats:
 }
 
 /// Run the prepared core expression and output to selected emitter
-pub fn run(opt: &EucalyptOptions, mut loader: SourceLoader) -> Result<Statistics, EucalyptError> {
+/// Run result: statistics and an optional process exit code override.
+///
+/// The exit code is `Some(130)` when the program was interrupted by
+/// SIGINT and `None` for normal completion.
+pub struct RunResult {
+    pub stats: Statistics,
+    pub exit_code: Option<u8>,
+}
+
+pub fn run(opt: &EucalyptOptions, mut loader: SourceLoader) -> Result<RunResult, EucalyptError> {
     let format = determine_format(opt, &loader);
     let mut stats = Statistics::default();
     // Extract the blob before the loader is consumed by Executor::from().
@@ -116,10 +125,10 @@ pub fn run(opt: &EucalyptOptions, mut loader: SourceLoader) -> Result<Statistics
     let mut executor = Executor::from(loader);
     #[cfg(not(target_arch = "wasm32"))]
     executor.set_prelude_blob(blob);
-    executor
+    let exit_code = executor
         .execute(opt, &mut stats, format)
         .map_err(|e| EucalyptError::Execution(Box::new(e)))?;
-    Ok(stats)
+    Ok(RunResult { stats, exit_code })
 }
 
 /// Determine the output format from options and targets
@@ -363,11 +372,12 @@ impl<'a> Executor<'a> {
                     }
                 } else {
                     machine.take_emitter().stream_end();
-                    ret?;
-                    Ok(None)
+                    ret.map(|_| None)
                 };
 
-                // Collect machine/GC statistics from all execution phases.
+                // Collect machine/GC statistics from all execution phases,
+                // even on error (e.g. Interrupted) so that -S output is
+                // available.
                 collect_machine_stats(&machine, stats);
 
                 result
@@ -382,6 +392,10 @@ impl<'a> Executor<'a> {
         error_format: &ErrorFormat,
     ) -> Result<Option<u8>, ExecutionError> {
         match result {
+            Err(ref e) if e.is_interrupted() => {
+                eprintln!("interrupted");
+                Ok(Some(130))
+            }
             Err(e) => {
                 match error_format {
                     ErrorFormat::Human => {
