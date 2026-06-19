@@ -211,6 +211,16 @@ cannot soundly emit `AtMostOnce` for `LetRec` bindings because the scope
 is recursive. The demand analysis pass's fixed-point handles this correctly
 by iterating until the cardinality stabilises.
 
+### Debugging flag
+
+Add `suppress_demand_analysis: bool` to the pipeline settings (alongside
+the existing `suppress_updates`, `suppress_inlining`, `suppress_optimiser`
+flags). When set, the analysis pass is skipped entirely and all demands
+remain at `Unknown` (the conservative default). This enables A/B testing
+of the analysis's effect on any program.
+
+Expose via CLI flag `--suppress-demand-analysis` or environment variable.
+
 ### Dump support
 
 Add `eu dump demands <file>` showing the core expression with demand
