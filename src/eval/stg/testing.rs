@@ -30,7 +30,7 @@ lazy_static! {
         heap_dump_at_gc: false,
         test_mode: false,
         prelude_globals: None,
-        suppress_demand_analysis: false,
+        suppress_demand_analysis: true,
     };
 }
 
