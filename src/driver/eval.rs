@@ -393,7 +393,7 @@ impl<'a> Executor<'a> {
     ) -> Result<Option<u8>, ExecutionError> {
         match result {
             Err(ref e) if e.is_interrupted() => {
-                eprintln!("interrupted");
+                eprintln!("\nInterrupted (Ctrl-C) — partial statistics follow");
                 Ok(Some(130))
             }
             Err(e) => {
