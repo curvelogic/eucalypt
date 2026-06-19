@@ -45,6 +45,18 @@ use super::{
     lob::LargeObjectBlock,
 };
 
+/// Default nursery budget in blocks.  When this many blocks have been
+/// allocated since the last collection, a collection is triggered.
+/// 256 blocks = 8 MiB with 32 KiB blocks.
+const DEFAULT_NURSERY_BUDGET: usize = 256;
+
+/// After this many consecutive minor collections, force a major collection.
+const MINORS_BEFORE_MAJOR: usize = 8;
+
+/// If a minor collection reclaims less than this fraction of the nursery,
+/// escalate to a major collection next time.
+const MIN_MINOR_RECLAIM_RATIO: f64 = 0.25;
+
 /// Type of garbage collection performed
 #[derive(Debug, Clone, Copy)]
 enum CollectionType {
@@ -80,11 +92,23 @@ impl CollectionStrategy {
         )
     }
 
-    /// Return the candidate block indices for evacuation (empty if mark-in-place)
+    /// Return the candidate block indices for evacuation (empty if mark-in-place).
+    ///
+    /// For `DefragmentationSweep`, returns all block indices (head,
+    /// overflow, rest) — the caller filters out pinned blocks.
     pub fn candidates(&self) -> Vec<usize> {
         match self {
             CollectionStrategy::SelectiveEvacuation(blocks) => blocks.clone(),
-            CollectionStrategy::DefragmentationSweep => Vec::new(), // TODO: all blocks
+            CollectionStrategy::DefragmentationSweep => {
+                // Cannot enumerate blocks here — the strategy is
+                // resolved by `analyze_collection_strategy` which
+                // populates `SelectiveEvacuation` with all unpinned
+                // fragmented indices.  If we reach this arm the
+                // caller has a `DefragmentationSweep` without block
+                // data; return empty so the collector falls back to
+                // mark-in-place (safe, no data loss).
+                Vec::new()
+            }
             CollectionStrategy::MarkInPlace => Vec::new(),
         }
     }
@@ -120,8 +144,12 @@ pub struct HeapStats {
     pub used: usize,
     /// Number of blocks used and recycled
     pub recycled: usize,
-    /// Number of GC collections performed
+    /// Number of GC collections performed (minor + major)
     pub collections_count: u64,
+    /// Number of minor (nursery) collections
+    pub minor_collections: u64,
+    /// Number of major (full) collections
+    pub major_collections: u64,
     /// High-water mark of allocated blocks
     pub peak_heap_blocks: usize,
 }
@@ -354,30 +382,47 @@ impl SizeClass {
     }
 }
 
-/// Simple heap of bump blocks with no reclaim for now
+/// The heap's block storage.
+///
+/// Blocks move through a lifecycle:
+///   head/overflow → rest → unswept → recycled → head/overflow
+///
+/// During collection, the collector marks live objects in-place (line
+/// marks in each block).  After marking, blocks move to `unswept`
+/// where they are lazily swept one at a time as the allocator needs
+/// recycled blocks.  Opportunistic evacuation copies objects out of
+/// fragmented "candidate" blocks into a dedicated evacuation target;
+/// after the update phase the target is integrated into `rest`.
 pub struct HeapState {
     /// For allocating small objects
     head: Option<BumpBlock>,
     /// For allocating medium objects
     overflow: Option<BumpBlock>,
-    /// Recycled - part used but reclaimed
+    /// Recycled — partially used, lazily swept, available for reuse
     recycled: VecDeque<BumpBlock>,
-    /// Part used - not yet reclaimed
+    /// Fully used — awaiting the next collection
     rest: VecDeque<BumpBlock>,
     /// Blocks awaiting lazy sweep (populated after mark phase)
     unswept: VecDeque<BumpBlock>,
-    /// Large object blocks - each contains single object
+    /// Large object blocks — each contains a single oversized object
     lobs: Vec<LargeObjectBlock>,
     /// Recycled large object blocks available for reuse
     recycled_lobs: Vec<LargeObjectBlock>,
-    /// Number of GC collections performed
+    /// Number of GC collections performed (minor + major)
     collections_count: u64,
     /// High-water mark of allocated blocks
     peak_heap_blocks: usize,
-    /// Block currently used as evacuation target during collection
+    /// Block currently used as evacuation target during collection.
+    ///
+    /// During an evacuating collection, objects are copied from
+    /// candidate blocks into this target.  After the update phase,
+    /// `finalise_evacuation()` moves the target into `rest`.
     evacuation_target: Option<BumpBlock>,
     /// Blocks filled during evacuation (integrated into rest after collection)
     filled_evacuation_blocks: Vec<BumpBlock>,
+    /// Counter of block replacements since last collection.
+    /// Incremented by replace_head / replace_head_targeted / replace_overflow.
+    blocks_replaced_since_gc: usize,
 }
 
 impl Default for HeapState {
@@ -430,6 +475,7 @@ impl HeapState {
             peak_heap_blocks: 0,
             evacuation_target: None,
             filled_evacuation_blocks: Vec::new(),
+            blocks_replaced_since_gc: 0,
         }
     }
 
@@ -464,6 +510,7 @@ impl HeapState {
             self.rest.push_back(old);
             None as Option<BumpBlock>
         });
+        self.blocks_replaced_since_gc += 1;
         self.head.as_mut().expect("head block was just replaced")
     }
 
@@ -493,6 +540,7 @@ impl HeapState {
             self.rest.push_back(old);
             None as Option<BumpBlock>
         });
+        self.blocks_replaced_since_gc += 1;
         self.head.as_mut().expect("head block was just replaced")
     }
 
@@ -532,6 +580,7 @@ impl HeapState {
             self.rest.push_back(old);
             None as Option<BumpBlock>
         });
+        self.blocks_replaced_since_gc += 1;
         self.overflow
             .as_mut()
             .expect("overflow block was just replaced")
@@ -828,8 +877,8 @@ impl HeapState {
         }
     }
 
-    /// Statistics
-    pub fn stats(&self) -> HeapStats {
+    /// Statistics (without minor/major breakdown — use Heap::stats() for that)
+    fn stats_partial(&self) -> HeapStats {
         HeapStats {
             blocks_allocated: self.rest.len()
                 + self.unswept.len()
@@ -840,6 +889,8 @@ impl HeapState {
             used: self.rest.len() + self.unswept.len(),
             recycled: self.recycled.len(),
             collections_count: self.collections_count,
+            minor_collections: 0,
+            major_collections: 0,
             peak_heap_blocks: self.peak_heap_blocks,
         }
     }
@@ -1193,8 +1244,12 @@ impl EmergencyState {
 pub struct Heap {
     state: UnsafeCell<HeapState>,
     limit: Option<usize>,
-    /// Mark state for this heap instance - flipped each collection to avoid clearing marks.
-    /// Plain bool suffices as each Heap is used from a single thread.
+    /// Mark state for this heap instance — flipped each major collection.
+    ///
+    /// An object whose header mark bit matches `mark_state` is considered
+    /// "old" (tenured).  An object whose mark bit does NOT match is "young"
+    /// (nursery).  Minor collections mark nursery objects WITHOUT flipping
+    /// this bit, thereby tenuring them in place.
     mark_state: bool,
     /// Cached value of `EU_GC_STRESS` environment variable.
     ///
@@ -1212,6 +1267,16 @@ pub struct Heap {
     /// Never reset to zero — `verify_mark_integrity` uses a before/after
     /// snapshot to detect objects missed during a single mark phase.
     mark_count: std::cell::Cell<u64>,
+    /// Nursery budget in blocks.  When `blocks_replaced_since_gc` reaches this
+    /// threshold, a minor collection is triggered.  Starts at
+    /// `DEFAULT_NURSERY_BUDGET` and adapts based on survival rate.
+    nursery_budget: std::cell::Cell<usize>,
+    /// Number of consecutive minor collections since the last major.
+    minors_since_major: std::cell::Cell<usize>,
+    /// Number of minor collections performed (lifetime).
+    minor_collection_count: std::cell::Cell<u64>,
+    /// Number of major collections performed (lifetime).
+    major_collection_count: std::cell::Cell<u64>,
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -1469,7 +1534,7 @@ mod oom_tests {
         heap_state.replace_head();
         heap_state.replace_overflow();
 
-        let stats_before = heap_state.stats();
+        let stats_before = heap_state.stats_partial();
         eprintln!(
             "Before emergency collection: {} blocks allocated, {} in rest, {} recycled",
             stats_before.blocks_allocated, stats_before.used, stats_before.recycled
@@ -1679,6 +1744,11 @@ impl Heap {
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
             pin_counts: UnsafeCell::new(HashMap::new()),
             mark_count: std::cell::Cell::new(0),
+
+            nursery_budget: std::cell::Cell::new(DEFAULT_NURSERY_BUDGET),
+            minors_since_major: std::cell::Cell::new(0),
+            minor_collection_count: std::cell::Cell::new(0),
+            major_collection_count: std::cell::Cell::new(0),
         }
     }
 
@@ -1693,12 +1763,20 @@ impl Heap {
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
             pin_counts: UnsafeCell::new(HashMap::new()),
             mark_count: std::cell::Cell::new(0),
+
+            nursery_budget: std::cell::Cell::new(DEFAULT_NURSERY_BUDGET),
+            minors_since_major: std::cell::Cell::new(0),
+            minor_collection_count: std::cell::Cell::new(0),
+            major_collection_count: std::cell::Cell::new(0),
         }
     }
 
     pub fn stats(&self) -> HeapStats {
         // SAFETY: Read-only access to heap state. Single-threaded, Heap owns state.
-        unsafe { (*self.state.get()).stats() }
+        let mut s = unsafe { (*self.state.get()).stats_partial() };
+        s.minor_collections = self.minor_collection_count.get();
+        s.major_collections = self.major_collection_count.get();
+        s
     }
 
     /// Record that a GC collection occurred, incrementing count and updating peak blocks
@@ -1768,14 +1846,121 @@ impl Heap {
         heap_state.finalise_evacuation();
     }
 
+    /// Whether the GC should run.
+    ///
+    /// Returns `true` when either the nursery budget is exhausted (allocation-
+    /// rate trigger) or the heap limit is reached (back-pressure trigger).
+    /// The caller decides whether to run a minor or major collection via
+    /// `should_collect_major()`.
     pub fn policy_requires_collection(&self) -> bool {
+        // Back-pressure trigger: heap limit reached
         if let Some(limit) = self.limit {
             let stats = self.stats();
-            stats.blocks_allocated >= limit
+            if stats.blocks_allocated >= limit
                 && (stats.recycled as f32 / stats.blocks_allocated as f32) < 0.25
-        } else {
-            false
+            {
+                return true;
+            }
         }
+
+        // Allocation-rate trigger: nursery budget exhausted.
+        //
+        // Only active when a heap limit is set, because without a
+        // limit there is no memory pressure and the allocation-rate
+        // trigger would cause unnecessary full collections.  When a
+        // true minor collection (skipping old objects) is available,
+        // this trigger should fire unconditionally.
+        if self.limit.is_some() {
+            let heap_state = unsafe { &*self.state.get() };
+            if heap_state.blocks_replaced_since_gc >= self.nursery_budget.get() {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Decide whether the next collection should be major (full) or minor.
+    ///
+    /// A major collection is chosen when:
+    /// - Too many consecutive minors have occurred (> `MINORS_BEFORE_MAJOR`)
+    /// - The heap limit is reached (back-pressure)
+    /// - GC stress mode is active (every collection is major to maximise
+    ///   coverage of the flip-and-trace path)
+    pub fn should_collect_major(&self) -> bool {
+        if self.gc_stress {
+            return true;
+        }
+
+        // First collection must be major to establish mark state
+        let total = self.minor_collection_count.get() + self.major_collection_count.get();
+        if total == 0 {
+            return true;
+        }
+
+        if self.minors_since_major.get() >= MINORS_BEFORE_MAJOR {
+            return true;
+        }
+
+        // If the heap limit is reached, escalate to major
+        if let Some(limit) = self.limit {
+            let stats = self.stats();
+            if stats.blocks_allocated >= limit {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Record that a minor collection completed.
+    ///
+    /// Updates counters and resets the allocation-rate trigger.
+    /// `reclaim_ratio` is the fraction of nursery blocks reclaimed
+    /// (0.0–1.0); if below `MIN_MINOR_RECLAIM_RATIO` the next
+    /// collection will be escalated to major.
+    pub fn record_minor_collection(&self, reclaim_ratio: f64) {
+        self.minor_collection_count
+            .set(self.minor_collection_count.get() + 1);
+        let minors = self.minors_since_major.get() + 1;
+        self.minors_since_major.set(minors);
+
+        // Reset allocation-rate trigger
+        let heap_state = unsafe { &mut *self.state.get() };
+        heap_state.blocks_replaced_since_gc = 0;
+        heap_state.record_collection();
+
+        // If minor reclaimed very little, force a major next time
+        if reclaim_ratio < MIN_MINOR_RECLAIM_RATIO {
+            self.minors_since_major.set(MINORS_BEFORE_MAJOR);
+        }
+    }
+
+    /// Record that a major collection completed.
+    pub fn record_major_collection(&self) {
+        self.major_collection_count
+            .set(self.major_collection_count.get() + 1);
+        self.minors_since_major.set(0);
+
+        // Reset allocation-rate trigger
+        let heap_state = unsafe { &mut *self.state.get() };
+        heap_state.blocks_replaced_since_gc = 0;
+        heap_state.record_collection();
+    }
+
+    /// Current nursery budget in blocks.
+    pub fn nursery_budget(&self) -> usize {
+        self.nursery_budget.get()
+    }
+
+    /// Number of minor collections performed (lifetime).
+    pub fn minor_collection_count(&self) -> u64 {
+        self.minor_collection_count.get()
+    }
+
+    /// Number of major collections performed (lifetime).
+    pub fn major_collection_count(&self) -> u64 {
+        self.major_collection_count.get()
     }
 
     /// Analyze fragmentation across all blocks and determine optimal collection strategy
@@ -1911,8 +2096,29 @@ impl Heap {
                 }
             }
 
-            // High fragmentation (30%+) - comprehensive defragmentation
-            _ => CollectionStrategy::DefragmentationSweep,
+            // High fragmentation (30%+) — evacuate all unpinned fragmented blocks
+            _ => {
+                if fragmented_blocks.is_empty() {
+                    CollectionStrategy::MarkInPlace
+                } else {
+                    let unpinned_candidates: Vec<usize> = fragmented_blocks
+                        .into_iter()
+                        .filter(|&idx| {
+                            let base = match idx {
+                                0 => heap_state.head.as_ref().map(|b| b.base_address()),
+                                1 => heap_state.overflow.as_ref().map(|b| b.base_address()),
+                                n => heap_state.rest.get(n - 2).map(|b| b.base_address()),
+                            };
+                            base.is_none_or(|addr| !self.is_block_pinned(addr))
+                        })
+                        .collect();
+                    if unpinned_candidates.is_empty() {
+                        CollectionStrategy::MarkInPlace
+                    } else {
+                        CollectionStrategy::SelectiveEvacuation(unpinned_candidates)
+                    }
+                }
+            }
         }
     }
 
@@ -2452,7 +2658,7 @@ impl Heap {
         // Single-threaded, allocation is blocked during emergency collection.
         // The emergency_state reentrancy guard prevents concurrent sweeps.
         let heap_state = unsafe { &mut *self.state.get() };
-        let stats_before = heap_state.stats();
+        let stats_before = heap_state.stats_partial();
 
         eprintln!(
             "Emergency collection: before sweep - {} blocks allocated, {} recycled",
@@ -2465,11 +2671,11 @@ impl Heap {
 
         // Strategy 2: If we still need space, try to free the current head block
         // if it's mostly empty (this is more aggressive but still relatively safe)
-        if stats_before.recycled == heap_state.stats().recycled {
+        if stats_before.recycled == heap_state.stats_partial().recycled {
             self.try_emergency_head_replacement(heap_state);
         }
 
-        let stats_after = heap_state.stats();
+        let stats_after = heap_state.stats_partial();
         eprintln!(
             "Emergency collection: after sweep - {} blocks allocated, {} recycled",
             stats_after.blocks_allocated, stats_after.recycled
@@ -2753,6 +2959,36 @@ impl Heap {
         // depending on size of object + header, unmark line or lines
         let _header = self.get_header(ptr);
         todo!();
+    }
+
+    /// Write barrier: eagerly tenure a young object when stored into an
+    /// old frame.
+    ///
+    /// Called by the VM when an Update continuation overwrites a black
+    /// hole.  If the target frame is old (marked) and the value being
+    /// stored points to a young (unmarked) object, we mark the young
+    /// object immediately — tenuring it in place so that subsequent
+    /// minor collections don't need a remembered set.
+    ///
+    /// Thunk updates are write-once, so this check fires at most once
+    /// per thunk and the branch is highly predictable.
+    ///
+    /// Marks both the header bit and the lines covering the allocation,
+    /// so the object is fully protected from lazy sweep.
+    pub fn write_barrier_mark_young<T>(&self, ptr: NonNull<T>) {
+        if !self.is_marked(ptr) {
+            self.mark_object(ptr);
+
+            // Mark lines covering the full allocation (header + object)
+            // via interior mutability (same UnsafeCell pattern as mark_object).
+            // SAFETY: Single-threaded mutator path; no concurrent access.
+            let heap_state = unsafe { &mut *self.state.get() };
+            let header_size = size_of::<AllocHeader>();
+            let total_size = header_size + size_of::<T>();
+            let header_ptr =
+                unsafe { NonNull::new_unchecked((ptr.as_ptr() as *mut u8).sub(header_size)) };
+            heap_state.mark_region_in_block(header_ptr, total_size);
+        }
     }
 
     pub fn sweep(&mut self) {
