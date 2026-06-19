@@ -141,7 +141,7 @@ impl StgIntrinsic for If {
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         lambda(
             3,
-            dsl::switch_suppress(
+            dsl::switch(
                 local(0),
                 vec![
                     (DataConstructor::BoolTrue.tag(), local(1)),
