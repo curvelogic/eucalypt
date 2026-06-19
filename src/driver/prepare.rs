@@ -86,6 +86,7 @@ pub fn prepare(
                 || opt.dump_cooked()
                 || opt.dump_inlined()
                 || opt.dump_pruned()
+                || opt.dump_demands()
                 || opt.test();
 
             if can_continue {
@@ -332,6 +333,13 @@ pub fn prepare(
     if opt.dump_pruned() {
         let c = loader.core();
         dump_core(c.expr.clone(), opt);
+        return Ok(Command::Exit);
+    }
+
+    if opt.dump_demands() {
+        let c = loader.core();
+        let (annotated, _sigs) = crate::core::analyse_demand::analyse_demands(&c.expr);
+        dump_core(annotated, opt);
         return Ok(Command::Exit);
     }
 

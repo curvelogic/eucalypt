@@ -215,6 +215,10 @@ pub struct RunArgs {
     #[arg(long = "no-dce")]
     pub no_dce: bool,
 
+    /// Suppress demand analysis pass (all demands remain at Unknown)
+    #[arg(long = "suppress-demand-analysis")]
+    pub suppress_demand_analysis: bool,
+
     /// Seed for random number generation (for reproducible results)
     #[arg(long = "seed")]
     pub seed: Option<i64>,
@@ -297,6 +301,8 @@ pub enum DumpPhase {
     Inlined,
     /// Dump core expression once dead code has been eliminated
     Pruned,
+    /// Dump core expression with demand annotations
+    Demands,
     /// Dump compiled STG syntax
     Stg,
     /// Dump code for runtime globals
@@ -380,6 +386,7 @@ pub struct EucalyptOptions {
     pub dump_cooked: bool,
     pub dump_inlined: bool,
     pub dump_pruned: bool,
+    pub dump_demands: bool,
     pub dump_stg: bool,
     pub dump_runtime: bool,
 
@@ -545,47 +552,59 @@ impl From<EucalyptCli> for EucalyptOptions {
             dump_cooked,
             dump_inlined,
             dump_pruned,
+            dump_demands,
             dump_stg,
             dump_runtime,
             list_targets,
         ) = match &cli.command {
             Some(Commands::Version) => (
-                false, true, false, false, false, false, false, false, false, false, false,
+                false, true, false, false, false, false, false, false, false, false, false, false,
             ),
             Some(Commands::Explain(_)) => (
-                true, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
             ),
             Some(Commands::Test(_)) => (
-                false, false, true, false, false, false, false, false, false, false, false,
+                false, false, true, false, false, false, false, false, false, false, false, false,
             ),
             Some(Commands::ListTargets(_)) => (
-                false, false, false, false, false, false, false, false, false, false, true,
+                false, false, false, false, false, false, false, false, false, false, false, true,
             ),
             Some(Commands::Dump(args)) => match args.phase {
                 DumpPhase::Ast => (
                     false, false, false, true, false, false, false, false, false, false, false,
+                    false,
                 ),
                 DumpPhase::Desugared => (
                     false, false, false, false, true, false, false, false, false, false, false,
+                    false,
                 ),
                 DumpPhase::Cooked => (
                     false, false, false, false, false, true, false, false, false, false, false,
+                    false,
                 ),
                 DumpPhase::Inlined => (
                     false, false, false, false, false, false, true, false, false, false, false,
+                    false,
                 ),
                 DumpPhase::Pruned => (
                     false, false, false, false, false, false, false, true, false, false, false,
+                    false,
+                ),
+                DumpPhase::Demands => (
+                    false, false, false, false, false, false, false, false, true, false, false,
+                    false,
                 ),
                 DumpPhase::Stg => (
-                    false, false, false, false, false, false, false, false, true, false, false,
+                    false, false, false, false, false, false, false, false, false, true, false,
+                    false,
                 ),
                 DumpPhase::Runtime => (
-                    false, false, false, false, false, false, false, false, false, true, false,
+                    false, false, false, false, false, false, false, false, false, false, true,
+                    false,
                 ),
             },
             _ => (
-                false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false, false, false, false, false,
             ),
         };
 
@@ -631,6 +650,11 @@ impl From<EucalyptCli> for EucalyptOptions {
 
         let no_dce = match &cli.command {
             Some(Commands::Run(args)) => args.no_dce,
+            _ => false,
+        };
+
+        let suppress_demand_analysis = match &cli.command {
+            Some(Commands::Run(args)) => args.suppress_demand_analysis,
             _ => false,
         };
 
@@ -685,6 +709,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             dump_cooked,
             dump_inlined,
             dump_pruned,
+            dump_demands,
             dump_stg,
             dump_runtime,
             lsp,
@@ -707,6 +732,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             error_format,
             stg_settings: StgSettings {
                 heap_limit_mib,
+                suppress_demand_analysis,
                 ..StgSettings::default()
             },
             explicit_inputs,
@@ -806,6 +832,10 @@ impl EucalyptOptions {
 
     pub fn dump_pruned(&self) -> bool {
         self.dump_pruned
+    }
+
+    pub fn dump_demands(&self) -> bool {
+        self.dump_demands
     }
 
     pub fn dump_stg(&self) -> bool {
@@ -908,6 +938,7 @@ impl EucalyptOptions {
             && !self.dump_cooked
             && !self.dump_inlined
             && !self.dump_pruned
+            && !self.dump_demands
             && !self.dump_stg
             && !self.dump_runtime
             && !self.format
@@ -1231,6 +1262,8 @@ impl EucalyptOptions {
             explanation.push_str(
                 "process inputs and simplify to final core representation and dump to standard out",
             );
+        } else if self.dump_demands {
+            explanation.push_str("process inputs through core phase, run demand analysis, and dump annotated core to standard out");
         } else if self.dump_stg {
             explanation.push_str("process inputs through core phase and compile to STG code and dump to standard out");
         } else if self.dump_runtime {
