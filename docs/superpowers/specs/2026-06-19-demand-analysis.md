@@ -129,16 +129,44 @@ consults it when compiling `App` nodes.
 
 The hardcoded `strict_args` vectors and `single_use_args` lists encode real
 semantic knowledge. Before the analysis pass runs, seed the signature table
-with demand signatures for all intrinsics:
+with demand signatures for all intrinsics.
 
-- **IF**: `[(Strict, Multi), (Lazy, AtMostOnce), (Lazy, AtMostOnce)]`
-  (condition is strict; then/else each entered at most once)
+#### Blanket rule
+
+**All strict intrinsic arguments are also `AtMostOnce`**. Intrinsics evaluate
+each argument exactly once and return — there is no case where a strict
+intrinsic argument is evaluated more than once. This is the single biggest
+refinement over the existing `strict_args` data, which only captures
+strictness without cardinality. It eliminates Update frames for every strict
+intrinsic call site.
+
+Non-strict arguments default to `(Lazy, Multi)` unless refined below.
+
+#### Specific refinements
+
+- **IF**: `[(Strict, AtMostOnce), (Lazy, AtMostOnce), (Lazy, AtMostOnce)]`
+  — condition evaluated exactly once; then/else each entered at most once
+- **AND/OR** (short-circuit boolean): first arg `(Strict, AtMostOnce)`,
+  second arg `(Lazy, AtMostOnce)` — second may not be evaluated at all
+  (short-circuit), but if it is, it's evaluated once
 - **Arithmetic** (+, -, *, /, etc.): all args `(Strict, AtMostOnce)`
 - **Comparisons** (<, >, =, etc.): all args `(Strict, AtMostOnce)`
-- **String operations**: first arg `(Strict, AtMostOnce)`, rest per-intrinsic
+- **String operations**: all strict args `(Strict, AtMostOnce)` per blanket
+  rule
+- **LookupOr**: object `(Strict, AtMostOnce)`, fallback
+  `(Lazy, AtMostOnce)` — fallback only evaluated if lookup fails, and at
+  most once
+- **IO bind** (`__IO_BIND`): action `(Strict, AtMostOnce)`, continuation
+  `(Lazy, AtMostOnce)` — the continuation is called exactly once per IO step
+- **map/filter function arg**: `(Lazy, Multi)` — genuinely called on every
+  element, so `Multi` is correct; no refinement beyond the conservative default
 
-These seeds are derived mechanically from the existing `strict_args` and
-`single_use_args` data, then the old data is deleted.
+#### Derivation
+
+The seed table is derived mechanically from the existing `strict_args`
+vectors (each strict index → `(Strict, AtMostOnce)` per blanket rule) plus
+the specific refinements above for IF, AND/OR, LookupOr, and IO bind. The
+old `strict_args` vectors and `single_use_args` trait are then deleted.
 
 ### Pipeline placement
 
