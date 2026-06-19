@@ -2445,6 +2445,12 @@ pub fn test_error_167() {
 }
 
 #[test]
+/// io.shell without a cmd field should produce a proper IoFail error, not a panic.
+pub fn test_error_168() {
+    run_error_test(&io_error_opts("168_io_shell_missing_cmd.eu"));
+}
+
+#[test]
 /// Importing a malformed JSONL stream should produce a clear error, not a panic.
 pub fn test_error_169() {
     run_error_test(&error_opts("169_malformed_jsonl_stream.eu"));
