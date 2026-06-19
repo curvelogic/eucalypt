@@ -240,6 +240,21 @@ pub fn prepare(
         return Ok(Command::Exit);
     }
 
+    // Hoist inlinable namespace members to top-level bindings.
+    //
+    // This pass lifts `Lam(_, true, _)` and `Intrinsic` members of namespace
+    // `DefaultBlockLet` bindings (e.g. `str.upper`) to named top-level bindings
+    // (`__str_upper`) and rewrites `Lookup(Var(ns), member)` to direct `Var`
+    // references.  The inliner can then work on individual functions without
+    // distributing the whole namespace block.
+    {
+        let t = Instant::now();
+
+        loader.hoist_namespaces()?;
+
+        stats.record("hoist", t.elapsed());
+    }
+
     // Prune unused bindings to reduce inline overhead
     if !opt.no_dce() {
         let t = Instant::now();
