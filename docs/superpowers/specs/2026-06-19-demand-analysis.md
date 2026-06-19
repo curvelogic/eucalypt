@@ -161,12 +161,22 @@ Non-strict arguments default to `(Lazy, Multi)` unless refined below.
 - **map/filter function arg**: `(Lazy, Multi)` — genuinely called on every
   element, so `Multi` is correct; no refinement beyond the conservative default
 
-#### Derivation
+#### Derivation and single source of truth
 
 The seed table is derived mechanically from the existing `strict_args`
 vectors (each strict index → `(Strict, AtMostOnce)` per blanket rule) plus
-the specific refinements above for IF, AND/OR, LookupOr, and IO bind. The
-old `strict_args` vectors and `single_use_args` trait are then deleted.
+the specific refinements above for IF, AND/OR, LookupOr, and IO bind.
+
+Once the seed table is established, it becomes the **single canonical source**
+of intrinsic demand information. Both the analysis pass and `wrap.rs` (which
+generates STG wrappers that force strict arguments) read from it. The
+`strict_args()` trait method on `StgIntrinsic` and the hardcoded `strict`
+vectors in `intrinsics.rs` are then deleted entirely.
+
+`wrap.rs` currently consults `strict_args()` to decide which arguments to
+case-evaluate before calling the intrinsic. After this change, it consults
+the demand signature table instead — if an argument has `Strict` demand,
+generate the forcing wrapper. Same behaviour, single data source.
 
 ### Pipeline placement
 
@@ -213,6 +223,11 @@ After the analysis pass is working and tests pass, delete in order:
 6. **`switch_suppress()`** in `syntax.rs` (line 541-553)
 7. **Hardcoded `strict` vectors** from `src/eval/intrinsics.rs` — replaced
    by intrinsic seed signatures
+8. **`strict_args()` trait method** on `StgIntrinsic`
+   (`src/eval/machine/intrinsic.rs`) — replaced by the demand signature
+   table as the single source of truth
+9. **`wrap.rs` strict-arg consultation** — change from `strict_args()` to
+   reading `Strict` demands from the signature table
 
 Each deletion should leave tests passing. If a deletion causes a failure,
 the analysis pass is not yet producing equivalent demands — fix the analysis,
@@ -262,19 +277,21 @@ analysed functions.
 2. **`single_use_args()`** trait method and all overrides deleted from
    `intrinsic.rs`, `boolean.rs`
 3. **Hardcoded `strict` vectors** deleted from `intrinsics.rs`
-4. **`suppress_updates` global flag** in `StgSettings` / compiler remains
+4. **`strict_args()` trait method** deleted from `StgIntrinsic`; `wrap.rs`
+   reads from the demand signature table instead
+5. **`suppress_updates` global flag** in `StgSettings` / compiler remains
    (it's a debugging escape hatch, orthogonal to the analysis)
-5. IF-heavy programs (AoC tail-recursive conditionals) show **no performance
+6. IF-heavy programs (AoC tail-recursive conditionals) show **no performance
    regression** — the analysis must produce demands at least as good as the
    hand-rolled heuristics
-6. Thunk allocation count **reduced** compared to eu-9tah.4 baseline on at
+7. Thunk allocation count **reduced** compared to eu-9tah.4 baseline on at
    least 3 AoC examples
-7. `eu dump demands` shows demand annotations on bindings
-8. Tail-recursive conditionals show **flat stack depth** under `EU_STACK_DIAG=1`
+8. `eu dump demands` shows demand annotations on bindings
+9. Tail-recursive conditionals show **flat stack depth** under `EU_STACK_DIAG=1`
    — no O(N) Update accumulation
-9. All tests pass: `cargo test`
-10. `cargo clippy --all-targets -- -D warnings` clean
-11. `cargo fmt --all` clean
+10. All tests pass: `cargo test`
+11. `cargo clippy --all-targets -- -D warnings` clean
+12. `cargo fmt --all` clean
 
 ## Risks
 
