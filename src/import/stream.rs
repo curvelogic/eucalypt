@@ -8,6 +8,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::rc::Rc;
 
+use crate::common::sourcemap::Smid;
+use crate::eval::error::ExecutionError;
 use crate::eval::stg::json_to_stg::json_to_stg;
 use crate::eval::stg::stream::LazyProducer;
 use crate::eval::stg::syntax::dsl;
@@ -32,7 +34,7 @@ impl JsonlProducer {
 }
 
 impl LazyProducer for JsonlProducer {
-    fn next(&mut self) -> Option<Rc<StgSyn>> {
+    fn next(&mut self) -> Option<Result<Rc<StgSyn>, ExecutionError>> {
         loop {
             self.line_buf.clear();
             match self.reader.read_line(&mut self.line_buf) {
@@ -42,11 +44,18 @@ impl LazyProducer for JsonlProducer {
                     if trimmed.is_empty() {
                         continue; // skip blank lines
                     }
-                    let value: serde_json::Value = serde_json::from_str(trimmed)
-                        .unwrap_or_else(|e| panic!("malformed JSON on stream line: {e}"));
-                    return Some(json_to_stg(&value));
+                    return Some(
+                        serde_json::from_str(trimmed)
+                            .map(|v: serde_json::Value| json_to_stg(&v))
+                            .map_err(|e| {
+                                ExecutionError::Panic(
+                                    Smid::default(),
+                                    format!("malformed JSON in stream: {e}"),
+                                )
+                            }),
+                    );
                 }
-                Err(e) => panic!("IO error reading JSONL stream: {e}"),
+                Err(e) => return Some(Err(ExecutionError::Io(e))),
             }
         }
     }
@@ -73,10 +82,15 @@ impl CsvProducer {
 }
 
 impl LazyProducer for CsvProducer {
-    fn next(&mut self) -> Option<Rc<StgSyn>> {
+    fn next(&mut self) -> Option<Result<Rc<StgSyn>, ExecutionError>> {
         let record = match self.reader.records().next() {
             Some(Ok(rec)) => rec,
-            Some(Err(e)) => panic!("CSV parse error on stream: {e}"),
+            Some(Err(e)) => {
+                return Some(Err(ExecutionError::Panic(
+                    Smid::default(),
+                    format!("CSV parse error in stream: {e}"),
+                )));
+            }
             None => return None,
         };
 
@@ -88,7 +102,7 @@ impl LazyProducer for CsvProducer {
                 serde_json::Value::String(value.to_string()),
             );
         }
-        Some(json_to_stg(&serde_json::Value::Object(map)))
+        Some(Ok(json_to_stg(&serde_json::Value::Object(map))))
     }
 }
 
@@ -114,16 +128,16 @@ impl TextProducer {
 }
 
 impl LazyProducer for TextProducer {
-    fn next(&mut self) -> Option<Rc<StgSyn>> {
+    fn next(&mut self) -> Option<Result<Rc<StgSyn>, ExecutionError>> {
         self.line_buf.clear();
         match self.reader.read_line(&mut self.line_buf) {
             Ok(0) => None, // EOF
             Ok(_) => {
                 // Strip trailing newline
                 let line = self.line_buf.trim_end_matches('\n').trim_end_matches('\r');
-                Some(dsl::box_str(line))
+                Some(Ok(dsl::box_str(line)))
             }
-            Err(e) => panic!("IO error reading text stream: {e}"),
+            Err(e) => Some(Err(ExecutionError::Io(e))),
         }
     }
 }

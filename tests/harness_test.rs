@@ -2445,6 +2445,12 @@ pub fn test_error_167() {
 }
 
 #[test]
+/// Importing a malformed JSONL stream should produce a clear error, not a panic.
+pub fn test_error_169() {
+    run_error_test(&error_opts("169_malformed_jsonl_stream.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:

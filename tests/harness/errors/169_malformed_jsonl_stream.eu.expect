@@ -1,0 +1,2 @@
+exit: 1
+stderr: "malformed JSON in stream"
