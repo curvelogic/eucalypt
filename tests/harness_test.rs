@@ -2451,6 +2451,12 @@ pub fn test_error_169() {
 }
 
 #[test]
+/// io.fail should carry the call-site source location in the error diagnostic.
+pub fn test_error_170() {
+    run_error_test(&io_error_opts("170_io_fail_source_location.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
