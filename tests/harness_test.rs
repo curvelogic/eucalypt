@@ -2463,6 +2463,15 @@ pub fn test_167_namespace_hoisting() {
 }
 
 #[test]
+/// Blob namespace hoisting (eu-9tah.7): verifies that namespace member
+/// calls (str.to-upper, str.trim, str.split-on, str.join-on) are correctly
+/// resolved via the blob's hoisted globals, and that namespace blocks remain
+/// accessible as values when the blob pipeline is active.
+pub fn test_168_blob_namespace_hoisting() {
+    run_test(&opts("168_blob_namespace_hoisting.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

@@ -134,6 +134,16 @@ fn cmd_prelude_compile() -> Result<()> {
     // Cook (resolve operator precedence).
     loader.cook().context("cook")?;
 
+    // Hoist namespace members to top-level bindings.
+    //
+    // This lifts inlinable members of namespace blocks (e.g. `str`, `cal`,
+    // `vec`) to individual `OtherLet` bindings named `__<ns>_<member>`.
+    // After hoisting, the peel step produces one `binding_body` entry per
+    // hoisted member, giving each its own global slot in the blob.  The
+    // `inline_cores` fixed-point then picks up hoisted intrinsics (e.g.
+    // `__str_to-upper`) exactly like other prelude combinators.
+    loader.hoist_namespaces().context("hoist_namespaces")?;
+
     // Run destructure fusion only.
     // NOTE: We skip `inline()` deliberately: the inline pass aggressively
     // folds internal Let bindings into their single call site, reducing the
@@ -173,6 +183,20 @@ fn cmd_prelude_compile() -> Result<()> {
     peel_all_let_bindings(&core_expr, &mut binding_bodies);
 
     println!("  prelude bindings (peeled): {}", binding_bodies.len());
+
+    // Count hoisted namespace members: names matching `__<ns>_<member>` where
+    // `<ns>` is a non-empty lowercase segment and `<member>` is non-empty.
+    // These are the new globals produced by the `hoist_namespaces` step above.
+    let hoisted_count = binding_bodies
+        .iter()
+        .filter(|(n, _)| {
+            n.starts_with("__")
+                && n[2..]
+                    .find('_')
+                    .map_or(false, |sep| sep > 0 && sep + 1 < n[2..].len())
+        })
+        .count();
+    println!("  namespace members hoisted: {hoisted_count}");
 
     // ── 4b. Collect inlinable combinator bindings for inline_cores ────────────
     // After peeling, intra-prelude references are Var::Free(name) rather than

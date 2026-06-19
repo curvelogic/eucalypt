@@ -594,8 +594,19 @@ impl SourceLoader {
     /// `Var(__<namespace>_<member>)`.  This lets the inline pass work directly
     /// on individual functions without distributing the namespace block.
     ///
+    /// When the prelude blob is active the namespace blocks are not present in
+    /// the user-code expression.  In that case `hoist_with_blob_globals` is
+    /// used instead: it seeds the rewrite map from the blob's `name_to_slot`
+    /// so that `Lookup(Var("str"), "upper")` is still rewritten to
+    /// `Var(Free("__str_upper"))`, which the compiler resolves to `Ref::G`.
+    ///
     /// The pass is a no-op when no hoistable members are found.
     pub fn hoist_namespaces(&mut self) -> Result<(), EucalyptError> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(ref blob) = self.prelude_blob {
+            self.core.expr = hoist::hoist_with_blob_globals(&self.core.expr, &blob.name_to_slot)?;
+            return Ok(());
+        }
         self.core.expr = hoist::hoist(&self.core.expr)?;
         Ok(())
     }
