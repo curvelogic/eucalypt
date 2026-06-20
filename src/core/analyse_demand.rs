@@ -603,6 +603,10 @@ fn print_demands_inner(expr: &RcExpr, depth: usize) {
                 print_demands_inner(v, depth);
             }
         }
+        Expr::Meta(_, e, m) => {
+            print_demands_inner(e, depth);
+            print_demands_inner(m, depth);
+        }
         _ => {}
     }
 }
@@ -956,5 +960,62 @@ mod tests {
         let combined = once.plus(once);
         assert_eq!(combined.cardinality, Cardinality::Multi);
         assert_eq!(combined.strictness, Strictness::Strict);
+    }
+
+    /// Demonstrate that SCC splitting improves demand analysis.
+    ///
+    /// Without splitting, a non-recursive single-use binding `a` that
+    /// shares a scope with a self-recursive binding `x` (where `x`
+    /// uses `a`) is tainted to Multi.  After SCC splitting separates
+    /// `a` into its own Let scope, demand analysis correctly assigns
+    /// AtMostOnce.
+    #[test]
+    fn scc_splitting_improves_demand_for_tainted_binding() {
+        use crate::core::dependency::split_letrecs;
+
+        let a = free("a");
+        let x = free("x");
+        // let a = 1; x = ADD(x, a) in x
+        // Before splitting: a is tainted by x's recursion → Multi
+        let unsplit = let_(
+            vec![
+                (a.clone(), num(1)),
+                (
+                    x.clone(),
+                    app(bif("ADD"), vec![var(x.clone()), var(a.clone())]),
+                ),
+            ],
+            var(x.clone()),
+        );
+
+        let (unsplit_result, _) = analyse_demands(&unsplit);
+        match &*unsplit_result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(
+                    scope.pattern[0].demand.cardinality,
+                    Cardinality::Multi,
+                    "before splitting: a is tainted by x's recursion"
+                );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+
+        // After SCC splitting: a is in its own Let scope
+        let split = split_letrecs(&unsplit);
+        let (split_result, _) = analyse_demands(&split);
+
+        // The outermost Let should be `a` (independent, placed outermost)
+        match &*split_result.inner {
+            Expr::Let(_, outer_scope, _) => {
+                assert_eq!(outer_scope.pattern.len(), 1, "outer scope has one binding");
+                assert_eq!(outer_scope.pattern[0].name, "a");
+                assert_eq!(
+                    outer_scope.pattern[0].demand.cardinality,
+                    Cardinality::AtMostOnce,
+                    "after splitting: a is in its own scope → AtMostOnce"
+                );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
     }
 }

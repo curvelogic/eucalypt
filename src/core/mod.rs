@@ -6,6 +6,7 @@ pub mod anaphora;
 pub mod binding;
 pub mod cook;
 pub mod demand;
+pub mod dependency;
 pub mod desugar;
 pub mod doc;
 pub mod error;

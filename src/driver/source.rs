@@ -586,6 +586,18 @@ impl SourceLoader {
         Ok(())
     }
 
+    /// Split `LetRec` scopes into minimal `Let`/`LetRec` via SCC
+    /// decomposition.
+    ///
+    /// Builds a dependency graph for each non-block `OtherLet` scope,
+    /// computes strongly connected components (Tarjan's algorithm),
+    /// topologically sorts them, and re-emits the scope as a chain of
+    /// nested `Let` scopes — one per SCC.  `DefaultBlockLet` scopes
+    /// are not split.
+    pub fn split_letrecs(&mut self) {
+        self.core.expr = crate::core::dependency::split_letrecs(&self.core.expr);
+    }
+
     /// Run the namespace lambda hoisting pass.
     ///
     /// Hoists inlinable members of namespace `DefaultBlockLet` bindings (such

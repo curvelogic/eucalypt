@@ -89,7 +89,7 @@ impl IndexTransformation for LetIndexTransformation {
     fn apply(&self, r: &Ref, outer: &dyn Fn(&Ref) -> Ref) -> Ref {
         match r {
             Ref::L(n) => match self.mapping.get(*n) {
-                Some(i) => Ref::L(*i),
+                Some(i) => outer(&Ref::L(*i)),
                 None => outer(&Ref::L(*n - self.mapping.len())),
             },
             x => x.clone(),

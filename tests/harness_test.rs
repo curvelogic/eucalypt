@@ -2513,6 +2513,13 @@ pub fn test_168_blob_namespace_hoisting() {
 }
 
 #[test]
+/// LetRec SCC splitting: independent bindings become non-recursive Let
+/// scopes, mutually recursive groups stay as LetRec, blocks are untouched.
+pub fn test_169_letrec_scc_splitting() {
+    run_test(&opts("169_letrec_scc_splitting.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

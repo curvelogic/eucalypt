@@ -241,6 +241,24 @@ pub fn prepare(
         return Ok(Command::Exit);
     }
 
+    // Split LetRec scopes into minimal Let/LetRec via SCC decomposition.
+    // This runs after cook (operator precedence resolution) so free
+    // variable analysis is accurate, and before hoist/inline so that
+    // downstream passes benefit from smaller, non-recursive scopes.
+    {
+        let t = Instant::now();
+
+        loader.split_letrecs();
+
+        stats.record("split-letrecs", t.elapsed());
+    }
+
+    if opt.dump_split() {
+        let c = loader.core();
+        dump_core(c.expr.clone(), opt);
+        return Ok(Command::Exit);
+    }
+
     // Hoist inlinable namespace members to top-level bindings.
     //
     // This pass lifts `Lam(_, true, _)` and `Intrinsic` members of namespace
