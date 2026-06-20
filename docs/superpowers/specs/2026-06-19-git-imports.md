@@ -18,7 +18,7 @@ git repositories with commit-pinned reproducibility.
 
 ## Documented Syntax (Restoring Prior Behaviour)
 
-```eu
+```text
 { import: { git: "https://github.com/gmorpheme/eu.aws"
             commit: "0140232cf882a922bdd67b520ed56f0cddbd0637"
             import: "aws/cloudformation.eu" } }
@@ -30,7 +30,7 @@ git repositories with commit-pinned reproducibility.
 
 Multiple git imports mix freely with local imports:
 
-```eu
+```text
 { import: [
   "local.eu",
   { git: "https://github.com/user/lib"
