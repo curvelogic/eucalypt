@@ -382,18 +382,25 @@ impl DemandAnalyser {
         loop {
             let old = demands.clone();
             for i in 0..n {
-                // Direct demand from body (already in `demands[i]`).
-                let mut d = demands[i];
+                // Recompute from body demand fresh each iteration to avoid
+                // double-counting when using `plus`.
+                let mut d = body_env
+                    .get(&(0, i as u32))
+                    .copied()
+                    .unwrap_or(Demand::absent());
 
                 // Propagated demand: for each binding j whose RHS references i,
                 // if j is demanded with demand d_j, then i gets an additional
                 // demand of d_j scaled by the demand j's RHS places on i.
+                //
+                // These are SEQUENTIAL uses (each demanded binding's RHS is
+                // evaluated independently), so combine with `plus`, not `lub`.
                 for j in 0..n {
                     if let Some(&d_ji) = rhs_envs[j].get(&(0, i as u32)) {
                         // d_ji: demand j's RHS places on i
                         // demands[j]: how often binding j itself is demanded
                         let contribution = d_ji.scale(demands[j]);
-                        d = d.lub(contribution);
+                        d = d.plus(contribution);
                     }
                 }
 
@@ -488,16 +495,26 @@ impl DemandAnalyser {
         for (i, arg) in args.iter().enumerate() {
             let (new_arg, arg_env) = self.analyse_expr(arg);
 
-            // Scale the arg's env by the demand the function places on this arg
+            // The demand the function places on this argument position.
             let arg_demand = sig
                 .as_ref()
                 .and_then(|s| s.get(i))
                 .copied()
                 .unwrap_or(Demand::lazy_multi());
 
-            // If the argument is used (not absent), merge its demands
+            // If the argument is used (not absent), scale the argument's
+            // free-variable demands by the function's demand on this
+            // argument position.  If the function uses this argument
+            // Multi times (e.g. map's function argument), every free
+            // variable captured in the argument is also demanded Multi
+            // times — without this scaling they would stay AtMostOnce,
+            // causing the STG compiler to skip memoisation.
             if arg_demand.cardinality != Cardinality::Absent {
-                env = merge_envs(&env, &arg_env);
+                let scaled_env: DemandEnv = arg_env
+                    .iter()
+                    .map(|(&k, &d)| (k, d.scale(arg_demand)))
+                    .collect();
+                env = merge_envs(&env, &scaled_env);
             }
 
             new_args.push(new_arg);
@@ -718,6 +735,65 @@ mod tests {
         match &*result.inner {
             Expr::Let(_, scope, _) => {
                 assert_eq!(scope.pattern[0].demand.cardinality, Cardinality::Multi);
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn binding_used_by_two_siblings_gets_multi() {
+        // let x = 1; y = ADD(x, 2); z = ADD(x, 3) in ADD(y, z)
+        // x is used once by y's RHS and once by z's RHS — two sequential
+        // uses, so x must be Multi.  The old code used `lub` which
+        // collapsed this to AtMostOnce, breaking memoisation.
+        let x = free("x");
+        let y = free("y");
+        let z = free("z");
+        let expr = let_(
+            vec![
+                (x.clone(), num(1)),
+                (y.clone(), app(bif("ADD"), vec![var(x.clone()), num(2)])),
+                (z.clone(), app(bif("ADD"), vec![var(x.clone()), num(3)])),
+            ],
+            app(bif("ADD"), vec![var(y), var(z)]),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(
+                    scope.pattern[0].demand.cardinality,
+                    Cardinality::Multi,
+                    "x is used by two sibling bindings — must be Multi"
+                );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn binding_used_in_body_and_sibling_rhs_gets_multi() {
+        // let x = 1; y = ADD(x, 2) in ADD(x, y)
+        // x is used once in the body and once in y's RHS — two sequential
+        // uses, so x must be Multi.
+        let x = free("x");
+        let y = free("y");
+        let expr = let_(
+            vec![
+                (x.clone(), num(1)),
+                (y.clone(), app(bif("ADD"), vec![var(x.clone()), num(2)])),
+            ],
+            app(bif("ADD"), vec![var(x), var(y)]),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(
+                    scope.pattern[0].demand.cardinality,
+                    Cardinality::Multi,
+                    "x is used in body and sibling RHS — must be Multi"
+                );
             }
             other => panic!("expected Let, got: {other:?}"),
         }
