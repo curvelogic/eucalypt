@@ -431,6 +431,21 @@ impl DemandAnalyser {
             }
         }
 
+        // Step 7: Fixup for rendered block scopes.
+        //
+        // DefaultBlockLet scopes whose body is a Block constructor will
+        // have their bindings forced by RENDER_DOC after demand analysis.
+        // The render traversal adds invisible uses that the analysis
+        // cannot see, so AtMostOnce is unsound here — force Multi on
+        // any non-absent binding to prevent update elision.
+        if let_type == LetType::DefaultBlockLet && matches!(&*new_body.inner, Expr::Block(_, _)) {
+            for d in &mut demands {
+                if d.cardinality == Cardinality::AtMostOnce {
+                    d.cardinality = Cardinality::Multi;
+                }
+            }
+        }
+
         // Build annotated bindings and propagate demands to the outer scope.
         let mut outer_env = unshift_env(&body_env);
         let mut new_bindings = Vec::with_capacity(n);
@@ -980,10 +995,9 @@ mod tests {
     }
 
     #[test]
-    fn absent_demand_does_not_skip_update() {
-        // Absent → Value is disabled (same reason as AtMostOnce — see
-        // Demand::skip_update doc comment).
-        assert!(!Demand::absent().skip_update());
+    fn absent_demand_skips_update() {
+        // Absent bindings are never evaluated, so skipping update is safe.
+        assert!(Demand::absent().skip_update());
     }
 
     #[test]

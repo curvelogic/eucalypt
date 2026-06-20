@@ -41,17 +41,16 @@ impl Demand {
     /// Returns `true` when the STG compiler should skip the Update frame
     /// (i.e. emit `Value` rather than `Thunk`).
     ///
-    /// Currently only fires for bindings already in WHNF. The
-    /// `AtMostOnce` and `Absent` cardinality paths are disabled because
-    /// demand analysis counts `Var::Bound` references but cannot account
-    /// for runtime block lookups (`.key`) or the post-analysis rendering
-    /// wrapper — both of which re-enter closures that the analysis
-    /// considers single-use, causing cascading re-evaluation and a 3×
-    /// allocation regression.  The cardinality computation is retained
-    /// in the analysis for future use once a sound update-elision
-    /// strategy is in place.
+    /// Fires for bindings already in WHNF, bindings used at most once,
+    /// and absent bindings.  The demand analysis fixup pass forces Multi
+    /// on `DefaultBlockLet` bindings whose body is a `Block` constructor
+    /// (rendered scopes), so `AtMostOnce` here only applies to
+    /// generalised-lookup blocks and non-block `Let` scopes where the
+    /// cardinality is genuinely sound.
     pub fn skip_update(self) -> bool {
         self.whnf
+            || self.cardinality == Cardinality::AtMostOnce
+            || self.cardinality == Cardinality::Absent
     }
 
     /// Convenience: a demand marking a binding as used at most once.
@@ -241,15 +240,22 @@ mod tests {
     }
 
     #[test]
-    fn at_most_once_does_not_skip_update() {
-        // AtMostOnce → Value is disabled: runtime block lookups and
-        // post-analysis rendering re-enter closures that the analysis
-        // considers single-use, causing cascading re-evaluation.
+    fn at_most_once_skips_update() {
+        // AtMostOnce → Value is now sound: the demand analysis fixup
+        // forces Multi on rendered block scopes (DefaultBlockLet with
+        // Block body), so AtMostOnce only survives for genuinely
+        // single-use bindings.
         let d = Demand::at_most_once();
         assert!(
-            !d.skip_update(),
-            "AtMostOnce should NOT skip update (disabled — unsound with rendering)"
+            d.skip_update(),
+            "AtMostOnce should skip update (sound after rendered-block fixup)"
         );
+    }
+
+    #[test]
+    fn absent_skips_update() {
+        let d = Demand::absent();
+        assert!(d.skip_update(), "Absent demand should skip update");
     }
 
     #[test]

@@ -1797,16 +1797,12 @@ pub mod tests {
 
     /// AtMostOnce demand does NOT elide update frames (disabled).
     ///
-    /// `AtMostOnce → Value` was disabled because demand analysis counts
-    /// `Var::Bound` references but cannot account for runtime block
-    /// lookups (`.key`) or the post-analysis rendering wrapper — both
-    /// re-enter closures the analysis considers single-use, causing
-    /// cascading re-evaluation and a 3× allocation regression.
-    ///
-    /// This test verifies both `Unknown` and `AtMostOnce` compile as
-    /// `Thunk` for a non-WHNF binding.
+    /// After the rendered-block fixup in demand analysis, `AtMostOnce`
+    /// only survives for genuinely single-use bindings (non-rendered
+    /// scopes).  The STG compiler should now emit `Value` for
+    /// `AtMostOnce` and `Thunk` for `Unknown`.
     #[test]
-    pub fn test_at_most_once_does_not_elide_update() {
+    pub fn test_at_most_once_elides_update() {
         use crate::common::sourcemap::Smid;
         use crate::core::binding::{CoreBinding, Scope};
         use crate::core::demand::Demand;
@@ -1862,18 +1858,18 @@ pub mod tests {
             "with Unknown demand, nested-let binding should be Thunk; got:\n{unknown_demand:?}"
         );
 
-        // With AtMostOnce demand: update elision is disabled, so still Thunk.
+        // With AtMostOnce demand: update elision is now enabled → Value.
         let at_most_once = compile(make_let(Demand::at_most_once())).unwrap();
-        let x_is_thunk_too = match at_most_once.as_ref() {
+        let x_is_value = match at_most_once.as_ref() {
             StgSyn::LetRec { bindings, .. } => {
-                matches!(bindings.first(), Some(LambdaForm::Thunk { .. }))
+                matches!(bindings.first(), Some(LambdaForm::Value { .. }))
             }
             _ => false,
         };
         assert!(
-            x_is_thunk_too,
-            "with AtMostOnce demand, nested-let binding should still be Thunk \
-             (update elision disabled); got:\n{at_most_once:?}"
+            x_is_value,
+            "with AtMostOnce demand, nested-let binding should be Value \
+             (update elision enabled after rendered-block fixup); got:\n{at_most_once:?}"
         );
     }
 }
