@@ -1865,11 +1865,8 @@ impl Heap {
 
         // Allocation-rate trigger: nursery budget exhausted.
         //
-        // Only active when a heap limit is set, because without a
-        // limit there is no memory pressure and the allocation-rate
-        // trigger would cause unnecessary full collections.  When a
-        // true minor collection (skipping old objects) is available,
-        // this trigger should fire unconditionally.
+        // Only active when a heap limit is set — without memory
+        // pressure, collections would be unnecessary overhead.
         if self.limit.is_some() {
             let heap_state = unsafe { &*self.state.get() };
             if heap_state.blocks_replaced_since_gc >= self.nursery_budget.get() {
@@ -1951,6 +1948,11 @@ impl Heap {
     /// Current nursery budget in blocks.
     pub fn nursery_budget(&self) -> usize {
         self.nursery_budget.get()
+    }
+
+    /// Number of minor collections since the last major.
+    pub fn minors_since_last_major(&self) -> usize {
+        self.minors_since_major.get()
     }
 
     /// Number of minor collections performed (lifetime).
