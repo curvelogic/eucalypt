@@ -301,9 +301,10 @@ impl<'a> Executor<'a> {
             // Run demand analysis on the core expression before STG compile
             if !stg_settings.suppress_demand_analysis {
                 let t = Instant::now();
-                let (annotated, _signatures) =
+                let (annotated, _signatures, named_signatures) =
                     crate::core::analyse_demand::analyse_demands(&self.evaluand);
                 self.evaluand = annotated;
+                stg_settings.user_demand_sigs = named_signatures;
                 stats.timings_mut().record("demand-analysis", t.elapsed());
             }
 
