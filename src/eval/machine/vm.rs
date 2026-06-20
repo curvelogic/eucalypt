@@ -558,8 +558,9 @@ impl MachineState {
 
     /// Update environment index to point to current closure.
     ///
-    /// This is the single mutation site for the generational nursery.
-    /// The write barrier is currently disabled — see comment in body.
+    /// No write barrier is needed: the minor collection uses a HashSet to trace
+    /// ALL reachable objects (old and young alike), so old→young edges created
+    /// by thunk updates are discovered naturally without any special treatment.
     fn update(
         &mut self,
         view: MutatorHeapView,
@@ -567,23 +568,8 @@ impl MachineState {
         index: usize,
     ) -> Result<(), ExecutionError> {
         let cont_env = view.scoped(environment);
-
-        // Write barrier is intentionally disabled.  The current minor
-        // collection does a full trace (visiting all reachable objects
-        // via a visited set), so the barrier is not needed for
-        // correctness.  Enabling the write barrier requires
-        // coordinating with the major collection's mark-state flip:
-        // header marks set during mutation would confuse the next
-        // major's flip-at-end, causing the marked objects to be
-        // skipped (their header bit matches mark_state, so they
-        // appear "already traced").
-        //
-        // A future optimisation can enable the barrier alongside a
-        // selective minor that only traces young objects, once the
-        // flip interaction is resolved (e.g. flip-before-trace with
-        // appropriate new-allocation handling).
-
-        cont_env.update(&view, index, self.closure.clone())
+        cont_env.update(&view, index, self.closure.clone())?;
+        Ok(())
     }
 
     /// Return meta into a demeta destructuring or just strip metadata

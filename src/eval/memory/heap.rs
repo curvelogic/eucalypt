@@ -1244,12 +1244,16 @@ impl EmergencyState {
 pub struct Heap {
     state: UnsafeCell<HeapState>,
     limit: Option<usize>,
-    /// Mark state for this heap instance — flipped each major collection.
+    /// Mark state for this heap instance — flipped at the END of each major
+    /// collection.
     ///
-    /// An object whose header mark bit matches `mark_state` is considered
-    /// "old" (tenured).  An object whose mark bit does NOT match is "young"
-    /// (nursery).  Minor collections mark nursery objects WITHOUT flipping
-    /// this bit, thereby tenuring them in place.
+    /// During a major trace, objects are marked with the current `mark_state`.
+    /// After tracing, `flip_mark_state()` inverts the bit.  In the next major
+    /// cycle, all survivors have `mark_bit = !mark_state` and appear unmarked,
+    /// so they are correctly re-discovered from scratch.
+    ///
+    /// Minor collections do NOT touch header mark bits — they only refresh
+    /// line marks via a HashSet traversal of all reachable objects.
     mark_state: bool,
     /// Cached value of `EU_GC_STRESS` environment variable.
     ///
@@ -1865,11 +1869,8 @@ impl Heap {
 
         // Allocation-rate trigger: nursery budget exhausted.
         //
-        // Only active when a heap limit is set, because without a
-        // limit there is no memory pressure and the allocation-rate
-        // trigger would cause unnecessary full collections.  When a
-        // true minor collection (skipping old objects) is available,
-        // this trigger should fire unconditionally.
+        // Only active when a heap limit is set — without memory
+        // pressure, collections would be unnecessary overhead.
         if self.limit.is_some() {
             let heap_state = unsafe { &*self.state.get() };
             if heap_state.blocks_replaced_since_gc >= self.nursery_budget.get() {
@@ -1951,6 +1952,11 @@ impl Heap {
     /// Current nursery budget in blocks.
     pub fn nursery_budget(&self) -> usize {
         self.nursery_budget.get()
+    }
+
+    /// Number of minor collections since the last major.
+    pub fn minors_since_last_major(&self) -> usize {
+        self.minors_since_major.get()
     }
 
     /// Number of minor collections performed (lifetime).
@@ -2961,36 +2967,6 @@ impl Heap {
         todo!();
     }
 
-    /// Write barrier: eagerly tenure a young object when stored into an
-    /// old frame.
-    ///
-    /// Called by the VM when an Update continuation overwrites a black
-    /// hole.  If the target frame is old (marked) and the value being
-    /// stored points to a young (unmarked) object, we mark the young
-    /// object immediately — tenuring it in place so that subsequent
-    /// minor collections don't need a remembered set.
-    ///
-    /// Thunk updates are write-once, so this check fires at most once
-    /// per thunk and the branch is highly predictable.
-    ///
-    /// Marks both the header bit and the lines covering the allocation,
-    /// so the object is fully protected from lazy sweep.
-    pub fn write_barrier_mark_young<T>(&self, ptr: NonNull<T>) {
-        if !self.is_marked(ptr) {
-            self.mark_object(ptr);
-
-            // Mark lines covering the full allocation (header + object)
-            // via interior mutability (same UnsafeCell pattern as mark_object).
-            // SAFETY: Single-threaded mutator path; no concurrent access.
-            let heap_state = unsafe { &mut *self.state.get() };
-            let header_size = size_of::<AllocHeader>();
-            let total_size = header_size + size_of::<T>();
-            let header_ptr =
-                unsafe { NonNull::new_unchecked((ptr.as_ptr() as *mut u8).sub(header_size)) };
-            heap_state.mark_region_in_block(header_ptr, total_size);
-        }
-    }
-
     pub fn sweep(&mut self) {
         let start_time = Instant::now();
         self.state.get_mut().sweep();
@@ -3216,6 +3192,12 @@ pub mod tests {
 
     #[test]
     pub fn test_collection_strategy_mark_in_place() {
+        // EU_GC_STRESS=1 overrides analyze_collection_strategy() to always
+        // return SelectiveEvacuation, so this test's assertion doesn't hold
+        // under stress mode.
+        if std::env::var("EU_GC_STRESS").as_deref() == Ok("1") {
+            return;
+        }
         let heap = Heap::new();
 
         // Create a heap with dense blocks by allocating many objects
