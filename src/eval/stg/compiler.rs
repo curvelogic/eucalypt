@@ -516,6 +516,11 @@ pub struct Compiler<'rt> {
     /// This is how user code compiled independently of the prelude references
     /// the pre-loaded prelude global slots.
     prelude_globals: Option<HashMap<String, usize>>,
+    /// Per-user-function demand signatures from the analysis pass.
+    ///
+    /// Maps binding name → per-argument demand vector. Used when
+    /// compiling `App(user_function, args)` to set per-argument demands.
+    user_demand_sigs: crate::core::analyse_demand::NamedSignatureTable,
 }
 
 /// An item which can be converted to STG syntax once the context in known
@@ -962,13 +967,21 @@ impl ProtoSyntax for ProtoAppGroup {
     ) -> Result<Rc<StgSyn>, CompileError> {
         let mut intrinsic_index = None;
         let mut intrinsic_name: Option<&str> = None;
+        let mut callee_name: Option<&str> = None;
         let mut local_binder = LetBinder::synthetic_let(context);
 
         // Find a reference for the function
         let f_index: Box<dyn ProtoReference> = match &*self.f.inner {
             Expr::Var(s, v) => match v {
-                Var::Bound(bv) => Box::new(ProtoVar::new(bv.clone())),
-                Var::Free(name) => Box::new(ProtoRef::new(compiler.resolve_free_var(*s, name)?)),
+                Var::Bound(bv) => {
+                    // Preserve the binding name for user demand signature lookup.
+                    callee_name = bv.name.as_deref();
+                    Box::new(ProtoVar::new(bv.clone()))
+                }
+                Var::Free(name) => {
+                    callee_name = Some(name.as_str());
+                    Box::new(ProtoRef::new(compiler.resolve_free_var(*s, name)?))
+                }
             },
             Expr::Intrinsic(_, bif) => {
                 intrinsic_index = intrinsics::index(bif);
@@ -985,13 +998,16 @@ impl ProtoSyntax for ProtoAppGroup {
             )?)),
         };
 
-        // Look up per-argument demands from the intrinsic seed signatures.
-        // These were built by the demand analysis pass (build_intrinsic_signatures)
-        // and encode the blanket rule: strict args → (Strict, AtMostOnce), with
-        // special refinements for IF, AND/OR, LOOKUPOR, IO_BIND.
+        // Look up per-argument demands.  Try intrinsic signatures first,
+        // then fall back to user function signatures from the demand analysis.
         let arg_demands: Option<&[crate::core::demand::Demand]> = intrinsic_name
             .and_then(|name| compiler.intrinsic_demand_sigs.get(name))
-            .map(|v| v.as_slice());
+            .map(|v| v.as_slice())
+            .or_else(|| {
+                callee_name
+                    .and_then(|name| compiler.user_demand_sigs.get(name))
+                    .map(|v| v.as_slice())
+            });
 
         let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
         for (i, arg) in self.args.iter().enumerate() {
@@ -1233,7 +1249,17 @@ impl<'rt> Compiler<'rt> {
             intrinsics,
             intrinsic_demand_sigs,
             prelude_globals,
+            user_demand_sigs: Default::default(),
         }
+    }
+
+    /// Set the user function demand signature table.
+    pub fn with_user_demand_sigs(
+        mut self,
+        sigs: crate::core::analyse_demand::NamedSignatureTable,
+    ) -> Self {
+        self.user_demand_sigs = sigs;
+        self
     }
 
     /// Resolve a free variable name to a global slot reference.

@@ -36,6 +36,14 @@ pub type DemandSignature = Vec<Demand>;
 /// data, mapping to per-argument demand vectors.
 pub type SignatureTable = HashMap<SigKey, DemandSignature>;
 
+/// Name-keyed demand signature table for user function calls.
+///
+/// Maps binding names to per-argument demand vectors. Built during
+/// `analyse_let` by recording the signature of each Let binding whose
+/// RHS is a Lam with a known signature. Used by the STG compiler to
+/// apply per-argument demands at user function call sites.
+pub type NamedSignatureTable = HashMap<String, DemandSignature>;
+
 /// Build intrinsic seed signatures from the INTRINSICS catalogue.
 ///
 /// For each intrinsic, strict arguments get `(Strict, AtMostOnce)` per
@@ -157,6 +165,8 @@ pub struct DemandAnalyser {
     intrinsic_sigs: HashMap<String, DemandSignature>,
     /// Signatures discovered during analysis (keyed by Lam body pointer).
     signatures: SignatureTable,
+    /// Name-keyed signatures for user function calls.
+    named_signatures: NamedSignatureTable,
 }
 
 impl Default for DemandAnalyser {
@@ -170,14 +180,16 @@ impl DemandAnalyser {
         DemandAnalyser {
             intrinsic_sigs: build_intrinsic_signatures(),
             signatures: HashMap::new(),
+            named_signatures: HashMap::new(),
         }
     }
 
     /// Run the demand analysis on the given expression, returning the
-    /// annotated expression and the signature side-table.
-    pub fn analyse(mut self, expr: &RcExpr) -> (RcExpr, SignatureTable) {
+    /// annotated expression, the pointer-keyed signature table, and the
+    /// name-keyed signature table for user function calls.
+    pub fn analyse(mut self, expr: &RcExpr) -> (RcExpr, SignatureTable, NamedSignatureTable) {
         let (new_expr, _env) = self.analyse_expr(expr);
-        (new_expr, self.signatures)
+        (new_expr, self.signatures, self.named_signatures)
     }
 
     /// Analyse an expression, returning the annotated expression and
@@ -434,6 +446,16 @@ impl DemandAnalyser {
                 outer_env = merge_envs(&outer_env, &shifted);
             }
 
+            // If the binding's RHS is a Lam with a known signature, record
+            // the signature under the binding name for STG compiler use.
+            if let Expr::Lam(_, _, ref lam_scope) = &*new_rhs_exprs[i].inner {
+                let key = Rc::as_ptr(&lam_scope.body.inner) as usize;
+                if let Some(sig) = self.signatures.get(&key) {
+                    self.named_signatures
+                        .insert(binding.name.clone(), sig.clone());
+                }
+            }
+
             new_bindings.push(CoreBinding::with_demand(
                 binding.name.clone(),
                 new_rhs_exprs[i].clone(),
@@ -545,7 +567,7 @@ impl DemandAnalyser {
 /// Run the demand analysis pass on a core expression.
 ///
 /// Returns the annotated expression and the signature side-table.
-pub fn analyse_demands(expr: &RcExpr) -> (RcExpr, SignatureTable) {
+pub fn analyse_demands(expr: &RcExpr) -> (RcExpr, SignatureTable, NamedSignatureTable) {
     let analyser = DemandAnalyser::new();
     analyser.analyse(expr)
 }
@@ -624,7 +646,7 @@ mod tests {
         // in any cycle and can safely skip the Update frame.
         let x = free("x");
         let expr = let_(vec![(x.clone(), num(1))], var(x));
-        let (result, _sigs) = analyse_demands(&expr);
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -646,7 +668,7 @@ mod tests {
             vec![(x.clone(), app(bif("ADD"), vec![var(x.clone()), num(1)]))],
             var(x),
         );
-        let (result, _sigs) = analyse_demands(&expr);
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -670,7 +692,7 @@ mod tests {
             ],
             app(bif("ADD"), vec![var(x), var(y)]),
         );
-        let (result, _sigs) = analyse_demands(&expr);
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -699,7 +721,7 @@ mod tests {
             ],
             var(x),
         );
-        let (result, _sigs) = analyse_demands(&expr);
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -717,7 +739,7 @@ mod tests {
         let x = free("x");
         let y = free("y");
         let expr = let_(vec![(x.clone(), num(1)), (y.clone(), num(2))], var(x));
-        let (result, _sigs) = analyse_demands(&expr);
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -734,7 +756,7 @@ mod tests {
             vec![(x.clone(), num(1))],
             app(bif("ADD"), vec![var(x.clone()), var(x)]),
         );
-        let (result, _sigs) = analyse_demands(&expr);
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -761,7 +783,7 @@ mod tests {
             ],
             app(bif("ADD"), vec![var(y), var(z)]),
         );
-        let (result, _sigs) = analyse_demands(&expr);
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -789,7 +811,7 @@ mod tests {
             ],
             app(bif("ADD"), vec![var(x), var(y)]),
         );
-        let (result, _sigs) = analyse_demands(&expr);
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -822,7 +844,7 @@ mod tests {
                 ],
             ),
         );
-        let (result, _sigs) = analyse_demands(&expr);
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -860,7 +882,7 @@ mod tests {
                 vec![num(0), app(bif("ADD"), vec![num(0), var(x)])],
             ),
         );
-        let (result, _sigs) = analyse_demands(&expr);
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -896,7 +918,7 @@ mod tests {
                 )],
             ),
         );
-        let (result, _sigs) = analyse_demands(&expr);
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
 
         match &*result.inner {
             Expr::Let(_, scope, _) => {
@@ -925,7 +947,7 @@ mod tests {
         let x = free("x");
         // \x y -> x (y is unused)
         let lam_expr = lam(vec!["x".to_string(), "y".to_string()], var(x.clone()));
-        let (result, sigs) = analyse_demands(&lam_expr);
+        let (result, sigs, _named_sigs) = analyse_demands(&lam_expr);
 
         assert!(!sigs.is_empty(), "signature table should not be empty");
 
@@ -938,6 +960,23 @@ mod tests {
         } else {
             panic!("expected Lam");
         }
+    }
+
+    #[test]
+    fn named_signature_recorded_for_let_bound_lam() {
+        let x = free("x");
+        // let f = \x y -> x in f
+        let lam_body = lam(vec!["x".to_string(), "y".to_string()], var(x.clone()));
+        let f = free("f");
+        let expr = let_(vec![(f.clone(), lam_body)], var(f));
+        let (_result, _sigs, named_sigs) = analyse_demands(&expr);
+
+        let sig = named_sigs
+            .get("f")
+            .expect("named signature should exist for let-bound lambda");
+        assert_eq!(sig.len(), 2);
+        assert_eq!(sig[0].cardinality, Cardinality::AtMostOnce); // x used once
+        assert_eq!(sig[1].cardinality, Cardinality::Absent); // y unused
     }
 
     #[test]
@@ -988,7 +1027,7 @@ mod tests {
             var(x.clone()),
         );
 
-        let (unsplit_result, _) = analyse_demands(&unsplit);
+        let (unsplit_result, _, _) = analyse_demands(&unsplit);
         match &*unsplit_result.inner {
             Expr::Let(_, scope, _) => {
                 assert_eq!(
@@ -1002,7 +1041,7 @@ mod tests {
 
         // After SCC splitting: a is in its own Let scope
         let split = split_letrecs(&unsplit);
-        let (split_result, _) = analyse_demands(&split);
+        let (split_result, _, _) = analyse_demands(&split);
 
         // The outermost Let should be `a` (independent, placed outermost)
         match &*split_result.inner {

@@ -31,6 +31,7 @@ lazy_static! {
         test_mode: false,
         prelude_globals: None,
         suppress_demand_analysis: false,
+        user_demand_sigs: Default::default(),
     };
 }
 

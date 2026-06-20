@@ -316,6 +316,11 @@ pub struct StgSettings {
     pub prelude_globals: Option<HashMap<String, usize>>,
     /// Suppress the demand analysis pass (all demands remain at Unknown).
     pub suppress_demand_analysis: bool,
+    /// Per-user-function demand signatures discovered by the analysis pass.
+    ///
+    /// Maps binding name → per-argument demand vector. Used by the STG
+    /// compiler to apply per-argument demands at user function call sites.
+    pub user_demand_sigs: crate::core::analyse_demand::NamedSignatureTable,
 }
 
 /// Compile core syntax to STG ready for execution
@@ -334,6 +339,7 @@ pub fn compile(
         settings.suppress_optimiser,
         runtime.intrinsics(),
         settings.prelude_globals.clone(),
-    );
+    )
+    .with_user_demand_sigs(settings.user_demand_sigs.clone());
     compiler.compile(expr)
 }
