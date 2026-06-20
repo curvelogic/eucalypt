@@ -1,6 +1,7 @@
 //! The cactus environment heap used by the STG machine.
 
 use std::fmt;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 
 use crate::eval::memory::collect::{CollectorHeapView, GcScannable, OpaqueHeapBytes, ScanPtr};
 use crate::eval::memory::infotable::{InfoTable, InfoTagged};
@@ -11,6 +12,89 @@ use crate::eval::memory::{
     array::Array,
     syntax::{HeapSyn, Native, Ref, RefPtr},
 };
+
+// ─── Environment traversal profiling (EU_ENV_PROFILE=1) ─────────────────────
+//
+// Depth histogram: DEPTH_HIST[d] = number of lookups that traversed exactly
+// d frames before finding the binding.  Index 7 captures d ≥ 7 (7+).
+static ENV_PROFILE_ENABLED: AtomicBool = AtomicBool::new(false);
+static DEPTH_HIST: [AtomicU64; 8] = [
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+];
+static TOTAL_LOOKUPS: AtomicU64 = AtomicU64::new(0);
+static TOTAL_STEPS: AtomicU64 = AtomicU64::new(0);
+static MAX_DEPTH: AtomicU64 = AtomicU64::new(0);
+
+/// Initialise env profiling. Call once at startup when EU_ENV_PROFILE=1.
+pub fn init_env_profile() {
+    ENV_PROFILE_ENABLED.store(true, Relaxed);
+}
+
+/// Record one lookup at the given traversal depth.
+#[inline(always)]
+fn record_depth(depth: usize) {
+    let bucket = depth.min(7);
+    DEPTH_HIST[bucket].fetch_add(1, Relaxed);
+    TOTAL_LOOKUPS.fetch_add(1, Relaxed);
+    TOTAL_STEPS.fetch_add(depth as u64 + 1, Relaxed); // +1: the frame where it was found
+    let d64 = depth as u64;
+    // Update max (relaxed; approximate is fine for profiling)
+    let mut cur = MAX_DEPTH.load(Relaxed);
+    while d64 > cur {
+        match MAX_DEPTH.compare_exchange_weak(cur, d64, Relaxed, Relaxed) {
+            Ok(_) => break,
+            Err(v) => cur = v,
+        }
+    }
+}
+
+/// Dump env traversal statistics to stderr.
+pub fn dump_env_profile() {
+    if !ENV_PROFILE_ENABLED.load(Relaxed) {
+        return;
+    }
+    let total = TOTAL_LOOKUPS.load(Relaxed);
+    let steps = TOTAL_STEPS.load(Relaxed);
+    let max_d = MAX_DEPTH.load(Relaxed);
+    if total == 0 {
+        eprintln!("EU_ENV_PROFILE: no lookups recorded");
+        return;
+    }
+    let avg_steps = steps as f64 / total as f64;
+    eprintln!();
+    eprintln!("══════════════════════════════════════════════════════");
+    eprintln!("ENV TRAVERSAL PROFILE  (EU_ENV_PROFILE=1)");
+    eprintln!("══════════════════════════════════════════════════════");
+    eprintln!("  Total lookups  : {total}");
+    eprintln!("  Total steps    : {steps}");
+    eprintln!("  Max depth      : {max_d}");
+    eprintln!("  Avg steps/look : {avg_steps:.3}");
+    eprintln!();
+    eprintln!("  Depth histogram (depth = frames traversed before finding binding):");
+    eprintln!("  {:>7}  {:>12}  {:>7}  cumulative%", "depth", "count", "%");
+    let mut cumulative = 0u64;
+    for (d, bucket) in DEPTH_HIST.iter().enumerate() {
+        let count = bucket.load(Relaxed);
+        cumulative += count;
+        let pct = count as f64 / total as f64 * 100.0;
+        let cum_pct = cumulative as f64 / total as f64 * 100.0;
+        let label = if d < 7 {
+            format!("{d}")
+        } else {
+            "7+".to_string()
+        };
+        eprintln!("  {label:>7}  {count:>12}  {pct:>6.2}%  {cum_pct:>6.2}%");
+    }
+    eprintln!("══════════════════════════════════════════════════════");
+    eprintln!();
+}
 
 /// Closure as stored in an environment frame
 ///
@@ -343,6 +427,28 @@ where
         }
     }
 
+    /// Profiling variant: like `cell()` but also returns the traversal depth.
+    fn cell_profiled(
+        &self,
+        guard: &dyn MutatorScope,
+        idx: usize,
+        depth: usize,
+    ) -> Option<(Array<C>, usize, usize)> {
+        let len = self.logical_len();
+        if idx < len {
+            Some((self.bindings.clone(), self.physical_index(idx), depth))
+        } else {
+            match self.next {
+                Some(ref env) => (*ScopedPtr::from_non_null(guard, *env)).cell_profiled(
+                    guard,
+                    idx - len,
+                    depth + 1,
+                ),
+                None => None,
+            }
+        }
+    }
+
     /// Zero-based closure access (from top of environment)
     ///
     /// Uses guard for scoping derefs during navigation but then
@@ -350,7 +456,14 @@ where
     /// the returned value is not affected by subsequent updates and
     /// is useful mainly for immediate evaluation.
     pub fn get(&self, guard: &dyn MutatorScope, idx: usize) -> Option<C> {
-        if let Some((arr, i)) = self.cell(guard, idx) {
+        if ENV_PROFILE_ENABLED.load(Relaxed) {
+            if let Some((arr, i, depth)) = self.cell_profiled(guard, idx, 0) {
+                record_depth(depth);
+                arr.get(i)
+            } else {
+                None
+            }
+        } else if let Some((arr, i)) = self.cell(guard, idx) {
             arr.get(i)
         } else {
             None

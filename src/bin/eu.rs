@@ -44,6 +44,11 @@ pub fn main() {
 }
 
 fn run() -> i32 {
+    // Initialise env-traversal profiling if requested.
+    if std::env::var("EU_ENV_PROFILE").as_deref() == Ok("1") {
+        eucalypt::eval::machine::env::init_env_profile();
+    }
+
     let opt = EucalyptOptions::from_args();
 
     // LSP mode runs the language server and exits
@@ -184,6 +189,9 @@ fn run() -> i32 {
 
 /// Optionally dump stats to stderr and/or write JSON file, then return exit code.
 pub fn exit_code(opts: &EucalyptOptions, code: i32, stats: &Statistics) -> i32 {
+    // Dump env-traversal profile if enabled (printed before other stats).
+    eucalypt::eval::machine::env::dump_env_profile();
+
     if opts.statistics() {
         eprintln!();
         eprintln!("══════════════════════════════════════════════════════");
