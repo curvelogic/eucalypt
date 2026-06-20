@@ -105,7 +105,7 @@ impl CommonArgs {
 #[command(version)]
 pub struct EucalyptCli {
     /// Force source-prelude pipeline even when pre-compiled blob is available
-    #[arg(long = "source-prelude")]
+    #[arg(long = "source-prelude", global = true)]
     pub source_prelude: bool,
 
     #[command(subcommand)]
@@ -781,6 +781,13 @@ impl EucalyptCli {
             "doc",
             "help",
         ];
+
+        // Known top-level (global) boolean flags that may appear before a
+        // subcommand.  These must be skipped when scanning for the subcommand
+        // name so that, e.g., `eu --source-prelude dump stg file.eu` is not
+        // misidentified as a bare-run invocation.
+        const GLOBAL_FLAGS: &[&str] = &["--source-prelude"];
+
         // Rewrite --version/-V to the version subcommand so the
         // rich build banner from build-meta.yaml is shown instead
         // of clap's bare CARGO_PKG_VERSION.
@@ -789,11 +796,23 @@ impl EucalyptCli {
             return Self::try_parse_from(modified_args).unwrap_or_else(|e| e.exit());
         }
 
-        if SUBCOMMANDS.contains(&args[1].as_str()) || args[1] == "--help" || args[1] == "-h" {
-            return Self::parse();
+        // Scan past any leading global flags to find the effective first
+        // positional argument (which may be a subcommand name or a file).
+        let first_positional = args[1..]
+            .iter()
+            .find(|a| !GLOBAL_FLAGS.contains(&a.as_str()));
+
+        if let Some(first) = first_positional {
+            if SUBCOMMANDS.contains(&first.as_str()) || first == "--help" || first == "-h" {
+                // A known subcommand (possibly preceded by global flags) —
+                // let clap parse the full args as-is.
+                return Self::parse();
+            }
         }
 
-        // If first arg starts with '-', or doesn't match subcommands, assume it's for run
+        // If the first positional is absent, starts with '-' (unknown flag), or
+        // doesn't match a subcommand, assume the implicit `run` subcommand.
+        // Inject `run` after the program name but before any flags or files.
         let mut modified_args = vec![args[0].clone(), "run".to_string()];
         modified_args.extend_from_slice(&args[1..]);
 
@@ -1543,5 +1562,39 @@ mod tests {
     fn test_lib_path_flag() {
         let opts = parse_opts(&["test", "-L", "/some/path", "file.eu"]);
         assert_eq!(opts.lib_path, vec![std::path::PathBuf::from("/some/path")]);
+    }
+
+    // --source-prelude is a global flag: it must be accepted wherever it appears.
+
+    #[test]
+    fn source_prelude_after_run() {
+        let opts = parse_opts(&["run", "--source-prelude", "file.eu"]);
+        assert!(opts.source_prelude);
+    }
+
+    #[test]
+    fn source_prelude_after_dump_phase() {
+        let opts = parse_opts(&["dump", "stg", "--source-prelude", "file.eu"]);
+        assert!(opts.source_prelude);
+        assert!(opts.dump_stg);
+    }
+
+    #[test]
+    fn source_prelude_before_dump_subcommand() {
+        // --source-prelude before the subcommand name must be handled by
+        // parse_with_fallback's global-flag scanning logic.  This exercises
+        // the `EucalyptCli::try_parse_from` path directly.
+        let cli = EucalyptCli::try_parse_from(["eu", "--source-prelude", "dump", "stg", "file.eu"])
+            .expect("should parse --source-prelude before dump subcommand");
+        assert!(cli.source_prelude);
+        assert!(matches!(cli.command, Some(Commands::Dump(_))));
+    }
+
+    #[test]
+    fn source_prelude_before_run_subcommand() {
+        let cli = EucalyptCli::try_parse_from(["eu", "--source-prelude", "run", "file.eu"])
+            .expect("should parse --source-prelude before run subcommand");
+        assert!(cli.source_prelude);
+        assert!(matches!(cli.command, Some(Commands::Run(_))));
     }
 }
