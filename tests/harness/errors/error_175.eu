@@ -1,0 +1,10 @@
+# Error test: sort-nums on a string instead of a number list.
+#
+# DataIterator used to emit Panic with Smid::default() so no source
+# location appeared in the diagnostic.  After the fix the error carries
+# the annotation Smid from the call site.
+#
+# Expected behaviour:
+#   - Exit code 1
+#   - Stderr mentions the type mismatch
+result: "not_a_list" sort-nums

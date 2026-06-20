@@ -1,0 +1,10 @@
+# Error test: str.join-on on a list of numbers instead of strings.
+#
+# StrListIterator used to emit TypeMismatch with Smid::default() so no
+# source location appeared in the diagnostic.  After the fix the error
+# carries the annotation Smid from the call site.
+#
+# Expected behaviour:
+#   - Exit code 1
+#   - Stderr mentions "type mismatch" and "string"
+result: [1, 2, 3] str.join-on(",")

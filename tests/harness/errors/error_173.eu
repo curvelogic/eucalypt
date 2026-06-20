@@ -1,0 +1,10 @@
+# Error test: graph.topo-sort with non-numeric edge values.
+#
+# collect_num_list is called internally for graph intrinsics; passing
+# string values in the edge list used to produce a locationless Panic.
+# After the fix it produces a NotValue error with source location.
+#
+# Expected behaviour:
+#   - Exit code 1
+#   - Stderr mentions "non-numeric value"
+result: graph.topo-sort(3, [["a", 1], [1, 2]])

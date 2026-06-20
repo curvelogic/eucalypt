@@ -2457,6 +2457,28 @@ pub fn test_error_169() {
 }
 
 #[test]
+/// graph.topo-sort with non-numeric edge values used to produce a locationless
+/// Panic from collect_num_list; after the fix it emits a NotValue error with
+/// source location.
+pub fn test_error_173() {
+    run_error_test(&error_opts("error_173.eu"));
+}
+
+#[test]
+/// str.join-on on a list of numbers used to emit TypeMismatch with
+/// Smid::default(); after the fix StrListIterator carries the call-site Smid.
+pub fn test_error_174() {
+    run_error_test(&error_opts("error_174.eu"));
+}
+
+#[test]
+/// sort-nums on a string used to produce a locationless type-mismatch error
+/// from DataIterator; after the fix the error carries the call-site Smid.
+pub fn test_error_175() {
+    run_error_test(&error_opts("error_175.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
