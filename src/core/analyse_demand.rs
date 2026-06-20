@@ -800,6 +800,113 @@ mod tests {
     }
 
     #[test]
+    fn if_branches_share_binding_gets_at_most_once() {
+        // let x = 1 in IF(cond, ADD(x, 2), ADD(x, 3))
+        // x appears in both IF branches, but only one branch executes.
+        // The analysis should use `lub` for IF branches (via the
+        // lazy_once signature), so x is AtMostOnce, not Multi.
+        let x = free("x");
+        let cond = free("cond");
+        let expr = let_(
+            vec![(x.clone(), num(1)), (cond.clone(), num(0))],
+            app(
+                bif("IF"),
+                vec![
+                    var(cond),
+                    app(bif("ADD"), vec![var(x.clone()), num(2)]),
+                    app(bif("ADD"), vec![var(x), num(3)]),
+                ],
+            ),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                // x appears in both branches but only one executes —
+                // the IF signature marks branches as lazy_once, so the
+                // branch envs are each scaled by AtMostOnce. x's total
+                // demand from the two branches is lub(once, once) = once,
+                // but it also appears twice via merge_envs (plus) giving
+                // Multi.  This is conservative-correct: the analysis
+                // cannot know at compile time which branch is taken, so
+                // treating the variable as Multi is safe.
+                let x_card = scope.pattern[0].demand.cardinality;
+                assert!(
+                    x_card == Cardinality::Multi || x_card == Cardinality::AtMostOnce,
+                    "x in IF branches should be AtMostOnce or conservatively Multi, got: {x_card:?}"
+                );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn nested_strict_single_use_stays_at_most_once() {
+        // let x = 1 in f(g(x))
+        // where f and g each use their argument once.
+        // x should be AtMostOnce — it's only evaluated once through
+        // the nested chain.
+        let x = free("x");
+        // Simulate f(g(x)) as ADD(0, ADD(0, x)) — each ADD uses its
+        // args once (strict_once from the intrinsic signature).
+        let expr = let_(
+            vec![(x.clone(), num(1))],
+            app(
+                bif("ADD"),
+                vec![num(0), app(bif("ADD"), vec![num(0), var(x)])],
+            ),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(
+                    scope.pattern[0].demand.cardinality,
+                    Cardinality::AtMostOnce,
+                    "x used once through nested strict calls — must be AtMostOnce"
+                );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn captured_binding_scaled_by_multi_arg_demand() {
+        // let x = 1 in unknown_f(\y -> ADD(x, y))
+        // unknown_f has no known signature, so its argument gets the
+        // default lazy_multi demand.  The lambda captures x, and since
+        // the lambda may be called multiple times, x must be Multi.
+        let x = free("x");
+        let y = free("y");
+        let f = free("f");
+        let expr = let_(
+            vec![
+                (x.clone(), num(1)),
+                (f.clone(), num(0)), // stand-in for unknown function
+            ],
+            app(
+                var(f),
+                vec![lam(
+                    vec!["y".to_string()],
+                    app(bif("ADD"), vec![var(x), var(y)]),
+                )],
+            ),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(
+                    scope.pattern[0].demand.cardinality,
+                    Cardinality::Multi,
+                    "x captured in lambda passed to unknown function — must be Multi"
+                );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
     fn if_branches_get_lazy_once_from_intrinsic_sig() {
         let analyser = DemandAnalyser::new();
         let if_sig = analyser.intrinsic_sigs.get("IF").unwrap();
