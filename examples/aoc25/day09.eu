@@ -8,14 +8,14 @@ Find the largest rectangle using two red tiles as corners that fits
 entirely within the red/green region.
 
 Approach: Part 1 is brute-force over all tile pairs via `tails` and
-`max-of-by`. Part 2 builds polygon 'levels' (cross-sections at each
+`foldl` to find the maximum area without intermediate lists. Part 2
+builds polygon 'levels' (cross-sections at each
 y-coordinate), then sweeps all start/end level pairs with corridor
 narrowing and area-based pruning to find the maximum inscribed
 rectangle.
 
 Notable eucalypt techniques:
-- `tails` for generating all suffix pairs
-- `max-of-by` for finding best pair without explicit recursion
+- `tails` with `foldl` for pairwise maximum without intermediate lists
 - `product` for 2D area from dimension list
 - block-scoped modules (`levels`, `search`) for organising complex logic
 - `cross` for Cartesian product of tile x-coords
@@ -34,11 +34,13 @@ area(a, b): zip-with(-, a, b) map(abs ; (+ 1)) product
 ` "Max area from head of a list to any later element."
 best-from(ps): ps tail map(area(ps head)) max-of
 
-` "Max area over all distinct pairs of points."
-best-area(pts):
-  tails(pts)
-    filter(count ; (> 1))
-    max-map(best-from)
+` "Max area over all distinct pairs of points.
+Uses foldl instead of max-map to avoid materialising an intermediate
+list of areas — each tail is processed and discarded in turn."
+best-area(pts): {
+  step(best, suffix): max(best, best-from(suffix))
+  tls: tails(pts) filter(count ; (> 1))
+}.(foldl(step, 0, tls))
 
 parse(data): data filter(!= "") map(parse-coord)
 
