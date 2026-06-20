@@ -45,10 +45,6 @@ pub enum IoRunError {
     Fail(String),
     #[error("IO operations are not permitted; use the --allow-io (-I) flag to enable")]
     IoNotAllowed(Smid),
-    #[error("unknown IO action tag: {0}")]
-    UnknownActionTag(String),
-    #[error("malformed IO action spec block")]
-    MalformedSpec,
     #[error("io.shell-with: command timed out after {0} seconds")]
     Timeout(Smid, u64),
     #[error("io.shell-with: command execution error: {0}")]
@@ -1071,6 +1067,7 @@ fn execute_shell(
     cmd: &str,
     stdin_data: Option<&str>,
     timeout_secs: u64,
+    call_smid: Smid,
 ) -> Result<CommandResult, IoRunError> {
     let command = if cfg!(windows) {
         let mut c = Command::new("pwsh");
@@ -1081,7 +1078,7 @@ fn execute_shell(
         c.args(["-c", cmd]);
         c
     };
-    run_command(command, stdin_data, timeout_secs)
+    run_command(command, stdin_data, timeout_secs, call_smid)
 }
 
 /// Execute a binary directly.
@@ -1090,10 +1087,11 @@ fn execute_exec(
     args: &[String],
     stdin_data: Option<&str>,
     timeout_secs: u64,
+    call_smid: Smid,
 ) -> Result<CommandResult, IoRunError> {
     let mut command = Command::new(cmd);
     command.args(args);
-    run_command(command, stdin_data, timeout_secs)
+    run_command(command, stdin_data, timeout_secs, call_smid)
 }
 
 /// Core helper: spawn the command, optionally write stdin, and wait with timeout.
@@ -1101,6 +1099,7 @@ fn run_command(
     mut command: Command,
     stdin_data: Option<&str>,
     timeout_secs: u64,
+    call_smid: Smid,
 ) -> Result<CommandResult, IoRunError> {
     command
         .stdin(if stdin_data.is_some() {
@@ -1132,7 +1131,7 @@ fn run_command(
     if let Some(input) = stdin_data {
         if let Some(mut pipe) = child.stdin.take() {
             pipe.write_all(input.as_bytes())
-                .map_err(|e| IoRunError::CommandError(Smid::default(), e.to_string()))?;
+                .map_err(|e| IoRunError::CommandError(call_smid, e.to_string()))?;
             // Drop `pipe` to close stdin and signal EOF to the child
         }
     }
@@ -1155,8 +1154,8 @@ fn run_command(
                 exit_code,
             })
         }
-        Ok(Err(e)) => Err(IoRunError::CommandError(Smid::default(), e.to_string())),
-        Err(_timeout) => Err(IoRunError::Timeout(Smid::default(), timeout_secs)),
+        Ok(Err(e)) => Err(IoRunError::CommandError(call_smid, e.to_string())),
+        Err(_timeout) => Err(IoRunError::Timeout(call_smid, timeout_secs)),
     }
 }
 
@@ -1165,7 +1164,7 @@ static IO_TRACE: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("EU_IO_TRACE").is_ok());
 
 /// Dispatch an `ActionSpec` to the appropriate executor.
-fn run_spec(spec: &ActionSpec) -> Result<CommandResult, IoRunError> {
+fn run_spec(spec: &ActionSpec, call_smid: Smid) -> Result<CommandResult, IoRunError> {
     if *IO_TRACE {
         match spec {
             ActionSpec::Shell { cmd, stdin, .. } => {
@@ -1189,13 +1188,13 @@ fn run_spec(spec: &ActionSpec) -> Result<CommandResult, IoRunError> {
             cmd,
             stdin,
             timeout_secs,
-        } => execute_shell(cmd, stdin.as_deref(), *timeout_secs),
+        } => execute_shell(cmd, stdin.as_deref(), *timeout_secs, call_smid),
         ActionSpec::Exec {
             cmd,
             args,
             stdin,
             timeout_secs,
-        } => execute_exec(cmd, args, stdin.as_deref(), *timeout_secs),
+        } => execute_exec(cmd, args, stdin.as_deref(), *timeout_secs, call_smid),
     };
     if *IO_TRACE {
         match &result {
@@ -1276,12 +1275,9 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                 // timeout / command errors carry a source location.
                 let ann = machine.annotation();
 
-                // Execute the shell action
-                let result = run_spec(&spec).map_err(|e| match e {
-                    IoRunError::Timeout(_, secs) => IoRunError::Timeout(ann, secs),
-                    IoRunError::CommandError(_, msg) => IoRunError::CommandError(ann, msg),
-                    other => other,
-                })?;
+                // Execute the shell action; call_smid is threaded through so
+                // timeout / command errors carry the source location directly.
+                let result = run_spec(&spec, ann)?;
 
                 // Pre-intern the result block key symbols into the machine's
                 // pool so that the IDs embedded by BuildResultBlock are already
