@@ -215,15 +215,9 @@ pub struct RunArgs {
     #[arg(long = "no-dce")]
     pub no_dce: bool,
 
-    /// Suppress demand analysis pass (all demands remain at Unknown).
-    /// Currently the default — demand analysis is disabled pending
-    /// correctness fixes. Use --demand-analysis to opt in.
-    #[arg(long = "suppress-demand-analysis", default_value_t = true)]
+    /// Suppress demand analysis pass (all demands remain at Unknown)
+    #[arg(long = "suppress-demand-analysis")]
     pub suppress_demand_analysis: bool,
-
-    /// Enable the demand analysis pass (experimental — may cause regressions)
-    #[arg(long = "demand-analysis")]
-    pub demand_analysis: bool,
 
     /// Seed for random number generation (for reproducible results)
     #[arg(long = "seed")]
@@ -660,14 +654,8 @@ impl From<EucalyptCli> for EucalyptOptions {
         };
 
         let suppress_demand_analysis = match &cli.command {
-            Some(Commands::Run(args)) => {
-                if args.demand_analysis {
-                    false // explicit opt-in overrides default suppression
-                } else {
-                    args.suppress_demand_analysis
-                }
-            }
-            _ => true, // suppressed by default outside Run
+            Some(Commands::Run(args)) => args.suppress_demand_analysis,
+            _ => false,
         };
 
         // Extract seed from Run command
