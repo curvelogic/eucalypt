@@ -53,10 +53,6 @@ const DEFAULT_NURSERY_BUDGET: usize = 256;
 /// After this many consecutive minor collections, force a major collection.
 const MINORS_BEFORE_MAJOR: usize = 8;
 
-/// If a minor collection reclaims less than this fraction of the nursery,
-/// escalate to a major collection next time.
-const MIN_MINOR_RECLAIM_RATIO: f64 = 0.25;
-
 /// Type of garbage collection performed
 #[derive(Debug, Clone, Copy)]
 enum CollectionType {
@@ -1754,6 +1750,10 @@ impl Heap {
 
     pub fn with_limit(limit_mib: usize) -> Self {
         let block_limit = (limit_mib * 1_048_576) / BLOCK_SIZE_BYTES;
+        // Scale nursery budget to the heap limit: at most 1/16 of the
+        // limit, so collections trigger before dead young objects fill
+        // the heap.  Floor at 8 blocks (256 KiB).
+        let budget = (block_limit / 16).clamp(8, DEFAULT_NURSERY_BUDGET);
         Heap {
             state: UnsafeCell::new(HeapState::new()),
             limit: Some(block_limit),
@@ -1764,7 +1764,7 @@ impl Heap {
             pin_counts: UnsafeCell::new(HashMap::new()),
             mark_count: std::cell::Cell::new(0),
 
-            nursery_budget: std::cell::Cell::new(DEFAULT_NURSERY_BUDGET),
+            nursery_budget: std::cell::Cell::new(budget),
             minors_since_major: std::cell::Cell::new(0),
             minor_collection_count: std::cell::Cell::new(0),
             major_collection_count: std::cell::Cell::new(0),
@@ -1865,15 +1865,17 @@ impl Heap {
 
         // Allocation-rate trigger: nursery budget exhausted.
         //
-        // Only active when a heap limit is set, because without a
-        // limit there is no memory pressure and the allocation-rate
-        // trigger would cause unnecessary full collections.  When a
-        // true minor collection (skipping old objects) is available,
-        // this trigger should fire unconditionally.
-        if self.limit.is_some() {
-            let heap_state = unsafe { &*self.state.get() };
-            if heap_state.blocks_replaced_since_gc >= self.nursery_budget.get() {
-                return true;
+        // Only active when the heap is under memory pressure — i.e.
+        // when at least half of the heap limit is in use.  Programs
+        // that never approach the limit (e.g. naive_fib at the
+        // default 32 GiB limit) avoid unnecessary collection overhead.
+        if let Some(limit) = self.limit {
+            let stats = self.stats();
+            if stats.blocks_allocated >= limit / 2 {
+                let heap_state = unsafe { &*self.state.get() };
+                if heap_state.blocks_replaced_since_gc >= self.nursery_budget.get() {
+                    return true;
+                }
             }
         }
 
@@ -1884,9 +1886,10 @@ impl Heap {
     ///
     /// A major collection is chosen when:
     /// - Too many consecutive minors have occurred (> `MINORS_BEFORE_MAJOR`)
-    /// - The heap limit is reached (back-pressure)
     /// - GC stress mode is active (every collection is major to maximise
-    ///   coverage of the flip-and-trace path)
+    ///   coverage of the visited-set trace path)
+    /// - Heap usage exceeds the limit (minors don't sweep, so dead young
+    ///   objects accumulate; a major is needed to reclaim them)
     pub fn should_collect_major(&self) -> bool {
         if self.gc_stress {
             return true;
@@ -1902,10 +1905,15 @@ impl Heap {
             return true;
         }
 
-        // If the heap limit is reached, escalate to major
+        // If the heap exceeds the limit, escalate to major.  Minors
+        // don't sweep, so dead young objects accumulate between majors.
+        // Without this, the heap grows unboundedly at tight limits.
+        // We only check this AFTER at least one minor has run, so the
+        // nursery gets a chance to tenure objects before forcing a
+        // full trace.
         if let Some(limit) = self.limit {
             let stats = self.stats();
-            if stats.blocks_allocated >= limit {
+            if stats.blocks_allocated >= limit && self.minors_since_major.get() > 0 {
                 return true;
             }
         }
@@ -1916,10 +1924,11 @@ impl Heap {
     /// Record that a minor collection completed.
     ///
     /// Updates counters and resets the allocation-rate trigger.
-    /// `reclaim_ratio` is the fraction of nursery blocks reclaimed
-    /// (0.0–1.0); if below `MIN_MINOR_RECLAIM_RATIO` the next
-    /// collection will be escalated to major.
-    pub fn record_minor_collection(&self, reclaim_ratio: f64) {
+    /// Minor collections do not sweep (dead young objects are reclaimed
+    /// at the next major), so there is no reclaim-ratio escalation.
+    /// The count-based `MINORS_BEFORE_MAJOR` threshold handles
+    /// escalation to major when minors accumulate.
+    pub fn record_minor_collection(&self) {
         self.minor_collection_count
             .set(self.minor_collection_count.get() + 1);
         let minors = self.minors_since_major.get() + 1;
@@ -1929,11 +1938,6 @@ impl Heap {
         let heap_state = unsafe { &mut *self.state.get() };
         heap_state.blocks_replaced_since_gc = 0;
         heap_state.record_collection();
-
-        // If minor reclaimed very little, force a major next time
-        if reclaim_ratio < MIN_MINOR_RECLAIM_RATIO {
-            self.minors_since_major.set(MINORS_BEFORE_MAJOR);
-        }
     }
 
     /// Record that a major collection completed.

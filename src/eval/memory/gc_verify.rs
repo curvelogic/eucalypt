@@ -177,6 +177,62 @@ pub(crate) fn verify_post_update(heap: &Heap) {
     let _ = (mark_state, block_ranges);
 }
 
+/// Post-minor verification: old→young invariant check.
+///
+/// After a minor collection with eager promotion, every reachable
+/// object must be marked (old).  The minor marks all reachable young
+/// objects (tenuring them), and the write barrier marks young objects
+/// pointed to by old objects.  If any reachable object is still
+/// unmarked after the minor, either the trace missed it or the write
+/// barrier failed to promote it.
+///
+/// This traverses from roots using a visited set to visit ALL
+/// reachable objects (not just young ones).  For each discovered
+/// object, it verifies the header is marked.
+///
+/// Enabled by `EU_GC_VERIFY=2`.
+pub(crate) fn verify_post_minor(roots: &dyn super::collect::GcScannable, heap: &mut Heap) {
+    use super::collect::{CollectorHeapView, Scope};
+    use std::collections::VecDeque;
+
+    let scope = Scope();
+    let mut heap_view = CollectorHeapView::new_verify(heap);
+    let mut queue = VecDeque::default();
+    let mut scan_buffer = Vec::new();
+    let mut total = 0usize;
+    let mark_state = heap_view.mark_state();
+
+    // Traverse from roots using the visited set.  mark() will
+    // unconditionally mark objects, but after a correct minor all
+    // reachable objects should already be marked.  We check BEFORE
+    // marking to detect the bug.
+    roots.scan(&scope, &mut heap_view, &mut scan_buffer);
+    queue.extend(scan_buffer.drain(..));
+
+    while let Some(scanptr) = queue.pop_front() {
+        total += 1;
+        // The object was already marked by the visited-set mark().
+        // We check the object's prior state by counting how many
+        // mark_object calls occurred — the mark_count delta tells us.
+        scanptr.get().scan(&scope, &mut heap_view, &mut scan_buffer);
+        queue.extend(scan_buffer.drain(..));
+    }
+
+    // Count objects that were newly marked during this verification
+    // traversal.  These were unmarked (young) after the minor,
+    // meaning the minor trace or write barrier missed them.
+    let newly_marked = heap_view.newly_marked_count();
+    if newly_marked > 0 {
+        panic!(
+            "POST-MINOR old→young invariant violation: {newly_marked} reachable objects \
+             were still unmarked (young) after minor collection \
+             ({total} objects traversed, mark_state={mark_state}). \
+             This indicates either the minor trace missed them or the \
+             write barrier failed to promote them.",
+        );
+    }
+}
+
 /// Post-sweep verification: block list disjointness and rest block
 /// liveness.
 pub(crate) fn verify_post_sweep(heap: &Heap) {
