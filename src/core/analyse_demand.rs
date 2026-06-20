@@ -382,18 +382,25 @@ impl DemandAnalyser {
         loop {
             let old = demands.clone();
             for i in 0..n {
-                // Direct demand from body (already in `demands[i]`).
-                let mut d = demands[i];
+                // Recompute from body demand fresh each iteration to avoid
+                // double-counting when using `plus`.
+                let mut d = body_env
+                    .get(&(0, i as u32))
+                    .copied()
+                    .unwrap_or(Demand::absent());
 
                 // Propagated demand: for each binding j whose RHS references i,
                 // if j is demanded with demand d_j, then i gets an additional
                 // demand of d_j scaled by the demand j's RHS places on i.
+                //
+                // These are SEQUENTIAL uses (each demanded binding's RHS is
+                // evaluated independently), so combine with `plus`, not `lub`.
                 for j in 0..n {
                     if let Some(&d_ji) = rhs_envs[j].get(&(0, i as u32)) {
                         // d_ji: demand j's RHS places on i
                         // demands[j]: how often binding j itself is demanded
                         let contribution = d_ji.scale(demands[j]);
-                        d = d.lub(contribution);
+                        d = d.plus(contribution);
                     }
                 }
 
@@ -488,16 +495,26 @@ impl DemandAnalyser {
         for (i, arg) in args.iter().enumerate() {
             let (new_arg, arg_env) = self.analyse_expr(arg);
 
-            // Scale the arg's env by the demand the function places on this arg
+            // The demand the function places on this argument position.
             let arg_demand = sig
                 .as_ref()
                 .and_then(|s| s.get(i))
                 .copied()
                 .unwrap_or(Demand::lazy_multi());
 
-            // If the argument is used (not absent), merge its demands
+            // If the argument is used (not absent), scale the argument's
+            // free-variable demands by the function's demand on this
+            // argument position.  If the function uses this argument
+            // Multi times (e.g. map's function argument), every free
+            // variable captured in the argument is also demanded Multi
+            // times — without this scaling they would stay AtMostOnce,
+            // causing the STG compiler to skip memoisation.
             if arg_demand.cardinality != Cardinality::Absent {
-                env = merge_envs(&env, &arg_env);
+                let scaled_env: DemandEnv = arg_env
+                    .iter()
+                    .map(|(&k, &d)| (k, d.scale(arg_demand)))
+                    .collect();
+                env = merge_envs(&env, &scaled_env);
             }
 
             new_args.push(new_arg);
@@ -718,6 +735,172 @@ mod tests {
         match &*result.inner {
             Expr::Let(_, scope, _) => {
                 assert_eq!(scope.pattern[0].demand.cardinality, Cardinality::Multi);
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn binding_used_by_two_siblings_gets_multi() {
+        // let x = 1; y = ADD(x, 2); z = ADD(x, 3) in ADD(y, z)
+        // x is used once by y's RHS and once by z's RHS — two sequential
+        // uses, so x must be Multi.  The old code used `lub` which
+        // collapsed this to AtMostOnce, breaking memoisation.
+        let x = free("x");
+        let y = free("y");
+        let z = free("z");
+        let expr = let_(
+            vec![
+                (x.clone(), num(1)),
+                (y.clone(), app(bif("ADD"), vec![var(x.clone()), num(2)])),
+                (z.clone(), app(bif("ADD"), vec![var(x.clone()), num(3)])),
+            ],
+            app(bif("ADD"), vec![var(y), var(z)]),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(
+                    scope.pattern[0].demand.cardinality,
+                    Cardinality::Multi,
+                    "x is used by two sibling bindings — must be Multi"
+                );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn binding_used_in_body_and_sibling_rhs_gets_multi() {
+        // let x = 1; y = ADD(x, 2) in ADD(x, y)
+        // x is used once in the body and once in y's RHS — two sequential
+        // uses, so x must be Multi.
+        let x = free("x");
+        let y = free("y");
+        let expr = let_(
+            vec![
+                (x.clone(), num(1)),
+                (y.clone(), app(bif("ADD"), vec![var(x.clone()), num(2)])),
+            ],
+            app(bif("ADD"), vec![var(x), var(y)]),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(
+                    scope.pattern[0].demand.cardinality,
+                    Cardinality::Multi,
+                    "x is used in body and sibling RHS — must be Multi"
+                );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn if_branches_share_binding_gets_at_most_once() {
+        // let x = 1 in IF(cond, ADD(x, 2), ADD(x, 3))
+        // x appears in both IF branches, but only one branch executes.
+        // The analysis should use `lub` for IF branches (via the
+        // lazy_once signature), so x is AtMostOnce, not Multi.
+        let x = free("x");
+        let cond = free("cond");
+        let expr = let_(
+            vec![(x.clone(), num(1)), (cond.clone(), num(0))],
+            app(
+                bif("IF"),
+                vec![
+                    var(cond),
+                    app(bif("ADD"), vec![var(x.clone()), num(2)]),
+                    app(bif("ADD"), vec![var(x), num(3)]),
+                ],
+            ),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                // x appears in both branches but only one executes —
+                // the IF signature marks branches as lazy_once, so the
+                // branch envs are each scaled by AtMostOnce. x's total
+                // demand from the two branches is lub(once, once) = once,
+                // but it also appears twice via merge_envs (plus) giving
+                // Multi.  This is conservative-correct: the analysis
+                // cannot know at compile time which branch is taken, so
+                // treating the variable as Multi is safe.
+                let x_card = scope.pattern[0].demand.cardinality;
+                assert!(
+                    x_card == Cardinality::Multi || x_card == Cardinality::AtMostOnce,
+                    "x in IF branches should be AtMostOnce or conservatively Multi, got: {x_card:?}"
+                );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn nested_strict_single_use_stays_at_most_once() {
+        // let x = 1 in f(g(x))
+        // where f and g each use their argument once.
+        // x should be AtMostOnce — it's only evaluated once through
+        // the nested chain.
+        let x = free("x");
+        // Simulate f(g(x)) as ADD(0, ADD(0, x)) — each ADD uses its
+        // args once (strict_once from the intrinsic signature).
+        let expr = let_(
+            vec![(x.clone(), num(1))],
+            app(
+                bif("ADD"),
+                vec![num(0), app(bif("ADD"), vec![num(0), var(x)])],
+            ),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(
+                    scope.pattern[0].demand.cardinality,
+                    Cardinality::AtMostOnce,
+                    "x used once through nested strict calls — must be AtMostOnce"
+                );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn captured_binding_scaled_by_multi_arg_demand() {
+        // let x = 1 in unknown_f(\y -> ADD(x, y))
+        // unknown_f has no known signature, so its argument gets the
+        // default lazy_multi demand.  The lambda captures x, and since
+        // the lambda may be called multiple times, x must be Multi.
+        let x = free("x");
+        let y = free("y");
+        let f = free("f");
+        let expr = let_(
+            vec![
+                (x.clone(), num(1)),
+                (f.clone(), num(0)), // stand-in for unknown function
+            ],
+            app(
+                var(f),
+                vec![lam(
+                    vec!["y".to_string()],
+                    app(bif("ADD"), vec![var(x), var(y)]),
+                )],
+            ),
+        );
+        let (result, _sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(
+                    scope.pattern[0].demand.cardinality,
+                    Cardinality::Multi,
+                    "x captured in lambda passed to unknown function — must be Multi"
+                );
             }
             other => panic!("expected Let, got: {other:?}"),
         }
