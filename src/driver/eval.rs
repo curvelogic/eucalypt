@@ -259,10 +259,18 @@ impl<'a> Executor<'a> {
 
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(ref b) = self.prelude_blob {
+            // Build a slot-ordered name list from name_to_slot (name → slot index).
+            let mut names = vec![String::new(); b.binding_entries.len()];
+            for (name, &slot) in &b.name_to_slot {
+                if slot < names.len() {
+                    names[slot] = name.clone();
+                }
+            }
             rt.set_prelude_bindings(
                 b.nodes.clone(),
                 b.forms_pool.clone(),
                 b.binding_entries.clone(),
+                names,
             );
         }
 
