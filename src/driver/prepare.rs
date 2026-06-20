@@ -253,6 +253,12 @@ pub fn prepare(
         stats.record("split-letrecs", t.elapsed());
     }
 
+    if opt.dump_split() {
+        let c = loader.core();
+        dump_core(c.expr.clone(), opt);
+        return Ok(Command::Exit);
+    }
+
     // Hoist inlinable namespace members to top-level bindings.
     //
     // This pass lifts `Lam(_, true, _)` and `Intrinsic` members of namespace

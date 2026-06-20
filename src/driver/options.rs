@@ -303,6 +303,8 @@ pub enum DumpPhase {
     Desugared,
     /// Dump core expression once operator soup has been analysed for precedence
     Cooked,
+    /// Dump core expression after SCC-based LetRec splitting
+    Split,
     /// Dump core expression once inliner pass has run
     Inlined,
     /// Dump core expression once dead code has been eliminated
@@ -390,6 +392,7 @@ pub struct EucalyptOptions {
     pub parse: bool,
     pub dump_desugared: bool,
     pub dump_cooked: bool,
+    pub dump_split: bool,
     pub dump_inlined: bool,
     pub dump_pruned: bool,
     pub dump_demands: bool,
@@ -556,6 +559,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             parse,
             dump_desugared,
             dump_cooked,
+            dump_split,
             dump_inlined,
             dump_pruned,
             dump_demands,
@@ -565,52 +569,61 @@ impl From<EucalyptCli> for EucalyptOptions {
         ) = match &cli.command {
             Some(Commands::Version) => (
                 false, true, false, false, false, false, false, false, false, false, false, false,
+                false,
             ),
             Some(Commands::Explain(_)) => (
                 false, false, false, false, false, false, false, false, false, false, false, false,
+                false,
             ),
             Some(Commands::Test(_)) => (
                 false, false, true, false, false, false, false, false, false, false, false, false,
+                false,
             ),
             Some(Commands::ListTargets(_)) => (
-                false, false, false, false, false, false, false, false, false, false, false, true,
+                false, false, false, false, false, false, false, false, false, false, false, false,
+                true,
             ),
             Some(Commands::Dump(args)) => match args.phase {
                 DumpPhase::Ast => (
                     false, false, false, true, false, false, false, false, false, false, false,
-                    false,
+                    false, false,
                 ),
                 DumpPhase::Desugared => (
                     false, false, false, false, true, false, false, false, false, false, false,
-                    false,
+                    false, false,
                 ),
                 DumpPhase::Cooked => (
                     false, false, false, false, false, true, false, false, false, false, false,
-                    false,
+                    false, false,
+                ),
+                DumpPhase::Split => (
+                    false, false, false, false, false, false, true, false, false, false, false,
+                    false, false,
                 ),
                 DumpPhase::Inlined => (
-                    false, false, false, false, false, false, true, false, false, false, false,
-                    false,
+                    false, false, false, false, false, false, false, true, false, false, false,
+                    false, false,
                 ),
                 DumpPhase::Pruned => (
-                    false, false, false, false, false, false, false, true, false, false, false,
-                    false,
+                    false, false, false, false, false, false, false, false, true, false, false,
+                    false, false,
                 ),
                 DumpPhase::Demands => (
-                    false, false, false, false, false, false, false, false, true, false, false,
-                    false,
+                    false, false, false, false, false, false, false, false, false, true, false,
+                    false, false,
                 ),
                 DumpPhase::Stg => (
-                    false, false, false, false, false, false, false, false, false, true, false,
-                    false,
+                    false, false, false, false, false, false, false, false, false, false, true,
+                    false, false,
                 ),
                 DumpPhase::Runtime => (
-                    false, false, false, false, false, false, false, false, false, false, true,
-                    false,
+                    false, false, false, false, false, false, false, false, false, false, false,
+                    true, false,
                 ),
             },
             _ => (
                 false, false, false, false, false, false, false, false, false, false, false, false,
+                false,
             ),
         };
 
@@ -719,6 +732,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             parse,
             dump_desugared,
             dump_cooked,
+            dump_split,
             dump_inlined,
             dump_pruned,
             dump_demands,
@@ -857,6 +871,10 @@ impl EucalyptOptions {
         self.dump_cooked
     }
 
+    pub fn dump_split(&self) -> bool {
+        self.dump_split
+    }
+
     pub fn dump_inlined(&self) -> bool {
         self.dump_inlined
     }
@@ -967,6 +985,7 @@ impl EucalyptOptions {
             && !self.parse
             && !self.dump_desugared
             && !self.dump_cooked
+            && !self.dump_split
             && !self.dump_inlined
             && !self.dump_pruned
             && !self.dump_demands
@@ -1287,6 +1306,8 @@ impl EucalyptOptions {
             explanation.push_str("parse inputs and translate to initial core representation then dump to standard out");
         } else if self.dump_cooked {
             explanation.push_str("parse inputs, translate to core, resolve operator precedence and dump to standard out");
+        } else if self.dump_split {
+            explanation.push_str("parse inputs, translate to core, cook, and split LetRec scopes via SCC decomposition then dump to standard out");
         } else if self.dump_inlined {
             explanation.push_str("process inputs up to inlining then dump to standard out");
         } else if self.dump_pruned {

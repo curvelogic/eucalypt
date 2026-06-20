@@ -586,6 +586,18 @@ impl SourceLoader {
         Ok(())
     }
 
+    /// Split `LetRec` scopes into minimal `Let`/`LetRec` via SCC
+    /// decomposition.
+    ///
+    /// Builds a dependency graph for each non-block `OtherLet` scope,
+    /// computes strongly connected components (Tarjan's algorithm),
+    /// topologically sorts them, and re-emits the scope as a chain of
+    /// nested `Let` scopes — one per SCC.  `DefaultBlockLet` scopes
+    /// are not split.
+    pub fn split_letrecs(&mut self) {
+        self.core.expr = crate::core::dependency::split_letrecs(&self.core.expr);
+    }
+
     /// Run the namespace lambda hoisting pass.
     ///
     /// Hoists inlinable members of namespace `DefaultBlockLet` bindings (such
@@ -600,12 +612,6 @@ impl SourceLoader {
     /// so that `Lookup(Var("str"), "upper")` is still rewritten to
     /// `Var(Free("__str_upper"))`, which the compiler resolves to `Ref::G`.
     ///
-    /// Split `LetRec` scopes into minimal `Let`/`LetRec` via SCC
-    /// decomposition.  `DefaultBlockLet` scopes are not split.
-    pub fn split_letrecs(&mut self) {
-        self.core.expr = crate::core::dependency::split_letrecs(&self.core.expr);
-    }
-
     /// The pass is a no-op when no hoistable members are found.
     pub fn hoist_namespaces(&mut self) -> Result<(), EucalyptError> {
         #[cfg(not(target_arch = "wasm32"))]

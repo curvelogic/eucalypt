@@ -140,12 +140,6 @@ fn split_scope(
     // (depended upon but don't depend on others in the SCC DAG).
 
     // If there's only one SCC covering all bindings, no splitting needed.
-    // Also bail if splitting would create excessive nesting depth —
-    // the STG compiler traverses scopes via a linked context chain
-    // and extremely deep nesting inflates de Bruijn indices beyond
-    // the chain length.  A cap of 32 SCCs is generous: in practice,
-    // scopes with hundreds of bindings (e.g. prelude + user code)
-    // produce hundreds of singleton SCCs, which is unhelpful.
     if sccs.len() <= 1 {
         return RcExpr::from(Expr::Let(smid, scope, LetType::OtherLet));
     }
