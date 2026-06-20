@@ -3218,6 +3218,12 @@ pub mod tests {
 
     #[test]
     pub fn test_collection_strategy_mark_in_place() {
+        // EU_GC_STRESS=1 overrides analyze_collection_strategy() to always
+        // return SelectiveEvacuation, so this test's assertion doesn't hold
+        // under stress mode.
+        if std::env::var("EU_GC_STRESS").as_deref() == Ok("1") {
+            return;
+        }
         let heap = Heap::new();
 
         // Create a heap with dense blocks by allocating many objects

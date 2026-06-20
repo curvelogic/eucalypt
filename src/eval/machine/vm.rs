@@ -572,14 +572,34 @@ impl MachineState {
 
         cont_env.update(&view, index, self.closure.clone())?;
 
-        // Write barrier: not required for correctness with the current
-        // sticky-mark-bit minor collection strategy.  Minor collections trace
-        // from ALL roots, so old→young edges are discovered transitively.
-        // A future optimisation could add a remembered-set-based write
-        // barrier to restrict minor traces to the young generation only,
-        // at the cost of additional barrier overhead at each thunk update.
-        let _ = &view;
-        let _ = &environment;
+        // Write barrier: tenure young objects stored into an old frame.
+        //
+        // Thunk updates are the only source of old→young edges in the VM:
+        // an old EnvFrame (survived a previous major GC) is overwritten with
+        // the result of evaluating a thunk (a fresh SynClosure pointing to
+        // newly allocated code and/or env).
+        //
+        // Without this barrier, the preliminary minor in collect_major misses
+        // those young objects (minor stops at old object boundaries), causing
+        // them to appear "already marked" after the major flip.  Reset then
+        // clears their line marks; the major trace skips them; lazy sweep
+        // reclaims them while the old frame still holds the dangling pointer.
+        //
+        // Shallow mark of code and env is sufficient: HeapSyn objects (code
+        // pointers) are compiled structures without dynamic young children, and
+        // any further young objects introduced via env will themselves be roots
+        // or reachable from roots directly.  Thunk updates are write-once, so
+        // this barrier fires at most once per thunk in the programme's lifetime.
+        if view.is_marked(environment) {
+            let code = self.closure.code();
+            if code != RefPtr::dangling() {
+                view.write_barrier_mark_young(code);
+            }
+            let env_ptr = self.closure.env();
+            if env_ptr != RefPtr::dangling() {
+                view.write_barrier_mark_young(env_ptr);
+            }
+        }
 
         Ok(())
     }
