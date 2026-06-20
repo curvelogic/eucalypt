@@ -572,11 +572,12 @@ impl MachineState {
 
         cont_env.update(&view, index, self.closure.clone())?;
 
-        // Write barrier: not needed for correctness with the current
-        // minor collection strategy, which traces from ALL roots using
-        // a HashSet for cycle detection.  A future optimisation could
-        // switch to remembered-set-based minor collection, at which
-        // point a write barrier would be necessary here.
+        // Write barrier: not required for correctness with the current
+        // sticky-mark-bit minor collection strategy.  Minor collections trace
+        // from ALL roots, so old→young edges are discovered transitively.
+        // A future optimisation could add a remembered-set-based write
+        // barrier to restrict minor traces to the young generation only,
+        // at the cost of additional barrier overhead at each thunk update.
         let _ = &view;
         let _ = &environment;
 
