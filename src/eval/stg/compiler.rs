@@ -1795,28 +1795,18 @@ pub mod tests {
         );
     }
 
-    /// A single-use binding is compiled as `Value` after prune sets its demand.
+    /// AtMostOnce demand does NOT elide update frames (disabled).
     ///
-    /// The prune pass annotates bindings used exactly once with
-    /// `Cardinality::AtMostOnce`.  The STG compiler then emits `value(...)`
-    /// instead of `thunk(...)` because no Update frame is needed (W9 §8
-    /// criterion 3 — at least one binding previously Thunk is now Value).
+    /// `AtMostOnce → Value` was disabled because demand analysis counts
+    /// `Var::Bound` references but cannot account for runtime block
+    /// lookups (`.key`) or the post-analysis rendering wrapper — both
+    /// re-enter closures the analysis considers single-use, causing
+    /// cascading re-evaluation and a 3× allocation regression.
     ///
-    /// We verify this with an expression where a binding holds another
-    /// binding reference — a `var(y)` — which is a bound-variable atom
-    /// (WHNF), but compile it indirectly by constructing a `CoreBinding`
-    /// with explicit demands so that the non-WHNF case can be demonstrated
-    /// without needing a prune-safe inner expression.
-    ///
-    /// Concretely: `let x = λf.f(f)` used once in the body.  Without demand,
-    /// the lambda binding is always `Value` (lambdas are WHNF).  Instead we
-    /// use the prune test helper to confirm that a binding with `Unknown`
-    /// demand (the default) compiles as `Thunk` for a nested let, and with
-    /// `AtMostOnce` it compiles as `Value`.  We build the demand explicitly
-    /// using `CoreBinding::with_demand` so that `ErrEliminated` is not
-    /// introduced.
+    /// This test verifies both `Unknown` and `AtMostOnce` compile as
+    /// `Thunk` for a non-WHNF binding.
     #[test]
-    pub fn test_single_use_binding_compiles_as_value_after_prune() {
+    pub fn test_at_most_once_does_not_elide_update() {
         use crate::common::sourcemap::Smid;
         use crate::core::binding::{CoreBinding, Scope};
         use crate::core::demand::Demand;
@@ -1872,19 +1862,18 @@ pub mod tests {
             "with Unknown demand, nested-let binding should be Thunk; got:\n{unknown_demand:?}"
         );
 
-        // With AtMostOnce demand: prune would set this for a single-use binding.
-        // Compiler should emit Value, not Thunk (W9 §8 criterion 3).
+        // With AtMostOnce demand: update elision is disabled, so still Thunk.
         let at_most_once = compile(make_let(Demand::at_most_once())).unwrap();
-        let x_is_value = match at_most_once.as_ref() {
+        let x_is_thunk_too = match at_most_once.as_ref() {
             StgSyn::LetRec { bindings, .. } => {
-                matches!(bindings.first(), Some(LambdaForm::Value { .. }))
+                matches!(bindings.first(), Some(LambdaForm::Thunk { .. }))
             }
             _ => false,
         };
         assert!(
-            x_is_value,
-            "with AtMostOnce demand (set by prune for single-use bindings), \
-             nested-let binding should be Value; got:\n{at_most_once:?}"
+            x_is_thunk_too,
+            "with AtMostOnce demand, nested-let binding should still be Thunk \
+             (update elision disabled); got:\n{at_most_once:?}"
         );
     }
 }

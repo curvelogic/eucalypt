@@ -980,8 +980,10 @@ mod tests {
     }
 
     #[test]
-    fn absent_demand_skips_update() {
-        assert!(Demand::absent().skip_update());
+    fn absent_demand_does_not_skip_update() {
+        // Absent → Value is disabled (same reason as AtMostOnce — see
+        // Demand::skip_update doc comment).
+        assert!(!Demand::absent().skip_update());
     }
 
     #[test]
