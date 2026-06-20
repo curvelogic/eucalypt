@@ -238,6 +238,7 @@ pub fn zdt_arg(
 pub struct DataIterator<'scope> {
     closure: SynClosure,
     view: MutatorHeapView<'scope>,
+    smid: Smid,
 }
 
 impl Iterator for DataIterator<'_> {
@@ -251,15 +252,15 @@ impl Iterator for DataIterator<'_> {
                 Ok(DataConstructor::ListCons) => (args.get(0), args.get(1)),
                 Ok(DataConstructor::ListNil) => return None,
                 _ => {
-                    return Some(Err(ExecutionError::Panic(
-                        Smid::default(),
+                    return Some(Err(ExecutionError::NotValue(
+                        self.smid,
                         "expected list data".to_string(),
                     )))
                 }
             },
             _ => {
-                return Some(Err(ExecutionError::Panic(
-                    Smid::default(),
+                return Some(Err(ExecutionError::NotValue(
+                    self.smid,
                     "expected list data".to_string(),
                 )))
             }
@@ -269,7 +270,7 @@ impl Iterator for DataIterator<'_> {
             Some(h) => self.closure.navigate_local(&self.view, h),
             None => {
                 return Some(Err(ExecutionError::Panic(
-                    Smid::default(),
+                    self.smid,
                     "malformed cons cell".to_string(),
                 )))
             }
@@ -281,7 +282,7 @@ impl Iterator for DataIterator<'_> {
             }
             None => {
                 return Some(Err(ExecutionError::Panic(
-                    Smid::default(),
+                    self.smid,
                     "malformed cons cell".to_string(),
                 )))
             }
@@ -298,6 +299,7 @@ pub fn data_list_arg<'scope>(
     arg: Ref,
 ) -> Result<DataIterator<'scope>, ExecutionError> {
     Ok(DataIterator {
+        smid: machine.annotation(),
         closure: machine.nav(view).resolve(&arg)?,
         view,
     })
@@ -308,6 +310,7 @@ pub fn data_list_arg<'scope>(
 pub struct StrListIterator<'scope> {
     closure: SynClosure,
     view: MutatorHeapView<'scope>,
+    smid: Smid,
 }
 
 impl Iterator for StrListIterator<'_> {
@@ -321,15 +324,15 @@ impl Iterator for StrListIterator<'_> {
                 Ok(DataConstructor::ListCons) => (args.get(0), args.get(1)),
                 Ok(DataConstructor::ListNil) => return None,
                 _ => {
-                    return Some(Err(ExecutionError::Panic(
-                        Smid::default(),
+                    return Some(Err(ExecutionError::NotValue(
+                        self.smid,
                         "expected string list data".to_string(),
                     )))
                 }
             },
             _ => {
-                return Some(Err(ExecutionError::Panic(
-                    Smid::default(),
+                return Some(Err(ExecutionError::NotValue(
+                    self.smid,
                     "expected string list data".to_string(),
                 )))
             }
@@ -339,7 +342,7 @@ impl Iterator for StrListIterator<'_> {
             Some(h) => self.closure.navigate_local_native(&self.view, h),
             None => {
                 return Some(Err(ExecutionError::Panic(
-                    Smid::default(),
+                    self.smid,
                     "malformed cons cell".to_string(),
                 )))
             }
@@ -351,7 +354,7 @@ impl Iterator for StrListIterator<'_> {
             }
             None => {
                 return Some(Err(ExecutionError::Panic(
-                    Smid::default(),
+                    self.smid,
                     "malformed cons cell".to_string(),
                 )))
             }
@@ -361,7 +364,7 @@ impl Iterator for StrListIterator<'_> {
             Some(Ok((*self.view.scoped(s)).as_str().to_string()))
         } else {
             Some(Err(ExecutionError::TypeMismatch(
-                Smid::default(),
+                self.smid,
                 Box::new(IntrinsicType::String),
                 Box::new(native_type(&native)),
                 None,
@@ -377,6 +380,7 @@ pub fn str_list_arg<'guard>(
     arg: Ref,
 ) -> Result<StrListIterator<'guard>, ExecutionError> {
     Ok(StrListIterator {
+        smid: machine.annotation(),
         closure: machine.nav(view).resolve(&arg)?,
         view,
     })
@@ -694,6 +698,7 @@ pub fn collect_num_list(
     view: MutatorHeapView<'_>,
     list_ref: Ref,
 ) -> Result<Vec<f64>, ExecutionError> {
+    let smid = machine.annotation();
     let iter = data_list_arg(machine, view, list_ref)?;
     let mut numbers = Vec::new();
     for item_result in iter {
@@ -705,8 +710,8 @@ pub fn collect_num_list(
                 match native {
                     Native::Num(n) => numbers.push(n.as_f64().unwrap_or(0.0)),
                     _ => {
-                        return Err(ExecutionError::Panic(
-                            Smid::default(),
+                        return Err(ExecutionError::NotValue(
+                            smid,
                             "non-numeric value in number list".to_string(),
                         ))
                     }
@@ -717,25 +722,22 @@ pub fn collect_num_list(
                 args: cargs,
             } => {
                 let inner_ref = cargs.get(0).ok_or_else(|| {
-                    ExecutionError::Panic(
-                        Smid::default(),
-                        "empty boxed value in number list".to_string(),
-                    )
+                    ExecutionError::Panic(smid, "empty boxed value in number list".to_string())
                 })?;
                 let native = item_closure.navigate_local_native(&view, inner_ref.clone());
                 match native {
                     Native::Num(n) => numbers.push(n.as_f64().unwrap_or(0.0)),
                     _ => {
-                        return Err(ExecutionError::Panic(
-                            Smid::default(),
+                        return Err(ExecutionError::NotValue(
+                            smid,
                             "non-numeric value in number list".to_string(),
                         ))
                     }
                 }
             }
             _ => {
-                return Err(ExecutionError::Panic(
-                    Smid::default(),
+                return Err(ExecutionError::NotValue(
+                    smid,
                     "unexpected value in number list".to_string(),
                 ))
             }

@@ -495,6 +495,7 @@ impl StgIntrinsic for ListDrop {
             num.as_u64().unwrap_or(0) as usize
         };
 
+        let smid = machine.annotation();
         // Navigate through the cons structure, skipping n elements.
         // We traverse the tail links directly so we can return the
         // remaining cons cell (rather than reconstructing the list).
@@ -509,10 +510,7 @@ impl StgIntrinsic for ListDrop {
                     match (*tag).try_into() {
                         Ok(DataConstructor::ListCons) => {
                             let tail_ref = cons_args.get(1).ok_or_else(|| {
-                                ExecutionError::Panic(
-                                    Smid::default(),
-                                    "malformed cons cell".to_string(),
-                                )
+                                ExecutionError::Panic(smid, "malformed cons cell".to_string())
                             })?;
                             closure = closure.navigate_local(&view, tail_ref);
                         }
@@ -521,17 +519,17 @@ impl StgIntrinsic for ListDrop {
                             return machine.set_closure(closure);
                         }
                         _ => {
-                            return Err(ExecutionError::Panic(
-                                Smid::default(),
-                                "LIST.DROP: expected list".to_string(),
+                            return Err(ExecutionError::NotValue(
+                                smid,
+                                "drop: expected a list".to_string(),
                             ));
                         }
                     }
                 }
                 _ => {
-                    return Err(ExecutionError::Panic(
-                        Smid::default(),
-                        "LIST.DROP: expected list".to_string(),
+                    return Err(ExecutionError::NotValue(
+                        smid,
+                        "drop: expected a list".to_string(),
                     ));
                 }
             }
