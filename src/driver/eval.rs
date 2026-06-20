@@ -307,6 +307,27 @@ impl<'a> Executor<'a> {
                 stats.timings_mut().record("demand-analysis", t.elapsed());
             }
 
+            // Re-flatten nested Let/LetRec scopes after demand analysis.
+            // SCC splitting decomposes LetRec into chains of nested scopes
+            // for precise demand analysis; this pass merges them back into
+            // single scopes (single EnvFrame at runtime) while preserving
+            // the per-binding demand annotations.
+            {
+                let t = Instant::now();
+                self.evaluand = crate::core::reflatten::reflatten(&self.evaluand);
+                stats.timings_mut().record("reflatten", t.elapsed());
+            }
+
+            if opt.dump_reflatten() {
+                if opt.quote_debug() {
+                    println!("{:#?}", self.evaluand);
+                } else {
+                    let pretty = crate::common::prettify::prettify(&self.evaluand);
+                    println!("{pretty}");
+                }
+                return Ok(None);
+            }
+
             let syn = {
                 let t = Instant::now();
                 let syn = stg::compile(&stg_settings, self.evaluand.clone(), rt.as_ref())?;

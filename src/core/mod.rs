@@ -15,6 +15,7 @@ pub mod export;
 pub mod expr;
 pub mod inline;
 pub mod metadata;
+pub mod reflatten;
 pub mod rt;
 pub mod simplify;
 pub mod target;
