@@ -600,6 +600,12 @@ impl SourceLoader {
     /// so that `Lookup(Var("str"), "upper")` is still rewritten to
     /// `Var(Free("__str_upper"))`, which the compiler resolves to `Ref::G`.
     ///
+    /// Split `LetRec` scopes into minimal `Let`/`LetRec` via SCC
+    /// decomposition.  `DefaultBlockLet` scopes are not split.
+    pub fn split_letrecs(&mut self) {
+        self.core.expr = crate::core::dependency::split_letrecs(&self.core.expr);
+    }
+
     /// The pass is a no-op when no hoistable members are found.
     pub fn hoist_namespaces(&mut self) -> Result<(), EucalyptError> {
         #[cfg(not(target_arch = "wasm32"))]

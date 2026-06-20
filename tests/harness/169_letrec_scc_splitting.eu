@@ -1,0 +1,47 @@
+#!/usr/bin/env eu
+# Tests for LetRec SCC splitting pass
+#
+# The dependency analysis pass splits LetRec scopes into minimal
+# Let/LetRec via SCC decomposition.  Non-recursive bindings become
+# non-recursive Let scopes; mutually recursive groups stay as LetRec.
+# DefaultBlockLet scopes (blocks) are never split.
+
+# Independent bindings: a and b have no dependency
+independent-a: 10
+independent-b: 20
+independent-ok: (independent-a + independent-b) = 30
+
+# Chain dependency: c depends on b depends on a
+chain-a: 1
+chain-b: chain-a + 1
+chain-c: chain-b + 1
+chain-ok: chain-c = 3
+
+# Mutual recursion: even? and odd? reference each other
+even?(n): if(n = 0, true, odd?(n - 1))
+odd?(n): if(n = 0, false, even?(n - 1))
+even-ok: even?(4)
+odd-ok: odd?(3)
+
+# Self-recursive function
+factorial(n): if(n <= 1, 1, n * factorial(n - 1))
+factorial-ok: factorial(5) = 120
+
+# Mixed: independent binding + recursive pair
+mix-base: 10
+mix-f(n): if(n = 0, mix-base, mix-g(n - 1))
+mix-g(n): if(n = 0, mix-base, mix-f(n - 1))
+mix-ok: mix-f(3) = 10
+
+# Block values should not be affected by splitting
+block-val: { x: 1, y: 2, z: 3 }
+block-ok: (block-val.x + block-val.y + block-val.z) = 6
+
+# Higher-order: non-recursive binding used in a lambda
+double(x): x * 2
+mapped: [1, 2, 3] map(double)
+mapped-ok: mapped = [2, 4, 6]
+
+RESULT: [ independent-ok, chain-ok, even-ok, odd-ok,
+          factorial-ok, mix-ok, block-ok, mapped-ok ] all-true?
+  then(:PASS, :FAIL)
