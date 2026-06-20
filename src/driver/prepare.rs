@@ -84,6 +84,7 @@ pub fn prepare(
             let can_continue = opt.parse_only()
                 || opt.dump_desugared()
                 || opt.dump_cooked()
+                || opt.dump_split()
                 || opt.dump_inlined()
                 || opt.dump_pruned()
                 || opt.dump_demands()

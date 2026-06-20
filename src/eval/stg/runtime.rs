@@ -66,6 +66,11 @@ pub struct StandardRuntime {
     /// Index into `prelude_forms_pool` for each prelude global binding
     /// (one entry per binding, in slot order).
     prelude_binding_entries: Vec<FormIdx>,
+    /// Binding names in slot order (parallel to `prelude_binding_entries`).
+    ///
+    /// Empty string for any slot whose name is not recorded.  Used by
+    /// `dump runtime` to label prelude global slots.
+    prelude_names: Vec<String>,
 }
 
 impl Default for StandardRuntime {
@@ -80,6 +85,7 @@ impl Default for StandardRuntime {
             prelude_nodes: Vec::new(),
             prelude_forms_pool: Vec::new(),
             prelude_binding_entries: Vec::new(),
+            prelude_names: Vec::new(),
         }
     }
 }
@@ -92,16 +98,20 @@ impl StandardRuntime {
     ///
     /// `forms_pool` is the COMPLETE set of lambda forms (entry thunks + all inner
     /// forms from `Let`/`LetRec` nodes).  `binding_entries` contains one `FormIdx`
-    /// per prelude binding pointing into `forms_pool`.
+    /// per prelude binding pointing into `forms_pool`.  `names` contains the
+    /// binding name for each slot (parallel to `binding_entries`), used by
+    /// `dump runtime` to label prelude global slots.
     pub fn set_prelude_bindings(
         &mut self,
         nodes: Vec<ArenaStgSyn>,
         forms_pool: Vec<ArenaLambdaForm>,
         binding_entries: Vec<FormIdx>,
+        names: Vec<String>,
     ) {
         self.prelude_nodes = nodes;
         self.prelude_forms_pool = forms_pool;
         self.prelude_binding_entries = binding_entries;
+        self.prelude_names = names;
     }
 }
 
@@ -119,7 +129,9 @@ impl ToPretty for StandardRuntime {
         D::Doc: Clone,
         A: Clone,
     {
-        let docs = self.lambdas().into_iter().enumerate().map(|(i, lam)| {
+        let intrinsic_count = self.impls.len();
+
+        let intrinsic_docs = self.lambdas().into_iter().enumerate().map(|(i, lam)| {
             let name = intrinsics::intrinsic(i).name();
 
             allocator
@@ -132,7 +144,43 @@ impl ToPretty for StandardRuntime {
                 .append(allocator.line())
         });
 
-        allocator.intersperse(docs, allocator.line())
+        if self.prelude_binding_entries.is_empty() {
+            return allocator.intersperse(intrinsic_docs, allocator.line());
+        }
+
+        // In blob mode, also print prelude globals (slots INTRINSIC_COUNT..).
+        let arena = StgArena {
+            nodes: self.prelude_nodes.clone(),
+            forms: self.prelude_forms_pool.clone(),
+        };
+
+        let prelude_docs =
+            self.prelude_binding_entries
+                .iter()
+                .enumerate()
+                .filter_map(|(i, &entry_idx)| {
+                    let slot = intrinsic_count + i;
+                    let name = self
+                        .prelude_names
+                        .get(i)
+                        .map(|s| s.as_str())
+                        .unwrap_or("<unnamed>");
+                    match arena.reconstruct_form(entry_idx) {
+                        Ok(lam) => Some(
+                            allocator
+                                .text(format!("(⊗{slot}) "))
+                                .append(name)
+                                .append(":")
+                                .append(allocator.space())
+                                .append(allocator.line())
+                                .append(allocator.text(prettify(&lam)))
+                                .append(allocator.line()),
+                        ),
+                        Err(_) => None,
+                    }
+                });
+
+        allocator.intersperse(intrinsic_docs.chain(prelude_docs), allocator.line())
     }
 }
 
