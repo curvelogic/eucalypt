@@ -4,7 +4,11 @@
 //! tracing, marking and potentially, in future, moving.
 //!
 
-use std::{collections::VecDeque, mem::size_of, ptr::NonNull};
+use std::{
+    collections::{HashSet, VecDeque},
+    mem::size_of,
+    ptr::NonNull,
+};
 
 use crate::eval::machine::metrics::{Clock, ThreadOccupation};
 
@@ -143,9 +147,21 @@ impl<T: GcScannable> GcScannable for Vec<NonNull<T>> {
     }
 }
 
-/// View of the heap available to the collector
+/// View of the heap available to the collector.
+///
+/// In major mode (default), `mark()` uses the header mark bit to track
+/// visited objects — an already-marked object is skipped.
+///
+/// In minor mode, a `HashSet` tracks visited addresses so that old
+/// (already header-marked) objects are still scanned to discover young
+/// children.  This is necessary because without a complete transitive
+/// write barrier, old→young edges can exist.
 pub struct CollectorHeapView<'guard> {
     heap: &'guard mut Heap,
+    /// When `Some`, we are in minor mode: the set tracks all objects
+    /// visited during this minor cycle so that old objects are scanned
+    /// exactly once.
+    minor_visited: Option<HashSet<usize>>,
 }
 
 impl CollectorHeapView<'_> {
@@ -153,7 +169,12 @@ impl CollectorHeapView<'_> {
         self.heap.reset_region_marks();
     }
 
-    /// Mark object if not already marked and return whether marked
+    /// Mark object if not already marked and return whether it should
+    /// be scanned (queued).
+    ///
+    /// In major mode, this checks the header mark bit.
+    /// In minor mode, this uses the visited set so that old objects are
+    /// scanned once (to discover young children) without re-marking them.
     pub fn mark<T>(&mut self, obj: NonNull<T>) -> bool {
         debug_assert!(obj != NonNull::dangling());
         debug_assert!(obj.as_ptr() as usize != usize::MAX);
@@ -173,6 +194,10 @@ impl CollectorHeapView<'_> {
                     );
                 }
             }
+        }
+
+        if let Some(ref mut visited) = self.minor_visited {
+            return Self::mark_minor_inner(self.heap, obj, visited);
         }
 
         if obj != NonNull::dangling() && !self.heap.is_marked(obj) {
@@ -199,6 +224,32 @@ impl CollectorHeapView<'_> {
         }
     }
 
+    /// Minor-mode mark: visit every reachable object exactly once,
+    /// re-marking lines for ALL visited objects.
+    ///
+    /// Header mark bits are NOT changed — only lines are marked.
+    /// This avoids conflicts with the major collection's flip-at-end
+    /// semantics.  The major sees all objects as "unmarked" (header
+    /// bit ≠ mark_state after a flip) and re-traces everything,
+    /// which is correct regardless of whether a minor ran in between.
+    ///
+    /// Cannot borrow `self` because `minor_visited` is part of self;
+    /// the caller passes the visited set directly.
+    fn mark_minor_inner<T>(heap: &mut Heap, obj: NonNull<T>, visited: &mut HashSet<usize>) -> bool {
+        let addr = obj.as_ptr() as usize;
+        if !visited.insert(addr) {
+            return false; // already visited this cycle
+        }
+
+        // Mark lines for this object (lines were reset at start)
+        heap.mark_line(obj);
+
+        // Do NOT set the header mark bit — leave it for major
+        // collections which use the flip mechanism.
+
+        true // scan children
+    }
+
     /// Mark a raw byte allocation (e.g. a `RawArray<u8>` backing buffer)
     /// if not already marked, covering all lines spanned by the bytes.
     ///
@@ -207,6 +258,17 @@ impl CollectorHeapView<'_> {
     pub fn mark_raw_bytes(&mut self, ptr: NonNull<u8>) -> bool {
         debug_assert!(ptr != NonNull::dangling());
         debug_assert!(ptr.as_ptr() as usize != usize::MAX);
+
+        if let Some(ref mut visited) = self.minor_visited {
+            let addr = ptr.as_ptr() as usize;
+            if !visited.insert(addr) {
+                return false;
+            }
+            // Lines only — no header mark change in minor mode
+            self.heap.mark_lines_for_bytes(ptr);
+            return true;
+        }
+
         if !self.heap.is_marked(ptr) {
             self.heap.mark_object(ptr);
             self.heap.mark_lines_for_bytes(ptr);
@@ -221,6 +283,17 @@ impl CollectorHeapView<'_> {
         if let Some(ptr) = arr.allocated_data() {
             debug_assert!(ptr != NonNull::dangling());
             debug_assert!(ptr.as_ptr() as usize != usize::MAX);
+
+            if let Some(ref mut visited) = self.minor_visited {
+                let addr = ptr.as_ptr() as usize;
+                if !visited.insert(addr) {
+                    return false;
+                }
+                // Lines only — no header mark change in minor mode
+                self.heap.mark_lines_for_bytes(ptr);
+                return true;
+            }
+
             if !self.heap.is_marked(ptr) {
                 self.heap.mark_object(ptr);
                 self.heap.mark_lines_for_bytes(ptr);
@@ -385,24 +458,60 @@ impl CollectorHeapView<'_> {
 pub struct Scope();
 impl CollectorScope for Scope {}
 
+/// Perform the appropriate collection (minor or major) based on policy.
+///
+/// This is the main entry point called by the VM.  It delegates to
+/// `collect_minor` or `collect_major` depending on the heap's nursery
+/// scheduling policy.
 pub fn collect(roots: &mut dyn GcScannable, heap: &mut Heap, clock: &mut Clock, dump_heap: bool) {
+    // All collections are currently major.  The allocation-rate
+    // trigger (`policy_requires_collection`) provides more frequent
+    // collection without needing a separate minor path.
+    //
+    // A true minor collection (sticky-mark-bit, skipping old objects)
+    // requires a write barrier that coordinates with the mark-state
+    // flip.  Setting header marks during mutation (eager promotion)
+    // causes those objects to be skipped by the next major's trace
+    // after the flip, since their bit matches mark_state.  The minor
+    // path (`collect_minor`) and its full-trace visited-set approach
+    // are retained below for when this is resolved.
+    collect_major(roots, heap, clock, dump_heap);
+}
+
+/// Major collection: full mark-sweep with mark-state flip.
+///
+/// Resets all line marks, traces every live object from roots, defers
+/// sweep, then flips the mark state so that all surviving objects are
+/// now "old" (their header mark bit matches the new mark state).
+///
+/// Optionally performs selective evacuation of fragmented blocks.
+pub fn collect_major(
+    roots: &mut dyn GcScannable,
+    heap: &mut Heap,
+    clock: &mut Clock,
+    dump_heap: bool,
+) {
     // Decide collection strategy based on fragmentation analysis
     let strategy = heap.analyze_collection_strategy();
     let candidates = strategy.candidates();
 
     if !candidates.is_empty() {
+        // collect_with_evacuation records the major collection internally
         return collect_with_evacuation(roots, heap, clock, &candidates, dump_heap);
     }
 
     if dump_heap {
-        eprintln!("GC!");
+        eprintln!("GC (major)!");
     }
 
     clock.switch(ThreadOccupation::CollectorMark);
 
-    let mut heap_view = CollectorHeapView { heap };
+    let mut heap_view = CollectorHeapView {
+        heap,
+        minor_visited: None,
+    };
 
-    // clear line maps
+    // Clear all line marks — every live object will be re-marked
     heap_view.reset();
 
     let mut queue = VecDeque::default();
@@ -443,11 +552,98 @@ pub fn collect(roots: &mut dyn GcScannable, heap: &mut Heap, clock: &mut Clock, 
         eprintln!("Heap after defer_sweep:\n\n{:?}", &heap_view.heap)
     }
 
-    // Record collection count and update peak blocks
-    heap_view.heap.record_collection();
-
-    // After collection, flip mark state ready for next collection
+    // Record major collection and flip mark state
+    heap_view.heap.record_major_collection();
     heap_view.heap.flip_mark_state();
+}
+
+/// Minor (nursery) collection: full trace without mark-state flip.
+///
+/// Line marks ARE reset so that dead objects (old and young) have their
+/// lines reclaimed.  The trace visits ALL reachable objects (old and
+/// young alike), using a visited set to handle cycle detection for old
+/// objects whose header mark bit would otherwise cause them to be
+/// skipped.  Young objects that are reached are tenured in place (their
+/// header mark bit is set).  The mark state is NOT flipped.
+///
+/// The full trace is necessary because without a transitive write
+/// barrier, old→young edges can exist (an old thunk's result may
+/// reference young objects).  Once the write barrier ensures all
+/// old→young references are eagerly promoted, a future optimisation
+/// can switch to tracing only young objects.
+pub fn collect_minor(
+    roots: &mut dyn GcScannable,
+    heap: &mut Heap,
+    clock: &mut Clock,
+    dump_heap: bool,
+) {
+    if dump_heap {
+        eprintln!("GC (minor)!");
+    }
+
+    let blocks_before = heap.stats().recycled;
+
+    clock.switch(ThreadOccupation::CollectorMark);
+
+    let mut heap_view = CollectorHeapView {
+        heap,
+        minor_visited: Some(HashSet::new()),
+    };
+
+    // Reset all line marks.  The full trace below will re-mark lines
+    // for every reachable object (old and young).  Dead objects' lines
+    // remain unmarked and are reclaimable by lazy sweep.
+    heap_view.reset();
+
+    let mut queue = VecDeque::default();
+    let mut scan_buffer = Vec::new();
+
+    let scope = Scope();
+
+    // Trace from roots.  In minor mode, mark() uses the visited set
+    // so that old objects are scanned exactly once (discovering young
+    // children) without relying on the header mark bit for cycle
+    // detection.
+    roots.scan(&scope, &mut heap_view, &mut scan_buffer);
+    queue.extend(scan_buffer.drain(..));
+
+    while let Some(scanptr) = queue.pop_front() {
+        scanptr.get().scan(&scope, &mut heap_view, &mut scan_buffer);
+        queue.extend(scan_buffer.drain(..));
+    }
+
+    if dump_heap {
+        eprintln!("Heap after minor mark:\n\n{:?}", &heap_view.heap)
+    }
+
+    // Skip verify_mark_integrity — minor does not change header marks,
+    // so the verify (which checks header marks) would find nothing
+    // meaningful.  The full-trace via visited set guarantees all
+    // reachable objects have their lines marked.
+
+    let verify = super::gc_debug::verify_level();
+
+    clock.switch(ThreadOccupation::CollectorSweep);
+
+    // Defer sweep — lazy sweep will reclaim lines with no marks
+    heap_view.defer_sweep();
+
+    if verify >= 2 {
+        super::gc_verify::verify_post_sweep(heap_view.heap);
+    }
+
+    if dump_heap {
+        eprintln!("Heap after minor defer_sweep:\n\n{:?}", &heap_view.heap)
+    }
+
+    // Calculate reclaim ratio for adaptive scheduling
+    let blocks_after = heap_view.heap.stats().recycled;
+    let reclaimed = blocks_after.saturating_sub(blocks_before);
+    let budget = heap_view.heap.nursery_budget().max(1);
+    let reclaim_ratio = reclaimed as f64 / budget as f64;
+
+    // Do NOT flip mark state — header marks are unchanged.
+    heap_view.heap.record_minor_collection(reclaim_ratio);
 }
 
 /// Perform a collecting GC cycle with selective evacuation of fragmented blocks.
@@ -483,7 +679,10 @@ pub fn collect_with_evacuation(
     let mut live_heap_objects: Vec<(*const u8, *const ())> = Vec::new();
 
     {
-        let mut heap_view = CollectorHeapView { heap: &mut *heap };
+        let mut heap_view = CollectorHeapView {
+            heap: &mut *heap,
+            minor_visited: None,
+        };
         heap_view.reset();
 
         let mut queue = VecDeque::default();
@@ -530,7 +729,10 @@ pub fn collect_with_evacuation(
     // --- Update phase ---
     // Rewrite forwarded pointers in roots and all live heap objects.
     {
-        let heap_view = CollectorHeapView { heap: &mut *heap };
+        let heap_view = CollectorHeapView {
+            heap: &mut *heap,
+            minor_visited: None,
+        };
 
         // Update root pointers (MachineState: globals, closure, stack)
         roots.scan_and_update(&heap_view);
@@ -594,7 +796,10 @@ pub fn collect_with_evacuation(
 
     // Defer sweep to allocation time (lazy sweeping)
     {
-        let mut heap_view = CollectorHeapView { heap };
+        let mut heap_view = CollectorHeapView {
+            heap,
+            minor_visited: None,
+        };
         heap_view.defer_sweep();
     }
 
@@ -603,7 +808,7 @@ pub fn collect_with_evacuation(
         super::gc_verify::verify_post_sweep(heap);
     }
 
-    heap.record_collection();
+    heap.record_major_collection();
     heap.flip_mark_state();
 }
 
@@ -622,7 +827,10 @@ pub fn collect_with_evacuation(
 /// Enabled by `EU_GC_VERIFY=1`.
 fn verify_mark_integrity(roots: &dyn GcScannable, heap: &mut Heap) {
     let scope = Scope();
-    let mut heap_view = CollectorHeapView { heap };
+    let mut heap_view = CollectorHeapView {
+        heap,
+        minor_visited: None,
+    };
     let mut queue = VecDeque::default();
     let mut scan_buffer = Vec::new();
     let mut total = 0usize;
@@ -842,7 +1050,10 @@ pub mod tests {
 
         // Reconstruct via transmute and call scan_and_update (no-op since
         // nothing is forwarded, but verifies the transmute doesn't crash)
-        let heap_view = CollectorHeapView { heap: &mut heap };
+        let heap_view = CollectorHeapView {
+            heap: &mut heap,
+            minor_visited: None,
+        };
         unsafe {
             let obj_ref: &mut dyn GcScannable =
                 std::mem::transmute::<[usize; 2], &mut dyn GcScannable>([
@@ -948,7 +1159,10 @@ pub mod tests {
         let original_addr = atom_ptr.as_ptr() as usize;
 
         // Manually perform evacuation via CollectorHeapView
-        let mut heap_view = CollectorHeapView { heap: &mut heap };
+        let mut heap_view = CollectorHeapView {
+            heap: &mut heap,
+            minor_visited: None,
+        };
 
         // Mark the object so evacuation recognises it as live
         heap_view.mark(atom_ptr);
@@ -1005,7 +1219,10 @@ pub mod tests {
             .unwrap()
             .as_ptr();
 
-        let mut heap_view = CollectorHeapView { heap: &mut heap };
+        let mut heap_view = CollectorHeapView {
+            heap: &mut heap,
+            minor_visited: None,
+        };
 
         // Mark and evacuate both
         heap_view.mark(atom_ptr);

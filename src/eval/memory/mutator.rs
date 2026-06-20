@@ -112,6 +112,22 @@ impl<'guard> MutatorHeapView<'guard> {
             heap: self.heap,
         }
     }
+
+    /// Check whether an object is marked (old / tenured).
+    #[inline(always)]
+    pub fn is_marked<T>(&self, ptr: std::ptr::NonNull<T>) -> bool {
+        self.heap_ref().is_marked(ptr)
+    }
+
+    /// Write barrier: if `ptr` points to a young (unmarked) object,
+    /// mark it immediately (eager promotion / tenuring).
+    ///
+    /// Called by the VM after writing a closure into an old env frame
+    /// during thunk update.
+    #[inline(always)]
+    pub fn write_barrier_mark_young<T>(&self, ptr: std::ptr::NonNull<T>) {
+        self.heap_ref().write_barrier_mark_young(ptr);
+    }
 }
 
 /// Allow allocation in a mutator scope
