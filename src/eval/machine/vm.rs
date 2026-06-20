@@ -558,31 +558,29 @@ impl MachineState {
 
     /// Update environment index to point to current closure.
     ///
-    /// This is the single mutation site for the generational nursery.
-    /// The write barrier is currently disabled — see comment in body.
+    /// Includes an eager-promotion write barrier: when a marked (old)
+    /// env frame is updated to point to an unmarked (young) closure,
+    /// the closure's code and environment are immediately marked
+    /// (tenured).  This eliminates old→young edges at mutation time,
+    /// allowing minor collections to skip old objects entirely.
+    ///
+    /// Thunk updates are write-once (each thunk is updated exactly once),
+    /// so the barrier cost is bounded: one branch + two potential marks
+    /// per thunk evaluation.
     fn update(
         &mut self,
         view: MutatorHeapView,
         environment: RefPtr<EnvFrame>,
         index: usize,
     ) -> Result<(), ExecutionError> {
+        // Eager promotion: if the env frame is old (marked), mark the
+        // closure's code and environment to eliminate old→young edges.
+        if view.is_marked(environment) {
+            view.write_barrier_mark_young(self.closure.code());
+            view.write_barrier_mark_young(self.closure.env());
+        }
+
         let cont_env = view.scoped(environment);
-
-        // Write barrier is intentionally disabled.  The current minor
-        // collection does a full trace (visiting all reachable objects
-        // via a visited set), so the barrier is not needed for
-        // correctness.  Enabling the write barrier requires
-        // coordinating with the major collection's mark-state flip:
-        // header marks set during mutation would confuse the next
-        // major's flip-at-end, causing the marked objects to be
-        // skipped (their header bit matches mark_state, so they
-        // appear "already traced").
-        //
-        // A future optimisation can enable the barrier alongside a
-        // selective minor that only traces young objects, once the
-        // flip interaction is resolved (e.g. flip-before-trace with
-        // appropriate new-allocation handling).
-
         cont_env.update(&view, index, self.closure.clone())
     }
 
