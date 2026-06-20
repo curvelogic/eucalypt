@@ -598,6 +598,17 @@ impl SourceLoader {
         self.core.expr = crate::core::dependency::split_letrecs(&self.core.expr);
     }
 
+    /// Re-flatten nested Let/LetRec scopes after demand analysis.
+    ///
+    /// Merges chains of directly nested `Let`/`LetRec` scopes back
+    /// into a single scope while preserving per-binding demand
+    /// annotations.  This reverses the nesting introduced by SCC
+    /// splitting so the STG compiler sees flat scopes (single
+    /// `EnvFrame` at runtime) but with accurate demand information.
+    pub fn reflatten_lets(&mut self) {
+        self.core.expr = crate::core::reflatten::reflatten(&self.core.expr);
+    }
+
     /// Run the namespace lambda hoisting pass.
     ///
     /// Hoists inlinable members of namespace `DefaultBlockLet` bindings (such

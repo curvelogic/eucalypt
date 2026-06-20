@@ -248,14 +248,7 @@ pub fn prepare(
     {
         let t = Instant::now();
 
-        // SCC splitting disabled pending env-depth performance fix.
-        // The pass correctly decomposes LetRec into Let+LetRec but
-        // the deeper nesting causes O(depth) env traversal regressions
-        // (day01-p2: 9.7s→39s, day12: 0.3s→3.4s, multiple timeouts).
-        // TODO: re-enable once STG compiler flattens nested Let scopes
-        // into a single env frame or env lookup is made O(1).
-        //
-        // loader.split_letrecs();
+        loader.split_letrecs();
 
         stats.record("split-letrecs", t.elapsed());
     }

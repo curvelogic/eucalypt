@@ -167,7 +167,7 @@ fn run() -> i32 {
         }
     }
 
-    if opt.run() || opt.dump_stg() || opt.dump_runtime() {
+    if opt.run() || opt.dump_stg() || opt.dump_runtime() || opt.dump_reflatten() {
         // run manages error reporting
         match eval::run(&opt, loader) {
             Ok(result) => {

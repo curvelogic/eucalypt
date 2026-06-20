@@ -305,6 +305,8 @@ pub enum DumpPhase {
     Pruned,
     /// Dump core expression with demand annotations
     Demands,
+    /// Dump core expression after re-flattening nested Let scopes
+    Reflatten,
     /// Dump compiled STG syntax
     Stg,
     /// Dump code for runtime globals
@@ -390,6 +392,7 @@ pub struct EucalyptOptions {
     pub dump_inlined: bool,
     pub dump_pruned: bool,
     pub dump_demands: bool,
+    pub dump_reflatten: bool,
     pub dump_stg: bool,
     pub dump_runtime: bool,
 
@@ -557,67 +560,72 @@ impl From<EucalyptCli> for EucalyptOptions {
             dump_inlined,
             dump_pruned,
             dump_demands,
+            dump_reflatten,
             dump_stg,
             dump_runtime,
             list_targets,
         ) = match &cli.command {
             Some(Commands::Version) => (
                 false, true, false, false, false, false, false, false, false, false, false, false,
-                false,
+                false, false,
             ),
             Some(Commands::Explain(_)) => (
                 false, false, false, false, false, false, false, false, false, false, false, false,
-                false,
+                false, false,
             ),
             Some(Commands::Test(_)) => (
                 false, false, true, false, false, false, false, false, false, false, false, false,
-                false,
+                false, false,
             ),
             Some(Commands::ListTargets(_)) => (
                 false, false, false, false, false, false, false, false, false, false, false, false,
-                true,
+                false, true,
             ),
             Some(Commands::Dump(args)) => match args.phase {
                 DumpPhase::Ast => (
                     false, false, false, true, false, false, false, false, false, false, false,
-                    false, false,
+                    false, false, false,
                 ),
                 DumpPhase::Desugared => (
                     false, false, false, false, true, false, false, false, false, false, false,
-                    false, false,
+                    false, false, false,
                 ),
                 DumpPhase::Cooked => (
                     false, false, false, false, false, true, false, false, false, false, false,
-                    false, false,
+                    false, false, false,
                 ),
                 DumpPhase::Split => (
                     false, false, false, false, false, false, true, false, false, false, false,
-                    false, false,
+                    false, false, false,
                 ),
                 DumpPhase::Inlined => (
                     false, false, false, false, false, false, false, true, false, false, false,
-                    false, false,
+                    false, false, false,
                 ),
                 DumpPhase::Pruned => (
                     false, false, false, false, false, false, false, false, true, false, false,
-                    false, false,
+                    false, false, false,
                 ),
                 DumpPhase::Demands => (
                     false, false, false, false, false, false, false, false, false, true, false,
-                    false, false,
+                    false, false, false,
+                ),
+                DumpPhase::Reflatten => (
+                    false, false, false, false, false, false, false, false, false, false, true,
+                    false, false, false,
                 ),
                 DumpPhase::Stg => (
-                    false, false, false, false, false, false, false, false, false, false, true,
-                    false, false,
+                    false, false, false, false, false, false, false, false, false, false, false,
+                    true, false, false,
                 ),
                 DumpPhase::Runtime => (
                     false, false, false, false, false, false, false, false, false, false, false,
-                    true, false,
+                    false, true, false,
                 ),
             },
             _ => (
                 false, false, false, false, false, false, false, false, false, false, false, false,
-                false,
+                false, false,
             ),
         };
 
@@ -724,6 +732,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             dump_inlined,
             dump_pruned,
             dump_demands,
+            dump_reflatten,
             dump_stg,
             dump_runtime,
             lsp,
@@ -875,6 +884,10 @@ impl EucalyptOptions {
         self.dump_demands
     }
 
+    pub fn dump_reflatten(&self) -> bool {
+        self.dump_reflatten
+    }
+
     pub fn dump_stg(&self) -> bool {
         self.dump_stg
     }
@@ -977,6 +990,7 @@ impl EucalyptOptions {
             && !self.dump_inlined
             && !self.dump_pruned
             && !self.dump_demands
+            && !self.dump_reflatten
             && !self.dump_stg
             && !self.dump_runtime
             && !self.format
@@ -1304,6 +1318,8 @@ impl EucalyptOptions {
             );
         } else if self.dump_demands {
             explanation.push_str("process inputs through core phase, run demand analysis, and dump annotated core to standard out");
+        } else if self.dump_reflatten {
+            explanation.push_str("process inputs through demand analysis, re-flatten nested Let scopes, and dump to standard out");
         } else if self.dump_stg {
             explanation.push_str("process inputs through core phase and compile to STG code and dump to standard out");
         } else if self.dump_runtime {
