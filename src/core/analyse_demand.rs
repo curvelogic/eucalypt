@@ -216,7 +216,7 @@ pub fn build_prelude_signatures() -> HashMap<String, DemandSignature> {
     sigs.insert("apply".into(), vec![sm(), sm()]);
 
     // Conditionals — condition strict, branches lazy
-    sigs.insert("then".into(), vec![sm(), lm(), sm()]);
+    sigs.insert("then".into(), vec![lm(), lm(), sm()]);
     sigs.insert("when".into(), vec![sm(), sm(), sm()]);
 
     // Lookup functions — strict in key/object args
