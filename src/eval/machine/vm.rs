@@ -88,6 +88,7 @@ impl HeapNavigator<'_> {
     }
 
     /// Index into current environment, retrieving pointer
+    #[inline(always)]
     pub fn get(&self, index: usize) -> Result<SynClosure, ExecutionError> {
         match (*self.locals).get(&self.view, index) {
             Some(c) => Ok(c),
@@ -96,6 +97,7 @@ impl HeapNavigator<'_> {
     }
 
     /// Index into globals
+    #[inline(always)]
     pub fn global(&self, index: usize) -> Result<SynClosure, ExecutionError> {
         match (*self.globals).get(&self.view, index) {
             Some(c) => Ok(c),
