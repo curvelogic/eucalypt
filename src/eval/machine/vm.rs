@@ -558,9 +558,9 @@ impl MachineState {
 
     /// Update environment index to point to current closure.
     ///
-    /// No write barrier is needed: the minor collection uses a HashSet to trace
-    /// ALL reachable objects (old and young alike), so old→young edges created
-    /// by thunk updates are discovered naturally without any special treatment.
+    /// Write barrier: if the frame being updated is old (already marked),
+    /// record it in the remembered set so the next minor collection scans
+    /// it as an extra root and finds the newly-written young closure.
     fn update(
         &mut self,
         view: MutatorHeapView,
@@ -569,6 +569,10 @@ impl MachineState {
     ) -> Result<(), ExecutionError> {
         let cont_env = view.scoped(environment);
         cont_env.update(&view, index, self.closure.clone())?;
+        // Write barrier: record old frames updated with new (possibly young) closures.
+        if view.is_marked(environment) {
+            view.record_dirty_frame(environment);
+        }
         Ok(())
     }
 
