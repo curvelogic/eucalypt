@@ -1870,16 +1870,15 @@ impl Heap {
             }
         }
 
-        // Allocation-rate trigger: nursery budget exhausted.
+        // NOTE: The allocation-rate (nursery budget) trigger is intentionally
+        // disabled.  For programs that fit comfortably in RAM the budget fired
+        // too frequently (e.g. 35+ minor collections for AoC day04 vs. the
+        // pre-nursery baseline of 2), causing regressions of 2-14×.
         //
-        // Only active when a heap limit is set — without memory
-        // pressure, collections would be unnecessary overhead.
-        if self.limit.is_some() {
-            let heap_state = unsafe { &*self.state.get() };
-            if heap_state.blocks_replaced_since_gc >= self.nursery_budget.get() {
-                return true;
-            }
-        }
+        // The primary GC trigger is the unconditional end-of-run collection in
+        // vm.rs (called after STG eval and after rendering).  Back-pressure
+        // collection remains as a safety valve for programs that exhaust the
+        // heap limit before completing.
 
         false
     }

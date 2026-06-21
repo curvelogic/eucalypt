@@ -561,6 +561,12 @@ impl MachineState {
     /// Write barrier: if the frame being updated is old (already marked),
     /// record it in the remembered set so the next minor collection scans
     /// it as an extra root and finds the newly-written young closure.
+    ///
+    /// The write barrier records the ACTUAL frame that owns the updated slot,
+    /// not necessarily `environment` (the top of the chain).  When `index >=
+    /// environment.logical_len()`, the update traverses to a parent frame and
+    /// we must record that parent — otherwise dirty-frame scanning would iterate
+    /// the wrong frame's bindings and miss the young closure.
     fn update(
         &mut self,
         view: MutatorHeapView,
@@ -569,9 +575,13 @@ impl MachineState {
     ) -> Result<(), ExecutionError> {
         let cont_env = view.scoped(environment);
         cont_env.update(&view, index, self.closure.clone())?;
+        // Find the specific frame that owns the updated slot so the write
+        // barrier records exactly where the young closure was written.
+        let actual_frame =
+            EnvFrame::find_frame_for_index(environment, index).unwrap_or(environment);
         // Write barrier: record old frames updated with new (possibly young) closures.
-        if view.is_marked(environment) {
-            view.record_dirty_frame(environment);
+        if view.is_marked(actual_frame) {
+            view.record_dirty_frame(actual_frame);
         }
         Ok(())
     }
@@ -1821,16 +1831,13 @@ impl<'a> Machine<'a> {
             self.step()?;
         }
 
-        // Only collect at the end of a run() call if the heap is under
-        // memory pressure.  run() is called multiple times for IO programs
-        // (once per IO step) and also once for rendering; an unconditional
-        // collection here was the dominant source of GC overhead since it
-        // ran a full mark/sweep on every call even when no reclamation was
-        // needed.  The periodic in-loop check (every 500 steps) still
-        // triggers collection when the policy demands it.
-        if self.heap().policy_requires_collection() {
-            self.collect_with_diagnostics();
-        }
+        // Unconditional end-of-run collection: ensures GC has a chance to
+        // establish mark state and reclaim dead objects after each evaluation
+        // phase.  run() is called once for STG eval and once for rendering,
+        // giving exactly 2 collections for non-IO programs — matching the
+        // pre-nursery baseline.  The nursery budget trigger is disabled so
+        // this is the primary trigger for programs that fit comfortably in RAM.
+        self.collect_with_diagnostics();
 
         self.core.clock.stop();
 

@@ -592,15 +592,20 @@ pub fn collect_minor(
     //    Each dirty frame is an old EnvFrame that was updated since
     //    the last collection.  Scanning its closures finds young
     //    objects reachable through old→young edges.
+    //
+    //    IMPORTANT: We must NOT use EnvFrame::scan() here.  scan() calls
+    //    mark_array() on the backing array, which returns false (already
+    //    marked from the last major), causing all bindings to be skipped.
+    //    Instead we iterate bindings directly via iter_bindings() so that
+    //    young closures written via thunk updates are discovered and tenured.
     for frame_addr in dirty_addrs {
         // SAFETY: frame_addr was stored by record_dirty_frame() from a live
         // NonNull<EnvFrame>.  The frame is still live (it's old / marked) and
         // cannot have been reclaimed between barrier and collection.
         if let Some(frame_ptr) = NonNull::new(frame_addr as *mut EnvFrame) {
-            unsafe {
-                frame_ptr
-                    .as_ref()
-                    .scan(&scope, &mut heap_view, &mut scan_buffer);
+            let frame = unsafe { frame_ptr.as_ref() };
+            for binding in frame.iter_bindings() {
+                binding.scan(&scope, &mut heap_view, &mut scan_buffer);
             }
             queue.extend(scan_buffer.drain(..));
         }
