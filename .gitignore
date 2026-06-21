@@ -58,3 +58,4 @@ lib/.result/
 # Fuzz corpora and artefacts (generated from existing tests)
 fuzz/corpus/
 fuzz/artifacts/
+lib/prelude.blob
