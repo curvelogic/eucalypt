@@ -433,12 +433,16 @@ impl DemandAnalyser {
 
         // Step 7: Fixup for rendered block scopes.
         //
-        // DefaultBlockLet scopes whose body is a Block constructor will
-        // have their bindings forced by RENDER_DOC after demand analysis.
-        // The render traversal adds invisible uses that the analysis
-        // cannot see, so AtMostOnce is unsound here — force Multi on
-        // any non-absent binding to prevent update elision.
-        if let_type == LetType::DefaultBlockLet && matches!(&*new_body.inner, Expr::Block(_, _)) {
+        // Any Let scope whose body is a Block constructor will have its
+        // bindings forced by RENDER_DOC after demand analysis. The render
+        // traversal adds invisible uses that the analysis cannot see, so
+        // AtMostOnce is unsound here — force Multi on any non-absent
+        // binding to prevent update elision.
+        //
+        // Note: we check the body rather than the LetType because pipeline
+        // transforms (inject_prelude_inline_cores + compress) can convert
+        // DefaultBlockLet scopes to OtherLet while preserving the Block body.
+        if matches!(&*new_body.inner, Expr::Block(_, _)) {
             for d in &mut demands {
                 if d.cardinality == Cardinality::AtMostOnce {
                     d.cardinality = Cardinality::Multi;
