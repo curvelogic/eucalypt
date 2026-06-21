@@ -85,13 +85,15 @@ impl LetIndexTransformation {
 
 impl IndexTransformation for LetIndexTransformation {
     /// Apply the transformation to a Ref, updating locals and leaving
-    /// globals and values intact
+    /// globals, values, and flat-closure refs intact
     fn apply(&self, r: &Ref, outer: &dyn Fn(&Ref) -> Ref) -> Ref {
         match r {
             Ref::L(n) => match self.mapping.get(*n) {
                 Some(i) => outer(&Ref::L(*i)),
                 None => outer(&Ref::L(*n - self.mapping.len())),
             },
+            // Local/Capture refs are flat-closure refs that don't
+            // participate in de Bruijn index shifting
             x => x.clone(),
         }
     }
@@ -174,7 +176,7 @@ impl AllocationPruner {
                     bound,
                     body,
                     annotation,
-                    ..
+                    capture_recipe,
                 } => {
                     self.transform_stack
                         .push(Box::new(ShiftIndexTransformation::new(*bound as usize)));
@@ -184,16 +186,22 @@ impl AllocationPruner {
                         bound: *bound,
                         body,
                         annotation: *annotation,
-                        capture_recipe: vec![],
+                        capture_recipe: capture_recipe.clone(),
                     }
                 }
-                LambdaForm::Thunk { body, .. } => LambdaForm::Thunk {
+                LambdaForm::Thunk {
+                    body,
+                    capture_recipe,
+                } => LambdaForm::Thunk {
                     body: self.apply(body.clone()),
-                    capture_recipe: vec![],
+                    capture_recipe: capture_recipe.clone(),
                 },
-                LambdaForm::Value { body, .. } => LambdaForm::Value {
+                LambdaForm::Value {
+                    body,
+                    capture_recipe,
+                } => LambdaForm::Value {
                     body: self.apply(body.clone()),
-                    capture_recipe: vec![],
+                    capture_recipe: capture_recipe.clone(),
                 },
             };
 
@@ -205,7 +213,11 @@ impl AllocationPruner {
     pub fn apply(&mut self, stg: Rc<StgSyn>) -> Rc<StgSyn> {
         match &*stg {
             StgSyn::Atom { evaluand } => dsl::atom(self.transform(evaluand)),
-            StgSyn::Let { bindings, body } => {
+            StgSyn::Let {
+                bindings,
+                body,
+                capture_recipe,
+            } => {
                 match LetIndexTransformation::from_let_bindings(bindings) {
                     Some(t) => {
                         // we can strip	the let
@@ -220,11 +232,19 @@ impl AllocationPruner {
                             .push(Box::new(ShiftIndexTransformation::new(bindings.len())));
                         let body = self.apply(body.clone());
                         self.transform_stack.pop();
-                        Rc::new(StgSyn::Let { bindings, body })
+                        Rc::new(StgSyn::Let {
+                            bindings,
+                            body,
+                            capture_recipe: capture_recipe.clone(),
+                        })
                     }
                 }
             }
-            StgSyn::LetRec { bindings, body } => {
+            StgSyn::LetRec {
+                bindings,
+                body,
+                capture_recipe,
+            } => {
                 match LetIndexTransformation::from_letrec_bindings(bindings) {
                     Some(t) => {
                         // All bindings are simple outer-scope refs: strip the letrec.
@@ -241,7 +261,11 @@ impl AllocationPruner {
                         let bindings = self.transform_bindings(bindings);
                         let body = self.apply(body.clone());
                         self.transform_stack.pop();
-                        Rc::new(StgSyn::LetRec { bindings, body })
+                        Rc::new(StgSyn::LetRec {
+                            bindings,
+                            body,
+                            capture_recipe: capture_recipe.clone(),
+                        })
                     }
                 }
             }

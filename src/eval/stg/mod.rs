@@ -17,6 +17,7 @@ pub mod emit;
 pub mod encoding;
 pub mod eq;
 pub mod expect;
+pub mod flatten;
 pub mod force;
 pub mod graph;
 pub mod io;

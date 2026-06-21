@@ -729,6 +729,8 @@ pub mod repr {
             memory::syntax::Ref::V(memory::syntax::Native::Producer(_)) => {
                 stg::syntax::Ref::V(stg::syntax::Native::Sym("<producer>".to_string()))
             }
+            memory::syntax::Ref::Local(i) => stg::syntax::Ref::Local(*i),
+            memory::syntax::Ref::Capture(i) => stg::syntax::Ref::Capture(*i),
         }
     }
 
@@ -826,10 +828,12 @@ impl Repr for ScopedPtr<'_, HeapSyn> {
             HeapSyn::Let { bindings, body } => Rc::new(StgSyn::Let {
                 bindings: repr::repr_bindings(self, bindings.clone()),
                 body: ScopedPtr::from_non_null(self, *body).repr(),
+                capture_recipe: vec![],
             }),
             HeapSyn::LetRec { bindings, body } => Rc::new(StgSyn::LetRec {
                 bindings: repr::repr_bindings(self, bindings.clone()),
                 body: ScopedPtr::from_non_null(self, *body).repr(),
+                capture_recipe: vec![],
             }),
             HeapSyn::Ann { smid, body } => Rc::new(StgSyn::Ann {
                 smid: *smid,

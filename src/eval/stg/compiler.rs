@@ -792,9 +792,17 @@ impl<'a> LetBinder<'a> {
             };
 
             if recursive_let {
-                Ok(Rc::new(StgSyn::LetRec { bindings, body }))
+                Ok(Rc::new(StgSyn::LetRec {
+                    bindings,
+                    body,
+                    capture_recipe: vec![],
+                }))
             } else {
-                Ok(Rc::new(StgSyn::Let { bindings, body }))
+                Ok(Rc::new(StgSyn::Let {
+                    bindings,
+                    body,
+                    capture_recipe: vec![],
+                }))
             }
         }
     }
@@ -1307,7 +1315,11 @@ impl ProtoSyntax for ProtoInline {
 
         let bindings = refs.into_iter().map(|r| dsl::value(dsl::atom(r))).collect();
 
-        Ok(Rc::new(StgSyn::Let { bindings, body }))
+        Ok(Rc::new(StgSyn::Let {
+            bindings,
+            body,
+            capture_recipe: vec![],
+        }))
     }
 }
 
@@ -1401,11 +1413,15 @@ impl<'rt> Compiler<'rt> {
         binder.freeze();
         let compiled = binder.into_stg(self);
 
-        if self.suppress_optimiser {
+        let optimised = if self.suppress_optimiser {
             compiled
         } else {
             compiled.map(|c| optimiser::AllocationPruner::default().apply(c))
-        }
+        };
+
+        // Flatten closures: rewrite Ref::L → Local/Capture and build
+        // capture recipes on every frame boundary.
+        optimised.map(|c| super::flatten::flatten_closures(&c))
     }
 
     /// Compile a let body or standalone expression
@@ -1868,7 +1884,7 @@ pub mod tests {
         // inner let that holds the application.
         fn has_thunk(syn: &Rc<StgSyn>) -> bool {
             match syn.as_ref() {
-                StgSyn::Let { bindings, body } | StgSyn::LetRec { bindings, body } => {
+                StgSyn::Let { bindings, body, .. } | StgSyn::LetRec { bindings, body, .. } => {
                     bindings
                         .iter()
                         .any(|b| matches!(b, LambdaForm::Thunk { .. }))

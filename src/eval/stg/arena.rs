@@ -40,7 +40,7 @@ use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    syntax::{LambdaForm, Ref, StgSyn},
+    syntax::{CaptureInstruction, LambdaForm, Ref, StgSyn},
     tags::Tag,
 };
 use crate::common::sourcemap::Smid;
@@ -88,12 +88,15 @@ pub enum ArenaLambdaForm {
         bound: u8,
         body: NodeIdx,
         annotation: Smid,
+        capture_recipe: Vec<CaptureInstruction>,
     },
     Thunk {
         body: NodeIdx,
+        capture_recipe: Vec<CaptureInstruction>,
     },
     Value {
         body: NodeIdx,
+        capture_recipe: Vec<CaptureInstruction>,
     },
 }
 
@@ -128,10 +131,12 @@ pub enum ArenaStgSyn {
     Let {
         bindings: Vec<FormIdx>,
         body: NodeIdx,
+        capture_recipe: Vec<CaptureInstruction>,
     },
     LetRec {
         bindings: Vec<FormIdx>,
         body: NodeIdx,
+        capture_recipe: Vec<CaptureInstruction>,
     },
     Ann {
         smid: Smid,
@@ -219,22 +224,32 @@ impl StgArena {
                 intrinsic: *intrinsic,
                 args: args.clone(),
             },
-            StgSyn::Let { bindings, body } => {
+            StgSyn::Let {
+                bindings,
+                body,
+                capture_recipe,
+            } => {
                 let form_idxs: Vec<FormIdx> =
                     bindings.iter().map(|lf| self.alloc_form(lf)).collect();
                 let body_idx = self.alloc_node(body);
                 ArenaStgSyn::Let {
                     bindings: form_idxs,
                     body: body_idx,
+                    capture_recipe: capture_recipe.clone(),
                 }
             }
-            StgSyn::LetRec { bindings, body } => {
+            StgSyn::LetRec {
+                bindings,
+                body,
+                capture_recipe,
+            } => {
                 let form_idxs: Vec<FormIdx> =
                     bindings.iter().map(|lf| self.alloc_form(lf)).collect();
                 let body_idx = self.alloc_node(body);
                 ArenaStgSyn::LetRec {
                     bindings: form_idxs,
                     body: body_idx,
+                    capture_recipe: capture_recipe.clone(),
                 }
             }
             StgSyn::Ann { smid, body } => {
@@ -288,7 +303,10 @@ impl StgArena {
         let idx = self.forms.len() as FormIdx;
         // Push a placeholder (Thunk with a dummy body slot).
         // We know the real form will overwrite it immediately.
-        self.forms.push(ArenaLambdaForm::Thunk { body: u32::MAX });
+        self.forms.push(ArenaLambdaForm::Thunk {
+            body: u32::MAX,
+            capture_recipe: vec![],
+        });
         let arena_form = self.build_form(lf);
         self.forms[idx as usize] = arena_form;
         idx
@@ -300,22 +318,35 @@ impl StgArena {
                 bound,
                 body,
                 annotation,
-                ..
+                capture_recipe,
             } => {
                 let body_idx = self.alloc_node(body);
                 ArenaLambdaForm::Lambda {
                     bound: *bound,
                     body: body_idx,
                     annotation: *annotation,
+                    capture_recipe: capture_recipe.clone(),
                 }
             }
-            LambdaForm::Thunk { body, .. } => {
+            LambdaForm::Thunk {
+                body,
+                capture_recipe,
+            } => {
                 let body_idx = self.alloc_node(body);
-                ArenaLambdaForm::Thunk { body: body_idx }
+                ArenaLambdaForm::Thunk {
+                    body: body_idx,
+                    capture_recipe: capture_recipe.clone(),
+                }
             }
-            LambdaForm::Value { body, .. } => {
+            LambdaForm::Value {
+                body,
+                capture_recipe,
+            } => {
                 let body_idx = self.alloc_node(body);
-                ArenaLambdaForm::Value { body: body_idx }
+                ArenaLambdaForm::Value {
+                    body: body_idx,
+                    capture_recipe: capture_recipe.clone(),
+                }
             }
         }
     }
@@ -378,19 +409,29 @@ impl StgArena {
                 intrinsic: *intrinsic,
                 args: args.clone(),
             },
-            ArenaStgSyn::Let { bindings, body } => StgSyn::Let {
+            ArenaStgSyn::Let {
+                bindings,
+                body,
+                capture_recipe,
+            } => StgSyn::Let {
                 bindings: bindings
                     .iter()
                     .map(|&idx| self.reconstruct_form(idx))
                     .collect::<Result<_, BlobReconstructError>>()?,
                 body: self.reconstruct_node(*body)?,
+                capture_recipe: capture_recipe.clone(),
             },
-            ArenaStgSyn::LetRec { bindings, body } => StgSyn::LetRec {
+            ArenaStgSyn::LetRec {
+                bindings,
+                body,
+                capture_recipe,
+            } => StgSyn::LetRec {
                 bindings: bindings
                     .iter()
                     .map(|&idx| self.reconstruct_form(idx))
                     .collect::<Result<_, BlobReconstructError>>()?,
                 body: self.reconstruct_node(*body)?,
+                capture_recipe: capture_recipe.clone(),
             },
             // Ann nodes are elided in reconstruct_node() above.
             ArenaStgSyn::Ann { .. } => unreachable!("Ann handled in reconstruct_node"),
@@ -424,21 +465,32 @@ impl StgArena {
                 len: self.forms.len(),
             })?;
         Ok(match form {
-            ArenaLambdaForm::Lambda { bound, body, .. } => LambdaForm::Lambda {
+            ArenaLambdaForm::Lambda {
+                bound,
+                body,
+                capture_recipe,
+                ..
+            } => LambdaForm::Lambda {
                 bound: *bound,
                 body: self.reconstruct_node(*body)?,
                 // Clear xtask-sourced annotations — they are meaningless
                 // at runtime and would pollute user error locations.
                 annotation: Smid::default(),
-                capture_recipe: vec![],
+                capture_recipe: capture_recipe.clone(),
             },
-            ArenaLambdaForm::Thunk { body } => LambdaForm::Thunk {
+            ArenaLambdaForm::Thunk {
+                body,
+                capture_recipe,
+            } => LambdaForm::Thunk {
                 body: self.reconstruct_node(*body)?,
-                capture_recipe: vec![],
+                capture_recipe: capture_recipe.clone(),
             },
-            ArenaLambdaForm::Value { body } => LambdaForm::Value {
+            ArenaLambdaForm::Value {
+                body,
+                capture_recipe,
+            } => LambdaForm::Value {
                 body: self.reconstruct_node(*body)?,
-                capture_recipe: vec![],
+                capture_recipe: capture_recipe.clone(),
             },
         })
     }
@@ -509,6 +561,7 @@ mod tests {
         let original: Rc<StgSyn> = Rc::new(StgSyn::Let {
             bindings: vec![lf],
             body: let_body,
+            capture_recipe: vec![],
         });
         let arena = flatten(&original);
         let reconstructed = arena.reconstruct(0).unwrap();
@@ -527,6 +580,7 @@ mod tests {
         let original: Rc<StgSyn> = Rc::new(StgSyn::Let {
             bindings: vec![lf],
             body: atom(Reference::L(0)),
+            capture_recipe: vec![],
         });
         let arena = flatten(&original);
         let reconstructed = arena.reconstruct(0).unwrap();
@@ -571,6 +625,7 @@ mod tests {
                 smid: Smid::default(),
                 body: atom(Reference::L(0)),
             }),
+            capture_recipe: vec![],
         });
         let expected: Rc<StgSyn> = Rc::new(StgSyn::Let {
             bindings: vec![LambdaForm::Thunk {
@@ -578,6 +633,7 @@ mod tests {
                 capture_recipe: vec![],
             }],
             body: atom(Reference::L(0)),
+            capture_recipe: vec![],
         });
         let arena = flatten(&original);
         let bytes = postcard::to_allocvec(&arena).expect("serialise");

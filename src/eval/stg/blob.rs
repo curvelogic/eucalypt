@@ -255,16 +255,23 @@ mod tests {
         });
 
         // Add a Value lambda form referencing node 0
-        blob.forms_pool.push(ArenaLambdaForm::Value { body: 0 });
+        blob.forms_pool.push(ArenaLambdaForm::Value {
+            body: 0,
+            capture_recipe: vec![],
+        });
 
         // Add a Thunk lambda form referencing node 0
-        blob.forms_pool.push(ArenaLambdaForm::Thunk { body: 0 });
+        blob.forms_pool.push(ArenaLambdaForm::Thunk {
+            body: 0,
+            capture_recipe: vec![],
+        });
 
         // Add a Lambda form
         blob.forms_pool.push(ArenaLambdaForm::Lambda {
             bound: 2,
             body: 0,
             annotation: Smid::default(),
+            capture_recipe: vec![],
         });
 
         // Binding entries point to forms_pool indices
@@ -288,11 +295,11 @@ mod tests {
         // Verify the lambda form variants survived
         assert!(matches!(
             &restored.forms_pool[0],
-            ArenaLambdaForm::Value { body: 0 }
+            ArenaLambdaForm::Value { body: 0, .. }
         ));
         assert!(matches!(
             &restored.forms_pool[1],
-            ArenaLambdaForm::Thunk { body: 0 }
+            ArenaLambdaForm::Thunk { body: 0, .. }
         ));
         assert!(matches!(
             &restored.forms_pool[2],

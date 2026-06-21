@@ -76,6 +76,9 @@ impl HeapNavigator<'_> {
         match r {
             Ref::L(index) => Ok(self.get(*index)?),
             Ref::G(index) => Ok(self.global(*index)?),
+            Ref::Local(_) | Ref::Capture(_) => {
+                todo!("flat closure ref resolution")
+            }
             Ref::V(_) => Ok(SynClosure::new(
                 self.view
                     .alloc(HeapSyn::Atom {
@@ -122,6 +125,9 @@ impl HeapNavigator<'_> {
         match r {
             Ref::L(index) => self.get(*index),
             Ref::G(index) => self.global(*index),
+            Ref::Local(_) | Ref::Capture(_) => {
+                todo!("flat closure ref resolution")
+            }
             Ref::V(n) => Err(ExecutionError::NotCallable(
                 self.annotation,
                 n.type_description().to_string(),
@@ -149,6 +155,9 @@ impl HeapNavigator<'_> {
         let mut closure = match r {
             Ref::L(index) => self.get(*index)?,
             Ref::G(index) => self.global(*index)?,
+            Ref::Local(_) | Ref::Capture(_) => {
+                todo!("flat closure ref resolution")
+            }
             Ref::V(n) => return Ok(n.clone()),
             Ref::Local(i) => (*self.locals)
                 .get_local(*i as usize)
@@ -169,6 +178,9 @@ impl HeapNavigator<'_> {
                         .ok_or(ExecutionError::BadEnvironmentIndex(*index))?
                 }
                 Ref::G(index) => self.global(*index)?,
+                Ref::Local(_) | Ref::Capture(_) => {
+                    todo!("flat closure ref resolution")
+                }
                 Ref::V(n) => return Ok(n.clone()),
                 Ref::Local(i) => {
                     let env = self.view.scoped(closure.env());
@@ -228,6 +240,9 @@ impl HeapNavigator<'_> {
                 (*env).get(&self.view, i)
             }
             Ref::G(i) => (*self.globals).get(&self.view, i),
+            Ref::Local(_) | Ref::Capture(_) => {
+                todo!("flat closure ref resolution")
+            }
             Ref::V(_) => {
                 let ptr = self
                     .view
@@ -500,6 +515,9 @@ impl MachineState {
                     }
                     Ref::G(i) => {
                         self.closure = self.nav(view).global(*i)?;
+                    }
+                    Ref::Local(_) | Ref::Capture(_) => {
+                        todo!("flat closure ref resolution")
                     }
                     Ref::V(v) => {
                         self.return_native(view, v)?;
@@ -960,6 +978,9 @@ impl MachineState {
                 Ref::G(index) => (*global_env)
                     .get(&view, *index)
                     .ok_or(ExecutionError::BadGlobalIndex(*index))?,
+                Ref::Local(_) | Ref::Capture(_) => {
+                    todo!("flat closure ref resolution")
+                }
                 Ref::V(_) => SynClosure::new(
                     view.alloc(HeapSyn::Atom {
                         evaluand: r.clone(),
@@ -2195,6 +2216,9 @@ impl<'a> Machine<'a> {
                     Ref::G(i) => (*globals)
                         .get(&view, *i)
                         .ok_or(ExecutionError::BadGlobalIndex(*i)),
+                    Ref::Local(_) | Ref::Capture(_) => {
+                        todo!("flat closure ref resolution")
+                    }
                     Ref::V(_) => {
                         let ptr = view
                             .alloc(HeapSyn::Atom {

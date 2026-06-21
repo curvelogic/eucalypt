@@ -133,7 +133,7 @@ impl ToPretty for StgSyn {
                         .parens(),
                 )
             }
-            StgSyn::Let { bindings, body } => {
+            StgSyn::Let { bindings, body, .. } => {
                 let binding_docs = bindings.iter().enumerate().map(|(i, d)| {
                     allocator
                         .text(format!("[{i}] "))
@@ -152,7 +152,7 @@ impl ToPretty for StgSyn {
                     .append(body.pretty(allocator))
                     .group()
             }
-            StgSyn::LetRec { bindings, body } => {
+            StgSyn::LetRec { bindings, body, .. } => {
                 let binding_docs = bindings.iter().enumerate().map(|(i, d)| {
                     allocator
                         .text(format!("[{i}] "))

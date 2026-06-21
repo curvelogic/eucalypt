@@ -135,6 +135,27 @@ where
     }
 }
 
+/// Instruction for populating a single capture slot when creating a
+/// closure at runtime.
+///
+/// The compiler builds a recipe (a `Vec<CaptureInstruction>`) for each
+/// `LambdaForm` whose body references variables from enclosing scopes.
+/// At runtime, the recipe is executed against the enclosing environment
+/// frame to populate the new frame's captures array.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CaptureInstruction {
+    /// Copy `enclosing.captures[i]` into the new frame's captures.
+    ///
+    /// Used when the captured variable is itself a capture in the
+    /// enclosing scope (transitive capture).
+    CopyCapture(u16),
+    /// Create a capture entry `(enclosing_frame, physical_idx)`.
+    ///
+    /// Used when the captured variable is a local in the enclosing
+    /// scope.
+    CaptureLocal(u16),
+}
+
 pub type Ref = Reference<Native>;
 
 /// Compiled STG syntax
@@ -161,6 +182,12 @@ pub enum StgSyn {
     Let {
         bindings: Vec<LambdaForm>,
         body: Rc<StgSyn>,
+        /// Capture recipe for the let frame itself (flat closures).
+        ///
+        /// Populated by the closure flattening pass.  Tells the runtime
+        /// how to build the captures array for this frame from the
+        /// enclosing environment.
+        capture_recipe: Vec<CaptureInstruction>,
     },
     /// Recursive let bindings
     ///
@@ -171,6 +198,10 @@ pub enum StgSyn {
     LetRec {
         bindings: Vec<LambdaForm>,
         body: Rc<StgSyn>,
+        /// Capture recipe for the letrec frame itself (flat closures).
+        ///
+        /// Populated by the closure flattening pass.
+        capture_recipe: Vec<CaptureInstruction>,
     },
     /// Call-stack / source location annotation
     Ann { smid: Smid, body: Rc<StgSyn> },
@@ -241,10 +272,10 @@ impl fmt::Display for StgSyn {
             StgSyn::Bif { intrinsic, args } => {
                 write!(f, "BIF[{}](×{})", intrinsic, args.len())
             }
-            StgSyn::Let { bindings, body } => {
+            StgSyn::Let { bindings, body, .. } => {
                 write!(f, "LET[×{}]({})", bindings.len(), body)
             }
-            StgSyn::LetRec { bindings, body } => {
+            StgSyn::LetRec { bindings, body, .. } => {
                 write!(f, "LETREC[×{}]({})", bindings.len(), body)
             }
             StgSyn::Ann { smid, body } => {
@@ -325,6 +356,16 @@ impl LambdaForm {
             | LambdaForm::Thunk { capture_recipe, .. }
             | LambdaForm::Value { capture_recipe, .. } => capture_recipe,
         }
+    }
+
+    /// Set the capture recipe
+    pub fn with_capture_recipe(mut self, recipe: Vec<CaptureInstruction>) -> Self {
+        match &mut self {
+            LambdaForm::Lambda { capture_recipe, .. }
+            | LambdaForm::Thunk { capture_recipe, .. }
+            | LambdaForm::Value { capture_recipe, .. } => *capture_recipe = recipe,
+        }
+        self
     }
 
     /// Reference the body of the lambda form
@@ -518,12 +559,20 @@ pub mod dsl {
 
     /// Simple let
     pub fn let_(bindings: Vec<LambdaForm>, body: Rc<StgSyn>) -> Rc<StgSyn> {
-        Rc::new(StgSyn::Let { bindings, body })
+        Rc::new(StgSyn::Let {
+            bindings,
+            body,
+            capture_recipe: vec![],
+        })
     }
 
     /// Recursive let
     pub fn letrec_(bindings: Vec<LambdaForm>, body: Rc<StgSyn>) -> Rc<StgSyn> {
-        Rc::new(StgSyn::LetRec { bindings, body })
+        Rc::new(StgSyn::LetRec {
+            bindings,
+            body,
+            capture_recipe: vec![],
+        })
     }
 
     /// Force-and-discard: evaluate `scrutinee` to WHNF, then enter `body`

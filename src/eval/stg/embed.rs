@@ -174,7 +174,7 @@ fn embed_stg(syn: &StgSyn) -> Option<rowan_ast::Soup> {
             }
             b.finish()
         }
-        StgSyn::Let { bindings, body } => {
+        StgSyn::Let { bindings, body, .. } => {
             let mut b = StgEmbedBuilder::new("s-let");
 
             let mut binding_parts = Vec::new();
@@ -189,7 +189,7 @@ fn embed_stg(syn: &StgSyn) -> Option<rowan_ast::Soup> {
             b.embed_soup(&body_soup);
             b.finish()
         }
-        StgSyn::LetRec { bindings, body } => {
+        StgSyn::LetRec { bindings, body, .. } => {
             let mut b = StgEmbedBuilder::new("s-letrec");
 
             let mut binding_parts = Vec::new();

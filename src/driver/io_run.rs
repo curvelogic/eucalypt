@@ -125,6 +125,9 @@ fn resolve_ref_with_globals(
                 .as_ptr();
             Ok(SynClosure::new(atom_ptr, parent.env()))
         }
+        Ref::Local(_) | Ref::Capture(_) => {
+            todo!("flat closure ref resolution")
+        }
         Ref::G(i) => {
             if let Some(g) = globals {
                 let genv = view.scoped(g);

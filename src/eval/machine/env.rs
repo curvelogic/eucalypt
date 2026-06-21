@@ -125,6 +125,7 @@ impl Closing<RefPtr<HeapSyn>> {
         let mut closure = match arg {
             Ref::L(_) => self.navigate_local(guard, arg),
             Ref::G(_) => panic!("cannot navigate global"),
+            Ref::Local(_) | Ref::Capture(_) => panic!("cannot navigate flat closure ref"),
             Ref::V(n) => return n,
             Ref::Local(_) | Ref::Capture(_) => panic!("cannot navigate flat ref"),
         };
@@ -135,6 +136,7 @@ impl Closing<RefPtr<HeapSyn>> {
             closure = match r {
                 Ref::L(_) => closure.navigate_local(guard, r.clone()),
                 Ref::G(_) => panic!("cannot navigate global"),
+                Ref::Local(_) | Ref::Capture(_) => panic!("cannot navigate flat closure ref"),
                 Ref::V(n) => return n.clone(),
                 Ref::Local(_) | Ref::Capture(_) => panic!("cannot navigate flat ref"),
             };
