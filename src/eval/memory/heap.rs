@@ -47,15 +47,13 @@ use super::{
 
 /// Default nursery budget in blocks.  When this many blocks have been
 /// allocated since the last collection, a collection is triggered.
-/// 256 blocks = 8 MiB with 32 KiB blocks.
-const DEFAULT_NURSERY_BUDGET: usize = 256;
+/// 2048 blocks = 64 MiB with 32 KiB blocks.  The previous value of 256
+/// (8 MiB) was too aggressive, triggering hundreds of minor collections
+/// on programs that fit comfortably in RAM and causing 2-14x regressions.
+const DEFAULT_NURSERY_BUDGET: usize = 2048;
 
 /// After this many consecutive minor collections, force a major collection.
 const MINORS_BEFORE_MAJOR: usize = 8;
-
-/// If a minor collection reclaims less than this fraction of the nursery,
-/// escalate to a major collection next time.
-const MIN_MINOR_RECLAIM_RATIO: f64 = 0.25;
 
 /// Type of garbage collection performed
 #[derive(Debug, Clone, Copy)]
@@ -423,6 +421,10 @@ pub struct HeapState {
     /// Counter of block replacements since last collection.
     /// Incremented by replace_head / replace_head_targeted / replace_overflow.
     blocks_replaced_since_gc: usize,
+    /// Remembered set: addresses of old EnvFrame objects that have been
+    /// updated since the last collection (write barrier records).
+    /// Drained at the start of each minor and major collection.
+    dirty_frames: Vec<usize>,
 }
 
 impl Default for HeapState {
@@ -476,6 +478,7 @@ impl HeapState {
             evacuation_target: None,
             filled_evacuation_blocks: Vec::new(),
             blocks_replaced_since_gc: 0,
+            dirty_frames: Vec::new(),
         }
     }
 
@@ -1867,16 +1870,15 @@ impl Heap {
             }
         }
 
-        // Allocation-rate trigger: nursery budget exhausted.
+        // NOTE: The allocation-rate (nursery budget) trigger is intentionally
+        // disabled.  For programs that fit comfortably in RAM the budget fired
+        // too frequently (e.g. 35+ minor collections for AoC day04 vs. the
+        // pre-nursery baseline of 2), causing regressions of 2-14×.
         //
-        // Only active when a heap limit is set — without memory
-        // pressure, collections would be unnecessary overhead.
-        if self.limit.is_some() {
-            let heap_state = unsafe { &*self.state.get() };
-            if heap_state.blocks_replaced_since_gc >= self.nursery_budget.get() {
-                return true;
-            }
-        }
+        // The primary GC trigger is the unconditional end-of-run collection in
+        // vm.rs (called after STG eval and after rendering).  Back-pressure
+        // collection remains as a safety valve for programs that exhaust the
+        // heap limit before completing.
 
         false
     }
@@ -1917,10 +1919,10 @@ impl Heap {
     /// Record that a minor collection completed.
     ///
     /// Updates counters and resets the allocation-rate trigger.
-    /// `reclaim_ratio` is the fraction of nursery blocks reclaimed
-    /// (0.0–1.0); if below `MIN_MINOR_RECLAIM_RATIO` the next
-    /// collection will be escalated to major.
-    pub fn record_minor_collection(&self, reclaim_ratio: f64) {
+    /// Does NOT escalate to major based on reclaim ratio — the minor
+    /// collector does not sweep, so no meaningful ratio is available.
+    /// Major escalation is handled by the `MINORS_BEFORE_MAJOR` counter.
+    pub fn record_minor_collection(&self) {
         self.minor_collection_count
             .set(self.minor_collection_count.get() + 1);
         let minors = self.minors_since_major.get() + 1;
@@ -1930,11 +1932,6 @@ impl Heap {
         let heap_state = unsafe { &mut *self.state.get() };
         heap_state.blocks_replaced_since_gc = 0;
         heap_state.record_collection();
-
-        // If minor reclaimed very little, force a major next time
-        if reclaim_ratio < MIN_MINOR_RECLAIM_RATIO {
-            self.minors_since_major.set(MINORS_BEFORE_MAJOR);
-        }
     }
 
     /// Record that a major collection completed.
@@ -1947,6 +1944,27 @@ impl Heap {
         let heap_state = unsafe { &mut *self.state.get() };
         heap_state.blocks_replaced_since_gc = 0;
         heap_state.record_collection();
+    }
+
+    /// Record an old EnvFrame as dirty (write barrier).
+    ///
+    /// Called when a thunk update writes a new closure into an old
+    /// (already-marked) frame.  The frame's address is added to the
+    /// remembered set so that the next minor collection scans it as
+    /// an extra root, finding any young objects reachable through it.
+    pub fn record_dirty_frame<T>(&self, ptr: NonNull<T>) {
+        let heap_state = unsafe { &mut *self.state.get() };
+        heap_state.dirty_frames.push(ptr.as_ptr() as usize);
+    }
+
+    /// Drain and return the remembered set of dirty frame addresses.
+    ///
+    /// Called at the start of each minor and major collection.
+    /// Clears the dirty list so new barriers recorded during the pause
+    /// (none, since we're stop-the-world) don't accumulate.
+    pub fn drain_dirty_frames(&self) -> Vec<usize> {
+        let heap_state = unsafe { &mut *self.state.get() };
+        std::mem::take(&mut heap_state.dirty_frames)
     }
 
     /// Current nursery budget in blocks.
