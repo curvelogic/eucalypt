@@ -65,6 +65,18 @@ pub enum Continuation {
         /// Environment of handlers
         environment: RefPtr<EnvFrame>,
     },
+    /// Force-and-discard: once the scrutinee reaches WHNF (updating any
+    /// thunk via its Update continuation), enter the body in the original
+    /// environment.  The WHNF result is NOT bound — Seq is purely for
+    /// its side effect of memoising the thunk.
+    SeqBind {
+        /// Body to enter after forcing the scrutinee
+        body: RefPtr<HeapSyn>,
+        /// Environment for the body (same as the Seq's environment)
+        environment: RefPtr<EnvFrame>,
+        /// Source annotation at the seq site
+        annotation: Smid,
+    },
     /// Marks the end of an emitter capture.  When the machine returns a
     /// value into this continuation, it signals `Machine::step()` to pop
     /// the capture emitter and extract the buffer as a string result.
@@ -115,6 +127,9 @@ impl fmt::Display for Continuation {
             }
             Continuation::DeMeta { .. } => {
                 write!(f, "ƒ(`,•)")
+            }
+            Continuation::SeqBind { .. } => {
+                write!(f, "⟶seq")
             }
             Continuation::CaptureEnd => {
                 write!(f, "⊡capture")
@@ -204,6 +219,16 @@ impl GcScannable for Continuation {
                     out.push(ScanPtr::from_non_null(scope, *environment));
                 }
             }
+            Continuation::SeqBind {
+                body, environment, ..
+            } => {
+                if marker.mark(*body) {
+                    out.push(ScanPtr::from_non_null(scope, *body));
+                }
+                if marker.mark(*environment) {
+                    out.push(ScanPtr::from_non_null(scope, *environment));
+                }
+            }
             Continuation::CaptureEnd => {
                 // No heap pointers to scan.
             }
@@ -268,6 +293,16 @@ impl GcScannable for Continuation {
                 }
                 if let Some(new) = heap.forwarded_to(*or_else) {
                     *or_else = new;
+                }
+                if let Some(new) = heap.forwarded_to(*environment) {
+                    *environment = new;
+                }
+            }
+            Continuation::SeqBind {
+                body, environment, ..
+            } => {
+                if let Some(new) = heap.forwarded_to(*body) {
+                    *body = new;
                 }
                 if let Some(new) = heap.forwarded_to(*environment) {
                     *environment = new;

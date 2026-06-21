@@ -146,6 +146,10 @@ pub enum ArenaStgSyn {
         handler: NodeIdx,
         or_else: NodeIdx,
     },
+    Seq {
+        scrutinee: NodeIdx,
+        body: NodeIdx,
+    },
     BlackHole,
 }
 
@@ -256,6 +260,14 @@ impl StgArena {
                     scrutinee: s_idx,
                     handler: h_idx,
                     or_else: o_idx,
+                }
+            }
+            StgSyn::Seq { scrutinee, body } => {
+                let s_idx = self.alloc_node(scrutinee);
+                let b_idx = self.alloc_node(body);
+                ArenaStgSyn::Seq {
+                    scrutinee: s_idx,
+                    body: b_idx,
                 }
             }
             StgSyn::BlackHole => ArenaStgSyn::BlackHole,
@@ -393,6 +405,10 @@ impl StgArena {
                 scrutinee: self.reconstruct_node(*scrutinee)?,
                 handler: self.reconstruct_node(*handler)?,
                 or_else: self.reconstruct_node(*or_else)?,
+            },
+            ArenaStgSyn::Seq { scrutinee, body } => StgSyn::Seq {
+                scrutinee: self.reconstruct_node(*scrutinee)?,
+                body: self.reconstruct_node(*body)?,
             },
             ArenaStgSyn::BlackHole => StgSyn::BlackHole,
         })

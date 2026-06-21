@@ -278,11 +278,13 @@ mod tests {
             strictness: Strictness::Strict,
             cardinality: Cardinality::AtMostOnce,
             whnf: false,
+            recursive: false,
         };
         let lazy_multi = Demand {
             strictness: Strictness::Lazy,
             cardinality: Cardinality::Multi,
             whnf: false,
+            recursive: false,
         };
 
         let inner = make_let_with_demand(vec![("b", lit_num(2), lazy_multi)], var("x"));

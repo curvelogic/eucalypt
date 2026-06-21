@@ -162,6 +162,14 @@ pub enum StgSyn {
         handler: Rc<StgSyn>,
         or_else: Rc<StgSyn>,
     },
+    /// Force-and-discard: evaluate `scrutinee` to WHNF (triggering any
+    /// Update continuation on the thunk), then enter `body` in the same
+    /// environment.  The evaluated result is NOT bound — it is only used
+    /// for its side effect of memoising the thunk via the Update frame.
+    Seq {
+        scrutinee: Rc<StgSyn>,
+        body: Rc<StgSyn>,
+    },
     /// Blackhole - invalid / uninitialised code
     #[default]
     BlackHole,
@@ -223,6 +231,9 @@ impl fmt::Display for StgSyn {
             }
             StgSyn::DeMeta { .. } => {
                 write!(f, "ƒ(`,•)")
+            }
+            StgSyn::Seq { scrutinee, body } => {
+                write!(f, "SEQ({scrutinee},{body})")
             }
             StgSyn::BlackHole => {
                 write!(f, "⊙")
@@ -470,6 +481,12 @@ pub mod dsl {
     /// Recursive let
     pub fn letrec_(bindings: Vec<LambdaForm>, body: Rc<StgSyn>) -> Rc<StgSyn> {
         Rc::new(StgSyn::LetRec { bindings, body })
+    }
+
+    /// Force-and-discard: evaluate `scrutinee` to WHNF, then enter `body`
+    /// in the same environment (no new scope).
+    pub fn seq(scrutinee: Rc<StgSyn>, body: Rc<StgSyn>) -> Rc<StgSyn> {
+        Rc::new(StgSyn::Seq { scrutinee, body })
     }
 
     /// A lambda form

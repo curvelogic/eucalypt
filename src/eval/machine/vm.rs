@@ -158,6 +158,7 @@ impl HeapNavigator<'_> {
             HeapSyn::Case { .. } => "a case expression",
             HeapSyn::Let { .. } | HeapSyn::LetRec { .. } => "a let binding",
             HeapSyn::Meta { .. } | HeapSyn::DeMeta { .. } => "a metadata expression",
+            HeapSyn::Seq { .. } => "a strict evaluation",
             HeapSyn::BlackHole => "an uninitialised value (possible cycle)",
             HeapSyn::Ann { .. } => "an annotated expression",
             HeapSyn::Atom { .. } => "an atom",
@@ -554,6 +555,17 @@ impl MachineState {
                 )?;
                 self.closure = SynClosure::new(*scrutinee, environment);
             }
+            HeapSyn::Seq { scrutinee, body } => {
+                self.push(
+                    view,
+                    Continuation::SeqBind {
+                        body: *body,
+                        environment,
+                        annotation: self.annotation,
+                    },
+                )?;
+                self.closure = SynClosure::new(*scrutinee, environment);
+            }
             HeapSyn::BlackHole => return Err(ExecutionError::BlackHole(self.annotation)),
         }
 
@@ -666,6 +678,18 @@ impl MachineState {
                         or_else,
                         view.from_closure(self.closure.clone(), environment, self.annotation)?,
                     );
+                }
+                Continuation::SeqBind {
+                    body,
+                    environment,
+                    annotation,
+                } => {
+                    // Force-and-discard: enter body in the original
+                    // environment without binding the evaluated result.
+                    // The forced thunk's Update continuation has already
+                    // memoised the WHNF value in the let frame.
+                    self.closure = SynClosure::new(body, environment);
+                    self.annotation = annotation;
                 }
                 Continuation::CaptureEnd => {
                     self.capture_end_pending = true;
@@ -881,6 +905,18 @@ impl MachineState {
                         view.from_closure(self.closure.clone(), environment, self.annotation)?,
                     );
                 }
+                Continuation::SeqBind {
+                    body,
+                    environment,
+                    annotation,
+                } => {
+                    // Force-and-discard: enter body in the original
+                    // environment without binding the evaluated result.
+                    // The forced thunk's Update continuation has already
+                    // memoised the WHNF value in the let frame.
+                    self.closure = SynClosure::new(body, environment);
+                    self.annotation = annotation;
+                }
                 Continuation::CaptureEnd => {
                     self.capture_end_pending = true;
                 }
@@ -976,6 +1012,18 @@ impl MachineState {
                         view.from_closure(self.closure.clone(), environment, self.annotation)?,
                     );
                 }
+                Continuation::SeqBind {
+                    body,
+                    environment,
+                    annotation,
+                } => {
+                    // Force-and-discard: enter body in the original
+                    // environment without binding the evaluated result.
+                    // The forced thunk's Update continuation has already
+                    // memoised the WHNF value in the let frame.
+                    self.closure = SynClosure::new(body, environment);
+                    self.annotation = annotation;
+                }
                 Continuation::CaptureEnd => {
                     self.capture_end_pending = true;
                 }
@@ -995,7 +1043,8 @@ impl MachineState {
         for cont in self.stack.iter().rev() {
             let smid = match cont {
                 Continuation::Branch { annotation, .. }
-                | Continuation::ApplyTo { annotation, .. } => *annotation,
+                | Continuation::ApplyTo { annotation, .. }
+                | Continuation::SeqBind { annotation, .. } => *annotation,
                 Continuation::Update { environment, .. }
                 | Continuation::DeMeta { environment, .. } => {
                     let cont_env = view.scoped(*environment);
@@ -1023,7 +1072,8 @@ impl MachineState {
         self.stack.iter().rev().filter_map(move |cont| {
             let smid = match cont {
                 Continuation::Branch { annotation, .. }
-                | Continuation::ApplyTo { annotation, .. } => *annotation,
+                | Continuation::ApplyTo { annotation, .. }
+                | Continuation::SeqBind { annotation, .. } => *annotation,
                 Continuation::Update { environment, .. }
                 | Continuation::DeMeta { environment, .. } => {
                     let cont_env = view.scoped(*environment);
@@ -1625,20 +1675,31 @@ impl<'a> Machine<'a> {
         // Diagnostic: dump stack composition when a new max is reached
         if settings.stack_diag && stack_len > prev_max && stack_len > 5 {
             let counts = state.stack.iter().fold(
-                (0usize, 0usize, 0usize, 0usize),
-                |(branch, update, apply, demeta), cont| match cont {
-                    super::cont::Continuation::Branch { .. } => (branch + 1, update, apply, demeta),
-                    super::cont::Continuation::Update { .. } => (branch, update + 1, apply, demeta),
-                    super::cont::Continuation::ApplyTo { .. } => {
-                        (branch, update, apply + 1, demeta)
+                (0usize, 0usize, 0usize, 0usize, 0usize),
+                |(branch, update, apply, demeta, seqbind), cont| match cont {
+                    super::cont::Continuation::Branch { .. } => {
+                        (branch + 1, update, apply, demeta, seqbind)
                     }
-                    super::cont::Continuation::DeMeta { .. } => (branch, update, apply, demeta + 1),
-                    super::cont::Continuation::CaptureEnd => (branch, update, apply, demeta),
+                    super::cont::Continuation::Update { .. } => {
+                        (branch, update + 1, apply, demeta, seqbind)
+                    }
+                    super::cont::Continuation::ApplyTo { .. } => {
+                        (branch, update, apply + 1, demeta, seqbind)
+                    }
+                    super::cont::Continuation::DeMeta { .. } => {
+                        (branch, update, apply, demeta + 1, seqbind)
+                    }
+                    super::cont::Continuation::SeqBind { .. } => {
+                        (branch, update, apply, demeta, seqbind + 1)
+                    }
+                    super::cont::Continuation::CaptureEnd => {
+                        (branch, update, apply, demeta, seqbind)
+                    }
                 },
             );
             eprintln!(
-                "STACK_MAX depth={} Branch={} Update={} ApplyTo={} DeMeta={}",
-                stack_len, counts.0, counts.1, counts.2, counts.3
+                "STACK_MAX depth={} Branch={} Update={} ApplyTo={} DeMeta={} SeqBind={}",
+                stack_len, counts.0, counts.1, counts.2, counts.3, counts.4
             );
         }
 

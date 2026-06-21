@@ -35,6 +35,12 @@ pub struct Demand {
     /// Is this known to already be in WHNF (set during STG compilation
     /// after compiling the binding's body to `StgSyn`)?
     pub whnf: bool,
+    /// Is this binding part of a recursive cycle?  Set by demand
+    /// analysis for bindings that can reach themselves through the
+    /// dependency graph.  When true, black-holing is required to
+    /// detect infinite loops, so update elision must be suppressed
+    /// even for Strict bindings.
+    pub recursive: bool,
 }
 
 impl Demand {
@@ -47,6 +53,12 @@ impl Demand {
     /// (rendered scopes), so `AtMostOnce` here only applies to
     /// generalised-lookup blocks and non-block `Let` scopes where the
     /// cardinality is genuinely sound.
+    ///
+    /// Note: Strict demand alone does NOT trigger update elision here.
+    /// Multi-use Strict bindings would re-evaluate on each Enter as
+    /// Values, which is catastrophically expensive.  Strict bindings
+    /// are instead handled by the `LetStrict` compilation path which
+    /// evaluates eagerly at definition time and stores the result.
     pub fn skip_update(self) -> bool {
         self.whnf
             || self.cardinality == Cardinality::AtMostOnce
@@ -132,6 +144,7 @@ impl Demand {
             cardinality: self.cardinality.join(other.cardinality),
             strictness: self.strictness.join(other.strictness),
             whnf: self.whnf && other.whnf,
+            recursive: self.recursive || other.recursive,
         }
     }
 
@@ -202,6 +215,7 @@ impl Demand {
             cardinality,
             strictness,
             whnf: false,
+            recursive: self.recursive || outer.recursive,
         }
     }
 
@@ -225,6 +239,7 @@ impl Demand {
             cardinality,
             strictness,
             whnf: self.whnf && other.whnf,
+            recursive: self.recursive || other.recursive,
         }
     }
 }
@@ -278,7 +293,7 @@ mod tests {
         let d = Demand::strict();
         assert!(
             !d.skip_update(),
-            "Strict-only demand should NOT skip update (strictness is orthogonal)"
+            "Strict-only demand should NOT skip update (handled by LetStrict instead)"
         );
     }
 

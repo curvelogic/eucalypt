@@ -2527,6 +2527,12 @@ pub fn test_169_letrec_scc_splitting() {
 }
 
 #[test]
+/// Strict eager evaluation: Seq forces strict thunks at definition time
+pub fn test_170_strict_eager_eval() {
+    run_test(&opts("170_strict_eager_eval.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }
