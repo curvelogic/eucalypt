@@ -56,8 +56,7 @@ impl HeapString {
     pub fn from_str<'guard, A: ScopedAllocator<'guard>>(mem: &A, source: &str) -> Self {
         HeapString {
             length: source.len(),
-            data: RawArray::with_data(mem, source.as_bytes())
-                .expect("with_data: alloc failure (string)"),
+            data: RawArray::with_data(mem, source.as_bytes()),
         }
     }
 
