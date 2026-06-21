@@ -357,7 +357,8 @@ pub fn prepare(
 
     if opt.dump_demands() {
         let c = loader.core();
-        let (annotated, sigs, named_sigs) = crate::core::analyse_demand::analyse_demands(&c.expr);
+        let (annotated, sigs, named_sigs) =
+            crate::core::forward_demand::analyse_demands_forward(&c.expr);
         dump_core(annotated.clone(), opt);
         // Print demand annotations for all let-bound names.
         println!("\n-- demand annotations --");

@@ -11,6 +11,7 @@ pub mod desugar;
 pub mod doc;
 pub mod error;
 pub mod export;
+pub mod forward_demand;
 #[macro_use]
 pub mod expr;
 pub mod inline;
