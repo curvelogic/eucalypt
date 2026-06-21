@@ -66,12 +66,8 @@ pub struct Statistics {
     blocks_used: usize,
     /// Recycled memory blocks
     blocks_recycled: usize,
-    /// Number of GC collections performed (minor + major)
+    /// Number of GC collections performed
     collections_count: u64,
-    /// Number of minor (nursery) collections
-    minor_collections: u64,
-    /// Number of major (full) collections
-    major_collections: u64,
     /// High-water mark of allocated blocks
     peak_heap_blocks: usize,
     /// Aggregate mark phase time
@@ -149,22 +145,6 @@ impl Statistics {
         self.collections_count = count
     }
 
-    pub fn minor_collections(&self) -> u64 {
-        self.minor_collections
-    }
-
-    pub fn set_minor_collections(&mut self, count: u64) {
-        self.minor_collections = count
-    }
-
-    pub fn major_collections(&self) -> u64 {
-        self.major_collections
-    }
-
-    pub fn set_major_collections(&mut self, count: u64) {
-        self.major_collections = count
-    }
-
     pub fn peak_heap_blocks(&self) -> usize {
         self.peak_heap_blocks
     }
@@ -205,8 +185,6 @@ impl Statistics {
             "blocks_used": self.blocks_used,
             "blocks_recycled": self.blocks_recycled,
             "collections_count": self.collections_count,
-            "minor_collections": self.minor_collections,
-            "major_collections": self.major_collections,
             "peak_heap_blocks": self.peak_heap_blocks,
             "total_mark_time_secs": self.total_mark_time.as_secs_f64(),
             "total_sweep_time_secs": self.total_sweep_time.as_secs_f64(),
@@ -224,8 +202,6 @@ impl Statistics {
         self.blocks_used = max(self.blocks_used, other.blocks_used);
         self.blocks_recycled = max(self.blocks_recycled, other.blocks_recycled);
         self.collections_count += other.collections_count;
-        self.minor_collections += other.minor_collections;
-        self.major_collections += other.major_collections;
         self.peak_heap_blocks = max(self.peak_heap_blocks, other.peak_heap_blocks);
         self.total_mark_time += other.total_mark_time;
         self.total_sweep_time += other.total_sweep_time;
@@ -301,16 +277,6 @@ impl Display for Statistics {
             f,
             "Collections    : {:>14}",
             fmt_thousands(self.collections_count)
-        )?;
-        writeln!(
-            f,
-            "  Minor        : {:>14}",
-            fmt_thousands(self.minor_collections)
-        )?;
-        writeln!(
-            f,
-            "  Major        : {:>14}",
-            fmt_thousands(self.major_collections)
         )?;
         writeln!(
             f,

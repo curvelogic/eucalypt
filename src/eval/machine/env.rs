@@ -343,51 +343,6 @@ where
         }
     }
 
-    /// Find the specific frame in the chain that owns the slot at `idx`.
-    ///
-    /// Used by the GC write barrier to record the ACTUAL frame whose backing
-    /// array was written, rather than always recording the top-of-chain frame.
-    /// Without this, a thunk update at index `idx >= self.logical_len()` writes
-    /// to a parent frame but the write barrier would record `self` (the top),
-    /// causing the parent's young closure to be missed by dirty-frame scanning.
-    ///
-    /// Returns `None` if `idx` is out of range.
-    ///
-    /// # Safety
-    ///
-    /// `start` must be a valid, live pointer to a heap-allocated `EnvironmentFrame`
-    /// and all `next` pointers reachable from it must be similarly valid.  This is
-    /// upheld by the invariant that frames are GC-managed heap objects.
-    pub fn find_frame_for_index(
-        start: std::ptr::NonNull<EnvironmentFrame<C>>,
-        idx: usize,
-    ) -> Option<std::ptr::NonNull<EnvironmentFrame<C>>> {
-        let frame = unsafe { start.as_ref() };
-        let len = frame.logical_len();
-        if idx < len {
-            Some(start)
-        } else {
-            match frame.next {
-                Some(next_ref) => {
-                    let next_ptr = unsafe { std::ptr::NonNull::new_unchecked(next_ref.as_ptr()) };
-                    Self::find_frame_for_index(next_ptr, idx - len)
-                }
-                None => None,
-            }
-        }
-    }
-
-    /// Iterate all physical binding slots in this frame.
-    ///
-    /// Used by the GC dirty-frame scanning pass to find young closures in
-    /// old frames without going through `mark_array()`.  Unlike `GcScannable::scan`,
-    /// this iterates every slot unconditionally — the frame and its backing array
-    /// are already marked (old), so `mark_array` would return false and skip them,
-    /// causing live young closures written via thunk updates to be missed.
-    pub fn iter_bindings(&self) -> std::slice::Iter<'_, C> {
-        self.bindings.iter()
-    }
-
     /// Zero-based closure access (from top of environment)
     ///
     /// Uses guard for scoping derefs during navigation but then

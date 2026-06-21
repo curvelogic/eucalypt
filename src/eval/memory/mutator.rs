@@ -112,22 +112,6 @@ impl<'guard> MutatorHeapView<'guard> {
             heap: self.heap,
         }
     }
-
-    /// Return whether `ptr` is already marked (i.e. is an old object).
-    ///
-    /// Used by the write barrier to determine whether a frame is old
-    /// and should be added to the remembered set.
-    pub fn is_marked<T>(&self, ptr: std::ptr::NonNull<T>) -> bool {
-        self.heap_ref().is_marked(ptr)
-    }
-
-    /// Record a dirty frame in the remembered set (write barrier).
-    ///
-    /// Called when a thunk update writes into an old (marked) frame,
-    /// so that the next minor collection scans it as an extra root.
-    pub fn record_dirty_frame<T>(&self, ptr: std::ptr::NonNull<T>) {
-        self.heap_ref().record_dirty_frame(ptr)
-    }
 }
 
 /// Allow allocation in a mutator scope

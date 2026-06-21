@@ -760,6 +760,45 @@ below the >95% regime; net wall-clock gains on `007_short_lived`/`004_generation
 `009_fragmentation` no longer degrades; no regression on `001`/`002`; the full
 harness green under `VERIFY=2`/`POISON=1` with the old→young invariant holding.
 
+**Post-mortem: 0.10.0 sticky-mark-bit attempt (reverted).** A full implementation
+of the sticky-mark-bit design above was completed, tested, and reverted in 0.10.0.
+The implementation was correct (all tests passed under `EU_GC_VERIFY=2`/`EU_GC_STRESS=1`)
+but delivered no wall-clock benefit — and at any allocation-rate trigger threshold
+tested (2048–8192 blocks = 64–256 MiB), caused 10–1500% regressions on AoC workloads.
+
+*Why it failed:*
+
+1. **First-post-major minor is always a full trace.** After a major collection the
+   mark-state flips, making every object appear unmarked (young). The first minor
+   after each major must therefore trace the entire live set — there is no cost
+   saving versus a major. At N majors you pay N full live-set traces inside minor
+   collections, on top of the N full traces during the majors themselves.
+
+2. **Live sets dwarf the nursery budget.** AoC programs accumulate 100–600 MiB of
+   long-lived data (grids, adjacency lists, memo tables). Any nursery budget smaller
+   than the total allocation triggers multiple majors. With day05-p1 allocating
+   585 MiB and an 8 GiB nursery budget (250 MiB), we still saw 3 majors + 26 minors
+   where the baseline needed 0. Mark time exploded from 2 ms to 3.1 s (1500×).
+
+3. **Remembered set overhead without young-set benefit.** The write barrier (at
+   thunk update) and dirty-frame scanning added overhead on every collection, but the
+   sticky-mark-bit minor — which only skips objects that were old before the most
+   recent major — found almost nothing to skip because the post-major flip had just
+   unmarked everything.
+
+*What would work:* A **separate copying nursery** (semi-space or bump-and-copy,
+e.g. 8 MiB) that is independent of the Immix heap. Young objects live in the nursery;
+survivors are evacuated into Immix on minor collection. The minor never sees old
+objects at all — they live in a disjoint address range. This is the classic
+generational layout. A sticky-mark-bit design *over a shared address space* cannot
+achieve this isolation because one mark bit cannot distinguish "old and re-marked
+this major" from "old and unmarked since the pre-major flip".
+
+*Future direction:* Implement a true separate-nursery generation as a follow-on to
+list-fusion (W12). Fusion reduces the thunk-churn workload that a nursery would
+target; profile post-fusion to assess whether a nursery is still the right next step
+or whether demand analysis (W11) delivers more per unit of effort.
+
 #### W11. Strictness & demand analysis
 
 **Problem.** Every `let`-binding reaching the STG compiler without a WHNF witness is
