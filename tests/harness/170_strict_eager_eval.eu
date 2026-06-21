@@ -1,0 +1,53 @@
+#!/usr/bin/env eu
+# Strict eager evaluation: Seq forces strict thunks at definition time
+#
+# When demand analysis marks a binding as Strict, the compiler wraps
+# the let body with Seq forms that force the thunk eagerly.  The
+# thunk's Update continuation memoises the result so subsequent uses
+# see the evaluated value.
+
+# Basic strict-multi: used more than once, eagerly evaluated
+strict-multi-ok: { x: 3 + 4  result: x + x }.result = 14
+
+# Strict binding referencing another binding
+chain-strict-ok: { a: 10  b: a + 5  result: b * 2 }.result = 30
+
+# Mix of strict and lazy bindings
+mixed-ok: { a: 1 + 1  b: a * 3  c: b + a  result: c }.result = 8
+
+# Strict bindings with list operations
+list-ok: ([1, 2, 3] map(_ + 10)) = [11, 12, 13]
+
+# Strict args to intrinsic calls (synthetic let bindings)
+intrinsic-ok: (2 + 3) * (4 + 5) = 45
+
+# Nested strict bindings
+nested-ok: {
+  x: 5
+  y: x * x
+  z: y + x
+  result: z
+}.result = 30
+
+# Strict with conditional
+cond-ok: {
+  n: 7
+  result: if(n > 5, :big, :small)
+}.result = :big
+
+# Multiple uses of strict binding (memoisation must work)
+memo-ok: {
+  x: [1, 2, 3] map(_ * 2) head
+  result: x + x + x
+}.result = 6
+
+# Recursive function with strict args
+fib(n): if(n < 2, n, fib(n - 1) + fib(n - 2))
+fib-ok: fib(10) = 55
+
+RESULT: if(
+  [strict-multi-ok, chain-strict-ok, mixed-ok, list-ok,
+   intrinsic-ok, nested-ok, cond-ok, memo-ok, fib-ok] all-true?,
+  :PASS,
+  :FAIL
+)

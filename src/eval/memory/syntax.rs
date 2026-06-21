@@ -269,6 +269,13 @@ pub enum HeapSyn {
         handler: RefPtr<HeapSyn>,
         or_else: RefPtr<HeapSyn>,
     },
+    /// Force-and-discard: evaluate `scrutinee` to WHNF (triggering any
+    /// Update continuation on the thunk), then enter `body` in the same
+    /// environment.  Does NOT create a new scope.
+    Seq {
+        scrutinee: RefPtr<HeapSyn>,
+        body: RefPtr<HeapSyn>,
+    },
     /// Blackhole - invalid / uninitialised code
     #[default]
     BlackHole,
@@ -527,6 +534,14 @@ impl GcScannable for HeapSyn {
                     out.push(ScanPtr::from_non_null(scope, *or_else));
                 }
             }
+            HeapSyn::Seq { scrutinee, body } => {
+                if marker.mark(*scrutinee) {
+                    out.push(ScanPtr::from_non_null(scope, *scrutinee));
+                }
+                if marker.mark(*body) {
+                    out.push(ScanPtr::from_non_null(scope, *body));
+                }
+            }
             HeapSyn::BlackHole => {}
         }
     }
@@ -632,6 +647,14 @@ impl GcScannable for HeapSyn {
                 }
                 if let Some(new) = heap.forwarded_to(*or_else) {
                     *or_else = new;
+                }
+            }
+            HeapSyn::Seq { scrutinee, body } => {
+                if let Some(new) = heap.forwarded_to(*scrutinee) {
+                    *scrutinee = new;
+                }
+                if let Some(new) = heap.forwarded_to(*body) {
+                    *body = new;
                 }
             }
             HeapSyn::BlackHole => {}
@@ -809,6 +832,10 @@ impl Repr for ScopedPtr<'_, HeapSyn> {
                 scrutinee: ScopedPtr::from_non_null(self, *scrutinee).repr(),
                 handler: ScopedPtr::from_non_null(self, *handler).repr(),
                 or_else: ScopedPtr::from_non_null(self, *or_else).repr(),
+            }),
+            HeapSyn::Seq { scrutinee, body } => Rc::new(StgSyn::Seq {
+                scrutinee: ScopedPtr::from_non_null(self, *scrutinee).repr(),
+                body: ScopedPtr::from_non_null(self, *body).repr(),
             }),
             HeapSyn::BlackHole => Rc::new(StgSyn::BlackHole {}),
         }

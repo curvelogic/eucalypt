@@ -612,6 +612,9 @@ pub struct LetBinder<'a> {
     size: Option<usize>,
     /// Next
     context: Option<&'a Context<'a>>,
+    /// Indices of bindings that are strict and non-recursive, eligible
+    /// for eager evaluation via Seq in non-recursive lets.
+    strict_indices: Vec<usize>,
 }
 
 impl<'a> LetBinder<'a> {
@@ -625,6 +628,7 @@ impl<'a> LetBinder<'a> {
             body: None,
             size: None,
             context: None,
+            strict_indices: vec![],
         }
     }
 
@@ -639,6 +643,7 @@ impl<'a> LetBinder<'a> {
             body: None,
             size: None,
             context: Some(context),
+            strict_indices: vec![],
         }
     }
 
@@ -653,6 +658,7 @@ impl<'a> LetBinder<'a> {
             body: None,
             size: None,
             context: Some(context),
+            strict_indices: vec![],
         }
     }
 
@@ -666,6 +672,7 @@ impl<'a> LetBinder<'a> {
             body: None,
             size: None,
             context: Some(context),
+            strict_indices: vec![],
         }
     }
 
@@ -738,10 +745,48 @@ impl<'a> LetBinder<'a> {
 
         if bindings.is_empty() {
             Ok(body)
-        } else if recursive_let {
-            Ok(Rc::new(StgSyn::LetRec { bindings, body }))
         } else {
-            Ok(Rc::new(StgSyn::Let { bindings, body }))
+            // For strict non-recursive Thunk bindings, wrap the body
+            // with Seq forms that force each thunk eagerly at definition
+            // time.  Seq is force-and-discard: it evaluates the scrutinee
+            // to WHNF (triggering the thunk's Update continuation for
+            // memoisation) then enters the body in the SAME environment.
+            // No new scope is created, so no de Bruijn index shifting is
+            // needed.
+            //
+            // Structure:
+            //   LET/LETREC([bindings...],
+            //     SEQ(ATOM(L(i0)),          -- force thunk i0
+            //       SEQ(ATOM(L(i1)),        -- force thunk i1
+            //         ... body ...)))
+            let strict_thunk_indices: Vec<usize> = self
+                .strict_indices
+                .iter()
+                .copied()
+                .filter(|&idx| matches!(bindings[idx], LambdaForm::Thunk { .. }))
+                .collect();
+
+            let body = if strict_thunk_indices.is_empty() {
+                body
+            } else {
+                // Wrap the body with Seq forms that force each strict thunk.
+                // Seq is force-and-discard: it evaluates the scrutinee to WHNF
+                // (triggering the thunk's Update continuation for memoisation)
+                // then enters the body in the SAME environment — no new scope.
+                let mut result = body;
+                // Wrap inside-out (last strict index is outermost)
+                for &idx in strict_thunk_indices.iter().rev() {
+                    let scrutinee = dsl::local(idx);
+                    result = dsl::seq(scrutinee, result);
+                }
+                result
+            };
+
+            if recursive_let {
+                Ok(Rc::new(StgSyn::LetRec { bindings, body }))
+            } else {
+                Ok(Rc::new(StgSyn::Let { bindings, body }))
+            }
         }
     }
 
@@ -762,6 +807,14 @@ impl<'a> LetBinder<'a> {
     /// (regardless of unknown context)
     pub fn add(&mut self, syntax: Rc<StgSyn>) -> Result<Ref, CompileError> {
         self.add_deferred(Box::new(Holder::new(syntax)))
+    }
+
+    /// Mark the binding at the given index as strict for eager
+    /// evaluation via Seq in non-recursive lets.
+    pub fn mark_strict(&mut self, index: usize) {
+        if !self.strict_indices.contains(&index) {
+            self.strict_indices.push(index);
+        }
     }
 
     /// Add a ref as an equivalent to an underlying core let binding
@@ -819,12 +872,20 @@ impl ProtoSyntax for ProtoLet {
         compiler: &Compiler,
         context: &Context,
     ) -> Result<Rc<StgSyn>, CompileError> {
+        use crate::core::demand::Strictness;
+
         let scope = self.scope();
         let mut binder = LetBinder::for_scope(self.expr.clone(), context);
         for b in scope.pattern.iter() {
             let annotation = b.expr.smid();
             let index =
                 compiler.compile_binding(&mut binder, b.expr.clone(), annotation, b.demand)?;
+            // Mark strict non-recursive bindings for eager Seq evaluation
+            if b.demand.strictness == Strictness::Strict && !b.demand.recursive {
+                if let Ref::L(n) = index {
+                    binder.mark_strict(n);
+                }
+            }
             binder.add_var_index(index);
         }
 
@@ -965,6 +1026,7 @@ impl ProtoSyntax for ProtoAppGroup {
         compiler: &Compiler,
         context: &Context,
     ) -> Result<Rc<StgSyn>, CompileError> {
+        use crate::core::demand::Strictness;
         let mut intrinsic_index = None;
         let mut intrinsic_name: Option<&str> = None;
         let mut callee_name: Option<&str> = None;
@@ -1037,6 +1099,12 @@ impl ProtoSyntax for ProtoAppGroup {
                         self.smid,
                         arg_demand,
                     )?;
+                    // Mark strict non-recursive arg bindings for eager Seq evaluation
+                    if arg_demand.strictness == Strictness::Strict && !arg_demand.recursive {
+                        if let Ref::L(n) = index {
+                            local_binder.mark_strict(n);
+                        }
+                    }
                     arg_indexes.push(Box::new(ProtoRef::new(index)));
                 }
             }

@@ -208,6 +208,12 @@ impl ToPretty for StgSyn {
                     )
                     .group()
             }
+            StgSyn::Seq { scrutinee, body } => allocator
+                .text("seq ")
+                .append(scrutinee.pretty(allocator))
+                .append(allocator.text(" in "))
+                .append(body.pretty(allocator))
+                .group(),
             StgSyn::BlackHole => allocator.text("HOLE"),
         }
     }

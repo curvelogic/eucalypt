@@ -424,10 +424,15 @@ impl DemandAnalyser {
         }
 
         // Step 6: Force Multi cardinality on recursive/tainted bindings
-        // that are actually used (not Absent).
+        // that are actually used (not Absent).  Also mark bindings that
+        // can reach themselves through the dependency graph as recursive
+        // so the STG compiler preserves black-holing (no update elision).
         for i in 0..n {
             if is_tainted[i] && demands[i].cardinality != Cardinality::Absent {
                 demands[i].cardinality = Cardinality::Multi;
+            }
+            if is_recursive[i] {
+                demands[i].recursive = true;
             }
         }
 

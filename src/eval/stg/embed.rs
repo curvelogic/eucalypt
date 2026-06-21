@@ -229,6 +229,14 @@ fn embed_stg(syn: &StgSyn) -> Option<rowan_ast::Soup> {
             b.embed_soup(&or_else_soup);
             b.finish()
         }
+        StgSyn::Seq { scrutinee, body } => {
+            let mut b = StgEmbedBuilder::new("s-seq");
+            let scrutinee_soup = embed_stg(scrutinee)?;
+            b.embed_soup(&scrutinee_soup);
+            let body_soup = embed_stg(body)?;
+            b.embed_soup(&body_soup);
+            b.finish()
+        }
         StgSyn::BlackHole => StgEmbedBuilder::new("s-hole").finish(),
     }
 }

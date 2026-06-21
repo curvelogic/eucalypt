@@ -179,6 +179,10 @@ pub fn load<'scope, T: ScopedAllocator<'scope>>(
             handler: load(view, pool, handler.clone())?,
             or_else: load(view, pool, or_else.clone())?,
         }),
+        StgSyn::Seq { scrutinee, body } => view.alloc(HeapSyn::Seq {
+            scrutinee: load(view, pool, scrutinee.clone())?,
+            body: load(view, pool, body.clone())?,
+        }),
         StgSyn::BlackHole => view.alloc(HeapSyn::BlackHole {}),
     }
     .map(|sp| sp.as_ptr())
