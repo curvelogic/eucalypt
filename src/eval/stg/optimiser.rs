@@ -361,6 +361,35 @@ impl AllocationPruner {
                     or_else,
                 })
             }
+            StgSyn::IoTransparentCase {
+                scrutinee,
+                branches,
+                fallback,
+            } => {
+                let scrutinee = self.apply(scrutinee.clone());
+                let branches = branches
+                    .iter()
+                    .map(|(t, b)| {
+                        let cons: DataConstructor = (*t).try_into().unwrap();
+                        self.transform_stack
+                            .push(Box::new(ShiftIndexTransformation::new(cons.arity())));
+                        let branch = self.apply(b.clone());
+                        self.transform_stack.pop();
+                        (*t, branch)
+                    })
+                    .collect();
+
+                self.transform_stack
+                    .push(Box::new(ShiftIndexTransformation::new(1)));
+                let fallback = fallback.as_ref().map(|s| self.apply(s.clone()));
+                self.transform_stack.pop();
+
+                Rc::new(StgSyn::IoTransparentCase {
+                    scrutinee,
+                    branches,
+                    fallback,
+                })
+            }
             _ => stg.clone(),
         }
     }

@@ -14,6 +14,7 @@ use crate::{
     eval::{
         error::ExecutionError,
         machine::standard_machine,
+        memory::infotable::InfoTable,
         stg::{self, make_standard_runtime, RenderType, StgSettings},
     },
     export,
@@ -278,24 +279,24 @@ impl<'a> Executor<'a> {
             println!("{}", prettify::prettify(rt.as_ref()));
             Ok(None)
         } else {
-            // Always compile in headless mode so that IO constructors can
-            // yield to the io-run driver rather than being passed to
-            // RENDER_DOC.
+            // Compile with the render wrapper so that evaluation and
+            // rendering happen in a single pass — no double evaluation.
             //
-            // After the first run we inspect the result:
+            // RENDER_DOC uses an IO-transparent force at the top level:
+            // if the expression evaluates to an IO constructor or an IO
+            // function (PAP waiting for world), the machine yields.  The
+            // driver then handles the IO loop and renders the final pure
+            // value.  Non-IO documents render in-place with no second
+            // pass.
             //
-            // • IO yield directly → run the io-run loop.
-            //
-            // • Normal termination, WHNF is a function (arity > 0) → inject
-            //   the world token and re-run.  If this yields IO, run the
-            //   io-run loop; otherwise the program is erroneous.
-            //
-            // • Normal termination, WHNF is a data value (arity = 0) → the
-            //   program is a plain document.  Build RENDER_DOC on the
-            //   existing heap and re-run the same machine — one compile,
-            //   one machine, no GC hazard.
+            // When options already specify RenderFragment (test/fragment
+            // mode), keep that setting; otherwise use RenderDoc.
+            let render_type = match opt.stg_settings().render_type {
+                RenderType::RenderFragment => RenderType::RenderFragment,
+                _ => RenderType::RenderDoc,
+            };
             let mut stg_settings = StgSettings {
-                render_type: RenderType::Headless,
+                render_type,
                 ..opt.stg_settings().clone()
             };
 
@@ -355,64 +356,71 @@ impl<'a> Executor<'a> {
                 let ret = machine.run(None);
                 stats.timings_mut().record("stg-eval", t_exec.elapsed());
 
-                // The machine always runs in headless mode (no RENDER_DOC
-                // wrapper).  After the first run, handle the three cases:
+                // RENDER_DOC wraps the expression with an IO-transparent
+                // force.  After the first run:
                 //
-                // 1. Machine yielded on an IO constructor directly → run
-                //    the io-run loop (honours opt.allow_io).
+                // 1. Normal termination → non-IO document rendered in
+                //    place (single pass, no double evaluation).
                 //
-                // 2. Machine terminated normally → the top-level value is
-                //    either an IO function (PAP waiting for world) or a
-                //    plain document.  Inject the world token and re-run;
-                //    then handle the result as case 1 or 3.
+                // 2. IO yield with a function closure (arity > 0) → the
+                //    expression produced an IO PAP.  Inject world, run
+                //    the io-run loop, then render the pure result.
                 //
-                // 3. No IO yield after world injection → the value is a
-                //    plain document; feed it through RENDER_DOC explicitly.
+                // 3. IO yield with an IO data constructor → the expression
+                //    produced an IO constructor directly.  Run the
+                //    io-run loop, then render the pure result.
                 let result = if ret.is_ok() {
                     if machine.io_yielded() {
-                        let t_io = Instant::now();
-                        let io_result = io_run_and_render(&mut machine, opt.allow_io)
-                            .map_err(io_run_error_to_execution);
-                        stats.timings_mut().record("io-run", t_io.elapsed());
-                        machine.take_emitter().stream_end();
-                        io_result
-                    } else {
-                        // Machine terminated without yielding.  Try world
-                        // injection to handle IO functions (case 2).
-                        let io_yielded =
-                            inject_world_and_run(&mut machine).map_err(io_run_error_to_execution);
-                        match io_yielded {
-                            Ok(true) => {
-                                // World injection triggered an IO yield;
-                                // proceed with the io-run loop.
-                                let t_io = Instant::now();
-                                let io_result = io_run_and_render(&mut machine, opt.allow_io)
-                                    .map_err(io_run_error_to_execution);
-                                stats.timings_mut().record("io-run", t_io.elapsed());
-                                machine.take_emitter().stream_end();
-                                io_result
+                        // The IO-transparent force caught an IO value.
+                        // Check if it's a function (PAP waiting for world)
+                        // or an IO data constructor.
+                        let is_function = machine.current_closure().arity() > 0;
+                        if is_function {
+                            // Inject world to saturate the IO function, then
+                            // resume — the empty stack means the IO constructor
+                            // will yield normally.
+                            let io_yielded = inject_world_and_run(&mut machine)
+                                .map_err(io_run_error_to_execution);
+                            match io_yielded {
+                                Ok(true) => {
+                                    let t_io = Instant::now();
+                                    let io_result = io_run_and_render(&mut machine, opt.allow_io)
+                                        .map_err(io_run_error_to_execution);
+                                    stats.timings_mut().record("io-run", t_io.elapsed());
+                                    machine.take_emitter().stream_end();
+                                    io_result
+                                }
+                                Ok(false) => {
+                                    // Not actually an IO function — render it.
+                                    let t_render = Instant::now();
+                                    let render_result = render_headless_result(&mut machine)
+                                        .map_err(io_run_error_to_execution);
+                                    stats.timings_mut().record("stg-render", t_render.elapsed());
+                                    machine.take_emitter().stream_end();
+                                    render_result
+                                }
+                                Err(e) => {
+                                    machine.take_emitter().stream_end();
+                                    Err(e)
+                                }
                             }
-                            Ok(false) => {
-                                // Still no IO yield after world injection;
-                                // treat as a plain document.  Render in place
-                                // using RENDER_DOC on the existing machine —
-                                // one compile, one machine.
-                                let t_render = Instant::now();
-                                let render_result = render_headless_result(&mut machine)
-                                    .map_err(io_run_error_to_execution);
-                                stats.timings_mut().record("stg-render", t_render.elapsed());
-                                machine.take_emitter().stream_end();
-                                render_result
-                            }
-                            Err(e) => {
-                                machine.take_emitter().stream_end();
-                                Err(e)
-                            }
+                        } else {
+                            // IO data constructor — run the io-run loop.
+                            let t_io = Instant::now();
+                            let io_result = io_run_and_render(&mut machine, opt.allow_io)
+                                .map_err(io_run_error_to_execution);
+                            stats.timings_mut().record("io-run", t_io.elapsed());
+                            machine.take_emitter().stream_end();
+                            io_result
                         }
+                    } else {
+                        // Normal termination — render happened in-place.
+                        machine.take_emitter().stream_end();
+                        ret
                     }
                 } else {
                     machine.take_emitter().stream_end();
-                    ret.map(|_| None)
+                    ret
                 };
 
                 // Collect machine/GC statistics from all execution phases,

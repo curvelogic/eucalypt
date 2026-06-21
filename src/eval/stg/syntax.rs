@@ -162,6 +162,17 @@ pub enum StgSyn {
         handler: Rc<StgSyn>,
         or_else: Rc<StgSyn>,
     },
+    /// Like `Case`, but IO constructors yield to the driver instead of
+    /// being matched.  Used by `RENDER_DOC` so that IO programs can be
+    /// compiled with the render wrapper and still yield IO actions.
+    IoTransparentCase {
+        /// Form to be evaluated
+        scrutinee: Rc<StgSyn>,
+        /// Data type handlers
+        branches: Vec<(Tag, Rc<StgSyn>)>,
+        /// Default handler
+        fallback: Option<Rc<StgSyn>>,
+    },
     /// Blackhole - invalid / uninitialised code
     #[default]
     BlackHole,
@@ -223,6 +234,18 @@ impl fmt::Display for StgSyn {
             }
             StgSyn::DeMeta { .. } => {
                 write!(f, "ƒ(`,•)")
+            }
+            StgSyn::IoTransparentCase {
+                scrutinee,
+                branches,
+                fallback,
+            } => {
+                let mut tags: Vec<String> = branches.iter().map(|b| format!("{}", b.0)).collect();
+                if fallback.is_some() {
+                    tags.push("…".to_string());
+                }
+                let desc = &tags.join(",");
+                write!(f, "IO_CASE({scrutinee}⑂<{desc}>)")
             }
             StgSyn::BlackHole => {
                 write!(f, "⊙")
@@ -534,6 +557,17 @@ pub mod dsl {
     /// Force evaluation of scrutinee then continue
     pub fn force(scrutinee: Rc<StgSyn>, then: Rc<StgSyn>) -> Rc<StgSyn> {
         case(scrutinee, vec![], then)
+    }
+
+    /// Force evaluation, but yield IO constructors to the driver instead
+    /// of matching them.  Used by `RENDER_DOC` to allow IO programs to
+    /// be compiled with the render wrapper.
+    pub fn io_transparent_force(scrutinee: Rc<StgSyn>, then: Rc<StgSyn>) -> Rc<StgSyn> {
+        Rc::new(StgSyn::IoTransparentCase {
+            scrutinee,
+            branches: vec![],
+            fallback: Some(then),
+        })
     }
 
     /// Unbox a number, accepting native atoms as a passthrough fallback.

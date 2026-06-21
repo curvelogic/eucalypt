@@ -146,6 +146,11 @@ pub enum ArenaStgSyn {
         handler: NodeIdx,
         or_else: NodeIdx,
     },
+    IoTransparentCase {
+        scrutinee: NodeIdx,
+        branches: Vec<(Tag, NodeIdx)>,
+        fallback: Option<NodeIdx>,
+    },
     BlackHole,
 }
 
@@ -256,6 +261,23 @@ impl StgArena {
                     scrutinee: s_idx,
                     handler: h_idx,
                     or_else: o_idx,
+                }
+            }
+            StgSyn::IoTransparentCase {
+                scrutinee,
+                branches,
+                fallback,
+            } => {
+                let s_idx = self.alloc_node(scrutinee);
+                let b_idxs: Vec<(Tag, NodeIdx)> = branches
+                    .iter()
+                    .map(|(tag, body)| (*tag, self.alloc_node(body)))
+                    .collect();
+                let fb_idx = fallback.as_ref().map(|fb| self.alloc_node(fb));
+                ArenaStgSyn::IoTransparentCase {
+                    scrutinee: s_idx,
+                    branches: b_idxs,
+                    fallback: fb_idx,
                 }
             }
             StgSyn::BlackHole => ArenaStgSyn::BlackHole,
@@ -393,6 +415,18 @@ impl StgArena {
                 scrutinee: self.reconstruct_node(*scrutinee)?,
                 handler: self.reconstruct_node(*handler)?,
                 or_else: self.reconstruct_node(*or_else)?,
+            },
+            ArenaStgSyn::IoTransparentCase {
+                scrutinee,
+                branches,
+                fallback,
+            } => StgSyn::IoTransparentCase {
+                scrutinee: self.reconstruct_node(*scrutinee)?,
+                branches: branches
+                    .iter()
+                    .map(|(tag, idx)| Ok((*tag, self.reconstruct_node(*idx)?)))
+                    .collect::<Result<_, BlobReconstructError>>()?,
+                fallback: fallback.map(|idx| self.reconstruct_node(idx)).transpose()?,
             },
             ArenaStgSyn::BlackHole => StgSyn::BlackHole,
         })

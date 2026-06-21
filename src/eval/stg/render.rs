@@ -206,9 +206,17 @@ impl StgIntrinsic for RenderDoc {
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         lambda(
             1, // [renderee]
-            force(
-                call::bif::emit_doc_start(), // [()] [renderee]
-                force(Render.global(lref(1)), call::bif::emit_doc_end()),
+            // IO-transparent force: if the renderee evaluates to an IO
+            // constructor, yield it to the driver instead of attempting
+            // to render it.  Non-IO values fall through to the normal
+            // render path.
+            io_transparent_force(
+                local(0), // evaluate the renderee
+                // fallback: [evaluated_value] [renderee]
+                force(
+                    call::bif::emit_doc_start(), // [()] [evaluated_value] [renderee]
+                    force(Render.global(lref(1)), call::bif::emit_doc_end()),
+                ),
             ),
         )
     }

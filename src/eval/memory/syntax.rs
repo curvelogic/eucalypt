@@ -269,6 +269,18 @@ pub enum HeapSyn {
         handler: RefPtr<HeapSyn>,
         or_else: RefPtr<HeapSyn>,
     },
+    /// Like `Case`, but IO constructors yield to the driver instead of
+    /// being matched.  Pushes `Continuation::IoTransparentBranch`.
+    IoTransparentCase {
+        /// Form to be evaluated
+        scrutinee: RefPtr<HeapSyn>,
+        /// Lowest tag in the branch table
+        min_tag: Tag,
+        /// Indexed branch table
+        branch_table: Array<Option<RefPtr<HeapSyn>>>,
+        /// Default handler
+        fallback: Option<RefPtr<HeapSyn>>,
+    },
     /// Blackhole - invalid / uninitialised code
     #[default]
     BlackHole,
@@ -527,6 +539,34 @@ impl GcScannable for HeapSyn {
                     out.push(ScanPtr::from_non_null(scope, *or_else));
                 }
             }
+            HeapSyn::IoTransparentCase {
+                scrutinee,
+                branch_table,
+                fallback,
+                ..
+            } => {
+                if marker.mark(*scrutinee) {
+                    out.push(ScanPtr::from_non_null(scope, *scrutinee));
+                }
+                if marker.mark_array(branch_table) {
+                    if let Some(backing_ptr) = branch_table.allocated_data() {
+                        out.push(ScanPtr::from_non_null(
+                            scope,
+                            backing_ptr.cast::<OpaqueHeapBytes>(),
+                        ));
+                    }
+                    for b in branch_table.iter().flatten() {
+                        if marker.mark(*b) {
+                            out.push(ScanPtr::from_non_null(scope, *b));
+                        }
+                    }
+                }
+                if let Some(f) = fallback {
+                    if marker.mark(*f) {
+                        out.push(ScanPtr::from_non_null(scope, *f));
+                    }
+                }
+            }
             HeapSyn::BlackHole => {}
         }
     }
@@ -632,6 +672,31 @@ impl GcScannable for HeapSyn {
                 }
                 if let Some(new) = heap.forwarded_to(*or_else) {
                     *or_else = new;
+                }
+            }
+            HeapSyn::IoTransparentCase {
+                scrutinee,
+                branch_table,
+                fallback,
+                ..
+            } => {
+                if let Some(new) = heap.forwarded_to(*scrutinee) {
+                    *scrutinee = new;
+                }
+                if let Some(old_ptr) = branch_table.allocated_data() {
+                    if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                        unsafe { branch_table.set_backing_ptr(new_ptr.cast()) };
+                    }
+                }
+                for ptr in branch_table.iter_mut().flatten() {
+                    if let Some(new) = heap.forwarded_to(*ptr) {
+                        *ptr = new;
+                    }
+                }
+                if let Some(ref mut f) = fallback {
+                    if let Some(new) = heap.forwarded_to(*f) {
+                        *f = new;
+                    }
                 }
             }
             HeapSyn::BlackHole => {}
@@ -767,6 +832,19 @@ impl Repr for ScopedPtr<'_, HeapSyn> {
                 fallback,
                 ..
             } => Rc::new(StgSyn::Case {
+                scrutinee: ScopedPtr::from_non_null(self, *scrutinee).repr(),
+                branches: repr::repr_branch_table(self, *min_tag, branch_table.clone()),
+                fallback: fallback
+                    .as_ref()
+                    .map(|f| ScopedPtr::from_non_null(self, *f).repr()),
+            }),
+            HeapSyn::IoTransparentCase {
+                scrutinee,
+                min_tag,
+                branch_table,
+                fallback,
+                ..
+            } => Rc::new(StgSyn::IoTransparentCase {
                 scrutinee: ScopedPtr::from_non_null(self, *scrutinee).repr(),
                 branches: repr::repr_branch_table(self, *min_tag, branch_table.clone()),
                 fallback: fallback

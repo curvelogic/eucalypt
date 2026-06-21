@@ -142,6 +142,22 @@ pub fn load<'scope, T: ScopedAllocator<'scope>>(
                 },
             })
         }
+        StgSyn::IoTransparentCase {
+            scrutinee,
+            branches,
+            fallback,
+        } => {
+            let (min_tag, branch_table) = load_branches(view, pool, branches)?;
+            view.alloc(HeapSyn::IoTransparentCase {
+                scrutinee: load(view, pool, scrutinee.clone())?,
+                min_tag,
+                branch_table,
+                fallback: match fallback {
+                    Some(f) => Some(load(view, pool, f.clone())?),
+                    None => None,
+                },
+            })
+        }
         StgSyn::Cons { tag, args } => view.alloc(HeapSyn::Cons {
             tag: *tag,
             args: load_refvec(view, pool, args)?,

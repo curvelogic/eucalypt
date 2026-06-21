@@ -65,6 +65,21 @@ pub enum Continuation {
         /// Environment of handlers
         environment: RefPtr<EnvFrame>,
     },
+    /// Like `Branch`, but IO constructors yield to the driver instead of
+    /// being matched.  Used by `RENDER_DOC` so that IO programs can
+    /// yield IO actions through the render wrapper.
+    IoTransparentBranch {
+        /// Lowest tag in the branch table
+        min_tag: Tag,
+        /// Indexed branch table
+        branch_table: Array<Option<RefPtr<HeapSyn>>>,
+        /// Fallback for unmatched data or native
+        fallback: Option<RefPtr<HeapSyn>>,
+        /// Environment of case statement
+        environment: RefPtr<EnvFrame>,
+        /// Source annotation at the point the case was pushed
+        annotation: Smid,
+    },
     /// Marks the end of an emitter capture.  When the machine returns a
     /// value into this continuation, it signals `Machine::step()` to pop
     /// the capture emitter and extract the buffer as a string result.
@@ -115,6 +130,23 @@ impl fmt::Display for Continuation {
             }
             Continuation::DeMeta { .. } => {
                 write!(f, "ƒ(`,•)")
+            }
+            Continuation::IoTransparentBranch {
+                min_tag,
+                branch_table,
+                fallback,
+                ..
+            } => {
+                let mut tags: Vec<String> = branch_table
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, entry)| entry.map(|_| format!("{}", *min_tag + i as u8)))
+                    .collect();
+                if fallback.is_some() {
+                    tags.push("…".to_string());
+                }
+                let desc = &tags.join(",");
+                write!(f, "⑂io<{desc}>")
             }
             Continuation::CaptureEnd => {
                 write!(f, "⊡capture")
@@ -204,6 +236,36 @@ impl GcScannable for Continuation {
                     out.push(ScanPtr::from_non_null(scope, *environment));
                 }
             }
+            Continuation::IoTransparentBranch {
+                branch_table,
+                fallback,
+                environment,
+                ..
+            } => {
+                if marker.mark_array(branch_table) {
+                    if let Some(backing_ptr) = branch_table.allocated_data() {
+                        out.push(ScanPtr::from_non_null(
+                            scope,
+                            backing_ptr.cast::<OpaqueHeapBytes>(),
+                        ));
+                    }
+                    for branch in branch_table.iter().flatten() {
+                        if marker.mark(*branch) {
+                            out.push(ScanPtr::from_non_null(scope, *branch));
+                        }
+                    }
+                }
+
+                if let Some(fb) = fallback {
+                    if marker.mark(*fb) {
+                        out.push(ScanPtr::from_non_null(scope, *fb));
+                    }
+                }
+
+                if marker.mark(*environment) {
+                    out.push(ScanPtr::from_non_null(scope, *environment));
+                }
+            }
             Continuation::CaptureEnd => {
                 // No heap pointers to scan.
             }
@@ -268,6 +330,31 @@ impl GcScannable for Continuation {
                 }
                 if let Some(new) = heap.forwarded_to(*or_else) {
                     *or_else = new;
+                }
+                if let Some(new) = heap.forwarded_to(*environment) {
+                    *environment = new;
+                }
+            }
+            Continuation::IoTransparentBranch {
+                branch_table,
+                fallback,
+                environment,
+                ..
+            } => {
+                if let Some(old_ptr) = branch_table.allocated_data() {
+                    if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                        unsafe { branch_table.set_backing_ptr(new_ptr.cast()) };
+                    }
+                }
+                for ptr in branch_table.iter_mut().flatten() {
+                    if let Some(new) = heap.forwarded_to(*ptr) {
+                        *ptr = new;
+                    }
+                }
+                if let Some(ref mut fb) = fallback {
+                    if let Some(new) = heap.forwarded_to(*fb) {
+                        *fb = new;
+                    }
                 }
                 if let Some(new) = heap.forwarded_to(*environment) {
                     *environment = new;

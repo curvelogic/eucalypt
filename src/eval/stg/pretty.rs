@@ -104,6 +104,45 @@ impl ToPretty for StgSyn {
                     )
                     .group()
             }
+            StgSyn::IoTransparentCase {
+                scrutinee,
+                branches,
+                fallback,
+                ..
+            } => {
+                let scrutinee_doc = allocator
+                    .text("io_case ")
+                    .append(scrutinee.pretty(allocator))
+                    .append(allocator.text(" of"));
+
+                let mut branch_docs: Vec<_> = branches
+                    .iter()
+                    .map(|(t, c)| {
+                        allocator
+                            .text(tag_name(*t))
+                            .append(allocator.text(" \u{2192} "))
+                            .append(c.pretty(allocator))
+                            .group()
+                    })
+                    .collect();
+                if let Some(fb) = fallback {
+                    branch_docs.push(
+                        allocator
+                            .text("_ \u{2192} ")
+                            .append(fb.pretty(allocator))
+                            .group(),
+                    );
+                }
+
+                scrutinee_doc
+                    .append(
+                        allocator
+                            .line()
+                            .append(allocator.intersperse(branch_docs, allocator.line()).align())
+                            .nest(2),
+                    )
+                    .group()
+            }
             StgSyn::Cons { tag, args } => {
                 let name = tag_name(*tag);
                 if args.is_empty() {

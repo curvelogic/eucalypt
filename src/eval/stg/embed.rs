@@ -229,6 +229,31 @@ fn embed_stg(syn: &StgSyn) -> Option<rowan_ast::Soup> {
             b.embed_soup(&or_else_soup);
             b.finish()
         }
+        StgSyn::IoTransparentCase {
+            scrutinee,
+            branches,
+            fallback,
+            ..
+        } => {
+            let mut b = StgEmbedBuilder::new("s-io-case");
+            let scrutinee_soup = embed_stg(scrutinee)?;
+            b.embed_soup(&scrutinee_soup);
+
+            let mut branch_parts = Vec::new();
+            for (tag, body) in branches {
+                let body_soup = embed_stg(body)?;
+                let body_text = pretty::express(&body_soup);
+                branch_parts.push(format!("[{tag}, {body_text}]"));
+            }
+            let branches_text = format!("[{}]", branch_parts.join(", "));
+            b.token(&branches_text);
+
+            if let Some(fb) = fallback {
+                let fb_soup = embed_stg(fb)?;
+                b.embed_soup(&fb_soup);
+            }
+            b.finish()
+        }
         StgSyn::BlackHole => StgEmbedBuilder::new("s-hole").finish(),
     }
 }

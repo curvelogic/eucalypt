@@ -151,7 +151,7 @@ impl HeapNavigator<'_> {
             },
             HeapSyn::App { .. } => "a function application",
             HeapSyn::Bif { .. } => "an intrinsic function call",
-            HeapSyn::Case { .. } => "a case expression",
+            HeapSyn::Case { .. } | HeapSyn::IoTransparentCase { .. } => "a case expression",
             HeapSyn::Let { .. } | HeapSyn::LetRec { .. } => "a let binding",
             HeapSyn::Meta { .. } | HeapSyn::DeMeta { .. } => "a metadata expression",
             HeapSyn::BlackHole => "an uninitialised value (possible cycle)",
@@ -469,6 +469,24 @@ impl MachineState {
                 )?;
                 self.closure = SynClosure::new(*scrutinee, environment);
             }
+            HeapSyn::IoTransparentCase {
+                scrutinee,
+                min_tag,
+                branch_table,
+                fallback,
+            } => {
+                self.push(
+                    view,
+                    Continuation::IoTransparentBranch {
+                        min_tag: *min_tag,
+                        branch_table: branch_table.clone(),
+                        fallback: *fallback,
+                        environment,
+                        annotation: self.annotation,
+                    },
+                )?;
+                self.closure = SynClosure::new(*scrutinee, environment);
+            }
             HeapSyn::Cons { tag, args } => {
                 self.return_data(view, *tag, args.as_slice())?;
             }
@@ -667,6 +685,25 @@ impl MachineState {
                         or_else,
                         view.from_closure(self.closure.clone(), environment, self.annotation)?,
                     );
+                }
+                Continuation::IoTransparentBranch {
+                    fallback,
+                    environment,
+                    ..
+                } => {
+                    // Natives are never IO constructors, so handle like
+                    // a normal Branch fallback.
+                    if let Some(fb) = fallback {
+                        self.closure = SynClosure::new(
+                            fb,
+                            view.from_closure(self.closure.clone(), environment, self.annotation)?,
+                        );
+                    } else {
+                        return Err(ExecutionError::NoBranchForNative(
+                            self.annotation,
+                            value.type_description().to_string(),
+                        ));
+                    }
                 }
                 Continuation::CaptureEnd => {
                     self.capture_end_pending = true;
@@ -882,6 +919,44 @@ impl MachineState {
                         view.from_closure(self.closure.clone(), environment, self.annotation)?,
                     );
                 }
+                Continuation::IoTransparentBranch {
+                    min_tag,
+                    branch_table,
+                    fallback,
+                    environment,
+                    annotation,
+                } => {
+                    if DataConstructor::is_io_constructor(tag) {
+                        // Yield IO constructors to the driver rather than
+                        // matching them.  The remaining stack is preserved so
+                        // the driver can resume after handling the IO action.
+                        self.terminated = true;
+                        self.yielded_io = true;
+                    } else if let Some(body) = match_tag(tag, min_tag, branch_table.as_slice()) {
+                        let env = if args.is_empty() {
+                            environment
+                        } else {
+                            self.env_from_data_args(view, args, environment)?
+                        };
+                        self.closure = SynClosure::new(body, env);
+                    } else if let Some(body) = fallback {
+                        self.closure = SynClosure::new(
+                            body,
+                            view.from_closure(self.closure.clone(), environment, self.annotation)?,
+                        );
+                    } else {
+                        let expected_tags: Vec<u8> = (0..branch_table.len())
+                            .filter(|i| branch_table.get(*i).flatten().is_some())
+                            .map(|i| min_tag + i as u8)
+                            .collect();
+                        let ann = if annotation.is_valid() {
+                            annotation
+                        } else {
+                            self.nearest_stack_annotation(view)
+                        };
+                        return Err(ExecutionError::NoBranchForDataTag(ann, tag, expected_tags));
+                    }
+                }
                 Continuation::CaptureEnd => {
                     self.capture_end_pending = true;
                 }
@@ -977,6 +1052,14 @@ impl MachineState {
                         view.from_closure(self.closure.clone(), environment, self.annotation)?,
                     );
                 }
+                Continuation::IoTransparentBranch { .. } => {
+                    // A function (likely an IO PAP waiting for world)
+                    // returned into an IO-transparent case.  Yield to
+                    // the driver so it can inject world and run the IO
+                    // loop before rendering.
+                    self.terminated = true;
+                    self.yielded_io = true;
+                }
                 Continuation::CaptureEnd => {
                     self.capture_end_pending = true;
                 }
@@ -996,6 +1079,7 @@ impl MachineState {
         for cont in self.stack.iter().rev() {
             let smid = match cont {
                 Continuation::Branch { annotation, .. }
+                | Continuation::IoTransparentBranch { annotation, .. }
                 | Continuation::ApplyTo { annotation, .. } => *annotation,
                 Continuation::Update { environment, .. }
                 | Continuation::DeMeta { environment, .. } => {
@@ -1024,6 +1108,7 @@ impl MachineState {
         self.stack.iter().rev().filter_map(move |cont| {
             let smid = match cont {
                 Continuation::Branch { annotation, .. }
+                | Continuation::IoTransparentBranch { annotation, .. }
                 | Continuation::ApplyTo { annotation, .. } => *annotation,
                 Continuation::Update { environment, .. }
                 | Continuation::DeMeta { environment, .. } => {
@@ -1628,7 +1713,10 @@ impl<'a> Machine<'a> {
             let counts = state.stack.iter().fold(
                 (0usize, 0usize, 0usize, 0usize),
                 |(branch, update, apply, demeta), cont| match cont {
-                    super::cont::Continuation::Branch { .. } => (branch + 1, update, apply, demeta),
+                    super::cont::Continuation::Branch { .. }
+                    | super::cont::Continuation::IoTransparentBranch { .. } => {
+                        (branch + 1, update, apply, demeta)
+                    }
                     super::cont::Continuation::Update { .. } => (branch, update + 1, apply, demeta),
                     super::cont::Continuation::ApplyTo { .. } => {
                         (branch, update, apply + 1, demeta)
