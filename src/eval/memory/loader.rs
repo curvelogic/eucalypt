@@ -68,13 +68,14 @@ pub fn load_lambdavec<'scope, T: ScopedAllocator<'scope>>(
                 bound,
                 body,
                 annotation,
+                ..
             } => {
                 memory::syntax::LambdaForm::new(*bound, load(mem, pool, body.clone())?, *annotation)
             }
-            stg::syntax::LambdaForm::Thunk { body } => {
+            stg::syntax::LambdaForm::Thunk { body, .. } => {
                 memory::syntax::LambdaForm::thunk(load(mem, pool, body.clone())?)
             }
-            stg::syntax::LambdaForm::Value { body } => {
+            stg::syntax::LambdaForm::Value { body, .. } => {
                 memory::syntax::LambdaForm::value(load(mem, pool, body.clone())?)
             }
         };
@@ -95,6 +96,8 @@ fn stg_to_heap<'scope, T: ScopedAllocator<'scope>>(
     match r {
         stg::syntax::Ref::L(n) => memory::syntax::Ref::L(*n),
         stg::syntax::Ref::G(n) => memory::syntax::Ref::G(*n),
+        stg::syntax::Ref::Local(i) => memory::syntax::Ref::Local(*i),
+        stg::syntax::Ref::Capture(i) => memory::syntax::Ref::Capture(*i),
         stg::syntax::Ref::V(stg::syntax::Native::Sym(s)) => {
             let id = pool.intern(s.as_str());
             memory::syntax::Ref::V(memory::syntax::Native::Sym(id))

@@ -300,6 +300,7 @@ impl StgArena {
                 bound,
                 body,
                 annotation,
+                ..
             } => {
                 let body_idx = self.alloc_node(body);
                 ArenaLambdaForm::Lambda {
@@ -308,11 +309,11 @@ impl StgArena {
                     annotation: *annotation,
                 }
             }
-            LambdaForm::Thunk { body } => {
+            LambdaForm::Thunk { body, .. } => {
                 let body_idx = self.alloc_node(body);
                 ArenaLambdaForm::Thunk { body: body_idx }
             }
-            LambdaForm::Value { body } => {
+            LambdaForm::Value { body, .. } => {
                 let body_idx = self.alloc_node(body);
                 ArenaLambdaForm::Value { body: body_idx }
             }
@@ -429,12 +430,15 @@ impl StgArena {
                 // Clear xtask-sourced annotations — they are meaningless
                 // at runtime and would pollute user error locations.
                 annotation: Smid::default(),
+                capture_recipe: vec![],
             },
             ArenaLambdaForm::Thunk { body } => LambdaForm::Thunk {
                 body: self.reconstruct_node(*body)?,
+                capture_recipe: vec![],
             },
             ArenaLambdaForm::Value { body } => LambdaForm::Value {
                 body: self.reconstruct_node(*body)?,
+                capture_recipe: vec![],
             },
         })
     }
@@ -497,7 +501,10 @@ mod tests {
     #[test]
     fn round_trip_let() {
         let binding_body = atom(int(10));
-        let lf = LambdaForm::Value { body: binding_body };
+        let lf = LambdaForm::Value {
+            body: binding_body,
+            capture_recipe: vec![],
+        };
         let let_body = atom(Reference::L(0));
         let original: Rc<StgSyn> = Rc::new(StgSyn::Let {
             bindings: vec![lf],
@@ -515,6 +522,7 @@ mod tests {
             bound: 1,
             body,
             annotation: Smid::default(),
+            capture_recipe: vec![],
         };
         let original: Rc<StgSyn> = Rc::new(StgSyn::Let {
             bindings: vec![lf],
@@ -557,6 +565,7 @@ mod tests {
         let original: Rc<StgSyn> = Rc::new(StgSyn::Let {
             bindings: vec![LambdaForm::Thunk {
                 body: atom(int(99)),
+                capture_recipe: vec![],
             }],
             body: Rc::new(StgSyn::Ann {
                 smid: Smid::default(),
@@ -566,6 +575,7 @@ mod tests {
         let expected: Rc<StgSyn> = Rc::new(StgSyn::Let {
             bindings: vec![LambdaForm::Thunk {
                 body: atom(int(99)),
+                capture_recipe: vec![],
             }],
             body: atom(Reference::L(0)),
         });

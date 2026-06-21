@@ -47,11 +47,11 @@ impl ToPretty for LambdaForm {
                 .append(allocator.space())
                 .append(body.pretty(allocator))
                 .group(),
-            LambdaForm::Thunk { body } => allocator
+            LambdaForm::Thunk { body, .. } => allocator
                 .text("thunk ")
                 .append(body.pretty(allocator))
                 .group(),
-            LambdaForm::Value { body } => body.pretty(allocator),
+            LambdaForm::Value { body, .. } => body.pretty(allocator),
         }
     }
 }

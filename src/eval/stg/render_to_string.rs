@@ -178,6 +178,7 @@ pub fn extract_scalar_string(
                 extract_scalar_string(view, pool, &inner)
             }
             Ref::G(_) => None,
+            Ref::Local(_) | Ref::Capture(_) => None,
         },
         HeapSyn::Cons { tag, args } => {
             let dc: Result<DataConstructor, _> = (*tag).try_into();
@@ -198,7 +199,7 @@ pub fn extract_scalar_string(
                             let env = view.scoped(closure.env());
                             (*env).get(view, i)?
                         }
-                        Ref::G(_) => return None,
+                        Ref::G(_) | Ref::Local(_) | Ref::Capture(_) => return None,
                     };
                     extract_scalar_string(view, pool, &inner)
                 }
