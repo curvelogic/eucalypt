@@ -8,13 +8,14 @@ the total removed.
 
 Approach: 2D convolution — compute 3x3 block sums via horizontal
 windowing then vertical stacking. A cell is accessible if it is a
-roll with block sum < 5. Part 2 iterates removal until stable.
+roll with block sum < 5. Part 2 uses a tail-recursive accumulator
+to sum removal counts without retaining the full sequence of grids.
 
 Notable eucalypt techniques:
 - `window(3, 1)` for horizontal sliding-window sums
 - `zip-with` for element-wise grid arithmetic
 - padding with zero rows/columns for uniform edge handling
-- recursive grid simulation for iterative removal
+- tail-recursive `step` for iterative removal with accumulator
 - juxtaposed list-destructuring syntax `remove-step[grid, _]:`
 
 Running time: ~3s (part 1), ~3.5 min (part 2)
@@ -64,7 +65,16 @@ remove-step[grid, _]: {
   new-grid: zip-with(zip-with(-), grid, removed)
 }.([new-grid, n])
 
-solve2(grid): [grid, 1] iterate(remove-step) tail map(second) take-while(!= 0) sum
+` "Accumulate removal counts until no more rolls are accessible.
+Uses a tail-recursive helper instead of iterate+take-while+sum
+to avoid retaining the full sequence of grids."
+solve2(grid): {
+  step(g, total): {
+    removed: survivals(g)
+    n: removed map(sum) sum
+    new-grid: zip-with(zip-with(-), g, removed)
+  }.(n = 0 then(total, step(new-grid, total + n)))
+}.(step(grid, 0))
 
 ` { target: :test
     import: "ex1=inputs/day04-ex1.txt" }
