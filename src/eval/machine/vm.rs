@@ -89,16 +89,18 @@ impl HeapNavigator<'_> {
 
     /// Index into current environment, retrieving pointer
     pub fn get(&self, index: usize) -> Result<SynClosure, ExecutionError> {
-        (*self.locals)
-            .get(&self.view, index)
-            .ok_or(ExecutionError::BadEnvironmentIndex(index))
+        match (*self.locals).get(&self.view, index) {
+            Some(c) => Ok(c),
+            None => Err(ExecutionError::BadEnvironmentIndex(index)),
+        }
     }
 
     /// Index into globals
     pub fn global(&self, index: usize) -> Result<SynClosure, ExecutionError> {
-        (*self.globals)
-            .get(&self.view, index)
-            .ok_or(ExecutionError::BadGlobalIndex(index))
+        match (*self.globals).get(&self.view, index) {
+            Some(c) => Ok(c),
+            None => Err(ExecutionError::BadGlobalIndex(index)),
+        }
     }
 
     /// Resolve a ref to a closure
