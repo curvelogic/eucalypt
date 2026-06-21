@@ -111,6 +111,8 @@ fn embed_ref(r: &Ref) -> String {
             Native::Num(n) => format!("{n}"),
             Native::Zdt(dt) => format!("\"{dt}\""),
         },
+        Reference::Local(i) => format!("\"Local{i}\""),
+        Reference::Capture(i) => format!("\"Capture{i}\""),
     }
 }
 
@@ -250,13 +252,13 @@ fn embed_lambda_form(lam: &LambdaForm) -> Option<rowan_ast::Soup> {
             b.embed_soup(&body_soup);
             b.finish()
         }
-        LambdaForm::Thunk { body } => {
+        LambdaForm::Thunk { body, .. } => {
             let mut b = StgEmbedBuilder::new("s-thunk");
             let body_soup = embed_stg(body)?;
             b.embed_soup(&body_soup);
             b.finish()
         }
-        LambdaForm::Value { body } => {
+        LambdaForm::Value { body, .. } => {
             let mut b = StgEmbedBuilder::new("s-value");
             let body_soup = embed_stg(body)?;
             b.embed_soup(&body_soup);

@@ -68,19 +68,37 @@ impl fmt::Display for Native {
     }
 }
 
+/// An instruction in a capture recipe for building flat closure captures.
+///
+/// Used by the STG compiler to describe which variables from the enclosing
+/// scope a new closure should capture.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CaptureInstruction {
+    /// Copy capture entry at index `i` from the enclosing frame's captures.
+    CopyCapture(u16),
+    /// Capture the local at physical index `i` from the enclosing frame.
+    CaptureLocal(u16),
+}
+
 /// A reference into environments or a value.
 ///
 /// `L(n)` is a de Bruijn index into the local environment.
 /// `G(n)` is a global slot index (intrinsics 0..INTRINSIC_COUNT, then prelude).
 /// `V(t)` is an inline native value (no heap allocation needed).
+/// `Local(n)` is a flat local index into the current frame's locals array.
+/// `Capture(n)` is an index into the current frame's captures array.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum Reference<T: Clone> {
-    /// Local index into environment
+    /// Cactus-stack local (legacy, kept for blob deserialisation)
     L(usize),
     /// Global index
     G(usize),
     /// Value
     V(T),
+    /// Flat local index into current frame's locals array
+    Local(u16),
+    /// Index into current frame's captures array
+    Capture(u16),
 }
 
 impl<T: Clone> Reference<T> {
@@ -106,6 +124,12 @@ where
             }
             Reference::V(n) => {
                 write!(f, "!{n}")
+            }
+            Reference::Local(i) => {
+                write!(f, "\u{2113}{i}")
+            }
+            Reference::Capture(i) => {
+                write!(f, "\u{03ba}{i}")
             }
         }
     }
@@ -255,12 +279,15 @@ pub enum LambdaForm {
         bound: u8,
         body: Rc<StgSyn>,
         annotation: Smid,
+        capture_recipe: Vec<CaptureInstruction>,
     },
     Thunk {
         body: Rc<StgSyn>,
+        capture_recipe: Vec<CaptureInstruction>,
     },
     Value {
         body: Rc<StgSyn>,
+        capture_recipe: Vec<CaptureInstruction>,
     },
 }
 
@@ -271,17 +298,33 @@ impl LambdaForm {
             bound,
             body,
             annotation,
+            capture_recipe: vec![],
         }
     }
 
     /// A lambda form that will be updated after evaluation
     pub fn thunk(body: Rc<StgSyn>) -> Self {
-        LambdaForm::Thunk { body }
+        LambdaForm::Thunk {
+            body,
+            capture_recipe: vec![],
+        }
     }
 
     /// A lambda form that is effectively a value - not worth updating
     pub fn value(body: Rc<StgSyn>) -> Self {
-        LambdaForm::Value { body }
+        LambdaForm::Value {
+            body,
+            capture_recipe: vec![],
+        }
+    }
+
+    /// The capture recipe for this lambda form (empty if none).
+    pub fn capture_recipe(&self) -> &[CaptureInstruction] {
+        match self {
+            LambdaForm::Lambda { capture_recipe, .. }
+            | LambdaForm::Thunk { capture_recipe, .. }
+            | LambdaForm::Value { capture_recipe, .. } => capture_recipe,
+        }
     }
 
     /// Reference the body of the lambda form
@@ -289,7 +332,7 @@ impl LambdaForm {
         match *self {
             LambdaForm::Lambda { ref body, .. }
             | LambdaForm::Thunk { ref body, .. }
-            | LambdaForm::Value { ref body } => body,
+            | LambdaForm::Value { ref body, .. } => body,
         }
     }
 

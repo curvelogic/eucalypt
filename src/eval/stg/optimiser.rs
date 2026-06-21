@@ -25,7 +25,7 @@ impl LetIndexTransformation {
 
         for b in bindings {
             match b {
-                LambdaForm::Thunk { body } | LambdaForm::Value { body } => {
+                LambdaForm::Thunk { body, .. } | LambdaForm::Value { body, .. } => {
                     if let StgSyn::Atom {
                         evaluand: Ref::L(n),
                     } = **body
@@ -59,7 +59,7 @@ impl LetIndexTransformation {
 
         for b in bindings {
             match b {
-                LambdaForm::Thunk { body } | LambdaForm::Value { body } => {
+                LambdaForm::Thunk { body, .. } | LambdaForm::Value { body, .. } => {
                     if let StgSyn::Atom {
                         evaluand: Ref::L(k),
                     } = **body
@@ -174,6 +174,7 @@ impl AllocationPruner {
                     bound,
                     body,
                     annotation,
+                    ..
                 } => {
                     self.transform_stack
                         .push(Box::new(ShiftIndexTransformation::new(*bound as usize)));
@@ -183,13 +184,16 @@ impl AllocationPruner {
                         bound: *bound,
                         body,
                         annotation: *annotation,
+                        capture_recipe: vec![],
                     }
                 }
-                LambdaForm::Thunk { body } => LambdaForm::Thunk {
+                LambdaForm::Thunk { body, .. } => LambdaForm::Thunk {
                     body: self.apply(body.clone()),
+                    capture_recipe: vec![],
                 },
-                LambdaForm::Value { body } => LambdaForm::Value {
+                LambdaForm::Value { body, .. } => LambdaForm::Value {
                     body: self.apply(body.clone()),
+                    capture_recipe: vec![],
                 },
             };
 

@@ -12,6 +12,18 @@ use crate::eval::memory::{
     syntax::{HeapSyn, Native, Ref, RefPtr},
 };
 
+/// An entry in a flat closure's captures array.
+///
+/// Points to a specific local slot in a source environment frame.  The physical
+/// index is stored (remap applied at capture creation time, never at access time).
+#[derive(Clone, Copy)]
+pub struct CaptureEntry {
+    /// The environment frame that holds the captured value.
+    pub frame: RefPtr<EnvFrame>,
+    /// Physical index of the captured slot in `frame`'s locals array.
+    pub index: u16,
+}
+
 /// Closure as stored in an environment frame
 ///
 /// A closure consist of a static part (InfoTable) that can be
@@ -114,6 +126,7 @@ impl Closing<RefPtr<HeapSyn>> {
             Ref::L(_) => self.navigate_local(guard, arg),
             Ref::G(_) => panic!("cannot navigate global"),
             Ref::V(n) => return n,
+            Ref::Local(_) | Ref::Capture(_) => panic!("cannot navigate flat ref"),
         };
 
         let mut code_ptr = ScopedPtr::from_non_null(guard, closure.code());
@@ -123,6 +136,7 @@ impl Closing<RefPtr<HeapSyn>> {
                 Ref::L(_) => closure.navigate_local(guard, r.clone()),
                 Ref::G(_) => panic!("cannot navigate global"),
                 Ref::V(n) => return n.clone(),
+                Ref::Local(_) | Ref::Capture(_) => panic!("cannot navigate flat ref"),
             };
 
             code_ptr = ScopedPtr::from_non_null(guard, closure.code());
@@ -194,6 +208,8 @@ where
 {
     /// Indexed bindings (may share backing storage with another frame)
     bindings: Array<C>,
+    /// Flat capture entries for this frame.  Empty for legacy cactus-stack frames.
+    captures: Array<CaptureEntry>,
     /// Logical-to-physical index remap for shared-backing frames.
     ///
     /// When `remap_len > 0`, logical index `i` maps to physical index
@@ -215,6 +231,7 @@ where
     fn default() -> Self {
         Self {
             bindings: Default::default(),
+            captures: Default::default(),
             remap: [0; 4],
             remap_len: 0,
             annotation: Default::default(),
@@ -227,10 +244,16 @@ impl<C> EnvironmentFrame<C>
 where
     C: Clone,
 {
-    pub fn new(bindings: Array<C>, annotation: Smid, next: Option<RefPtr<Self>>) -> Self {
+    pub fn new(
+        bindings: Array<C>,
+        captures: Array<CaptureEntry>,
+        annotation: Smid,
+        next: Option<RefPtr<Self>>,
+    ) -> Self {
         debug_assert!(next.is_none() || (next.unwrap() != RefPtr::dangling()));
         Self {
             bindings,
+            captures,
             remap: [0; 4],
             remap_len: 0,
             annotation,
@@ -248,6 +271,7 @@ where
     /// which frame it encounters first.
     pub fn new_remapped(
         bindings: Array<C>,
+        captures: Array<CaptureEntry>,
         remap: &[u8],
         annotation: Smid,
         next: Option<RefPtr<Self>>,
@@ -258,6 +282,7 @@ where
         map[..remap.len()].copy_from_slice(remap);
         Self {
             bindings,
+            captures,
             remap: map,
             remap_len: remap.len() as u8,
             annotation,
@@ -370,6 +395,16 @@ where
         } else {
             Err(ExecutionError::BadEnvironmentIndex(idx))
         }
+    }
+
+    /// Direct access to local at physical index (no chain traversal, no remap).
+    pub fn get_local(&self, index: usize) -> Option<C> {
+        self.bindings.get(index)
+    }
+
+    /// Return the raw `CaptureEntry` at index `i`, or `None` if out of bounds.
+    pub fn get_capture_entry(&self, i: usize) -> Option<CaptureEntry> {
+        self.captures.get(i)
     }
 
     /// Access any annotation
@@ -520,6 +555,22 @@ impl GcScannable for EnvFrame {
             }
         }
 
+        // Scan captures array
+        let captures = &self.captures;
+        if marker.mark_array(captures) {
+            if let Some(backing_ptr) = captures.allocated_data() {
+                out.push(ScanPtr::from_non_null(
+                    scope,
+                    backing_ptr.cast::<OpaqueHeapBytes>(),
+                ));
+            }
+            for entry in captures.iter() {
+                if marker.mark(entry.frame) {
+                    out.push(ScanPtr::from_non_null(scope, entry.frame));
+                }
+            }
+        }
+
         if let Some(next) = self.next {
             if marker.mark(next) {
                 out.push(ScanPtr::from_non_null(scope, next));
@@ -542,10 +593,36 @@ impl GcScannable for EnvFrame {
         for binding in self.bindings.iter_mut() {
             binding.scan_and_update(heap);
         }
+
+        // Update captures backing ptr if evacuated
+        if let Some(old_ptr) = self.captures.allocated_data() {
+            if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                unsafe { self.captures.set_backing_ptr(new_ptr.cast()) };
+            }
+        }
+        // Update frame pointers in each capture entry
+        for entry in self.captures.iter_mut() {
+            if let Some(new_frame) = heap.forwarded_to(entry.frame) {
+                entry.frame = new_frame;
+            }
+        }
+
         if let Some(ref mut next) = self.next {
             if let Some(new_next) = heap.forwarded_to(*next) {
                 *next = new_next;
             }
         }
+    }
+}
+
+impl EnvFrame {
+    /// Access a captured value by index into the captures array.
+    ///
+    /// Dereferences `captures[i]` → `(source_frame, physical_idx)` →
+    /// `source_frame.locals[physical_idx]`.  Always single-level indirection.
+    pub fn get_capture(&self, guard: &dyn MutatorScope, i: usize) -> Option<SynClosure> {
+        let entry = self.captures.get(i)?;
+        let source = ScopedPtr::from_non_null(guard, entry.frame);
+        source.bindings.get(entry.index as usize)
     }
 }

@@ -137,6 +137,16 @@ fn resolve_ref_with_globals(
                 ))
             }
         }
+        Ref::Local(i) => {
+            let env = view.scoped(parent.env());
+            env.get_local(i as usize)
+                .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))
+        }
+        Ref::Capture(i) => {
+            let env = view.scoped(parent.env());
+            env.get_capture(view, i as usize)
+                .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))
+        }
     }
 }
 
@@ -279,7 +289,7 @@ fn peel_meta(
             // Resolve body Ref to a closure
             let body_closure = match body {
                 Ref::L(i) => resolve_env(*i).unwrap_or_else(|| derefed.clone()),
-                Ref::V(_) | Ref::G(_) => derefed.clone(),
+                Ref::V(_) | Ref::G(_) | Ref::Local(_) | Ref::Capture(_) => derefed.clone(),
             };
 
             (sym_name, body_closure)

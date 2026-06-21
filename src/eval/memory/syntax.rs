@@ -138,12 +138,16 @@ impl fmt::Display for Native {
 /// A reference into environments or a value
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Reference<T: Clone> {
-    /// Local index into environment
+    /// Cactus-stack local index (legacy)
     L(usize),
     /// Global index
     G(usize),
     /// Value
     V(T),
+    /// Flat local index into current frame's locals array
+    Local(u16),
+    /// Index into current frame's captures array
+    Capture(u16),
 }
 
 impl<T: Clone> StgObject for Reference<T> {}
@@ -187,6 +191,12 @@ where
             }
             Reference::V(n) => {
                 write!(f, "!{n}")
+            }
+            Reference::Local(i) => {
+                write!(f, "\u{2113}{i}")
+            }
+            Reference::Capture(i) => {
+                write!(f, "\u{03ba}{i}")
             }
         }
     }
@@ -685,6 +695,8 @@ pub mod repr {
         match r {
             memory::syntax::Ref::L(n) => stg::syntax::Ref::L(*n),
             memory::syntax::Ref::G(n) => stg::syntax::Ref::G(*n),
+            memory::syntax::Ref::Local(i) => stg::syntax::Ref::Local(*i),
+            memory::syntax::Ref::Capture(i) => stg::syntax::Ref::Capture(*i),
             memory::syntax::Ref::V(memory::syntax::Native::Sym(id)) => {
                 // Without pool access, use the ID for debug representation
                 stg::syntax::Ref::V(stg::syntax::Native::Sym(format!("sym#{}", id.as_u32())))
@@ -758,14 +770,17 @@ pub mod repr {
                     bound: pc.arity(),
                     body: ScopedPtr::from_non_null(guard, pc.body()).repr(),
                     annotation: pc.annotation(),
+                    capture_recipe: vec![],
                 }
             } else if pc.update() {
                 stg::syntax::LambdaForm::Thunk {
                     body: ScopedPtr::from_non_null(guard, pc.body()).repr(),
+                    capture_recipe: vec![],
                 }
             } else {
                 stg::syntax::LambdaForm::Value {
                     body: ScopedPtr::from_non_null(guard, pc.body()).repr(),
+                    capture_recipe: vec![],
                 }
             };
             v.push(binding);

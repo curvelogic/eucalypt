@@ -11,10 +11,11 @@ use crate::{
             mutator::MutatorHeapView,
             syntax::{HeapSyn, LambdaForm, Ref, RefPtr, StgBuilder},
         },
+        stg::syntax::CaptureInstruction,
     },
 };
 
-use super::env::{EnvFrame, SynClosure};
+use super::env::{CaptureEntry, EnvFrame, SynClosure};
 
 /// For building environments in the heap
 /// All operations now return Result to handle allocation failures gracefully.
@@ -107,7 +108,12 @@ impl EnvBuilder for MutatorHeapView<'_> {
         annotation: Smid,
     ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
         Ok(self
-            .alloc(EnvFrame::new(args, annotation, Some(next)))?
+            .alloc(EnvFrame::new(
+                args,
+                Array::default(),
+                annotation,
+                Some(next),
+            ))?
             .as_ptr())
     }
 
@@ -188,7 +194,12 @@ impl EnvBuilder for MutatorHeapView<'_> {
         }
 
         let frame = self
-            .alloc(EnvFrame::new(array.clone(), annotation, Some(next)))?
+            .alloc(EnvFrame::new(
+                array.clone(),
+                Array::default(),
+                annotation,
+                Some(next),
+            ))?
             .as_ptr();
 
         for (i, pc) in bindings.iter().enumerate() {
@@ -270,6 +281,37 @@ impl EnvBuilder for MutatorHeapView<'_> {
     }
 }
 
+/// Build a captures array from a capture recipe, reading from `enclosing`.
+///
+/// - `CaptureLocal(phys_idx)`: creates `CaptureEntry { frame: enclosing, index: phys_idx }`.
+/// - `CopyCapture(cap_idx)`: copies `enclosing.captures[cap_idx]`.
+///
+/// Returns `Array::default()` if `recipe` is empty (backward compatible).
+pub fn resolve_captures(
+    view: &MutatorHeapView<'_>,
+    recipe: &[CaptureInstruction],
+    enclosing: RefPtr<EnvFrame>,
+) -> Array<CaptureEntry> {
+    if recipe.is_empty() {
+        return Array::default();
+    }
+    let enc = (*view).scoped(enclosing);
+    let mut caps = Array::with_capacity(view, recipe.len());
+    for instr in recipe {
+        let entry = match instr {
+            CaptureInstruction::CaptureLocal(phys_idx) => CaptureEntry {
+                frame: enclosing,
+                index: *phys_idx,
+            },
+            CaptureInstruction::CopyCapture(cap_idx) => enc
+                .get_capture_entry(*cap_idx as usize)
+                .unwrap_or_else(|| panic!("CopyCapture index {} out of bounds", cap_idx)),
+        };
+        caps.push(view, entry);
+    }
+    caps
+}
+
 /// Return the code of a closure which acts as the partial application
 /// of f to xs where the top frame in its environment is f:xs and it
 /// expects pending to be passed as arguments.
@@ -286,4 +328,192 @@ fn pap_syn(
         arg_array.push(&view, Ref::L(i));
     }
     Ok(view.app(Ref::L(pending), arg_array)?.as_ptr())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        common::sourcemap::Smid,
+        eval::{
+            memory::{
+                alloc::ScopedAllocator,
+                heap::Heap,
+                mutator::MutatorHeapView,
+                syntax::{HeapSyn, Ref, RefPtr},
+            },
+            stg::syntax::CaptureInstruction,
+        },
+    };
+
+    use super::{resolve_captures, CaptureEntry, EnvFrame, SynClosure};
+
+    /// Create an atom closure pointing to `Ref::V(num)` and put it in a fresh
+    /// env frame with a single slot, returning the frame pointer.
+    fn make_frame_with_num(view: &MutatorHeapView<'_>, n: i64) -> RefPtr<EnvFrame> {
+        let code = view
+            .alloc(HeapSyn::Atom {
+                evaluand: Ref::V(crate::eval::memory::syntax::Native::Num(
+                    serde_json::Number::from(n),
+                )),
+            })
+            .unwrap()
+            .as_ptr();
+        let dummy_env = view.alloc(EnvFrame::default()).unwrap().as_ptr();
+        let closure = SynClosure::new(code, dummy_env);
+        let mut arr = crate::eval::memory::array::Array::with_capacity(view, 1);
+        arr.push(view, closure);
+        let frame = view
+            .alloc(EnvFrame::new(
+                arr,
+                crate::eval::memory::array::Array::default(),
+                Smid::default(),
+                None,
+            ))
+            .unwrap()
+            .as_ptr();
+        frame
+    }
+
+    #[test]
+    fn test_capture_local_recipe() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+
+        // Build a source frame with 2 locals (values 42 and 99).
+        let code42 = view
+            .alloc(HeapSyn::Atom {
+                evaluand: Ref::V(crate::eval::memory::syntax::Native::Num(
+                    serde_json::Number::from(42i64),
+                )),
+            })
+            .unwrap()
+            .as_ptr();
+        let code99 = view
+            .alloc(HeapSyn::Atom {
+                evaluand: Ref::V(crate::eval::memory::syntax::Native::Num(
+                    serde_json::Number::from(99i64),
+                )),
+            })
+            .unwrap()
+            .as_ptr();
+        let dummy = view.alloc(EnvFrame::default()).unwrap().as_ptr();
+        let c42 = SynClosure::new(code42, dummy);
+        let c99 = SynClosure::new(code99, dummy);
+        let mut bindings = crate::eval::memory::array::Array::with_capacity(&view, 2);
+        bindings.push(&view, c42);
+        bindings.push(&view, c99);
+        let src_frame = view
+            .alloc(EnvFrame::new(
+                bindings,
+                crate::eval::memory::array::Array::default(),
+                Smid::default(),
+                None,
+            ))
+            .unwrap()
+            .as_ptr();
+
+        // Recipe: capture local 1 (value 99), then local 0 (value 42).
+        let recipe = vec![
+            CaptureInstruction::CaptureLocal(1),
+            CaptureInstruction::CaptureLocal(0),
+        ];
+
+        let caps = resolve_captures(&view, &recipe, src_frame);
+
+        // Verify the captures array has 2 entries.
+        assert_eq!(caps.len(), 2, "should have 2 capture entries");
+
+        // Both entries should point to src_frame.
+        let entry0 = caps.get(0).expect("capture entry 0");
+        let entry1 = caps.get(1).expect("capture entry 1");
+        assert_eq!(entry0.frame, src_frame);
+        assert_eq!(entry0.index, 1);
+        assert_eq!(entry1.frame, src_frame);
+        assert_eq!(entry1.index, 0);
+    }
+
+    #[test]
+    fn test_copy_capture_recipe() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+
+        // Build a source frame with one local.
+        let src_frame = make_frame_with_num(&view, 7);
+
+        // Build a capture frame with one entry pointing to src_frame slot 0.
+        let entry = CaptureEntry {
+            frame: src_frame,
+            index: 0,
+        };
+        let mut cap_arr = crate::eval::memory::array::Array::with_capacity(&view, 1);
+        cap_arr.push(&view, entry);
+        let cap_frame = view
+            .alloc(EnvFrame::new(
+                crate::eval::memory::array::Array::default(),
+                cap_arr,
+                Smid::default(),
+                None,
+            ))
+            .unwrap()
+            .as_ptr();
+
+        // Recipe: copy capture 0 from cap_frame.
+        let recipe = vec![CaptureInstruction::CopyCapture(0)];
+        let caps = resolve_captures(&view, &recipe, cap_frame);
+
+        assert_eq!(caps.len(), 1);
+        let copied = caps.get(0).expect("copied entry");
+        // Should have copied the original entry (pointing to src_frame slot 0).
+        assert_eq!(copied.frame, src_frame);
+        assert_eq!(copied.index, 0);
+    }
+
+    #[test]
+    fn test_get_local_direct() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+
+        let frame = make_frame_with_num(&view, 55);
+        let env = view.scoped(frame);
+        // get_local(0) should return the closure at physical index 0.
+        let got = env.get_local(0);
+        assert!(got.is_some(), "get_local(0) should succeed");
+        // get_local(1) should return None (frame has only 1 slot).
+        let none = env.get_local(1);
+        assert!(none.is_none(), "get_local(1) should be None");
+    }
+
+    #[test]
+    fn test_get_capture() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+
+        // Build source frame with 1 slot.
+        let src_frame = make_frame_with_num(&view, 123);
+
+        // Build capture frame pointing to src_frame slot 0.
+        let entry = CaptureEntry {
+            frame: src_frame,
+            index: 0,
+        };
+        let mut cap_arr = crate::eval::memory::array::Array::with_capacity(&view, 1);
+        cap_arr.push(&view, entry);
+        let cap_frame = view
+            .alloc(EnvFrame::new(
+                crate::eval::memory::array::Array::default(),
+                cap_arr,
+                Smid::default(),
+                None,
+            ))
+            .unwrap()
+            .as_ptr();
+
+        let cap_env = view.scoped(cap_frame);
+        // get_capture(0) should return the closure from src_frame slot 0.
+        let got = cap_env.get_capture(&view, 0);
+        assert!(got.is_some(), "get_capture(0) should succeed");
+        // get_capture(1) should return None.
+        let none = cap_env.get_capture(&view, 1);
+        assert!(none.is_none(), "get_capture(1) should be None");
+    }
 }

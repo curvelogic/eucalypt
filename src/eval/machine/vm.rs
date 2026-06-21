@@ -84,6 +84,18 @@ impl HeapNavigator<'_> {
                     .as_ptr(),
                 self.view.alloc(EnvFrame::default())?.as_ptr(),
             )),
+            Ref::Local(i) => {
+                let idx = *i as usize;
+                (*self.locals)
+                    .get_local(idx)
+                    .ok_or(ExecutionError::BadEnvironmentIndex(idx))
+            }
+            Ref::Capture(i) => {
+                let idx = *i as usize;
+                (*self.locals)
+                    .get_capture(&self.view, idx)
+                    .ok_or(ExecutionError::BadEnvironmentIndex(idx))
+            }
         }
     }
 
@@ -114,6 +126,18 @@ impl HeapNavigator<'_> {
                 self.annotation,
                 n.type_description().to_string(),
             )),
+            Ref::Local(i) => {
+                let idx = *i as usize;
+                (*self.locals)
+                    .get_local(idx)
+                    .ok_or(ExecutionError::BadEnvironmentIndex(idx))
+            }
+            Ref::Capture(i) => {
+                let idx = *i as usize;
+                (*self.locals)
+                    .get_capture(&self.view, idx)
+                    .ok_or(ExecutionError::BadEnvironmentIndex(idx))
+            }
         }
     }
 
@@ -126,6 +150,12 @@ impl HeapNavigator<'_> {
             Ref::L(index) => self.get(*index)?,
             Ref::G(index) => self.global(*index)?,
             Ref::V(n) => return Ok(n.clone()),
+            Ref::Local(i) => (*self.locals)
+                .get_local(*i as usize)
+                .ok_or(ExecutionError::BadEnvironmentIndex(*i as usize))?,
+            Ref::Capture(i) => (*self.locals)
+                .get_capture(&self.view, *i as usize)
+                .ok_or(ExecutionError::BadEnvironmentIndex(*i as usize))?,
         };
 
         let mut scoped_code = self.view.scoped(closure.code());
@@ -140,6 +170,18 @@ impl HeapNavigator<'_> {
                 }
                 Ref::G(index) => self.global(*index)?,
                 Ref::V(n) => return Ok(n.clone()),
+                Ref::Local(i) => {
+                    let env = self.view.scoped(closure.env());
+                    (*env)
+                        .get_local(*i as usize)
+                        .ok_or(ExecutionError::BadEnvironmentIndex(*i as usize))?
+                }
+                Ref::Capture(i) => {
+                    let env = self.view.scoped(closure.env());
+                    (*env)
+                        .get_capture(&self.view, *i as usize)
+                        .ok_or(ExecutionError::BadEnvironmentIndex(*i as usize))?
+                }
             };
 
             scoped_code = self.view.scoped(closure.code());
@@ -193,6 +235,14 @@ impl HeapNavigator<'_> {
                     .ok()?
                     .as_ptr();
                 Some(SynClosure::new(ptr, closure.env()))
+            }
+            Ref::Local(i) => {
+                let env = self.view.scoped(closure.env());
+                (*env).get_local(i as usize)
+            }
+            Ref::Capture(i) => {
+                let env = self.view.scoped(closure.env());
+                (*env).get_capture(&self.view, i as usize)
             }
         }
     }
@@ -454,6 +504,58 @@ impl MachineState {
                     Ref::V(v) => {
                         self.return_native(view, v)?;
                     }
+                    Ref::Local(i) => {
+                        // Flat local access — same black-holing pattern as Ref::L
+                        let phys = *i as usize;
+                        self.closure = {
+                            let env = view.scoped(environment);
+                            (*env)
+                                .get_local(phys)
+                                .ok_or(ExecutionError::BadEnvironmentIndex(phys))?
+                        };
+                        let is_thunk = self.closure.update();
+                        if is_thunk {
+                            let hole = view.alloc(HeapSyn::BlackHole)?;
+                            let black_hole = SynClosure::new(hole.as_ptr(), environment);
+                            let cont_env = view.scoped(environment);
+                            cont_env.update(&view, phys, black_hole)?;
+                            self.push(
+                                view,
+                                Continuation::Update {
+                                    environment,
+                                    index: phys,
+                                },
+                            )?;
+                        }
+                    }
+                    Ref::Capture(i) => {
+                        // Flat capture access — thunk update targets the SOURCE frame
+                        let cap_idx = *i as usize;
+                        let maybe_entry;
+                        {
+                            let env_frame = view.scoped(environment);
+                            maybe_entry = env_frame.get_capture_entry(cap_idx);
+                            self.closure = env_frame
+                                .get_capture(&view, cap_idx)
+                                .ok_or(ExecutionError::BadEnvironmentIndex(cap_idx))?;
+                        }
+                        let is_thunk = self.closure.update();
+                        if is_thunk {
+                            if let Some(entry) = maybe_entry {
+                                let hole = view.alloc(HeapSyn::BlackHole)?;
+                                let black_hole = SynClosure::new(hole.as_ptr(), entry.frame);
+                                let src_env = view.scoped(entry.frame);
+                                src_env.update(&view, entry.index as usize, black_hole)?;
+                                self.push(
+                                    view,
+                                    Continuation::Update {
+                                        environment: entry.frame,
+                                        index: entry.index as usize,
+                                    },
+                                )?;
+                            }
+                        }
+                    }
                 }
             }
             HeapSyn::Case {
@@ -507,6 +609,59 @@ impl MachineState {
                                 index: *i,
                             },
                         )?;
+                        self.closure = callee;
+                    } else {
+                        self.closure = self.nav(view).resolve_callable(callable)?;
+                    }
+                } else if let Ref::Local(i) = callable {
+                    let phys = *i as usize;
+                    let env_f = view.scoped(environment);
+                    let callee = (*env_f)
+                        .get_local(phys)
+                        .ok_or(ExecutionError::BadEnvironmentIndex(phys))?;
+                    let is_thunk = callee.update();
+                    if is_thunk {
+                        let hole = view.alloc(HeapSyn::BlackHole)?;
+                        let black_hole = SynClosure::new(hole.as_ptr(), environment);
+                        let cont_env = view.scoped(environment);
+                        cont_env.update(&view, phys, black_hole)?;
+                        self.push(
+                            view,
+                            Continuation::Update {
+                                environment,
+                                index: phys,
+                            },
+                        )?;
+                        self.closure = callee;
+                    } else {
+                        self.closure = self.nav(view).resolve_callable(callable)?;
+                    }
+                } else if let Ref::Capture(i) = callable {
+                    let cap_idx = *i as usize;
+                    let maybe_entry;
+                    let callee;
+                    {
+                        let env_f = view.scoped(environment);
+                        maybe_entry = env_f.get_capture_entry(cap_idx);
+                        callee = env_f
+                            .get_capture(&view, cap_idx)
+                            .ok_or(ExecutionError::BadEnvironmentIndex(cap_idx))?;
+                    }
+                    let is_thunk = callee.update();
+                    if is_thunk {
+                        if let Some(entry) = maybe_entry {
+                            let hole = view.alloc(HeapSyn::BlackHole)?;
+                            let black_hole = SynClosure::new(hole.as_ptr(), entry.frame);
+                            let src_env = view.scoped(entry.frame);
+                            src_env.update(&view, entry.index as usize, black_hole)?;
+                            self.push(
+                                view,
+                                Continuation::Update {
+                                    environment: entry.frame,
+                                    index: entry.index as usize,
+                                },
+                            )?;
+                        }
                         self.closure = callee;
                     } else {
                         self.closure = self.nav(view).resolve_callable(callable)?;
@@ -748,7 +903,12 @@ impl MachineState {
                 let shared = (*constructor_env).shared_bindings_full();
                 debug_assert_eq!(n, backing_len);
                 Ok(view
-                    .alloc(EnvFrame::new(shared, self.annotation, Some(next)))?
+                    .alloc(EnvFrame::new(
+                        shared,
+                        Array::default(),
+                        self.annotation,
+                        Some(next),
+                    ))?
                     .as_ptr())
             }
             ArgPattern::Remapped { remap, len } => {
@@ -765,6 +925,7 @@ impl MachineState {
                 Ok(view
                     .alloc(EnvFrame::new_remapped(
                         shared,
+                        Array::default(),
                         &remap[..len],
                         self.annotation,
                         Some(next),
@@ -806,6 +967,12 @@ impl MachineState {
                     .as_ptr(),
                     self.closure.env(),
                 ),
+                Ref::Local(i) => (*local_env)
+                    .get_local(*i as usize)
+                    .ok_or(ExecutionError::BadEnvironmentIndex(*i as usize))?,
+                Ref::Capture(i) => (*local_env)
+                    .get_capture(&view, *i as usize)
+                    .ok_or(ExecutionError::BadEnvironmentIndex(*i as usize))?,
             };
             array.push(&view, closure);
         }
@@ -2036,6 +2203,12 @@ impl<'a> Machine<'a> {
                             .map(|p| p.as_ptr());
                         ptr.map(|p| SynClosure::new(p, self.state.root_env))
                     }
+                    Ref::Local(i) => (*env)
+                        .get_local(*i as usize)
+                        .ok_or(ExecutionError::BadEnvironmentIndex(*i as usize)),
+                    Ref::Capture(i) => (*env)
+                        .get_capture(&view, *i as usize)
+                        .ok_or(ExecutionError::BadEnvironmentIndex(*i as usize)),
                 })
                 .collect();
             resolved.ok()
