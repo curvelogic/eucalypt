@@ -2533,6 +2533,12 @@ pub fn test_170_strict_eager_eval() {
 }
 
 #[test]
+/// Strict prelude args: Seq forces strict args at global call sites
+pub fn test_171_strict_prelude_args() {
+    run_test(&opts("171_strict_prelude_args.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

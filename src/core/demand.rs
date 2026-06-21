@@ -174,6 +174,15 @@ impl Demand {
         }
     }
 
+    /// A demand marking a binding as strict and used multiple times.
+    pub fn strict_multi() -> Self {
+        Self {
+            strictness: Strictness::Strict,
+            cardinality: Cardinality::Multi,
+            ..Default::default()
+        }
+    }
+
     /// A demand marking a binding as lazy and used multiple times.
     pub fn lazy_multi() -> Self {
         Self {

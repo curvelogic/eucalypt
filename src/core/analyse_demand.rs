@@ -120,6 +120,140 @@ pub fn build_intrinsic_signatures() -> HashMap<String, DemandSignature> {
     sigs
 }
 
+/// Build demand signatures for common prelude functions.
+///
+/// In blob-prelude mode, the prelude is pre-compiled and its functions
+/// appear as globals (`Ref::G`) with no demand analysis.  This table
+/// provides conservative strictness information for the most common
+/// prelude functions so that the STG compiler can apply strict-arg
+/// optimisation (Seq wrapping) to complex arguments at call sites.
+///
+/// We use `sm()` (Strict + Multi) for strict arguments
+/// because we do not know the exact cardinality within the prelude
+/// function body.  Multi ensures the binding becomes a Thunk (with
+/// Update/memoisation) and Strict triggers Seq wrapping for eager
+/// evaluation.
+pub fn build_prelude_signatures() -> HashMap<String, DemandSignature> {
+    let mut sigs = HashMap::new();
+    let sm = Demand::strict_multi;
+    let lm = Demand::lazy_multi;
+
+    // List operations — strict in all arguments
+    // map(f, l): f applied to each element, l traversed
+    sigs.insert("map".into(), vec![sm(), sm()]);
+    // map2(f, l, m): zip-with
+    sigs.insert("map2".into(), vec![sm(), sm(), sm()]);
+    // filter(p?, l): predicate applied, list traversed
+    sigs.insert("filter".into(), vec![sm(), sm()]);
+    // foldl(op, i, l): all args needed
+    sigs.insert("foldl".into(), vec![sm(), sm(), sm()]);
+    // foldr(op, i, l): all args needed
+    sigs.insert("foldr".into(), vec![sm(), sm(), sm()]);
+    // take(n, l): count and list both needed
+    sigs.insert("take".into(), vec![sm(), sm()]);
+    // drop(n, l): count and list both needed
+    sigs.insert("drop".into(), vec![sm(), sm()]);
+    // nth(n, l): index and list both needed
+    sigs.insert("nth".into(), vec![sm(), sm()]);
+    // reverse(l): list needed
+    sigs.insert("reverse".into(), vec![sm()]);
+    // append(l1, l2): both lists needed
+    sigs.insert("append".into(), vec![sm(), sm()]);
+    // zip-with(f, a, b): all needed
+    sigs.insert("zip-with".into(), vec![sm(), sm(), sm()]);
+    // zip(a, b): both needed (zip = zip-with(pair))
+    sigs.insert("zip".into(), vec![sm(), sm()]);
+    // count(l): list traversed
+    sigs.insert("count".into(), vec![sm()]);
+    // sum(l): list traversed
+    sigs.insert("sum".into(), vec![sm()]);
+    // product(l): list traversed
+    sigs.insert("product".into(), vec![sm()]);
+    // cons(h, t): both needed to construct
+    sigs.insert("cons".into(), vec![sm(), sm()]);
+    // snoc(x, l): both needed
+    sigs.insert("snoc".into(), vec![sm(), sm()]);
+    // mapcat(f, l): catenation applied via compose, but f is strict
+    sigs.insert("mapcat".into(), vec![sm()]);
+    // cross(f, xs, ys): all needed
+    sigs.insert("cross".into(), vec![sm(), sm(), sm()]);
+    // interleave(a, b): both needed
+    sigs.insert("interleave".into(), vec![sm(), sm()]);
+
+    // take-while / drop-while: predicate and list both strict
+    sigs.insert("take-while".into(), vec![sm(), sm()]);
+    sigs.insert("drop-while".into(), vec![sm(), sm()]);
+
+    // Sorting
+    sigs.insert("sort-by".into(), vec![sm(), sm(), sm()]);
+    sigs.insert("sort-by-num".into(), vec![sm()]);
+    sigs.insert("sort-by-str".into(), vec![sm()]);
+    sigs.insert("sort-nums".into(), vec![sm()]);
+    sigs.insert("sort-strs".into(), vec![sm()]);
+
+    // Grouping
+    sigs.insert("group-by".into(), vec![sm(), sm()]);
+    sigs.insert("discriminate".into(), vec![sm(), sm()]);
+    sigs.insert("group-consecutive-by".into(), vec![sm(), sm()]);
+
+    // Numeric — strict in all args
+    sigs.insert("abs".into(), vec![sm()]);
+    sigs.insert("negate".into(), vec![sm()]);
+    sigs.insert("max".into(), vec![sm(), sm()]);
+    sigs.insert("min".into(), vec![sm(), sm()]);
+    sigs.insert("max-of".into(), vec![sm()]);
+    sigs.insert("min-of".into(), vec![sm()]);
+    sigs.insert("pow".into(), vec![sm(), sm()]);
+    sigs.insert("div".into(), vec![sm(), sm()]);
+    sigs.insert("mod".into(), vec![sm(), sm()]);
+    sigs.insert("quot".into(), vec![sm(), sm()]);
+    sigs.insert("rem".into(), vec![sm(), sm()]);
+
+    // Combinators — strict in function arg, lazy in data args
+    sigs.insert("compose".into(), vec![sm(), sm(), sm()]);
+    sigs.insert("flip".into(), vec![sm(), sm(), sm()]);
+    sigs.insert("identity".into(), vec![sm()]);
+    sigs.insert("apply".into(), vec![sm(), sm()]);
+
+    // Conditionals — condition strict, branches lazy
+    sigs.insert("then".into(), vec![sm(), lm(), sm()]);
+    sigs.insert("when".into(), vec![sm(), sm(), sm()]);
+
+    // Lookup functions — strict in key/object args
+    sigs.insert("has".into(), vec![sm(), sm()]);
+    sigs.insert("lookup".into(), vec![sm(), sm()]);
+    sigs.insert("lookup-in".into(), vec![sm(), sm()]);
+    sigs.insert("lookup-or".into(), vec![sm(), lm(), sm()]);
+
+    // Deep operations — strict in key/pattern and block
+    sigs.insert("deep-find".into(), vec![sm(), sm()]);
+    sigs.insert("deep-transform".into(), vec![sm(), sm()]);
+    sigs.insert("deep-query".into(), vec![sm(), sm()]);
+
+    // Head/tail — strict in list
+    sigs.insert("head-or".into(), vec![sm(), sm()]);
+    sigs.insert("tail-or".into(), vec![sm(), sm()]);
+
+    // Rendering
+    sigs.insert("render".into(), vec![sm()]);
+    sigs.insert("render-as".into(), vec![sm(), sm()]);
+    sigs.insert("parse-as".into(), vec![sm(), sm()]);
+
+    // Iterate — strict in initial value, function
+    sigs.insert("iterate".into(), vec![sm(), sm()]);
+    // range(b, e)
+    sigs.insert("range".into(), vec![sm(), sm()]);
+    // iota(n)
+    sigs.insert("iota".into(), vec![sm()]);
+    // repeat(i)
+    sigs.insert("repeat".into(), vec![sm()]);
+
+    // Sliding / windowing
+    sigs.insert("over-sliding-pairs".into(), vec![sm(), sm()]);
+
+    sigs
+}
+
 /// Return the indices of strict arguments for the named intrinsic,
 /// derived from the demand signature table.
 ///
