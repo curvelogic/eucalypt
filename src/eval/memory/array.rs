@@ -47,22 +47,16 @@ impl<T: Sized> RawArray<T> {
     }
 
     /// Construct with capacity
-    pub fn with_capacity<'guard, A: ScopedAllocator<'guard>>(
-        mem: &A,
-        capacity: usize,
-    ) -> Result<RawArray<T>, ExecutionError> {
-        Ok(RawArray {
+    pub fn with_capacity<'guard, A: ScopedAllocator<'guard>>(mem: &A, capacity: usize) -> Self {
+        RawArray {
             capacity,
-            ptr: Self::alloc(mem, capacity)?,
-        })
+            ptr: Self::alloc(mem, capacity),
+        }
     }
 
     /// Initialise by copying from a slice
-    pub fn with_data<'guard, A: ScopedAllocator<'guard>>(
-        mem: &A,
-        data: &[T],
-    ) -> Result<RawArray<T>, ExecutionError> {
-        let new_ptr = Self::alloc(mem, data.len())?;
+    pub fn with_data<'guard, A: ScopedAllocator<'guard>>(mem: &A, data: &[T]) -> Self {
+        let new_ptr = Self::alloc(mem, data.len());
         if let Some(new) = new_ptr {
             // SAFETY: The copy is valid because:
             // - `data.as_ptr()` points to valid, initialised memory
@@ -75,19 +69,15 @@ impl<T: Sized> RawArray<T> {
             }
         }
 
-        Ok(RawArray {
+        RawArray {
             capacity: data.len(),
             ptr: new_ptr,
-        })
+        }
     }
 
     /// Resize to new capacity, copying data if required
-    pub fn resize<'guard, A: ScopedAllocator<'guard>>(
-        &mut self,
-        mem: &A,
-        new_capacity: usize,
-    ) -> Result<(), ExecutionError> {
-        let new_ptr = Self::alloc(mem, new_capacity)?;
+    pub fn resize<'guard, A: ScopedAllocator<'guard>>(&mut self, mem: &A, new_capacity: usize) {
+        let new_ptr = Self::alloc(mem, new_capacity);
 
         if let Some(old) = self.ptr {
             if let Some(new) = new_ptr {
@@ -109,7 +99,6 @@ impl<T: Sized> RawArray<T> {
 
         self.ptr = new_ptr;
         self.capacity = new_capacity;
-        Ok(())
     }
 
     /// Current capacity
@@ -117,19 +106,18 @@ impl<T: Sized> RawArray<T> {
         self.capacity
     }
 
-    fn alloc<'guard, A: ScopedAllocator<'guard>>(
-        mem: &A,
-        capacity: usize,
-    ) -> Result<Option<RefPtr<T>>, ExecutionError> {
+    fn alloc<'guard, A: ScopedAllocator<'guard>>(mem: &A, capacity: usize) -> Option<RefPtr<T>> {
         if capacity == 0 {
-            Ok(None)
+            None
         } else {
             let capacity_bytes = capacity
                 .checked_mul(size_of::<T>())
-                .ok_or(ExecutionError::AllocationError)?;
-            Ok(RefPtr::new(
-                mem.alloc_bytes_uninit(capacity_bytes)?.as_ptr() as *mut T,
-            ))
+                .unwrap_or_else(|| panic!("Array: capacity overflow: {capacity} elements"));
+            RefPtr::new(
+                mem.alloc_bytes_uninit(capacity_bytes)
+                    .unwrap_or_else(|e| panic!("Array: allocation failed: {e}"))
+                    .as_ptr() as *mut T,
+            )
         }
     }
 
@@ -184,16 +172,15 @@ impl<T: Sized + Clone> Array<T> {
     pub fn with_capacity<'guard, A: ScopedAllocator<'guard>>(mem: &A, capacity: usize) -> Self {
         Array {
             length: 0,
-            data: RawArray::with_capacity(mem, capacity)
-                .expect("with_capacity: allocation failure"),
+            data: RawArray::with_capacity(mem, capacity),
         }
     }
 
-    /// Construct an Array with a known capacity
+    /// Construct an Array from a slice
     pub fn from_slice<'guard, A: ScopedAllocator<'guard>>(mem: &A, slice: &[T]) -> Self {
         Array {
             length: slice.len(),
-            data: RawArray::with_data(mem, slice).expect("from_slice: allocation failure"),
+            data: RawArray::with_data(mem, slice),
         }
     }
 
@@ -212,8 +199,7 @@ impl<T: Sized + Clone> Array<T> {
         if self.length == self.data.capacity {
             let old_cap = self.data.capacity;
             self.data
-                .resize(mem, Self::default_array_growth(self.data.capacity))
-                .expect("allocation failure");
+                .resize(mem, Self::default_array_growth(self.data.capacity));
             debug_assert!(
                 self.data.capacity > old_cap,
                 "Array::push: resize did not grow capacity (was {old_cap}, now {})",
@@ -221,14 +207,20 @@ impl<T: Sized + Clone> Array<T> {
             );
         }
 
-        debug_assert!(
-            self.length < self.data.capacity,
-            "Array::push: length {} >= capacity {} before write",
-            self.length,
-            self.data.capacity
-        );
+        // SAFETY: After the resize check above, self.length < self.data.capacity,
+        // so capacity > 0, which means self.data.ptr is Some (alloc never returns
+        // None for capacity > 0). The index self.length is within [0, capacity).
+        unsafe {
+            debug_assert!(
+                self.length < self.data.capacity,
+                "Array::push: length {} >= capacity {} before write",
+                self.length,
+                self.data.capacity
+            );
+            let ptr = self.data.ptr.unwrap_unchecked().as_ptr().add(self.length);
+            std::ptr::write(ptr, item);
+        }
         self.length += 1;
-        self.write(self.length - 1, item);
     }
 
     /// Remove and return the final item (if any)
