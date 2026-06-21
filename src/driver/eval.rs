@@ -96,8 +96,6 @@ fn collect_machine_stats(machine: &crate::eval::machine::vm::Machine<'_>, stats:
     stats.set_blocks_used(heap_stats.used);
     stats.set_blocks_recycled(heap_stats.recycled);
     stats.set_collections_count(heap_stats.collections_count);
-    stats.set_minor_collections(heap_stats.minor_collections);
-    stats.set_major_collections(heap_stats.major_collections);
     stats.set_peak_heap_blocks(heap_stats.peak_heap_blocks);
 
     // Aggregate GC timings
