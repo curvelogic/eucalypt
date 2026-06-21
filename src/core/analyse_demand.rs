@@ -433,11 +433,12 @@ impl DemandAnalyser {
 
         // Step 7: Fixup for rendered block scopes.
         //
-        // DefaultBlockLet scopes whose body is a Block constructor will
-        // have their bindings forced by RENDER_DOC after demand analysis.
-        // The render traversal adds invisible uses that the analysis
-        // cannot see, so AtMostOnce is unsound here — force Multi on
-        // any non-absent binding to prevent update elision.
+        // DefaultBlockLet scopes whose body is a Block constructor have
+        // bindings that are accessed dynamically by the Render traversal
+        // at runtime.  The demand analysis sees only the static reference
+        // from the Block constructor (AtMostOnce) but Render forces each
+        // binding again when emitting the document.  Force Multi on any
+        // non-absent binding to preserve memoisation.
         if let_type == LetType::DefaultBlockLet && matches!(&*new_body.inner, Expr::Block(_, _)) {
             for d in &mut demands {
                 if d.cardinality == Cardinality::AtMostOnce {
