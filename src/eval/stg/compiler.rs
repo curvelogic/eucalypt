@@ -521,6 +521,13 @@ pub struct Compiler<'rt> {
     /// Maps binding name → per-argument demand vector. Used when
     /// compiling `App(user_function, args)` to set per-argument demands.
     user_demand_sigs: crate::core::analyse_demand::NamedSignatureTable,
+    /// Per-prelude-function demand signatures for blob-mode globals.
+    ///
+    /// Maps prelude function name → per-argument demand vector. Used as
+    /// a third fallback (after intrinsic and user sigs) when compiling
+    /// `App(global, args)` to set per-argument demands for eager Seq
+    /// wrapping of strict arguments.
+    prelude_demand_sigs: HashMap<String, Vec<crate::core::demand::Demand>>,
 }
 
 /// An item which can be converted to STG syntax once the context in known
@@ -1063,13 +1070,19 @@ impl ProtoSyntax for ProtoAppGroup {
         };
 
         // Look up per-argument demands.  Try intrinsic signatures first,
-        // then fall back to user function signatures from the demand analysis.
+        // then user function signatures from demand analysis, then
+        // prelude function signatures for blob-mode globals.
         let arg_demands: Option<&[crate::core::demand::Demand]> = intrinsic_name
             .and_then(|name| compiler.intrinsic_demand_sigs.get(name))
             .map(|v| v.as_slice())
             .or_else(|| {
                 callee_name
                     .and_then(|name| compiler.user_demand_sigs.get(name))
+                    .map(|v| v.as_slice())
+            })
+            .or_else(|| {
+                callee_name
+                    .and_then(|name| compiler.prelude_demand_sigs.get(name))
                     .map(|v| v.as_slice())
             });
 
@@ -1310,6 +1323,11 @@ impl<'rt> Compiler<'rt> {
         prelude_globals: Option<HashMap<String, usize>>,
     ) -> Self {
         let intrinsic_demand_sigs = crate::core::analyse_demand::build_intrinsic_signatures();
+        let prelude_demand_sigs = if prelude_globals.is_some() {
+            crate::core::analyse_demand::build_prelude_signatures()
+        } else {
+            HashMap::new()
+        };
         Compiler {
             generate_annotations,
             render_type,
@@ -1320,6 +1338,7 @@ impl<'rt> Compiler<'rt> {
             intrinsic_demand_sigs,
             prelude_globals,
             user_demand_sigs: Default::default(),
+            prelude_demand_sigs,
         }
     }
 

@@ -1,0 +1,60 @@
+#!/usr/bin/env eu
+# Strict prelude args: Seq forces strict args at global call sites
+#
+# In blob-prelude mode, prelude functions are globals (Ref::G) with no
+# demand analysis. The prelude demand signature table provides
+# conservative strictness for common prelude functions, enabling Seq
+# wrapping of complex arguments at call sites.
+
+# nth with complex index arg — forces (2 + 1) eagerly
+nth-ok: nth(2 + 1, [10, 20, 30, 40]) = 40
+
+# take with computed count
+take-ok: take(1 + 1, [10, 20, 30]) = [10, 20]
+
+# drop with computed count
+drop-ok: drop(2 - 1, [10, 20, 30]) = [20, 30]
+
+# foldl with complex initial accumulator
+foldl-ok: foldl(+, 10 + 5, [1, 2, 3]) = 21
+
+# map with complex function (lambda is WHNF, so no seq needed,
+# but the list arg via catenation is separate)
+map-ok: ([1, 2, 3] map(_ + (5 * 2))) = [11, 12, 13]
+
+# filter with result used in further computation
+filter-ok: ([1, 2, 3, 4, 5] filter(_ > (1 + 1))) = [3, 4, 5]
+
+# Nested prelude calls with complex args
+nested-ok: nth(0, take(1 + 1, [10, 20, 30])) = 10
+
+# range with computed bounds
+range-ok: range(2 * 1, 2 + 3) = [2, 3, 4]
+
+# reverse preserves values
+reverse-ok: reverse([1, 2, 3]) = [3, 2, 1]
+
+# sum / product with list
+sum-ok: sum([1, 2, 3, 4]) = 10
+product-ok: product([1, 2, 3, 4]) = 24
+
+# max / min with computed args
+max-ok: max(3 + 1, 2 + 1) = 4
+min-ok: min(3 + 1, 2 + 1) = 3
+
+# abs with complex arg
+abs-ok: abs(0 - (3 + 2)) = 5
+
+# Chained prelude calls
+chain-ok: ([5, 3, 1, 4, 2] sort-nums reverse head) = 5
+
+# compose with complex args
+compose-ok: compose(_ + 1, _ * 2, 3) = 7
+
+RESULT: if(
+  [nth-ok, take-ok, drop-ok, foldl-ok, map-ok, filter-ok,
+   nested-ok, range-ok, reverse-ok, sum-ok, product-ok,
+   max-ok, min-ok, abs-ok, chain-ok, compose-ok] all-true?,
+  :PASS,
+  :FAIL
+)
