@@ -338,6 +338,10 @@ impl AllocationPruner {
                 meta: self.transform(meta),
                 body: self.transform(body),
             }),
+            StgSyn::Seq { scrutinee, body } => Rc::new(StgSyn::Seq {
+                scrutinee: self.apply(scrutinee.clone()),
+                body: self.apply(body.clone()),
+            }),
             StgSyn::DeMeta {
                 scrutinee,
                 handler,

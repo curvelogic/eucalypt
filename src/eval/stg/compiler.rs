@@ -763,7 +763,9 @@ impl<'a> LetBinder<'a> {
                 .strict_indices
                 .iter()
                 .copied()
-                .filter(|&idx| matches!(bindings[idx], LambdaForm::Thunk { .. }))
+                .filter(|&idx| {
+                    idx < bindings.len() && matches!(bindings[idx], LambdaForm::Thunk { .. })
+                })
                 .collect();
 
             let body = if strict_thunk_indices.is_empty() {
