@@ -569,6 +569,12 @@ lazy_static! {
         r"^\.nan|\.NaN|\.NAN$",
     ])
     .expect("YAML scalar patterns should compile");
+
+    /// Compiled regex for YAML timestamp detection.
+    /// Compiled once and reused for all plain scalar processing.
+    static ref YAML_TIMESTAMP_PATTERN: Regex =
+        Regex::new(r"^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}(:\d{2})?)?)?$")
+            .expect("YAML timestamp pattern should compile");
 }
 
 /// If tags aren't explicit, infer from value
@@ -597,16 +603,7 @@ fn infer_tag_for_plain_scalar(text: &str) -> Tag {
 /// - Space separator: 2023-01-15 10:30:00 (UTC)
 /// - Fractional seconds: 2023-01-15T10:30:00.123456Z
 fn is_timestamp(text: &str) -> bool {
-    // YAML timestamp pattern - matches formats like:
-    // YYYY-MM-DD
-    // YYYY-MM-DD[T ]HH:MM:SS
-    // YYYY-MM-DD[T ]HH:MM:SS.fraction
-    // YYYY-MM-DD[T ]HH:MM:SS[Z|±HH:MM|±HHMM|±HH]
-    let timestamp_regex =
-        Regex::new(r"^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}(:\d{2})?)?)?$")
-            .unwrap();
-
-    if !timestamp_regex.is_match(text) {
+    if !YAML_TIMESTAMP_PATTERN.is_match(text) {
         return false;
     }
 
