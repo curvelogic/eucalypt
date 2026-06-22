@@ -861,9 +861,24 @@ impl SourceLoader {
     }
 
     /// Declare source manipulation complete and take ownership of
-    /// reporting resources
-    pub fn complete(self) -> (SimpleFiles<String, String>, SourceMap, RcExpr) {
-        (self.files, self.source_map, self.core.expr)
+    /// reporting resources, along with the runtime environment data
+    /// needed to override stale blob globals at execution time.
+    pub fn complete(
+        self,
+    ) -> (
+        SimpleFiles<String, String>,
+        SourceMap,
+        RcExpr,
+        Vec<String>,
+        Option<i64>,
+    ) {
+        (
+            self.files,
+            self.source_map,
+            self.core.expr,
+            self.args,
+            self.seed,
+        )
     }
 
     /// Read text from the filesystem, using lib-path to resolve the

@@ -381,7 +381,7 @@ fn type_check_path_with_seed(
     let core_expr = loader.core().expr.clone();
     let mut warnings = type_check_with_seed(&core_expr, &ui.type_summary);
     warnings.extend(deprecation_warnings);
-    let (_, source_map, _) = loader.complete();
+    let (_, source_map, _, _, _) = loader.complete();
     PathCheckResult {
         warnings,
         types: std::collections::HashMap::new(),
@@ -426,7 +426,7 @@ fn type_check_path_merged(
     let core_expr = loader.core().expr.clone();
     let mut result = type_check_full(&core_expr);
     result.warnings.extend(deprecation_warnings);
-    let (_, source_map, _) = loader.complete();
+    let (_, source_map, _, _, _) = loader.complete();
     PathCheckResult {
         warnings: result.warnings,
         types: result.types,
@@ -513,7 +513,7 @@ fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eucaly
     // Run content verifier to catch static errors (e.g. trivial self-assignment).
     let core_errors = loader.verify().unwrap_or_default();
 
-    let (files, source_map, _) = loader.complete();
+    let (files, source_map, _, _, _) = loader.complete();
     Ok(PipelineCheckResult {
         warnings,
         core_errors,

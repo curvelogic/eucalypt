@@ -174,12 +174,27 @@ pub struct Executor<'a> {
     /// prelude free variables to `Ref::G` rather than raising `CompileError::FreeVar`.
     #[cfg(not(target_arch = "wasm32"))]
     prelude_blob: Option<crate::eval::stg::blob::PreludeBlob>,
+
+    /// Command-line arguments passed after `--`.
+    ///
+    /// Used to override the stale `__args` global baked into the blob at
+    /// compile time with the actual runtime argument list.
+    args: Vec<String>,
+
+    /// Random seed from `--seed`, if provided.
+    ///
+    /// Used to override the stale `__io` global baked into the blob at
+    /// compile time with fresh runtime environment data.
+    seed: Option<i64>,
 }
 
 impl From<SourceLoader> for Executor<'_> {
     fn from(loader: SourceLoader) -> Self {
-        let (files, source_map, evaluand) = loader.complete();
-        Self::new(files, source_map, evaluand)
+        let (files, source_map, evaluand, args, seed) = loader.complete();
+        let mut executor = Self::new(files, source_map, evaluand);
+        executor.args = args;
+        executor.seed = seed;
+        executor
     }
 }
 
@@ -199,6 +214,8 @@ impl<'a> Executor<'a> {
             err: None,
             #[cfg(not(target_arch = "wasm32"))]
             prelude_blob: None,
+            args: Vec::new(),
+            seed: None,
         }
     }
 
@@ -270,6 +287,40 @@ impl<'a> Executor<'a> {
                 b.binding_entries.clone(),
                 names,
             );
+
+            // Override the stale __args and __io globals baked into the blob
+            // at compile time with freshly-constructed runtime values.
+            //
+            // The blob compiles these pseudoblocks once with empty/default
+            // values.  At runtime the actual argument list and environment must
+            // be substituted so that `io.args`, `io.RANDOM_SEED`,
+            // `io.epoch-time`, and `io.env` reflect the current invocation.
+            let override_settings = stg::StgSettings {
+                generate_annotations: false,
+                suppress_updates: false,
+                suppress_inlining: true,
+                suppress_optimiser: false,
+                render_type: stg::RenderType::Headless,
+                prelude_globals: Some(b.name_to_slot.clone()),
+                ..Default::default()
+            };
+
+            if let Some(&args_slot) = b.name_to_slot.get("__args") {
+                let args_expr = crate::driver::io::create_args_pseudoblock(&self.args);
+                if let Ok(stg_syn) = stg::compile(&override_settings, args_expr, rt.as_ref()) {
+                    rt.set_prelude_slot_override(
+                        args_slot,
+                        stg::syntax::LambdaForm::thunk(stg_syn),
+                    );
+                }
+            }
+
+            if let Some(&io_slot) = b.name_to_slot.get("__io") {
+                let io_expr = crate::driver::io::create_io_pseudoblock(self.seed);
+                if let Ok(stg_syn) = stg::compile(&override_settings, io_expr, rt.as_ref()) {
+                    rt.set_prelude_slot_override(io_slot, stg::syntax::LambdaForm::thunk(stg_syn));
+                }
+            }
         }
 
         if opt.dump_runtime() {
