@@ -1,0 +1,19 @@
+# Error test: assertion failure on interpolated string shows actual value.
+#
+# eu-kw67: when the actual value in `//=` is a string produced by
+# interpolation (or any non-trivial expression whose BoxedString inner
+# ref is an unevaluated thunk), the error message used to show `<string>`
+# instead of the actual string content.
+#
+# After the fix, `render_debug_repr_forced` evaluates the inner thunk
+# via `evaluate_to_whnf` and shows the real string.
+#
+# Expected behaviour:
+#   - Exit code 1
+#   - Stderr "EXPECT FAILED" line shows a quoted string, not `<string>`
+#   - Stderr "assertion failed" diagnostic shows a quoted string
+
+make-greeting(name): "hello {name}"
+
+` :target
+result: make-greeting("world") //= "goodbye world"

@@ -880,12 +880,31 @@ impl ExecutionError {
             }
         };
 
+        // For assertion failures, suppress a non-user-file primary label.
+        //
+        // When `//=` fails, the env and stack traces often contain only
+        // prelude frames (the `//=` wrapper body's internal evaluation).
+        // Showing the prelude's `//=` definition as the primary error site
+        // is confusing — users want to see their own code.  If we cannot
+        // find a user-file location, it is less misleading to show no
+        // primary label than to show prelude internals.
+        let primary_file_span = if matches!(inner, ExecutionError::AssertionFailed(..)) {
+            primary_file_span.filter(|(file, _)| source_map.is_user_file(*file))
+        } else {
+            primary_file_span
+        };
+
         // Apply the primary label.  We clear any label that source_map.diagnostic()
         // may have set (which could be a prelude location) and replace it with the
         // best location determined above.
         if let Some((file, span)) = primary_file_span {
             diag.labels.clear();
             diag.labels.push(Label::primary(file, span));
+        } else if matches!(inner, ExecutionError::AssertionFailed(..)) {
+            // No user-file location found: clear any prelude label that
+            // source_map.diagnostic() may have placed, so the diagnostic
+            // shows only the error message without a confusing prelude pointer.
+            diag.labels.clear();
         }
 
         // Add secondary labels from the env trace for call-chain context.
@@ -893,13 +912,20 @@ impl ExecutionError {
         // We collect env trace entries that have real source locations and differ
         // from the primary label (to avoid redundant markers).  Limited to 3
         // secondary labels to keep output readable.
+        //
+        // For assertion failures without a user-file primary label, skip
+        // secondary labels entirely: they would only show prelude internals
+        // (the `//=` wrapper body), which adds noise rather than insight.
+        let show_secondary =
+            !matches!(inner, ExecutionError::AssertionFailed(..)) || primary_file_span.is_some();
+
         {
             let mut secondary_labels: Vec<Label<usize>> = vec![];
             let mut seen_spans: Vec<(usize, codespan::Span)> = vec![];
 
             // Skip the first env_trace entry if it matches the fallback primary (already shown)
             for &smid in env_trace.iter() {
-                if secondary_labels.len() >= 3 {
+                if !show_secondary || secondary_labels.len() >= 3 {
                     break;
                 }
                 let info = match source_map.source_info_for_smid(smid) {

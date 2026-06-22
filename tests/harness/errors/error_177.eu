@@ -1,0 +1,17 @@
+# Error test: assertion failure diagnostic does not show prelude internals.
+#
+# eu-4qy4: when `//=` fails, the error diagnostic used to show the
+# prelude's `//=` definition (e.g. `[prelude]:1253`) as the primary
+# source location — confusing users who want to see their own code.
+#
+# After the fix, when no user-file source location is available in the
+# env/stack traces, the assertion failure diagnostic suppresses the
+# prelude label entirely, showing only the clear error message.
+#
+# Expected behaviour:
+#   - Exit code 1
+#   - Stderr does NOT mention "prelude" as a location
+#   - Stderr contains the "assertion failed" message with expected/got values
+
+` :target
+result: "hello" //= "goodbye"
