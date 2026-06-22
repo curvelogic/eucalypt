@@ -341,16 +341,16 @@ X-sorted windowing to reduce pairs to O(n×w); union-find on k closest edges, wi
 | create_arg_array | 230 | 6.7% |
 | try_allocate | 218 | 6.4% |
 
-**Characteristics:** Allocation-intensive. `create_arg_array` (6.7%) + `try_allocate` (6.4%) + `BumpBlock::bump` (3.8%) + `Array::push` (3.3%) = 20.2% of CPU in allocation machinery. With 18.7M allocs in 4.64s, this is allocating at ~4M allocs/sec. The union-find structure creates many small closures for component tracking. Env walk at 11.1% is moderate.
+**Characteristics:** Allocation-intensive. `create_arg_array` (6.7%) + `try_allocate` (6.4%) + `BumpBlock::bump` (3.8%) + `Array::push` (3.3%) = 20.2% of CPU in allocation machinery. With 18.7M allocs in 4.64s, this is allocating at ~4M allocs/sec. Note: `graph.union-find` is a Rust intrinsic — the allocations come from the windowed pair generation pipeline: `window-pairs(150, vertices)` generates ~75,000 encoded pairs via nested `tails`, `zip-with`, `iota`, and `concat` operations, all of which are forced when `sort-nums` materialises the full list. Env walk at 11.1% is moderate.
 
-**0.10.0 changes:** Ticks −4% (239.0M → 229.0M), allocs −84% (117.6M → 18.7M), wall time −57% (10.93s → 4.64s), GC 2 → 0. Despite large alloc reduction, 18.7M allocs remain — this program genuinely needs many allocations for its data structures.
+**0.10.0 changes:** Ticks −4% (239.0M → 229.0M), allocs −84% (117.6M → 18.7M), wall time −57% (10.93s → 4.64s), GC 2 → 0. Despite large alloc reduction, 18.7M allocs remain — the windowed pair generation genuinely materialises ~75,000 cons cells before the union-find step.
 
-**Bottleneck:** VM dispatch + allocation overhead. The union-find algorithm requires many small structure updates; each update goes through the full closure/thunk path.
+**Bottleneck:** VM dispatch + allocation overhead from the pair generation pipeline. The ~75,000 encoded pairs must all be materialised for `sort-nums` before the union-find step.
 
 **Potential improvements:**
-- *Engine-level (high impact):* Persistent blocks would reduce allocation overhead for the union-find structures. Given 20% of CPU in allocation machinery, this is a meaningful target.
-- *Source-level:* The windowed pair generation may materialise intermediate lists. A direct fold over sorted pairs without explicit windowing lists would reduce allocations.
-- *VM-level:* Flat closures for the env walk (11.1%).
+- *Source-level (high impact):* `window-pairs` generates all pairs eagerly when `sort-nums` is applied. The pipeline `window-pairs(150, vertices) sort-nums map(decode-edge) take(1000) graph.union-find(n)` forces all ~75,000 cons cells. Rewriting `window-pairs` to generate pairs in a form that feeds directly into `sort-nums` without intermediate cons allocation would be the largest win.
+- *Source-level:* The `tails`-based windowing materialises `n` tails each of decreasing length. A direct fold over index pairs `(i, j)` where `i < j <= i+w` with a mutable encoding accumulator would generate the same encoded values without any intermediate list structure.
+- *VM-level:* Flat closures for the 11.1% env walk.
 
 ---
 
@@ -444,21 +444,32 @@ DFS topological sort on a DAG followed by DP path counting in reverse topologica
 
 ## day11 — part 2
 
-Inclusion-exclusion with graph variant generation. Four independent DP passes computing path counts via required nodes. Inclusion-exclusion over node subsets.
+Inclusion-exclusion with graph variant generation. Four independent DP passes computing path counts via required nodes: `total - no_dac - no_fft + neither`, each on a graph variant with one or two required nodes removed.
 
 **Stats (0.10.0):** 3,068,130,793 ticks | 4,264,268 allocs | 0 GC | ~129s
 
-**Characteristics:** The tick-bound outlier of the suite. 3.07 billion ticks in 129 seconds. Allocation is negligible (1 alloc per 720 ticks — lowest in the suite), confirming this is not an allocation or memory problem. The algorithm's inclusion-exclusion runs 2^k DP passes where k is the number of required nodes; for non-trivial inputs this is a large constant. The inner DP loop is the same structure as part 1 but repeated many times.
+**CPU profile (top 5):**
 
-**0.10.0 changes:** Ticks +0% (3.07B → 3.07B), allocs −42% (7.39M → 4.26M), wall time −11% (144.9s → 129.1s), GC 2 → 0. Zero tick change — this program's cost is entirely in the algorithm, not the engine.
+| Function | Self-time | % |
+|----------|-----------|---|
+| handle_instruction | 37,727 | 50.3% |
+| EnvironmentFrame::get | 20,326 | 27.1% |
+| Machine::run | 14,807 | 19.7% |
+| sip Hasher::write (block key hashing) | 265 | 0.4% |
+| create_arg_array | 264 | 0.4% |
 
-**Bottleneck:** Algorithmic. The inclusion-exclusion structure requires exponential DP passes in the number of required nodes. No VM or engine optimisation can address this; the tick count is fixed by the algorithm.
+**Characteristics:** VM dispatch and env-walk bound. `EnvironmentFrame::get` at 27.1% is the highest env-walk ratio in the suite — matching day01-p1 (29%). Allocation is negligible (1 alloc per 720 ticks; try_allocate is only 0.4%). The 3.07B ticks come from the four DP passes, each of which is structurally identical to part 1 but starts from "svr" (a node with a much larger reachable subgraph than "you"). The deep env chains arise from `dp-step` closures that capture `g` (the graph block) and `table` (the current DP accumulator block), both large objects deep in the env frame — every `lookup-count(table, name)` call inside `map(lookup-count(table))` walks the chain to find `table`. Notable: `sip Hasher::write` at 0.4% (0.52s) reflects the cost of hashing symbol keys for block lookups in the hot path.
+
+**0.10.0 changes:** Ticks +0% (3.07B → 3.07B), allocs −42% (7.39M → 4.26M), wall time −11% (144.9s → 129.1s), GC 2 → 0. Zero tick change — the hot path (the DP loop itself) does not call prelude thunks. The 11% wall-time improvement is GC elimination only.
+
+**Bottleneck:** The DP passes execute 3.07B instructions. The bottleneck has two components: (1) raw VM dispatch (50.3% + 19.7% = 70%), addressable only by VM throughput improvements; (2) env-walk (27.1%), addressable by flat closures. The inclusion-exclusion structure (4 DP passes) is already optimal for this problem formulation — the dominant cost is the graph size reachable from "svr", not the number of required nodes.
 
 **Potential improvements:**
-- *Source-level (only meaningful improvement):* If the required-node set is large, pruning the inclusion-exclusion (e.g., via meet-in-the-middle, or bounding partial sums early) could reduce the number of DP passes. The 129s runtime suggests the input has several required nodes.
-- *Source-level:* Memoisation of sub-problems shared across inclusion-exclusion terms, if the graph structure permits.
-- *VM-level:* Since this is pure dispatch at 3B ticks, any improvement to the VM dispatch loop (see day11-p1 notes) scales proportionally. But even a 2× VM speedup would only bring this to ~65s — still slow.
-- *Engine-level:* Persistent blocks would not help here (allocs are negligible).
+- *VM-level (highest impact):* Flat closures would directly address the 27.1% env-walk. Conservatively applying the reduction seen on day01 (−33% in EnvironmentFrame::get) yields ~9% wall-time savings — roughly 12s off 129s. This is the strongest single-program case in the suite for flat closures.
+- *Source-level (highest algorithmic impact):* The `dp-step` function calls `merge(table, kv-block(sym(node), c))` at each step. `sym(node)` interns a string to a symbol on every DP step (visible as `SymbolPool::intern` in the profile). Pre-interning all node names once before the DP loop and storing them in a block would eliminate this repeated hashing overhead.
+- *Source-level:* The four DP passes each rebuild the entire DP table from scratch. Graph variants (with one node removed) share most of their structure; the tables could be computed incrementally starting from a shared base, reducing redundant work.
+- *VM-level:* Any improvement to raw VM dispatch speed (see day11-p1 notes) scales proportionally across 3B ticks. A 2× dispatch improvement would halve wall time to ~65s.
+- *Engine-level:* Persistent blocks would not help here (allocs are negligible); the hashing cost is for block lookup, not allocation.
 
 ---
 
@@ -482,7 +493,7 @@ Area check and box dimension filter. Counts feasible regions passing geometric c
 
 ### Flat closures (env walk)
 
-`EnvironmentFrame::get` is a measurable cost in every program > 0.5s. The extreme case is day06-p2 (33.4%), but it is significant in day05-p1 (19.3%), day11-p1 (16.2%), day09-p1 (15.8%), and day07-p2 (18.4%). A flat closure representation would eliminate this cost across the board. Conservative estimate: 10–20% wall-time improvement for most programs, 25–35% for day06-p2 and day05-p1.
+`EnvironmentFrame::get` is a measurable cost in every program > 0.5s. The extreme cases are day06-p2 (33.4%) and day11-p2 (27.1%), with significant cost also in day05-p1 (19.3%), day11-p1 (16.2%), day09-p1 (15.8%), and day07-p2 (18.4%). A flat closure representation would eliminate this cost across the board. Conservative estimate: 10–20% wall-time improvement for most programs, 25–35% for day06-p2 and day11-p2.
 
 ### Persistent blocks
 
@@ -494,4 +505,4 @@ day11-p1 and day11-p2 are the cleanest benchmarks for VM dispatch speed: near-ze
 
 ### Algorithmic limits
 
-day11-p2 (3B ticks, 129s) is beyond what engine-level work can address. Source-level algorithmic improvement (pruning the inclusion-exclusion, memoisation) is the only path to a materially faster result.
+day11-p2 (3B ticks, 129s) has a large algorithmic component, but is not purely algorithmic: its 27.1% env-walk overhead means flat closures could save ~12s. The remaining ~117s reflects the genuine cost of four large-graph DP passes. Source-level improvements (reducing redundant computation across graph variants, pre-interning node symbols) are the highest-leverage path to a materially faster result.
