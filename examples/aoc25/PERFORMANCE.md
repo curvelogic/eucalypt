@@ -291,8 +291,8 @@ Bit-vector beam propagation. Per-row fold detects splitter hits, emits left/righ
 **Bottleneck:** VM dispatch. The bit-vector operations are each individually cheap but there are many of them (43M ticks total).
 
 **Potential improvements:**
-- *VM-level:* Native integer bitwise operations as intrinsics (if not already) would reduce tick count for the bit-shift/merge operations.
-- *Engine-level:* Persistent blocks for beam state accumulation. The 87% alloc reduction already happened in 0.10.0; further alloc work has diminishing returns.
+- *Source-level (high impact):* The beam is a list of 0/1 integers operated on element-wise via `zip-with`. Bitwise intrinsics `&`, `|`, `<<`, `>>` already exist. Replacing the list representation with a packed integer bitmask (one integer per row) would reduce each row-step from O(width) `zip-with` calls to O(1) bit operations: `h = beam & sp`, `p = beam & ~sp`, `emitted = (h << 1) | (h >> 1)`, `new_beam = p | emitted`. This eliminates the dominant allocation source and most of the 43M ticks.
+- *Engine-level:* Persistent blocks for beam state accumulation — already largely addressed by 0.10.0's 87% alloc reduction; diminishing returns remain.
 
 ---
 
@@ -319,9 +319,9 @@ Same bit-vector beam structure as part 1 but sums beam counts rather than taking
 **Bottleneck:** VM instruction dispatch (54.5%) — specifically the summation path. The instruction mix is the root cause, not absolute tick count.
 
 **Potential improvements:**
-- *Source-level:* Investigate whether the summation accumulates via a list-based fold that materialises intermediate sums. If so, accumulating into a mutable-style counter via a strict fold would reduce closures.
-- *VM-level:* Profiling the specific instruction types within `handle_instruction` would identify which opcodes dominate the 54.5% — likely `App` or `Let` instructions in the summation path.
-- *Compiler-level:* The divergence between part 1 and part 2 suggests the STG compilation of the summation variant generates less efficient code than the max variant. Worth examining the `eu dump stg` output for both.
+- *Source-level (primary):* Part 2 counts timelines with `zip-with(+, p, emitted)` — still a list of integers, not packed. For part 2, counts can exceed 1, so bitwise packing does not directly apply. However, the same structural improvement applies: rather than list-of-counts-of-width-w, a direct fold over beam state without materialising per-element lists would reduce the 28.5M ticks substantially.
+- *Source-level:* The `solve2` final step `foldl(row-step2, b0) sum` forces the final beam vector to a single sum. With a packed representation, `sum` becomes `popcount`. The divergence in instruction cost between parts 1 and 2 (same ticks, but part 2 is 1.68× slower) is likely because the `+` combiner in the summation path creates more thunks than the `max` combiner in part 1.
+- *Compiler-level:* The `handle_instruction` self-time of 54.5% (vs 36.9% in part 1) and near-identical tick counts suggest the summation combiner generates different STG instructions that are individually more expensive. `eu dump stg day07.eu -t part-2` vs `-t part-1` would reveal the difference.
 
 ---
 
