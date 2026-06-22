@@ -1215,4 +1215,17 @@ mod tests {
         );
         assert!(is_consistent(&mu_x, &mu_y));
     }
+
+    #[test]
+    fn mu_mutual_recursion() {
+        // µX. {a: µY. {b: X}}  — interleaved recursive types, must terminate
+        let x = TypeVarId("X".to_string());
+        let y = TypeVarId("Y".to_string());
+        let inner = Type::Mu(
+            y.clone(),
+            Box::new(closed(&[("b", Type::Var(x.clone(), Kind::Star))])),
+        );
+        let mu = Type::Mu(x.clone(), Box::new(closed(&[("a", inner)])));
+        assert!(is_consistent(&mu, &mu));
+    }
 }
