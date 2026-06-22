@@ -60,7 +60,7 @@ Single-pass fold over a sequence of 13 million instructions. Accumulates a posit
 
 **Potential improvements:**
 - *Source-level:* The fold processes a flat list of instructions. If the input were chunked into blocks and processed with arithmetic shortcuts (runs of identical instructions), a significant fraction of steps could be collapsed before the fold.
-- *VM-level:* Tail-call optimisation improvements would reduce frame allocation on deeply recursive folds.
+- *VM-level:* The prelude's `foldl` is lazy: the accumulator `op(i, l head)` is passed unevaluated at each step, building a chain of O(n) Update frames when the result is finally forced (`EU_STACK_DIAG=1` confirms linear stack growth to depth 28,626 for this input). The STG machine already handles the tail-recursive call correctly — the issue is the unevaluated accumulator. A strict fold variant (forcing the accumulator at each step) would reduce peak stack depth to O(1) and may reduce allocation.
 - *Engine-level:* List fusion (deforestation) could eliminate intermediate list allocations if the instruction list is generated rather than read from input.
 
 ---
@@ -127,7 +127,7 @@ Greedy digit selection via windowed recursion. Finds the largest digit in a vali
 
 **Potential improvements:**
 - *Source-level:* The greedy algorithm currently uses functional windowing (`take`/`drop`). A fold-based approach that maintains a sliding window index without list slicing would reduce allocation significantly.
-- *VM-level:* Tail-call optimisation for the recursive descent.
+- *VM-level:* The STG machine handles the recursive descent correctly — `cons(best, pick(k-1,...))` creates a thunk rather than pushing a continuation for the recursive call. Stack depth is bounded by k (output size, ~1,209 at most), not input size. No tail-call issue exists here.
 
 ---
 
