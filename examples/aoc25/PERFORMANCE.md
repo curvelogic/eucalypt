@@ -15,6 +15,7 @@ Performance characteristics of the AoC 2025 eucalypt example programs, benchmark
 | day03-p1 | ~0.27s | 16,501,658 | 1,453,486 | VM dispatch | −78% wall time |
 | day03-p2 | ~0.46s | 27,614,729 | 2,501,641 | VM dispatch | −82% wall time |
 | day04-p1 | ~1.10s | 53,908,706 | 3,215,923 | VM dispatch + env walk | −53% wall time |
+| day04-p2 | >600s (timeout) | — | — | VM dispatch (loop-bound) | first analysed at 0.10.0 |
 | day05-p1 | ~1.19s | 60,865,199 | 2,275,240 | VM dispatch + env walk | −46% wall time |
 | day05-p2 | ~0.06s | 1,252,458 | 151,165 | Trivial | −54% wall time |
 | day06-p1 | ~0.44s | 16,706,391 | 232,193 | VM dispatch | −27% wall time |
@@ -22,8 +23,11 @@ Performance characteristics of the AoC 2025 eucalypt example programs, benchmark
 | day07-p1 | ~0.87s | 42,911,737 | 2,174,510 | VM dispatch | −44% wall time |
 | day07-p2 | ~1.46s | 28,483,917 | 1,437,304 | Handle-instruction (54%) | −40% wall time |
 | day08-p1 | ~4.64s | 228,966,325 | 18,660,114 | Alloc + VM dispatch | −57% wall time |
+| day08-p2 | >600s (timeout) | — | — | VM dispatch + alloc (pair gen) | first analysed at 0.10.0 |
 | day09-p1 | ~3.87s | 195,078,936 | 12,342,225 | VM dispatch + alloc | −53% wall time |
+| day09-p2 | >600s (timeout) | — | — | Continuation overhead + env walk | first analysed at 0.10.0 |
 | day10-p1 | ~7.01s | 432,649,144 | 43,177,479 | Alloc-intensive | −68% wall time |
+| day10-p2 | >600s (timeout) | — | — | Env walk (dominant, 39.3%) | first analysed at 0.10.0 |
 | day11-p1 | ~1.32s | 66,475,331 | 357,770 | VM dispatch loop | −10% wall time |
 | day11-p2 | ~129s | 3,068,130,793 | 4,264,268 | Tick-bound algorithm | −11% wall time |
 | day12-p1 | ~0.19s | 6,647,460 | 1,527,523 | Trivial | −35% wall time |
@@ -173,6 +177,34 @@ Same greedy algorithm extended to 12-digit selection. Higher constant factor but
 - *Source-level:* The convolution currently materialises intermediate sums as lists of lists. A single-pass imperative scan (prefix sums) would require a fundamentally different algorithmic structure, but could reduce tick count significantly.
 - *Engine-level:* Persistent blocks would reduce allocation cost for the intermediate grid blocks. Estimated ~30% wall-time improvement.
 - *VM-level:* Flat closures would address the 12.9% env-walk cost.
+
+---
+
+## day04 — part 2
+
+Tail-recursive removal loop: each step calls `survivals(grid)` (the same 3×3 block-sum convolution as part 1), removes accessible rolls from the grid, and accumulates the count. Repeats until no accessible rolls remain.
+
+**Stats (0.10.0):** did not complete — terminated at 600s (timeout).
+
+**CPU profile (top 5):**
+
+| Function | Self-time | % |
+|----------|-----------|---|
+| handle_instruction | 2,930 | 35.2% |
+| Machine::run | 2,232 | 26.8% |
+| EnvironmentFrame::get | 944 | 11.4% |
+| create_arg_array | 271 | 3.3% |
+| try_allocate | 270 | 3.2% |
+
+**Characteristics:** Profile is structurally identical to part 1 (VM dispatch dominant: 35.2% + 26.8% = 62%, env walk 11.4%). The bottleneck is not algorithmic complexity per iteration but iteration count: for the actual puzzle input (135×135 grid) the removal loop requires hundreds of steps, each costing the same ~1.1s as part 1. Allocation rate (try_allocate + BumpBlock::bump + create_arg_array + Array::push ≈ 12%) reflects each `survivals(grid)` call materialising new intermediate grid structures (h-sums, block-sums) that accumulate until GC. Peak heap footprint during profiling reached 12.6 GB, suggesting a steady accumulation of intermediate convolution structures between GC cycles. `env_from_data_args (209 samples, 2.5%)` reflects argument-copying overhead in the tight convolution inner loop.
+
+**Bottleneck:** Iteration count × per-iteration cost. The `step` function is properly tail-recursive and executes without stack growth, but the underlying convolution work per iteration is unchanged from part 1.
+
+**Potential improvements:**
+- *Source-level (highest impact):* The total removal count can be computed analytically from the initial block-sum grid without iterating. Because each cell is removed at most once, the total is bounded by the initial accessible count. A smarter structure that identifies the removal order without re-convolving on every step would collapse the O(iterations) loop to O(1) convolution passes.
+- *Source-level:* The tail-recursive `step` allocates a new grid on every iteration via `zip-with(zip-with(-), grid, removed)`. Sharing structure between iterations (only updating changed cells) would cut per-iteration allocation significantly.
+- *VM-level:* Flat closures for the 11.4% env-walk cost.
+- *Engine-level:* Persistent blocks for the intermediate list structures.
 
 ---
 
@@ -354,6 +386,33 @@ X-sorted windowing to reduce pairs to O(n×w); union-find on k closest edges, wi
 
 ---
 
+## day08 — part 2
+
+MST via Kruskal on the full candidate set. `solve2-n(999, data)` uses window size w=999 (vs w=150 for part 1), expanding candidate pairs from ~75,000 to n×(n−1)/2 ≈ 499,500 for n=1,000 points. All pairs are materialised, sorted by `sort-nums`, and passed to `graph.kruskal-edges` to build the complete MST. The bridge is identified by `last-edge-idx`: `graph.kruskal-edges(n) (reverse ; nth(1))`.
+
+**Stats (0.10.0):** did not complete — terminated at 600s (timeout).
+
+**CPU profile (top 5):**
+
+| Function | Self-time | % |
+|----------|-----------|---|
+| handle_instruction | 3,146 | 37.7% |
+| Machine::run | 1,929 | 23.1% |
+| EnvironmentFrame::get | 1,107 | 13.3% |
+| try_allocate | 284 | 3.4% |
+| create_arg_array | 270 | 3.2% |
+
+**Characteristics:** Profile matches day08-p1 in structure (VM dispatch 37.7% + 23.1% = 60.8%, env walk 13.3%), scaled up by 6.6× more candidate pairs. The eucalypt-side pair generation (`tails` + `zip-with` + `iota` + `concat` for 499,500 pairs) dominates: allocation machinery (try_allocate + BumpBlock::bump + Array::push + find_space) totals ~12%. Two minor signals absent from day08-p1 appear: `serde_json::de::Deserializer::parse_integer (37 samples, 0.4%)` and `Pow::execute (29 samples, 0.3%)`, reflecting the `dist2` squared-distance computation (power intrinsic) being sampled in the tight pair-generation inner loop. The `graph.kruskal-edges` Rust intrinsic processes only (n−1) MST edges and is not visible in the profile, confirming the bottleneck is the eucalypt-side generation of the full 499,500-pair candidate set.
+
+**Bottleneck:** Pair generation pipeline (≈6.6× more pairs than part 1). The `window-pairs(999, vertices)` call materialises ~499,500 cons cells before `sort-nums` can sort them.
+
+**Potential improvements:**
+- *Source-level (highest impact):* Same as part 1: eliminate the cons-cell materialisation in `window-pairs`. With 499,500 pairs, this would reduce allocation by the same 84% seen in total allocs for part 1.
+- *Source-level:* The `prepare` function is called once and returns a block that is then interrogated. If `window-pairs` were replaced by a fold that feeds directly into a sort-by-accumulator, the pair list would never need to be materialised as a cons sequence.
+- *VM-level:* Flat closures for the 13.3% env-walk cost.
+
+---
+
 ## day09 — part 1
 
 Pairwise brute-force via `tails` with `foldl`. Computes area for each head-to-tail pair, finds the maximum. O(n²) in the number of points.
@@ -383,6 +442,34 @@ Pairwise brute-force via `tails` with `foldl`. Computes area for each head-to-ta
 
 ---
 
+## day09 — part 2
+
+Largest-inscribed-rectangle sweep over a rectilinear polygon. `levels.from-points` partitions the 496-point polygon into cross-sections (levels) at each distinct y-coordinate. `search.find-max` sweeps all level pairs as (start, end) candidates: an outer fold iterates start levels, an inner `foldl` sweeps from start downward narrowing the corridor at each step. Pruning skips pairs where the maximum possible area cannot beat the current best.
+
+**Stats (0.10.0):** did not complete — terminated at 600s (timeout).
+
+**CPU profile (top 5):**
+
+| Function | Self-time | % |
+|----------|-----------|---|
+| Machine::run | 2,804 | 33.6% |
+| handle_instruction | 2,580 | 30.9% |
+| EnvironmentFrame::get | 1,414 | 16.9% |
+| try_allocate | 217 | 2.6% |
+| create_arg_array | 210 | 2.5% |
+
+**Characteristics:** The profile shows an anomalous Machine::run (33.6%) > handle_instruction (30.9%) ratio — the only program in the suite where Machine::run dominates. This indicates a high proportion of continuation-management overhead: the nested `outer-step` / `inner-step` folds generate many function applications, returns, and resume-continuation frames per level pair. EnvironmentFrame::get at 16.9% is significant: `outer-step` captures `ymax`, `maxw`; `inner-step` captures `sy`, `start-tiles`, `ymax`; `max-rect` captures `sy`, `st`, `ey`, `et`, `cl`, `cr` — each level-pair step walks a moderately deep chain. `serde_json::de::Deserializer::parse_integer (38 samples, 0.5%)` and `NumParse::execute (20 samples, 0.2%)` appearing in the steady-state profile indicates that coordinate parsing is still being forced lazily during level construction (the 496-point polygon's coordinates are being converted from strings to numbers as the level sweep forces each `pts` element for the first time).
+
+**Bottleneck:** Continuation overhead (Machine::run 33.6%) combined with env walk (16.9%) and the O(levels²) worst-case sweep. For the actual puzzle input, the pruning may not be reducing the search space sufficiently.
+
+**Potential improvements:**
+- *Source-level:* Pre-force the entire `pts` list before level construction to eliminate the lazy parsing overhead (the `serde_json` signal in the profile).
+- *Source-level:* The outer fold iterates over `tails(lvs)`, passing each suffix to `outer-step`. If the pruning condition `max-possible <= best` is satisfied early, earlier termination would help, but the data access pattern (each level is visited once as a start) limits this.
+- *VM-level (primary):* The Machine::run dominance suggests continuation management is the binding cost. Inlining small tail calls or improving continuation allocation would benefit this program most.
+- *VM-level:* Flat closures for the 16.9% env-walk cost.
+
+---
+
 ## day10 — part 1
 
 DFS subset enumeration over GF(2). Finds minimum k-size subsets via XOR-based target matching. Highly recursive with extensive backtracking.
@@ -409,6 +496,34 @@ DFS subset enumeration over GF(2). Finds minimum k-size subsets via XOR-based ta
 - *Engine-level (highest impact in suite):* Persistent blocks would directly reduce the allocation overhead. Given 28% of CPU is in allocation infrastructure, a 2× improvement in allocator throughput would yield ~14% wall-time improvement.
 - *Source-level:* The DFS uses functional subset accumulation. An iterative representation with explicit stack would reduce closure creation, but would require significant algorithmic rewrite.
 - *Compiler-level:* Examine whether `from_let` (3.6%) and `from_closure` (2.4%) bindings in the DFS body can be lifted or shared across iterations.
+
+---
+
+## day10 — part 2
+
+Branch-and-bound integer linear programme solver. For each machine `[joltage, buttons]`, `solve-machine2` performs: (1) float Gaussian elimination (`gauss.forward`) to find pivot/free columns and compute slopes and bounds; (2) integer Bareiss elimination (`gauss-int.forward`) for exact back-substitution; (3) branch-and-bound search over free variables with cost-based pruning (`search(0, [], 0, INF)`). For machines with many free variables, the search is exponential.
+
+**Stats (0.10.0):** did not complete — terminated at 600s (timeout).
+
+**CPU profile (top 5):**
+
+| Function | Self-time | % |
+|----------|-----------|---|
+| EnvironmentFrame::get | 3,237 | 39.3% |
+| handle_instruction | 2,378 | 28.9% |
+| Machine::run | 750 | 9.1% |
+| create_arg_array | 260 | 3.2% |
+| try_allocate | 203 | 2.5% |
+
+**Characteristics:** EnvironmentFrame::get at 39.3% is the highest env-walk ratio in the entire suite — surpassing day11-p2 (27.1%) and day06-p2 (33.4%). The `solve-machine2` block captures an exceptionally large number of outer bindings (`nc`, `nb`, `INF`, `result`, `reduced`, `pivots`, `rank`, `nfree`, `frees`, `solution-vec`, `base-cost`, `lowers`, `uppers`, `slopes`, `result-int`, `iref`) all accessed by deeply nested closures (`search`, `inner-solve`, `eval-free`, `adjusted-lower-bound`, `adjusted-upper-bound`, `try`). Every env frame access in the branch-and-bound inner loop walks past all these enclosing bindings. handle_instruction at 28.9% and Machine::run at 9.1% are the inverse of the usual ratio, confirming env walk dominates dispatch here. Allocation machinery (create_arg_array + try_allocate + BumpBlock::bump + Array::push + find_space) totals ~14%, with `from_let (134 samples, 1.6%)` and `from_letrec (20 samples, 0.2%)` reflecting Gaussian matrix row construction. `BlockListIterator::next (16 samples, 0.2%)` and `hashbrown::raw::RawTable::reserve_rehash (9 samples, 0.1%)` reflect block iteration and hashmap growth in the matrix state.
+
+**Bottleneck:** Env-walk (39.3%) and the exponential search over free variables. Flat closures would be the single largest structural improvement; beyond that, the search complexity is input-dependent.
+
+**Potential improvements:**
+- *VM-level (highest impact in suite):* Flat closures would directly address the 39.3% env-walk. Even a conservative 50% reduction in env-walk cost (extrapolating from day06-p2 estimates) would yield ~20% wall-time improvement in non-search-bound runs.
+- *Source-level:* Pre-project the captured bindings used in the inner loop. The `search` function accesses `slopes`, `uppers`, `lowers`, `frees`, `nfree`, `base-cost` on every recursive call. Packing these into a single tuple argument would reduce the env chain depth by eliminating the outer block's binding layer.
+- *Source-level:* The `eval-free` function rebuilds the back-substitution from scratch on every call to `inner-solve`. Memoising partial back-substitution results for previously fixed prefix assignments would reduce redundant work in the inner exhaustive loop.
+- *Compiler-level:* The `solve-machine2` block creates closures for `free-lower-bound`, `free-upper-bound`, `free-slope`, `adjusted-lower-bound`, `adjusted-upper-bound`, `inner-solve`, and `eval-free` — all computed once per machine but allocated freshly. Static analysis could detect that these are machine-local constants and lift them out of the block as frozen closures.
 
 ---
 
