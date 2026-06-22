@@ -882,6 +882,50 @@ measurable mark-time reduction (`benches/gc.rs`); at least one `single_use_args`
 override removed; tail-recursive conditionals show flat stack depth under
 `EU_STACK_DIAG=1` with no `suppress_update` flag; no harness regression.
 
+**Post-mortem: 0.10.0 demand analysis results.** The infrastructure was fully
+implemented: backward abstract interpretation, SCC splitting + reflatten, intrinsic
+demand signatures, user function signature wiring, and the AtMostOnce rendered-block
+fixup. The two halves of the demand lattice (strictness × cardinality) had very
+different outcomes.
+
+*Strictness — success.* Strict eager evaluation via `Seq` forms forces non-recursive
+strict thunks at definition time. Results: -38% allocs, -34% ticks on 010_prelude;
+-76% on 008_folds; -30.8% allocs on day12-p1 (a program we did not refactor). The
+mechanism is sound: "this binding WILL be evaluated" is a safe observation regardless
+of how many times it is entered. The old `strict_args` / `single_use_args` /
+`suppress_update` hacks were replaced by demand-driven intrinsic signatures.
+
+*AtMostOnce cardinality — failure.* Update elision (compiling as `Value` instead of
+`Thunk` to skip the Update frame) is unsound in eucalypt for three reasons:
+
+1. **Render traversal.** `RenderKv` enters each block value twice (suppression check +
+   render) within a single pass, even after render unification. Bindings the analysis
+   considers single-use are entered twice.
+2. **Dynamic `.key` lookups.** Runtime block lookups enter closures the static analysis
+   cannot predict.
+3. **Higher-order use.** A binding passed to `foldl`/`map` is referenced once
+   syntactically but entered per list element at runtime.
+
+A fixup forcing Multi on rendered-scope bindings prevents the regression but also
+eliminates virtually all AtMostOnce opportunities — on measured programs, DA-on =
+DA-off for allocation counts. A conservative forward approach (only mark AtMostOnce
+for provably safe patterns) found zero additional opportunities beyond what intrinsic
+signatures already provide.
+
+*SCC splitting + reflatten — neutral.* Decomposes LetRec into nested Let+LetRec for
+more precise per-binding demands, then merges back to preserve flat env frames. No
+independent performance contribution. Retained because it enables stricter Strict
+assignments and may become valuable with future cardinality improvements.
+
+*Future directions:*
+- **Rationalise RenderKv** (moved to 0.11 as eu-9tah.19) — restructure to enter each
+  value once, which would make AtMostOnce sound for rendered scopes.
+- **Escape analysis** (moved to 0.11 as eu-9tah.12) — force Multi only on block
+  bindings whose block escapes, preserving AtMostOnce for locally-consumed blocks.
+- **Strict eval for blob globals** (eu-9tah.20, merged) — prelude demand signature
+  table enables Seq wrapping at global call sites, though minimal impact observed
+  because most prelude calls use catenation style with simple ref arguments.
+
 #### W12. Restore git imports (fetch-under-a-hash)
 
 **Problem.** `{ import: { git: …, commit: …, import: … } }` is **documented as

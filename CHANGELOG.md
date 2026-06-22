@@ -2,7 +2,37 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.9.2] - Unreleased
+## [0.10.0] - Unreleased
+
+### Added
+
+- **Strict eager evaluation (W11)** — demand analysis marks strict bindings and the STG compiler wraps them with `Seq` forms to force evaluation at definition time, avoiding thunk allocation. -38% allocations, -34% ticks on 010_prelude; -76% on 008_folds
+- **Prelude demand signatures** — ~60 common prelude functions have conservative strictness signatures enabling strict eager eval at call sites
+- **SCC splitting + reflatten** — LetRec scopes decomposed by dependency analysis for more precise demand, then merged back to preserve flat env frames
+- **User function demand signature wiring** — named signature table threaded from demand analysis into STG compiler for user function call sites
+- **`eu dump split`** — dump intermediate representation after SCC splitting
+- **`eu dump reflatten`** — dump after re-flattening
+- **`eu dump runtime` in blob mode** — now shows complete runtime including named prelude global slots
+- **Git imports restored (W12)** — `{ import: "git://..." }` with bare clone cache and commit pinning
+- **Namespace lambda hoisting** — namespace members (str, cal, vec) hoisted to top level for inlining, including in blob pipeline
+- **Dev version clarity** — dev builds now report `v0.0.0.dev` instead of a stale version number
+- **Prelude blob gitignored** — the blob is a build optimisation, not source; build falls back to source-prelude mode when absent
+
+### Changed
+
+- **AtMostOnce update elision** — re-enabled with rendered-block fixup forcing Multi on scopes whose body is a Block constructor, preventing unsound skip-update for bindings entered multiple times by the render traversal
+
+### Fixed
+
+- **HeapNavigator hot-path overhead** — `ok_or(ExecutionError)` replaced with `match` to avoid constructing/dropping error values on the success path. -20% mutator CPU
+- **HeapNavigator inlining** — `#[inline(always)]` on `get`/`global` eliminates call overhead + register spills. ~3-7% wall time improvement
+- **Array::push overhead** — redundant bounds check and Option unwrap eliminated in pre-allocated push path. -4.5-6% wall time
+- **Array allocation drop glue** — `RawArray` allocation helpers changed from `Result<_, ExecutionError>` to direct panic, eliminating non-trivial drop glue on success path
+- **YAML timestamp regex** — `is_timestamp()` compiled regex on every call; moved to `lazy_static!`. -5% startup overhead
+- **AoC head-retention** — day01, day04, day09 refactored from map-then-aggregate to foldl patterns. day01-p2: -95% wall time (9.7s → 0.46s)
+- **YAML complex-key panic** — converted to proper error diagnostic
+
+## [0.9.2] - 2026-06-20
 
 ### Added
 
