@@ -799,6 +799,45 @@ list-fusion (W12). Fusion reduces the thunk-churn workload that a nursery would
 target; profile post-fusion to assess whether a nursery is still the right next step
 or whether demand analysis (W11) delivers more per unit of effort.
 
+**Post-mortem: 0.10.0 flat closures experiment (not merged).** CPU profiling showed
+`EnvironmentFrame::get` at 69% self-time — the single largest hotspot. The cactus
+stack (linked `next` pointers) was identified as a cache-miss-dominated pointer chase.
+A flat closure implementation (capture frames with `(frame_ptr, physical_index)` pairs
+replacing the `next` chain) was built, profiled, and archived at `archive/flat-closures`.
+
+*Results:* Env `get()` self-time dropped 27% but net wall time regressed 2–10% across
+all benchmarks. No program improved.
+
+*Why it didn't help:*
+
+1. **Eucalypt's env depths are shallow (avg 2, max 4–5).** At depth 1, the flat capture
+   path (two loads: capture array + source frame) costs roughly the same as the cactus
+   path (one chase + one index). Flat only wins at depth ≥ 3 (4% of accesses).
+
+2. **Universal overhead.** Every frame creation pays the capture-recipe tax (resolve
+   instructions, allocate capture array) even for 0-capture closures (28–50% of all
+   closures). The savings on env lookup were entirely eaten by the creation cost.
+
+3. **Wider dispatch degraded branch prediction.** Adding `Ref::Local`/`Ref::Capture`
+   variants alongside `Ref::L` widened the hot dispatch match in `handle_instruction`,
+   increasing `handle_instruction` self-time by 12%.
+
+*Implementation issues (not fundamental):* The extra `Ref` variant branching could be
+eliminated by fully replacing `Ref::L` rather than adding alongside. The recipe tax
+could be avoided for 0-capture closures with a fast path. A selective approach (only
+flatten depth ≥ 3) would eliminate most overhead but also most benefit. These leave
+room for a revisit with a different implementation strategy.
+
+*What the 69% self-time actually is:* At avg depth 2, the pointer chase is only ~2
+loads per access — similar to any alternative representation. The 69% comes from the
+sheer FREQUENCY of env access (billions of calls), not from per-access cost. Reducing
+the frequency (register-like caching, better inlining) would be more impactful than
+changing the representation.
+
+*Archived:* `archive/flat-closures` branch. Spec at
+`docs/superpowers/specs/2026-06-21-flat-closures.md`. FV data: avg 1.0 free vars per
+closure, max 5, strongly bimodal (0 or 2).
+
 #### W11. Strictness & demand analysis
 
 **Problem.** Every `let`-binding reaching the STG compiler without a WHNF witness is
