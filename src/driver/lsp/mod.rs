@@ -1121,7 +1121,9 @@ fn spawn_pipeline(
     tx: mpsc::Sender<PipelineResult>,
     cancel: Arc<AtomicBool>,
 ) {
-    std::thread::spawn(move || {
+    std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024) // 64 MiB, matching the main thread
+        .spawn(move || {
         // Debounce: wait 300ms before starting the pipeline.
         std::thread::sleep(Duration::from_millis(300));
         if cancel.load(Ordering::SeqCst) {
@@ -1134,7 +1136,8 @@ fn spawn_pipeline(
         }
 
         let _ = tx.send(PipelineResult { uri, result });
-    });
+    })
+    .expect("failed to spawn LSP pipeline thread");
 }
 
 /// Run the full SourceLoader pipeline on the given document text.
