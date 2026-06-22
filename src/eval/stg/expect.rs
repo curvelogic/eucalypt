@@ -17,7 +17,7 @@ use crate::eval::{
     stg::support::{machine_return_bool, str_arg},
 };
 
-use super::{debug::render_debug_repr, tags::DataConstructor};
+use super::{debug::render_debug_repr_forced, tags::DataConstructor};
 
 /// Resolve a strict bool argument to a Rust bool.
 ///
@@ -85,7 +85,7 @@ impl StgIntrinsic for Expect {
             machine.set_closure(closure)
         } else {
             let expected_repr = str_arg(machine, view, &args[1])?;
-            let actual_repr = render_debug_repr(machine, view, &args[0]);
+            let actual_repr = render_debug_repr_forced(machine, view, &args[0]);
             eprintln!("EXPECT FAILED: expected {expected_repr}, got {actual_repr}");
 
             if machine.test_mode() {

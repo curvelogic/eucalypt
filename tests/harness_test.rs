@@ -2479,6 +2479,23 @@ pub fn test_error_175() {
 }
 
 #[test]
+/// Assertion failure on an interpolated string used to show `<string>` instead
+/// of the actual string value in the EXPECT FAILED message (eu-kw67).
+/// After the fix, `render_debug_repr_forced` evaluates the inner thunk and
+/// shows the real string.
+pub fn test_error_176() {
+    run_error_test(&error_opts("error_176.eu"));
+}
+
+#[test]
+/// Assertion failure diagnostic used to show the prelude `//=` definition
+/// as the primary source location (eu-4qy4).  After the fix, when no
+/// user-file source location is available, the prelude label is suppressed.
+pub fn test_error_177() {
+    run_error_test(&error_opts("error_177.eu"));
+}
+
+#[test]
 /// Exporting a JSON u64 value exceeding i64::MAX to YAML should produce an
 /// informative panic message including the value, not a bare "unrenderable number".
 pub fn test_error_171() {

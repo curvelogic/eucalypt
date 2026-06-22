@@ -202,6 +202,162 @@ fn extract_native(
     }
 }
 
+/// Extract a native value from a ref, forcing unevaluated thunks via
+/// `evaluate_to_whnf` when the cheap path fails.
+///
+/// This is the forcing variant of `extract_native`, used when rendering
+/// actual values in assertion failure messages.  It evaluates inner thunks
+/// that `extract_native` cannot reach — for example, the string
+/// concatenation BIF application inside an interpolated `BoxedString`.
+fn extract_native_forced(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    env: &crate::eval::machine::env::EnvFrame,
+    r: &Ref,
+) -> Option<Native> {
+    // Fast path: cheap extraction succeeds.
+    if let Some(n) = extract_native(view, env, r) {
+        return Some(n);
+    }
+
+    // Slow path: resolve the closure and force it to WHNF.
+    let closure = match r {
+        Ref::L(idx) => env.get(&view, *idx)?,
+        Ref::G(idx) => machine.nav(view).global(*idx).ok()?,
+        Ref::V(_) => return None, // already tried in fast path
+    };
+
+    let forced = machine.evaluate_to_whnf(closure).ok()?;
+    let forced_code = view.scoped(forced.code());
+    match &*forced_code {
+        HeapSyn::Atom {
+            evaluand: Ref::V(n),
+        } => Some(n.clone()),
+        _ => None,
+    }
+}
+
+/// Render an inner argument ref as a debug string, forcing thunks if needed.
+fn render_inner_forced(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    env: &crate::eval::machine::env::EnvFrame,
+    r: &Ref,
+) -> Option<String> {
+    let native = extract_native_forced(machine, view, env, r)?;
+    Some(render_native(&native, view, machine))
+}
+
+/// Render an inner string arg with surrounding double quotes, forcing thunks.
+fn render_inner_quoted_forced(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    env: &crate::eval::machine::env::EnvFrame,
+    r: &Ref,
+) -> Option<String> {
+    let native = extract_native_forced(machine, view, env, r)?;
+    match &native {
+        Native::Str(s) => {
+            let scoped = view.scoped(*s);
+            Some(format!("{:?}", (*scoped).as_str()))
+        }
+        _ => Some(render_native(&native, view, machine)),
+    }
+}
+
+/// Render an inner symbol arg with `:` prefix, forcing thunks.
+fn render_inner_symbol_forced(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    env: &crate::eval::machine::env::EnvFrame,
+    r: &Ref,
+) -> Option<String> {
+    let native = extract_native_forced(machine, view, env, r)?;
+    match &native {
+        Native::Sym(id) => Some(format!(":{}", machine.symbol_pool().resolve(*id))),
+        _ => Some(render_native(&native, view, machine)),
+    }
+}
+
+/// Render a eucalypt value from a resolved closure, forcing inner thunks.
+///
+/// Unlike `render_debug_repr_closure`, this variant evaluates unevaluated
+/// inner refs (e.g. the string concat thunk inside a `BoxedString` produced
+/// by string interpolation) via `evaluate_to_whnf`.  Use this in contexts
+/// where `&mut dyn IntrinsicMachine` is available (intrinsic `execute` methods).
+fn render_debug_repr_closure_forced(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    closure: crate::eval::machine::env::SynClosure,
+) -> String {
+    let code = view.scoped(closure.code());
+    let env = view.scoped(closure.env());
+
+    match &*code {
+        HeapSyn::Cons { tag, args } => {
+            let dc: Result<DataConstructor, _> = (*tag).try_into();
+            match dc {
+                Ok(DataConstructor::BoolTrue) => "true".to_string(),
+                Ok(DataConstructor::BoolFalse) => "false".to_string(),
+                Ok(DataConstructor::Unit) => "null".to_string(),
+                Ok(DataConstructor::ListNil) => "[]".to_string(),
+                Ok(DataConstructor::ListCons) => "[list]".to_string(),
+                Ok(DataConstructor::Block)
+                | Ok(DataConstructor::BlockPair)
+                | Ok(DataConstructor::BlockKvList) => "{block}".to_string(),
+                Ok(DataConstructor::BoxedNumber) => args
+                    .get(0)
+                    .and_then(|inner| render_inner_forced(machine, view, &env, &inner))
+                    .unwrap_or_else(|| "<number>".to_string()),
+                Ok(DataConstructor::BoxedString) => args
+                    .get(0)
+                    .and_then(|inner| render_inner_quoted_forced(machine, view, &env, &inner))
+                    .unwrap_or_else(|| "<string>".to_string()),
+                Ok(DataConstructor::BoxedSymbol) => args
+                    .get(0)
+                    .and_then(|inner| render_inner_symbol_forced(machine, view, &env, &inner))
+                    .unwrap_or_else(|| "<symbol>".to_string()),
+                Ok(DataConstructor::BoxedZdt) => args
+                    .get(0)
+                    .and_then(|inner| render_inner_forced(machine, view, &env, &inner))
+                    .unwrap_or_else(|| "<datetime>".to_string()),
+                Ok(DataConstructor::BoxedTypeData) => args
+                    .get(0)
+                    .and_then(|inner| render_inner_quoted_forced(machine, view, &env, &inner))
+                    .unwrap_or_else(|| "<type-data>".to_string()),
+                Ok(DataConstructor::IoReturn) => "<io-return>".to_string(),
+                Ok(DataConstructor::IoBind) => "<io-bind>".to_string(),
+                Ok(DataConstructor::IoAction) => "<io-action>".to_string(),
+                Ok(DataConstructor::IoFail) => "<io-fail>".to_string(),
+                Ok(DataConstructor::Clause) => "<clause>".to_string(),
+                Err(_) => "<value>".to_string(),
+            }
+        }
+        HeapSyn::Atom {
+            evaluand: Ref::V(n),
+        } => render_native(n, view, machine),
+        _ => "<unevaluated>".to_string(),
+    }
+}
+
+/// Render a eucalypt value to a compact debug string, forcing inner thunks.
+///
+/// This is the forcing variant of `render_debug_repr`, suitable for use in
+/// intrinsic `execute` methods (which have `&mut dyn IntrinsicMachine` access).
+/// It evaluates lazy inner refs (e.g. string interpolation results inside a
+/// `BoxedString`) via `evaluate_to_whnf`, so the rendered output is accurate
+/// rather than showing `<string>` or `<number>` for lazy scalar values.
+pub fn render_debug_repr_forced(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    r: &Ref,
+) -> String {
+    match machine.nav(view).resolve(r) {
+        Ok(closure) => render_debug_repr_closure_forced(machine, view, closure),
+        Err(_) => "<error>".to_string(),
+    }
+}
+
 /// `__DBG_REPR(value)` — render any value to a compact debug string.
 ///
 /// Used as the shared foundation by both debug tracing functions and
