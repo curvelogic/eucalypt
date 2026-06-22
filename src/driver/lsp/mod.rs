@@ -1346,7 +1346,7 @@ fn run_pipeline(
         }
     }
 
-    let (_, source_map, _) = loader.complete();
+    let (_, source_map, _, _, _) = loader.complete();
 
     // Merge pre-elimination aliases with post-elimination aliases.
     // Post-elimination aliases (from the type-check pass) take priority

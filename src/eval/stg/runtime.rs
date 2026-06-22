@@ -71,6 +71,26 @@ pub struct StandardRuntime {
     /// Empty string for any slot whose name is not recorded.  Used by
     /// `dump runtime` to label prelude global slots.
     prelude_names: Vec<String>,
+
+    /// Per-slot overrides for pre-compiled prelude globals, stored in arena form.
+    ///
+    /// Each entry is `(slot, nodes, forms, entry_form_idx)` where:
+    /// - `slot` is the zero-based prelude slot index (the index into
+    ///   `prelude_binding_entries`, *not* the full `Ref::G` slot number)
+    /// - `nodes` / `forms` / `entry_form_idx` are a self-contained arena for
+    ///   the override `LambdaForm` (reconstructed on demand in `globals()`)
+    ///
+    /// Arena form (`ArenaStgSyn` / `ArenaLambdaForm`) does not contain `Rc`
+    /// and is therefore `Sync`, satisfying the `Runtime: Sync` bound.
+    ///
+    /// Used to replace stale `__args` / `__io` blob globals with freshly-
+    /// constructed runtime values.
+    prelude_slot_overrides: Vec<(
+        usize,
+        Vec<crate::eval::stg::arena::ArenaStgSyn>,
+        Vec<crate::eval::stg::arena::ArenaLambdaForm>,
+        crate::eval::stg::arena::FormIdx,
+    )>,
 }
 
 impl Default for StandardRuntime {
@@ -86,6 +106,7 @@ impl Default for StandardRuntime {
             prelude_forms_pool: Vec::new(),
             prelude_binding_entries: Vec::new(),
             prelude_names: Vec::new(),
+            prelude_slot_overrides: Vec::new(),
         }
     }
 }
@@ -119,6 +140,27 @@ impl StandardRuntime {
     pub fn add(&mut self, imp: Box<dyn StgIntrinsic>) {
         let index = imp.index();
         self.impls[index] = imp;
+    }
+
+    /// Override a single pre-compiled prelude global with a freshly-compiled
+    /// `LambdaForm`.
+    ///
+    /// `slot` is the zero-based prelude slot index (i.e. the value stored in
+    /// `blob.name_to_slot`, *not* the full `Ref::G` index).  When `globals()`
+    /// iterates `prelude_binding_entries`, it checks this list first and uses
+    /// the override if present.
+    ///
+    /// The `LambdaForm` is immediately flattened into an arena so that the
+    /// `StandardRuntime` remains `Sync` (arena types contain no `Rc`).
+    ///
+    /// This is used to replace stale `__args` / `__io` blob globals with
+    /// forms that reflect the actual runtime argument list and environment.
+    pub fn set_prelude_slot_override(&mut self, slot: usize, form: LambdaForm) {
+        use crate::eval::stg::arena::StgArena;
+        let mut arena = StgArena::default();
+        let entry_idx = arena.flatten_form(&form);
+        self.prelude_slot_overrides
+            .push((slot, arena.nodes, arena.forms, entry_idx));
     }
 }
 
@@ -221,7 +263,33 @@ impl Runtime for StandardRuntime {
                 nodes: self.prelude_nodes.clone(),
                 forms: self.prelude_forms_pool.clone(),
             };
-            for &entry_idx in &self.prelude_binding_entries {
+            for (i, &entry_idx) in self.prelude_binding_entries.iter().enumerate() {
+                // Use the runtime override when present (e.g. for `__args` /
+                // `__io` whose blob-baked values are stale at runtime).
+                if let Some(override_form) = self
+                    .prelude_slot_overrides
+                    .iter()
+                    .find(|(slot, _, _, _)| *slot == i)
+                {
+                    let (_, ref nodes, ref forms, entry) = *override_form;
+                    let override_arena = StgArena {
+                        nodes: nodes.clone(),
+                        forms: forms.clone(),
+                    };
+                    match override_arena.reconstruct_form(entry) {
+                        Ok(form) => {
+                            gs.push(form);
+                            continue;
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "warning: corrupt override for prelude slot {i} ({}), \
+                                 using blob value",
+                                e
+                            );
+                        }
+                    }
+                }
                 match arena.reconstruct_form(entry_idx) {
                     Ok(form) => gs.push(form),
                     Err(e) => {
