@@ -19,10 +19,6 @@ All notable changes to eucalypt are documented here.
 - **Prelude blob gitignored** — the blob is a build optimisation, not source; build falls back to source-prelude mode when absent
 - **`io.args` / `io.env` integration tests** — 10 binary-level tests verifying runtime pseudo-inputs work correctly with the prelude blob
 
-### Changed
-
-- **AtMostOnce update elision** — re-enabled with rendered-block fixup forcing Multi on scopes whose body is a Block constructor, preventing unsound skip-update for bindings entered multiple times by the render traversal
-
 ### Fixed
 
 - **Blob prelude stale `io.args` / `io.RANDOM_SEED`** — the pre-compiled prelude blob baked `__args` and `__io` pseudo-inputs with empty/default values at blob compilation time, so `io.args`, `io.RANDOM_SEED`, `io.epoch-time`, and `io.env` returned stale data at runtime. The executor now compiles fresh override `LambdaForm`s for these slots from the actual command-line arguments and seed (#897)
