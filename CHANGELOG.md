@@ -2,7 +2,7 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.10.0] - Unreleased
+## [0.10.0] - 2026-06-22
 
 ### Added
 
@@ -17,6 +17,7 @@ All notable changes to eucalypt are documented here.
 - **Namespace lambda hoisting** — namespace members (str, cal, vec) hoisted to top level for inlining, including in blob pipeline
 - **Dev version clarity** — dev builds now report `v0.0.0.dev` instead of a stale version number
 - **Prelude blob gitignored** — the blob is a build optimisation, not source; build falls back to source-prelude mode when absent
+- **`io.args` / `io.env` integration tests** — 10 binary-level tests verifying runtime pseudo-inputs work correctly with the prelude blob
 
 ### Changed
 
@@ -24,6 +25,12 @@ All notable changes to eucalypt are documented here.
 
 ### Fixed
 
+- **Blob prelude stale `io.args` / `io.RANDOM_SEED`** — the pre-compiled prelude blob baked `__args` and `__io` pseudo-inputs with empty/default values at blob compilation time, so `io.args`, `io.RANDOM_SEED`, `io.epoch-time`, and `io.env` returned stale data at runtime. The executor now compiles fresh override `LambdaForm`s for these slots from the actual command-line arguments and seed (#897)
+- **Assertion failure `<string>` display** — `//=` failures on interpolated strings showed `<string>` instead of the actual value. `render_debug_repr_forced` now evaluates inner thunks via `evaluate_to_whnf` (#898)
+- **Assertion failure source location** — `//=` failure diagnostics pointed at the prelude's `//=` definition rather than user code. When no user-file location is available, the prelude label is now suppressed (#898)
+- **Type checker µ-type cycle** — `is_consistent` entered infinite recursion on mutually recursive µ-types. Added coinductive cycle detection with a pending-pair set (#896)
+- **LSP stack overflow** — pipeline threads could overflow on deeply nested expressions; now use 64 MiB stacks
+- **Prelude demand signatures** — `cons` was incorrectly marked strict, forcing list spines eagerly and causing stack overflows on large lists (P0)
 - **HeapNavigator hot-path overhead** — `ok_or(ExecutionError)` replaced with `match` to avoid constructing/dropping error values on the success path. -20% mutator CPU
 - **HeapNavigator inlining** — `#[inline(always)]` on `get`/`global` eliminates call overhead + register spills. ~3-7% wall time improvement
 - **Array::push overhead** — redundant bounds check and Option unwrap eliminated in pre-allocated push path. -4.5-6% wall time
