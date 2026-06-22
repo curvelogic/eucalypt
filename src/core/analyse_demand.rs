@@ -169,8 +169,10 @@ pub fn build_prelude_signatures() -> HashMap<String, DemandSignature> {
     sigs.insert("sum".into(), vec![sm()]);
     // product(l): list traversed
     sigs.insert("product".into(), vec![sm()]);
-    // cons(h, t): both needed to construct
-    sigs.insert("cons".into(), vec![sm(), sm()]);
+    // cons(h, t): lazy in both — wraps __CONS which does not force args.
+    // Strictness here would cause infinite forcing for recursive list
+    // construction (iterate, map, scanl, etc.) over infinite lists.
+    sigs.insert("cons".into(), vec![lm(), lm()]);
     // snoc(x, l): both needed
     sigs.insert("snoc".into(), vec![sm(), sm()]);
     // mapcat(f, l): catenation applied via compose, but f is strict
