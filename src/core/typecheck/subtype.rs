@@ -285,6 +285,14 @@ fn is_app_subtype(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
 
 /// Return `true` if types `s` and `t` are consistent (`s ~ t`).
 pub fn is_consistent(s: &Type, t: &Type) -> bool {
+    is_consistent_co(s, t, &mut Vec::new())
+}
+
+/// Coinductive consistency with an assumed-pairs set to handle equirecursive
+/// (µ) types.  When we encounter a `(s, t)` pair we have already assumed
+/// consistent, we return `true` — the coinductive interpretation is that
+/// recursive types are consistent unless a contradiction is found.
+fn is_consistent_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
     // Beta-reduce App(Lam(x, body), arg) before checking.
     let s_red;
     let t_red;
@@ -306,6 +314,12 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
         return true;
     }
 
+    // Coinductive base: if we have already assumed this pair consistent,
+    // no contradiction has been found so far — return true.
+    if assumed.iter().any(|(as_, at)| as_ == s && at == t) {
+        return true;
+    }
+
     // Literal type consistency.
     match (s, t) {
         (Type::LiteralSymbol(_), Type::Symbol)
@@ -322,13 +336,19 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
         // ── Mu ─────────────────────────────────────────────────────────────
         (Type::Mu(x, body), _) => {
             let mu = s.clone();
+            assumed.push((s.clone(), t.clone()));
             let unfolded = unfold_mu(x, body, &mu);
-            is_consistent(&unfolded, t)
+            let result = is_consistent_co(&unfolded, t, assumed);
+            assumed.pop();
+            result
         }
         (_, Type::Mu(x, body)) => {
             let mu = t.clone();
+            assumed.push((s.clone(), t.clone()));
             let unfolded = unfold_mu(x, body, &mu);
-            is_consistent(s, &unfolded)
+            let result = is_consistent_co(s, &unfolded, assumed);
+            assumed.pop();
+            result
         }
 
         // ── Constructor application ──────────────────────────────────────────
@@ -345,23 +365,26 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
         (Type::App(f, _), _) if matches!(&**f, Type::Var(_, _)) => true,
         // Symmetric: right head is an unresolved HKT variable.
         (_, Type::App(f, _)) if matches!(&**f, Type::Var(_, _)) => true,
-        (Type::App(_, _), Type::App(_, _)) => is_app_consistent(s, t),
+        (Type::App(_, _), Type::App(_, _)) => is_app_consistent_co(s, t, assumed),
 
         // ── Tuple ─────────────────────────────────────────────────────────────
-        (Type::Tuple(as_), Type::Tuple(bs)) if as_.len() == bs.len() => {
-            as_.iter().zip(bs.iter()).all(|(a, b)| is_consistent(a, b))
-        }
+        (Type::Tuple(as_), Type::Tuple(bs)) if as_.len() == bs.len() => as_
+            .iter()
+            .zip(bs.iter())
+            .all(|(a, b)| is_consistent_co(a, b, assumed)),
         (Type::Tuple(elems), _) if s_is_app_con(t, "NonEmpty") => {
             let b = t.as_non_empty().unwrap();
-            !elems.is_empty() && elems.iter().all(|e| is_consistent(e, b))
+            !elems.is_empty() && elems.iter().all(|e| is_consistent_co(e, b, assumed))
         }
         (_, Type::Tuple(elems)) if s_is_app_con(s, "NonEmpty") => {
             let a = s.as_non_empty().unwrap();
-            !elems.is_empty() && elems.iter().all(|e| is_consistent(a, e))
+            !elems.is_empty() && elems.iter().all(|e| is_consistent_co(a, e, assumed))
         }
 
         // ── Function ─────────────────────────────────────────────────────────
-        (Type::Function(a, b), Type::Function(c, d)) => is_consistent(c, a) && is_consistent(b, d),
+        (Type::Function(a, b), Type::Function(c, d)) => {
+            is_consistent_co(c, a, assumed) && is_consistent_co(b, d, assumed)
+        }
 
         // ── Record ─────────────────────────────────────────────────────────
         (
@@ -380,7 +403,7 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
             let shared_ok = t_fields
                 .iter()
                 .all(|(name, t_ty)| match s_fields.get(name) {
-                    Some(s_ty) => is_consistent(s_ty, t_ty),
+                    Some(s_ty) => is_consistent_co(s_ty, t_ty, assumed),
                     None => s_is_open,
                 });
             if !shared_ok {
@@ -394,24 +417,24 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
 
         // Dict consistency.
         (s, t) if s_is_app_con(s, "Dict") && s_is_app_con(t, "Dict") => {
-            is_consistent(s.as_dict().unwrap(), t.as_dict().unwrap())
+            is_consistent_co(s.as_dict().unwrap(), t.as_dict().unwrap(), assumed)
         }
         (Type::Record { fields, .. }, t) if s_is_app_con(t, "Dict") => {
             let b = t.as_dict().unwrap();
-            fields.values().all(|v| is_consistent(v, b))
+            fields.values().all(|v| is_consistent_co(v, b, assumed))
         }
         (s, Type::Record { fields, .. }) if s_is_app_con(s, "Dict") => {
             let a = s.as_dict().unwrap();
-            fields.values().all(|v| is_consistent(a, v))
+            fields.values().all(|v| is_consistent_co(a, v, assumed))
         }
 
         // ── Union ──────────────────────────────────────────────────────────
-        (Type::Union(vs), t) => vs.iter().any(|v| is_consistent(v, t)),
-        (s, Type::Union(vs)) => vs.iter().any(|v| is_consistent(s, v)),
+        (Type::Union(vs), t) => vs.iter().any(|v| is_consistent_co(v, t, assumed)),
+        (s, Type::Union(vs)) => vs.iter().any(|v| is_consistent_co(s, v, assumed)),
 
         // ── Forall ────────────────────────────────────────────────────────
-        (Type::Forall(_, body_s), t) => is_consistent(body_s, t),
-        (s, Type::Forall(_, body_t)) => is_consistent(s, body_t),
+        (Type::Forall(_, body_s), t) => is_consistent_co(body_s, t, assumed),
+        (s, Type::Forall(_, body_t)) => is_consistent_co(s, body_t, assumed),
 
         // ── Lam — type-level lambda ───────────────────────────────────────
         // A Lam in isolation (not beta-reduced away by the App check above)
@@ -429,27 +452,27 @@ pub fn is_consistent(s: &Type, t: &Type) -> bool {
 }
 
 /// Consistency for App types.
-fn is_app_consistent(s: &Type, t: &Type) -> bool {
+fn is_app_consistent_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
     // Two-arg.
     if let (Some((sn, sa, sb)), Some((tn, ta, tb))) = (s.as_applied_two(), t.as_applied_two()) {
         if sn == tn {
-            return is_consistent(sa, ta) && is_consistent(sb, tb);
+            return is_consistent_co(sa, ta, assumed) && is_consistent_co(sb, tb, assumed);
         }
         if sn == "Lens" && tn == "Traversal" {
-            return is_consistent(sa, ta) && is_consistent(sb, tb);
+            return is_consistent_co(sa, ta, assumed) && is_consistent_co(sb, tb, assumed);
         }
         if sn == "Traversal" && tn == "Lens" {
-            return is_consistent(sa, ta) && is_consistent(sb, tb);
+            return is_consistent_co(sa, ta, assumed) && is_consistent_co(sb, tb, assumed);
         }
     }
 
     // Single-arg.
     if let (Some((sn, si)), Some((tn, ti))) = (s.as_applied_single(), t.as_applied_single()) {
         if sn == tn {
-            return is_consistent(si, ti);
+            return is_consistent_co(si, ti, assumed);
         }
         if (sn == "NonEmpty" && tn == "List") || (sn == "List" && tn == "NonEmpty") {
-            return is_consistent(si, ti);
+            return is_consistent_co(si, ti, assumed);
         }
     }
 
@@ -1111,5 +1134,85 @@ mod tests {
     fn hkt_list_covariance_via_app() {
         // [never] <: [number] via App covariance
         assert!(is_subtype(&list(Type::Never), &list(Type::Number)));
+    }
+
+    // ── Recursive (Mu) type consistency ─────────────────────────────────────
+
+    /// Helper: build µX. {a: X}
+    fn mu_record_self_ref() -> Type {
+        let x = TypeVarId("X".to_string());
+        Type::Mu(
+            x.clone(),
+            Box::new(closed(&[("a", Type::Var(x, Kind::Star))])),
+        )
+    }
+
+    #[test]
+    fn mu_consistent_with_itself() {
+        // µX. {a: X} ~ µX. {a: X}  — must terminate
+        let mu = mu_record_self_ref();
+        assert!(is_consistent(&mu, &mu));
+    }
+
+    #[test]
+    fn mu_consistent_with_wider_open_record() {
+        // µX. {a: X, b: Num, ...} ~ µY. {a: Y, ...}
+        // Open records with width subtyping — wider is subtype of narrower.
+        let x = TypeVarId("X".to_string());
+        let y = TypeVarId("Y".to_string());
+        let mu_wide = Type::Mu(
+            x.clone(),
+            Box::new(open(&[
+                ("a", Type::Var(x.clone(), Kind::Star)),
+                ("b", Type::Number),
+            ])),
+        );
+        let mu_narrow = Type::Mu(
+            y.clone(),
+            Box::new(open(&[("a", Type::Var(y, Kind::Star))])),
+        );
+        assert!(is_consistent(&mu_wide, &mu_narrow));
+        assert!(is_consistent(&mu_narrow, &mu_wide));
+    }
+
+    #[test]
+    fn mu_subtype_reflexive() {
+        // µX. {a: X} <: µX. {a: X}  — must terminate
+        let mu = mu_record_self_ref();
+        assert!(is_subtype(&mu, &mu));
+    }
+
+    #[test]
+    fn mu_consistent_with_any() {
+        let mu = mu_record_self_ref();
+        assert!(is_consistent(&mu, &Type::Any));
+        assert!(is_consistent(&Type::Any, &mu));
+    }
+
+    #[test]
+    fn mu_function_consistent_with_itself() {
+        // µX. (X → Num) ~ µX. (X → Num)  — recursive function type
+        let x = TypeVarId("X".to_string());
+        let mu = Type::Mu(
+            x.clone(),
+            Box::new(func(Type::Var(x, Kind::Star), Type::Number)),
+        );
+        assert!(is_consistent(&mu, &mu));
+    }
+
+    #[test]
+    fn mu_both_sides_recursive() {
+        // µX. {a: X} ~ µY. {a: Y}  — two distinct but structurally identical µ-types
+        let x = TypeVarId("X".to_string());
+        let y = TypeVarId("Y".to_string());
+        let mu_x = Type::Mu(
+            x.clone(),
+            Box::new(closed(&[("a", Type::Var(x, Kind::Star))])),
+        );
+        let mu_y = Type::Mu(
+            y.clone(),
+            Box::new(closed(&[("a", Type::Var(y, Kind::Star))])),
+        );
+        assert!(is_consistent(&mu_x, &mu_y));
     }
 }
