@@ -285,6 +285,7 @@ impl<'guard> StgBuilder<'guard> for MutatorHeapView<'guard> {
         self.alloc(HeapSyn::Let {
             bindings,
             body: body.as_ptr(),
+            capture_recipe: Array::default(),
         })
     }
 
@@ -297,6 +298,7 @@ impl<'guard> StgBuilder<'guard> for MutatorHeapView<'guard> {
         self.alloc(HeapSyn::LetRec {
             bindings,
             body: body.as_ptr(),
+            capture_recipe: Array::default(),
         })
     }
 

@@ -56,6 +56,7 @@ impl Mutator for Initialiser<'_> {
             load_lambdavec(view, &mut pool, self.runtime.globals().as_slice())
                 .unwrap()
                 .as_slice(),
+            &[],
             root_env,
             Smid::default(),
         );

@@ -54,6 +54,7 @@ pub trait EnvBuilder {
     fn from_let(
         &self,
         bindings: &[LambdaForm],
+        recipe: &[CaptureInstruction],
         next: RefPtr<EnvFrame>,
         annotation: Smid,
     ) -> Result<RefPtr<EnvFrame>, ExecutionError>;
@@ -62,6 +63,7 @@ pub trait EnvBuilder {
     fn from_letrec(
         &self,
         bindings: &[LambdaForm],
+        recipe: &[CaptureInstruction],
         next: RefPtr<EnvFrame>,
         annotation: Smid,
     ) -> Result<RefPtr<EnvFrame>, ExecutionError>;
@@ -171,20 +173,31 @@ impl EnvBuilder for MutatorHeapView<'_> {
     fn from_let(
         &self,
         bindings: &[LambdaForm],
+        recipe: &[CaptureInstruction],
         next: RefPtr<EnvFrame>,
         annotation: Smid,
     ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
+        let captures = resolve_captures(self, recipe, next);
         let closures = bindings.iter().map(|lf| SynClosure::close(lf, next));
-        self.from_closures(closures, bindings.len(), next, annotation)
+        let mut array = Array::with_capacity(self, bindings.len());
+        for c in closures {
+            array.push(self, c)
+        }
+
+        Ok(self
+            .alloc(EnvFrame::new(array, captures, annotation, Some(next)))?
+            .as_ptr())
     }
 
     /// "Allocate" let bindings in a new env
     fn from_letrec(
         &self,
         bindings: &[LambdaForm],
+        recipe: &[CaptureInstruction],
         next: RefPtr<EnvFrame>,
         annotation: Smid,
     ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
+        let captures = resolve_captures(self, recipe, next);
         let mut array = Array::with_capacity(self, bindings.len());
         for _ in 0..bindings.len() {
             array.push(
@@ -196,7 +209,7 @@ impl EnvBuilder for MutatorHeapView<'_> {
         let frame = self
             .alloc(EnvFrame::new(
                 array.clone(),
-                Array::default(),
+                captures,
                 annotation,
                 Some(next),
             ))?

@@ -125,9 +125,6 @@ fn resolve_ref_with_globals(
                 .as_ptr();
             Ok(SynClosure::new(atom_ptr, parent.env()))
         }
-        Ref::Local(_) | Ref::Capture(_) => {
-            todo!("flat closure ref resolution")
-        }
         Ref::G(i) => {
             if let Some(g) = globals {
                 let genv = view.scoped(g);
@@ -335,11 +332,16 @@ fn block_list_inner(view: &MutatorHeapView<'_>, c: SynClosure, depth: usize) -> 
         }
         // A thunk-wrapped LetRec or Let: peek at the body to find the Block.
         // We build the env frame and look at the body code statically.
-        HeapSyn::LetRec { bindings, body } => {
+        HeapSyn::LetRec {
+            bindings,
+            body,
+            capture_recipe,
+        } => {
             use crate::eval::machine::env_builder::EnvBuilder;
             let env = view
                 .from_letrec(
                     bindings.as_slice(),
+                    capture_recipe.as_slice(),
                     c.env(),
                     crate::common::sourcemap::Smid::default(),
                 )
@@ -348,11 +350,16 @@ fn block_list_inner(view: &MutatorHeapView<'_>, c: SynClosure, depth: usize) -> 
             let body_deref = deref(view, body_closure);
             block_list_inner(view, body_deref, depth - 1)
         }
-        HeapSyn::Let { bindings, body } => {
+        HeapSyn::Let {
+            bindings,
+            body,
+            capture_recipe,
+        } => {
             use crate::eval::machine::env_builder::EnvBuilder;
             let env = view
                 .from_let(
                     bindings.as_slice(),
+                    capture_recipe.as_slice(),
                     c.env(),
                     crate::common::sourcemap::Smid::default(),
                 )

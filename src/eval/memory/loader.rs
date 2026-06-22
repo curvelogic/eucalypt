@@ -115,8 +115,6 @@ fn stg_to_heap<'scope, T: ScopedAllocator<'scope>>(
         stg::syntax::Ref::V(stg::syntax::Native::Zdt(d)) => {
             memory::syntax::Ref::V(memory::syntax::Native::Zdt(*d))
         }
-        stg::syntax::Ref::Local(i) => memory::syntax::Ref::Local(*i),
-        stg::syntax::Ref::Capture(i) => memory::syntax::Ref::Capture(*i),
     }
 }
 
@@ -159,13 +157,23 @@ pub fn load<'scope, T: ScopedAllocator<'scope>>(
             intrinsic: *intrinsic,
             args: load_refvec(view, pool, args)?,
         }),
-        StgSyn::Let { bindings, body, .. } => view.alloc(HeapSyn::Let {
+        StgSyn::Let {
+            bindings,
+            body,
+            capture_recipe,
+        } => view.alloc(HeapSyn::Let {
             bindings: load_lambdavec(view, pool, bindings.as_slice())?,
             body: load(view, pool, body.clone())?,
+            capture_recipe: Array::from_slice(view, capture_recipe),
         }),
-        StgSyn::LetRec { bindings, body, .. } => view.alloc(HeapSyn::LetRec {
+        StgSyn::LetRec {
+            bindings,
+            body,
+            capture_recipe,
+        } => view.alloc(HeapSyn::LetRec {
             bindings: load_lambdavec(view, pool, bindings.as_slice())?,
             body: load(view, pool, body.clone())?,
+            capture_recipe: Array::from_slice(view, capture_recipe),
         }),
         StgSyn::Ann { smid, body } => view.alloc(HeapSyn::Ann {
             smid: *smid,

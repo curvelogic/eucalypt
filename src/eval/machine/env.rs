@@ -127,7 +127,6 @@ impl Closing<RefPtr<HeapSyn>> {
             Ref::G(_) => panic!("cannot navigate global"),
             Ref::Local(_) | Ref::Capture(_) => panic!("cannot navigate flat closure ref"),
             Ref::V(n) => return n,
-            Ref::Local(_) | Ref::Capture(_) => panic!("cannot navigate flat ref"),
         };
 
         let mut code_ptr = ScopedPtr::from_non_null(guard, closure.code());
@@ -138,7 +137,6 @@ impl Closing<RefPtr<HeapSyn>> {
                 Ref::G(_) => panic!("cannot navigate global"),
                 Ref::Local(_) | Ref::Capture(_) => panic!("cannot navigate flat closure ref"),
                 Ref::V(n) => return n.clone(),
-                Ref::Local(_) | Ref::Capture(_) => panic!("cannot navigate flat ref"),
             };
 
             code_ptr = ScopedPtr::from_non_null(guard, closure.code());

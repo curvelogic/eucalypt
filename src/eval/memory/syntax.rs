@@ -3,7 +3,7 @@
 
 use crate::common::sourcemap::Smid;
 
-use crate::eval::{error::ExecutionError, stg::tags::Tag};
+use crate::eval::{error::ExecutionError, stg::syntax::CaptureInstruction, stg::tags::Tag};
 use chrono::{DateTime, FixedOffset};
 use serde_json::Number;
 use std::{collections::HashMap, fmt, ptr::NonNull, rc::Rc};
@@ -259,11 +259,15 @@ pub enum HeapSyn {
     Let {
         bindings: Array<LambdaForm>,
         body: RefPtr<HeapSyn>,
+        /// Flat-closure capture recipe for the Let frame.
+        capture_recipe: Array<CaptureInstruction>,
     },
     /// Recursive let bindings -
     LetRec {
         bindings: Array<LambdaForm>,
         body: RefPtr<HeapSyn>,
+        /// Flat-closure capture recipe for the LetRec frame.
+        capture_recipe: Array<CaptureInstruction>,
     },
     /// Call-stack / source location annotation
     Ann { smid: Smid, body: RefPtr<HeapSyn> },
@@ -480,7 +484,16 @@ impl GcScannable for HeapSyn {
                 }
                 mark_ref_array_heap_pointers(args, scope, marker, out);
             }
-            HeapSyn::Let { bindings, body } => {
+            HeapSyn::Let {
+                bindings,
+                body,
+                capture_recipe,
+            }
+            | HeapSyn::LetRec {
+                bindings,
+                body,
+                capture_recipe,
+            } => {
                 if marker.mark_array(bindings) {
                     // Push the backing allocation as a heap object so the
                     // evacuation loop calls try_evacuate on it.  See the
@@ -496,23 +509,15 @@ impl GcScannable for HeapSyn {
                     }
                 }
 
-                if marker.mark(*body) {
-                    out.push(ScanPtr::from_non_null(scope, *body));
-                }
-            }
-            HeapSyn::LetRec { bindings, body } => {
-                if marker.mark_array(bindings) {
-                    // Push the backing allocation as a heap object so the
-                    // evacuation loop calls try_evacuate on it.  See the
-                    // same pattern in EnvFrame::scan for the full rationale.
-                    if let Some(backing_ptr) = bindings.allocated_data() {
+                // Mark the capture recipe backing array (no GC pointers
+                // inside CaptureInstruction, but the backing store itself
+                // lives on the GC heap and must be evacuated/forwarded).
+                if marker.mark_array(capture_recipe) {
+                    if let Some(backing_ptr) = capture_recipe.allocated_data() {
                         out.push(ScanPtr::from_non_null(
                             scope,
                             backing_ptr.cast::<OpaqueHeapBytes>(),
                         ));
-                    }
-                    for bindings in bindings.iter() {
-                        out.push(ScanPtr::new(scope, bindings));
                     }
                 }
 
@@ -619,7 +624,16 @@ impl GcScannable for HeapSyn {
                 }
                 update_ref_array_heap_pointers(args, heap);
             }
-            HeapSyn::Let { bindings, body } | HeapSyn::LetRec { bindings, body } => {
+            HeapSyn::Let {
+                bindings,
+                body,
+                capture_recipe,
+            }
+            | HeapSyn::LetRec {
+                bindings,
+                body,
+                capture_recipe,
+            } => {
                 // Update bindings backing ptr if the array was evacuated.
                 if let Some(old_ptr) = bindings.allocated_data() {
                     if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
@@ -630,6 +644,12 @@ impl GcScannable for HeapSyn {
                 }
                 for lf in bindings.iter_mut() {
                     lf.scan_and_update(heap);
+                }
+                // Update capture recipe backing ptr if evacuated.
+                if let Some(old_ptr) = capture_recipe.allocated_data() {
+                    if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                        unsafe { capture_recipe.set_backing_ptr(new_ptr.cast()) };
+                    }
                 }
                 if let Some(new) = heap.forwarded_to(*body) {
                     *body = new;
@@ -729,8 +749,6 @@ pub mod repr {
             memory::syntax::Ref::V(memory::syntax::Native::Producer(_)) => {
                 stg::syntax::Ref::V(stg::syntax::Native::Sym("<producer>".to_string()))
             }
-            memory::syntax::Ref::Local(i) => stg::syntax::Ref::Local(*i),
-            memory::syntax::Ref::Capture(i) => stg::syntax::Ref::Capture(*i),
         }
     }
 
@@ -825,15 +843,23 @@ impl Repr for ScopedPtr<'_, HeapSyn> {
                 intrinsic: *intrinsic,
                 args: repr::repr_refarray(self, args.clone()),
             }),
-            HeapSyn::Let { bindings, body } => Rc::new(StgSyn::Let {
+            HeapSyn::Let {
+                bindings,
+                body,
+                capture_recipe,
+            } => Rc::new(StgSyn::Let {
                 bindings: repr::repr_bindings(self, bindings.clone()),
                 body: ScopedPtr::from_non_null(self, *body).repr(),
-                capture_recipe: vec![],
+                capture_recipe: capture_recipe.as_slice().to_vec(),
             }),
-            HeapSyn::LetRec { bindings, body } => Rc::new(StgSyn::LetRec {
+            HeapSyn::LetRec {
+                bindings,
+                body,
+                capture_recipe,
+            } => Rc::new(StgSyn::LetRec {
                 bindings: repr::repr_bindings(self, bindings.clone()),
                 body: ScopedPtr::from_non_null(self, *body).repr(),
-                capture_recipe: vec![],
+                capture_recipe: capture_recipe.as_slice().to_vec(),
             }),
             HeapSyn::Ann { smid, body } => Rc::new(StgSyn::Ann {
                 smid: *smid,

@@ -68,18 +68,6 @@ impl fmt::Display for Native {
     }
 }
 
-/// An instruction in a capture recipe for building flat closure captures.
-///
-/// Used by the STG compiler to describe which variables from the enclosing
-/// scope a new closure should capture.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CaptureInstruction {
-    /// Copy capture entry at index `i` from the enclosing frame's captures.
-    CopyCapture(u16),
-    /// Capture the local at physical index `i` from the enclosing frame.
-    CaptureLocal(u16),
-}
-
 /// A reference into environments or a value.
 ///
 /// `L(n)` is a de Bruijn index into the local environment.
@@ -429,9 +417,14 @@ pub mod dsl {
         Rc::new(StgSyn::Cons { tag, args })
     }
 
-    /// Local ref
+    /// De Bruijn ref (chain-traversal)
     pub fn lref(index: usize) -> Ref {
         Reference::L(index)
+    }
+
+    /// Flat local ref (direct frame access)
+    pub fn flat_lref(index: usize) -> Ref {
+        Reference::Local(index as u16)
     }
 
     /// Global ref
@@ -444,9 +437,14 @@ pub mod dsl {
         Reference::V(n)
     }
 
-    /// Reference into environment
+    /// Atom with de Bruijn ref into environment
     pub fn local(index: usize) -> Rc<StgSyn> {
         atom(Reference::L(index))
+    }
+
+    /// Atom with flat local ref
+    pub fn flat_local(index: usize) -> Rc<StgSyn> {
+        atom(Reference::Local(index as u16))
     }
 
     /// Reference into globals
