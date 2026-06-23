@@ -21,6 +21,10 @@
           "named": true
         },
         {
+          "type": "bracket_expr",
+          "named": true
+        },
+        {
           "type": "name",
           "named": true
         },
@@ -75,6 +79,10 @@
       "types": [
         {
           "type": "block_argument",
+          "named": true
+        },
+        {
+          "type": "bracket_expr",
           "named": true
         },
         {
@@ -419,6 +427,10 @@
       "multiple": true,
       "required": true,
       "types": [
+        {
+          "type": "bracket_expr",
+          "named": true
+        },
         {
           "type": "list_argument",
           "named": true
