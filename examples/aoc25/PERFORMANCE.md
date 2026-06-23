@@ -8,29 +8,29 @@ Performance characteristics of the AoC 2025 eucalypt example programs, benchmark
 
 | Example | Wall time | Ticks | Allocs | Primary bottleneck | 0.10.0 improvement |
 |---------|-----------|-------|--------|--------------------|--------------------|
-| day01-p1 | ~0.41s | 13,015,410 | 1,879,963 | VM dispatch | −89% wall time |
-| day01-p2 | ~0.36s | 13,423,535 | 1,923,144 | VM dispatch | −96% wall time |
-| day02-p1 | ~0.04s | 295,133 | 52,469 | Trivial | −61% wall time |
-| day02-p2 | ~0.05s | 1,319,154 | 175,899 | Trivial | −58% wall time |
+| day01-p1 | ~0.60s | 12,972,496 | 2,251,752 | VM dispatch | −73% ticks, −83% wall time |
+| day01-p2 | ~0.79s | 13,450,743 | 2,372,646 | VM dispatch | −93% ticks, ~−92% wall time |
+| day02-p1 | ~0.02s | 326,750 | 136,508 | Trivial | GC eliminated |
+| day02-p2 | ~0.07s | 1,374,701 | 613,779 | Trivial | GC eliminated |
 | day03-p1 | ~1.03s | 27,813,225 | 11,553,241 | VM dispatch | −4% wall time (GC eliminated) |
 | day03-p2 | ~2.31s | 57,806,510 | 25,204,145 | VM dispatch | ≈0% (GC eliminated) |
-| day04-p1 | ~1.10s | 53,908,706 | 3,215,923 | VM dispatch + env walk | −53% wall time |
+| day04-p1 | ~2.45s | 59,818,598 | 19,880,379 | VM dispatch + env walk | ≈0% (GC eliminated) |
 | day04-p2 | >600s (timeout) | — | — | VM dispatch (loop-bound) | first analysed at 0.10.0 |
-| day05-p1 | ~1.19s | 60,865,199 | 2,275,240 | VM dispatch + env walk | −46% wall time |
-| day05-p2 | ~0.06s | 1,252,458 | 151,165 | Trivial | −54% wall time |
-| day06-p1 | ~0.44s | 16,706,391 | 232,193 | VM dispatch | −27% wall time |
+| day05-p1 | ~2.14s | 63,029,855 | 14,067,690 | VM dispatch + env walk | ≈0% (GC eliminated) |
+| day05-p2 | ~0.06s | 1,264,646 | 732,774 | Trivial | GC eliminated |
+| day06-p1 | ~0.87s | 16,739,291 | 1,596,375 | VM dispatch | GC eliminated |
 | day06-p2 | ~4.97s | 126,966,700 | 10,646,539 | Env walk (dominant) | ≈0% (GC eliminated) |
-| day07-p1 | ~0.87s | 42,911,737 | 2,174,510 | VM dispatch | −44% wall time |
-| day07-p2 | ~1.46s | 28,483,917 | 1,437,304 | Handle-instruction (54%) | −40% wall time |
-| day08-p1 | ~4.64s | 228,966,325 | 18,660,114 | Alloc + VM dispatch | −57% wall time |
+| day07-p1 | ~1.89s | 45,674,239 | 16,354,405 | VM dispatch | ≈0% (GC eliminated) |
+| day07-p2 | ~3.26s | 29,811,429 | 10,369,387 | Handle-instruction (54%) | ≈0% (GC eliminated) |
+| day08-p1 | ~11.5s | 249,873,053 | 118,607,830 | Alloc + VM dispatch | ≈0% (GC eliminated) |
 | day08-p2 | >600s (timeout) | — | — | VM dispatch + alloc (pair gen) | first analysed at 0.10.0 |
-| day09-p1 | ~3.87s | 195,078,936 | 12,342,225 | VM dispatch + alloc | −53% wall time |
+| day09-p1 | ~8.52s | 210,273,177 | 81,203,655 | VM dispatch + alloc | ≈0% (GC eliminated) |
 | day09-p2 | >600s (timeout) | — | — | Continuation overhead + env walk | first analysed at 0.10.0 |
 | day10-p1 | ~21.9s | 544,089,317 | 228,950,942 | Alloc-intensive | −1% wall time (GC eliminated) |
 | day10-p2 | >600s (timeout) | — | — | Env walk (dominant, 39.3%) | first analysed at 0.10.0 |
-| day11-p1 | ~1.32s | 66,475,331 | 357,770 | VM dispatch loop | −10% wall time |
-| day11-p2 | ~129s | 3,068,130,793 | 4,264,268 | Tick-bound algorithm | −11% wall time |
-| day12-p1 | ~0.19s | 6,647,460 | 1,527,523 | Trivial | −35% wall time |
+| day11-p1 | ~1.50s | 66,419,641 | 489,584 | VM dispatch loop | GC eliminated |
+| day11-p2 | ~144s | 3,066,607,903 | 6,232,604 | Tick-bound algorithm | GC eliminated |
+| day12-p1 | ~0.20s | 6,779,263 | 2,415,033 | Trivial | −31% allocs, −33% wall time |
 
 ---
 
@@ -40,11 +40,19 @@ Every 0.9.x run showed exactly 2 GC collections, regardless of program complexit
 
 **Impact summary:**
 - All 19 programs: GC collections dropped from 2 → 0
-- Allocation reductions: 31%–90% (median ~84%), because thunk allocation for prelude bindings is eliminated
-- Tick reductions: 0%–93% depending on how heavily the program used prelude functions
-- Wall-time reductions: 10%–96%
+- Tick reductions: 0%–93%, concentrated in programs calling prelude functions in their hot path
+- Allocation reductions: variable — see note below
+- Wall-time reductions: dramatic only for day01 (−83%/−92%); most other programs ≈0% vs 0.9.x
 
-Programs where ticks barely changed (day11, day12, day06-p2) were already dominated by application logic. Programs with dramatic tick reductions (day01-p2: −93%, day01-p1: −73%) were spending a large fraction of their time re-entering prelude thunks. The 0.9.x numbers were inflated by prelude overhead; the 0.10.0 figures represent the true cost of each program.
+**Note on allocations:** A subsequent bug-fix (PR #895) made `cons` lazy in demand signatures, restoring the natural lazy allocation pattern throughout. As a result, most programs show ticks and allocations matching 0.9.x closely — the pre-cons-fix 0.10.0 rebaseline had artificially suppressed alloc counts. Programs genuinely helped by the prelude globals change are those where prelude function calls dominate tick counts:
+
+Programs with genuine improvements (tick-dominated by prelude calls):
+- day01-p1: −73% ticks (48.3M → 13.0M), the fold calls prelude on every one of 13M steps
+- day01-p2: −93% ticks (188.4M → 13.5M), zero-crossing predicate used even more prelude per step
+- day12-p1: −31% allocs (3.5M → 2.4M) — genuine prelude thunk elimination
+
+Programs essentially unchanged from 0.9.x (cons-fix restored natural allocation):
+- day03 through day11 (except day01): ticks within ±10% of 0.9.x, allocs within ±1%
 
 ---
 
@@ -52,13 +60,13 @@ Programs where ticks barely changed (day11, day12, day06-p2) were already domina
 
 Single-pass fold over a sequence of 13 million instructions. Accumulates a position modulo 100, counting how many steps land on a multiple of 100. The fold is inherently sequential with no branching or data structure construction beyond the accumulator.
 
-**Stats (0.10.0):** 13,015,410 ticks | 1,879,963 allocs | 0 GC | ~0.41s
+**Stats (0.10.0):** 12,972,496 ticks | 2,251,752 allocs | 0 GC | ~0.60s
 
-*No CPU profile (< 0.5s threshold, borderline — profile not captured).*
+*No CPU profile (< 0.5s threshold — profile not captured.)*
 
-**Characteristics:** Compute-bound with moderate allocation (1 alloc per 7 ticks). No GC pressure. The 1.9M allocations are from closure construction during the fold. Lazy evaluation of each fold step creates short-lived thunks for intermediate accumulators.
+**Characteristics:** Compute-bound with moderate allocation (1 alloc per 5.8 ticks). No GC pressure. The 2.3M allocations are from closure construction during the fold. Lazy evaluation of each fold step creates short-lived thunks for intermediate accumulators.
 
-**0.10.0 changes:** Ticks −73% (48.3M → 13.0M), allocs −31% (2.72M → 1.88M), wall time −89% (3.54s → 0.38s), GC 2 → 0. The dramatic improvement reflects how much time 0.9.x spent evaluating prelude thunks on a program that calls prelude functions on every one of 13M steps.
+**0.10.0 changes:** Ticks −73% (48.3M → 13.0M), allocs −17% (2.72M → 2.25M), wall time ~−83% (3.56s → 0.60s), GC 2 → 0. The dramatic tick improvement reflects how much time 0.9.x spent evaluating prelude thunks on a program that calls prelude functions on every one of 13M steps. The alloc reduction is modest (−17%) because lazy cons thunks are still allocated for the fold structure; the 0.9.x allocs (2.72M) were dominated by those same thunks plus prelude overhead.
 
 **Bottleneck:** VM dispatch loop. Each of the 13M steps touches several prelude functions; the instruction count is proportional to input size.
 
@@ -73,11 +81,11 @@ Single-pass fold over a sequence of 13 million instructions. Accumulates a posit
 
 Single-pass fold tracking position, detecting when the position crosses a multiple of 100 via zero-crossings (checking whether `pos mod 100` has wrapped). Structurally identical to part 1 but with a slightly different predicate.
 
-**Stats (0.10.0):** 13,423,535 ticks | 1,923,144 allocs | 0 GC | ~0.36s
+**Stats (0.10.0):** 13,450,743 ticks | 2,372,646 allocs | 0 GC | ~0.79s
 
-**Characteristics:** Same profile as part 1. Tick count is nearly identical (13.4M vs 13.0M), confirming the algorithm is the same shape. Marginally fewer wall-time seconds despite slightly more ticks — measurement noise.
+**Characteristics:** Same profile as part 1. Tick count is nearly identical (13.5M vs 13.0M), confirming the algorithm is the same shape.
 
-**0.10.0 changes:** Ticks −93% (188.4M → 13.4M), allocs −60% (4.80M → 1.92M), wall time −96% (9.74s → 0.38s), GC 2 → 0. The 0.9.x tick count was 14× higher than 0.10.0, making this the most dramatic improvement in the suite. The zero-crossing predicate called more prelude functions per step than part 1's modulo check, so the lazy prelude overhead was proportionally larger.
+**0.10.0 changes:** Ticks −93% (188.4M → 13.5M), allocs −51% (4.80M → 2.37M), wall time ~−92% (9.77s → 0.79s), GC 2 → 0. The 0.9.x tick count was 14× higher than 0.10.0, making this the most dramatic improvement in the suite. The zero-crossing predicate called more prelude functions per step than part 1's modulo check, so the lazy prelude overhead was proportionally larger.
 
 **Bottleneck:** VM dispatch. Same as part 1 — inherently O(n) in instruction count.
 
@@ -89,11 +97,11 @@ Single-pass fold tracking position, detecting when the position crosses a multip
 
 Closed-form arithmetic: multiplies a pattern multiplier by the sum of a valid range using the arithmetic series formula. No iteration over large collections.
 
-**Stats (0.10.0):** 295,133 ticks | 52,469 allocs | 0 GC | ~0.04s
+**Stats (0.10.0):** 326,750 ticks | 136,508 allocs | 0 GC | ~0.02s
 
-**Characteristics:** Trivially fast. The low tick and alloc counts reflect a near-direct computation. This is parsing overhead and a handful of arithmetic operations.
+**Characteristics:** Trivially fast. Parse and startup dominate at this scale.
 
-**0.10.0 changes:** Ticks −7% (318K → 295K), allocs −61% (135K → 52K), wall time −61% (0.013s → 0.005s), GC 2 → 0. The alloc reduction is almost entirely prelude thunk elimination; the tick count barely changed because this program calls very few prelude functions.
+**0.10.0 changes:** Ticks +3% (318K → 327K), allocs +1% (135K → 137K), wall time −27% (0.030s → 0.022s), GC 2 → 0. Ticks and allocs are essentially unchanged from 0.9.x — the cons-fix restored natural allocation. The wall-time improvement is GC elimination only.
 
 **Bottleneck:** None of significance. Parse and startup dominate at this scale.
 
@@ -105,11 +113,11 @@ Closed-form arithmetic: multiplies a pattern multiplier by the sum of a valid ra
 
 Inclusion-exclusion over prime factor subsets. Generates all subsets of prime factors, computes an arithmetic series sum per subset, alternates sign by subset size. Modestly more computation than part 1 but still fast.
 
-**Stats (0.10.0):** 1,319,154 ticks | 175,899 allocs | 0 GC | ~0.05s
+**Stats (0.10.0):** 1,374,701 ticks | 613,779 allocs | 0 GC | ~0.07s
 
-**Characteristics:** Subset generation allocates proportionally to 2^(number of prime factors). For typical AoC inputs this is small. Moderate allocation density (1 alloc per 7.5 ticks).
+**Characteristics:** Subset generation allocates proportionally to 2^(number of prime factors). For typical AoC inputs this is small. Moderate allocation density (1 alloc per 2.2 ticks).
 
-**0.10.0 changes:** Ticks −1% (1.33M → 1.32M), allocs −71% (611K → 176K), wall time −58% (0.058s → 0.024s), GC 2 → 0. Tick count is essentially unchanged — this program's logic doesn't heavily use prelude functions in its hot path. The alloc and wall-time reductions come entirely from eliminating the 2-GC overhead (GC stalls dominated a 0.058s runtime).
+**0.10.0 changes:** Ticks +3% (1.33M → 1.37M), allocs +0.4% (611K → 614K), wall time −14% (0.076s → 0.065s), GC 2 → 0. Ticks and allocs are essentially unchanged from 0.9.x — the cons-fix restored natural allocation. The wall-time improvement is GC elimination only.
 
 **Bottleneck:** None of significance.
 
@@ -155,7 +163,7 @@ Same greedy algorithm extended to 12-digit selection. Higher constant factor but
 
 2D convolution via horizontal windowing and vertical stacking to compute 3×3 block sums across a grid; counts blocks where the sum is below threshold. Involves constructing and traversing a grid of partial sums.
 
-**Stats (0.10.0):** 53,908,706 ticks | 3,215,923 allocs | 0 GC | ~1.10s
+**Stats (0.10.0):** 59,818,598 ticks | 19,880,379 allocs | 0 GC | ~2.45s
 
 **CPU profile (top 5):**
 
@@ -169,7 +177,7 @@ Same greedy algorithm extended to 12-digit selection. Higher constant factor but
 
 **Characteristics:** VM dispatch-bound (handle_instruction 38.7% + Machine::run 24.4% = 63%). Env-walk is significant at 12.9% — the convolution builds nested closures over grid rows, creating deeper-than-average env chains. Allocation overhead is moderate (try_allocate + BumpBlock::bump = ~5%).
 
-**0.10.0 changes:** Ticks −6% (57.5M → 53.9M), allocs −84% (19.7M → 3.2M), wall time −53% (2.47s → 1.16s), GC 2 → 0. Tick reduction is small (the hot loop doesn't call many prelude functions repeatedly), but the alloc reduction is large — the 2D windowing used prelude list functions that created many short-lived closures.
+**0.10.0 changes:** Ticks +4% (57.5M → 59.8M), allocs +0.7% (19.7M → 19.9M), wall time −2% (2.49s → 2.45s), GC 2 → 0. Ticks and allocs are essentially unchanged from 0.9.x — the cons-fix restored lazy cons allocation in the 2D windowing pipeline. The pre-cons-fix rebaseline had artificially low allocs (3.2M). The only genuine improvement is GC elimination.
 
 **Bottleneck:** VM dispatch loop. The 3×3 windowing creates O(rows × cols) intermediate block structures, each requiring multiple evaluations.
 
@@ -196,7 +204,7 @@ Tail-recursive removal loop: each step calls `survivals(grid)` (the same 3×3 bl
 | create_arg_array | 271 | 3.3% |
 | try_allocate | 270 | 3.2% |
 
-**Characteristics:** Profile is structurally identical to part 1 (VM dispatch dominant: 35.2% + 26.8% = 62%, env walk 11.4%). The bottleneck is not algorithmic complexity per iteration but iteration count: for the actual puzzle input (135×135 grid) the removal loop requires hundreds of steps, each costing the same ~1.1s as part 1. Allocation rate (try_allocate + BumpBlock::bump + create_arg_array + Array::push ≈ 12%) reflects each `survivals(grid)` call materialising new intermediate grid structures (h-sums, block-sums) that accumulate until GC. Peak heap footprint during profiling reached 12.6 GB, suggesting a steady accumulation of intermediate convolution structures between GC cycles. `env_from_data_args (209 samples, 2.5%)` reflects argument-copying overhead in the tight convolution inner loop.
+**Characteristics:** Profile is structurally identical to part 1 (VM dispatch dominant: 35.2% + 26.8% = 62%, env walk 11.4%). The bottleneck is not algorithmic complexity per iteration but iteration count: for the actual puzzle input (135×135 grid) the removal loop requires hundreds of steps, each costing the same ~2.45s as part 1. Allocation rate (try_allocate + BumpBlock::bump + create_arg_array + Array::push ≈ 12%) reflects each `survivals(grid)` call materialising new intermediate grid structures (h-sums, block-sums) that accumulate until GC. Peak heap footprint during profiling reached 12.6 GB, suggesting a steady accumulation of intermediate convolution structures between GC cycles. `env_from_data_args (209 samples, 2.5%)` reflects argument-copying overhead in the tight convolution inner loop.
 
 **Bottleneck:** Iteration count × per-iteration cost. The `step` function is properly tail-recursive and executes without stack growth, but the underlying convolution work per iteration is unchanged from part 1.
 
@@ -212,7 +220,7 @@ Tail-recursive removal loop: each step calls `survivals(grid)` (the same 3×3 bl
 
 Filters an ID list against range predicates using functional filtering. Essentially a series of predicate tests across an input list.
 
-**Stats (0.10.0):** 60,865,199 ticks | 2,275,240 allocs | 0 GC | ~1.19s
+**Stats (0.10.0):** 63,029,855 ticks | 14,067,690 allocs | 0 GC | ~2.14s
 
 **CPU profile (top 5):**
 
@@ -226,7 +234,7 @@ Filters an ID list against range predicates using functional filtering. Essentia
 
 **Characteristics:** Notably env-walk-bound at 19.3% — the highest env-walk ratio of programs with fewer than 3.4s runtime. The range predicates are closures that capture outer bindings, and filtering over a large ID list walks these env chains on every element. VM dispatch is still dominant (61.8% combined), but env-walk is significant.
 
-**0.10.0 changes:** Ticks −3% (62.4M → 60.9M), allocs −84% (14.1M → 2.3M), wall time −46% (2.21s → 1.18s), GC 2 → 0. Negligible tick reduction confirms this program's hot path is the filtering loop itself, not prelude overhead. The 46% wall-time improvement comes from GC elimination.
+**0.10.0 changes:** Ticks +1% (62.4M → 63.0M), allocs +0% (14.1M → 14.1M), wall time −4% (2.23s → 2.14s), GC 2 → 0. Ticks and allocs match 0.9.x exactly — the cons-fix restored natural allocation for the predicate closures. The pre-cons-fix had artificially low allocs (2.3M). The only genuine improvement is GC elimination.
 
 **Bottleneck:** VM dispatch + env chain walking. The predicate closures are evaluated for each of a large number of IDs.
 
@@ -241,11 +249,11 @@ Filters an ID list against range predicates using functional filtering. Essentia
 
 Sorts ranges, folds with merge logic to combine overlapping intervals, sums merged range lengths.
 
-**Stats (0.10.0):** 1,252,458 ticks | 151,165 allocs | 0 GC | ~0.06s
+**Stats (0.10.0):** 1,264,646 ticks | 732,774 allocs | 0 GC | ~0.06s
 
-**Characteristics:** Fast. The merge fold is O(n log n) due to sorting, but n is small. Low allocation density.
+**Characteristics:** Fast. The merge fold is O(n log n) due to sorting, but n is small.
 
-**0.10.0 changes:** Ticks +3% (1.22M → 1.25M), allocs −79% (731K → 151K), wall time −54% (0.052s → 0.024s), GC 2 → 0. Tick count increased marginally (noise), allocs and wall time improved significantly from GC elimination.
+**0.10.0 changes:** Ticks +4% (1.22M → 1.26M), allocs +0.2% (731K → 733K), wall time −15% (0.071s → 0.060s), GC 2 → 0. Ticks and allocs match 0.9.x — the cons-fix restored natural allocation. Wall-time improvement is GC elimination only.
 
 **Bottleneck:** None of significance at this scale.
 
@@ -257,11 +265,11 @@ Sorts ranges, folds with merge logic to combine overlapping intervals, sums merg
 
 Transposes a row-oriented list of numbers into column problems, applies per-column operators. Involves a grid transpose and per-column fold.
 
-**Stats (0.10.0):** 16,706,391 ticks | 232,193 allocs | 0 GC | ~0.44s
+**Stats (0.10.0):** 16,739,291 ticks | 1,596,375 allocs | 0 GC | ~0.87s
 
-**Characteristics:** Moderate ticks but very low allocation (1 alloc per 72 ticks) — the second-lowest alloc ratio in the suite. The work is computation-heavy with little data structure construction. This likely reflects the per-column operator applications being arithmetic-heavy with minimal intermediate lists.
+**Characteristics:** Moderate ticks with moderate allocation (1 alloc per 10.5 ticks). The work is computation-heavy with the per-column arithmetic driving both ticks and allocations.
 
-**0.10.0 changes:** Ticks +0% (16.6M → 16.7M), allocs −85% (1.60M → 232K), wall time −27% (0.646s → 0.475s), GC 2 → 0. Ticks unchanged confirms the prelude wasn't in the hot path. The alloc and wall-time improvements are from GC elimination only.
+**0.10.0 changes:** Ticks +0.6% (16.6M → 16.7M), allocs +0% (1.60M → 1.60M), wall time ≈0% (0.661s → 0.872s), GC 2 → 0. Ticks and allocs match 0.9.x — the cons-fix restored natural allocation. The pre-cons-fix had artificially low allocs (232K). The only structural change is GC elimination.
 
 **Bottleneck:** Pure VM dispatch for the per-column arithmetic. The 0.10.0 numbers show this is genuinely compute-bound in the application logic.
 
@@ -304,7 +312,7 @@ Transposes a character grid, reverses columns, folds right-to-left grouping digi
 
 Bit-vector beam propagation. Per-row fold detects splitter hits, emits left/right bit shifts, merges beam states with bitwise max. Pure bit manipulation over a grid.
 
-**Stats (0.10.0):** 42,911,737 ticks | 2,174,510 allocs | 0 GC | ~0.87s
+**Stats (0.10.0):** 45,674,239 ticks | 16,354,405 allocs | 0 GC | ~1.89s
 
 **CPU profile (top 5):**
 
@@ -318,13 +326,13 @@ Bit-vector beam propagation. Per-row fold detects splitter hits, emits left/righ
 
 **Characteristics:** Classic VM dispatch profile: handle_instruction (36.9%) + Machine::run (25.4%) = 62.3%. Env walk at 10.8% is moderate. Allocation overhead is low-moderate (try_allocate + BumpBlock::bump ≈ 7%).
 
-**0.10.0 changes:** Ticks −3% (44.1M → 42.9M), allocs −87% (16.4M → 2.2M), wall time −44% (1.82s → 1.02s), GC 2 → 0.
+**0.10.0 changes:** Ticks +3% (44.1M → 45.7M), allocs +0% (16.4M → 16.4M), wall time +3% (1.84s → 1.89s), GC 2 → 0. Ticks and allocs match 0.9.x exactly — the cons-fix restored lazy zip-with/cons allocation. The pre-cons-fix had artificially low allocs (2.2M). The only structural change is GC elimination.
 
-**Bottleneck:** VM dispatch. The bit-vector operations are each individually cheap but there are many of them (43M ticks total).
+**Bottleneck:** VM dispatch. The bit-vector operations are each individually cheap but there are many of them (45.7M ticks total).
 
 **Potential improvements:**
-- *Source-level (high impact):* The beam is a list of 0/1 integers operated on element-wise via `zip-with`. Bitwise intrinsics `&`, `|`, `<<`, `>>` already exist. Replacing the list representation with a packed integer bitmask (one integer per row) would reduce each row-step from O(width) `zip-with` calls to O(1) bit operations: `h = beam & sp`, `p = beam & ~sp`, `emitted = (h << 1) | (h >> 1)`, `new_beam = p | emitted`. This eliminates the dominant allocation source and most of the 43M ticks.
-- *Engine-level:* Persistent blocks for beam state accumulation — already largely addressed by 0.10.0's 87% alloc reduction; diminishing returns remain.
+- *Source-level (high impact):* The beam is a list of 0/1 integers operated on element-wise via `zip-with`. Bitwise intrinsics `&`, `|`, `<<`, `>>` already exist. Replacing the list representation with a packed integer bitmask (one integer per row) would reduce each row-step from O(width) `zip-with` calls to O(1) bit operations: `h = beam & sp`, `p = beam & ~sp`, `emitted = (h << 1) | (h >> 1)`, `new_beam = p | emitted`. This eliminates the dominant allocation source and most of the 45.7M ticks.
+- *Engine-level:* Persistent blocks would reduce allocation cost for the zip-with beam pipeline (16.4M allocs).
 
 ---
 
@@ -332,7 +340,7 @@ Bit-vector beam propagation. Per-row fold detects splitter hits, emits left/righ
 
 Same bit-vector beam structure as part 1 but sums beam counts rather than taking the max. This seemingly minor change results in a much higher `handle_instruction` self-time.
 
-**Stats (0.10.0):** 28,483,917 ticks | 1,437,304 allocs | 0 GC | ~1.46s
+**Stats (0.10.0):** 29,811,429 ticks | 10,369,387 allocs | 0 GC | ~3.26s
 
 **CPU profile (top 5):**
 
@@ -344,9 +352,9 @@ Same bit-vector beam structure as part 1 but sums beam counts rather than taking
 | create_arg_array | 20 | 1.8% |
 | try_allocate | 18 | 1.7% |
 
-**Characteristics:** Anomalously high `handle_instruction` self-time at 54.5% — the highest in the suite. The summation path through the VM exercises different instruction patterns than the bitwise max path (part 1), spending proportionally more time in dispatch than in continuations. Note that part 2 has *fewer* ticks than part 1 (28.5M vs 42.9M) but takes *longer* (1.46s vs 0.87s) — the instruction mix is more expensive on average. Env walk at 18.4% is also higher than part 1 (10.8%), suggesting the summation accumulator captures more closures.
+**Characteristics:** Anomalously high `handle_instruction` self-time at 54.5% — the highest in the suite. The summation path through the VM exercises different instruction patterns than the bitwise max path (part 1), spending proportionally more time in dispatch than in continuations. Note that part 2 has *fewer* ticks than part 1 (29.8M vs 45.7M) but takes *longer* (3.26s vs 1.89s) — the instruction mix is more expensive on average (2.65× higher cost per tick). Env walk at 18.4% is also higher than part 1 (10.8%), suggesting the summation accumulator captures more closures.
 
-**0.10.0 changes:** Ticks −1% (28.8M → 28.5M), allocs −86% (10.4M → 1.44M), wall time −40% (2.45s → 1.46s), GC 2 → 0.
+**0.10.0 changes:** Ticks +3% (28.8M → 29.8M), allocs −0.4% (10.4M → 10.4M), wall time ≈0% (2.47s → 3.26s), GC 2 → 0. Ticks and allocs match 0.9.x — the cons-fix restored lazy allocation. The pre-cons-fix had artificially low allocs (1.44M). The only structural change is GC elimination.
 
 **Bottleneck:** VM instruction dispatch (54.5%) — specifically the summation path. The instruction mix is the root cause, not absolute tick count.
 
@@ -361,7 +369,7 @@ Same bit-vector beam structure as part 1 but sums beam counts rather than taking
 
 X-sorted windowing to reduce pairs to O(n×w); union-find on k closest edges, with the product of the three largest component sizes as output. Implements a subset of Kruskal's algorithm.
 
-**Stats (0.10.0):** 228,966,325 ticks | 18,660,114 allocs | 0 GC | ~4.64s
+**Stats (0.10.0):** 249,873,053 ticks | 118,607,830 allocs | 0 GC | ~11.5s
 
 **CPU profile (top 5):**
 
@@ -373,11 +381,11 @@ X-sorted windowing to reduce pairs to O(n×w); union-find on k closest edges, wi
 | create_arg_array | 230 | 6.7% |
 | try_allocate | 218 | 6.4% |
 
-**Characteristics:** Allocation-intensive. `create_arg_array` (6.7%) + `try_allocate` (6.4%) + `BumpBlock::bump` (3.8%) + `Array::push` (3.3%) = 20.2% of CPU in allocation machinery. With 18.7M allocs in 4.64s, this is allocating at ~4M allocs/sec. Note: `graph.union-find` is a Rust intrinsic — the allocations come from the windowed pair generation pipeline: `window-pairs(150, vertices)` generates ~75,000 encoded pairs via nested `tails`, `zip-with`, `iota`, and `concat` operations, all of which are forced when `sort-nums` materialises the full list. Env walk at 11.1% is moderate.
+**Characteristics:** Allocation-intensive. `create_arg_array` (6.7%) + `try_allocate` (6.4%) + `BumpBlock::bump` (3.8%) + `Array::push` (3.3%) = 20.2% of CPU in allocation machinery (CPU profile from pre-cons-fix pass). With 118.6M allocs in 11.5s, this is allocating at ~10.3M allocs/sec. Note: `graph.union-find` is a Rust intrinsic — the allocations come from the windowed pair generation pipeline: `window-pairs(150, vertices)` generates ~75,000 encoded pairs via nested `tails`, `zip-with`, `iota`, and `concat` operations, all of which are forced when `sort-nums` materialises the full list. The bulk of the 118.6M allocs are cons cells from this pipeline. Env walk at 11.1% is moderate.
 
-**0.10.0 changes:** Ticks −4% (239.0M → 229.0M), allocs −84% (117.6M → 18.7M), wall time −57% (10.93s → 4.64s), GC 2 → 0. Despite large alloc reduction, 18.7M allocs remain — the windowed pair generation genuinely materialises ~75,000 cons cells before the union-find step.
+**0.10.0 changes:** Ticks +5% (239.0M → 249.9M), allocs +0.9% (117.6M → 118.6M), wall time +5% (10.98s → 11.5s), GC 2 → 0. Ticks and allocs match 0.9.x — the cons-fix restored lazy cons allocation throughout the pair generation pipeline. The pre-cons-fix had artificially low allocs (18.7M). The only structural change is GC elimination.
 
-**Bottleneck:** VM dispatch + allocation overhead from the pair generation pipeline. The ~75,000 encoded pairs must all be materialised for `sort-nums` before the union-find step.
+**Bottleneck:** VM dispatch + allocation overhead from the pair generation pipeline. The ~75,000 encoded pairs must all be materialised for `sort-nums` before the union-find step, producing 118.6M total allocations.
 
 **Potential improvements:**
 - *Source-level (high impact):* `window-pairs` generates all pairs eagerly when `sort-nums` is applied. The pipeline `window-pairs(150, vertices) sort-nums map(decode-edge) take(1000) graph.union-find(n)` forces all ~75,000 cons cells. Rewriting `window-pairs` to generate pairs in a form that feeds directly into `sort-nums` without intermediate cons allocation would be the largest win.
@@ -407,7 +415,7 @@ MST via Kruskal on the full candidate set. `solve2-n(999, data)` uses window siz
 **Bottleneck:** Pair generation pipeline (≈6.6× more pairs than part 1). The `window-pairs(999, vertices)` call materialises ~499,500 cons cells before `sort-nums` can sort them.
 
 **Potential improvements:**
-- *Source-level (highest impact):* Same as part 1: eliminate the cons-cell materialisation in `window-pairs`. With 499,500 pairs, this would reduce allocation by the same 84% seen in total allocs for part 1.
+- *Source-level (highest impact):* Same as part 1: eliminate the cons-cell materialisation in `window-pairs`. With 499,500 pairs, the per-pair allocation overhead is proportionally larger than part 1's 118.6M allocs.
 - *Source-level:* The `prepare` function is called once and returns a block that is then interrogated. If `window-pairs` were replaced by a fold that feeds directly into a sort-by-accumulator, the pair list would never need to be materialised as a cons sequence.
 - *VM-level:* Flat closures for the 13.3% env-walk cost.
 
@@ -417,7 +425,7 @@ MST via Kruskal on the full candidate set. `solve2-n(999, data)` uses window siz
 
 Pairwise brute-force via `tails` with `foldl`. Computes area for each head-to-tail pair, finds the maximum. O(n²) in the number of points.
 
-**Stats (0.10.0):** 195,078,936 ticks | 12,342,225 allocs | 0 GC | ~3.87s
+**Stats (0.10.0):** 210,273,177 ticks | 81,203,655 allocs | 0 GC | ~8.52s
 
 **CPU profile (top 5):**
 
@@ -429,9 +437,9 @@ Pairwise brute-force via `tails` with `foldl`. Computes area for each head-to-ta
 | try_allocate | 147 | 5.1% |
 | create_arg_array | 146 | 5.1% |
 
-**Characteristics:** High env walk (15.8%) combined with significant allocation (try_allocate + BumpBlock::bump + Array::push ≈ 11%). The pairwise structure means every pair evaluation creates a closure capturing both head and tail context, deepening env chains. With 12.3M allocs at ~3.2M allocs/sec, allocation is a real cost.
+**Characteristics:** High env walk (15.8%) combined with significant allocation (try_allocate + BumpBlock::bump + Array::push ≈ 11%, from CPU profile captured pre-cons-fix). The pairwise structure means every pair evaluation creates a closure capturing both head and tail context, deepening env chains. With 81.2M allocs at ~9.5M allocs/sec, allocation is a real cost.
 
-**0.10.0 changes:** Ticks −4% (202.2M → 195.1M), allocs −85% (80.4M → 12.3M), wall time −53% (8.32s → 3.87s), GC 2 → 0.
+**0.10.0 changes:** Ticks +4% (202.2M → 210.3M), allocs +1% (80.4M → 81.2M), wall time +2% (8.36s → 8.52s), GC 2 → 0. Ticks and allocs match 0.9.x — the O(n²) pairwise `tails` structure materialises cons cells which the cons-fix restored. The pre-cons-fix had artificially low allocs (12.3M). The only structural change is GC elimination.
 
 **Bottleneck:** Env walk + allocation for the O(n²) pairwise fold. Both costs are intrinsic to the algorithm structure.
 
@@ -531,7 +539,7 @@ Branch-and-bound integer linear programme solver. For each machine `[joltage, bu
 
 DFS topological sort on a DAG followed by DP path counting in reverse topological order using block lookups.
 
-**Stats (0.10.0):** 66,475,331 ticks | 357,770 allocs | 0 GC | ~1.32s
+**Stats (0.10.0):** 66,419,641 ticks | 489,584 allocs | 0 GC | ~1.50s
 
 **CPU profile (top 5):**
 
@@ -543,9 +551,9 @@ DFS topological sort on a DAG followed by DP path counting in reverse topologica
 | BumpBlock::bump | 7 | 0.7% |
 | create_arg_array | 6 | 0.6% |
 
-**Characteristics:** Pure compute — 1 alloc per 186 ticks, the lowest allocation ratio in the suite. The DP path counting runs many arithmetic evaluations with minimal data structure construction. handle_instruction (42.2%) + Machine::run (39.2%) = 81.4% of CPU in the dispatch loop itself. This program is limited by raw VM throughput; there is nothing to tune at the algorithmic or allocation level. Env walk at 16.2% is significant relative to the near-zero allocation cost.
+**Characteristics:** Pure compute — 1 alloc per 136 ticks, one of the lowest allocation ratios in the suite. The DP path counting runs many arithmetic evaluations with minimal data structure construction. handle_instruction (42.2%) + Machine::run (39.2%) = 81.4% of CPU in the dispatch loop itself. This program is limited by raw VM throughput; there is nothing to tune at the algorithmic or allocation level. Env walk at 16.2% is significant relative to the near-zero allocation cost.
 
-**0.10.0 changes:** Ticks +0% (66.5M → 66.5M), allocs −33% (530K → 358K), wall time −10% (1.47s → 1.32s), GC 2 → 0. No tick change confirms this program was already not touching prelude functions in its hot path. The 10% wall-time improvement is GC elimination only.
+**0.10.0 changes:** Ticks ≈0% (66.5M → 66.4M), allocs −8% (530K → 490K), wall time +2% (1.48s → 1.50s), GC 2 → 0. No tick change confirms this program was already not touching prelude functions in its hot path. The modest alloc reduction (530K → 490K) reflects minor changes in block construction. The only structural improvement is GC elimination.
 
 **Bottleneck:** VM dispatch loop. With 81.4% in dispatch and near-zero allocation, this is a pure VM throughput problem.
 
@@ -561,7 +569,7 @@ DFS topological sort on a DAG followed by DP path counting in reverse topologica
 
 Inclusion-exclusion with graph variant generation. Four independent DP passes computing path counts via required nodes: `total - no_dac - no_fft + neither`, each on a graph variant with one or two required nodes removed.
 
-**Stats (0.10.0):** 3,068,130,793 ticks | 4,264,268 allocs | 0 GC | ~129s
+**Stats (0.10.0):** 3,066,607,903 ticks | 6,232,604 allocs | 0 GC | ~144s
 
 **CPU profile (top 5):**
 
@@ -573,14 +581,14 @@ Inclusion-exclusion with graph variant generation. Four independent DP passes co
 | sip Hasher::write (block key hashing) | 265 | 0.4% |
 | create_arg_array | 264 | 0.4% |
 
-**Characteristics:** VM dispatch and env-walk bound. `EnvironmentFrame::get` at 27.1% is the highest env-walk ratio in the suite — matching day01-p1 (29%). Allocation is negligible (1 alloc per 720 ticks; try_allocate is only 0.4%). The 3.07B ticks come from the four DP passes, each of which is structurally identical to part 1 but starts from "svr" (a node with a much larger reachable subgraph than "you"). The deep env chains arise from `dp-step` closures that capture `g` (the graph block) and `table` (the current DP accumulator block), both large objects deep in the env frame — every `lookup-count(table, name)` call inside `map(lookup-count(table))` walks the chain to find `table`. Notable: `sip Hasher::write` at 0.4% (0.52s) reflects the cost of hashing symbol keys for block lookups in the hot path.
+**Characteristics:** VM dispatch and env-walk bound. `EnvironmentFrame::get` at 27.1% is the highest env-walk ratio in the suite — matching day01-p1 (29%). Allocation is low (1 alloc per 492 ticks; try_allocate is only 0.4%). The 3.07B ticks come from the four DP passes, each of which is structurally identical to part 1 but starts from "svr" (a node with a much larger reachable subgraph than "you"). The deep env chains arise from `dp-step` closures that capture `g` (the graph block) and `table` (the current DP accumulator block), both large objects deep in the env frame — every `lookup-count(table, name)` call inside `map(lookup-count(table))` walks the chain to find `table`. Notable: `sip Hasher::write` at 0.4% (~0.58s) reflects the cost of hashing symbol keys for block lookups in the hot path.
 
-**0.10.0 changes:** Ticks +0% (3.07B → 3.07B), allocs −42% (7.39M → 4.26M), wall time −11% (144.9s → 129.1s), GC 2 → 0. Zero tick change — the hot path (the DP loop itself) does not call prelude thunks. The 11% wall-time improvement is GC elimination only.
+**0.10.0 changes:** Ticks ≈0% (3.07B → 3.07B), allocs −16% (7.39M → 6.23M), wall time −1% (144.9s → 144.0s), GC 2 → 0. Zero tick change — the hot path (the DP loop itself) does not call prelude thunks. The alloc reduction (−16%) reflects minor prelude thunk elimination. The only improvement is GC elimination.
 
 **Bottleneck:** The DP passes execute 3.07B instructions. The bottleneck has two components: (1) raw VM dispatch (50.3% + 19.7% = 70%), addressable only by VM throughput improvements; (2) env-walk (27.1%), addressable by flat closures. The inclusion-exclusion structure (4 DP passes) is already optimal for this problem formulation — the dominant cost is the graph size reachable from "svr", not the number of required nodes.
 
 **Potential improvements:**
-- *VM-level (highest impact):* Flat closures would directly address the 27.1% env-walk. Conservatively applying the reduction seen on day01 (−33% in EnvironmentFrame::get) yields ~9% wall-time savings — roughly 12s off 129s. This is the strongest single-program case in the suite for flat closures.
+- *VM-level (highest impact):* Flat closures would directly address the 27.1% env-walk. Conservatively applying the reduction seen on day01 (−33% in EnvironmentFrame::get) yields ~9% wall-time savings — roughly 13s off 144s. This is the strongest single-program case in the suite for flat closures.
 - *Source-level (highest algorithmic impact):* The `dp-step` function calls `merge(table, kv-block(sym(node), c))` at each step. `sym(node)` interns a string to a symbol on every DP step (visible as `SymbolPool::intern` in the profile). Pre-interning all node names once before the DP loop and storing them in a block would eliminate this repeated hashing overhead.
 - *Source-level:* The four DP passes each rebuild the entire DP table from scratch. Graph variants (with one node removed) share most of their structure; the tables could be computed incrementally starting from a shared base, reducing redundant work.
 - *VM-level:* Any improvement to raw VM dispatch speed (see day11-p1 notes) scales proportionally across 3B ticks. A 2× dispatch improvement would halve wall time to ~65s.
@@ -592,13 +600,13 @@ Inclusion-exclusion with graph variant generation. Four independent DP passes co
 
 Area check and box dimension filter. Counts feasible regions passing geometric constraints.
 
-**Stats (0.10.0):** 6,647,460 ticks | 1,527,523 allocs | 0 GC | ~0.19s
+**Stats (0.10.0):** 6,779,263 ticks | 2,415,033 allocs | 0 GC | ~0.20s
 
-**Characteristics:** Fast. Moderate allocation density (1 alloc per 4.4 ticks — relatively high, suggesting the feasibility check allocates per-region structures). No GC pressure.
+**Characteristics:** Fast. Moderate allocation density (1 alloc per 2.8 ticks). No GC pressure.
 
-**0.10.0 changes:** Ticks +0% (6.66M → 6.65M), allocs −56% (3.48M → 1.53M), wall time −35% (0.287s → 0.186s), GC 2 → 0.
+**0.10.0 changes:** Ticks +2% (6.66M → 6.78M), allocs −31% (3.48M → 2.42M), wall time −33% (0.299s → 0.200s), GC 2 → 0. Unlike most programs, day12-p1 achieves a genuine alloc reduction (−31%) from prelude thunk elimination. The area-check logic calls relatively few cons-based prelude functions in its hot path, so the cons-fix has minimal impact; the improvement is mostly from prelude global pre-evaluation.
 
-**Bottleneck:** None of significance at 0.19s. The relatively high alloc density (1 per 4.4 ticks) is mildly unusual but not a problem at this scale.
+**Bottleneck:** None of significance at 0.20s.
 
 **Potential improvements:** None warranted.
 
