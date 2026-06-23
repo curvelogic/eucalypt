@@ -65,6 +65,82 @@ interpolation.
 
 **Top-level unit**: the file itself is an implicit block without braces.
 
+### 1.3.1 Idiot Brackets
+
+Idiot brackets are user-definable Unicode bracket pairs. Inside the
+brackets, whitespace-separated items are collected into a list and
+passed as the single argument to the function named by the bracket
+pair's declaration.
+
+```eu,notest
+# Declare a bracket pair function (xs receives the item list)
+⟦ xs ⟧: xs map(_ * 2)
+
+# Usage — items are collected as a list
+⟦ 3 4 5 ⟧   # => [6, 8, 10]
+```
+
+Any matching Unicode bracket pair can be declared. The prelude defines
+two bracket pairs for rounding:
+
+```eu,notest
+⌈ x ⌉: x ceiling   # prelude: ceiling bracket
+⌊ x ⌋: x floor     # prelude: floor bracket
+
+⌈3.2⌉    # => 4
+⌊3.8⌋    # => 3
+⌈-1.5⌉   # => -1
+⌊-1.5⌋   # => -2
+```
+
+**Bracket parameter pattern**: the declaration's parameter is always
+the *list* of collected items. Use destructuring when the bracket
+expects a fixed structure:
+
+```eu,notest
+# Idiom bracket: first item is a function, rest are argument lists
+⌈ [f: lists] ⌉: foldl(zapp, repeat(f), lists)
+```
+
+**Juxtaposed call syntax after a bracket expression**: a bracket
+expression can be followed immediately by `[args]` or `{block}` to
+juxtapose-call the result. This is valid syntax (a parser fix ensures
+it works):
+
+```eu,notest
+# ⌈expr⌉[args]  — evaluate the bracket, then call with list argument
+⌈ g ⌉[xs]
+
+# ⌈expr⌉{block}  — evaluate the bracket, then call with block argument
+⌈ h ⌉{x: 1}
+```
+
+**Monadic brackets**: when a bracket pair is declared with `:monad`
+metadata, it acts as monadic do-notation. Items inside the brackets
+are bind steps (`name: action`); the return expression follows the
+closing bracket as `.name` or `.(expr)`:
+
+```eu,notest
+# List monad declared with ⌈⌉
+⌈{}⌉: { :monad bind(m, f): m mapcat(f)  return(v): [v] }
+
+# Usage: cartesian product
+⌈ x: [1, 2]  y: [10, 20] ⌉.(x + y)   # => [11, 21, 12, 22]
+```
+
+Monadic brackets **cannot be empty** — at least one bind step is
+required (an empty monadic block is a desugaring error).
+
+**Path bracket shorthand** (`‹›`): `lib/lens.eu` defines `‹›` as a
+bracket that converts a sequence of symbols and numbers into a
+composed lens path:
+
+```eu,notest
+{ import: "lens.eu" }
+‹:server :db :host›   # same as at(:server) ∘ at(:db) ∘ at(:host)
+‹:items 0 :title›     # at(:items) ∘ ix(0) ∘ at(:title)
+```
+
 ### 1.4 Comments
 
 ```eu,notest
@@ -1116,7 +1192,7 @@ The following are commonly assumed but are **not** in the prelude:
 - `even?` / `odd?` — do not exist (use `x % 2 = 0`)
 - `round` / `ceil` — use `floor` and `ceiling` (or bracket notation `⌊n⌋` and `⌈n⌉`)
 - `select(ks, b)` — **exists**: `{ a: 1, b: 2, c: 3 } select([:a, :c])` → `{ a: 1, c: 3 }`
-- `dissoc` — does not exist (use `filter-items` with `by-key`)
+- `dissoc(ks, b)` — **exists**: `{ a: 1, b: 2 } dissoc([:a])` → `{ b: 2 }`
 
 These **do exist** and are commonly available:
 
@@ -1182,6 +1258,162 @@ rebuilds the block. Combine with `bimap` for point-free transforms:
 ```eu,notest
 blk map-elements(bimap(rename-key, transform-value))
 ```
+
+### 5.17 `{x: x}` Is Always Self-Reference
+
+Every declaration inside a block literal sees *itself* — including its
+own right-hand side. `{x: x}` does **not** copy an outer `x` into the
+block; it creates a self-referential binding that refers to itself.
+This most often bites function parameters:
+
+```eu,notest
+# WRONG — cmd refers to itself (infinite loop), not the parameter
+shell-spec(cmd): { :io-shell cmd: cmd, timeout: 30 }
+
+# CORRECT — use a different name so the parameter isn't shadowed
+shell-spec(c): { :io-shell cmd: c, timeout: 30 }
+```
+
+To transform a value and keep its name use a `:let` block (see 5.18)
+or pick a different local name.
+
+### 5.18 Sequential Bindings: Use `:let` Blocks
+
+Eucalypt has no `let … in` syntax. For sequential, non-self-referential
+bindings, use a `:let` block:
+
+```eu,notest
+# WRONG — 'in' is unresolved; 'let' is just a prelude value
+result: let x: 1 in x + 2
+
+# CORRECT — :let block; y can safely reference x
+result: { :let x: 1  y: x + 2 }.y
+```
+
+`:let` RHS expressions see the *outer* scope (including prior `:let`
+bindings), not themselves. This is the one place where `{name: name}`
+is not self-reference — the RHS is evaluated before the new binding
+takes effect:
+
+```eu,notest
+# Transform xs and keep its name — RHS xs is the function parameter
+normalise(xs): { :let xs: xs map(clean) }.xs
+```
+
+### 5.19 Backtick and Braces in Doc Strings
+
+The backtick (`` ` ``) inside a string is **not** an escape — it is
+parsed as a metadata marker. Using `` ` `` inside a doc string causes
+a parse error:
+
+```eu,notest
+# WRONG — backtick inside string triggers metadata parsing
+` "Run via `sh -c`"
+my-fn(x): x
+
+# CORRECT — use plain prose, no backticks inside the string
+` "Run via sh -c"
+my-fn(x): x
+```
+
+Similarly, `{` inside a doc string starts string interpolation. A
+literal `{` example (e.g. `"e.g. {stdin: s}"`) will try to look up
+`stdin` as a variable and likely fail:
+
+```eu,notest
+# WRONG — {stdin: s} triggers interpolation; s becomes a free variable
+` "Provide options e.g. {stdin: s}"
+run(opts): opts
+
+# CORRECT — describe with plain prose
+` "Provide options e.g. a block with stdin field"
+run(opts): opts
+```
+
+### 5.20 `:suppress` Leaks Through References
+
+`` ` :suppress `` hides a binding from rendered output, but the flag
+travels with the **value**. If you reference a suppressed value, the
+field it lands in is also silently suppressed:
+
+```eu,notest
+# WRONG — log4j is suppressed, so @id silently disappears
+` :suppress
+log4j: "pkg:maven/log4j-core@2.17.1"
+
+entry: { '@id': log4j }   # renders as {} — @id is gone
+
+# CORRECT — suppress the container, reference members directly
+` :suppress
+purls: { log4j: "pkg:maven/log4j-core@2.17.1" }
+
+entry: { '@id': purls.log4j }   # @id is present and correct
+```
+
+Only suppress a binding you do not reference elsewhere. To hide values
+you *do* reference, group them in a suppressed block and look up members
+from it.
+
+### 5.21 Cons Pattern Only Valid in Function Parameters
+
+The `[h : t]` destructuring pattern is only valid in a **function
+parameter position**. A colon inside a list expression is a parse
+error:
+
+```eu,notest
+# VALID — cons pattern in function parameter
+first([h : t]): h
+
+# INVALID — colon is not a list separator in expressions
+bad: [1 : rest]   # parse error
+```
+
+In expressions, use the `‖` cons operator or `cons` prelude function:
+
+```eu,notest
+built: 1 ‖ [2, 3]        # => [1, 2, 3]
+also: cons(1, [2, 3])     # => [1, 2, 3]
+```
+
+### 5.22 Prefer `when` Over `if` for Conditional Transforms
+
+`when(pred?, f, x)` applies `f` when the predicate is satisfied and
+passes `x` through unchanged. It is cleaner than `if(pred?(x), f(x),
+x)` because it avoids repeating `x`:
+
+```eu,notest
+# Prefer — no repetition
+x when(number?, + 1)
+
+# Avoid — x appears three times
+if(x number?, x + 1, x)
+```
+
+### 5.23 Anaphor Scoping: Parentheses Are Opaque
+
+Parentheses create a new anaphor scope. Anaphors inside parens form a
+lambda at the paren level, not at the enclosing expression:
+
+```eu,notest
+(_0 + _1) / 2   # WRONG: (_0 + _1) is its own 2-arg lambda;
+                #  / 2 then tries to divide a function by 2
+
+# Correct: use a named helper
+avg2(a, b): (a + b) / 2
+```
+
+**Subsumption**: if the enclosing expression already has a direct
+anaphor, inner paren groups become *transparent* — their anaphors join
+the outer scope:
+
+```eu,notest
+# _0✓ makes the outer expression anaphoric, so _0 inside count(_0)
+# is subsumed — both refer to the same parameter
+_0✓ && count(_0) >= 4    # λ(a). a != null && count(a) >= 4
+```
+
+Without the outer `_0✓`, the `_0` inside `count(_0)` would form a
+separate lambda at the ArgTuple level.
 
 ---
 
@@ -1333,3 +1565,123 @@ Uses [semver constraint syntax](https://docs.rs/semver/latest/semver/#requiremen
   string, before the first binding definition.
 - Build metadata (`+N`) is ignored by the version check — `">=0.8"` matches
   `0.8.0+1685`.
+
+---
+
+## 11. Lens Library (`lib/lens.eu`)
+
+The lens library provides composable, bidirectional accessors for
+nested data. Import it with:
+
+```eu,notest
+{ import: "lens.eu" }
+```
+
+### What a Lens Is
+
+A **lens** is a reusable description of a *position* within a data
+structure. Once defined, the same lens can read the value at that
+position (`view`), replace it (`over` with `->const`), or transform
+it with a function (`over`) — always returning the complete, updated
+structure.
+
+A **traversal** extends this to *multiple* positions: `over` applies a
+function at each focus and rebuilds the whole structure; `to-list-of`
+collects all foci into a list.
+
+### Core Operations
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `view(lens, data)` | `Lens(a, b) → a → b` | Read the focused value |
+| `over(optic, fn, data)` | `(Lens(a,b) \| Traversal(a,b)) → (b→b) → a → a` | Transform at each focus |
+| `to-list-of(optic, data)` | `(Lens(a,b) \| Traversal(a,b)) → a → [b]` | Collect all foci into a list |
+| `parts-of(traversal)` | `Traversal(a,b) → Lens(a,[b])` | Turn a traversal into a lens on the list of all foci |
+
+**Setting a value**: use `over` with the `->` const operator to
+replace rather than transform:
+
+```eu,notest
+data over(lens, -> "new-value")   # -> discards the old value
+```
+
+### Lens and Traversal Constructors
+
+| Constructor | Type | Description |
+|-------------|------|-------------|
+| `at(key)` | `symbol → Lens({..}, a)` | Focus on block value at symbol key |
+| `ix(n)` | `number → Lens([a], a)` | Focus on list element at index n |
+| `item(pred)` | `(a→bool) → Lens([a], a)` | Focus on first list element matching predicate |
+| `element(pred)` | `((sym,any)→bool) → Lens({..},[sym,any])` | Focus on first `[key,value]` pair matching predicate |
+| `_value` | `Lens([a], a)` | Focus on value (index 1) of a `[key,value]` pair |
+| `_key` | `Lens([a], a)` | Focus on key (index 0) of a `[key,value]` pair |
+| `each` | `Traversal([a], a)` | Traverse all list elements |
+| `filtered(pred)` | `(a→bool) → Traversal([a], a)` | Traverse only matching list elements |
+| `each-element` | `Traversal({..}, [sym,any])` | Traverse all block kv pairs |
+| `filtered-elements(pred)` | `((sym,any)→bool) → Traversal({..}, [sym,any])` | Traverse matching block kv pairs |
+
+### Composition
+
+Compose with `∘` (right-to-left) to focus deeper. A lens composed
+with a traversal yields a traversal:
+
+```eu,notest
+# Equivalent compositions
+at(:server) ∘ at(:db) ∘ at(:host)
+‹:server :db :host›       # shorthand bracket form
+
+# Mix key and index navigation
+‹:items 0 :meta :title›   # at(:items) ∘ ix(0) ∘ at(:meta) ∘ at(:title)
+```
+
+The `‹›` bracket shorthand converts symbols to `at` lenses and
+numbers to `ix` lenses, then composes them with `∘`. Lens function
+values may also appear in the path: `‹element(by-key(_ = :b)) _value›`.
+
+### Examples
+
+```eu,notest
+{ import: "lens.eu" }
+
+config: { server: { db: { host: "localhost", port: 5432 } } }
+
+# Read with view
+host: config view(‹:server :db :host›)
+# => "localhost"
+
+# Update with over — whole config returned, rest unchanged
+updated: config over(‹:server :db :host›, -> "10.0.0.5")
+# => { server: { db: { host: "10.0.0.5", port: 5432 } } }
+
+# Apply a function to a nested value
+bumped: config over(‹:server :db :port›, + 1)
+# => { server: { db: { host: "localhost", port: 5433 } } }
+```
+
+Traversal example — transform a field across every list element:
+
+```eu,notest
+{ import: "lens.eu" }
+
+records: [{name: "a", score: 10}, {name: "b", score: 20}]
+
+# Collect all scores
+records to-list-of(each ∘ at(:score))   # => [10, 20]
+
+# Double all scores
+records over(each ∘ at(:score), * 2)
+# => [{name: "a", score: 20}, {name: "b", score: 40}]
+
+# Sort all scores as a group (parts-of)
+[3, 1, 4, 1, 5] over(parts-of(each), sort-nums)   # => [1, 1, 3, 4, 5]
+```
+
+### Type Checker Integration
+
+The type checker understands `Lens(a, b)` and `Traversal(a, b)` as
+opaque types. Using `view` on a traversal (instead of `to-list-of`)
+triggers a type warning. Composing incompatible optics (e.g.
+`Lens(a, b) ∘ Lens(c, d)` where `b ≠ c`) also produces a warning.
+
+See [Navigating Nested Data](../guide/navigating-nested-data.md) for
+a complete tutorial including `~` safe navigation and `match?`.
