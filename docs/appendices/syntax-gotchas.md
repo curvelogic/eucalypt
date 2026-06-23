@@ -629,6 +629,62 @@ hide values you *do* reference, group them in a block and suppress that.
 
 ---
 
+## Idiot Bracket Gotchas
+
+### Single-Item Idiot Brackets Still Pass a List
+
+Idiot brackets always collect their contents into a **list** before
+calling the function, even when there is only one item:
+
+```eu,notest
+⟦ xs ⟧: xs        # xs is always a list
+
+single: ⟦ 42 ⟧   # calls ⟦⟧([42]), not ⟦⟧(42)
+# single => [42], not 42
+```
+
+If you expect a scalar, extract the head or use a named parameter with
+destructuring:
+
+```eu,notest
+# Extract the head to use a single item as a scalar
+⌈ [x] ⌉: x ceiling   # destructure the single element
+⌈ 3.7 ⌉              # => 4
+```
+
+The prelude `⌈⌉` and `⌊⌋` bracket pairs do this automatically:
+they destructure `[x]` so `⌈3.7⌉` works as expected.
+
+### Multi-Token Items Must Be Parenthesised
+
+Items inside idiot brackets are separated by whitespace. A compound
+expression such as `x + 1` is two items (`x` and `+ 1`), not one:
+
+```eu,notest
+⟦ xs ⟧: xs
+
+# THREE items — x, +, 1
+result: ⟦ x + 1 ⟧     # => [x, +, 1]  (+ is the section (+ _))
+
+# ONE item — the expression x + 1
+result: ⟦ (x + 1) ⟧   # => [x + 1]
+```
+
+Parenthesise any expression that should be treated as a single item.
+
+### Juxtaposed Call After a Bracket Expression
+
+A bracket expression can be followed immediately by `[args]` or
+`{block}` to call the result with a further argument. This is valid
+syntax, but be aware that the `[...]` is **not** parsed as list syntax
+here — it is a juxtaposed call with a list argument:
+
+```eu,notest
+⟦ g ⟧[xs]    # evaluate ⟦g⟧, then call the result with list xs
+```
+
+---
+
 ## Monad Bracket Restrictions
 
 ### Empty Monad Brackets Are an Error
