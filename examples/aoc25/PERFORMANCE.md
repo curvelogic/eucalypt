@@ -12,21 +12,21 @@ Performance characteristics of the AoC 2025 eucalypt example programs, benchmark
 | day01-p2 | ~0.36s | 13,423,535 | 1,923,144 | VM dispatch | −96% wall time |
 | day02-p1 | ~0.04s | 295,133 | 52,469 | Trivial | −61% wall time |
 | day02-p2 | ~0.05s | 1,319,154 | 175,899 | Trivial | −58% wall time |
-| day03-p1 | ~0.27s | 16,501,658 | 1,453,486 | VM dispatch | −78% wall time |
-| day03-p2 | ~0.46s | 27,614,729 | 2,501,641 | VM dispatch | −82% wall time |
+| day03-p1 | ~1.03s | 27,813,225 | 11,553,241 | VM dispatch | −4% wall time (GC eliminated) |
+| day03-p2 | ~2.31s | 57,806,510 | 25,204,145 | VM dispatch | ≈0% (GC eliminated) |
 | day04-p1 | ~1.10s | 53,908,706 | 3,215,923 | VM dispatch + env walk | −53% wall time |
 | day04-p2 | >600s (timeout) | — | — | VM dispatch (loop-bound) | first analysed at 0.10.0 |
 | day05-p1 | ~1.19s | 60,865,199 | 2,275,240 | VM dispatch + env walk | −46% wall time |
 | day05-p2 | ~0.06s | 1,252,458 | 151,165 | Trivial | −54% wall time |
 | day06-p1 | ~0.44s | 16,706,391 | 232,193 | VM dispatch | −27% wall time |
-| day06-p2 | ~3.43s | 126,350,418 | 1,388,340 | Env walk (dominant) | −30% wall time |
+| day06-p2 | ~4.97s | 126,966,700 | 10,646,539 | Env walk (dominant) | ≈0% (GC eliminated) |
 | day07-p1 | ~0.87s | 42,911,737 | 2,174,510 | VM dispatch | −44% wall time |
 | day07-p2 | ~1.46s | 28,483,917 | 1,437,304 | Handle-instruction (54%) | −40% wall time |
 | day08-p1 | ~4.64s | 228,966,325 | 18,660,114 | Alloc + VM dispatch | −57% wall time |
 | day08-p2 | >600s (timeout) | — | — | VM dispatch + alloc (pair gen) | first analysed at 0.10.0 |
 | day09-p1 | ~3.87s | 195,078,936 | 12,342,225 | VM dispatch + alloc | −53% wall time |
 | day09-p2 | >600s (timeout) | — | — | Continuation overhead + env walk | first analysed at 0.10.0 |
-| day10-p1 | ~7.01s | 432,649,144 | 43,177,479 | Alloc-intensive | −68% wall time |
+| day10-p1 | ~21.9s | 544,089,317 | 228,950,942 | Alloc-intensive | −1% wall time (GC eliminated) |
 | day10-p2 | >600s (timeout) | — | — | Env walk (dominant, 39.3%) | first analysed at 0.10.0 |
 | day11-p1 | ~1.32s | 66,475,331 | 357,770 | VM dispatch loop | −10% wall time |
 | day11-p2 | ~129s | 3,068,130,793 | 4,264,268 | Tick-bound algorithm | −11% wall time |
@@ -121,11 +121,11 @@ Inclusion-exclusion over prime factor subsets. Generates all subsets of prime fa
 
 Greedy digit selection via windowed recursion. Finds the largest digit in a valid window, then recurses on the remaining sequence. Processes a moderately sized input with O(n×w) comparisons where w is the window size.
 
-**Stats (0.10.0):** 16,501,658 ticks | 1,453,486 allocs | 0 GC | ~0.27s
+**Stats (0.10.0):** 27,813,225 ticks | 11,553,241 allocs | 0 GC | ~1.03s
 
-**Characteristics:** Compute-bound with moderate allocation. 1 alloc per 11 ticks. No GC pressure. The recursive structure creates closure chains proportional to recursion depth.
+**Characteristics:** Compute-bound with high allocation (1 alloc per 2.4 ticks). No GC pressure. Each recursive `cons(best, pick(k-1,...))` call creates a thunk for the tail, allocating proportionally to output size (~1,209 digits).
 
-**0.10.0 changes:** Ticks −38% (26.6M → 16.5M), allocs −88% (11.6M → 1.45M), wall time −78% (1.06s → 0.24s), GC 2 → 0. Large alloc reduction (88%) suggests the 0.9.x version was allocating heavily for prelude functions used in the windowing operations (likely `take`, `drop`, `max` variants).
+**0.10.0 changes:** Ticks +4% (26.6M → 27.8M), allocs −0.6% (11.6M → 11.6M), wall time −4% (1.07s → 1.03s), GC 2 → 0. Tick and allocation counts are essentially unchanged from 0.9.x — the lazy cons evaluation pattern was always present. The dramatic figures in the initial 0.10.0 rebaseline were an artefact of incorrect cons strictness (fixed in PR #895), which had suppressed thunk allocation by forcing both cons args eagerly. The only genuine improvement is GC elimination.
 
 **Bottleneck:** VM dispatch for the recursive windowed search.
 
@@ -139,15 +139,15 @@ Greedy digit selection via windowed recursion. Finds the largest digit in a vali
 
 Same greedy algorithm extended to 12-digit selection. Higher constant factor but identical structure.
 
-**Stats (0.10.0):** 27,614,729 ticks | 2,501,641 allocs | 0 GC | ~0.46s
+**Stats (0.10.0):** 57,806,510 ticks | 25,204,145 allocs | 0 GC | ~2.31s
 
-**Characteristics:** Structurally identical to part 1 with a larger selection target. Tick and alloc counts scale roughly with the additional selection rounds. 1 alloc per 11 ticks — same ratio as part 1.
+**Characteristics:** Structurally identical to part 1 with a larger selection target. Tick and alloc counts scale roughly with the additional selection rounds. 1 alloc per 2.3 ticks — same ratio as part 1.
 
-**0.10.0 changes:** Ticks −50% (55.1M → 27.6M), allocs −90% (25.2M → 2.50M), wall time −82% (2.29s → 0.40s), GC 2 → 0.
+**0.10.0 changes:** Ticks +5% (55.1M → 57.8M), allocs −0.2% (25.2M → 25.2M), wall time ≈0% (2.31s → 2.31s), GC 2 → 0. Same situation as part 1: lazy cons evaluation restores 0.9.x-level ticks and allocs; the only measurable improvement is GC elimination.
 
 **Bottleneck:** Same as part 1. The larger selection target multiplies the constant but doesn't change the algorithm's structure.
 
-**Potential improvements:** Same as part 1. The alloc-per-tick ratio is identical, confirming the same allocation pattern.
+**Potential improvements:** Same as part 1. The alloc-per-tick ratio is identical to part 1 (1 per 2.3 ticks vs 1 per 2.4 ticks), confirming the same allocation pattern.
 
 ---
 
@@ -275,7 +275,7 @@ Transposes a row-oriented list of numbers into column problems, applies per-colu
 
 Transposes a character grid, reverses columns, folds right-to-left grouping digits by operator boundaries. Structurally similar to part 1 but with character classification and more complex grouping logic.
 
-**Stats (0.10.0):** 126,350,418 ticks | 1,388,340 allocs | 0 GC | ~3.43s
+**Stats (0.10.0):** 126,966,700 ticks | 10,646,539 allocs | 0 GC | ~4.97s
 
 **CPU profile (top 5):**
 
@@ -287,9 +287,9 @@ Transposes a character grid, reverses columns, folds right-to-left grouping digi
 | create_arg_array | 28 | 1.0% |
 | try_allocate | 23 | 0.8% |
 
-**Characteristics:** The most env-walk-bound program in the suite. `EnvironmentFrame::get` at 33.4% is the dominant cost — surpassing `handle_instruction` (32.4%). The grouping fold captures many outer bindings (column index, operator type, accumulator) creating deep env chains that are walked on every element of every column. Allocation is low (1 alloc per 91 ticks) — this program barely allocates; it just walks env chains.
+**Characteristics:** The most env-walk-bound program in the suite. `EnvironmentFrame::get` at 33.4% is the dominant cost — surpassing `handle_instruction` (32.4%). The grouping fold captures many outer bindings (column index, operator type, accumulator) creating deep env chains that are walked on every element of every column. Allocation is moderate (1 alloc per 12 ticks) — the cons-fix restored lazy cons args in the fold accumulator, raising allocs from the pre-fix 1.4M back to 10.6M (consistent with 0.9.x at 10.6M). Even so, the dominant runtime cost is env chain walking, not allocation.
 
-**0.10.0 changes:** Ticks +0% (125.9M → 126.4M), allocs −87% (10.6M → 1.39M), wall time −30% (4.84s → 3.37s), GC 2 → 0. Ticks are essentially unchanged, confirming the prelude is not in the hot path. The wall-time improvement is GC elimination only.
+**0.10.0 changes:** Ticks +0.8% (125.9M → 127.0M), allocs +0.8% (10.6M → 10.6M), wall time +2.5% (4.85s → 4.97s), GC 2 → 0. Ticks, allocs, and wall time are essentially unchanged from 0.9.x. The pre-cons-fix rebaseline had artificially suppressed allocs (1.4M), which made this appear to be a 30% wall-time winner. The only structural change is GC elimination.
 
 **Bottleneck:** Env chain walking. This is the single best candidate in the entire suite for flat closures optimisation. If `EnvironmentFrame::get` were O(1) instead of O(depth), this program would likely run in under 2s.
 
@@ -474,7 +474,7 @@ Largest-inscribed-rectangle sweep over a rectilinear polygon. `levels.from-point
 
 DFS subset enumeration over GF(2). Finds minimum k-size subsets via XOR-based target matching. Highly recursive with extensive backtracking.
 
-**Stats (0.10.0):** 432,649,144 ticks | 43,177,479 allocs | 0 GC | ~7.01s
+**Stats (0.10.0):** 544,089,317 ticks | 228,950,942 allocs | 0 GC | ~21.9s
 
 **CPU profile (top 5):**
 
@@ -486,11 +486,11 @@ DFS subset enumeration over GF(2). Finds minimum k-size subsets via XOR-based ta
 | EnvironmentFrame::get | 437 | 8.4% |
 | create_arg_array | 354 | 6.8% |
 
-**Characteristics:** The most allocation-intensive program in the suite. With 43.2M allocs in 7.01s, allocation rate is ~6.2M allocs/sec. Allocation machinery totals ~28% of CPU (try_allocate 8.7% + BumpBlock::bump 5.4% + Array::push 4.3% + from_let 3.6% + find_space 3.5%). The DFS enumeration creates a closure per candidate subset, and each backtracking step must rebuild env frames. Env walk at 8.4% is moderate but secondary to allocation.
+**Characteristics:** The most allocation-intensive program in the suite. With 229M allocs in 21.9s, allocation rate is ~10.5M allocs/sec. The CPU profile below was captured on the initial 0.10.0 binary (pre-cons-fix, 43M allocs); with the correct post-fix 229M allocs, allocation machinery overhead will be proportionally higher. The DFS enumeration creates a closure per candidate subset via recursive `cons`, and each backtracking step must rebuild env frames. Env walk at 8.4% is moderate but secondary to allocation.
 
-**0.10.0 changes:** Ticks −18% (527.6M → 432.6M), allocs −81% (228.3M → 43.2M), wall time −68% (22.09s → 7.01s), GC 2 → 0. Despite the large reduction, 43.2M allocs remain — these are genuine algorithmic allocations.
+**0.10.0 changes:** Ticks +3% (527.6M → 544.1M), allocs +0.3% (228.3M → 229.0M), wall time −1% (22.16s → 21.9s), GC 2 → 0. Tick and allocation counts are essentially unchanged from 0.9.x. The dramatic improvement shown in the initial 0.10.0 rebaseline (−68% wall time) was an artefact of incorrect cons strictness (fixed in PR #895): the DFS uses recursive cons construction throughout the backtracking loop, and forcing those args eagerly had artificially suppressed allocations and ticks. The only genuine improvement is GC elimination.
 
-**Bottleneck:** Allocation machinery (~28% of CPU). This program is the strongest case in the suite for persistent blocks and arena allocation improvements.
+**Bottleneck:** Allocation machinery (CPU profile from pre-cons-fix pass; see note in Characteristics). This program remains the strongest case in the suite for persistent blocks and arena allocation improvements.
 
 **Potential improvements:**
 - *Engine-level (highest impact in suite):* Persistent blocks would directly reduce the allocation overhead. Given 28% of CPU is in allocation infrastructure, a 2× improvement in allocator throughput would yield ~14% wall-time improvement.
@@ -612,7 +612,7 @@ Area check and box dimension filter. Counts feasible regions passing geometric c
 
 ### Persistent blocks
 
-day10-p1 is the clearest case: 28% of CPU in allocation machinery, 43M allocs. day08-p1 (20% allocation overhead), day09-p1 (11%), and day04-p1 (5%) would also benefit. Persistent blocks reduce per-element allocation for block construction, which would lower these costs.
+day10-p1 is the clearest case: 28% of CPU in allocation machinery (CPU profile from pre-cons-fix pass), 229M allocs. day08-p1 (20% allocation overhead), day09-p1 (11%), and day04-p1 (5%) would also benefit. Persistent blocks reduce per-element allocation for block construction, which would lower these costs.
 
 ### VM dispatch loop
 
