@@ -2556,6 +2556,13 @@ pub fn test_171_strict_prelude_args() {
 }
 
 #[test]
+/// Idiot-bracket expressions accepted as juxtaposed call targets: ⌈expr⌉[args]
+/// and ⌈expr⌉{block} are parsed as calls, not catenation with a list literal.
+pub fn test_172_idiot_bracket_juxtaposed_call() {
+    run_test(&opts("172_idiot_bracket_juxtaposed_call.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

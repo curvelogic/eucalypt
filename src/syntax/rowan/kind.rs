@@ -133,6 +133,7 @@ impl SyntaxKind {
         *self == CLOSE_PAREN
             || *self == CLOSE_BRACE
             || *self == CLOSE_SQUARE
+            || *self == BRACKET_CLOSE
             || *self == UNQUOTED_IDENTIFIER
             || *self == STRING_PATTERN_END
             || *self == C_STRING_PATTERN_END
