@@ -1,0 +1,30 @@
+#!/usr/bin/env eu
+# Regression test for idiot-bracket expressions as juxtaposed call targets.
+#
+# Prior to the fix, `⌈expr⌉[args]` was parsed as catenation of the bracket
+# expression with a plain list literal, rather than as a juxtaposed call
+# (the bracket expression calling a function with `[args]` as argument).
+# This happened because BRACKET_CLOSE was not included in `is_callable_terminal()`,
+# so the lexer emitted OPEN_SQUARE instead of OPEN_SQUARE_APPLY.
+
+# Define a custom bracket pair that extracts the single item from its list
+# and returns it — so ⌊f⌋ is equivalent to f.
+⌊xs⌋: xs head
+
+# Juxtaposed list call: ⌊map(_ * 2)⌋[1, 2, 3] should call map(_ * 2) with [1, 2, 3]
+list-call-ok: ⌊map(_ * 2)⌋[1, 2, 3] = [2, 4, 6]
+
+# Juxtaposed block call: ⌊lookup(:b)⌋{a: 1, b: 99} should look up :b in the block
+block-call-ok: ⌊lookup(:b)⌋{a: 1, b: 99} = 99
+
+# Nested: bracket expression as receiver in a further chain
+# ⌊map(_ + 10)⌋[5, 6] should give [15, 16], then filter(> 14) gives [15, 16]
+nested-ok: (⌊map(_ + 10)⌋[5, 6] filter(> 14)) = [15, 16]
+
+# The standard prelude ceiling/floor brackets are not affected:
+# ⌈n⌉[args] would be a runtime error (ceiling returns a number, not a
+# function), so we only test that the *parser* accepts the syntax by
+# checking the juxtaposed-call cases above.
+
+RESULT: [list-call-ok, block-call-ok, nested-ok] all-true?
+  then(:PASS, :FAIL)
