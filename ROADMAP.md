@@ -114,9 +114,10 @@ plan:
 Two measurements reset the priorities. Both reproduced on the current build.
 
 1. **Startup is a front-end tax, and it is not yet banked.** `eu -e 'true'` spends
-   ~53 ms, of which **~100% is the front-end re-processing the 2,262-line prelude**
-   (parse 23%, cook 24%, translate 22%, merge 13%); actual evaluation is
-   *microseconds* (`stg-eval` 15 µs). The prelude **blob** that would eliminate
+   ~53 ms here (the feasibility study measured ~85 ms on its reference machine — the
+   same tax, cited as "today's startup" throughout this document), of which **~100% is
+   the front-end re-processing the 2,262-line prelude** (parse 23%, cook 24%,
+   translate 22%, merge 13%); actual evaluation is *microseconds* (`stg-eval` 15 µs). The prelude **blob** that would eliminate
    parse/cook exists only when separately generated (`cargo xtask prelude-compile`,
    `xtask/src/main.rs:64`) and embedded behind `cfg(prelude_blob_ok)`
    (`src/driver/resources.rs:6`, `build.rs:35`); a plain `cargo build` has **no
