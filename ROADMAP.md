@@ -493,7 +493,7 @@ aspiration. The type-DSL stays the authoring surface (no reserved bracket, §4.3
 core is `s"…"` + `as-spec` + ingress validation + optional fields; **generation and
 full reflection are the aspirational end-state**, pursued once the vocabulary proves
 out — but the design of `s"…"`/type-data should be chosen so they are reachable, not
-foreclosed. (Its mirror image is **code-as-data**: the embedding bridge that renders
+foreclosed. (Its mirror image is **code-as-data**: the AST embedding that renders
 eucalypt *source* from eucalypt data — Pillar EC, EC-embed. Types-as-data and
 code-as-data are the two halves of eucalypt's reflective surface.)
 
@@ -672,36 +672,45 @@ The surviving cross-unit and surface work that lets 1.0 be declared and frozen.
   nothing observable** (the dual-engine conformance the corpus was built for). Bar:
   golden coverage of every export format and the frozen prelude set; zero panics after
   a 24-hour fuzz run; full harness green under `EU_GC_VERIFY=2`.
-- **EC-embed The embedding bridge — eucalypt as an export target, and the macro
-  substrate.** Eucalypt can already render *itself*: `-x eu` renders values as
-  eucalypt-source data (`src/export/eu.rs`), the `Embed` trait turns core/STG into a
-  Rowan AST and back (`src/syntax/export/embed.rs`, the `c-*`/`s-*` tagged-list
-  vocabulary, `docs/development/embed-format.md`), parse-embed reconstructs core from
-  that vocabulary, and `eu fmt` pretty-prints. **This capability must not die**, even
-  while its day-to-day use is thin. The aspiration is to make eucalypt a generator of
-  *eucalypt code, not just data*: transform a data structure into an **AST embedding**
-  and **render it as eucalypt source** — emit `.eu` libraries and config from
-  eucalypt, the code-as-data dual of SV's types-as-data (§ Pillar SV). Three
-  commitments: **(1) keep it alive** — the embed format is "stable by convention…
-  not enforced by snapshot tests" today; promote its round-trip (embed→disembed) and
-  the `-x eu`/`fmt` paths into the **conformance corpus (W5)** so they cannot silently
-  rot, and treat the tag vocabulary as a documented, versioned surface; **(2) unify**
-  the three fragments (value export, the embed/disembed bridge, `fmt`) into one
-  coherent "eucalypt as an export target" story, extended from data to *code* (lambdas,
-  operators, bindings — the things `-x eu` does not yet round-trip); **(3) worked
-  examples** — carry a couple of living harness examples that take data and emit `.eu`
-  source (generate a block of bindings; round-trip a parsed file through AST-data and
-  back), so the path is exercised and demonstrated rather than latent. **Macros stay
-  deferred** (below), but the embedding *is* their substrate: any later compile-time
-  metaprogramming over the core builds on this same embed/disembed bridge, so keeping
-  it warm keeps that door open at no extra cost.
+- **EC-embed The embedding bridges — eucalypt as an export target, and the macro
+  substrate.** There are **two distinct embedding formats**, and the distinction is
+  the whole point. The **AST embedding** (`src/syntax/export/embed.rs`, *"allow parsed
+  AST to be quote-embedded as eucalypt"*) represents the **front-end syntax tree**
+  (Rowan nodes — blocks, lists, declarations, units) as eucalypt data, and renders
+  back to source via `pretty.rs`/`format.rs` (and `eu fmt`). The **Core embedding**
+  (`src/core/export/embed.rs`, the `c-*` tagged-list vocabulary with `parse-embed:
+  :CORE`, documented in `docs/development/embed-format.md`) represents the **desugared
+  Core IR**, for constructing and testing compiler intermediate representations
+  (there is a parallel `s-*` STG embedding in `src/eval/stg/embed.rs`). They serve
+  different ends: the **AST** embedding is the path for *generating eucalypt source
+  from data* (the syntax level — `data → AST embedding → rendered .eu`); the **Core**
+  embedding is the path for *metaprogramming over the compiled IR* (the substrate any
+  future macros build on). Separately, `-x eu` (`src/export/eu.rs`) renders plain
+  *values* as eucalypt-source data.
+
+  **This must not die — and the AST half is already half-dead:** 10 of the 11 `Embed`
+  impls in the AST module currently return `None` (only `Soup` is wired). So your
+  aspiration — transform a data structure into an AST embedding and render it as
+  eucalypt — is *exactly* the gap: the AST embedding needs completing so eucalypt can
+  emit `.eu` *code* (lambdas, operators, bindings), not just `-x eu` *data*. Three
+  commitments: **(1) keep both alive** — the embed formats are "stable by convention…
+  not enforced by snapshot tests" today; promote the Core round-trip (embed→disembed)
+  and the AST embed→`pretty`→reparse round-trip into the **conformance corpus (W5)** so
+  neither can silently rot, and version the two tag vocabularies as documented
+  surfaces; **(2) complete the AST embedding** — fill the stubbed node impls and unify
+  AST-embed + `pretty`/`fmt` + `-x eu` into one coherent "eucalypt as an export target"
+  story that round-trips code as well as data; **(3) worked examples** — living harness
+  examples that emit `.eu` source from data (generate a block of bindings; round-trip a
+  parsed unit through AST-data and back). **Macros stay deferred** (below), but the
+  **Core** embedding is their substrate, so keeping it warm keeps that door open at no
+  extra cost.
 
 #### Deferred candidates (kept warm, not scheduled)
 
 Recorded so they are not forgotten, able to swap in if priorities shift:
 
 - **Macros / homoiconicity** — compile-time metaprogramming over the core, built on
-  the embedding bridge (EC-embed). Deferred, not declined; the substrate is maintained.
+  the **Core** embedding (EC-embed). Deferred, not declined; the substrate is maintained.
 - **First-class type values** — types as ordinary values beyond the `s"…"` surface;
   the SV aspiration taken to its limit (reflection, type-level computation).
 - **Alternative backends** — core→WASM and other targets, post-bytecode and as
