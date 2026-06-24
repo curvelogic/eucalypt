@@ -428,7 +428,14 @@ stops re-allocating the program each run. The six-kind continuation machine
    `EnvFrame` (`src/eval/machine/env.rs:191`); BV3 introduces **register frames** for
    *only the hot/deep captures CG's escape analysis flags*, not all frames — the lesson
    of the flat-closure revert (§10), where a universal capture tax sank the win. The
-   selectivity threshold is profile-tuned.
+   selectivity threshold is profile-tuned. **The sharpest motivating case is
+   higher-order recursion:** `foldl(op, …)` is **O(n²)** purely because the *local* `op`
+   is re-resolved through the env-walk every step — measured, a higher-order fold runs
+   13.5M → 52M → 204M ticks at N = 5k/10k/20k (O(n²)), while the *identical* recursion
+   with a hard-coded **global** `+` is O(n) (945K → 1.9M → 3.8M), since globals resolve
+   in O(1) with no env-walk. Register frames make local resolution O(1), turning
+   higher-order folds linear. (Strictness is *orthogonal* — a strict and a lazy
+   accumulator scale identically; only first-order-vs-higher-order matters.)
 5. **One serialisation format, three consumers.** BV5's bytecode-bytes format
    (extending the postcard arena form) is reused by the **embedded prelude**, the
    **content-hash unit cache**, and **PP's IPC wire payload** (Pillar PP) — design it
@@ -444,8 +451,11 @@ seeds BV1 — nothing is thrown away.
 **Success.** BV1: code no longer appears in GC scans; `day11-p1` dispatch improves by
 the BV0-measured factor; full harness byte-identical under `EU_GC_VERIFY=2`. BV5:
 `eu -e true` startup floor drops to ~20–30 ms on a plain build with no separate blob
-step. BV3: `EnvironmentFrame::get` falls out of the top of the AoC profiles. Every
-phase: rendered output byte-identical across the conformance corpus (W5).
+step. BV3: `EnvironmentFrame::get` falls out of the top of the AoC profiles, **and a
+higher-order fold `range(0,N) foldl((_+_),0)` scales linearly** — the cleanest
+regression benchmark for the env-walk line (it is O(n²) today purely from local-`op`
+resolution; the first-order equivalent is already O(n)). Every phase: rendered output
+byte-identical across the conformance corpus (W5).
 
 ### Pillar CG — Demand- and type-directed compilation
 
@@ -473,7 +483,10 @@ side-table with a `Synthesised`/`Trusted` provenance bit (§4.2).
     `Update`-frame chains a lazy left fold accumulates.
   - **CG4 Selective lambda-lifting / pre-projection** — demand/escape analysis lifts
     hot deep captures into explicit arguments. Feeds BV3 register frames; this is the
-    sound, targeted form of the reverted flat-closure idea.
+    sound, targeted form of the reverted flat-closure idea. **This — not CG3 — is what
+    addresses the higher-order-fold O(n²)** (§6.4 item 4): the cost is re-resolving the
+    local `op` through the env-walk, so lifting/flattening that capture (or BV3's
+    register frames) makes it O(1); a strict accumulator (CG3) does *not* help.
 - **Type-gated tier (needs §4.2 — decided; lands cleanest on BV):**
   - **CG5 Unboxing + direct intrinsic dispatch** — on a `Synthesised` numeric type,
     take the unboxed `Native::Num` path and skip the tag-`case`. Plus dead-branch
