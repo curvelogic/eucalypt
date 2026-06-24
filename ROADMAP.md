@@ -499,12 +499,31 @@ code-as-data are the two halves of eucalypt's reflective surface.)
 
 **The work:**
 
-- **SV1 The `s"…"` string-prefix.** A new `StringPrefix::SString` alongside
-  `c"…"`/`r"…"`/`t"…"`, producing type-data. Small lexer/parser addition; the design
-  (what type-data *is*, and how it composes toward reflection/generation) is the work.
+- **SV1 `s"…"` value semantics (the surface is already lexed).** `s"…"` already
+  tokenises as `S_STRING` (`src/syntax/rowan/lex.rs`, *"type-data literal — no
+  interpolation, no escape processing"*) and is used today only by `monad:` element-type
+  hints, which read its *raw text*; in value position it currently evaluates to a plain
+  string. The work is to give it **type-data value semantics**, decided as follows:
+  - **Opaque value, rendering as its canonical type-DSL string.** `s"…"` parses (via the
+    type-DSL, `src/core/typecheck/parse.rs`) at *compile time* and reifies an **opaque
+    type-data value** — `t"…"` is the exact precedent (a zdt native that renders as ISO).
+    It renders as its source string, so existing output is unchanged. No checker type
+    reaches runtime (§4.2): it is a data value that *encodes* a type.
+  - **Clean single-brace records — the point of the surface.** Inside `s"…"`, records use
+    plain `s"{ name: String, age: Number }"` — **no interpolation, no `{{…}}` escaping**.
+    This is deliberately cleaner than the `type:` metadata form (which needs `{{…}}` to
+    coexist with interpolation); the type-DSL parser gains a single-brace mode for
+    `s"…"` content.
+  - **A simple `to-data` projection — the Type embedding.** Type-data is opaque but
+    trivially openable: `to-data` projects it to an ordinary **tagged-list** structure
+    and a builder rebuilds it — e.g. `s"[String]" to-data` → `[:t-list [:t-prim :string]]`,
+    `s"A | B"` → `[:t-union …]`. Tagged-list (not block) for terseness and **uniformity
+    with the existing embeddings**: this is the **Type embedding** with a `t-*` vocabulary,
+    completing the family — AST `a-*`, Core `c-*`, STG `s-*`, **Type `t-*`** — all
+    round-trippable data projections of an internal IR (ties to EC-embed).
 - **SV2 `as-spec` / `to-spec`.** Lower type-data into a runtime spec speaking the
   `match?` predicate vocabulary; consumers auto-lower a type via `to-spec`. Prelude
-  work on `match?` and the predicate intrinsics.
+  work on `match?` and the predicate intrinsics, consuming the `to-data` projection.
 - **SV3 Structural contracts & runtime validation (W16).** Apply specs explicitly at
   data ingress (`parse-as`/import sites and user checkpoints), with cost paid only
   where written — the runtime dual of the optimistic erased boundary (§4.2)
@@ -512,6 +531,18 @@ code-as-data are the two halves of eucalypt's reflective surface.)
 - **SV4 `eu doc` schema extraction / schema interop (W8/W22).** `eu doc` reads the
   `s"…"` surface to emit schemas; JSON Schema export; ingest of external schemas
   (incl. CRDs, which need optional fields) as contracts.
+
+**Backward compatibility.** The `s"…"` *surface* is already shipped, so there is no
+lexer collision to manage. The only behavioural change is value-position semantics
+(today a plain string → type-data), and its blast radius is tiny: the live uses are
+`monad:` hints that read raw text and are unaffected, and `s"…"` sits in the
+**Experimental** tier (§4.1), where evaluation may change in a MINOR with a changelog
+entry. Rendering BC is preserved by construction (type-data renders as its source
+string). The **`t-*` projection schema is the versioned surface** — documented and
+tolerant of additive growth — while the type-DSL grammar and the opaque value's
+internals stay Experimental and free to evolve; the projection schema freezes when the
+type representation stabilises (the embed-format discipline: document changes, keep
+old projections readable).
 
 #### SV — Type-vocabulary enrichments (the type representation itself)
 
@@ -542,10 +573,12 @@ from the runtime pillars.
   rules (`head`/`second`/`tail` project the prefix precisely, the tail homogeneously).
   Flows through validation/generation/schema unchanged.
 
-**Success.** A user validates an imported manifest against a spec derived from a
+**Success.** `s"{ name: String }"` parses with clean single braces and renders as
+its source string; `to-data`/builder round-trips type-data through the `t-*`
+tagged-list form; a user validates an imported manifest against a spec derived from a
 `type:` annotation and gets a precise, located failure; the same spec serves `match?`,
-fills defaults, and exports to JSON Schema; optional fields and the markup
-prefix-list shape are both expressible and check correctly.
+fills defaults, and exports to JSON Schema; optional fields and the markup prefix-list
+shape are both expressible and check correctly.
 
 ### Pillar DS — Block & value model
 
@@ -681,7 +714,9 @@ The surviving cross-unit and surface work that lets 1.0 be declared and frozen.
   (`src/core/export/embed.rs`, the `c-*` tagged-list vocabulary with `parse-embed:
   :CORE`, documented in `docs/development/embed-format.md`) represents the **desugared
   Core IR**, for constructing and testing compiler intermediate representations
-  (there is a parallel `s-*` STG embedding in `src/eval/stg/embed.rs`). They serve
+  (there is a parallel `s-*` STG embedding in `src/eval/stg/embed.rs`, and the `t-*`
+  **Type embedding** is the `to-data` projection of `s"…"` from Pillar SV — so the
+  full family is AST `a-*`, Core `c-*`, STG `s-*`, Type `t-*`). They serve
   different ends: the **AST** embedding is the path for *generating eucalypt source
   from data* (the syntax level — `data → AST embedding → rendered .eu`); the **Core**
   embedding is the path for *metaprogramming over the compiled IR* (the substrate any
