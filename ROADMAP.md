@@ -117,7 +117,8 @@ Two measurements reset the priorities. Both reproduced on the current build.
    ~53 ms here (the feasibility study measured ~85 ms on its reference machine — the
    same tax, cited as "today's startup" throughout this document), of which **~100% is
    the front-end re-processing the 2,262-line prelude** (parse 23%, cook 24%,
-   translate 22%, merge 13%); actual evaluation is *microseconds* (`stg-eval` 15 µs). The prelude **blob** that would eliminate
+   translate 22%, merge 13%); actual evaluation is *microseconds* (`stg-eval`
+   15 µs). The prelude **blob** that would eliminate
    parse/cook exists only when separately generated (`cargo xtask prelude-compile`,
    `xtask/src/main.rs:64`) and embedded behind `cfg(prelude_blob_ok)`
    (`src/driver/resources.rs:6`, `build.rs:35`); a plain `cargo build` has **no
@@ -788,7 +789,7 @@ The surviving cross-unit and surface work that lets 1.0 be declared and frozen.
   *values* as eucalypt-source data.
 
   **This must not die — and the AST half is already half-dead:** 10 of the 11 `Embed`
-  impls in the AST module currently return `None` (only `Soup` is wired). So your
+  impls in the AST module currently return `None` (only `Soup` is wired). The
   aspiration — transform a data structure into an AST embedding and render it as
   eucalypt — is *exactly* the gap: the AST embedding needs completing so eucalypt can
   emit `.eu` *code* (lambdas, operators, bindings), not just `-x eu` *data*. Three
