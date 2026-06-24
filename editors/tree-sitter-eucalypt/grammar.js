@@ -242,8 +242,10 @@ module.exports = grammar({
     paren_expr: $ => seq('(', optional($.soup), ')'),
 
     // Function application: name(args) or element(args)
+    // Callable targets mirror the Rowan parser's is_callable_terminal():
+    // names, parenthesised expressions, blocks, and bracket expressions.
     application: $ => prec(2, seq(
-      choice($.name, $.paren_expr, $.block),
+      choice($.name, $.paren_expr, $.block, $.bracket_expr),
       $.argument_list,
     )),
 
@@ -260,8 +262,10 @@ module.exports = grammar({
     // Juxtaposed block call: f{x: 1, y: 2} — sugar for f({x: 1, y: 2}).
     // The Rust parser handles this via OPEN_BRACE_APPLY token ('{' immediately
     // following a name/expression, with no whitespace).
+    // Callable targets mirror the Rowan parser's is_callable_terminal():
+    // names, parenthesised expressions, and bracket expressions.
     block_application: $ => prec(2, seq(
-      choice($.name, $.paren_expr),
+      choice($.name, $.paren_expr, $.bracket_expr),
       $.block_argument,
     )),
 
@@ -277,8 +281,10 @@ module.exports = grammar({
     // Juxtaposed list call: f[1, 2] — sugar for f([1, 2]).
     // The Rust parser handles this via OPEN_SQUARE_APPLY token ('[' immediately
     // following a name/expression, with no whitespace).
+    // Callable targets mirror the Rowan parser's is_callable_terminal():
+    // names, parenthesised expressions, and bracket expressions.
     list_application: $ => prec(2, seq(
-      choice($.name, $.paren_expr),
+      choice($.name, $.paren_expr, $.bracket_expr),
       $.list_argument,
     )),
 

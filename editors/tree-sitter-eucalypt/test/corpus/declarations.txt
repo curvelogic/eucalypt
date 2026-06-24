@@ -770,3 +770,81 @@ x: 1
     (soup
       (literal
         (number)))))
+
+================================================================================
+Bracket expression as function call target (paren args)
+================================================================================
+
+result: ⌈f⌉(1, 2)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (application
+        (bracket_expr
+          (soup
+            (name
+              (identifier))))
+        (argument_list
+          (soup
+            (literal
+              (number)))
+          (soup
+            (literal
+              (number))))))))
+
+================================================================================
+Bracket expression as block call target
+================================================================================
+
+result: ⌈f⌉{x: 1}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (block_application
+        (bracket_expr
+          (soup
+            (name
+              (identifier))))
+        (block_argument
+          (declaration
+            (declaration_head
+              (identifier))
+            (soup
+              (literal
+                (number)))))))))
+
+================================================================================
+Bracket expression as list call target
+================================================================================
+
+result: ⌈f⌉[1, 2]
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (list_application
+        (bracket_expr
+          (soup
+            (name
+              (identifier))))
+        (list_argument
+          (soup
+            (literal
+              (number)))
+          (soup
+            (literal
+              (number))))))))
