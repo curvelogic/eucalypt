@@ -29,7 +29,7 @@ the bottleneck; win in compilation and dispatch, not in heap representation.**
 The document has two halves. **Sections 2–6** are the plan: what eucalypt is and
 where it now stands, the principles, the settled decisions, the deliberate
 non-goals, and the shape and sequencing of the work. **Section 7** is the work
-itself, grouped into six pillars, each item carrying its problem (grounded in the
+itself, grouped into seven pillars, each item carrying its problem (grounded in the
 current code with `path:line` references), design, phasing and success criteria.
 **Sections 8–9** give the critical path and the index. **Section 10** is the
 supplement: the superseded and abandoned work, with its post-mortems, kept so the
@@ -47,8 +47,7 @@ artificial limits rather than advertise them (Principle 5). Its peers for the da
 case are the configuration languages (Jsonnet, Dhall, CUE, Nickel, Pkl, KCL,
 Starlark); for the general case its lineage is the lazy functional languages
 (Haskell/STG, Unison). Every idea is weighed against the data centre of gravity,
-but generality is a legitimate, intended use — the author will use eucalypt for
-this year's Advent of Code.
+but generality is a legitimate, intended use.
 
 ### The implementation, in brief
 
@@ -231,19 +230,29 @@ that the cost lives in code materialisation, dispatch and env-walk. Therefore:
   error machinery and the `EU_*` tooling.
 - **Demand- and type-directed compilation rides on it** (Pillar CG): the bytecode is
   the substrate the smarter codegen emits into.
-- **Generational GC and persistent blocks are shelved** (§10), to be revisited only
-  when a real memory-pressure workload exhibits the regime they target.
+- **The speculative generational-GC rebuild is shelved** (§10), to be revisited only
+  when a real memory-pressure workload exhibits the regime it targets. **Persistent
+  O(log n) blocks are retained** as a forward item (Pillar DS) — eucalypt is an
+  intensely merge-heavy language and the case is structural, not workload-of-the-day —
+  but sequenced *after* bytecode (which removes the code-as-scanned-data churn and
+  makes the GC-native node approach cheap) and built GC-native to avoid the ADR-001
+  finalisation leak.
 
-### 4.6 1.0's surface freeze is independent of the engine
+### 4.6 1.0 is a milestone, not a feature bucket
 
-Bytecode is a multi-release programme (§6.4) and it changes *no observable
-semantics* — output is byte-identical across engines (this is exactly what the
-conformance corpus, W5, proves). Therefore the **1.0 freeze of the stable surface is
-gated on the surface being complete and proven, not on the engine being finished.**
-The bytecode programme straddles 1.0: its core and the startup win land before 1.0
-(they serve the config centre of gravity); register frames and superinstructions
-continue after. We neither block the freeze on the rewrite nor freeze the surface
-*because* the rewrite is done.
+**No feature is scheduled *for* 1.0.** Every capability in this plan ships in an
+ordinary **point release** (0.11, 0.12, …) on the existing high-cadence
+continuous-delivery model. 1.0 is the *milestone we reach* once the point releases
+have delivered the surface and it has been proven — the moment we **decide we are
+going for 1.0**: ratify and freeze the stable-surface tiers (§4.1), turn on the
+version contract, declare the commitment. It carries gates (a complete surface, W5
+conformance green, the deprecation lifecycle exercised), not features.
+
+A corollary: the **freeze is gated on the surface, not on the engine.** Bytecode is a
+multi-release programme (§6.4) that changes *no observable semantics* — output is
+byte-identical across engines, which is exactly what the conformance corpus (W5)
+proves — so the bytecode programme may still be mid-flight when 1.0 is declared. We
+neither block the freeze on the rewrite nor declare 1.0 *because* the rewrite is done.
 
 ### 4.7 WASM is a distribution target, not an execution engine
 
@@ -273,8 +282,9 @@ compile from. Post-1.0 candidate (§10 records the analysis).
 - **Nominal types / classes.** Stay structural (Principle 2).
 - **Sound/guarded gradual typing** and an always-on runtime type check (§4.2).
 - **WASM as an execution engine** (§4.7) — distribution only, and only post-bytecode.
-- **A speculative generational-GC rebuild** and **persistent O(log n) blocks** — both
-  shelved (§4.5, §10); revisit only on a demonstrated memory-pressure workload.
+- **A speculative generational-GC rebuild** — shelved (§4.5, §10); revisit only on a
+  demonstrated memory-pressure workload. (Persistent O(log n) blocks are *not* a
+  non-goal — they are retained as Pillar DS, sequenced after bytecode.)
 - **Shared-memory parallelism / a `Send`+`Sync` heap.** Parallelism is process-level
   and isolated (Principle 4, Pillar PP).
 
@@ -282,16 +292,17 @@ compile from. Post-1.0 candidate (§10 records the analysis).
 
 ## 6. The shape of the plan
 
-### 6.1 The six pillars
+### 6.1 The seven pillars
 
 | Pillar | Theme | The shared thing |
 |---|---|---|
 | **BV — Bytecode VM** | A flat, serialisable, arena-resident execution form | Code leaves the GC heap; dispatch, frames and annotations are restructured; the program becomes serialisable bytes |
 | **CG — Code generation** | Demand- and type-directed core→STG/bytecode | One demand/type analysis decides thunk-vs-value, direct dispatch, key resolution, unboxing and selective lifting |
 | **TY — Typing default-on** | The checker earns its keep | Cheap, quiet checking made the default; the forcing function that hardens the checker toward CG's type-gated tier |
-| **SV — Spec & validation** | `s"…"` type-data → contracts, presence, schema | One type-data vocabulary reused by ingress validation, optional fields, doc/schema extraction and interop |
-| **PP — Process parallelism** | Isolated forked workers, data-only boundary | Purity + IO-isolation make a scatter/gather `par-map`/`par-fold` safe; mmap is the transport |
-| **EC — Ecosystem & surface** | Modules, interactive surface, reproducibility, conformance | The cross-unit interface, the cache, and the proof corpus that let 1.0 be declared and frozen |
+| **SV — Type-value surface** | `s"…"` type-data → validation, optional fields, prefix-lists, schema | Types become ordinary values; one type-data source is validated, generated, coerced, defaulted, documented and exported |
+| **DS — Block & value model** | Persistent O(log n) blocks; arbitrary-value `vec` | The merge-heavy core data structure made sub-linear with structural sharing, GC-native, on the bytecode-reduced churn |
+| **PP — Process parallelism** | Isolated forked workers, data-only boundary | Purity + IO-isolation make a scatter/gather `par-map`/`par-fold` safe; an mmap arena is the transport and coordination layer |
+| **EC — Ecosystem & surface** | Modules, interactive surface, reproducibility, conformance | The cross-unit interface, the cache, and the proof corpus that let the surface be completed and frozen |
 
 ### 6.2 The dependency spine (`→` = "must precede")
 
@@ -305,22 +316,31 @@ compile from. Post-1.0 candidate (§10 records the analysis).
   type-gated tier depends on.
 - **BV5** (serialisable bytecode) makes **PP** workers cheapest to spawn, and is the
   natural successor to the existing `ArenaStgSyn`/postcard blob.
-- **SV** (`s"…"` → contracts) is independent of the runtime work; **W15** (presence)
-  enriches it; **W8/W22** consume it.
+- **SV** is independent of the runtime work; **optional fields** and the
+  **prefix-list type** are type-vocabulary enrichments it surfaces; **W8/W22**
+  (doc/schema) consume the same type-data.
+- **DS** (persistent blocks) is sequenced **after BV** — bytecode removes the
+  code-as-scanned-data churn and makes the GC-native CHAMP/RRB nodes cheap; it shares
+  BV's GC-scannable-array machinery. Independent of SV/CG.
 - **EC**: **W18** (modules) builds on the shipped Unit Interface + git imports;
   **W19** (watch/REPL) builds on the cache + BV5 startup; **W5** (conformance) is the
   proof that BV changes nothing observable.
 
 ### 6.3 Release mapping
 
+All features ship in **point releases**; 1.0 is a milestone, not a bucket (§4.6).
+The near releases are concrete; the later ones are a likely grouping, freely
+reordered as the cadence dictates.
+
 | Release | Theme | Items |
 |---|---|---|
-| **0.11** | Codegen wins, typing on, validation foundation, bytecode spike | CG type-free tier; TY default-on; SV `s"…"` + `as-spec`; **BV0** gate |
+| **0.11** | Codegen wins, typing on, type-value foundation, bytecode spike | CG type-free tier; TY default-on; SV `s"…"` + `as-spec`; **optional record fields**; **BV0** gate |
 | **0.12** | The bytecode core + the startup win | **BV1** (code out of the heap) + **BV5** (serialised/embedded prelude, 85→~25 ms) |
-| **0.13** | Frames, annotations, and type-gated codegen | **BV2** side tables; **BV3** register frames + CG selective lifting; **CG** type-gated (unboxing) |
-| **0.14** | Polish + parallelism + contracts | **BV4** superinstructions; **PP** `par-map`/`par-fold`; **W16** contracts; **W15** presence |
-| **1.0** | Freeze & prove | **W18** modules; **W19** watch/REPL; **W17** hermetic; **W5** green; surface freeze (§4.6) |
-| **post-1.0** | Breadth & curated bets | WASM-as-distribution; **W22** schema interop; **W14** vec; parallel Model B (maybe-never); a true separate-nursery GC *iff* a workload demands it |
+| **0.13** | Frames, annotations, type-gated codegen, prefix-lists | **BV2** side tables; **BV3** register frames + CG selective lifting; **CG** type-gated (unboxing); **prefix-list type** |
+| **0.14** | Polish, parallelism, contracts | **BV4** superinstructions; **PP** `par-map`/`par-fold`; **W16** contracts; presence inference |
+| **0.15+** | Value model, ecosystem, surface | **DS** persistent blocks + `vec`; **W18** modules; **W19** watch/REPL; **W17** hermetic; **W22** schema interop |
+| **1.0** *(milestone)* | Decide, prove, freeze | *No features.* Surface complete + **W5** conformance green → ratify and freeze the stable-surface tiers, turn on the version contract (§4.6) |
+| **post-1.0** | Curated bets | WASM-as-distribution; parallel Model B (maybe-never); a true separate-nursery GC *iff* a workload demands it |
 
 ### 6.4 The bytecode programme is multi-version — phased so each step ships value
 
@@ -441,58 +461,194 @@ gaps (e.g. `1 + "hello"`), maturing the checker toward CG's type-gated tier.
 path; zero spurious warnings on the harness and AoC corpus; the gaps default-on
 surfaces become tracked checker fixes.
 
-### Pillar SV — Spec, validation & differentiation
+### Pillar SV — The type-value surface: `s"…"`, validation & schema
 
-This pillar is the data-language differentiation no peer combines: gradual structural
-types + metadata extensibility + pay-as-you-go ingress validation. It is independent
-of the runtime work and design-heavy / low-risk.
+This is the data-language differentiation no peer combines (gradual structural types
++ metadata extensibility + pay-as-you-go validation), and it is more than a
+validation onramp. It is independent of the runtime work, design-heavy and low-risk.
 
-- **SV1 The `s"…"` string-prefix (§4.3).** A new `StringPrefix::SString` alongside
-  `c"…"`/`r"…"`/`t"…"`, producing first-class **type-data**. Small lexer/parser
-  addition; the design is the work.
-- **SV2 `as-spec` / `to-spec`.** Lower type-data into a runtime **spec value**
-  speaking the `match?` predicate vocabulary; consumers auto-lower a type via
-  `to-spec`. Prelude work, building on `match?` and the predicate intrinsics.
-- **W16 Structural contracts & runtime validation.** Apply specs explicitly at data
-  ingress (`parse-as`/import sites and user checkpoints), returning structured,
-  located blame — the runtime dual of the optimistic erased boundary (§4.2). Validation
-  cost is paid only where written (Findler–Felleisen; Clojure spec; Nickel contracts).
-- **W15 Optional (presence-annotated) record fields.** A key-side `name?: T` slot,
-  distinct from the value-side `T?`/`Partial`. Required for honest config schemas and
-  for CRD import. Annotated form ships; presence *inference* is post-1.0.
-- **W8 `eu doc` schema extraction / W22 schema interop (post-1.0).** `eu doc` reads
-  the `s"…"` surface to emit schemas; JSON Schema export, and ingest of external
-  schemas (incl. Kubernetes CRDs, which need W15) as W16 contracts.
+**The aspiration — types as ordinary values, one source many uses.** Today a type
+lives only as a string in `type:` metadata: it is checked, then erased. The
+**`s"…"` string-prefix** (§4.3) brings a type into *value* context as first-class
+**type-data** — a value you can bind, store in a block, compute with, and pass to a
+function. That one move turns the type system from a check-and-erase tool into a
+**data vocabulary** with many consumers fed from a single source, with a runtime
+**spec value** as the hub:
+
+- **validate** — `as-spec` lowers type-data into a spec over the `match?` predicate
+  vocabulary; apply it at ingress for structured, located blame (the validation core).
+- **generate** — the same spec drives example/fixture/mock generation (property-test
+  seeds, golden inputs) — the Clojure-spec conform-and-gen duality.
+- **coerce / parse** — type-directed parsing at ingress: `bytes parse-as(s"…")`.
+- **default-fill** — type-data carrying field defaults completes a partial block
+  (ties directly to optional fields, below).
+- **describe** — `eu doc` renders type-data to human docs and to JSON Schema; an
+  ingested external schema (incl. a Kubernetes CRD) becomes type-data → a contract.
+- **reflect** — `typeof(value)` returns type-data, so types become comparable,
+  decomposable and queryable at runtime.
+
+`s"…"` is therefore the wedge toward the long-standing "types as first-class values"
+aspiration. The type-DSL stays the authoring surface (no reserved bracket, §4.3);
+`s"…"` is its value-context dual; the spec is the runtime projection. The near-term
+core is `s"…"` + `as-spec` + ingress validation + optional fields; **generation and
+full reflection are the aspirational end-state**, pursued once the vocabulary proves
+out — but the design of `s"…"`/type-data should be chosen so they are reachable, not
+foreclosed.
+
+**The work:**
+
+- **SV1 The `s"…"` string-prefix.** A new `StringPrefix::SString` alongside
+  `c"…"`/`r"…"`/`t"…"`, producing type-data. Small lexer/parser addition; the design
+  (what type-data *is*, and how it composes toward reflection/generation) is the work.
+- **SV2 `as-spec` / `to-spec`.** Lower type-data into a runtime spec speaking the
+  `match?` predicate vocabulary; consumers auto-lower a type via `to-spec`. Prelude
+  work on `match?` and the predicate intrinsics.
+- **SV3 Structural contracts & runtime validation (W16).** Apply specs explicitly at
+  data ingress (`parse-as`/import sites and user checkpoints), with cost paid only
+  where written — the runtime dual of the optimistic erased boundary (§4.2)
+  (Findler–Felleisen; Clojure spec; Nickel contracts).
+- **SV4 `eu doc` schema extraction / schema interop (W8/W22).** `eu doc` reads the
+  `s"…"` surface to emit schemas; JSON Schema export; ingest of external schemas
+  (incl. CRDs, which need optional fields) as contracts.
+
+#### SV — Type-vocabulary enrichments (the type representation itself)
+
+Two missing pieces of the type vocabulary, surfaced through `s"…"` and consumed by
+every spec use above. Both are type-checker work (`src/core/typecheck/`), distinct
+from the runtime pillars.
+
+- **Optional (presence-annotated) record fields — promoted.** Record types are
+  required-keys-only today (`src/core/typecheck/types.rs`); a missing required field
+  is a warning. Real config — and the downstream eucalypt-grove work where this keeps
+  recurring — needs a field that *may be absent*: a key-side **`name?: T`** slot,
+  kept distinct from the value-side `T?`/`Partial` (a present-but-partial *value*).
+  A record type partitions into required and optional fields; presence subtyping makes
+  a record with the optional field present a subtype of one where it is optional;
+  `match?`/`me?` gain an optional arm. The annotated form ships near-term (0.11);
+  presence *inference* follows. It composes with default-fill (a spec can supply the
+  value for an absent optional field) and is a hard prerequisite for honest schema
+  import. **Priority raised** from the previous plan on the strength of repeated
+  real-world need.
+- **Prefix-list type — new.** A list with a **fixed-shape prefix followed by a
+  variable-length homogeneous tail** — `[A, B, C…]` meaning "an `A`, then a `B`, then
+  zero or more `C`". The type DSL has fixed tuples (`(A, B)`) and homogeneous lists
+  (`List(T)`) but nothing between them, so the canonical hiccup/markup element —
+  `[tag, attrs, …content]` = `[Symbol, Block, (String | Element)…]`, the shape
+  `lib/markup.eu` is built on (`tag = head`, `attrs = second`, `content = _ tail
+  tail`) — cannot be typed. Add a rest-element form to the type DSL (the `…` tail,
+  cf. TypeScript `[string, number, ...boolean[]]`), with subtyping and indexed-access
+  rules (`head`/`second`/`tail` project the prefix precisely, the tail homogeneously).
+  Flows through validation/generation/schema unchanged.
 
 **Success.** A user validates an imported manifest against a spec derived from a
-`type:` annotation and gets a precise, located failure; the same spec serves
-`match?`; optional fields are expressible; schemas round-trip.
+`type:` annotation and gets a precise, located failure; the same spec serves `match?`,
+fills defaults, and exports to JSON Schema; optional fields and the markup
+prefix-list shape are both expressible and check correctly.
+
+### Pillar DS — Block & value model
+
+**Problem.** Blocks — the thing eucalypt exists to produce, and merge — are cons-lists
+with **O(n) lookup** (`src/eval/stg/block.rs`), and **merge is catenation**:
+`merge`/`deep-merge`/`<<` walk both operands and re-emit a fresh spine with no
+structural sharing. Eucalypt is an *intensely merge-heavy* language — layered config
+is merge upon merge — so this is a structural cost of the core use case, independent
+of any one workload. The empirical AoC corpus does not exercise it (those programs are
+compute-heavy, not merge-heavy), which is why it was wrongly de-prioritised in the
+GC-era plan; the merge-heavy case is the *config* case, the centre of gravity.
+
+**Why it stalled before, and why bytecode unblocks it.** A prior persistent O(log n)
+attempt (`im_rc::OrdMap`) was reverted (ADR-001): its `Rc` nodes lived on the Rust
+heap outside the bump allocator, which recycles by overwrite and never runs `Drop`,
+so the nodes leaked — 220–580% GC-churn regressions. The wall was **GC finalisation**,
+not block design. Bytecode (BV) changes the calculus twice: it takes *code* out of the
+scanned heap (cutting the churn baseline these structures were charged against), and
+its arena/`GcScannable`-array machinery is exactly what a GC-native persistent node
+needs.
+
+**Design.** Store the persistent structures **inline in the GC heap** as ordinary
+scannable objects — no `Rc`, no Rust-heap nodes, no finaliser. A **threshold hybrid**
+preserves the common small-block case and insertion order: below ~16 keys a block stays
+a plain cons-list (ordered, allocation-light); at/above, two GC-native structures — a
+**CHAMP** key-index (`SymbolId → order-slot`) and a persistent **RRB order-sequence**
+holding the `(key, value)` pairs in insertion order. Lookup is two O(log n) descents;
+render walks the order sequence; override updates one slot; merge shares unchanged
+sub-trees, so `<<`/`deep-merge` allocates proportional to the *difference*. Both node
+types reuse one `GcScannable` array impl, so the collector surface is small.
+
+- **DS1 Persistent O(log n) blocks** — the CHAMP+RRB hybrid above. Sequenced after
+  BV; validated under `EU_GC_VERIFY=2`/`POISON=1`/`STRESS=1`; gated on
+  **independently-verified merge-heavy benchmarks** (not microbenchmarks), with the
+  ADR-001 non-regression as a hard bar.
+- **DS2 Generalise `vec` to arbitrary values** — let the O(1)-indexed sequence hold
+  blocks/lists (the array-of-objects shape of CSV/JSON inputs), not just scalars, via
+  a GC-traced `Array<Closure>` modelled on `EnvFrame`; also fixes the current
+  `Native::Vec` backing leak. Shares DS1's GC-array machinery; otherwise independent.
+
+**Success.** Lookup on a 1,000-key block grows logarithmically; merge of two large
+blocks differing in a few keys allocates proportional to the difference; rendered key
+order is byte-identical to the cons-list across the conformance corpus; **no GC-churn
+regression** (ADR-001 does not recur); `vec` round-trips a list of blocks preserving
+order and identity.
 
 ### Pillar PP — Process-level parallelism
 
-**Problem.** No concurrency. The shared-memory route is declined (Principle 4: the
-heap is a deliberately non-`Sync` `UnsafeCell`). But real cases are safe by
-construction under purity + IO-isolation: **batches of files** and **data-parallel
-`map`/`fold`** over large inputs — and several AoC heavies are embarrassingly
-parallel (day08 independent pair distances, day09-p1 O(n²) pairs, day10-p1 DFS
-branches).
+**The aspiration.** Multi-core for the cases that are *safe by construction*, without
+surrendering the single-threaded lazy-pure heap (Principle 4: the heap is a
+deliberately non-`Sync` `UnsafeCell` whose soundness rests on stop-the-world access).
+Purity makes a parallel merge order-independent and IO-isolation makes effects
+independent, so a whole class of work parallelises with **zero single-thread cost and
+fully reproducible results** — provided we never try to *share the heap*. The model is
+OS processes (forks), not threads. Three rungs of increasing coupling:
 
-**Design.** Lead with **isolated forked workers, data-only boundary**: a
-`par-map`/`par-fold` combinator that scatters chunks to forked `eu` workers applying a
-**named** (addressable) transform and merges results deterministically (order-independent
-by purity). Honest scope: **shared memory carries serialised bytes, not live heap** —
-pointers are process-local and the GC moves objects — so an **mmap region is a
-zero-copy transport** for Model A, not a way to share a heap. Workers reuse the
-`io.exec` subprocess machinery; BV5's serialisable bytecode makes them cheapest to
-spawn. It serves the embarrassingly-parallel slice only, not the sequential heavies
-(day10-p2 branch-and-bound, day11-p2 DP) — those are CG/BV's job. Opt-in, deterministic,
-composes with hermetic mode (W17). **Model B** (shared-heap threads) stays a
-maybe-never fork (§10): it needs a `Send`+`Sync` heap and a parallel collector.
+1. **Batch.** Run `eu` over many files / many targets at once. A runner concern,
+   trivially safe, available first — the embarrassingly-parallel base case.
+2. **Data-parallel combinators.** `par-map` / `par-fold`: scatter a list across forked
+   workers, each applying a **named, addressable** transform (a binding name resolved
+   in both processes — *not* an arbitrary closure, which cannot cross heaps), then
+   gather and **merge deterministically**. This is the core surface a user reaches for.
+3. **A shared-memory results / work arena.** The specific aspiration: a memory-mapped
+   region that collaborating `eu` forks write into and coordinate over, instead of
+   funnelling everything through a parent process.
 
-**Success.** >1.5× on a file batch and one large data-parallel `map` across 4+ cores,
-**zero** single-threaded cost, identical deterministic results.
+**What the shared arena can and cannot hold — the load-bearing constraint.** It
+**cannot hold live heap**: pointers are process-local and the GC moves objects. So the
+mmap region is not a shared heap; it is a fast **transport + coordination** layer
+carrying:
 
-### Pillar EC — Ecosystem & surface (the 1.0 floor)
+- **serialised values** — and here PP and BV compound: **BV5's serialisable
+  bytecode-value form is the natural wire payload**, so forks exchange eucalypt
+  *values* as compact bytes with no re-parse. The serialisation built for the embedded
+  prelude doubles as the IPC format.
+- **a results board** — pre-sized slots workers fill, gathered when all complete
+  (zero-copy, no parent bottleneck).
+- **coordination metadata** — a work-claim index (claim-next-chunk counters/flags) for
+  dynamic load balancing / work-stealing among peers. Just integers, not heap.
+
+So the end-state is a small set of **deterministic parallel combinators** — `par-map`,
+`par-fold`, batch — that "just work" over an mmap arena for the parallelisable slice,
+with named transforms as the unit of work and serialised bytes as the only thing that
+crosses a process boundary.
+
+**Scope, honestly.** This serves the embarrassingly-parallel slice: independent
+`map`/`fold` elements, file batches, and the AoC cases that decompose (day08
+independent pair distances, day09-p1 O(n²) pairs, day10-p1 DFS branches). It does
+**not** parallelise inherently sequential algorithms (day10-p2 branch-and-bound,
+day11-p2 DP — those are CG/BV's job), and it is **not** fine-grained intra-evaluation
+parallelism. That last — shared-thunk, shared-heap threads (**Model B**) — needs a
+`Send`+`Sync` heap and a parallel collector (a superset of the shelved GC work) and
+stays a **maybe-never fork** (§10). PP is always *advisory parallelism, never
+observable concurrency*: deterministic merge, composes with hermetic mode (W17).
+
+**Phasing.** Workers reuse the existing `io.exec` subprocess machinery; the data-only
+boundary (named transforms, serialised bytes) is implementable before BV, but is
+*cheapest and cleanest on BV5's serialisation* — so the combinators can prototype
+early and the mmap-arena transport lands once the value-serialisation form exists.
+
+**Success.** >1.5× on a file batch and on one large data-parallel `map` across 4+
+cores; **zero** single-threaded cost; identical deterministic results to the
+sequential run; the transform unit is something a user reaches for without contortion.
+
+### Pillar EC — Ecosystem & surface (the surface floor)
 
 The surviving cross-unit and surface work that lets 1.0 be declared and frozen.
 
@@ -514,20 +670,18 @@ The surviving cross-unit and surface work that lets 1.0 be declared and frozen.
   nothing observable** (the dual-engine conformance the corpus was built for). Bar:
   golden coverage of every export format and the frozen prelude set; zero panics after
   a 24-hour fuzz run; full harness green under `EU_GC_VERIFY=2`.
-- **W14 Generalise `vec` to arbitrary values (post-1.0, low priority).** Let `vec`
-  hold blocks/lists (the array-of-objects shape) via a GC-traced `Array<Closure>`,
-  fixing the current backing leak. Independent; no longer bundled with persistent
-  blocks.
 
 ---
 
 ## 8. The critical path
 
-**CG type-free tier + TY default-on + SV `s"…"` (0.11) → BV0 gate → BV1 + BV5 (0.12,
-the bytecode core + startup win) → BV3 + CG type-gated (0.13) → W16 + W18 (validation
-+ ecosystem floor) → W5 green → freeze the surface and ship 1.0 (§4.6).** BV4, PP and
-the post-1.0 candidates slot alongside or follow. The surface freeze does not wait on
-the bytecode programme to finish.
+**CG type-free tier + TY default-on + SV `s"…"` + optional fields (0.11) → BV0 gate →
+BV1 + BV5 (0.12, the bytecode core + startup win) → BV3 + CG type-gated (0.13) → SV
+contracts + DS + modules (0.14–0.15) → W5 conformance green → the 1.0 milestone:
+ratify and freeze the surface (§4.6).** BV4, DS, PP and the post-1.0 candidates slot
+alongside or follow. The 1.0 freeze is gated on the surface and conformance, not on
+the bytecode programme being finished — and no feature is scheduled *for* 1.0; they all
+land in point releases first.
 
 ## 9. Index
 
@@ -543,16 +697,19 @@ the bytecode programme to finish.
 | **CG5** | Type-gated codegen (unboxing, dead-branch, interpolation) | 0.13 |
 | **TY** | Typing default-on | 0.11 |
 | **SV1–2** | `s"…"` type-data + `as-spec`/`to-spec` | 0.11 |
-| **W16** | Structural contracts & runtime validation | 0.14 |
-| **W15** | Optional (presence-annotated) fields | 0.14 |
-| **PP** | Process parallelism (`par-map`/`par-fold`, mmap transport) | 0.14 |
-| **W18** | Module & package system (git, content-addressed) | 1.0 |
-| **W19** | `eu watch` & REPL (Phase 1) | 1.0 |
-| **W17** | Hermetic mode | 1.0 |
-| **W7** | Incremental query core (continue) | →1.0 |
-| **W5** | Conformance / property / fuzz (continue) | →1.0 bar |
-| **W8 / W22** | `eu doc` schema / schema interop | post-1.0 |
-| **W14** | Generalise `vec` | post-1.0 |
+| **SV — optional fields** | Optional (presence-annotated) record fields *(promoted)* | 0.11 |
+| **SV — prefix-list type** | Fixed-prefix + variable-tail list type (markup/hiccup) | 0.13 |
+| **SV3 (W16)** | Structural contracts & runtime validation | 0.14 |
+| **SV4 (W8/W22)** | `eu doc` schema / schema interop | 0.15+ |
+| **DS1** | Persistent O(log n) blocks (GC-native CHAMP+RRB) | 0.15+ |
+| **DS2 (W14)** | Generalise `vec` to arbitrary values | 0.15+ |
+| **PP** | Process parallelism (`par-map`/`par-fold`, mmap arena) | 0.14+ |
+| **W18** | Module & package system (git, content-addressed) | 0.15+ |
+| **W19** | `eu watch` & REPL (Phase 1) | 0.15+ |
+| **W17** | Hermetic mode | 0.15+ |
+| **W7** | Incremental query core (continue) | point releases |
+| **W5** | Conformance / property / fuzz (continue) | →1.0 gate |
+| *1.0* | *Milestone: freeze the surface, turn on the version contract* | *no features* |
 | *WASM-distribution* | WASI components / playground accel | post-1.0 candidate |
 
 Settled decisions (§4) and non-goals (§5) are not scheduled work items.
@@ -604,18 +761,7 @@ prevents the regression also eliminates virtually all opportunities. **Verdict:*
 abandoned; the strictness half is retained and extended by CG. Possible future
 enablers (a single-entry `RenderKv`; escape analysis) are noted but not scheduled.
 
-### 10.4 Persistent O(log n) blocks (W13) — demoted
-
-Designed as 0.11's GC item: GC-native CHAMP key-index + RRB order-sequence to make
-block lookup/merge sub-linear with structural sharing, avoiding the `im_rc` leak
-(ADR-001: `Rc` nodes outside the bump allocator, never `Drop`ped, 220–580%
-regressions). The design is sound, but the **empirical case evaporated**: allocation
-is no longer the bottleneck (§2), and merge-heavy O(log n) wins do not show on the AoC
-corpus. **Verdict:** demoted off the 1.0 path. The one surviving fragment is the
-**block-lookup hashing** cost visible in `day11-p2` (sip-hash on symbol keys), which CG2
-(literal-key resolution) addresses directly without a new data structure.
-
-### 10.5 STG→WASM as an execution engine — declined (feasibility study)
+### 10.4 STG→WASM as an execution engine — declined (feasibility study)
 
 Full analysis in `docs/development/stg-compilation-targets-feasibility.md`. Compiling
 STG to WASM is *feasible* but attacks the wrong bottleneck at the wrong price:
@@ -628,7 +774,7 @@ retained as a **post-1.0 distribution** target (WASI components, playground), to
 compiled *from the bytecode* once it exists. The study's measurements (startup floor;
 ~2.4 M ticks/s; code-as-scanned-heap-data) are the evidence base for Pillars BV and CG.
 
-### 10.6 The old GC-as-spine performance thesis — superseded
+### 10.5 The old GC-as-spine performance thesis — superseded
 
 The previous roadmap (baseline 0.7.1) made a generational GC (W10) and persistent
 blocks (W13) the engine of 1.0 performance, on the premise *mark > 95% of VM time*.
