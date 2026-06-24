@@ -403,12 +403,13 @@ stops re-allocating the program each run. The six-kind continuation machine
 
 **Key design decisions (settle at/around BV0):**
 
-1. **Source IR & encoding.** The existing `ArenaStgSyn`/`PreludeBlob` form
-   (`src/eval/stg/blob.rs`, postcard, index-referenced) is proto-bytecode — but it is a
-   *node pool*, not a linear instruction stream. Decide: a **linearised opcode stream**
-   (best for threaded dispatch + superinstructions — recommended, since dispatch is the
-   target) vs a flattened-node interpreter (lower risk, smaller win). Either way the
-   encoder builds *from* `StgSyn`/`ArenaStgSyn`, reusing that arena machinery.
+1. **Source IR & encoding — decided: a linearised opcode stream** (best for threaded
+   dispatch + superinstructions, since dispatch is the target), with **BV0 the
+   empirical confirmation**. The existing `ArenaStgSyn`/`PreludeBlob` form
+   (`src/eval/stg/blob.rs`, postcard, index-referenced) is proto-bytecode but a *node
+   pool*, not a linear stream; the encoder builds *from* `StgSyn`/`ArenaStgSyn`, reusing
+   that arena machinery. (Fallback if BV0 disappoints: a flattened-node interpreter —
+   lower risk, smaller win.)
 2. **Constant/heap split.** Code lives in the non-GC arena; the **values it references**
    (interned symbols, `HeapString` literals) must stay GC-/pool-managed. Decide the
    constants-pool boundary so no GC scan ever touches code and no arena offset is ever
@@ -417,11 +418,11 @@ stops re-allocating the program each run. The six-kind continuation machine
    `Vec<Continuation>` and the `pending_bif` mechanism; bytecode is about *code
    representation*, not the 192 intrinsics or the control model. Revisit folding control
    flow into the stream only post-BV1.
-4. **Frame model — deferred to BV3.** BV1 keeps the cactus `EnvFrame`
-   (`src/eval/machine/env.rs:191`); BV3 introduces **register frames**, and the open
-   question is *how selective* — all frames, or only the hot/deep captures CG's escape
-   analysis flags (the lesson of the flat-closure revert, §10). Recommended: selective,
-   CG-informed.
+4. **Frame model — deferred to BV3, decided: selective.** BV1 keeps the cactus
+   `EnvFrame` (`src/eval/machine/env.rs:191`); BV3 introduces **register frames** for
+   *only the hot/deep captures CG's escape analysis flags*, not all frames — the lesson
+   of the flat-closure revert (§10), where a universal capture tax sank the win. The
+   selectivity threshold is profile-tuned.
 5. **One serialisation format, three consumers.** BV5's bytecode-bytes format
    (extending the postcard arena form) is reused by the **embedded prelude**, the
    **content-hash unit cache**, and **PP's IPC wire payload** (Pillar PP) — design it
@@ -474,6 +475,25 @@ side-table with a `Synthesised`/`Trusted` provenance bit (§4.2).
     generation win). Fires only on proven-concrete types; a single optimised node
     meeting a mis-typed operand would be a memory-safety bug, so synthesis-only is
     mandatory.
+
+**The type-gated mechanism (how facts survive erasure).** The checker is advisory and
+its in-tree annotations are erased before STG compile (§4.2) — so banking a type fact
+cannot mean *keeping the annotation*. Instead the checker emits a **node-keyed
+side-table**: for each actionable core node it records the synthesised type plus a
+**provenance bit** — `Synthesised` (proven from the code) vs `Trusted` (rests on an
+annotation that crossed an `any`). The *table* survives into the inliner/specialiser
+even though the tree's types are gone. CG5 consults it and fires **only where both the
+callee's signature and its arguments are `Synthesised`-concrete**; a `Trusted` fact
+never licenses unboxing, because under the unboxed path a lying `any` would reinterpret
+e.g. a string pointer as an integer — memory corruption, not a type error (§4.2). The
+target is concrete: `+` compiles to a tag-`case` wrapper and `Add::execute`
+(`src/eval/stg/arith.rs`) re-checks operand kinds at runtime even where the checker
+proved `number → number → number`; the STG already has the unboxed `Native::Num`
+representation, so what CG5 adds is *permission, from a `Synthesised` type, to take the
+direct path*. It is purely additive — the boxed wrappers remain for every unspecialised
+call — and it is the high-risk surface that makes the whole tier a careful, profile-gated
+effort (kill switch: if real render workloads show <2×, generation being block/string-
+heavy rather than arithmetic-heavy, it is shelved).
 
 **Success.** Measurable dispatch reduction on `day11`; literal-key hot loops shed the
 intern/hash cost; `day01`-class folds show flat stack depth under `EU_STACK_DIAG=1`
@@ -557,9 +577,12 @@ code-as-data are the two halves of eucalypt's reflective surface.)
     `s"…"` content.
   - **A simple `to-data` projection — the Type embedding.** Type-data is opaque but
     trivially openable: `to-data` projects it to an ordinary **tagged-list** structure
-    and a builder rebuilds it — e.g. `s"[String]" to-data` → `[:t-list [:t-prim :string]]`,
+    and `from-data` (a prelude builder function, uniform with `to-data` and kept at the
+    data level) rebuilds it — e.g. `s"[String]" to-data` → `[:t-list [:t-prim :string]]`,
     `s"A | B"` → `[:t-union …]`. Tagged-list (not block) for terseness and **uniformity
-    with the existing embeddings**: this is the **Type embedding** with a `t-*` vocabulary,
+    with the existing embeddings**: this is the **Type embedding** with a `t-*` vocabulary
+    that mirrors the checker's type constructors **1:1** (`src/core/typecheck/types.rs` —
+    `t-prim`/`t-list`/`t-record`/`t-union`/`t-fn`/`t-forall`/`t-app`/`t-con`/`t-mu`…),
     completing the family — AST `a-*`, Core `c-*`, STG `s-*`, **Type `t-*`** — all
     round-trippable data projections of an internal IR (ties to EC-embed).
 - **SV2 `as-spec` / `to-spec`.** Lower type-data into a runtime spec speaking the
