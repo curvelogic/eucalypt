@@ -470,7 +470,7 @@ side-table with a `Synthesised`/`Trusted` provenance bit (§4.2).
     hot loops.
   - **CG3 Strict accumulators (worker/wrapper)** — extend demand from prelude
     signatures to discovered user recursion; emit strict-spine folds, collapsing the
-    O(n) `Update`-frame chains.
+    `Update`-frame chains a lazy left fold accumulates.
   - **CG4 Selective lambda-lifting / pre-projection** — demand/escape analysis lifts
     hot deep captures into explicit arguments. Feeds BV3 register frames; this is the
     sound, targeted form of the reverted flat-closure idea.
@@ -785,14 +785,15 @@ lazy-pure; IO interpreted by the driver). Staged direction:
 **EF2 — Native filesystem / IO capabilities.** The entire IO surface is `io.shell` /
 `io.exec` plus env/args/epoch (`lib/prelude.eu:34-78`) — there is **no** `io.read-file`,
 `io.ls`, `io.walk` or `io.stat`. So gathering a filesystem tree means shelling out
-(`ls`/`find`), receiving one large stdout *string*, splitting it into thousands of
-lines, and rebuilding a cons-list: a subprocess **plus** a full string round-trip
-**plus** O(n) materialisation, on top of the startup tax — which is why "`ls` a few
-thousand files into a structure" is impractically slow today. Add a native capability
-family — `io.read-file`, `io.walk`/`io.ls` (a directory tree → structured data
-directly), `io.stat`, `io.glob` — that produces eucalypt data **without the shell
-round-trip** and **lazily/streamably**, so a large tree need not fully materialise
-(ties to DS and the streaming candidate).
+(`ls`/`find`), receiving one large stdout *string*, splitting it, and rebuilding a
+cons-list. **This is a capability and ergonomics gap, not a performance blocker** —
+profiling shows the shell call and the `vec.of` build are cheap (the slowness one hits
+aggregating the result is a separate `foldl` defect, handled as a bug fix, not here).
+Native `io.read-file`, `io.walk`/`io.ls` (a directory tree → structured data directly),
+`io.stat` and `io.glob` are still worth it: they remove the subprocess + string
+round-trip, give a typed structured result instead of line-parsing, and can be
+**lazy/streamable** so a large tree need not fully materialise (ties to DS and the
+streaming candidate).
 
 **Why this belongs (not a sweet-spot exception).** The data sweet spot is about the
 *shape* of the work, not a ceiling on input source or scale (Principle 5). Gathering and
