@@ -493,7 +493,9 @@ aspiration. The type-DSL stays the authoring surface (no reserved bracket, §4.3
 core is `s"…"` + `as-spec` + ingress validation + optional fields; **generation and
 full reflection are the aspirational end-state**, pursued once the vocabulary proves
 out — but the design of `s"…"`/type-data should be chosen so they are reachable, not
-foreclosed.
+foreclosed. (Its mirror image is **code-as-data**: the embedding bridge that renders
+eucalypt *source* from eucalypt data — Pillar EC, EC-embed. Types-as-data and
+code-as-data are the two halves of eucalypt's reflective surface.)
 
 **The work:**
 
@@ -670,6 +672,46 @@ The surviving cross-unit and surface work that lets 1.0 be declared and frozen.
   nothing observable** (the dual-engine conformance the corpus was built for). Bar:
   golden coverage of every export format and the frozen prelude set; zero panics after
   a 24-hour fuzz run; full harness green under `EU_GC_VERIFY=2`.
+- **EC-embed The embedding bridge — eucalypt as an export target, and the macro
+  substrate.** Eucalypt can already render *itself*: `-x eu` renders values as
+  eucalypt-source data (`src/export/eu.rs`), the `Embed` trait turns core/STG into a
+  Rowan AST and back (`src/syntax/export/embed.rs`, the `c-*`/`s-*` tagged-list
+  vocabulary, `docs/development/embed-format.md`), parse-embed reconstructs core from
+  that vocabulary, and `eu fmt` pretty-prints. **This capability must not die**, even
+  while its day-to-day use is thin. The aspiration is to make eucalypt a generator of
+  *eucalypt code, not just data*: transform a data structure into an **AST embedding**
+  and **render it as eucalypt source** — emit `.eu` libraries and config from
+  eucalypt, the code-as-data dual of SV's types-as-data (§ Pillar SV). Three
+  commitments: **(1) keep it alive** — the embed format is "stable by convention…
+  not enforced by snapshot tests" today; promote its round-trip (embed→disembed) and
+  the `-x eu`/`fmt` paths into the **conformance corpus (W5)** so they cannot silently
+  rot, and treat the tag vocabulary as a documented, versioned surface; **(2) unify**
+  the three fragments (value export, the embed/disembed bridge, `fmt`) into one
+  coherent "eucalypt as an export target" story, extended from data to *code* (lambdas,
+  operators, bindings — the things `-x eu` does not yet round-trip); **(3) worked
+  examples** — carry a couple of living harness examples that take data and emit `.eu`
+  source (generate a block of bindings; round-trip a parsed file through AST-data and
+  back), so the path is exercised and demonstrated rather than latent. **Macros stay
+  deferred** (below), but the embedding *is* their substrate: any later compile-time
+  metaprogramming over the core builds on this same embed/disembed bridge, so keeping
+  it warm keeps that door open at no extra cost.
+
+#### Deferred candidates (kept warm, not scheduled)
+
+Recorded so they are not forgotten, able to swap in if priorities shift:
+
+- **Macros / homoiconicity** — compile-time metaprogramming over the core, built on
+  the embedding bridge (EC-embed). Deferred, not declined; the substrate is maintained.
+- **First-class type values** — types as ordinary values beyond the `s"…"` surface;
+  the SV aspiration taken to its limit (reflection, type-level computation).
+- **Alternative backends** — core→WASM and other targets, post-bytecode and as
+  **distribution** not speed (§4.7); the consumer of W5's cross-backend conformance.
+- **Streaming & bounded-memory** — process inputs that don't fit the heap; the
+  principled answer to the large-data regime that doesn't require winning the GC fight.
+  A partial `LazyProducer` spec already exists.
+- **Lazy-evaluation debugging** — a DAP server / value-provenance for stepping lazy
+  evaluation.
+- **Algebraic effect-rows** — typed effects beyond the IO monad.
 
 ---
 
@@ -707,6 +749,7 @@ land in point releases first.
 | **W18** | Module & package system (git, content-addressed) | 0.15+ |
 | **W19** | `eu watch` & REPL (Phase 1) | 0.15+ |
 | **W17** | Hermetic mode | 0.15+ |
+| **EC-embed** | Embedding bridge: `.eu` code export, harden + exemplify (macro substrate) | 0.12+ |
 | **W7** | Incremental query core (continue) | point releases |
 | **W5** | Conformance / property / fuzz (continue) | →1.0 gate |
 | *1.0* | *Milestone: freeze the surface, turn on the version contract* | *no features* |
