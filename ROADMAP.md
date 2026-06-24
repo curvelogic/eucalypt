@@ -29,7 +29,7 @@ the bottleneck; win in compilation and dispatch, not in heap representation.**
 The document has two halves. **Sections 2–6** are the plan: what eucalypt is and
 where it now stands, the principles, the settled decisions, the deliberate
 non-goals, and the shape and sequencing of the work. **Section 7** is the work
-itself, grouped into seven pillars, each item carrying its problem (grounded in the
+itself, grouped into eight pillars, each item carrying its problem (grounded in the
 current code with `path:line` references), design, phasing and success criteria.
 **Sections 8–9** give the critical path and the index. **Section 10** is the
 supplement: the superseded and abandoned work, with its post-mortems, kept so the
@@ -294,7 +294,7 @@ compile from. Post-1.0 candidate (§10 records the analysis).
 
 ## 6. The shape of the plan
 
-### 6.1 The seven pillars
+### 6.1 The eight pillars
 
 | Pillar | Theme | The shared thing |
 |---|---|---|
@@ -304,6 +304,7 @@ compile from. Post-1.0 candidate (§10 records the analysis).
 | **SV — Type-value surface** | `s"…"` type-data → validation, optional fields, prefix-lists, schema | Types become ordinary values; one type-data source is validated, generated, coerced, defaulted, documented and exported |
 | **DS — Block & value model** | Persistent O(log n) blocks; arbitrary-value `vec` | The merge-heavy core data structure made sub-linear with structural sharing, GC-native, on the bytecode-reduced churn |
 | **PP — Process parallelism** | Isolated forked workers, data-only boundary | Purity + IO-isolation make a scatter/gather `par-map`/`par-fold` safe; an mmap arena is the transport and coordination layer |
+| **EF — Effects & IO** | Composing monads; native filesystem/IO capabilities | One effect story so state+random+IO compose, and native `walk`/`read`/`stat` so filesystem trees are practical (Principle 5) |
 | **EC — Ecosystem & surface** | Modules, interactive surface, reproducibility, conformance | The cross-unit interface, the cache, and the proof corpus that let the surface be completed and frozen |
 
 ### 6.2 The dependency spine (`→` = "must precede")
@@ -324,6 +325,10 @@ compile from. Post-1.0 candidate (§10 records the analysis).
 - **DS** (persistent blocks) is sequenced **after BV** — bytecode removes the
   code-as-scanned-data churn and makes the GC-native CHAMP/RRB nodes cheap; it shares
   BV's GC-scannable-array machinery. Independent of SV/CG.
+- **EF** is largely independent: **EF1** (effect composition) is prelude-level for its
+  near-term steps; **EF2** (native filesystem IO) is intrinsics + prelude, and its
+  *streaming* form composes with DS and the streaming candidate; the algebraic
+  effect-rows end-state (EF1.3) is post-1.0.
 - **EC**: **W18** (modules) builds on the shipped Unit Interface + git imports;
   **W19** (watch/REPL) builds on the cache + BV5 startup; **W5** (conformance) is the
   proof that BV changes nothing observable.
@@ -339,10 +344,10 @@ reordered as the cadence dictates.
 | **0.11** | Codegen wins, typing on, type-value foundation, bytecode spike | CG type-free tier; TY default-on; SV `s"…"` + `as-spec`; **optional record fields**; **BV0** gate |
 | **0.12** | The bytecode core + the startup win | **BV1** (code out of the heap) + **BV5** (serialised/embedded prelude, 85→~25 ms) |
 | **0.13** | Frames, annotations, type-gated codegen, prefix-lists | **BV2** side tables; **BV3** register frames + CG selective lifting; **CG** type-gated (unboxing); **prefix-list type** |
-| **0.14** | Polish, parallelism, contracts | **BV4** superinstructions; **PP** `par-map`/`par-fold`; **W16** contracts; presence inference |
-| **0.15+** | Value model, ecosystem, surface | **DS** persistent blocks + `vec`; **W18** modules; **W19** watch/REPL; **W17** hermetic; **W22** schema interop |
+| **0.14** | Polish, parallelism, effects, contracts | **BV4** superinstructions; **PP** `par-map`/`par-fold`; **EF2** native filesystem IO + **EF1** effect-composition combinators; **W16** contracts; presence inference |
+| **0.15+** | Value model, ecosystem, surface | **DS** persistent blocks + `vec`; **EF1** unified effect context; **W18** modules; **W19** watch/REPL; **W17** hermetic; **W22** schema interop |
 | **1.0** *(milestone)* | Decide, prove, freeze | *No features.* Surface complete + **W5** conformance green → ratify and freeze the stable-surface tiers, turn on the version contract (§4.6) |
-| **post-1.0** | Curated bets | WASM-as-distribution; parallel Model B (maybe-never); a true separate-nursery GC *iff* a workload demands it |
+| **post-1.0** | Curated bets | EF1.3 algebraic effect-rows; WASM-as-distribution; parallel Model B (maybe-never); a true separate-nursery GC *iff* a workload demands it |
 
 ### 6.4 The bytecode programme is multi-version — phased so each step ships value
 
@@ -680,7 +685,8 @@ types reuse one `GcScannable` array impl, so the collector surface is small.
   **independently-verified merge-heavy benchmarks** (not microbenchmarks), with the
   ADR-001 non-regression as a hard bar.
 - **DS2 Generalise `vec` to arbitrary values** — let the O(1)-indexed sequence hold
-  blocks/lists (the array-of-objects shape of CSV/JSON inputs), not just scalars, via
+  blocks/lists (the array-of-objects shape of CSV/JSON inputs, or a multi-thousand-entry
+  filesystem listing from EF2), not just scalars, via
   a GC-traced `Array<Closure>` modelled on `EnvFrame`; also fixes the current
   `Native::Vec` backing leak. Shares DS1's GC-array machinery; otherwise independent.
 
@@ -747,6 +753,58 @@ early and the mmap-arena transport lands once the value-serialisation form exist
 **Success.** >1.5× on a file batch and on one large data-parallel `map` across 4+
 cores; **zero** single-threaded cost; identical deterministic results to the
 sequential run; the transform unit is something a user reaches for without contortion.
+
+### Pillar EF — Effects & IO: composition and capabilities
+
+Two long-standing rough edges keep real data-gathering programs awkward, and
+Principle 5 (no false ceiling) says we fix them rather than wave them off as "outside
+the sweet spot."
+
+**EF1 — Composing effects.** Today `io`, `state`, `random`, `let` and `for` are each an
+independent `monad{bind, return}` (`lib/prelude.eu:34,162,2155,2163`, `lib/state.eu:55`),
+with no transformer or lift *between effects* — `state.lift` only lifts a *pure
+function* into state. So a stateful, seeded, IO-driven pipeline (accumulate state while
+shelling out, with a controlled PRNG) has no supported path; you hand-roll the
+threading. The runtime rules out a heavy transformer zoo (Principle 4: single-threaded
+lazy-pure; IO interpreted by the driver). Staged direction:
+
+1. **Composition combinators (near-term, prelude-level).** `state` and `random` are
+   *pure value-threading* monads, so they already run inside any context — what is
+   missing is glue: `lift`/interop to run a `state` or `random` computation inside an
+   IO pipeline and thread its result, plus `for`-comprehension across them. No core
+   change.
+2. **A unified effect context.** Because `state` (thread a state block) and `random`
+   (thread a seed) are both pure value-threading and only IO is driver-interpreted, one
+   effect monad can carry `(state, seed)` alongside IO — an RWS+IO-shaped context the
+   existing namespaces become operations *within*. More eucalypt-idiomatic (one
+   structural monad) than a transformer stack.
+3. **Algebraic effect-rows (the long arc).** The general, typed answer — typed effects
+   beyond the IO monad (promoted from a deferred candidate). Heavier type machinery; the
+   end-state, not the near-term step.
+
+**EF2 — Native filesystem / IO capabilities.** The entire IO surface is `io.shell` /
+`io.exec` plus env/args/epoch (`lib/prelude.eu:34-78`) — there is **no** `io.read-file`,
+`io.ls`, `io.walk` or `io.stat`. So gathering a filesystem tree means shelling out
+(`ls`/`find`), receiving one large stdout *string*, splitting it into thousands of
+lines, and rebuilding a cons-list: a subprocess **plus** a full string round-trip
+**plus** O(n) materialisation, on top of the startup tax — which is why "`ls` a few
+thousand files into a structure" is impractically slow today. Add a native capability
+family — `io.read-file`, `io.walk`/`io.ls` (a directory tree → structured data
+directly), `io.stat`, `io.glob` — that produces eucalypt data **without the shell
+round-trip** and **lazily/streamably**, so a large tree need not fully materialise
+(ties to DS and the streaming candidate).
+
+**Why this belongs (not a sweet-spot exception).** The data sweet spot is about the
+*shape* of the work, not a ceiling on input source or scale (Principle 5). Gathering and
+transforming filesystem trees is squarely a data-tool job; that it is currently
+impractical is a gap, not a boundary. The scaling half — thousands of strings/blocks
+held at once — is attacked by DS (arbitrary-value `vec`, persistent blocks), BV (startup,
+dispatch, GC load) and streaming; EF2 removes the *capability* gap and the
+string-round-trip overhead on top.
+
+**Success.** A stateful, seeded, IO-driven pipeline composes without hand-rolled
+threading; `io.walk` ingests a multi-thousand-file tree into a structured value in well
+under a second, lazily where the consumer is lazy, with no shell-out.
 
 ### Pillar EC — Ecosystem & surface (the surface floor)
 
@@ -815,12 +873,14 @@ Recorded so they are not forgotten, able to swap in if priorities shift:
   the SV aspiration taken to its limit (reflection, type-level computation).
 - **Alternative backends** — core→WASM and other targets, post-bytecode and as
   **distribution** not speed (§4.7); the consumer of W5's cross-backend conformance.
-- **Streaming & bounded-memory** — process inputs that don't fit the heap; the
-  principled answer to the large-data regime that doesn't require winning the GC fight.
-  A partial `LazyProducer` spec already exists.
+- **Streaming & bounded-memory** — process inputs that don't fit the heap (including
+  large **filesystem trees**, the EF2 motivating case); the principled answer to the
+  large-data regime that doesn't require winning the GC fight. A partial `LazyProducer`
+  spec already exists.
 - **Lazy-evaluation debugging** — a DAP server / value-provenance for stepping lazy
   evaluation.
-- **Algebraic effect-rows** — typed effects beyond the IO monad.
+- **Algebraic effect-rows** — typed effects beyond the IO monad; now the long-arc
+  end-state of **Pillar EF** (EF1.3), not a free-standing candidate.
 
 ---
 
@@ -855,6 +915,8 @@ land in point releases first.
 | **DS1** | Persistent O(log n) blocks (GC-native CHAMP+RRB) | 0.15+ |
 | **DS2 (W14)** | Generalise `vec` to arbitrary values | 0.15+ |
 | **PP** | Process parallelism (`par-map`/`par-fold`, mmap arena) | 0.14+ |
+| **EF1** | Effect composition (combinators → unified context → effect-rows) | 0.14 → post-1.0 |
+| **EF2** | Native filesystem/IO capabilities (`walk`/`read`/`stat`, streamable) | 0.14 |
 | **W18** | Module & package system (git, content-addressed) | 0.15+ |
 | **W19** | `eu watch` & REPL (Phase 1) | 0.15+ |
 | **W17** | Hermetic mode | 0.15+ |
