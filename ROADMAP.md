@@ -1,1409 +1,1012 @@
-# Eucalypt — Roadmap to 1.0
+# Eucalypt — Roadmap to 1.0 and beyond
 
 - **Status:** Plan of record
-- **Date:** 2026-06-09
-- **Baseline:** eucalypt 0.7.1
+- **Date:** 2026-06-23
+- **Baseline:** eucalypt 0.10.1
 
 ---
 
 ## 1. Purpose
 
 This is the single, self-contained roadmap for eucalypt's evolution to **1.0** and
-the shape of the work just beyond it. It **supersedes and replaces** the earlier
-set of design proposals: everything of lasting value from them — the reasoning,
-the prior art, and the technical content of each change — is folded in here, and
-the proposals are retired.
+the shape of the work beyond it. It is a **direction reset**: the runtime half of
+the previous plan (a generational-GC line as the engine of 1.0 performance) was
+attempted in 0.10.0, did not pay off, and has been retired. What replaced it is the
+subject of this document.
 
-The document has two halves. **Sections 2–6** are the plan: what eucalypt is, the
-principles it must not break, the decisions already settled, the things it will
-deliberately *not* do, and the shape and sequencing of the work. **Section 7** is
-the work itself — each item a self-contained section carrying its problem,
-prior art, design, implementation, risks and success criteria, with `path:line`
-groundings against the current code. **Sections 8–9** give the critical path and a
-complete index.
+The reset rests on one empirical turn. The previous plan was written against a
+0.7.1 baseline in which *mark time was >95% of VM time*; it built two large
+engineering bets — a generational GC and persistent O(log n) blocks — on that
+premise. By 0.10.0 the premise no longer described real workloads: strict prelude
+globals eliminated the recurring collections, and on the AoC-2025 corpus **GC
+dropped to zero collections** while the dominant costs became **VM dispatch** and
+**environment-frame walking**. The generational GC and flat-closure experiments
+that targeted the old picture were both built, measured, and reverted (§10). The
+lesson the one *successful* 0.10.0 change taught — strict eager evaluation, a
+*compile-time* change — is the thesis of this plan: **the bytes we generate are
+the bottleneck; win in compilation and dispatch, not in heap representation.**
 
-Work items are numbered **W1–W22**, ordered by release. Decisions and non-goals
-are not numbered — they govern the work rather than being scheduled.
+The document has two halves. **Sections 2–6** are the plan: what eucalypt is and
+where it now stands, the principles, the settled decisions, the deliberate
+non-goals, and the shape and sequencing of the work. **Section 7** is the work
+itself, grouped into eight pillars, each item carrying its problem (grounded in the
+current code with `path:line` references), design, phasing and success criteria.
+**Sections 8–9** give the critical path and the index. **Section 10** is the
+supplement: the superseded and abandoned work, with its post-mortems, kept so the
+reasoning is not lost and not repeated.
 
 ---
 
 ## 2. What eucalypt is, and where it stands
 
-Eucalypt is a **tool first** — for generating, templating and transforming
-YAML/JSON/TOML — and a lazy, pure, functional language second. Its peers are the
-configuration/data languages (Jsonnet, Dhall, CUE, Nickel, Pkl, KCL, Starlark)
-and, for some ideas, Unison; they are not general-purpose languages, and every
-idea below is weighed against the tool-first use.
+Eucalypt's **centre of gravity is data**: generating, templating and transforming
+YAML/JSON/TOML is the prime case, and the great majority of uses spit out config.
+But eucalypt is a real lazy, pure, functional language, and it carries **no false
+ceiling** — it must extend cleanly into general computation, and we remove
+artificial limits rather than advertise them (Principle 5). Its peers for the data
+case are the configuration languages (Jsonnet, Dhall, CUE, Nickel, Pkl, KCL,
+Starlark); for the general case its lineage is the lazy functional languages
+(Haskell/STG, Unison). Every idea is weighed against the data centre of gravity,
+but generality is a legitimate, intended use.
 
 ### The implementation, in brief
 
-The compile pipeline is: **parse** (a Rowan lossless tree — the sole parser; the
-LALRPOP grammar is retired) → **desugar** → **cook** (shunting-yard operator
-fixity resolution) → **eliminate** → **inline** (×2) → **fuse** →
-**eliminate/compress** → **verify** → **type-check** (bidirectional, advisory,
-then *erased*) → **STG compile** → **STG optimise** → **load to heap** → run on
-the **STG machine**.
+The compile pipeline is: **parse** (a Rowan lossless tree — the sole parser) →
+**desugar** → **cook** (shunting-yard fixity resolution, seedable from prelude
+operators via `distribute_with_prelude`, `src/core/cook/fixity.rs:21`) →
+**eliminate** → **inline** (×2) → **fuse** → **eliminate/compress** → **verify** →
+**type-check** (bidirectional, advisory, then *erased*) → **STG compile**
+(`src/eval/stg/compiler.rs`) → **STG optimise** → **load to heap**
+(`src/eval/memory/loader.rs:120`) → run on the **STG machine**.
 
-- **The VM** is a Spineless Tagless G-machine (`src/eval/machine/vm.rs`): five
-  continuation kinds, an off-heap `Vec` continuation stack, ~181 intrinsics, a
-  single worker thread with a 64 MiB stack.
+There are two STG representations, and the boundary between them is central to this
+plan:
+
+- **`StgSyn`** (`src/eval/stg/syntax.rs:118`) — the off-heap, `Rc`-based,
+  pointer-free IR. It is the optimisation target, and it already has an
+  arena-flattened, index-referenced, **postcard-serialisable** form
+  (`ArenaStgSyn`/`PreludeBlob`, `src/eval/stg/blob.rs`). This is, in effect, a
+  proto-bytecode.
+- **`HeapSyn`** (`src/eval/memory/syntax.rs:227`) — the on-heap form the VM
+  actually executes. The loader translates `StgSyn → HeapSyn` into the GC heap on
+  **every run**, and **compiled code is GC-scanned and evacuated like data**
+  (`impl GcScannable for HeapSyn`, `src/eval/memory/syntax.rs:400-547`).
+
+- **The VM** is a Spineless Tagless G-machine (`src/eval/machine/vm.rs`): the loop
+  `run`→`step`→`handle_instruction` (`vm.rs:1842,1663,389`) dispatches a `match` on
+  `HeapSyn` (`vm.rs:426`), with **six** continuation kinds (`Branch`, `Update`,
+  `ApplyTo`, `DeMeta`, `SeqBind`, `CaptureEnd`; `src/eval/machine/cont.rs:34`) on
+  an off-heap `Vec` stack (`vm.rs:282`), and **192** intrinsics
+  (`src/eval/intrinsics.rs:49`) invoked via a deferred-BIF path (`vm.rs:518,1722`).
+- **Environment frames** (`src/eval/machine/env.rs:191`) are a cactus stack: each
+  frame holds an `Array<C>` of bindings plus a `next` pointer to its parent; a
+  local reference walks the chain (`cell`/`get`, `env.rs:334,352`), and **every
+  `let` allocates a frame** (`from_let`/`from_letrec`, `vm.rs:525`).
+- **Annotation nodes** (`StgSyn::Ann`, `src/eval/stg/syntax.rs:152`) carry source
+  `Smid`s inline in the code and **cost a dispatch step each** (`vm.rs:536`).
 - **The GC** is Immix-inspired (`src/eval/memory/`): 32 KiB blocks, 128 B lines,
-  mark-and-sweep **with** opportunistic evacuation and **lazy** (deferred) sweep.
-  It has excellent debug instrumentation — `EU_GC_VERIFY` (structural
-  verification), `EU_GC_STRESS` (force evacuation every cycle), `EU_GC_POISON`
-  (use-after-free detection).
-- **The type checker** (`src/core/typecheck/`) is bidirectional, freshen-and-unify
-  with subtyping, and **advisory** — it emits warnings and is then erased before
-  code generation.
-- **Blocks** — the core data structure — are **cons-lists** of key/value pairs
-  with **O(n) lookup**, insertion-ordered (the order is observable output).
+  mark-sweep with opportunistic evacuation and lazy sweep, single-threaded
+  stop-the-world. Excellent debug instrumentation (`EU_GC_VERIFY`, `EU_GC_STRESS`,
+  `EU_GC_POISON`).
+- **The type checker** (`src/core/typecheck/`) is bidirectional and **advisory**:
+  it emits warnings and is erased before code generation. The gradual type system
+  the language was built toward is **complete** (HKT shipped in 0.7.0).
+- **Demand analysis** (`src/core/demand.rs`, `src/core/analyse_demand.rs`) carries
+  a four-field `Demand` (cardinality, strictness, whnf, recursive) on every
+  `CoreBinding` (`src/core/binding.rs:9`); `take_lambda_form`
+  (`src/eval/stg/compiler.rs:540`) consults it to choose `Value` vs `Thunk`, and
+  strict non-recursive bindings are wrapped in `Seq` forms (`compiler.rs:756`).
+- **Blocks** are cons-lists of key/value pairs with **O(n) lookup**,
+  insertion-ordered.
 
-### What 0.7.0 already shipped
+### What 0.7–0.10 shipped (ledger)
 
-The gradual type system the language was built toward is **complete**. Stage A
-(0.6.2) delivered `Dict`, equirecursive `Mu` types, literal-string types, flow
-narrowing, `NonEmpty`, first-class alias references, and the `cond[…]`/`=>` clause
-form. Stage B + **higher-kinded types** (0.7.0) delivered `Con`/`App`/`Kind`/
-`forall`, higher-order pattern unification, HKT-typed `monad()`, dependent indexed
-access, the prelude type-summary cache, `Partial(T)`/`T?`, full row inference, and
-**structural operator constraints** (so `min`/`max` now carry `"<(a, a) => …"`
-annotations). The road to 1.0 is therefore mostly *outside* the type system.
+| Release | Landed |
+|---|---|
+| **0.7.0** | Gradual type system completed — HKT, row inference, structural operator constraints, `Partial(T)`/`T?` |
+| **0.7.1** | One-compile pure-document path; the Unit Interface + cross-import bracket fix; `export: :internal` |
+| **0.8** | Real semver + stability tiers; `requires` guard; prelude selection; deprecation lifecycle; resilient parser (phase 1); conformance corpus + golden sidecars; GC-verified CI |
+| **0.9** | Pre-compiled prelude **blob** (postcard-serialised arena STG); incremental query-based LSP; `eu doc`; demand annotations on core bindings; parser error recovery (phase 2); proptest + fuzz targets |
+| **0.10** | **Strict eager evaluation** (the one runtime win — −38% allocs/−34% ticks on prelude-heavy, −76% on folds); prelude demand signatures; git imports restored; *generational GC attempted and reverted; demand cardinality/update-elision attempted and abandoned (§10)* |
 
-### The largest gaps
+### Where it actually stands now (the empirical picture)
 
-1. **No statement of what 1.0 commits to** — no stability discipline, no
-   versioning that means anything (today: continuous delivery with a four-part
-   build number; a genuine breaking change shipped in a patch-looking 0.6.2).
-2. **Compile latency.** Every invocation re-parses and re-compiles the entire
-   prelude — **~500–700 ms** of fixed overhead (parse ~120 ms, cook ~190 ms,
-   eliminate ~110 ms, STG compile ~90 ms) that dwarfs the actual work (a lookup on
-   a 1.15 MB input runs the VM in ~1 ms). It is the most *visible* performance
-   problem.
-3. **GC cost.** On traversal-heavy programs, mark time is **>95%** of VM time, and
-   the collector re-marks the entire live set every cycle — there is no
-   generational dimension.
-4. **O(n) blocks.** Lookup and merge are linear, and the one attempt at persistent
-   O(log n) blocks hit a GC-finalisation wall (it leaked, 220–580% regressions).
-5. **No module/package system** beyond file imports; **no documentation
-   generation**; **no interactive surface**; **no concurrency**.
+Two measurements reset the priorities. Both reproduced on the current build.
+
+1. **Startup is a front-end tax, and it is not yet banked.** `eu -e 'true'` spends
+   ~53 ms here (the feasibility study measured ~85 ms on its reference machine — the
+   same tax, cited as "today's startup" throughout this document), of which **~100% is
+   the front-end re-processing the 2,262-line prelude** (parse 23%, cook 24%,
+   translate 22%, merge 13%); actual evaluation is *microseconds* (`stg-eval`
+   15 µs). The prelude **blob** that would eliminate
+   parse/cook exists only when separately generated (`cargo xtask prelude-compile`,
+   `xtask/src/main.rs:64`) and embedded behind `cfg(prelude_blob_ok)`
+   (`src/driver/resources.rs:6`, `build.rs:35`); a plain `cargo build` has **no
+   blob** and silently runs source-prelude — verified: the default path and
+   `--source-prelude` are timing-identical. And even *with* the blob, the program
+   is still loaded into the GC heap as scanned `HeapSyn` on every run. **For the
+   config centre of gravity, this startup floor — not interpretation speed — is the
+   user-visible performance.**
+
+2. **For compute, dispatch and env-walk dominate; GC does not.** Across the
+   AoC-2025 corpus, after strict prelude globals, **every program does 0 GC
+   collections**. The costs that remain (CPU profiles in
+   `examples/aoc25/PERFORMANCE.md`): **VM dispatch** (`handle_instruction` +
+   `Machine::run`) at **60–81%**, and **`EnvironmentFrame::get`** at **10–39%**
+   (day10-p2 39%, day06-p2 33%, day11-p2 27%). `day11-p1` is the clean microbench —
+   66.5 M ticks, 357 K allocs, **0 collections**, ~all time in the dispatch loop.
+   Allocation machinery is material only on a couple of programs (day10-p1 28%).
+
+These two facts, plus the three reverts (§10), define the work: **the engine
+materialises code as scanned heap data, dispatches it through a tree-walk over
+`HeapSyn`, and walks a cactus env on every variable** — and the front-end re-derives
+the prelude on every invocation. Bytecode and smarter codegen attack all of this;
+heap-representation changes (generational GC, persistent blocks, flat closures) did
+not.
 
 ---
 
 ## 3. Principles (non-negotiable)
 
 1. **Syntactic conservatism.** The surface syntax stays as it is. New machinery
-   lives in metadata (backtick blocks: `type:`, `monad:`, `export:`, …), symbols,
-   strings, blocks, operators, or idiot-bracket pairs — never in new keywords,
-   statement forms, lambda arrows, or `let … in` / `match … with`.
-2. **Structural over nominal.** No named classes, no `implements`, no nominal
-   types. Constraints reference shapes and functions, not names.
-3. **Gradual and inference-first.** Types are advisory by default; a feature must
-   deliver value when only the prelude is annotated.
+   lives in metadata, symbols, strings, blocks, operators, or idiot-bracket pairs —
+   never in new keywords, statement forms, lambda arrows, or `let … in`. **Generality
+   comes from the runtime and the libraries, never from new surface syntax.**
+2. **Structural over nominal.** No named classes, no `implements`, no nominal types.
+   Constraints reference shapes and functions, not names.
+3. **Gradual and inference-first — and checking is cheap enough to default on.**
+   Types are advisory; a feature must deliver value when only the prelude is
+   annotated. Type-checking adds no measurable cost over the front-end already paid
+   (verified: `eu check` ≈ `eu eval`), so it runs by **default**, emitting warnings
+   that never affect output or exit code.
 4. **Single-threaded lazy-pure runtime.** Evaluation is lazy, pure and
    single-threaded over an `UnsafeCell` heap whose soundness depends on
    stop-the-world access (`src/eval/memory/heap.rs:8`). IO is an explicit monad
-   interpreted by the driver loop; the pure core performs no effects.
-5. **Tool-first.** Eucalypt generates/templates/transforms structured data before
-   it is a language. Weigh every idea against that use.
+   interpreted by the driver. The heap stays single-threaded; **parallelism is
+   process-level and isolated** (Pillar PP), never shared-memory mutation.
+5. **Tool-first centre of gravity, no false ceiling.** Eucalypt generates,
+   templates and transforms structured data before it is anything else — but it is a
+   real language and must extend cleanly into general computation. We remove
+   artificial limits rather than market them.
 
 ---
 
 ## 4. Decisions (settled)
 
-These are resolved, with their reasoning, so they are not re-litigated. They
-govern the work in Section 7 but are not themselves scheduled.
+These are resolved, with their reasoning, so they are not re-litigated.
 
-### 4.1 Versioning & stability
+### 4.1 Versioning & stability (shipped in 0.8, unchanged)
 
-Adopt **real semver** at 1.0 (semver.org): `major.minor.patch`, with the CI build
-number moved to `+build.N` metadata (which semver ignores for precedence). The
-fields are interpreted against eucalypt's real API — syntax + prelude + rendered
-output — sharpened by Dhall's three-field rule and Rust RFC 1105 ("all major
-changes are breaking, but not all breaking changes are major"): a **MAJOR** is a
-change an *unmodified* file can observe in its output or a removal from the Stable
-surface; **MINOR** is a backwards-compatible addition (including a new opt-in
-prelude version); **PATCH** is no observable semantic change.
+Real semver against eucalypt's real API (syntax + prelude + rendered output), with
+the CI build number in `+build.N` metadata. 1.0 commits to an enumerated stable
+surface in tiers — **Stable** (syntax, prelude v1, block semantics, CLI,
+import/export formats, embedding API), **Experimental** (the type-annotation DSL and
+checker), **Not covered** (internal IR/STG/GC/`dump`, error prose). The `requires`
+guard enforces version ranges read-side; the prelude evolves via an opt-in **v2**
+coexisting with a frozen **v1**; a deprecation lifecycle retires prelude functions
+in order. The deep-merge-as-default change ships as a MAJOR or behind v2, never a
+silent flip.
 
-1.0 commits to an **enumerated stable surface in tiers** — **Stable** (won't break
-except in a MAJOR, with a deprecation path for the prelude), **Experimental** (may
-change in a MINOR; opt-in/advisory), **Not covered** (no promise). Core syntax,
-the prelude v1 API, block-merge/lookup semantics, the CLI surface, the
-import/export formats, and the WASM/embedding API are **Stable**; the
-**type-annotation DSL and checker are Experimental** — which is what lets
-lang + prelude reach 1.0 without the type system being "done" (it is advisory, so
-it need not be). Internal IR/STG/GC/`dump` output and exact error *prose* are Not
-covered (error *codes/locations* and exit codes are Stable).
+### 4.2 Boundary soundness — decided, and it gates type-directed codegen
 
-The version contract is enforced read-side by **`requires`**, which already parses
-full `semver::VersionReq` ranges (`lib/prelude.eu:15-17`, `src/eval/stg/version.rs`,
-`VersionRequirementFailed` at `src/eval/error.rs:679`) — once versions *mean*
-something, a unit pins the range it tolerates and **fails loud** on a binary that
-moved past it, rather than silently re-rendering wrong (CUE's `language.version`
-model). The prelude — the heaviest Stable surface (~228 declarations) — evolves
-via an **opt-in v2** that coexists with a frozen v1 (`{ prelude: :v2 }`,
-default v1), because the prelude is already a named, embedded, swappable resource
-(`src/driver/resources.rs:14-18`); shipping two is two `include_bytes!` + a
-selector, *not* a forked desugarer. A **deprecation lifecycle** (`deprecated:` /
-`replaced-by:` metadata → use-site WARNING → LSP quick-fix → removal in a MAJOR or
-simply omitted from v2) retires prelude functions in good order. The pending
-deep-merge-as-default change ships **as a MAJOR or behind prelude v2 — never as a
-silent default flip**.
+The gradual boundary stays **advisory and optimistic**: an `any` value flowing into
+a typed position is trusted at runtime — no cast, no proxy, no blame — and types are
+erased before execution. Sound/guarded gradual typing is declined (Takikawa et al.
+POPL 2016: up to ~100× from per-boundary proxies; eucalypt is AOT and has no JIT to
+recover it). The blessed static contract is **`eu check --strict`** as the CI gate.
 
-### 4.2 Boundary soundness
+**The consequence for codegen (Pillar CG):** a type-directed optimisation may fire
+**only on a `Synthesised` type — one proven from code — never on a type merely
+`Trusted` across an `any`.** Under a naïve unboxed path a lying `any` would
+reinterpret a string pointer as an integer: memory corruption, not a type error. So
+type-gated optimisation carries a provenance bit and restricts to synthesis, with an
+optional, off-by-default `--strict-boundary` test mode inserting shallow checks at
+annotated ingress. This is decided now so CG's type-gated tier is unblocked.
 
-Eucalypt's gradual boundary stays **advisory and optimistic by default**: an
-`any` value flowing into a typed position is **trusted at runtime — no cast, no
-proxy, no blame — and types are erased before execution**. This ratifies the
-current behaviour as a permanent, *stated* guarantee: `is_consistent` short-
-circuits on `any` (`src/core/typecheck/subtype.rs:181`), `unify` produces no
-binding at the boundary (`src/core/typecheck/unify.rs:56`), warnings never block
-evaluation (`check.rs:24`), and types never reach `stg::compile`.
+### 4.3 The string type-DSL and the `s"…"` value surface
 
-This is the textbook Siek–Taha consistency relation (symmetric, non-transitive —
-`any` launders any type into any other). The reason for declining **sound/guarded
-gradual typing** is empirical and architectural: Takikawa et al., *Is Sound
-Gradual Typing Dead?* (POPL 2016), measured partially-typed configurations at up
-to ~100× slowdown from per-boundary proxies; Bauman et al. (OOPSLA 2017) showed a
-tracing JIT recovers most of it — but **eucalypt is AOT-compiled and GC-bound
-(mark >95%), with no JIT**, so it is the worst case. The blessed static contract
-is therefore **`eu check --strict`** as the CI gate — its exit code is part of the
-public interface (`src/driver/check.rs:114-117`). An **opt-in `--strict-boundary`
-test mode** (off by default, on under the test harness) may later insert
-*targeted, shallow* runtime checks at explicitly-annotated boundaries
-(transient/shallow in the sense of Vitousek et al., POPL 2017; never whole-program
-proxying) to catch latent mistyping where a 2–5× slowdown is irrelevant. The
-plain-words policy is stated in the language reference so no one assumes "typed"
-means "checked at runtime". Runtime *validation* where it genuinely earns its keep
-is the job of contracts at data ingress (W16), not of always-on casts.
+Type annotations remain strings in `type:` metadata, parsed by a dedicated DSL
+(`src/core/typecheck/parse.rs`); no reserved type bracket is added. Where a type
+must be referenced in *value* context, the **`s"…"` string-prefix** is the surface:
+it produces first-class **type-data**, kept deliberately distinct from a bare
+symbol. This is promoted to a near-term item (Pillar SV) because it is the keystone
+of the validation/schema differentiation.
 
-### 4.3 The string type-DSL
+### 4.4 Ad-hoc polymorphism — "typeclasses without classes" (shipped)
 
-Type annotations remain **strings in `type:` metadata**, parsed by a dedicated
-DSL (`src/core/typecheck/parse.rs`); inside those strings records use escaped
-braces `{{..}}`. This is kept through 1.0 — **no reserved type bracket** is
-added (it would burn scarce surface syntax and the metadata-string form composes
-with everything). Where a type must be referenced in *value* context (W16), the
-**`s"…"` string-prefix** form is the surface: it produces type-data, kept
-deliberately distinct from a bare symbol (which would be "too magical"). The DSL
-is the one Experimental surface (§4.1) and stays so until the open questions
-around it settle.
+Operator/overload constraints reference shapes and functions, not names (`<(a, a)`
+= "there exists a `<` at this shape"). Shipped in 0.7.0; this is the whole
+mechanism — there is no nominal typeclass system coming.
 
-### 4.4 Ad-hoc polymorphism — "typeclasses without classes"
+### 4.5 Runtime performance is won in compilation, not heap representation
 
-Operator/overload constraints reference **shapes and functions, not names**: a
-constraint like `<(a, a)` says "there exists a `<` at this shape", with no class
-to declare or instance to register. Shipped in 0.7.0 as structural operator
-constraints (live `TypeScheme.constraints`); the standing position is that this is
-the whole mechanism — there is no nominal typeclass system coming.
+This supersedes the previous "generational GC + persistent blocks" performance
+plan. The evidence (§2, §10) is that heap-representation rewrites did not pay and
+that the cost lives in code materialisation, dispatch and env-walk. Therefore:
 
-### 4.5 Runtime performance is a 1.0 goal
+- **A bytecode VM is the spine of runtime performance** (Pillar BV): flat code in a
+  non-GC arena (code leaves the scanned heap), register frames (env-walk), side
+  tables (annotation dispatch), superinstructions (hot patterns), and
+  serialisability (the startup win). Estimated 3–10× on dispatch-bound code and a
+  large drop in GC load, keeping the Immix GC, all intrinsics, the emitter, the
+  error machinery and the `EU_*` tooling.
+- **Demand- and type-directed compilation rides on it** (Pillar CG): the bytecode is
+  the substrate the smarter codegen emits into.
+- **The speculative generational-GC rebuild is shelved** (§10), to be revisited only
+  when a real memory-pressure workload exhibits the regime it targets. **Persistent
+  O(log n) blocks are retained** as a forward item (Pillar DS) — eucalypt is an
+  intensely merge-heavy language and the case is structural, not workload-of-the-day —
+  but sequenced *after* bytecode (which removes the code-as-scanned-data churn and
+  makes the GC-native node approach cheap) and built GC-native to avoid the ADR-001
+  finalisation leak.
 
-The generational GC (W10) **and** strictness/demand analysis (W11) both ship
-before 1.0. Latency (W6) and GC cost are the two most-felt runtime problems; W10
-benefits every program and W11 compounds it. (The further, type-directed
-performance work, W20, is a curated post-1.0 bet — see §4.6.)
+### 4.6 1.0 is a milestone, not a feature bucket
 
-### 4.6 Post-1.0 big rebuilds are curated, not pre-committed
+**No feature is scheduled *for* 1.0.** Every capability in this plan ships in an
+ordinary **point release** (0.11, 0.12, …) on the existing high-cadence
+continuous-delivery model. 1.0 is the *milestone we reach* once the point releases
+have delivered the surface and it has been proven — the moment we **decide we are
+going for 1.0**: ratify and freeze the stable-surface tiers (§4.1), turn on the
+version contract, declare the commitment. It carries gates (a complete surface, W5
+conformance green, the deprecation lifecycle exercised), not features.
 
-The roadmap commits through 1.0. The large systems rebuilds beyond it —
-type-directed compilation (W20) and parallel evaluation (W21) — are deliberate,
-**one-at-a-time** candidates chosen *at* 1.0, never parallelised and never assumed.
-They draw on the same scarce deep-systems expertise as the GC line and must not
-starve it.
+A corollary: the **freeze is gated on the surface, not on the engine.** Bytecode is a
+multi-release programme (§6.4) that changes *no observable semantics* — output is
+byte-identical across engines, which is exactly what the conformance corpus (W5)
+proves — so the bytecode programme may still be mid-flight when 1.0 is declared. We
+neither block the freeze on the rewrite nor declare 1.0 *because* the rewrite is done.
+
+### 4.7 WASM is a distribution target, not an execution engine
+
+The STG→WASM feasibility study (`docs/development/stg-compilation-targets-feasibility.md`)
+is settled: compiling to WASM as an *execution engine* attacks the wrong bottleneck
+at the wrong price. Code generation is the easy 20%; the hard 80% is a second
+runtime system (lazy object model, a GC story that either rebuilds a linear-memory
+RTS or discards the Immix investment, a bridge across 192 intrinsics, the per-scalar
+streaming render path), with Wasmtime codegen + instantiation likely making small
+runs *slower* than today's 85 ms — an estimated 18–36 months to parity behind a long
+dual-engine migration. The durable WASM opportunity is **distribution**: sandboxed
+WASI components and playground acceleration, revisited *after* the bytecode exists to
+compile from. Post-1.0 candidate (§10 records the analysis).
 
 ---
 
 ## 5. Non-goals (won't-do)
 
-- **A package registry.** All distribution goals are met with **git + GitHub /
-  GitLab** alone — content-addressed imports, an in-language manifest, version
-  selection. There is no ecosystem of deployed third-party `.eu` files to justify
-  an index or hosted registry, and we decline to build one (W18).
-- **Rust-style editions.** Editions let one binary interpret old files under old
-  *semantics* forever — valuable with many untouchable third-party crates, but it
-  forces the desugarer to carry every historical semantic path indefinitely. At
-  current scale that recurring cost buys a benefit the ecosystem does not warrant;
-  the `requires` guard and opt-in prelude v2 (§4.1) cover the real need. Revisit
-  only if a real third-party ecosystem appears.
-- **Capability *types*.** The hermetic/determinism *mode* (W17) ships; a
-  capability *type system* does not — too much machinery for the tool-first remit.
-- **Algebraic subtyping / MLsub (an MLsub/MLstruct core swap).** The hand-rolled
-  bidirectional checker plus shipped HKT is the committed core; an MLsub rebuild
-  would buy principal types and "rows/unions for free" but **conflicts directly
-  with the now-shipped HKT keystone** and is too cutting-edge to combine with it.
-  Reassess only if the current core visibly creaks.
-- **Nominal types / classes.** Stay structural (Principle 2). A nominal newtype,
-  if ever, would itself be opt-in (a MAJOR or prelude v2), never a default.
-- **Sound/guarded gradual typing** — see §4.2. **An always-on runtime type
-  check** is declined by design.
+- **A package registry.** Distribution is met with **git + GitHub/GitLab** alone —
+  content-addressed imports, an in-language manifest, version selection (W18).
+- **Rust-style editions.** The `requires` guard and opt-in prelude v2 cover the real
+  need without forcing the desugarer to carry every historical semantic path.
+- **Capability *types*.** The hermetic/determinism *mode* (W17) ships; a capability
+  *type system* does not.
+- **Algebraic subtyping / MLsub core swap.** Collides with the shipped HKT keystone;
+  reassess only if the hand-rolled bidirectional core visibly creaks.
+- **Nominal types / classes.** Stay structural (Principle 2).
+- **Sound/guarded gradual typing** and an always-on runtime type check (§4.2).
+- **WASM as an execution engine** (§4.7) — distribution only, and only post-bytecode.
+- **A speculative generational-GC rebuild** — shelved (§4.5, §10); revisit only on a
+  demonstrated memory-pressure workload. (Persistent O(log n) blocks are *not* a
+  non-goal — they are retained as Pillar DS, sequenced after bytecode.)
+- **Shared-memory parallelism / a `Send`+`Sync` heap.** Parallelism is process-level
+  and isolated (Principle 4, Pillar PP).
 
 ---
 
 ## 6. The shape of the plan
 
-### 6.1 The six families
+### 6.1 The eight pillars
 
-Work groups along six commonalities — the real reason items sit together.
-
-| Family | Members | The shared thing |
+| Pillar | Theme | The shared thing |
 |---|---|---|
-| **Cross-unit interface** | W2, W6, W7, W18 | One *Unit Interface* (W2) exposes each unit's cross-unit contributions; separate compilation, incremental queries and module imports all consume it. |
-| **Compile latency & incrementality** | W1, W6, W7 | Eliminate redundant compiles, cache/embed the prelude, then a demand-driven query graph. One cache-key discipline. |
-| **GC / memory** | W10, W13, W14 | Generational nursery first; then persistent blocks and vec-of-values on the GC-scannable-array machinery. One scarce skill set — *sequence, never parallelise*. |
-| **Strictness / demand** | W9, W11, W20 | One demand annotation (W9) feeds the analysis (W11) feeds type-directed compilation (W20). |
-| **Types-as-validation** | W16, W15, W8, W22 | The `s"…"` type vocabulary is reused by runtime validation, presence-typed fields, doc/schema extraction and schema interop. |
-| **1.0 commitment** | W3, W5, W17 | Versioning & stable-surface tiers, a conformance corpus, reproducibility — what "1.0" *means* and how it is *proven*. |
+| **BV — Bytecode VM** | A flat, serialisable, arena-resident execution form | Code leaves the GC heap; dispatch, frames and annotations are restructured; the program becomes serialisable bytes |
+| **CG — Code generation** | Demand- and type-directed core→STG/bytecode | One demand/type analysis decides thunk-vs-value, direct dispatch, key resolution, unboxing and selective lifting |
+| **TY — Typing default-on** | The checker earns its keep | Cheap, quiet checking made the default; the forcing function that hardens the checker toward CG's type-gated tier |
+| **SV — Type-value surface** | `s"…"` type-data → validation, optional fields, prefix-lists, schema | Types become ordinary values; one type-data source is validated, generated, coerced, defaulted, documented and exported |
+| **DS — Block & value model** | Persistent O(log n) blocks; arbitrary-value `vec` | The merge-heavy core data structure made sub-linear with structural sharing, GC-native, on the bytecode-reduced churn |
+| **PP — Process parallelism** | Isolated forked workers, data-only boundary | Purity + IO-isolation make a scatter/gather `par-map`/`par-fold` safe; an mmap arena is the transport and coordination layer |
+| **EF — Effects & IO** | Composing monads; native filesystem/IO capabilities | One effect story so state+random+IO compose, and native `walk`/`read`/`stat` so filesystem trees are practical (Principle 5) |
+| **EC — Ecosystem & surface** | Modules, interactive surface, reproducibility, conformance | The cross-unit interface, the cache, and the proof corpus that let the surface be completed and frozen |
 
-### 6.2 The dependency spine
+### 6.2 The dependency spine (`→` = "must precede")
 
-The edges that constrain ordering (`→` = "must precede"):
+- **BV0** (encoding + ceiling spike) **→ BV1** (threaded interp) **→ BV5** (serialised
+  prelude), **BV2** (side tables), **BV3** (register frames), **BV4** (superinstructions).
+- **CG (type-free tier)** is independent of BV and helps the current VM today; **CG
+  (type-gated tier)** needs §4.2 (decided) and lands cleanest on BV.
+- **BV3** (register frames) and **CG selective-lifting** share one escape/demand
+  analysis — sequence them together.
+- **TY** is independent; it is the forcing function that matures the checker CG's
+  type-gated tier depends on.
+- **BV5** (serialisable bytecode) makes **PP** workers cheapest to spawn, and is the
+  natural successor to the existing `ArenaStgSyn`/postcard blob.
+- **SV** is independent of the runtime work; **optional fields** and the
+  **prefix-list type** are type-vocabulary enrichments it surfaces; **W8/W22**
+  (doc/schema) consume the same type-data.
+- **DS** (persistent blocks) is sequenced **after BV** — bytecode removes the
+  code-as-scanned-data churn and makes the GC-native CHAMP/RRB nodes cheap; it shares
+  BV's GC-scannable-array machinery. Independent of SV/CG.
+- **EF** is largely independent: **EF1** (effect composition) is prelude-level for its
+  near-term steps; **EF2** (native filesystem IO) is intrinsics + prelude, and its
+  *streaming* form composes with DS and the streaming candidate; the algebraic
+  effect-rows end-state (EF1.3) is post-1.0.
+- **EC**: **W18** (modules) builds on the shipped Unit Interface + git imports;
+  **W19** (watch/REPL) builds on the cache + BV5 startup; **W5** (conformance) is the
+  proof that BV changes nothing observable.
 
-- **W2** (Unit Interface) **→ W6, W7, W18**; W2 also subsumes the cross-import
-  bracket fix.
-- **W9** (demand annotation) **→ W11** (the analysis that populates it fully).
-- **W12** (git fetch backend) **→ W18** (modules).
-- **W10** (generational GC) **→ W13** (persistent blocks) — same scarce GC
-  expertise; W10's nursery also makes the persistent structures' short-lived nodes
-  cheap.
-- **W15** (presence) **→ W22**; and it enriches **W16**.
-- **W16, W8 → W22** (an ingested schema *is* a contract; doc extraction feeds
-  codegen).
-- **W6 → W19, W21**; **W7 → W19** (per-prompt latency + reactivity).
-- **W14** (vec) shares W13's GC-array machinery but is otherwise independent.
-- **W20** is gated on the boundary-soundness decision (§4.2) and couples to **W11**.
+### 6.3 Release mapping
 
-### 6.3 The GC line, and the curated rebuilds
-
-Five efforts draw on the same deep-systems skills (the GC, the core checker, the
-STG machine) and **cannot all happen at once**:
-
-| Effort | Buys | Verdict |
-|---|---|---|
-| **W10** generational GC | cuts the dominant mark cost; benefits *every* program | **Do it — 0.10.** |
-| **W13** persistent blocks | O(log n) for large/merge-heavy configs | **0.11, after W10.** |
-| **W20** type-directed compilation | types as a runtime asset | post-1.0 candidate; gated on §4.2. |
-| **W21** parallel evaluation | multi-core for batches/large maps | post-1.0 candidate; Model B is a GC rebuild in itself. |
-| *(MLsub core swap)* | principal types "for free" | **Won't-do** — collides with shipped HKT (§5). |
-
-Spend the scarce systems effort on the GC (W10, then W13) before 1.0; take
-W20/W21 one at a time afterwards.
-
-### 6.4 Leverage vs cost
-
-A second lens, orthogonal to release order (decisions and non-goals excluded):
-
-| Bucket | Items |
-|---|---|
-| **Cheap & high-leverage** (design-heavy, do early) | W1, W3, W4, W6, W8 |
-| **High-leverage, real engineering** | W2, W5, W7, W10, W13, W16, W18 |
-| **Worthwhile, medium** | W9, W11, W12, W14, W15, W17, W19 |
-| **Big bets / forks** (deliberate, post-1.0, one at a time) | W20, W21, W22 |
-
-### 6.5 Release summary
+All features ship in **point releases**; 1.0 is a milestone, not a bucket (§4.6).
+The near releases are concrete; the later ones are a likely grouping, freely
+reordered as the cadence dictates.
 
 | Release | Theme | Items |
 |---|---|---|
-| **0.7.1** ✓ | Two correctness fixes + export :internal | W1–W2 |
-| **0.8** | Versioning, foundations & front-end hygiene | W3–W5 |
-| **0.9** | Compile latency, docs & incremental groundwork | W6–W9 |
-| **0.10** | The runtime: GC & demand | W10–W12 |
-| **0.11** | Blocks, value model & presence types | W13–W15 |
-| **0.12** | Data-correctness & reproducibility | W16–W17 |
-| **1.0** | Ecosystem floor, prove & freeze | W18–W19 (+ W5 bar, W3 freeze) |
-| **post-1.0** | Breadth & curated bets | W20–W22, candidates |
+| **0.11** | Codegen wins, typing on, type-value foundation, bytecode spike | CG type-free tier; TY default-on; SV `s"…"` + `as-spec`; **optional record fields**; **BV0** gate |
+| **0.12** | The bytecode core + the startup win | **BV1** (code out of the heap) + **BV5** (serialised/embedded prelude, 85→~25 ms) |
+| **0.13** | Frames, annotations, type-gated codegen, prefix-lists | **BV2** side tables; **BV3** register frames + CG selective lifting; **CG** type-gated (unboxing); **prefix-list type** |
+| **0.14** | Polish, parallelism, effects, contracts | **BV4** superinstructions; **PP** `par-map`/`par-fold`; **EF2** native filesystem IO + **EF1** effect-composition combinators; **W16** contracts; presence inference |
+| **0.15+** | Value model, ecosystem, surface | **DS** persistent blocks + `vec`; **EF1** unified effect context; **W18** modules; **W19** watch/REPL; **W17** hermetic; **W22** schema interop |
+| **1.0** *(milestone)* | Decide, prove, freeze | *No features.* Surface complete + **W5** conformance green → ratify and freeze the stable-surface tiers, turn on the version contract (§4.6) |
+| **post-1.0** | Curated bets | EF1.3 algebraic effect-rows; WASM-as-distribution; parallel Model B (maybe-never); a true separate-nursery GC *iff* a workload demands it |
+
+### 6.4 The bytecode programme is multi-version — phased so each step ships value
+
+Bytecode is the largest single effort in this plan and the highest-risk (it
+rewrites the hottest, most delicate code). It is sequenced so each phase is
+independently shippable and de-risks the next, and so the most user-visible win (the
+startup floor) is banked early:
+
+1. **BV0 — encoding + ceiling spike (a gate, not a commitment).** Define a flat
+   bytecode over `StgSyn` building on the existing `ArenaStgSyn` arena form; encode
+   just enough to run `day11-p1` (the 81%-dispatch microbench) end-to-end on a
+   minimal threaded interpreter; **measure the dispatch ceiling**. Proceed only if
+   ≥~2×; otherwise reassess. Weeks, low commitment.
+2. **BV1 — threaded-code interpreter, code out of the GC heap.** Replace the
+   `HeapSyn` tree-walk (`vm.rs:389`) with opcode dispatch over arena-resident
+   bytecode; retire `impl GcScannable for HeapSyn` (code stops being scanned and
+   evacuated); keep continuations, env frames and the intrinsic boundary intact to
+   isolate variables. The big correctness lift; full harness green under
+   `EU_GC_VERIFY=2`.
+3. **BV5 — serialisation, embedded prelude, unit cache.** Execute directly from
+   serialised bytecode; embed the prelude bytecode at build time (superseding the
+   heap-graph blob; the loader stops re-allocating the program each run); content-hash
+   unit caching. Closes the startup story for *every* build (85→~20–30 ms), the
+   single most user-visible win. Reuses the postcard/`cfg(prelude_blob_ok)` plumbing.
+4. **BV2 — side tables for annotations.** Move `Smid`s out of the instruction stream
+   (retire the `Ann` dispatch step, `vm.rs:536`) into offset-keyed side tables the
+   error machinery reads. Additive, low risk.
+5. **BV3 — register frames.** Replace cactus-env churn (`env.rs:191`, `from_let`
+   `vm.rs:525`) with flat register frames for the common case, spilling to heap
+   frames only where a closure genuinely escapes. This is the structural env-walk fix
+   — and the place the reverted flat-closure idea (§10) **correctly relocates**: a
+   *selective, compiler-decided* transform on hot deep captures, not a universal
+   runtime representation. Shares CG's escape analysis. High value, high risk.
+6. **BV4 — superinstructions.** Profile-guided fusion of the boxing-heavy hot
+   sequences (force-then-case, alloc-thunk-update, literal arithmetic). Additive and
+   iterative.
+
+---
 
 ## 7. The work
 
-Each item carries its problem (grounded in the current code), the prior art that
-shaped it, the chosen design, an implementation sketch with size/risk, the risks
-that would falsify it, and how we would know it worked. Items phased across
-releases keep one number with phase notes.
-
----
-
-### 0.7.1 — Two correctness fixes ✓ (shipped 2026-06-09)
-
-*Two latent bugs plus `export: :internal` declaration visibility, shipped as a
-patch before the 0.8 line begins. The cross-import bracket fix required building
-the Unit Interface the later releases depend on, so it lands here as the
-foundation it is.*
-
-#### W1. Eliminate the double STG compile of plain documents
-
-**Problem.** For a plain (non-IO) document — the common case — `try_execute`
-compiles the prelude-plus-unit evaluand to STG **twice**: once headless to
-classify IO-vs-document, then again under `RenderType::RenderDoc` on a *fresh*
-machine to render (`src/driver/eval.rs:178-295`). The second compile (~90 ms, and
-not even timed) exists only as a workaround: rendering the headless result in
-place via `render_headless_result` (`src/driver/io_run.rs:1602`) crashes the GC on
-stale string pointers left by the first run (`eval.rs:272-275`). The IO paths
-already render in place safely; only the pure-document path recompiles.
-
-**Design.** Fix the stale-string hazard so the pure-document result renders in
-place like the IO cases → **one compile, one machine** on every plain-document
-run, and a known heap-lifecycle landmine removed. Independent of, and complementary
-to, the prelude embedding in W6 (W1 removes the *second* compile; W6 removes the
-*prelude* compile).
-
-**Implementation.** `src/driver/eval.rs:163-302`, `src/driver/io_run.rs:1602`.
-Small but touches heap lifecycle — validate under `EU_GC_VERIFY=2` +
-`EU_GC_STRESS=1`. P1 / high priority.
-
-**Success.** A plain-document run performs exactly one STG compile (verifiable via
-the `stg-compile` timing); the headless result renders in place; no GC crash under
-verification across the harness; a regression test exercises it.
-
-#### W2. The Unit Interface (and the cross-import bracket fix)
-
-**Problem.** A dependency makes several *source-level contributions* to a dependent
-unit's compilation, handled today by **four separate, inconsistent mechanisms**:
-bracket content-modes (per-file `BracketRegistry`, no cross-file seeding —
-`src/syntax/rowan/parse.rs:45`); the monad-namespace registry (seedable —
-`src/core/desugar/desugarer.rs:171`); the operator table (rediscovered from the
-merged tree at cook, no seeding — `src/core/cook/fixity.rs:143`); and type schemes
-(`PreludeSummary`/`with_seed` — `src/core/typecheck/check.rs:197,382`). Operators
-are even captured twice (typecheck *and* cook). One of these is an outright bug:
-because a block-style idiot-bracket pair is decided per-file at parse, a pair
-**defined in an imported file is invisible** to the importing file's pre-scan, so
-its uses there default to soup/expr mode — a program that works in one file
-**silently mis-parses** when the definition is moved to a library.
-
-**Prior art.** A GHC `.hi` interface / ML signature: build a unit's interface once;
-seed each phase of a dependent from its dependencies' interfaces. `PreludeSummary`
-is already a partial one.
-
-**Design.** Refactor the four contributions into a single per-unit **Unit
-Interface** with one consistent pattern. This **fixes the bracket bug** (brackets
-gain a slot and the seeding they lack — the block-vs-soup decision is deferred past
-parse to the seedable desugar stage), removes the operator-table redundancy
-(extract once, serve both cook and typecheck), and makes the cross-unit surface
-explicit and testable. It is independently valuable *before* any separate
-compilation, and is the foundation W6 (separate compilation), W7 (incremental) and
-W18 (modules) all consume; demand signatures (W9) and exported-binding slots become
-further fields of the same interface.
-
-**Implementation.** `parse.rs:45` (brackets), `desugarer.rs:160-177` (the seedable
-template), `fixity.rs:143` (operator rediscovery), `check.rs:197,382`
-(`PreludeSummary` to generalise). Parse is the awkward phase (it runs *before*
-import resolution), which is exactly why the bracket contribution must move to the
-seedable desugar stage. Interfaces build bottom-up over the import DAG; mutual
-recursion across units is the residual hard case. Medium / architecture.
-
-**Success.** One mechanism instead of four; the imported-bracket repro parses
-correctly; operators are extracted once; the interface is a documented, testable
-artefact.
-
-### 0.8 — Versioning, foundations & front-end hygiene
-
-*Design-heavy, front-end, low-risk: make 1.0's shape real.*
-
-#### W3. Versioning & stability discipline
-
-**Problem.** Eucalypt practises continuous delivery with a four-part build number
-(`build.eu:7-13,59-62`); the `0.7.0` in `Cargo.toml` is a human-set prefix and the
-fourth field carries no compatibility meaning. A genuine breaking change shipped
-in a patch-looking **0.6.2** (the `cond` rewrite to the `=>` clause form,
-`CHANGELOG.md:57`, `lib/prelude.eu:1168`): eucalypt's own callers were fixed by
-hand, any user file broke silently. The risk worth managing is narrow — *a file
-silently changes behaviour on a binary upgrade and nobody notices* — not "an
-untouchable third-party file breaks" (there is no such ecosystem yet).
-
-**Design.** This item *implements* the policy settled in §4.1; it is deliberately
-proportionate, not a heavyweight charter. Four engineering pieces, all front-end /
-loader / docs with no runtime risk:
-
-1. **Semver plumbing** — adopt the field meanings of §4.1; move the build number to
-   `+build.N` metadata at 1.0 (`build.eu`, release flow, docs).
-2. **`requires` as a guard** — the runtime path already exists
-   (`__REQUIRES`/`semver::VersionReq`); document the range-pin convention, model it
-   in the shipped library units (`lens.eu`, `state.eu`), and optionally add an
-   `eu`/LSP "minimum version / missing pin" hint.
-3. **Opt-in prelude versioning** — ship a frozen **v1** and an in-development **v2**
-   as two embedded resources; read `{ prelude: :v2 }` from unit metadata in the
-   loader (beside `import:`), default to v1; key the prelude type cache on the
-   selection (`src/driver/check.rs`; noted for W6). This is two `include_bytes!` +
-   a selector — explicitly *not* editions (§5): a prelude is a *unit merged in*,
-   not semantic lowering rules.
-4. **Deprecation lifecycle** — `deprecated:` / `replaced-by:` metadata, a use-site
-   WARNING (never an error under the advisory default), and an LSP quick-fix
-   reusing the existing `WorkspaceEdit` machinery (`src/driver/lsp/actions.rs`).
-
-The stable-surface **tier table** (§4.1) is ratified and published as a one-page
-statement; the **type system is labelled Experimental** so it does not block a
-lang/prelude 1.0. The **freeze** of the enumerated surface happens at 1.0.
-
-**Implementation.** `build.eu` + release flow (S); `requires` docs + optional hint
-(S); prelude versioning in `resources.rs`/`source.rs`/`check.rs` (M); deprecation
-metadata + diagnostics + quick-fix (S). Front-end/loader only.
-
-**Risks.** Two preludes drift (mitigate: v1 *frozen*, security-only; feature work
-in v2). Premature 1.0 burns credibility (mitigate: the gate, and keeping the type
-system Experimental). `requires` pins rot (mitigate: the missing-pin hint; model
-it in shipped units).
-
-**Success.** A published `1.0.0` with real semver and a one-page tier statement;
-prelude v2 exists opt-in with v1 frozen; every Stable prelude element has a
-deprecation→removal path; the deep-merge default, when it lands, ships as a MAJOR
-or behind `prelude: :v2`, never a silent flip.
-
-#### W4. Resilient parser front-end & error recovery
-
-**Problem.** The syntactic LSP features already work by calling the Rowan parser
-directly (`src/driver/lsp/mod.rs:805ff`). What is blocked is the *pipeline*: an
-all-or-nothing shim discards the Rowan **lossless** tree on any error, so a single
-typo turns the whole file opaque to diagnostics and to every downstream pass.
-
-**Prior art.** Rowan (rust-analyzer's lossless syntax trees) is built for error
-recovery — a tree is always produced, with error nodes in place.
-
-**Design.** Two phases. **Phase 1 (0.8):** delete the all-or-nothing shim and
-always surface the Rowan partial tree (~150 lines; immediate diagnostic
-improvement). **Phase 2 (0.9):** real error-recovery in the parser — synchronising
-on block/list boundaries and producing typed error nodes — so a malformed region
-is isolated and the rest of the file still parses, cooks and checks. Bracket
-recovery couples to W2 (the deferred block/soup decision).
-
-**Implementation.** `src/syntax/rowan/`. Phase 1 small/low; Phase 2 medium. Honour
-the panic policy — odd input yields a clean diagnostic, never a panic.
-
-**Success.** A file with one error still yields diagnostics and hovers for the rest
-of the file; the partial tree always reaches the pipeline.
-
-#### W5. Conformance corpus, property tests & fuzzing
-
-**Problem.** The 315+ harness tests are unusually good — *dogfooded*, written in
-eucalypt's own `//=`/`//!`/`//=>` assertion operators (so they double as `eu test`
-and as examples), with `.expect` sidecars for error/check tests. But the harness
-is an internal regression suite, not yet (a) a **portable contract** an independent
-backend could run, nor does it externally pin (b) **rendered output bytes** or the
-(c) **prelude-v1 freeze**; there is **no property-based testing**, **no fuzzing**
-of the parsers or the type-DSL, and GC verification runs in only one CI job.
-
-**Prior art.** Dhall and the WebAssembly spec tests make the *files plus a
-documented pass/fail convention* the contract, each implementation bringing its own
-runner (never privileging one); Nickel's `.ncl`+`.expected` is the minimal form.
-QuickCheck (Claessen & Hughes, ICFP 2000) / Rust `proptest` for properties;
-CSmith (Yang et al., PLDI 2011) and metamorphic/differential testing (Rigger & Su,
-OOPSLA 2020) for compilers; `cargo-fuzz`/libFuzzer for parsers.
-
-**Design.** (1) **Document the corpus contract** and keep the `.eu` files as-is;
-add a **golden-output `.expect` layer** to a curated subset — every export format,
-and the prelude-v1 frozen set — extending the existing sidecar plumbing. This is
-the executable form of the §4.1 freeze and "what would have caught the `cond`
-break". (2) **Property tests** (`proptest`): round-trip idempotence
-(render→parse), render determinism, `eu fmt` idempotence, subtyping
-reflexivity/transitivity and the §4.2 consistency-symmetry property (needs an
-`Arbitrary` for `Type` covering `Con`/`App`/`Forall`/`Mu`), and GC invariants over
-generated structures. (3) **Three `cargo-fuzz` targets**: `fuzz_type_dsl`
-(highest priority — the hand-written parser over untrusted annotation strings,
-`src/core/typecheck/parse.rs`), `fuzz_parser` (Rowan), `fuzz_loader`
-(YAML/JSON/TOML/CSV/XML import). (4) **Promote `EU_GC_VERIFY=2`+`STRESS`+`POISON`
-to a full-harness CI job** on x86-64, and `asan` to a hard gate.
-
-**Implementation.** Phase 1 (0.8): contract doc + golden sidecars + the GC-verified
-CI job. Phase 2 (0.9): `proptest` + properties. Phase 3 (0.9–1.0): fuzz targets +
-seed corpora, run to exhaustion before the freeze; every panic becomes a diagnostic
-with a regression test. The reference runner and existing files are untouched.
-
-**Success.** Golden sidecars cover every export format and the frozen prelude set;
-the property suite passes; **zero panics after a 24-hour fuzz run** on each target;
-the full harness is green under `EU_GC_VERIFY=2`; when the first alternative backend
-lands it can be held to the *same* corpus with its own runner. (The cross-backend
-payoff arrives with the forthcoming core→WASM backend — see Candidates.)
-
----
-
-### 0.9 — Compile latency, docs & incremental groundwork
-
-*Cheap-to-medium: attack the most visible perf problem and the authoring surface.*
-
-#### W6. Compiled-unit & prelude caching (separate compilation)
-
-**Problem.** Every `eu` invocation re-parses, re-cooks and re-compiles the entire
-prelude from source — the ~500–700 ms fixed tax of §2, ~500× the VM work on a
-typical run, paid on every run of a tool that lives in CI and scripts. It *looks*
-cacheable (the prelude is fixed and embedded, `resources.rs:16`), and its **types**
-are already cached (the `PreludeSummary`/`PRELUDE_CACHE`). But the **code** is not,
-because the prelude has **no independent compiled form**: every input is spliced
-into one core expression by `rebody` (`src/core/expr.rs:548`) *before* STG
-compilation, and `stg::compile` runs once on the whole merged evaluand
-(`eval.rs:187`). Caching the prelude's STG keyed on its bytes is caching something
-that does not exist.
-
-**Prior art.** GHC compiles each module to an object + an **interface (`.hi`)** that
-carries exports *and unfoldings* (so cross-module inlining survives) *and strictness
-signatures*. ML functors / 1ML / Backpack compile a module as a function of its
-imports' signatures. Unison identifies definitions by content hash, making
-linking/caching free. Python's `.pyc` is the security lesson: a cache of executable
-artifacts is an RCE vector — keep it co-located and validated (PEP 552), or avoid
-it.
-
-**Design.** The real fix is **separate compilation** on top of the Unit Interface
-(W2): give the prelude an independent compiled form whose cross-unit references are
-unresolved externals, then **embed the compiled prelude in the binary** (mirroring
-how `build-meta.yaml` is embedded via `include_bytes!`, with a build-time hash
-check against `lib/prelude.eu`). This eliminates prelude compilation at runtime
-with **no on-disk cache and no security surface**, and auto-versions (it *is* the
-binary's prelude).
-
-The **one genuine wall is operators**: cook discovers operators from the merged
-`let`-nest and mis-parses an out-of-scope operator (`fixity.rs:143`; verified:
-`-Q` + `2 + 3` → "unresolved variable '+'"), and there is no seeding mechanism
-today. User code uses ~55 prelude operators pervasively, so cooking a unit
-independently of its dependencies' operators is the load-bearing change — but for
-the prelude floor it is bounded (the prelude's operator set is fixed and already
-extracted on the type side, `check.rs:86`). Monad namespaces are already seedable
-and bracket modes are handled by W2.
-
-Four mechanisms, floor to radical: **(A)** stable-global-prefix — compile the
-prelude once to a fixed `Ref::G` global-slot layout (its de Bruijn indices are
-already body-independent), user bodies reference those slots; **(B)** symbolic
-externals + link (GHC `.o`+`.hi`, carrying inline-able defs); **(C)**
-units-as-functions (ML functors; a unit is `λimports. body`, the most
-eucalypt-idiomatic since blocks are records); **(D)** content-addressed definitions
-(Unison; unifies with W18). **The prelude floor (A, with operator seeding) is the
-recommended, Medium-effort 1.0 target; arbitrary-unit separate compilation
-(B/C/D) is Hard and post-1.0.**
-
-**An on-disk cache is explicitly demoted.** After W1 + the embedded prelude, the
-only remaining cacheable thing is the *whole merged evaluand* keyed on the full
-input set — a hit only on exact re-runs, deduping nothing, and carrying a real
-security surface (a cache of compiled units is executable content; content-hash
-keying guards staleness, not tampering — a writable cache entry is RCE; a restored
-CI cache is untrusted input). If ever pursued it serialises **`StgSyn`** (off-heap,
-`Rc`-based, pointer-free — *not* `HeapSyn`), keyed `sha256(inputs) ∥ version ∥
-prelude-version`, advisory (any miss/corruption → clean recompile), and refuses a
-group/world-writable dir. A long-running daemon (Bloop-style) is deferred likewise
-(a Unix-domain socket at `0600`, authenticated). Embedding avoids all of this for
-the dominant cost.
-
-**Implementation.** W2 (interface) → fixed global slots
-(`compiler.rs`, `machine/mod.rs:55`) → **operator seeding** of cook (the real work)
-→ deferred externals + link (`compiler.rs:1031`; the type checker's seed path is the
-template) → embed with a build-time source-hash check. (W1 has already removed the
-*second* compile in 0.7.1; embedding removes the *prelude* compile.) Prelude
-floor (A): **Medium, feasible.** General units (B/C/D), the on-disk cache and the
-daemon: **post-1.0**, gated on demonstrated need.
-
-**Risks.** The operator wall may not yield cleanly to seeding (fallback: the
-prelude floor, which still needs bounded operator seeding). Lost cross-unit
-inlining/DCE — mitigate by carrying inline-able defs *and* strictness signatures
-(W9) in the interface (GHC's lesson); the latency win should dominate but is the
-benchmark to watch.
-
-**Success.** The prelude is compiled **zero times at runtime**, output
-byte-identical across the harness, cold latency down by the prelude's share, **with
-no on-disk executable cache**; prelude operators resolve in separately-compiled
-user code (the verified failure mode is gone).
-
-#### W7. Incremental, query-based core
-
-**Problem.** The front-end pipeline (CLI and editor) recomputes everything on every
-change. The LSP holds pipeline state but cannot reuse sub-results across edits or
-across the CLI/editor boundary; re-evaluation re-runs the whole front-end.
-
-**Prior art.** Salsa (rust-analyzer) and Adapton: a demand-driven query graph with
-content-hashed inputs and memoised, invalidation-tracked derived queries — the same
-discipline rustc's red-green incremental cache and Bazel's action cache use.
-
-**Design.** Wrap the front-end passes as **queries** over the Unit Interface (W2):
-parse, the per-unit interface, cook, check, compile become memoised nodes keyed on
-content hashes, so an edit re-runs only the affected sub-graph. The embedded prelude
-(W6) is the base case of the graph; the cache-key discipline is shared with W6.
-**Scope for 1.0 is the front-end pipeline** (diagnostics, completion, re-compile);
-incremental *evaluation* (re-running the VM incrementally) is post-1.0. A real
-constraint: `RcExpr` and much of core/STG are `Rc`-based and **not `Send`**, so the
-query store is single-threaded for now (it shares the runtime's threading posture).
-
-**Implementation.** A query layer over `src/core/*` and `src/driver/*`, consuming
-W2's interfaces. Begin in 0.9 (wrap the passes); the cache key must account for the
-cross-unit inputs W2 exposes (brackets, operators, monad namespaces, schemes) — the
-reason W2 is the prerequisite. Medium.
-
-**Success.** An edit to one unit re-runs only its dependents' affected queries;
-LSP latency on large workspaces drops; the same graph serves CLI re-compiles.
-
-#### W8. `eu doc` — documentation & schema extraction
-
-**Problem.** The prelude reference is hand-written and drifts from the code; there
-is no way to extract documentation or a schema from a `.eu` unit's metadata and
-types.
-
-**Design.** A `eu doc` subcommand performing **source-level extraction** (not
-eval-to-verify): read the `` ` `` metadata (`doc:`, `type:`, `deprecated:`) and the
-binding structure straight from the parsed/desugared unit, reusing the symbol-table
-machinery the LSP already has (`symbol_table.rs`). It reads the **`s"…"` type-DSL
-surface** (§4.3) to emit schemas. A **doctest** mode runs the examples in `doc:`
-metadata under the test harness (ties to W5). Regenerate the hand-written prelude
-reference from the prelude itself.
-
-**Prerequisite: the `s"…"` string prefix (§4.3).** The `s"…"` type-data literal
-must land in 0.9 before W8, so that schemas can reference types as values. This is
-a small lexer/parser addition (a new `StringPrefix::SString` alongside `c"…"`,
-`r"…"`, `t"…"`) producing a type-data value.
-
-**Implementation.** `src/driver/` new subcommand + the LSP extraction; render to
-Markdown/JSON-schema. Small-to-medium, low risk. Reads W3's `deprecated:` metadata
-and W2's interface where cross-unit.
-
-**Success.** The prelude reference is generated and matches the code; a unit's
-`type:`/`doc:` metadata produces a schema and a doc page; doctests run in CI.
-
-#### W9. One demand annotation behind the strictness heuristics
-
-**Problem.** Eucalypt has ~six separate hand-rolled mechanisms that all decide
-*`Value`-vs-`Thunk` / skip-`Update`* from facets of one question — *is this binding
-used-at-most-once / strict / already-WHNF?*: `LambdaForm::Value` vs `Thunk`
-(`syntax.rs:213`); per-intrinsic `strict_args` (`intrinsics.rs`); per-intrinsic
-`single_use_args` (`intrinsic.rs:119`); the bespoke `suppress_update` threading for
-`IF` alone (`boolean.rs:143`, `vm.rs:270`); `is_whnf` (`syntax.rs:143`); and the
-global `--suppress-updates` call-by-name escape hatch. Two are per-intrinsic hand
-lists; one is bespoke threading for a single intrinsic.
-
-**Design.** Unify them behind **one demand annotation per binding** (cardinality +
-strictness + WHNF) as the single representation the `Value`-vs-`Thunk` and
-update-suppression decisions consult. The existing heuristics populate it today;
-the analysis (W11) populates it more completely later. This pays off *before* any
-analysis — one decision point instead of six, testable and consistent — and the
-annotation on an *exported* binding is a **strictness signature** the Unit Interface
-(W2) carries for W6 (a missing signature only costs optimisation, never
-correctness — unlike operators, it is not a wall).
-
-**Implementation.** A demand annotation on core bindings; `take_lambda_form`
-(`compiler.rs:506-517`) consults it instead of the scattered flags;
-`single_use`/`suppress_update` become populators/overrides during transition.
-Small-to-medium.
-
-**Success.** One annotation drives the thunk/update decisions; at least one
-`single_use_args` override is subsumed; no harness regression.
-
----
-
-### 0.10 — The runtime: GC & demand
-
-*The substantive engineering release: one major GC effort plus its multiplier.*
-
-#### W10. Generational nursery & Immix completion
-
-**Problem.** The GC is the largest runtime consumer on real workloads (**mark time
->95% of VM time** on traversal-heavy programs) and it **re-marks the entire live
-set every cycle** — there is no notion of age, no remembered set, no way to skip a
-long-lived object. The canonical case `008_long_lived_graph.eu` builds a 200-cell
-list that survives the whole run and re-marks all 200 cells on every collection.
-Three concrete deficiencies: the **trigger is crude** (a 500-step countdown,
-`vm.rs:1760`, and `policy_requires_collection` returns false when no
-`--heap-limit-mib` is set, so allocation rate is ignored despite being tracked,
-`heap.rs:167`); the **top defrag tier is unwired** (`DefragmentationSweep`'s
-`candidates()` is a stub `// TODO: all blocks`, `heap.rs:87`, so the
-worst-fragmentation case silently degrades to non-compacting); and the GC
-documentation is **stale and wrong** (it claims "no evacuation / eager sweep", but
-the collector already does opportunistic evacuation with forwarding pointers,
-`collect.rs:298,465`, and lazy deferred sweep, `heap.rs:674,680`). The collector is
-"Immix without the *generational* dimension".
-
-**Prior art.** Immix (Blackburn & McKinley, PLDI 2008) is the direct ancestor —
-32 KiB blocks, 128 B lines, opportunistic evacuation — designed to sit *under* a
-nursery ("as the mature space, Immix matches a tuned generational collector"). The
-**sticky-mark-bit** algorithm (Demers et al., POPL 1990; Wingo 2022): flip the mark
-bit only on major collections, trace minors from roots + a remembered set, so
-"marking an object is tenuring, in place" — eucalypt already flips a single mark bit
-per cycle (`flip_mark_state`, `heap.rs:1716`), making this a near-minimal delta. The
-generational hypothesis holds strongly here (laziness manufactures vast short-lived
-thunks). GHC's lesson for lazy languages: a generational collector needs a
-**write barrier** on **thunk update** (the forced-thunk overwrite) to catch
-old→young pointers, coupled with eager promotion or a remembered set; in eucalypt
-thunk update is essentially the *only* in-place heap write. Data-language peers
-offer no GC blueprint (they ride host GCs).
-
-**Design.** A runtime-internal change, **no surface syntax**, four parts, sequenced
-so each lands value independently:
-
-1. **Allocation-rate trigger** — decouple "should we collect?" from the heap limit;
-   fire on an adaptive nursery budget using the already-tracked allocation volume
-   (`heap.rs:167,1771`). Prerequisite for a nursery.
-2. **Sticky-mark-bit minor collection** — designate freshly allocated blocks as the
-   **nursery** (the existing `head`/`overflow` active blocks); a **minor**
-   collection traces from roots + remembered set **without flipping** the mark
-   state, so any nursery object it marks is tenured in place; a **major** collection
-   is today's full flip-and-trace. No copying, no second space, no new header bit.
-3. **Write barrier on thunk update** — the single mutation site is
-   `EnvFrame::update` (`env.rs:361`), reached when an `Update` continuation
-   overwrites the black hole (`vm.rs:540`). **Eager promotion** (preferred): on
-   update, if a mature frame is written with a nursery value, tenure it immediately
-   (writes are write-once, so no repeated cost); a **remembered set** is the
-   fallback for awkward cases.
-4. **Finish `DefragmentationSweep`** — replace the stub with the full set of
-   unpinned fragmented block indices (the enumeration already exists for the stress
-   path); closes the worst-fragmentation regression.
-
-Everything runs **inside the existing stop-the-world, single-threaded collector**
-(`heap.rs:8`); concurrency is deferred to W21.
-
-**Implementation (phased).** P0: rewrite the stale GC doc (trivial). P1:
-allocation-rate trigger (small/low). P2: finish `DefragmentationSweep`
-(small/low). P3: minor collection + nursery (medium / medium-high). P4: write
-barrier with eager promotion (`env.rs:361`, `vm.rs:526`, `cont.rs`) (medium /
-**high**). P5: remembered-set fallback + minor/major scheduling (medium). P0–P2 are
-independently shippable wins; P3–P5 are the strategic core. A new `EU_GC_VERIFY`
-checkpoint asserts the **no-untracked-old→young-edge** invariant after every minor
-collection.
-
-**Risks.** The write barrier may cost more than the nursery saves — a net
-regression on `002_thunk_updates`/`001_naive_fib` not recovered on `008`/`007`
-would falsify it (mitigate: eager promotion behind one predictable branch).
-Generational rewrites are where GCs crash, and the evacuation path already has
-documented aarch64-specific bugs (`collect.rs:1515`) — mitigate with the
-`VERIFY`/`POISON`/`STRESS` harness, the new edge-invariant check, and W5 fuzzing.
-
-**Success.** `008_long_lived_graph.eu` shows the `CollectorMark` fraction drop well
-below the >95% regime; net wall-clock gains on `007_short_lived`/`004_generations`;
-`009_fragmentation` no longer degrades; no regression on `001`/`002`; the full
-harness green under `VERIFY=2`/`POISON=1` with the old→young invariant holding.
-
-**Post-mortem: 0.10.0 sticky-mark-bit attempt (reverted).** A full implementation
-of the sticky-mark-bit design above was completed, tested, and reverted in 0.10.0.
-The implementation was correct (all tests passed under `EU_GC_VERIFY=2`/`EU_GC_STRESS=1`)
-but delivered no wall-clock benefit — and at any allocation-rate trigger threshold
-tested (2048–8192 blocks = 64–256 MiB), caused 10–1500% regressions on AoC workloads.
-
-*Why it failed:*
-
-1. **First-post-major minor is always a full trace.** After a major collection the
-   mark-state flips, making every object appear unmarked (young). The first minor
-   after each major must therefore trace the entire live set — there is no cost
-   saving versus a major. At N majors you pay N full live-set traces inside minor
-   collections, on top of the N full traces during the majors themselves.
-
-2. **Live sets dwarf the nursery budget.** AoC programs accumulate 100–600 MiB of
-   long-lived data (grids, adjacency lists, memo tables). Any nursery budget smaller
-   than the total allocation triggers multiple majors. With day05-p1 allocating
-   585 MiB and an 8 GiB nursery budget (250 MiB), we still saw 3 majors + 26 minors
-   where the baseline needed 0. Mark time exploded from 2 ms to 3.1 s (1500×).
-
-3. **Remembered set overhead without young-set benefit.** The write barrier (at
-   thunk update) and dirty-frame scanning added overhead on every collection, but the
-   sticky-mark-bit minor — which only skips objects that were old before the most
-   recent major — found almost nothing to skip because the post-major flip had just
-   unmarked everything.
-
-*What would work:* A **separate copying nursery** (semi-space or bump-and-copy,
-e.g. 8 MiB) that is independent of the Immix heap. Young objects live in the nursery;
-survivors are evacuated into Immix on minor collection. The minor never sees old
-objects at all — they live in a disjoint address range. This is the classic
-generational layout. A sticky-mark-bit design *over a shared address space* cannot
-achieve this isolation because one mark bit cannot distinguish "old and re-marked
-this major" from "old and unmarked since the pre-major flip".
-
-*Future direction:* Implement a true separate-nursery generation as a follow-on to
-list-fusion (W12). Fusion reduces the thunk-churn workload that a nursery would
-target; profile post-fusion to assess whether a nursery is still the right next step
-or whether demand analysis (W11) delivers more per unit of effort.
-
-**Post-mortem: 0.10.0 flat closures experiment (not merged).** CPU profiling showed
-`EnvironmentFrame::get` at 69% self-time — the single largest hotspot. The cactus
-stack (linked `next` pointers) was identified as a cache-miss-dominated pointer chase.
-A flat closure implementation (capture frames with `(frame_ptr, physical_index)` pairs
-replacing the `next` chain) was built, profiled, and archived at `archive/flat-closures`.
-
-*Results:* Env `get()` self-time dropped 27% but net wall time regressed 2–10% across
-all benchmarks. No program improved.
-
-*Why it didn't help:*
-
-1. **Eucalypt's env depths are shallow (avg 2, max 4–5).** At depth 1, the flat capture
-   path (two loads: capture array + source frame) costs roughly the same as the cactus
-   path (one chase + one index). Flat only wins at depth ≥ 3 (4% of accesses).
-
-2. **Universal overhead.** Every frame creation pays the capture-recipe tax (resolve
-   instructions, allocate capture array) even for 0-capture closures (28–50% of all
-   closures). The savings on env lookup were entirely eaten by the creation cost.
-
-3. **Wider dispatch degraded branch prediction.** Adding `Ref::Local`/`Ref::Capture`
-   variants alongside `Ref::L` widened the hot dispatch match in `handle_instruction`,
-   increasing `handle_instruction` self-time by 12%.
-
-*Implementation issues (not fundamental):* The extra `Ref` variant branching could be
-eliminated by fully replacing `Ref::L` rather than adding alongside. The recipe tax
-could be avoided for 0-capture closures with a fast path. A selective approach (only
-flatten depth ≥ 3) would eliminate most overhead but also most benefit. These leave
-room for a revisit with a different implementation strategy.
-
-*What the 69% self-time actually is:* At avg depth 2, the pointer chase is only ~2
-loads per access — similar to any alternative representation. The 69% comes from the
-sheer FREQUENCY of env access (billions of calls), not from per-access cost. Reducing
-the frequency (register-like caching, better inlining) would be more impactful than
-changing the representation.
-
-*Archived:* `archive/flat-closures` branch. Spec at
-`docs/superpowers/specs/2026-06-21-flat-closures.md`. FV data: avg 1.0 free vars per
-closure, max 5, strongly bimodal (0 or 2).
-
-#### W11. Strictness & demand analysis
-
-**Problem.** Every `let`-binding reaching the STG compiler without a WHNF witness is
-compiled as a `Thunk` (`syntax.rs:213-225`): allocate the closure, black-hole it on
-entry, push an `Update`, evaluate, write back, leave a dead object for the GC to
-mark — on *every* binding unless the compiler can prove it WHNF or used-at-most-once.
-In traversal-heavy workloads this thunk churn is exactly the mark pressure W10
-attacks, from the other side. The hand-rolled heuristics (W9) only cover sites a
-programmer or intrinsic author flagged in advance; **no pass discovers strictness
-from the program text.**
-
-**Prior art.** GHC's demand analysis (Sergey et al., POPL 2014) — a backward
-abstract interpretation over a demand lattice carrying **strictness** (definitely
-evaluated → no thunk) and **cardinality** (used at most once → no update). "One of
-the highest-return optimisations for a lazy language." Projection-based strictness
-(Wadler–Hughes, FPCA 1987) for finer demands (head/spine) is a post-1.0 refinement.
-Among peers only Nickel is comparable (Rust, lazy, sharing) and publishes no
-analysis — eucalypt's situation is closest to it; purity makes the analysis sound
-(no side effect invalidates a strictness proof).
-
-**Design.** A backward pass over **core expressions** (after inline/fuse, before STG
-compile), populating the W9 demand annotation completely. A minimal two-point
-lattice (`L`/`S`) plus usage (`U1`/`SU1`) suffices first: a binding compiles as
-`Value` if `U1`/`SU1` (its memoisation is never exploitable). Application propagates
-a callee's strictness signature to arguments (intrinsic signatures read from
-`strict_args`; user functions analysed); `Case` joins across branches; `LetRec`
-needs a fixed point bounded by the lattice depth (≤2 iterations). **Soundness is
-one-directional**: for a pure language, a wrong `U1` changes only *cost* (O(1)→O(k)),
-never results — so the first implementation is conservative (when in doubt, `Thunk`).
-
-**Implementation.** A new `src/core/analyse/demand.rs` (~300–400 lines) wired
-between fuse and STG compile; `take_lambda_form` consults the annotation (~10
-lines); P3 is the LetRec fixed point (the fiddly part). The signature on an exported
-binding rides in the Unit Interface (W2/W9) for W6.
-
-**Risks.** A soundness slip duplicates expensive work (mitigate: conservative
-default; property-test analysis results against a call-by-name run). Compile-time
-cost is negligible (a linear pass adds milliseconds).
-
-**Success.** ~20% reduction in allocation count on prelude-heavy transforms;
-measurable mark-time reduction (`benches/gc.rs`); at least one `single_use_args`
-override removed; tail-recursive conditionals show flat stack depth under
-`EU_STACK_DIAG=1` with no `suppress_update` flag; no harness regression.
-
-**Post-mortem: 0.10.0 demand analysis results.** The infrastructure was fully
-implemented: backward abstract interpretation, SCC splitting + reflatten, intrinsic
-demand signatures, user function signature wiring, and the AtMostOnce rendered-block
-fixup. The two halves of the demand lattice (strictness × cardinality) had very
-different outcomes.
-
-*Strictness — success.* Strict eager evaluation via `Seq` forms forces non-recursive
-strict thunks at definition time. Results: -38% allocs, -34% ticks on 010_prelude;
--76% on 008_folds; -30.8% allocs on day12-p1 (a program we did not refactor). The
-mechanism is sound: "this binding WILL be evaluated" is a safe observation regardless
-of how many times it is entered. The old `strict_args` / `single_use_args` /
-`suppress_update` hacks were replaced by demand-driven intrinsic signatures.
-
-*AtMostOnce cardinality — failure.* Update elision (compiling as `Value` instead of
-`Thunk` to skip the Update frame) is unsound in eucalypt for three reasons:
-
-1. **Render traversal.** `RenderKv` enters each block value twice (suppression check +
-   render) within a single pass, even after render unification. Bindings the analysis
-   considers single-use are entered twice.
-2. **Dynamic `.key` lookups.** Runtime block lookups enter closures the static analysis
-   cannot predict.
-3. **Higher-order use.** A binding passed to `foldl`/`map` is referenced once
-   syntactically but entered per list element at runtime.
-
-A fixup forcing Multi on rendered-scope bindings prevents the regression but also
-eliminates virtually all AtMostOnce opportunities — on measured programs, DA-on =
-DA-off for allocation counts. A conservative forward approach (only mark AtMostOnce
-for provably safe patterns) found zero additional opportunities beyond what intrinsic
-signatures already provide.
-
-*SCC splitting + reflatten — neutral.* Decomposes LetRec into nested Let+LetRec for
-more precise per-binding demands, then merges back to preserve flat env frames. No
-independent performance contribution. Retained because it enables stricter Strict
-assignments and may become valuable with future cardinality improvements.
-
-*Future directions:*
-- **Rationalise RenderKv** (moved to 0.11 as eu-9tah.19) — restructure to enter each
-  value once, which would make AtMostOnce sound for rendered scopes.
-- **Escape analysis** (moved to 0.11 as eu-9tah.12) — force Multi only on block
-  bindings whose block escapes, preserving AtMostOnce for locally-consumed blocks.
-- **Strict eval for blob globals** (eu-9tah.20, merged) — prelude demand signature
-  table enables Seq wrapping at global call sites, though minimal impact observed
-  because most prelude calls use catenation style with simple ref arguments.
-
-#### W12. Restore git imports (fetch-under-a-hash)
-
-**Problem.** `{ import: { git: …, commit: …, import: … } }` is **documented as
-working** (`docs/guide/imports-and-modules.md`, `docs/reference/import-formats.md`)
-but does nothing in the Rust implementation. It was a real, shipped feature of the
-**Haskell** eucalypt (added 2019, PR #115/`6e56dc5c` — `Driver/Git.hs` cloned a
-repo at a commit into a `.eucalypt.d` cache) that was dropped wholesale in the
-2021 Rust rewrite (`6217817f`) and never re-ported; the docs survived. Today
-`scrape_rowan_imports` (`src/syntax/import.rs:259-293`) matches only string and
-list elements — a `{ git: … }` block is silently dropped (the `_ => {}` arm), so the
-user gets a downstream "unbound name", not a clear "git imports unsupported". There
-is no `Git` variant in `Locator` (`src/syntax/input.rs:17`), no git dependency, and
-the `Url` locator parses but has no fetch arm either. (An interim docs fix marking
-the feature not-yet-implemented has shipped.)
-
-**Design.** Restore it **consistent with the module system (W18), not as the bare
-2019 form** — implement git as a **fetch backend beneath a content hash**: teach
-the scraper the **block form** (the same change W2 and W18 need — read
-`git:`/`commit:`/`import:` plus an optional `sha256:`); add a git-capable locator +
-clone-and-cache at the pinned commit (keyed by commit SHA, the `.eucalypt.d` cache
-the reference); and verify the optional `sha256:` **content** hash on the fetched
-bytes (the commit SHA pins the ref; the content hash additionally defends against a
-force-push / rewritten history). This makes the regression-fix the **foundation
-W18 builds on** rather than a throwaway. The unwired `Url` locator is the same
-loader gap and can be closed alongside. P1 (the docs are otherwise wrong).
-
-**Implementation.** `src/syntax/import.rs:259-293` (block scraper, shared with
-W2/W18), `src/syntax/input.rs:17` (a `Git` locator), a git dependency + cache, the
-`Url` fetch arm in `src/driver/source.rs`. Medium.
-
-**Success.** The documented git-import form fetches, pins by commit, verifies the
-optional content hash, and resolves bindings; the silent-drop path is gone.
-
----
-
-### 0.11 — Blocks, value model & presence types
-
-*The second GC item — only after W10 — plus the value-model and type enrichments.*
-
-#### W13. Persistent O(log n) blocks & the GC-finalisation fix
-
-**Problem.** Blocks — the thing eucalypt exists to produce — are cons-lists with
-**O(n) lookup** (`Block::wrapper`, `src/eval/stg/block.rs:79`; the `find` loop at
-`:495`), and **merge is catenation**: `merge`/`deep-merge`/`<<` walk both operands
-into an `IndexMap` and re-emit a fresh spine (`Merge::execute`, `block.rs:1453`),
-O(n+m) with no structural sharing — and configuration work is merge-heavy by
-nature. A partial mitigation exists (a cached `HashMap` index built lazily above
-`BLOCK_INDEX_THRESHOLD = 16`, `block.rs:469`), but it is an **`Rc<BlockIndex>` on
-the Rust heap** the GC never frees. A previous persistent O(log n) attempt
-(`im_rc::OrdMap`) was **reverted (ADR-001)** not because it was slow but because it
-**leaked**: the bump allocator recycles memory by overwrite and **never runs
-`Drop`** (`src/eval/memory/bump.rs:294,371`), so the map's `Rc` nodes — on the Rust
-heap, outside GC management — were stranded, producing **220–580% regressions** on
-GC-churn benchmarks even for programs barely using blocks. This is the wall: a
-**GC-finalisation** problem, not a block-design one.
-
-**Prior art.** HAMT (Bagwell, *Ideal Hash Trees*, 2001) — the 32-way
-bitmap-indexed hash trie behind Clojure/Scala immutable maps, O(log₃₂ n) with
-structural sharing. **CHAMP** (Steindorfer & Vinju, OOPSLA 2015) — the modern
-refinement: two compact arrays per node (inline data, child references), giving
-1.3–6.7× faster iteration and a smaller footprint (adopted by Scala 2.13);
-iteration speed matters because rendering and `deep-find`/`deep-merge` are
-iteration-bound. **Persistent vectors** (Clojure's `PersistentVector`; RRB-trees,
-Bagwell & Rompf, 2011) — the vector analogue, O(log₃₂ n) append/update/index with
-sharing. The `im`/`im_rc` crates are `Rc`/`Arc`-node B-trees (2–3× slower than std
-*before* any leak) — exactly the shape the GC cannot finalise. GC **finalisation**
-itself is hazard-rich (resurrection, ordering, non-determinism; Java deprecated
-`finalize()`; Hughes & Tratt, *The Finalizer Frontier*, 2024) — so where the
-payload is just more heap data, make it **GC-managed data in the first place**.
+### Pillar BV — Bytecode VM
+
+The six phases are specified in §6.4; this is the engineering detail and the forks a
+multi-release programme must settle up front.
+
+**The transition, concretely.** Today: `StgSyn` (`src/eval/stg/syntax.rs:118`, the
+`Rc`, off-heap optimisation IR) → `load` (`src/eval/memory/loader.rs:120`) → `HeapSyn`
+(`src/eval/memory/syntax.rs:227`, a `NonNull` pointer graph allocated *into the GC
+heap every run* and scanned by `impl GcScannable for HeapSyn`, `syntax.rs:400-547`) →
+`handle_instruction` tree-walk over it (`src/eval/machine/vm.rs:389`, the match at
+`:426`). BV replaces the `HeapSyn` execution IR **and its loader** with **flat
+bytecode in a non-GC arena** and an **opcode dispatcher**: a closure's code field
+moves from `RefPtr<HeapSyn>` to a bytecode offset (`SynClosure` is the touch point),
+`GcScannable for HeapSyn` is retired (code leaves the scanned set), and the loader
+stops re-allocating the program each run. The six-kind continuation machine
+(`src/eval/machine/cont.rs:34`) and the deferred-BIF intrinsic boundary
+(`vm.rs:518,1722`, `intrinsics.rs:49`) stay intact through BV1 to isolate the change.
+
+**Key design decisions (settle at/around BV0):**
+
+1. **Source IR & encoding — decided: a linearised opcode stream** (best for threaded
+   dispatch + superinstructions, since dispatch is the target), with **BV0 the
+   empirical confirmation**. The existing `ArenaStgSyn`/`PreludeBlob` form
+   (`src/eval/stg/blob.rs`, postcard, index-referenced) is proto-bytecode but a *node
+   pool*, not a linear stream; the encoder builds *from* `StgSyn`/`ArenaStgSyn`, reusing
+   that arena machinery. (Fallback if BV0 disappoints: a flattened-node interpreter —
+   lower risk, smaller win.)
+2. **Constant/heap split.** Code lives in the non-GC arena; the **values it references**
+   (interned symbols, `HeapString` literals) must stay GC-/pool-managed. Decide the
+   constants-pool boundary so no GC scan ever touches code and no arena offset is ever
+   moved by evacuation.
+3. **Continuations & intrinsics — unchanged in BV1.** Keep the off-heap
+   `Vec<Continuation>` and the `pending_bif` mechanism; bytecode is about *code
+   representation*, not the 192 intrinsics or the control model. Revisit folding control
+   flow into the stream only post-BV1.
+4. **Frame model — deferred to BV3, decided: selective.** BV1 keeps the cactus
+   `EnvFrame` (`src/eval/machine/env.rs:191`); BV3 introduces **register frames** for
+   *only the hot/deep captures CG's escape analysis flags*, not all frames — the lesson
+   of the flat-closure revert (§10), where a universal capture tax sank the win. The
+   selectivity threshold is profile-tuned. **The sharpest motivating case is
+   higher-order recursion:** `foldl(op, …)` is **O(n²)** purely because the *local* `op`
+   is re-resolved through the env-walk every step — measured, a higher-order fold runs
+   13.5M → 52M → 204M ticks at N = 5k/10k/20k (O(n²)), while the *identical* recursion
+   with a hard-coded **global** `+` is O(n) (945K → 1.9M → 3.8M), since globals resolve
+   in O(1) with no env-walk. Register frames make local resolution O(1), turning
+   higher-order folds linear. (Strictness is *orthogonal* — a strict and a lazy
+   accumulator scale identically; only first-order-vs-higher-order matters.)
+5. **One serialisation format, three consumers.** BV5's bytecode-bytes format
+   (extending the postcard arena form) is reused by the **embedded prelude**, the
+   **content-hash unit cache**, and **PP's IPC wire payload** (Pillar PP) — design it
+   once to serve all three.
+
+**BV0 — the gate, made actionable.** Encode the minimal opcode subset `day11-p1` needs
+(`Atom`/`Case`/`Cons`/`App`/`Bif`/`Let` + the six continuations) from its `StgSyn`; run
+it on a threaded-dispatch loop; measure dispatch throughput against the current
+`handle_instruction` walk on the *same* program (local baseline: 66.5 M ticks, ~all
+dispatch, 0 GC). **Go if ≥~2×; reassess otherwise.** Weeks of work, and the encoder
+seeds BV1 — nothing is thrown away.
+
+**Success.** BV1: code no longer appears in GC scans; `day11-p1` dispatch improves by
+the BV0-measured factor; full harness byte-identical under `EU_GC_VERIFY=2`. BV5:
+`eu -e true` startup floor drops to ~20–30 ms on a plain build with no separate blob
+step. BV3: `EnvironmentFrame::get` falls out of the top of the AoC profiles, **and a
+higher-order fold `range(0,N) foldl((_+_),0)` scales linearly** — the cleanest
+regression benchmark for the env-walk line (it is O(n²) today purely from local-`op`
+resolution; the first-order equivalent is already O(n)). Every phase: rendered output
+byte-identical across the conformance corpus (W5).
+
+### Pillar CG — Demand- and type-directed compilation
+
+**Problem.** The engine pays for dispatch and boxing it can often avoid. Every call
+goes through generic apply even when the callee is statically known; literal-key
+block lookups intern a symbol and hash it in the hot loop (`day11-p2`); lazy
+accumulators build O(n) `Update` chains (`day01` reaches stack depth 28,626); every
+`+` pays a tag-`case` wrapper even where `number → number → number` was proven. The
+demand infrastructure exists (`Demand` on every `CoreBinding`, `core/binding.rs:9`;
+`take_lambda_form` consulting it, `compiler.rs:540`; `Seq` strict eager eval,
+`compiler.rs:756`) and the strictness half already paid (−76% on folds, 0.10.0).
+
+**Design — two tiers.** A core→STG/bytecode optimisation family driven by the demand
+annotation and (for the second tier) erased type facts threaded as a node-keyed
+side-table with a `Synthesised`/`Trusted` provenance bit (§4.2).
+
+- **Type-free tier (independent of BV, helps the current VM now):**
+  - **CG1 Known-call direct dispatch** — a statically-known callee compiles to a
+    direct enter, bypassing generic apply. Attacks the 60–81% dispatch cost.
+  - **CG2 Literal-key resolution** — `.key` / `lookup(:k)` with a literal key resolves
+    to a pre-interned symbol/offset at compile time, removing intern + sip-hash from
+    hot loops.
+  - **CG3 Strict accumulators (worker/wrapper)** — extend demand from prelude
+    signatures to discovered user recursion; emit strict-spine folds, collapsing the
+    `Update`-frame chains a lazy left fold accumulates.
+  - **CG4 Selective lambda-lifting / pre-projection** — demand/escape analysis lifts
+    hot deep captures into explicit arguments. Feeds BV3 register frames; this is the
+    sound, targeted form of the reverted flat-closure idea. **This — not CG3 — is what
+    addresses the higher-order-fold O(n²)** (§6.4 item 4): the cost is re-resolving the
+    local `op` through the env-walk, so lifting/flattening that capture (or BV3's
+    register frames) makes it O(1); a strict accumulator (CG3) does *not* help.
+- **Type-gated tier (needs §4.2 — decided; lands cleanest on BV):**
+  - **CG5 Unboxing + direct intrinsic dispatch** — on a `Synthesised` numeric type,
+    take the unboxed `Native::Num` path and skip the tag-`case`. Plus dead-branch
+    elimination on literal types and interpolation specialisation (the most pervasive
+    generation win). Fires only on proven-concrete types; a single optimised node
+    meeting a mis-typed operand would be a memory-safety bug, so synthesis-only is
+    mandatory.
+
+**The type-gated mechanism (how facts survive erasure).** The checker is advisory and
+its in-tree annotations are erased before STG compile (§4.2) — so banking a type fact
+cannot mean *keeping the annotation*. Instead the checker emits a **node-keyed
+side-table**: for each actionable core node it records the synthesised type plus a
+**provenance bit** — `Synthesised` (proven from the code) vs `Trusted` (rests on an
+annotation that crossed an `any`). The *table* survives into the inliner/specialiser
+even though the tree's types are gone. CG5 consults it and fires **only where both the
+callee's signature and its arguments are `Synthesised`-concrete**; a `Trusted` fact
+never licenses unboxing, because under the unboxed path a lying `any` would reinterpret
+e.g. a string pointer as an integer — memory corruption, not a type error (§4.2). The
+target is concrete: `+` compiles to a tag-`case` wrapper and `Add::execute`
+(`src/eval/stg/arith.rs`) re-checks operand kinds at runtime even where the checker
+proved `number → number → number`; the STG already has the unboxed `Native::Num`
+representation, so what CG5 adds is *permission, from a `Synthesised` type, to take the
+direct path*. It is purely additive — the boxed wrappers remain for every unspecialised
+call — and it is the high-risk surface that makes the whole tier a careful, profile-gated
+effort (kill switch: if real render workloads show <2×, generation being block/string-
+heavy rather than arithmetic-heavy, it is shelved).
+
+**Success.** Measurable dispatch reduction on `day11`; literal-key hot loops shed the
+intern/hash cost; `day01`-class folds show flat stack depth under `EU_STACK_DIAG=1`
+with no `suppress_update`; unboxed arithmetic shows the expected speedup on
+`Synthesised` numeric code with zero effect on output; no harness regression.
+
+### Pillar TY — Typing default-on
+
+**Problem.** The checker is complete but advisory and *erased*: it banks none of its
+value, and most users never run it. Yet it is cheap (rides the prelude type cache;
+`eu check` ≈ `eu eval`, verified) and quiet on real code (0 warnings across the AoC
+corpus; 56/60 sampled harness files clean), and it is genuinely useful (it catches
+`[1,2,3] str.split-on(",")` precisely, though it still misses `1 + "hello"`).
+
+**Design.** Make checking the **default** for every run: warnings to stderr that
+never affect output or exit code, with a `--no-check` escape and a measured
+per-invocation latency budget (the config centre of gravity is latency-sensitive).
+The type system stays Experimental (§4.1) — but its *warning surface* becomes
+default-visible, so warning stability and prose matter more. Two steps: **(1)** a
+warning inventory across harness + AoC + conform, triaging the handful of existing
+warnings to confirm they are intentional, not false positives; **(2)** flip the
+default. Default-on is itself the forcing function that surfaces and closes checker
+gaps (e.g. `1 + "hello"`), maturing the checker toward CG's type-gated tier.
+
+**Success.** Checking on by default with no measurable regression on the config
+path; zero spurious warnings on the harness and AoC corpus; the gaps default-on
+surfaces become tracked checker fixes.
+
+### Pillar SV — The type-value surface: `s"…"`, validation & schema
+
+This is the data-language differentiation no peer combines (gradual structural types
++ metadata extensibility + pay-as-you-go validation), and it is more than a
+validation onramp. It is independent of the runtime work, design-heavy and low-risk.
+
+**The aspiration — types as ordinary values, one source many uses.** Today a type
+lives only as a string in `type:` metadata: it is checked, then erased. The
+**`s"…"` string-prefix** (§4.3) brings a type into *value* context as first-class
+**type-data** — a value you can bind, store in a block, compute with, and pass to a
+function. That one move turns the type system from a check-and-erase tool into a
+**data vocabulary** with many consumers fed from a single source, with a runtime
+**spec value** as the hub:
+
+- **validate** — `as-spec` lowers type-data into a spec over the `match?` predicate
+  vocabulary; apply it at ingress for structured, located blame (the validation core).
+- **generate** — the same spec drives example/fixture/mock generation (property-test
+  seeds, golden inputs) — the Clojure-spec conform-and-gen duality.
+- **coerce / parse** — type-directed parsing at ingress: `bytes parse-as(s"…")`.
+- **default-fill** — type-data carrying field defaults completes a partial block
+  (ties directly to optional fields, below).
+- **describe** — `eu doc` renders type-data to human docs and to JSON Schema; an
+  ingested external schema (incl. a Kubernetes CRD) becomes type-data → a contract.
+- **reflect** — `typeof(value)` returns type-data, so types become comparable,
+  decomposable and queryable at runtime.
+
+`s"…"` is therefore the wedge toward the long-standing "types as first-class values"
+aspiration. The type-DSL stays the authoring surface (no reserved bracket, §4.3);
+`s"…"` is its value-context dual; the spec is the runtime projection. The near-term
+core is `s"…"` + `as-spec` + ingress validation + optional fields; **generation and
+full reflection are the aspirational end-state**, pursued once the vocabulary proves
+out — but the design of `s"…"`/type-data should be chosen so they are reachable, not
+foreclosed. (Its mirror image is **code-as-data**: the AST embedding that renders
+eucalypt *source* from eucalypt data — Pillar EC, EC-embed. Types-as-data and
+code-as-data are the two halves of eucalypt's reflective surface.)
+
+**The work:**
+
+- **SV1 `s"…"` value semantics (the surface is already lexed).** `s"…"` already
+  tokenises as `S_STRING` (`src/syntax/rowan/lex.rs`, *"type-data literal — no
+  interpolation, no escape processing"*) and is used today only by `monad:` element-type
+  hints, which read its *raw text*; in value position it currently evaluates to a plain
+  string. The work is to give it **type-data value semantics**, decided as follows:
+  - **Opaque value, rendering as its canonical type-DSL string.** `s"…"` parses (via the
+    type-DSL, `src/core/typecheck/parse.rs`) at *compile time* and reifies an **opaque
+    type-data value** — `t"…"` is the exact precedent (a zdt native that renders as ISO).
+    It renders as its source string, so existing output is unchanged. No checker type
+    reaches runtime (§4.2): it is a data value that *encodes* a type.
+  - **Clean single-brace records — the point of the surface.** Inside `s"…"`, records use
+    plain `s"{ name: String, age: Number }"` — **no interpolation, no `{{…}}` escaping**.
+    This is deliberately cleaner than the `type:` metadata form (which needs `{{…}}` to
+    coexist with interpolation); the type-DSL parser gains a single-brace mode for
+    `s"…"` content.
+  - **A simple `to-data` projection — the Type embedding.** Type-data is opaque but
+    trivially openable: `to-data` projects it to an ordinary **tagged-list** structure
+    and `from-data` (a prelude builder function, uniform with `to-data` and kept at the
+    data level) rebuilds it — e.g. `s"[String]" to-data` → `[:t-list [:t-prim :string]]`,
+    `s"A | B"` → `[:t-union …]`. Tagged-list (not block) for terseness and **uniformity
+    with the existing embeddings**: this is the **Type embedding** with a `t-*` vocabulary
+    that mirrors the checker's type constructors **1:1** (`src/core/typecheck/types.rs` —
+    `t-prim`/`t-list`/`t-record`/`t-union`/`t-fn`/`t-forall`/`t-app`/`t-con`/`t-mu`…),
+    completing the family — AST `a-*`, Core `c-*`, STG `s-*`, **Type `t-*`** — all
+    round-trippable data projections of an internal IR (ties to EC-embed).
+- **SV2 `as-spec` / `to-spec`.** Lower type-data into a runtime spec speaking the
+  `match?` predicate vocabulary; consumers auto-lower a type via `to-spec`. Prelude
+  work on `match?` and the predicate intrinsics, consuming the `to-data` projection.
+- **SV3 Structural contracts & runtime validation (W16).** Apply specs explicitly at
+  data ingress (`parse-as`/import sites and user checkpoints), with cost paid only
+  where written — the runtime dual of the optimistic erased boundary (§4.2)
+  (Findler–Felleisen; Clojure spec; Nickel contracts).
+- **SV4 `eu doc` schema extraction / schema interop (W8/W22).** `eu doc` reads the
+  `s"…"` surface to emit schemas; JSON Schema export; ingest of external schemas
+  (incl. CRDs, which need optional fields) as contracts.
+
+**Backward compatibility.** The `s"…"` *surface* is already shipped, so there is no
+lexer collision to manage. The only behavioural change is value-position semantics
+(today a plain string → type-data), and its blast radius is tiny: the live uses are
+`monad:` hints that read raw text and are unaffected, and `s"…"` sits in the
+**Experimental** tier (§4.1), where evaluation may change in a MINOR with a changelog
+entry. Rendering BC is preserved by construction (type-data renders as its source
+string). The **`t-*` projection schema is the versioned surface** — documented and
+tolerant of additive growth — while the type-DSL grammar and the opaque value's
+internals stay Experimental and free to evolve; the projection schema freezes when the
+type representation stabilises (the embed-format discipline: document changes, keep
+old projections readable).
+
+#### SV — Type-vocabulary enrichments (the type representation itself)
+
+Two missing pieces of the type vocabulary, surfaced through `s"…"` and consumed by
+every spec use above. Both are type-checker work (`src/core/typecheck/`), distinct
+from the runtime pillars.
+
+- **Optional (presence-annotated) record fields — promoted.** Record types are
+  required-keys-only today (`src/core/typecheck/types.rs`); a missing required field
+  is a warning. Real config — and the downstream eucalypt-grove work where this keeps
+  recurring — needs a field that *may be absent*: a key-side **`name?: T`** slot,
+  kept distinct from the value-side `T?`/`Partial` (a present-but-partial *value*).
+  A record type partitions into required and optional fields; presence subtyping makes
+  a record with the optional field present a subtype of one where it is optional;
+  `match?`/`me?` gain an optional arm. The annotated form ships near-term (0.11);
+  presence *inference* follows. It composes with default-fill (a spec can supply the
+  value for an absent optional field) and is a hard prerequisite for honest schema
+  import. **Priority raised** from the previous plan on the strength of repeated
+  real-world need.
+- **Prefix-list type — new.** A list with a **fixed-shape prefix followed by a
+  variable-length homogeneous tail** — `[A, B, C…]` meaning "an `A`, then a `B`, then
+  zero or more `C`". The type DSL has fixed tuples (`(A, B)`) and homogeneous lists
+  (`List(T)`) but nothing between them, so the canonical hiccup/markup element —
+  `[tag, attrs, …content]` = `[Symbol, Block, (String | Element)…]`, the shape
+  `lib/markup.eu` is built on (`tag = head`, `attrs = second`, `content = _ tail
+  tail`) — cannot be typed. Add a rest-element form to the type DSL (the `…` tail,
+  cf. TypeScript `[string, number, ...boolean[]]`), with subtyping and indexed-access
+  rules (`head`/`second`/`tail` project the prefix precisely, the tail homogeneously).
+  Flows through validation/generation/schema unchanged.
+
+**Success.** `s"{ name: String }"` parses with clean single braces and renders as
+its source string; `to-data`/builder round-trips type-data through the `t-*`
+tagged-list form; a user validates an imported manifest against a spec derived from a
+`type:` annotation and gets a precise, located failure; the same spec serves `match?`,
+fills defaults, and exports to JSON Schema; optional fields and the markup prefix-list
+shape are both expressible and check correctly.
+
+### Pillar DS — Block & value model
+
+**Problem.** Blocks — the thing eucalypt exists to produce, and merge — are cons-lists
+with **O(n) lookup** (`src/eval/stg/block.rs`), and **merge is catenation**:
+`merge`/`deep-merge`/`<<` walk both operands and re-emit a fresh spine with no
+structural sharing. Eucalypt is an *intensely merge-heavy* language — layered config
+is merge upon merge — so this is a structural cost of the core use case, independent
+of any one workload. The empirical AoC corpus does not exercise it (those programs are
+compute-heavy, not merge-heavy), which is why it was wrongly de-prioritised in the
+GC-era plan; the merge-heavy case is the *config* case, the centre of gravity.
+
+**Why it stalled before, and why bytecode unblocks it.** A prior persistent O(log n)
+attempt (`im_rc::OrdMap`) was reverted (ADR-001): its `Rc` nodes lived on the Rust
+heap outside the bump allocator, which recycles by overwrite and never runs `Drop`,
+so the nodes leaked — 220–580% GC-churn regressions. The wall was **GC finalisation**,
+not block design. Bytecode (BV) changes the calculus twice: it takes *code* out of the
+scanned heap (cutting the churn baseline these structures were charged against), and
+its arena/`GcScannable`-array machinery is exactly what a GC-native persistent node
+needs.
 
 **Design.** Store the persistent structures **inline in the GC heap** as ordinary
-scannable objects (option (c) of four — (a) a finaliser table is the pragmatic
-*fallback*; (b) arena allocation re-creates the leak; (d) switching to a
-`Drop`-supporting collector discards the Immix investment). A CHAMP node is a
-header-prefixed heap object with a `u32` datamap + `u32` nodemap and two inline
-`Array`s, scanned by a new `impl GcScannable for ChampNode` modelled on the
-existing `HeapSyn` arms — **no `Rc`, no Rust-heap nodes, no finaliser ever
-required**; evacuation needs no new code (a header-prefixed object forwards like any
-other).
-
-**Order preservation is essential** and a hash trie cannot give it alone (CHAMP
-orders by hash; blocks render in **insertion order**, verified against
-`./target/release/eu`: override updates in place keeping position, a new key
-appends). So a **threshold hybrid**: below 16 a block stays a plain **cons-list**
-(ordered, allocation-light, faster than a trie at small *n* — purely additive for
-the common case); at/above 16, **two GC-native structures** — a **CHAMP key-index**
-(`SymbolId → order-slot`) and a persistent **order sequence** (a Bagwell/RRB
-persistent vector) holding the `(key, value)` pairs in insertion order. Lookup is
-two O(log n) descents; render/`ELEMENTS` walks the order sequence O(n) with values
-in hand; override updates one slot leaving the CHAMP untouched; a new key appends +
-inserts; both structures share unchanged sub-trees across a merge, so `<<`/
-`deep-merge` allocates in proportion to the *change*. Both node types reuse the
-**same** scannable `Array<Ref>` + `GcScannable` machinery, so the second structure
-adds no new collector surface. The `Block` constructor becomes
-`Block(repr, meta)` (the cons-list below threshold, the `(champ-index,
-order-sequence)` pair above), with `meta` replacing the `Rc` index slot — deleting
-the one leak tolerated today.
-
-**Implementation (phased).** New `ChampNode` + order-sequence node heap types
-(`src/eval/memory/`, `array.rs`); `GcScannable` for both (the genuine risk — GC
-correctness); trie + order-sequence ops (lookup, append, update-in-place,
-sharing merge, in-order iteration) in `block.rs`; dual `Block` repr + dispatch of
-`LOOKUP`/`MERGE`/`DEEPMERGE`/`ELEMENTS`; validate under
-`VERIFY=2`/`POISON=1`/`STRESS=1`. **Sequenced after W10** (same scarce GC
-expertise; W10's nursery makes the many short-lived intermediate nodes cheap).
-
-**Risks.** CHAMP/vector tracing bugs are the same class as the documented
-aarch64 evacuation bugs — a use-after-free under `POISON=1` falsifies it. No net win
-on real configs would collapse the value case (gate on independently-verified
-benches, not microbenchmarks). Small blocks are protected by the cons-list
-threshold.
-
-**Success.** Lookup on a 1,000-key block grows ~logarithmically; merge of two large
-blocks differing in a few keys allocates proportional to the *difference*;
-`deep-find` scales toward near-linear; **no GC-churn regression** (the ADR-001
-220–580% does not recur) and the `Rc<BlockIndex>` slot is gone; rendered key order
-is byte-identical to the cons-list implementation across the harness; full harness
-green under `VERIFY=2`/`POISON=1`.
-
-#### W14. Generalise `vec` to hold arbitrary values
-
-**Problem.** `vec` — the only O(1)-indexed sequence — holds **only primitive
-scalars** (`Num`/`Str`/`Sym`), because its backing is `Vec<Primitive>`
-(`src/eval/memory/vec.rs:14`) and `VEC.OF` rejects anything else
-(`extract_primitive` panics, `src/eval/stg/vec.rs:86`). So you cannot get
-random/indexed access to a sequence of **records (blocks) or nested lists** — the
-canonical "array of objects" shape of CSV/JSON/YAML inputs — and must fall back to
-O(n) cons-lists. "Non-primitive" is non-trivial: there is **no
-`Native::Block`/`List`/`Closure`** (`src/eval/memory/syntax.rs:37-58`) — those are
-`HeapSyn` closures with environments — so an element must be a **closure** (code +
-captured env), and the right backing is a GC-managed **`Array<Closure>`**, not
-`Array<Ref>`. Secondarily, `Native::Vec` is *marked but never scanned*
-(`syntax.rs:343,380`) and its `Vec<Primitive>` buffer lives on the Rust heap, so a
-reclaimed vec's backing **leaks** today (ADR-001 class) — tolerated only because
-vecs are rare.
-
-**Design.** Re-shape `HeapVec` to follow the **`EnvFrame`** pattern
-(`src/eval/machine/env.rs:196,498`) — a GC-traced, evacuation-safe array of
-heterogeneous closures already exists in-tree; `HeapString` is the template for a
-traced native-with-backing. Store `Array<Closure>`; add `impl GcScannable for
-HeapVec` and **push `Native::Vec` for scanning** (the correctness-critical wiring).
-The seven intrinsics mostly *simplify* (the `Primitive` round-trip and `Boxed*`
-re-wrapping disappear); `emit_vec` routes each element through the normal
-per-element render. Moving to a GC `Array` also **fixes the backing leak**.
-Strictness: store source element closures as-is (drop `VEC.OF`'s deep-force) so vec
-inherits list laziness — O(1) is about *index*, not evaluation. Shares W13's
-GC-scannable-array machinery; otherwise independent of it.
-
-**Implementation.** `vec.rs` (storage), `syntax.rs` (scan wiring + `GcScannable`),
-the seven intrinsics in `stg/vec.rs`, `emit_vec`. Sets/ndarrays and the collector
-core are untouched. Medium GC risk, doubly precedented; validate under
-`VERIFY=2`/`POISON=1`/`STRESS=1`.
-
-**Success.** `vec.of`→`vec.to-list` round-trips a list of blocks/nested lists
-preserving order and identity; `vec.nth` over a vec of blocks returns the block
-(indexable further) in O(1); a non-primitive vec renders identically to the
-equivalent list; no GC-churn regression and the prior backing leak is gone.
-
-#### W15. Optional (presence-annotated) record fields
-
-**Problem.** Record types cannot express that a field may be **absent**: a `Record`
-is required-keys-only (`src/core/typecheck/types.rs:238`), and the checker reports a
-missing required field (`subtype.rs:704`). Real config — and any ingested schema
-with optional properties (W22) — needs *presence* in the type, distinct from
-`Partial(T)`/`T?` which is about a *value* being partial, not a *field* being
-optional.
-
-**Prior art.** Presence polymorphism / row types with presence variables (Wand;
-Rémy's "absent labels"); the row algebras already in eucalypt's lineage (Leijen's
-scoped labels were recommended for *merge*, which is a different axis from
-presence). The annotated case is what ships; full presence *inference* is deferred.
-
-**Design.** A key-side `?` slot — **`name?: T`** in the type-DSL (the `?` attaches
-to the key, distinct from the value-side `T?` which stays `Partial`). A record type
-partitions into required and optional fields; presence subtyping makes a record
-with a present optional field a subtype of one where it is optional, and the
-merge×presence rule composes with block merge. `match?`/`me?` gain an **optional
-arm** so a spec/contract (W16) can say "this key may be absent". The annotated form
-is 1.0; **presence inference is post-1.0** (W20-era, or later).
-
-**Implementation.** `src/core/typecheck/parse.rs` (the `?` key slot, kept separate
-from the `:541-543` value-`?`→`Partial` path), `types.rs:238` (the
-required/optional partition), `subtype.rs` (presence subtyping + the missing-field
-rule), and the `me?` rule (`lib/prelude.eu:548-549`). Medium — type-checker work,
-a different skill area from the GC items it shares the release with.
-
-**Success.** `name?: T` checks and renders; a record missing an optional field is
-well-typed; `match?` with an optional arm matches both presence and absence; W16
-contracts and W22 schemas can express optional properties.
-
----
-
-### 0.12 — Data-correctness & reproducibility
-
-*The config story that distinguishes a 1.0 data tool.*
-
-#### W16. Structural contracts & runtime validation
-
-**Problem.** §4.2 keeps the type boundary optimistic, so **bad data still
-renders** — a manifest assembled from imported (`any`-typed) data that violates an
-annotation emits anyway. A config tool must offer runtime validation **where the
-user asks for it** (at data ingress), without the always-on cost §4.2 declines.
-Eucalypt already has the raw materials: `match?` and a predicate vocabulary, plus
-the type-DSL.
-
-**Prior art.** Clojure **spec** — specs are values: composable predicates that both
-*validate* and *describe* data, kept separate from the type system, applied at
-chosen points. Nickel pairs static types with **runtime contracts** at the
-boundary. Findler–Felleisen contracts (ICFP 2002) — pay-as-you-go validation *where
-written*, not at every crossing.
-
-**Design.** A **two-stage spec model** unifying `match?`, types and runtime
-validation. The **`s"…"` string-prefix** (§4.3) produces **type-data** (a
-first-class value form of a type, distinct from a "magical" bare symbol);
-**`as-spec`** transforms type-data into a runtime **spec value** speaking the
-`match?` vocabulary (predicates, shapes, alternatives, optional arms); consumers
-auto-lower a type to a spec via `to-spec`. Validation is applied explicitly at
-ingress (`parse-as`/import sites and user-chosen checkpoints), returning structured
-blame, never wrapping every boundary. Enriched by **W15**: a spec can mark a field
-optional via the `me?`/`match?` optional arm. This is the runtime dual of §4.2 —
-together: static checking via `eu check --strict`, optimistic erased boundaries in
-production, contracts for the few places runtime validation earns its keep.
-
-**Implementation.** Build on `match?` and the predicate intrinsics; `as-spec`/
-`to-spec` in the prelude; the `s"…"` surface from §4.3 (its value-context machinery
-lands here if not already present). Real engineering, no new core-runtime risk.
-
-**Success.** A user can validate an imported manifest against a spec derived from a
-`type:` annotation and get a precise, located failure; the same spec serves
-`match?`; optional fields (W15) are expressible; the validation cost is paid only at
-the chosen ingress points.
-
-#### W17. Hermetic mode for reproducible rendering
-
-**Problem.** Rendering can depend on ambient inputs — wall-clock time, environment
-variables, randomness, filesystem/network — so the same source can render
-differently on different runs/machines. A config tool's output should be
-**byte-reproducible** when the inputs are fixed.
-
-**Design.** A **hermetic mode** (the determinism *mode*; the capability *type
-system* is a non-goal, §5) that pins the ambient inputs: a fixed
-clock, a controlled environment, a seeded PRNG stream, and deterministic ordering,
-so a render is a pure function of its declared inputs. It composes with hermetic
-imports (W18, content-addressed + pinned) for end-to-end reproducibility, and with
-W21 (any parallelism must stay **unobservable** — advisory, deterministic merge).
-
-**Implementation.** Driver-level (`src/driver/`): a mode flag that routes `io.*`
-ambient reads through pinned sources and fixes ordering/seeding; no core/runtime
-change. Relates to W5 (golden output is reproducible by construction).
-
-**Success.** Under hermetic mode, a fixed source + fixed declared inputs renders
-byte-identically across runs and machines; non-deterministic ambient reads are
-either pinned or rejected.
-
----
-
-### 1.0 — Ecosystem floor, prove & freeze
-
-#### W18. Module & package system (git-only, content-addressed)
-
-**Problem.** There is no module/package system beyond raw file imports — no
-versioned, shareable, integrity-checked dependencies, and no namespace isolation
-between imported units. A 1.0 that invites third-party sharing needs an ecosystem
-floor, but **without** building a registry (§5).
-
-**Prior art.** Go's **registry-free, VCS-direct** model — depend on a repo by URL,
-pin by version/commit, record integrity hashes in a lockfile (`go.sum`), select
-versions by MVS — proves you can have a real package ecosystem with **no central
-index**. Unison's content-addressing makes identity and caching intrinsic.
-
-**Design.** Build on the git fetch backend (**W12**) and the Unit Interface
-(**W2**). The 1.0 **core cut**: **content-addressed git imports** (fetch a repo at a
-pinned commit, verify a `sha256:` content hash on the fetched bytes); an
-**eucalypt-syntax manifest** discovered by upward search from the invoked file's
-directory (degrading to today's behaviour, with a `--manifest` override); and
-**namespace isolation** so imported units don't collide (consuming W2's interface).
-Transitive integrity is recorded in a **lockfile that pins the closure** (the Go
-`go.sum` model; a Merkle-tree hash over the import DAG is the noted alternative if
-per-file hashes prove insufficient). **No registry** — distribution is git +
-GitHub/GitLab alone. Deeper **version selection (MVS) and lockfile depth are
-post-1.0** (W18-depth).
-
-**Implementation.** The block-form scraper (shared with W2/W12), manifest discovery
-+ parsing in `src/driver/source.rs`, namespace isolation over W2's interface, the
-lockfile. Real engineering; the fetch/integrity halves are W12.
-
-**Success.** A unit can depend on another repo by URL pinned to a commit + content
-hash, with a discovered manifest and a lockfile pinning the closure; imported
-namespaces don't collide; nothing requires a registry; renders are reproducible
-with W17.
-
-#### W19. An interactive surface — `eu watch` & REPL (Phase 1)
-
-**Problem.** Data exploration and authoring have no interactive loop — every change
-is a fresh cold invocation (the latency of §2), and there is no way to hold a
-session and re-query.
-
-**Prior art.** Unison's codebase-aware `watch` expressions; notebook surfaces for
-data exploration.
-
-**Design.** **Phase 1 (1.0):** `eu watch` (Unison-style) — re-render on change —
-and a **thin REPL over the cache**, leaning on the embedded prelude/cache (W6) for
-per-prompt latency and the incremental query core (W7) for reactive re-evaluation.
-Phase 1 deliberately avoids holding fragile cross-prompt heap state: the
-stale-string hazard is fixed separately (W1), and richer persistent-session state
-is the post-1.0 full notebook. **Full notebook is post-1.0.**
-
-**Implementation.** A driver surface over W6/W7; `src/driver/`. Medium.
-
-**Success.** `eu watch` re-renders a file on save with sub-prompt latency; a REPL
-evaluates expressions against a loaded unit over the cache.
-
-*(Also at 1.0: **W5** reaches its bar — golden corpus green, property + fuzz
-running; **W3** freezes the enumerated stable surface under real semver.)*
-
----
-
-### post-1.0 — breadth and the curated bets
-
-*The roadmap commits through 1.0. Beyond it, these are chosen deliberately, one at a time (§4.6).*
-
-#### W20. Type-directed compilation
-
-**Problem.** The checker is advisory and **erased** (§4.2): eucalypt pays the full
-cost of a gradual type system and banks none of its runtime value. Every numeric
-and structural op pays for dispatch it may not need — `+` compiles to a tag-`case`
-wrapper (`src/eval/stg/arith.rs:452`) and `Add::execute` re-checks operand kinds at
-runtime even where the checker already *proved* `number → number → number`; the STG
-already has the unboxed `Native::Num` representation — what is missing is
-*permission*, from a type, to take the direct path.
-
-**Prior art.** GHC (demand analysis + worker/wrapper; unboxing is a *strictness*
-result as much as a type one — binds this to W11), MLton (representation selection),
-flambda (the pragmatic opt-in posture), Idris 2 (types decide what survives), Roc
-(lambda-set specialisation — but predicated on *total* inference eucalypt lacks).
-Borrow representation-selection + the strictness-gates-unboxing discipline; reject
-the closed-world/total-inference assumptions.
-
-**Design.** Thread type facts past erasure as a **node-keyed side-table** carrying a
-**provenance bit** — `Synthesised` (proven from code) vs `Trusted` (rests on an
-annotation crossing `any`). A type-aware specialisation pass in the inliner emits
-specialised bodies where a callee carries an actionable signature and arguments are
-actionable-concrete: **unboxing + direct intrinsic dispatch** (the ~5–10× on tight
-arithmetic — but narrower for string/block-heavy generation), **dead-branch
-elimination** on literal types (keyed on the *brancher set*, not the name `if`),
-**IO flattening**, and **interpolation specialisation** (the most *pervasive*
-generation win). Lens fusion and block-offset specialisation are dropped — their
-payoff needs usage patterns that aren't how eucalypt is written.
-
-**The crux:** optimisation may fire **only on proven-concrete (`Synthesised`)
-types**, never on a type merely *trusted* across an `any` — because under a naïve
-unboxed path a lying `any` would reinterpret e.g. a string pointer as an integer:
-**memory corruption, not a type error**. So **W20 cannot land before the
-boundary-soundness decision (§4.2) is in force**, and either restricts to
-synthesis-only or relies on the opt-in `--strict-boundary` checks at the feeding
-sites. Couples tightly to **W11** (a `number` annotation implies the strictness that
-makes unboxing legal).
-
-**Implementation/risk.** A checker side-table → an inliner specialisation pass →
-an STG unboxed-arithmetic mode bypassing the tag-`case` (additive; the boxed
-wrappers remain for every unspecialised call). The high-risk surface is that STG
-path — a single optimised node meeting a mis-typed operand is a **P1 memory-safety
-bug**, which is why this is a curated post-1.0 fork. Phased and independently
-benchmarkable. **Kill switches:** if runtime perf is not a goal, or if real render
-workloads show <2× (generation is block/string-heavy, not arithmetic-heavy), it is
-shelved — *measure before committing*.
-
-#### W21. Parallel evaluation
-
-**Problem.** No concurrency; the obvious shared-memory route is expensive (the heap
-is an `UnsafeCell` deliberately not `Sync`). Real motivating cases: **batches of
-files** (embarrassingly parallel) and **data-parallel `map`/`fold`** over large
-imported datasets — both safe by construction given purity and IO-isolation.
-
-**Prior art.** Model A: JS Web Workers (isolated heaps, message-passing), Starlark
-(parallel loading via immutability), scatter-gather. Model B: GHC Strategies/sparks
-on a shared heap (Trinder 1998; "Seq no more" Marlow 2010; Harris/Marlow/Peyton
-Jones 2005), OCaml-5 (ICFP 2020 — the GC is the gating cost). Rejected:
-async/effects (observable nondeterminism), GPU/SIMD (wrong shape for irregular
-graph reduction).
-
-**Design.** Lead with **Model A — isolated workers**: each worker a full evaluator
-with its own heap, coordinating by passing *serialised data* (a `par-map`/`par-fold`
-prelude combinator that scatters chunks to workers applying a **named** transform
-and merges results). It fits because purity makes the merge order-independent,
-IO-isolation makes effects independent, and W6's embedded prelude makes workers
-cheap to spawn; eucalypt's `eu -e <transform> <chunk>` model *is* a worker, and the
-IO driver already spawns subprocesses for `io.exec`. The cost lands at the
-**interface** (data-only/strict boundary; addressable transforms, not arbitrary
-closures; coarse chunking) rather than the runtime — a far better trade for a data
-tool, paid only when you parallelise. **Model B — shared-heap threads** (the
-fine-grained, shared-thunk case A can't express) is a **hard fork, maybe-never**: it
-needs a `Send`/`Sync` heap with a parallel collector (a superset of W10), an atomic
-thunk-claim replacing blackholing, and GC-level spark pruning, all paying an
-unpredictable single-threaded tax. Both models stay **advisory and deterministic**
-(parallelism, never observable concurrency — relates W17). Model A depends on
-**W6**; Model B on **W10**.
-
-**Success.** A: >1.5× on a file batch and one large data-parallel `map` across 4+
-cores, **zero** single-threaded cost, identical deterministic results, and an
-interface a user reaches for without contortion. B: pursued only if A demonstrably
-cannot serve an intra-program compute case **and** a heap prototype shows the
-single-threaded tax is acceptable.
-
-#### W22. Host-language & schema interop
-
-**Problem.** Eucalypt cannot exchange schemas with the outside world — no JSON
-Schema export of its types, no ingest of external schemas (JSON Schema, Kubernetes
-CRDs) as eucalypt contracts.
-
-**Design.** **JSON Schema export/import** as the first increment: emit a schema
-from a unit's `type:` annotations (reusing W8's extraction), and **ingest** an
-external schema as a W16 contract (an ingested schema *is* a contract). **CRD
-import** specifically needs **optional fields (W15)** — Kubernetes schemas are
-optional-property-heavy. Codegen is **delegated to existing JSON-Schema
-toolchains** rather than built in-house. Builds on W16 (contracts), W8 (doc/schema
-extraction) and W15 (presence). Post-1.0; the JSON-Schema core is the natural first
-cut.
-
-**Success.** A eucalypt unit's types export to JSON Schema; an external JSON Schema
-(incl. a CRD with optional properties) imports as a contract that validates data at
-ingress.
-
----
-
-### Candidates not yet planned
-
-Areas worth a proposal but not yet drafted — recorded so they are not forgotten,
-and able to swap into the plan if priorities shift.
-
-- **Alternative backends** — core→WASM compilation and other execution targets. The
-  most developed candidate and the **consumer of W5's conformance contract** (a
-  genuinely independent backend is what gives cross-backend conformance teeth);
-  interacts with W21 and W22.
-- **Debugging a lazy language** — a DAP server / value-provenance for stepping lazy
+scannable objects — no `Rc`, no Rust-heap nodes, no finaliser. A **threshold hybrid**
+preserves the common small-block case and insertion order: below ~16 keys a block stays
+a plain cons-list (ordered, allocation-light); at/above, two GC-native structures — a
+**CHAMP** key-index (`SymbolId → order-slot`) and a persistent **RRB order-sequence**
+holding the `(key, value)` pairs in insertion order. Lookup is two O(log n) descents;
+render walks the order sequence; override updates one slot; merge shares unchanged
+sub-trees, so `<<`/`deep-merge` allocates proportional to the *difference*. Both node
+types reuse one `GcScannable` array impl, so the collector surface is small.
+
+- **DS1 Persistent O(log n) blocks** — the CHAMP+RRB hybrid above. Sequenced after
+  BV; validated under `EU_GC_VERIFY=2`/`POISON=1`/`STRESS=1`; gated on
+  **independently-verified merge-heavy benchmarks** (not microbenchmarks), with the
+  ADR-001 non-regression as a hard bar.
+- **DS2 Generalise `vec` to arbitrary values** — let the O(1)-indexed sequence hold
+  blocks/lists (the array-of-objects shape of CSV/JSON inputs, or a multi-thousand-entry
+  filesystem listing from EF2), not just scalars, via
+  a GC-traced `Array<Closure>` modelled on `EnvFrame`; also fixes the current
+  `Native::Vec` backing leak. Shares DS1's GC-array machinery; otherwise independent.
+
+**Success.** Lookup on a 1,000-key block grows logarithmically; merge of two large
+blocks differing in a few keys allocates proportional to the difference; rendered key
+order is byte-identical to the cons-list across the conformance corpus; **no GC-churn
+regression** (ADR-001 does not recur); `vec` round-trips a list of blocks preserving
+order and identity.
+
+### Pillar PP — Process-level parallelism
+
+**The aspiration.** Multi-core for the cases that are *safe by construction*, without
+surrendering the single-threaded lazy-pure heap (Principle 4: the heap is a
+deliberately non-`Sync` `UnsafeCell` whose soundness rests on stop-the-world access).
+Purity makes a parallel merge order-independent and IO-isolation makes effects
+independent, so a whole class of work parallelises with **zero single-thread cost and
+fully reproducible results** — provided we never try to *share the heap*. The model is
+OS processes (forks), not threads. Three rungs of increasing coupling:
+
+1. **Batch.** Run `eu` over many files / many targets at once. A runner concern,
+   trivially safe, available first — the embarrassingly-parallel base case.
+2. **Data-parallel combinators.** `par-map` / `par-fold`: scatter a list across forked
+   workers, each applying a **named, addressable** transform (a binding name resolved
+   in both processes — *not* an arbitrary closure, which cannot cross heaps), then
+   gather and **merge deterministically**. This is the core surface a user reaches for.
+3. **A shared-memory results / work arena.** The specific aspiration: a memory-mapped
+   region that collaborating `eu` forks write into and coordinate over, instead of
+   funnelling everything through a parent process.
+
+**What the shared arena can and cannot hold — the load-bearing constraint.** It
+**cannot hold live heap**: pointers are process-local and the GC moves objects. So the
+mmap region is not a shared heap; it is a fast **transport + coordination** layer
+carrying:
+
+- **serialised values** — and here PP and BV compound: **BV5's serialisable
+  bytecode-value form is the natural wire payload**, so forks exchange eucalypt
+  *values* as compact bytes with no re-parse. The serialisation built for the embedded
+  prelude doubles as the IPC format.
+- **a results board** — pre-sized slots workers fill, gathered when all complete
+  (zero-copy, no parent bottleneck).
+- **coordination metadata** — a work-claim index (claim-next-chunk counters/flags) for
+  dynamic load balancing / work-stealing among peers. Just integers, not heap.
+
+So the end-state is a small set of **deterministic parallel combinators** — `par-map`,
+`par-fold`, batch — that "just work" over an mmap arena for the parallelisable slice,
+with named transforms as the unit of work and serialised bytes as the only thing that
+crosses a process boundary.
+
+**Scope, honestly.** This serves the embarrassingly-parallel slice: independent
+`map`/`fold` elements, file batches, and the AoC cases that decompose (day08
+independent pair distances, day09-p1 O(n²) pairs, day10-p1 DFS branches). It does
+**not** parallelise inherently sequential algorithms (day10-p2 branch-and-bound,
+day11-p2 DP — those are CG/BV's job), and it is **not** fine-grained intra-evaluation
+parallelism. That last — shared-thunk, shared-heap threads (**Model B**) — needs a
+`Send`+`Sync` heap and a parallel collector (a superset of the shelved GC work) and
+stays a **maybe-never fork** (§10). PP is always *advisory parallelism, never
+observable concurrency*: deterministic merge, composes with hermetic mode (W17).
+
+**Phasing.** Workers reuse the existing `io.exec` subprocess machinery; the data-only
+boundary (named transforms, serialised bytes) is implementable before BV, but is
+*cheapest and cleanest on BV5's serialisation* — so the combinators can prototype
+early and the mmap-arena transport lands once the value-serialisation form exists.
+
+**Success.** >1.5× on a file batch and on one large data-parallel `map` across 4+
+cores; **zero** single-threaded cost; identical deterministic results to the
+sequential run; the transform unit is something a user reaches for without contortion.
+
+### Pillar EF — Effects & IO: composition and capabilities
+
+Two long-standing rough edges keep real data-gathering programs awkward, and
+Principle 5 (no false ceiling) says we fix them rather than wave them off as "outside
+the sweet spot."
+
+**EF1 — Composing effects.** Today `io`, `state`, `random`, `let` and `for` are each an
+independent `monad{bind, return}` (`lib/prelude.eu:34,162,2155,2163`, `lib/state.eu:55`),
+with no transformer or lift *between effects* — `state.lift` only lifts a *pure
+function* into state. So a stateful, seeded, IO-driven pipeline (accumulate state while
+shelling out, with a controlled PRNG) has no supported path; you hand-roll the
+threading. The runtime rules out a heavy transformer zoo (Principle 4: single-threaded
+lazy-pure; IO interpreted by the driver). Staged direction:
+
+1. **Composition combinators (near-term, prelude-level).** `state` and `random` are
+   *pure value-threading* monads, so they already run inside any context — what is
+   missing is glue: `lift`/interop to run a `state` or `random` computation inside an
+   IO pipeline and thread its result, plus `for`-comprehension across them. No core
+   change.
+2. **A unified effect context.** Because `state` (thread a state block) and `random`
+   (thread a seed) are both pure value-threading and only IO is driver-interpreted, one
+   effect monad can carry `(state, seed)` alongside IO — an RWS+IO-shaped context the
+   existing namespaces become operations *within*. More eucalypt-idiomatic (one
+   structural monad) than a transformer stack.
+3. **Algebraic effect-rows (the long arc).** The general, typed answer — typed effects
+   beyond the IO monad (promoted from a deferred candidate). Heavier type machinery; the
+   end-state, not the near-term step.
+
+**EF2 — Native filesystem / IO capabilities.** The entire IO surface is `io.shell` /
+`io.exec` plus env/args/epoch (`lib/prelude.eu:34-78`) — there is **no** `io.read-file`,
+`io.ls`, `io.walk` or `io.stat`. So gathering a filesystem tree means shelling out
+(`ls`/`find`), receiving one large stdout *string*, splitting it, and rebuilding a
+cons-list. **This is a capability and ergonomics gap, not a performance blocker** —
+profiling shows the shell call and the `vec.of` build are cheap (the slowness one hits
+aggregating the result is a separate `foldl` defect, handled as a bug fix, not here).
+Native `io.read-file`, `io.walk`/`io.ls` (a directory tree → structured data directly),
+`io.stat` and `io.glob` are still worth it: they remove the subprocess + string
+round-trip, give a typed structured result instead of line-parsing, and can be
+**lazy/streamable** so a large tree need not fully materialise (ties to DS and the
+streaming candidate).
+
+**Why this belongs (not a sweet-spot exception).** The data sweet spot is about the
+*shape* of the work, not a ceiling on input source or scale (Principle 5). Gathering and
+transforming filesystem trees is squarely a data-tool job; that it is currently
+impractical is a gap, not a boundary. The scaling half — thousands of strings/blocks
+held at once — is attacked by DS (arbitrary-value `vec`, persistent blocks), BV (startup,
+dispatch, GC load) and streaming; EF2 removes the *capability* gap and the
+string-round-trip overhead on top.
+
+**Success.** A stateful, seeded, IO-driven pipeline composes without hand-rolled
+threading; `io.walk` ingests a multi-thousand-file tree into a structured value in well
+under a second, lazily where the consumer is lazy, with no shell-out.
+
+### Pillar EC — Ecosystem & surface (the surface floor)
+
+The surviving cross-unit and surface work that lets 1.0 be declared and frozen.
+
+- **W18 Module & package system (git-only, content-addressed).** Build on the shipped
+  Unit Interface and git fetch backend: content-addressed git imports (commit pin +
+  `sha256:` content hash), an eucalypt-syntax manifest discovered by upward search,
+  namespace isolation, and a lockfile pinning the closure (Go `go.sum` model). No
+  registry (§5). MVS/lockfile depth are post-1.0.
+- **W19 Interactive surface — `eu watch` & REPL (Phase 1).** Re-render on change, and
+  a thin REPL over the cache, leaning on BV5 startup and the incremental query core
+  (W7). Full notebook is post-1.0.
+- **W17 Hermetic mode for reproducible rendering.** Pin ambient inputs (clock, env,
+  seeded PRNG, deterministic ordering) so a render is a pure function of declared
+  inputs; composes with content-addressed imports and PP's deterministic merge.
+- **W7 Incremental, query-based core (continue).** The memoised query graph over the
+  Unit Interface; front-end scope for 1.0, serving both LSP and CLI re-compiles.
+- **W5 Conformance, property tests & fuzzing (continue to the 1.0 bar).** The golden
+  corpus + properties + fuzzers — and now the **proof that every BV phase changes
+  nothing observable** (the dual-engine conformance the corpus was built for). Bar:
+  golden coverage of every export format and the frozen prelude set; zero panics after
+  a 24-hour fuzz run; full harness green under `EU_GC_VERIFY=2`.
+- **EC-embed The embedding bridges — eucalypt as an export target, and the macro
+  substrate.** There are **two distinct embedding formats**, and the distinction is
+  the whole point. The **AST embedding** (`src/syntax/export/embed.rs`, *"allow parsed
+  AST to be quote-embedded as eucalypt"*) represents the **front-end syntax tree**
+  (Rowan nodes — blocks, lists, declarations, units) as eucalypt data, and renders
+  back to source via `pretty.rs`/`format.rs` (and `eu fmt`). The **Core embedding**
+  (`src/core/export/embed.rs`, the `c-*` tagged-list vocabulary with `parse-embed:
+  :CORE`, documented in `docs/development/embed-format.md`) represents the **desugared
+  Core IR**, for constructing and testing compiler intermediate representations
+  (there is a parallel `s-*` STG embedding in `src/eval/stg/embed.rs`, and the `t-*`
+  **Type embedding** is the `to-data` projection of `s"…"` from Pillar SV — so the
+  full family is AST `a-*`, Core `c-*`, STG `s-*`, Type `t-*`). They serve
+  different ends: the **AST** embedding is the path for *generating eucalypt source
+  from data* (the syntax level — `data → AST embedding → rendered .eu`); the **Core**
+  embedding is the path for *metaprogramming over the compiled IR* (the substrate any
+  future macros build on). Separately, `-x eu` (`src/export/eu.rs`) renders plain
+  *values* as eucalypt-source data.
+
+  **This must not die — and the AST half is already half-dead:** 10 of the 11 `Embed`
+  impls in the AST module currently return `None` (only `Soup` is wired). The
+  aspiration — transform a data structure into an AST embedding and render it as
+  eucalypt — is *exactly* the gap: the AST embedding needs completing so eucalypt can
+  emit `.eu` *code* (lambdas, operators, bindings), not just `-x eu` *data*. Three
+  commitments: **(1) keep both alive** — the embed formats are "stable by convention…
+  not enforced by snapshot tests" today; promote the Core round-trip (embed→disembed)
+  and the AST embed→`pretty`→reparse round-trip into the **conformance corpus (W5)** so
+  neither can silently rot, and version the two tag vocabularies as documented
+  surfaces; **(2) complete the AST embedding** — fill the stubbed node impls and unify
+  AST-embed + `pretty`/`fmt` + `-x eu` into one coherent "eucalypt as an export target"
+  story that round-trips code as well as data; **(3) worked examples** — living harness
+  examples that emit `.eu` source from data (generate a block of bindings; round-trip a
+  parsed unit through AST-data and back). **Macros stay deferred** (below), but the
+  **Core** embedding is their substrate, so keeping it warm keeps that door open at no
+  extra cost.
+
+#### Deferred candidates (kept warm, not scheduled)
+
+Recorded so they are not forgotten, able to swap in if priorities shift:
+
+- **Macros / homoiconicity** — compile-time metaprogramming over the core, built on
+  the **Core** embedding (EC-embed). Deferred, not declined; the substrate is maintained.
+- **First-class type values** — types as ordinary values beyond the `s"…"` surface;
+  the SV aspiration taken to its limit (reflection, type-level computation).
+- **Alternative backends** — core→WASM and other targets, post-bytecode and as
+  **distribution** not speed (§4.7); the consumer of W5's cross-backend conformance.
+- **Streaming & bounded-memory** — process inputs that don't fit the heap (including
+  large **filesystem trees**, the EF2 motivating case); the principled answer to the
+  large-data regime that doesn't require winning the GC fight. A partial `LazyProducer`
+  spec already exists.
+- **Lazy-evaluation debugging** — a DAP server / value-provenance for stepping lazy
   evaluation.
-- **Streaming & large-data scaling** — bounded-memory processing of inputs that
-  don't fit the heap.
-- **Distribution & packaging** — nixpkgs / Homebrew / a WASM CDN build.
-- **Homoiconicity & macros** — compile-time metaprogramming over the core.
-- **First-class type values** — types as ordinary values, beyond the `s"…"` surface.
-- **Algebraic effect-rows** — typed effects beyond the IO monad.
+- **Algebraic effect-rows** — typed effects beyond the IO monad; now the long-arc
+  end-state of **Pillar EF** (EF1.3), not a free-standing candidate.
 
 ---
 
 ## 8. The critical path
 
-**W1/W2 (the two fixes + the Unit Interface) + W3 (versioning) → W6 (latency) → W10 (the
-runtime) → W16 + W18 (data-correctness + ecosystem floor, on W12) → W5 green (prove
-it) → ship 1.0.** Everything else is a cheap win that slots alongside, or a curated
-post-1.0 bet.
+**CG type-free tier + TY default-on + SV `s"…"` + optional fields (0.11) → BV0 gate →
+BV1 + BV5 (0.12, the bytecode core + startup win) → BV3 + CG type-gated (0.13) → SV
+contracts + DS + modules (0.14–0.15) → W5 conformance green → the 1.0 milestone:
+ratify and freeze the surface (§4.6).** BV4, DS, PP and the post-1.0 candidates slot
+alongside or follow. The 1.0 freeze is gated on the surface and conformance, not on
+the bytecode programme being finished — and no feature is scheduled *for* 1.0; they all
+land in point releases first.
 
 ## 9. Index
 
-| # | Item | Release |
-|---|------|:-------:|
-| W1 | Eliminate the double STG compile | 0.7.1 |
-| W2 | The Unit Interface (+ cross-import bracket fix) | 0.7.1 |
-| W3 | Versioning & stability discipline | 0.8 → 1.0 freeze |
-| W4 | Resilient parser front-end & error recovery | 0.8 (Ph1) / 0.9 (Ph2) |
-| W5 | Conformance corpus, property tests, fuzzing | 0.8 begin → 1.0 bar |
-| W6 | Compiled-unit & prelude caching (separate compilation) | 0.9 floor → post-1.0 full |
-| W7 | Incremental, query-based core | 0.9 begin → post-1.0 full |
-| W8 | `eu doc` — documentation & schema extraction | 0.9 |
-| W9 | One demand annotation behind the strictness heuristics | 0.9 |
-| W10 | Generational nursery & Immix completion | 0.10 |
-| W11 | Strictness & demand analysis | 0.10 |
-| W12 | Restore git imports (fetch-under-a-hash) | 0.10 |
-| W13 | Persistent O(log n) blocks & the GC-finalisation fix | 0.11 |
-| W14 | Generalise `vec` to hold arbitrary values | 0.11 |
-| W15 | Optional (presence-annotated) record fields | 0.11 |
-| W16 | Structural contracts & runtime validation | 0.12 |
-| W17 | Hermetic mode for reproducible rendering | 0.12 |
-| W18 | Module & package system (git-only, content-addressed) | 1.0 |
-| W19 | Interactive surface — `eu watch` & REPL | 1.0 (Ph1) → post-1.0 |
-| W20 | Type-directed compilation | post-1.0 (curated) |
-| W21 | Parallel evaluation | post-1.0 (curated) |
-| W22 | Host-language & schema interop | post-1.0 |
+| ID | Item | Release |
+|---|---|:---:|
+| **BV0** | Bytecode encoding + dispatch-ceiling spike (gate) | 0.11 |
+| **BV1** | Threaded interpreter; code out of the GC heap | 0.12 |
+| **BV5** | Serialised/embedded prelude + unit cache (startup win) | 0.12 |
+| **BV2** | Side tables for annotations | 0.13 |
+| **BV3** | Register frames | 0.13 |
+| **BV4** | Superinstructions | 0.14 |
+| **CG1–4** | Type-free codegen (direct dispatch, key resolution, strict folds, lifting) | 0.11 |
+| **CG5** | Type-gated codegen (unboxing, dead-branch, interpolation) | 0.13 |
+| **TY** | Typing default-on | 0.11 |
+| **SV1–2** | `s"…"` type-data + `as-spec`/`to-spec` | 0.11 |
+| **SV — optional fields** | Optional (presence-annotated) record fields *(promoted)* | 0.11 |
+| **SV — prefix-list type** | Fixed-prefix + variable-tail list type (markup/hiccup) | 0.13 |
+| **SV3 (W16)** | Structural contracts & runtime validation | 0.14 |
+| **SV4 (W8/W22)** | `eu doc` schema / schema interop | 0.15+ |
+| **DS1** | Persistent O(log n) blocks (GC-native CHAMP+RRB) | 0.15+ |
+| **DS2 (W14)** | Generalise `vec` to arbitrary values | 0.15+ |
+| **PP** | Process parallelism (`par-map`/`par-fold`, mmap arena) | 0.14+ |
+| **EF1** | Effect composition (combinators → unified context → effect-rows) | 0.14 → post-1.0 |
+| **EF2** | Native filesystem/IO capabilities (`walk`/`read`/`stat`, streamable) | 0.14 |
+| **W18** | Module & package system (git, content-addressed) | 0.15+ |
+| **W19** | `eu watch` & REPL (Phase 1) | 0.15+ |
+| **W17** | Hermetic mode | 0.15+ |
+| **EC-embed** | Embedding bridge: `.eu` code export, harden + exemplify (macro substrate) | 0.12+ |
+| **W7** | Incremental query core (continue) | point releases |
+| **W5** | Conformance / property / fuzz (continue) | →1.0 gate |
+| *1.0* | *Milestone: freeze the surface, turn on the version contract* | *no features* |
+| *WASM-distribution* | WASI components / playground accel | post-1.0 candidate |
 
 Settled decisions (§4) and non-goals (§5) are not scheduled work items.
 
+---
+
+## 10. Supplement — superseded & abandoned work
+
+Kept so the reasoning is not lost and the experiments are not repeated. None of the
+following is scheduled; each records *why*.
+
+### 10.1 The generational-GC line (W10) — attempted and reverted (0.10.0)
+
+The previous plan's runtime keystone. A full **sticky-mark-bit** generational
+collector was implemented, passed all tests under `EU_GC_VERIFY=2`/`EU_GC_STRESS=1`,
+and was **reverted**: no wall-clock benefit, and 10–1500% regressions at every
+nursery-budget tested. *Why it failed:* (1) the first minor after every major is a
+full live-set trace (the mark-state flip makes everything look young); (2) AoC live
+sets (100–600 MiB grids/memo tables) dwarf any nursery budget, forcing repeated
+majors; (3) the write barrier + dirty-frame scan cost was paid with almost nothing to
+skip. *What would work:* a **separate copying nursery** (e.g. 8 MiB) disjoint from the
+Immix heap, so a minor never sees old objects — the classic generational layout, which
+a single mark bit over a shared address space cannot emulate. **Verdict:** shelved
+(§4.5). Revisit only when a real memory-pressure workload (large data under a tight
+`--heap-limit`) exhibits the regime; profile after BV/CG first, since both reduce the
+thunk churn a nursery would target.
+
+### 10.2 Flat closures — built and reverted (0.10.0)
+
+Targeting the env-walk cost (`EnvironmentFrame::get`, up to 39% on AoC), capture
+frames were replaced with `(frame_ptr, physical_index)` pairs. Env `get` self-time
+fell 27% but **net wall time regressed 2–10% everywhere**: eucalypt's env chains are
+shallow (avg depth 2), so the flat path costs about the same as the cactus path while
+every frame creation pays a capture-recipe tax (28–50% of closures capture nothing),
+and the wider `Ref` dispatch hurt branch prediction. **Verdict:** abandoned as a
+*uniform runtime representation*; the idea relocates — correctly — to **BV3 register
+frames + CG4 selective lifting**, a targeted, compiler-decided transform on hot deep
+captures rather than a universal one. Archived at `archive/flat-closures`.
+
+### 10.3 Demand cardinality / update-elision (W11 second half) — abandoned
+
+The strictness half of demand analysis succeeded and shipped (the `Seq` eager-eval
+path, §2). The **AtMostOnce / update-elision** half (compiling a single-use binding as
+`Value` to skip the `Update` frame) is **unsound in eucalypt**: render traversal
+enters each block value twice; dynamic `.key` lookups enter closures the static
+analysis cannot predict; higher-order use (a binding passed to `foldl`/`map`) is
+referenced once syntactically but entered per element. The forced-`Multi` fixup that
+prevents the regression also eliminates virtually all opportunities. **Verdict:**
+abandoned; the strictness half is retained and extended by CG. Possible future
+enablers (a single-entry `RenderKv`; escape analysis) are noted but not scheduled.
+
+### 10.4 STG→WASM as an execution engine — declined (feasibility study)
+
+Full analysis in `docs/development/stg-compilation-targets-feasibility.md`. Compiling
+STG to WASM is *feasible* but attacks the wrong bottleneck at the wrong price:
+codegen is the easy 20%, the hard 80% is a second RTS (lazy object model; a GC story
+that rebuilds a linear-memory RTS or discards Immix; a 192-intrinsic bridge; the
+per-scalar streaming render bridge), with per-run Wasmtime codegen + instantiation
+likely *slower* than today's 85 ms on the small runs that dominate; 18–36 months to
+parity behind a dual-engine migration. **Verdict:** declined as an engine (§4.7),
+retained as a **post-1.0 distribution** target (WASI components, playground), to be
+compiled *from the bytecode* once it exists. The study's measurements (startup floor;
+~2.4 M ticks/s; code-as-scanned-heap-data) are the evidence base for Pillars BV and CG.
+
+### 10.5 The old GC-as-spine performance thesis — superseded
+
+The previous roadmap (baseline 0.7.1) made a generational GC (W10) and persistent
+blocks (W13) the engine of 1.0 performance, on the premise *mark > 95% of VM time*.
+Strict prelude globals (0.10.0) removed the recurring collections that premise rested
+on; on real workloads GC now does **0 collections** while dispatch and env-walk
+dominate. The performance plan is therefore rebuilt around compilation and dispatch
+(§4.5): **Pillars BV and CG supersede W10 and W13.**
