@@ -384,17 +384,57 @@ startup floor) is banked early:
 
 ### Pillar BV — Bytecode VM
 
-The six phases are specified in §6.4. The grounding: the optimisation IR
-(`StgSyn`, `src/eval/stg/syntax.rs:118`) is already off-heap and has an
-arena-flattened, postcard-serialisable form (`src/eval/stg/blob.rs`); the execution
-IR (`HeapSyn`, `src/eval/memory/syntax.rs:227`) is loaded into the GC heap every run
-(`loader.rs:120`) and scanned as data (`syntax.rs:400-547`). BV replaces the
-execution IR and its loader with arena-resident bytecode and an opcode dispatcher,
-leaving the continuation machine (`cont.rs:34`), the intrinsic boundary
-(`vm.rs:1722`, `intrinsics.rs:49`) and (until BV3) the env model untouched.
+The six phases are specified in §6.4; this is the engineering detail and the forks a
+multi-release programme must settle up front.
 
-**Success.** BV1: code no longer appears in GC scans; `day11-p1` dispatch improves
-by the BV0-measured factor; full harness byte-identical under `EU_GC_VERIFY=2`. BV5:
+**The transition, concretely.** Today: `StgSyn` (`src/eval/stg/syntax.rs:118`, the
+`Rc`, off-heap optimisation IR) → `load` (`src/eval/memory/loader.rs:120`) → `HeapSyn`
+(`src/eval/memory/syntax.rs:227`, a `NonNull` pointer graph allocated *into the GC
+heap every run* and scanned by `impl GcScannable for HeapSyn`, `syntax.rs:400-547`) →
+`handle_instruction` tree-walk over it (`src/eval/machine/vm.rs:389`, the match at
+`:426`). BV replaces the `HeapSyn` execution IR **and its loader** with **flat
+bytecode in a non-GC arena** and an **opcode dispatcher**: a closure's code field
+moves from `RefPtr<HeapSyn>` to a bytecode offset (`SynClosure` is the touch point),
+`GcScannable for HeapSyn` is retired (code leaves the scanned set), and the loader
+stops re-allocating the program each run. The six-kind continuation machine
+(`src/eval/machine/cont.rs:34`) and the deferred-BIF intrinsic boundary
+(`vm.rs:518,1722`, `intrinsics.rs:49`) stay intact through BV1 to isolate the change.
+
+**Key design decisions (settle at/around BV0):**
+
+1. **Source IR & encoding.** The existing `ArenaStgSyn`/`PreludeBlob` form
+   (`src/eval/stg/blob.rs`, postcard, index-referenced) is proto-bytecode — but it is a
+   *node pool*, not a linear instruction stream. Decide: a **linearised opcode stream**
+   (best for threaded dispatch + superinstructions — recommended, since dispatch is the
+   target) vs a flattened-node interpreter (lower risk, smaller win). Either way the
+   encoder builds *from* `StgSyn`/`ArenaStgSyn`, reusing that arena machinery.
+2. **Constant/heap split.** Code lives in the non-GC arena; the **values it references**
+   (interned symbols, `HeapString` literals) must stay GC-/pool-managed. Decide the
+   constants-pool boundary so no GC scan ever touches code and no arena offset is ever
+   moved by evacuation.
+3. **Continuations & intrinsics — unchanged in BV1.** Keep the off-heap
+   `Vec<Continuation>` and the `pending_bif` mechanism; bytecode is about *code
+   representation*, not the 192 intrinsics or the control model. Revisit folding control
+   flow into the stream only post-BV1.
+4. **Frame model — deferred to BV3.** BV1 keeps the cactus `EnvFrame`
+   (`src/eval/machine/env.rs:191`); BV3 introduces **register frames**, and the open
+   question is *how selective* — all frames, or only the hot/deep captures CG's escape
+   analysis flags (the lesson of the flat-closure revert, §10). Recommended: selective,
+   CG-informed.
+5. **One serialisation format, three consumers.** BV5's bytecode-bytes format
+   (extending the postcard arena form) is reused by the **embedded prelude**, the
+   **content-hash unit cache**, and **PP's IPC wire payload** (Pillar PP) — design it
+   once to serve all three.
+
+**BV0 — the gate, made actionable.** Encode the minimal opcode subset `day11-p1` needs
+(`Atom`/`Case`/`Cons`/`App`/`Bif`/`Let` + the six continuations) from its `StgSyn`; run
+it on a threaded-dispatch loop; measure dispatch throughput against the current
+`handle_instruction` walk on the *same* program (local baseline: 66.5 M ticks, ~all
+dispatch, 0 GC). **Go if ≥~2×; reassess otherwise.** Weeks of work, and the encoder
+seeds BV1 — nothing is thrown away.
+
+**Success.** BV1: code no longer appears in GC scans; `day11-p1` dispatch improves by
+the BV0-measured factor; full harness byte-identical under `EU_GC_VERIFY=2`. BV5:
 `eu -e true` startup floor drops to ~20–30 ms on a plain build with no separate blob
 step. BV3: `EnvironmentFrame::get` falls out of the top of the AoC profiles. Every
 phase: rendered output byte-identical across the conformance corpus (W5).
