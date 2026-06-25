@@ -792,6 +792,7 @@ fn entry_index(all: &[&FlatEntry], entry: &FlatEntry) -> usize {
 fn generate_index_page(
     by_category: &HashMap<&'static str, Vec<&FlatEntry>>,
     unit_doc: Option<&str>,
+    supplements_dir: &Path,
 ) -> String {
     let category_info: &[(&str, &str, &str)] = &[
         (
@@ -873,6 +874,16 @@ fn generate_index_page(
 
     parts.push(String::new());
     parts.push(format!("*{total} documented entries in total.*"));
+
+    // Footer supplement (e.g. links to bundled standard libraries that are not
+    // part of the prelude). Lives in `supplements/index/footer.md` so the
+    // content survives `eu doc` regeneration and the freshness check.
+    let footer = load_supplement("index", "footer", supplements_dir);
+    if !footer.is_empty() {
+        parts.push(String::new());
+        parts.push(footer);
+    }
+
     parts.push(String::new());
 
     parts.join("\n")
@@ -951,7 +962,7 @@ pub fn render_prelude_multifile(
     }
 
     // Generate index
-    let index_page = generate_index_page(&by_category, unit_doc);
+    let index_page = generate_index_page(&by_category, unit_doc, supplements_dir);
     let index_path = output_dir.join("index.md");
     fs::write(&index_path, &index_page).map_err(|e| {
         EucalyptError::FileCouldNotBeWritten(index_path.display().to_string(), Some(e.to_string()))

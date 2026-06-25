@@ -19,6 +19,7 @@
 - [Anaphora (Implicit Parameters)](guide/anaphora.md)
 - [Block Manipulation](guide/block-manipulation.md)
 - [Navigating Nested Data](guide/navigating-nested-data.md)
+- [Lenses](guide/lenses.md)
 - [Imports and Modules](guide/imports-and-modules.md)
 - [Working with Data](guide/working-with-data.md)
 - [The Command Line](guide/command-line.md)

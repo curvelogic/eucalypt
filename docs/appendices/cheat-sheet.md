@@ -436,6 +436,55 @@ Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jso
 | `floor` / `ceiling` / `⌊n⌋` / `⌈n⌉` | Rounding (no `round`) |
 | `even?` / `odd?` | Do **not** exist — use `x % 2 = 0` / `x % 2 = 1` |
 
+### Lenses (`lens.eu`)
+
+Import with `{ import: "lens.eu" }`. A **lens** focuses on a single position
+in a structure; a **traversal** focuses on multiple positions.
+
+**Core operations:**
+
+| Operation | Description |
+|-----------|-------------|
+| `view(lens, data)` | Read the focused value |
+| `over(optic, fn, data)` | Apply `fn` at each focus; return whole structure |
+| `to-list-of(optic, data)` | Collect all foci into a list |
+| `parts-of(traversal)` | Turn traversal into a lens on the list of all foci |
+
+Set a value with `over` and the `->` const operator: `data over(lens, -> newval)`.
+
+**Constructors:**
+
+| Constructor | Description |
+|-------------|-------------|
+| `at(key)` | Block value at symbol key |
+| `ix(n)` | List element at index `n` |
+| `item(p?)` | First list element matching predicate |
+| `element(p?)` | First block `[key, value]` pair matching predicate |
+| `_value` | Value (index 1) of a `[key, value]` pair |
+| `_key` | Key (index 0) of a `[key, value]` pair |
+| `each` | All list elements (traversal) |
+| `filtered(p?)` | Matching list elements (traversal) |
+| `each-element` | All block kv pairs (traversal) |
+| `filtered-elements(p?)` | Matching block kv pairs (traversal) |
+
+**Composition:** `∘` composes right-to-left; `‹›` is bracket shorthand.
+
+```eu,notest
+{ import: "lens.eu" }
+
+config: { server: { db: { host: "localhost", port: 5432 } } }
+
+# Bracket shorthand — symbols become at(), numbers become ix()
+config view(‹:server :db :host›)              # "localhost"
+config over(‹:server :db :port›, + 1)         # whole config with port 5433
+
+# Traversal — operate across all list elements
+records: [{name: "a", score: 10}, {name: "b", score: 20}]
+records to-list-of(each ∘ at(:score))         # [10, 20]
+records over(each ∘ at(:score), * 2)          # scores doubled
+[3, 1, 2] over(parts-of(each), sort-nums)     # [1, 2, 3]
+```
+
 ### Arrays (`arr` namespace)
 
 | Function | Description |
