@@ -2,7 +2,11 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.10.1] - Unreleased
+## [0.10.1] - 2026-06-25
+
+### Fixed
+
+- **Idiot-bracket expressions as juxtaposed call targets** — an idiot-bracket expression immediately followed by a call bracket now parses as a call rather than as catenation with a literal. `⌊map(_ * 2)⌋[1, 2, 3]` calls the bracket expression with `[1, 2, 3]`, and `⌊lookup(:b)⌋{a: 1, b: 99}` with the block. `CLOSE_SQUARE`/`BRACKET_CLOSE` are now callable terminals, so the lexer emits the apply-bracket token; the tree-sitter grammar is updated to match (#899, #901, #902)
 
 ## [0.10.0] - 2026-06-22
 
