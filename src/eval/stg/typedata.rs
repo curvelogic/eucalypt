@@ -81,7 +81,17 @@ fn type_to_rcexpr(ty: &Type) -> RcExpr {
         } => {
             let field_exprs: Vec<(String, RcExpr)> = fields
                 .iter()
-                .map(|(k, v)| (k.clone(), type_to_rcexpr(v)))
+                .map(|(k, fp)| {
+                    let presence_sym = if fp.is_optional() {
+                        "optional"
+                    } else {
+                        "required"
+                    };
+                    let inner = type_to_rcexpr(fp.ty());
+                    let wrapper =
+                        expr::core::list(s, vec![sym("t-field"), sym(presence_sym), inner]);
+                    (k.clone(), wrapper)
+                })
                 .collect();
             let block_expr = expr::core::block(s, field_exprs);
             expr::core::list(s, vec![sym("t-record"), block_expr])

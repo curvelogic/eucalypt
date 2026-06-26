@@ -1,0 +1,7 @@
+# Optional field syntax: a function typed {name: string, age?: number, ..r} -> string
+# called with a record that omits the optional field should produce no warning.
+# The row variable ..r keeps the type open so block literals are accepted.
+` { type: "{{name: string, age?: number, ..r}} -> string" }
+greet(rec): rec.name
+
+result: greet({ name: "Alice" })

@@ -1,0 +1,6 @@
+# Optional field syntax: a function typed {name: string, age?: number, ..r} -> string
+# called with a record that omits the REQUIRED `name` field should produce a warning.
+` { type: "{{name: string, age?: number, ..r}} -> string" }
+greet(rec): rec.name
+
+result: greet({ age: 30 })

@@ -1,0 +1,21 @@
+#!/usr/bin/env eu
+# Criterion 9: to-spec handles optional fields correctly in match? patterns.
+
+schema: s"{ name: string, age?: number }" as-spec
+
+# Optional field present and correct type — should pass
+t1: { name: "Alice", age: 30 } match?(schema)
+
+# Optional field absent — should pass
+t2: { name: "Alice" } match?(schema)
+
+# Optional field present but wrong type — should fail
+t3: not({ name: "Alice", age: "thirty" } match?(schema))
+
+# Required field missing — should fail
+t4: not({ age: 30 } match?(schema))
+
+# Extra field ignored (open matching) — should pass
+t5: { name: "Alice", extra: "ok" } match?(schema)
+
+RESULT: if([t1, t2, t3, t4, t5] all-true?, :PASS, :FAIL)

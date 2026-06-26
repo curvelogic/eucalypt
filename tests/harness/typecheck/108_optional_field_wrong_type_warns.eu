@@ -1,0 +1,7 @@
+# Optional field present with wrong type should produce a type warning.
+# {name: "Alice", age: "thirty"} against {name: string, age?: number, ..r} -> string
+# The optional `age` field is present but its value is a string, not a number.
+` { type: "{{name: string, age?: number, ..r}} -> string" }
+greet(rec): rec.name
+
+result: greet({ name: "Alice", age: "thirty" })

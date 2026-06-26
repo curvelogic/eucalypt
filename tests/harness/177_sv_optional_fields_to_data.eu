@@ -1,0 +1,29 @@
+#!/usr/bin/env eu
+# Criterion 8: to-data of a record with optional fields emits [:t-field :optional T] wrappers.
+# Round-trip: from-data re-renders optional fields with the ? suffix.
+
+ty-req: s"{ name: string }"
+ty-opt: s"{ name: string, age?: number }"
+
+# to-data for required field: the name field entry has [:t-field :required ...]
+req-td: ty-req to-data
+req-block: req-td tail head
+req-name-fp: (req-block elements head) tail head
+req-tf-tag: req-name-fp head
+req-presence: req-name-fp tail head
+req-is-req: (req-tf-tag = :t-field) ∧ (req-presence = :required)
+
+# to-data for optional field: age comes first alphabetically in the block.
+# opt-block elements = [[:age, [:t-field, :optional, ...]], [:name, [:t-field, :required, ...]]]
+opt-td: ty-opt to-data
+opt-block: opt-td tail head
+opt-age-fp: (opt-block elements head) tail head
+opt-tf-tag: opt-age-fp head
+opt-presence: opt-age-fp tail head
+opt-is-opt: (opt-tf-tag = :t-field) ∧ (opt-presence = :optional)
+
+# Round-trip: from-data re-renders optional field with ? suffix
+rt-opt: ty-opt to-data from-data
+rt-ok: rt-opt = ty-opt
+
+RESULT: if(req-is-req ∧ opt-is-opt ∧ rt-ok, :PASS, :FAIL)
