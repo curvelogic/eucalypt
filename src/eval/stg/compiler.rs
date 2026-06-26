@@ -845,21 +845,29 @@ struct ProtoLet {
     /// bindings whose values are nested let expressions are compiled as
     /// `Value` rather than `Thunk`.
     demand: Demand,
+    /// Enclosing recursive binding name, forwarded through nested lets
+    /// so self-recursive calls are detected even inside inner let bodies.
+    self_recurse_name: Option<String>,
 }
 
 impl ProtoLet {
-    pub fn new(expr: RcExpr) -> Self {
+    pub fn new(expr: RcExpr, self_recurse: Option<&str>) -> Self {
         assert!(matches!(&*expr.inner, Expr::Let(_, _, _)));
         ProtoLet {
             expr,
             demand: Demand::default(),
+            self_recurse_name: self_recurse.map(|s| s.to_string()),
         }
     }
 
     /// Create a `ProtoLet` with an explicit demand annotation.
-    pub fn with_demand(expr: RcExpr, demand: Demand) -> Self {
+    pub fn with_demand(expr: RcExpr, demand: Demand, self_recurse: Option<&str>) -> Self {
         assert!(matches!(&*expr.inner, Expr::Let(_, _, _)));
-        ProtoLet { expr, demand }
+        ProtoLet {
+            expr,
+            demand,
+            self_recurse_name: self_recurse.map(|s| s.to_string()),
+        }
     }
 
     /// Reference the scope inside the let expression
@@ -888,8 +896,24 @@ impl ProtoSyntax for ProtoLet {
         let mut binder = LetBinder::for_scope(self.expr.clone(), context);
         for b in scope.pattern.iter() {
             let annotation = b.expr.smid();
-            let index =
-                compiler.compile_binding(&mut binder, b.expr.clone(), annotation, b.demand)?;
+            // For recursive bindings, pass the binding's own name as
+            // self_recurse so that self-recursive calls in its body
+            // (including nested lambdas) are detected.
+            let binding_self_recurse = if b.demand.recursive {
+                Some(b.name.as_str())
+            } else {
+                // Non-recursive bindings still forward any outer
+                // self_recurse context (e.g. inner lets inside a
+                // recursive function body).
+                self.self_recurse_name.as_deref()
+            };
+            let index = compiler.compile_binding(
+                &mut binder,
+                b.expr.clone(),
+                annotation,
+                b.demand,
+                binding_self_recurse,
+            )?;
             // Mark strict non-recursive bindings for eager Seq evaluation
             if b.demand.strictness == Strictness::Strict && !b.demand.recursive {
                 if let Ref::L(n) = index {
@@ -899,7 +923,11 @@ impl ProtoSyntax for ProtoLet {
             binder.add_var_index(index);
         }
 
-        let body = compiler.compile_body(&mut binder, scope.body.clone())?;
+        let body = compiler.compile_body(
+            &mut binder,
+            scope.body.clone(),
+            self.self_recurse_name.as_deref(),
+        )?;
         binder.set_body(body)?;
         binder.freeze();
 
@@ -965,6 +993,28 @@ impl ProtoSyntax for ProtoRef {
     }
 }
 
+/// A binding that wraps a variable reference as a **Thunk** rather than
+/// a Value.  Used at self-recursive call sites to create Update-backed
+/// bindings for passed-through arguments.  When the Thunk is Seq-forced,
+/// the Update continuation overwrites the env slot with the resolved
+/// value, breaking the O(n²) lazy indirection chain that `create_arg_array`
+/// would otherwise build across iterations.
+struct ProtoThunkAtom {
+    inner: Box<dyn ProtoReference>,
+}
+
+impl ProtoSyntax for ProtoThunkAtom {
+    fn take_lambda_form(
+        &mut self,
+        _compiler: &Compiler,
+        context: &Context,
+    ) -> Result<LambdaForm, CompileError> {
+        let r = self.inner.take_reference(context)?;
+        // Explicit Thunk — NOT Value — so Update fires on Seq.
+        Ok(dsl::thunk(dsl::atom(r)))
+    }
+}
+
 /// Holder just wraps up the StgSyn that will be delivered later when
 /// the context is available
 pub struct Holder {
@@ -1013,15 +1063,25 @@ pub struct ProtoAppGroup {
     args: Vec<RcExpr>,
     demand: Demand,
     smid: Smid,
+    /// When set, the name of the enclosing recursive binding.  Used to
+    /// detect self-recursive calls and Seq-wrap strict arguments.
+    self_recurse_name: Option<String>,
 }
 
 impl ProtoAppGroup {
-    pub fn new(f: RcExpr, args: Vec<RcExpr>, demand: Demand, smid: Smid) -> Self {
+    pub fn new(
+        f: RcExpr,
+        args: Vec<RcExpr>,
+        demand: Demand,
+        smid: Smid,
+        self_recurse_name: Option<&str>,
+    ) -> Self {
         Self {
             f,
             args,
             demand,
             smid,
+            self_recurse_name: self_recurse_name.map(|s| s.to_string()),
         }
     }
 }
@@ -1081,6 +1141,7 @@ impl ProtoSyntax for ProtoAppGroup {
                 self.f.clone(),
                 self.smid,
                 Demand::default(),
+                self.self_recurse_name.as_deref(),
             )?)),
         };
 
@@ -1101,19 +1162,67 @@ impl ProtoSyntax for ProtoAppGroup {
                     .map(|v| v.as_slice())
             });
 
+        // Detect self-recursive call: callee name matches the
+        // enclosing recursive binding.  When detected, simple args
+        // (Var::Bound, Var::Free) are wrapped as Thunk bindings so
+        // that Seq + Update overwrites the env slot with the resolved
+        // value, breaking the O(n²) lazy indirection chain from
+        // create_arg_array.
+        let is_self_recursive = self
+            .self_recurse_name
+            .as_deref()
+            .is_some_and(|name| callee_name == Some(name) || intrinsic_name == Some(name));
         let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
         for (i, arg) in self.args.iter().enumerate() {
             match &*arg.inner {
                 Expr::Var(s, v) => match v {
-                    Var::Bound(bv) => arg_indexes.push(Box::new(ProtoVar::new(bv.clone()))),
-                    Var::Free(name) => arg_indexes.push(Box::new(ProtoRef::new(
-                        compiler.resolve_free_var(*s, name)?,
-                    ))),
+                    Var::Bound(bv) => {
+                        if is_self_recursive {
+                            // At self-recursive call sites, create a Thunk
+                            // binding for the arg so that Seq + Update
+                            // collapses the lazy indirection chain.
+                            let idx = local_binder.add_deferred(Box::new(ProtoThunkAtom {
+                                inner: Box::new(ProtoVar::new(bv.clone())),
+                            }))?;
+                            if let Ref::L(n) = idx {
+                                local_binder.mark_strict(n);
+                            }
+                            arg_indexes.push(Box::new(ProtoRef::new(idx)));
+                        } else {
+                            arg_indexes.push(Box::new(ProtoVar::new(bv.clone())));
+                        }
+                    }
+                    Var::Free(name) => {
+                        if is_self_recursive {
+                            let resolved = compiler.resolve_free_var(*s, name)?;
+                            let idx = local_binder.add_deferred(Box::new(ProtoThunkAtom {
+                                inner: Box::new(ProtoRef::new(resolved)),
+                            }))?;
+                            if let Ref::L(n) = idx {
+                                local_binder.mark_strict(n);
+                            }
+                            arg_indexes.push(Box::new(ProtoRef::new(idx)));
+                        } else {
+                            arg_indexes.push(Box::new(ProtoRef::new(
+                                compiler.resolve_free_var(*s, name)?,
+                            )));
+                        }
+                    }
                 },
                 Expr::Intrinsic(_, bif) => {
                     let global_index = intrinsics::index(bif)
                         .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
-                    arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))))
+                    if is_self_recursive {
+                        let idx = local_binder.add_deferred(Box::new(ProtoThunkAtom {
+                            inner: Box::new(ProtoRef::new(gref(global_index))),
+                        }))?;
+                        if let Ref::L(n) = idx {
+                            local_binder.mark_strict(n);
+                        }
+                        arg_indexes.push(Box::new(ProtoRef::new(idx)));
+                    } else {
+                        arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))));
+                    }
                 }
                 _ => {
                     // Use the per-argument demand from the intrinsic signature table.
@@ -1128,9 +1237,17 @@ impl ProtoSyntax for ProtoAppGroup {
                         arg.clone(),
                         self.smid,
                         arg_demand,
+                        self.self_recurse_name.as_deref(),
                     )?;
-                    // Mark strict non-recursive arg bindings for eager Seq evaluation
-                    if arg_demand.strictness == Strictness::Strict && !arg_demand.recursive {
+                    // Mark strict non-recursive arg bindings for eager Seq evaluation.
+                    // At self-recursive call sites, mark ALL complex args strict
+                    // to force them before re-entering the recursive function.
+                    let force = if is_self_recursive {
+                        true
+                    } else {
+                        arg_demand.strictness == Strictness::Strict && !arg_demand.recursive
+                    };
+                    if force {
                         if let Ref::L(n) = index {
                             local_binder.mark_strict(n);
                         }
@@ -1311,12 +1428,19 @@ pub fn compile_boxed_literal(prim: &Primitive) -> Rc<StgSyn> {
 pub struct ProtoLambda {
     expr: RcExpr,
     annotation: Smid,
+    /// Enclosing recursive binding name, forwarded to compile_body
+    /// so self-recursive calls inside nested lambdas are detected.
+    self_recurse_name: Option<String>,
 }
 
 impl ProtoLambda {
-    pub fn new(expr: RcExpr, annotation: Smid) -> Self {
+    pub fn new(expr: RcExpr, annotation: Smid, self_recurse: Option<&str>) -> Self {
         assert!(matches!(&*expr.inner, Expr::Lam(_, _, _)));
-        ProtoLambda { expr, annotation }
+        ProtoLambda {
+            expr,
+            annotation,
+            self_recurse_name: self_recurse.map(|s| s.to_string()),
+        }
     }
 
     /// Reference the scope inside the lambda expression
@@ -1350,7 +1474,11 @@ impl ProtoSyntax for ProtoLambda {
 
         let mut binder = LetBinder::synthetic_let(&lambda_context);
 
-        let body = compiler.compile_body(&mut binder, scope.body.clone())?;
+        let body = compiler.compile_body(
+            &mut binder,
+            scope.body.clone(),
+            self.self_recurse_name.as_deref(),
+        )?;
         binder.set_body(body)?;
         binder.freeze();
         let mut body = binder.into_stg(compiler)?;
@@ -1468,7 +1596,7 @@ impl<'rt> Compiler<'rt> {
         let mut binder = LetBinder::root();
         match self.render_type {
             RenderType::Headless => {
-                let body = self.compile_body(&mut binder, expr)?;
+                let body = self.compile_body(&mut binder, expr, None)?;
                 binder.set_body(body)?;
             }
             RenderType::RenderDoc => {
@@ -1477,6 +1605,7 @@ impl<'rt> Compiler<'rt> {
                     expr.clone(),
                     expr.smid(),
                     Demand::default(),
+                    None,
                 )?;
                 binder.set_body(Box::new(Holder::new(RenderDoc.global(index))))?;
             }
@@ -1486,6 +1615,7 @@ impl<'rt> Compiler<'rt> {
                     expr.clone(),
                     expr.smid(),
                     Demand::default(),
+                    None,
                 )?;
                 binder.set_body(Box::new(Holder::new(Render.global(index))))?;
             }
@@ -1500,14 +1630,19 @@ impl<'rt> Compiler<'rt> {
         }
     }
 
-    /// Compile a let body or standalone expression
+    /// Compile a let body or standalone expression.
+    ///
+    /// `self_recurse` carries the name of the enclosing recursive binding
+    /// (if any) so that self-recursive call sites can be detected and
+    /// strict arguments Seq-wrapped.
     pub fn compile_body(
         &self,
         binder: &mut LetBinder,
         expr: RcExpr,
+        self_recurse: Option<&str>,
     ) -> Result<Box<dyn ProtoSyntax>, CompileError> {
         match &*expr.inner {
-            Expr::Let(_, _, _) => Ok(Box::new(ProtoLet::new(expr))),
+            Expr::Let(_, _, _) => Ok(Box::new(ProtoLet::new(expr, self_recurse))),
             Expr::Var(s, v) => match v {
                 Var::Bound(bv) => Ok(Box::new(ProtoVar::new(bv.clone()))),
                 Var::Free(name) => Ok(Box::new(ProtoRef::new(self.resolve_free_var(*s, name)?))),
@@ -1516,12 +1651,18 @@ impl<'rt> Compiler<'rt> {
                 // Demand::at_most_once() — a let body is evaluated exactly once,
                 // so no Update frame is needed. (Bindings use Unknown because
                 // they may be shared.)
-                let proto_app =
-                    self.compile_application(binder, *s, f, args, Demand::at_most_once())?;
+                let proto_app = self.compile_application(
+                    binder,
+                    *s,
+                    f,
+                    args,
+                    Demand::at_most_once(),
+                    self_recurse,
+                )?;
                 Ok(proto_app)
             }
             Expr::Literal(_, n) => Ok(Box::new(Holder::new(compile_boxed_literal(n)))),
-            Expr::Lam(s, _, _) => Ok(Box::new(self.compile_lambda(&expr, *s)?)),
+            Expr::Lam(s, _, _) => Ok(Box::new(self.compile_lambda(&expr, *s, self_recurse)?)),
             Expr::List(s, xs) => {
                 let list = self.compile_list_body(binder, *s, xs)?;
                 Ok(Box::new(list))
@@ -1540,11 +1681,11 @@ impl<'rt> Compiler<'rt> {
                 Ok(Box::new(lookup))
             }
             Expr::Meta(s, body, meta) => {
-                let m = self.compile_binding(binder, meta.clone(), *s, Demand::default())?;
-                let b = self.compile_binding(binder, body.clone(), *s, Demand::default())?;
+                let m = self.compile_binding(binder, meta.clone(), *s, Demand::default(), None)?;
+                let b = self.compile_binding(binder, body.clone(), *s, Demand::default(), None)?;
                 Ok(Box::new(Holder::new(dsl::with_meta(m, b))))
             }
-            Expr::Operator(_, _, _, body) => self.compile_body(binder, body.clone()),
+            Expr::Operator(_, _, _, body) => self.compile_body(binder, body.clone(), self_recurse),
             x => Err(CompileError::UnexpectedExpression(x.smid())),
         }
     }
@@ -1555,12 +1696,16 @@ impl<'rt> Compiler<'rt> {
     /// `demand` is the demand annotation for the resulting binding — it flows
     /// through to `ProtoAppGroup` / `ProtoApp` which use it in `take_lambda_form`
     /// to decide Value vs. Thunk.
+    ///
+    /// `self_recurse` carries the name of the enclosing recursive binding
+    /// for self-recursive call detection.
     pub fn compile_binding(
         &self,
         binder: &mut LetBinder,
         expr: RcExpr,
         annotation: Smid,
         demand: Demand,
+        self_recurse: Option<&str>,
     ) -> Result<Ref, CompileError> {
         match &*expr.inner {
             Expr::Var(s, v) => match v {
@@ -1579,13 +1724,16 @@ impl<'rt> Compiler<'rt> {
                 Var::Free(name) => self.resolve_free_var(*s, name),
             },
             Expr::Let(_, _, _) => {
-                binder.add_deferred(Box::new(ProtoLet::with_demand(expr, demand)))
+                binder.add_deferred(Box::new(ProtoLet::with_demand(expr, demand, self_recurse)))
             }
-            Expr::Lam(_, _, _) => {
-                binder.add_deferred(Box::new(self.compile_lambda(&expr, annotation)?))
-            }
+            Expr::Lam(_, _, _) => binder.add_deferred(Box::new(self.compile_lambda(
+                &expr,
+                annotation,
+                self_recurse,
+            )?)),
             Expr::App(s, f, args) => {
-                let proto_app = self.compile_application(binder, *s, f, args, demand)?;
+                let proto_app =
+                    self.compile_application(binder, *s, f, args, demand, self_recurse)?;
                 binder.add_deferred(proto_app)
             }
             Expr::Literal(_, n) => binder.add(compile_boxed_literal(n)),
@@ -1605,14 +1753,14 @@ impl<'rt> Compiler<'rt> {
             }
             Expr::Name(s, _) => Err(CompileError::UnexpectedExpression(*s)),
             Expr::Meta(s, body, meta) => {
-                let m = self.compile_binding(binder, meta.clone(), *s, Demand::default())?;
-                let b = self.compile_binding(binder, body.clone(), *s, Demand::default())?;
+                let m = self.compile_binding(binder, meta.clone(), *s, Demand::default(), None)?;
+                let b = self.compile_binding(binder, body.clone(), *s, Demand::default(), None)?;
                 binder.add(dsl::with_meta(m, b))
             }
             Expr::ArgTuple(s, _) => Err(CompileError::BadArgTupleExpression(*s)),
             Expr::Soup(s, _, _) => Err(CompileError::BadSoupExpression(*s)),
             Expr::Operator(s, _, _, body) => {
-                self.compile_binding(binder, body.clone(), *s, Demand::default())
+                self.compile_binding(binder, body.clone(), *s, Demand::default(), self_recurse)
             }
             _ => Err(CompileError::UnexpectedExpression(expr.smid())),
         }
@@ -1635,14 +1783,20 @@ impl<'rt> Compiler<'rt> {
     ) -> Result<Holder, CompileError> {
         binder.ensure_recursive();
 
-        let obj = self.compile_binding(binder, obj.clone(), obj.smid(), Demand::default())?;
+        let obj = self.compile_binding(binder, obj.clone(), obj.smid(), Demand::default(), None)?;
         let dft = match dft {
             // Dynamic generalised lookups (from dynamise) may have
             // fallback defaults referencing outer-scope variables
             // that are free at compile time. If the lookup succeeds
             // the default is unused; if it fails we panic anyway.
             Some(expr) => {
-                match self.compile_binding(binder, expr.clone(), annotation, Demand::default()) {
+                match self.compile_binding(
+                    binder,
+                    expr.clone(),
+                    annotation,
+                    Demand::default(),
+                    None,
+                ) {
                     Ok(expr) => Ok(expr),
                     Err(CompileError::FreeVar(..)) => {
                         let ann = if self.generate_annotations() {
@@ -1704,8 +1858,9 @@ impl<'rt> Compiler<'rt> {
         &self,
         expr: &RcExpr,
         annotation: Smid,
+        self_recurse: Option<&str>,
     ) -> Result<ProtoLambda, CompileError> {
-        Ok(ProtoLambda::new(expr.clone(), annotation))
+        Ok(ProtoLambda::new(expr.clone(), annotation, self_recurse))
     }
 
     /// Compile a list into a chain of cons cells in the environment
@@ -1725,7 +1880,8 @@ impl<'rt> Compiler<'rt> {
                 Some(data) => binder.add(data)?,
                 None => KEmptyList.gref(),
             };
-            let item_index = self.compile_binding(binder, item.clone(), smid, Demand::default())?;
+            let item_index =
+                self.compile_binding(binder, item.clone(), smid, Demand::default(), None)?;
             last_cons = Some(dsl::cons(item_index, last_index));
         }
 
@@ -1752,7 +1908,8 @@ impl<'rt> Compiler<'rt> {
                 Some(data) => binder.add(data)?,
                 None => KEmptyList.gref(),
             };
-            let item_index = self.compile_binding(binder, item.clone(), smid, Demand::default())?;
+            let item_index =
+                self.compile_binding(binder, item.clone(), smid, Demand::default(), None)?;
             last_cons = Some(dsl::cons(item_index, last_index));
         }
 
@@ -1773,7 +1930,7 @@ impl<'rt> Compiler<'rt> {
 
         let mut index = KEmptyList.gref();
         for (k, v) in block_map.iter().rev() {
-            let v_index = self.compile_binding(binder, v.clone(), smid, Demand::default())?;
+            let v_index = self.compile_binding(binder, v.clone(), smid, Demand::default(), None)?;
             let kv_index = binder.add(dsl::pair(k, v_index))?;
             index = binder.add(dsl::cons(kv_index, index))?;
         }
@@ -1793,12 +1950,14 @@ impl<'rt> Compiler<'rt> {
         f: &RcExpr,
         args: &[RcExpr],
         demand: Demand,
+        self_recurse: Option<&str>,
     ) -> Result<Box<dyn ProtoSyntax>, CompileError> {
         Ok(Box::new(ProtoAppGroup::new(
             f.clone(),
             args.to_vec(),
             demand,
             smid,
+            self_recurse,
         )))
     }
 }
