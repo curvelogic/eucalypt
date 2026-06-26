@@ -2563,6 +2563,13 @@ pub fn test_172_idiot_bracket_juxtaposed_call() {
 }
 
 #[test]
+/// Verify CG1 direct-dispatch (DirectApp) correctness across pipeline, direct,
+/// nested, and user-function call patterns.
+pub fn test_173_direct_app_dispatch() {
+    run_test(&opts("173_direct_app_dispatch.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

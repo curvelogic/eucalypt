@@ -1041,17 +1041,29 @@ impl ProtoSyntax for ProtoAppGroup {
         let mut callee_name: Option<&str> = None;
         let mut local_binder = LetBinder::synthetic_let(context);
 
-        // Find a reference for the function
+        // Find a reference for the function.  Also track whether the
+        // callee compiles to a global ref (Ref::G), which is the only
+        // case where DirectApp is safe without threading lambda-form
+        // information: globals are always pre-evaluated Value closures
+        // with their full arity visible.  Local refs (Ref::L) inside a
+        // letrec are thunks until updated, so their arity at resolution
+        // time is 0 regardless of the underlying lambda's arity.
+        let mut callee_is_global = false;
         let f_index: Box<dyn ProtoReference> = match &*self.f.inner {
             Expr::Var(s, v) => match v {
                 Var::Bound(bv) => {
                     // Preserve the binding name for user demand signature lookup.
                     callee_name = bv.name.as_deref();
+                    // Bound variables always compile to Ref::L — not safe for DirectApp.
                     Box::new(ProtoVar::new(bv.clone()))
                 }
                 Var::Free(name) => {
                     callee_name = Some(name.as_str());
-                    Box::new(ProtoRef::new(compiler.resolve_free_var(*s, name)?))
+                    let r = compiler.resolve_free_var(*s, name)?;
+                    // Free variables may resolve to Ref::G (blob-prelude globals) or
+                    // Ref::L (source-prelude locals).  Only Ref::G is safe.
+                    callee_is_global = matches!(r, Ref::G(_));
+                    Box::new(ProtoRef::new(r))
                 }
             },
             Expr::Intrinsic(_, bif) => {
@@ -1059,6 +1071,8 @@ impl ProtoSyntax for ProtoAppGroup {
                 let n =
                     intrinsic_index.ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
                 intrinsic_name = Some(intrinsics::intrinsic(n).name());
+                // Intrinsics are always Ref::G globals.
+                callee_is_global = true;
                 Box::new(ProtoRef::new(gref(n)))
             }
             _ => Box::new(ProtoRef::new(compiler.compile_binding(
@@ -1127,6 +1141,7 @@ impl ProtoSyntax for ProtoAppGroup {
 
         // If it's an intrinsic, check whether we should inline the
         // wrapper
+        let mut used_direct_app = false;
         match intrinsic_index.and_then(|index| compiler.intrinsics.get(index)) {
             Some(bif)
                 if !compiler.suppress_inlining
@@ -1137,7 +1152,32 @@ impl ProtoSyntax for ProtoAppGroup {
                 local_binder.set_body(Box::new(ProtoInline::new(arg_indexes, inline_body)))?;
             }
             _ => {
-                local_binder.set_body(ProtoApp::boxed(f_index, arg_indexes, self.demand))?;
+                // Check conditions for DirectApp (exact-arity known-callee dispatch).
+                // Conditions:
+                // 1. Callee has a name (callee_name or intrinsic_name)
+                // 2. A demand signature was found (arg_demands is Some)
+                // 3. Arity > 0 and matches arg count exactly
+                // 4. Callee compiles to a global ref (Ref::G): globals are always
+                //    pre-evaluated lambda closures, so their arity is correct at
+                //    resolution time.  Local refs (Ref::L) are thunks in a letrec,
+                //    which have arity 0 until evaluated — unsafe for DirectApp without
+                //    threading lambda-form information (deferred to a later spec).
+                let direct = if let Some(sigs) = arg_demands {
+                    callee_is_global && !sigs.is_empty() && sigs.len() == arg_indexes.len()
+                } else {
+                    false
+                };
+                if direct && self.smid.is_valid() {
+                    used_direct_app = true;
+                    local_binder.set_body(ProtoDirectApp::boxed(
+                        f_index,
+                        arg_indexes,
+                        self.demand,
+                        self.smid,
+                    ))?;
+                } else {
+                    local_binder.set_body(ProtoApp::boxed(f_index, arg_indexes, self.demand))?;
+                }
             }
         };
 
@@ -1149,13 +1189,64 @@ impl ProtoSyntax for ProtoAppGroup {
         // Applied whenever source tracking is enabled and the call site has a
         // valid Smid. The IO spec block navigator (block_list_inner) handles
         // Ann nodes transparently, so this is safe for all call sites.
-        let stg = if compiler.generate_annotations() && self.smid.is_valid() {
+        // When DirectApp was emitted, the smid is inlined in the node itself,
+        // so we must NOT add an outer Ann wrapper.
+        let stg = if compiler.generate_annotations() && self.smid.is_valid() && !used_direct_app {
             dsl::ann(self.smid, stg)
         } else {
             stg
         };
 
         Ok(stg)
+    }
+}
+
+/// A direct-dispatch application: emitted when the callee has a known demand
+/// signature and the argument count matches the arity exactly.
+pub struct ProtoDirectApp {
+    f: Box<dyn ProtoReference>,
+    args: Vec<Box<dyn ProtoReference>>,
+    demand: Demand,
+    smid: Smid,
+}
+
+impl ProtoDirectApp {
+    pub fn boxed(
+        f: Box<dyn ProtoReference>,
+        args: Vec<Box<dyn ProtoReference>>,
+        demand: Demand,
+        smid: Smid,
+    ) -> Box<dyn ProtoSyntax> {
+        Box::new(ProtoDirectApp {
+            f,
+            args,
+            demand,
+            smid,
+        })
+    }
+}
+
+impl ProtoSyntax for ProtoDirectApp {
+    fn demand(&self) -> Demand {
+        self.demand
+    }
+
+    fn take_syntax(
+        &mut self,
+        _compiler: &Compiler,
+        context: &Context,
+    ) -> Result<Rc<StgSyn>, CompileError> {
+        let callable = self.f.take_reference(context)?;
+        let args = self
+            .args
+            .drain(0..)
+            .map(|mut a| a.take_reference(context))
+            .collect::<Result<Vec<Ref>, CompileError>>()?;
+        Ok(Rc::new(StgSyn::DirectApp {
+            smid: self.smid,
+            callable,
+            args,
+        }))
     }
 }
 

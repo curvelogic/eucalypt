@@ -131,6 +131,16 @@ pub enum StgSyn {
     Cons { tag: Tag, args: Vec<Ref> },
     /// Function application
     App { callable: Ref, args: Vec<Ref> },
+    /// Direct exact-arity application to a statically known callee.
+    ///
+    /// Emitted by the compiler when the callee has a demand signature and the
+    /// argument count matches the arity exactly.  The `Smid` is carried inline
+    /// (no wrapping `Ann` node).
+    DirectApp {
+        smid: Smid,
+        callable: Ref,
+        args: Vec<Ref>,
+    },
     /// Saturated intrinsic application
     Bif { intrinsic: u8, args: Vec<Ref> },
     /// Let bindings
@@ -213,6 +223,9 @@ impl fmt::Display for StgSyn {
             }
             StgSyn::App { callable, args } => {
                 write!(f, "{}(×{})", callable, args.len())
+            }
+            StgSyn::DirectApp { callable, args, .. } => {
+                write!(f, "→{}(×{})", callable, args.len())
             }
             StgSyn::Bif { intrinsic, args } => {
                 write!(f, "BIF[{}](×{})", intrinsic, args.len())
@@ -331,6 +344,14 @@ pub mod dsl {
 
     pub fn app(r: Ref, args: Vec<Ref>) -> Rc<StgSyn> {
         Rc::new(StgSyn::App { callable: r, args })
+    }
+
+    pub fn direct_app(smid: Smid, r: Ref, args: Vec<Ref>) -> Rc<StgSyn> {
+        Rc::new(StgSyn::DirectApp {
+            smid,
+            callable: r,
+            args,
+        })
     }
 
     pub fn app_bif(index: u8, args: Vec<Ref>) -> Rc<StgSyn> {

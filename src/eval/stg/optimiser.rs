@@ -326,6 +326,15 @@ impl AllocationPruner {
                 callable: self.transform(callable),
                 args: args.iter().map(|s| self.transform(s)).collect(),
             }),
+            StgSyn::DirectApp {
+                smid,
+                callable,
+                args,
+            } => Rc::new(StgSyn::DirectApp {
+                smid: *smid,
+                callable: self.transform(callable),
+                args: args.iter().map(|s| self.transform(s)).collect(),
+            }),
             StgSyn::Bif { intrinsic, args } => Rc::new(StgSyn::Bif {
                 intrinsic: *intrinsic,
                 args: args.iter().map(|s| self.transform(s)).collect(),

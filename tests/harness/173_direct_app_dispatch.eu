@@ -1,0 +1,39 @@
+#!/usr/bin/env eu
+# Test for CG1 direct-dispatch (DirectApp) of known-arity global callees.
+#
+# When a call site has an exact-arity match to a named global (prelude function
+# or intrinsic) the compiler emits StgSyn::DirectApp instead of StgSyn::App.
+# The VM's DirectApp handler saturates the closure directly without pushing an
+# ApplyTo continuation — a fast path that saves ~3 VM steps per call.
+#
+# This test verifies correctness across the call patterns that DirectApp covers.
+
+# Pipeline (catenation) style — prelude global via Ref::G.
+# `xs map(f)` compiles map as a 1-arg partial application (not saturated),
+# so the pipeline pattern exercises App for the outer call and DirectApp
+# for the prelude-internal recursive calls (e.g. cons inside map).
+pipeline-map: [1, 2, 3] map(_ * 3)
+
+# Direct multi-arg call — map with explicit 2-arg form.
+# This call is saturated (2 args == map's arity 2) and fires DirectApp.
+direct-map: map(_ + 10, [5, 6, 7])
+
+# Nested calls to prelude globals.
+nested: map((_ * 2), filter(> 2, [1, 2, 3, 4]))
+
+# Prelude function passed as value and called inside another prelude function.
+apply-twice(f, x): x f f
+apply-result: 3 apply-twice(_ + 1)
+
+# Intrinsic called with exact arity — ADD is compiled as a Bif (inlined)
+# so this checks that Bif inlining and DirectApp coexist correctly.
+add-result: 10 + 20
+
+# Boolean short-circuit combinator from prelude.
+all-good: [pipeline-map = [3, 6, 9], direct-map = [15, 16, 17],
+           nested = [6, 8],
+           apply-result = 5,
+           add-result = 30]
+  all-true?
+
+RESULT: all-good then(:PASS, :FAIL)
