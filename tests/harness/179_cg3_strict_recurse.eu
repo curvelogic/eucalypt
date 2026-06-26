@@ -1,0 +1,48 @@
+#!/usr/bin/env eu
+# CG3: Seq-wrap all args at self-recursive call sites.
+#
+# Verifies that higher-order recursive folds produce correct results
+# when the operator is passed as a function argument.  Before CG3,
+# such folds were O(n^2) due to lazy indirection chains built by
+# create_arg_array; CG3 forces all args at self-recursive call sites,
+# breaking the chain and restoring O(n) scaling.
+#
+# This test confirms correctness, not performance — the tick count
+# assertions are omitted.  Linear completion at N=1000 implicitly
+# validates that the O(n^2) pathology is gone (O(n^2) at N=1000
+# would need ~1M ticks per step and likely time out).
+
+# Higher-order fold: op is a function argument, not a global.
+my-fold(op, acc, xs): if(xs nil?, acc, my-fold(op, op(acc, (xs head)), (xs tail)))
+
+# First-order fold for comparison (uses + directly in body).
+my-sum(acc, xs): if(xs nil?, acc, my-sum(acc + (xs head), (xs tail)))
+
+# Test data: a strict list of 1000 numbers.
+nums: sort-nums(range(0, 1000))
+
+# Higher-order fold with (+) section.
+ho-sum: my-fold((+), 0, nums)
+ho-sum-ok: ho-sum = 499500
+
+# First-order fold for cross-check.
+fo-sum: my-sum(0, nums)
+fo-sum-ok: fo-sum = 499500
+
+# Higher-order fold with (*) section on a smaller list.
+product-list: sort-nums(range(1, 11))
+ho-product: my-fold((*), 1, product-list)
+ho-product-ok: ho-product = 3628800
+
+# Higher-order fold with a user-defined combinator.
+my-max(a, b): if(a > b, a, b)
+ho-max: my-fold(my-max, 0, nums)
+ho-max-ok: ho-max = 999
+
+# Accumulator that builds a list (tests non-numeric accumulator).
+prepend(xs, x): [x] ++ xs
+reversed: my-fold(prepend, [], [1, 2, 3, 4, 5])
+reversed-ok: reversed = [5, 4, 3, 2, 1]
+
+RESULT: [ho-sum-ok, fo-sum-ok, ho-product-ok, ho-max-ok, reversed-ok]
+  all-true? then(:PASS, :FAIL)
