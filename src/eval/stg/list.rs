@@ -392,6 +392,36 @@ impl StgIntrinsic for IsTypeData {
 
 impl CallGlobal1 for IsTypeData {}
 
+/// ISZDT(value)
+///
+/// Return true if the value is a zoned datetime, false otherwise
+pub struct IsZdt;
+
+impl StgIntrinsic for IsZdt {
+    fn name(&self) -> &str {
+        "ISZDT"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        use crate::eval::memory::syntax;
+        let closure = machine.nav(view).resolve(&args[0])?;
+        let code = view.scoped(closure.code());
+        let result = matches!(
+            &*code,
+            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedZdt.tag()
+        );
+        machine_return_bool(machine, view, result)
+    }
+}
+
+impl CallGlobal1 for IsZdt {}
+
 /// SORT_NUM_LIST — sort a list of numbers in Rust
 ///
 /// The wrapper first applies SeqNumList to force and unbox all elements,

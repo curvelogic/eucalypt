@@ -1032,6 +1032,11 @@ lazy_static! {
             ty: function(vec![str_(), any()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 194
+            name: "ISZDT",
+            ty: function(vec![any(), bool_()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 

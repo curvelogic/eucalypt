@@ -2582,6 +2582,12 @@ pub fn test_174_sv1_typedata() {
 }
 
 #[test]
+/// SV2 to-spec / as-spec: convert type-data to match?-compatible patterns.
+pub fn test_175_sv2_to_spec() {
+    run_test(&opts("175_sv2_to_spec.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

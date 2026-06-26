@@ -861,7 +861,34 @@ true bool?          # true
 42 string?          # false
 ```
 
-All predicates take one argument and return a boolean.
+All predicates take one argument and return a boolean. `datetime?(v)` is also available for zoned-datetime values.
+
+### 3.5a Type Specs — `to-spec` / `as-spec`
+
+Convert a type annotation (an `s"…"` type-data value) to a `match?`-compatible pattern:
+
+```eu,notest
+schema: s"{ name: string, age: number }" as-spec
+
+{name: "Alice", age: 30}     match?(schema)  # true
+{name: "Alice", age: "old"}  match?(schema)  # false
+```
+
+`as-spec` and `to-spec` are synonyms; `as-spec` reads naturally in pipeline position.
+
+**Mapping:**
+
+| Type form | Pattern produced |
+|---|---|
+| `Number`, `String`, `Symbol`, `Bool`, `Null`, `DateTime`, `Any` | Corresponding predicate (`number?`, `string?`, …) |
+| `{ k: T }` record | Block pattern `{k: T-spec, …}` (open matching, extra keys ignored) |
+| `[T]` list | Predicate: `list? ∧ all(T-spec)` |
+| `A \| B` union | Predicate: true if value matches any branch |
+| `T?` partial/nullable | Predicate: `null?` or `T-spec` |
+| `(T1, T2, …)` tuple | List pattern `[T1-spec, T2-spec, …]` (exact length) |
+| `A → B` function | Predicate: `__SATURATED not` (checks it is a function) |
+| `forall …` | Erase quantifier, spec the body |
+| Type variables | `any?` (unconstrained at runtime) |
 
 ### 3.6 Command-line Argument Parsing
 
