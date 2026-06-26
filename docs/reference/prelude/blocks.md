@@ -14,6 +14,8 @@
 | `symbol?` | True if and only if `v` is a symbol |
 | `bool?` | True if and only if `v` is a boolean |
 | `type-data?` | True if and only if v is a type-data literal produced by the s prefix |
+| `to-data(v)` | Project a type-data value to a structured t-* tagged list |
+| `from-data(td)` | Construct a type-data value from a t-* tagged list |
 | `elements` | Expose list of elements of block `b` |
 | `block` | (re)construct block from list `kvs` of elements |
 | `has(s, b)` | True if and only if block `b` has key (symbol) `s` |
@@ -23,6 +25,7 @@
 | `lookup-or-in(b, s, d)` | Look up symbol `s` in block `b`, default `d` if not found |
 | `(l ~ r)` | A ~ :k - safe key lookup. Returns value at key :k if a is a block containing :k, else null. Null-propagating for chained navigation |
 | `lookup-alts(syms, d, b)` | Look up symbols `syms` in turn in block `b` until a value is found, default `d` if none |
+| `lookup-across(s, d, bs)` | Look up symbol `s` in turn in each of blocks `bs` until a value is found, default `d` if none |
 | `lookup-path(ks, b)` | Look up value at key path `ks` in block `b` |
 
 ## Block Utilities
@@ -66,6 +69,7 @@
 | `update-value(k, f, b)` | Update `b.k` to `f(b.k)` |
 | `alter(ks, v, b)` | In nested block `b` alter value to value `v` at path-of-keys `ks` |
 | `update(ks, f, b)` | In nested block `b` apply `f` to value at path-of-keys `ks` |
+| `update-value-or(k, f, d, b)` | Set `b.k` to `f(v)` where v is current value, otherwise add with default value `d` |
 | `set-value(k, v)` | Set `b.k` to `v`, adding if absent |
 | `tongue(ks, v)` | Construct block with a single nested path-of-keys `ks` down to value `v` |
 | `merge-at(ks, v, b)` | Shallow merge block `v` into block value at path-of-keys `ks` |
@@ -75,7 +79,10 @@
 
 | Function | Description |
 |----------|-------------|
+| `deep-find(k, b)` | Return list of all values for key `k` (a symbol) at any depth in block `b`, depth-first |
 | `deep-find-first(k, d, b)` | Return first value for key `k` (a symbol) at any depth in block `b`, or default `d` |
+| `deep-find-paths(k, b)` | Return list of key paths to all occurrences of key `k` (a symbol) at any depth in block `b` |
+| `deep-query-fold(pattern, b)` | Core query engine returning `[path, value]` pairs matching the dot-separated `pattern` in block `b` |
 | `deep-query(pattern, b)` | Query block `b` using dot-separated pattern string. `*` matches one level, `**` matches any depth. Bare `foo` is sugar for `**.foo` |
 | `deep-query-first(pattern, d, b)` | Return first match for `pattern` in block `b`, or default `d` |
 | `deep-query-paths(pattern, b)` | Return list of key paths matching `pattern` in block `b` |

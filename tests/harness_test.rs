@@ -2496,6 +2496,12 @@ pub fn test_error_177() {
 }
 
 #[test]
+/// Syntactically invalid type-DSL in an s-string produces a compile error.
+pub fn test_error_178() {
+    run_error_test(&error_opts("error_178.eu"));
+}
+
+#[test]
 /// Exporting a JSON u64 value exceeding i64::MAX to YAML should produce an
 /// informative panic message including the value, not a bare "unrenderable number".
 pub fn test_error_171() {
@@ -2567,6 +2573,12 @@ pub fn test_172_idiot_bracket_juxtaposed_call() {
 /// nested, and user-function call patterns.
 pub fn test_173_direct_app_dispatch() {
     run_test(&opts("173_direct_app_dispatch.eu"));
+}
+
+#[test]
+/// SV1 type-data semantics: to-data projection, from-data round-trip, passthru.
+pub fn test_174_sv1_typedata() {
+    run_test(&opts("174_sv1_typedata.eu"));
 }
 
 #[test]

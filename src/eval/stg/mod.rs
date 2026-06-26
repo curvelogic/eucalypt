@@ -45,6 +45,7 @@ pub mod syntax;
 pub mod tags;
 mod testing;
 pub mod time;
+pub mod typedata;
 pub mod vec;
 pub mod version;
 pub mod wrap;
@@ -248,6 +249,8 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(platform::Os));
     rt.add(Box::new(platform::Arch));
     rt.add(Box::new(set::SetSample));
+    rt.add(Box::new(typedata::TypeToData));
+    rt.add(Box::new(typedata::TypeFromString));
     rt.prepare(source_map);
     Box::new(rt)
 }
