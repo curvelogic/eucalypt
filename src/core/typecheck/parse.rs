@@ -1230,6 +1230,25 @@ pub fn parse_scheme(input: &str) -> Result<(Type, Vec<Constraint>), ParseError> 
     }
 }
 
+/// Render a parsed scheme (type + constraints) back to its canonical string
+/// form.  If there are no constraints the result is just `format!("{ty}")`.
+pub fn render_scheme(ty: &Type, constraints: &[Constraint]) -> String {
+    if constraints.is_empty() {
+        format!("{ty}")
+    } else {
+        use std::fmt::Write;
+        let mut out = String::new();
+        for (i, c) in constraints.iter().enumerate() {
+            if i > 0 {
+                out.push_str(", ");
+            }
+            let _ = write!(out, "{c}");
+        }
+        let _ = write!(out, " => {ty}");
+        out
+    }
+}
+
 /// Parse a type-annotation string and return all alias references found.
 ///
 /// This is the tooling-oriented entry point (§A7.1).  It is identical to
@@ -2107,5 +2126,36 @@ mod tests {
         let (ty, cs) = super::parse_scheme("number -> number").unwrap();
         assert!(matches!(ty, Type::Function(_, _)));
         assert!(cs.is_empty());
+    }
+
+    // ── render_scheme roundtrip tests ─────────────────────────────────────────
+
+    #[test]
+    fn render_scheme_no_constraints() {
+        let (ty, cs) = super::parse_scheme("number -> number").unwrap();
+        let rendered = super::render_scheme(&ty, &cs);
+        assert_eq!(rendered, "number → number");
+    }
+
+    #[test]
+    fn render_scheme_single_constraint() {
+        let (ty, cs) = super::parse_scheme(">(a, a) => a -> a -> a").unwrap();
+        let rendered = super::render_scheme(&ty, &cs);
+        assert_eq!(rendered, ">(a, a) => a → a → a");
+    }
+
+    #[test]
+    fn render_scheme_two_constraints() {
+        let (ty, cs) = super::parse_scheme("<(a, a), +(a, a) => a -> a -> a").unwrap();
+        let rendered = super::render_scheme(&ty, &cs);
+        assert_eq!(rendered, "<(a, a), +(a, a) => a → a → a");
+    }
+
+    #[test]
+    fn render_scheme_roundtrip_forall_kind() {
+        let (ty, cs) =
+            super::parse_scheme("forall (m :: * -> *) a b. (a -> b) -> m a -> m b").unwrap();
+        let rendered = super::render_scheme(&ty, &cs);
+        assert_eq!(rendered, "forall (m :: * → *) a b. (a → b) → m a → m b");
     }
 }

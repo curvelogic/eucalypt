@@ -178,6 +178,19 @@ pub struct Constraint {
     pub args: Vec<Type>,
 }
 
+impl fmt::Display for Constraint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}(", self.function)?;
+        for (i, arg) in self.args.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{arg}")?;
+        }
+        write!(f, ")")
+    }
+}
+
 /// A polymorphic type scheme: `forall vars. body` with optional constraints.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TypeScheme {

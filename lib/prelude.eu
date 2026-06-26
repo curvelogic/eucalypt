@@ -94,7 +94,7 @@ io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
 list-map: map
 
 ` { doc: "monad(m) - derive standard monad combinators from a block m with bind and return fields. Returns a block with bind, return, map, then, and-then, join, sequence, map-m, and filter-m."
-    type: s"!forall (m :: * -> *). {..} → {bind: forall a b. m a → (a → m b) → m b,
+    type: s"forall (m :: * -> *). {..} → {bind: forall a b. m a → (a → m b) → m b,
                return: forall a. a → m a,
                map: forall a b. (a → b) → m a → m b,
                then: forall a b. m b → m a → m b,
@@ -204,12 +204,12 @@ random: monad{bind: random-bind, return: random-ret} {
   ` { doc: "random.shuffle(list) - state-monad action returning a shuffled copy of list."
       type: s"[a] → any → {..}" }
   shuffle(lst): {
-    ` { type: s"![a] → number → [a] → any → {..}" }
+    ` { type: s"[a] → number → [a] → any → {..}" }
     shuffle-impl(remaining, n, acc, stream):
       if(n = 0,
         { value: acc, rest: stream },
         shuffle-step(remaining, n, acc, stream))
-    ` { type: s"![a] → number → [a] → any → {..}" }
+    ` { type: s"[a] → number → [a] → any → {..}" }
     shuffle-step(remaining, n, acc, stream): {
       r: int(n, stream)
       picked: remaining drop(r.value) head
@@ -1074,7 +1074,7 @@ sum(l): foldl(+, 0, l)
 product(l): foldl(*, 1, l)
 
 ` { doc: "`max(l, r)` - return max of `l` and `r` by `>`."
-    type: s"!>(a, a) => a → a → a" }
+    type: s">(a, a) => a → a → a" }
 max(l, r): if(l > r, l, r)
 
 ` "`max-of(l) - return max element in list of numbers `l` - error if empty`"
@@ -1099,7 +1099,7 @@ max-map(f, l): l map(f) max-of
 max-of-or(d, l): l nil? then(d, max-of(l))
 
 ` { doc: "`min(l, r)` - return min of `l` and `r` by `<`."
-    type: s"!<(a, a) => a → a → a" }
+    type: s"<(a, a) => a → a → a" }
 min(l, r): if(l < r, l, r)
 
 ` "`min-of(l) - return min element in list of numbers `l` - error if empty`"
@@ -1738,7 +1738,7 @@ window-all(n, step, l): { chunk: l take(n) }.(if(chunk nil?, [], cons(chunk, (if
 partition-all(n): window-all(n, n)
 
 ` { doc: "`over-sliding-pairs(f, l)` - apply binary fn `f` to each overlapping pair in `l` to form new list."
-    type: s"!(a → a → b) → [a] → [b]" }
+    type: s"(a → a → b) → [a] → [b]" }
 over-sliding-pairs(f, l):
   { apply-pair(p): f(p head, p tail head)
   }.(l window(2, 1) map(apply-pair))

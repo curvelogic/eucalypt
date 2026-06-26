@@ -19,7 +19,7 @@ use crate::{
         expr::*,
         rt,
         transform::dynamise,
-        typecheck::parse::parse_type,
+        typecheck::parse::{parse_scheme, render_scheme},
     },
     syntax::rowan::{
         ast::{self as rowan_ast, AstToken, Element, HasSoup},
@@ -636,22 +636,18 @@ impl Desugarable for rowan_ast::Literal {
                 }
                 rowan_ast::LiteralValue::SStr(s) => {
                     if let Some(text) = s.value() {
-                        // The `!` prefix is an escape hatch for types that use
-                        // extended syntax (e.g. kind annotations) not yet
-                        // supported by `parse_type`. Skip validation and store
-                        // the raw content (without the `!`).
-                        if let Some(raw) = text.strip_prefix('!') {
-                            Primitive::TypeData(raw.to_string())
-                        } else {
-                            // Validate at compile time; store canonical (re-rendered) form.
-                            match parse_type(text) {
-                                Ok(ty) => Primitive::TypeData(format!("{ty}")),
-                                Err(e) => {
-                                    return Err(CoreError::InvalidEmbedding(
-                                        format!("invalid type annotation: {e}"),
-                                        desugarer.new_smid(span),
-                                    ));
-                                }
+                        // Validate at compile time; store canonical (re-rendered) form.
+                        // Uses parse_scheme to handle the full type-DSL including
+                        // operator constraints (e.g. `>(a, a) => a → a → a`).
+                        match parse_scheme(text) {
+                            Ok((ty, constraints)) => {
+                                Primitive::TypeData(render_scheme(&ty, &constraints))
+                            }
+                            Err(e) => {
+                                return Err(CoreError::InvalidEmbedding(
+                                    format!("invalid type annotation: {e}"),
+                                    desugarer.new_smid(span),
+                                ));
                             }
                         }
                     } else {
