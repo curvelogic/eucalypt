@@ -80,6 +80,7 @@ pub struct CommonArgs {
     pub statistics_file: Option<PathBuf>,
 
     /// Run the type checker before evaluation, reporting warnings to stderr
+    /// (no-op since 0.11.0 — type checking always runs; kept for backwards compatibility)
     #[arg(long = "type-check")]
     pub type_check: bool,
 
@@ -207,7 +208,11 @@ pub struct RunArgs {
     #[arg(short = 'N', long = "name-inputs")]
     pub name_inputs: bool,
 
-    /// With --type-check: treat type warnings as errors and abort before evaluation
+    /// Suppress type-checking warnings (type checker still runs, warnings are silenced)
+    #[arg(long = "suppress-type-warnings")]
+    pub suppress_type_warnings: bool,
+
+    /// Treat type warnings as errors and abort before evaluation
     #[arg(long = "strict")]
     pub strict: bool,
 
@@ -411,7 +416,11 @@ pub struct EucalyptOptions {
     pub doc_output_dir: Option<PathBuf>,
 
     // Type check before evaluation
+    // (always runs since 0.11.0; this field is kept for backwards compatibility)
     pub type_check: bool,
+
+    // Suppress type-checking warnings (checker still runs)
+    pub suppress_type_warnings: bool,
 
     // Format command options
     pub format: bool,
@@ -704,6 +713,12 @@ impl From<EucalyptCli> for EucalyptOptions {
             _ => false,
         };
 
+        // Extract suppress-type-warnings flag from Run command
+        let suppress_type_warnings = match &cli.command {
+            Some(Commands::Run(run_args)) => run_args.suppress_type_warnings,
+            _ => false,
+        };
+
         EucalyptOptions {
             lib_path: common.lib_path,
             no_prelude: common.no_prelude,
@@ -744,6 +759,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             doc_coverage_check,
             doc_output_dir,
             type_check: common.type_check,
+            suppress_type_warnings,
             format,
             format_width,
             format_write,
@@ -953,6 +969,10 @@ impl EucalyptOptions {
 
     pub fn type_check(&self) -> bool {
         self.type_check
+    }
+
+    pub fn suppress_type_warnings(&self) -> bool {
+        self.suppress_type_warnings
     }
 
     pub fn no_dce(&self) -> bool {
