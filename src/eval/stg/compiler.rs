@@ -997,24 +997,6 @@ impl ProtoSyntax for ProtoRef {
 /// a Value.  Used at self-recursive call sites to create Update-backed
 /// bindings for passed-through arguments.  When the Thunk is Seq-forced,
 /// the Update continuation overwrites the env slot with the resolved
-/// value, breaking the O(n²) lazy indirection chain that `create_arg_array`
-/// would otherwise build across iterations.
-struct ProtoThunkAtom {
-    inner: Box<dyn ProtoReference>,
-}
-
-impl ProtoSyntax for ProtoThunkAtom {
-    fn take_lambda_form(
-        &mut self,
-        _compiler: &Compiler,
-        context: &Context,
-    ) -> Result<LambdaForm, CompileError> {
-        let r = self.inner.take_reference(context)?;
-        // Explicit Thunk — NOT Value — so Update fires on Seq.
-        Ok(dsl::thunk(dsl::atom(r)))
-    }
-}
-
 /// Holder just wraps up the StgSyn that will be delivered later when
 /// the context is available
 pub struct Holder {
@@ -1150,11 +1132,9 @@ impl ProtoSyntax for ProtoAppGroup {
             });
 
         // Detect self-recursive call: callee name matches the
-        // enclosing recursive binding.  When detected, simple args
-        // (Var::Bound, Var::Free) are wrapped as Thunk bindings so
-        // that Seq + Update overwrites the env slot with the resolved
-        // value, breaking the O(n²) lazy indirection chain from
-        // create_arg_array.
+        // enclosing recursive binding.  The VM will resolve Ref::L
+        // args eagerly at runtime (via `eager_args`) to prevent
+        // O(n²) indirection chain build-up across iterations.
         let is_self_recursive = self
             .self_recurse_name
             .as_deref()
@@ -1163,53 +1143,15 @@ impl ProtoSyntax for ProtoAppGroup {
         for (i, arg) in self.args.iter().enumerate() {
             match &*arg.inner {
                 Expr::Var(s, v) => match v {
-                    Var::Bound(bv) => {
-                        if is_self_recursive {
-                            // At self-recursive call sites, create a Thunk
-                            // binding for the arg so that Seq + Update
-                            // collapses the lazy indirection chain.
-                            let idx = local_binder.add_deferred(Box::new(ProtoThunkAtom {
-                                inner: Box::new(ProtoVar::new(bv.clone())),
-                            }))?;
-                            if let Ref::L(n) = idx {
-                                local_binder.mark_strict(n);
-                            }
-                            arg_indexes.push(Box::new(ProtoRef::new(idx)));
-                        } else {
-                            arg_indexes.push(Box::new(ProtoVar::new(bv.clone())));
-                        }
-                    }
-                    Var::Free(name) => {
-                        if is_self_recursive {
-                            let resolved = compiler.resolve_free_var(*s, name)?;
-                            let idx = local_binder.add_deferred(Box::new(ProtoThunkAtom {
-                                inner: Box::new(ProtoRef::new(resolved)),
-                            }))?;
-                            if let Ref::L(n) = idx {
-                                local_binder.mark_strict(n);
-                            }
-                            arg_indexes.push(Box::new(ProtoRef::new(idx)));
-                        } else {
-                            arg_indexes.push(Box::new(ProtoRef::new(
-                                compiler.resolve_free_var(*s, name)?,
-                            )));
-                        }
-                    }
+                    Var::Bound(bv) => arg_indexes.push(Box::new(ProtoVar::new(bv.clone()))),
+                    Var::Free(name) => arg_indexes.push(Box::new(ProtoRef::new(
+                        compiler.resolve_free_var(*s, name)?,
+                    ))),
                 },
                 Expr::Intrinsic(_, bif) => {
                     let global_index = intrinsics::index(bif)
                         .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
-                    if is_self_recursive {
-                        let idx = local_binder.add_deferred(Box::new(ProtoThunkAtom {
-                            inner: Box::new(ProtoRef::new(gref(global_index))),
-                        }))?;
-                        if let Ref::L(n) = idx {
-                            local_binder.mark_strict(n);
-                        }
-                        arg_indexes.push(Box::new(ProtoRef::new(idx)));
-                    } else {
-                        arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))));
-                    }
+                    arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))))
                 }
                 _ => {
                     // Use the per-argument demand from the intrinsic signature table.
@@ -1226,15 +1168,8 @@ impl ProtoSyntax for ProtoAppGroup {
                         arg_demand,
                         self.self_recurse_name.as_deref(),
                     )?;
-                    // Mark strict non-recursive arg bindings for eager Seq evaluation.
-                    // At self-recursive call sites, mark ALL complex args strict
-                    // to force them before re-entering the recursive function.
-                    let force = if is_self_recursive {
-                        true
-                    } else {
-                        arg_demand.strictness == Strictness::Strict && !arg_demand.recursive
-                    };
-                    if force {
+                    // Mark strict non-recursive arg bindings for eager Seq evaluation
+                    if arg_demand.strictness == Strictness::Strict && !arg_demand.recursive {
                         if let Ref::L(n) = index {
                             local_binder.mark_strict(n);
                         }
@@ -1280,9 +1215,15 @@ impl ProtoSyntax for ProtoAppGroup {
                         arg_indexes,
                         self.demand,
                         self.smid,
+                        is_self_recursive,
                     ))?;
                 } else {
-                    local_binder.set_body(ProtoApp::boxed(f_index, arg_indexes, self.demand))?;
+                    local_binder.set_body(ProtoApp::boxed(
+                        f_index,
+                        arg_indexes,
+                        self.demand,
+                        is_self_recursive,
+                    ))?;
                 }
             }
         };
@@ -1314,6 +1255,7 @@ pub struct ProtoDirectApp {
     args: Vec<Box<dyn ProtoReference>>,
     demand: Demand,
     smid: Smid,
+    eager_args: bool,
 }
 
 impl ProtoDirectApp {
@@ -1322,12 +1264,14 @@ impl ProtoDirectApp {
         args: Vec<Box<dyn ProtoReference>>,
         demand: Demand,
         smid: Smid,
+        eager_args: bool,
     ) -> Box<dyn ProtoSyntax> {
         Box::new(ProtoDirectApp {
             f,
             args,
             demand,
             smid,
+            eager_args,
         })
     }
 }
@@ -1352,6 +1296,7 @@ impl ProtoSyntax for ProtoDirectApp {
             smid: self.smid,
             callable,
             args,
+            eager_args: self.eager_args,
         }))
     }
 }
@@ -1361,6 +1306,7 @@ pub struct ProtoApp {
     f: Box<dyn ProtoReference>,
     args: Vec<Box<dyn ProtoReference>>,
     demand: Demand,
+    eager_args: bool,
 }
 
 impl ProtoApp {
@@ -1368,8 +1314,14 @@ impl ProtoApp {
         f: Box<dyn ProtoReference>,
         args: Vec<Box<dyn ProtoReference>>,
         demand: Demand,
+        eager_args: bool,
     ) -> Box<dyn ProtoSyntax> {
-        Box::new(ProtoApp { f, args, demand })
+        Box::new(ProtoApp {
+            f,
+            args,
+            demand,
+            eager_args,
+        })
     }
 }
 
@@ -1389,7 +1341,11 @@ impl ProtoSyntax for ProtoApp {
             .drain(0..)
             .map(|mut a| a.take_reference(context))
             .collect::<Result<Vec<Ref>, CompileError>>()?;
-        Ok(Rc::new(StgSyn::App { callable, args }))
+        Ok(Rc::new(StgSyn::App {
+            callable,
+            args,
+            eager_args: self.eager_args,
+        }))
     }
 }
 

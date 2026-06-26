@@ -478,8 +478,16 @@ impl MachineState {
             HeapSyn::Cons { tag, args } => {
                 self.return_data(view, *tag, args.as_slice())?;
             }
-            HeapSyn::App { callable, args } => {
-                let array = view.create_arg_array(args.as_slice(), environment)?;
+            HeapSyn::App {
+                callable,
+                args,
+                eager_args,
+            } => {
+                let array = if *eager_args {
+                    view.create_arg_array_eager(args.as_slice(), environment)?
+                } else {
+                    view.create_arg_array(args.as_slice(), environment)?
+                };
                 self.push(
                     view,
                     Continuation::ApplyTo {
@@ -520,51 +528,72 @@ impl MachineState {
                 smid,
                 callable,
                 args,
+                eager_args,
             } => {
                 // Set the source annotation from the inline Smid (replaces Ann dispatch).
                 self.annotation = *smid;
                 // Create the argument array from refs.
-                let array = view.create_arg_array(args.as_slice(), environment)?;
+                let array = if *eager_args {
+                    view.create_arg_array_eager(args.as_slice(), environment)?
+                } else {
+                    view.create_arg_array(args.as_slice(), environment)?
+                };
                 // Resolve the callable.  The compiler emits DirectApp for known
                 // lambdas, but demand-sig lookup may occasionally be overly
                 // optimistic (e.g. a parameter whose name coincides with a
                 // prelude function).  Guard with an arity check: on the fast
                 // path (exact match) we skip the ApplyTo push entirely; on the
                 // slow path we degrade gracefully to normal App semantics.
-                let closure = self.nav(view).resolve_callable(callable)?;
-                if closure.arity() as usize == array.len() {
-                    // True fast path: exact arity — saturate directly, no
-                    // ApplyTo continuation pushed, no return_fun dispatch.
-                    self.closure = view.saturate_with_array(&closure, array)?;
-                } else {
-                    // Fallback: push ApplyTo and let return_fun handle arity
-                    // mismatch (under- or over-application).  Mirror the
-                    // App handler's blackhole + Update logic for Ref::L
-                    // thunks so that updateable closures are handled
-                    // correctly even on the slow path.
-                    self.push(
-                        view,
-                        Continuation::ApplyTo {
-                            args: array,
-                            annotation: self.annotation,
-                        },
-                    )?;
-                    if let Ref::L(i) = callable {
-                        if closure.update() {
-                            let hole = view.alloc(HeapSyn::BlackHole)?;
-                            let black_hole = SynClosure::new(hole.as_ptr(), environment);
-                            let cont_env = view.scoped(environment);
-                            cont_env.update(&view, *i, black_hole)?;
-                            self.push(
-                                view,
-                                Continuation::Update {
-                                    environment,
-                                    index: *i,
-                                },
-                            )?;
-                        }
+                if let Ref::L(i) = callable {
+                    let callee = self.nav(view).get(*i)?;
+                    let is_thunk = callee.update();
+                    if is_thunk {
+                        // Thunk callable: blackhole + Update before entering
+                        let hole = view.alloc(HeapSyn::BlackHole)?;
+                        let black_hole = SynClosure::new(hole.as_ptr(), environment);
+                        let cont_env = view.scoped(environment);
+                        cont_env.update(&view, *i, black_hole)?;
+                        self.push(
+                            view,
+                            Continuation::ApplyTo {
+                                args: array,
+                                annotation: self.annotation,
+                            },
+                        )?;
+                        self.push(
+                            view,
+                            Continuation::Update {
+                                environment,
+                                index: *i,
+                            },
+                        )?;
+                        self.closure = callee;
+                    } else if callee.arity() as usize == array.len() {
+                        self.closure = view.saturate_with_array(&callee, array)?;
+                    } else {
+                        self.push(
+                            view,
+                            Continuation::ApplyTo {
+                                args: array,
+                                annotation: self.annotation,
+                            },
+                        )?;
+                        self.closure = callee;
                     }
-                    self.closure = closure;
+                } else {
+                    let closure = self.nav(view).resolve_callable(callable)?;
+                    if closure.arity() as usize == array.len() {
+                        self.closure = view.saturate_with_array(&closure, array)?;
+                    } else {
+                        self.push(
+                            view,
+                            Continuation::ApplyTo {
+                                args: array,
+                                annotation: self.annotation,
+                            },
+                        )?;
+                        self.closure = closure;
+                    }
                 }
             }
             HeapSyn::Bif { intrinsic, .. } => {

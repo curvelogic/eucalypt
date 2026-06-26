@@ -1026,7 +1026,7 @@ pub mod tests {
         // Verify app data structure
         let app_obj: &HeapSyn = unsafe { &*new_app.as_ptr() };
         match app_obj {
-            HeapSyn::App { callable, args } => {
+            HeapSyn::App { callable, args, .. } => {
                 assert_eq!(*callable, Ref::L(0));
                 assert_eq!(args.len(), 1);
             }

@@ -95,6 +95,16 @@ pub trait EnvBuilder {
         args: &[Ref],
         environment: RefPtr<EnvFrame>,
     ) -> Result<Array<SynClosure>, ExecutionError>;
+
+    /// Like `create_arg_array` but resolves `Ref::L` args eagerly by
+    /// looking up the closure from the environment instead of creating
+    /// a lazy `Atom{Ref::L}` indirection.  Used at self-recursive call
+    /// sites to prevent O(n) indirection chain build-up.
+    fn create_arg_array_eager(
+        &self,
+        args: &[Ref],
+        environment: RefPtr<EnvFrame>,
+    ) -> Result<Array<SynClosure>, ExecutionError>;
 }
 
 impl EnvBuilder for MutatorHeapView<'_> {
@@ -266,6 +276,27 @@ impl EnvBuilder for MutatorHeapView<'_> {
             );
         }
 
+        Ok(array)
+    }
+
+    fn create_arg_array_eager(
+        &self,
+        args: &[Ref],
+        environment: RefPtr<EnvFrame>,
+    ) -> Result<Array<SynClosure>, ExecutionError> {
+        // SAFETY: environment is a valid heap pointer kept alive by the
+        // current mutator scope.  We only read through it.
+        let env = unsafe { environment.as_ref() };
+        let mut array = Array::with_capacity(self, args.len());
+        for syn in args.iter() {
+            let closure = match syn {
+                Ref::L(i) => env
+                    .get(self, *i)
+                    .ok_or(ExecutionError::BadEnvironmentIndex(*i))?,
+                _ => SynClosure::new(self.atom(syn.clone())?.as_ptr(), environment),
+            };
+            array.push(self, closure);
+        }
         Ok(array)
     }
 }

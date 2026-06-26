@@ -142,6 +142,7 @@ impl StgIntrinsic for RenderToString {
             .alloc(HeapSyn::App {
                 callable: Ref::G(render_doc_idx),
                 args: Array::from_slice(&view, &[args[0].clone()]),
+                eager_args: false,
             })?
             .as_ptr();
         machine.set_closure(crate::eval::machine::env::SynClosure::new(

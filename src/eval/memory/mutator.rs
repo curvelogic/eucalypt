@@ -179,7 +179,11 @@ impl<'guard> StgBuilder<'guard> for MutatorHeapView<'guard> {
         r: Ref,
         args: Array<Ref>,
     ) -> Result<ScopedPtr<'guard, HeapSyn>, ExecutionError> {
-        self.alloc(HeapSyn::App { callable: r, args })
+        self.alloc(HeapSyn::App {
+            callable: r,
+            args,
+            eager_args: false,
+        })
     }
 
     /// Allocate an intrinsic application
