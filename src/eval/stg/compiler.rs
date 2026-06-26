@@ -993,10 +993,6 @@ impl ProtoSyntax for ProtoRef {
     }
 }
 
-/// A binding that wraps a variable reference as a **Thunk** rather than
-/// a Value.  Used at self-recursive call sites to create Update-backed
-/// bindings for passed-through arguments.  When the Thunk is Seq-forced,
-/// the Update continuation overwrites the env slot with the resolved
 /// Holder just wraps up the StgSyn that will be delivered later when
 /// the context is available
 pub struct Holder {
