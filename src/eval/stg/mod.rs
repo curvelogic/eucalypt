@@ -239,6 +239,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(list::IsSymbol));
     rt.add(Box::new(list::IsBool));
     rt.add(Box::new(list::IsTypeData));
+    rt.add(Box::new(list::IsZdt));
     rt.add(Box::new(vec::VecOf));
     rt.add(Box::new(vec::VecLen));
     rt.add(Box::new(vec::VecNth));

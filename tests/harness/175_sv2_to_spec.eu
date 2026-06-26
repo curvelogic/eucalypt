@@ -1,0 +1,84 @@
+"174 sv2 to-spec / as-spec"
+
+` { target: :test }
+test: {
+
+  # AC1: Primitive specs
+  num-spec: s"number" as-spec
+  t-prim-num: 42 match?(num-spec)              //=> true
+  t-prim-num-miss: "hello" match?(num-spec)    //=> false
+
+  str-spec: s"string" as-spec
+  t-prim-str: "hello" match?(str-spec)         //=> true
+  t-prim-str-miss: 42 match?(str-spec)         //=> false
+
+  sym-spec: s"symbol" as-spec
+  t-prim-sym: :foo match?(sym-spec)            //=> true
+  t-prim-sym-miss: "foo" match?(sym-spec)      //=> false
+
+  bool-spec: s"bool" as-spec
+  t-prim-bool: true match?(bool-spec)          //=> true
+  t-prim-bool-f: false match?(bool-spec)       //=> true
+  t-prim-bool-miss: 1 match?(bool-spec)        //=> false
+
+  null-spec: s"null" as-spec
+  t-prim-null: null match?(null-spec)          //=> true
+  t-prim-null-miss: 0 match?(null-spec)        //=> false
+
+  any-spec: s"any" as-spec
+  t-prim-any-num: 42 match?(any-spec)          //=> true
+  t-prim-any-str: "x" match?(any-spec)         //=> true
+  t-prim-any-null: null match?(any-spec)       //=> true
+
+  # AC2: Record specs
+  rec-spec: s"{ name: string, age: number }" as-spec
+  t-rec: {name: "Alice", age: 30} match?(rec-spec)           //=> true
+  t-rec-miss-type: {name: "Alice", age: "thirty"} match?(rec-spec) //=> false
+  t-rec-extra-keys: {name: "Bob", age: 25, extra: "ok"} match?(rec-spec) //=> true
+  t-rec-miss-key: {name: "Alice"} match?(rec-spec)           //=> false
+
+  # AC3: List specs
+  list-spec: s"[number]" as-spec
+  t-list: [1, 2, 3] match?(list-spec)          //=> true
+  t-list-miss: [1, "two", 3] match?(list-spec) //=> false
+  t-list-empty: [] match?(list-spec)           //=> true
+
+  # AC4: Union specs
+  union-spec: s"string | number" as-spec
+  t-union-str: "hello" match?(union-spec)      //=> true
+  t-union-num: 42 match?(union-spec)           //=> true
+  t-union-miss: true match?(union-spec)        //=> false
+
+  # AC5: Partial (nullable) specs
+  partial-spec: s"string?" as-spec
+  t-partial-val: "hello" match?(partial-spec)  //=> true
+  t-partial-null: null match?(partial-spec)    //=> true
+  t-partial-miss: 42 match?(partial-spec)      //=> false
+
+  # AC6: Nested specs
+  nested-spec: s"{ users: [{ name: string }] }" as-spec
+  t-nested: {users: [{name: "Alice"}, {name: "Bob"}]} match?(nested-spec) //=> true
+  t-nested-miss: {users: [{name: 42}]} match?(nested-spec)               //=> false
+
+  # Function specs (can only check it is a function)
+  fun-spec: s"number -> string" as-spec
+  t-fun: number? match?(fun-spec)              //=> true
+  t-fun-miss: 42 match?(fun-spec)              //=> false
+
+  # Tuple specs
+  tuple-spec: s"(number, string)" as-spec
+  t-tuple: [42, "hello"] match?(tuple-spec)    //=> true
+  t-tuple-miss: [42, 99] match?(tuple-spec)    //=> false
+  t-tuple-len-miss: [42] match?(tuple-spec)    //=> false
+
+  # as-spec synonym (pipeline position)
+  t-pipeline: {name: "Alice", age: 30} match?(s"{ name: string, age: number }" as-spec) //=> true
+
+  # to-spec synonym
+  t-to-spec: {name: "Alice"} match?(to-spec(s"{ name: string }"))  //=> true
+
+  # Edge cases
+  t-empty-rec: {a: 1} match?(s"{}" as-spec)    //=> true
+
+  RESULT: :PASS
+}
