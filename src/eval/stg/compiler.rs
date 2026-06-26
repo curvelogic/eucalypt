@@ -1669,6 +1669,14 @@ impl<'rt> Compiler<'rt> {
         // LookupLit cannot navigate the block (e.g. list is a thunk),
         // fall through to the full multi-step LookupOr wrapper which
         // uses Case to force list elements lazily.
+        //
+        // Tradeoff: LookupLit uses a linear scan of the block's
+        // key-value pairs rather than building an index first.  This
+        // is faster for the common case (small blocks, keys near the
+        // front) but degrades for large blocks with deep keys.  The
+        // LookupOr fallback path builds an OrdMap index lazily on
+        // first miss, amortising the cost over subsequent lookups on
+        // the same block.
         let lookup_or_stg =
             LookupOr(NativeVariant::Unboxed).global(dsl::sym(key), dft, obj.clone());
         let ann_stg = if self.generate_annotations() && annotation.is_valid() {
