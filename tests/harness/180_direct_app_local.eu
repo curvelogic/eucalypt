@@ -1,0 +1,41 @@
+#!/usr/bin/env eu
+# Test DirectApp for Ref::L local callees (letrec-bound user functions).
+#
+# CG1 originally restricted DirectApp to Ref::G globals.  This test
+# exercises the extended path where user-defined functions in the same
+# letrec scope are called at exact arity and compiled to DirectApp.
+
+# Simple 2-arg local function called at exact arity.
+add(x, y): x + y
+sum-test: add(3, 4)
+
+# Local function used in pipeline (catenation) style.
+double(x): x * 2
+pipeline-test: [1, 2, 3] map(double)
+
+# Recursive local function — the callee is a letrec binding that
+# references itself; DirectApp must still work correctly.
+fac-acc(n, acc): if(n = 0, acc, fac-acc(n - 1, acc * n))
+factorial-test: fac-acc(6, 1)
+
+# Mutually recursive local functions.
+is-even(n): if(n = 0, true, is-odd(n - 1))
+is-odd(n): if(n = 0, false, is-even(n - 1))
+mutual-test: is-even(10)
+
+# Higher-order local function: takes a function argument and calls
+# it — the outer call is DirectApp, the inner call is normal App.
+apply-to-five(f): f(5)
+ho-test: apply-to-five(_ * 3)
+
+# Local function with arity > 2.
+triple-add(a, b, c): a + b + c
+triple-test: triple-add(10, 20, 30)
+
+RESULT: [sum-test = 7,
+         pipeline-test = [2, 4, 6],
+         factorial-test = 720,
+         mutual-test,
+         ho-test = 15,
+         triple-test = 60]
+  all-true? then(:PASS, :FAIL)

@@ -2610,6 +2610,13 @@ pub fn test_179_cg3_strict_recurse() {
 }
 
 #[test]
+/// CG1 DirectApp for Ref::L local callees: user-defined letrec functions
+/// called at exact arity should use the DirectApp fast path.
+pub fn test_180_direct_app_local() {
+    run_test(&opts("180_direct_app_local.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

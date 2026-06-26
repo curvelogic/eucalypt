@@ -1102,28 +1102,17 @@ impl ProtoSyntax for ProtoAppGroup {
         let mut callee_name: Option<&str> = None;
         let mut local_binder = LetBinder::synthetic_let(context);
 
-        // Find a reference for the function.  Also track whether the
-        // callee compiles to a global ref (Ref::G), which is the only
-        // case where DirectApp is safe without threading lambda-form
-        // information: globals are always pre-evaluated Value closures
-        // with their full arity visible.  Local refs (Ref::L) inside a
-        // letrec are thunks until updated, so their arity at resolution
-        // time is 0 regardless of the underlying lambda's arity.
-        let mut callee_is_global = false;
+        // Find a reference for the function.
         let f_index: Box<dyn ProtoReference> = match &*self.f.inner {
             Expr::Var(s, v) => match v {
                 Var::Bound(bv) => {
                     // Preserve the binding name for user demand signature lookup.
                     callee_name = bv.name.as_deref();
-                    // Bound variables always compile to Ref::L — not safe for DirectApp.
                     Box::new(ProtoVar::new(bv.clone()))
                 }
                 Var::Free(name) => {
                     callee_name = Some(name.as_str());
                     let r = compiler.resolve_free_var(*s, name)?;
-                    // Free variables may resolve to Ref::G (blob-prelude globals) or
-                    // Ref::L (source-prelude locals).  Only Ref::G is safe.
-                    callee_is_global = matches!(r, Ref::G(_));
                     Box::new(ProtoRef::new(r))
                 }
             },
@@ -1132,8 +1121,6 @@ impl ProtoSyntax for ProtoAppGroup {
                 let n =
                     intrinsic_index.ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
                 intrinsic_name = Some(intrinsics::intrinsic(n).name());
-                // Intrinsics are always Ref::G globals.
-                callee_is_global = true;
                 Box::new(ProtoRef::new(gref(n)))
             }
             _ => Box::new(ProtoRef::new(compiler.compile_binding(
@@ -1272,16 +1259,17 @@ impl ProtoSyntax for ProtoAppGroup {
             _ => {
                 // Check conditions for DirectApp (exact-arity known-callee dispatch).
                 // Conditions:
-                // 1. Callee has a name (callee_name or intrinsic_name)
-                // 2. A demand signature was found (arg_demands is Some)
-                // 3. Arity > 0 and matches arg count exactly
-                // 4. Callee compiles to a global ref (Ref::G): globals are always
-                //    pre-evaluated lambda closures, so their arity is correct at
-                //    resolution time.  Local refs (Ref::L) are thunks in a letrec,
-                //    which have arity 0 until evaluated — unsafe for DirectApp without
-                //    threading lambda-form information (deferred to a later spec).
+                // 1. A demand signature was found (arg_demands is Some)
+                // 2. Arity > 0 and matches arg count exactly
+                //
+                // Demand signatures are only recorded for let-bound lambdas
+                // (user_demand_sigs) or hand-curated prelude/intrinsic tables,
+                // so their presence reliably indicates a Value lambda form
+                // whose arity is correct at resolution time.  The VM also
+                // guards with a runtime arity check, falling back to normal
+                // App semantics on mismatch.
                 let direct = if let Some(sigs) = arg_demands {
-                    callee_is_global && !sigs.is_empty() && sigs.len() == arg_indexes.len()
+                    !sigs.is_empty() && sigs.len() == arg_indexes.len()
                 } else {
                     false
                 };
