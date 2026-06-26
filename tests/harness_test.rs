@@ -2588,6 +2588,21 @@ pub fn test_175_sv2_to_spec() {
 }
 
 #[test]
+pub fn test_176_sv_optional_fields() {
+    run_test(&opts("176_sv_optional_fields.eu"));
+}
+
+#[test]
+pub fn test_177_sv_optional_fields_to_data() {
+    run_test(&opts("177_sv_optional_fields_to_data.eu"));
+}
+
+#[test]
+pub fn test_178_sv_optional_fields_to_spec() {
+    run_test(&opts("178_sv_optional_fields_to_spec.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }
@@ -2645,6 +2660,26 @@ pub fn test_typecheck_102_types_alias_with_docstring() {
 #[test]
 pub fn test_typecheck_103_interpolation_string_type() {
     run_typecheck_test("103_interpolation_string_type.eu");
+}
+
+#[test]
+pub fn test_typecheck_105_optional_field_no_warning() {
+    run_typecheck_test("105_optional_field_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_106_optional_field_with_value_no_warning() {
+    run_typecheck_test("106_optional_field_with_value_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_107_optional_field_missing_required_warns() {
+    run_typecheck_test("107_optional_field_missing_required_warns.eu");
+}
+
+#[test]
+pub fn test_typecheck_108_optional_field_wrong_type_warns() {
+    run_typecheck_test("108_optional_field_wrong_type_warns.eu");
 }
 
 // ── eu doc tests ──────────────────────────────────────────────────────────────

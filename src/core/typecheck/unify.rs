@@ -21,7 +21,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::core::typecheck::types::{
-    kind_of, unfold_mu, Constraint, Kind, Type, TypeScheme, TypeVarId,
+    kind_of, unfold_mu, Constraint, FieldPresence, Kind, Type, TypeScheme, TypeVarId,
 };
 
 // ── Beta reduction ────────────────────────────────────────────────────────────
@@ -64,7 +64,12 @@ pub fn structural_subst(pattern: &Type, var: &TypeVarId, concrete: &Type) -> Typ
         Type::Record { fields, open, rows } => Type::Record {
             fields: fields
                 .iter()
-                .map(|(k, v)| (k.clone(), structural_subst(v, var, concrete)))
+                .map(|(k, fp)| {
+                    (
+                        k.clone(),
+                        fp.clone().map_type(|v| structural_subst(&v, var, concrete)),
+                    )
+                })
                 .collect(),
             open: *open,
             rows: rows.clone(),
@@ -307,8 +312,8 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
             let common_keys: Vec<String> =
                 f1.keys().filter(|k| f2.contains_key(*k)).cloned().collect();
             for k in &common_keys {
-                let v1 = apply_subst(f1.get(k).unwrap(), subst);
-                let v2 = apply_subst(f2.get(k).unwrap(), subst);
+                let v1 = apply_subst(f1.get(k).unwrap().ty(), subst);
+                let v2 = apply_subst(f2.get(k).unwrap().ty(), subst);
                 unify(&v1, &v2, subst)?;
             }
 
@@ -354,10 +359,10 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
             for r1 in &rows1 {
                 let r1_resolved = apply_subst(&Type::var(r1.clone()), subst);
                 if matches!(r1_resolved, Type::Var(_, _)) {
-                    let extra: std::collections::BTreeMap<String, Type> = f2
+                    let extra: std::collections::BTreeMap<String, FieldPresence> = f2
                         .iter()
                         .filter(|(k, _)| !f1.contains_key(*k))
-                        .map(|(k, v)| (k.clone(), apply_subst(v, subst)))
+                        .map(|(k, fp)| (k.clone(), fp.clone().map_type(|v| apply_subst(&v, subst))))
                         .collect();
                     // When the extra fields are empty and the other side has
                     // exactly one bare row variable, alias directly to avoid
@@ -399,10 +404,10 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
 
                 let r2_resolved = apply_subst(&Type::var(r2.clone()), subst);
                 if matches!(r2_resolved, Type::Var(_, _)) {
-                    let extra: std::collections::BTreeMap<String, Type> = f1
+                    let extra: std::collections::BTreeMap<String, FieldPresence> = f1
                         .iter()
                         .filter(|(k, _)| !f2.contains_key(*k))
-                        .map(|(k, v)| (k.clone(), apply_subst(v, subst)))
+                        .map(|(k, fp)| (k.clone(), fp.clone().map_type(|v| apply_subst(&v, subst))))
                         .collect();
                     let extra_ty = if extra.is_empty() && rows1.len() == 1 {
                         Type::var(rows1[0].clone())
@@ -436,7 +441,7 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
         ) if matches!(dict_head.as_ref(), Type::Con(n) if n == "Dict") && rows.is_empty() => {
             let t = t.clone();
             let fields = fields.clone();
-            let value_union = Type::union(fields.values().cloned());
+            let value_union = Type::union(fields.values().map(|fp| fp.ty().clone()));
             unify(&t, &value_union, subst)
         }
         (
@@ -449,7 +454,7 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
         ) if matches!(dict_head.as_ref(), Type::Con(n) if n == "Dict") && rows.is_empty() => {
             let t = t.clone();
             let fields = fields.clone();
-            let value_union = Type::union(fields.values().cloned());
+            let value_union = Type::union(fields.values().map(|fp| fp.ty().clone()));
             unify(&value_union, &t, subst)
         }
         // Dict unified with an open/row-variable record: bind to `any`.
@@ -534,9 +539,9 @@ pub fn apply_subst(ty: &Type, subst: &Substitution) -> Type {
             Box::new(apply_subst(b, subst)),
         ),
         Type::Record { fields, open, rows } => {
-            let mut merged_fields: std::collections::BTreeMap<String, Type> = fields
+            let mut merged_fields: std::collections::BTreeMap<String, FieldPresence> = fields
                 .iter()
-                .map(|(k, v)| (k.clone(), apply_subst(v, subst)))
+                .map(|(k, fp)| (k.clone(), fp.clone().map_type(|v| apply_subst(&v, subst))))
                 .collect();
 
             let mut new_rows: Vec<TypeVarId> = Vec::new();
@@ -552,8 +557,8 @@ pub fn apply_subst(ty: &Type, subst: &Substitution) -> Type {
                             open: extra_open,
                             rows: extra_rows,
                         } => {
-                            for (k, v) in extra_fields {
-                                merged_fields.entry(k).or_insert(v);
+                            for (k, fp) in extra_fields {
+                                merged_fields.entry(k).or_insert(fp);
                             }
                             if extra_open {
                                 result_open = true;
@@ -708,8 +713,8 @@ pub fn var_kind_in_type(var: &TypeVarId, ty: &Type) -> Kind {
             var_kind_in_type(var, b)
         }
         Type::Record { fields, .. } => {
-            for v in fields.values() {
-                let k = var_kind_in_type(var, v);
+            for fp in fields.values() {
+                let k = var_kind_in_type(var, fp.ty());
                 if k != Kind::Star {
                     return k;
                 }
@@ -797,8 +802,8 @@ fn collect_free_vars(ty: &Type, vars: &mut Vec<TypeVarId>, seen: &mut HashSet<Ty
             }
         }
         Type::Record { fields, rows, .. } => {
-            for v in fields.values() {
-                collect_free_vars(v, vars, seen);
+            for fp in fields.values() {
+                collect_free_vars(fp.ty(), vars, seen);
             }
             for r in rows {
                 if !seen.contains(r) {
@@ -843,7 +848,7 @@ fn occurs(id: &TypeVarId, ty: &Type) -> bool {
         Type::Function(a, b) => occurs(id, a) || occurs(id, b),
         Type::Tuple(elems) => elems.iter().any(|e| occurs(id, e)),
         Type::Record { fields, rows, .. } => {
-            fields.values().any(|v| occurs(id, v)) || rows.iter().any(|r| r == id)
+            fields.values().any(|fp| occurs(id, fp.ty())) || rows.iter().any(|r| r == id)
         }
         Type::Union(variants) => variants.iter().any(|v| occurs(id, v)),
         Type::Mu(x, body) => x != id && occurs(id, body),
@@ -1090,7 +1095,7 @@ mod tests {
         Type::Record {
             fields: fields
                 .iter()
-                .map(|(k, v)| (k.to_string(), v.clone()))
+                .map(|(k, v)| (k.to_string(), FieldPresence::Required(v.clone())))
                 .collect(),
             open,
             rows: rows.iter().map(|r| TypeVarId(r.to_string())).collect(),
@@ -1176,7 +1181,8 @@ mod tests {
         );
         let mut s = Substitution::new();
         assert!(unify(&lhs, &rhs, &mut s).is_ok());
-        let mut absorbed_fields: std::collections::BTreeMap<String, Type> = Default::default();
+        let mut absorbed_fields: std::collections::BTreeMap<String, FieldPresence> =
+            Default::default();
         if let Some(Type::Record { fields, .. }) = s.get(&vid("r")) {
             absorbed_fields.extend(fields.clone());
         }

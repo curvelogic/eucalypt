@@ -32,7 +32,7 @@
 //! with every type in both directions.  For non-`any` types the relation
 //! falls through to subtyping.
 
-use super::types::{unfold_mu, Type};
+use super::types::{unfold_mu, FieldPresence, Type};
 use super::unify::beta_reduce;
 
 /// Return `true` if type `s` is a subtype of type `t` (`s <: t`).
@@ -167,12 +167,21 @@ fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
             // rejected as a subtype of a row-variable record `{..r}`.
             let t_is_effectively_open = *t_open || !t_rows.is_empty();
 
-            let fields_ok = t_fields
-                .iter()
-                .all(|(name, t_ty)| match s_fields.get(name) {
-                    Some(s_ty) => is_subtype_co(s_ty, t_ty, assumed),
-                    None => false,
-                });
+            let fields_ok = t_fields.iter().all(|(name, t_presence)| match t_presence {
+                FieldPresence::Required(t_ty) => match s_fields.get(name) {
+                    Some(FieldPresence::Required(s_ty)) => is_subtype_co(s_ty, t_ty, assumed),
+                    Some(FieldPresence::Optional(_)) => {
+                        // Optional in source cannot satisfy required in target:
+                        // the field might be absent.
+                        false
+                    }
+                    None => false, // required field missing — not a subtype
+                },
+                FieldPresence::Optional(t_ty) => match s_fields.get(name) {
+                    Some(s_presence) => is_subtype_co(s_presence.ty(), t_ty, assumed),
+                    None => true, // optional field may be absent — still a subtype
+                },
+            });
 
             if !fields_ok {
                 return false;
@@ -200,7 +209,9 @@ fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
             _,
         ) if rows.is_empty() && s_is_app_con(t, "Dict") => {
             let b = t.as_dict().unwrap();
-            s_fields.values().all(|v| is_subtype_co(v, b, assumed))
+            s_fields
+                .values()
+                .all(|fp| is_subtype_co(fp.ty(), b, assumed))
         }
 
         // Dict(T) <: {..}
@@ -405,16 +416,25 @@ fn is_consistent_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool
             },
         ) => {
             let s_is_open = *s_open || !s_rows.is_empty();
-            let shared_ok = t_fields
-                .iter()
-                .all(|(name, t_ty)| match s_fields.get(name) {
-                    Some(s_ty) => is_consistent_co(s_ty, t_ty, assumed),
+            let shared_ok = t_fields.iter().all(|(name, t_presence)| match t_presence {
+                FieldPresence::Required(t_ty) => match s_fields.get(name) {
+                    Some(s_presence) => is_consistent_co(s_presence.ty(), t_ty, assumed),
                     None => s_is_open,
-                });
+                },
+                FieldPresence::Optional(t_ty) => match s_fields.get(name) {
+                    Some(s_presence) => is_consistent_co(s_presence.ty(), t_ty, assumed),
+                    None => true, // optional field absent — consistent
+                },
+            });
             if !shared_ok {
                 return false;
             }
-            if !t_open && s_fields.len() > t_fields.len() && !s_is_open {
+            // If t is closed, s must not have required fields that t doesn't mention.
+            // Optional extra fields in s are fine (they may be absent).
+            let s_has_required_extra = s_fields
+                .iter()
+                .any(|(k, fp)| !t_fields.contains_key(k) && fp.is_required());
+            if !t_open && s_has_required_extra && !s_is_open {
                 return false;
             }
             true
@@ -426,11 +446,15 @@ fn is_consistent_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool
         }
         (Type::Record { fields, .. }, t) if s_is_app_con(t, "Dict") => {
             let b = t.as_dict().unwrap();
-            fields.values().all(|v| is_consistent_co(v, b, assumed))
+            fields
+                .values()
+                .all(|fp| is_consistent_co(fp.ty(), b, assumed))
         }
         (s, Type::Record { fields, .. }) if s_is_app_con(s, "Dict") => {
             let a = s.as_dict().unwrap();
-            fields.values().all(|v| is_consistent_co(a, v, assumed))
+            fields
+                .values()
+                .all(|fp| is_consistent_co(a, fp.ty(), assumed))
         }
 
         // ── Union ──────────────────────────────────────────────────────────
@@ -488,7 +512,7 @@ fn is_app_consistent_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::typecheck::types::{Kind, Type, TypeVarId};
+    use crate::core::typecheck::types::{FieldPresence, Kind, Type, TypeVarId};
 
     fn var(name: &str) -> Type {
         Type::var(TypeVarId(name.to_string()))
@@ -518,7 +542,7 @@ mod tests {
         Type::Record {
             fields: fields
                 .iter()
-                .map(|(k, v)| ((*k).to_string(), v.clone()))
+                .map(|(k, v)| ((*k).to_string(), FieldPresence::Required(v.clone())))
                 .collect(),
             open: false,
             rows: vec![],
@@ -529,7 +553,7 @@ mod tests {
         Type::Record {
             fields: fields
                 .iter()
-                .map(|(k, v)| ((*k).to_string(), v.clone()))
+                .map(|(k, v)| ((*k).to_string(), FieldPresence::Required(v.clone())))
                 .collect(),
             open: true,
             rows: vec![],
@@ -1095,7 +1119,7 @@ mod tests {
         Type::Record {
             fields: fields
                 .iter()
-                .map(|(k, v)| ((*k).to_string(), v.clone()))
+                .map(|(k, v)| ((*k).to_string(), FieldPresence::Required(v.clone())))
                 .collect(),
             open: false,
             rows: vec![TypeVarId(row_name.to_string())],
@@ -1232,5 +1256,92 @@ mod tests {
         );
         let mu = Type::Mu(x.clone(), Box::new(closed(&[("a", inner)])));
         assert!(is_consistent(&mu, &mu));
+    }
+
+    // ── Optional field subtyping ──────────────────────────────────────────────
+
+    fn make_record(fields: &[(&str, FieldPresence)]) -> Type {
+        Type::Record {
+            fields: fields
+                .iter()
+                .map(|(k, fp)| ((*k).to_string(), fp.clone()))
+                .collect(),
+            open: false,
+            rows: vec![],
+        }
+    }
+
+    #[test]
+    fn required_field_is_subtype_of_optional() {
+        // {name: string, age: number} <: {name: string, age?: number}
+        let with_age = make_record(&[
+            ("name", FieldPresence::Required(Type::String)),
+            ("age", FieldPresence::Required(Type::Number)),
+        ]);
+        let age_optional = make_record(&[
+            ("name", FieldPresence::Required(Type::String)),
+            ("age", FieldPresence::Optional(Type::Number)),
+        ]);
+        assert!(
+            is_subtype(&with_age, &age_optional),
+            "required field should be subtype of optional"
+        );
+        assert!(
+            !is_subtype(&age_optional, &with_age),
+            "optional field should NOT be subtype of required"
+        );
+    }
+
+    #[test]
+    fn missing_field_is_subtype_of_optional() {
+        // {name: string} <: {name: string, age?: number}
+        let without_age = make_record(&[("name", FieldPresence::Required(Type::String))]);
+        let age_optional = make_record(&[
+            ("name", FieldPresence::Required(Type::String)),
+            ("age", FieldPresence::Optional(Type::Number)),
+        ]);
+        assert!(
+            is_subtype(&without_age, &age_optional),
+            "missing optional field means the record is still a subtype"
+        );
+    }
+
+    #[test]
+    fn missing_required_field_is_not_subtype() {
+        // {} <: {name: string} should fail
+        let empty = make_record(&[]);
+        let with_name = make_record(&[("name", FieldPresence::Required(Type::String))]);
+        assert!(
+            !is_subtype(&empty, &with_name),
+            "missing required field should not be a subtype"
+        );
+    }
+
+    #[test]
+    fn optional_consistent_with_required() {
+        // {name: string, age?: number} ~ {name: string, age: number}
+        let with_required = make_record(&[
+            ("name", FieldPresence::Required(Type::String)),
+            ("age", FieldPresence::Required(Type::Number)),
+        ]);
+        let with_optional = make_record(&[
+            ("name", FieldPresence::Required(Type::String)),
+            ("age", FieldPresence::Optional(Type::Number)),
+        ]);
+        // Consistency should be symmetric
+        assert!(is_consistent(&with_required, &with_optional));
+        assert!(is_consistent(&with_optional, &with_required));
+    }
+
+    #[test]
+    fn missing_optional_consistent_with_optional() {
+        // {name: string} ~ {name: string, age?: number}
+        let without_age = make_record(&[("name", FieldPresence::Required(Type::String))]);
+        let age_optional = make_record(&[
+            ("name", FieldPresence::Required(Type::String)),
+            ("age", FieldPresence::Optional(Type::Number)),
+        ]);
+        assert!(is_consistent(&without_age, &age_optional));
+        assert!(is_consistent(&age_optional, &without_age));
     }
 }

@@ -225,8 +225,9 @@ fn type_to_json_schema(ty: &Type) -> Option<String> {
             }
             let props: Vec<String> = fields
                 .iter()
-                .filter_map(|(k, v)| {
-                    type_to_json_schema(v).map(|schema| format!("{}: {}", json_str(k), schema))
+                .filter_map(|(k, fp)| {
+                    type_to_json_schema(fp.ty())
+                        .map(|schema| format!("{}: {}", json_str(k), schema))
                 })
                 .collect();
             let additional = if *open {

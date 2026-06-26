@@ -442,10 +442,14 @@ from-data(td):
       }."{a-r} → {b-r}"
     field-str(kv):
       { k: kv head
-        v: kv tail head
-        v-str: to-str(v)
+        fp: kv tail head
+        is-tf: (fp head) = :t-field
+        is-opt: is-tf ∧ ((fp tail head) = :optional)
+        inner-ty: if(is-tf, fp tail tail head, fp)
+        q: if(is-opt, "?", "")
+        ty-str: to-str(inner-ty)
         k-str: str.of(k)
-      }."{k-str}: {v-str}"
+      }."{k-str}{q}: {ty-str}"
     record-str(rec):
       { fields-str: rec elements map(field-str) str.join-on(", ")
       }."{{ {fields-str} }}"
@@ -540,8 +544,20 @@ to-spec(t):
       }.(pred)
 
     record-spec(rec):
-      { spec-block: rec map-values(to-spec-td)
-        pred(v): v match?(spec-block)
+      { entries: rec elements
+        check-entry(v, kv):
+          { k: kv head
+            fp: kv tail head
+            is-tf: (fp head) = :t-field
+            is-opt: is-tf ∧ ((fp tail head) = :optional)
+            inner-td: if(is-tf, fp tail tail head, fp)
+            s: to-spec-td(inner-td)
+            chk: (v lookup(k)) match?(s)
+          }.(if(is-opt,
+               if(v has(k), chk, true),
+               (v has(k)) ∧ chk))
+        pred(v):
+          entries map(check-entry(v)) all-true?
       }.(pred)
 
     to-spec-td(td2):
