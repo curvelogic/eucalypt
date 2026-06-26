@@ -1022,6 +1022,16 @@ lazy_static! {
             ty: function(vec![str_(), unk(), bool_(), unk()]).unwrap(),
             strict: vec![0, 2],
     },
+    Intrinsic { // 192
+            name: "TYPE_TO_DATA",
+            ty: function(vec![any(), any()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 193
+            name: "TYPE_FROM_STRING",
+            ty: function(vec![str_(), any()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 

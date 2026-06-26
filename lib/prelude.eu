@@ -212,7 +212,7 @@ random: monad{bind: random-bind, return: random-ret} {
     ` { type: s"![a] → number → [a] → any → {..}" }
     shuffle-step(remaining, n, acc, stream): {
       r: int(n, stream)
-      picked: remaining nth(r.value)
+      picked: remaining drop(r.value) head
       without: (remaining take(r.value)) ++ (remaining drop(r.value + 1))
       next: shuffle-impl(without, n - 1, cons(picked, acc), r.rest)
       value: next.value
@@ -402,6 +402,90 @@ bool?: __ISBOOL
 ` { doc: "type-data?(v) - true if and only if v is a type-data literal produced by the s prefix."
     type: s"any → bool" }
 type-data?: __ISTYPEDATA
+
+` { doc: "`to-data(v)` - project a type-data value to a structured t-* tagged list."
+    type: s"any → any" }
+to-data(v): if(type-data?(v), __TYPE_TO_DATA(v), v)
+
+` { doc: "`from-data(td)` - construct a type-data value from a t-* tagged list."
+    type: s"any → any" }
+from-data(td):
+  { prim-names: {
+        number: "number"
+        string: "string"
+        symbol: "symbol"
+        bool: "bool"
+        null: "null"
+        datetime: "datetime"
+        any: "any"
+        top: "top"
+        never: "never"
+        error: "ExecutionError"
+        set: "set"
+        vec: "vec"
+        array: "array"
+      }
+    prim-str(name-sym): prim-names lookup-or(name-sym, str.of(name-sym))
+    needs-lhs?(t): { tag: t head }.(tag = :t-fn || tag = :t-union || tag = :t-partial)
+    needs-rhs?(t): { tag: t head }.(tag = :t-union || tag = :t-partial)
+    fn-str(a, b):
+      { a-str: to-str(a)
+        b-str: to-str(b)
+        a-needs: needs-lhs?(a)
+        b-needs: needs-rhs?(b)
+        a-r: if(a-needs, "({a-str})", a-str)
+        b-r: if(b-needs, "({b-str})", b-str)
+      }."{a-r} → {b-r}"
+    field-str(kv):
+      { k: kv head
+        v: kv tail head
+        v-str: to-str(v)
+        k-str: str.of(k)
+      }."{k-str}: {v-str}"
+    record-str(rec):
+      { fields-str: rec elements map(field-str) str.join-on(", ")
+      }."{{ {fields-str} }}"
+    app-str(f, x):
+      { x-str: to-str(x)
+        f-head: f head
+        f-name: if(f-head = :t-con, str.of(f tail head), "")
+        f-str: to-str(f)
+      }.(cond([
+          f-head = :t-con && f-name = "IO"       => "IO({x-str})"
+        , f-head = :t-con && f-name = "Dict"     => "Dict({x-str})"
+        , f-head = :t-con && f-name = "NonEmpty" => "NonEmpty([{x-str}])"
+        , "{f-str} {x-str}"
+        ]))
+    tuple-str(ts):
+      { parts: ts map(to-str)
+        body: parts str.join-on(", ")
+      }."({body})"
+    to-str(t):
+      { tag:    t head
+        rest:   t tail
+        r0:     t tail head
+        r1:     t tail tail head
+        r0-str: to-str(r0)
+        r1-str: to-str(r1)
+        r0-sym: str.of(r0)
+      }.(cond([
+          tag = :t-prim    => prim-str(rest head)
+        , tag = :t-list    => "[{r0-str}]"
+        , tag = :t-fn      => fn-str(rest head, rest tail head)
+        , tag = :t-con     => str.of(rest head)
+        , tag = :t-app     => app-str(rest head, rest tail head)
+        , tag = :t-union   => rest map(to-str) str.join-on(" | ")
+        , tag = :t-partial => "{r0-str}?"
+        , tag = :t-tuple   => tuple-str(rest)
+        , tag = :t-record  => record-str(rest head)
+        , tag = :t-var     => str.of(rest head)
+        , tag = :t-lit-sym => ":{str.of(rest head)}"
+        , tag = :t-mu      => str.of(rest head)
+        , tag = :t-forall  => "forall {r0-sym}. {r1-str}"
+        , tag = :t-lam     => "λ{r0-sym}. {r1-str}"
+        , "any"
+        ]))
+  }.(to-str(td) __TYPE_FROM_STRING)
 
 ` { doc: "`elements(b)` - expose list of elements of block `b`."
     type: s"{..} → [(symbol, any)]" }
@@ -896,7 +980,7 @@ sum(l): foldl(+, 0, l)
 product(l): foldl(*, 1, l)
 
 ` { doc: "`max(l, r)` - return max of `l` and `r` by `>`."
-    type: s">(a, a) => a → a → a" }
+    type: s"!>(a, a) => a → a → a" }
 max(l, r): if(l > r, l, r)
 
 ` "`max-of(l) - return max element in list of numbers `l` - error if empty`"
@@ -921,7 +1005,7 @@ max-map(f, l): l map(f) max-of
 max-of-or(d, l): l nil? then(d, max-of(l))
 
 ` { doc: "`min(l, r)` - return min of `l` and `r` by `<`."
-    type: s"<(a, a) => a → a → a" }
+    type: s"!<(a, a) => a → a → a" }
 min(l, r): if(l < r, l, r)
 
 ` "`min-of(l) - return min element in list of numbers `l` - error if empty`"
@@ -1561,7 +1645,9 @@ partition-all(n): window-all(n, n)
 
 ` { doc: "`over-sliding-pairs(f, l)` - apply binary fn `f` to each overlapping pair in `l` to form new list."
     type: s"!(a → a → b) → [a] → [b]" }
-over-sliding-pairs(f, l): l window(2, 1) map(f uncurry)
+over-sliding-pairs(f, l):
+  { apply-pair(p): f(p head, p tail head)
+  }.(l window(2, 1) map(apply-pair))
 
 ` { doc: "`differences(l)` - calculate difference between each overlapping pair in list of numbers `l`."
     type: s"[number] → [number]" }

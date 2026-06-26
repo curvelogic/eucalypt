@@ -19,6 +19,7 @@ use crate::{
         expr::*,
         rt,
         transform::dynamise,
+        typecheck::parse::parse_type,
     },
     syntax::rowan::{
         ast::{self as rowan_ast, AstToken, Element, HasSoup},
@@ -635,7 +636,24 @@ impl Desugarable for rowan_ast::Literal {
                 }
                 rowan_ast::LiteralValue::SStr(s) => {
                     if let Some(text) = s.value() {
-                        Primitive::TypeData(text.to_string())
+                        // The `!` prefix is an escape hatch for types that use
+                        // extended syntax (e.g. kind annotations) not yet
+                        // supported by `parse_type`. Skip validation and store
+                        // the raw content (without the `!`).
+                        if let Some(raw) = text.strip_prefix('!') {
+                            Primitive::TypeData(raw.to_string())
+                        } else {
+                            // Validate at compile time; store canonical (re-rendered) form.
+                            match parse_type(text) {
+                                Ok(ty) => Primitive::TypeData(format!("{ty}")),
+                                Err(e) => {
+                                    return Err(CoreError::InvalidEmbedding(
+                                        format!("invalid type annotation: {e}"),
+                                        desugarer.new_smid(span),
+                                    ));
+                                }
+                            }
+                        }
                     } else {
                         return Err(CoreError::InvalidEmbedding(
                             "invalid type-data literal".to_string(),

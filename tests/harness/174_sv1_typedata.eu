@@ -1,0 +1,66 @@
+#!/usr/bin/env eu
+# Tests for SV1 s-string type-data semantics:
+# compile-time validation, to-data projection, from-data round-trip.
+
+# ── Compile-time validation ────────────────────────────────────────────────
+# Valid type strings compile and render as canonical strings.
+valid-prim:        s"number"
+valid-fn:          s"number → string"
+valid-record:      s"{ name: string }"
+valid-list:        s"[string]"
+valid-partial:     s"number?"
+valid-tuple:       s"(number, string)"
+valid-union:       s"number | string"
+valid-forall:      s"forall a. [a] → a"
+
+# Canonical form: whitespace is normalised, arrow glyph is Unicode →.
+canonical-fn:      s"number -> string"
+
+# ── to-data projection ──────────────────────────────────────────────────────
+td-prim:    s"number" to-data  //= [:t-prim, :number]
+td-fn:      s"number → string" to-data
+            //= [:t-fn, [:t-prim, :number], [:t-prim, :string]]
+td-list:    s"[string]" to-data  //= [:t-list, [:t-prim, :string]]
+td-partial: s"number?" to-data   //= [:t-partial, [:t-prim, :number]]
+td-con:     s"IO(number)" to-data
+            //= [:t-app, [:t-con, :IO], [:t-prim, :number]]
+td-var:     s"a" to-data  //= [:t-var, :a]
+td-union:   s"number | string" to-data
+            //= [:t-union, [:t-prim, :number], [:t-prim, :string]]
+td-tuple:   s"(number, string)" to-data
+            //= [:t-tuple, [:t-prim, :number], [:t-prim, :string]]
+td-forall:  s"forall a. [a] → a" to-data
+            //= [:t-forall, :a, [:t-fn, [:t-list, [:t-var, :a]], [:t-var, :a]]]
+
+# ── Round-trip: to-data from-data ──────────────────────────────────────────
+rt-number:  s"number" to-data from-data  //=? type-data?
+rt-fn:      s"number → string" to-data from-data  //=? type-data?
+rt-fn-val:  (s"number → string" to-data from-data) = s"number → string"
+rt-list:    s"[number]" to-data from-data  //=? type-data?
+rt-record:  s"{ x: number }" to-data from-data  //=? type-data?
+rt-partial: s"number?" to-data from-data  //=? type-data?
+rt-forall:  s"forall a. a → a" to-data from-data  //=? type-data?
+
+# ── Non-type-data values pass through to-data unchanged ───────────────────
+passthru-num: 42 to-data  //= 42
+passthru-str: "hello" to-data  //= "hello"
+
+RESULT: if(
+  and(td-prim,
+  and(td-fn,
+  and(td-list,
+  and(td-partial,
+  and(td-con,
+  and(td-var,
+  and(td-union,
+  and(td-tuple,
+  and(td-forall,
+  and(rt-number,
+  and(rt-fn,
+  and(rt-list,
+  and(rt-record,
+  and(rt-partial,
+  and(rt-forall,
+  and(passthru-num,
+  passthru-str)))))))))))))))),
+  :PASS, :FAIL)

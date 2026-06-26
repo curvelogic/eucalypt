@@ -25,8 +25,8 @@ not-equal-td: not(s"number" = s"string")
 # Braces inside s"..." are literal — no interpolation, no doubling required
 literal-braces: type-data?(s"{x: number}")
 
-# Curly-brace content that looks like interpolation is still literal in s-strings
-no-interp: type-data?(s"hi {name}")
+# Curly-brace content is still literal in s-strings (record type with braces)
+no-interp: type-data?(s"{ n: string, m: number }")
 
 RESULT: if(
   and(td-is-type-data,
