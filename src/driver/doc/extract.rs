@@ -546,7 +546,11 @@ fn collect_symbol_refs(list: &ast::List) -> Vec<String> {
 
 /// Extract child entries for namespace blocks.
 ///
-/// If the declaration body is a single block, its declarations become children.
+/// Only `Property` declarations (i.e. `name: { ... }`) are treated as
+/// namespace blocks whose inner declarations become documented children.
+/// Function declarations whose bodies happen to contain a block literal
+/// (e.g. for scoping helpers via block-dot) are explicitly excluded, so
+/// internal helper bindings do not leak into the public documentation.
 fn extract_children(decl: &ast::Declaration) -> Vec<DocEntry> {
     let body = match decl.body() {
         Some(b) => b,
@@ -557,12 +561,15 @@ fn extract_children(decl: &ast::Declaration) -> Vec<DocEntry> {
         None => return vec![],
     };
 
-    let namespace = match decl.head() {
+    // Only property declarations create namespace blocks; function bodies
+    // that contain block literals (e.g. `f(x): { helpers }.result`) are
+    // implementation details and must not expose their internal bindings.
+    let namespace: String = match decl.head() {
         Some(h) => match h.classify_declaration() {
-            DeclarationKind::Property(id) => Some(id.text().to_string()),
-            _ => None,
+            DeclarationKind::Property(id) => id.text().to_string(),
+            _ => return vec![],
         },
-        None => None,
+        None => return vec![],
     };
 
     let mut children = vec![];
@@ -570,7 +577,7 @@ fn extract_children(decl: &ast::Declaration) -> Vec<DocEntry> {
         if let ast::Element::Block(block) = element {
             for inner_decl in block.declarations() {
                 if let Some(mut child) = entry_from_declaration(&inner_decl) {
-                    child.namespace = namespace.clone();
+                    child.namespace = Some(namespace.clone());
                     children.push(child);
                 }
             }
