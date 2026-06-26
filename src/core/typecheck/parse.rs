@@ -822,7 +822,7 @@ impl<'a> Parser<'a> {
     /// variable (e.g. `{x: number, ..r}`).  When `..` appears alone the
     /// record is open with an anonymous tail (e.g. `{x: number, ..}`).
     fn parse_record(&mut self, _open_pos: usize) -> Result<Type, ParseError> {
-        use super::types::TypeVarId;
+        use super::types::{FieldPresence, TypeVarId};
 
         // After consuming `..`, optionally consume a following ident as the
         // row variable name.  Returns a named TypeVarId or None for anonymous open.
@@ -909,7 +909,7 @@ impl<'a> Parser<'a> {
             });
         }
 
-        let mut fields = BTreeMap::new();
+        let mut fields: BTreeMap<String, FieldPresence> = BTreeMap::new();
         let mut open = false;
         let mut rows: Vec<TypeVarId> = vec![];
 
@@ -974,6 +974,13 @@ impl<'a> Parser<'a> {
                         Token::Ident(name) => name,
                         _ => unreachable!(),
                     };
+                    // Optional field: `name?:`
+                    let is_optional = if self.peek()? == &Token::Question {
+                        self.advance()?;
+                        true
+                    } else {
+                        false
+                    };
                     self.expect(&Token::Colon)?;
                     let field_type = self.parse_type()?;
                     if fields.contains_key(&field_name) {
@@ -982,7 +989,12 @@ impl<'a> Parser<'a> {
                             format!("duplicate field '{field_name}' in record type"),
                         ));
                     }
-                    fields.insert(field_name, field_type);
+                    let presence = if is_optional {
+                        FieldPresence::Optional(field_type)
+                    } else {
+                        FieldPresence::Required(field_type)
+                    };
+                    fields.insert(field_name, presence);
 
                     // After a field: expect ',' or '}'
                     match self.peek()? {
@@ -1250,7 +1262,7 @@ pub fn parse_type_with_refs(input: &str) -> Result<(Type, Vec<AliasRef>), ParseE
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::typecheck::types::{Type, TypeVarId};
+    use crate::core::typecheck::types::{FieldPresence, Type, TypeVarId};
     use std::collections::BTreeMap;
 
     fn var(name: &str) -> Type {
@@ -1466,7 +1478,7 @@ mod tests {
     #[test]
     fn parse_closed_record() {
         let mut fields = BTreeMap::new();
-        fields.insert("name".to_string(), Type::String);
+        fields.insert("name".to_string(), FieldPresence::Required(Type::String));
         assert_eq!(
             parse_type("{name: string}").unwrap(),
             Type::Record {
@@ -1480,7 +1492,7 @@ mod tests {
     #[test]
     fn parse_open_record() {
         let mut fields = BTreeMap::new();
-        fields.insert("name".to_string(), Type::String);
+        fields.insert("name".to_string(), FieldPresence::Required(Type::String));
         assert_eq!(
             parse_type("{name: string, ..}").unwrap(),
             Type::Record {
@@ -1489,6 +1501,30 @@ mod tests {
                 rows: vec![]
             }
         );
+    }
+
+    #[test]
+    fn parse_optional_field() {
+        let ty = parse_type("{name: string, age?: number}").unwrap();
+        if let Type::Record { fields, open, rows } = ty {
+            assert!(!open);
+            assert!(rows.is_empty());
+            assert_eq!(
+                fields.get("name"),
+                Some(&FieldPresence::Required(Type::String))
+            );
+            assert_eq!(
+                fields.get("age"),
+                Some(&FieldPresence::Optional(Type::Number))
+            );
+        } else {
+            panic!("expected Record type");
+        }
+    }
+
+    #[test]
+    fn roundtrip_optional_field() {
+        roundtrip("{age?: number, name: string}");
     }
 
     #[test]
@@ -1518,9 +1554,12 @@ mod tests {
     #[test]
     fn parse_multi_field_record() {
         let mut fields = BTreeMap::new();
-        fields.insert("stdout".to_string(), Type::String);
-        fields.insert("stderr".to_string(), Type::String);
-        fields.insert("exit-code".to_string(), Type::Number);
+        fields.insert("stdout".to_string(), FieldPresence::Required(Type::String));
+        fields.insert("stderr".to_string(), FieldPresence::Required(Type::String));
+        fields.insert(
+            "exit-code".to_string(),
+            FieldPresence::Required(Type::Number),
+        );
         assert_eq!(
             parse_type("{stdout: string, stderr: string, exit-code: number}").unwrap(),
             Type::Record {
@@ -1550,9 +1589,12 @@ mod tests {
             Type::io(Type::Record {
                 fields: {
                     let mut m = BTreeMap::new();
-                    m.insert("stdout".to_string(), Type::String);
-                    m.insert("stderr".to_string(), Type::String);
-                    m.insert("exit-code".to_string(), Type::Number);
+                    m.insert("stdout".to_string(), FieldPresence::Required(Type::String));
+                    m.insert("stderr".to_string(), FieldPresence::Required(Type::String));
+                    m.insert(
+                        "exit-code".to_string(),
+                        FieldPresence::Required(Type::Number),
+                    );
                     m
                 },
                 open: false,
@@ -1755,7 +1797,7 @@ mod tests {
         // {x: number, ..r} — named row variable after a field
         // open: false because openness is captured in the named row var, not anonymous
         let mut fields = BTreeMap::new();
-        fields.insert("x".to_string(), Type::Number);
+        fields.insert("x".to_string(), FieldPresence::Required(Type::Number));
         assert_eq!(
             parse_type("{x: number, ..r}").unwrap(),
             Type::Record {
@@ -1784,8 +1826,8 @@ mod tests {
     fn parse_record_named_row_multi_field() {
         // {name: string, age: number, ..rest}
         let mut fields = BTreeMap::new();
-        fields.insert("name".to_string(), Type::String);
-        fields.insert("age".to_string(), Type::Number);
+        fields.insert("name".to_string(), FieldPresence::Required(Type::String));
+        fields.insert("age".to_string(), FieldPresence::Required(Type::Number));
         assert_eq!(
             parse_type("{name: string, age: number, ..rest}").unwrap(),
             Type::Record {
@@ -1814,7 +1856,7 @@ mod tests {
     fn parse_record_field_then_two_row_vars() {
         // {x: number, ..r, ..s}
         let mut fields = BTreeMap::new();
-        fields.insert("x".to_string(), Type::Number);
+        fields.insert("x".to_string(), FieldPresence::Required(Type::Number));
         assert_eq!(
             parse_type("{x: number, ..r, ..s}").unwrap(),
             Type::Record {

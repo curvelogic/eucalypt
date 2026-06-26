@@ -194,15 +194,18 @@ fn complete_record_fields(
     if let Type::Record { fields, .. } = ty {
         let items = fields
             .iter()
-            .map(|(name, field_ty)| CompletionItem {
-                label: name.clone(),
-                kind: Some(if matches!(field_ty, Type::Function(_, _)) {
-                    CompletionItemKind::FUNCTION
-                } else {
-                    CompletionItemKind::FIELD
-                }),
-                detail: Some(field_ty.to_string()),
-                ..CompletionItem::default()
+            .map(|(name, field_presence)| {
+                let field_ty = field_presence.ty();
+                CompletionItem {
+                    label: name.clone(),
+                    kind: Some(if matches!(field_ty, Type::Function(_, _)) {
+                        CompletionItemKind::FUNCTION
+                    } else {
+                        CompletionItemKind::FIELD
+                    }),
+                    detail: Some(field_ty.to_string()),
+                    ..CompletionItem::default()
+                }
             })
             .collect();
         Some(items)

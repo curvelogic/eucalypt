@@ -1,0 +1,17 @@
+#!/usr/bin/env eu
+# Optional record field type syntax (`field?:`) smoke test.
+#
+# Verifies that the `?` suffix on a record field in a type annotation is
+# parsed and evaluated correctly. The row variable `..r` keeps the record
+# type open so block literals are accepted without false-positive warnings.
+
+` { type: "{{name: string, age?: number, ..r}} -> string" }
+greet(rec): rec.name
+
+# A record WITH the optional field — should work fine.
+with-age: greet({ name: "Alice", age: 30 })
+
+# A record WITHOUT the optional field — also fine (field is optional).
+without-age: greet({ name: "Bob" })
+
+RESULT: [with-age = "Alice", without-age = "Bob"] all-true? then(:PASS, :FAIL)

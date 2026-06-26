@@ -718,7 +718,7 @@ impl Checker {
             Type::Record { fields, open, rows } => Type::Record {
                 fields: fields
                     .into_iter()
-                    .map(|(k, v)| (k, self.resolve_aliases_inner(v, resolving)))
+                    .map(|(k, fp)| (k, fp.map_type(|v| self.resolve_aliases_inner(v, resolving))))
                     .collect(),
                 open,
                 rows,
@@ -1205,12 +1205,13 @@ impl Checker {
     /// The record is always marked **open** (`{k: T, ..}`) because a block
     /// may have additional unannotated members beyond what we can enumerate.
     fn synthesise_block(&mut self, fields: &BlockMap<RcExpr>) -> Type {
-        let mut field_types: BTreeMap<String, Type> = BTreeMap::new();
+        use crate::core::typecheck::types::FieldPresence;
+        let mut field_types: BTreeMap<String, FieldPresence> = BTreeMap::new();
         for (key, value) in fields.iter() {
             let ty = self.synthesise(value);
             // Only include fields whose type carries real information.
             if is_informative(&ty) {
-                field_types.insert(key.clone(), ty);
+                field_types.insert(key.clone(), FieldPresence::Required(ty));
             }
         }
         Type::Record {
@@ -1230,9 +1231,9 @@ impl Checker {
     pub fn synthesise_lookup(&mut self, smid: Smid, obj_type: &Type, field: &str) -> Type {
         match obj_type {
             Type::Record { fields, open, rows } => {
-                if let Some(field_ty) = fields.get(field) {
+                if let Some(field_presence) = fields.get(field) {
                     // Field is known — return its type directly.
-                    field_ty.clone()
+                    field_presence.ty().clone()
                 } else if *open || !rows.is_empty() {
                     // Open record (or record with row variables) may have this
                     // field at runtime — no warning.
@@ -2419,8 +2420,8 @@ impl Checker {
     ) -> Type {
         match block_type {
             Type::Record { fields, open, rows } => {
-                if let Some(field_type) = fields.get(key) {
-                    field_type.clone()
+                if let Some(field_presence) = fields.get(key) {
+                    field_presence.ty().clone()
                 } else if !open && rows.is_empty() {
                     // Closed record without the key — key typo warning.
                     let known: Vec<String> = fields.keys().map(|k| format!(":{k}")).collect();
@@ -3022,7 +3023,7 @@ fn contains_var_named(ty: &Type, name: &str) -> bool {
         }
         Type::Function(a, b) => contains_var_named(a, name) || contains_var_named(b, name),
         Type::Tuple(elems) => elems.iter().any(|e| contains_var_named(e, name)),
-        Type::Record { fields, .. } => fields.values().any(|v| contains_var_named(v, name)),
+        Type::Record { fields, .. } => fields.values().any(|fp| contains_var_named(fp.ty(), name)),
         Type::Union(variants) => variants.iter().any(|v| contains_var_named(v, name)),
         // Mu: the binder name `x` is bound, not free — stop if it shadows `name`.
         Type::Mu(x, body) => x.0 != name && contains_var_named(body, name),
@@ -3465,7 +3466,7 @@ impl Checker {
 mod tests {
     use super::*;
     use crate::core::expr::core;
-    use crate::core::typecheck::types::TypeVarId;
+    use crate::core::typecheck::types::{FieldPresence, TypeVarId};
 
     fn num_lit(n: i64) -> RcExpr {
         core::num(Smid::default(), n)
@@ -4113,9 +4114,12 @@ mod tests {
             Type::Record {
                 fields: {
                     let mut m = std::collections::BTreeMap::new();
-                    m.insert("age".to_string(), Type::Number);
+                    m.insert("age".to_string(), FieldPresence::Required(Type::Number));
                     // String literals synthesise as LiteralString.
-                    m.insert("name".to_string(), Type::LiteralString("Alice".to_string()));
+                    m.insert(
+                        "name".to_string(),
+                        FieldPresence::Required(Type::LiteralString("Alice".to_string())),
+                    );
                     m
                 },
                 open: true,
@@ -4141,7 +4145,10 @@ mod tests {
                     let mut m = std::collections::BTreeMap::new();
                     m.insert(
                         "greet".to_string(),
-                        Type::Function(Box::new(Type::String), Box::new(Type::String)),
+                        FieldPresence::Required(Type::Function(
+                            Box::new(Type::String),
+                            Box::new(Type::String),
+                        )),
                     );
                     m
                 },
@@ -4167,8 +4174,8 @@ mod tests {
             mono(Type::Record {
                 fields: {
                     let mut m = std::collections::BTreeMap::new();
-                    m.insert("name".to_string(), Type::String);
-                    m.insert("age".to_string(), Type::Number);
+                    m.insert("name".to_string(), FieldPresence::Required(Type::String));
+                    m.insert("age".to_string(), FieldPresence::Required(Type::Number));
                     m
                 },
                 open: true,
@@ -4213,7 +4220,7 @@ mod tests {
             mono(Type::Record {
                 fields: {
                     let mut m = std::collections::BTreeMap::new();
-                    m.insert("x".to_string(), Type::Number);
+                    m.insert("x".to_string(), FieldPresence::Required(Type::Number));
                     m
                 },
                 open: false,

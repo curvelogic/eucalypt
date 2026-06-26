@@ -24,6 +24,46 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct TypeVarId(pub String);
 
+// ── FieldPresence ─────────────────────────────────────────────────────────────
+
+/// Whether a record field is required or optional.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FieldPresence {
+    /// Field must be present.
+    Required(Type),
+    /// Field may be absent; if present, must match the type.
+    Optional(Type),
+}
+
+impl FieldPresence {
+    pub fn ty(&self) -> &Type {
+        match self {
+            FieldPresence::Required(t) | FieldPresence::Optional(t) => t,
+        }
+    }
+
+    pub fn ty_mut(&mut self) -> &mut Type {
+        match self {
+            FieldPresence::Required(t) | FieldPresence::Optional(t) => t,
+        }
+    }
+
+    pub fn is_optional(&self) -> bool {
+        matches!(self, FieldPresence::Optional(_))
+    }
+
+    pub fn is_required(&self) -> bool {
+        matches!(self, FieldPresence::Required(_))
+    }
+
+    pub fn map_type(self, f: impl FnOnce(Type) -> Type) -> Self {
+        match self {
+            FieldPresence::Required(t) => FieldPresence::Required(f(t)),
+            FieldPresence::Optional(t) => FieldPresence::Optional(f(t)),
+        }
+    }
+}
+
 impl fmt::Display for TypeVarId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -240,7 +280,7 @@ pub enum Type {
 
     /// Record type (open or closed, with optional named row variables).
     Record {
-        fields: BTreeMap<String, Type>,
+        fields: BTreeMap<String, FieldPresence>,
         open: bool,
         /// Named row variables — the `..r` tail form.  Usually 0 or 1 entries.
         rows: Vec<TypeVarId>,
@@ -507,11 +547,15 @@ impl fmt::Display for Type {
             Type::Record { fields, open, rows } => {
                 write!(f, "{{")?;
                 let mut any_written = false;
-                for (k, v) in fields.iter() {
+                for (k, fp) in fields.iter() {
                     if any_written {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{k}: {v}")?;
+                    if fp.is_optional() {
+                        write!(f, "{k}?: {}", fp.ty())?;
+                    } else {
+                        write!(f, "{k}: {}", fp.ty())?;
+                    }
                     any_written = true;
                 }
                 for r in rows {
@@ -635,8 +679,8 @@ pub fn humanise(ty: &Type) -> Type {
                 collect_fresh_vars(b, seen);
             }
             Type::Record { fields, rows, .. } => {
-                for v in fields.values() {
-                    collect_fresh_vars(v, seen);
+                for fp in fields.values() {
+                    collect_fresh_vars(fp.ty(), seen);
                 }
                 for r in rows {
                     if r.0.starts_with("_t") && !seen.contains(&r.0) {
@@ -683,7 +727,7 @@ pub fn humanise(ty: &Type) -> Type {
             Type::Record { fields, open, rows } => Type::Record {
                 fields: fields
                     .iter()
-                    .map(|(k, v)| (k.clone(), replace(v, mapping)))
+                    .map(|(k, fp)| (k.clone(), fp.clone().map_type(|t| replace(&t, mapping))))
                     .collect(),
                 open: *open,
                 rows: rows
@@ -756,7 +800,12 @@ pub fn unfold_mu(x: &TypeVarId, ty: &Type, replacement: &Type) -> Type {
         Type::Record { fields, open, rows } => Type::Record {
             fields: fields
                 .iter()
-                .map(|(k, v)| (k.clone(), unfold_mu(x, v, replacement)))
+                .map(|(k, fp)| {
+                    (
+                        k.clone(),
+                        fp.clone().map_type(|t| unfold_mu(x, &t, replacement)),
+                    )
+                })
                 .collect(),
             open: *open,
             rows: rows.clone(),
@@ -928,8 +977,8 @@ mod tests {
     #[test]
     fn display_closed_record() {
         let mut fields = BTreeMap::new();
-        fields.insert("name".to_string(), Type::String);
-        fields.insert("age".to_string(), Type::Number);
+        fields.insert("name".to_string(), FieldPresence::Required(Type::String));
+        fields.insert("age".to_string(), FieldPresence::Required(Type::Number));
         let t = Type::Record {
             fields,
             open: false,
@@ -941,13 +990,36 @@ mod tests {
     #[test]
     fn display_open_record() {
         let mut fields = BTreeMap::new();
-        fields.insert("name".to_string(), Type::String);
+        fields.insert("name".to_string(), FieldPresence::Required(Type::String));
         let t = Type::Record {
             fields,
             open: true,
             rows: vec![],
         };
         assert_eq!(t.to_string(), "{name: string, ..}");
+    }
+
+    #[test]
+    fn display_optional_field_record() {
+        let mut fields = BTreeMap::new();
+        fields.insert("name".to_string(), FieldPresence::Required(Type::String));
+        fields.insert("age".to_string(), FieldPresence::Optional(Type::Number));
+        let t = Type::Record {
+            fields,
+            open: false,
+            rows: vec![],
+        };
+        // BTreeMap sorts keys: age < name
+        assert_eq!(t.to_string(), "{age?: number, name: string}");
+    }
+
+    #[test]
+    fn roundtrip_optional_field_record() {
+        use super::super::parse::parse_type;
+        let ty = parse_type("{name: string, age?: number}").unwrap();
+        let displayed = ty.to_string();
+        let ty2 = parse_type(&displayed).unwrap();
+        assert_eq!(ty, ty2);
     }
 
     #[test]
@@ -1046,7 +1118,7 @@ mod tests {
     #[test]
     fn display_row_var_with_fields() {
         let mut fields = BTreeMap::new();
-        fields.insert("x".to_string(), Type::Number);
+        fields.insert("x".to_string(), FieldPresence::Required(Type::Number));
         let t = Type::Record {
             fields,
             open: false,
@@ -1127,9 +1199,12 @@ mod tests {
                 let mut m = BTreeMap::new();
                 m.insert(
                     "value".to_string(),
-                    Type::Var(TypeVarId("_t0".into()), Kind::Star),
+                    FieldPresence::Required(Type::Var(TypeVarId("_t0".into()), Kind::Star)),
                 );
-                m.insert("left".to_string(), Type::Var(tree_id.clone(), Kind::Star));
+                m.insert(
+                    "left".to_string(),
+                    FieldPresence::Required(Type::Var(tree_id.clone(), Kind::Star)),
+                );
                 m
             },
             open: false,
