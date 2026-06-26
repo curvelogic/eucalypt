@@ -2667,6 +2667,11 @@ pub fn test_typecheck_107_optional_field_missing_required_warns() {
     run_typecheck_test("107_optional_field_missing_required_warns.eu");
 }
 
+#[test]
+pub fn test_typecheck_108_optional_field_wrong_type_warns() {
+    run_typecheck_test("108_optional_field_wrong_type_warns.eu");
+}
+
 // ── eu doc tests ──────────────────────────────────────────────────────────────
 
 /// `eu doc` on a documented fixture produces Markdown with the expected content.
