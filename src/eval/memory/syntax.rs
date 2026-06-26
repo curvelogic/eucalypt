@@ -243,6 +243,12 @@ pub enum HeapSyn {
     Cons { tag: Tag, args: Array<Ref> },
     /// Function application
     App { callable: Ref, args: Array<Ref> },
+    /// Direct exact-arity application to a statically known callee.
+    DirectApp {
+        smid: Smid,
+        callable: Ref,
+        args: Array<Ref>,
+    },
     /// Saturated intrinsic application
     Bif { intrinsic: u8, args: Array<Ref> },
     /// Let bindings
@@ -459,6 +465,18 @@ impl GcScannable for HeapSyn {
                 }
                 mark_ref_array_heap_pointers(args, scope, marker, out);
             }
+            HeapSyn::DirectApp { callable, args, .. } => {
+                mark_ref_heap_pointers(callable, scope, marker, out);
+                if marker.mark_array(args) {
+                    if let Some(backing_ptr) = args.allocated_data() {
+                        out.push(ScanPtr::from_non_null(
+                            scope,
+                            backing_ptr.cast::<OpaqueHeapBytes>(),
+                        ));
+                    }
+                }
+                mark_ref_array_heap_pointers(args, scope, marker, out);
+            }
             HeapSyn::Bif { intrinsic: _, args } => {
                 if marker.mark_array(args) {
                     if let Some(backing_ptr) = args.allocated_data() {
@@ -594,6 +612,15 @@ impl GcScannable for HeapSyn {
                     if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
                         // SAFETY: new_ptr is a valid evacuated copy of the same
                         // backing allocation.
+                        unsafe { args.set_backing_ptr(new_ptr.cast()) };
+                    }
+                }
+                update_ref_array_heap_pointers(args, heap);
+            }
+            HeapSyn::DirectApp { callable, args, .. } => {
+                update_ref_heap_pointers(callable, heap);
+                if let Some(old_ptr) = args.allocated_data() {
+                    if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
                         unsafe { args.set_backing_ptr(new_ptr.cast()) };
                     }
                 }
@@ -801,6 +828,15 @@ impl Repr for ScopedPtr<'_, HeapSyn> {
                 args: repr::repr_refarray(self, args.clone()),
             }),
             HeapSyn::App { callable, args } => Rc::new(StgSyn::App {
+                callable: repr::heap_to_stg(self, callable),
+                args: repr::repr_refarray(self, args.clone()),
+            }),
+            HeapSyn::DirectApp {
+                smid,
+                callable,
+                args,
+            } => Rc::new(StgSyn::DirectApp {
+                smid: *smid,
                 callable: repr::heap_to_stg(self, callable),
                 args: repr::repr_refarray(self, args.clone()),
             }),

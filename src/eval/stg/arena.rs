@@ -121,6 +121,11 @@ pub enum ArenaStgSyn {
         callable: Ref,
         args: Vec<Ref>,
     },
+    DirectApp {
+        smid: Smid,
+        callable: Ref,
+        args: Vec<Ref>,
+    },
     Bif {
         intrinsic: u8,
         args: Vec<Ref>,
@@ -212,6 +217,15 @@ impl StgArena {
                 args: args.clone(),
             },
             StgSyn::App { callable, args } => ArenaStgSyn::App {
+                callable: callable.clone(),
+                args: args.clone(),
+            },
+            StgSyn::DirectApp {
+                smid,
+                callable,
+                args,
+            } => ArenaStgSyn::DirectApp {
+                smid: *smid,
                 callable: callable.clone(),
                 args: args.clone(),
             },
@@ -370,6 +384,15 @@ impl StgArena {
                 args: args.clone(),
             },
             ArenaStgSyn::App { callable, args } => StgSyn::App {
+                callable: callable.clone(),
+                args: args.clone(),
+            },
+            ArenaStgSyn::DirectApp {
+                smid,
+                callable,
+                args,
+            } => StgSyn::DirectApp {
+                smid: *smid,
                 callable: callable.clone(),
                 args: args.clone(),
             },

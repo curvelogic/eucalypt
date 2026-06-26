@@ -153,7 +153,7 @@ impl HeapNavigator<'_> {
                 Ok(DataConstructor::Block) => "a block",
                 _ => "a data constructor",
             },
-            HeapSyn::App { .. } => "a function application",
+            HeapSyn::App { .. } | HeapSyn::DirectApp { .. } => "a function application",
             HeapSyn::Bif { .. } => "an intrinsic function call",
             HeapSyn::Case { .. } => "a case expression",
             HeapSyn::Let { .. } | HeapSyn::LetRec { .. } => "a let binding",
@@ -513,6 +513,39 @@ impl MachineState {
                     }
                 } else {
                     self.closure = self.nav(view).resolve_callable(callable)?;
+                }
+            }
+            HeapSyn::DirectApp {
+                smid,
+                callable,
+                args,
+            } => {
+                // Set the source annotation from the inline Smid (replaces Ann dispatch).
+                self.annotation = *smid;
+                // Create the argument array from refs.
+                let array = view.create_arg_array(args.as_slice(), environment)?;
+                // Resolve the callable.  The compiler emits DirectApp for known
+                // lambdas, but demand-sig lookup may occasionally be overly
+                // optimistic (e.g. a parameter whose name coincides with a
+                // prelude function).  Guard with an arity check: on the fast
+                // path (exact match) we skip the ApplyTo push entirely; on the
+                // slow path we degrade gracefully to normal App semantics.
+                let closure = self.nav(view).resolve_callable(callable)?;
+                if closure.arity() as usize == array.len() {
+                    // True fast path: exact arity — saturate directly, no
+                    // ApplyTo continuation pushed, no return_fun dispatch.
+                    self.closure = view.saturate_with_array(&closure, array)?;
+                } else {
+                    // Fallback: push ApplyTo and let return_fun handle arity
+                    // mismatch (under- or over-application).
+                    self.push(
+                        view,
+                        Continuation::ApplyTo {
+                            args: array,
+                            annotation: self.annotation,
+                        },
+                    )?;
+                    self.closure = closure;
                 }
             }
             HeapSyn::Bif { intrinsic, .. } => {

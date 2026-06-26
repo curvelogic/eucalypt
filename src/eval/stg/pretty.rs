@@ -124,6 +124,17 @@ impl ToPretty for StgSyn {
                         .parens(),
                 )
             }
+            StgSyn::DirectApp { callable, args, .. } => {
+                let args_docs = args.iter().map(|r| allocator.text(format!("{r}")));
+                allocator
+                    .text("→")
+                    .append(allocator.text(format!("{callable}")))
+                    .append(
+                        allocator
+                            .intersperse(args_docs, allocator.text(", "))
+                            .parens(),
+                    )
+            }
             StgSyn::Bif { intrinsic, args } => {
                 let name = intrinsics::intrinsic(*intrinsic as usize).name();
                 let args_docs = args.iter().map(|r| allocator.text(format!("{r}")));

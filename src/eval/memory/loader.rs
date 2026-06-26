@@ -150,6 +150,15 @@ pub fn load<'scope, T: ScopedAllocator<'scope>>(
             callable: stg_to_heap(view, pool, callable),
             args: load_refvec(view, pool, args)?,
         }),
+        StgSyn::DirectApp {
+            smid,
+            callable,
+            args,
+        } => view.alloc(HeapSyn::DirectApp {
+            smid: *smid,
+            callable: stg_to_heap(view, pool, callable),
+            args: load_refvec(view, pool, args)?,
+        }),
         StgSyn::Bif { intrinsic, args } => view.alloc(HeapSyn::Bif {
             intrinsic: *intrinsic,
             args: load_refvec(view, pool, args)?,

@@ -163,6 +163,18 @@ fn embed_stg(syn: &StgSyn) -> Option<rowan_ast::Soup> {
             }
             b.finish()
         }
+        StgSyn::DirectApp {
+            callable,
+            args,
+            smid: _,
+        } => {
+            let mut b = StgEmbedBuilder::new("s-direct-app");
+            b.token(&embed_ref(callable));
+            for arg in args {
+                b.token(&embed_ref(arg));
+            }
+            b.finish()
+        }
         StgSyn::Bif { intrinsic, args } => {
             let name = intrinsics::intrinsic(*intrinsic as usize).name();
             let mut b = StgEmbedBuilder::new("s-bif");
