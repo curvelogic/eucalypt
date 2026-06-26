@@ -71,6 +71,21 @@ pub struct HeapNavigator<'scope> {
 }
 
 impl HeapNavigator<'_> {
+    /// Construct a navigator from explicit components.
+    pub(crate) fn new<'a>(
+        view: MutatorHeapView<'a>,
+        local_env: RefPtr<EnvFrame>,
+        global_env: RefPtr<EnvFrame>,
+        annotation: Smid,
+    ) -> HeapNavigator<'a> {
+        HeapNavigator {
+            locals: view.scoped(local_env),
+            globals: view.scoped(global_env),
+            view,
+            annotation,
+        }
+    }
+
     /// Resolve a ref (creating atom closure if it resolves to native)
     pub fn resolve(&self, r: &Ref) -> Result<SynClosure, ExecutionError> {
         match r {
@@ -204,7 +219,7 @@ impl HeapNavigator<'_> {
 /// Used by `env_from_data_args` to determine whether the new environment frame
 /// can share backing storage with the constructor's environment frame, preserving
 /// thunk memoisation across multiple traversals of the same structure.
-enum ArgPattern {
+pub(crate) enum ArgPattern {
     /// All args map to physical slots `0, 1, ..., n-1` (after composing with the
     /// constructor env's remap if any) and `n == backing_len` — identity physical
     /// mapping, shares full backing with no remap overhead.
@@ -230,7 +245,7 @@ enum ArgPattern {
 /// The `backing_len` parameter is the physical slot count of the constructor's top
 /// frame.  `logical_len` is its exposed (logical) slot count.  They differ when the
 /// constructor frame itself has a remap table.
-fn classify_args(
+pub(crate) fn classify_args(
     args: &[Ref],
     logical_len: usize,
     backing_len: usize,
@@ -274,27 +289,27 @@ fn classify_args(
 /// The state of the machine (stack / closure etc.)
 pub struct MachineState {
     /// Root (empty) environment
-    root_env: RefPtr<EnvFrame>,
+    pub(crate) root_env: RefPtr<EnvFrame>,
     /// Current closure
-    closure: SynClosure,
+    pub(crate) closure: SynClosure,
     /// Globals (primarily STG wrappers for intrinsics)
-    globals: RefPtr<EnvFrame>,
+    pub(crate) globals: RefPtr<EnvFrame>,
     /// Stack of continuations (stored inline, not on the eucalypt heap)
-    stack: Vec<Continuation>,
+    pub(crate) stack: Vec<Continuation>,
     /// Termination flag. Set when machine has terminated
-    terminated: bool,
+    pub(crate) terminated: bool,
     /// Yield flag. Set (alongside `terminated`) when the machine has
     /// evaluated an IO constructor to WHNF with no pending Branch or
     /// ApplyTo continuations.  The `io-run` driver loop checks this
     /// flag to distinguish a normal termination from an IO yield and
     /// inspects `closure` to read the IO constructor tag and fields.
-    yielded_io: bool,
+    pub(crate) yielded_io: bool,
     /// Annotation to paint on any environments we create
-    annotation: Smid,
+    pub(crate) annotation: Smid,
     /// Cache compiled regexes
-    rcache: LruCache<String, Regex>,
+    pub(crate) rcache: LruCache<String, Regex>,
     /// Interned symbol pool for fast symbol comparison
-    symbol_pool: SymbolPool,
+    pub(crate) symbol_pool: SymbolPool,
     /// Stash of closures kept alive across `machine.run()` calls.
     ///
     /// The io-run driver holds closures (e.g. `cont` and `world` from an
@@ -303,24 +318,24 @@ pub struct MachineState {
     /// continuation stack, so the GC would not mark them.  Pushing them
     /// into this stash ensures they are scanned as GC roots for the
     /// duration of the io-run loop.
-    stash: Vec<SynClosure>,
+    pub(crate) stash: Vec<SynClosure>,
     /// Suspended continuation stacks saved during `evaluate_to_whnf` calls.
     ///
     /// When `evaluate_to_whnf` is called with a non-empty continuation stack,
     /// the current stack is moved here (rather than dropped) so that the GC
     /// can trace its heap pointers during the sub-evaluation `run()`.  Each
     /// entry is popped and restored after the sub-evaluation completes.
-    suspended_stacks: Vec<Vec<Continuation>>,
+    pub(crate) suspended_stacks: Vec<Vec<Continuation>>,
     /// Set by `CaptureEnd` continuation to signal `Machine::step()` to
     /// pop the capture emitter and produce the result string.
-    capture_end_pending: bool,
+    pub(crate) capture_end_pending: bool,
     /// Captured string results from completed emitter captures.
-    capture_results: Vec<String>,
+    pub(crate) capture_results: Vec<String>,
     /// Format name for a pending capture start, set by `start_capture()`.
     /// `Machine::step()` reads this to push the actual emitter.
-    pending_capture_start: Option<String>,
+    pub(crate) pending_capture_start: Option<String>,
     /// Test mode flag — `__EXPECT` failures return false instead of panicking.
-    test_mode: bool,
+    pub(crate) test_mode: bool,
     /// Pending BIF intrinsic index, set by `handle_instruction` when it
     /// encounters a `HeapSyn::Bif` node.
     ///
@@ -330,7 +345,7 @@ pub struct MachineState {
     /// re-derives the argument slice directly from `self.state.closure` — no
     /// allocation or copy is needed because no GC can fire between
     /// `handle_instruction` returning and the BIF being dispatched.
-    pending_bif: Option<u8>,
+    pub(crate) pending_bif: Option<u8>,
 }
 
 impl Default for MachineState {
@@ -380,14 +395,18 @@ impl MachineState {
     }
 
     /// Push a new continuation onto the stack
-    fn push(&mut self, _view: MutatorHeapView, cont: Continuation) -> Result<(), ExecutionError> {
+    pub(crate) fn push(
+        &mut self,
+        _view: MutatorHeapView,
+        cont: Continuation,
+    ) -> Result<(), ExecutionError> {
         self.stack.push(cont);
         Ok(())
     }
 
     /// Handle an instruction
     #[inline]
-    fn handle_instruction<'guard>(
+    pub(crate) fn handle_instruction<'guard>(
         &mut self,
         view: MutatorHeapView<'guard>,
         _emitter: &mut dyn Emitter,
@@ -708,7 +727,7 @@ impl MachineState {
     }
 
     /// Update environment index to point to current closure
-    fn update(
+    pub(crate) fn update(
         &mut self,
         view: MutatorHeapView,
         environment: RefPtr<EnvFrame>,
@@ -720,7 +739,7 @@ impl MachineState {
 
     /// Return meta into a demeta destructuring or just strip metadata
     /// and continue
-    fn return_meta(
+    pub(crate) fn return_meta(
         &mut self,
         view: MutatorHeapView<'_>,
         meta: &Ref,
@@ -766,7 +785,7 @@ impl MachineState {
     /// The current closure already wraps the native in an Atom on the
     /// heap, so we reuse that closure when building the env frame for
     /// Branch/DeMeta fallbacks instead of allocating a fresh Atom.
-    fn return_native(
+    pub(crate) fn return_native(
         &mut self,
         view: MutatorHeapView<'_>,
         value: &Native,
@@ -873,7 +892,7 @@ impl MachineState {
     ///   (it chains into a deeper frame — sharing across frames is unsupported)
     /// - more than 4 args (remap table capacity)
     #[inline]
-    fn env_from_data_args(
+    pub(crate) fn env_from_data_args(
         &self,
         view: MutatorHeapView<'_>,
         args: &[Ref],
@@ -928,7 +947,7 @@ impl MachineState {
     /// (`Ref::V` or `Ref::G`), more than 4 args, or physical indices that reach
     /// beyond the constructor's top frame.  This is the original behaviour prior
     /// to the shared-env optimisation.
-    fn env_from_data_args_copy(
+    pub(crate) fn env_from_data_args_copy(
         &self,
         view: MutatorHeapView<'_>,
         args: &[Ref],
@@ -964,7 +983,7 @@ impl MachineState {
     ///
     /// Data is destructured for tag handlers but not for the default
     /// handler which is used for natives and unknown data constructors.
-    fn return_data(
+    pub(crate) fn return_data(
         &mut self,
         view: MutatorHeapView<'_>,
         tag: Tag,
@@ -1117,7 +1136,7 @@ impl MachineState {
     }
 
     /// Return function to either apply to args or default case branch
-    fn return_fun(&mut self, view: MutatorHeapView) -> Result<(), ExecutionError> {
+    pub(crate) fn return_fun(&mut self, view: MutatorHeapView) -> Result<(), ExecutionError> {
         if let Some(continuation) = self.stack.pop() {
             match continuation {
                 Continuation::ApplyTo { args, annotation } => {
@@ -1228,7 +1247,7 @@ impl MachineState {
     ///
     /// Used as a fallback when the immediate continuation has no
     /// annotation, to attribute errors to their enclosing call context.
-    fn nearest_stack_annotation(&self, view: MutatorHeapView) -> Smid {
+    pub(crate) fn nearest_stack_annotation(&self, view: MutatorHeapView) -> Smid {
         for cont in self.stack.iter().rev() {
             let smid = match cont {
                 Continuation::Branch { annotation, .. }
@@ -1443,18 +1462,18 @@ pub struct MachineSettings {
 /// `MachineBifContext`, enabling sound `evaluate_to_whnf` support.
 pub struct MachineCore<'a> {
     /// Main VM Memory — interior mutability throughout
-    heap: Heap,
+    pub(crate) heap: Heap,
     /// Intrinsics (actions with access into machine)
-    intrinsics: Vec<&'a dyn StgIntrinsic>,
+    pub(crate) intrinsics: Vec<&'a dyn StgIntrinsic>,
     /// Whether to trace every step to stderr
-    settings: MachineSettings,
+    pub(crate) settings: MachineSettings,
     /// Metrics
-    metrics: Metrics,
+    pub(crate) metrics: Metrics,
     /// Clock
-    clock: Clock,
+    pub(crate) clock: Clock,
     /// Crash diagnostics snapshot — updated periodically, read by signal handler.
     /// Boxed to guarantee a stable address regardless of Machine moves.
-    crash_diagnostics: Box<super::crash::CrashDiagnostics>,
+    pub(crate) crash_diagnostics: Box<super::crash::CrashDiagnostics>,
 }
 
 /// An STG machine variant using cactus environment
@@ -1465,22 +1484,22 @@ pub struct MachineCore<'a> {
 /// - stack
 pub struct Machine<'a> {
     /// Non-state fields (heap, intrinsics, settings, metrics, clock, diagnostics)
-    core: MachineCore<'a>,
+    pub(crate) core: MachineCore<'a>,
     /// The current state of the machine - operated on as mutable ref
-    state: MachineState,
+    pub(crate) state: MachineState,
     /// Emitter to send output and error events to.
     ///
     /// Kept as a direct field (not in `MachineCore`) so that `step()` can
     /// borrow it independently from `core`, allowing simultaneous
     /// `&mut core` (for `MachineBifContext`) and `&mut emitter`.
-    emitter: Box<dyn Emitter + 'a>,
+    pub(crate) emitter: Box<dyn Emitter + 'a>,
     /// Active capture emitters for nested `render-as` calls.
     ///
     /// **GC constraint**: This field is NOT scanned by the garbage collector.
     /// Emitters must hold only off-heap data (Rust-owned buffers, trait objects).
     /// If future changes require storing heap pointers here, move this field
     /// to `MachineState` so it participates in GC marking.
-    capture_emitters: Vec<crate::eval::stg::render_to_string::OwnedCaptureEmitter>,
+    pub(crate) capture_emitters: Vec<crate::eval::stg::render_to_string::OwnedCaptureEmitter>,
 }
 
 /// Evaluate `closure` to WHNF using `state` and `core`.
@@ -1731,6 +1750,12 @@ impl<'a> Machine<'a> {
     /// Read-only access to the symbol pool for resolving `SymbolId` to text.
     pub fn symbol_pool(&self) -> &SymbolPool {
         &self.state.symbol_pool
+    }
+
+    /// Mutable access to the symbol pool for bytecode constant
+    /// preparation (BV0 spike).
+    pub fn symbol_pool_mut(&mut self) -> &mut SymbolPool {
+        &mut self.state.symbol_pool
     }
 
     /// Intern a symbol string into the machine's symbol pool and return its ID.
@@ -1991,7 +2016,7 @@ impl<'a> Machine<'a> {
     }
 
     /// Run a GC collection and update crash diagnostics around it.
-    fn collect_with_diagnostics(&mut self) {
+    pub(crate) fn collect_with_diagnostics(&mut self) {
         let ticks = self.core.metrics.ticks();
 
         // Snapshot VM state before collection

@@ -1026,9 +1026,9 @@ impl Mutator for BuildIoReturn {
 
 // ─── Mutator: build RENDER_DOC call for the final value ──────────────────────
 
-struct BuildRenderDoc {
-    value: SynClosure,
-    root_env: RefPtr<EnvFrame>,
+pub struct BuildRenderDoc {
+    pub value: SynClosure,
+    pub root_env: RefPtr<EnvFrame>,
 }
 
 impl Mutator for BuildRenderDoc {

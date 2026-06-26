@@ -14,7 +14,7 @@ use crate::{
     eval::{
         error::ExecutionError,
         machine::standard_machine,
-        stg::{self, make_standard_runtime, RenderType, StgSettings},
+        stg::{self, make_standard_runtime, runtime::Runtime as _, RenderType, StgSettings},
     },
     export,
 };
@@ -242,6 +242,12 @@ impl<'a> Executor<'a> {
         stats: &mut Statistics,
         format: String,
     ) -> Result<Option<u8>, ExecutionError> {
+        // BV0 spike: use bytecode dispatch when EU_BYTECODE=1
+        #[cfg(not(target_arch = "wasm32"))]
+        if std::env::var("EU_BYTECODE").as_deref() == Ok("1") {
+            let result = self.try_execute_bytecode(opt, stats, format);
+            return self.diagnose(result, opt.error_format());
+        }
         let result = self.try_execute(opt, stats, format);
         self.diagnose(result, opt.error_format())
     }
@@ -472,6 +478,190 @@ impl<'a> Executor<'a> {
                 result
             }
         }
+    }
+
+    /// Execute using bytecode dispatch (BV0 spike).
+    ///
+    /// Mirrors `try_execute` but encodes the STG to bytecode, patches
+    /// the machine's root and globals, and runs `bytecode_run` instead
+    /// of `machine.run()`.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn try_execute_bytecode(
+        &mut self,
+        opt: &EucalyptOptions,
+        stats: &mut Statistics,
+        format: String,
+    ) -> Result<Option<u8>, ExecutionError> {
+        let mut output: Box<dyn Write>;
+        if let Some(out) = &mut self.out {
+            output = Box::new(out);
+        } else if let Some(outfile) = opt.output() {
+            output = Box::new(std::fs::File::create(outfile)?);
+        } else {
+            output = Box::new(std::io::stdout());
+        }
+
+        let mut emitter = export::create_emitter(&format, output.as_mut())
+            .ok_or_else(|| ExecutionError::UnknownFormat(format.to_string()))?;
+
+        let mut rt = make_standard_runtime(&mut self.source_map);
+
+        if let Some(ref b) = self.prelude_blob {
+            let mut names = vec![String::new(); b.binding_entries.len()];
+            for (name, &slot) in &b.name_to_slot {
+                if slot < names.len() {
+                    names[slot] = name.clone();
+                }
+            }
+            rt.set_prelude_bindings(
+                b.nodes.clone(),
+                b.forms_pool.clone(),
+                b.binding_entries.clone(),
+                names,
+            );
+
+            let override_settings = stg::StgSettings {
+                generate_annotations: false,
+                suppress_updates: false,
+                suppress_inlining: true,
+                suppress_optimiser: false,
+                render_type: stg::RenderType::Headless,
+                prelude_globals: Some(b.name_to_slot.clone()),
+                ..Default::default()
+            };
+
+            if let Some(&args_slot) = b.name_to_slot.get("__args") {
+                let args_expr = crate::driver::io::create_args_pseudoblock(&self.args);
+                if let Ok(stg_syn) = stg::compile(&override_settings, args_expr, rt.as_ref()) {
+                    rt.set_prelude_slot_override(
+                        args_slot,
+                        stg::syntax::LambdaForm::thunk(stg_syn),
+                    );
+                }
+            }
+
+            if let Some(&io_slot) = b.name_to_slot.get("__io") {
+                let io_expr = crate::driver::io::create_io_pseudoblock(self.seed);
+                if let Ok(stg_syn) = stg::compile(&override_settings, io_expr, rt.as_ref()) {
+                    rt.set_prelude_slot_override(io_slot, stg::syntax::LambdaForm::thunk(stg_syn));
+                }
+            }
+        }
+
+        let mut stg_settings = StgSettings {
+            render_type: RenderType::Headless,
+            ..opt.stg_settings().clone()
+        };
+
+        if let Some(ref b) = self.prelude_blob {
+            stg_settings.prelude_globals = Some(b.name_to_slot.clone());
+        }
+
+        if !stg_settings.suppress_demand_analysis {
+            let t = Instant::now();
+            let (annotated, _signatures, named_signatures) =
+                crate::core::analyse_demand::analyse_demands(&self.evaluand);
+            self.evaluand = annotated;
+            stg_settings.user_demand_sigs = named_signatures;
+            stats.timings_mut().record("demand-analysis", t.elapsed());
+        }
+
+        {
+            let t = Instant::now();
+            self.evaluand = crate::core::reflatten::reflatten(&self.evaluand);
+            stats.timings_mut().record("reflatten", t.elapsed());
+        }
+
+        let syn = {
+            let t = Instant::now();
+            let syn = stg::compile(&stg_settings, self.evaluand.clone(), rt.as_ref())?;
+            stats.timings_mut().record("stg-compile", t.elapsed());
+            syn
+        };
+
+        // ── Bytecode encoding ────────────────────────────────────────
+        let globals = rt.globals();
+        let t_encode = Instant::now();
+        let (mut bc_program, root_off, global_forms) =
+            crate::eval::bytecode::encode::encode(&syn, &globals);
+        let encode_time = t_encode.elapsed();
+        stats.timings_mut().record("bc-encode", encode_time);
+        // Bytecode encoding stats are available in the statistics output
+
+        // ── Machine setup ────────────────────────────────────────────
+        emitter.stream_start();
+        let mut machine = standard_machine(&stg_settings, syn, emitter, rt.as_ref())?;
+
+        // Pre-convert constant pool.
+        // Use unsafe raw heap view to avoid borrow conflict with
+        // symbol_pool_mut.
+        {
+            use crate::eval::memory::mutator::MutatorHeapView;
+            let view = unsafe { MutatorHeapView::from_raw_heap(machine.heap() as *const _) };
+            bc_program.prepare_constants(view, machine.symbol_pool_mut());
+        }
+
+        // Patch root and globals for bytecode dispatch
+        crate::eval::bytecode::interp::patch_machine_for_bytecode(
+            &mut machine,
+            &bc_program,
+            root_off,
+            &global_forms,
+        )?;
+
+        // ── Run ──────────────────────────────────────────────────────
+        let t_exec = Instant::now();
+        let ret = crate::eval::bytecode::interp::bytecode_run(&mut machine, &bc_program);
+        stats.timings_mut().record("bc-eval", t_exec.elapsed());
+
+        // ── Render ───────────────────────────────────────────────────
+        // Use bytecode_run for all subsequent phases because closures
+        // created during bytecode evaluation contain bytecode stubs.
+        // bytecode_step automatically falls through to HeapSyn dispatch
+        // for non-bytecode closures (intrinsic wrappers, RENDER_DOC).
+        use crate::driver::io_run::BuildRenderDoc;
+        use crate::eval::memory::infotable::InfoTable as _;
+        let result = if ret.is_ok() {
+            if machine.io_yielded() {
+                // IO yield — not supported in BV0 spike
+                machine.take_emitter().stream_end();
+                Err(ExecutionError::Panic(
+                    Smid::default(),
+                    "BV0 spike: IO yield not supported".to_string(),
+                ))
+            } else if machine.current_closure().arity() > 0 {
+                // IO function — not supported in BV0 spike
+                machine.take_emitter().stream_end();
+                Err(ExecutionError::Panic(
+                    Smid::default(),
+                    "BV0 spike: IO function not supported".to_string(),
+                ))
+            } else {
+                // Plain document — render via RENDER_DOC using bytecode_run
+                let value = machine.current_closure();
+                let render_c = machine.mutate(
+                    BuildRenderDoc {
+                        value,
+                        root_env: machine.root_env(),
+                    },
+                    (),
+                )?;
+                machine.resume_for_render(render_c);
+
+                let t_render = Instant::now();
+                let render_ret =
+                    crate::eval::bytecode::interp::bytecode_run(&mut machine, &bc_program);
+                stats.timings_mut().record("bc-render", t_render.elapsed());
+                machine.take_emitter().stream_end();
+                render_ret
+            }
+        } else {
+            machine.take_emitter().stream_end();
+            ret.map(|_| None)
+        };
+
+        collect_machine_stats(&machine, stats);
+        result
     }
 
     /// Print any errors as diagnoses to stderr
