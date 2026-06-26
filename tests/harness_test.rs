@@ -2593,6 +2593,11 @@ pub fn test_176_sv_optional_fields() {
 }
 
 #[test]
+pub fn test_177_sv_optional_fields_to_data() {
+    run_test(&opts("177_sv_optional_fields_to_data.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

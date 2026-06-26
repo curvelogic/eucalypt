@@ -442,10 +442,14 @@ from-data(td):
       }."{a-r} → {b-r}"
     field-str(kv):
       { k: kv head
-        v: kv tail head
-        v-str: to-str(v)
+        fp: kv tail head
+        is-tf: (fp head) = :t-field
+        is-opt: is-tf ∧ ((fp tail head) = :optional)
+        inner-ty: if(is-tf, fp tail tail head, fp)
+        q: if(is-opt, "?", "")
+        ty-str: to-str(inner-ty)
         k-str: str.of(k)
-      }."{k-str}: {v-str}"
+      }."{k-str}{q}: {ty-str}"
     record-str(rec):
       { fields-str: rec elements map(field-str) str.join-on(", ")
       }."{{ {fields-str} }}"
