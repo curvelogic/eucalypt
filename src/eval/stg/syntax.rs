@@ -180,6 +180,16 @@ pub enum StgSyn {
         scrutinee: Rc<StgSyn>,
         body: Rc<StgSyn>,
     },
+    /// Literal-key block lookup in a single VM step.
+    ///
+    /// Replaces the `LookupOr` wrapper for compile-time-known `.key`
+    /// lookups.  The `key` is always `Ref::V(Native::Sym(...))`.
+    LookupLit {
+        smid: Smid,
+        key: Ref,
+        obj: Ref,
+        default: Ref,
+    },
     /// Blackhole - invalid / uninitialised code
     #[default]
     BlackHole,
@@ -247,6 +257,9 @@ impl fmt::Display for StgSyn {
             }
             StgSyn::Seq { scrutinee, body } => {
                 write!(f, "SEQ({scrutinee},{body})")
+            }
+            StgSyn::LookupLit { key, obj, .. } => {
+                write!(f, "⌕({obj},{key})")
             }
             StgSyn::BlackHole => {
                 write!(f, "⊙")

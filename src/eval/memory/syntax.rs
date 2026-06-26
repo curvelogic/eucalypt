@@ -282,6 +282,13 @@ pub enum HeapSyn {
         scrutinee: RefPtr<HeapSyn>,
         body: RefPtr<HeapSyn>,
     },
+    /// Literal-key block lookup in a single VM step.
+    LookupLit {
+        smid: Smid,
+        key: Ref,
+        obj: Ref,
+        default: Ref,
+    },
     /// Blackhole - invalid / uninitialised code
     #[default]
     BlackHole,
@@ -560,6 +567,13 @@ impl GcScannable for HeapSyn {
                     out.push(ScanPtr::from_non_null(scope, *body));
                 }
             }
+            HeapSyn::LookupLit {
+                key, obj, default, ..
+            } => {
+                mark_ref_heap_pointers(key, scope, marker, out);
+                mark_ref_heap_pointers(obj, scope, marker, out);
+                mark_ref_heap_pointers(default, scope, marker, out);
+            }
             HeapSyn::BlackHole => {}
         }
     }
@@ -683,6 +697,13 @@ impl GcScannable for HeapSyn {
                 if let Some(new) = heap.forwarded_to(*body) {
                     *body = new;
                 }
+            }
+            HeapSyn::LookupLit {
+                key, obj, default, ..
+            } => {
+                update_ref_heap_pointers(key, heap);
+                update_ref_heap_pointers(obj, heap);
+                update_ref_heap_pointers(default, heap);
             }
             HeapSyn::BlackHole => {}
         }
@@ -872,6 +893,17 @@ impl Repr for ScopedPtr<'_, HeapSyn> {
             HeapSyn::Seq { scrutinee, body } => Rc::new(StgSyn::Seq {
                 scrutinee: ScopedPtr::from_non_null(self, *scrutinee).repr(),
                 body: ScopedPtr::from_non_null(self, *body).repr(),
+            }),
+            HeapSyn::LookupLit {
+                smid,
+                key,
+                obj,
+                default,
+            } => Rc::new(StgSyn::LookupLit {
+                smid: *smid,
+                key: repr::heap_to_stg(self, key),
+                obj: repr::heap_to_stg(self, obj),
+                default: repr::heap_to_stg(self, default),
             }),
             HeapSyn::BlackHole => Rc::new(StgSyn::BlackHole {}),
         }

@@ -225,6 +225,16 @@ impl ToPretty for StgSyn {
                 .append(allocator.text(" in "))
                 .append(body.pretty(allocator))
                 .group(),
+            StgSyn::LookupLit {
+                key, obj, default, ..
+            } => allocator
+                .text("lookup ")
+                .append(allocator.text(format!("{obj}")))
+                .append(allocator.text(" . "))
+                .append(allocator.text(format!("{key}")))
+                .append(allocator.text(" or "))
+                .append(allocator.text(format!("{default}")))
+                .group(),
             StgSyn::BlackHole => allocator.text("HOLE"),
         }
     }

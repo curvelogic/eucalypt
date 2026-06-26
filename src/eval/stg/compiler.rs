@@ -9,7 +9,7 @@ use crate::{
     core::expr::{BlockMap, Expr, LamScope, LetScope, Primitive, RcExpr, INTERNAL_FREE_VAR_PREFIX},
     eval::{
         intrinsics,
-        machine::intrinsic::{CallGlobal1, CallGlobal3, Const, StgIntrinsic},
+        machine::intrinsic::{CallGlobal1, Const, StgIntrinsic},
     },
 };
 use codespan_reporting::diagnostic::Diagnostic;
@@ -21,13 +21,14 @@ use super::{
     constant::KEmptyList,
     optimiser,
     render::{Render, RenderDoc},
-    runtime::NativeVariant,
     syntax::{
         dsl::{self, gref},
         LambdaForm, Ref, StgSyn,
     },
     RenderType,
 };
+use crate::eval::machine::intrinsic::CallGlobal3;
+use crate::eval::stg::runtime::NativeVariant;
 
 /// Errors found during compilation
 #[derive(Debug, Error)]
@@ -1617,7 +1618,13 @@ impl<'rt> Compiler<'rt> {
         }
     }
 
-    /// Compile a lookup (with or without default) to a LOOKUPOR call
+    /// Compile a lookup to a LookupLit node with LookupOr fallback
+    ///
+    /// LookupLit tries a fast-path direct lookup when the block's
+    /// cons-list is already navigable.  If the list contains thunks
+    /// (e.g. merged/imported blocks), the default fires — which is
+    /// the original LookupOr wrapper that can force elements lazily
+    /// via Case expressions.
     pub fn compile_lookup(
         &self,
         binder: &mut LetBinder,
@@ -1657,14 +1664,38 @@ impl<'rt> Compiler<'rt> {
                 binder.add(lookup_fail(key, obj.clone(), ann))
             }
         }?;
-        let lookup_stg = LookupOr(NativeVariant::Unboxed).global(dsl::sym(key), dft, obj);
-        // Wrap with a source annotation so that lookup type errors (e.g.
-        // dot notation on a non-block) carry the user's call-site location.
-        let stg = if self.generate_annotations() && annotation.is_valid() {
-            dsl::ann(annotation, lookup_stg)
+
+        // Build the LookupOr fallback as a thunk: if the fast-path
+        // LookupLit cannot navigate the block (e.g. list is a thunk),
+        // fall through to the full multi-step LookupOr wrapper which
+        // uses Case to force list elements lazily.
+        //
+        // Tradeoff: LookupLit uses a linear scan of the block's
+        // key-value pairs rather than building an index first.  This
+        // is faster for the common case (small blocks, keys near the
+        // front) but degrades for large blocks with deep keys.  The
+        // LookupOr fallback path builds an OrdMap index lazily on
+        // first miss, amortising the cost over subsequent lookups on
+        // the same block.
+        let lookup_or_stg =
+            LookupOr(NativeVariant::Unboxed).global(dsl::sym(key), dft, obj.clone());
+        let ann_stg = if self.generate_annotations() && annotation.is_valid() {
+            dsl::ann(annotation, lookup_or_stg)
         } else {
-            lookup_stg
+            lookup_or_stg
         };
+        let fallback = binder.add(ann_stg)?;
+
+        let stg = Rc::new(StgSyn::LookupLit {
+            smid: if self.generate_annotations() {
+                annotation
+            } else {
+                Smid::default()
+            },
+            key: dsl::sym(key),
+            obj,
+            default: fallback,
+        });
         Ok(Holder::new(stg))
     }
 

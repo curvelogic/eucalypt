@@ -155,6 +155,12 @@ pub enum ArenaStgSyn {
         scrutinee: NodeIdx,
         body: NodeIdx,
     },
+    LookupLit {
+        smid: Smid,
+        key: Ref,
+        obj: Ref,
+        default: Ref,
+    },
     BlackHole,
 }
 
@@ -284,6 +290,17 @@ impl StgArena {
                     body: b_idx,
                 }
             }
+            StgSyn::LookupLit {
+                smid,
+                key,
+                obj,
+                default,
+            } => ArenaStgSyn::LookupLit {
+                smid: *smid,
+                key: key.clone(),
+                obj: obj.clone(),
+                default: default.clone(),
+            },
             StgSyn::BlackHole => ArenaStgSyn::BlackHole,
         }
     }
@@ -432,6 +449,17 @@ impl StgArena {
             ArenaStgSyn::Seq { scrutinee, body } => StgSyn::Seq {
                 scrutinee: self.reconstruct_node(*scrutinee)?,
                 body: self.reconstruct_node(*body)?,
+            },
+            ArenaStgSyn::LookupLit {
+                smid,
+                key,
+                obj,
+                default,
+            } => StgSyn::LookupLit {
+                smid: *smid,
+                key: key.clone(),
+                obj: obj.clone(),
+                default: default.clone(),
             },
             ArenaStgSyn::BlackHole => StgSyn::BlackHole,
         })

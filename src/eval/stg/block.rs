@@ -875,6 +875,154 @@ fn store_index_in_block(
 
 impl CallGlobal3 for LookupOr {}
 
+/// Resolve a ref relative to a closure, handling L, G, and V cases.
+///
+/// For `Ref::L(i)`: navigates the closure's environment.
+/// For `Ref::G(i)`: resolves via the navigator's globals.
+/// For `Ref::V(_)`: wraps in an Atom closure.
+fn resolve_ref_in_closure(
+    nav: &HeapNavigator<'_>,
+    closure: &SynClosure,
+    r: Ref,
+) -> Option<SynClosure> {
+    nav.resolve_in_closure(closure, r)
+}
+
+/// Perform a literal-key lookup on a forced block.
+///
+/// `block_closure` must point to a `HeapSyn::Cons` with
+/// `DataConstructor::Block` tag (already in WHNF).  Returns `Some(value)`
+/// on hit, `None` on miss.  Uses the same hybrid index/linear-scan
+/// strategy as `LookupOr::execute`.
+pub(crate) fn lookup_lit_in_block(
+    nav: &HeapNavigator<'_>,
+    view: MutatorHeapView<'_>,
+    block_closure: &SynClosure,
+    sym_id: crate::eval::memory::symbol::SymbolId,
+) -> Option<SynClosure> {
+    let code = view.scoped(block_closure.code());
+    let (list_ref, index_ref) = match &*code {
+        HeapSyn::Cons { tag, args } if *tag == DataConstructor::Block.tag() => {
+            (args.get(0)?, args.get(1)?)
+        }
+        _ => return None,
+    };
+
+    // Check for existing index (index_ref is V(Index(map)) or V(Num(0)) sentinel)
+    if let Ref::V(Native::Index(ref map)) = index_ref {
+        if let Some(&position) = map.get(&sym_id) {
+            let list_closure = resolve_ref_in_closure(nav, block_closure, list_ref.clone())?;
+            return walk_list_to_position_from_closure(nav, view, &list_closure, position)
+                .and_then(|pair| extract_value_from_pair_closure(nav, view, &pair));
+        }
+        // Index exists but key not found
+        return None;
+    }
+
+    // No index — resolve the list closure and check it is navigable
+    let list_closure = resolve_ref_in_closure(nav, block_closure, list_ref.clone())?;
+
+    // Verify the list is in WHNF (a Cons or Nil). If it is still a
+    // thunk (App, Let, Case, etc.), return None so the caller falls
+    // through to the LookupOr fallback which can force it lazily.
+    {
+        let list_code = view.scoped(list_closure.code());
+        match &*list_code {
+            HeapSyn::Cons { tag, .. }
+                if *tag == DataConstructor::ListCons.tag()
+                    || *tag == DataConstructor::ListNil.tag() => {}
+            _ => return None,
+        }
+    }
+
+    // Linear scan (index building is left to the LookupOr fallback
+    // which runs as a BIF and can safely store the index; the check
+    // at the top of this function will use it on subsequent lookups).
+    linear_scan_for_key(nav, view, &list_closure, sym_id)
+}
+
+/// Walk a cons-list to a given position starting from a resolved closure.
+fn walk_list_to_position_from_closure(
+    nav: &HeapNavigator<'_>,
+    view: MutatorHeapView<'_>,
+    list_closure: &SynClosure,
+    position: usize,
+) -> Option<SynClosure> {
+    let mut current = list_closure.clone();
+    for _ in 0..position {
+        let code = view.scoped(current.code());
+        match &*code {
+            HeapSyn::Cons { tag, args } if *tag == DataConstructor::ListCons.tag() => {
+                let tail_ref = args.get(1)?;
+                current = resolve_ref_in_closure(nav, &current, tail_ref.clone())?;
+            }
+            _ => return None,
+        }
+    }
+    // current should be a ListCons with the pair at head
+    let code = view.scoped(current.code());
+    match &*code {
+        HeapSyn::Cons { tag, args } if *tag == DataConstructor::ListCons.tag() => {
+            let head_ref = args.get(0)?;
+            resolve_ref_in_closure(nav, &current, head_ref.clone())
+        }
+        _ => None,
+    }
+}
+
+/// Extract the value from a block pair closure (using closure-relative navigation).
+fn extract_value_from_pair_closure(
+    nav: &HeapNavigator<'_>,
+    view: MutatorHeapView<'_>,
+    pair: &SynClosure,
+) -> Option<SynClosure> {
+    let code = view.scoped(pair.code());
+    match &*code {
+        HeapSyn::Cons { tag, args } if *tag == DataConstructor::BlockPair.tag() => {
+            let v = args.get(1)?;
+            resolve_ref_in_closure(nav, pair, v.clone())
+        }
+        _ => None,
+    }
+}
+
+/// Count elements in a cons-list starting from a resolved closure.
+/// Linear scan of a cons-list for a key, returning the value closure on hit.
+fn linear_scan_for_key(
+    nav: &HeapNavigator<'_>,
+    view: MutatorHeapView<'_>,
+    list_closure: &SynClosure,
+    target: crate::eval::memory::symbol::SymbolId,
+) -> Option<SynClosure> {
+    let mut current = list_closure.clone();
+    loop {
+        let code = view.scoped(current.code());
+        match &*code {
+            HeapSyn::Cons { tag, args } if *tag == DataConstructor::ListCons.tag() => {
+                if let Some(head_ref) = args.get(0) {
+                    if let Some(pair) = resolve_ref_in_closure(nav, &current, head_ref.clone()) {
+                        if let Some(sym_id) = pair_key_symbol_id(view, &pair) {
+                            if sym_id == target {
+                                return extract_value_from_pair_closure(nav, view, &pair);
+                            }
+                        }
+                    }
+                }
+                if let Some(tail_ref) = args.get(1) {
+                    if let Some(next) = resolve_ref_in_closure(nav, &current, tail_ref.clone()) {
+                        current = next;
+                    } else {
+                        return None;
+                    }
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+    }
+}
+
 /// SAFE_LOOKUP(obj, k) — safe key lookup with null propagation.
 ///
 /// Returns the value at key `k` if `obj` is a block containing `k`,
