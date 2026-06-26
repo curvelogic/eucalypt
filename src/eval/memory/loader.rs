@@ -192,6 +192,17 @@ pub fn load<'scope, T: ScopedAllocator<'scope>>(
             scrutinee: load(view, pool, scrutinee.clone())?,
             body: load(view, pool, body.clone())?,
         }),
+        StgSyn::LookupLit {
+            smid,
+            key,
+            obj,
+            default,
+        } => view.alloc(HeapSyn::LookupLit {
+            smid: *smid,
+            key: stg_to_heap(view, pool, key),
+            obj: stg_to_heap(view, pool, obj),
+            default: stg_to_heap(view, pool, default),
+        }),
         StgSyn::BlackHole => view.alloc(HeapSyn::BlackHole {}),
     }
     .map(|sp| sp.as_ptr())

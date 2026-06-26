@@ -159,6 +159,7 @@ impl HeapNavigator<'_> {
             HeapSyn::Let { .. } | HeapSyn::LetRec { .. } => "a let binding",
             HeapSyn::Meta { .. } | HeapSyn::DeMeta { .. } => "a metadata expression",
             HeapSyn::Seq { .. } => "a strict evaluation",
+            HeapSyn::LookupLit { .. } => "a lookup expression",
             HeapSyn::BlackHole => "an uninitialised value (possible cycle)",
             HeapSyn::Ann { .. } => "an annotated expression",
             HeapSyn::Atom { .. } => "an atom",
@@ -599,6 +600,107 @@ impl MachineState {
                 )?;
                 self.closure = SynClosure::new(*scrutinee, environment);
             }
+            HeapSyn::LookupLit {
+                smid,
+                key,
+                obj,
+                default,
+            } => {
+                self.annotation = *smid;
+
+                // Resolve the key to a SymbolId (always Ref::V(Native::Sym(id)))
+                let sym_id = match key {
+                    Ref::V(Native::Sym(id)) => *id,
+                    _ => {
+                        return Err(ExecutionError::NotValue(
+                            self.annotation,
+                            "non-symbol key in LookupLit".to_string(),
+                        ))
+                    }
+                };
+
+                // Resolve obj to a closure
+                let obj_ref = obj;
+                let obj_closure = match obj_ref {
+                    Ref::L(i) => self.nav(view).get(*i)?,
+                    Ref::G(i) => self.nav(view).global(*i)?,
+                    Ref::V(_) => {
+                        return Err(ExecutionError::NotCallable(
+                            self.annotation,
+                            "native value".to_string(),
+                        ))
+                    }
+                };
+
+                // Check if the obj is already a Block (fast path)
+                let is_block = {
+                    let obj_code = view.scoped(obj_closure.code());
+                    matches!(&*obj_code, HeapSyn::Cons { tag, .. } if *tag == DataConstructor::Block.tag())
+                };
+                if is_block {
+                    let nav = self.nav(view);
+                    if let Some(value) = crate::eval::stg::block::lookup_lit_in_block(
+                        &nav,
+                        view,
+                        &obj_closure,
+                        sym_id,
+                    ) {
+                        self.closure = value;
+                    } else {
+                        // Key not found — resolve default in the LookupLit's env
+                        self.closure = match default {
+                            Ref::L(i) => nav.get(*i)?,
+                            Ref::G(i) => nav.global(*i)?,
+                            Ref::V(_) => {
+                                let atom = view.atom(default.clone())?;
+                                SynClosure::new(atom.as_ptr(), environment)
+                            }
+                        };
+                    }
+                    return Ok(());
+                }
+
+                // Slow path: obj is a thunk or unevaluated expression.
+                // Pre-resolve the default closure.
+                let default_closure = match default {
+                    Ref::L(i) => self.nav(view).get(*i)?,
+                    Ref::G(i) => self.nav(view).global(*i)?,
+                    Ref::V(_) => {
+                        let atom = view.atom(default.clone())?;
+                        SynClosure::new(atom.as_ptr(), environment)
+                    }
+                };
+
+                // Push the LookupLitForce continuation
+                self.push(
+                    view,
+                    Continuation::LookupLitForce {
+                        key: sym_id,
+                        smid: *smid,
+                        default_closure,
+                    },
+                )?;
+
+                // If obj is a thunk, do the thunk-enter dance (blackhole + Update)
+                if let Ref::L(i) = obj_ref {
+                    if obj_closure.update() {
+                        let hole = view.alloc(HeapSyn::BlackHole)?;
+                        let black_hole = SynClosure::new(hole.as_ptr(), environment);
+                        let cont_env = view.scoped(environment);
+                        cont_env.update(&view, *i, black_hole)?;
+                        self.push(
+                            view,
+                            Continuation::Update {
+                                environment,
+                                index: *i,
+                            },
+                        )?;
+                    }
+                }
+
+                // Enter the obj closure to force it
+                self.closure = obj_closure;
+            }
             HeapSyn::BlackHole => return Err(ExecutionError::BlackHole(self.annotation)),
         }
 
@@ -723,6 +825,18 @@ impl MachineState {
                     // memoised the WHNF value in the let frame.
                     self.closure = SynClosure::new(body, environment);
                     self.annotation = annotation;
+                }
+                Continuation::LookupLitForce { smid, .. } => {
+                    // A native value is not a block — raise type error
+                    let ann = if smid.is_valid() {
+                        smid
+                    } else {
+                        self.nearest_stack_annotation(view)
+                    };
+                    return Err(ExecutionError::NoBranchForNative(
+                        ann,
+                        value.type_description().to_string(),
+                    ));
                 }
                 Continuation::CaptureEnd => {
                     self.capture_end_pending = true;
@@ -950,6 +1064,39 @@ impl MachineState {
                     self.closure = SynClosure::new(body, environment);
                     self.annotation = annotation;
                 }
+                Continuation::LookupLitForce {
+                    key: sym_id,
+                    smid,
+                    default_closure,
+                } => {
+                    if tag == DataConstructor::Block.tag() {
+                        // Block has been forced — perform the lookup
+                        let nav = self.nav(view);
+                        if let Some(value) = crate::eval::stg::block::lookup_lit_in_block(
+                            &nav,
+                            view,
+                            &self.closure,
+                            sym_id,
+                        ) {
+                            self.closure = value;
+                        } else {
+                            // Key not found — use the pre-resolved default
+                            self.closure = default_closure;
+                        }
+                    } else {
+                        // Not a block — raise type error
+                        let ann = if smid.is_valid() {
+                            smid
+                        } else {
+                            self.nearest_stack_annotation(view)
+                        };
+                        return Err(ExecutionError::NoBranchForDataTag(
+                            ann,
+                            tag,
+                            vec![DataConstructor::Block.tag()],
+                        ));
+                    }
+                }
                 Continuation::CaptureEnd => {
                     self.capture_end_pending = true;
                 }
@@ -1057,6 +1204,15 @@ impl MachineState {
                     self.closure = SynClosure::new(body, environment);
                     self.annotation = annotation;
                 }
+                Continuation::LookupLitForce { smid, .. } => {
+                    // A function is not a block — raise type error
+                    let ann = if smid.is_valid() {
+                        smid
+                    } else {
+                        self.nearest_stack_annotation(view)
+                    };
+                    return Err(ExecutionError::NotCallable(ann, "function".to_string()));
+                }
                 Continuation::CaptureEnd => {
                     self.capture_end_pending = true;
                 }
@@ -1078,6 +1234,7 @@ impl MachineState {
                 Continuation::Branch { annotation, .. }
                 | Continuation::ApplyTo { annotation, .. }
                 | Continuation::SeqBind { annotation, .. } => *annotation,
+                Continuation::LookupLitForce { smid, .. } => *smid,
                 Continuation::Update { environment, .. }
                 | Continuation::DeMeta { environment, .. } => {
                     let cont_env = view.scoped(*environment);
@@ -1107,6 +1264,7 @@ impl MachineState {
                 Continuation::Branch { annotation, .. }
                 | Continuation::ApplyTo { annotation, .. }
                 | Continuation::SeqBind { annotation, .. } => *annotation,
+                Continuation::LookupLitForce { smid, .. } => *smid,
                 Continuation::Update { environment, .. }
                 | Continuation::DeMeta { environment, .. } => {
                     let cont_env = view.scoped(*environment);
@@ -1725,7 +1883,8 @@ impl<'a> Machine<'a> {
                     super::cont::Continuation::SeqBind { .. } => {
                         (branch, update, apply, demeta, seqbind + 1)
                     }
-                    super::cont::Continuation::CaptureEnd => {
+                    super::cont::Continuation::LookupLitForce { .. }
+                    | super::cont::Continuation::CaptureEnd => {
                         (branch, update, apply, demeta, seqbind)
                     }
                 },

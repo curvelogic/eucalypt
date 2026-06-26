@@ -8,7 +8,8 @@ use crate::{
         memory::{
             alloc::StgObject,
             array::Array,
-            collect::{CollectorHeapView, GcScannable, OpaqueHeapBytes, ScanPtr},
+            collect::{CollectorHeapView, CollectorScope, GcScannable, OpaqueHeapBytes, ScanPtr},
+            symbol::SymbolId,
             syntax::{HeapSyn, RefPtr},
         },
         stg::tags::Tag,
@@ -77,6 +78,17 @@ pub enum Continuation {
         /// Source annotation at the seq site
         annotation: Smid,
     },
+    /// After forcing an unevaluated block object to WHNF, perform the
+    /// literal-key lookup that was deferred.  Fired by `return_data`
+    /// when `self.closure` is the forced block Cons.
+    LookupLitForce {
+        /// Pre-resolved interned symbol to look up.
+        key: SymbolId,
+        /// Source annotation at the lookup site.
+        smid: Smid,
+        /// Pre-resolved default closure (returned when key is absent).
+        default_closure: SynClosure,
+    },
     /// Marks the end of an emitter capture.  When the machine returns a
     /// value into this continuation, it signals `Machine::step()` to pop
     /// the capture emitter and extract the buffer as a string result.
@@ -131,10 +143,30 @@ impl fmt::Display for Continuation {
             Continuation::SeqBind { .. } => {
                 write!(f, "⟶seq")
             }
+            Continuation::LookupLitForce { key, .. } => {
+                write!(f, "⌕force({key})")
+            }
             Continuation::CaptureEnd => {
                 write!(f, "⊡capture")
             }
         }
+    }
+}
+
+/// Mark and push a single `SynClosure` for GC scanning.
+fn scan_syn_closure<'a>(
+    closure: &'a SynClosure,
+    scope: &'a dyn CollectorScope,
+    marker: &mut CollectorHeapView<'a>,
+    out: &mut Vec<ScanPtr<'a>>,
+) {
+    let code = closure.code();
+    if marker.mark(code) {
+        out.push(ScanPtr::from_non_null(scope, code));
+    }
+    let env = closure.env();
+    if marker.mark(env) {
+        out.push(ScanPtr::from_non_null(scope, env));
     }
 }
 
@@ -229,6 +261,11 @@ impl GcScannable for Continuation {
                     out.push(ScanPtr::from_non_null(scope, *environment));
                 }
             }
+            Continuation::LookupLitForce {
+                default_closure, ..
+            } => {
+                scan_syn_closure(default_closure, scope, marker, out);
+            }
             Continuation::CaptureEnd => {
                 // No heap pointers to scan.
             }
@@ -307,6 +344,11 @@ impl GcScannable for Continuation {
                 if let Some(new) = heap.forwarded_to(*environment) {
                     *environment = new;
                 }
+            }
+            Continuation::LookupLitForce {
+                default_closure, ..
+            } => {
+                default_closure.scan_and_update(heap);
             }
             Continuation::CaptureEnd => {}
         }

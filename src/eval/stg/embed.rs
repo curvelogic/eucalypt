@@ -249,6 +249,15 @@ fn embed_stg(syn: &StgSyn) -> Option<rowan_ast::Soup> {
             b.embed_soup(&body_soup);
             b.finish()
         }
+        StgSyn::LookupLit {
+            key, obj, default, ..
+        } => {
+            let mut b = StgEmbedBuilder::new("s-lookup-lit");
+            b.token(&embed_ref(key));
+            b.token(&embed_ref(obj));
+            b.token(&embed_ref(default));
+            b.finish()
+        }
         StgSyn::BlackHole => StgEmbedBuilder::new("s-hole").finish(),
     }
 }
