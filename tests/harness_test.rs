@@ -2603,6 +2603,13 @@ pub fn test_178_sv_optional_fields_to_spec() {
 }
 
 #[test]
+/// CG3: higher-order recursive folds with strict arg forcing at self-recursive
+/// call sites produce correct results and complete in linear time.
+pub fn test_179_cg3_strict_recurse() {
+    run_test(&opts("179_cg3_strict_recurse.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

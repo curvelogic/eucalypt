@@ -1171,7 +1171,7 @@ impl ProtoSyntax for ProtoAppGroup {
         let is_self_recursive = self
             .self_recurse_name
             .as_deref()
-            .is_some_and(|name| callee_name == Some(name) || intrinsic_name == Some(name));
+            .is_some_and(|name| callee_name == Some(name));
         let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
         for (i, arg) in self.args.iter().enumerate() {
             match &*arg.inner {
