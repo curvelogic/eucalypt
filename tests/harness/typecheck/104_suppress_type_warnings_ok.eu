@@ -1,0 +1,9 @@
+# A type annotation mismatch where the runtime behaviour is still correct.
+# The annotation says 'number -> number' but we also call with a string.
+# At runtime the string passes through untouched — no runtime error.
+# This lets us test that --suppress-type-warnings silences the warning
+# without affecting the exit code when evaluation succeeds.
+` { type: "number -> number" }
+wrap(x): x
+
+result: wrap("hello")

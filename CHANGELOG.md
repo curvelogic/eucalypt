@@ -2,6 +2,23 @@
 
 All notable changes to eucalypt are documented here.
 
+## [Unreleased]
+
+### Added
+
+- **Type checking always-on (TY)** — the gradual type checker now runs on every `eu` invocation without any flag. Previously it required `--type-check`. Type warnings are emitted to stderr before evaluation and never affect stdout or exit code (unless `--strict`).
+- **`--suppress-type-warnings`** — new flag to silence type-warning output. The checker still runs; warnings are computed but not printed. Use for contexts where warnings are distracting.
+- **`--type-check` kept as silent no-op** — existing scripts using `--type-check` continue to work without change.
+
+### Fixed
+
+- **Type checker false positives eliminated** — six checker improvements eliminate all spurious warnings across the full harness and AoC corpus:
+  - Literal types (`"apple"`, `:active`) widen to their base type (`string`, `symbol`) when binding a type variable, preventing over-constrained polymorphism in functions like `min`/`max`.
+  - Row-variable records are treated as effectively open in subtype and lookup checks, preventing spurious "field not found" warnings on row-polymorphic return types.
+  - Gradual consistency (`~`) used in the overloaded-function fallback path, accepting `any?` where a concrete list or dict is expected without false alarms.
+  - Row variable absorption preserves source openness only when there are actual extra fields, preventing synthesised block literals from propagating spurious openness into result types.
+  - `io.exec` and `io.exec-with` prelude type annotations corrected from `string` to `[string]`.
+
 ## [0.10.1] - 2026-06-25
 
 ### Changed

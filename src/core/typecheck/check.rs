@@ -1229,15 +1229,16 @@ impl Checker {
     /// - Non-record object type → return `any` (cannot reason about field access).
     pub fn synthesise_lookup(&mut self, smid: Smid, obj_type: &Type, field: &str) -> Type {
         match obj_type {
-            Type::Record { fields, open, .. } => {
+            Type::Record { fields, open, rows } => {
                 if let Some(field_ty) = fields.get(field) {
                     // Field is known — return its type directly.
                     field_ty.clone()
-                } else if *open {
-                    // Open record may have this field at runtime.
+                } else if *open || !rows.is_empty() {
+                    // Open record (or record with row variables) may have this
+                    // field at runtime — no warning.
                     Type::Any
                 } else {
-                    // Closed record: field is definitely absent.
+                    // Closed record with no row variables: field is definitely absent.
                     let known: Vec<&str> = fields.keys().map(String::as_str).collect();
                     let warning = TypeWarning::new(format!(
                         "field '{field}' not found in closed record type"
@@ -1808,8 +1809,8 @@ impl Checker {
                     *subst = trial;
                     return apply_subst(result_type, subst);
                 }
-                // Fall back to subtyping (e.g. Lens <: Traversal)
-                if is_subtype(&arg_type, &param_applied) {
+                // Fall back to consistency (e.g. Lens <: Traversal, or any ~ T)
+                if is_consistent(&arg_type, &param_applied) {
                     return apply_subst(result_type, subst);
                 }
             }

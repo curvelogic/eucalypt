@@ -366,8 +366,15 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
                         Type::var(rows2[0].clone())
                     } else {
                         Type::Record {
+                            // Preserve the source record's open flag only when
+                            // there are extra fields or row variables to carry.
+                            // When extra is empty and rows2 is empty, the row
+                            // variable binds to a closed empty record — this
+                            // prevents synthesised open literals (open: true,
+                            // rows: []) from propagating spurious openness into
+                            // the result type of a row-polymorphic function call.
+                            open: (!extra.is_empty() && open2) || !rows2.is_empty(),
                             fields: extra,
-                            open: !rows2.is_empty(),
                             rows: rows2.clone(),
                         }
                     };
@@ -401,8 +408,10 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
                         Type::var(rows1[0].clone())
                     } else {
                         Type::Record {
+                            // Symmetric with r1 loop: only propagate openness
+                            // when there are actual extra fields or row variables.
+                            open: (!extra.is_empty() && open1) || !rows1.is_empty(),
                             fields: extra,
-                            open: !rows1.is_empty(),
                             rows: rows1.clone(),
                         }
                     };
@@ -480,6 +489,16 @@ fn bind_var(
     if occurs(&id, &rhs) {
         return Err(UnifyError::OccursCheck(id, rhs));
     }
+    // Widen literal types to their base type before binding a type variable.
+    // This prevents false positives for polymorphic functions applied to two
+    // different literal values of the same base type — e.g. `min("a", "b")`
+    // would otherwise bind the type variable to `"a"` and then fail to
+    // unify the second argument `"b"` against it.
+    let rhs = match rhs {
+        Type::LiteralString(_) => Type::String,
+        Type::LiteralSymbol(_) => Type::Symbol,
+        other => other,
+    };
     // Kind check: the rhs must have the same kind as the variable.
     let rhs_kind = kind_of(&rhs);
     if rhs_kind != kind {
@@ -961,13 +980,13 @@ mod tests {
 
     #[test]
     fn unify_var_with_literal_symbol() {
+        // Binding a type variable to a literal symbol widens to the base type
+        // (Symbol) so that polymorphic functions don't over-constrain their
+        // type variable to a single literal value.
         let mut s = Substitution::new();
         let ls = Type::LiteralSymbol("active".to_string());
         assert!(unify(&var("a"), &ls, &mut s).is_ok());
-        assert_eq!(
-            s.get(&vid("a")),
-            Some(&Type::LiteralSymbol("active".to_string()))
-        );
+        assert_eq!(s.get(&vid("a")), Some(&Type::Symbol));
     }
 
     // ── apply_subst ──────────────────────────────────────────────────────────

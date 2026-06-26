@@ -157,10 +157,15 @@ fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
             Type::Record {
                 fields: t_fields,
                 open: t_open,
-                rows: _,
+                rows: t_rows,
             },
         ) => {
             let s_is_open = *s_open || !s_rows.is_empty();
+            // A record with row variables is effectively open: the row variable
+            // can absorb any additional fields that the source record carries.
+            // Without this, an open source record `{a: T, ..}` is incorrectly
+            // rejected as a subtype of a row-variable record `{..r}`.
+            let t_is_effectively_open = *t_open || !t_rows.is_empty();
 
             let fields_ok = t_fields
                 .iter()
@@ -173,7 +178,7 @@ fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
                 return false;
             }
 
-            if !t_open && s_is_open {
+            if !t_is_effectively_open && s_is_open {
                 return false;
             }
 

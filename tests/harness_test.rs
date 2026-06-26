@@ -2716,3 +2716,105 @@ pub fn test_doc_006_prelude() {
         "eu doc --prelude should produce '# Prelude Reference'\nstdout: {stdout}"
     );
 }
+
+// ── Phase 2: type checking default-on ────────────────────────────────────────
+
+/// Type checker runs unconditionally — no flag needed to see warnings.
+#[test]
+pub fn test_type_warnings_run_unconditionally() {
+    // 001_arg_mismatch.eu calls `double("hello")` where double: number -> number.
+    // Without any flag, the type checker must run and emit a warning.
+    let output = std::process::Command::new(eu_binary())
+        .arg("tests/harness/typecheck/001_arg_mismatch.eu")
+        .output()
+        .expect("failed to run eu");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("type mismatch"),
+        "eu should emit type warnings unconditionally, but stderr was:\n{stderr}"
+    );
+}
+
+/// `--suppress-type-warnings` silences type warnings (checker still runs, no stderr output).
+///
+/// Uses `104_suppress_type_warnings_ok.eu` which has an annotation mismatch but a
+/// runtime behaviour that succeeds (identity function called with a string), so the
+/// exit code is 0 both with and without suppression.
+#[test]
+pub fn test_suppress_type_warnings_silences_output() {
+    // Without suppression: warning appears in stderr.
+    let without = std::process::Command::new(eu_binary())
+        .arg("tests/harness/typecheck/104_suppress_type_warnings_ok.eu")
+        .output()
+        .expect("failed to run eu");
+    let stderr_without = String::from_utf8_lossy(&without.stderr);
+    assert!(
+        stderr_without.contains("type mismatch"),
+        "without --suppress-type-warnings, warning should appear:\n{stderr_without}"
+    );
+
+    // With suppression: no warning in stderr, exit still 0.
+    let with = std::process::Command::new(eu_binary())
+        .args([
+            "--suppress-type-warnings",
+            "tests/harness/typecheck/104_suppress_type_warnings_ok.eu",
+        ])
+        .output()
+        .expect("failed to run eu --suppress-type-warnings");
+    let exit_code = with.status.code().unwrap_or(-1);
+    let stderr_with = String::from_utf8_lossy(&with.stderr);
+    assert_eq!(
+        exit_code, 0,
+        "--suppress-type-warnings should not affect exit code:\n{stderr_with}"
+    );
+    assert!(
+        !stderr_with.contains("type mismatch"),
+        "--suppress-type-warnings should silence type warnings, but stderr was:\n{stderr_with}"
+    );
+}
+
+/// `--type-check` is a silent no-op — behaviour is identical to omitting it.
+#[test]
+pub fn test_type_check_flag_is_noop() {
+    let without = std::process::Command::new(eu_binary())
+        .arg("tests/harness/typecheck/001_arg_mismatch.eu")
+        .output()
+        .expect("failed to run eu");
+    let with = std::process::Command::new(eu_binary())
+        .args([
+            "--type-check",
+            "tests/harness/typecheck/001_arg_mismatch.eu",
+        ])
+        .output()
+        .expect("failed to run eu --type-check");
+    assert_eq!(
+        without.status.code(),
+        with.status.code(),
+        "--type-check flag should not change exit code"
+    );
+    // Both should emit the same type warning.
+    let stderr_with = String::from_utf8_lossy(&with.stderr);
+    assert!(
+        stderr_with.contains("type mismatch"),
+        "--type-check should not suppress warnings:\n{stderr_with}"
+    );
+}
+
+/// `--strict` causes the run to abort with exit 1 when there are type warnings.
+#[test]
+pub fn test_strict_aborts_on_type_warnings() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["--strict", "tests/harness/typecheck/001_arg_mismatch.eu"])
+        .output()
+        .expect("failed to run eu --strict");
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        exit_code, 1,
+        "eu --strict should exit 1 when there are type warnings:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("type mismatch"),
+        "eu --strict should still print type warnings:\n{stderr}"
+    );
+}

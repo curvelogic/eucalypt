@@ -145,16 +145,18 @@ fn run() -> i32 {
         Ok(Command::Continue) => {}
     }
 
-    // --type-check: run the type checker before evaluation, emit warnings
-    if opt.type_check() {
+    // Type checker always runs; use --suppress-type-warnings to silence output.
+    {
         let t = std::time::Instant::now();
         let core_expr = loader.core().expr.clone();
         let warnings = eucalypt::core::typecheck::check::type_check(&core_expr);
         let elapsed = t.elapsed();
 
-        for w in &warnings {
-            let diag = w.to_diagnostic(loader.source_map());
-            loader.diagnose_to_stderr(&diag);
+        if !opt.suppress_type_warnings() {
+            for w in &warnings {
+                let diag = w.to_diagnostic(loader.source_map());
+                loader.diagnose_to_stderr(&diag);
+            }
         }
 
         if opt.statistics() {
