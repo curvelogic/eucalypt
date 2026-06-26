@@ -538,7 +538,10 @@ impl MachineState {
                     self.closure = view.saturate_with_array(&closure, array)?;
                 } else {
                     // Fallback: push ApplyTo and let return_fun handle arity
-                    // mismatch (under- or over-application).
+                    // mismatch (under- or over-application).  Mirror the
+                    // App handler's blackhole + Update logic for Ref::L
+                    // thunks so that updateable closures are handled
+                    // correctly even on the slow path.
                     self.push(
                         view,
                         Continuation::ApplyTo {
@@ -546,6 +549,21 @@ impl MachineState {
                             annotation: self.annotation,
                         },
                     )?;
+                    if let Ref::L(i) = callable {
+                        if closure.update() {
+                            let hole = view.alloc(HeapSyn::BlackHole)?;
+                            let black_hole = SynClosure::new(hole.as_ptr(), environment);
+                            let cont_env = view.scoped(environment);
+                            cont_env.update(&view, *i, black_hole)?;
+                            self.push(
+                                view,
+                                Continuation::Update {
+                                    environment,
+                                    index: *i,
+                                },
+                            )?;
+                        }
+                    }
                     self.closure = closure;
                 }
             }
