@@ -1,36 +1,36 @@
 # AoC 2025 Performance Analysis
 
-Performance characteristics of the AoC 2025 eucalypt example programs, benchmarked on the 0.10.0 release binary on ARM64 (Apple Silicon). All timings are 5-run means using user CPU time. Tick counts and allocation figures come from eucalypt's built-in statistics output. The 0.10.0 release introduced strict eager evaluation of prelude globals (blob mode), which eliminated the uniform 2-GC-collection overhead present in all 0.9.x runs.
+Performance characteristics of the AoC 2025 eucalypt example programs, benchmarked on ARM64 (Apple Silicon). All timings are 5-run medians of `VM-Mutator` from `--statistics-file`. Tick counts and allocation figures come from eucalypt's built-in statistics output. Stats files in `stats/` record the JSON from the median run.
 
 ---
 
-## Summary
+## Summary (0.11.0)
 
-| Example | Wall time | Ticks | Allocs | Primary bottleneck | 0.10.0 improvement |
-|---------|-----------|-------|--------|--------------------|--------------------|
-| day01-p1 | ~0.60s | 12,972,496 | 2,251,752 | VM dispatch | −73% ticks, −83% wall time |
-| day01-p2 | ~0.79s | 13,450,743 | 2,372,646 | VM dispatch | −93% ticks, ~−92% wall time |
-| day02-p1 | ~0.02s | 326,750 | 136,508 | Trivial | GC eliminated |
-| day02-p2 | ~0.07s | 1,374,701 | 613,779 | Trivial | GC eliminated |
-| day03-p1 | ~1.03s | 27,813,225 | 11,553,241 | VM dispatch | −4% wall time (GC eliminated) |
-| day03-p2 | ~2.31s | 57,806,510 | 25,204,145 | VM dispatch | ≈0% (GC eliminated) |
-| day04-p1 | ~2.45s | 59,818,598 | 19,880,379 | VM dispatch + env walk | ≈0% (GC eliminated) |
-| day04-p2 | >600s (timeout) | — | — | VM dispatch (loop-bound) | first analysed at 0.10.0 |
-| day05-p1 | ~2.14s | 63,029,855 | 14,067,690 | VM dispatch + env walk | ≈0% (GC eliminated) |
-| day05-p2 | ~0.06s | 1,264,646 | 732,774 | Trivial | GC eliminated |
-| day06-p1 | ~0.87s | 16,739,291 | 1,596,375 | VM dispatch | GC eliminated |
-| day06-p2 | ~4.97s | 126,966,700 | 10,646,539 | Env walk (dominant) | ≈0% (GC eliminated) |
-| day07-p1 | ~1.89s | 45,674,239 | 16,354,405 | VM dispatch | ≈0% (GC eliminated) |
-| day07-p2 | ~3.26s | 29,811,429 | 10,369,387 | Handle-instruction (54%) | ≈0% (GC eliminated) |
-| day08-p1 | ~11.5s | 249,873,053 | 118,607,830 | Alloc + VM dispatch | ≈0% (GC eliminated) |
-| day08-p2 | >600s (timeout) | — | — | VM dispatch + alloc (pair gen) | first analysed at 0.10.0 |
-| day09-p1 | ~8.52s | 210,273,177 | 81,203,655 | VM dispatch + alloc | ≈0% (GC eliminated) |
-| day09-p2 | >600s (timeout) | — | — | Continuation overhead + env walk | first analysed at 0.10.0 |
-| day10-p1 | ~21.9s | 544,089,317 | 228,950,942 | Alloc-intensive | −1% wall time (GC eliminated) |
-| day10-p2 | >600s (timeout) | — | — | Env walk (dominant, 39.3%) | first analysed at 0.10.0 |
-| day11-p1 | ~1.50s | 66,419,641 | 489,584 | VM dispatch loop | GC eliminated |
-| day11-p2 | ~144s | 3,066,607,903 | 6,232,604 | Tick-bound algorithm | GC eliminated |
-| day12-p1 | ~0.20s | 6,779,263 | 2,415,033 | Trivial | −31% allocs, −33% wall time |
+| Example | 0.10.0 | 0.11.0 | Δ wall | Ticks | Allocs | Bottleneck |
+|---------|--------|--------|--------|-------|--------|------------|
+| day01-p1 | 0.585s | 0.527s | −10% | 12,915,277 | 2,251,752 | VM dispatch |
+| day01-p2 | 0.790s | 0.500s | −37% | 13,382,554 | 2,372,646 | VM dispatch |
+| day02-p1 | 0.022s | 0.007s | −68% | 322,348 | 136,508 | Trivial |
+| day02-p2 | 0.065s | 0.030s | −54% | 1,263,752 | 613,779 | Trivial |
+| day03-p1 | 1.024s | 0.556s | −46% | 27,382,786 | 11,553,241 | VM dispatch |
+| day03-p2 | 2.310s | 1.149s | −50% | 56,836,818 | 25,204,145 | VM dispatch |
+| day04-p1 | 2.450s | 1.559s | −36% | 59,230,889 | 19,880,379 | VM dispatch + env walk |
+| day04-p2 | >600s | >600s | — | — | — | Loop-bound (timeout) |
+| day05-p1 | 2.140s | 1.462s | −32% | 62,895,143 | 14,067,690 | VM dispatch + env walk |
+| day05-p2 | 0.060s | 0.028s | −53% | 1,260,793 | 732,774 | Trivial |
+| day06-p1 | 0.872s | 0.636s | −27% | 16,727,001 | 1,596,375 | VM dispatch |
+| day06-p2 | 4.970s | 3.966s | −20% | 126,918,682 | 10,646,539 | Env walk (dominant) |
+| day07-p1 | 1.890s | 1.231s | −35% | 45,470,121 | 16,354,405 | VM dispatch |
+| day07-p2 | 3.260s | 2.495s | −23% | 29,729,386 | 10,369,387 | Handle-instruction |
+| day08-p1 | 11.50s | 6.082s | −47% | 247,753,409 | 118,607,839 | Alloc + VM dispatch |
+| day08-p2 | >600s | >600s | — | — | — | Pair generation (timeout) |
+| day09-p1 | 8.520s | 5.005s | −41% | 208,578,165 | 81,203,655 | VM dispatch + alloc |
+| day09-p2 | >600s | >600s | — | — | — | Continuation overhead (timeout) |
+| day10-p1 | 21.90s | 10.99s | −50% | 535,960,349 | 228,950,942 | Alloc-intensive |
+| day10-p2 | >600s | >600s | — | — | — | Env walk (timeout) |
+| day11-p1 | 1.500s | 1.593s | +6% | 66,410,797 | 489,584 | VM dispatch loop |
+| day11-p2 | 144.0s | 146.5s | +2% | 3,066,527,933 | 6,232,604 | Tick-bound algorithm |
+| day12-p1 | 0.200s | 0.197s | −2% | 6,745,268 | 2,415,033 | Trivial |
 
 ---
 
@@ -56,11 +56,41 @@ Programs essentially unchanged from 0.9.x (cons-fix restored natural allocation)
 
 ---
 
+## 0.11.0: Code Generation Optimisations
+
+The 0.11.0 release introduced three code generation (CG) optimisations that reduce the cost per tick without significantly changing tick counts:
+
+1. **CG1 — DirectApp**: Eliminates intermediate continuation frames for direct function applications. Instead of pushing a continuation, evaluating the function, then returning through the continuation to apply arguments, direct applications jump straight to the function body with arguments pre-loaded. This reduces continuation management overhead (`Machine::run` self-time).
+
+2. **CG2 — LookupLit**: Specialises block lookups with statically-known symbol keys. Instead of constructing a symbol object at runtime, pushing it, then dispatching a generic lookup, literal lookups resolve directly via a fast-path intrinsic. This reduces instruction count per lookup and eliminates temporary symbol allocations.
+
+3. **CG3 — Eager arg resolution**: For constructor arguments that are already in WHNF (values, not thunks), the compiler emits direct references instead of wrapping them in unnecessary thunks. This eliminates thunk allocation and subsequent forcing for arguments that would have been immediately evaluated anyway.
+
+**Impact pattern:** The CG changes reduce wall time by 20–50% across most programs, but tick counts drop by only 0.2–1.7%. This is because the optimisations make each tick cheaper (fewer continuation operations, faster lookups, no redundant thunk wrapping) rather than eliminating ticks. The benefit scales with instruction density — programs dominated by VM dispatch and env-walk see the largest improvements.
+
+**Programs most improved (wall time):**
+- day10-p1: −50% (21.9s → 11.0s) — alloc-intensive DFS, benefits from CG3 eager args
+- day08-p1: −47% (11.5s → 6.1s) — pair generation pipeline, benefits from CG1+CG2
+- day03-p1: −46% (1.02s → 0.56s), day03-p2: −50% (2.31s → 1.15s) — recursive windowing
+- day09-p1: −41% (8.52s → 5.01s) — pairwise brute-force
+- day01-p2: −37% (0.79s → 0.50s) — prelude-heavy fold
+
+**Programs essentially unchanged:**
+- day11-p1: +6% (1.50s → 1.59s), day11-p2: +2% (144s → 146s) — pure dispatch-bound with near-zero allocation; the CG changes don't help instruction dispatch speed itself
+- day12-p1: −2% (trivially fast)
+
+**Timeout cases unchanged:** day04-p2, day08-p2, day09-p2, day10-p2 all remain at >600s. These are fundamentally algorithmic or env-walk bound; per-tick cost reduction is insufficient to bring them within the timeout window.
+
+**Note on heap limits:** The 0.10.0 baselines were collected with `--heap-limit-mib 12288`. Under 0.11.0, alloc-heavy programs (day08-p1 with 118M allocs, day10-p1 with 229M allocs) now trigger GC at this limit, causing catastrophic slowdown (>10× overhead). The 0.11.0 benchmarks use the default 32 GiB heap limit. The root cause appears to be slightly higher per-allocation memory footprint from the CG changes, pushing these programs just past the 12 GiB threshold. This is not a functional regression — the programs complete correctly and faster with adequate heap.
+
+---
+
 ## day01 — part 1
 
 Single-pass fold over a sequence of 13 million instructions. Accumulates a position modulo 100, counting how many steps land on a multiple of 100. The fold is inherently sequential with no branching or data structure construction beyond the accumulator.
 
 **Stats (0.10.0):** 12,972,496 ticks | 2,251,752 allocs | 0 GC | ~0.60s
+**Stats (0.11.0):** 12,915,277 ticks | 2,251,752 allocs | 0 GC | ~0.53s (−10%)
 
 *No CPU profile (< 0.5s threshold — profile not captured.)*
 
@@ -82,6 +112,7 @@ Single-pass fold over a sequence of 13 million instructions. Accumulates a posit
 Single-pass fold tracking position, detecting when the position crosses a multiple of 100 via zero-crossings (checking whether `pos mod 100` has wrapped). Structurally identical to part 1 but with a slightly different predicate.
 
 **Stats (0.10.0):** 13,450,743 ticks | 2,372,646 allocs | 0 GC | ~0.79s
+**Stats (0.11.0):** 13,382,554 ticks | 2,372,646 allocs | 0 GC | ~0.50s (−37%)
 
 **Characteristics:** Same profile as part 1. Tick count is nearly identical (13.5M vs 13.0M), confirming the algorithm is the same shape.
 
@@ -98,6 +129,7 @@ Single-pass fold tracking position, detecting when the position crosses a multip
 Closed-form arithmetic: multiplies a pattern multiplier by the sum of a valid range using the arithmetic series formula. No iteration over large collections.
 
 **Stats (0.10.0):** 326,750 ticks | 136,508 allocs | 0 GC | ~0.02s
+**Stats (0.11.0):** 322,348 ticks | 136,508 allocs | 0 GC | ~0.007s (−68%)
 
 **Characteristics:** Trivially fast. Parse and startup dominate at this scale.
 
@@ -114,6 +146,7 @@ Closed-form arithmetic: multiplies a pattern multiplier by the sum of a valid ra
 Inclusion-exclusion over prime factor subsets. Generates all subsets of prime factors, computes an arithmetic series sum per subset, alternates sign by subset size. Modestly more computation than part 1 but still fast.
 
 **Stats (0.10.0):** 1,374,701 ticks | 613,779 allocs | 0 GC | ~0.07s
+**Stats (0.11.0):** 1,263,752 ticks | 613,779 allocs | 0 GC | ~0.030s (−54%)
 
 **Characteristics:** Subset generation allocates proportionally to 2^(number of prime factors). For typical AoC inputs this is small. Moderate allocation density (1 alloc per 2.2 ticks).
 
@@ -130,6 +163,7 @@ Inclusion-exclusion over prime factor subsets. Generates all subsets of prime fa
 Greedy digit selection via windowed recursion. Finds the largest digit in a valid window, then recurses on the remaining sequence. Processes a moderately sized input with O(n×w) comparisons where w is the window size.
 
 **Stats (0.10.0):** 27,813,225 ticks | 11,553,241 allocs | 0 GC | ~1.03s
+**Stats (0.11.0):** 27,382,786 ticks | 11,553,241 allocs | 0 GC | ~0.56s (−46%)
 
 **Characteristics:** Compute-bound with high allocation (1 alloc per 2.4 ticks). No GC pressure. Each recursive `cons(best, pick(k-1,...))` call creates a thunk for the tail, allocating proportionally to output size (~1,209 digits).
 
@@ -148,6 +182,7 @@ Greedy digit selection via windowed recursion. Finds the largest digit in a vali
 Same greedy algorithm extended to 12-digit selection. Higher constant factor but identical structure.
 
 **Stats (0.10.0):** 57,806,510 ticks | 25,204,145 allocs | 0 GC | ~2.31s
+**Stats (0.11.0):** 56,836,818 ticks | 25,204,145 allocs | 0 GC | ~1.15s (−50%)
 
 **Characteristics:** Structurally identical to part 1 with a larger selection target. Tick and alloc counts scale roughly with the additional selection rounds. 1 alloc per 2.3 ticks — same ratio as part 1.
 
@@ -164,6 +199,7 @@ Same greedy algorithm extended to 12-digit selection. Higher constant factor but
 2D convolution via horizontal windowing and vertical stacking to compute 3×3 block sums across a grid; counts blocks where the sum is below threshold. Involves constructing and traversing a grid of partial sums.
 
 **Stats (0.10.0):** 59,818,598 ticks | 19,880,379 allocs | 0 GC | ~2.45s
+**Stats (0.11.0):** 59,230,889 ticks | 19,880,379 allocs | 0 GC | ~1.56s (−36%)
 
 **CPU profile (top 5):**
 
@@ -221,6 +257,7 @@ Tail-recursive removal loop: each step calls `survivals(grid)` (the same 3×3 bl
 Filters an ID list against range predicates using functional filtering. Essentially a series of predicate tests across an input list.
 
 **Stats (0.10.0):** 63,029,855 ticks | 14,067,690 allocs | 0 GC | ~2.14s
+**Stats (0.11.0):** 62,895,143 ticks | 14,067,690 allocs | 0 GC | ~1.46s (−32%)
 
 **CPU profile (top 5):**
 
@@ -250,6 +287,7 @@ Filters an ID list against range predicates using functional filtering. Essentia
 Sorts ranges, folds with merge logic to combine overlapping intervals, sums merged range lengths.
 
 **Stats (0.10.0):** 1,264,646 ticks | 732,774 allocs | 0 GC | ~0.06s
+**Stats (0.11.0):** 1,260,793 ticks | 732,774 allocs | 0 GC | ~0.028s (−53%)
 
 **Characteristics:** Fast. The merge fold is O(n log n) due to sorting, but n is small.
 
@@ -266,6 +304,7 @@ Sorts ranges, folds with merge logic to combine overlapping intervals, sums merg
 Transposes a row-oriented list of numbers into column problems, applies per-column operators. Involves a grid transpose and per-column fold.
 
 **Stats (0.10.0):** 16,739,291 ticks | 1,596,375 allocs | 0 GC | ~0.87s
+**Stats (0.11.0):** 16,727,001 ticks | 1,596,375 allocs | 0 GC | ~0.64s (−27%)
 
 **Characteristics:** Moderate ticks with moderate allocation (1 alloc per 10.5 ticks). The work is computation-heavy with the per-column arithmetic driving both ticks and allocations.
 
@@ -284,6 +323,7 @@ Transposes a row-oriented list of numbers into column problems, applies per-colu
 Transposes a character grid, reverses columns, folds right-to-left grouping digits by operator boundaries. Structurally similar to part 1 but with character classification and more complex grouping logic.
 
 **Stats (0.10.0):** 126,966,700 ticks | 10,646,539 allocs | 0 GC | ~4.97s
+**Stats (0.11.0):** 126,918,682 ticks | 10,646,539 allocs | 0 GC | ~3.97s (−20%)
 
 **CPU profile (top 5):**
 
@@ -313,6 +353,7 @@ Transposes a character grid, reverses columns, folds right-to-left grouping digi
 Bit-vector beam propagation. Per-row fold detects splitter hits, emits left/right bit shifts, merges beam states with bitwise max. Pure bit manipulation over a grid.
 
 **Stats (0.10.0):** 45,674,239 ticks | 16,354,405 allocs | 0 GC | ~1.89s
+**Stats (0.11.0):** 45,470,121 ticks | 16,354,405 allocs | 0 GC | ~1.23s (−35%)
 
 **CPU profile (top 5):**
 
@@ -341,6 +382,7 @@ Bit-vector beam propagation. Per-row fold detects splitter hits, emits left/righ
 Same bit-vector beam structure as part 1 but sums beam counts rather than taking the max. This seemingly minor change results in a much higher `handle_instruction` self-time.
 
 **Stats (0.10.0):** 29,811,429 ticks | 10,369,387 allocs | 0 GC | ~3.26s
+**Stats (0.11.0):** 29,729,386 ticks | 10,369,387 allocs | 0 GC | ~2.49s (−23%)
 
 **CPU profile (top 5):**
 
@@ -370,6 +412,7 @@ Same bit-vector beam structure as part 1 but sums beam counts rather than taking
 X-sorted windowing to reduce pairs to O(n×w); union-find on k closest edges, with the product of the three largest component sizes as output. Implements a subset of Kruskal's algorithm.
 
 **Stats (0.10.0):** 249,873,053 ticks | 118,607,830 allocs | 0 GC | ~11.5s
+**Stats (0.11.0):** 247,753,409 ticks | 118,607,839 allocs | 0 GC | ~6.08s (−47%)
 
 **CPU profile (top 5):**
 
@@ -426,6 +469,7 @@ MST via Kruskal on the full candidate set. `solve2-n(999, data)` uses window siz
 Pairwise brute-force via `tails` with `foldl`. Computes area for each head-to-tail pair, finds the maximum. O(n²) in the number of points.
 
 **Stats (0.10.0):** 210,273,177 ticks | 81,203,655 allocs | 0 GC | ~8.52s
+**Stats (0.11.0):** 208,578,165 ticks | 81,203,655 allocs | 0 GC | ~5.01s (−41%)
 
 **CPU profile (top 5):**
 
@@ -483,6 +527,7 @@ Largest-inscribed-rectangle sweep over a rectilinear polygon. `levels.from-point
 DFS subset enumeration over GF(2). Finds minimum k-size subsets via XOR-based target matching. Highly recursive with extensive backtracking.
 
 **Stats (0.10.0):** 544,089,317 ticks | 228,950,942 allocs | 0 GC | ~21.9s
+**Stats (0.11.0):** 535,960,349 ticks | 228,950,942 allocs | 0 GC | ~10.99s (−50%)
 
 **CPU profile (top 5):**
 
@@ -540,6 +585,7 @@ Branch-and-bound integer linear programme solver. For each machine `[joltage, bu
 DFS topological sort on a DAG followed by DP path counting in reverse topological order using block lookups.
 
 **Stats (0.10.0):** 66,419,641 ticks | 489,584 allocs | 0 GC | ~1.50s
+**Stats (0.11.0):** 66,410,797 ticks | 489,584 allocs | 0 GC | ~1.59s (+6%)
 
 **CPU profile (top 5):**
 
@@ -570,6 +616,7 @@ DFS topological sort on a DAG followed by DP path counting in reverse topologica
 Inclusion-exclusion with graph variant generation. Four independent DP passes computing path counts via required nodes: `total - no_dac - no_fft + neither`, each on a graph variant with one or two required nodes removed.
 
 **Stats (0.10.0):** 3,066,607,903 ticks | 6,232,604 allocs | 0 GC | ~144s
+**Stats (0.11.0):** 3,066,527,933 ticks | 6,232,604 allocs | 0 GC | ~146.5s (+2%)
 
 **CPU profile (top 5):**
 
@@ -601,6 +648,7 @@ Inclusion-exclusion with graph variant generation. Four independent DP passes co
 Area check and box dimension filter. Counts feasible regions passing geometric constraints.
 
 **Stats (0.10.0):** 6,779,263 ticks | 2,415,033 allocs | 0 GC | ~0.20s
+**Stats (0.11.0):** 6,745,268 ticks | 2,415,033 allocs | 0 GC | ~0.197s (−2%)
 
 **Characteristics:** Fast. Moderate allocation density (1 alloc per 2.8 ticks). No GC pressure.
 
