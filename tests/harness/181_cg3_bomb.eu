@@ -1,0 +1,9 @@
+# CG3 soundness: unused divergent arg must NOT be forced at
+# self-recursive call sites.  If eager_args incorrectly forces
+# `lazy-arg`, the infinite recursion will diverge.
+
+spin(x): spin(x)
+
+count-down(n, lazy-arg): if(n = 0, :PASS, count-down(n - 1, lazy-arg))
+
+RESULT: count-down(50, spin(0))

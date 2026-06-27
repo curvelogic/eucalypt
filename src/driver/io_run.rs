@@ -1050,6 +1050,7 @@ impl Mutator for BuildRenderDoc {
             .alloc(HeapSyn::App {
                 callable: Ref::G(render_doc_idx),
                 args: Array::from_slice(view, &[Ref::L(0)]),
+                eager_args: false,
             })?
             .as_ptr();
         Ok(SynClosure::new(app_syn, env))
@@ -1470,6 +1471,7 @@ impl Mutator for BuildApply1 {
             .alloc(HeapSyn::App {
                 callable: Ref::L(1),
                 args: Array::from_slice(view, &[Ref::L(0)]),
+                eager_args: false,
             })?
             .as_ptr();
         Ok(SynClosure::new(app_syn, env))
@@ -1503,6 +1505,7 @@ impl Mutator for BuildApply2 {
             .alloc(HeapSyn::App {
                 callable: Ref::L(2),
                 args: Array::from_slice(view, &[Ref::L(0), Ref::L(1)]),
+                eager_args: false,
             })?
             .as_ptr();
         Ok(SynClosure::new(app_syn, env))
@@ -1550,6 +1553,7 @@ impl Mutator for BuildApplyWorld {
             .alloc(HeapSyn::App {
                 callable: Ref::L(1),
                 args: Array::from_slice(view, &[Ref::L(0)]),
+                eager_args: false,
             })?
             .as_ptr();
         Ok(SynClosure::new(app_syn, env))

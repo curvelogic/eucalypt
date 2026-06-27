@@ -242,12 +242,17 @@ pub enum HeapSyn {
     /// Saturated data constructor
     Cons { tag: Tag, args: Array<Ref> },
     /// Function application
-    App { callable: Ref, args: Array<Ref> },
+    App {
+        callable: Ref,
+        args: Array<Ref>,
+        eager_args: bool,
+    },
     /// Direct exact-arity application to a statically known callee.
     DirectApp {
         smid: Smid,
         callable: Ref,
         args: Array<Ref>,
+        eager_args: bool,
     },
     /// Saturated intrinsic application
     Bif { intrinsic: u8, args: Array<Ref> },
@@ -460,7 +465,7 @@ impl GcScannable for HeapSyn {
                 }
                 mark_ref_array_heap_pointers(args, scope, marker, out);
             }
-            HeapSyn::App { callable, args } => {
+            HeapSyn::App { callable, args, .. } => {
                 mark_ref_heap_pointers(callable, scope, marker, out);
                 if marker.mark_array(args) {
                     if let Some(backing_ptr) = args.allocated_data() {
@@ -620,7 +625,7 @@ impl GcScannable for HeapSyn {
                 }
                 update_ref_array_heap_pointers(args, heap);
             }
-            HeapSyn::App { callable, args } => {
+            HeapSyn::App { callable, args, .. } => {
                 update_ref_heap_pointers(callable, heap);
                 if let Some(old_ptr) = args.allocated_data() {
                     if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
@@ -848,18 +853,25 @@ impl Repr for ScopedPtr<'_, HeapSyn> {
                 tag: *tag,
                 args: repr::repr_refarray(self, args.clone()),
             }),
-            HeapSyn::App { callable, args } => Rc::new(StgSyn::App {
+            HeapSyn::App {
+                callable,
+                args,
+                eager_args,
+            } => Rc::new(StgSyn::App {
                 callable: repr::heap_to_stg(self, callable),
                 args: repr::repr_refarray(self, args.clone()),
+                eager_args: *eager_args,
             }),
             HeapSyn::DirectApp {
                 smid,
                 callable,
                 args,
+                eager_args,
             } => Rc::new(StgSyn::DirectApp {
                 smid: *smid,
                 callable: repr::heap_to_stg(self, callable),
                 args: repr::repr_refarray(self, args.clone()),
+                eager_args: *eager_args,
             }),
             HeapSyn::Bif { intrinsic, args } => Rc::new(StgSyn::Bif {
                 intrinsic: *intrinsic,

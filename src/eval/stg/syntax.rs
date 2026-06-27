@@ -130,7 +130,14 @@ pub enum StgSyn {
     /// Saturated data constructor
     Cons { tag: Tag, args: Vec<Ref> },
     /// Function application
-    App { callable: Ref, args: Vec<Ref> },
+    App {
+        callable: Ref,
+        args: Vec<Ref>,
+        /// When true, resolve `Ref::L` args eagerly at runtime instead of
+        /// creating lazy indirections.  Set at self-recursive call sites to
+        /// prevent O(n) indirection chain build-up across iterations.
+        eager_args: bool,
+    },
     /// Direct exact-arity application to a statically known callee.
     ///
     /// Emitted by the compiler when the callee has a demand signature and the
@@ -140,6 +147,8 @@ pub enum StgSyn {
         smid: Smid,
         callable: Ref,
         args: Vec<Ref>,
+        /// When true, resolve `Ref::L` args eagerly at runtime.
+        eager_args: bool,
     },
     /// Saturated intrinsic application
     Bif { intrinsic: u8, args: Vec<Ref> },
@@ -231,7 +240,7 @@ impl fmt::Display for StgSyn {
             StgSyn::Cons { tag, args } => {
                 write!(f, "DATA[{}](×{})", tag, args.len())
             }
-            StgSyn::App { callable, args } => {
+            StgSyn::App { callable, args, .. } => {
                 write!(f, "{}(×{})", callable, args.len())
             }
             StgSyn::DirectApp { callable, args, .. } => {
@@ -356,7 +365,19 @@ pub mod dsl {
     }
 
     pub fn app(r: Ref, args: Vec<Ref>) -> Rc<StgSyn> {
-        Rc::new(StgSyn::App { callable: r, args })
+        Rc::new(StgSyn::App {
+            callable: r,
+            args,
+            eager_args: false,
+        })
+    }
+
+    pub fn app_eager(r: Ref, args: Vec<Ref>) -> Rc<StgSyn> {
+        Rc::new(StgSyn::App {
+            callable: r,
+            args,
+            eager_args: true,
+        })
     }
 
     pub fn direct_app(smid: Smid, r: Ref, args: Vec<Ref>) -> Rc<StgSyn> {
@@ -364,6 +385,16 @@ pub mod dsl {
             smid,
             callable: r,
             args,
+            eager_args: false,
+        })
+    }
+
+    pub fn direct_app_eager(smid: Smid, r: Ref, args: Vec<Ref>) -> Rc<StgSyn> {
+        Rc::new(StgSyn::DirectApp {
+            smid,
+            callable: r,
+            args,
+            eager_args: true,
         })
     }
 

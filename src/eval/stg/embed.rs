@@ -155,7 +155,7 @@ fn embed_stg(syn: &StgSyn) -> Option<rowan_ast::Soup> {
             }
             b.finish()
         }
-        StgSyn::App { callable, args } => {
+        StgSyn::App { callable, args, .. } => {
             let mut b = StgEmbedBuilder::new("s-app");
             b.token(&embed_ref(callable));
             for arg in args {
@@ -167,6 +167,7 @@ fn embed_stg(syn: &StgSyn) -> Option<rowan_ast::Soup> {
             callable,
             args,
             smid: _,
+            ..
         } => {
             let mut b = StgEmbedBuilder::new("s-direct-app");
             b.token(&embed_ref(callable));

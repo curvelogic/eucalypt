@@ -2617,6 +2617,11 @@ pub fn test_180_direct_app_local() {
 }
 
 #[test]
+pub fn test_181_cg3_bomb() {
+    run_test(&opts("181_cg3_bomb.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

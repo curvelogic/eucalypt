@@ -116,7 +116,7 @@ impl ToPretty for StgSyn {
                         .parens(),
                 )
             }
-            StgSyn::App { callable, args } => {
+            StgSyn::App { callable, args, .. } => {
                 let args_docs = args.iter().map(|r| allocator.text(format!("{r}")));
                 allocator.text(format!("{callable}")).append(
                     allocator

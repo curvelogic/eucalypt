@@ -120,11 +120,15 @@ pub enum ArenaStgSyn {
     App {
         callable: Ref,
         args: Vec<Ref>,
+        #[serde(default)]
+        eager_args: bool,
     },
     DirectApp {
         smid: Smid,
         callable: Ref,
         args: Vec<Ref>,
+        #[serde(default)]
+        eager_args: bool,
     },
     Bif {
         intrinsic: u8,
@@ -222,18 +226,25 @@ impl StgArena {
                 tag: *tag,
                 args: args.clone(),
             },
-            StgSyn::App { callable, args } => ArenaStgSyn::App {
+            StgSyn::App {
+                callable,
+                args,
+                eager_args,
+            } => ArenaStgSyn::App {
                 callable: callable.clone(),
                 args: args.clone(),
+                eager_args: *eager_args,
             },
             StgSyn::DirectApp {
                 smid,
                 callable,
                 args,
+                eager_args,
             } => ArenaStgSyn::DirectApp {
                 smid: *smid,
                 callable: callable.clone(),
                 args: args.clone(),
+                eager_args: *eager_args,
             },
             StgSyn::Bif { intrinsic, args } => ArenaStgSyn::Bif {
                 intrinsic: *intrinsic,
@@ -400,18 +411,25 @@ impl StgArena {
                 tag: *tag,
                 args: args.clone(),
             },
-            ArenaStgSyn::App { callable, args } => StgSyn::App {
+            ArenaStgSyn::App {
+                callable,
+                args,
+                eager_args,
+            } => StgSyn::App {
                 callable: callable.clone(),
                 args: args.clone(),
+                eager_args: *eager_args,
             },
             ArenaStgSyn::DirectApp {
                 smid,
                 callable,
                 args,
+                eager_args,
             } => StgSyn::DirectApp {
                 smid: *smid,
                 callable: callable.clone(),
                 args: args.clone(),
+                eager_args: *eager_args,
             },
             ArenaStgSyn::Bif { intrinsic, args } => StgSyn::Bif {
                 intrinsic: *intrinsic,
