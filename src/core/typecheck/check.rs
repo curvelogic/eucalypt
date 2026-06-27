@@ -431,6 +431,11 @@ impl Checker {
         self.warnings
     }
 
+    /// Consume the checker and return warnings plus the alias map.
+    pub fn into_warnings_and_aliases(self) -> (Vec<TypeWarning>, AliasMap) {
+        (self.warnings, self.aliases)
+    }
+
     /// Return the flattened type environment from the scope stack.
     ///
     /// Merges all scope frames (innermost wins) into a single map of
@@ -3008,7 +3013,7 @@ fn is_clause_intrinsic(func: &RcExpr) -> bool {
 ///
 /// Used by `resolve_aliases_inner` to detect self-referential aliases and
 /// decide whether to wrap the resolved body in `Type::Mu`.
-fn contains_var_named(ty: &Type, name: &str) -> bool {
+pub fn contains_var_named(ty: &Type, name: &str) -> bool {
     match ty {
         Type::Var(id, _) => id.0 == name,
         Type::App(f, x) => contains_var_named(f, name) || contains_var_named(x, name),
@@ -3338,11 +3343,12 @@ pub struct TypeCheckResult {
     pub aliases: HashMap<String, Type>,
 }
 
-/// Run the type checker over `expr` and return all warnings found.
-pub fn type_check(expr: &RcExpr) -> Vec<TypeWarning> {
+/// Run the type checker over `expr` and return all warnings found,
+/// along with the alias map built during checking.
+pub fn type_check(expr: &RcExpr) -> (Vec<TypeWarning>, AliasMap) {
     let mut checker = Checker::new();
     checker.check_expr(expr);
-    checker.into_warnings()
+    checker.into_warnings_and_aliases()
 }
 
 /// Run the type checker over `expr` and return warnings plus the type environment.
@@ -4093,7 +4099,7 @@ mod tests {
 
     #[test]
     fn type_check_top_level_collects_all_warnings() {
-        let warnings = type_check(&str_lit("hello"));
+        let (warnings, _aliases) = type_check(&str_lit("hello"));
         assert!(warnings.is_empty(), "plain string literal has no warnings");
     }
 

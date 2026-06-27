@@ -149,7 +149,7 @@ fn run() -> i32 {
     {
         let t = std::time::Instant::now();
         let core_expr = loader.core().expr.clone();
-        let warnings = eucalypt::core::typecheck::check::type_check(&core_expr);
+        let (warnings, aliases) = eucalypt::core::typecheck::check::type_check(&core_expr);
         let elapsed = t.elapsed();
 
         if !opt.suppress_type_warnings() {
@@ -166,6 +166,15 @@ fn run() -> i32 {
         // --strict: abort before evaluation if there are type warnings
         if opt.check_strict() && !warnings.is_empty() {
             return exit_code(&opt, 1, &statistics);
+        }
+
+        // Resolve type aliases inside TypeData primitives so that
+        // runtime `to-data` / `to-spec` see the concrete types.
+        if !aliases.is_empty() {
+            let resolved = eucalypt::core::typecheck::resolve_typedata::resolve_typedata_aliases(
+                &core_expr, &aliases,
+            );
+            loader.set_core_expr(resolved);
         }
     }
 

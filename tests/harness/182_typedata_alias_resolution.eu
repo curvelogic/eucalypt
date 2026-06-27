@@ -1,0 +1,61 @@
+"182 typedata alias resolution"
+
+# Type aliases in s-strings should be resolved after type checking,
+# so that to-data and to-spec see the concrete types.
+
+# ── Explicit type annotation ──────────────────────────────────────────────
+
+# Define alias: Shape => { type: symbol, area: number }
+` { type-def: true
+    type: s"{ type: symbol, area: number }" }
+Shape: { type: :circle, area: 3.4 }
+
+# ── Implicit (synthesised) type-def ──────────────────────────────────────
+
+# No type: annotation — alias inferred from declaration value
+` :type-def
+Origin: { x: 0, y: 0 }
+
+# ── result-def ───────────────────────────────────────────────────────────
+
+` { result-def: true
+    type: s"string → [number]" }
+parse-nums(s): [1, 2, 3]
+
+` { target: :test }
+test: {
+
+  # ── Explicit alias: Shape ──────────────────────────────────────────────
+
+  shape-data: s"Shape" to-data
+  td-not-var: (shape-data head) != :t-var       //=> true
+  td-is-record: (shape-data head) = :t-record   //=> true
+
+  shape-spec: s"Shape" as-spec
+  matches-shape: {type: :square, area: 4.0} match?(shape-spec)    //=> true
+  rejects-non-shape: {name: "hello"} match?(shape-spec)           //=> false
+  missing-key: {type: :circle} match?(shape-spec)                 //=> false
+  wrong-type: {type: :circle, area: "big"} match?(shape-spec)     //=> false
+
+  # ── Implicit alias: Origin ─────────────────────────────────────────────
+
+  origin-data: s"Origin" to-data
+  od-not-var: (origin-data head) != :t-var       //=> true
+  od-is-record: (origin-data head) = :t-record   //=> true
+
+  origin-spec: s"Origin" as-spec
+  matches-origin: {x: 1, y: 2} match?(origin-spec)       //=> true
+  rejects-origin: {a: 1} match?(origin-spec)              //=> false
+
+  # ── result-def alias: parse-nums result is [number] ────────────────────
+
+  pn-data: s"parse-nums" to-data
+  pn-not-var: (pn-data head) != :t-var           //=> true
+  pn-is-list: (pn-data head) = :t-list           //=> true
+
+  pn-spec: s"parse-nums" as-spec
+  matches-pn: [1, 2] match?(pn-spec)             //=> true
+  rejects-pn: "hello" match?(pn-spec)            //=> false
+
+  RESULT: :PASS
+}

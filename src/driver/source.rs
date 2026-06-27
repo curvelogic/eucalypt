@@ -809,6 +809,11 @@ impl SourceLoader {
         &self.core
     }
 
+    /// Replace the core expression (e.g. after post-check alias resolution).
+    pub fn set_core_expr(&mut self, expr: RcExpr) {
+        self.core.expr = expr;
+    }
+
     /// Return a reference to the cross-unit interface.
     pub fn unit_interface(&self) -> &UnitInterface {
         &self.unit_interface
