@@ -1030,13 +1030,15 @@ impl Checker {
                         );
                     } else if let Some(alias_name) = Self::extract_type_def_name(value, name) {
                         // Use the explicit `type:` annotation if given; otherwise
-                        // the synthesised type (inferred from the value shape).
+                        // the synthesised type (inferred from the value shape),
+                        // widening literal types to their base types so that
+                        // e.g. `:circle` becomes `symbol`.
                         let alias_ty = if let Expr::Meta(_, _, meta) = &*value.inner {
                             self.extract_annotation(meta).map(|(ty, _, _, _)| ty)
                         } else {
                             None
                         }
-                        .unwrap_or_else(|| synthesised.clone());
+                        .unwrap_or_else(|| synthesised.clone().widen_literals());
                         self.register_alias(alias_name, alias_ty);
                     }
                     // Register `result-def:` alias when present.
@@ -1051,13 +1053,14 @@ impl Checker {
                         );
                     } else if let Some(alias_name) = Self::extract_result_def_name(value, name) {
                         // Use the explicit `type:` annotation if given; otherwise
-                        // the synthesised type (inferred from the value shape).
+                        // the synthesised type (inferred from the value shape),
+                        // widening literal types to their base types.
                         let alias_ty = if let Expr::Meta(_, _, meta) = &*value.inner {
                             self.extract_annotation(meta).map(|(ty, _, _, _)| ty)
                         } else {
                             None
                         }
-                        .unwrap_or_else(|| synthesised.clone());
+                        .unwrap_or_else(|| synthesised.clone().widen_literals());
                         match final_return_type(alias_ty) {
                             Some(return_ty) => self.register_alias(alias_name, return_ty),
                             None => {

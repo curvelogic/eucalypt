@@ -2627,6 +2627,11 @@ pub fn test_182_typedata_alias_resolution() {
 }
 
 #[test]
+pub fn test_183_widen_type_def_literals() {
+    run_test(&opts("183_widen_type_def_literals.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }
