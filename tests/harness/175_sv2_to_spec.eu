@@ -1,4 +1,5 @@
-"174 sv2 to-spec / as-spec"
+{ import: "resource:reflect"
+  doc: "174 sv2 to-spec / as-spec" }
 
 ` { target: :test }
 test: {
