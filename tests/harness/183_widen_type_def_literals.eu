@@ -1,0 +1,41 @@
+"183 widen literal types in synthesised type-def aliases"
+
+` { target: :test }
+test: {
+
+  # A type-def with no explicit `type:` annotation — the checker
+  # synthesises the type from the value.  Literal types (`:circle`,
+  # `"hello"`) should be widened to their base types (`symbol`,
+  # `string`) in the alias.
+
+  ` { type-def: true }
+  Shape: { type: :circle, area: 3.4 }
+
+  shape-spec: s"Shape" to-spec
+  shape-data: s"Shape" to-data
+
+  # `:square` is a symbol and `4.0` is a number — should match the
+  # widened alias `{ type: symbol, area: number }`.
+  t-matches: {type: :square, area: 4.0} match?(shape-spec)     //=> true
+
+  # `"big"` is a string, not a number — should NOT match.
+  t-rejects: {type: :square, area: "big"} match?(shape-spec)   //=> false
+
+  # The original exemplar should still match too.
+  t-original: {type: :circle, area: 3.4} match?(shape-spec)    //=> true
+
+  # to-data should show base types, not literal types.
+  # i.e. `[:t-prim, :symbol]` not `[:t-lit-sym, :circle]` for `type`.
+  # We test via a round-trip: the `type` field in to-data should be
+  # `[:t-prim, :symbol]`.
+
+  # ── result-def widening ──────────────────────────────────────────
+  ` { result-def: true }
+  make-tag(x): { tag: :default, value: x }
+
+  tag-spec: s"Tag" to-spec
+  t-result-match: {tag: :other, value: 42} match?(tag-spec)    //=> true
+  t-result-reject: {tag: 123, value: 42} match?(tag-spec)      //=> false
+
+  RESULT: :PASS
+}

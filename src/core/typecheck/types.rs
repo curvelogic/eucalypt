@@ -457,6 +457,37 @@ impl Type {
             .filter(|(n, _)| matches!(*n, "List" | "IO" | "Dict" | "NonEmpty"))
             .map(|(_, t)| t)
     }
+
+    /// Replace literal types with their base types, recursing into
+    /// compound types.  Used when registering synthesised (non-annotated)
+    /// `type-def:` / `result-def:` aliases so that, e.g.,
+    /// `{ type: :circle }` widens to `{ type: symbol }`.
+    pub fn widen_literals(self) -> Self {
+        match self {
+            Type::LiteralSymbol(_) => Type::Symbol,
+            Type::LiteralString(_) => Type::String,
+            Type::Tuple(ts) => Type::Tuple(ts.into_iter().map(Type::widen_literals).collect()),
+            Type::Union(ts) => Type::Union(ts.into_iter().map(Type::widen_literals).collect()),
+            Type::Function(a, b) => {
+                Type::Function(Box::new(a.widen_literals()), Box::new(b.widen_literals()))
+            }
+            Type::Record { fields, open, rows } => Type::Record {
+                fields: fields
+                    .into_iter()
+                    .map(|(k, fp)| (k, fp.map_type(Type::widen_literals)))
+                    .collect(),
+                open,
+                rows,
+            },
+            Type::App(f, x) => {
+                Type::App(Box::new(f.widen_literals()), Box::new(x.widen_literals()))
+            }
+            Type::Forall(vars, body) => Type::Forall(vars, Box::new(body.widen_literals())),
+            Type::Mu(v, body) => Type::Mu(v, Box::new(body.widen_literals())),
+            Type::Lam(v, body) => Type::Lam(v, Box::new(body.widen_literals())),
+            other => other,
+        }
+    }
 }
 
 // ── union smart constructor ───────────────────────────────────────────────────
@@ -1305,5 +1336,43 @@ mod tests {
         assert_eq!(Kind::star_to_star_to_star().to_string(), "* → * → *");
         let k = Kind::Arrow(Box::new(Kind::star_to_star()), Box::new(Kind::Star));
         assert_eq!(k.to_string(), "(* → *) → *");
+    }
+
+    #[test]
+    fn widen_literals_replaces_literal_types() {
+        // Leaf cases
+        assert_eq!(
+            Type::LiteralSymbol("circle".into()).widen_literals(),
+            Type::Symbol
+        );
+        assert_eq!(
+            Type::LiteralString("hello".into()).widen_literals(),
+            Type::String
+        );
+        // Non-literal leaves are unchanged
+        assert_eq!(Type::Number.widen_literals(), Type::Number);
+        assert_eq!(Type::Bool.widen_literals(), Type::Bool);
+    }
+
+    #[test]
+    fn widen_literals_recurses_into_record() {
+        let rec = Type::Record {
+            fields: BTreeMap::from([
+                (
+                    "type".into(),
+                    FieldPresence::Required(Type::LiteralSymbol("circle".into())),
+                ),
+                ("area".into(), FieldPresence::Required(Type::Number)),
+            ]),
+            open: false,
+            rows: vec![],
+        };
+        let widened = rec.widen_literals();
+        if let Type::Record { fields, .. } = widened {
+            assert_eq!(fields["type"].ty(), &Type::Symbol);
+            assert_eq!(fields["area"].ty(), &Type::Number);
+        } else {
+            panic!("expected Record");
+        }
     }
 }
