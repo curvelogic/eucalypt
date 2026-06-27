@@ -28,34 +28,38 @@ test: {
   # ── Explicit alias: Shape ──────────────────────────────────────────────
 
   shape-data: s"Shape" to-data
-  td-not-var: (shape-data head) != :t-var       //=> true
-  td-is-record: (shape-data head) = :t-record   //=> true
+  td-not-var: (shape-data first) != :t-var
+  td-is-record: (shape-data first) = :t-record
 
   shape-spec: s"Shape" as-spec
-  matches-shape: {type: :square, area: 4.0} match?(shape-spec)    //=> true
-  rejects-non-shape: {name: "hello"} match?(shape-spec)           //=> false
-  missing-key: {type: :circle} match?(shape-spec)                 //=> false
-  wrong-type: {type: :circle, area: "big"} match?(shape-spec)     //=> false
+  matches-shape: {type: :square, area: 4.0} match?(shape-spec)
+  rejects-non-shape: ({name: "hello"} match?(shape-spec)) not
+  missing-key: ({type: :circle} match?(shape-spec)) not
+  wrong-type: ({type: :circle, area: "big"} match?(shape-spec)) not
 
   # ── Implicit alias: Origin ─────────────────────────────────────────────
 
   origin-data: s"Origin" to-data
-  od-not-var: (origin-data head) != :t-var       //=> true
-  od-is-record: (origin-data head) = :t-record   //=> true
+  od-not-var: (origin-data first) != :t-var
+  od-is-record: (origin-data first) = :t-record
 
   origin-spec: s"Origin" as-spec
-  matches-origin: {x: 1, y: 2} match?(origin-spec)       //=> true
-  rejects-origin: {a: 1} match?(origin-spec)              //=> false
+  matches-origin: {x: 1, y: 2} match?(origin-spec)
+  rejects-origin: ({a: 1} match?(origin-spec)) not
 
   # ── result-def alias: parse-nums result is [number] ────────────────────
 
   pn-data: s"parse-nums" to-data
-  pn-not-var: (pn-data head) != :t-var           //=> true
-  pn-is-list: (pn-data head) = :t-list           //=> true
+  pn-not-var: (pn-data first) != :t-var
+  pn-is-list: (pn-data first) = :t-list
 
   pn-spec: s"parse-nums" as-spec
-  matches-pn: [1, 2] match?(pn-spec)             //=> true
-  rejects-pn: "hello" match?(pn-spec)            //=> false
+  matches-pn: [1, 2] match?(pn-spec)
+  rejects-pn: ("hello" match?(pn-spec)) not
 
-  RESULT: :PASS
+  RESULT: [td-not-var, td-is-record,
+           matches-shape, rejects-non-shape, missing-key, wrong-type,
+           od-not-var, od-is-record, matches-origin, rejects-origin,
+           pn-not-var, pn-is-list, matches-pn, rejects-pn]
+    all-true? then(:PASS, :FAIL)
 }
