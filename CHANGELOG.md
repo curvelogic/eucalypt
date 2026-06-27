@@ -19,7 +19,6 @@ All notable changes to eucalypt are documented here.
 ### Changed
 
 - **`--type-check` is now a silent no-op** — the flag is accepted for backward compatibility but type checking is always on (#906)
-- **Full type-DSL validation for s-strings** — `parse_scheme` replaces `parse_type` for compile-time s-string validation, supporting operator constraints (`>(a,a) => …`) and kind annotations (`forall (m :: * -> *). …`). The `!` escape-hatch prefix has been removed (#914)
 
 ### Fixed
 
