@@ -197,8 +197,8 @@ jobs:
         run: cargo install --path . --target-dir /tmp/eu-install
       - name: prepare build files for new version
         run: |
-          export OSTYPE=$(uname)
-          export HOSTTYPE=$(uname -m)
+          export EU_TARGET_TRIPLE="x86_64-unknown-linux-gnu"
+          export EU_RUSTC_VERSION="$(rustc --version | awk '{print $2}')"
 
           eu build.eu -t build-meta > build-meta.yaml.new
           mv -f build-meta.yaml.new build-meta.yaml
@@ -273,8 +273,8 @@ jobs:
         run: cargo install --path . --target-dir /tmp/eu-install
       - name: Prepare build files for new version
         run: |
-          export OSTYPE=$(uname)
-          export HOSTTYPE=$(uname -m)
+          export EU_TARGET_TRIPLE="aarch64-apple-darwin"
+          export EU_RUSTC_VERSION="$(rustc --version | awk '{print $2}')"
 
           eu build.eu -t build-meta > build-meta.yaml.new
           mv -f build-meta.yaml.new build-meta.yaml
@@ -319,8 +319,8 @@ jobs:
         run: cargo install --path . --target-dir /tmp/eu-install
       - name: Prepare build files for new version
         run: |
-          export OSTYPE=$(uname)
-          export HOSTTYPE=$(uname -m)
+          export EU_TARGET_TRIPLE="aarch64-unknown-linux-gnu"
+          export EU_RUSTC_VERSION="$(rustc --version | awk '{print $2}')"
 
           eu build.eu -t build-meta > build-meta.yaml.new
           mv -f build-meta.yaml.new build-meta.yaml
@@ -364,8 +364,9 @@ jobs:
       - name: Prepare build files for new version
         shell: pwsh
         run: |
-          $env:OSTYPE = "Windows"
-          $env:HOSTTYPE = "x86_64"
+          $env:EU_TARGET_TRIPLE = "x86_64-pc-windows-msvc"
+          $rustcVersion = (rustc --version) -replace 'rustc (\S+).*', '$1'
+          $env:EU_RUSTC_VERSION = $rustcVersion
           eu build.eu -t build-meta > build-meta.yaml.new
           Move-Item -Force build-meta.yaml.new build-meta.yaml
           cargo run --package xtask -- prelude-compile
