@@ -1,4 +1,5 @@
-"182 typedata alias resolution"
+{ import: "resource:reflect"
+  doc: "182 typedata alias resolution" }
 
 # Type aliases in s-strings should be resolved after type checking,
 # so that to-data and to-spec see the concrete types.
