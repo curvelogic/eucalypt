@@ -2,7 +2,13 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.11.0] - Unreleased
+## [0.11.1] - Unreleased
+
+### Changed
+
+- **`eu.build` metadata sanitised** — the `github-env` block that captured all `GITHUB_*` environment variables from the CI runner (including filesystem paths, actor IDs, and workflow internals) has been replaced with a curated set of build metadata: version, commit, build number, URL, timestamp, target triple, Rust version, build profile, and prelude blob status
+
+## [0.11.0] - 2026-06-27
 
 ### Added
 

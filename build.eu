@@ -40,17 +40,20 @@ build: {
   ` "URL of build"
   url: workflow-url
 
-  ` "Architecture of build environment"
-  arch: env lookup-alts([:HOSTTYPE, :_system_arch], "unknown")
+  ` "Target triple (e.g. aarch64-apple-darwin)"
+  arch: env lookup-or(:EU_TARGET_TRIPLE, "unknown")
 
-  ` "Architecture of build environment"
-  os: env lookup-alts([:OSTYPE, :_system_name], "unknown")
+  ` "Rust compiler version"
+  rust: env lookup-or(:EU_RUSTC_VERSION, "unknown")
+
+  ` "Build profile (release or debug)"
+  profile: env lookup-or(:EU_BUILD_PROFILE, "release")
+
+  ` "Whether prelude blob is embedded"
+  prelude-blob: env lookup-or(:EU_PRELUDE_BLOB, "true")
 
   ` "Seconds since epoch at eu build time"
-  epoch-time: io.epoch-time
-
-  ` "GitHub environment variables"
-  github-env: env filter-items(by-key-match("^GITHUB.*")) block
+  time: io.epoch-time
 }
 
 ` {target: :version
@@ -63,7 +66,6 @@ new-version: "{version.major}.{version.minor}.{version.patch}+{build.number str.
 build-meta: {
   version: new-version
   commit: build.commit
-  url: build.url
   banner: "eu - Eucalypt v{version}"
   eu-build: build
 }
