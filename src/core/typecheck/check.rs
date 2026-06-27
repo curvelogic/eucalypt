@@ -3145,15 +3145,17 @@ fn extract_plain_str(expr: &RcExpr) -> Option<String> {
 
 /// Return `true` when `expr` represents the boolean value `true`.
 ///
-/// Accepts two forms:
+/// Accepts three forms:
 /// - `Literal(Bool(true))` — created by `normalise_metadata` for `` ` :key `` shorthands.
 /// - A bound/free variable named `"true"` — the desugared form of `{ key: true }` written
 ///   in source, where eucalypt resolves `true` as the prelude binding.
+/// - `Intrinsic("TRUE")` — the inlined form when the prelude blob is active.
 fn is_bool_true(expr: &RcExpr) -> bool {
     match &*expr.inner {
         Expr::Literal(_, Primitive::Bool(true)) => true,
         Expr::Var(_, Var::Bound(BoundVar { name: Some(n), .. })) if n == "true" => true,
         Expr::Var(_, Var::Free(n)) if n == "true" => true,
+        Expr::Intrinsic(_, n) if n == "TRUE" => true,
         _ => false,
     }
 }

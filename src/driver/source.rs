@@ -105,6 +105,14 @@ pub struct SourceLoader {
     /// 2. `take_prelude_blob()` hands it to the `Executor` for runtime loading.
     #[cfg(not(target_arch = "wasm32"))]
     prelude_blob: Option<crate::eval::stg::blob::PreludeBlob>,
+    /// Type aliases collected from the full (unpruned) expression.
+    ///
+    /// Target pruning may remove bindings that carry `type-def:` or
+    /// `types:` metadata, so alias collection must happen before the
+    /// first dead-code elimination pass.  Callers that need TypeData
+    /// resolution (the `eu` binary, the tester) retrieve these via
+    /// `type_aliases()` after `prepare()` completes.
+    early_type_aliases: HashMap<String, crate::core::typecheck::types::Type>,
 }
 
 impl Default for SourceLoader {
@@ -127,6 +135,7 @@ impl Default for SourceLoader {
             pending_parse_errors: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             prelude_blob: None,
+            early_type_aliases: HashMap::new(),
         }
     }
 }
@@ -152,6 +161,7 @@ impl SourceLoader {
             #[cfg(not(target_arch = "wasm32"))]
             prelude_blob: None,
             pending_parse_errors: Vec::new(),
+            early_type_aliases: HashMap::new(),
         }
     }
 
@@ -812,6 +822,19 @@ impl SourceLoader {
     /// Replace the core expression (e.g. after post-check alias resolution).
     pub fn set_core_expr(&mut self, expr: RcExpr) {
         self.core.expr = expr;
+    }
+
+    /// Store type aliases collected from the unpruned expression.
+    pub fn set_type_aliases(
+        &mut self,
+        aliases: HashMap<String, crate::core::typecheck::types::Type>,
+    ) {
+        self.early_type_aliases = aliases;
+    }
+
+    /// Retrieve pre-pruning type aliases for TypeData resolution.
+    pub fn type_aliases(&self) -> &HashMap<String, crate::core::typecheck::types::Type> {
+        &self.early_type_aliases
     }
 
     /// Return a reference to the cross-unit interface.
