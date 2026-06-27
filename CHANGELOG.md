@@ -2,22 +2,35 @@
 
 All notable changes to eucalypt are documented here.
 
-## [Unreleased]
+## [0.11.0] - Unreleased
 
 ### Added
 
-- **Type checking always-on (TY)** — the gradual type checker now runs on every `eu` invocation without any flag. Previously it required `--type-check`. Type warnings are emitted to stderr before evaluation and never affect stdout or exit code (unless `--strict`).
-- **`--suppress-type-warnings`** — new flag to silence type-warning output. The checker still runs; warnings are computed but not printed. Use for contexts where warnings are distracting.
-- **`--type-check` kept as silent no-op** — existing scripts using `--type-check` continue to work without change.
+- **Type checking always-on (TY)** — the gradual type checker now runs on every `eu` invocation without any flag. Previously it required `--type-check`. Type warnings are emitted to stderr before evaluation and never affect stdout or exit code (unless `--strict`) (#906)
+- **`--suppress-type-warnings`** — new flag to silence type-warning output. The checker still runs; warnings are computed but not printed (#906)
+- **`s"…"` type-data value semantics (SV1)** — s-strings are now validated at compile time via the type-DSL parser. Invalid type syntax (e.g. `s"42"`) produces a source-located compile error. `to-data` projects type-data to `t-*` tagged-list form; `from-data` rebuilds it. `TYPE_TO_DATA` / `TYPE_FROM_STRING` intrinsics support the projection (#907, #914)
+- **`to-spec` / `as-spec` (SV2)** — prelude functions that convert `s"…"` type-data into `match?`-compatible patterns for runtime validation. Covers all type forms: primitives, records, lists, unions, functions, optionals, tuples, forall (#908)
+- **`datetime?` predicate** — new `__ISZDT` intrinsic (index 194) for runtime datetime type checking (#908)
+- **Optional record fields** — type-DSL syntax `name?: T` for fields that may be absent, distinct from `name: T?` (present but nullable). Presence subtyping, checker handling, `to-data` projection with `[:t-field :optional T]`, `to-spec`/`match?` integration (#909)
+- **Known-call direct dispatch (CG1)** — new `StgSyn::DirectApp` node for exact-arity calls to known callees (both `Ref::G` globals and `Ref::L` locals). Bypasses `ApplyTo` continuation push and runtime arity check. Source-prelude and blob-prelude parity (#905, #913)
+- **Literal-key resolution (CG2)** — new `StgSyn::LookupLit` node for `.key` lookups with compile-time-known keys. Single VM step with WHNF fast path and `LookupOr` fallback for thunked blocks (#910)
+- **Eager argument resolution at recursive calls (CG3)** — at self-recursive call sites, `Ref::L` arguments are resolved eagerly via `env.get(i)` instead of being wrapped as lazy indirections. Eliminates the O(n²) indirection chain in higher-order folds — `foldl` with a local `op` now scales linearly (19× speedup at N=10k). Unused arguments are not forced (soundness verified) (#911, #915)
+
+### Changed
+
+- **`--type-check` is now a silent no-op** — the flag is accepted for backward compatibility but type checking is always on (#906)
+- **Full type-DSL validation for s-strings** — `parse_scheme` replaces `parse_type` for compile-time s-string validation, supporting operator constraints (`>(a,a) => …`) and kind annotations (`forall (m :: * -> *). …`). The `!` escape-hatch prefix has been removed (#914)
 
 ### Fixed
 
-- **Type checker false positives eliminated** — six checker improvements eliminate all spurious warnings across the full harness and AoC corpus:
-  - Literal types (`"apple"`, `:active`) widen to their base type (`string`, `symbol`) when binding a type variable, preventing over-constrained polymorphism in functions like `min`/`max`.
-  - Row-variable records are treated as effectively open in subtype and lookup checks, preventing spurious "field not found" warnings on row-polymorphic return types.
-  - Gradual consistency (`~`) used in the overloaded-function fallback path, accepting `any?` where a concrete list or dict is expected without false alarms.
-  - Row variable absorption preserves source openness only when there are actual extra fields, preventing synthesised block literals from propagating spurious openness into result types.
-  - `io.exec` and `io.exec-with` prelude type annotations corrected from `string` to `[string]`.
+- **Type checker false positives eliminated** — six checker improvements eliminate all spurious warnings across the full harness and AoC corpus (#906):
+  - Literal types (`"apple"`, `:active`) widen to their base type (`string`, `symbol`) when binding a type variable
+  - Row-variable records treated as effectively open in subtype and lookup checks
+  - Gradual consistency (`~`) used in the overloaded-function fallback path
+  - Row variable absorption preserves source openness only when there are actual extra fields
+  - `synthesise_lookup` handles row variables
+  - `io.exec` and `io.exec-with` prelude type annotations corrected from `string` to `[string]`
+- **Prelude doc extraction leakage** — `extract_children` no longer walks into function bodies, preventing internal helpers (e.g. `from-data.prim-names`, `monad.step`) from leaking as public prelude entries (#907)
 
 ## [0.10.1] - 2026-06-25
 
