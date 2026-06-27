@@ -17,6 +17,7 @@ pub mod check;
 pub mod env;
 pub mod error;
 pub mod parse;
+pub mod resolve_typedata;
 pub mod subtype;
 pub mod types;
 pub mod unify;

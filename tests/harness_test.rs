@@ -2622,6 +2622,11 @@ pub fn test_181_cg3_bomb() {
 }
 
 #[test]
+pub fn test_182_typedata_alias_resolution() {
+    run_test(&opts("182_typedata_alias_resolution.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

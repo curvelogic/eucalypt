@@ -1,0 +1,65 @@
+"182 typedata alias resolution"
+
+# Type aliases in s-strings should be resolved after type checking,
+# so that to-data and to-spec see the concrete types.
+
+# ── Explicit type annotation ──────────────────────────────────────────────
+
+# Define alias: Shape => { type: symbol, area: number }
+` { type-def: true
+    type: s"{ type: symbol, area: number }" }
+Shape: { type: :circle, area: 3.4 }
+
+# ── Implicit (synthesised) type-def ──────────────────────────────────────
+
+# No type: annotation — alias inferred from declaration value
+` :type-def
+Origin: { x: 0, y: 0 }
+
+# ── result-def ───────────────────────────────────────────────────────────
+
+` { result-def: true
+    type: s"string → [number]" }
+parse-nums(s): [1, 2, 3]
+
+` { target: :test }
+test: {
+
+  # ── Explicit alias: Shape ──────────────────────────────────────────────
+
+  shape-data: s"Shape" to-data
+  td-not-var: (shape-data first) != :t-var
+  td-is-record: (shape-data first) = :t-record
+
+  shape-spec: s"Shape" as-spec
+  matches-shape: {type: :square, area: 4.0} match?(shape-spec)
+  rejects-non-shape: ({name: "hello"} match?(shape-spec)) not
+  missing-key: ({type: :circle} match?(shape-spec)) not
+  wrong-type: ({type: :circle, area: "big"} match?(shape-spec)) not
+
+  # ── Implicit alias: Origin ─────────────────────────────────────────────
+
+  origin-data: s"Origin" to-data
+  od-not-var: (origin-data first) != :t-var
+  od-is-record: (origin-data first) = :t-record
+
+  origin-spec: s"Origin" as-spec
+  matches-origin: {x: 1, y: 2} match?(origin-spec)
+  rejects-origin: ({a: 1} match?(origin-spec)) not
+
+  # ── result-def alias: parse-nums result is [number] ────────────────────
+
+  pn-data: s"parse-nums" to-data
+  pn-not-var: (pn-data first) != :t-var
+  pn-is-list: (pn-data first) = :t-list
+
+  pn-spec: s"parse-nums" as-spec
+  matches-pn: [1, 2] match?(pn-spec)
+  rejects-pn: ("hello" match?(pn-spec)) not
+
+  RESULT: [td-not-var, td-is-record,
+           matches-shape, rejects-non-shape, missing-key, wrong-type,
+           od-not-var, od-is-record, matches-origin, rejects-origin,
+           pn-not-var, pn-is-list, matches-pn, rejects-pn]
+    all-true? then(:PASS, :FAIL)
+}

@@ -504,7 +504,7 @@ fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eucaly
     // Run the type checker, seeded with the pre-cook operator overloads.
     let core_expr = loader.core().expr.clone();
     let mut warnings = if operator_overloads.is_empty() {
-        type_check(&core_expr)
+        type_check(&core_expr).0
     } else {
         type_check_with_operator_overloads(&core_expr, operator_overloads)
     };

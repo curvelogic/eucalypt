@@ -275,6 +275,20 @@ pub fn prepare(
         stats.record("hoist", t.elapsed());
     }
 
+    // Collect type aliases from the full (unpruned) expression.
+    //
+    // Target pruning removes bindings whose `type-def:` / `result-def:`
+    // metadata defines aliases used by s-string TypeData values.  Because
+    // s-strings reference types by name (opaque to DCE), the aliases must
+    // be captured before any elimination pass runs.
+    {
+        let core_expr = loader.core().expr.clone();
+        let (_warnings, aliases) = crate::core::typecheck::check::type_check(&core_expr);
+        if !aliases.is_empty() {
+            loader.set_type_aliases(aliases);
+        }
+    }
+
     // Prune unused bindings to reduce inline overhead
     if !opt.no_dce() {
         let t = Instant::now();

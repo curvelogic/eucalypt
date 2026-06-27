@@ -663,6 +663,20 @@ impl Tester for InProcessTester {
                     return Err(e);
                 }
 
+                // Resolve type aliases inside TypeData primitives using
+                // the pre-pruning aliases collected during prepare().
+                {
+                    let aliases = loader.type_aliases();
+                    if !aliases.is_empty() {
+                        let core_expr = loader.core().expr.clone();
+                        let resolved =
+                            crate::core::typecheck::resolve_typedata::resolve_typedata_aliases(
+                                &core_expr, aliases,
+                            );
+                        loader.set_core_expr(resolved);
+                    }
+                }
+
                 let mut outbuf = Vec::new();
                 let mut errbuf = Vec::new();
 

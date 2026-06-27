@@ -145,11 +145,13 @@ fn run() -> i32 {
         Ok(Command::Continue) => {}
     }
 
-    // Type checker always runs; use --suppress-type-warnings to silence output.
+    // Type checker runs on the pruned expression for warnings.
+    // Alias collection already happened pre-pruning inside prepare().
     {
         let t = std::time::Instant::now();
         let core_expr = loader.core().expr.clone();
-        let warnings = eucalypt::core::typecheck::check::type_check(&core_expr);
+        let (warnings, _post_prune_aliases) =
+            eucalypt::core::typecheck::check::type_check(&core_expr);
         let elapsed = t.elapsed();
 
         if !opt.suppress_type_warnings() {
@@ -166,6 +168,16 @@ fn run() -> i32 {
         // --strict: abort before evaluation if there are type warnings
         if opt.check_strict() && !warnings.is_empty() {
             return exit_code(&opt, 1, &statistics);
+        }
+
+        // Resolve type aliases inside TypeData primitives using the
+        // pre-pruning aliases (which include definitions removed by DCE).
+        let aliases = loader.type_aliases();
+        if !aliases.is_empty() {
+            let resolved = eucalypt::core::typecheck::resolve_typedata::resolve_typedata_aliases(
+                &core_expr, aliases,
+            );
+            loader.set_core_expr(resolved);
         }
     }
 
