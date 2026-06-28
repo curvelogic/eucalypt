@@ -19,44 +19,25 @@ to-data(v): type-data?(v) then(__TYPE_TO_DATA(v), v)
     type: s"any → any" }
 from-data(td):
   { prim-names: {
-        number: "number"
-        string: "string"
-        symbol: "symbol"
-        bool: "bool"
-        null: "null"
-        datetime: "datetime"
-        any: "any"
-        top: "top"
-        never: "never"
         error: "ExecutionError"
-        set: "set"
-        vec: "vec"
-        array: "array"
       }
 
     prim-str(name-sym): prim-names lookup-or(name-sym, str.of(name-sym))
 
-    needs-lhs?(t):
-      { tag: t first }.(tag = :t-fn ∨ tag = :t-union ∨ tag = :t-partial)
-
-    needs-rhs?(t):
-      { tag: t first }.(tag = :t-union ∨ tag = :t-partial)
+    needs-parens: set.from-list[:t-fn, :t-union, :t-partial]
 
     fn-str(a, b):
       { a-str: to-str(a)
         b-str: to-str(b)
-        a-r: needs-lhs?(a) then("({a-str})", a-str)
-        b-r: needs-rhs?(b) then("({b-str})", b-str)
+        a-r: ((a first) ∈ needs-parens) then("({a-str})", a-str)
+        b-r: ((b first) ∈ needs-parens) then("({b-str})", b-str)
       }."{a-r} → {b-r}"
 
-    field-str(kv):
-      { k: kv first
-        fp: kv second
-        is-tf: (fp first) = :t-field
-        is-opt: is-tf ∧ ((fp second) = :optional)
-        inner-ty: if(is-tf, fp !! 2, fp)
+    field-str([k, fp]):
+      { parts: field-parts(fp)
+        is-opt: parts first
+        ty-str: parts second to-str
         q: is-opt then("?", "")
-        ty-str: to-str(inner-ty)
       }."{k}{q}: {ty-str}"
 
     record-str(rec):
@@ -65,13 +46,11 @@ from-data(td):
 
     app-str(f, x):
       { x-str: to-str(x)
-        f-first: f first
-        f-name: (f-first = :t-con) then(str.of(f second), "")
         f-str: to-str(f)
       }.(cond([
-          f-first = :t-con ∧ f-name = "IO"       => "IO({x-str})"
-        , f-first = :t-con ∧ f-name = "Dict"     => "Dict({x-str})"
-        , f-first = :t-con ∧ f-name = "NonEmpty" => "NonEmpty([{x-str}])"
+          f = [:t-con, :IO]       => "IO({x-str})"
+        , f = [:t-con, :Dict]     => "Dict({x-str})"
+        , f = [:t-con, :NonEmpty] => "NonEmpty([{x-str}])"
         , "{f-str} {x-str}"
         ]))
 
@@ -79,35 +58,32 @@ from-data(td):
       { body: ts map(to-str) str.join-on(", ")
       }."({body})"
 
-    to-str(t):
-      { tag:    t first
-        rest:   t tail
-        r0:     t second
-        r1:     t !! 2
-        r0-str: to-str(r0)
-        r1-str: to-str(r1)
-        r0-sym: str.of(r0)
+    to-str[tag : rest]:
+      { r0: rest first
+        r1: rest second
+        s0: to-str(r0)
+        s1: to-str(r1)
       }.(cond([
-          tag = :t-prim    => prim-str(rest first)
-        , tag = :t-list    => "[{r0-str}]"
-        , tag = :t-fn      => fn-str(rest first, rest second)
-        , tag = :t-con     => str.of(rest first)
-        , tag = :t-app     => app-str(rest first, rest second)
+          tag = :t-prim    => prim-str(r0)
+        , tag = :t-list    => "[{s0}]"
+        , tag = :t-fn      => fn-str(r0, r1)
+        , tag = :t-con     => "{r0}"
+        , tag = :t-app     => app-str(r0, r1)
         , tag = :t-union   => rest map(to-str) str.join-on(" | ")
-        , tag = :t-partial => "{r0-str}?"
+        , tag = :t-partial => "{s0}?"
         , tag = :t-tuple   => tuple-str(rest)
-        , tag = :t-record  => record-str(rest first)
-        , tag = :t-var     => str.of(rest first)
-        , tag = :t-lit-sym => ":{str.of(rest first)}"
-        , tag = :t-mu      => str.of(rest first)
-        , tag = :t-forall  => "forall {r0-sym}. {r1-str}"
-        , tag = :t-lam     => "λ{r0-sym}. {r1-str}"
+        , tag = :t-record  => record-str(r0)
+        , tag = :t-var     => "{r0}"
+        , tag = :t-lit-sym => ":{r0}"
+        , tag = :t-mu      => "{r0}"
+        , tag = :t-forall  => "forall {r0}. {s1}"
+        , tag = :t-lam     => "λ{r0}. {s1}"
         , "any"
         ]))
   }.(to-str(td) __TYPE_FROM_STRING)
 
 ##
-## Type specs
+## Field-presence helper
 ##
 
 # Shared helper: decompose a field-presence wrapper.
@@ -115,8 +91,12 @@ from-data(td):
 field-parts(fp):
   { is-tf: (fp first) = :t-field
     is-opt: is-tf ∧ ((fp second) = :optional)
-    inner: if(is-tf, fp !! 2, fp)
+    inner: is-tf then(fp !! 2, fp)
   }.[is-opt, inner]
+
+##
+## Type specs
+##
 
 ` { doc: "`to-spec(t)` - convert type-data (or a t-* tagged list) to a match?-compatible pattern.
          Primitive types become predicates (number?, string?, etc.), records become block patterns,
@@ -145,10 +125,7 @@ to-spec(t):
     list-spec(inner):
       { s: to-spec-td(inner)
         elem-ok?(e): e match?(s)
-        pred(v):
-          { is-list: v list?
-            all-ok:  v all(elem-ok?)
-          }.(is-list ∧ all-ok)
+        pred(v): (v list?) ∧ (v all(elem-ok?))
       }.(pred)
 
     union-spec(ts):
@@ -160,10 +137,7 @@ to-spec(t):
 
     partial-spec(inner):
       { s: to-spec-td(inner)
-        pred(v):
-          { is-null: v null?
-            is-type: v match?(s)
-          }.(is-null ∨ is-type)
+        pred(v): (v null?) ∨ (v match?(s))
       }.(pred)
 
     tuple-spec(ts):
@@ -173,36 +147,30 @@ to-spec(t):
 
     record-spec(rec):
       { entries: rec elements
-        check-entry(v, kv):
-          { k: kv first
-            fp: kv second
-            parts: field-parts(fp)
+        check-entry(v, [k, fp]):
+          { parts: field-parts(fp)
             is-opt: parts first
-            inner-td: parts second
-            s: to-spec-td(inner-td)
+            s: parts second to-spec-td
             chk: (v lookup(k)) match?(s)
-          }.(if(is-opt,
-               if(v has(k), chk, true),
+          }.(is-opt then(
+               (v has(k)) then(chk, true),
                (v has(k)) ∧ chk))
         pred(v):
           entries map(check-entry(v)) all-true?
       }.(pred)
 
-    to-spec-td(td2):
-      { tag:  td2 first
-        rest: td2 tail
-        r0:   td2 second
-      }.(cond([
+    to-spec-td[tag : rest]:
+      cond([
           tag = :t-prim    => prim-spec(rest first)
-        , tag = :t-list    => list-spec(r0)
+        , tag = :t-list    => list-spec(rest first)
         , tag = :t-fn      => fun-spec
         , tag = :t-union   => union-spec(rest)
-        , tag = :t-partial => partial-spec(r0)
+        , tag = :t-partial => partial-spec(rest first)
         , tag = :t-tuple   => tuple-spec(rest)
-        , tag = :t-record  => record-spec(r0)
-        , tag = :t-forall  => to-spec-td(td2 !! 2)
+        , tag = :t-record  => record-spec(rest first)
+        , tag = :t-forall  => to-spec-td(rest second)
         , any?
-        ]))
+        ])
 
   }.(to-spec-td(td))
 

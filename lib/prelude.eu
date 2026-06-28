@@ -407,6 +407,92 @@ datetime?: __ISZDT
     type: s"any → bool" }
 type-data?: __ISTYPEDATA
 
+` { doc: "`to-spec(t)` - convert type-data to a match?-compatible pattern.
+         Primitive types become predicates, records become block patterns,
+         lists become list predicates, unions become disjunctive predicates,
+         partials accept null or the inner type."
+    type: s"any → any" }
+to-spec(t):
+  { td: type-data?(t) then(__TYPE_TO_DATA(t), t)
+
+    prim-specs: {
+      number:   number?
+      string:   string?
+      symbol:   symbol?
+      bool:     bool?
+      null:     null?
+      datetime: datetime?
+      any:      any?
+      top:      any?
+      never:    any?
+    }
+
+    prim-spec(name-sym): prim-specs lookup-or(name-sym, any?)
+
+    fun-spec: _ __SATURATED not
+
+    list-spec(inner):
+      { s: to-spec-td(inner)
+        elem-ok?(e): e match?(s)
+        pred(v): (v list?) ∧ (v all(elem-ok?))
+      }.(pred)
+
+    union-spec(ts):
+      { specs: ts map(to-spec-td)
+        union-pred(v):
+          { check-spec(p): v match?(p)
+          }.(specs map(check-spec) any-true?)
+      }.(union-pred)
+
+    partial-spec(inner):
+      { s: to-spec-td(inner)
+        pred(v): (v null?) ∨ (v match?(s))
+      }.(pred)
+
+    tuple-spec(ts):
+      { spec-list: ts map(to-spec-td)
+        pred(v): v match?(spec-list)
+      }.(pred)
+
+    # Shared helper: decompose a field-presence wrapper
+    field-parts(fp):
+      { is-tf: (fp first) = :t-field
+        is-opt: is-tf ∧ ((fp second) = :optional)
+        inner: is-tf then(fp !! 2, fp)
+      }.[is-opt, inner]
+
+    record-spec(rec):
+      { entries: rec elements
+        check-entry(v, [k, fp]):
+          { parts: field-parts(fp)
+            is-opt: parts first
+            s: parts second to-spec-td
+            chk: (v lookup(k)) match?(s)
+          }.(is-opt then(
+               (v has(k)) then(chk, true),
+               (v has(k)) ∧ chk))
+        pred(v):
+          entries map(check-entry(v)) all-true?
+      }.(pred)
+
+    to-spec-td[tag : rest]:
+      cond([
+          tag = :t-prim    => prim-spec(rest first)
+        , tag = :t-list    => list-spec(rest first)
+        , tag = :t-fn      => fun-spec
+        , tag = :t-union   => union-spec(rest)
+        , tag = :t-partial => partial-spec(rest first)
+        , tag = :t-tuple   => tuple-spec(rest)
+        , tag = :t-record  => record-spec(rest first)
+        , tag = :t-forall  => to-spec-td(rest second)
+        , any?
+        ])
+
+  }.(to-spec-td(td))
+
+` "as-spec: synonym for to-spec, convenient in pipeline position."
+as-spec: to-spec
+
 ` { doc: "`elements(b)` - expose list of elements of block `b`."
     type: s"{..} → [(symbol, any)]" }
 elements: __ELEMENTS
