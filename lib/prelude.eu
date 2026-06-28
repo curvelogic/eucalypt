@@ -433,16 +433,13 @@ to-spec(t):
 
     list-spec(inner):
       { s: to-spec-td(inner)
-        elem-ok?(e): e match?(s)
-        pred(v): (v list?) ∧ (v all(elem-ok?))
+        pred(v): (v list?) ∧ (v all(match?(s)))
       }.(pred)
 
     union-spec(ts):
       { specs: ts map(to-spec-td)
-        union-pred(v):
-          { check-spec(p): v match?(p)
-          }.(specs map(check-spec) any-true?)
-      }.(union-pred)
+        pred(v): specs any(v match?)
+      }.(pred)
 
     partial-spec(inner):
       { s: to-spec-td(inner)
@@ -454,22 +451,16 @@ to-spec(t):
         pred(v): v match?(spec-list)
       }.(pred)
 
-    # Shared helper: decompose a field-presence wrapper
-    field-parts(fp):
-      { is-tf: (fp first) = :t-field
-        is-opt: is-tf ∧ ((fp second) = :optional)
-        inner: is-tf then(fp !! 2, fp)
-      }.[is-opt, inner]
-
     record-spec(rec):
       { entries: rec elements
         check-entry(v, [k, fp]):
-          { parts: field-parts(fp)
-            is-opt: parts first
-            s: parts second to-spec-td
-            chk: (v lookup(k)) match?(s)
+          { is-tf: (fp first) = :t-field
+            is-opt: is-tf ∧ ((fp second) = :optional)
+            inner: is-tf then(fp !! 2, fp)
+            s: inner to-spec-td
+            chk: v lookup(k) match?(s)
           }.(is-opt then(
-               (v has(k)) then(chk, true),
+               v has(k) then(chk, true),
                (v has(k)) ∧ chk))
         pred(v):
           entries map(check-entry(v)) all-true?
