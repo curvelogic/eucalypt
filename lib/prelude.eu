@@ -467,7 +467,7 @@ to-spec(t):
       }.pred
 
     to-spec-td[tag : rest]:
-      cond([
+      cond[
           tag = :t-prim    => prim-spec(rest first)
         , tag = :t-list    => list-spec(rest first)
         , tag = :t-fn      => fun-spec
@@ -477,7 +477,7 @@ to-spec(t):
         , tag = :t-record  => record-spec(rest first)
         , tag = :t-forall  => to-spec-td(rest second)
         , any?
-        ])
+        ]
 
   }.(to-spec-td(td))
 

@@ -25,14 +25,16 @@ from-data(td):
 
     needs-parens: set.from-list[:t-fn, :t-union, :t-partial]
 
+    wrap(td, s): (td first) ∈ needs-parens then("({s})", s)
+
     fn-str(a, b):
       { a-str: to-str(a)
         b-str: to-str(b)
-        a-r: (a first) ∈ needs-parens then("({a-str})", a-str)
-        b-r: (b first) ∈ needs-parens then("({b-str})", b-str)
+        a-r: wrap(a, a-str)
+        b-r: wrap(b, b-str)
       }."{a-r} → {b-r}"
 
-    field-str([k, fp]):
+    field-str[k, fp]:
       { is-tf: (fp first) = :t-field
         is-opt: is-tf ∧ ((fp second) = :optional)
         inner: is-tf then(fp !! 2, fp)
@@ -47,12 +49,12 @@ from-data(td):
     app-str(f, x):
       { x-str: to-str(x)
         f-str: to-str(f)
-      }.(cond([
+      }.(cond[
           f = [:t-con, :IO]       => "IO({x-str})"
         , f = [:t-con, :Dict]     => "Dict({x-str})"
         , f = [:t-con, :NonEmpty] => "NonEmpty([{x-str}])"
         , "{f-str} {x-str}"
-        ]))
+        ])
 
     tuple-str(ts):
       { body: ts map(to-str) str.join-on(", ")
@@ -63,7 +65,7 @@ from-data(td):
         r1: rest second
         s0: to-str(r0)
         s1: to-str(r1)
-      }.(cond([
+      }.(cond[
           tag = :t-prim    => prim-str(r0)
         , tag = :t-list    => "[{s0}]"
         , tag = :t-fn      => fn-str(r0, r1)
@@ -79,5 +81,5 @@ from-data(td):
         , tag = :t-forall  => "forall {r0}. {s1}"
         , tag = :t-lam     => "λ{r0}. {s1}"
         , "any"
-        ]))
+        ])
   }.(to-str(td) __TYPE_FROM_STRING)
