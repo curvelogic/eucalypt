@@ -434,22 +434,22 @@ to-spec(t):
     list-spec(inner):
       { s: to-spec-td(inner)
         pred(v): (v list?) ∧ (v all(match?(s)))
-      }.(pred)
+      }.pred
 
     union-spec(ts):
       { specs: ts map(to-spec-td)
         pred(v): specs any(v match?)
-      }.(pred)
+      }.pred
 
     partial-spec(inner):
       { s: to-spec-td(inner)
         pred(v): (v null?) ∨ (v match?(s))
-      }.(pred)
+      }.pred
 
     tuple-spec(ts):
       { spec-list: ts map(to-spec-td)
         pred(v): v match?(spec-list)
-      }.(pred)
+      }.pred
 
     record-spec(rec):
       { entries: rec elements
@@ -464,7 +464,7 @@ to-spec(t):
                (v has(k)) ∧ chk))
         pred(v):
           entries map(check-entry(v)) all-true?
-      }.(pred)
+      }.pred
 
     to-spec-td[tag : rest]:
       cond([
