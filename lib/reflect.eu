@@ -38,13 +38,13 @@ from-data(td):
       { is-tf: (fp first) = :t-field
         is-opt: is-tf ∧ ((fp second) = :optional)
         inner: is-tf then(fp !! 2, fp)
-        ty-str: inner to-str
+        ty: inner to-str
         q: is-opt then("?", "")
-      }."{k}{q}: {ty-str}"
+      }."{k}{q}: {ty}"
 
     record-str(rec):
-      { fields-str: rec elements map(field-str) str.join-on(", ")
-      }."{{ {fields-str} }}"
+      { s: rec elements map(field-str) str.join-on(", ")
+      }."{{ {s} }}"
 
     app-str(f, x):
       { x-str: to-str(x)
@@ -57,8 +57,8 @@ from-data(td):
         ])
 
     tuple-str(ts):
-      { body: ts map(to-str) str.join-on(", ")
-      }."({body})"
+      { s: ts map(to-str) str.join-on(", ")
+      }."({s})"
 
     to-str[tag : rest]:
       { r0: rest first

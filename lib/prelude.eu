@@ -422,49 +422,31 @@ to-spec(t):
       bool:     bool?
       null:     null?
       datetime: datetime?
-      any:      any?
-      top:      any?
-      never:    any?
     }
 
     prim-spec(name-sym): prim-specs lookup-or(name-sym, any?)
 
     fun-spec: _ __SATURATED not
 
-    list-spec(inner):
-      { s: to-spec-td(inner)
-        pred(v): (v list?) ∧ (v all(match?(s)))
-      }.pred
+    list-spec(inner, v): (v list?) ∧ (v all(match?(inner to-spec-td)))
 
-    union-spec(ts):
-      { specs: ts map(to-spec-td)
-        pred(v): specs any(v match?)
-      }.pred
+    union-spec(ts, v): ts map(to-spec-td) any(v match?)
 
-    partial-spec(inner):
-      { s: to-spec-td(inner)
-        pred(v): (v null?) ∨ (v match?(s))
-      }.pred
+    partial-spec(inner, v): (v null?) ∨ (v match?(inner to-spec-td))
 
-    tuple-spec(ts):
-      { spec-list: ts map(to-spec-td)
-        pred(v): v match?(spec-list)
-      }.pred
+    tuple-spec(ts): match?(ts map(to-spec-td))
 
-    record-spec(rec):
-      { entries: rec elements
-        check-entry(v, [k, fp]):
-          { is-tf: (fp first) = :t-field
-            is-opt: is-tf ∧ ((fp second) = :optional)
-            inner: is-tf then(fp !! 2, fp)
-            s: inner to-spec-td
-            chk: v lookup(k) match?(s)
-          }.(is-opt then(
-               v has(k) then(chk, true),
-               (v has(k)) ∧ chk))
-        pred(v):
-          entries map(check-entry(v)) all-true?
-      }.pred
+    record-spec(rec): {
+
+      check-entry(v, [k, fp]):
+        { is-tf: (fp first) = :t-field
+          is-opt: is-tf ∧ ((fp second) = :optional)
+          inner: is-tf then(fp !! 2, fp)
+          check: v lookup(k) match?(inner to-spec-td)
+        }.(v has(k) then(check, is-opt))
+
+      pred(v): rec elements all(check-entry(v))
+    }.pred
 
     to-spec-td[tag : rest]:
       cond[
