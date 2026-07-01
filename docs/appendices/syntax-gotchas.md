@@ -35,14 +35,15 @@ The precedence hierarchy (highest to lowest):
 **Problem**: The lookup operator (`.`) has higher precedence (90) than
 catenation (precedence 20), which can lead to unexpected parsing.
 
-**Gotcha**: Writing `objects head.id` is parsed as `objects (head.id)`
-rather than `(objects head).id`.
+**Gotcha**: Writing `objects head.id` groups `head.id` into one unit
+first, and *that unit* — not `objects` — is what gets applied. It is
+parsed as `head.id(objects)`, rather than `(objects head).id`.
 
 **Example**:
 ```eu,notest
 # This doesn't work as expected:
 objects: range(0, 5) map({ id: _ })
-result: objects head.id  # Parsed as: objects (head.id)
+result: objects head.id  # Parsed as: head.id(objects)
 
 # Correct syntax requires parentheses:
 result: (objects head).id  # Explicitly groups the field access
@@ -56,6 +57,10 @@ result: (objects head).id  # Explicitly groups the field access
 access fields from:
 - Use `(expression).field` instead of `expression target.field`
 - Be explicit about precedence when combining catenation with field access
+
+The `↑` (head) prefix operator (precedence 95) binds even tighter than
+`.` (90), so it has the same gotcha one level up: `↑xs.id` means
+`(↑xs).id`, not `↑(xs.id)`.
 
 ### Arithmetic After a Pipeline
 

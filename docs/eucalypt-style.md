@@ -56,9 +56,9 @@ Rules:
 
 Catenation (juxtaposition / pipeline application) has the **lowest** operator precedence (20). ALL infix operators bind tighter, including `∧` (35), `∨` (30), `=` (40), `+` (75), etc. This means infix operators steal adjacent atoms from catenation pipelines:
 
-- `xs f(a) + 1` parses as `xs(f(a) + 1)` — `+` grabs `f(a)` and `1`
+- `xs f(a) + 1` parses as `(f(a) + 1)(xs)` — `+` grabs `f(a)` and `1` into one unit, which is then applied to `xs` (not the reverse)
 - `(k > 0) ∧ xs non-nil?` parses as `((k > 0) ∧ xs) non-nil?` — `∧` grabs `xs`
-- `xs tail ++ [0]` parses as `xs(tail ++ [0])` — `++` grabs `tail` and `[0]`
+- `xs tail ++ [0]` parses as `(tail ++ [0])(xs)` — `++` grabs `tail` and `[0]` into one unit, which is then applied to `xs`
 
 Fix with parens around the catenation: `(k > 0) ∧ (xs non-nil?)`, `(xs tail) ++ [0]`.
 

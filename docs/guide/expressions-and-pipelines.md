@@ -154,9 +154,10 @@ host: localhost
 ```
 
 > **Warning:** The dot operator binds very tightly (precedence 90).
-> Writing `list head.name` is parsed as `list (head.name)`, not
-> `(list head).name`. Use explicit parentheses when combining lookup
-> with catenation: `(list head).name`.
+> Writing `list head.name` groups `head.name` into one unit first —
+> and that unit, not `list`, is what gets applied: it parses as
+> `head.name(list)`, not `(list head).name`. Use explicit parentheses
+> when combining lookup with catenation: `(list head).name`.
 >
 > The `↑` (up arrow) prefix operator, which is shorthand for `head`,
 > binds even tighter (precedence 95). So `↑xs.name` means
