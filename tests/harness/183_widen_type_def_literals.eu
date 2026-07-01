@@ -1,4 +1,5 @@
-"183 widen literal types in synthesised type-def aliases"
+{ import: "resource:reflect"
+  doc: "183 widen literal types in synthesised type-def aliases" }
 
 ` { target: :test }
 test: {
@@ -11,7 +12,7 @@ test: {
   ` { type-def: true }
   Shape: { type: :circle, area: 3.4 }
 
-  shape-spec: s"Shape" to-spec
+  shape-spec: s"Shape" as-spec
   shape-data: s"Shape" to-data
 
   # `:square` is a symbol and `4.0` is a number — should match the
@@ -33,7 +34,7 @@ test: {
   ` { result-def: true }
   make-tag(x): { tag: :default, value: x }
 
-  tag-spec: s"Tag" to-spec
+  tag-spec: s"Tag" as-spec
   t-result-match: {tag: :other, value: 42} match?(tag-spec)    //=> true
   t-result-reject: {tag: 123, value: 42} match?(tag-spec)      //=> false
 

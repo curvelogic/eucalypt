@@ -15,10 +15,6 @@
 | `bool?` | True if and only if `v` is a boolean |
 | `datetime?` | True if and only if `v` is a zoned datetime value |
 | `type-data?` | True if and only if v is a type-data literal produced by the s prefix |
-| `to-data(v)` | Project a type-data value to a structured t-* tagged list |
-| `from-data(td)` | Construct a type-data value from a t-* tagged list |
-| `to-spec(t)` | Convert type-data (or a t-* tagged list) to a match?-compatible pattern. Primitive types become predicates (number?, string?, etc.), records become block patterns, lists become list predicates, unions become disjunctive predicates, partials accept null or the inner type |
-| `as-spec` | As-spec: synonym for to-spec, convenient in pipeline position |
 | `elements` | Expose list of elements of block `b` |
 | `block` | (re)construct block from list `kvs` of elements |
 | `has(s, b)` | True if and only if block `b` has key (symbol) `s` |

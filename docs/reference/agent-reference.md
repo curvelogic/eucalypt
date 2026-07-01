@@ -863,7 +863,7 @@ true bool?          # true
 
 All predicates take one argument and return a boolean. `datetime?(v)` is also available for zoned-datetime values.
 
-### 3.5a Type Specs — `to-spec` / `as-spec`
+### 3.5a Type Specs — `as-spec`
 
 Convert a type annotation (an `s"…"` type-data value) to a `match?`-compatible pattern:
 
@@ -873,8 +873,6 @@ schema: s"{ name: string, age: number }" as-spec
 {name: "Alice", age: 30}     match?(schema)  # true
 {name: "Alice", age: "old"}  match?(schema)  # false
 ```
-
-`as-spec` and `to-spec` are synonyms; `as-spec` reads naturally in pipeline position.
 
 **Mapping:**
 

@@ -1,0 +1,78 @@
+{ requires: ">=0.11"
+  doc: "Type-data reflection utilities.
+
+Provides functions for projecting type-data values (produced by
+the s-string prefix) to structured tagged lists and reconstructing
+type-data from tagged lists." }
+
+##
+## Projection and construction
+##
+
+` { doc: "`to-data(v)` - project a type-data value to a structured t-* tagged list.
+         Non-type-data values pass through unchanged."
+    type: s"any → any" }
+to-data(v): type-data?(v) then(__TYPE_TO_DATA(v), v)
+
+` { doc: "`from-data(td)` - construct a type-data value from a t-* tagged list."
+    type: s"any → any" }
+from-data(td):
+  { prim-names: {
+        error: "ExecutionError"
+      }
+
+    prim-str(name-sym): prim-names lookup-or(name-sym, str.of(name-sym))
+
+    needs-parens: set.from-list[:t-fn, :t-union, :t-partial]
+
+    wrap(td, s): (td first) ∈ needs-parens then("({s})", s)
+
+    fn-str(a, b): {
+      a-r: wrap(a, a to-str)
+      b-r: wrap(b, b to-str)
+    }."{a-r} → {b-r}"
+
+    field-str[k, fp]:
+      { is-tf: (fp first) = :t-field
+        is-opt: is-tf ∧ ((fp second) = :optional)
+        ty: is-tf then(fp !! 2, fp) to-str
+        q: is-opt then("?", "")
+      }."{k}{q}: {ty}"
+
+    record-str(rec): rec elements map(field-str) str.join-on(", ") "{{ {} }}"
+
+    app-str(f, x):
+      { x-str: to-str(x)
+        f-str: to-str(f)
+      }.(cond[
+          f = [:t-con, :IO]       => "IO({x-str})"
+        , f = [:t-con, :Dict]     => "Dict({x-str})"
+        , f = [:t-con, :NonEmpty] => "NonEmpty([{x-str}])"
+        , "{f-str} {x-str}"
+        ])
+
+    tuple-str(ts): ts map(to-str) str.join-on(", ") "({})"
+
+    to-str[tag : rest]:
+      { r0: rest first
+        r1: rest second
+        s0: to-str(r0)
+        s1: to-str(r1)
+      }.(cond[
+          tag = :t-prim    => prim-str(r0)
+        , tag = :t-list    => "[{s0}]"
+        , tag = :t-fn      => fn-str(r0, r1)
+        , tag = :t-con     => "{r0}"
+        , tag = :t-app     => app-str(r0, r1)
+        , tag = :t-union   => rest map(to-str) str.join-on(" | ")
+        , tag = :t-partial => "{s0}?"
+        , tag = :t-tuple   => tuple-str(rest)
+        , tag = :t-record  => record-str(r0)
+        , tag = :t-var     => "{r0}"
+        , tag = :t-lit-sym => ":{r0}"
+        , tag = :t-mu      => "{r0}"
+        , tag = :t-forall  => "forall {r0}. {s1}"
+        , tag = :t-lam     => "λ{r0}. {s1}"
+        , "any"
+        ])
+  }.(to-str(td) __TYPE_FROM_STRING)
