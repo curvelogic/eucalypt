@@ -58,6 +58,10 @@ access fields from:
 - Use `(expression).field` instead of `expression target.field`
 - Be explicit about precedence when combining catenation with field access
 
+The `↑` (head) prefix operator (precedence 95) binds even tighter than
+`.` (90), so it has the same gotcha one level up: `↑xs.id` means
+`(↑xs).id`, not `↑(xs.id)`.
+
 ### Arithmetic After a Pipeline
 
 **Problem**: Infix operators like `+`, `-`, `*` have higher precedence

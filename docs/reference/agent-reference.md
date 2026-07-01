@@ -915,7 +915,7 @@ Returns defaults block with parsed values overridden, plus `args` key for positi
 
 **Supported forms:** `--key value`, `--key=value`, `--flag`, `-x`, `-xy` (combined shorts), positionals, `--help`.
 
-See `docs/reference/prelude/args.md` for full documentation.
+See `docs/reference/prelude/io.md` for full documentation.
 
 ---
 

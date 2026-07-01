@@ -187,7 +187,8 @@ result: base << extra
 The `.` (lookup) operator has higher precedence than catenation, so
 `xs head.id` groups `head.id` into one unit first — and that unit,
 not `xs`, is what gets applied: it parses as `head.id(xs)`, not
-`(xs head).id`.
+`(xs head).id`. The `↑` (head) prefix operator binds even tighter
+still: `↑xs.id` means `(↑xs).id`, not `↑(xs.id)`.
 
 Use explicit parentheses:
 
