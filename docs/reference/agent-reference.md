@@ -450,8 +450,9 @@ config.db.host
 ```
 
 **Warning:** `.` binds very tightly (precedence 90). `list head.name`
-parses as `list (head.name)`, not `(list head).name`. Use parentheses:
-`(list head).name`.
+groups `head.name` into one unit first, and *that unit* — not `list`
+— is what gets applied: it parses as `head.name(list)`, not
+`(list head).name`. Use parentheses: `(list head).name`.
 
 ### 1.8 Anaphora (Implicit Parameters)
 
@@ -1106,18 +1107,25 @@ define a partial: `sum: foldl(+, 0)` then `[1,2,3] sum`.
 `.` has precedence 90 vs catenation at 20. So:
 
 ```eu,notest
-list head.name    # WRONG: parses as list (head.name)
+list head.name    # WRONG: parses as head.name(list)
 (list head).name  # RIGHT: get head, then lookup .name
 ```
 
 The `↑` prefix operator (precedence 95) binds even tighter: `↑xs.name`
 = `(↑xs).name`.
 
-### 5.3 No Whitespace Before Parentheses in Calls
+### 5.3 No Whitespace in Call Syntax
+
+Whether `(`, `[`, or `{` immediately follows the callee (no space) is
+what distinguishes a call from catenation:
 
 ```eu,notest
 f(x)    # function call
 f (x)   # catenation: applies f to (x) as pipeline
+f[1,2]  # juxtaposed call with list argument
+f [1,2] # catenation: applies f to [1,2] as pipeline
+f{a: 1} # juxtaposed call with block argument
+f {a: 1}# catenation: applies f to {a: 1} as pipeline
 ```
 
 ### 5.4 map vs mapcat
@@ -1211,7 +1219,6 @@ generalised lookup.
 
 The following are commonly assumed but are **not** in the prelude:
 
-- `str.trim` — does not exist
 - `flatten` — use `concat` (flattens one level)
 - `unique` — does not exist in prelude
 - `even?` / `odd?` — do not exist (use `x % 2 = 0`)
@@ -1221,6 +1228,7 @@ The following are commonly assumed but are **not** in the prelude:
 
 These **do exist** and are commonly available:
 
+- `str.trim(s)` — trims leading/trailing whitespace
 - `str.replace(pattern, replacement, s)` — replaces all regex matches
 - `str.contains?(pattern, s)` — true if `s` contains a match for regex `pattern`
 - `str.starts-with?(re, s)` — true if `s` starts with regex match

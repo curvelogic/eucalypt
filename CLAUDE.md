@@ -28,24 +28,7 @@ For specific topics, also consult:
 - `docs/guide/functions-and-combinators.md` — function definition and partial application
 - `docs/reference/prelude/` — full prelude reference by category
 
-### Critical Rules (Most Common Agent Mistakes)
-
-1. **Catenation precedence is LOW (20)**: ALL infix operators bind tighter, so they grab adjacent atoms before catenation does. `xs f(a) + 1` groups as `(f(a) + 1)(xs)` — the `+` binds `f(a)` and `1` into one unit first, and *that unit*, not `xs`, is what gets called; `xs` is its argument. NOT `(xs f(a)) + 1`. Fix: use parentheses or split into named bindings.
-2. **Dot `.` binds tighter (90) than catenation (20), and prefix `↑` (head) tighter still (95)**: `list head.name` groups as `head.name` first, and *that* — not `list` — is what's applied: `head.name(list)`, NOT `(list head).name`. Likewise `↑xs.name` = `(↑xs).name`, not `↑(xs.name)`. Fix: `(list head).name`. **Simple lookup** (`.name`) is key lookup restricted to block bindings. **Generalised lookup** (`.{ block }`, `.(expr)`, etc.) evaluates the RHS in the block's scope with access to outer scope.
-3. **NO lambda/arrow syntax**: `->` is the `const` operator, NOT lambda. Use sections `(+ 1)`, expression anaphora `(_ + 1)`, or named functions.
-4. **Each `_` creates a new param**: `_ + _` means `_0 + _1` (two params). Use `_0 * _0` to reference the same param twice.
-5. **Backtick is metadata, not comment**: `` ` "text" `` attaches to the NEXT declaration. Use `#` for comments.
-6. **`/` is floor division**: Use `÷` for exact division.
-7. **Many "obvious" functions don't exist**: No `str.trim`, `flatten`, `even?`, `odd?`. Check agent-reference.md section 5.11. Note: `str.replace`, `str.contains?`, `str.starts-with?`, `str.ends-with?`, and `abs` **do** exist.
-8. **`has` takes a symbol, not a string**: `has(:key)` not `has("key")`.
-9. **`str.split-on` uses regex**: `"a.b" str.split-on(".")` matches any char. Use `"[.]"`.
-10. **No whitespace before `(`**: `f(x)` is a call, `f (x)` is catenation.
-11. **Multiple imports go in one block**: `{ import: ["a.eu", "b.eu"] }` — do NOT write separate `{ import: "a.eu" }` and `{ import: "b.eu" }` blocks. Only the first block is unit metadata; the second becomes a separate expression.
-12. **`keys` returns symbols**: do NOT `map(sym)` over `keys` output — they are already symbols.
-13. **`if` with `_` anaphora doesn't make a rule**: `if(_ symbol?, x, null)` doesn't create a function — `if` evaluates its condition. Use a named function.
-14. **Use interpolation, not `str.join-on`**: `"{pfx}{name}"` not `[pfx, name] str.join-on("")`. Interpolation auto-converts values.
-15. **Use `deep-transform` for recursive rewrites**: return non-null to replace, null to recurse. Avoids nested `if(block?, ..., if(list?, ...))`.
-16. **Read `docs/eucalypt-style.md`** for idiomatic patterns: `when` over `if`, `bimap` for point-free, scope capture in blocks, sets for membership.
+`agent-reference.md` §5 ("Common Pitfalls") and `syntax-gotchas.md` already cover the specific traps (catenation precedence, dot-vs-catenation, anaphora scoping, functions that don't exist, etc.) in more depth and nuance than a condensed list here could — read them rather than relying on a summary.
 
 ## Build and Development Commands
 
