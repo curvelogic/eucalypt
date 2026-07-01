@@ -27,24 +27,19 @@ from-data(td):
 
     wrap(td, s): (td first) ∈ needs-parens then("({s})", s)
 
-    fn-str(a, b):
-      { a-str: to-str(a)
-        b-str: to-str(b)
-        a-r: wrap(a, a-str)
-        b-r: wrap(b, b-str)
-      }."{a-r} → {b-r}"
+    fn-str(a, b): {
+      a-r: wrap(a, a to-str)
+      b-r: wrap(b, b to-str)
+    }."{a-r} → {b-r}"
 
     field-str[k, fp]:
       { is-tf: (fp first) = :t-field
         is-opt: is-tf ∧ ((fp second) = :optional)
-        inner: is-tf then(fp !! 2, fp)
-        ty: inner to-str
+        ty: is-tf then(fp !! 2, fp) to-str
         q: is-opt then("?", "")
       }."{k}{q}: {ty}"
 
-    record-str(rec):
-      { s: rec elements map(field-str) str.join-on(", ")
-      }."{{ {s} }}"
+    record-str(rec): rec elements map(field-str) str.join-on(", ") "{{ {} }}"
 
     app-str(f, x):
       { x-str: to-str(x)
@@ -56,9 +51,7 @@ from-data(td):
         , "{f-str} {x-str}"
         ])
 
-    tuple-str(ts):
-      { s: ts map(to-str) str.join-on(", ")
-      }."({s})"
+    tuple-str(ts): ts map(to-str) str.join-on(", ") "({})"
 
     to-str[tag : rest]:
       { r0: rest first
