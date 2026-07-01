@@ -1,0 +1,5 @@
+sync:
+    mode: dolt-native
+sync-branch: beads-sync
+
+sync.remote: "git+ssh://git@github.com/curvelogic/eucalypt.git"
