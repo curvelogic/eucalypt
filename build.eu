@@ -66,6 +66,7 @@ new-version: "{version.major}.{version.minor}.{version.patch}+{build.number str.
 build-meta: {
   version: new-version
   commit: build.commit
+  url: build.url
   banner: "eu - Eucalypt v{version}"
   eu-build: build
 }
