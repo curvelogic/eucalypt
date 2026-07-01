@@ -100,4 +100,8 @@
   two distinct components |
 | `let` | Identity monad for sequential let-bindings. Use :let blocks for sequential evaluation without the self-reference gotcha |
 | `for` | List monad for list comprehensions. Each binding draws from a list; subsequent bindings can depend on earlier ones. Use [x] filter(pred?) for guards |
+| `as-spec(t)` | Convert type-data to a match?-compatible pattern.
+         Primitive types become predicates, records become block patterns,
+         lists become list predicates, unions become disjunctive predicates,
+         partials accept null or the inner type |
 | `parse-args(defaults, args)` | Parse command-line argument list against a defaults block. Each key in `defaults` defines an option with its default value. Field metadata configures parsing: `short` (symbol for short flag), `doc` (description), `flag` (true for boolean toggle). Returns the `defaults` block updated with parsed values, plus an `args` key containing positional arguments as a list. Unknown options cause a runtime error. Use `--help` for auto-generated help text |
