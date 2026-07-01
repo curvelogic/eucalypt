@@ -12,7 +12,7 @@ Eucalypt is a Rust-based tool and language for generating, templating, rendering
 
 ## Writing Eucalypt Code
 
-**MANDATORY: Read the documentation BEFORE writing any eucalypt (`.eu`) code.** Agents that skip this produce incorrect code and waste cycles — precedence, lambda syntax, and prelude contents in eucalypt are all unlike mainstream languages.
+**MANDATORY: Read the documentation BEFORE writing any eucalypt (`.eu`) code.** Agents that skip this produce incorrect code and waste cycles — catenation's pipeline semantics, lambda syntax, and prelude contents in eucalypt are all unlike mainstream languages.
 
 ### Required Reading
 
@@ -30,8 +30,8 @@ For specific topics, also consult:
 
 ### Critical Rules (Most Common Agent Mistakes)
 
-1. **Catenation precedence is LOW (20)**: ALL infix operators bind tighter. `xs f(a) + 1` parses as `xs(f(a) + 1)` NOT `(xs f(a)) + 1`. Fix: use parentheses or split into named bindings.
-2. **Dot `.` binds tighter (90) than catenation (20)**: `list head.name` parses as `list (head.name)`. Fix: `(list head).name`. **Simple lookup** (`.name`) is key lookup restricted to block bindings. **Generalised lookup** (`.{ block }`, `.(expr)`, etc.) evaluates the RHS in the block's scope with access to outer scope.
+1. **Catenation precedence is LOW (20)**: ALL infix operators bind tighter, so they grab adjacent atoms before catenation does. `xs f(a) + 1` groups as `(f(a) + 1)(xs)` — the `+` binds `f(a)` and `1` into one unit first, and *that unit*, not `xs`, is what gets called; `xs` is its argument. NOT `(xs f(a)) + 1`. Fix: use parentheses or split into named bindings.
+2. **Dot `.` binds tighter (90) than catenation (20), and prefix `↑` (head) tighter still (95)**: `list head.name` groups as `head.name` first, and *that* — not `list` — is what's applied: `head.name(list)`, NOT `(list head).name`. Likewise `↑xs.name` = `(↑xs).name`, not `↑(xs.name)`. Fix: `(list head).name`. **Simple lookup** (`.name`) is key lookup restricted to block bindings. **Generalised lookup** (`.{ block }`, `.(expr)`, etc.) evaluates the RHS in the block's scope with access to outer scope.
 3. **NO lambda/arrow syntax**: `->` is the `const` operator, NOT lambda. Use sections `(+ 1)`, expression anaphora `(_ + 1)`, or named functions.
 4. **Each `_` creates a new param**: `_ + _` means `_0 + _1` (two params). Use `_0 * _0` to reference the same param twice.
 5. **Backtick is metadata, not comment**: `` ` "text" `` attaches to the NEXT declaration. Use `#` for comments.
