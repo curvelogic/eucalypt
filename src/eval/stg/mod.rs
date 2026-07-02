@@ -22,6 +22,7 @@ pub mod graph;
 pub mod io;
 pub mod json_to_stg;
 pub mod list;
+pub mod materialise;
 pub mod meta;
 pub mod null;
 pub mod optimiser;

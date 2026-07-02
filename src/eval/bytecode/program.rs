@@ -39,6 +39,11 @@ pub struct BytecodeProgram {
     /// Offset of a shared `OP_BLACKHOLE` node, used to overwrite a thunk's
     /// env slot while it is being forced (cycle detection).
     pub blackhole: CodeRef,
+    /// Offset of a pre-encoded `OP_META L0 L1` node. A runtime
+    /// metadata-annotated value is a `BcClosure(meta_template, env{[meta,
+    /// body]})`, letting intrinsics rebuild `Meta` values (e.g. from parsed
+    /// YAML `!tag` scalars) with no per-call code allocation.
+    pub meta_template: CodeRef,
     /// Partial-application (PAP) trampoline templates, indexed
     /// `(supplied-1) * PAP_MAX_ARITY + (pending-1)`. Each is an
     /// `App(L(pending), [supplied+pending refs])` node used to build the

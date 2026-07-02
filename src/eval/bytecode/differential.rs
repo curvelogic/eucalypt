@@ -437,6 +437,47 @@ mod tests {
     }
 
     #[test]
+    fn agree_on_parse_string_json() {
+        // RENDER_DOC(PARSE_STRING(:json, "{\"x\":1,\"y\":2}")) — parse a JSON
+        // string to a block and render it. The parsed value is rebuilt through
+        // the neutral value-construction ABI (materialise_data), so it must
+        // render byte-identically on both engines.
+        let parse = crate::eval::intrinsics::index("PARSE_STRING").expect("PARSE_STRING");
+        let render_doc = crate::eval::intrinsics::index("RENDER_DOC").expect("RENDER_DOC");
+        let syn = dsl::letrec_(
+            vec![
+                dsl::value(dsl::box_sym("json")),
+                dsl::value(dsl::box_str("{\"x\":1,\"y\":2}")),
+                dsl::value(dsl::app(dsl::gref(parse), vec![dsl::lref(0), dsl::lref(1)])),
+            ],
+            dsl::app(dsl::gref(render_doc), vec![dsl::lref(2)]),
+        );
+        let out = assert_engines_render_agree(syn);
+        assert!(out.contains("x") && out.contains('1'), "got {out:?}");
+    }
+
+    #[test]
+    fn agree_on_type_to_data() {
+        // RENDER_DOC(TYPE_TO_DATA(s"number")) — project a type-data value to a
+        // `[:t-prim :number]` tagged list, rebuilt via the neutral ABI. Both
+        // engines must render byte-identically.
+        let ttd = crate::eval::intrinsics::index("TYPE_TO_DATA").expect("TYPE_TO_DATA");
+        let render_doc = crate::eval::intrinsics::index("RENDER_DOC").expect("RENDER_DOC");
+        let syn = dsl::letrec_(
+            vec![
+                dsl::value(dsl::box_type_data("number")),
+                dsl::value(dsl::app(dsl::gref(ttd), vec![dsl::lref(0)])),
+            ],
+            dsl::app(dsl::gref(render_doc), vec![dsl::lref(1)]),
+        );
+        let out = assert_engines_render_agree(syn);
+        assert!(
+            out.contains("t-prim") && out.contains("number"),
+            "got {out:?}"
+        );
+    }
+
+    #[test]
     fn agree_on_force_whnf() {
         // let t = __ADD(1, 2) in __FORCE_WHNF(t) -> 3
         let add = crate::eval::intrinsics::index_u8("ADD");
