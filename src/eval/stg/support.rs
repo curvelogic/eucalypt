@@ -235,74 +235,41 @@ pub fn zdt_arg(
     }
 }
 
-pub struct DataIterator<'scope> {
-    closure: SynClosure,
-    view: MutatorHeapView<'scope>,
-    smid: Smid,
-}
-
-impl Iterator for DataIterator<'_> {
-    type Item = Result<SynClosure, ExecutionError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let code = self.view.scoped(self.closure.code());
-
-        let (h_ref, t_ref) = match &*code {
-            HeapSyn::Cons { tag, args } => match (*tag).try_into() {
-                Ok(DataConstructor::ListCons) => (args.get(0), args.get(1)),
-                Ok(DataConstructor::ListNil) => return None,
-                _ => {
-                    return Some(Err(ExecutionError::NotValue(
-                        self.smid,
-                        "expected list data".to_string(),
-                    )))
-                }
-            },
+/// Collect a (forced) list argument's elements into a `Vec<AbiClosure>`.
+///
+/// Engine-neutral: walks the `ListCons`/`ListNil` spine via the neutral
+/// `data_tag`/`data_field` ABI, so it serves both the HeapSyn and bytecode
+/// engines. Eager rather than lazy, but the caller has already forced the
+/// spine so the result is identical (and eucalypt lists are finite data).
+pub fn data_list_arg(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: Ref,
+) -> Result<Vec<AbiClosure>, ExecutionError> {
+    let smid = machine.annotation();
+    let mut out = Vec::new();
+    let mut current = machine.resolve_closure(view, &arg)?;
+    loop {
+        match machine.data_tag(view, &current) {
+            Some(tag) if tag == DataConstructor::ListCons.tag() => {
+                let head = machine.data_field(view, &current, 0).ok_or_else(|| {
+                    ExecutionError::Panic(smid, "malformed cons cell".to_string())
+                })?;
+                out.push(head);
+                current = machine.data_field(view, &current, 1).ok_or_else(|| {
+                    ExecutionError::Panic(smid, "malformed cons cell".to_string())
+                })?;
+            }
+            Some(tag) if tag == DataConstructor::ListNil.tag() => break,
             _ => {
-                return Some(Err(ExecutionError::NotValue(
-                    self.smid,
+                return Err(ExecutionError::NotValue(
+                    smid,
                     "expected list data".to_string(),
-                )))
-            }
-        };
-
-        let head = match h_ref {
-            Some(h) => self.closure.navigate_local(&self.view, h),
-            None => {
-                return Some(Err(ExecutionError::Panic(
-                    self.smid,
-                    "malformed cons cell".to_string(),
-                )))
-            }
-        };
-
-        match t_ref {
-            Some(t) => {
-                self.closure = self.closure.navigate_local(&self.view, t);
-            }
-            None => {
-                return Some(Err(ExecutionError::Panic(
-                    self.smid,
-                    "malformed cons cell".to_string(),
-                )))
+                ))
             }
         }
-
-        Some(Ok(head))
     }
-}
-
-/// Helper for intrinsics to access a list argument
-pub fn data_list_arg<'scope>(
-    machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'scope>,
-    arg: Ref,
-) -> Result<DataIterator<'scope>, ExecutionError> {
-    Ok(DataIterator {
-        smid: machine.annotation(),
-        closure: machine.nav(view).resolve(&arg)?,
-        view,
-    })
+    Ok(out)
 }
 
 /// Collect a (forced, native-string) list argument into a `Vec<String>`.
@@ -619,43 +586,18 @@ pub fn collect_num_list(
     list_ref: Ref,
 ) -> Result<Vec<f64>, ExecutionError> {
     let smid = machine.annotation();
-    let iter = data_list_arg(machine, view, list_ref)?;
+    let items = data_list_arg(machine, view, list_ref)?;
     let mut numbers = Vec::new();
-    for item_result in iter {
-        let item_closure = item_result?;
-        let code = view.scoped(item_closure.code());
-        match &*code {
-            HeapSyn::Atom { evaluand } => {
-                let native = item_closure.navigate_local_native(&view, evaluand.clone());
-                match native {
-                    Native::Num(n) => numbers.push(n.as_f64().unwrap_or(0.0)),
-                    _ => {
-                        return Err(ExecutionError::NotValue(
-                            smid,
-                            "non-numeric value in number list".to_string(),
-                        ))
-                    }
-                }
+    for item in &items {
+        match machine.value_native(view, item) {
+            Some(Native::Num(n)) => numbers.push(n.as_f64().unwrap_or(0.0)),
+            Some(_) => {
+                return Err(ExecutionError::NotValue(
+                    smid,
+                    "non-numeric value in number list".to_string(),
+                ))
             }
-            HeapSyn::Cons {
-                tag: _,
-                args: cargs,
-            } => {
-                let inner_ref = cargs.get(0).ok_or_else(|| {
-                    ExecutionError::Panic(smid, "empty boxed value in number list".to_string())
-                })?;
-                let native = item_closure.navigate_local_native(&view, inner_ref.clone());
-                match native {
-                    Native::Num(n) => numbers.push(n.as_f64().unwrap_or(0.0)),
-                    _ => {
-                        return Err(ExecutionError::NotValue(
-                            smid,
-                            "non-numeric value in number list".to_string(),
-                        ))
-                    }
-                }
-            }
-            _ => {
+            None => {
                 return Err(ExecutionError::NotValue(
                     smid,
                     "unexpected value in number list".to_string(),

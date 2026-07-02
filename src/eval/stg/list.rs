@@ -7,11 +7,8 @@ use crate::{
     eval::{
         emit::Emitter,
         error::ExecutionError,
-        machine::{
-            env::SynClosure,
-            intrinsic::{
-                CallGlobal0, CallGlobal1, CallGlobal2, Const, IntrinsicMachine, StgIntrinsic,
-            },
+        machine::intrinsic::{
+            CallGlobal0, CallGlobal1, CallGlobal2, Const, IntrinsicMachine, StgIntrinsic,
         },
         memory::{mutator::MutatorHeapView, syntax::Ref},
     },
@@ -470,13 +467,9 @@ impl StgIntrinsic for ListNth {
             let num = num_arg(machine, view, &args[1])?;
             num.as_u64().unwrap_or(0) as usize
         };
-        let mut iter = data_list_arg(machine, view, args[0].clone())?;
-        let mut current: Option<SynClosure> = None;
-        for _ in 0..=n {
-            current = iter.next().transpose()?;
-        }
-        match current {
-            Some(closure) => machine.set_closure(closure),
+        let items = data_list_arg(machine, view, args[0].clone())?;
+        match items.into_iter().nth(n) {
+            Some(closure) => machine.set_result(closure),
             None => Err(ExecutionError::ListIndexOutOfBounds(
                 machine.annotation(),
                 n,

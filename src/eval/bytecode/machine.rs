@@ -2098,6 +2098,20 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
             AbiClosure::Heap(_) => None,
         }
     }
+
+    fn value_native(&self, view: MutatorHeapView<'_>, closure: &AbiClosure) -> Option<Native> {
+        let AbiClosure::Byte(v) = closure else {
+            return None;
+        };
+        match v {
+            BcValue::Native(n) => Some(n.clone()),
+            // A bare-native Atom → follow it; a boxed scalar → its field 0.
+            BcValue::Closure(_) => self
+                .native_from_value(view, v.clone())
+                .ok()
+                .or_else(|| self.field_native(view, closure, 0)),
+        }
+    }
 }
 
 #[cfg(test)]

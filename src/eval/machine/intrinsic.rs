@@ -265,6 +265,22 @@ pub trait IntrinsicMachine {
         }
     }
 
+    /// The native payload of a WHNF value: a bare native (an `Atom`) or a
+    /// boxed scalar's field-0 payload (a `Cons`, e.g. `BoxedNumber`). `None`
+    /// for a non-scalar (block/list) or a non-value. Used by native-list
+    /// collectors and set construction.
+    fn value_native(&self, view: MutatorHeapView<'_>, closure: &AbiClosure) -> Option<Native> {
+        let sc = closure.as_heap();
+        let code = view.scoped(sc.code());
+        match &*code {
+            HeapSyn::Atom { evaluand } => Some(sc.navigate_local_native(&view, evaluand.clone())),
+            HeapSyn::Cons { args, .. } => {
+                Some(sc.navigate_local_native(&view, args.get(0)?.clone()))
+            }
+            _ => None,
+        }
+    }
+
     /// Request an emitter capture for the given format.
     ///
     /// Sets a pending flag that `Machine::step()` reads to push a

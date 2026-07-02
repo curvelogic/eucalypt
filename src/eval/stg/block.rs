@@ -1610,15 +1610,17 @@ impl StgIntrinsic for Merge {
 
         let mut merge: IndexMap<String, SynClosure> = IndexMap::new();
 
-        for item in l {
-            let item = item?;
-            let (k, kv) = deconstruct(machine, view, machine.symbol_pool(), &item)?;
+        // NB the downstream (deconstruct / machine_return_closure_list) is
+        // still HeapSyn-typed (list construction needs runtime code synthesis);
+        // `as_heap()` bridges until the list-builder templates land, so block
+        // merge runs on HeapSyn only for now.
+        for item in &l {
+            let (k, kv) = deconstruct(machine, view, machine.symbol_pool(), item.as_heap())?;
             merge.insert(k, kv);
         }
 
-        for item in r {
-            let item = item?;
-            let (k, kv) = deconstruct(machine, view, machine.symbol_pool(), &item)?;
+        for item in &r {
+            let (k, kv) = deconstruct(machine, view, machine.symbol_pool(), item.as_heap())?;
             merge.insert(k, kv);
         }
 
@@ -1718,15 +1720,13 @@ impl StgIntrinsic for MergeWith {
 
         let mut merge: IndexMap<String, SynClosure> = IndexMap::new();
 
-        for item in l {
-            let item = item?;
-            let (key, value) = deconstruct(machine, view, machine.symbol_pool(), &item)?;
+        for item in &l {
+            let (key, value) = deconstruct(machine, view, machine.symbol_pool(), item.as_heap())?;
             merge.insert(key, value);
         }
 
-        for item in r {
-            let item = item?;
-            let (key, nv) = deconstruct(machine, view, machine.symbol_pool(), &item)?;
+        for item in &r {
+            let (key, nv) = deconstruct(machine, view, machine.symbol_pool(), item.as_heap())?;
             if let Some(ov) = merge.get_mut(&key) {
                 let args = [ov.clone(), nv];
                 let mut combined = SynClosure::new(

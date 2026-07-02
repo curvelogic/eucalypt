@@ -367,6 +367,37 @@ mod tests {
     }
 
     #[test]
+    fn agree_on_list_nth() {
+        // case __LIST.NTH(1, [boxed 10, boxed 20]) { BoxedNumber(x) -> x } -> 20.
+        // Exercises the migrated data_list_arg (neutral Vec<AbiClosure>) + the
+        // ListNth intrinsic on the bytecode path.
+        use crate::eval::stg::list::ListNth;
+        let boxed = |n: i64| {
+            dsl::value(dsl::data(
+                DataConstructor::BoxedNumber.tag(),
+                vec![dsl::num(n)],
+            ))
+        };
+        let nth = crate::eval::intrinsics::index_u8("LIST.NTH");
+        let syn = dsl::letrec_(
+            vec![
+                boxed(10),                                         // 0
+                boxed(20),                                         // 1
+                dsl::value(dsl::nil()),                            // 2
+                dsl::value(dsl::cons(dsl::lref(1), dsl::lref(2))), // 3: [20]
+                dsl::value(dsl::cons(dsl::lref(0), dsl::lref(3))), // 4: [10, 20]
+            ],
+            dsl::case(
+                // Bif arg order is (list, n).
+                dsl::app_bif(nth, vec![dsl::lref(4), dsl::num(1)]),
+                vec![(DataConstructor::BoxedNumber.tag(), dsl::local(0))],
+                dsl::atom(dsl::num(0)),
+            ),
+        );
+        assert_eq!(assert_engines_agree(syn, vec![Box::new(ListNth)]), Some(20));
+    }
+
+    #[test]
     fn agree_on_force_whnf() {
         // let t = __ADD(1, 2) in __FORCE_WHNF(t) -> 3
         let add = crate::eval::intrinsics::index_u8("ADD");
