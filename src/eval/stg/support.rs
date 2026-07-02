@@ -100,7 +100,7 @@ pub fn num_arg(
     view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<Number, ExecutionError> {
-    match machine.nav(view).resolve_native(arg) {
+    match machine.resolve_native(view, arg) {
         Ok(Native::Num(n)) => Ok(n),
         Ok(native) => Err(ExecutionError::TypeMismatch(
             machine.annotation(),
@@ -127,7 +127,7 @@ pub fn str_arg(
     view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<String, ExecutionError> {
-    let native = machine.nav(view).resolve_native(arg)?;
+    let native = machine.resolve_native(view, arg)?;
     if let Native::Str(s) = native {
         Ok((*view.scoped(s)).as_str().to_string())
     } else {
@@ -176,7 +176,7 @@ pub fn str_arg_ref(
     view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<PinnedString, ExecutionError> {
-    let native = machine.nav(view).resolve_native(arg)?;
+    let native = machine.resolve_native(view, arg)?;
     if let Native::Str(s) = native {
         let guard = view.pin(s);
         // SAFETY: The scoped pointer dereferences the HeapString on the
@@ -203,7 +203,7 @@ pub fn sym_arg(
     view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<String, ExecutionError> {
-    let native = machine.nav(view).resolve_native(arg)?;
+    let native = machine.resolve_native(view, arg)?;
     if let Native::Sym(id) = native {
         Ok(machine.symbol_pool().resolve(id).to_string())
     } else {
@@ -222,7 +222,7 @@ pub fn zdt_arg(
     view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<DateTime<FixedOffset>, ExecutionError> {
-    let native = machine.nav(view).resolve_native(arg)?;
+    let native = machine.resolve_native(view, arg)?;
     if let Native::Zdt(dt) = native {
         Ok(dt)
     } else {
@@ -391,7 +391,7 @@ pub fn machine_return_unit(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(SynClosure::new(view.unit()?.as_ptr(), machine.root_env()))
+    machine.return_unit(view)
 }
 
 /// Return number from intrinsic
@@ -400,13 +400,7 @@ pub fn machine_return_num(
     view: MutatorHeapView,
     n: Number,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(SynClosure::new(
-        view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Num(n)),
-        })?
-        .as_ptr(),
-        machine.root_env(),
-    ))
+    machine.return_native(view, Native::Num(n))
 }
 
 /// Return string from intrinsic
@@ -415,13 +409,11 @@ pub fn machine_return_str(
     view: MutatorHeapView,
     s: String,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(SynClosure::new(
-        view.alloc(HeapSyn::Atom {
-            evaluand: view.str_ref(s)?,
-        })?
-        .as_ptr(),
-        machine.root_env(),
-    ))
+    let native = match view.str_ref(s)? {
+        Ref::V(n) => n,
+        _ => unreachable!("str_ref always yields a V ref"),
+    };
+    machine.return_native(view, native)
 }
 
 /// Return symbol from intrinsic
@@ -430,11 +422,11 @@ pub fn machine_return_sym(
     view: MutatorHeapView,
     s: String,
 ) -> Result<(), ExecutionError> {
-    let evaluand = view.sym_ref(machine.symbol_pool_mut(), s)?;
-    machine.set_closure(SynClosure::new(
-        view.alloc(HeapSyn::Atom { evaluand })?.as_ptr(),
-        machine.root_env(),
-    ))
+    let native = match view.sym_ref(machine.symbol_pool_mut(), s)? {
+        Ref::V(n) => n,
+        _ => unreachable!("sym_ref always yields a V ref"),
+    };
+    machine.return_native(view, native)
 }
 
 /// Return zoned date time from intrinsic
@@ -443,13 +435,7 @@ pub fn machine_return_zdt(
     view: MutatorHeapView,
     zdt: DateTime<FixedOffset>,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(SynClosure::new(
-        view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Zdt(zdt)),
-        })?
-        .as_ptr(),
-        machine.root_env(),
-    ))
+    machine.return_native(view, Native::Zdt(zdt))
 }
 
 /// Return a boxed number from an intrinsic whose wrapper does not auto-box
@@ -466,13 +452,7 @@ pub fn machine_return_boxed_num(
     view: MutatorHeapView,
     n: Number,
 ) -> Result<(), ExecutionError> {
-    let ptr = view
-        .data(
-            DataConstructor::BoxedNumber.tag(),
-            Array::from_slice(&view, &[Ref::V(Native::Num(n))]),
-        )?
-        .as_ptr();
-    machine.set_closure(SynClosure::new(ptr, machine.root_env()))
+    machine.return_boxed_num(view, n)
 }
 
 /// Resolve a native value from a Ref, looking through boxed constructors
@@ -588,13 +568,7 @@ pub fn machine_return_set(
     set: HeapSet,
 ) -> Result<(), ExecutionError> {
     let ptr = view.alloc(set)?.as_ptr();
-    machine.set_closure(SynClosure::new(
-        view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Set(ptr)),
-        })?
-        .as_ptr(),
-        machine.root_env(),
-    ))
+    machine.return_native(view, Native::Set(ptr))
 }
 
 /// Helper for intrinsics to access an ndarray arg
@@ -603,7 +577,7 @@ pub fn ndarray_arg<'guard>(
     view: MutatorHeapView<'guard>,
     arg: &Ref,
 ) -> Result<ScopedPtr<'guard, HeapNdArray>, ExecutionError> {
-    let native = machine.nav(view).resolve_native(arg)?;
+    let native = machine.resolve_native(view, arg)?;
     if let Native::NdArray(ptr) = native {
         Ok(view.scoped(ptr))
     } else {
@@ -623,13 +597,7 @@ pub fn machine_return_ndarray(
     arr: HeapNdArray,
 ) -> Result<(), ExecutionError> {
     let ptr = view.alloc(arr)?.as_ptr();
-    machine.set_closure(SynClosure::new(
-        view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::NdArray(ptr)),
-        })?
-        .as_ptr(),
-        machine.root_env(),
-    ))
+    machine.return_native(view, Native::NdArray(ptr))
 }
 
 /// Helper for intrinsics to access a vec arg.
@@ -638,7 +606,7 @@ pub fn vec_arg<'guard>(
     view: MutatorHeapView<'guard>,
     arg: &Ref,
 ) -> Result<ScopedPtr<'guard, HeapVec>, ExecutionError> {
-    let native = machine.nav(view).resolve_native(arg)?;
+    let native = machine.resolve_native(view, arg)?;
     if let Native::Vec(ptr) = native {
         Ok(view.scoped(ptr))
     } else {
@@ -658,13 +626,7 @@ pub fn machine_return_vec(
     vec: HeapVec,
 ) -> Result<(), ExecutionError> {
     let ptr = view.alloc(vec)?.as_ptr();
-    machine.set_closure(SynClosure::new(
-        view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Vec(ptr)),
-        })?
-        .as_ptr(),
-        machine.root_env(),
-    ))
+    machine.return_native(view, Native::Vec(ptr))
 }
 
 /// Return boolean from intrinsic
@@ -677,15 +639,7 @@ pub fn machine_return_bool(
     view: MutatorHeapView,
     b: bool,
 ) -> Result<(), ExecutionError> {
-    use std::sync::OnceLock;
-    static TRUE_IDX: OnceLock<usize> = OnceLock::new();
-    static FALSE_IDX: OnceLock<usize> = OnceLock::new();
-    let idx = if b {
-        *TRUE_IDX.get_or_init(|| crate::eval::intrinsics::index("TRUE").unwrap())
-    } else {
-        *FALSE_IDX.get_or_init(|| crate::eval::intrinsics::index("FALSE").unwrap())
-    };
-    machine.set_closure(machine.nav(view).global(idx)?)
+    machine.return_bool(view, b)
 }
 
 /// Extract f64 values from a concrete (forced) number list.

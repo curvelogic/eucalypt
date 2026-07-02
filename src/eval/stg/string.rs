@@ -118,7 +118,7 @@ impl StgIntrinsic for Str {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let nat = machine.nav(view).resolve_native(&args[0])?;
+        let nat = machine.resolve_native(view, &args[0])?;
         let text = match nat {
             Native::Sym(id) => machine.symbol_pool().resolve(id).to_string(),
             Native::Str(s) => (*view.scoped(s)).as_str().to_string(),
@@ -410,7 +410,7 @@ impl StgIntrinsic for Fmt {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let nat = machine.nav(view).resolve_native(&args[0])?;
+        let nat = machine.resolve_native(view, &args[0])?;
         let fmt_string = str_arg(machine, view, &args[1])?;
 
         match printf::fmt(view, machine.symbol_pool(), &fmt_string, &nat) {

@@ -77,6 +77,11 @@ impl<S: Copy> Closing<S> {
         self.1
     }
 
+    /// Redirect the closure's environment pointer (used by GC fixup).
+    pub fn set_env(&mut self, env: RefPtr<EnvironmentFrame<Closing<S>>>) {
+        self.1 = env;
+    }
+
     /// Reference to the closure's code
     pub fn code(&self) -> S {
         self.0.body()
@@ -493,9 +498,13 @@ impl GcScannable for SynClosure {
 
 /// For now, an EnvFrame is an environment frame with HeapSyn Closures
 pub type EnvFrame = EnvironmentFrame<SynClosure>;
-impl StgObject for EnvFrame {}
 
-impl GcScannable for EnvFrame {
+// The environment-frame layout is independent of the closure code type
+// `C`; the same scan/scan_and_update logic serves both the HeapSyn
+// `SynClosure` frames and the bytecode `BcClosure` frames (spec §3).
+impl<C: Clone> StgObject for EnvironmentFrame<C> {}
+
+impl<C: Clone + GcScannable> GcScannable for EnvironmentFrame<C> {
     fn scan<'a>(
         &'a self,
         scope: &'a dyn crate::eval::memory::collect::CollectorScope,
