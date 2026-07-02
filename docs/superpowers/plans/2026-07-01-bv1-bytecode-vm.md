@@ -80,6 +80,7 @@ The self-contained handler arms are done (Atom/Cons/Case/Seq/Ann/App/DirectApp/L
 So the next unit is the **machine wiring**: a `BytecodeMachine`/run-context owning the `BytecodeProgram` (code/constants/templates/blackhole/pap/global_entries) + heap + intrinsics + emitter + metrics + symbol pool; build the globals frame of `BcClosure`s from the encoded `GlobalForm`s (intrinsic wrappers + prelude — needs prelude encoded to bytecode); refactor handlers to take/deref this context; then Bif dispatch, PAP, Meta/DeMeta/LookupLit arms, `EU_BYTECODE` flag path in `driver/eval.rs`, and the differential harness → day11 gate.
 
 - `1fda104d` Phase 2 — **PAP trampoline templates** in the arena (`BytecodeProgram.pap` + `pap_offset(supplied,pending)`, `PAP_MAX_ARITY=16`). Ready to wire into `return_fun`'s Less case once handlers take the program.
+- `7c4c84d9` **fix(deps)** — bump `quick-xml` 0.25→0.41 (RUSTSEC-2026-0194/0195, newly-published, unrelated to BV1) + migrate `src/import/xml.rs` API. Fixed the PR's Security Audit CI failure. XML harness test byte-identical; `cargo audit` clean.
 
 ### Machine-wiring integration — ordered plan + two refinements to settle in-flight
 The core machine is complete + tested (all return_* handlers; Atom/Cons/Case/Seq/Ann/App/DirectApp/Let/LetRec; thunk memoisation; Bif capture; data + blackhole + pap templates; value model + GC + decoders). Remaining is one coherent integration:
