@@ -31,6 +31,11 @@ BEADS_SYNC="${BEADS_SYNC:-1}"
 LOCAL_BIN="$HOME/.local/bin"
 mkdir -p "$LOCAL_BIN"
 
+# Run from the repo root regardless of the caller's working directory, so the
+# beads sync step finds .beads. The script lives in <repo>/scripts/.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
 log() { printf '\n=== %s ===\n' "$*"; }
 
 # Ensure ~/.local/bin is on PATH for this process and for later shells.
