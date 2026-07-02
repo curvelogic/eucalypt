@@ -24,7 +24,7 @@
 #   EUCALYPT_VERSION   Pin the eu release        (default: 0.11.1)
 #   DOLT_VERSION       Pin the dolt release, e.g. v1.58.6, or "latest"
 #                                                (default: latest)
-#   BEADS_SYNC         Set to 0 to skip `bd sync` (default: 1)
+#   BEADS_SYNC         Set to 0 to skip `bd bootstrap` (default: 1)
 #
 # Note on GitHub access: dolt is fetched from github.com/dolthub/dolt releases.
 # In Claude Code on the web, github.com traffic is gated by the session's
@@ -159,21 +159,38 @@ install_eucalypt() {
 # ---------------------------------------------------------------------------
 # beads database: materialise the dolt-native store so `bd list` works
 # ---------------------------------------------------------------------------
-sync_beads() {
+# The git-tracked issue data lives in .beads/issues.jsonl; the dolt/ runtime
+# store is gitignored, so a fresh checkout has no usable database until it is
+# rebuilt. `bd bootstrap` is beads' purpose-built command for this: it clones
+# from the configured sync.remote when reachable and otherwise falls back to
+# the git-tracked JSONL. (The old `bd sync` this script used to call no longer
+# exists in beads >= 1.0.)
+bootstrap_beads() {
     [ "$BEADS_SYNC" = "1" ] || return 0
     command -v bd >/dev/null 2>&1 || return 0
     command -v dolt >/dev/null 2>&1 || return 0
 
     local repo
     if ! repo="$(find_repo_root)"; then
-        echo "Skipping beads sync: could not locate a .beads checkout."
+        echo "Skipping beads bootstrap: could not locate a .beads checkout."
         return 0
     fi
 
-    log "Syncing beads store ($repo)"
+    log "Bootstrapping beads store ($repo)"
     chmod 700 "$repo/.beads" 2>/dev/null || true
-    # Non-fatal: git-ssh sync may be unavailable at provision time.
-    ( cd "$repo" && bd sync ) || echo "WARNING: 'bd sync' failed (network/git access?); run it later."
+
+    # Idempotency guard: `bd list` exits 0 only when the store is materialised.
+    # `bd bootstrap` is NOT self-idempotent when sync.remote is set — a second
+    # run re-attempts the clone and errors with "database exists" — so skip it
+    # once the store is already usable.
+    if ( cd "$repo" && bd list >/dev/null 2>&1 ); then
+        echo "beads store already materialised; skipping bootstrap."
+        return 0
+    fi
+
+    # Non-fatal: git/network access may be unavailable at provision time.
+    ( cd "$repo" && bd bootstrap --yes ) \
+        || echo "WARNING: 'bd bootstrap' failed (network/git access?); run 'bd bootstrap' later."
 }
 
 main() {
@@ -183,7 +200,7 @@ main() {
     # dolt fetch can fail where github.com release access is not granted; keep
     # going so eu/bd are still usable and the failure is reported, not fatal.
     install_dolt || echo "WARNING: dolt install failed; beads' dolt backend will be unavailable."
-    sync_beads
+    bootstrap_beads
     log "Setup complete"
 }
 
