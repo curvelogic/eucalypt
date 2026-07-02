@@ -15,10 +15,10 @@ use lru::LruCache;
 use regex::Regex;
 
 use crate::common::sourcemap::Smid;
-use crate::eval::emit::Emitter;
+use crate::eval::emit::{Emitter, NullEmitter};
 use crate::eval::error::ExecutionError;
 use crate::eval::machine::env::{EnvFrame, SynClosure};
-use crate::eval::machine::intrinsic::{IntrinsicMachine, StgIntrinsic};
+use crate::eval::machine::intrinsic::{AbiClosure, IntrinsicMachine, StgIntrinsic};
 use crate::eval::machine::metrics::{Clock, Metrics, ThreadOccupation};
 use crate::eval::machine::vm::{interrupted, HeapNavigator};
 use crate::eval::memory::alloc::ScopedAllocator;
@@ -206,6 +206,13 @@ pub struct BcMachineState {
     /// Offset of the shared `OP_BLACKHOLE` node (`BytecodeProgram::blackhole`),
     /// used to overwrite a thunk's slot while forcing it.
     pub blackhole: CodeRef,
+    /// Closures/values stashed live across a nested `evaluate_to_whnf`
+    /// sub-evaluation (and the io-run driver), kept as GC roots.
+    pub stash: Vec<BcValue>,
+    /// Continuation stacks suspended during nested `evaluate_to_whnf` calls;
+    /// their heap pointers must stay live for the sub-evaluation (mirrors
+    /// `MachineState::suspended_stacks`).
+    pub suspended_stacks: Vec<Vec<BcContinuation>>,
 }
 
 impl BcMachineState {
@@ -230,6 +237,8 @@ impl BcMachineState {
             capture_end_pending: false,
             yielded_io: false,
             blackhole: 0,
+            stash: Vec::new(),
+            suspended_stacks: Vec::new(),
         }
     }
 }
@@ -313,6 +322,16 @@ impl GcScannable for BcMachineState {
         for r in &self.constants {
             scan_const(r, scope, marker, out);
         }
+        // Values stashed across a nested evaluate_to_whnf / io-run.
+        for stashed in &self.stash {
+            out.push(ScanPtr::new(scope, stashed));
+        }
+        // Continuation stacks suspended during nested evaluations.
+        for suspended in &self.suspended_stacks {
+            for cont in suspended {
+                cont.scan(scope, marker, out);
+            }
+        }
     }
 
     fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
@@ -328,6 +347,14 @@ impl GcScannable for BcMachineState {
         }
         for r in &mut self.constants {
             update_const(r, heap);
+        }
+        for stashed in &mut self.stash {
+            stashed.scan_and_update(heap);
+        }
+        for suspended in &mut self.suspended_stacks {
+            for cont in suspended {
+                cont.scan_and_update(heap);
+            }
         }
     }
 }
@@ -1244,7 +1271,11 @@ impl<'a> BytecodeMachine<'a> {
                 .map(|c| c.env())
                 .unwrap_or(self.state.root_env);
             let bif = self.intrinsics[idx as usize];
-            let view = MutatorHeapView::new(&self.heap);
+            // SAFETY: the view borrows the heap only for the `execute` call and
+            // is not retained; `ctx` also holds `&mut heap` for a possible
+            // nested `evaluate_to_whnf`. This mirrors the HeapSyn `bif_view`
+            // aliasing in `vm.rs`.
+            let view = unsafe { MutatorHeapView::from_raw_heap(&self.heap as *const Heap) };
             let mut ctx = BcBifContext {
                 state: &mut self.state,
                 program: &self.program,
@@ -1252,6 +1283,11 @@ impl<'a> BytecodeMachine<'a> {
                 rcache: &mut self.rcache,
                 test_mode: self.test_mode,
                 env,
+                heap: &mut self.heap,
+                intrinsics: &self.intrinsics,
+                metrics: &mut self.metrics,
+                clock: &mut self.clock,
+                dump_heap: self.dump_heap,
             };
             bif.execute(&mut ctx, view, self.emitter.as_mut(), &args)?;
         }
@@ -1301,7 +1337,7 @@ impl<'a> BytecodeMachine<'a> {
 /// `env`/`evaluate_to_whnf`) are unreachable on this path and panic; an
 /// intrinsic still using them (or the not-yet-wired capture lifecycle)
 /// surfaces via the differential harness for migration.
-struct BcBifContext<'ctx> {
+struct BcBifContext<'ctx, 'a> {
     state: &'ctx mut BcMachineState,
     program: &'ctx BytecodeProgram,
     symbol_pool: &'ctx mut SymbolPool,
@@ -1309,9 +1345,16 @@ struct BcBifContext<'ctx> {
     test_mode: bool,
     /// Environment of the Bif closure (indexed by `Ref::L` arg operands).
     env: RefPtr<BcEnvFrame>,
+    /// The machine heap (for the re-entrant `evaluate_to_whnf` sub-run).
+    heap: &'ctx mut Heap,
+    /// Intrinsics, indexed by intrinsic index (for nested `Bif` dispatch).
+    intrinsics: &'ctx [&'a dyn StgIntrinsic],
+    metrics: &'ctx mut Metrics,
+    clock: &'ctx mut Clock,
+    dump_heap: bool,
 }
 
-impl BcBifContext<'_> {
+impl BcBifContext<'_, '_> {
     /// Resolve a runtime value to a native, following `OP_ATOM` indirections
     /// (the bytecode analogue of `HeapNavigator::resolve_native`).
     fn native_from_value(
@@ -1343,9 +1386,135 @@ impl BcBifContext<'_> {
             }
         }
     }
+
+    /// Resolve a ref to a runtime `BcValue` (the neutral resolve rule: locals
+    /// and globals looked up, `V` returned as a native).
+    fn resolve_value(
+        &self,
+        view: MutatorHeapView<'_>,
+        arg: &Ref,
+    ) -> Result<BcValue, ExecutionError> {
+        match arg {
+            Ref::V(n) => Ok(BcValue::Native(n.clone())),
+            Ref::L(i) => view
+                .scoped(self.env)
+                .get(&view, *i)
+                .ok_or(ExecutionError::BadEnvironmentIndex(*i)),
+            Ref::G(i) => view
+                .scoped(self.state.globals)
+                .get(&view, *i)
+                .ok_or(ExecutionError::BadGlobalIndex(*i)),
+        }
+    }
+
+    /// Evaluate `value` to WHNF on a fresh continuation stack, restoring the
+    /// caller's stack/current afterwards. The bytecode analogue of
+    /// `Machine::evaluate_to_whnf` (`vm.rs`). Used by `force`.
+    fn run_to_whnf(&mut self, value: BcValue) -> Result<BcValue, ExecutionError> {
+        // Suspend the caller's stack and stash its current value (GC roots).
+        let saved_stack = std::mem::take(&mut self.state.stack);
+        self.state.suspended_stacks.push(saved_stack);
+        let saved_current = std::mem::replace(&mut self.state.current, value);
+        self.state.stash.push(saved_current);
+        let saved_terminated = self.state.terminated;
+        self.state.terminated = false;
+        self.state.yielded_io = false;
+
+        let run_result = self.drive_to_whnf();
+
+        let saved_current = self
+            .state
+            .stash
+            .pop()
+            .expect("bytecode whnf stash underflow");
+        let saved_stack = self
+            .state
+            .suspended_stacks
+            .pop()
+            .expect("bytecode whnf suspended-stack underflow");
+
+        run_result?;
+
+        let sub_yielded = self.state.yielded_io;
+        let result = std::mem::replace(&mut self.state.current, saved_current);
+        self.state.terminated = saved_terminated;
+        self.state.yielded_io = false;
+        self.state.stack = saved_stack;
+
+        if sub_yielded {
+            return Err(ExecutionError::Panic(
+                self.state.annotation,
+                "bytecode: thunk evaluation unexpectedly yielded an IO constructor".to_string(),
+            ));
+        }
+        Ok(result)
+    }
+
+    /// The re-entrant dispatch loop for `run_to_whnf`: drives `step` (with a
+    /// NullEmitter and the `Bif` dispatch tail) until the sub-evaluation
+    /// terminates. Mirrors `evaluate_to_whnf_impl` (`vm.rs`).
+    fn drive_to_whnf(&mut self) -> Result<(), ExecutionError> {
+        let mut null = NullEmitter;
+        let gc_check_freq: u32 = 500;
+        let mut gc_countdown: u32 = gc_check_freq;
+        while !self.state.terminated {
+            gc_countdown -= 1;
+            if gc_countdown == 0 {
+                gc_countdown = gc_check_freq;
+                if interrupted() {
+                    return Err(ExecutionError::Interrupted);
+                }
+                if self.heap.policy_requires_collection() {
+                    gc_collect(self.state, self.heap, self.clock, self.dump_heap);
+                }
+            }
+            self.metrics.tick();
+            {
+                // SAFETY: the view borrows the heap for this scope only and is
+                // dropped before any `&mut self.heap` use; this mirrors the
+                // HeapSyn `bif_view` aliasing (`vm.rs`).
+                let view = unsafe { MutatorHeapView::from_raw_heap(self.heap as *const Heap) };
+                step(self.state, view, self.program)?;
+            }
+            if let Some(idx) = self.state.pending_bif.take() {
+                self.dispatch_pending_bif(idx, &mut null)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Run one captured pending BIF through `self` (re-entrant): materialise
+    /// its args, point `env` at the Bif closure's frame, and execute.
+    fn dispatch_pending_bif(
+        &mut self,
+        idx: u8,
+        emitter: &mut dyn Emitter,
+    ) -> Result<(), ExecutionError> {
+        let args: Vec<Ref> = std::mem::take(&mut self.state.pending_bif_args)
+            .iter()
+            .map(|d| match *d {
+                DecodedRef::Local(i) => Ref::L(i as usize),
+                DecodedRef::Global(i) => Ref::G(i as usize),
+                DecodedRef::Value(k) => self.state.constants[k as usize].clone(),
+            })
+            .collect();
+        let bif_env = self
+            .state
+            .current
+            .as_closure()
+            .map(|c| c.env())
+            .unwrap_or(self.state.root_env);
+        let bif = self.intrinsics[idx as usize];
+        // SAFETY: as above — the view is confined to the execute call.
+        let view = unsafe { MutatorHeapView::from_raw_heap(self.heap as *const Heap) };
+        let saved_env = std::mem::replace(&mut self.env, bif_env);
+        let result = bif.execute(self, view, emitter, &args);
+        self.env = saved_env;
+        result
+    }
 }
 
-impl IntrinsicMachine for BcBifContext<'_> {
+impl IntrinsicMachine for BcBifContext<'_, '_> {
     fn rcache(&mut self) -> &mut LruCache<String, Regex> {
         self.rcache
     }
@@ -1439,13 +1608,57 @@ impl IntrinsicMachine for BcBifContext<'_> {
         self.state.current = BcValue::Native(native);
         Ok(())
     }
+
+    fn resolve_closure(
+        &self,
+        view: MutatorHeapView<'_>,
+        arg: &Ref,
+    ) -> Result<AbiClosure, ExecutionError> {
+        Ok(AbiClosure::Byte(self.resolve_value(view, arg)?))
+    }
+
+    fn resolve_callable_closure(
+        &self,
+        view: MutatorHeapView<'_>,
+        arg: &Ref,
+    ) -> Result<AbiClosure, ExecutionError> {
+        match self.resolve_value(view, arg)? {
+            v @ BcValue::Closure(_) => Ok(AbiClosure::Byte(v)),
+            BcValue::Native(n) => Err(ExecutionError::NotCallable(
+                self.state.annotation,
+                n.type_description().to_string(),
+            )),
+        }
+    }
+
+    fn set_result(&mut self, closure: AbiClosure) -> Result<(), ExecutionError> {
+        match closure {
+            AbiClosure::Byte(v) => {
+                self.state.current = v;
+                Ok(())
+            }
+            AbiClosure::Heap(_) => {
+                panic!("bytecode BifContext: set_result(Heap) — intrinsic uses the HeapSyn ABI")
+            }
+        }
+    }
+
+    fn force(&mut self, closure: AbiClosure) -> Result<AbiClosure, ExecutionError> {
+        match closure {
+            // A native is already WHNF.
+            AbiClosure::Byte(v @ BcValue::Native(_)) => Ok(AbiClosure::Byte(v)),
+            AbiClosure::Byte(v) => Ok(AbiClosure::Byte(self.run_to_whnf(v)?)),
+            AbiClosure::Heap(_) => {
+                panic!("bytecode BifContext: force(Heap) — intrinsic uses the HeapSyn ABI")
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::eval::bytecode::{encode, BcClosure, BcEnvBuilder};
-    use crate::eval::emit::NullEmitter;
     use crate::eval::memory::alloc::ScopedAllocator;
     use crate::eval::memory::heap::Heap;
     use crate::eval::stg::syntax::dsl;
@@ -1941,5 +2154,43 @@ mod tests {
             BytecodeMachine::new(prog, root, &[], intrinsics, Box::new(NullEmitter), 0, false)
                 .unwrap();
         assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
+    }
+
+    #[test]
+    fn machine_forces_thunk_via_force_whnf() {
+        // let t = __ADD(1, 2) in __FORCE_WHNF(t) -> 3.
+        // Exercises the re-entrant evaluate_to_whnf: FORCE_WHNF resolves the
+        // let-bound thunk (not pre-evaluated), forces it on a fresh stack, and
+        // sets the result — all via BcBifContext's neutral closure ABI.
+        use crate::common::sourcemap::SourceMap;
+        use crate::eval::intrinsics;
+        use crate::eval::stg::{
+            arith::Add,
+            force::ForceWhnf,
+            runtime::{Runtime, StandardRuntime},
+        };
+
+        // A runtime with ADD + FORCE_WHNF registered at their catalogue
+        // indices (the rest remain unimplemented stubs, unused here).
+        let mut rt = StandardRuntime::default();
+        rt.add(Box::new(Add) as Box<dyn StgIntrinsic>);
+        rt.add(Box::new(ForceWhnf));
+        rt.prepare(&mut SourceMap::default());
+        let intrinsics = rt.intrinsics();
+        let add = intrinsics::index_u8("ADD");
+        let force = intrinsics::index_u8("__FORCE_WHNF");
+
+        let syn = dsl::let_(
+            vec![dsl::thunk(dsl::app_bif(
+                add,
+                vec![dsl::num(1), dsl::num(2)],
+            ))],
+            dsl::app_bif(force, vec![dsl::lref(0)]),
+        );
+        let (prog, root, _gforms) = encode(&syn, &[]);
+        let mut m =
+            BytecodeMachine::new(prog, root, &[], intrinsics, Box::new(NullEmitter), 0, false)
+                .unwrap();
+        assert_eq!(m.run(Some(10_000)).unwrap(), Some(3));
     }
 }
