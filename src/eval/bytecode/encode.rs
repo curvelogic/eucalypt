@@ -23,7 +23,10 @@ use std::rc::Rc;
 
 use crate::{
     common::sourcemap::Smid,
-    eval::stg::syntax::{LambdaForm, Native as StgNative, Ref, StgSyn},
+    eval::stg::{
+        syntax::{dsl, LambdaForm, Native as StgNative, Ref, StgSyn},
+        tags::DataConstructor,
+    },
 };
 
 use super::{opcode::*, program::BytecodeProgram, CodeRef};
@@ -346,6 +349,25 @@ impl Encoder {
         }
     }
 
+    /// Encode one data-constructor template per tag (spec §5.5): an
+    /// `OP_CONS tag [L0..L(arity-1)]` node per `DataConstructor`, returning
+    /// a table indexed by tag. Runtime data values point at these with a
+    /// fresh env holding the field values — no per-construction code alloc.
+    fn encode_templates(&mut self) -> Vec<CodeRef> {
+        // Tags are contiguous 0..=BoxedTypeData(17).
+        const NUM_DATA_TAGS: u8 = 18;
+        (0..NUM_DATA_TAGS)
+            .map(|tag| {
+                let arity = DataConstructor::try_from(tag)
+                    .map(|d| d.arity())
+                    .unwrap_or(0);
+                let args: Vec<Ref> = (0..arity).map(dsl::lref).collect();
+                let node = dsl::data(tag, args);
+                self.encode_node(&node)
+            })
+            .collect()
+    }
+
     /// The current end-of-stream offset (where the next byte lands).
     #[inline(always)]
     fn here(&self) -> CodeRef {
@@ -376,6 +398,10 @@ pub fn encode(
 ) -> (BytecodeProgram, CodeRef, Vec<GlobalForm>) {
     let mut enc = Encoder::new();
 
+    // Constructor templates first, so their offsets sit at the low end of
+    // the arena and are stable regardless of program size.
+    let templates = enc.encode_templates();
+
     let global_forms: Vec<GlobalForm> = globals
         .iter()
         .map(|lf| {
@@ -396,6 +422,7 @@ pub fn encode(
         code: enc.code,
         constants: enc.constants,
         global_entries: global_forms.iter().map(|f| f.entry).collect(),
+        templates,
     };
     (program, root_off, global_forms)
 }
@@ -507,6 +534,37 @@ mod tests {
         let mut pc = root as usize + 1;
         let flags = read_u8(&prog.code, &mut pc);
         assert_eq!(flags & FLAG_EAGER, 0);
+    }
+
+    #[test]
+    fn templates_encode_cons_shapes() {
+        let (prog, _root, _) = encode(&dsl::atom(dsl::num(0)), &[]);
+        assert_eq!(prog.templates.len(), 18);
+
+        // ListCons (tag 7): OP_CONS, tag 7, arity 2.
+        let mut pc = prog.templates[DataConstructor::ListCons.tag() as usize] as usize;
+        assert_eq!(prog.code[pc], Op::Cons as u8);
+        pc += 1;
+        assert_eq!(
+            read_u8(&prog.code, &mut pc),
+            DataConstructor::ListCons.tag()
+        );
+        assert_eq!(read_u8(&prog.code, &mut pc), 2);
+
+        // ListNil (tag 6): OP_CONS, tag 6, arity 0.
+        let mut pc = prog.templates[DataConstructor::ListNil.tag() as usize] as usize;
+        assert_eq!(prog.code[pc], Op::Cons as u8);
+        pc += 1;
+        assert_eq!(read_u8(&prog.code, &mut pc), DataConstructor::ListNil.tag());
+        assert_eq!(read_u8(&prog.code, &mut pc), 0);
+
+        // BoxedNumber (tag 3): arity 1.
+        let mut pc = prog.templates[DataConstructor::BoxedNumber.tag() as usize] as usize + 1;
+        assert_eq!(
+            read_u8(&prog.code, &mut pc),
+            DataConstructor::BoxedNumber.tag()
+        );
+        assert_eq!(read_u8(&prog.code, &mut pc), 1);
     }
 
     #[test]

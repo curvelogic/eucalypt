@@ -30,6 +30,12 @@ pub struct BytecodeProgram {
     pub constants: Vec<StgNative>,
     /// Global slot index -> bytecode entry offset (spec §5).
     pub global_entries: Vec<CodeRef>,
+    /// Data-constructor templates (spec §5.5): `templates[tag]` is the
+    /// offset of a pre-encoded `OP_CONS tag [L0..L(arity-1)]` node. A
+    /// runtime data value is a `BcClosure(templates[tag], env{fields…})`,
+    /// so intrinsics/return-helpers construct data with no per-call code
+    /// allocation. Indexed by `DataConstructor` tag.
+    pub templates: Vec<CodeRef>,
 }
 
 impl BytecodeProgram {
