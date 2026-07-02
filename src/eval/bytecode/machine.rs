@@ -15,7 +15,10 @@ use crate::eval::memory::syntax::{Native, Ref, RefPtr};
 use crate::eval::stg::tags::Tag;
 
 use super::program::{read_u32, read_u8};
-use super::{BcContinuation, BcEnvFrame, BcValue, CodeRef, NO_BRANCH, REF_G, REF_L, REF_V};
+use super::{
+    BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, CodeRef, NO_BRANCH, REF_G, REF_L,
+    REF_V,
+};
 
 /// A decoded inline `Ref` operand from the byte stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -171,6 +174,9 @@ pub struct BcMachineState {
     pub annotation: Smid,
     /// Deferred BIF intrinsic index (set by the `Bif` arm, run in `step`).
     pub pending_bif: Option<u8>,
+    /// Set by a `CaptureEnd` continuation to signal `step` to finish an
+    /// emitter capture.
+    pub capture_end_pending: bool,
 }
 
 impl BcMachineState {
@@ -191,8 +197,87 @@ impl BcMachineState {
             terminated: false,
             annotation: Smid::default(),
             pending_bif: None,
+            capture_end_pending: false,
         }
     }
+}
+
+/// Return a native WHNF value into the top continuation (or terminate).
+///
+/// Translated from `vm.rs` `return_native` (`:816-897`) for the `BcValue`
+/// model: the native is carried directly rather than via an `Atom` closure.
+pub fn return_native(
+    state: &mut BcMachineState,
+    view: MutatorHeapView<'_>,
+    value: Native,
+) -> Result<(), ExecutionError> {
+    let Some(cont) = state.stack.pop() else {
+        state.terminated = true;
+        return Ok(());
+    };
+    match cont {
+        BcContinuation::Branch {
+            fallback,
+            environment,
+            ..
+        } => {
+            // Case fallbacks handle natives; the native is bound as slot 0.
+            if let Some(fb) = fallback {
+                let env = view.from_value(BcValue::Native(value), environment, state.annotation)?;
+                state.current = BcValue::Closure(BcClosure::new(fb, env));
+            } else {
+                return Err(ExecutionError::NoBranchForNative(
+                    state.annotation,
+                    value.type_description().to_string(),
+                ));
+            }
+        }
+        BcContinuation::Update { environment, index } => {
+            // Memoise the value into the thunk's slot; leave `current` as the
+            // native so it is re-processed against the next continuation.
+            view.scoped(environment)
+                .update(&view, index, BcValue::Native(value))?;
+        }
+        BcContinuation::ApplyTo { annotation, .. } => {
+            return Err(ExecutionError::NotCallable(
+                annotation,
+                value.type_description().to_string(),
+            ));
+        }
+        BcContinuation::DeMeta {
+            or_else,
+            environment,
+            ..
+        } => {
+            let env = view.from_value(BcValue::Native(value), environment, state.annotation)?;
+            state.current = BcValue::Closure(BcClosure::new(or_else, env));
+        }
+        BcContinuation::SeqBind {
+            body,
+            environment,
+            annotation,
+        } => {
+            // Force-and-discard: enter the body without binding the result.
+            state.current = BcValue::Closure(BcClosure::new(body, environment));
+            state.annotation = annotation;
+        }
+        BcContinuation::LookupLitForce { smid, .. } => {
+            // A native is not a block — type error.
+            let ann = if smid.is_valid() {
+                smid
+            } else {
+                state.annotation
+            };
+            return Err(ExecutionError::NoBranchForNative(
+                ann,
+                value.type_description().to_string(),
+            ));
+        }
+        BcContinuation::CaptureEnd => {
+            state.capture_end_pending = true;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -288,5 +373,66 @@ mod tests {
         assert_eq!(hdr.kind, crate::eval::bytecode::FORM_THUNK);
         assert_eq!(hdr.arity, 0);
         assert!((hdr.body as usize) < prog.code.len());
+    }
+
+    use crate::eval::memory::array::Array;
+
+    fn num(n: i64) -> Native {
+        Native::Num(serde_json::Number::from(n))
+    }
+
+    #[test]
+    fn return_native_branch_fallback_binds_value() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let mut state = BcMachineState::new(BcValue::Native(num(0)), root, root, vec![]);
+
+        let bt: Array<Option<CodeRef>> = view.array(&[]);
+        state.stack.push(BcContinuation::Branch {
+            min_tag: 0,
+            branch_table: bt,
+            fallback: Some(7),
+            environment: root,
+            annotation: Default::default(),
+        });
+        return_native(&mut state, view, num(99)).unwrap();
+
+        let c = state.current.as_closure().unwrap();
+        assert_eq!(c.code(), 7);
+        let frame = view.scoped(c.env());
+        match frame.get(&view, 0).unwrap() {
+            BcValue::Native(Native::Num(n)) => assert_eq!(n.as_i64(), Some(99)),
+            _ => panic!("expected native slot"),
+        }
+    }
+
+    #[test]
+    fn return_native_empty_stack_terminates() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let mut state = BcMachineState::new(BcValue::Native(num(0)), root, root, vec![]);
+        return_native(&mut state, view, num(1)).unwrap();
+        assert!(state.terminated);
+    }
+
+    #[test]
+    fn return_native_branch_no_fallback_errors() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let mut state = BcMachineState::new(BcValue::Native(num(0)), root, root, vec![]);
+
+        let bt: Array<Option<CodeRef>> = view.array(&[]);
+        state.stack.push(BcContinuation::Branch {
+            min_tag: 0,
+            branch_table: bt,
+            fallback: None,
+            environment: root,
+            annotation: Default::default(),
+        });
+        let err = return_native(&mut state, view, num(1));
+        assert!(matches!(err, Err(ExecutionError::NoBranchForNative(..))));
     }
 }
