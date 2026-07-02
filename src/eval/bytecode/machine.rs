@@ -1919,6 +1919,12 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         self.test_mode
     }
 
+    fn block_index_enabled(&self) -> bool {
+        // Bytecode blocks are template closures with no in-place mutation; use
+        // the STG find-loop fallback for lookups (same result).
+        false
+    }
+
     // ── HeapSyn-typed methods: unreachable on the bytecode path ──────
     // These name `SynClosure`/`EnvFrame`, which the bytecode engine never
     // produces. An intrinsic reaching one has not been migrated to the

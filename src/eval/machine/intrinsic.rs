@@ -372,6 +372,17 @@ pub trait IntrinsicMachine {
     /// panicking, allowing test harnesses to collect results.
     fn test_mode(&self) -> bool;
 
+    /// Whether the mutable block-index optimisation is available.
+    ///
+    /// The optimisation caches a `SymbolId → position` map inside a block by
+    /// mutating its index slot in place. The HeapSyn engine supports this; the
+    /// bytecode engine does not (blocks are template closures), so `LookupOr`/
+    /// `SafeLookup` skip the index and fall back to the STG-level find loop —
+    /// same result, no in-place mutation. Defaults to `true`.
+    fn block_index_enabled(&self) -> bool {
+        true
+    }
+
     /// Evaluate a closure to WHNF, safely handling a non-empty continuation stack.
     ///
     /// Moves the current stack to a GC-visible location, runs the sub-evaluation,
