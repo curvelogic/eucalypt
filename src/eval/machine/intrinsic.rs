@@ -274,10 +274,8 @@ pub trait IntrinsicMachine {
         let sc = closure.as_heap();
         let code = view.scoped(sc.code());
         match &*code {
-            HeapSyn::Atom { evaluand } => Some(sc.navigate_local_native(&view, evaluand.clone())),
-            HeapSyn::Cons { args, .. } => {
-                Some(sc.navigate_local_native(&view, args.get(0)?.clone()))
-            }
+            HeapSyn::Atom { evaluand } => sc.try_navigate_local_native(&view, evaluand.clone()),
+            HeapSyn::Cons { args, .. } => sc.try_navigate_local_native(&view, args.get(0)?.clone()),
             _ => None,
         }
     }
