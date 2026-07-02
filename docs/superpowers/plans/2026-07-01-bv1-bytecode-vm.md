@@ -81,12 +81,14 @@ So the next unit is the **machine wiring**: a `BytecodeMachine`/run-context owni
 
 - `1fda104d` Phase 2 — **PAP trampoline templates** in the arena (`BytecodeProgram.pap` + `pap_offset(supplied,pending)`, `PAP_MAX_ARITY=16`). Ready to wire into `return_fun`'s Less case once handlers take the program.
 - `7c4c84d9` **fix(deps)** — bump `quick-xml` 0.25→0.41 (RUSTSEC-2026-0194/0195, newly-published, unrelated to BV1) + migrate `src/import/xml.rs` API. Fixed the PR's Security Audit CI failure. XML harness test byte-identical; `cargo audit` clean.
+- `5048ecde` **PR #927 merged** to `integration/0.12.0` (feat branch rebased onto the merge tip; work continues on `feat/bv1-bytecode-vm`).
+- `ac2f11aa` **Machine-wiring steps 1–2**: threaded `&BytecodeProgram` through `step`/`handle_op`/`return_fun` (handlers now reach `templates`/`blackhole`/`pap`); wired **PAP** (`return_fun` `Ordering::Less`) via a `partially_apply` helper building the `[f, supplied…]` env over `prog.pap_offset(supplied,pending)` with arity `pending`. New end-to-end test `run_partial_application` (`letrec k=\x y.x; p=k(5) in p(6)` → 5). 37 bytecode tests green, clippy clean.
 
 ### Machine-wiring integration — ordered plan + two refinements to settle in-flight
 The core machine is complete + tested (all return_* handlers; Atom/Cons/Case/Seq/Ann/App/DirectApp/Let/LetRec; thunk memoisation; Bif capture; data + blackhole + pap templates; value model + GC + decoders). Remaining is one coherent integration:
-1. **Refactor** `step`/`handle_op`/`return_fun` to take `&BytecodeProgram` (not `&[u8]`) so handlers reach `templates`/`blackhole`/`pap`. (Mechanical; update tests.)
-2. **Wire PAP** (`return_fun` Less) via `prog.pap_offset` + a `partially_apply` building the PAP closure env `[f, supplied…]`.
-3. **`BytecodeMachine`** owning heap/intrinsics/emitter/metrics/symbol-pool + the program + `BcMachineState`; `run` loop (500-tick GC poll; `pending_bif` dispatch tail; capture lifecycle).
+1. **[DONE `ac2f11aa`]** **Refactor** `step`/`handle_op`/`return_fun` to take `&BytecodeProgram` (not `&[u8]`) so handlers reach `templates`/`blackhole`/`pap`. (Mechanical; update tests.)
+2. **[DONE `ac2f11aa`]** **Wire PAP** (`return_fun` Less) via `prog.pap_offset` + a `partially_apply` building the PAP closure env `[f, supplied…]`.
+3. **[NEXT] `BytecodeMachine`** owning heap/intrinsics/emitter/metrics/symbol-pool + the program + `BcMachineState`; `run` loop (500-tick GC poll; `pending_bif` dispatch tail; capture lifecycle).
 4. **Bif dispatch** — a `BcBifContext` impl of `IntrinsicMachine`: neutral methods over `BcValue`+templates; the 5 `SynClosure`-typed methods `panic!` (bytecode never calls them; unmigrated intrinsics surface via the harness). Convert `pending_bif_args` (`DecodedRef`) → `&[Ref]` for `execute`.
    - **REFINEMENT A (resolve_closure vs native):** `AbiClosure` is `Heap(SynClosure)|Byte(BcClosure)`, but a bytecode ref can resolve to a bare `Native` (not a closure). Plan: change `AbiClosure::Byte` to hold a `BcValue` (Closure|Native) so `resolve_closure`/`set_result`/`force` round-trip natives too. (My call; implement during Bif dispatch.)
 5. **Globals + prelude**: build the globals frame from `GlobalForm`s (intrinsic wrappers) + encode the prelude to bytecode (Task 3.2). 
