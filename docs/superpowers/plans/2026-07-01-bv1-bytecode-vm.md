@@ -61,6 +61,8 @@ harness. **Branch:** `integration/0.12.0` (worktree
 - `d21ece03` **spec/plan revision 2** (`BcValue` value model → Phase 1.6)
 - `372c4b08` **Phase 1.6** `BcValue` rework (closure/cont/env_builder)
 - `7c2c665f` `&self` relax + `AbiClosure::arity` + migrate render/expect
+- `9f5c952b` this progress ledger (durable tracking)
+- `1a1aa3c6` **Phase 2 start** — `machine.rs`: `DecodedRef`, `read_ref`, `resolve_ref`/`resolve_native` (ref → `BcValue`)
 
 ### Neutral `IntrinsicMachine` ABI available (`intrinsic.rs`)
 `resolve_native`, `return_native/unit/boxed_num/bool`, `resolve_closure`,
