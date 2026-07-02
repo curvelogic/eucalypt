@@ -209,6 +209,30 @@ pub trait IntrinsicMachine {
         self.set_closure(closure.expect_heap())
     }
 
+    /// Tail-call the global at `global_idx` applied to `arg_refs` (resolved in
+    /// the current environment), replacing the machine's closure with that
+    /// application. Used by intrinsics that delegate to another global (e.g.
+    /// `RENDER_TO_STRING` → `RENDER_DOC`) without runtime code synthesis on the
+    /// bytecode path.
+    fn tail_apply_global(
+        &mut self,
+        view: MutatorHeapView<'_>,
+        global_idx: usize,
+        arg_refs: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        // HeapSyn default: build an `App(G(idx), arg_refs)` closure in the
+        // current environment and enter it.
+        let app = view
+            .alloc(HeapSyn::App {
+                callable: Ref::G(global_idx),
+                args: Array::from_slice(&view, arg_refs),
+                eager_args: false,
+            })?
+            .as_ptr();
+        let env = self.env(view);
+        self.set_closure(SynClosure::new(app, env))
+    }
+
     /// Force a closure handle to WHNF.
     fn force(&mut self, closure: AbiClosure) -> Result<AbiClosure, ExecutionError> {
         Ok(AbiClosure::Heap(
@@ -274,10 +298,8 @@ pub trait IntrinsicMachine {
         let sc = closure.as_heap();
         let code = view.scoped(sc.code());
         match &*code {
-            HeapSyn::Atom { evaluand } => Some(sc.navigate_local_native(&view, evaluand.clone())),
-            HeapSyn::Cons { args, .. } => {
-                Some(sc.navigate_local_native(&view, args.get(0)?.clone()))
-            }
+            HeapSyn::Atom { evaluand } => sc.try_navigate_local_native(&view, evaluand.clone()),
+            HeapSyn::Cons { args, .. } => sc.try_navigate_local_native(&view, args.get(0)?.clone()),
             _ => None,
         }
     }

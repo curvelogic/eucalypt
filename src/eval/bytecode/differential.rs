@@ -343,6 +343,27 @@ mod tests {
     }
 
     #[test]
+    fn agree_on_dbg_repr() {
+        // RENDER_DOC(DBG_REPR(boxed 42)) — the debug-repr intrinsic, migrated
+        // to the neutral ABI (resolve_closure/data_tag/data_field/value_native),
+        // must render byte-identically on both engines.
+        let dbg_repr = crate::eval::intrinsics::index("DBG_REPR").expect("DBG_REPR");
+        let render_doc = crate::eval::intrinsics::index("RENDER_DOC").expect("RENDER_DOC");
+        let syn = dsl::letrec_(
+            vec![
+                dsl::value(dsl::data(
+                    DataConstructor::BoxedNumber.tag(),
+                    vec![dsl::num(42)],
+                )), // 0: boxed 42
+                dsl::value(dsl::app(dsl::gref(dbg_repr), vec![dsl::lref(0)])), // 1: DBG_REPR(0)
+            ],
+            dsl::app(dsl::gref(render_doc), vec![dsl::lref(1)]),
+        );
+        let out = assert_engines_render_agree(syn);
+        assert!(out.contains("42"), "expected 42 in output, got {out:?}");
+    }
+
+    #[test]
     fn agree_on_islist_true() {
         // __ISLIST(nil) -> true -> 1. Exercises the migrated list predicate
         // (resolve_closure + data_tag) on the bytecode path.

@@ -134,6 +134,38 @@ impl Closing<RefPtr<HeapSyn>> {
         }
         panic!("could not navigate to native")
     }
+
+    /// Non-panicking variant of [`Self::navigate_local_native`].
+    ///
+    /// Follows `Atom` indirections through the local environment to a native
+    /// value, returning `None` — rather than panicking — when the chain ends
+    /// at a non-native (e.g. an unevaluated thunk, a data constructor, an
+    /// out-of-range or global ref). Used by the neutral `value_native` ABI so
+    /// that inspecting an unforced value (debug peek) cannot crash, matching
+    /// the bytecode engine's behaviour.
+    pub fn try_navigate_local_native(&self, guard: &dyn MutatorScope, arg: Ref) -> Option<Native> {
+        let i = match arg {
+            Ref::L(i) => i,
+            Ref::G(_) => return None,
+            Ref::V(n) => return Some(n),
+        };
+        let mut closure = {
+            let env = &*ScopedPtr::from_non_null(guard, self.env());
+            env.get(guard, i)?
+        };
+        let mut code_ptr = ScopedPtr::from_non_null(guard, closure.code());
+        while let HeapSyn::Atom { evaluand: r } = &*code_ptr {
+            let next_i = match r {
+                Ref::L(i) => *i,
+                Ref::G(_) => return None,
+                Ref::V(n) => return Some(n.clone()),
+            };
+            let env = &*ScopedPtr::from_non_null(guard, closure.env());
+            closure = env.get(guard, next_i)?;
+            code_ptr = ScopedPtr::from_non_null(guard, closure.code());
+        }
+        None
+    }
 }
 
 pub struct ScopeAndClosure<'guard>(pub &'guard dyn MutatorScope, pub &'guard SynClosure);

@@ -1,6 +1,6 @@
 //! Block intrinsics
 
-use std::{mem::swap, rc::Rc};
+use std::rc::Rc;
 
 use indexmap::IndexMap;
 
@@ -13,7 +13,9 @@ use crate::{
         machine::{
             env::SynClosure,
             env_builder::EnvBuilder,
-            intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic},
+            intrinsic::{
+                AbiClosure, CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic,
+            },
             vm::HeapNavigator,
         },
         memory::{
@@ -28,10 +30,7 @@ use super::{
     eq::Eq,
     panic::Panic,
     runtime::NativeVariant,
-    support::{
-        call, data_list_arg, machine_return_block_pair_closure_list, machine_return_bool,
-        machine_return_closure_list,
-    },
+    support::{call, data_list_arg, machine_return_block_pair_closure_list, machine_return_bool},
     syntax::{
         dsl::{self},
         LambdaForm, StgSyn,
@@ -1388,103 +1387,48 @@ fn collect_block_keys_from_args(
 /// from r overriding those in l
 pub struct Merge;
 
-/// Extract the symbol name from a block pair key, handling both raw
-/// symbol natives and boxed symbols (as produced by dynamically
-/// constructed blocks via `block()`).
-fn resolve_pair_key_symbol(
-    view: MutatorHeapView,
-    pool: &crate::eval::memory::symbol::SymbolPool,
-    pair_closure: &SynClosure,
-    k: Ref,
-) -> Result<String, ExecutionError> {
-    use crate::eval::memory::syntax;
-
-    // Fast path: key is a direct native value
-    if let Ref::V(syntax::Native::Sym(id)) = &k {
-        return Ok(pool.resolve(*id).to_string());
-    }
-
-    // Follow the key reference to its closure, unwrapping any Ann
-    // (source-location annotation) nodes along the way.
-    let mut key_closure = pair_closure.navigate_local(&view, k);
-    loop {
-        let key_code = view.scoped(key_closure.code());
-        match &*key_code {
-            // Raw atom containing a symbol
-            syntax::HeapSyn::Atom {
-                evaluand: Ref::V(syntax::Native::Sym(id)),
-            } => return Ok(pool.resolve(*id).to_string()),
-            // Boxed symbol (from dynamically-constructed blocks)
-            syntax::HeapSyn::Cons { tag, args } if *tag == DataConstructor::BoxedSymbol.tag() => {
-                let inner = args.get(0).ok_or_else(|| {
-                    ExecutionError::Panic(
-                        Smid::default(),
-                        "empty boxed symbol in block pair key".to_string(),
-                    )
-                })?;
-                let native = key_closure.navigate_local_native(&view, inner);
-                if let syntax::Native::Sym(id) = native {
-                    return Ok(pool.resolve(id).to_string());
-                } else {
-                    return Err(ExecutionError::Panic(
-                        Smid::default(),
-                        "boxed symbol contained non-symbol native".to_string(),
-                    ));
-                }
-            }
-            // Annotation wrapper — follow through to the body
-            syntax::HeapSyn::Ann { body, .. } => {
-                key_closure = SynClosure::new(*body, key_closure.env());
-            }
-            _ => {
-                return Err(ExecutionError::Panic(
-                    Smid::default(),
-                    "bad block_pair passed to merge intrinsic: non-symbolic key".to_string(),
-                ))
-            }
-        }
-    }
-}
-
 /// Items are passed to the MERGE intrinsic as block_pairs of k and
 /// the kv closure and to the MERGEWITH intrinsic as block_pairs of k
 /// and v. The same function can deconstruct either.
+///
+/// Engine-neutral: reads the pair's key (field 0) and value (field 1) via the
+/// `data_tag`/`data_field`/`value_native` ABI, so it serves both engines.
 fn deconstruct(
-    machine: &dyn IntrinsicMachine,
+    machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
-    pool: &crate::eval::memory::symbol::SymbolPool,
-    pair_closure: &SynClosure,
-) -> Result<(String, SynClosure), ExecutionError> {
-    use crate::eval::memory::syntax;
-
-    let code = view.scoped(pair_closure.code());
-    match &*code {
-        syntax::HeapSyn::Cons { tag, args } if *tag == DataConstructor::BlockPair.tag() => {
-            let k = args.get(0).unwrap();
-            let kv = args.get(1).unwrap();
-
-            let sym = resolve_pair_key_symbol(view, pool, pair_closure, k)?;
-
-            // Data constructor args can be any ref type (Ref::L,
-            // Ref::G for global constants like [], Ref::V for inline
-            // natives).  Use resolve_in_closure which handles all.
-            let kv_closure = machine
-                .nav(view)
-                .resolve_in_closure(pair_closure, kv)
-                .ok_or_else(|| {
-                    ExecutionError::Panic(
-                        Smid::default(),
-                        "failed to resolve block pair value in merge".to_string(),
-                    )
-                })?;
-
-            Ok((sym, kv_closure))
-        }
-        _ => Err(ExecutionError::Panic(
+    pair: &AbiClosure,
+) -> Result<(String, AbiClosure), ExecutionError> {
+    if machine.data_tag(view, pair) != Some(DataConstructor::BlockPair.tag()) {
+        return Err(ExecutionError::Panic(
             Smid::default(),
             "bad block_pair passed to merge intrinsic: non-data type".to_string(),
-        )),
+        ));
     }
+
+    // Key (field 0): a raw or boxed symbol, surfaced as a `Native::Sym` by
+    // `value_native`.
+    let key = machine.data_field(view, pair, 0).ok_or_else(|| {
+        ExecutionError::Panic(Smid::default(), "block pair missing key".to_string())
+    })?;
+    let sym = match machine.value_native(view, &key) {
+        Some(Native::Sym(id)) => machine.symbol_pool().resolve(id).to_string(),
+        _ => {
+            return Err(ExecutionError::Panic(
+                Smid::default(),
+                "bad block_pair passed to merge intrinsic: non-symbolic key".to_string(),
+            ))
+        }
+    };
+
+    // Value (field 1): the kv closure (MERGE) or bare value (MERGEWITH).
+    let value = machine.data_field(view, pair, 1).ok_or_else(|| {
+        ExecutionError::Panic(
+            Smid::default(),
+            "failed to resolve block pair value in merge".to_string(),
+        )
+    })?;
+
+    Ok((sym, value))
 }
 
 impl StgIntrinsic for Merge {
@@ -1616,23 +1560,15 @@ impl StgIntrinsic for Merge {
         let l = data_list_arg(machine, view, args[0].clone())?;
         let r = data_list_arg(machine, view, args[1].clone())?;
 
-        let mut merge: IndexMap<String, SynClosure> = IndexMap::new();
-
-        // NB the downstream (deconstruct / machine_return_closure_list) is
-        // still HeapSyn-typed (list construction needs runtime code synthesis);
-        // `as_heap()` bridges until the list-builder templates land, so block
-        // merge runs on HeapSyn only for now.
-        for item in &l {
-            let (k, kv) = deconstruct(machine, view, machine.symbol_pool(), item.as_heap())?;
+        // Engine-neutral: dedup pairs by key (RHS wins) and rebuild the
+        // kv-list via `return_closure_list` — no runtime code synthesis.
+        let mut merge: IndexMap<String, AbiClosure> = IndexMap::new();
+        for item in l.iter().chain(r.iter()) {
+            let (k, kv) = deconstruct(machine, view, item)?;
             merge.insert(k, kv);
         }
 
-        for item in &r {
-            let (k, kv) = deconstruct(machine, view, machine.symbol_pool(), item.as_heap())?;
-            merge.insert(k, kv);
-        }
-
-        machine_return_closure_list(machine, view, merge.into_iter().map(|(_, v)| v).collect())
+        machine.return_closure_list(view, merge.into_iter().map(|(_, v)| v).collect())
     }
 }
 
@@ -1726,18 +1662,22 @@ impl StgIntrinsic for MergeWith {
         let r = data_list_arg(machine, view, args[1].clone())?;
         let f = args[2].clone();
 
-        let mut merge: IndexMap<String, SynClosure> = IndexMap::new();
+        // NB: the value-combining step below builds an `f(ov, nv)` application
+        // thunk via `view.app` (runtime code synthesis), which has no neutral
+        // ABI equivalent yet, so MERGEWITH/DEEPMERGE remain HeapSyn-only for
+        // now — `as_heap()` bridges the neutral `deconstruct` results.
+        let mut merge: IndexMap<String, AbiClosure> = IndexMap::new();
 
         for item in &l {
-            let (key, value) = deconstruct(machine, view, machine.symbol_pool(), item.as_heap())?;
+            let (key, value) = deconstruct(machine, view, item)?;
             merge.insert(key, value);
         }
 
         for item in &r {
-            let (key, nv) = deconstruct(machine, view, machine.symbol_pool(), item.as_heap())?;
+            let (key, nv) = deconstruct(machine, view, item)?;
             if let Some(ov) = merge.get_mut(&key) {
-                let args = [ov.clone(), nv];
-                let mut combined = SynClosure::new(
+                let args = [ov.as_heap().clone(), nv.as_heap().clone()];
+                let combined = AbiClosure::Heap(SynClosure::new(
                     view.app(f.bump(2), Array::from_slice(&view, &[Ref::L(0), Ref::L(1)]))?
                         .as_ptr(),
                     view.from_closures(
@@ -1746,8 +1686,8 @@ impl StgIntrinsic for MergeWith {
                         machine.env(view),
                         Smid::default(),
                     )?,
-                );
-                swap(ov, &mut combined);
+                ));
+                *ov = combined;
             } else {
                 merge.insert(key, nv);
             }
@@ -1868,13 +1808,8 @@ impl StgIntrinsic for IsBlock {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
-        let is_block = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::Block.tag()
-        );
+        let closure = machine.resolve_closure(view, &args[0])?;
+        let is_block = machine.data_tag(view, &closure) == Some(DataConstructor::Block.tag());
         machine_return_bool(machine, view, is_block)
     }
 }

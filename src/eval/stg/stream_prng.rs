@@ -19,10 +19,8 @@ use crate::{
         error::ExecutionError,
         machine::intrinsic::{CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
         memory::{
-            alloc::ScopedAllocator,
-            array::Array,
             mutator::MutatorHeapView,
-            syntax::{LambdaForm, Native, Ref, StgBuilder},
+            syntax::{Native, Ref},
         },
     },
 };
@@ -40,7 +38,7 @@ fn prng_arg(
     view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<u64, ExecutionError> {
-    let native = machine.nav(view).resolve_native(arg)?;
+    let native = machine.resolve_native(view, arg)?;
     if let Native::Prng(state) = native {
         Ok(state)
     } else {
@@ -59,14 +57,8 @@ fn machine_return_stream(
     view: MutatorHeapView<'_>,
     state: u64,
 ) -> Result<(), ExecutionError> {
-    use crate::eval::memory::syntax::HeapSyn;
-    machine.set_closure(crate::eval::machine::env::SynClosure::new(
-        view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Prng(state)),
-        })?
-        .as_ptr(),
-        machine.root_env(),
-    ))
+    let v = machine.native_value(view, Native::Prng(state))?;
+    machine.set_result(v)
 }
 
 /// Build and return a two-element list `[first, second]` where both
@@ -77,56 +69,9 @@ fn machine_return_stream_pair(
     first: u64,
     second: u64,
 ) -> Result<(), ExecutionError> {
-    use crate::eval::memory::syntax::HeapSyn;
-    // Bindings (built in reverse for cons-list construction):
-    // [0] nil
-    // [1] Atom(Stream(second))
-    // [2] ListCons(L(1), L(0))   — [second]
-    // [3] Atom(Stream(first))
-    // [4] ListCons(L(3), L(2))   — [first, second]
-    let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
-
-    bindings.push(LambdaForm::value(
-        view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Prng(second)),
-        })?
-        .as_ptr(),
-    ));
-    let len = bindings.len();
-    bindings.push(LambdaForm::value(
-        view.data(
-            DataConstructor::ListCons.tag(),
-            Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
-        )?
-        .as_ptr(),
-    ));
-
-    bindings.push(LambdaForm::value(
-        view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Prng(first)),
-        })?
-        .as_ptr(),
-    ));
-    let len = bindings.len();
-    bindings.push(LambdaForm::value(
-        view.data(
-            DataConstructor::ListCons.tag(),
-            Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
-        )?
-        .as_ptr(),
-    ));
-
-    let list_index = bindings.len() - 1;
-    let syn = view
-        .letrec(
-            Array::from_slice(&view, &bindings),
-            view.atom(Ref::L(list_index))?,
-        )?
-        .as_ptr();
-    machine.set_closure(crate::eval::machine::env::SynClosure::new(
-        syn,
-        machine.root_env(),
-    ))
+    let a = machine.native_value(view, Native::Prng(first))?;
+    let b = machine.native_value(view, Native::Prng(second))?;
+    machine.return_closure_list(view, vec![a, b])
 }
 
 /// Build and return a two-element list `[float, stream]`.
@@ -138,62 +83,13 @@ fn machine_return_float_stream(
     float_val: f64,
     stream_state: u64,
 ) -> Result<(), ExecutionError> {
-    use crate::eval::memory::syntax::HeapSyn;
-
     let n = Number::from_f64(float_val).ok_or_else(|| {
         ExecutionError::Panic(Smid::default(), "STREAM produced invalid float".to_string())
     })?;
-
-    // Bindings:
-    // [0] nil
-    // [1] Atom(Stream(stream_state))
-    // [2] ListCons(L(1), L(0))           — [stream]
-    // [3] BoxedNumber(Num(float_val))
-    // [4] ListCons(L(3), L(2))           — [float, stream]
-    let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
-
-    bindings.push(LambdaForm::value(
-        view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Prng(stream_state)),
-        })?
-        .as_ptr(),
-    ));
-    let len = bindings.len();
-    bindings.push(LambdaForm::value(
-        view.data(
-            DataConstructor::ListCons.tag(),
-            Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
-        )?
-        .as_ptr(),
-    ));
-
-    bindings.push(LambdaForm::value(
-        view.data(
-            DataConstructor::BoxedNumber.tag(),
-            Array::from_slice(&view, &[Ref::V(Native::Num(n))]),
-        )?
-        .as_ptr(),
-    ));
-    let len = bindings.len();
-    bindings.push(LambdaForm::value(
-        view.data(
-            DataConstructor::ListCons.tag(),
-            Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
-        )?
-        .as_ptr(),
-    ));
-
-    let list_index = bindings.len() - 1;
-    let syn = view
-        .letrec(
-            Array::from_slice(&view, &bindings),
-            view.atom(Ref::L(list_index))?,
-        )?
-        .as_ptr();
-    machine.set_closure(crate::eval::machine::env::SynClosure::new(
-        syn,
-        machine.root_env(),
-    ))
+    let num = machine.native_value(view, Native::Num(n))?;
+    let boxed = machine.data_value(view, DataConstructor::BoxedNumber.tag(), &[num])?;
+    let stream = machine.native_value(view, Native::Prng(stream_state))?;
+    machine.return_closure_list(view, vec![boxed, stream])
 }
 
 /// Build and return a two-element list `[int, stream]`.
@@ -205,58 +101,10 @@ fn machine_return_int_stream(
     int_val: u64,
     stream_state: u64,
 ) -> Result<(), ExecutionError> {
-    use crate::eval::memory::syntax::HeapSyn;
-
-    // Bindings:
-    // [0] nil
-    // [1] Atom(Stream(stream_state))
-    // [2] ListCons(L(1), L(0))            — [stream]
-    // [3] BoxedNumber(Num(int_val as i64))
-    // [4] ListCons(L(3), L(2))            — [int, stream]
-    let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
-
-    bindings.push(LambdaForm::value(
-        view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Prng(stream_state)),
-        })?
-        .as_ptr(),
-    ));
-    let len = bindings.len();
-    bindings.push(LambdaForm::value(
-        view.data(
-            DataConstructor::ListCons.tag(),
-            Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
-        )?
-        .as_ptr(),
-    ));
-
-    bindings.push(LambdaForm::value(
-        view.data(
-            DataConstructor::BoxedNumber.tag(),
-            Array::from_slice(&view, &[Ref::V(Native::Num(Number::from(int_val as i64)))]),
-        )?
-        .as_ptr(),
-    ));
-    let len = bindings.len();
-    bindings.push(LambdaForm::value(
-        view.data(
-            DataConstructor::ListCons.tag(),
-            Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
-        )?
-        .as_ptr(),
-    ));
-
-    let list_index = bindings.len() - 1;
-    let syn = view
-        .letrec(
-            Array::from_slice(&view, &bindings),
-            view.atom(Ref::L(list_index))?,
-        )?
-        .as_ptr();
-    machine.set_closure(crate::eval::machine::env::SynClosure::new(
-        syn,
-        machine.root_env(),
-    ))
+    let num = machine.native_value(view, Native::Num(Number::from(int_val as i64)))?;
+    let boxed = machine.data_value(view, DataConstructor::BoxedNumber.tag(), &[num])?;
+    let stream = machine.native_value(view, Native::Prng(stream_state))?;
+    machine.return_closure_list(view, vec![boxed, stream])
 }
 
 // ─── STREAM_NEW ──────────────────────────────────────────────────────────────

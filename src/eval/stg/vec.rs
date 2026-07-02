@@ -11,84 +11,23 @@ use crate::eval::{
     memory::{
         mutator::MutatorHeapView,
         set::Primitive,
-        syntax::{HeapSyn, Native, Ref},
+        syntax::{Native, Ref},
         vec::HeapVec,
     },
     stg::tags::DataConstructor,
 };
 
-use crate::eval::machine::env::SynClosure;
-
 use super::{
     force::{SeqList, SeqNumList},
     support::{
-        collect_num_list, machine_return_num, machine_return_vec, native_to_set_primitive,
-        resolve_native_unboxing, set_primitive_to_native, vec_arg,
+        collect_num_list, data_list_arg, machine_return_num, machine_return_vec,
+        native_to_set_primitive, resolve_native_unboxing, set_primitive_to_native, vec_arg,
     },
     syntax::{
         dsl::{app_bif, force, lambda, lref},
         LambdaForm,
     },
 };
-
-use crate::eval::memory::{
-    alloc::ScopedAllocator,
-    array::Array,
-    syntax::{LambdaForm as HeapLambdaForm, StgBuilder},
-};
-
-/// Resolve a ref from within a cons closure context.
-///
-/// Delegates to `HeapNavigator::resolve_in_closure` which handles all
-/// ref types: `Ref::L` (local), `Ref::G` (global constant like nil),
-/// and `Ref::V` (inline native value).
-fn resolve_list_ref(
-    closure: &SynClosure,
-    machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    r: &Ref,
-) -> Result<SynClosure, ExecutionError> {
-    machine
-        .nav(view)
-        .resolve_in_closure(closure, r.clone())
-        .ok_or_else(|| {
-            ExecutionError::Panic(
-                Smid::default(),
-                "failed to resolve list ref in vec conversion".to_string(),
-            )
-        })
-}
-
-/// Extract a primitive from a closure representing a list element.
-///
-/// Handles both raw atom closures (`Atom { Ref::V(native) }`) and
-/// boxed constructor closures (`Cons { BoxedNumber | BoxedString | … }`).
-fn extract_primitive(
-    item_closure: &SynClosure,
-    machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-) -> Result<Primitive, ExecutionError> {
-    let smid = machine.annotation();
-    let code = view.scoped(item_closure.code());
-    match &*code {
-        HeapSyn::Atom { evaluand } => {
-            let native = item_closure.navigate_local_native(&view, evaluand.clone());
-            native_to_set_primitive(smid, view, &native)
-        }
-        HeapSyn::Cons { args: cargs, .. } => {
-            // Handle boxed values (BoxedNumber, BoxedString, BoxedSymbol, BoxedZdt)
-            let inner_ref = cargs.get(0).ok_or_else(|| {
-                ExecutionError::Panic(Smid::default(), "empty boxed value in vec".to_string())
-            })?;
-            let native = item_closure.navigate_local_native(&view, inner_ref.clone());
-            native_to_set_primitive(smid, view, &native)
-        }
-        _ => Err(ExecutionError::Panic(
-            Smid::default(),
-            "non-primitive value in vec construction".to_string(),
-        )),
-    }
-}
 
 /// VEC.OF — convert a list of primitives to a vec.
 pub struct VecOf;
@@ -118,55 +57,16 @@ impl StgIntrinsic for VecOf {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        // Resolve the list closure using the machine navigator (handles L, G, V).
-        let mut current = machine.nav(view).resolve(&args[0])?;
-        let mut primitives = Vec::new();
-
-        loop {
-            let code = view.scoped(current.code());
-            match &*code {
-                HeapSyn::Cons {
-                    tag,
-                    args: cons_args,
-                } => match (*tag).try_into() {
-                    Ok(DataConstructor::ListCons) => {
-                        let h_ref = cons_args
-                            .get(0)
-                            .ok_or_else(|| {
-                                ExecutionError::Panic(
-                                    Smid::default(),
-                                    "malformed cons cell".to_string(),
-                                )
-                            })?
-                            .clone();
-                        let t_ref = cons_args
-                            .get(1)
-                            .ok_or_else(|| {
-                                ExecutionError::Panic(
-                                    Smid::default(),
-                                    "malformed cons cell".to_string(),
-                                )
-                            })?
-                            .clone();
-                        let head = resolve_list_ref(&current, machine, view, &h_ref)?;
-                        primitives.push(extract_primitive(&head, machine, view)?);
-                        current = resolve_list_ref(&current, machine, view, &t_ref)?;
-                    }
-                    Ok(DataConstructor::ListNil) => break,
-                    _ => {
-                        return Err(ExecutionError::Panic(
-                            Smid::default(),
-                            "expected list in vec.of".to_string(),
-                        ))
-                    }
-                },
-                _ => {
-                    return Err(ExecutionError::Panic(
-                        Smid::default(),
-                        "expected list data in vec.of".to_string(),
-                    ))
-                }
-            }
+        // The wrapper has deep-forced the spine, so walk it via the neutral
+        // list ABI and read each element's native primitive with `value_native`.
+        let smid = machine.annotation();
+        let items = data_list_arg(machine, view, args[0].clone())?;
+        let mut primitives = Vec::with_capacity(items.len());
+        for item in &items {
+            let native = machine.value_native(view, item).ok_or_else(|| {
+                ExecutionError::Panic(smid, "non-primitive value in vec construction".to_string())
+            })?;
+            primitives.push(native_to_set_primitive(smid, view, &native)?);
         }
 
         machine_return_vec(
@@ -255,14 +155,9 @@ impl StgIntrinsic for VecNth {
                 ))
             }
         };
-        machine.set_closure(crate::eval::machine::env::SynClosure::new(
-            view.alloc(HeapSyn::Cons {
-                tag: box_tag,
-                args: Array::from_slice(&view, &[Ref::V(native)]),
-            })?
-            .as_ptr(),
-            machine.root_env(),
-        ))
+        let boxed = machine.native_value(view, native)?;
+        let value = machine.data_value(view, box_tag, &[boxed])?;
+        machine.set_result(value)
     }
 }
 
@@ -455,16 +350,9 @@ impl StgIntrinsic for VecToList {
     ) -> Result<(), ExecutionError> {
         let elements: Vec<Primitive> = vec_arg(machine, view, &args[0])?.elements().to_vec();
 
-        // Build a list of boxed values in reverse (same pattern as SetToList)
-        let mut bindings = vec![HeapLambdaForm::value(
-            view.alloc(HeapSyn::Cons {
-                tag: DataConstructor::ListNil.tag(),
-                args: Array::default(),
-            })?
-            .as_ptr(),
-        )];
-
-        for prim in elements.into_iter().rev() {
+        // Box each element and assemble the list via the neutral ABI.
+        let mut items = Vec::with_capacity(elements.len());
+        for prim in elements {
             let native = set_primitive_to_native(machine, view, &prim)?;
             let box_tag = match &native {
                 Native::Num(_) => DataConstructor::BoxedNumber.tag(),
@@ -477,34 +365,11 @@ impl StgIntrinsic for VecToList {
                     ))
                 }
             };
-            bindings.push(HeapLambdaForm::value(
-                view.alloc(HeapSyn::Cons {
-                    tag: box_tag,
-                    args: Array::from_slice(&view, &[Ref::V(native)]),
-                })?
-                .as_ptr(),
-            ));
-            let len = bindings.len();
-            bindings.push(HeapLambdaForm::value(
-                view.alloc(HeapSyn::Cons {
-                    tag: DataConstructor::ListCons.tag(),
-                    args: Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
-                })?
-                .as_ptr(),
-            ));
+            let boxed = machine.native_value(view, native)?;
+            items.push(machine.data_value(view, box_tag, &[boxed])?);
         }
 
-        let list_index = bindings.len() - 1;
-        let syn = view
-            .letrec(
-                Array::from_slice(&view, &bindings),
-                view.atom(Ref::L(list_index))?,
-            )?
-            .as_ptr();
-        machine.set_closure(crate::eval::machine::env::SynClosure::new(
-            syn,
-            machine.root_env(),
-        ))
+        machine.return_closure_list(view, items)
     }
 }
 

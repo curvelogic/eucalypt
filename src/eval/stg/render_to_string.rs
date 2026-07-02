@@ -16,8 +16,6 @@ use crate::{
         intrinsics,
         machine::intrinsic::{CallGlobal2, IntrinsicMachine, StgIntrinsic},
         memory::{
-            alloc::ScopedAllocator,
-            array::Array,
             mutator::MutatorHeapView,
             syntax::{HeapSyn, Ref},
         },
@@ -134,21 +132,13 @@ impl StgIntrinsic for RenderToString {
         // pops the capture emitter and produces the result string.
         machine.push_capture_end(view)?;
 
-        // Set closure to RENDER_DOC(value).
+        // Tail-call RENDER_DOC(value): the CaptureEnd continuation pushed above
+        // sits below the application, so the rendered doc is captured to a
+        // string when RENDER_DOC returns. Engine-neutral (no code synthesis).
         let render_doc_idx = intrinsics::index("RENDER_DOC").ok_or_else(|| {
             ExecutionError::Panic(machine.annotation(), "RENDER_DOC not found".to_string())
         })?;
-        let app = view
-            .alloc(HeapSyn::App {
-                callable: Ref::G(render_doc_idx),
-                args: Array::from_slice(&view, &[args[0].clone()]),
-                eager_args: false,
-            })?
-            .as_ptr();
-        machine.set_closure(crate::eval::machine::env::SynClosure::new(
-            app,
-            machine.env(view),
-        ))
+        machine.tail_apply_global(view, render_doc_idx, &[args[0].clone()])
     }
 }
 

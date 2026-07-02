@@ -5,19 +5,22 @@
 //! - `__DBG(label, value)` — print value to stderr and return it transparently
 //! - `__TRACE_ENTRY(name, args_list, strict)` — print entry trace to stderr
 //! - `__TRACE_EXIT(name, value, strict)` — print exit trace to stderr, return value
+//!
+//! All value inspection here goes through the engine-neutral intrinsic ABI
+//! (`resolve_closure`/`data_tag`/`data_field`/`value_native`/`force`), so these
+//! intrinsics run identically on the HeapSyn and bytecode engines.
 
 use std::convert::TryInto;
 
 use crate::eval::{
     emit::Emitter,
     error::ExecutionError,
-    machine::{
-        env::SynClosure,
-        intrinsic::{CallGlobal1, CallGlobal3, CallGlobal4, IntrinsicMachine, StgIntrinsic},
+    machine::intrinsic::{
+        AbiClosure, CallGlobal1, CallGlobal3, CallGlobal4, IntrinsicMachine, StgIntrinsic,
     },
     memory::{
         mutator::MutatorHeapView,
-        syntax::{HeapSyn, Native, Ref},
+        syntax::{Native, Ref},
     },
     stg::support::{machine_return_str, str_arg},
 };
@@ -26,88 +29,57 @@ use crate::common::sourcemap::Smid;
 
 use super::tags::DataConstructor;
 
-/// Render a eucalypt value from a resolved closure to a compact debug string.
-///
-/// Inner helper shared by `render_debug_repr` (takes `&Ref`) and the tracing
-/// intrinsics (which work with resolved `SynClosure` objects).
-fn render_debug_repr_closure(
+/// The `DataConstructor` of a resolved value handle, if it is a data
+/// constructor in WHNF.
+fn data_constructor(
     machine: &dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
-    closure: SynClosure,
-) -> String {
-    let code = view.scoped(closure.code());
-    let env = view.scoped(closure.env());
-
-    match &*code {
-        HeapSyn::Cons { tag, args } => {
-            let dc: Result<DataConstructor, _> = (*tag).try_into();
-            match dc {
-                Ok(DataConstructor::BoolTrue) => "true".to_string(),
-                Ok(DataConstructor::BoolFalse) => "false".to_string(),
-                Ok(DataConstructor::Unit) => "null".to_string(),
-                Ok(DataConstructor::ListNil) => "[]".to_string(),
-                Ok(DataConstructor::ListCons) => "[list]".to_string(),
-                Ok(DataConstructor::Block)
-                | Ok(DataConstructor::BlockPair)
-                | Ok(DataConstructor::BlockKvList) => "{block}".to_string(),
-                Ok(DataConstructor::BoxedNumber) => args
-                    .get(0)
-                    .and_then(|inner| render_inner(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<number>".to_string()),
-                Ok(DataConstructor::BoxedString) => args
-                    .get(0)
-                    .and_then(|inner| render_inner_quoted(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<string>".to_string()),
-                Ok(DataConstructor::BoxedSymbol) => args
-                    .get(0)
-                    .and_then(|inner| render_inner_symbol(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<symbol>".to_string()),
-                Ok(DataConstructor::BoxedZdt) => args
-                    .get(0)
-                    .and_then(|inner| render_inner(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<datetime>".to_string()),
-                Ok(DataConstructor::BoxedTypeData) => args
-                    .get(0)
-                    .and_then(|inner| render_inner_quoted(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<type-data>".to_string()),
-                Ok(DataConstructor::IoReturn) => "<io-return>".to_string(),
-                Ok(DataConstructor::IoBind) => "<io-bind>".to_string(),
-                Ok(DataConstructor::IoAction) => "<io-action>".to_string(),
-                Ok(DataConstructor::IoFail) => "<io-fail>".to_string(),
-                Ok(DataConstructor::Clause) => "<clause>".to_string(),
-                Err(_) => "<value>".to_string(),
-            }
-        }
-        HeapSyn::Atom {
-            evaluand: Ref::V(n),
-        } => render_native(n, view, machine),
-        _ => "<unevaluated>".to_string(),
-    }
+    clo: &AbiClosure,
+) -> Option<DataConstructor> {
+    machine
+        .data_tag(view, clo)
+        .and_then(|tag| tag.try_into().ok())
 }
 
-/// Render a eucalypt value to a compact, human-readable debug string.
+/// The native payload of a boxed scalar's field 0.
 ///
-/// Scalars are rendered in their literal form:
-/// - Numbers: `42`, `3.14`
-/// - Strings: `"hello"` (with surrounding quotes)
-/// - Symbols: `:foo`
-/// - Booleans: `true`, `false`
-/// - Null: `null`
-///
-/// Structured types produce a type label: `[list]`, `{block}`.
-/// Unevaluated thunks produce `<unevaluated>`.
-pub fn render_debug_repr(
-    machine: &dyn IntrinsicMachine,
+/// With `force`, an unevaluated inner thunk (e.g. the string-concat thunk
+/// inside a `BoxedString` produced by interpolation) is evaluated to WHNF
+/// first; without it, such a thunk yields `None` (the non-forcing peek).
+fn boxed_native(
+    machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
-    r: &Ref,
+    clo: &AbiClosure,
+    force: bool,
+) -> Option<Native> {
+    let field = machine.data_field(view, clo, 0)?;
+    let field = if force {
+        machine.force(field).ok()?
+    } else {
+        field
+    };
+    machine.value_native(view, &field)
+}
+
+/// Render a boxed scalar's inner value, falling back to `placeholder` when the
+/// inner native is not (yet) available.
+fn boxed_scalar(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    clo: &AbiClosure,
+    force: bool,
+    placeholder: &str,
 ) -> String {
-    match machine.nav(view).resolve(r) {
-        Ok(closure) => render_debug_repr_closure(machine, view, closure),
-        Err(_) => "<error>".to_string(),
+    match boxed_native(machine, view, clo, force) {
+        Some(native) => render_native(&native, view, machine),
+        None => placeholder.to_string(),
     }
 }
 
 /// Render a native value to a debug string.
+///
+/// Scalars are rendered in their literal form: numbers `42`/`3.14`, strings
+/// `"hello"` (quoted), symbols `:foo`, datetimes as RFC-3339.
 fn render_native(n: &Native, view: MutatorHeapView<'_>, machine: &dyn IntrinsicMachine) -> String {
     match n {
         Native::Num(num) => num.to_string(),
@@ -138,222 +110,124 @@ fn render_native(n: &Native, view: MutatorHeapView<'_>, machine: &dyn IntrinsicM
     }
 }
 
-/// Render an inner argument ref (from a boxed constructor) as a debug string.
-fn render_inner(
-    machine: &dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    env: &crate::eval::machine::env::EnvFrame,
-    r: &Ref,
-) -> Option<String> {
-    let native = extract_native(view, env, r)?;
-    Some(render_native(&native, view, machine))
-}
-
-/// Render an inner string arg with surrounding double quotes.
-fn render_inner_quoted(
-    machine: &dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    env: &crate::eval::machine::env::EnvFrame,
-    r: &Ref,
-) -> Option<String> {
-    let native = extract_native(view, env, r)?;
-    match &native {
-        Native::Str(s) => {
-            let scoped = view.scoped(*s);
-            Some(format!("{:?}", (*scoped).as_str()))
-        }
-        _ => Some(render_native(&native, view, machine)),
-    }
-}
-
-/// Render an inner symbol arg with `:` prefix.
-fn render_inner_symbol(
-    machine: &dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    env: &crate::eval::machine::env::EnvFrame,
-    r: &Ref,
-) -> Option<String> {
-    let native = extract_native(view, env, r)?;
-    match &native {
-        Native::Sym(id) => Some(format!(":{}", machine.symbol_pool().resolve(*id))),
-        _ => Some(render_native(&native, view, machine)),
-    }
-}
-
-/// Extract a native value from a ref, following local environment lookups.
-fn extract_native(
-    view: MutatorHeapView<'_>,
-    env: &crate::eval::machine::env::EnvFrame,
-    r: &Ref,
-) -> Option<Native> {
-    match r {
-        Ref::V(n) => Some(n.clone()),
-        Ref::L(idx) => {
-            let closure = env.get(&view, *idx)?;
-            let code = view.scoped(closure.code());
-            match &*code {
-                HeapSyn::Atom {
-                    evaluand: Ref::V(n),
-                } => Some(n.clone()),
-                _ => None,
-            }
-        }
-        _ => None,
-    }
-}
-
-/// Extract a native value from a ref, forcing unevaluated thunks via
-/// `evaluate_to_whnf` when the cheap path fails.
+/// Render a resolved value handle to a compact debug string.
 ///
-/// This is the forcing variant of `extract_native`, used when rendering
-/// actual values in assertion failure messages.  It evaluates inner thunks
-/// that `extract_native` cannot reach — for example, the string
-/// concatenation BIF application inside an interpolated `BoxedString`.
-fn extract_native_forced(
+/// Scalars are rendered in literal form; structured types produce a type label
+/// (`[list]`, `{block}`). Unevaluated values render as `<unevaluated>`. With
+/// `force`, inner scalar thunks (e.g. an interpolated `BoxedString`) are
+/// evaluated so the rendered output is accurate rather than `<string>`.
+fn render_value(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
-    env: &crate::eval::machine::env::EnvFrame,
-    r: &Ref,
-) -> Option<Native> {
-    // Fast path: cheap extraction succeeds.
-    if let Some(n) = extract_native(view, env, r) {
-        return Some(n);
-    }
-
-    // Slow path: resolve the closure and force it to WHNF.
-    let closure = match r {
-        Ref::L(idx) => env.get(&view, *idx)?,
-        Ref::G(idx) => machine.nav(view).global(*idx).ok()?,
-        Ref::V(_) => return None, // already tried in fast path
+    clo: &AbiClosure,
+    force: bool,
+) -> String {
+    let Some(dc) = data_constructor(machine, view, clo) else {
+        // Not a data constructor: a bare native atom renders as its literal,
+        // anything else is still a thunk.
+        return match machine.value_native(view, clo) {
+            Some(native) => render_native(&native, view, machine),
+            None => "<unevaluated>".to_string(),
+        };
     };
 
-    let forced = machine.evaluate_to_whnf(closure).ok()?;
-    let forced_code = view.scoped(forced.code());
-    match &*forced_code {
-        HeapSyn::Atom {
-            evaluand: Ref::V(n),
-        } => Some(n.clone()),
-        _ => None,
-    }
-}
-
-/// Render an inner argument ref as a debug string, forcing thunks if needed.
-fn render_inner_forced(
-    machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    env: &crate::eval::machine::env::EnvFrame,
-    r: &Ref,
-) -> Option<String> {
-    let native = extract_native_forced(machine, view, env, r)?;
-    Some(render_native(&native, view, machine))
-}
-
-/// Render an inner string arg with surrounding double quotes, forcing thunks.
-fn render_inner_quoted_forced(
-    machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    env: &crate::eval::machine::env::EnvFrame,
-    r: &Ref,
-) -> Option<String> {
-    let native = extract_native_forced(machine, view, env, r)?;
-    match &native {
-        Native::Str(s) => {
-            let scoped = view.scoped(*s);
-            Some(format!("{:?}", (*scoped).as_str()))
+    match dc {
+        DataConstructor::BoolTrue => "true".to_string(),
+        DataConstructor::BoolFalse => "false".to_string(),
+        DataConstructor::Unit => "null".to_string(),
+        DataConstructor::ListNil => "[]".to_string(),
+        DataConstructor::ListCons => "[list]".to_string(),
+        DataConstructor::Block | DataConstructor::BlockPair | DataConstructor::BlockKvList => {
+            "{block}".to_string()
         }
-        _ => Some(render_native(&native, view, machine)),
+        DataConstructor::BoxedNumber => boxed_scalar(machine, view, clo, force, "<number>"),
+        DataConstructor::BoxedString => boxed_scalar(machine, view, clo, force, "<string>"),
+        DataConstructor::BoxedSymbol => boxed_scalar(machine, view, clo, force, "<symbol>"),
+        DataConstructor::BoxedZdt => boxed_scalar(machine, view, clo, force, "<datetime>"),
+        DataConstructor::BoxedTypeData => boxed_scalar(machine, view, clo, force, "<type-data>"),
+        DataConstructor::IoReturn => "<io-return>".to_string(),
+        DataConstructor::IoBind => "<io-bind>".to_string(),
+        DataConstructor::IoAction => "<io-action>".to_string(),
+        DataConstructor::IoFail => "<io-fail>".to_string(),
+        DataConstructor::Clause => "<clause>".to_string(),
     }
 }
 
-/// Render an inner symbol arg with `:` prefix, forcing thunks.
-fn render_inner_symbol_forced(
-    machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    env: &crate::eval::machine::env::EnvFrame,
-    r: &Ref,
-) -> Option<String> {
-    let native = extract_native_forced(machine, view, env, r)?;
-    match &native {
-        Native::Sym(id) => Some(format!(":{}", machine.symbol_pool().resolve(*id))),
-        _ => Some(render_native(&native, view, machine)),
-    }
-}
-
-/// Render a eucalypt value from a resolved closure, forcing inner thunks.
+/// Render a eucalypt value to a compact, human-readable debug string.
 ///
-/// Unlike `render_debug_repr_closure`, this variant evaluates unevaluated
-/// inner refs (e.g. the string concat thunk inside a `BoxedString` produced
-/// by string interpolation) via `evaluate_to_whnf`.  Use this in contexts
-/// where `&mut dyn IntrinsicMachine` is available (intrinsic `execute` methods).
-fn render_debug_repr_closure_forced(
+/// Non-forcing: lazy inner scalars render as `<number>`/`<string>` etc.  Use
+/// [`render_debug_repr_forced`] when inner thunks should be evaluated.
+pub fn render_debug_repr(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
-    closure: crate::eval::machine::env::SynClosure,
+    r: &Ref,
 ) -> String {
-    let code = view.scoped(closure.code());
-    let env = view.scoped(closure.env());
-
-    match &*code {
-        HeapSyn::Cons { tag, args } => {
-            let dc: Result<DataConstructor, _> = (*tag).try_into();
-            match dc {
-                Ok(DataConstructor::BoolTrue) => "true".to_string(),
-                Ok(DataConstructor::BoolFalse) => "false".to_string(),
-                Ok(DataConstructor::Unit) => "null".to_string(),
-                Ok(DataConstructor::ListNil) => "[]".to_string(),
-                Ok(DataConstructor::ListCons) => "[list]".to_string(),
-                Ok(DataConstructor::Block)
-                | Ok(DataConstructor::BlockPair)
-                | Ok(DataConstructor::BlockKvList) => "{block}".to_string(),
-                Ok(DataConstructor::BoxedNumber) => args
-                    .get(0)
-                    .and_then(|inner| render_inner_forced(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<number>".to_string()),
-                Ok(DataConstructor::BoxedString) => args
-                    .get(0)
-                    .and_then(|inner| render_inner_quoted_forced(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<string>".to_string()),
-                Ok(DataConstructor::BoxedSymbol) => args
-                    .get(0)
-                    .and_then(|inner| render_inner_symbol_forced(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<symbol>".to_string()),
-                Ok(DataConstructor::BoxedZdt) => args
-                    .get(0)
-                    .and_then(|inner| render_inner_forced(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<datetime>".to_string()),
-                Ok(DataConstructor::BoxedTypeData) => args
-                    .get(0)
-                    .and_then(|inner| render_inner_quoted_forced(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<type-data>".to_string()),
-                Ok(DataConstructor::IoReturn) => "<io-return>".to_string(),
-                Ok(DataConstructor::IoBind) => "<io-bind>".to_string(),
-                Ok(DataConstructor::IoAction) => "<io-action>".to_string(),
-                Ok(DataConstructor::IoFail) => "<io-fail>".to_string(),
-                Ok(DataConstructor::Clause) => "<clause>".to_string(),
-                Err(_) => "<value>".to_string(),
-            }
-        }
-        HeapSyn::Atom {
-            evaluand: Ref::V(n),
-        } => render_native(n, view, machine),
-        _ => "<unevaluated>".to_string(),
+    match machine.resolve_closure(view, r) {
+        Ok(clo) => render_value(machine, view, &clo, false),
+        Err(_) => "<error>".to_string(),
     }
 }
 
 /// Render a eucalypt value to a compact debug string, forcing inner thunks.
 ///
-/// This is the forcing variant of `render_debug_repr`, suitable for use in
-/// intrinsic `execute` methods (which have `&mut dyn IntrinsicMachine` access).
-/// It evaluates lazy inner refs (e.g. string interpolation results inside a
-/// `BoxedString`) via `evaluate_to_whnf`, so the rendered output is accurate
-/// rather than showing `<string>` or `<number>` for lazy scalar values.
+/// The forcing variant of [`render_debug_repr`], suitable for intrinsic
+/// `execute` methods.  It evaluates lazy inner refs (e.g. string-interpolation
+/// results inside a `BoxedString`) via [`IntrinsicMachine::force`], so scalar
+/// values render accurately rather than as `<string>`/`<number>`.
 pub fn render_debug_repr_forced(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
     r: &Ref,
 ) -> String {
-    match machine.nav(view).resolve(r) {
-        Ok(closure) => render_debug_repr_closure_forced(machine, view, closure),
+    match machine.resolve_closure(view, r) {
+        Ok(clo) => render_value(machine, view, &clo, true),
+        Err(_) => "<error>".to_string(),
+    }
+}
+
+/// Render a value without forcing evaluation (non-strict peek).
+///
+/// - Native scalars are rendered as by [`render_debug_repr`].
+/// - Structured types show only their outer shape: `[...]` for non-empty lists,
+///   `{...}` for blocks.
+/// - Anything unevaluated renders as `<thunk>`.
+fn peek_value(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    clo: &AbiClosure,
+) -> String {
+    let Some(dc) = data_constructor(machine, view, clo) else {
+        return match machine.value_native(view, clo) {
+            Some(native) => render_native(&native, view, machine),
+            None => "<thunk>".to_string(),
+        };
+    };
+
+    match dc {
+        DataConstructor::BoolTrue => "true".to_string(),
+        DataConstructor::BoolFalse => "false".to_string(),
+        DataConstructor::Unit => "null".to_string(),
+        DataConstructor::ListNil => "[]".to_string(),
+        DataConstructor::ListCons => "[...]".to_string(),
+        DataConstructor::Block | DataConstructor::BlockPair | DataConstructor::BlockKvList => {
+            "{...}".to_string()
+        }
+        DataConstructor::BoxedNumber => boxed_scalar(machine, view, clo, false, "<number>"),
+        DataConstructor::BoxedString => boxed_scalar(machine, view, clo, false, "<string>"),
+        DataConstructor::BoxedSymbol => boxed_scalar(machine, view, clo, false, "<symbol>"),
+        DataConstructor::BoxedZdt => boxed_scalar(machine, view, clo, false, "<datetime>"),
+        _ => "<value>".to_string(),
+    }
+}
+
+/// Render a value without forcing evaluation (non-strict peek).
+pub fn peek_debug_repr(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    r: &Ref,
+) -> String {
+    match machine.resolve_closure(view, r) {
+        Ok(clo) => peek_value(machine, view, &clo),
         Err(_) => "<error>".to_string(),
     }
 }
@@ -426,128 +300,40 @@ impl StgIntrinsic for Dbg {
         }
 
         // Return args[2] (original value) transparently
-        let closure = machine.nav(view).resolve(&args[2])?;
-        machine.set_closure(closure)
+        let closure = machine.resolve_closure(view, &args[2])?;
+        machine.set_result(closure)
     }
 }
 
 impl CallGlobal3 for Dbg {}
-
-/// Render a value without forcing evaluation (non-strict peek).
-///
-/// - Native scalars (numbers, strings, symbols, booleans, null) are rendered
-///   using the same format as `render_debug_repr`.
-/// - Data constructors that represent structured types show their outer
-///   shape without recursing into contents: `[...]` for non-empty lists,
-///   `{...}` for blocks.
-/// - Anything unevaluated (thunks, applications, case expressions, etc.)
-///   renders as `<thunk>`.
-pub fn peek_debug_repr(
-    machine: &dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    r: &Ref,
-) -> String {
-    match machine.nav(view).resolve(r) {
-        Ok(closure) => peek_debug_repr_closure(machine, view, closure),
-        Err(_) => "<error>".to_string(),
-    }
-}
-
-/// Inner helper for `peek_debug_repr` that works on an already-resolved closure.
-fn peek_debug_repr_closure(
-    machine: &dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    closure: SynClosure,
-) -> String {
-    let code = view.scoped(closure.code());
-    let env = view.scoped(closure.env());
-
-    match &*code {
-        HeapSyn::Cons { tag, args } => {
-            let dc: Result<DataConstructor, _> = (*tag).try_into();
-            match dc {
-                Ok(DataConstructor::BoolTrue) => "true".to_string(),
-                Ok(DataConstructor::BoolFalse) => "false".to_string(),
-                Ok(DataConstructor::Unit) => "null".to_string(),
-                Ok(DataConstructor::ListNil) => "[]".to_string(),
-                Ok(DataConstructor::ListCons) => "[...]".to_string(),
-                Ok(DataConstructor::Block)
-                | Ok(DataConstructor::BlockPair)
-                | Ok(DataConstructor::BlockKvList) => "{...}".to_string(),
-                Ok(DataConstructor::BoxedNumber) => args
-                    .get(0)
-                    .and_then(|inner| render_inner(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<number>".to_string()),
-                Ok(DataConstructor::BoxedString) => args
-                    .get(0)
-                    .and_then(|inner| render_inner_quoted(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<string>".to_string()),
-                Ok(DataConstructor::BoxedSymbol) => args
-                    .get(0)
-                    .and_then(|inner| render_inner_symbol(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<symbol>".to_string()),
-                Ok(DataConstructor::BoxedZdt) => args
-                    .get(0)
-                    .and_then(|inner| render_inner(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<datetime>".to_string()),
-                _ => "<value>".to_string(),
-            }
-        }
-        HeapSyn::Atom {
-            evaluand: Ref::V(n),
-        } => render_native(n, view, machine),
-        _ => "<thunk>".to_string(),
-    }
-}
 
 /// Resolve a strict bool argument to a Rust `bool`.
 ///
 /// Since the arg must be declared strict in the intrinsic catalogue, it will
 /// have been evaluated to WHNF (a `BoolTrue` or `BoolFalse` constructor)
 /// before `execute` runs.
-fn resolve_bool(machine: &dyn IntrinsicMachine, view: MutatorHeapView<'_>, r: &Ref) -> bool {
-    let closure = match machine.nav(view).resolve(r) {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-    let code = view.scoped(closure.code());
-    match &*code {
-        HeapSyn::Cons { tag, .. } => {
-            let dc: Result<DataConstructor, _> = (*tag).try_into();
-            matches!(dc, Ok(DataConstructor::BoolTrue))
-        }
-        _ => false,
+fn resolve_bool(machine: &mut dyn IntrinsicMachine, view: MutatorHeapView<'_>, r: &Ref) -> bool {
+    match machine.resolve_closure(view, r) {
+        Ok(clo) => matches!(
+            data_constructor(machine, view, &clo),
+            Some(DataConstructor::BoolTrue)
+        ),
+        Err(_) => false,
     }
 }
 
-/// Extract a string value from a closure representing a string literal.
+/// Extract a string value from a resolved closure representing a string.
 ///
-/// Handles both unboxed atoms (`Atom { Ref::V(Native::Str(…)) }`) and
-/// boxed string constructors (`Cons(BoxedString, [inner_ref])`).
-/// Returns `None` if the closure does not hold a string.
-fn extract_str_from_closure(view: MutatorHeapView<'_>, closure: &SynClosure) -> Option<String> {
-    let code = view.scoped(closure.code());
-    let env = view.scoped(closure.env());
-
-    match &*code {
-        HeapSyn::Atom {
-            evaluand: Ref::V(Native::Str(s)),
-        } => Some((*view.scoped(*s)).as_str().to_string()),
-        HeapSyn::Cons { tag, args } => {
-            let dc: Result<DataConstructor, _> = DataConstructor::try_from(*tag);
-            match dc {
-                Ok(DataConstructor::BoxedString) => {
-                    let inner = args.get(0)?;
-                    let native = extract_native(view, &env, &inner)?;
-                    if let Native::Str(s) = native {
-                        Some((*view.scoped(s)).as_str().to_string())
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            }
-        }
+/// Handles both unboxed native strings and boxed `BoxedString` constructors
+/// (both surface a `Native::Str` through `value_native`).  Returns `None` if
+/// the closure does not hold a string.
+fn extract_str(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    clo: &AbiClosure,
+) -> Option<String> {
+    match machine.value_native(view, clo)? {
+        Native::Str(s) => Some((*view.scoped(s)).as_str().to_string()),
         _ => None,
     }
 }
@@ -555,150 +341,77 @@ fn extract_str_from_closure(view: MutatorHeapView<'_>, closure: &SynClosure) -> 
 /// Traverse a cons-list to the element at `index`, returning its closure.
 ///
 /// The list is always re-resolved from `list_ref` (a stable `Ref` into the
-/// machine's env frame), so this is safe to call after a `evaluate_to_whnf`
-/// call that may have triggered GC.
+/// machine's env frame), so this is safe to call after a `force` call that may
+/// have triggered GC — the caller re-invokes it each iteration rather than
+/// holding resolved element closures across a force.
 ///
 /// Returns an error if the list is shorter than `index + 1` elements or if
 /// the structure is malformed.
 fn get_list_element_at(
-    machine: &dyn IntrinsicMachine,
+    machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
     list_ref: &Ref,
     index: usize,
-) -> Result<SynClosure, ExecutionError> {
-    let mut current = machine.nav(view).resolve(list_ref)?;
+) -> Result<AbiClosure, ExecutionError> {
+    let malformed =
+        |what: &str| ExecutionError::Panic(Smid::default(), format!("TRACE args_list: {what}"));
+    let too_short = || {
+        ExecutionError::Panic(
+            Smid::default(),
+            format!("TRACE args_list too short: expected element at index {index}"),
+        )
+    };
 
+    let mut current = machine.resolve_closure(view, list_ref)?;
     for _ in 0..index {
-        let code = view.scoped(current.code());
-        match &*code {
-            HeapSyn::Cons { tag, args } => {
-                let dc: Result<DataConstructor, _> = (*tag).try_into();
-                match dc {
-                    Ok(DataConstructor::ListCons) => {
-                        let t_ref = args.get(1).ok_or_else(|| {
-                            ExecutionError::Panic(
-                                Smid::default(),
-                                "malformed TRACE args_list cons cell (missing tail)".to_string(),
-                            )
-                        })?;
-                        current = machine
-                            .nav(view)
-                            .resolve_in_closure(&current, t_ref.clone())
-                            .ok_or_else(|| {
-                                ExecutionError::Panic(
-                                    Smid::default(),
-                                    "TRACE args_list: invalid tail ref in cons cell".to_string(),
-                                )
-                            })?;
-                    }
-                    Ok(DataConstructor::ListNil) => {
-                        return Err(ExecutionError::Panic(
-                            Smid::default(),
-                            format!("TRACE args_list too short: expected element at index {index}"),
-                        ))
-                    }
-                    _ => {
-                        return Err(ExecutionError::Panic(
-                            Smid::default(),
-                            "TRACE args_list: unexpected data constructor".to_string(),
-                        ))
-                    }
-                }
+        match data_constructor(machine, view, &current) {
+            Some(DataConstructor::ListCons) => {
+                current = machine
+                    .data_field(view, &current, 1)
+                    .ok_or_else(|| malformed("invalid tail ref in cons cell"))?;
             }
-            _ => {
-                return Err(ExecutionError::Panic(
-                    Smid::default(),
-                    "TRACE args_list: expected cons cell, found unevaluated closure".to_string(),
-                ))
-            }
+            Some(DataConstructor::ListNil) => return Err(too_short()),
+            _ => return Err(malformed("expected cons cell")),
         }
     }
 
-    // Extract the head at the current position.
-    let code = view.scoped(current.code());
-    match &*code {
-        HeapSyn::Cons { tag, args } => {
-            let dc: Result<DataConstructor, _> = (*tag).try_into();
-            match dc {
-                Ok(DataConstructor::ListCons) => {
-                    let h_ref = args.get(0).ok_or_else(|| {
-                        ExecutionError::Panic(
-                            Smid::default(),
-                            "malformed TRACE args_list cons cell (missing head)".to_string(),
-                        )
-                    })?;
-                    machine
-                        .nav(view)
-                        .resolve_in_closure(&current, h_ref.clone())
-                        .ok_or_else(|| {
-                            ExecutionError::Panic(
-                                Smid::default(),
-                                "TRACE args_list: invalid head ref in cons cell".to_string(),
-                            )
-                        })
-                }
-                Ok(DataConstructor::ListNil) => Err(ExecutionError::Panic(
-                    Smid::default(),
-                    format!("TRACE args_list too short: expected element at index {index}"),
-                )),
-                _ => Err(ExecutionError::Panic(
-                    Smid::default(),
-                    "TRACE args_list: unexpected data constructor".to_string(),
-                )),
-            }
-        }
-        _ => Err(ExecutionError::Panic(
-            Smid::default(),
-            "TRACE args_list: expected cons cell, found unevaluated closure".to_string(),
-        )),
+    match data_constructor(machine, view, &current) {
+        Some(DataConstructor::ListCons) => machine
+            .data_field(view, &current, 0)
+            .ok_or_else(|| malformed("invalid head ref in cons cell")),
+        Some(DataConstructor::ListNil) => Err(too_short()),
+        _ => Err(malformed("expected cons cell")),
     }
 }
 
 /// Count the number of elements in a cons-list without forcing any values.
 fn count_list_elements(
-    machine: &dyn IntrinsicMachine,
+    machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
     list_ref: &Ref,
 ) -> Result<usize, ExecutionError> {
+    let malformed = || {
+        ExecutionError::Panic(
+            Smid::default(),
+            "malformed cons cell in TRACE args_list".to_string(),
+        )
+    };
+
     let mut count = 0usize;
-    let mut current = machine.nav(view).resolve(list_ref)?;
+    let mut current = machine.resolve_closure(view, list_ref)?;
     loop {
-        let code = view.scoped(current.code());
-        match &*code {
-            HeapSyn::Cons { tag, args } => {
-                let dc: Result<DataConstructor, _> = (*tag).try_into();
-                match dc {
-                    Ok(DataConstructor::ListNil) => break,
-                    Ok(DataConstructor::ListCons) => {
-                        count += 1;
-                        let t_ref = args.get(1).ok_or_else(|| {
-                            ExecutionError::Panic(
-                                Smid::default(),
-                                "malformed cons cell in TRACE args_list".to_string(),
-                            )
-                        })?;
-                        current = machine
-                            .nav(view)
-                            .resolve_in_closure(&current, t_ref.clone())
-                            .ok_or_else(|| {
-                                ExecutionError::Panic(
-                                    Smid::default(),
-                                    "TRACE args_list: invalid tail ref in cons cell".to_string(),
-                                )
-                            })?;
-                    }
-                    _ => {
-                        return Err(ExecutionError::Panic(
-                            Smid::default(),
-                            "unexpected data constructor in TRACE args_list".to_string(),
-                        ))
-                    }
-                }
+        match data_constructor(machine, view, &current) {
+            Some(DataConstructor::ListNil) => break,
+            Some(DataConstructor::ListCons) => {
+                count += 1;
+                current = machine
+                    .data_field(view, &current, 1)
+                    .ok_or_else(malformed)?;
             }
             _ => {
                 return Err(ExecutionError::Panic(
                     Smid::default(),
-                    "expected cons cell in TRACE args_list, found unevaluated closure".to_string(),
+                    "unexpected data constructor in TRACE args_list".to_string(),
                 ))
             }
         }
@@ -741,25 +454,25 @@ impl StgIntrinsic for TraceEntry {
         let n_elements = count_list_elements(machine, view, &args[1])?;
         let n_pairs = n_elements / 2;
 
-        // Pass 1: collect names (no GC — no evaluate_to_whnf calls here).
+        // Pass 1: collect names (no forcing — no GC here).
         let mut arg_names: Vec<String> = Vec::with_capacity(n_pairs);
         for i in 0..n_pairs {
             let name_closure = get_list_element_at(machine, view, &args[1], 2 * i)?;
-            let s = extract_str_from_closure(view, &name_closure)
-                .unwrap_or_else(|| "<arg>".to_string());
+            let s =
+                extract_str(machine, view, &name_closure).unwrap_or_else(|| "<arg>".to_string());
             arg_names.push(s);
         }
 
-        // Pass 2: render values (may trigger GC via evaluate_to_whnf in strict mode).
+        // Pass 2: render values (may trigger GC via `force` in strict mode).
         // Each iteration re-traverses from args[1] to remain GC-safe.
         let mut arg_reprs: Vec<String> = Vec::with_capacity(n_pairs);
         for i in 0..n_pairs {
             let value_closure = get_list_element_at(machine, view, &args[1], 2 * i + 1)?;
             let repr = if strict {
-                let forced = machine.evaluate_to_whnf(value_closure)?;
-                render_debug_repr_closure(machine, view, forced)
+                let forced = machine.force(value_closure)?;
+                render_value(machine, view, &forced, false)
             } else {
-                peek_debug_repr_closure(machine, view, value_closure)
+                peek_value(machine, view, &value_closure)
             };
             arg_reprs.push(repr);
         }
@@ -773,8 +486,8 @@ impl StgIntrinsic for TraceEntry {
         eprintln!("\u{2192} {name}({})", arg_strs.join(", "));
 
         // Return the body unchanged.
-        let body = machine.nav(view).resolve(&args[3])?;
-        machine.set_closure(body)
+        let body = machine.resolve_closure(view, &args[3])?;
+        machine.set_result(body)
     }
 }
 
@@ -811,18 +524,18 @@ impl StgIntrinsic for TraceExit {
         let strict = resolve_bool(machine, view, &args[2]);
 
         let result_closure = if strict {
-            let value_closure = machine.nav(view).resolve(&args[1])?;
-            let forced = machine.evaluate_to_whnf(value_closure)?;
-            let repr = render_debug_repr_closure(machine, view, forced.clone());
+            let value_closure = machine.resolve_closure(view, &args[1])?;
+            let forced = machine.force(value_closure)?;
+            let repr = render_value(machine, view, &forced, false);
             eprintln!("\u{2190} {name}: {repr}");
             forced
         } else {
             let repr = peek_debug_repr(machine, view, &args[1]);
             eprintln!("\u{2190} {name}: {repr}");
-            machine.nav(view).resolve(&args[1])?
+            machine.resolve_closure(view, &args[1])?
         };
 
-        machine.set_closure(result_closure)
+        machine.set_result(result_closure)
     }
 }
 

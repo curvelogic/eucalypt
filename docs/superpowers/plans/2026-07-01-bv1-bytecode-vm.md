@@ -2,13 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. This is a deep translation of intricate existing code, not greenfield — where a step says "translate `vm.rs:NNN-MMM`", read that arm and port its semantics; the differential harness (Phase 2) is the exact correctness gate for every such translation.
 
-> ## ▶ RESUME HERE (cold-start header — read this first) · updated 2026-07-02
+> ## ▶ RESUME HERE (cold-start header — read this first) · updated 2026-07-02 (post-#941)
 >
 > **Where:** worktree `/Users/greg/dev/curvelogic/eucalypt-worktrees/integration-0.12.0`,
 > integration branch `integration/0.12.0`. **Toolchain:** prepend
 > `~/.rustup/toolchains/stable-aarch64-apple-darwin/bin` to `PATH` (the
 > `~/.cargo/bin/cargo` symlink is broken). One feature branch per increment →
 > PR to `integration/0.12.0`. Owner reviews/merges PRs; do not merge your own.
+> Current working branch: `feat/bv1-migrate-intrinsics` (off the post-#941 merge
+> `25166517`).
 >
 > **State:** **The bytecode engine works end-to-end.** Real `.eu` programs run
 > under `EU_BYTECODE=1`, **byte-identical to the HeapSyn engine** (blocks, lists,
@@ -21,9 +23,9 @@
 > **Merged PRs (in order):** #927, #930 (machine spine + PAP + globals + Bif),
 > #932 (evaluate_to_whnf + closure ABI), #933 (differential harness), #934 (data
 > ABI), #935 (Meta/DeMeta/LookupLit), #937 (emit/render), #939 (Increment C/D:
-> iterators + list builders). **Open:** #941 (flag path + block-index gating —
-> the "real .eu runs" milestone). *(When resuming: check `gh pr list` for #941's
-> state and sync `git reset --hard origin/integration/0.12.0`.)*
+> iterators + list builders), **#941 (MERGED 2026-07-02 — flag path + block-index
+> gating, the "real .eu runs" milestone; merge commit `25166517`).**
+> *(All BV1 PRs to date are merged into `integration/0.12.0`.)*
 >
 > **How to run/verify the bytecode engine:**
 > - `EU_BYTECODE=1 timeout 90 ./target/debug/eu <file.eu>` vs the same without
@@ -36,20 +38,83 @@
 >   `let…in` (use `:let` blocks); `/` is floor division (`÷` exact); catenation
 >   precedence is very low.
 >
-> **NEXT (data-driven):** run more of `tests/harness/*.eu` under `EU_BYTECODE=1`,
-> and migrate whatever intrinsic panics with "…HeapSyn ABI" — the pattern is:
-> `machine.nav(view).resolve(x)` → `machine.resolve_closure(view, x)`;
-> `nav().resolve_native` → `resolve_native`; `HeapSyn::Cons` code-matching →
-> `data_tag`/`data_field`/`field_native`/`value_native`; `set_closure` →
-> `set_result`; list/data construction → `data_value`/`native_value`/
-> `return_closure_list` (already added — no runtime code synthesis). Then the IO
-> path (`io_run`/world-injection not ported; flag path is pure-programs-only),
-> and an automated `.eu`-corpus differential test. **Remaining HeapSyn-typed
-> intrinsic files** (panic on bytecode until migrated): block.rs builders/merge
-> (`deconstruct`, `machine_return_block_pair_closure_list`), debug.rs (20,
-> diagnostic), vec/time/typedata/stream_prng/set(`SetToList`)/parse_string
-> (`load()` = runtime HeapSyn synthesis, the one genuinely hard case),
-> assert.rs `format_ref` (diagnostic).
+> **CORPUS TALLY (branch `feat/bv1-migrate-intrinsics`, PR #942):** sweeping the
+> full `tests/harness/*.eu` under `EU_BYTECODE=1` vs HeapSyn: **144 PASS
+> (byte-identical), 0 DIFF**, 4 both-fail (pre-existing), **19 bytecode-only
+> fails** remaining. Was **43 PASS** at the start of this PR — the intrinsic
+> migration below unblocked ~101. Sweep script: `scratchpad/bv_sweep.sh`
+> (compares stdout of both engines per file).
+>
+> **DONE this PR (all neutral-ABI, byte-identical both engines):**
+> - `debug.rs` — DbgRepr/Dbg/TraceEntry/TraceExit + render/peek/trace helpers.
+> - `support.rs` — resolve_native_unboxing, machine_return_str_iter,
+>   machine_return_num_list_of_lists, machine_return_block_pair_closure_list,
+>   cons_tag_of; added `list_value` helper.
+> - `block.rs` — **block-application MERGE dispatch** in the bytecode machine
+>   (`return_data` ApplyTo → append block, enter MERGE global), plus
+>   Merge/IsBlock/deconstruct.
+> - `render_to_string.rs`, `time.rs` (ZdtFields), `vec.rs` (VecOf/VecNth/
+>   VecToList), `set.rs` (SetToList), `stream_prng.rs` (all stream returns).
+> - **Two new neutral primitives:** (1) `IntrinsicMachine::tail_apply_global`
+>   (tail-call a global on runtime args — HeapSyn builds the App, bytecode
+>   pushes ApplyTo + enters the global); (2) `try_navigate_local_native` so the
+>   HeapSyn `value_native` default no longer panics on an unforced `Atom{L}`
+>   (matches bytecode). Differential test `agree_on_dbg_repr` added.
+>
+> **⚠️ Neutral-ABI trap:** don't assume a resolved closure is WHNF; use
+> `value_native` (now non-panicking) for possibly-unforced values.
+>
+> **REMAINING 19 — all need RUNTIME CODE SYNTHESIS (a design decision, not more
+> mechanical ports):**
+> - `parse_string::ParseString` (10) and `typedata::TypeToData` (6): both call
+>   `load()` — compile a core/STG expression and materialise it *runnable* on
+>   the heap at runtime. On HeapSyn `load()` yields a HeapSyn tree the tree-walk
+>   runs directly; the bytecode engine has no runtime encoder, so this needs a
+>   **runtime bytecode-encode/append** (JIT a fragment into the code arena) or a
+>   neutral "materialise this compiled data value" path. This is the genuinely
+>   hard case the plan always flagged.
+> - `block::MergeWith` / DEEPMERGE (4): build a lazy `f(ov, nv)` **application
+>   thunk** as a stored value (not a tail call). Needs a neutral "build an
+>   application closure value" primitive (bytecode: an `App(L0,[L1,L2])` template
+>   over env `[f, ov, nv]`). Smaller than full `load()` but still code synthesis.
+> - `stream_intrinsic::ProducerNext` (1): `load()` **plus** a self-referential
+>   updatable BIF thunk (`PRODUCER_NEXT(handle)` tail) — both synthesis forms.
+>
+> These share one root: the bytecode path cannot yet synthesise *code* at
+> runtime, only *data* (`data_value`/`return_closure_list`).
+>
+> **⚠️ ARENA-GROWTH ANALYSIS (owner's concern, 2026-07-02): the code arena
+> (`BytecodeProgram.code`) is off-heap and NEVER GC-collected. Appending a fresh
+> fragment per `load()` call would leak unboundedly (e.g. parsing 1M JSON records
+> in a loop → 1M fragments). SO WE MUST NOT do naive runtime encode-append.
+> Analysis shows almost none of the remaining 19 actually needs unique runtime
+> code:**
+> - **`ParseString` / `TypeToData` value output is pure DATA** (a block/list/
+>   scalar tree — `load()` there materialises a data-literal, no computation).
+>   Build it directly via the neutral `data_value`/`native_value`/
+>   `return_closure_list` ABI on the **GC heap** (collectable). ZERO arena growth.
+>   This is the plan's "value representation" route — preferred over parse-to-
+>   bytecode for these. (TypeToData: verify `type_to_rcexpr` emits only data
+>   constructors, not prelude function applications; if it applies functions,
+>   the SHAPE is bounded by the finite type-DSL grammar → a small fixed template
+>   set, still not per-call-unique.)
+> - **`MergeWith` `f(ov,nv)` and `ProducerNext`'s tail thunk are FIXED-SHAPE
+>   applications** (`App(L0,[L1,L2])`, `AppBif(idx,[L0])`). Pre-encode ONE
+>   template each into the arena at init (exactly like the existing constructor/
+>   PAP templates); at runtime allocate only a **GC-heap env frame** `[f,ov,nv]`
+>   / `[handle]` over the fixed template. ZERO per-call arena growth.
+> - **Genuinely-dynamic unique code** (arbitrary runtime-varying computation) is
+>   the ONLY case that would need arena append — and none of the remaining 19
+>   clearly requires it. If one does, bound it (dedup/cache by content, or cap)
+>   and `log()` the cap; never append unboundedly.
+>
+> **Conclusion: build NO general runtime encoder. Use (a) neutral data
+> construction for data-literal `load()`, and (b) a small fixed set of pre-
+> encoded apply/thunk templates for the fixed-shape thunks. Arena stays bounded
+> and the GC still owns all per-call allocation.**
+>
+> **Follow-up filed:** `__DBG` fires a different #times on stderr per engine
+> (thunk-update difference, not render) — see beads eu-… .
 >
 > **⚠️ Before any perf work:** see the PERF CAVEAT below — the block-index
 > optimisation is OFF on the bytecode path (O(n) lookups), so block-heavy

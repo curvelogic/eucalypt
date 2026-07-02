@@ -8,10 +8,9 @@ use serde_json::Number;
 
 use crate::eval::{
     error::ExecutionError,
-    machine::{env::SynClosure, env_builder::EnvBuilder, intrinsic::*},
+    machine::{env::SynClosure, intrinsic::*},
     memory::{
         alloc::{ScopedAllocator, ScopedPtr},
-        array::Array,
         mutator::MutatorHeapView,
         ndarray::HeapNdArray,
         set::HeapSet,
@@ -80,13 +79,8 @@ fn cons_tag_of(
     view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Option<u8> {
-    let nav = machine.nav(view);
-    let closure = nav.resolve(arg).ok()?;
-    let code = view.scoped(closure.code());
-    match &*code {
-        HeapSyn::Cons { tag, .. } => Some(*tag),
-        _ => None,
-    }
+    let closure = machine.resolve_closure(view, arg).ok()?;
+    machine.data_tag(view, &closure)
 }
 
 /// Helper for intrinsics to access a numeric arg.
@@ -397,41 +391,54 @@ pub fn resolve_native_unboxing(
     arg: &Ref,
 ) -> Result<Native, ExecutionError> {
     // First try the standard resolve path
-    let nav = machine.nav(view);
-    if let Ok(native) = nav.resolve_native(arg) {
+    if let Ok(native) = machine.resolve_native(view, arg) {
         return Ok(native);
     }
 
-    // If that failed, the value may be a boxed constructor — resolve
-    // the closure and check for a Cons with a box tag.
-    let closure = nav.resolve(arg)?;
-    let code = view.scoped(closure.code());
-    match &*code {
-        HeapSyn::Cons { tag, args } => {
-            let dc: Result<DataConstructor, _> = (*tag).try_into();
-            match dc {
-                Ok(DataConstructor::BoxedNumber)
-                | Ok(DataConstructor::BoxedString)
-                | Ok(DataConstructor::BoxedSymbol)
-                | Ok(DataConstructor::BoxedZdt)
-                | Ok(DataConstructor::BoxedTypeData) => {
-                    let inner_ref = args.get(0).ok_or_else(|| {
-                        ExecutionError::Panic(Smid::default(), "empty boxed value".to_string())
-                    })?;
-                    let native = closure.navigate_local_native(&view, inner_ref);
-                    Ok(native)
-                }
-                _ => Err(ExecutionError::NotValue(
-                    machine.annotation(),
-                    "non-boxed constructor".to_string(),
-                )),
-            }
-        }
-        _ => Err(ExecutionError::NotValue(
+    // If that failed, the value may be a boxed constructor — resolve the
+    // closure and, if it is a boxed scalar, read its inner native via the
+    // neutral ABI (`value_native` unboxes a boxed Cons's field 0).
+    let closure = machine.resolve_closure(view, arg)?;
+    let dc: Option<DataConstructor> = machine
+        .data_tag(view, &closure)
+        .and_then(|tag| tag.try_into().ok());
+    match dc {
+        Some(
+            DataConstructor::BoxedNumber
+            | DataConstructor::BoxedString
+            | DataConstructor::BoxedSymbol
+            | DataConstructor::BoxedZdt
+            | DataConstructor::BoxedTypeData,
+        ) => machine
+            .value_native(view, &closure)
+            .ok_or_else(|| ExecutionError::Panic(Smid::default(), "empty boxed value".to_string())),
+        Some(_) => Err(ExecutionError::NotValue(
+            machine.annotation(),
+            "non-boxed constructor".to_string(),
+        )),
+        None => Err(ExecutionError::NotValue(
             machine.annotation(),
             "expected native value".to_string(),
         )),
     }
+}
+
+/// Build a cons-list value handle from item handles, engine-neutrally.
+///
+/// Folds `ListCons` over the items from a `ListNil` tail using `data_value`,
+/// so the result works on both the HeapSyn and bytecode engines (no runtime
+/// code synthesis). Unlike `return_closure_list`, this returns the list as a
+/// value handle rather than setting the machine result.
+pub fn list_value(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    items: Vec<AbiClosure>,
+) -> Result<AbiClosure, ExecutionError> {
+    let mut acc = machine.data_value(view, DataConstructor::ListNil.tag(), &[])?;
+    for item in items.into_iter().rev() {
+        acc = machine.data_value(view, DataConstructor::ListCons.tag(), &[item, acc])?;
+    }
+    Ok(acc)
 }
 
 /// Convert a Native value to a set Primitive
@@ -608,42 +615,6 @@ pub fn collect_num_list(
     Ok(numbers)
 }
 
-/// Build a heap cons-list of boxed numbers from a slice of f64, returning
-/// the raw heap pointer to the head of the list.
-///
-/// Used internally to construct inner lists for `machine_return_num_list_of_lists`.
-fn build_num_list_ptr(
-    view: MutatorHeapView<'_>,
-    nums: &[f64],
-) -> Result<RefPtr<HeapSyn>, ExecutionError> {
-    let mut bindings: Vec<LambdaForm> = vec![LambdaForm::value(view.nil()?.as_ptr())];
-    for &item in nums.iter().rev() {
-        let n = Number::from_f64(item).unwrap_or_else(|| Number::from(0));
-        bindings.push(LambdaForm::value(
-            view.data(
-                DataConstructor::BoxedNumber.tag(),
-                Array::from_slice(&view, &[Ref::V(Native::Num(n))]),
-            )?
-            .as_ptr(),
-        ));
-        let len = bindings.len();
-        bindings.push(LambdaForm::value(
-            view.data(
-                DataConstructor::ListCons.tag(),
-                Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
-            )?
-            .as_ptr(),
-        ));
-    }
-    let list_index = bindings.len() - 1;
-    Ok(view
-        .letrec(
-            Array::from_slice(&view, &bindings),
-            view.atom(Ref::L(list_index))?,
-        )?
-        .as_ptr())
-}
-
 /// Return a list of number-lists from an intrinsic.
 ///
 /// Used for `ARRAY.INDICES` which returns a list of coordinate lists.
@@ -652,33 +623,19 @@ pub fn machine_return_num_list_of_lists(
     view: MutatorHeapView<'_>,
     lists: Vec<Vec<f64>>,
 ) -> Result<(), ExecutionError> {
-    // Build each inner list as a heap object and collect raw pointers.
-    let inner_ptrs: Vec<RefPtr<HeapSyn>> = lists
-        .iter()
-        .map(|inner| build_num_list_ptr(view, inner))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    // Build the outer cons list from these pointers.
-    let mut bindings: Vec<LambdaForm> = vec![LambdaForm::value(view.nil()?.as_ptr())];
-    for ptr in inner_ptrs.into_iter().rev() {
-        bindings.push(LambdaForm::value(ptr));
-        let len = bindings.len();
-        bindings.push(LambdaForm::value(
-            view.data(
-                DataConstructor::ListCons.tag(),
-                Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
-            )?
-            .as_ptr(),
-        ));
+    // Build each inner list as a value handle via the neutral ABI, then the
+    // outer list over those handles.
+    let mut outer = Vec::with_capacity(lists.len());
+    for inner in lists {
+        let mut items = Vec::with_capacity(inner.len());
+        for x in inner {
+            let n = Number::from_f64(x).unwrap_or_else(|| Number::from(0));
+            let native = machine.native_value(view, Native::Num(n))?;
+            items.push(machine.data_value(view, DataConstructor::BoxedNumber.tag(), &[native])?);
+        }
+        outer.push(list_value(machine, view, items)?);
     }
-    let list_index = bindings.len() - 1;
-    let syn = view
-        .letrec(
-            Array::from_slice(&view, &bindings),
-            view.atom(Ref::L(list_index))?,
-        )?
-        .as_ptr();
-    machine.set_closure(SynClosure::new(syn, machine.root_env()))
+    machine.return_closure_list(view, outer)
 }
 
 /// Return a number list from intrinsic, following the same pattern
@@ -708,39 +665,17 @@ pub fn machine_return_str_iter(
     view: MutatorHeapView,
     iter: impl Iterator<Item = String>,
 ) -> Result<(), ExecutionError> {
-    // Allocate each string on the heap as it arrives from the iterator,
-    // collecting only the small Ref pointers (not full Strings).
-    let refs: Vec<Ref> = iter
-        .map(|s| view.str_ref(s))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    // Build the cons list in reverse from the heap refs
-    let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
-    for str_ref in refs.into_iter().rev() {
-        bindings.push(LambdaForm::value(
-            view.data(
-                DataConstructor::BoxedString.tag(),
-                Array::from_slice(&view, &[str_ref]),
-            )?
-            .as_ptr(),
-        ));
-        let len = bindings.len();
-        bindings.push(LambdaForm::value(
-            view.data(
-                DataConstructor::ListCons.tag(),
-                Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
-            )?
-            .as_ptr(),
-        ));
+    // Box each string as a value handle via the neutral ABI, then build the
+    // cons-list over those handles (works on both engines).
+    let mut items = Vec::new();
+    for s in iter {
+        let Ref::V(native) = view.str_ref(s)? else {
+            unreachable!("str_ref yields a value ref")
+        };
+        let boxed = machine.native_value(view, native)?;
+        items.push(machine.data_value(view, DataConstructor::BoxedString.tag(), &[boxed])?);
     }
-    let list_index = bindings.len() - 1;
-    let syn = view
-        .letrec(
-            Array::from_slice(&view, &bindings),
-            view.atom(Ref::L(list_index))?,
-        )?
-        .as_ptr();
-    machine.set_closure(SynClosure::new(syn, machine.root_env()))
+    machine.return_closure_list(view, items)
 }
 
 /// Return a string list from intrinsic
@@ -773,60 +708,25 @@ pub fn machine_return_closure_list(
     machine.return_closure_list(view, list.into_iter().map(AbiClosure::Heap).collect())
 }
 
-/// Return a list of closures from intrinsic
+/// Return a block's kv-list (a cons-list of `BlockPair(sym, value)`) from an
+/// intrinsic, engine-neutrally.
+///
+/// Each key is interned to a symbol native and each pair built via `data_value`;
+/// the list is assembled with `return_closure_list` — no runtime code synthesis.
 pub fn machine_return_block_pair_closure_list(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
-    block: IndexMap<String, SynClosure>,
+    block: IndexMap<String, AbiClosure>,
 ) -> Result<(), ExecutionError> {
-    // env of values
-    let values: Vec<_> = block.values().cloned().collect();
-    let value_frame = view.from_closures(
-        values.iter().cloned(),
-        values.len(),
-        machine.env(view),
-        Smid::default(),
-    )?;
-    let len = block.len();
-
-    // env of pairs
-    let mut pairs = vec![];
-    for (i, k) in block.keys().enumerate() {
-        pairs.push(SynClosure::new(
-            view.data(
-                DataConstructor::BlockPair.tag(),
-                Array::from_slice(
-                    &view,
-                    &[view.sym_ref(machine.symbol_pool_mut(), k)?, Ref::L(i)],
-                ),
-            )?
-            .as_ptr(),
-            value_frame,
-        ));
+    let mut pairs = Vec::with_capacity(block.len());
+    for (k, value) in block {
+        let Ref::V(sym_native) = view.sym_ref(machine.symbol_pool_mut(), &k)? else {
+            unreachable!("sym_ref yields a value ref")
+        };
+        let key = machine.native_value(view, sym_native)?;
+        pairs.push(machine.data_value(view, DataConstructor::BlockPair.tag(), &[key, value])?);
     }
-    let pair_frame = view.from_closures(
-        pairs.iter().cloned(),
-        pairs.len(),
-        value_frame,
-        Smid::default(),
-    )?;
-
-    // env of links [lnull, l0, l1 ..] [p0 p1 p2...] [v0 v1 ..]
-    let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
-    for i in (0..len + 1).rev() {
-        bindings.push(LambdaForm::value(
-            view.data(
-                DataConstructor::ListCons.tag(),
-                Array::from_slice(&view, &[Ref::L(len + i + 1), Ref::L(len - i)]),
-            )?
-            .as_ptr(),
-        ));
-    }
-
-    let syn = view
-        .letrec(Array::from_slice(&view, &bindings), view.atom(Ref::L(len))?)?
-        .as_ptr();
-    machine.set_closure(SynClosure::new(syn, pair_frame))
+    machine.return_closure_list(view, pairs)
 }
 
 pub mod call {
