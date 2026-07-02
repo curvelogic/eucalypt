@@ -9,20 +9,34 @@
 //! reference resolution used by every dispatch arm.
 
 use std::cmp::Ordering;
+use std::num::NonZeroUsize;
+
+use lru::LruCache;
+use regex::Regex;
 
 use crate::common::sourcemap::Smid;
+use crate::eval::emit::Emitter;
 use crate::eval::error::ExecutionError;
+use crate::eval::machine::env::{EnvFrame, SynClosure};
+use crate::eval::machine::intrinsic::{IntrinsicMachine, StgIntrinsic};
+use crate::eval::machine::metrics::{Clock, Metrics, ThreadOccupation};
+use crate::eval::machine::vm::{interrupted, HeapNavigator};
 use crate::eval::memory::alloc::ScopedAllocator;
 use crate::eval::memory::array::Array;
+use crate::eval::memory::collect::{
+    collect as gc_collect, CollectorHeapView, CollectorScope, GcScannable, ScanPtr,
+};
+use crate::eval::memory::heap::Heap;
 use crate::eval::memory::infotable::{InfoTable, InfoTagged};
 use crate::eval::memory::mutator::MutatorHeapView;
+use crate::eval::memory::symbol::SymbolPool;
 use crate::eval::memory::syntax::{Native, Ref, RefPtr};
 use crate::eval::stg::tags::{DataConstructor, Tag};
 
 use super::program::{read_u16, read_u32, read_u8};
 use super::{
-    BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, CodeRef, Op, FORM_LAMBDA,
-    FORM_THUNK, NO_BRANCH, REF_G, REF_L, REF_V,
+    BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, BytecodeProgram, CodeRef,
+    GlobalForm, Op, FORM_LAMBDA, FORM_THUNK, NO_BRANCH, REF_G, REF_L, REF_V,
 };
 
 /// A decoded inline `Ref` operand from the byte stream.
@@ -216,6 +230,104 @@ impl BcMachineState {
             capture_end_pending: false,
             yielded_io: false,
             blackhole: 0,
+        }
+    }
+}
+
+/// Mark the heap pointers embedded in a prepared constant (`Ref::V(native)`).
+/// Mirrors `syntax::mark_ref_heap_pointers` for the bytecode constant pool,
+/// which is an off-heap root set rather than part of the code graph.
+fn scan_const<'a>(
+    r: &'a Ref,
+    scope: &'a dyn CollectorScope,
+    marker: &mut CollectorHeapView<'a>,
+    out: &mut Vec<ScanPtr<'a>>,
+) {
+    match r {
+        Ref::V(Native::Str(ptr)) if marker.mark(*ptr) => {
+            out.push(ScanPtr::from_non_null(scope, *ptr));
+        }
+        Ref::V(Native::Set(ptr)) => {
+            marker.mark(*ptr);
+        }
+        Ref::V(Native::NdArray(ptr)) => {
+            marker.mark(*ptr);
+        }
+        Ref::V(Native::Vec(ptr)) => {
+            marker.mark(*ptr);
+        }
+        _ => {}
+    }
+}
+
+/// Update forwarded heap pointers in a prepared constant (mirrors
+/// `syntax::update_ref_heap_pointers`).
+fn update_const(r: &mut Ref, heap: &CollectorHeapView<'_>) {
+    match r {
+        Ref::V(Native::Str(ptr)) => {
+            if let Some(new) = heap.forwarded_to(*ptr) {
+                *ptr = new;
+            }
+        }
+        Ref::V(Native::Set(ptr)) => {
+            if let Some(new) = heap.forwarded_to(*ptr) {
+                *ptr = new;
+            }
+        }
+        Ref::V(Native::NdArray(ptr)) => {
+            if let Some(new) = heap.forwarded_to(*ptr) {
+                *ptr = new;
+            }
+        }
+        Ref::V(Native::Vec(ptr)) => {
+            if let Some(new) = heap.forwarded_to(*ptr) {
+                *ptr = new;
+            }
+        }
+        _ => {}
+    }
+}
+
+impl GcScannable for BcMachineState {
+    fn scan<'a>(
+        &'a self,
+        scope: &'a dyn CollectorScope,
+        marker: &mut CollectorHeapView<'a>,
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
+        if marker.mark(self.globals) {
+            out.push(ScanPtr::from_non_null(scope, self.globals));
+        }
+        if marker.mark(self.root_env) {
+            out.push(ScanPtr::from_non_null(scope, self.root_env));
+        }
+        // The current value ranges over `BcValue` (a closure or native); its
+        // `GcScannable` impl marks the env pointer / heap-backed native.
+        out.push(ScanPtr::new(scope, &self.current));
+        // Continuations live inline in the `Vec` (off the eucalypt heap); scan
+        // their internal heap pointers directly (mirrors `MachineState::scan`).
+        for cont in &self.stack {
+            cont.scan(scope, marker, out);
+        }
+        // The prepared constant pool is a root set of heap-backed natives.
+        for r in &self.constants {
+            scan_const(r, scope, marker, out);
+        }
+    }
+
+    fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
+        if let Some(new) = heap.forwarded_to(self.root_env) {
+            self.root_env = new;
+        }
+        if let Some(new) = heap.forwarded_to(self.globals) {
+            self.globals = new;
+        }
+        self.current.scan_and_update(heap);
+        for cont in &mut self.stack {
+            cont.scan_and_update(heap);
+        }
+        for r in &mut self.constants {
+            update_const(r, heap);
         }
     }
 }
@@ -464,6 +576,7 @@ pub fn return_native(
 pub fn return_fun(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
+    prog: &BytecodeProgram,
 ) -> Result<(), ExecutionError> {
     let Some(cont) = state.stack.pop() else {
         state.terminated = true;
@@ -481,10 +594,11 @@ pub fn return_fun(
                     state.current = BcValue::Closure(view.saturate_with_array(&fun, args)?);
                 }
                 Ordering::Less => {
-                    return Err(ExecutionError::Panic(
-                        annotation,
-                        "bytecode: partial application (PAP) not yet implemented".to_string(),
-                    ));
+                    // Partial application: build a PAP trampoline closure. Its
+                    // env is `[f, supplied…]` chaining onto `f`'s env; its code
+                    // is the pre-encoded `App(L(pending), …)` template; its
+                    // arity is the number still pending (spec §6.1).
+                    state.current = BcValue::Closure(partially_apply(view, prog, &fun, args)?);
                 }
                 Ordering::Greater => {
                     let (quorum, surplus) = args.as_slice().split_at(args.len() - excess as usize);
@@ -555,6 +669,42 @@ pub fn return_fun(
     Ok(())
 }
 
+/// Build a partial-application (PAP) trampoline closure for a function
+/// applied to too few args. The result closes `[f, supplied…]` over `f`'s
+/// env and points at the pre-encoded `App(L(pending), …)` template
+/// (`prog.pap`); its arity is the count still pending. Mirrors the HeapSyn
+/// `partially_apply` (`env_builder.rs`).
+fn partially_apply(
+    view: MutatorHeapView<'_>,
+    prog: &BytecodeProgram,
+    fun: &BcClosure,
+    args: Array<BcValue>,
+) -> Result<BcClosure, ExecutionError> {
+    let supplied = args.len();
+    let pending = fun.arity() as usize - supplied;
+    let tmpl = prog.pap_offset(supplied, pending).ok_or_else(|| {
+        ExecutionError::Panic(
+            fun.annotation(),
+            format!(
+                "bytecode: PAP arity out of range (supplied {supplied}, pending {pending}, max {})",
+                super::PAP_MAX_ARITY
+            ),
+        )
+    })?;
+    let env = view.from_values(
+        std::iter::once(BcValue::Closure(*fun)).chain(args.as_slice().iter().cloned()),
+        supplied + 1,
+        fun.env(),
+        fun.annotation(),
+    )?;
+    Ok(BcClosure::new_annotated_lambda(
+        tmpl,
+        pending as u8,
+        env,
+        fun.annotation(),
+    ))
+}
+
 /// Decode the field ref of an arg atom-offset (skip the `OP_ATOM` byte and
 /// read the inline ref).
 fn arg_ref(code: &[u8], atom_off: CodeRef) -> Result<DecodedRef, ExecutionError> {
@@ -590,13 +740,19 @@ fn make_arg_array(
     Ok(array)
 }
 
+/// Build the static part of a closure from a form kind/arity/annotation
+/// and its body offset (shared by let bindings and global forms).
+fn form_info(kind: u8, arity: u8, smid: Smid, body: CodeRef) -> InfoTagged<CodeRef> {
+    match kind {
+        FORM_THUNK => InfoTagged::thunk(body),
+        FORM_LAMBDA => InfoTagged::new(arity, body, smid),
+        _ => InfoTagged::value(body), // FORM_VALUE
+    }
+}
+
 /// Build the static part of a closure from a decoded form header.
 fn bc_info(h: &FormHeader) -> InfoTagged<CodeRef> {
-    match h.kind {
-        FORM_THUNK => InfoTagged::thunk(h.body),
-        FORM_LAMBDA => InfoTagged::new(h.arity, h.body, h.smid),
-        _ => InfoTagged::value(h.body), // FORM_VALUE
-    }
+    form_info(h.kind, h.arity, h.smid, h.body)
 }
 
 /// Read a `Let`/`LetRec` binding-header list (`u16` count then that many
@@ -670,8 +826,9 @@ fn enter_callable(
 pub fn handle_op(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
-    code: &[u8],
+    prog: &BytecodeProgram,
 ) -> Result<(), ExecutionError> {
+    let code = prog.code.as_slice();
     let closure = *state.current.as_closure().ok_or_else(|| {
         ExecutionError::Panic(state.annotation, "handle_op on a native value".to_string())
     })?;
@@ -899,7 +1056,7 @@ pub fn handle_op(
 pub fn step(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
-    code: &[u8],
+    prog: &BytecodeProgram,
 ) -> Result<(), ExecutionError> {
     enum Dispatch {
         Native(Native),
@@ -913,8 +1070,374 @@ pub fn step(
     };
     match dispatch {
         Dispatch::Native(n) => return_native(state, view, n),
-        Dispatch::Fun => return_fun(state, view),
-        Dispatch::Op => handle_op(state, view, code),
+        Dispatch::Fun => return_fun(state, view, prog),
+        Dispatch::Op => handle_op(state, view, prog),
+    }
+}
+
+/// The bytecode execution machine: owns the heap, program and machine state,
+/// and drives the `step` dispatch loop with periodic GC (spec §6). The
+/// parallel-engine counterpart to the HeapSyn `Machine`.
+///
+/// Intrinsic (`Bif`) dispatch runs through a neutral [`BcBifContext`]. The
+/// emitter/capture lifecycle and re-entrant `evaluate_to_whnf` are wired in
+/// following increments; intrinsics that reach those (or the HeapSyn-typed
+/// ABI methods) surface via the differential harness for migration.
+pub struct BytecodeMachine<'a> {
+    heap: Heap,
+    program: BytecodeProgram,
+    state: BcMachineState,
+    metrics: Metrics,
+    clock: Clock,
+    dump_heap: bool,
+    /// Symbol pool (interned symbols), shared with intrinsic dispatch.
+    symbol_pool: SymbolPool,
+    /// Regex cache used by string intrinsics.
+    rcache: LruCache<String, Regex>,
+    /// Whether `__EXPECT` failures return `false` rather than panicking.
+    test_mode: bool,
+    /// Intrinsic implementations, indexed by intrinsic index (spec §6.3).
+    intrinsics: Vec<&'a dyn StgIntrinsic>,
+    /// Output emitter.
+    emitter: Box<dyn Emitter + 'a>,
+}
+
+impl<'a> BytecodeMachine<'a> {
+    /// Build a machine for an encoded program rooted at `root_off`. A
+    /// `heap_limit_mib` of 0 means an unbounded managed heap. `intrinsics`
+    /// must be indexed by intrinsic index (e.g. `runtime.intrinsics()`).
+    pub fn new(
+        program: BytecodeProgram,
+        root_off: CodeRef,
+        global_forms: &[GlobalForm],
+        intrinsics: Vec<&'a dyn StgIntrinsic>,
+        emitter: Box<dyn Emitter + 'a>,
+        heap_limit_mib: usize,
+        test_mode: bool,
+    ) -> Result<Self, ExecutionError> {
+        let heap = if heap_limit_mib == 0 {
+            Heap::new()
+        } else {
+            Heap::with_limit(heap_limit_mib)
+        };
+        let mut pool = SymbolPool::new();
+        let (constants, root_env, globals) = {
+            let view = MutatorHeapView::new(&heap);
+            let constants = program.prepare_constants(view, &mut pool);
+            let root_env = view.alloc(BcEnvFrame::default())?.as_ptr();
+            // The globals frame holds one closure per encoded global form.
+            // Cross-global references compile to `Ref::G(i)` (resolved against
+            // this frame), so the closures need only close over `root_env`.
+            let globals = if global_forms.is_empty() {
+                root_env
+            } else {
+                view.from_values(
+                    global_forms.iter().map(|gf| {
+                        BcValue::Closure(BcClosure::close(
+                            &form_info(gf.kind, gf.arity, gf.smid, gf.entry),
+                            root_env,
+                        ))
+                    }),
+                    global_forms.len(),
+                    root_env,
+                    Smid::default(),
+                )?
+            };
+            (constants, root_env, globals)
+        };
+        let mut state = BcMachineState::new(
+            BcValue::Closure(BcClosure::new(root_off, root_env)),
+            globals,
+            root_env,
+            constants,
+        );
+        state.blackhole = program.blackhole;
+        Ok(BytecodeMachine {
+            heap,
+            program,
+            state,
+            metrics: Metrics::default(),
+            clock: Clock::default(),
+            dump_heap: false,
+            symbol_pool: pool,
+            rcache: LruCache::new(
+                NonZeroUsize::new(100).expect("regex cache size must be non-zero"),
+            ),
+            test_mode,
+            intrinsics,
+            emitter,
+        })
+    }
+
+    /// Run to termination (or `limit` ticks), returning the process exit
+    /// code. Polls for GC every 500 ticks (mirrors `Machine::run`, spec §6).
+    pub fn run(&mut self, limit: Option<usize>) -> Result<Option<u8>, ExecutionError> {
+        self.clock.switch(ThreadOccupation::Mutator);
+        let gc_check_freq: u32 = 500;
+        let mut gc_countdown: u32 = gc_check_freq;
+
+        while !self.state.terminated {
+            if let Some(limit) = limit {
+                if self.metrics.ticks() as usize >= limit {
+                    return Err(ExecutionError::DidntTerminate(limit));
+                }
+            }
+            gc_countdown -= 1;
+            if gc_countdown == 0 {
+                gc_countdown = gc_check_freq;
+                if interrupted() {
+                    return Err(ExecutionError::Interrupted);
+                }
+                if self.heap.policy_requires_collection() {
+                    gc_collect(
+                        &mut self.state,
+                        &mut self.heap,
+                        &mut self.clock,
+                        self.dump_heap,
+                    );
+                    self.clock.switch(ThreadOccupation::Mutator);
+                }
+            }
+            self.dispatch()?;
+        }
+
+        if self.heap.policy_requires_collection() {
+            gc_collect(
+                &mut self.state,
+                &mut self.heap,
+                &mut self.clock,
+                self.dump_heap,
+            );
+        }
+        self.clock.stop();
+        Ok(self.exit_code())
+    }
+
+    /// One dispatch step over the shared machine state (the free `step`),
+    /// followed by the deferred `Bif` dispatch tail (spec §6.3): when the
+    /// `Bif` arm captured an intrinsic, run it through a [`BcBifContext`].
+    fn dispatch(&mut self) -> Result<(), ExecutionError> {
+        self.metrics.tick();
+        {
+            let view = MutatorHeapView::new(&self.heap);
+            step(&mut self.state, view, &self.program)?;
+        }
+
+        if let Some(idx) = self.state.pending_bif.take() {
+            // Materialise the captured arg refs. There is no live code node to
+            // re-read (unlike HeapSyn), so we translate the decoded refs back
+            // into `Ref`s the intrinsic ABI understands.
+            let args: Vec<Ref> = std::mem::take(&mut self.state.pending_bif_args)
+                .iter()
+                .map(|d| match *d {
+                    DecodedRef::Local(i) => Ref::L(i as usize),
+                    DecodedRef::Global(i) => Ref::G(i as usize),
+                    DecodedRef::Value(k) => self.state.constants[k as usize].clone(),
+                })
+                .collect();
+            // The Bif closure is still `current`; its env holds the (strict,
+            // pre-evaluated) args that `Ref::L` operands index into.
+            let env = self
+                .state
+                .current
+                .as_closure()
+                .map(|c| c.env())
+                .unwrap_or(self.state.root_env);
+            let bif = self.intrinsics[idx as usize];
+            let view = MutatorHeapView::new(&self.heap);
+            let mut ctx = BcBifContext {
+                state: &mut self.state,
+                program: &self.program,
+                symbol_pool: &mut self.symbol_pool,
+                rcache: &mut self.rcache,
+                test_mode: self.test_mode,
+                env,
+            };
+            bif.execute(&mut ctx, view, self.emitter.as_mut(), &args)?;
+        }
+        Ok(())
+    }
+
+    /// The process exit code from a terminated machine's result value
+    /// (mirrors `Machine::exit_code`: a numeric result is the code, a
+    /// tag-0 success constructor exits 0, anything else exits 1).
+    fn exit_code(&self) -> Option<u8> {
+        if !self.state.terminated {
+            return None;
+        }
+        Some(match &self.state.current {
+            BcValue::Native(Native::Num(n)) => {
+                n.as_i64().and_then(|i| u8::try_from(i).ok()).unwrap_or(1)
+            }
+            BcValue::Native(_) => 1,
+            BcValue::Closure(c) => {
+                let mut pc = c.code() as usize;
+                match Op::from_u8(read_u8(&self.program.code, &mut pc)) {
+                    Some(Op::Cons) if read_u8(&self.program.code, &mut pc) == 0 => 0,
+                    _ => 1,
+                }
+            }
+        })
+    }
+
+    /// Force a collection now (tests: prove the root set survives GC).
+    #[cfg(test)]
+    fn gc_now(&mut self) {
+        gc_collect(
+            &mut self.state,
+            &mut self.heap,
+            &mut self.clock,
+            self.dump_heap,
+        );
+    }
+}
+
+/// The `IntrinsicMachine` implementation for the bytecode engine (spec §5.5).
+///
+/// It overrides the neutral, code-type-agnostic ABI methods to operate over
+/// `BcValue`s (resolving refs against the Bif closure's env / the globals
+/// frame / the constant pool, and returning results by mutating the machine
+/// `current`). The HeapSyn-typed methods (`nav`/`set_closure`/`root_env`/
+/// `env`/`evaluate_to_whnf`) are unreachable on this path and panic; an
+/// intrinsic still using them (or the not-yet-wired capture lifecycle)
+/// surfaces via the differential harness for migration.
+struct BcBifContext<'ctx> {
+    state: &'ctx mut BcMachineState,
+    program: &'ctx BytecodeProgram,
+    symbol_pool: &'ctx mut SymbolPool,
+    rcache: &'ctx mut LruCache<String, Regex>,
+    test_mode: bool,
+    /// Environment of the Bif closure (indexed by `Ref::L` arg operands).
+    env: RefPtr<BcEnvFrame>,
+}
+
+impl BcBifContext<'_> {
+    /// Resolve a runtime value to a native, following `OP_ATOM` indirections
+    /// (the bytecode analogue of `HeapNavigator::resolve_native`).
+    fn native_from_value(
+        &self,
+        view: MutatorHeapView<'_>,
+        value: BcValue,
+    ) -> Result<Native, ExecutionError> {
+        match value {
+            BcValue::Native(n) => Ok(n),
+            BcValue::Closure(c) => {
+                let code = self.program.code.as_slice();
+                let mut pc = c.code() as usize;
+                if Op::from_u8(read_u8(code, &mut pc)) == Some(Op::Atom) {
+                    let dref = read_ref(code, &mut pc)?;
+                    let inner = resolve_ref(
+                        view,
+                        &self.state.constants,
+                        c.env(),
+                        self.state.globals,
+                        dref,
+                    )?;
+                    self.native_from_value(view, inner)
+                } else {
+                    Err(ExecutionError::NotValue(
+                        self.state.annotation,
+                        "expected a native value".to_string(),
+                    ))
+                }
+            }
+        }
+    }
+}
+
+impl IntrinsicMachine for BcBifContext<'_> {
+    fn rcache(&mut self) -> &mut LruCache<String, Regex> {
+        self.rcache
+    }
+
+    fn symbol_pool(&self) -> &SymbolPool {
+        self.symbol_pool
+    }
+
+    fn symbol_pool_mut(&mut self) -> &mut SymbolPool {
+        self.symbol_pool
+    }
+
+    fn annotation(&self) -> Smid {
+        self.state.annotation
+    }
+
+    fn test_mode(&self) -> bool {
+        self.test_mode
+    }
+
+    // ── HeapSyn-typed methods: unreachable on the bytecode path ──────
+    // These name `SynClosure`/`EnvFrame`, which the bytecode engine never
+    // produces. An intrinsic reaching one has not been migrated to the
+    // neutral ABI and is caught by the differential harness.
+
+    fn set_closure(&mut self, _closure: SynClosure) -> Result<(), ExecutionError> {
+        panic!("bytecode BifContext: set_closure(SynClosure) — intrinsic uses the HeapSyn ABI")
+    }
+
+    fn nav<'guard>(&'guard self, _view: MutatorHeapView<'guard>) -> HeapNavigator<'guard> {
+        panic!("bytecode BifContext: nav — intrinsic uses the HeapSyn ABI")
+    }
+
+    fn root_env(&self) -> RefPtr<EnvFrame> {
+        panic!("bytecode BifContext: root_env — intrinsic uses the HeapSyn ABI")
+    }
+
+    fn env(&self, _view: MutatorHeapView) -> RefPtr<EnvFrame> {
+        panic!("bytecode BifContext: env — intrinsic uses the HeapSyn ABI")
+    }
+
+    // ── Emitter capture lifecycle: not yet wired ────────────────────
+
+    fn start_capture(&mut self, _format: &str) -> Result<(), ExecutionError> {
+        Err(ExecutionError::Panic(
+            self.state.annotation,
+            "bytecode: emit capture not yet wired".to_string(),
+        ))
+    }
+
+    fn push_capture_end(&mut self, _view: MutatorHeapView<'_>) -> Result<(), ExecutionError> {
+        Err(ExecutionError::Panic(
+            self.state.annotation,
+            "bytecode: emit capture not yet wired".to_string(),
+        ))
+    }
+
+    fn take_capture_result(&mut self) -> Result<String, ExecutionError> {
+        Err(ExecutionError::Panic(
+            self.state.annotation,
+            "bytecode: emit capture not yet wired".to_string(),
+        ))
+    }
+
+    // ── Neutral ABI over `BcValue` (spec §5.5) ──────────────────────
+
+    fn resolve_native(
+        &self,
+        view: MutatorHeapView<'_>,
+        arg: &Ref,
+    ) -> Result<Native, ExecutionError> {
+        let value = match arg {
+            Ref::V(n) => return Ok(n.clone()),
+            Ref::L(i) => view
+                .scoped(self.env)
+                .get(&view, *i)
+                .ok_or(ExecutionError::BadEnvironmentIndex(*i))?,
+            Ref::G(i) => view
+                .scoped(self.state.globals)
+                .get(&view, *i)
+                .ok_or(ExecutionError::BadGlobalIndex(*i))?,
+        };
+        self.native_from_value(view, value)
+    }
+
+    fn return_native(
+        &mut self,
+        _view: MutatorHeapView<'_>,
+        native: Native,
+    ) -> Result<(), ExecutionError> {
+        self.state.current = BcValue::Native(native);
+        Ok(())
     }
 }
 
@@ -922,9 +1445,29 @@ pub fn step(
 mod tests {
     use super::*;
     use crate::eval::bytecode::{encode, BcClosure, BcEnvBuilder};
+    use crate::eval::emit::NullEmitter;
     use crate::eval::memory::alloc::ScopedAllocator;
     use crate::eval::memory::heap::Heap;
     use crate::eval::stg::syntax::dsl;
+
+    /// A machine with no intrinsics and a null emitter (self-contained
+    /// programs).
+    fn bare_machine(
+        program: BytecodeProgram,
+        root_off: CodeRef,
+        global_forms: &[GlobalForm],
+    ) -> BytecodeMachine<'static> {
+        BytecodeMachine::new(
+            program,
+            root_off,
+            global_forms,
+            Vec::new(),
+            Box::new(NullEmitter),
+            0,
+            false,
+        )
+        .unwrap()
+    }
 
     #[test]
     fn read_ref_decodes_tags() {
@@ -1155,7 +1698,7 @@ mod tests {
             annotation: Default::default(),
         });
 
-        return_fun(&mut state, view).unwrap();
+        return_fun(&mut state, view, &BytecodeProgram::default()).unwrap();
 
         let c = state.current.as_closure().unwrap();
         assert_eq!(c.code(), 10);
@@ -1182,7 +1725,7 @@ mod tests {
             annotation: Default::default(),
         });
 
-        return_fun(&mut state, view).unwrap();
+        return_fun(&mut state, view, &BytecodeProgram::default()).unwrap();
 
         assert_eq!(state.current.as_closure().unwrap().code(), 10);
         assert_eq!(state.stack.len(), 1);
@@ -1213,7 +1756,7 @@ mod tests {
         state.blackhole = prog.blackhole;
         let mut guard = 0;
         while !state.terminated && guard < 1000 {
-            step(&mut state, view, &prog.code).unwrap();
+            step(&mut state, view, &prog).unwrap();
             guard += 1;
         }
         assert!(state.terminated, "machine did not terminate");
@@ -1283,7 +1826,7 @@ mod tests {
             root_env,
             constants,
         );
-        handle_op(&mut state, view, &prog.code).unwrap();
+        handle_op(&mut state, view, &prog).unwrap();
         assert_eq!(state.pending_bif, Some(3));
         assert_eq!(state.pending_bif_args.len(), 2);
     }
@@ -1299,5 +1842,104 @@ mod tests {
             Native::Num(n) => assert_eq!(n.as_i64(), Some(5)),
             _ => panic!("expected num"),
         }
+    }
+
+    #[test]
+    fn run_partial_application() {
+        // letrec k = \x y. x        -- a binary const
+        //        p = k(5)           -- thunk: too few args -> PAP of arity 1
+        // in p(6)                   -- saturate the PAP -> k(5, 6) -> 5
+        let syn = dsl::letrec_(
+            vec![
+                dsl::lambda(2, dsl::local(0)),
+                dsl::thunk(dsl::app(dsl::lref(0), vec![dsl::num(5)])),
+            ],
+            dsl::app(dsl::lref(1), vec![dsl::num(6)]),
+        );
+        match run_to_end(&syn) {
+            Native::Num(n) => assert_eq!(n.as_i64(), Some(5)),
+            _ => panic!("expected num"),
+        }
+    }
+
+    #[test]
+    fn machine_runs_atom_to_exit_code() {
+        // A numeric top-level result becomes the process exit code.
+        let (prog, root, gforms) = encode(&dsl::atom(dsl::num(0)), &[]);
+        let mut m = bare_machine(prog, root, &gforms);
+        assert_eq!(m.run(Some(10_000)).unwrap(), Some(0));
+    }
+
+    #[test]
+    fn machine_returns_numeric_exit_code() {
+        let (prog, root, gforms) = encode(&dsl::atom(dsl::num(5)), &[]);
+        let mut m = bare_machine(prog, root, &gforms);
+        assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
+    }
+
+    #[test]
+    fn machine_survives_forced_gc() {
+        // let x = 5 in x, forcing a collection after the Let allocates its
+        // env frame: the machine's root set must keep the frame live.
+        let syn = dsl::let_(vec![dsl::value(dsl::atom(dsl::num(5)))], dsl::local(0));
+        let (prog, root, gforms) = encode(&syn, &[]);
+        let mut m = bare_machine(prog, root, &gforms);
+        m.dispatch().unwrap(); // execute the Let (allocates the env frame)
+        m.gc_now(); // roots must survive
+        assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
+    }
+
+    #[test]
+    fn machine_resolves_global_ref() {
+        // globals = [ id = \x. x ]; root = id(7) via a G-ref.
+        let globals = vec![dsl::lambda(1, dsl::local(0))];
+        let root = dsl::app(dsl::gref(0), vec![dsl::num(7)]);
+        let (prog, root_off, gforms) = encode(&root, &globals);
+        let mut m = bare_machine(prog, root_off, &gforms);
+        assert_eq!(m.run(Some(10_000)).unwrap(), Some(7));
+    }
+
+    #[test]
+    fn machine_dispatches_add_intrinsic() {
+        // A bare `__ADD(2, 3)` Bif node dispatched through BcBifContext -> 5.
+        use crate::common::sourcemap::SourceMap;
+        use crate::eval::intrinsics;
+        use crate::eval::stg::{make_standard_runtime, runtime::Runtime};
+
+        let mut source_map = SourceMap::new();
+        let runtime = make_standard_runtime(&mut source_map);
+        let intrinsics = runtime.intrinsics();
+        let add = intrinsics::index("ADD").expect("ADD intrinsic") as u8;
+
+        let syn = dsl::app_bif(add, vec![dsl::num(2), dsl::num(3)]);
+        let (prog, root, _gforms) = encode(&syn, &[]);
+        let mut m =
+            BytecodeMachine::new(prog, root, &[], intrinsics, Box::new(NullEmitter), 0, false)
+                .unwrap();
+        assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
+    }
+
+    #[test]
+    fn machine_dispatches_add_with_local_arg() {
+        // let x = 2 in __ADD(x, 3) — exercises resolve_native's L-ref path
+        // (env slot -> OP_ATOM indirection -> native) in BcBifContext.
+        use crate::common::sourcemap::SourceMap;
+        use crate::eval::intrinsics;
+        use crate::eval::stg::{make_standard_runtime, runtime::Runtime};
+
+        let mut source_map = SourceMap::new();
+        let runtime = make_standard_runtime(&mut source_map);
+        let intrinsics = runtime.intrinsics();
+        let add = intrinsics::index("ADD").expect("ADD intrinsic") as u8;
+
+        let syn = dsl::let_(
+            vec![dsl::value(dsl::atom(dsl::num(2)))],
+            dsl::app_bif(add, vec![dsl::lref(0), dsl::num(3)]),
+        );
+        let (prog, root, _gforms) = encode(&syn, &[]);
+        let mut m =
+            BytecodeMachine::new(prog, root, &[], intrinsics, Box::new(NullEmitter), 0, false)
+                .unwrap();
+        assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
     }
 }

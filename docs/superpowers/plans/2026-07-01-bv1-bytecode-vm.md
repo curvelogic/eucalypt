@@ -39,12 +39,20 @@
 
 ## Progress Ledger (living — durable source of truth; update every increment)
 
-**Position (2026-07-02):** Phases 0, 1, 1.6 complete; Phase 1.5 (intrinsic ABI)
-partially done; **pivoting to Phase 2 (bytecode machine)**, completing the
-remaining intrinsic migrations alongside it and verifying via the differential
-harness. **Branch:** `integration/0.12.0` (worktree
-`eucalypt-worktrees/integration-0.12.0`). **Toolchain:** prepend
-`~/.rustup/toolchains/stable-aarch64-apple-darwin/bin` to PATH. Nothing pushed.
+**Position (2026-07-02, later):** Phases 0, 1, 1.6 complete; Phase 1.5
+(intrinsic ABI) partially done. **Phase 2 machine now runs end-to-end**: the
+`BytecodeMachine` (run/step loop + GC roots), globals frame, PAP, and the
+**`Bif` dispatch spine** (`BcBifContext: IntrinsicMachine`) are landed and
+tested — `__ADD(2,3)`/`let x=2 in __ADD(x,3)` execute through the real runtime
+intrinsics. **Next:** widen `BcBifContext`'s neutral overrides
+(`return_unit`/`return_boxed_num`/`return_bool`/`resolve_closure`/`data_*`/
+`force`), `evaluate_to_whnf`, the `Meta`/`DeMeta`/`LookupLit` arms, then encode
+the **full runtime globals + prelude** and wire the `EU_BYTECODE` flag path in
+`driver/eval.rs` → differential harness (synthetic-first per REFINEMENT B) →
+day11 gate. **Branch:** `feat/bv1-bytecode-vm` → PRs to `integration/0.12.0`
+(PR #927 merged). Worktree `eucalypt-worktrees/integration-0.12.0`.
+**Toolchain:** prepend `~/.rustup/toolchains/stable-aarch64-apple-darwin/bin`
+to PATH. Committed on the feature branch; not yet PR'd.
 
 ### Done (commit → what)
 - `9cbb2a0c` Phase 0 scaffold (module + `EU_BYTECODE` flag)
@@ -81,15 +89,20 @@ So the next unit is the **machine wiring**: a `BytecodeMachine`/run-context owni
 
 - `1fda104d` Phase 2 — **PAP trampoline templates** in the arena (`BytecodeProgram.pap` + `pap_offset(supplied,pending)`, `PAP_MAX_ARITY=16`). Ready to wire into `return_fun`'s Less case once handlers take the program.
 - `7c4c84d9` **fix(deps)** — bump `quick-xml` 0.25→0.41 (RUSTSEC-2026-0194/0195, newly-published, unrelated to BV1) + migrate `src/import/xml.rs` API. Fixed the PR's Security Audit CI failure. XML harness test byte-identical; `cargo audit` clean.
+- `5048ecde` **PR #927 merged** to `integration/0.12.0` (feat branch rebased onto the merge tip; work continues on `feat/bv1-bytecode-vm`).
+- `ac2f11aa` **Machine-wiring steps 1–2**: threaded `&BytecodeProgram` through `step`/`handle_op`/`return_fun` (handlers now reach `templates`/`blackhole`/`pap`); wired **PAP** (`return_fun` `Ordering::Less`) via a `partially_apply` helper building the `[f, supplied…]` env over `prog.pap_offset(supplied,pending)` with arity `pending`. New end-to-end test `run_partial_application` (`letrec k=\x y.x; p=k(5) in p(6)` → 5). 37 bytecode tests green, clippy clean.
+- `1aa2a4fa` **Machine-wiring step 3a — `BytecodeMachine`**: owns heap/program/state/metrics/clock; `run` loop mirroring `Machine::run` (500-tick GC poll → `gc_collect`, tick metering, `exit_code`); `dispatch()` drives the free `step`. `impl GcScannable for BcMachineState` (marks globals/root_env, scans `current`+stack inline, scans the constant pool via `scan_const`/`update_const`). Tests incl. `machine_survives_forced_gc` (step → force collect → run → 5). 40 green.
+- `eef945f0` **Step 3b-i — globals frame**: `BytecodeMachine::new` takes `&[GlobalForm]` and builds the globals frame (one closure per form via `form_info`, closed over `root_env`; cross-global refs are `Ref::G`). Test `machine_resolves_global_ref` (`id(7)` via G-ref). NB global-thunk memoisation deferred (pure → values agree). 41 green.
+- `dc8fe6ea` **Step 3b-ii — `Bif` dispatch spine**: machine gains intrinsics table / symbol pool / rcache / emitter / test-mode. `dispatch()` tail materialises `pending_bif_args` → `&[Ref]` and runs the intrinsic through **`BcBifContext: IntrinsicMachine`** (overrides `resolve_native` incl. `OP_ATOM` indirection via `native_from_value`, and `return_native`; the 5 HeapSyn-typed methods + capture lifecycle panic/error → unmigrated intrinsics surface via the harness). Tests `machine_dispatches_add_intrinsic` + `..._with_local_arg`. 43 bytecode + full lib (1228) green.
 
 ### Machine-wiring integration — ordered plan + two refinements to settle in-flight
 The core machine is complete + tested (all return_* handlers; Atom/Cons/Case/Seq/Ann/App/DirectApp/Let/LetRec; thunk memoisation; Bif capture; data + blackhole + pap templates; value model + GC + decoders). Remaining is one coherent integration:
-1. **Refactor** `step`/`handle_op`/`return_fun` to take `&BytecodeProgram` (not `&[u8]`) so handlers reach `templates`/`blackhole`/`pap`. (Mechanical; update tests.)
-2. **Wire PAP** (`return_fun` Less) via `prog.pap_offset` + a `partially_apply` building the PAP closure env `[f, supplied…]`.
-3. **`BytecodeMachine`** owning heap/intrinsics/emitter/metrics/symbol-pool + the program + `BcMachineState`; `run` loop (500-tick GC poll; `pending_bif` dispatch tail; capture lifecycle).
-4. **Bif dispatch** — a `BcBifContext` impl of `IntrinsicMachine`: neutral methods over `BcValue`+templates; the 5 `SynClosure`-typed methods `panic!` (bytecode never calls them; unmigrated intrinsics surface via the harness). Convert `pending_bif_args` (`DecodedRef`) → `&[Ref]` for `execute`.
-   - **REFINEMENT A (resolve_closure vs native):** `AbiClosure` is `Heap(SynClosure)|Byte(BcClosure)`, but a bytecode ref can resolve to a bare `Native` (not a closure). Plan: change `AbiClosure::Byte` to hold a `BcValue` (Closure|Native) so `resolve_closure`/`set_result`/`force` round-trip natives too. (My call; implement during Bif dispatch.)
-5. **Globals + prelude**: build the globals frame from `GlobalForm`s (intrinsic wrappers) + encode the prelude to bytecode (Task 3.2). 
+1. **[DONE `ac2f11aa`]** **Refactor** `step`/`handle_op`/`return_fun` to take `&BytecodeProgram` (not `&[u8]`) so handlers reach `templates`/`blackhole`/`pap`. (Mechanical; update tests.)
+2. **[DONE `ac2f11aa`]** **Wire PAP** (`return_fun` Less) via `prog.pap_offset` + a `partially_apply` building the PAP closure env `[f, supplied…]`.
+3. **[DONE `1aa2a4fa`+`eef945f0`] `BytecodeMachine`** owning heap/intrinsics/emitter/metrics/symbol-pool + the program + `BcMachineState`; `run` loop (500-tick GC poll; `pending_bif` dispatch tail; capture lifecycle). *(Globals frame done; emitter capture lifecycle still stubbed — errors on use.)*
+4. **[SPINE DONE `dc8fe6ea`] Bif dispatch** — a `BcBifContext` impl of `IntrinsicMachine`: neutral methods over `BcValue`+templates; the 5 `SynClosure`-typed methods `panic!`. Convert `pending_bif_args` (`DecodedRef`) → `&[Ref]` for `execute`. *(Done for `resolve_native`/`return_native`; REMAINING overrides: `return_unit`/`return_boxed_num`/`return_bool` (templates + globals TRUE/FALSE), `resolve_closure`/`resolve_callable_closure`/`set_result`/`force` (needs `evaluate_to_whnf` + REFINEMENT A), `data_tag`/`data_field`/`field_native`.)*
+   - **REFINEMENT A (resolve_closure vs native):** `AbiClosure` is `Heap(SynClosure)|Byte(BcClosure)`, but a bytecode ref can resolve to a bare `Native` (not a closure). Plan: change `AbiClosure::Byte` to hold a `BcValue` (Closure|Native) so `resolve_closure`/`set_result`/`force` round-trip natives too. (My call; implement when wiring those overrides.)
+5. **[NEXT] Globals + prelude**: encode the **full runtime globals** (intrinsic wrappers + prelude) to bytecode + build the full globals frame (unblocks `return_bool` TRUE/FALSE, prelude G-refs, real programs). Also global-thunk memoisation (Atom `Global` arm: blackhole + Update into the globals frame).
    - **REFINEMENT B (harness-first):** stand up the differential harness on tiny **synthetic** programs (no prelude) first — validate the core end-to-end through both engines — *before* encoding the full prelude. (My call; do harness-first.)
 6. **Meta/DeMeta/LookupLit** arms (+ `return_meta`, bytecode block navigator for LookupLit/MERGE).
 7. **`EU_BYTECODE` flag path** in `driver/eval.rs`; full differential harness → day11 gate (§8).
