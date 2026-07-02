@@ -697,6 +697,56 @@ pub fn return_fun(
     Ok(())
 }
 
+/// Handle a metadata-annotated value (`OP_META`) reaching the top of the
+/// stack. Translated from `vm.rs` `return_meta`: a `DeMeta` continuation
+/// binds `[meta, body]` into its handler; otherwise the metadata is stripped
+/// and the body flows on. `meta_ref`/`body_ref` resolve in `env` (the Meta
+/// node's environment).
+fn return_meta(
+    state: &mut BcMachineState,
+    view: MutatorHeapView<'_>,
+    env: RefPtr<BcEnvFrame>,
+    meta_ref: DecodedRef,
+    body_ref: DecodedRef,
+) -> Result<(), ExecutionError> {
+    let Some(cont) = state.stack.pop() else {
+        // Nothing consumes the metadata: strip it and continue with the body.
+        state.current = resolve_ref(view, &state.constants, env, state.globals, body_ref)?;
+        return Ok(());
+    };
+    match cont {
+        BcContinuation::DeMeta {
+            handler,
+            environment,
+            ..
+        } => {
+            let meta_v = resolve_ref(view, &state.constants, env, state.globals, meta_ref)?;
+            let body_v = resolve_ref(view, &state.constants, env, state.globals, body_ref)?;
+            let frame = view.from_values(
+                [meta_v, body_v].into_iter(),
+                2,
+                environment,
+                state.annotation,
+            )?;
+            state.current = BcValue::Closure(BcClosure::new(handler, frame));
+        }
+        BcContinuation::Update { environment, index } => {
+            // Memoise the metadata-annotated value itself (the current Meta
+            // closure); it is re-processed against the next continuation on
+            // the following step (mirrors the HeapSyn `update` path).
+            let cur = state.current.clone();
+            view.scoped(environment).update(&view, index, cur)?;
+        }
+        other => {
+            // Any other continuation is metadata-transparent: strip and
+            // re-offer the body, restoring the continuation.
+            state.current = resolve_ref(view, &state.constants, env, state.globals, body_ref)?;
+            state.stack.push(other);
+        }
+    }
+    Ok(())
+}
+
 /// Build a partial-application (PAP) trampoline closure for a function
 /// applied to too few args. The result closes `[f, supplied…]` over `f`'s
 /// env and points at the pre-encoded `App(L(pending), …)` template
@@ -1066,10 +1116,29 @@ pub fn handle_op(
             state.pending_bif = Some(intrinsic);
             state.pending_bif_args = arg_refs;
         }
-        Op::Meta | Op::DeMeta | Op::LookupLit => {
+        Op::Meta => {
+            // Operands are atom offsets for the meta and body refs.
+            let meta_off = read_u32(code, &mut pc);
+            let body_off = read_u32(code, &mut pc);
+            let meta_ref = arg_ref(code, meta_off)?;
+            let body_ref = arg_ref(code, body_off)?;
+            return_meta(state, view, env, meta_ref, body_ref)?;
+        }
+        Op::DeMeta => {
+            let scr_off = read_u32(code, &mut pc);
+            let handler_off = read_u32(code, &mut pc);
+            let or_else_off = read_u32(code, &mut pc);
+            state.stack.push(BcContinuation::DeMeta {
+                handler: handler_off,
+                or_else: or_else_off,
+                environment: env,
+            });
+            state.current = BcValue::Closure(BcClosure::new(scr_off, env));
+        }
+        Op::LookupLit => {
             return Err(ExecutionError::Panic(
                 state.annotation,
-                format!("bytecode: opcode {op:?} not yet implemented"),
+                "bytecode: opcode LookupLit not yet implemented".to_string(),
             ));
         }
     }

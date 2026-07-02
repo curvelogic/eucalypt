@@ -144,6 +144,26 @@ mod tests {
     }
 
     #[test]
+    fn agree_on_demeta_meta_value() {
+        // demeta(with_meta(99, 42), handler=[meta,body]->body, or_else=[v]->v)
+        // A metadata-annotated value takes the handler branch -> body (42).
+        let syn = dsl::demeta(
+            dsl::with_meta(dsl::num(99), dsl::num(42)),
+            dsl::local(1),
+            dsl::local(0),
+        );
+        assert_eq!(assert_engines_agree(syn, vec![]), Some(42));
+    }
+
+    #[test]
+    fn agree_on_demeta_plain_value() {
+        // demeta(7, handler=[meta,body]->body, or_else=[v]->v) -> 7.
+        // A plain (non-Meta) value takes the or_else branch with the value.
+        let syn = dsl::demeta(dsl::atom(dsl::num(7)), dsl::local(1), dsl::local(0));
+        assert_eq!(assert_engines_agree(syn, vec![]), Some(7));
+    }
+
+    #[test]
     fn agree_on_force_whnf() {
         // let t = __ADD(1, 2) in __FORCE_WHNF(t) -> 3
         let add = crate::eval::intrinsics::index_u8("ADD");
