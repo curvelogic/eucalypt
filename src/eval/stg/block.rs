@@ -608,6 +608,11 @@ impl StgIntrinsic for LookupOr {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         // args: [sym_key, blocklist, blockindex, block]
+        // When the mutable block-index optimisation is unavailable (bytecode
+        // engine), skip it and return ListNil to signal the STG find loop.
+        if !machine.block_index_enabled() {
+            return machine.return_closure_list(view, vec![]);
+        }
         // Check for an existing index — use ok() for sym key since it
         // may be an unforced thunk (BIF can't force thunks)
         if let Ok(Native::Index(ref map)) = machine.nav(view).resolve_native(&args[2]) {
@@ -1164,6 +1169,9 @@ impl StgIntrinsic for SafeLookup {
         // args: [sym_key, blocklist, blockindex, block]
         // Same BIF logic as LookupOr: return ListCons on hit, ListNil on miss.
         // The wrapper handles the null-propagation for non-block values.
+        if !machine.block_index_enabled() {
+            return machine.return_closure_list(view, vec![]);
+        }
         if let Ok(Native::Index(ref map)) = machine.nav(view).resolve_native(&args[2]) {
             if let Ok(Native::Sym(sym_id)) = machine.nav(view).resolve_native(&args[0]) {
                 if let Some(&position) = map.get(&sym_id) {
