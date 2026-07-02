@@ -795,8 +795,8 @@ pub(crate) fn array_binop<F: Fn(f64, f64) -> f64>(
     b_ref: &Ref,
     f: F,
 ) -> Result<(), ExecutionError> {
-    let a_native = machine.nav(view).resolve_native(a_ref)?;
-    let b_native = machine.nav(view).resolve_native(b_ref)?;
+    let a_native = machine.resolve_native(view, a_ref)?;
+    let b_native = machine.resolve_native(view, b_ref)?;
 
     let smid = machine.annotation();
     match (a_native, b_native) {
