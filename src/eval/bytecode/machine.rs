@@ -8,12 +8,14 @@
 //! This first increment lands the foundational operand decoding and
 //! reference resolution used by every dispatch arm.
 
+use crate::common::sourcemap::Smid;
 use crate::eval::error::ExecutionError;
 use crate::eval::memory::mutator::MutatorHeapView;
 use crate::eval::memory::syntax::{Native, Ref, RefPtr};
+use crate::eval::stg::tags::Tag;
 
 use super::program::{read_u32, read_u8};
-use super::{BcEnvFrame, BcValue, REF_G, REF_L, REF_V};
+use super::{BcContinuation, BcEnvFrame, BcValue, CodeRef, NO_BRANCH, REF_G, REF_L, REF_V};
 
 /// A decoded inline `Ref` operand from the byte stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,12 +98,110 @@ pub fn resolve_native(
     }
 }
 
+/// Read an arg-offset list (`u8` count then that many `u32` offsets), as
+/// emitted for App/DirectApp/Cons/Bif operands.
+pub fn read_arg_offsets(code: &[u8], pc: &mut usize) -> Vec<CodeRef> {
+    let n = read_u8(code, pc) as usize;
+    (0..n).map(|_| read_u32(code, pc)).collect()
+}
+
+/// A decoded lambda-form header (Let/LetRec binding, or a global form).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormHeader {
+    pub kind: u8,
+    pub arity: u8,
+    pub smid: Smid,
+    pub body: CodeRef,
+}
+
+/// Read a lambda-form header (`kind`, `arity`, `smid`, `body` offset).
+pub fn read_form_header(code: &[u8], pc: &mut usize) -> FormHeader {
+    let kind = read_u8(code, pc);
+    let arity = read_u8(code, pc);
+    let smid = Smid::from(read_u32(code, pc));
+    let body = read_u32(code, pc);
+    FormHeader {
+        kind,
+        arity,
+        smid,
+        body,
+    }
+}
+
+/// Read a densified branch table (`min_tag`, `len`, then `len` `u32`
+/// entries, `NO_BRANCH` → `None`). `pc` must sit at the `min_tag` byte
+/// (i.e. after the Case scrutinee offset).
+pub fn read_branch_table(code: &[u8], pc: &mut usize) -> (Tag, Vec<Option<CodeRef>>) {
+    let min_tag = read_u8(code, pc);
+    let len = read_u8(code, pc) as usize;
+    let entries = (0..len)
+        .map(|_| {
+            let e = read_u32(code, pc);
+            if e == NO_BRANCH {
+                None
+            } else {
+                Some(e)
+            }
+        })
+        .collect();
+    (min_tag, entries)
+}
+
+/// The bytecode machine's runtime state (its GC roots point in from here).
+///
+/// The current value, the continuation stack, and the two environment
+/// roots range over `BcValue`; the constant pool holds prepared native
+/// values (`Ref::V`). The heap / intrinsics / emitter / metrics are held
+/// alongside (added with the `run`/`step` loop in a later increment),
+/// mirroring `MachineCore` on the HeapSyn side.
+pub struct BcMachineState {
+    /// The value currently being evaluated or returned.
+    pub current: BcValue,
+    /// Continuation stack (off-heap `Vec`, scanned as GC roots).
+    pub stack: Vec<BcContinuation>,
+    /// Globals frame (intrinsic wrappers then prelude bindings).
+    pub globals: RefPtr<BcEnvFrame>,
+    /// The empty root environment.
+    pub root_env: RefPtr<BcEnvFrame>,
+    /// Prepared constant pool (all `Ref::V(Native)`), a GC root set.
+    pub constants: Vec<Ref>,
+    /// Termination flag.
+    pub terminated: bool,
+    /// Annotation to stamp on allocations / attach to errors.
+    pub annotation: Smid,
+    /// Deferred BIF intrinsic index (set by the `Bif` arm, run in `step`).
+    pub pending_bif: Option<u8>,
+}
+
+impl BcMachineState {
+    /// Create a fresh state with the given roots and constant pool. The
+    /// initial `current` value is the program-root closure.
+    pub fn new(
+        current: BcValue,
+        globals: RefPtr<BcEnvFrame>,
+        root_env: RefPtr<BcEnvFrame>,
+        constants: Vec<Ref>,
+    ) -> Self {
+        BcMachineState {
+            current,
+            stack: Vec::new(),
+            globals,
+            root_env,
+            constants,
+            terminated: false,
+            annotation: Smid::default(),
+            pending_bif: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::eval::bytecode::{BcClosure, BcEnvBuilder};
+    use crate::eval::bytecode::{encode, BcClosure, BcEnvBuilder};
     use crate::eval::memory::alloc::ScopedAllocator;
     use crate::eval::memory::heap::Heap;
+    use crate::eval::stg::syntax::dsl;
 
     #[test]
     fn read_ref_decodes_tags() {
@@ -142,5 +242,51 @@ mod tests {
             .unwrap();
         let v = resolve_ref(view, &[], frame, root, DecodedRef::Local(0)).unwrap();
         assert_eq!(v.as_closure().unwrap().code(), 3);
+    }
+
+    #[test]
+    fn read_arg_offsets_roundtrip() {
+        let (prog, root, _) = encode(&dsl::app(dsl::gref(0), vec![dsl::num(7)]), &[]);
+        let mut pc = root as usize + 1; // skip Op::App
+        let _flags = read_u8(&prog.code, &mut pc);
+        let _callable = read_ref(&prog.code, &mut pc).unwrap();
+        let offs = read_arg_offsets(&prog.code, &mut pc);
+        assert_eq!(offs.len(), 1);
+        assert_eq!(
+            prog.code[offs[0] as usize],
+            crate::eval::bytecode::Op::Atom as u8
+        );
+    }
+
+    #[test]
+    fn read_branch_table_roundtrip() {
+        let syn = dsl::case(
+            dsl::local(0),
+            vec![(2, dsl::atom(dsl::num(10))), (4, dsl::atom(dsl::num(20)))],
+            dsl::atom(dsl::num(30)),
+        );
+        let (prog, root, _) = encode(&syn, &[]);
+        let mut pc = root as usize + 1; // skip Op::Case
+        let _scr = read_u32(&prog.code, &mut pc);
+        let (min_tag, entries) = read_branch_table(&prog.code, &mut pc);
+        assert_eq!(min_tag, 2);
+        assert_eq!(entries.len(), 3);
+        assert!(entries[0].is_some());
+        assert!(entries[1].is_none()); // gap at tag 3
+        assert!(entries[2].is_some());
+    }
+
+    #[test]
+    fn read_form_header_roundtrip() {
+        let syn = dsl::let_(vec![dsl::thunk(dsl::atom(dsl::num(5)))], dsl::local(0));
+        let (prog, root, _) = encode(&syn, &[]);
+        let mut pc = root as usize + 1; // skip Op::Let
+        let count = u16::from_le_bytes([prog.code[pc], prog.code[pc + 1]]);
+        pc += 2;
+        assert_eq!(count, 1);
+        let hdr = read_form_header(&prog.code, &mut pc);
+        assert_eq!(hdr.kind, crate::eval::bytecode::FORM_THUNK);
+        assert_eq!(hdr.arity, 0);
+        assert!((hdr.body as usize) < prog.code.len());
     }
 }
