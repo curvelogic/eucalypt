@@ -38,12 +38,14 @@
 >   `let…in` (use `:let` blocks); `/` is floor division (`÷` exact); catenation
 >   precedence is very low.
 >
-> **CORPUS TALLY (branch `feat/bv1-migrate-intrinsics`, PR #942):** sweeping the
-> full `tests/harness/*.eu` under `EU_BYTECODE=1` vs HeapSyn: **144 PASS
-> (byte-identical), 0 DIFF**, 4 both-fail (pre-existing), **19 bytecode-only
-> fails** remaining. Was **43 PASS** at the start of this PR — the intrinsic
-> migration below unblocked ~101. Sweep script: `scratchpad/bv_sweep.sh`
-> (compares stdout of both engines per file).
+> **CORPUS TALLY (branch `feat/bv1-parse-typedata`, PR eu-9p9g):** sweeping the
+> full `tests/harness/*.eu` under `EU_BYTECODE=1` vs HeapSyn (comparing stdout +
+> exit code): **160 PASS, 8 DIFF** (was 146 PASS / 22 DIFF before this PR). The
+> 8 remaining DIFFs: `015_block_fns`, `085_deep_merge_dynamic`,
+> `135_dynamic_key_merge`, `127_merge_metadata` (MergeWith/DeepMerge),
+> `079_streams` (ProducerNext), `125_expectations`, and `175_sv2_to_spec` +
+> `183_widen_type_def_literals` (both fail on the *reference* HeapSyn engine —
+> pre-existing prelude bug). Sweep: stdout+exit of both engines per file.
 >
 > **DONE this PR (all neutral-ABI, byte-identical both engines):**
 > - `debug.rs` — DbgRepr/Dbg/TraceEntry/TraceExit + render/peek/trace helpers.
@@ -64,15 +66,28 @@
 > **⚠️ Neutral-ABI trap:** don't assume a resolved closure is WHNF; use
 > `value_native` (now non-panicking) for possibly-unforced values.
 >
-> **REMAINING 19 — all need RUNTIME CODE SYNTHESIS (a design decision, not more
-> mechanical ports):**
-> - `parse_string::ParseString` (10) and `typedata::TypeToData` (6): both call
->   `load()` — compile a core/STG expression and materialise it *runnable* on
->   the heap at runtime. On HeapSyn `load()` yields a HeapSyn tree the tree-walk
->   runs directly; the bytecode engine has no runtime encoder, so this needs a
->   **runtime bytecode-encode/append** (JIT a fragment into the code arena) or a
->   neutral "materialise this compiled data value" path. This is the genuinely
->   hard case the plan always flagged.
+> **✅ DONE 2026-07-02 (eu-9p9g, branch `feat/bv1-parse-typedata`):
+> `parse_string::ParseString` + `typedata::{TypeToData, TypeFromString}`** —
+> migrated off `load()` via the **value-representation route** (NO runtime code
+> synthesis, zero arena growth). New shared `stg/materialise.rs::materialise_data`
+> walks the compiled data-only STG (a flat/nested letrec of value-form
+> `Cons`/`Meta`/`Atom` cells with backward refs) and rebuilds the value directly
+> through the neutral `native_value`/`data_value`/`meta_value`/`resolve_closure`
+> ABI — engine-agnostic, on the GC heap. Verified `type_to_rcexpr` emits **only
+> data constructors** (no function applications) → data-only confirmed, no split
+> needed. One new neutral primitive `meta_value` (HeapSyn default builds
+> `HeapSyn::Meta`; bytecode override builds a `Meta` value over a new pre-encoded
+> `meta_template` in the arena — the "small fixed template" route, bounded).
+> Corpus **146→160 PASS** (fixed all 9 `parse_as_*`, `128_parse_args`, and
+> `174/177/178/182`), **zero new DIFFs**. Differential tests
+> `agree_on_parse_string_json` + `agree_on_type_to_data`. `EU_GC_VERIFY=2 +
+> EU_GC_STRESS=1` clean both engines. **NB `175_sv2_to_spec` and
+> `183_widen_type_def_literals` still DIFF — but they fail an assertion/warning
+> on the *reference HeapSyn* engine too (pre-existing prelude `union-spec`/
+> `result-def` bug), diverging only in partial pre-error emit; unrelated to this
+> migration.**
+>
+> **REMAINING (need code synthesis — not data):**
 > - `block::MergeWith` / DEEPMERGE (4): build a lazy `f(ov, nv)` **application
 >   thunk** as a stored value (not a tail call). Needs a neutral "build an
 >   application closure value" primitive (bytecode: an `App(L0,[L1,L2])` template
@@ -256,6 +271,29 @@ to PATH. Committed on the feature branch; not yet PR'd.
 - `0a010546` Phase 2 — **App arm + thunk memoisation + blackhole template + Let/LetRec**. `make_arg_array` (lazy/eager CG3), `enter_local`/`enter_callable` (blackhole slot + push Update for thunks), blackhole template in the arena (`BytecodeProgram.blackhole`, `state.blackhole`). End-to-end: `let x=5 in x`→5; `let id=\x.x in id(5)`→5.
 - `2c48cf2f` Phase 2 — **DirectApp arm** (CG1: inline smid, exact-arity fast-path saturate skipping ApplyTo, thunk/fallback). End-to-end: `id(5)` via DirectApp→5.
 - `0b6cb09a` Phase 2 — **Bif arm (capture)**: decode intrinsic index + arg refs into `pending_bif`/`pending_bif_args` (spec §6.3) for deferred dispatch. Tested (capture only; dispatch pending — see below).
+
+### Increment (2026-07-02, eu-9p9g) — ParseString + TypeToData/TypeFromString via value representation
+- **New `src/eval/stg/materialise.rs`** — `materialise_data(machine, view, pool,
+  syn, frame)` walks a compiled *data-only* STG value (letrec of value-form
+  `Cons`/`Meta`/`Atom` cells, backward refs, empty-list global) and rebuilds it
+  on the GC heap through the neutral ABI (`native_value`/`data_value`/
+  `meta_value`/`resolve_closure`). Errors cleanly on any code-bearing form
+  (`App`/`Bif`/`Case`/lambda/forward-ref) so a non-data input can never yield a
+  wrong value. Nested structures are self-contained fresh frames.
+- **New neutral primitive `meta_value`** (`intrinsic.rs`): HeapSyn default builds
+  `HeapSyn::Meta` over env `[meta, body]`; **bytecode override** builds a `Meta`
+  value over a new pre-encoded **`meta_template`** (`BytecodeProgram.meta_template`,
+  `encode.rs` emits `Meta L0 L1` once after blackhole). Bounded — one template,
+  no per-call arena growth. Needed for YAML `!tag` scalars (`115_parse_as_data_only`).
+- **`parse_string.rs` / `typedata.rs`** now `materialise_data` + `set_result`
+  instead of `load()` + `set_closure(SynClosure)`. `TypeFromString` builds its
+  `BoxedTypeData` cell via `data_value`/`native_value`. Same code runs on both
+  engines. Verified `type_to_rcexpr` is data-only (no fn-application → no split).
+- **Corpus 146→160 PASS**, zero new DIFFs. `cargo test --lib` 1250 green; clippy
+  `--all-targets` + fmt clean; `EU_GC_VERIFY=2 + EU_GC_STRESS=1` clean both engines.
+- **Follow-up:** MergeWith/DeepMerge (4) + ProducerNext (1) still need the
+  application/thunk *code* templates (not data). `175`/`183` are a pre-existing
+  prelude assertion bug on HeapSyn (out of scope here).
 
 ### ARCHITECTURAL BOUNDARY (2026-07-02) — handlers need machine/program context
 The self-contained handler arms are done (Atom/Cons/Case/Seq/Ann/App/DirectApp/Let/LetRec + all three return_* + thunk memoisation). The machine executes real expressions end-to-end. The REMAINING features all need broader context than the current free-fn handlers `(state, view, code)` take:

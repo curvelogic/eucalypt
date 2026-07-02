@@ -9,7 +9,7 @@
 //! Supported format symbols: `yaml`, `json`, `toml`, `csv`, `xml`, `edn`,
 //! `jsonl`, `text`.  `:json` and `:yaml` share the same parser.
 
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 use codespan_reporting::files::SimpleFiles;
 
@@ -18,13 +18,11 @@ use crate::{
     eval::{
         emit::Emitter,
         error::ExecutionError,
-        machine::{
-            env::SynClosure,
-            intrinsic::{CallGlobal2, IntrinsicMachine, StgIntrinsic},
-        },
-        memory::{loader::load, mutator::MutatorHeapView, syntax::Ref},
+        machine::intrinsic::{CallGlobal2, IntrinsicMachine, StgIntrinsic},
+        memory::{mutator::MutatorHeapView, syntax::Ref},
         stg::{
             compiler::Compiler,
+            materialise::materialise_data,
             support::{str_arg, sym_arg},
             RenderType,
         },
@@ -93,15 +91,18 @@ impl StgIntrinsic for ParseString {
             .compile(core_expr)
             .map_err(|e| ExecutionError::Panic(smid, format!("parse-as compile error: {e}")))?;
 
-        // Load the compiled STG onto the machine heap and set as closure.
-        let pool = RefCell::new(machine.symbol_pool_mut().clone());
-        let heap_ptr = load(&view, &mut pool.borrow_mut(), syntax)
-            .map_err(|e| ExecutionError::Panic(smid, format!("parse-as load error: {e}")))?;
+        // The compiled STG is a pure data literal. Rebuild it directly on the
+        // GC heap through the neutral value-construction ABI (engine-agnostic,
+        // no runtime code synthesis) rather than loading a HeapSyn tree that
+        // only the tree-walk engine can run.
+        let mut pool = machine.symbol_pool_mut().clone();
+        let value = materialise_data(&*machine, view, &mut pool, &syntax, &[])
+            .map_err(|e| ExecutionError::Panic(smid, format!("parse-as materialise error: {e}")))?;
 
-        // Update the machine's symbol pool with any new symbols interned during load
-        *machine.symbol_pool_mut() = pool.into_inner();
+        // Publish any symbols interned while materialising the value.
+        *machine.symbol_pool_mut() = pool;
 
-        machine.set_closure(SynClosure::new(heap_ptr, machine.root_env()))
+        machine.set_result(value)
     }
 }
 

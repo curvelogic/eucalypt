@@ -2194,6 +2194,30 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         Ok(AbiClosure::Byte(self.build_data(view, tag, &bc_fields)?))
     }
 
+    fn meta_value(
+        &self,
+        view: MutatorHeapView<'_>,
+        meta: AbiClosure,
+        body: AbiClosure,
+    ) -> Result<AbiClosure, ExecutionError> {
+        let unwrap = |c: AbiClosure| match c {
+            AbiClosure::Byte(v) => v,
+            AbiClosure::Heap(_) => {
+                panic!("bytecode BifContext: meta_value with a HeapSyn field")
+            }
+        };
+        let env = view.from_values(
+            [unwrap(meta), unwrap(body)].into_iter(),
+            2,
+            self.state.root_env,
+            self.state.annotation,
+        )?;
+        Ok(AbiClosure::Byte(BcValue::Closure(BcClosure::new(
+            self.program.meta_template,
+            env,
+        ))))
+    }
+
     fn return_closure_list(
         &mut self,
         view: MutatorHeapView<'_>,

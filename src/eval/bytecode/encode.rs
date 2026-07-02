@@ -428,6 +428,9 @@ pub fn encode(
     let templates = enc.encode_templates();
     let blackhole = enc.here();
     enc.emit_op(Op::BlackHole);
+    // A single `Meta L0 L1` template: a runtime metadata value closes a fresh
+    // env `[meta, body]` over it (mirrors the constructor templates).
+    let meta_template = enc.encode_node(&dsl::with_meta(dsl::lref(0), dsl::lref(1)));
     let pap = enc.encode_pap_templates();
 
     let global_forms: Vec<GlobalForm> = globals
@@ -452,6 +455,7 @@ pub fn encode(
         global_entries: global_forms.iter().map(|f| f.entry).collect(),
         templates,
         blackhole,
+        meta_template,
         pap,
     };
     (program, root_off, global_forms)

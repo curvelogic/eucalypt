@@ -6,7 +6,7 @@
 //!
 //! Together these power the `to-data` / `from-data` round-trip in the prelude.
 
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 use crate::eval::memory::syntax::{Native, StgBuilder};
 use crate::{
@@ -18,13 +18,11 @@ use crate::{
     eval::{
         emit::Emitter,
         error::ExecutionError,
-        machine::{
-            env::SynClosure,
-            intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
-        },
-        memory::{array::Array, loader::load, mutator::MutatorHeapView, syntax::Ref},
+        machine::intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
+        memory::{mutator::MutatorHeapView, syntax::Ref},
         stg::{
             compiler::Compiler,
+            materialise::materialise_data,
             support::{resolve_native_unboxing, str_arg},
             tags::DataConstructor,
             RenderType,
@@ -205,13 +203,18 @@ impl StgIntrinsic for TypeToData {
             ExecutionError::Panic(smid, format!("TYPE_TO_DATA: compile error: {e}"))
         })?;
 
-        // Load onto heap and return as closure.
-        let pool = RefCell::new(machine.symbol_pool_mut().clone());
-        let heap_ptr = load(&view, &mut pool.borrow_mut(), syntax)
-            .map_err(|e| ExecutionError::Panic(smid, format!("TYPE_TO_DATA: load error: {e}")))?;
-        *machine.symbol_pool_mut() = pool.into_inner();
+        // `type_to_rcexpr` emits only data constructors (lists of symbols/
+        // strings + record blocks) — never function applications — so the
+        // compiled STG is a pure data literal. Rebuild it directly on the GC
+        // heap through the neutral value-construction ABI (engine-agnostic, no
+        // runtime code synthesis).
+        let mut pool = machine.symbol_pool_mut().clone();
+        let value = materialise_data(&*machine, view, &mut pool, &syntax, &[]).map_err(|e| {
+            ExecutionError::Panic(smid, format!("TYPE_TO_DATA: materialise error: {e}"))
+        })?;
+        *machine.symbol_pool_mut() = pool;
 
-        machine.set_closure(SynClosure::new(heap_ptr, machine.root_env()))
+        machine.set_result(value)
     }
 }
 
@@ -249,16 +252,12 @@ impl StgIntrinsic for TypeFromString {
         })?;
         let canonical = format!("{ty}");
 
-        // Allocate BoxedTypeData on the heap.
-        let s_ref = view.str_ref(canonical)?;
-        let ptr = view
-            .data(
-                DataConstructor::BoxedTypeData.tag(),
-                Array::from_slice(&view, &[s_ref]),
-            )?
-            .as_ptr();
-
-        machine.set_closure(SynClosure::new(ptr, machine.root_env()))
+        // Build the BoxedTypeData value through the neutral ABI so it runs on
+        // both engines (a single data cell wrapping the canonical string).
+        let str_ptr = view.str(canonical)?.as_ptr();
+        let field = machine.native_value(view, Native::Str(str_ptr))?;
+        let value = machine.data_value(view, DataConstructor::BoxedTypeData.tag(), &[field])?;
+        machine.set_result(value)
     }
 }
 
