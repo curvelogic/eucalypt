@@ -37,6 +37,52 @@
 > home in an off-heap code offset). **NEW Phase 1.6** reworks the Phase 1 closure
 > types to `BcValue` before the machine. See spec §3 revision.
 
+## Progress Ledger (living — durable source of truth; update every increment)
+
+**Position (2026-07-02):** Phases 0, 1, 1.6 complete; Phase 1.5 (intrinsic ABI)
+partially done; **pivoting to Phase 2 (bytecode machine)**, completing the
+remaining intrinsic migrations alongside it and verifying via the differential
+harness. **Branch:** `integration/0.12.0` (worktree
+`eucalypt-worktrees/integration-0.12.0`). **Toolchain:** prepend
+`~/.rustup/toolchains/stable-aarch64-apple-darwin/bin` to PATH. Nothing pushed.
+
+### Done (commit → what)
+- `9cbb2a0c` Phase 0 scaffold (module + `EU_BYTECODE` flag)
+- `31973ca3` opcodes; `2bb05deb` `BytecodeProgram` + LE readers
+- `5bc6a387` encoder → `10176820` reworked to **atom-offset operands + dense case table**
+- `9eb97f4a` `BcClosure` + GC + **`env.rs` generalised `EnvironmentFrame` `StgObject`/`GcScannable` over `C` + `Closing::set_env`**
+- `ba690ad1` `BcContinuation`; `fa965358` `BcEnvBuilder`
+- `44b88d03` **spec/plan revision 1** (intrinsics not free → Phase 1.5)
+- `cbcc5c3b` Increment A (neutral scalar ABI + `support.rs` scalars)
+- `9bb9c0c1` Increment B (set/vec/ndarray → `return_native`)
+- `ef5fc399` C1 (`AbiClosure` + neutral closure ABI)
+- `a81f4356` migrate force/eq/arith; `d5bdaf50` string/array
+- `3e144b15` **Task 1.5.2 constructor templates** (`BytecodeProgram.templates[tag]`)
+- `d21ece03` **spec/plan revision 2** (`BcValue` value model → Phase 1.6)
+- `372c4b08` **Phase 1.6** `BcValue` rework (closure/cont/env_builder)
+- `7c2c665f` `&self` relax + `AbiClosure::arity` + migrate render/expect
+
+### Neutral `IntrinsicMachine` ABI available (`intrinsic.rs`)
+`resolve_native`, `return_native/unit/boxed_num/bool`, `resolve_closure`,
+`resolve_callable_closure`, `set_result`, `force`, `data_tag`, `data_field`,
+`field_native`; `AbiClosure{Heap,Byte}` + `arity`/`as_heap`/`expect_heap`.
+`BcValue = Closure(BcClosure) | Native(Native)`; `BcEnvFrame = EnvironmentFrame<BcValue>`.
+
+### Remaining (checklist)
+- [ ] **Phase 2** — `BytecodeMachine` (state over `BcValue`; `run`/`step`/`handle_op`;
+  `pending_bif`; `evaluate_to_whnf`); its neutral `IntrinsicMachine` impl (`BcValue`
+  over templates); flag path; **differential harness**; day11 byte-identical gate.
+- [ ] **Finish Increment C alongside Phase 2** — `return_data` + `machine_return_*_list`
+  over templates; `DataIterator`/`StrListIterator` neutral redesign; migrate
+  block/debug/list/parse_string/typedata/set/vec/stream_prng/etc.
+- [ ] **Increment D** — move `nav`/`set_closure`/`env`/`root_env`/`evaluate_to_whnf`
+  to a HeapSyn-only sub-trait; make neutral methods required (no default).
+- [ ] **Phase 3** — full opcode coverage + prelude encoded + full-harness differential
+  + GC stress + no-regression (acceptance §8).
+- [ ] **Phase 4** — collapse: delete HeapSyn machine/loader/flag.
+
+---
+
 **Goal:** Replace the `HeapSyn` tree-walk execution IR with a native flat-bytecode machine so compiled code leaves the GC-scanned heap, built as a parallel engine behind a flag and cross-checked against the HeapSyn engine by differential testing.
 
 **Architecture:** A new `src/eval/bytecode/` module: an encoder (`StgSyn`/`ArenaStgSyn` → flat `Vec<u8>` + constant pool), a `BytecodeMachine` reusing the existing heap/GC/env/intrinsics/emitter with a `match u8` dispatch loop, closures typed `BcClosure = Closing<CodeRef>` (`CodeRef = u32`), and a parallel `BcContinuation`. Selected by a flag; the HeapSyn machine is deleted in Phase 4 once the full harness passes byte-identically through both engines.
