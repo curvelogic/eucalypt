@@ -5,6 +5,8 @@ use std::rc::Rc;
 use lru::LruCache;
 use regex::Regex;
 
+use serde_json::Number;
+
 use crate::{
     common::sourcemap::Smid,
     eval::stg::wrap::wrap,
@@ -13,11 +15,16 @@ use crate::{
         error::ExecutionError,
         intrinsics,
         memory::{
+            alloc::ScopedAllocator,
+            array::Array,
             mutator::MutatorHeapView,
             symbol::SymbolPool,
-            syntax::{Ref, RefPtr},
+            syntax::{HeapSyn, Native, Ref, RefPtr, StgBuilder},
         },
-        stg::syntax::{dsl, StgSyn},
+        stg::{
+            syntax::{dsl, StgSyn},
+            tags::DataConstructor,
+        },
     },
 };
 
@@ -51,6 +58,78 @@ pub trait IntrinsicMachine {
 
     /// Current source annotation for error reporting
     fn annotation(&self) -> Smid;
+
+    // ── Code-type-neutral primitives (BV1 §5.5) ─────────────────────
+    //
+    // These express argument resolution and result construction without
+    // naming the code type, so the bytecode engine can implement the same
+    // intrinsic layer. The default impls below are the HeapSyn behaviour
+    // (built from `nav`/`set_closure`); the bytecode engine overrides them
+    // to produce `BcClosure`s over constructor templates. Once every
+    // caller uses these, the `SynClosure`-typed methods above move to a
+    // HeapSyn-only sub-trait (plan Phase 1.5, later increment).
+
+    /// Resolve a ref to a native value, looking through atom indirections.
+    fn resolve_native(
+        &mut self,
+        view: MutatorHeapView<'_>,
+        arg: &Ref,
+    ) -> Result<Native, ExecutionError> {
+        self.nav(view).resolve_native(arg)
+    }
+
+    /// Set the machine result to a native value (scalar return).
+    fn return_native(
+        &mut self,
+        view: MutatorHeapView<'_>,
+        native: Native,
+    ) -> Result<(), ExecutionError> {
+        let env = self.root_env();
+        self.set_closure(SynClosure::new(
+            view.alloc(HeapSyn::Atom {
+                evaluand: Ref::V(native),
+            })?
+            .as_ptr(),
+            env,
+        ))
+    }
+
+    /// Set the machine result to the unit value.
+    fn return_unit(&mut self, view: MutatorHeapView<'_>) -> Result<(), ExecutionError> {
+        let env = self.root_env();
+        self.set_closure(SynClosure::new(view.unit()?.as_ptr(), env))
+    }
+
+    /// Set the machine result to a `BoxedNumber` data value.
+    fn return_boxed_num(
+        &mut self,
+        view: MutatorHeapView<'_>,
+        n: Number,
+    ) -> Result<(), ExecutionError> {
+        let env = self.root_env();
+        let ptr = view
+            .data(
+                DataConstructor::BoxedNumber.tag(),
+                Array::from_slice(&view, &[Ref::V(Native::Num(n))]),
+            )?
+            .as_ptr();
+        self.set_closure(SynClosure::new(ptr, env))
+    }
+
+    /// Set the machine result to a boolean, reusing the global TRUE/FALSE
+    /// closures rather than allocating a fresh data cell.
+    fn return_bool(&mut self, view: MutatorHeapView<'_>, b: bool) -> Result<(), ExecutionError> {
+        use std::sync::OnceLock;
+        static TRUE_IDX: OnceLock<usize> = OnceLock::new();
+        static FALSE_IDX: OnceLock<usize> = OnceLock::new();
+        let idx = if b {
+            *TRUE_IDX.get_or_init(|| intrinsics::index("TRUE").unwrap())
+        } else {
+            *FALSE_IDX.get_or_init(|| intrinsics::index("FALSE").unwrap())
+        };
+        let closure = self.nav(view).global(idx)?;
+        self.set_closure(closure)
+    }
 
     /// Request an emitter capture for the given format.
     ///
