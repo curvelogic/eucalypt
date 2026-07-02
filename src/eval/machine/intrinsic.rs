@@ -11,7 +11,7 @@ use crate::{
     common::sourcemap::Smid,
     eval::stg::wrap::wrap,
     eval::{
-        bytecode::BcClosure,
+        bytecode::BcValue,
         emit::Emitter,
         error::ExecutionError,
         intrinsics,
@@ -46,7 +46,9 @@ use super::{
 #[derive(Clone)]
 pub enum AbiClosure {
     Heap(SynClosure),
-    Byte(BcClosure),
+    /// A bytecode runtime value — a closure or a bare native (a resolved ref
+    /// may be either, hence `BcValue` rather than a closure; BV1 REFINEMENT A).
+    Byte(BcValue),
 }
 
 impl AbiClosure {
@@ -76,7 +78,8 @@ impl AbiClosure {
     pub fn arity(&self) -> u8 {
         match self {
             AbiClosure::Heap(c) => c.arity(),
-            AbiClosure::Byte(c) => c.arity(),
+            AbiClosure::Byte(BcValue::Closure(c)) => c.arity(),
+            AbiClosure::Byte(BcValue::Native(_)) => 0,
         }
     }
 }
