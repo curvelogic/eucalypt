@@ -28,6 +28,14 @@
 > at runtime. This blocks *every* `Bif` (hence day11) and must be solved before
 > the dispatch loop. See the new Phase 1.5 section and spec §5.5. This is real,
 > previously-unscoped work — expect Phase 1.5 to be comparable in size to Phase 2.
+>
+> **Update (later 2026-07-02).** Phase 1.5 progress: neutral scalar + closure
+> intrinsic ABI added and `force`/`eq`/`arith`/`string`/`array` migrated
+> (HeapSyn byte-identical throughout); **Task 1.5.2 (arena constructor
+> templates) done**. A second spec correction surfaced: **the value model is
+> `BcValue = Closure | Native`, not `Closing<CodeRef>`** (a runtime native has no
+> home in an off-heap code offset). **NEW Phase 1.6** reworks the Phase 1 closure
+> types to `BcValue` before the machine. See spec §3 revision.
 
 **Goal:** Replace the `HeapSyn` tree-walk execution IR with a native flat-bytecode machine so compiled code leaves the GC-scanned heap, built as a parallel engine behind a flag and cross-checked against the HeapSyn engine by differential testing.
 
@@ -336,6 +344,41 @@ bytecode engine has a working `machine_return_*` + navigator producing
 **Phase 1.5 gate:** HeapSyn engine byte-identical across lib + full harness; the
 generic intrinsic layer compiles for both `S = RefPtr<HeapSyn>` and
 `S = CodeRef`. Only then start Phase 2.
+
+---
+
+## Phase 1.6 — Value model (`BcValue`) rework
+
+**Added 2026-07-02 (spec §3 revision).** A runtime native cannot live in an
+off-heap `CodeRef`, so the bytecode value model is
+`BcValue = enum { Closure(BcClosure), Native(Native) }`, with `BcClosure` a
+bespoke struct `{ info: InfoTagged<CodeRef>, env: RefPtr<EnvironmentFrame<BcValue>> }`.
+Phase 1 built `BcClosure = Closing<CodeRef>` as a first cut; this phase reworks it.
+
+**Milestone:** `BcValue`/`BcClosure` defined; `EnvironmentFrame<BcValue>`,
+`BcContinuation`, and `BcEnvBuilder` use them; `GcScannable` for all three; Phase 1
+unit tests updated and green. Still no execution.
+
+### Task 1.6.1: Define `BcValue` + bespoke `BcClosure`
+- [ ] Replace `pub type BcClosure = Closing<CodeRef>` with a struct carrying
+  `InfoTagged<CodeRef>` + `RefPtr<EnvironmentFrame<BcValue>>`; define
+  `enum BcValue { Closure(BcClosure), Native(Native) }`. Provide the constructors
+  the builders need (`new`, `new_annotated`, `new_annotated_lambda`, `close`,
+  `code`, `env`, `set_env`, arity/update/annotation via `InfoTable`).
+
+### Task 1.6.2: GC scanning for `BcValue`/`BcClosure`
+- [ ] `GcScannable for BcClosure` (env only; code inert) and `for BcValue`
+  (`Closure` → delegate; `Native` → mark heap-pointer natives). Update the
+  `closure.rs` `bcclosure_code_field_is_inert` test to the new type.
+
+### Task 1.6.3: Propagate through `cont.rs` / `env_builder.rs`
+- [ ] `BcContinuation` env/args fields use `EnvironmentFrame<BcValue>` /
+  `Array<BcValue>`; `BcEnvBuilder` builds `BcValue` slots. Update the Phase 1
+  unit tests (`branch_match_tag_indexes_table`, `saturate_reuses_code_with_new_env`).
+
+**Phase 1.6 gate:** `cargo test --lib bytecode` green with the new model; clippy
+clean. Then the bytecode engine can implement the neutral intrinsic ABI (§5.5)
+producing `BcValue`s over templates, unblocking Phase 2.
 
 ---
 

@@ -22,6 +22,13 @@
 >    A new §5.5 specifies parameterising the ABI over the code type plus
 >    constructor templates; phasing (§10) gains an intrinsic-layer phase before
 >    the day11 dispatch subset.
+> 4. **Correction — the value model is `BcValue`, not `Closing<CodeRef>`** (§3,
+>    §7): a runtime native cannot live in an off-heap code offset, so the
+>    bytecode value is `enum { Closure(BcClosure), Native(Native) }` and env
+>    frames / continuations / the current value range over it. `BcClosure`
+>    becomes a bespoke struct over `EnvironmentFrame<BcValue>`; Phase 1's
+>    `BcClosure = Closing<CodeRef>` first cut is reworked to this before the
+>    machine is built.
 
 ---
 
@@ -95,20 +102,58 @@ BV1 introduces:
 
 ```rust
 pub type CodeRef = u32;                    // offset into the bytecode arena
-pub type BcClosure = Closing<CodeRef>;     // closure whose code is a bytecode offset
-// EnvironmentFrame<BcClosure> comes for free from the generic definition
 ```
 
-Because a `u32` offset **never moves**, GC gets *simpler*, not harder:
-`BcClosure`'s `scan_and_update` no longer calls `heap.forwarded_to(code())` /
-`set_body()` (contrast `SynClosure::scan_and_update`, `env.rs:484-491`) — the code
-field is inert to the collector. Env frames still hold runtime values and are still
-scanned exactly as today.
+Because a `u32` offset **never moves**, GC gets *simpler*, not harder: a
+bytecode closure's `scan_and_update` no longer calls
+`heap.forwarded_to(code())` / `set_body()` (contrast
+`SynClosure::scan_and_update`, `env.rs:484-491`) — the code field is inert to
+the collector. Env frames still hold runtime values and are still scanned as
+today.
 
-**Reused for free** (by instantiating the generics with `CodeRef`): the closure
-struct, `InfoFlags` arity/update/annotation packing, `EnvironmentFrame` + cactus
-stack + `cell`/`get` + shared-backing/remap optimisation, the heap + GC + Immix
-allocator, the emitter, metrics, and the error machinery.
+> **Revision 2026-07-02 — the value model (`BcValue`), not `Closing<CodeRef>`.**
+> The original draft wrote `pub type BcClosure = Closing<CodeRef>` and claimed
+> `EnvironmentFrame<BcClosure>` "comes for free". Implementation review found
+> this does not close over **native values**. In the HeapSyn engine a native
+> WHNF value is `Closing(Atom{V(native)}, env)` — the `Native` lives *inline in
+> the heap-allocated `Atom` code node*. With code off-heap, a runtime-computed
+> native (every arithmetic result, the commonest value the machine makes) has
+> nowhere to live: a `CodeRef` is a `u32` offset into an immutable arena, and
+> `Closing<S>` hardcodes its env-slot type to `Closing<S>` itself. The constant
+> pool (§4.4) covers only *load-time* literals.
+>
+> BV1 therefore represents a bytecode runtime value as an explicit two-kind
+> value, and env frames / continuations / the machine's current value are
+> parameterised over it:
+>
+> ```rust
+> pub struct BcClosure {                       // a code closure
+>     info: InfoTagged<CodeRef>,               // arity/update/annotation + code offset
+>     env:  RefPtr<EnvironmentFrame<BcValue>>, // slots are BcValues
+> }
+> pub enum BcValue {
+>     Closure(BcClosure),                      // an unevaluated / callable closure
+>     Native(Native),                          // a WHNF primitive (num, str ptr, sym, …)
+> }
+> // EnvironmentFrame<BcValue> is still the generic frame — reused for free.
+> ```
+>
+> This mirrors how STG-style machines separate heap closures from returned
+> primitives, and keeps *code* off the GC scan set: `BcValue::Closure` scans its
+> env (code offset inert); `BcValue::Native` scans only the heap-pointer natives
+> (`Str`/`Set`/`Vec`/`NdArray`). It does mean `BcClosure` is a bespoke struct
+> rather than `Closing<CodeRef>`, so the "reuse the closure struct for free"
+> claim below is downgraded: the *`EnvironmentFrame`/cactus stack/`cell`/`get`/
+> shared-backing* machinery is still reused (it is generic over the slot type),
+> but the closure struct and its `InfoTagged` packing are re-expressed for the
+> `BcValue` env. (Phase 1 built `BcClosure = Closing<CodeRef>` as a first cut;
+> it is reworked to this model before the machine is built — see the plan.)
+
+**Reused for free**: `InfoFlags` arity/update/annotation packing, `EnvironmentFrame`
++ cactus stack + `cell`/`get` + shared-backing/remap optimisation (generic over
+the slot type, so it serves `EnvironmentFrame<BcValue>`), the heap + GC + Immix
+allocator, the emitter, metrics, and the error machinery. (The closure *struct*
+is **not** reused verbatim — see the `BcValue` revision note above.)
 
 > **Revision 2026-07-02 — intrinsics are NOT reused for free.** The original
 > draft listed "all 192 intrinsics" here. Implementation review found that
@@ -126,12 +171,14 @@ allocator, the emitter, metrics, and the error machinery.
 > (see §5.5). This is real added scope the original draft under-estimated.
 
 **Genuinely new work** (the bulk of BV1):
+- the **`BcValue` value model** (`Closure(BcClosure) | Native(Native)`) and the
+  bespoke `BcClosure` struct over `EnvironmentFrame<BcValue>`;
 - a `BcContinuation` enum (today's 7 continuations hard-code `RefPtr<HeapSyn>`);
 - the bytecode encoder (replacing the `StgSyn → HeapSyn` loader);
 - the bytecode dispatch loop(s);
-- `BcClosure` builders paralleling `env_builder`'s `create_arg_array` etc.;
-- `GcScannable` impls for `BcContinuation` and `BcClosure` (simpler — no code
-  pointer to trace/fix up);
+- `BcValue`/`BcClosure` builders paralleling `env_builder`'s `create_arg_array` etc.;
+- `GcScannable` impls for `BcContinuation`, `BcClosure` and `BcValue` (the code
+  offset is inert; only env pointers and heap-pointer natives are traced);
 - **the intrinsic layer (§5.5): parameterise `IntrinsicMachine` / `HeapNavigator`
   / the `support.rs` return helpers over the code type `S`, and construct all
   runtime data via fixed constructor templates pre-encoded in the arena.**
@@ -385,8 +432,13 @@ node (code is root-reachable for the whole run); and the entire two-level
 `Array` + `OpaqueHeapBytes` backing-buffer registration/forwarding dance for
 `branch_table`/`args`/`bindings` (`collect.rs:71-121`) — the most intricate,
 historically bug-prone part of the code/GC coupling (MEMORY.md "Bug 2/3/5/6").
-Runtime **data values** (data-constructor closures = `CodeRef` + heap env) and the
-constant pool remain scanned; only *code* leaves the set.
+Runtime **values** remain scanned; only *code* leaves the set. A `BcValue` is
+scanned by kind: `Closure(BcClosure)` marks/forwards its env pointer (the
+`CodeRef` is inert); `Native(n)` marks the heap-pointer natives (`Str`/`Set`/
+`Vec`/`NdArray`) and ignores the inline scalars (`Num`/`Sym`/`Zdt`). Env frames
+are `EnvironmentFrame<BcValue>` and the constant pool is a root set — both scanned
+as data, never as code. Constructor templates (§5.5) live in the code arena and
+so, like all code, are never scanned.
 
 The HeapSyn machine, `HeapSyn`, its `GcScannable` impls, and the `StgSyn → HeapSyn`
 loader are physically deleted in phase 4 (§10), once the bytecode path passes the
@@ -469,6 +521,12 @@ differential harness once it exists.
   (dispatch, continuations, env-builder). Mitigated by the parallel-machine
   structure + differential testing (both engines cross-check on every case) and the
   disposable integration branch.
+- **High — value model rework (discovered 2026-07-02, §3).** The draft's
+  `BcClosure = Closing<CodeRef>` cannot represent a runtime native (code is
+  off-heap). Adopting the `BcValue = Closure | Native` model reworks Phase 1's
+  closure/continuation/env-builder types and defines the machine's core value
+  representation. It is foundational and touches everything downstream; mitigated
+  by doing it before the machine is built and re-running the Phase 1 unit tests.
 - **High — intrinsic-layer scope (discovered 2026-07-02, §5.5).** The original
   draft assumed the 192 intrinsics were reused for free; in fact the ABI is
   `SynClosure`-typed and the return helpers synthesise `HeapSyn`. Parameterising
