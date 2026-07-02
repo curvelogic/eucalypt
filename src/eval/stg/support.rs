@@ -568,13 +568,7 @@ pub fn machine_return_set(
     set: HeapSet,
 ) -> Result<(), ExecutionError> {
     let ptr = view.alloc(set)?.as_ptr();
-    machine.set_closure(SynClosure::new(
-        view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Set(ptr)),
-        })?
-        .as_ptr(),
-        machine.root_env(),
-    ))
+    machine.return_native(view, Native::Set(ptr))
 }
 
 /// Helper for intrinsics to access an ndarray arg
@@ -603,13 +597,7 @@ pub fn machine_return_ndarray(
     arr: HeapNdArray,
 ) -> Result<(), ExecutionError> {
     let ptr = view.alloc(arr)?.as_ptr();
-    machine.set_closure(SynClosure::new(
-        view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::NdArray(ptr)),
-        })?
-        .as_ptr(),
-        machine.root_env(),
-    ))
+    machine.return_native(view, Native::NdArray(ptr))
 }
 
 /// Helper for intrinsics to access a vec arg.
@@ -638,13 +626,7 @@ pub fn machine_return_vec(
     vec: HeapVec,
 ) -> Result<(), ExecutionError> {
     let ptr = view.alloc(vec)?.as_ptr();
-    machine.set_closure(SynClosure::new(
-        view.alloc(HeapSyn::Atom {
-            evaluand: Ref::V(Native::Vec(ptr)),
-        })?
-        .as_ptr(),
-        machine.root_env(),
-    ))
+    machine.return_native(view, Native::Vec(ptr))
 }
 
 /// Return boolean from intrinsic
