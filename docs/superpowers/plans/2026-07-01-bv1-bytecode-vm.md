@@ -39,39 +39,54 @@
 >   precedence is very low.
 >
 > **CORPUS TALLY (branch `feat/bv1-migrate-intrinsics`, PR #942):** sweeping the
-> full `tests/harness/*.eu` under `EU_BYTECODE=1` vs HeapSyn: **96 PASS
-> (byte-identical), 0 DIFF**, 4 both-fail (pre-existing), **68 bytecode-only
-> fails** remaining. Was 43 PASS before this increment — `debug.rs` (DbgRepr &
-> trace) migration unblocked ~53. Sweep script:
-> `scratchpad/bv_sweep.sh` (compares stdout of both engines per file).
+> full `tests/harness/*.eu` under `EU_BYTECODE=1` vs HeapSyn: **144 PASS
+> (byte-identical), 0 DIFF**, 4 both-fail (pre-existing), **19 bytecode-only
+> fails** remaining. Was **43 PASS** at the start of this PR — the intrinsic
+> migration below unblocked ~101. Sweep script: `scratchpad/bv_sweep.sh`
+> (compares stdout of both engines per file).
 >
-> **NEXT (data-driven):** migrate the remaining bytecode-only panics, in
-> impact order (culprit → #tests it blocks, from the sweep backtraces):
-> `support::machine_return_str_iter` (9), `block::Merge` — "block application
-> (MERGE) not yet implemented" (8), `support::resolve_native_unboxing` (7),
-> `render_to_string::RenderToString` (7), `parse_string::ParseString` (5, the
-> hard `load()` runtime-synthesis case), `block::IsBlock` (4), then the
-> singles (vec/time/typedata/stream_prng/stream_intrinsic). The port pattern:
-> `machine.nav(view).resolve(x)` → `machine.resolve_closure(view, x)`;
-> `nav().resolve_native` → `resolve_native`; `HeapSyn::Cons` code-matching →
-> `data_tag`/`data_field`/`field_native`/`value_native`; `set_closure` →
-> `set_result`; `evaluate_to_whnf(SynClosure)` → `force(AbiClosure)`; list/data
-> construction → `data_value`/`native_value`/`return_closure_list`. Then the IO
-> path (`io_run`/world-injection not ported; flag path is pure-programs-only)
-> and an automated `.eu`-corpus differential test.
+> **DONE this PR (all neutral-ABI, byte-identical both engines):**
+> - `debug.rs` — DbgRepr/Dbg/TraceEntry/TraceExit + render/peek/trace helpers.
+> - `support.rs` — resolve_native_unboxing, machine_return_str_iter,
+>   machine_return_num_list_of_lists, machine_return_block_pair_closure_list,
+>   cons_tag_of; added `list_value` helper.
+> - `block.rs` — **block-application MERGE dispatch** in the bytecode machine
+>   (`return_data` ApplyTo → append block, enter MERGE global), plus
+>   Merge/IsBlock/deconstruct.
+> - `render_to_string.rs`, `time.rs` (ZdtFields), `vec.rs` (VecOf/VecNth/
+>   VecToList), `set.rs` (SetToList), `stream_prng.rs` (all stream returns).
+> - **Two new neutral primitives:** (1) `IntrinsicMachine::tail_apply_global`
+>   (tail-call a global on runtime args — HeapSyn builds the App, bytecode
+>   pushes ApplyTo + enters the global); (2) `try_navigate_local_native` so the
+>   HeapSyn `value_native` default no longer panics on an unforced `Atom{L}`
+>   (matches bytecode). Differential test `agree_on_dbg_repr` added.
 >
-> **⚠️ Neutral-ABI trap (learned this increment):** the HeapSyn `value_native`
-> default previously called `navigate_local_native`, which *panics* on a
-> non-native local (unevaluated `Atom{L}`). A non-forcing peek trips this. Fixed
-> by `try_navigate_local_native` (returns `Option`) so HeapSyn matches the
-> bytecode engine. When you port an intrinsic that inspects *unforced* values,
-> prefer `value_native` (now safe) and never assume a resolved closure is WHNF.
+> **⚠️ Neutral-ABI trap:** don't assume a resolved closure is WHNF; use
+> `value_native` (now non-panicking) for possibly-unforced values.
 >
-> **DONE this increment (PR #942, eu-0sst):** `debug.rs` fully on the neutral
-> ABI (DbgRepr/Dbg/TraceEntry/TraceExit + helpers), byte-identical both engines;
-> `value_native` panic fix; `agree_on_dbg_repr` differential test. Follow-up
-> filed: `__DBG` fires a different #times on stderr per engine (thunk-update
-> difference, not render) — see beads.
+> **REMAINING 19 — all need RUNTIME CODE SYNTHESIS (a design decision, not more
+> mechanical ports):**
+> - `parse_string::ParseString` (10) and `typedata::TypeToData` (6): both call
+>   `load()` — compile a core/STG expression and materialise it *runnable* on
+>   the heap at runtime. On HeapSyn `load()` yields a HeapSyn tree the tree-walk
+>   runs directly; the bytecode engine has no runtime encoder, so this needs a
+>   **runtime bytecode-encode/append** (JIT a fragment into the code arena) or a
+>   neutral "materialise this compiled data value" path. This is the genuinely
+>   hard case the plan always flagged.
+> - `block::MergeWith` / DEEPMERGE (4): build a lazy `f(ov, nv)` **application
+>   thunk** as a stored value (not a tail call). Needs a neutral "build an
+>   application closure value" primitive (bytecode: an `App(L0,[L1,L2])` template
+>   over env `[f, ov, nv]`). Smaller than full `load()` but still code synthesis.
+> - `stream_intrinsic::ProducerNext` (1): `load()` **plus** a self-referential
+>   updatable BIF thunk (`PRODUCER_NEXT(handle)` tail) — both synthesis forms.
+>
+> These share one root: the bytecode path cannot yet synthesise *code* at
+> runtime, only *data* (`data_value`/`return_closure_list`). Next step is a
+> design decision on how to add runtime code (encoder-append vs. a small set of
+> pre-encoded apply/thunk templates vs. keeping these few on a HeapSyn shim).
+>
+> **Follow-up filed:** `__DBG` fires a different #times on stderr per engine
+> (thunk-update difference, not render) — see beads eu-… .
 >
 > **⚠️ Before any perf work:** see the PERF CAVEAT below — the block-index
 > optimisation is OFF on the bytecode path (O(n) lookups), so block-heavy
