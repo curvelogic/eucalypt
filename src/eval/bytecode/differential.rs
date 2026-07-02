@@ -63,9 +63,11 @@ fn assert_engines_agree(syntax: Rc<StgSyn>, bifs: Vec<Box<dyn StgIntrinsic>>) ->
 
 mod tests {
     use super::*;
-    use crate::eval::stg::arith::Add;
+    use crate::eval::stg::arith::{Add, Lt};
+    use crate::eval::stg::boolean::{False, True};
     use crate::eval::stg::force::ForceWhnf;
     use crate::eval::stg::syntax::dsl;
+    use crate::eval::stg::tags::DataConstructor;
 
     #[test]
     fn agree_on_arithmetic() {
@@ -119,6 +121,26 @@ mod tests {
             dsl::app(dsl::lref(1), vec![dsl::num(4)]),
         );
         assert_eq!(assert_engines_agree(syn, vec![]), Some(9));
+    }
+
+    #[test]
+    fn agree_on_comparison_bool() {
+        // case __LT(2, 3) { BoolTrue -> 42 ; BoolFalse -> 7 } else 0 -> 42.
+        // Exercises return_bool (a constructor-template return) + case
+        // dispatch on the resulting boolean data value.
+        let lt = crate::eval::intrinsics::index_u8("LT");
+        let syn = dsl::case(
+            dsl::app_bif(lt, vec![dsl::num(2), dsl::num(3)]),
+            vec![
+                (DataConstructor::BoolTrue.tag(), dsl::atom(dsl::num(42))),
+                (DataConstructor::BoolFalse.tag(), dsl::atom(dsl::num(7))),
+            ],
+            dsl::atom(dsl::num(0)),
+        );
+        assert_eq!(
+            assert_engines_agree(syn, vec![Box::new(Lt), Box::new(True), Box::new(False)],),
+            Some(42)
+        );
     }
 
     #[test]
