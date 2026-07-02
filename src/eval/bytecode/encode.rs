@@ -368,6 +368,31 @@ impl Encoder {
             .collect()
     }
 
+    /// Encode the PAP trampoline table (spec §6.1 / `pap_syn`). For each
+    /// `(supplied, pending)` with both in `1..=PAP_MAX_ARITY`, emit
+    /// `App(L(pending), [L(pending+1)..L(pending+supplied), L(0)..L(pending-1)])`.
+    /// When the partially-applied closure is later saturated with `pending`
+    /// args, its env is `[pending args…, f, supplied args…]`, so this applies
+    /// `f` to all `supplied + pending` arguments in order.
+    fn encode_pap_templates(&mut self) -> Vec<CodeRef> {
+        use crate::eval::bytecode::program::PAP_MAX_ARITY as MAX;
+        let mut table = vec![0u32; MAX * MAX];
+        for supplied in 1..=MAX {
+            for pending in 1..=MAX {
+                let mut args: Vec<Ref> = Vec::with_capacity(supplied + pending);
+                for i in 0..supplied {
+                    args.push(dsl::lref(pending + i + 1));
+                }
+                for i in 0..pending {
+                    args.push(dsl::lref(i));
+                }
+                let node = dsl::app(dsl::lref(pending), args);
+                table[(supplied - 1) * MAX + (pending - 1)] = self.encode_node(&node);
+            }
+        }
+        table
+    }
+
     /// The current end-of-stream offset (where the next byte lands).
     #[inline(always)]
     fn here(&self) -> CodeRef {
@@ -403,6 +428,7 @@ pub fn encode(
     let templates = enc.encode_templates();
     let blackhole = enc.here();
     enc.emit_op(Op::BlackHole);
+    let pap = enc.encode_pap_templates();
 
     let global_forms: Vec<GlobalForm> = globals
         .iter()
@@ -426,6 +452,7 @@ pub fn encode(
         global_entries: global_forms.iter().map(|f| f.entry).collect(),
         templates,
         blackhole,
+        pap,
     };
     (program, root_off, global_forms)
 }
@@ -568,6 +595,17 @@ mod tests {
             DataConstructor::BoxedNumber.tag()
         );
         assert_eq!(read_u8(&prog.code, &mut pc), 1);
+    }
+
+    #[test]
+    fn pap_templates_are_apps() {
+        let (prog, _root, _) = encode(&dsl::atom(dsl::num(0)), &[]);
+        // supplied=1, pending=1 → an App node.
+        let off = prog.pap_offset(1, 1).unwrap();
+        assert_eq!(prog.code[off as usize], Op::App as u8);
+        // Out-of-range indices yield None.
+        assert!(prog.pap_offset(0, 1).is_none());
+        assert!(prog.pap_offset(1, 99).is_none());
     }
 
     #[test]

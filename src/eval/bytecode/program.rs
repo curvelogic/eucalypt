@@ -39,6 +39,28 @@ pub struct BytecodeProgram {
     /// Offset of a shared `OP_BLACKHOLE` node, used to overwrite a thunk's
     /// env slot while it is being forced (cycle detection).
     pub blackhole: CodeRef,
+    /// Partial-application (PAP) trampoline templates, indexed
+    /// `(supplied-1) * PAP_MAX_ARITY + (pending-1)`. Each is an
+    /// `App(L(pending), [supplied+pending refs])` node used to build the
+    /// closure that resumes a partially-applied function (spec §6.1 / the
+    /// `pap_syn` analogue). Use `pap_offset` to index.
+    pub pap: Vec<CodeRef>,
+}
+
+/// Maximum function arity supported by the PAP trampoline table.
+pub const PAP_MAX_ARITY: usize = 16;
+
+impl BytecodeProgram {
+    /// The PAP trampoline offset for a function partially applied to
+    /// `supplied` args with `pending` still required (both `>= 1`).
+    pub fn pap_offset(&self, supplied: usize, pending: usize) -> Option<CodeRef> {
+        if supplied == 0 || pending == 0 || supplied > PAP_MAX_ARITY || pending > PAP_MAX_ARITY {
+            return None;
+        }
+        self.pap
+            .get((supplied - 1) * PAP_MAX_ARITY + (pending - 1))
+            .copied()
+    }
 }
 
 impl BytecodeProgram {
