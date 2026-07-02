@@ -28,8 +28,8 @@ use crate::eval::stg::tags::{DataConstructor, Tag};
 
 use super::program::{read_u16, read_u32, read_u8};
 use super::{
-    BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, BytecodeProgram, CodeRef, Op,
-    FORM_LAMBDA, FORM_THUNK, NO_BRANCH, REF_G, REF_L, REF_V,
+    BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, BytecodeProgram, CodeRef,
+    GlobalForm, Op, FORM_LAMBDA, FORM_THUNK, NO_BRANCH, REF_G, REF_L, REF_V,
 };
 
 /// A decoded inline `Ref` operand from the byte stream.
@@ -733,13 +733,19 @@ fn make_arg_array(
     Ok(array)
 }
 
+/// Build the static part of a closure from a form kind/arity/annotation
+/// and its body offset (shared by let bindings and global forms).
+fn form_info(kind: u8, arity: u8, smid: Smid, body: CodeRef) -> InfoTagged<CodeRef> {
+    match kind {
+        FORM_THUNK => InfoTagged::thunk(body),
+        FORM_LAMBDA => InfoTagged::new(arity, body, smid),
+        _ => InfoTagged::value(body), // FORM_VALUE
+    }
+}
+
 /// Build the static part of a closure from a decoded form header.
 fn bc_info(h: &FormHeader) -> InfoTagged<CodeRef> {
-    match h.kind {
-        FORM_THUNK => InfoTagged::thunk(h.body),
-        FORM_LAMBDA => InfoTagged::new(h.arity, h.body, h.smid),
-        _ => InfoTagged::value(h.body), // FORM_VALUE
-    }
+    form_info(h.kind, h.arity, h.smid, h.body)
 }
 
 /// Read a `Let`/`LetRec` binding-header list (`u16` count then that many
@@ -1084,6 +1090,7 @@ impl BytecodeMachine {
     pub fn new(
         program: BytecodeProgram,
         root_off: CodeRef,
+        global_forms: &[GlobalForm],
         heap_limit_mib: usize,
     ) -> Result<Self, ExecutionError> {
         let heap = if heap_limit_mib == 0 {
@@ -1092,14 +1099,30 @@ impl BytecodeMachine {
             Heap::with_limit(heap_limit_mib)
         };
         let mut pool = SymbolPool::new();
-        let (constants, root_env) = {
+        let (constants, root_env, globals) = {
             let view = MutatorHeapView::new(&heap);
             let constants = program.prepare_constants(view, &mut pool);
             let root_env = view.alloc(BcEnvFrame::default())?.as_ptr();
-            (constants, root_env)
+            // The globals frame holds one closure per encoded global form.
+            // Cross-global references compile to `Ref::G(i)` (resolved against
+            // this frame), so the closures need only close over `root_env`.
+            let globals = if global_forms.is_empty() {
+                root_env
+            } else {
+                view.from_values(
+                    global_forms.iter().map(|gf| {
+                        BcValue::Closure(BcClosure::close(
+                            &form_info(gf.kind, gf.arity, gf.smid, gf.entry),
+                            root_env,
+                        ))
+                    }),
+                    global_forms.len(),
+                    root_env,
+                    Smid::default(),
+                )?
+            };
+            (constants, root_env, globals)
         };
-        // No prelude yet: globals is the empty root frame (wired next increment).
-        let globals = root_env;
         let mut state = BcMachineState::new(
             BcValue::Closure(BcClosure::new(root_off, root_env)),
             globals,
@@ -1615,15 +1638,15 @@ mod tests {
     #[test]
     fn machine_runs_atom_to_exit_code() {
         // A numeric top-level result becomes the process exit code.
-        let (prog, root, _) = encode(&dsl::atom(dsl::num(0)), &[]);
-        let mut m = BytecodeMachine::new(prog, root, 0).unwrap();
+        let (prog, root, gforms) = encode(&dsl::atom(dsl::num(0)), &[]);
+        let mut m = BytecodeMachine::new(prog, root, &gforms, 0).unwrap();
         assert_eq!(m.run(Some(10_000)).unwrap(), Some(0));
     }
 
     #[test]
     fn machine_returns_numeric_exit_code() {
-        let (prog, root, _) = encode(&dsl::atom(dsl::num(5)), &[]);
-        let mut m = BytecodeMachine::new(prog, root, 0).unwrap();
+        let (prog, root, gforms) = encode(&dsl::atom(dsl::num(5)), &[]);
+        let mut m = BytecodeMachine::new(prog, root, &gforms, 0).unwrap();
         assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
     }
 
@@ -1632,10 +1655,20 @@ mod tests {
         // let x = 5 in x, forcing a collection after the Let allocates its
         // env frame: the machine's root set must keep the frame live.
         let syn = dsl::let_(vec![dsl::value(dsl::atom(dsl::num(5)))], dsl::local(0));
-        let (prog, root, _) = encode(&syn, &[]);
-        let mut m = BytecodeMachine::new(prog, root, 0).unwrap();
+        let (prog, root, gforms) = encode(&syn, &[]);
+        let mut m = BytecodeMachine::new(prog, root, &gforms, 0).unwrap();
         m.dispatch().unwrap(); // execute the Let (allocates the env frame)
         m.gc_now(); // roots must survive
         assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
+    }
+
+    #[test]
+    fn machine_resolves_global_ref() {
+        // globals = [ id = \x. x ]; root = id(7) via a G-ref.
+        let globals = vec![dsl::lambda(1, dsl::local(0))];
+        let root = dsl::app(dsl::gref(0), vec![dsl::num(7)]);
+        let (prog, root_off, gforms) = encode(&root, &globals);
+        let mut m = BytecodeMachine::new(prog, root_off, &gforms, 0).unwrap();
+        assert_eq!(m.run(Some(10_000)).unwrap(), Some(7));
     }
 }
