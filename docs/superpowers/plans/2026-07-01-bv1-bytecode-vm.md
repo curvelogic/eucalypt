@@ -65,6 +65,7 @@ harness. **Branch:** `integration/0.12.0` (worktree
 - `1a1aa3c6` **Phase 2 start** — `machine.rs`: `DecodedRef`, `read_ref`, `resolve_ref`/`resolve_native` (ref → `BcValue`)
 - `cf2b3e34` Phase 2 — operand decoders (`read_arg_offsets`/`read_branch_table`/`read_form_header`, round-tripped vs encoder) + `BcMachineState` struct
 - `0b66403b` Phase 2 — `return_native` handler (WHNF native → continuation; Branch/Update/DeMeta/SeqBind/LookupLitForce/CaptureEnd), tested. Building return_* handlers as standalone tested units before the full loop.
+- `0bd7b7f9` Phase 2 — `return_data` handler (branch match + copy-path `env_from_data_args`; Update/DeMeta/SeqBind/CaptureEnd/IO-yield), tested. STUBBED (need globals + bytecode block navigator): ApplyTo block-application → MERGE, LookupLitForce block-lookup — wire with the machine loop. Also deferred: shared-backing env optimisation (perf); `nearest_stack_annotation` fallback (used `state.annotation` — revisit if differential harness flags error-location diffs).
 
 ### Phase 2 next steps (fine-grained)
 - [ ] `BytecodeMachine` wiring: own/borrow heap+intrinsics+emitter+metrics (mirror `MachineCore`/`Machine`); hold `BcMachineState`; construct globals frame from `GlobalForm`s + `prepare_constants`.
