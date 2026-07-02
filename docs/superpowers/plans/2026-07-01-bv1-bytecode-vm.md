@@ -39,6 +39,21 @@
 
 ## Progress Ledger (living — durable source of truth; update every increment)
 
+### ⚠️ PERF CAVEAT — block-index optimisation DISABLED on the bytecode path
+`LookupOr`/`SafeLookup` cache a `SymbolId→position` map inside a block (mutating
+its index slot in place). The bytecode engine **cannot** do that in-place
+mutation (blocks are template closures), so `block_index_enabled()` returns
+`false` for `BcBifContext` and the bytecode engine falls back to the **STG-level
+find loop** for every block lookup — **O(n) per lookup instead of O(1)**.
+Correct (same result) but slower on lookup-heavy blocks.
+**When BV2–5 benchmark bytecode vs HeapSyn, this is NOT an apples-to-apples
+comparison for block-heavy programs** — either (a) reinstate a bytecode-native
+block index (needs a way to mutate/replace a data value's field or a side table
+keyed by block identity), or (b) also disable the index on the HeapSyn side for
+the comparison run. Do not attribute any bytecode block-lookup slowdown to the
+dispatch engine without controlling for this. (Tracked in the code via the
+`block_index_enabled` doc comment.)
+
 ### 🎉 MILESTONE (branch `feat/bv1-migrate-block-builders`): real `.eu` runs on bytecode
 The **`EU_BYTECODE=1` flag path** is wired in `driver/eval.rs` (pure programs:
 recompile with `RenderType::RenderDoc`, encode + full runtime globals, run the
