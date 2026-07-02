@@ -12,6 +12,9 @@ pub use opcode::*;
 mod program;
 pub use program::*;
 
+mod encode;
+pub use encode::*;
+
 /// Whether the bytecode engine is selected for this run. Reads the
 /// `EU_BYTECODE` env var; a CLI flag is added in Phase 2.
 // Removed when wired in Phase 2; inert scaffolding for now.
