@@ -14,7 +14,7 @@ use crate::{
     eval::{
         error::ExecutionError,
         machine::standard_machine,
-        stg::{self, make_standard_runtime, RenderType, StgSettings},
+        stg::{self, make_standard_runtime, runtime::Runtime, RenderType, StgSettings},
     },
     export,
 };
@@ -396,6 +396,40 @@ impl<'a> Executor<'a> {
             if opt.dump_stg() {
                 println!("{}", prettify::prettify(&*syn));
                 Ok(None)
+            } else if crate::eval::bytecode::bytecode_enabled() {
+                // Experimental parallel bytecode engine (EU_BYTECODE=1).
+                //
+                // Pure programs only: recompile with a self-contained
+                // RenderDoc wrapper (the bytecode engine has no runtime code
+                // synthesis for the headless-render path) and run the
+                // BytecodeMachine. IO / world-injection is not yet ported;
+                // intrinsics still on the HeapSyn-typed ABI will panic and
+                // surface which ones the corpus needs.
+                let bc_settings = StgSettings {
+                    render_type: RenderType::RenderDoc,
+                    ..stg_settings.clone()
+                };
+                let bc_syn = stg::compile(&bc_settings, self.evaluand.clone(), rt.as_ref())?;
+                let globals = rt.globals();
+                let (prog, root, gforms) = crate::eval::bytecode::encode(&bc_syn, &globals);
+                emitter.stream_start();
+                let heap_mib = stg_settings.heap_limit_mib.unwrap_or(0);
+                let mut m = crate::eval::bytecode::BytecodeMachine::new(
+                    prog,
+                    root,
+                    &gforms,
+                    rt.intrinsics(),
+                    emitter,
+                    heap_mib,
+                    stg_settings.test_mode,
+                )?;
+                let t_exec = Instant::now();
+                let ret = m.run(None);
+                stats
+                    .timings_mut()
+                    .record("bytecode-eval", t_exec.elapsed());
+                m.take_emitter().stream_end();
+                ret
             } else {
                 emitter.stream_start();
                 let mut machine = standard_machine(&stg_settings, syn, emitter, rt.as_ref())?;
