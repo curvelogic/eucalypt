@@ -11,7 +11,7 @@ use crate::eval::{
     memory::{
         mutator::MutatorHeapView,
         set::Primitive,
-        syntax::{HeapSyn, Native, Ref},
+        syntax::{Native, Ref},
         vec::HeapVec,
     },
     stg::tags::DataConstructor,
@@ -27,12 +27,6 @@ use super::{
         dsl::{app_bif, force, lambda, lref},
         LambdaForm,
     },
-};
-
-use crate::eval::memory::{
-    alloc::ScopedAllocator,
-    array::Array,
-    syntax::{LambdaForm as HeapLambdaForm, StgBuilder},
 };
 
 /// VEC.OF — convert a list of primitives to a vec.
@@ -161,14 +155,9 @@ impl StgIntrinsic for VecNth {
                 ))
             }
         };
-        machine.set_closure(crate::eval::machine::env::SynClosure::new(
-            view.alloc(HeapSyn::Cons {
-                tag: box_tag,
-                args: Array::from_slice(&view, &[Ref::V(native)]),
-            })?
-            .as_ptr(),
-            machine.root_env(),
-        ))
+        let boxed = machine.native_value(view, native)?;
+        let value = machine.data_value(view, box_tag, &[boxed])?;
+        machine.set_result(value)
     }
 }
 
@@ -361,16 +350,9 @@ impl StgIntrinsic for VecToList {
     ) -> Result<(), ExecutionError> {
         let elements: Vec<Primitive> = vec_arg(machine, view, &args[0])?.elements().to_vec();
 
-        // Build a list of boxed values in reverse (same pattern as SetToList)
-        let mut bindings = vec![HeapLambdaForm::value(
-            view.alloc(HeapSyn::Cons {
-                tag: DataConstructor::ListNil.tag(),
-                args: Array::default(),
-            })?
-            .as_ptr(),
-        )];
-
-        for prim in elements.into_iter().rev() {
+        // Box each element and assemble the list via the neutral ABI.
+        let mut items = Vec::with_capacity(elements.len());
+        for prim in elements {
             let native = set_primitive_to_native(machine, view, &prim)?;
             let box_tag = match &native {
                 Native::Num(_) => DataConstructor::BoxedNumber.tag(),
@@ -383,34 +365,11 @@ impl StgIntrinsic for VecToList {
                     ))
                 }
             };
-            bindings.push(HeapLambdaForm::value(
-                view.alloc(HeapSyn::Cons {
-                    tag: box_tag,
-                    args: Array::from_slice(&view, &[Ref::V(native)]),
-                })?
-                .as_ptr(),
-            ));
-            let len = bindings.len();
-            bindings.push(HeapLambdaForm::value(
-                view.alloc(HeapSyn::Cons {
-                    tag: DataConstructor::ListCons.tag(),
-                    args: Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
-                })?
-                .as_ptr(),
-            ));
+            let boxed = machine.native_value(view, native)?;
+            items.push(machine.data_value(view, box_tag, &[boxed])?);
         }
 
-        let list_index = bindings.len() - 1;
-        let syn = view
-            .letrec(
-                Array::from_slice(&view, &bindings),
-                view.atom(Ref::L(list_index))?,
-            )?
-            .as_ptr();
-        machine.set_closure(crate::eval::machine::env::SynClosure::new(
-            syn,
-            machine.root_env(),
-        ))
+        machine.return_closure_list(view, items)
     }
 }
 
