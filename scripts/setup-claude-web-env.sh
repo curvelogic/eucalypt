@@ -159,10 +159,10 @@ install_eucalypt() {
 # ---------------------------------------------------------------------------
 # beads database: materialise the dolt-native store so `bd list` works
 # ---------------------------------------------------------------------------
-# The git-tracked issue data lives in .beads/issues.jsonl; the dolt/ runtime
-# store is gitignored, so a fresh checkout has no usable database until it is
-# rebuilt. `bd bootstrap` is beads' purpose-built command for this. (The old
-# `bd sync` this script used to call no longer exists in beads >= 1.0.)
+# The authoritative issue store is Dolt (refs/dolt/data on the remote); the
+# dolt/ runtime store is gitignored, so a fresh checkout has no usable database
+# until it is rebuilt. `bd bootstrap` is beads' purpose-built command for this.
+# (The old `bd sync` this script used to call no longer exists in beads >= 1.0.)
 #
 # Caveat that this function works around: `bd bootstrap` is priority-ordered,
 # and a configured `sync.remote` is the FIRST rule — it clones from that remote
@@ -171,8 +171,8 @@ install_eucalypt() {
 # binary and dolt shells out to ssh directly (bypassing the proxy's git-ssh
 # rewrite), so the clone dead-ends and leaves an empty store — every later `bd`
 # call then reports "database … not found". The fallback below neutralises
-# `sync.remote` and retries, so bd falls through to the git origin (https via
-# the agent proxy) or the git-tracked issues.jsonl.
+# `sync.remote` and retries, so bd falls through to the git origin (the same
+# refs/dolt/data, reached as https via the agent proxy).
 
 # True when the beads store is materialised (`bd list` exits 0 only then).
 _beads_store_ok() { ( cd "$1" && bd list >/dev/null 2>&1 ); }
@@ -234,6 +234,37 @@ bootstrap_beads() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# beads push path for web sessions
+# ---------------------------------------------------------------------------
+# Local dev pushes over the ssh `sync.remote` in config.yaml. A Claude-web
+# container has no ssh binary, so that remote is a dead end for writes as well
+# as reads. Point beads' Dolt remote at the proxy-brokered https endpoint
+# instead — a stable URL (unlike the ephemeral git-origin http URL, whose port
+# is per-session) that the agent proxy authenticates with the session's write
+# token. Dolt-native sync reads/writes refs/dolt/data + refs/heads/
+# __dolt_remote_info__ over this remote. The tracked ssh config.yaml is left
+# untouched, so local dev is unaffected.
+#
+# Detection: absence of `ssh` marks the no-ssh container. On a dev machine ssh
+# is present and this is a no-op, so the ssh remote stays authoritative.
+configure_web_beads_remote() {
+    [ "$BEADS_SYNC" = "1" ] || return 0
+    command -v bd >/dev/null 2>&1 || return 0
+    command -v ssh >/dev/null 2>&1 && return 0   # dev machine: keep ssh remote
+
+    local repo
+    repo="$(find_repo_root)" || return 0
+    _beads_store_ok "$repo" || return 0          # only if the store came up
+
+    local https="git+https://github.com/curvelogic/eucalypt.git"
+    ( cd "$repo"
+      bd dolt remote remove origin >/dev/null 2>&1 || true
+      bd dolt remote add origin "$https" >/dev/null 2>&1 || true )
+    echo "beads Dolt remote set to https for this container: $https"
+    echo "  Persist web-session issues with: bd dolt commit -am '…' && bd dolt push"
+}
+
 main() {
     ensure_path
     install_eucalypt
@@ -242,6 +273,7 @@ main() {
     # going so eu/bd are still usable and the failure is reported, not fatal.
     install_dolt || echo "WARNING: dolt install failed; beads' dolt backend will be unavailable."
     bootstrap_beads
+    configure_web_beads_remote
     log "Setup complete"
 }
 
