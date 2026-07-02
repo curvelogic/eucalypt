@@ -21,8 +21,8 @@ use crate::eval::stg::tags::{DataConstructor, Tag};
 
 use super::program::{read_u16, read_u32, read_u8};
 use super::{
-    BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, CodeRef, Op, FORM_LAMBDA,
-    FORM_THUNK, NO_BRANCH, REF_G, REF_L, REF_V,
+    BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, BytecodeProgram, CodeRef, Op,
+    FORM_LAMBDA, FORM_THUNK, NO_BRANCH, REF_G, REF_L, REF_V,
 };
 
 /// A decoded inline `Ref` operand from the byte stream.
@@ -464,6 +464,7 @@ pub fn return_native(
 pub fn return_fun(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
+    prog: &BytecodeProgram,
 ) -> Result<(), ExecutionError> {
     let Some(cont) = state.stack.pop() else {
         state.terminated = true;
@@ -481,10 +482,11 @@ pub fn return_fun(
                     state.current = BcValue::Closure(view.saturate_with_array(&fun, args)?);
                 }
                 Ordering::Less => {
-                    return Err(ExecutionError::Panic(
-                        annotation,
-                        "bytecode: partial application (PAP) not yet implemented".to_string(),
-                    ));
+                    // Partial application: build a PAP trampoline closure. Its
+                    // env is `[f, supplied…]` chaining onto `f`'s env; its code
+                    // is the pre-encoded `App(L(pending), …)` template; its
+                    // arity is the number still pending (spec §6.1).
+                    state.current = BcValue::Closure(partially_apply(view, prog, &fun, args)?);
                 }
                 Ordering::Greater => {
                     let (quorum, surplus) = args.as_slice().split_at(args.len() - excess as usize);
@@ -553,6 +555,42 @@ pub fn return_fun(
         }
     }
     Ok(())
+}
+
+/// Build a partial-application (PAP) trampoline closure for a function
+/// applied to too few args. The result closes `[f, supplied…]` over `f`'s
+/// env and points at the pre-encoded `App(L(pending), …)` template
+/// (`prog.pap`); its arity is the count still pending. Mirrors the HeapSyn
+/// `partially_apply` (`env_builder.rs`).
+fn partially_apply(
+    view: MutatorHeapView<'_>,
+    prog: &BytecodeProgram,
+    fun: &BcClosure,
+    args: Array<BcValue>,
+) -> Result<BcClosure, ExecutionError> {
+    let supplied = args.len();
+    let pending = fun.arity() as usize - supplied;
+    let tmpl = prog.pap_offset(supplied, pending).ok_or_else(|| {
+        ExecutionError::Panic(
+            fun.annotation(),
+            format!(
+                "bytecode: PAP arity out of range (supplied {supplied}, pending {pending}, max {})",
+                super::PAP_MAX_ARITY
+            ),
+        )
+    })?;
+    let env = view.from_values(
+        std::iter::once(BcValue::Closure(*fun)).chain(args.as_slice().iter().cloned()),
+        supplied + 1,
+        fun.env(),
+        fun.annotation(),
+    )?;
+    Ok(BcClosure::new_annotated_lambda(
+        tmpl,
+        pending as u8,
+        env,
+        fun.annotation(),
+    ))
 }
 
 /// Decode the field ref of an arg atom-offset (skip the `OP_ATOM` byte and
@@ -670,8 +708,9 @@ fn enter_callable(
 pub fn handle_op(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
-    code: &[u8],
+    prog: &BytecodeProgram,
 ) -> Result<(), ExecutionError> {
+    let code = prog.code.as_slice();
     let closure = *state.current.as_closure().ok_or_else(|| {
         ExecutionError::Panic(state.annotation, "handle_op on a native value".to_string())
     })?;
@@ -899,7 +938,7 @@ pub fn handle_op(
 pub fn step(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
-    code: &[u8],
+    prog: &BytecodeProgram,
 ) -> Result<(), ExecutionError> {
     enum Dispatch {
         Native(Native),
@@ -913,8 +952,8 @@ pub fn step(
     };
     match dispatch {
         Dispatch::Native(n) => return_native(state, view, n),
-        Dispatch::Fun => return_fun(state, view),
-        Dispatch::Op => handle_op(state, view, code),
+        Dispatch::Fun => return_fun(state, view, prog),
+        Dispatch::Op => handle_op(state, view, prog),
     }
 }
 
@@ -1155,7 +1194,7 @@ mod tests {
             annotation: Default::default(),
         });
 
-        return_fun(&mut state, view).unwrap();
+        return_fun(&mut state, view, &BytecodeProgram::default()).unwrap();
 
         let c = state.current.as_closure().unwrap();
         assert_eq!(c.code(), 10);
@@ -1182,7 +1221,7 @@ mod tests {
             annotation: Default::default(),
         });
 
-        return_fun(&mut state, view).unwrap();
+        return_fun(&mut state, view, &BytecodeProgram::default()).unwrap();
 
         assert_eq!(state.current.as_closure().unwrap().code(), 10);
         assert_eq!(state.stack.len(), 1);
@@ -1213,7 +1252,7 @@ mod tests {
         state.blackhole = prog.blackhole;
         let mut guard = 0;
         while !state.terminated && guard < 1000 {
-            step(&mut state, view, &prog.code).unwrap();
+            step(&mut state, view, &prog).unwrap();
             guard += 1;
         }
         assert!(state.terminated, "machine did not terminate");
@@ -1283,7 +1322,7 @@ mod tests {
             root_env,
             constants,
         );
-        handle_op(&mut state, view, &prog.code).unwrap();
+        handle_op(&mut state, view, &prog).unwrap();
         assert_eq!(state.pending_bif, Some(3));
         assert_eq!(state.pending_bif_args.len(), 2);
     }
@@ -1294,6 +1333,24 @@ mod tests {
         let syn = dsl::let_(
             vec![dsl::lambda(1, dsl::local(0))],
             dsl::direct_app(Default::default(), dsl::lref(0), vec![dsl::num(5)]),
+        );
+        match run_to_end(&syn) {
+            Native::Num(n) => assert_eq!(n.as_i64(), Some(5)),
+            _ => panic!("expected num"),
+        }
+    }
+
+    #[test]
+    fn run_partial_application() {
+        // letrec k = \x y. x        -- a binary const
+        //        p = k(5)           -- thunk: too few args -> PAP of arity 1
+        // in p(6)                   -- saturate the PAP -> k(5, 6) -> 5
+        let syn = dsl::letrec_(
+            vec![
+                dsl::lambda(2, dsl::local(0)),
+                dsl::thunk(dsl::app(dsl::lref(0), vec![dsl::num(5)])),
+            ],
+            dsl::app(dsl::lref(1), vec![dsl::num(6)]),
         );
         match run_to_end(&syn) {
             Native::Num(n) => assert_eq!(n.as_i64(), Some(5)),
