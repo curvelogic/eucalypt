@@ -10,10 +10,7 @@ use crate::eval::{
     emit::Emitter,
     error::ExecutionError,
     machine::intrinsic::{CallGlobal4, IntrinsicMachine, StgIntrinsic},
-    memory::{
-        mutator::MutatorHeapView,
-        syntax::{HeapSyn, Ref},
-    },
+    memory::{mutator::MutatorHeapView, syntax::Ref},
     stg::support::{machine_return_bool, str_arg},
 };
 
@@ -25,14 +22,13 @@ use super::{debug::render_debug_repr_forced, tags::DataConstructor};
 /// will have been evaluated to WHNF before `execute` runs, so we
 /// only need to check the data constructor tag.
 fn resolve_bool(machine: &dyn IntrinsicMachine, view: MutatorHeapView<'_>, r: &Ref) -> bool {
-    let closure = match machine.nav(view).resolve(r) {
+    let closure = match machine.resolve_closure(view, r) {
         Ok(c) => c,
         Err(_) => return false,
     };
-    let code = view.scoped(closure.code());
-    match &*code {
-        HeapSyn::Cons { tag, .. } => {
-            let dc: Result<DataConstructor, _> = (*tag).try_into();
+    match machine.data_tag(view, &closure) {
+        Some(tag) => {
+            let dc: Result<DataConstructor, _> = tag.try_into();
             matches!(dc, Ok(DataConstructor::BoolTrue))
         }
         _ => false,
@@ -81,8 +77,8 @@ impl StgIntrinsic for Expect {
 
         if pass {
             // Return the success value (args[3]) as-is
-            let closure = machine.nav(view).resolve(&args[3])?;
-            machine.set_closure(closure)
+            let closure = machine.resolve_closure(view, &args[3])?;
+            machine.set_result(closure)
         } else {
             let expected_repr = str_arg(machine, view, &args[1])?;
             let actual_repr = render_debug_repr_forced(machine, view, &args[0]);

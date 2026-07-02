@@ -8,7 +8,7 @@ use crate::{
         machine::intrinsic::{
             CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic,
         },
-        memory::{infotable::InfoTable, mutator::MutatorHeapView, syntax::Ref},
+        memory::{mutator::MutatorHeapView, syntax::Ref},
         stg::{runtime::NativeVariant, support::call},
     },
 };
@@ -315,7 +315,7 @@ impl StgIntrinsic for Saturated {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let closure = machine.nav(view).resolve(&args[0])?;
+        let closure = machine.resolve_closure(view, &args[0])?;
         machine_return_bool(machine, view, closure.arity() == 0)
     }
 }

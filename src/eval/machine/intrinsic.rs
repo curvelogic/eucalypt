@@ -18,6 +18,7 @@ use crate::{
         memory::{
             alloc::ScopedAllocator,
             array::Array,
+            infotable::InfoTable,
             mutator::MutatorHeapView,
             symbol::SymbolPool,
             syntax::{HeapSyn, Native, Ref, RefPtr, StgBuilder},
@@ -69,6 +70,15 @@ impl AbiClosure {
             }
         }
     }
+
+    /// The closure's arity (0 for a saturated/value closure). Works for
+    /// both engine variants via their `InfoTable` impls.
+    pub fn arity(&self) -> u8 {
+        match self {
+            AbiClosure::Heap(c) => c.arity(),
+            AbiClosure::Byte(c) => c.arity(),
+        }
+    }
 }
 
 /// Machine interface exposed to intrinsic implementations
@@ -109,7 +119,7 @@ pub trait IntrinsicMachine {
 
     /// Resolve a ref to a native value, looking through atom indirections.
     fn resolve_native(
-        &mut self,
+        &self,
         view: MutatorHeapView<'_>,
         arg: &Ref,
     ) -> Result<Native, ExecutionError> {
@@ -174,7 +184,7 @@ pub trait IntrinsicMachine {
     /// Resolve a ref to a closure handle (following the resolve rules:
     /// locals/globals looked up, `V` wrapped in an atom closure).
     fn resolve_closure(
-        &mut self,
+        &self,
         view: MutatorHeapView<'_>,
         arg: &Ref,
     ) -> Result<AbiClosure, ExecutionError> {
@@ -183,7 +193,7 @@ pub trait IntrinsicMachine {
 
     /// Resolve a ref to a closure that must be callable (errors on `V`).
     fn resolve_callable_closure(
-        &mut self,
+        &self,
         view: MutatorHeapView<'_>,
         arg: &Ref,
     ) -> Result<AbiClosure, ExecutionError> {
