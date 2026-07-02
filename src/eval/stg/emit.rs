@@ -120,7 +120,7 @@ fn tag_from_arg(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
 ) -> Option<String> {
-    let tag_nat = machine.nav(view).resolve_native(arg).ok();
+    let tag_nat = machine.resolve_native(view, arg).ok();
     match tag_nat {
         Some(memory::syntax::Native::Sym(id)) => {
             Some(machine.symbol_pool().resolve(id).to_string())
@@ -219,7 +219,7 @@ impl StgIntrinsic for EmitNative {
         emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let native = machine.nav(view).resolve_native(&args[0])?;
+        let native = machine.resolve_native(view, &args[0])?;
         match native {
             memory::syntax::Native::Set(ptr) => {
                 emit_set(machine, view, emitter, ptr, &RenderMetadata::empty());
@@ -274,7 +274,7 @@ impl StgIntrinsic for EmitTagNative {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let tag = tag_from_arg(&args[0], machine, view);
-        let native = machine.nav(view).resolve_native(&args[1])?;
+        let native = machine.resolve_native(view, &args[1])?;
         match native {
             memory::syntax::Native::Set(ptr) => {
                 emit_set(machine, view, emitter, ptr, &RenderMetadata::new(tag));
