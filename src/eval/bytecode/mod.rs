@@ -9,6 +9,9 @@ pub type CodeRef = u32;
 mod opcode;
 pub use opcode::*;
 
+mod program;
+pub use program::*;
+
 /// Whether the bytecode engine is selected for this run. Reads the
 /// `EU_BYTECODE` env var; a CLI flag is added in Phase 2.
 // Removed when wired in Phase 2; inert scaffolding for now.
