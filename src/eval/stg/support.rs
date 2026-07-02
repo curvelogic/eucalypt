@@ -305,85 +305,51 @@ pub fn data_list_arg<'scope>(
     })
 }
 
-/// An iterator for tracing through the list of string values as
-/// established by SeqStrList
-pub struct StrListIterator<'scope> {
-    closure: SynClosure,
-    view: MutatorHeapView<'scope>,
-    smid: Smid,
-}
-
-impl Iterator for StrListIterator<'_> {
-    type Item = Result<String, ExecutionError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let code = self.view.scoped(self.closure.code());
-
-        let (h_ref, t_ref) = match &*code {
-            HeapSyn::Cons { tag, args } => match (*tag).try_into() {
-                Ok(DataConstructor::ListCons) => (args.get(0), args.get(1)),
-                Ok(DataConstructor::ListNil) => return None,
-                _ => {
-                    return Some(Err(ExecutionError::NotValue(
-                        self.smid,
-                        "expected string list data".to_string(),
-                    )))
+/// Collect a (forced, native-string) list argument into a `Vec<String>`.
+///
+/// Engine-neutral: walks the `ListCons`/`ListNil` spine via the neutral
+/// `data_tag`/`data_field`/`field_native` ABI (works on both the HeapSyn and
+/// bytecode engines). Eager rather than lazy, but the spine is already forced
+/// by the caller so the result is identical.
+pub fn str_list_arg(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: Ref,
+) -> Result<Vec<String>, ExecutionError> {
+    let smid = machine.annotation();
+    let mut out = Vec::new();
+    let mut current = machine.resolve_closure(view, &arg)?;
+    loop {
+        match machine.data_tag(view, &current) {
+            Some(tag) if tag == DataConstructor::ListCons.tag() => {
+                let native = machine.field_native(view, &current, 0).ok_or_else(|| {
+                    ExecutionError::NotValue(smid, "expected string list data".to_string())
+                })?;
+                match native {
+                    Native::Str(s) => out.push((*view.scoped(s)).as_str().to_string()),
+                    other => {
+                        return Err(ExecutionError::TypeMismatch(
+                            smid,
+                            Box::new(IntrinsicType::String),
+                            Box::new(native_type(&other)),
+                            None,
+                        ))
+                    }
                 }
-            },
+                current = machine.data_field(view, &current, 1).ok_or_else(|| {
+                    ExecutionError::Panic(smid, "malformed cons cell".to_string())
+                })?;
+            }
+            Some(tag) if tag == DataConstructor::ListNil.tag() => break,
             _ => {
-                return Some(Err(ExecutionError::NotValue(
-                    self.smid,
+                return Err(ExecutionError::NotValue(
+                    smid,
                     "expected string list data".to_string(),
-                )))
+                ))
             }
-        };
-
-        let native = match h_ref {
-            Some(h) => self.closure.navigate_local_native(&self.view, h),
-            None => {
-                return Some(Err(ExecutionError::Panic(
-                    self.smid,
-                    "malformed cons cell".to_string(),
-                )))
-            }
-        };
-
-        match t_ref {
-            Some(t) => {
-                self.closure = self.closure.navigate_local(&self.view, t);
-            }
-            None => {
-                return Some(Err(ExecutionError::Panic(
-                    self.smid,
-                    "malformed cons cell".to_string(),
-                )))
-            }
-        }
-
-        if let Native::Str(s) = native {
-            Some(Ok((*self.view.scoped(s)).as_str().to_string()))
-        } else {
-            Some(Err(ExecutionError::TypeMismatch(
-                self.smid,
-                Box::new(IntrinsicType::String),
-                Box::new(native_type(&native)),
-                None,
-            )))
         }
     }
-}
-
-/// Helper for intrinsics to access a string list arg
-pub fn str_list_arg<'guard>(
-    machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
-    arg: Ref,
-) -> Result<StrListIterator<'guard>, ExecutionError> {
-    Ok(StrListIterator {
-        smid: machine.annotation(),
-        closure: machine.nav(view).resolve(&arg)?,
-        view,
-    })
+    Ok(out)
 }
 
 /// What to return when the return should be ignored

@@ -402,8 +402,7 @@ impl StgIntrinsic for ArrayIsArray {
         // resolve_native returns Err for non-natives (e.g. lists, blocks).
         // In that case, the value is definitely not an array.
         let is_array = machine
-            .nav(view)
-            .resolve_native(&args[0])
+            .resolve_native(view, &args[0])
             .map(|n| matches!(n, Native::NdArray(_)))
             .unwrap_or(false);
         machine_return_bool(machine, view, is_array)
