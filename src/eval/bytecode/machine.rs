@@ -13,6 +13,7 @@ use std::num::NonZeroUsize;
 
 use lru::LruCache;
 use regex::Regex;
+use serde_json::Number;
 
 use crate::common::sourcemap::Smid;
 use crate::eval::emit::{Emitter, NullEmitter};
@@ -1407,6 +1408,57 @@ impl BcBifContext<'_, '_> {
         }
     }
 
+    /// Build a data-constructor value of `tag` over `fields` using the
+    /// pre-encoded constructor template (`BytecodeProgram::templates[tag]`).
+    /// The fields become an env frame; the template's `OP_CONS tag [L0..]`
+    /// reads them back. Zero-field constructors close over `root_env`.
+    fn build_data(
+        &self,
+        view: MutatorHeapView<'_>,
+        tag: Tag,
+        fields: &[BcValue],
+    ) -> Result<BcValue, ExecutionError> {
+        let code = self
+            .program
+            .templates
+            .get(tag as usize)
+            .copied()
+            .ok_or_else(|| {
+                ExecutionError::Panic(
+                    self.state.annotation,
+                    format!("bytecode: no constructor template for tag {tag}"),
+                )
+            })?;
+        let env = if fields.is_empty() {
+            self.state.root_env
+        } else {
+            view.from_values(
+                fields.iter().cloned(),
+                fields.len(),
+                self.state.root_env,
+                self.state.annotation,
+            )?
+        };
+        Ok(BcValue::Closure(BcClosure::new(code, env)))
+    }
+
+    /// If `value` is a data-constructor closure, return its `(tag, env, arg
+    /// offsets)`; otherwise `None`. Decodes the `OP_CONS` node the closure
+    /// points at (a template or an encoded `Cons`).
+    fn cons_of(&self, value: &AbiClosure) -> Option<(Tag, RefPtr<BcEnvFrame>, Vec<CodeRef>)> {
+        let AbiClosure::Byte(BcValue::Closure(c)) = value else {
+            return None;
+        };
+        let code = self.program.code.as_slice();
+        let mut pc = c.code() as usize;
+        if Op::from_u8(read_u8(code, &mut pc)) != Some(Op::Cons) {
+            return None;
+        }
+        let tag = read_u8(code, &mut pc);
+        let offsets = read_arg_offsets(code, &mut pc);
+        Some((tag, c.env(), offsets))
+    }
+
     /// Evaluate `value` to WHNF on a fresh continuation stack, restoring the
     /// caller's stack/current afterwards. The bytecode analogue of
     /// `Machine::evaluate_to_whnf` (`vm.rs`). Used by `force`.
@@ -1651,6 +1703,67 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
             AbiClosure::Heap(_) => {
                 panic!("bytecode BifContext: force(Heap) — intrinsic uses the HeapSyn ABI")
             }
+        }
+    }
+
+    // ── Data construction over templates (spec §5.5) ────────────────
+
+    fn return_unit(&mut self, view: MutatorHeapView<'_>) -> Result<(), ExecutionError> {
+        self.state.current = self.build_data(view, DataConstructor::Unit.tag(), &[])?;
+        Ok(())
+    }
+
+    fn return_boxed_num(
+        &mut self,
+        view: MutatorHeapView<'_>,
+        n: Number,
+    ) -> Result<(), ExecutionError> {
+        self.state.current = self.build_data(
+            view,
+            DataConstructor::BoxedNumber.tag(),
+            &[BcValue::Native(Native::Num(n))],
+        )?;
+        Ok(())
+    }
+
+    fn return_bool(&mut self, view: MutatorHeapView<'_>, b: bool) -> Result<(), ExecutionError> {
+        let tag = if b {
+            DataConstructor::BoolTrue.tag()
+        } else {
+            DataConstructor::BoolFalse.tag()
+        };
+        self.state.current = self.build_data(view, tag, &[])?;
+        Ok(())
+    }
+
+    // ── Data inspection (spec §5.5) ─────────────────────────────────
+
+    fn data_tag(&self, _view: MutatorHeapView<'_>, closure: &AbiClosure) -> Option<Tag> {
+        self.cons_of(closure).map(|(tag, _, _)| tag)
+    }
+
+    fn data_field(
+        &self,
+        view: MutatorHeapView<'_>,
+        closure: &AbiClosure,
+        idx: usize,
+    ) -> Option<AbiClosure> {
+        let (_, env, offsets) = self.cons_of(closure)?;
+        let off = *offsets.get(idx)?;
+        let dref = arg_ref(self.program.code.as_slice(), off).ok()?;
+        let value = resolve_ref(view, &self.state.constants, env, self.state.globals, dref).ok()?;
+        Some(AbiClosure::Byte(value))
+    }
+
+    fn field_native(
+        &self,
+        view: MutatorHeapView<'_>,
+        closure: &AbiClosure,
+        idx: usize,
+    ) -> Option<Native> {
+        match self.data_field(view, closure, idx)? {
+            AbiClosure::Byte(v) => self.native_from_value(view, v).ok(),
+            AbiClosure::Heap(_) => None,
         }
     }
 }
