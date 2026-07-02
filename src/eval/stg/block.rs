@@ -1300,10 +1300,11 @@ impl StgIntrinsic for LookupFail {
     ) -> Result<(), ExecutionError> {
         // Resolve the key symbol to a string. The sym arg may arrive as
         // either a direct Ref::V(Native::Sym) or as a closure wrapping
-        // a native value.
+        // a native value. Uses the neutral `resolve_native` ABI so it
+        // serves both the HeapSyn and bytecode engines.
         let key_name = match &args[0] {
             Ref::V(Native::Sym(id)) => machine.symbol_pool().resolve(*id).to_string(),
-            other => match machine.nav(view).resolve_native(other) {
+            other => match machine.resolve_native(view, other) {
                 Ok(Native::Sym(id)) => machine.symbol_pool().resolve(id).to_string(),
                 _ => "<unknown>".to_string(),
             },
@@ -1312,7 +1313,7 @@ impl StgIntrinsic for LookupFail {
         // Collect keys from the block. The block arg has been forced by
         // the wrapper, so it should be a Block cons cell accessible via
         // resolve.
-        let available_keys = collect_block_keys_from_args(machine, view, &args[1]);
+        let available_keys = collect_block_keys(machine, view, &args[1]);
 
         // Compute suggestions via edit distance
         let max_distance = (key_name.len() / 2).clamp(2, 4);
@@ -1330,54 +1331,72 @@ impl StgIntrinsic for LookupFail {
 
 impl CallGlobal2 for LookupFail {}
 
-/// Collect all key names from a block that has been resolved to a closure.
+/// Collect the key names of a (forced) block value, engine-neutrally.
 ///
-/// The closure should point to a `Block` cons cell. This is the main
-/// implementation used by both the BIF args path and direct closure path.
-fn collect_block_keys_from_closure(
-    machine: &dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    closure: &SynClosure,
-) -> Vec<String> {
-    let nav = machine.nav(view);
-    let code = view.scoped(closure.code());
-    let blocklist_ref = match &*code {
-        HeapSyn::Cons { tag, args } if *tag == DataConstructor::Block.tag() => match args.get(0) {
-            Some(r) => r.clone(),
-            None => return vec![],
-        },
-        _ => return vec![],
-    };
-
-    let list_closure = match nav.resolve_in_closure(closure, blocklist_ref) {
-        Some(c) => c,
-        None => return vec![],
-    };
-
-    let iter = BlockListIterator {
-        closure: list_closure,
-        nav: &nav,
-        done: false,
-    };
-
-    iter.filter_map(|pair| {
-        let sym_id = pair_key_symbol_id(view, &pair)?;
-        Some(machine.symbol_pool().resolve(sym_id).to_string())
-    })
-    .collect()
-}
-
-/// Collect block keys from a BIF arg ref. Resolves the ref to a closure
-/// first, then delegates to `collect_block_keys_from_closure`.
-fn collect_block_keys_from_args(
-    machine: &dyn IntrinsicMachine,
+/// Walks the block's `ListCons`/`ListNil` spine of `BlockPair`s via the
+/// neutral `data_tag`/`data_field`/`value_native` ABI (forcing each spine
+/// cell), so it serves both the HeapSyn and bytecode engines. This is
+/// best-effort — it feeds the "did you mean?" hint on a lookup failure, so
+/// any structural surprise simply yields the keys gathered so far.
+fn collect_block_keys(
+    machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
     block_ref: &Ref,
 ) -> Vec<String> {
-    let nav = machine.nav(view);
-    match nav.resolve(block_ref) {
-        Ok(closure) => collect_block_keys_from_closure(machine, view, &closure),
-        Err(_) => vec![],
+    let mut keys = Vec::new();
+
+    // Resolve and force the block to WHNF; it should be a `Block` cell whose
+    // field 0 is the kv-pair list.
+    let block = match machine.resolve_closure(view, block_ref) {
+        Ok(c) => c,
+        Err(_) => return keys,
+    };
+    let block = match machine.force(block) {
+        Ok(c) => c,
+        Err(_) => return keys,
+    };
+    if machine.data_tag(view, &block) != Some(DataConstructor::Block.tag()) {
+        return keys;
+    }
+    let mut current = match machine.data_field(view, &block, 0) {
+        Some(c) => c,
+        None => return keys,
+    };
+
+    // Walk the list spine, reading each pair's key (field 0).
+    while let Ok(cell) = machine.force(current) {
+        if machine.data_tag(view, &cell) != Some(DataConstructor::ListCons.tag()) {
+            break; // ListNil or an unexpected shape
+        }
+        if let Some(key) = pair_key_name(machine, view, &cell) {
+            keys.push(key);
+        }
+        match machine.data_field(view, &cell, 1) {
+            Some(tail) => current = tail,
+            None => break,
+        }
+    }
+
+    keys
+}
+
+/// Best-effort read of a kv-list cell's head `BlockPair` key as a string,
+/// via the neutral ABI. Returns `None` on any non-`BlockPair` / non-symbol
+/// shape.
+fn pair_key_name(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    cell: &AbiClosure,
+) -> Option<String> {
+    let head = machine.data_field(view, cell, 0)?;
+    let head = machine.force(head).ok()?;
+    if machine.data_tag(view, &head) != Some(DataConstructor::BlockPair.tag()) {
+        return None;
+    }
+    let key = machine.data_field(view, &head, 0)?;
+    match machine.value_native(view, &key)? {
+        Native::Sym(id) => Some(machine.symbol_pool().resolve(id).to_string()),
+        _ => None,
     }
 }
 

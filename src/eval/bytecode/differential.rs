@@ -104,6 +104,71 @@ fn assert_engines_render_agree(syntax: Rc<StgSyn>) -> String {
     heap_out
 }
 
+/// Run `syntax` — which must raise a `LookupFailure` — through both engines and
+/// assert they agree on the failing key, its suggestions and the available
+/// keys. Regression guard for the `LOOKUP_FAIL` diagnostic path on the bytecode
+/// engine (eu-ter9): its key collection must go through the neutral ABI, not
+/// the HeapSyn-only `nav` navigator (which panics on the bytecode engine).
+fn assert_engines_lookup_fail_agree(syntax: Rc<StgSyn>, bifs: Vec<Box<dyn StgIntrinsic>>) {
+    use crate::eval::error::ExecutionError;
+
+    let mut rt = StandardRuntime::default();
+    for b in bifs {
+        rt.add(b);
+    }
+    rt.prepare(&mut SourceMap::default());
+    let settings = StgSettings::default();
+
+    // Reference: the HeapSyn tree-walk machine.
+    let heap_err = {
+        let mut m = standard_machine(&settings, syntax.clone(), Box::new(NullEmitter), &rt)
+            .expect("build HeapSyn machine");
+        m.run(Some(1_000_000))
+            .expect_err("HeapSyn should raise LookupFailure")
+    };
+
+    // Under test: the bytecode machine, sharing the same runtime globals.
+    let bc_err = {
+        let globals = rt.globals();
+        let (prog, root, gforms) = encode(&syntax, &globals);
+        let mut m = BytecodeMachine::new(
+            prog,
+            root,
+            &gforms,
+            rt.intrinsics(),
+            Box::new(NullEmitter),
+            0,
+            false,
+        )
+        .expect("build bytecode machine");
+        m.run(Some(1_000_000))
+            .expect_err("bytecode should raise LookupFailure")
+    };
+
+    // The HeapSyn machine wraps raised errors in `Traced`; unwrap to compare
+    // the underlying diagnostic on equal terms with the bytecode engine.
+    fn unwrap_traced(e: &ExecutionError) -> &ExecutionError {
+        match e {
+            ExecutionError::Traced(inner, _, _) => unwrap_traced(inner),
+            other => other,
+        }
+    }
+
+    match (unwrap_traced(&heap_err), unwrap_traced(&bc_err)) {
+        (
+            ExecutionError::LookupFailure(_, hk, hs, ha),
+            ExecutionError::LookupFailure(_, bk, bs, ba),
+        ) => {
+            assert_eq!(hk, bk, "engines disagree on the failing key");
+            assert_eq!(hs, bs, "engines disagree on the suggestions");
+            assert_eq!(ha, ba, "engines disagree on the available keys");
+        }
+        _ => {
+            panic!("expected LookupFailure from both engines, got heap={heap_err:?} bc={bc_err:?}")
+        }
+    }
+}
+
 mod tests {
     use super::*;
     use crate::eval::stg::arith::{Add, Lt};
@@ -127,6 +192,32 @@ mod tests {
                 dsl::atom(dsl::num(9)),
             ),
         )
+    }
+
+    #[test]
+    fn agree_on_lookup_failure_suggestions() {
+        use crate::eval::stg::block::LookupFail;
+
+        // A block `{ foo: 1, bar: 2 }`; look up the missing key `bax`. Both
+        // engines must raise the same `LookupFailure`, with `bar` suggested
+        // (edit distance 1). This exercises `collect_block_keys` on the
+        // bytecode engine, which pre-fix panicked in `nav` (eu-ter9).
+        let lookup_fail = crate::eval::intrinsics::index_u8("LOOKUP_FAIL");
+        let syn = dsl::letrec_(
+            vec![
+                dsl::value(dsl::pair("foo", dsl::num(1))),
+                dsl::value(dsl::pair("bar", dsl::num(2))),
+                dsl::value(dsl::nil()),
+                // [bar]
+                dsl::value(dsl::cons(dsl::lref(1), dsl::lref(2))),
+                // [foo, bar]
+                dsl::value(dsl::cons(dsl::lref(0), dsl::lref(3))),
+                // block over the kv-list
+                dsl::value(dsl::block(dsl::lref(4))),
+            ],
+            dsl::app_bif(lookup_fail, vec![dsl::sym("bax"), dsl::lref(5)]),
+        );
+        assert_engines_lookup_fail_agree(syn, vec![Box::new(LookupFail)]);
     }
 
     #[test]
