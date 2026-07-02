@@ -39,27 +39,29 @@
 
 ## Progress Ledger (living — durable source of truth; update every increment)
 
-### Increment C/D migration — started (branch `feat/bv1-migrate-support-list`)
-- **DONE** (byte-identical on HeapSyn, works on bytecode): list.rs 7 type
-  predicates (`IS{LIST,NUMBER,STRING,SYMBOL,BOOL,TYPEDATA,ZDT}` → `resolve_closure`
-  + `data_tag`); `ISARRAY` (`resolve_native`); `str_list_arg` (redesigned →
-  neutral eager `Vec<String>` via `data_tag`/`field_native`). Differential
-  tests `agree_on_islist_{true,false}`.
-- **NEXT — `data_list_arg` → `Vec<AbiClosure>`** (the interconnected root): same
-  eager-collect design as `str_list_arg` but yielding `AbiClosure` via
-  `data_tag`/`data_field`. Forces migrating all 7 callers at once (block.rs ×4,
-  list.rs ListNth, set.rs SetOf, support.rs:656). Blocker discovered: set.rs/
-  block.rs item processing needs an **`AbiClosure` → `Native`** neutral helper
-  (a set element / boxed scalar's native) — no such ABI method yet; add one
-  (e.g. `IntrinsicMachine::value_native(&AbiClosure) -> Option<Native>` that
-  follows Atom + unwraps a boxed scalar's field 0). ListNth/support.rs:656 are
-  the easy callers (`.nth(n)` / iterate).
-- **HARD cases (runtime code synthesis — need templates/redesign, defer):**
-  `parse_string.rs` (`load()` builds HeapSyn at runtime), typedata.rs / set.rs
-  builders (`set_closure(SynClosure::new(synth))`), the `machine_return_*_list`
-  builders in support.rs (773–978). block.rs (29) mixes easy inspectors + hard
-  builders. debug.rs (20) is diagnostic-only. assert.rs `format_ref` is
-  diagnostic-only (deep field formatting).
+### Increment C/D migration — in progress (branch `feat/bv1-migrate-support-list`, PR #939)
+- **DONE** (byte-identical on HeapSyn, now working on bytecode):
+  - list.rs 7 type predicates (`IS{LIST,NUMBER,STRING,SYMBOL,BOOL,TYPEDATA,ZDT}`
+    → `resolve_closure` + `data_tag`); `ISARRAY` (`resolve_native`).
+  - **`value_native`** added to `IntrinsicMachine` (HeapSyn default +
+    `BcBifContext` override): a WHNF value's native payload (bare `Atom` native
+    or a boxed scalar's field 0).
+  - **`str_list_arg`** → neutral eager `Vec<String>`; **`data_list_arg`** →
+    neutral eager `Vec<AbiClosure>` (both via `data_tag`/`data_field`/
+    `field_native`, spine already forced by callers).
+  - Callers migrated: `collect_num_list`, set `SetOf` (via `value_native`), list
+    `ListNth` (`.nth` + `set_result`). Differential tests
+    `agree_on_islist_{true,false}`, `agree_on_list_nth`.
+  - block `Merge`/`MergeWith` **bridged** with `as_heap()` — compile + HeapSyn
+    byte-identical; bytecode block-merge deferred (downstream needs list-builder
+    templates).
+- **HARD cases remaining (runtime code synthesis — need list/data-builder
+  templates or redesign):** `machine_return_closure_list`/`machine_return_*_list`
+  + `machine_return_block_pair_closure_list` (support/block list construction),
+  `SetToList`, typedata.rs builders, `parse_string.rs` (`load()` builds HeapSyn
+  at runtime). block.rs (still ~25 sites: inspectors migratable like the
+  predicates; builders hard). debug.rs (20) + assert.rs `format_ref` are
+  diagnostic-only (migrate last).
 
 
 **Position (2026-07-02, later):** Phases 0, 1, 1.6 complete; Phase 1.5
