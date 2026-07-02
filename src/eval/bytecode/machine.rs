@@ -799,7 +799,71 @@ pub fn handle_op(
             }
             state.current = BcValue::Closure(BcClosure::new(body_off, frame));
         }
-        Op::DirectApp | Op::Bif | Op::Meta | Op::DeMeta | Op::LookupLit => {
+        Op::DirectApp => {
+            let flags = read_u8(code, &mut pc);
+            let eager = flags & super::FLAG_EAGER != 0;
+            let smid = Smid::from(read_u32(code, &mut pc));
+            let callable = read_ref(code, &mut pc)?;
+            let arg_offs = read_arg_offsets(code, &mut pc);
+            // Inline smid replaces a wrapping Ann.
+            state.annotation = smid;
+            let args = make_arg_array(view, code, env, &arg_offs, eager)?;
+
+            let (callee_env, callee) = match callable {
+                DecodedRef::Local(i) => (
+                    env,
+                    view.scoped(env)
+                        .get(&view, i as usize)
+                        .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?,
+                ),
+                DecodedRef::Global(i) => (
+                    state.globals,
+                    view.scoped(state.globals)
+                        .get(&view, i as usize)
+                        .ok_or(ExecutionError::BadGlobalIndex(i as usize))?,
+                ),
+                DecodedRef::Value(_) => {
+                    return Err(ExecutionError::NotCallable(
+                        state.annotation,
+                        "native value".to_string(),
+                    ))
+                }
+            };
+            let BcValue::Closure(c) = callee else {
+                return Err(ExecutionError::NotCallable(
+                    state.annotation,
+                    "native value".to_string(),
+                ));
+            };
+
+            // Thunk callee (only reachable for a local): blackhole + Update.
+            if c.update() {
+                if let DecodedRef::Local(i) = callable {
+                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, callee_env));
+                    view.scoped(callee_env).update(&view, i as usize, hole)?;
+                    state.stack.push(BcContinuation::ApplyTo {
+                        args,
+                        annotation: state.annotation,
+                    });
+                    state.stack.push(BcContinuation::Update {
+                        environment: callee_env,
+                        index: i as usize,
+                    });
+                    state.current = callee;
+                }
+            } else if c.arity() as usize == args.len() {
+                // Fast path: exact arity → saturate, skip the ApplyTo push.
+                state.current = BcValue::Closure(view.saturate_with_array(&c, args)?);
+            } else {
+                // Arity mismatch: degrade to normal App semantics.
+                state.stack.push(BcContinuation::ApplyTo {
+                    args,
+                    annotation: state.annotation,
+                });
+                state.current = callee;
+            }
+        }
+        Op::Bif | Op::Meta | Op::DeMeta | Op::LookupLit => {
             return Err(ExecutionError::Panic(
                 state.annotation,
                 format!("bytecode: opcode {op:?} not yet implemented"),
@@ -1179,6 +1243,19 @@ mod tests {
         let syn = dsl::let_(
             vec![dsl::lambda(1, dsl::local(0))],
             dsl::app(dsl::lref(0), vec![dsl::num(5)]),
+        );
+        match run_to_end(&syn) {
+            Native::Num(n) => assert_eq!(n.as_i64(), Some(5)),
+            _ => panic!("expected num"),
+        }
+    }
+
+    #[test]
+    fn run_direct_apply_identity() {
+        // let id = \x.x in id(5) via DirectApp (exact-arity fast path)
+        let syn = dsl::let_(
+            vec![dsl::lambda(1, dsl::local(0))],
+            dsl::direct_app(Default::default(), dsl::lref(0), vec![dsl::num(5)]),
         );
         match run_to_end(&syn) {
             Native::Num(n) => assert_eq!(n.as_i64(), Some(5)),
