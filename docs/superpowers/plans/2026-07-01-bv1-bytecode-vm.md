@@ -69,16 +69,30 @@ engine can't mutate that way — a block is `BcClosure{code, env}` where the `Co
 currently **gated off** (`block_index_enabled()` = `false` for `BcBifContext`)
 and lookups fall back to the **STG find loop** (O(n), same result).
 
-**This was a deliberate deferral, NOT a hard limitation.** The bytecode engine
-*can* mutate the field *values* — they live in the (shared, GC-heap) `env`
-frame, so `env.update(index_slot, Native::Index(map))` would propagate to all
-holders. Reinstating a bytecode-native index needs: (1) migrate the index
-machinery (`build_index`/`walk_list_to_position`/`store_index_in_block`/
-`count_list`/`BlockListIterator`) off the `SynClosure`-typed ABI, and (2) point
-`store_index_in_block` at the block closure's env slot instead of the heap node's
-arg array. It was skipped only because it's a pure perf optimisation (correctness
-is fine via the find loop) and gating it was the minimal change to unblock the
-whole corpus.
+**This was a deliberate deferral, NOT a hard limitation — but the reinstatement
+is subtler than "update the env slot", because it depends on how a block was
+created:**
+- **Dynamically-built blocks** (intrinsic output via `build_data`/`data_value`):
+  every field, including the index slot, is a `BcValue` in the shared GC-heap
+  `env` frame, so `env.update(index_slot, Native::Index(map))` works and
+  propagates. Mutable. ✓
+- **Static block literals** (`{a: 1}` in source): the encoder bakes the `Cons`
+  into the arena and compiles the index field (`no_index()` = `num(0)`) as a
+  **`V`-const reference into the constant pool, inline in the immutable arena
+  node** — there is no mutable env slot to overwrite. ✗ *(VERIFY in `encode.rs`
+  / the block compiler before designing the fix — this is reasoned from the
+  value model, not yet confirmed.)* Contrast HeapSyn, where even a literal is
+  loaded into a **heap** `Cons` node at runtime, so its arg array is always
+  mutable — which is why HeapSyn can cache the index regardless of origin.
+
+Reinstatement options: (1) migrate the index machinery (`build_index`/
+`walk_list_to_position`/`store_index_in_block`/`count_list`/`BlockListIterator`)
+off the `SynClosure`-typed ABI; **and** for literal blocks either (2a) change
+the encoder to give a block's index field a real mutable env slot even for
+literals, (2b) use a **side table keyed by block identity** (env pointer), or
+(2c) cache only dynamic blocks and leave literals on the find loop. Skipped for
+now only because it's pure perf (correctness is fine via the find loop) and
+gating was the minimal change to unblock the whole corpus.
 
 **When BV2–5 benchmark bytecode vs HeapSyn, this is NOT apples-to-apples for
 block-heavy programs** — either reinstate the bytecode index (above) or also
