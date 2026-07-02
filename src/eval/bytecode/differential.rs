@@ -61,6 +61,49 @@ fn assert_engines_agree(syntax: Rc<StgSyn>, bifs: Vec<Box<dyn StgIntrinsic>>) ->
     heap_exit
 }
 
+/// Run `syntax` through both engines with a YAML emitter capturing to a
+/// buffer, and assert the rendered output agrees. Uses the full standard
+/// runtime (all emit/render intrinsics). Returns the shared output string.
+fn assert_engines_render_agree(syntax: Rc<StgSyn>) -> String {
+    use crate::eval::stg::make_standard_runtime;
+    let mut source_map = SourceMap::default();
+    let mut rt = make_standard_runtime(&mut source_map);
+    rt.prepare(&mut source_map);
+    let settings = StgSettings::default();
+
+    // Reference: HeapSyn engine rendering to a YAML buffer.
+    let mut heap_buf: Vec<u8> = Vec::new();
+    {
+        let mut emitter =
+            crate::export::create_emitter("yaml", &mut heap_buf).expect("yaml emitter");
+        emitter.stream_start();
+        let mut m = standard_machine(&settings, syntax.clone(), emitter, rt.as_ref())
+            .expect("build HeapSyn machine");
+        m.run(None).expect("HeapSyn run");
+        m.take_emitter().stream_end();
+    }
+    let heap_out = String::from_utf8(heap_buf).expect("HeapSyn output utf-8");
+
+    // Under test: bytecode engine, same runtime globals + intrinsics.
+    let mut bc_buf: Vec<u8> = Vec::new();
+    {
+        let mut emitter = crate::export::create_emitter("yaml", &mut bc_buf).expect("yaml emitter");
+        emitter.stream_start();
+        let (prog, root, gforms) = encode(&syntax, &rt.globals());
+        let mut m = BytecodeMachine::new(prog, root, &gforms, rt.intrinsics(), emitter, 0, false)
+            .expect("build bytecode machine");
+        m.run(None).expect("bytecode run");
+        m.take_emitter().stream_end();
+    }
+    let bc_out = String::from_utf8(bc_buf).expect("bytecode output utf-8");
+
+    assert_eq!(
+        heap_out, bc_out,
+        "HeapSyn and bytecode engines disagree on rendered output"
+    );
+    heap_out
+}
+
 mod tests {
     use super::*;
     use crate::eval::stg::arith::{Add, Lt};
@@ -240,6 +283,46 @@ mod tests {
             }),
         );
         assert_eq!(assert_engines_agree(syn, vec![]), Some(42));
+    }
+
+    #[test]
+    fn agree_on_rendered_boxed_number() {
+        // RENDER_DOC(boxed 42) — the top-level render path (RenderDoc ->
+        // Render -> EMITx) emitting a YAML document. Both engines must produce
+        // byte-identical output.
+        let render_doc = crate::eval::intrinsics::index("RENDER_DOC").expect("RENDER_DOC");
+        let syn = dsl::let_(
+            vec![dsl::value(dsl::data(
+                DataConstructor::BoxedNumber.tag(),
+                vec![dsl::num(42)],
+            ))],
+            dsl::app(dsl::gref(render_doc), vec![dsl::lref(0)]),
+        );
+        let out = assert_engines_render_agree(syn);
+        assert!(out.contains("42"), "expected 42 in output, got {out:?}");
+    }
+
+    #[test]
+    fn agree_on_rendered_block() {
+        // RENDER_DOC({ k: 42 }) — exercises the block-rendering walker
+        // (RenderKv / block start+end) plus scalar emission. Byte-identical
+        // YAML output required.
+        let render_doc = crate::eval::intrinsics::index("RENDER_DOC").expect("RENDER_DOC");
+        let syn = dsl::letrec_(
+            vec![
+                dsl::value(dsl::data(
+                    DataConstructor::BoxedNumber.tag(),
+                    vec![dsl::num(42)],
+                )), // 0: boxed 42
+                dsl::value(dsl::pair("k", dsl::lref(0))), // 1: BlockPair(:k, v)
+                dsl::value(dsl::nil()),                   // 2: nil
+                dsl::value(dsl::cons(dsl::lref(1), dsl::lref(2))), // 3: [pair]
+                dsl::value(dsl::block(dsl::lref(3))),     // 4: block
+            ],
+            dsl::app(dsl::gref(render_doc), vec![dsl::lref(4)]),
+        );
+        let out = assert_engines_render_agree(syn);
+        assert!(out.contains("k") && out.contains("42"), "got {out:?}");
     }
 
     #[test]

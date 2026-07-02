@@ -30,8 +30,10 @@ use crate::eval::memory::collect::{
 use crate::eval::memory::heap::Heap;
 use crate::eval::memory::infotable::{InfoTable, InfoTagged};
 use crate::eval::memory::mutator::MutatorHeapView;
+use crate::eval::memory::string::HeapString;
 use crate::eval::memory::symbol::{SymbolId, SymbolPool};
 use crate::eval::memory::syntax::{Native, Ref, RefPtr};
+use crate::eval::stg::render_to_string::OwnedCaptureEmitter;
 use crate::eval::stg::tags::{DataConstructor, Tag};
 
 use super::program::{read_u16, read_u32, read_u8};
@@ -201,6 +203,10 @@ pub struct BcMachineState {
     /// Set by a `CaptureEnd` continuation to signal `step` to finish an
     /// emitter capture.
     pub capture_end_pending: bool,
+    /// Requested capture format (set by `start_capture`); the machine loop
+    /// reads it to push a capture emitter (mirrors
+    /// `MachineState::pending_capture_start`).
+    pub pending_capture_start: Option<String>,
     /// Set (with `terminated`) when an IO constructor reaches the top with
     /// nothing to consume it — the io-run driver inspects `current`.
     pub yielded_io: bool,
@@ -236,6 +242,7 @@ impl BcMachineState {
             pending_bif: None,
             pending_bif_args: Vec::new(),
             capture_end_pending: false,
+            pending_capture_start: None,
             yielded_io: false,
             blackhole: 0,
             stash: Vec::new(),
@@ -1414,6 +1421,9 @@ pub struct BytecodeMachine<'a> {
     intrinsics: Vec<&'a dyn StgIntrinsic>,
     /// Output emitter.
     emitter: Box<dyn Emitter + 'a>,
+    /// Active `render-as` capture emitters (a stack); emit BIFs route to the
+    /// top one when non-empty, else to `emitter` (mirrors `Machine`).
+    capture_emitters: Vec<OwnedCaptureEmitter>,
 }
 
 impl<'a> BytecodeMachine<'a> {
@@ -1480,6 +1490,7 @@ impl<'a> BytecodeMachine<'a> {
             test_mode,
             intrinsics,
             emitter,
+            capture_emitters: Vec::new(),
         })
     }
 
@@ -1576,9 +1587,44 @@ impl<'a> BytecodeMachine<'a> {
                 clock: &mut self.clock,
                 dump_heap: self.dump_heap,
             };
-            bif.execute(&mut ctx, view, self.emitter.as_mut(), &args)?;
+            // Emit BIFs route to the active capture emitter, else the main one.
+            let emitter: &mut dyn Emitter = match self.capture_emitters.last_mut() {
+                Some(capture) => capture,
+                None => self.emitter.as_mut(),
+            };
+            bif.execute(&mut ctx, view, emitter, &args)?;
+        }
+
+        // Capture lifecycle (mirrors `Machine::step`, vm.rs). A `render-as`
+        // intrinsic sets `pending_capture_start`; `CaptureEnd` sets
+        // `capture_end_pending`, whereupon the captured string becomes the
+        // machine's current value.
+        if let Some(format) = self.state.pending_capture_start.take() {
+            let mut capture = OwnedCaptureEmitter::new(&format, self.state.annotation)?;
+            capture.stream_start();
+            self.capture_emitters.push(capture);
+        }
+        if self.state.capture_end_pending {
+            self.state.capture_end_pending = false;
+            let mut capture = self.capture_emitters.pop().ok_or_else(|| {
+                ExecutionError::Panic(
+                    self.state.annotation,
+                    "bytecode: no active capture emitter".to_string(),
+                )
+            })?;
+            capture.stream_end();
+            let result = capture.into_string(self.state.annotation)?;
+            let view = MutatorHeapView::new(&self.heap);
+            let ptr = view.alloc(HeapString::from_str(&view, &result))?.as_ptr();
+            self.state.current = BcValue::Native(Native::Str(ptr));
         }
         Ok(())
+    }
+
+    /// Recover the emitter after a run (so the caller can `stream_end` and
+    /// read its output), replacing it with a `NullEmitter`.
+    pub fn take_emitter(&mut self) -> Box<dyn Emitter + 'a> {
+        std::mem::replace(&mut self.emitter, Box::new(NullEmitter))
     }
 
     /// The process exit code from a terminated machine's result value
@@ -1894,26 +1940,26 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         panic!("bytecode BifContext: env — intrinsic uses the HeapSyn ABI")
     }
 
-    // ── Emitter capture lifecycle: not yet wired ────────────────────
+    // ── Emitter capture lifecycle (spec §6; render-as) ──────────────
 
-    fn start_capture(&mut self, _format: &str) -> Result<(), ExecutionError> {
-        Err(ExecutionError::Panic(
-            self.state.annotation,
-            "bytecode: emit capture not yet wired".to_string(),
-        ))
+    fn start_capture(&mut self, format: &str) -> Result<(), ExecutionError> {
+        // The machine loop reads this and pushes a capture emitter.
+        self.state.pending_capture_start = Some(format.to_string());
+        Ok(())
     }
 
     fn push_capture_end(&mut self, _view: MutatorHeapView<'_>) -> Result<(), ExecutionError> {
-        Err(ExecutionError::Panic(
-            self.state.annotation,
-            "bytecode: emit capture not yet wired".to_string(),
-        ))
+        self.state.stack.push(BcContinuation::CaptureEnd);
+        Ok(())
     }
 
     fn take_capture_result(&mut self) -> Result<String, ExecutionError> {
+        // The captured string is installed as the machine value directly by
+        // the capture-end handler, so this hook is unused on the bytecode
+        // path (as on the HeapSyn path).
         Err(ExecutionError::Panic(
             self.state.annotation,
-            "bytecode: emit capture not yet wired".to_string(),
+            "bytecode: take_capture_result is unused (result flows via current)".to_string(),
         ))
     }
 
