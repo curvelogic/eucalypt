@@ -8,10 +8,13 @@
 //! This first increment lands the foundational operand decoding and
 //! reference resolution used by every dispatch arm.
 
+use std::cmp::Ordering;
+
 use crate::common::sourcemap::Smid;
 use crate::eval::error::ExecutionError;
 use crate::eval::memory::alloc::ScopedAllocator;
 use crate::eval::memory::array::Array;
+use crate::eval::memory::infotable::InfoTable;
 use crate::eval::memory::mutator::MutatorHeapView;
 use crate::eval::memory::syntax::{Native, Ref, RefPtr};
 use crate::eval::stg::tags::{DataConstructor, Tag};
@@ -442,6 +445,105 @@ pub fn return_native(
     Ok(())
 }
 
+/// Return a function value (`current` is a closure of arity > 0) into the
+/// top continuation. Translated from `vm.rs` `return_fun` (`:1167`).
+///
+/// The partial-application (`ApplyTo` with too few args) case needs the
+/// PAP trampoline templates and is stubbed until those land.
+pub fn return_fun(
+    state: &mut BcMachineState,
+    view: MutatorHeapView<'_>,
+) -> Result<(), ExecutionError> {
+    let Some(cont) = state.stack.pop() else {
+        state.terminated = true;
+        return Ok(());
+    };
+    let fun = *state.current.as_closure().ok_or_else(|| {
+        ExecutionError::Panic(state.annotation, "return_fun on a native value".to_string())
+    })?;
+
+    match cont {
+        BcContinuation::ApplyTo { args, annotation } => {
+            let excess = args.len() as isize - fun.arity() as isize;
+            match excess.cmp(&0) {
+                Ordering::Equal => {
+                    state.current = BcValue::Closure(view.saturate_with_array(&fun, args)?);
+                }
+                Ordering::Less => {
+                    return Err(ExecutionError::Panic(
+                        annotation,
+                        "bytecode: partial application (PAP) not yet implemented".to_string(),
+                    ));
+                }
+                Ordering::Greater => {
+                    let (quorum, surplus) = args.as_slice().split_at(args.len() - excess as usize);
+                    state.current = BcValue::Closure(view.saturate(&fun, quorum)?);
+                    state.stack.push(BcContinuation::ApplyTo {
+                        args: Array::from_slice(&view, surplus),
+                        annotation,
+                    });
+                }
+            }
+        }
+        BcContinuation::Branch {
+            min_tag,
+            branch_table,
+            fallback,
+            environment,
+            annotation,
+        } => {
+            // Dynamic typing: code may `case` a value and find it is a lambda.
+            if let Some(body) = fallback {
+                let env = view.from_value(BcValue::Closure(fun), environment, state.annotation)?;
+                state.current = BcValue::Closure(BcClosure::new(body, env));
+            } else {
+                let expected: Vec<u8> = (0..branch_table.len())
+                    .filter(|i| branch_table.get(*i).flatten().is_some())
+                    .map(|i| min_tag + i as u8)
+                    .collect();
+                let ann = if annotation.is_valid() {
+                    annotation
+                } else {
+                    state.annotation
+                };
+                return Err(ExecutionError::CannotReturnFunToCase(ann, expected));
+            }
+        }
+        BcContinuation::Update { environment, index } => {
+            view.scoped(environment)
+                .update(&view, index, BcValue::Closure(fun))?;
+        }
+        BcContinuation::DeMeta {
+            or_else,
+            environment,
+            ..
+        } => {
+            let env = view.from_value(BcValue::Closure(fun), environment, state.annotation)?;
+            state.current = BcValue::Closure(BcClosure::new(or_else, env));
+        }
+        BcContinuation::SeqBind {
+            body,
+            environment,
+            annotation,
+        } => {
+            state.current = BcValue::Closure(BcClosure::new(body, environment));
+            state.annotation = annotation;
+        }
+        BcContinuation::LookupLitForce { smid, .. } => {
+            let ann = if smid.is_valid() {
+                smid
+            } else {
+                state.annotation
+            };
+            return Err(ExecutionError::NotCallable(ann, "function".to_string()));
+        }
+        BcContinuation::CaptureEnd => {
+            state.capture_end_pending = true;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -663,5 +765,56 @@ mod tests {
         // Return tag 6 (no branch, no fallback).
         let err = return_data(&mut state, view, 6, &[]);
         assert!(matches!(err, Err(ExecutionError::NoBranchForDataTag(..))));
+    }
+
+    #[test]
+    fn return_fun_exact_application_saturates() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+
+        let fun = BcClosure::new_annotated_lambda(10, 1, root, Default::default());
+        let mut state = BcMachineState::new(BcValue::Closure(fun), root, root, vec![]);
+        let arg = BcValue::Closure(BcClosure::new(55, root));
+        state.stack.push(BcContinuation::ApplyTo {
+            args: view.array(&[arg]),
+            annotation: Default::default(),
+        });
+
+        return_fun(&mut state, view).unwrap();
+
+        let c = state.current.as_closure().unwrap();
+        assert_eq!(c.code(), 10);
+        let frame = view.scoped(c.env());
+        assert_eq!(
+            frame.get(&view, 0).unwrap().as_closure().unwrap().code(),
+            55
+        );
+    }
+
+    #[test]
+    fn return_fun_over_application_pushes_surplus() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+
+        // Arity-1 function applied to 2 args → saturate with 1, push ApplyTo[1].
+        let fun = BcClosure::new_annotated_lambda(10, 1, root, Default::default());
+        let mut state = BcMachineState::new(BcValue::Closure(fun), root, root, vec![]);
+        let a = BcValue::Closure(BcClosure::new(55, root));
+        let b = BcValue::Closure(BcClosure::new(66, root));
+        state.stack.push(BcContinuation::ApplyTo {
+            args: view.array(&[a, b]),
+            annotation: Default::default(),
+        });
+
+        return_fun(&mut state, view).unwrap();
+
+        assert_eq!(state.current.as_closure().unwrap().code(), 10);
+        assert_eq!(state.stack.len(), 1);
+        match &state.stack[0] {
+            BcContinuation::ApplyTo { args, .. } => assert_eq!(args.len(), 1),
+            _ => panic!("expected surplus ApplyTo"),
+        }
     }
 }
