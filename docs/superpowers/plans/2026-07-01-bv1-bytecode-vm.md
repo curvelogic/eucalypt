@@ -39,20 +39,39 @@
 
 ## Progress Ledger (living — durable source of truth; update every increment)
 
-**Position (2026-07-02, later):** Phases 0, 1, 1.6 complete; Phase 1.5
-(intrinsic ABI) partially done. **Phase 2 machine now runs end-to-end**: the
-`BytecodeMachine` (run/step loop + GC roots), globals frame, PAP, and the
-**`Bif` dispatch spine** (`BcBifContext: IntrinsicMachine`) are landed and
-tested — `__ADD(2,3)`/`let x=2 in __ADD(x,3)` execute through the real runtime
-intrinsics. **Next:** widen `BcBifContext`'s neutral overrides
-(`return_unit`/`return_boxed_num`/`return_bool`/`resolve_closure`/`data_*`/
-`force`), `evaluate_to_whnf`, the `Meta`/`DeMeta`/`LookupLit` arms, then encode
-the **full runtime globals + prelude** and wire the `EU_BYTECODE` flag path in
-`driver/eval.rs` → differential harness (synthetic-first per REFINEMENT B) →
-day11 gate. **Branch:** `feat/bv1-bytecode-vm` → PRs to `integration/0.12.0`
-(PR #927 merged). Worktree `eucalypt-worktrees/integration-0.12.0`.
+**Position (2026-07-02, latest):** **The bytecode engine is functionally
+complete for the day11 subset and validated against the reference.** Landed +
+merged (PRs #927/#930/#932/#933/#934/#935/#937): the `BytecodeMachine`
+(run/step + GC roots + capture lifecycle), globals frame, PAP, the full `Bif`
+dispatch spine, re-entrant `evaluate_to_whnf`, the data ABI, **all day11
+opcodes** (incl. Meta/DeMeta/LookupLit + block navigator), and the **emit/render
+pipeline** (byte-identical YAML). 14 synthetic differential cases pass (all
+opcodes/intrinsics/rendering) vs the HeapSyn `standard_machine`.
+
+**The blocker to the `.eu`-corpus day11 gate is now the Increment C/D
+intrinsic-ABI migration.** Only the already-migrated intrinsics (arith, force,
+eq, boolean, emit/render, data constructors) run on bytecode. ~15 intrinsic
+files still use the HeapSyn-typed ABI (`nav().resolve`, `set_closure`,
+`navigate_local`, direct `HeapSyn::Cons` matching) and **panic** on
+`BcBifContext`: `block.rs` (29 sites), `debug.rs` (20), `support.rs` (12 — incl.
+the shared `data_list_arg`/`DataIterator` used by list/block), `list.rs` (11),
+`stream_prng.rs` (9), `time.rs` (7), `vec.rs` (6), + set/typedata/array/
+parse_string/assert. The migration replaces SynClosure-typed inspection with
+the neutral `resolve_closure`/`data_tag`/`data_field`/`field_native`/`set_result`
+(no-op on HeapSyn) and needs a neutral `DataIterator` in `support.rs` first
+(the interconnected root). This is a multi-increment phase.
+
+**Then:** the `EU_BYTECODE` flag path in `driver/eval.rs` — larger than first
+scoped: the driver runs **headless** (no RENDER_DOC wrapper) and orchestrates
+IO (`io_run_and_render`), world injection, and `render_headless_result` (all
+HeapSyn-`Machine`-specific). A minimal pure-program path can recompile with
+`RenderType::RenderDoc` (self-contained, no runtime App synthesis) and skip IO;
+full IO parity is a later increment.
+
+**Branch cadence:** one feature branch per increment → PR to
+`integration/0.12.0`. Worktree `eucalypt-worktrees/integration-0.12.0`.
 **Toolchain:** prepend `~/.rustup/toolchains/stable-aarch64-apple-darwin/bin`
-to PATH. Committed on the feature branch; not yet PR'd.
+to PATH.
 
 ### Done (commit → what)
 - `9cbb2a0c` Phase 0 scaffold (module + `EU_BYTECODE` flag)
