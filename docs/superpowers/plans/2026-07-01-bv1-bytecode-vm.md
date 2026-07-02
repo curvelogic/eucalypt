@@ -79,6 +79,20 @@ The self-contained handler arms are done (Atom/Cons/Case/Seq/Ann/App/DirectApp/L
 - **Data construction** (`return_data`/`machine_return_*` on the bytecode path): needs the templates table.
 So the next unit is the **machine wiring**: a `BytecodeMachine`/run-context owning the `BytecodeProgram` (code/constants/templates/blackhole/pap/global_entries) + heap + intrinsics + emitter + metrics + symbol pool; build the globals frame of `BcClosure`s from the encoded `GlobalForm`s (intrinsic wrappers + prelude — needs prelude encoded to bytecode); refactor handlers to take/deref this context; then Bif dispatch, PAP, Meta/DeMeta/LookupLit arms, `EU_BYTECODE` flag path in `driver/eval.rs`, and the differential harness → day11 gate.
 
+- `1fda104d` Phase 2 — **PAP trampoline templates** in the arena (`BytecodeProgram.pap` + `pap_offset(supplied,pending)`, `PAP_MAX_ARITY=16`). Ready to wire into `return_fun`'s Less case once handlers take the program.
+
+### Machine-wiring integration — ordered plan + two refinements to settle in-flight
+The core machine is complete + tested (all return_* handlers; Atom/Cons/Case/Seq/Ann/App/DirectApp/Let/LetRec; thunk memoisation; Bif capture; data + blackhole + pap templates; value model + GC + decoders). Remaining is one coherent integration:
+1. **Refactor** `step`/`handle_op`/`return_fun` to take `&BytecodeProgram` (not `&[u8]`) so handlers reach `templates`/`blackhole`/`pap`. (Mechanical; update tests.)
+2. **Wire PAP** (`return_fun` Less) via `prog.pap_offset` + a `partially_apply` building the PAP closure env `[f, supplied…]`.
+3. **`BytecodeMachine`** owning heap/intrinsics/emitter/metrics/symbol-pool + the program + `BcMachineState`; `run` loop (500-tick GC poll; `pending_bif` dispatch tail; capture lifecycle).
+4. **Bif dispatch** — a `BcBifContext` impl of `IntrinsicMachine`: neutral methods over `BcValue`+templates; the 5 `SynClosure`-typed methods `panic!` (bytecode never calls them; unmigrated intrinsics surface via the harness). Convert `pending_bif_args` (`DecodedRef`) → `&[Ref]` for `execute`.
+   - **REFINEMENT A (resolve_closure vs native):** `AbiClosure` is `Heap(SynClosure)|Byte(BcClosure)`, but a bytecode ref can resolve to a bare `Native` (not a closure). Plan: change `AbiClosure::Byte` to hold a `BcValue` (Closure|Native) so `resolve_closure`/`set_result`/`force` round-trip natives too. (My call; implement during Bif dispatch.)
+5. **Globals + prelude**: build the globals frame from `GlobalForm`s (intrinsic wrappers) + encode the prelude to bytecode (Task 3.2). 
+   - **REFINEMENT B (harness-first):** stand up the differential harness on tiny **synthetic** programs (no prelude) first — validate the core end-to-end through both engines — *before* encoding the full prelude. (My call; do harness-first.)
+6. **Meta/DeMeta/LookupLit** arms (+ `return_meta`, bytecode block navigator for LookupLit/MERGE).
+7. **`EU_BYTECODE` flag path** in `driver/eval.rs`; full differential harness → day11 gate (§8).
+
 ### Phase 2 remaining (updated)
 - [ ] PAP trampoline templates in the arena + wire `return_fun` Less case + `partially_apply`.
 - [ ] `handle_op` arms (day11): Atom, App, DirectApp, Bif, Case, Cons, Let/LetRec, Seq, LookupLit — each fetches operands (decoders done) and produces/consumes via the return_* handlers (done).
