@@ -2,13 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. This is a deep translation of intricate existing code, not greenfield — where a step says "translate `vm.rs:NNN-MMM`", read that arm and port its semantics; the differential harness (Phase 2) is the exact correctness gate for every such translation.
 
-> ## ▶ RESUME HERE (cold-start header — read this first) · updated 2026-07-02
+> ## ▶ RESUME HERE (cold-start header — read this first) · updated 2026-07-02 (post-#941)
 >
 > **Where:** worktree `/Users/greg/dev/curvelogic/eucalypt-worktrees/integration-0.12.0`,
 > integration branch `integration/0.12.0`. **Toolchain:** prepend
 > `~/.rustup/toolchains/stable-aarch64-apple-darwin/bin` to `PATH` (the
 > `~/.cargo/bin/cargo` symlink is broken). One feature branch per increment →
 > PR to `integration/0.12.0`. Owner reviews/merges PRs; do not merge your own.
+> Current working branch: `feat/bv1-migrate-intrinsics` (off the post-#941 merge
+> `25166517`).
 >
 > **State:** **The bytecode engine works end-to-end.** Real `.eu` programs run
 > under `EU_BYTECODE=1`, **byte-identical to the HeapSyn engine** (blocks, lists,
@@ -21,9 +23,9 @@
 > **Merged PRs (in order):** #927, #930 (machine spine + PAP + globals + Bif),
 > #932 (evaluate_to_whnf + closure ABI), #933 (differential harness), #934 (data
 > ABI), #935 (Meta/DeMeta/LookupLit), #937 (emit/render), #939 (Increment C/D:
-> iterators + list builders). **Open:** #941 (flag path + block-index gating —
-> the "real .eu runs" milestone). *(When resuming: check `gh pr list` for #941's
-> state and sync `git reset --hard origin/integration/0.12.0`.)*
+> iterators + list builders), **#941 (MERGED 2026-07-02 — flag path + block-index
+> gating, the "real .eu runs" milestone; merge commit `25166517`).**
+> *(All BV1 PRs to date are merged into `integration/0.12.0`.)*
 >
 > **How to run/verify the bytecode engine:**
 > - `EU_BYTECODE=1 timeout 90 ./target/debug/eu <file.eu>` vs the same without
