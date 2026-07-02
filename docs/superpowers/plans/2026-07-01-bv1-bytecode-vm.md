@@ -2,40 +2,61 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. This is a deep translation of intricate existing code, not greenfield — where a step says "translate `vm.rs:NNN-MMM`", read that arm and port its semantics; the differential harness (Phase 2) is the exact correctness gate for every such translation.
 
-> ## STATUS (revised 2026-07-02)
+> ## ▶ RESUME HERE (cold-start header — read this first) · updated 2026-07-02
 >
-> **Phase 0 (scaffolding) and Phase 1 (encoder + core types): COMPLETE** on
-> `integration/0.12.0`, all lib tests green (1198) + `clippy --all-targets`
-> clean. Commits `9cbb2a0c..10176820` (8). Delivered: `src/eval/bytecode/`
-> {`mod`, `opcode`, `program` (incl. a fully-implemented `prepare_constants`,
-> not the stub the plan called for), `encode`, `closure`, `cont`,
-> `env_builder`}; `env.rs` generalised `EnvironmentFrame`'s `StgObject`/
-> `GcScannable` over `C` + added `Closing::set_env` (behaviourally identical on
-> the SynClosure path).
+> **Where:** worktree `/Users/greg/dev/curvelogic/eucalypt-worktrees/integration-0.12.0`,
+> integration branch `integration/0.12.0`. **Toolchain:** prepend
+> `~/.rustup/toolchains/stable-aarch64-apple-darwin/bin` to `PATH` (the
+> `~/.cargo/bin/cargo` symlink is broken). One feature branch per increment →
+> PR to `integration/0.12.0`. Owner reviews/merges PRs; do not merge your own.
 >
-> **Design decisions settled during Phase 1** (now in spec §4.2 note / §5.5):
-> - **Operand encoding:** args are pre-emitted `OP_ATOM` nodes referenced by
->   `u32` offset (lazy arg closure = `BcClosure(atom_off, env)`, zero
->   per-dispatch code alloc; ref recoverable at `atom_off+1`). Encoder rewritten
->   accordingly (commit `10176820`). Case tables densified at encode time.
-> - **Deferred to later phases:** `create_arg_array`/`_eager`, `partially_apply`
->   (pap trampoline), `from_let`/`from_letrec` builders — completed when their
->   dispatch arms are written.
+> **State:** **The bytecode engine works end-to-end.** Real `.eu` programs run
+> under `EU_BYTECODE=1`, **byte-identical to the HeapSyn engine** (blocks, lists,
+> arithmetic, block lookups, strings — verified via the `eu` binary). Complete:
+> the whole day11 opcode set, GC roots + `evaluate_to_whnf`, the neutral
+> intrinsic ABI, rendering, the list/data builders, and the `EU_BYTECODE` flag
+> path in `driver/eval.rs`. HeapSyn is untouched (bytecode is behind the flag).
+> `cargo test --lib` = **1247 green**; clippy `--all-targets` + fmt clean.
 >
-> **NEW Phase 1.5 (intrinsic layer) inserted before Phase 2.** Implementation
-> review found spec §3's "192 intrinsics reused for free" is wrong: the intrinsic
-> ABI is `SynClosure`-typed and `support.rs` return helpers synthesise `HeapSyn`
-> at runtime. This blocks *every* `Bif` (hence day11) and must be solved before
-> the dispatch loop. See the new Phase 1.5 section and spec §5.5. This is real,
-> previously-unscoped work — expect Phase 1.5 to be comparable in size to Phase 2.
+> **Merged PRs (in order):** #927, #930 (machine spine + PAP + globals + Bif),
+> #932 (evaluate_to_whnf + closure ABI), #933 (differential harness), #934 (data
+> ABI), #935 (Meta/DeMeta/LookupLit), #937 (emit/render), #939 (Increment C/D:
+> iterators + list builders). **Open:** #941 (flag path + block-index gating —
+> the "real .eu runs" milestone). *(When resuming: check `gh pr list` for #941's
+> state and sync `git reset --hard origin/integration/0.12.0`.)*
 >
-> **Update (later 2026-07-02).** Phase 1.5 progress: neutral scalar + closure
-> intrinsic ABI added and `force`/`eq`/`arith`/`string`/`array` migrated
-> (HeapSyn byte-identical throughout); **Task 1.5.2 (arena constructor
-> templates) done**. A second spec correction surfaced: **the value model is
-> `BcValue = Closure | Native`, not `Closing<CodeRef>`** (a runtime native has no
-> home in an off-heap code offset). **NEW Phase 1.6** reworks the Phase 1 closure
-> types to `BcValue` before the machine. See spec §3 revision.
+> **How to run/verify the bytecode engine:**
+> - `EU_BYTECODE=1 timeout 90 ./target/debug/eu <file.eu>` vs the same without
+>   the env var → compare output (must be identical).
+> - Synthetic differential tests: `src/eval/bytecode/differential.rs`
+>   (`assert_engines_agree` = exit code; `assert_engines_render_agree` = YAML).
+>   `cargo test --lib bytecode::differential`.
+> - **Test-eu gotchas** (read `docs/appendices/syntax-gotchas.md`): use
+>   declaration files (`a: 1` / `b: 2`), NOT inline `{ }` in `eu -e`; no
+>   `let…in` (use `:let` blocks); `/` is floor division (`÷` exact); catenation
+>   precedence is very low.
+>
+> **NEXT (data-driven):** run more of `tests/harness/*.eu` under `EU_BYTECODE=1`,
+> and migrate whatever intrinsic panics with "…HeapSyn ABI" — the pattern is:
+> `machine.nav(view).resolve(x)` → `machine.resolve_closure(view, x)`;
+> `nav().resolve_native` → `resolve_native`; `HeapSyn::Cons` code-matching →
+> `data_tag`/`data_field`/`field_native`/`value_native`; `set_closure` →
+> `set_result`; list/data construction → `data_value`/`native_value`/
+> `return_closure_list` (already added — no runtime code synthesis). Then the IO
+> path (`io_run`/world-injection not ported; flag path is pure-programs-only),
+> and an automated `.eu`-corpus differential test. **Remaining HeapSyn-typed
+> intrinsic files** (panic on bytecode until migrated): block.rs builders/merge
+> (`deconstruct`, `machine_return_block_pair_closure_list`), debug.rs (20,
+> diagnostic), vec/time/typedata/stream_prng/set(`SetToList`)/parse_string
+> (`load()` = runtime HeapSyn synthesis, the one genuinely hard case),
+> assert.rs `format_ref` (diagnostic).
+>
+> **⚠️ Before any perf work:** see the PERF CAVEAT below — the block-index
+> optimisation is OFF on the bytecode path (O(n) lookups), so block-heavy
+> benchmarks are not apples-to-apples.
+>
+> *(Historical Phase 0/1/1.5/1.6 notes preserved in the Done ledger + git
+> history; the engine is well past them.)*
 
 ## Progress Ledger (living — durable source of truth; update every increment)
 
