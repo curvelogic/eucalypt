@@ -66,6 +66,14 @@ harness. **Branch:** `integration/0.12.0` (worktree
 - `cf2b3e34` Phase 2 — operand decoders (`read_arg_offsets`/`read_branch_table`/`read_form_header`, round-tripped vs encoder) + `BcMachineState` struct
 - `0b66403b` Phase 2 — `return_native` handler (WHNF native → continuation; Branch/Update/DeMeta/SeqBind/LookupLitForce/CaptureEnd), tested. Building return_* handlers as standalone tested units before the full loop.
 - `0bd7b7f9` Phase 2 — `return_data` handler (branch match + copy-path `env_from_data_args`; Update/DeMeta/SeqBind/CaptureEnd/IO-yield), tested. STUBBED (need globals + bytecode block navigator): ApplyTo block-application → MERGE, LookupLitForce block-lookup — wire with the machine loop. Also deferred: shared-backing env optimisation (perf); `nearest_stack_annotation` fallback (used `state.annotation` — revisit if differential harness flags error-location diffs).
+- `0ddd1075` Phase 2 — `return_fun` handler (ApplyTo exact→saturate / over→saturate+push surplus; Branch fallback→`CannotReturnFunToCase`; Update/DeMeta/SeqBind/LookupLitForce/CaptureEnd), tested. STUBBED: PAP (ApplyTo Less) — needs pap trampoline templates (next).
+
+### Phase 2 remaining (updated)
+- [ ] PAP trampoline templates in the arena + wire `return_fun` Less case + `partially_apply`.
+- [ ] `handle_op` arms (day11): Atom, App, DirectApp, Bif, Case, Cons, Let/LetRec, Seq, LookupLit — each fetches operands (decoders done) and produces/consumes via the return_* handlers (done).
+- [ ] value-dispatch `step`: `Native`→`return_native`; `Closure` arity>0→`return_fun`; else fetch opcode→`handle_op`. 500-tick GC poll + `pending_bif` tail.
+- [ ] `BytecodeMachine` wiring (heap/intrinsics/emitter/metrics; build globals frame from `GlobalForm`s + `prepare_constants`); neutral `IntrinsicMachine` impl over `BcValue`+templates; `evaluate_to_whnf`.
+- [ ] `EU_BYTECODE` flag path (`driver/eval.rs`) + differential harness + day11 gate.
 
 ### Phase 2 next steps (fine-grained)
 - [ ] `BytecodeMachine` wiring: own/borrow heap+intrinsics+emitter+metrics (mirror `MachineCore`/`Machine`); hold `BcMachineState`; construct globals frame from `GlobalForm`s + `prepare_constants`.
