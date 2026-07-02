@@ -9,7 +9,6 @@
 //! backings — are traced.
 
 use crate::common::sourcemap::Smid;
-use crate::eval::machine::env::EnvironmentFrame;
 use crate::eval::memory::{
     alloc::StgObject,
     array::Array,
@@ -19,10 +18,7 @@ use crate::eval::memory::{
 };
 use crate::eval::stg::tags::Tag;
 
-use super::{BcClosure, CodeRef};
-
-/// Environment frame type for the bytecode engine.
-type BcEnvFrame = EnvironmentFrame<BcClosure>;
+use super::{BcClosure, BcEnvFrame, BcValue, CodeRef};
 
 /// Continuations recorded on the bytecode machine's stack.
 #[derive(Clone)]
@@ -48,7 +44,7 @@ pub enum BcContinuation {
     },
     /// Once callable is evaluated, apply to args.
     ApplyTo {
-        args: Array<BcClosure>,
+        args: Array<BcValue>,
         annotation: Smid,
     },
     /// Catch metadata and pass it (with body) to handler.
@@ -261,10 +257,7 @@ mod tests {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
 
-        let env = view
-            .alloc(EnvironmentFrame::<BcClosure>::default())
-            .unwrap()
-            .as_ptr();
+        let env = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
         let branch_table: Array<Option<CodeRef>> = view.array(&[Some(100u32), Some(200u32)]);
 
         let cont = BcContinuation::Branch {
@@ -285,10 +278,7 @@ mod tests {
     fn non_branch_match_tag_is_none() {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
-        let env = view
-            .alloc(EnvironmentFrame::<BcClosure>::default())
-            .unwrap()
-            .as_ptr();
+        let env = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
         let cont = BcContinuation::Update {
             environment: env,
             index: 0,
