@@ -11,6 +11,7 @@ use crate::{
     common::sourcemap::Smid,
     eval::stg::wrap::wrap,
     eval::{
+        bytecode::BcClosure,
         emit::Emitter,
         error::ExecutionError,
         intrinsics,
@@ -23,7 +24,7 @@ use crate::{
         },
         stg::{
             syntax::{dsl, StgSyn},
-            tags::DataConstructor,
+            tags::{DataConstructor, Tag},
         },
     },
 };
@@ -32,6 +33,43 @@ use super::{
     env::{EnvFrame, SynClosure},
     vm::HeapNavigator,
 };
+
+/// A code-type-erased closure handle passed across the intrinsic ABI
+/// (BV1 §5.5).
+///
+/// During the parallel-engine phase both closure kinds coexist: the
+/// HeapSyn engine produces/consumes `Heap`, the bytecode engine `Byte`.
+/// Intrinsics treat the handle opaquely; each engine downcasts to its own
+/// variant in the `IntrinsicMachine` method impls. Phase 4 collapses this
+/// to the sole surviving closure type.
+#[derive(Clone)]
+pub enum AbiClosure {
+    Heap(SynClosure),
+    Byte(BcClosure),
+}
+
+impl AbiClosure {
+    /// Unwrap the HeapSyn closure, panicking on a bytecode handle. Used by
+    /// the HeapSyn engine's ABI impls, which only ever see `Heap`.
+    pub fn expect_heap(self) -> SynClosure {
+        match self {
+            AbiClosure::Heap(c) => c,
+            AbiClosure::Byte(_) => {
+                unreachable!("bytecode closure handed to the HeapSyn intrinsic engine")
+            }
+        }
+    }
+
+    /// Borrow the HeapSyn closure, panicking on a bytecode handle.
+    pub fn as_heap(&self) -> &SynClosure {
+        match self {
+            AbiClosure::Heap(c) => c,
+            AbiClosure::Byte(_) => {
+                unreachable!("bytecode closure handed to the HeapSyn intrinsic engine")
+            }
+        }
+    }
+}
 
 /// Machine interface exposed to intrinsic implementations
 pub trait IntrinsicMachine {
@@ -129,6 +167,89 @@ pub trait IntrinsicMachine {
         };
         let closure = self.nav(view).global(idx)?;
         self.set_closure(closure)
+    }
+
+    // ── Neutral closure operations (BV1 §5.5, Increment C) ──────────
+
+    /// Resolve a ref to a closure handle (following the resolve rules:
+    /// locals/globals looked up, `V` wrapped in an atom closure).
+    fn resolve_closure(
+        &mut self,
+        view: MutatorHeapView<'_>,
+        arg: &Ref,
+    ) -> Result<AbiClosure, ExecutionError> {
+        Ok(AbiClosure::Heap(self.nav(view).resolve(arg)?))
+    }
+
+    /// Resolve a ref to a closure that must be callable (errors on `V`).
+    fn resolve_callable_closure(
+        &mut self,
+        view: MutatorHeapView<'_>,
+        arg: &Ref,
+    ) -> Result<AbiClosure, ExecutionError> {
+        Ok(AbiClosure::Heap(self.nav(view).resolve_callable(arg)?))
+    }
+
+    /// Set the machine result to a previously-resolved closure handle.
+    fn set_result(&mut self, closure: AbiClosure) -> Result<(), ExecutionError> {
+        self.set_closure(closure.expect_heap())
+    }
+
+    /// Force a closure handle to WHNF.
+    fn force(&mut self, closure: AbiClosure) -> Result<AbiClosure, ExecutionError> {
+        Ok(AbiClosure::Heap(
+            self.evaluate_to_whnf(closure.expect_heap())?,
+        ))
+    }
+
+    /// The data-constructor tag of a (WHNF) closure handle, if it is a
+    /// data constructor; `None` otherwise.
+    fn data_tag(&self, view: MutatorHeapView<'_>, closure: &AbiClosure) -> Option<Tag> {
+        let code = view.scoped(closure.as_heap().code());
+        match &*code {
+            HeapSyn::Cons { tag, .. } => Some(*tag),
+            _ => None,
+        }
+    }
+
+    /// The `idx`-th field of a data-constructor closure, resolved within
+    /// the closure's environment; `None` if not a constructor / out of range.
+    fn data_field(
+        &self,
+        view: MutatorHeapView<'_>,
+        closure: &AbiClosure,
+        idx: usize,
+    ) -> Option<AbiClosure> {
+        let sc = closure.as_heap();
+        let field_ref = {
+            let code = view.scoped(sc.code());
+            match &*code {
+                HeapSyn::Cons { args, .. } => args.get(idx)?,
+                _ => return None,
+            }
+        };
+        Some(AbiClosure::Heap(
+            self.nav(view).resolve_in_closure(sc, field_ref)?,
+        ))
+    }
+
+    /// The `idx`-th field of a data-constructor closure read as a native
+    /// value (used by native-list iteration).
+    fn field_native(
+        &self,
+        view: MutatorHeapView<'_>,
+        closure: &AbiClosure,
+        idx: usize,
+    ) -> Option<Native> {
+        let sc = closure.as_heap();
+        let code = view.scoped(sc.code());
+        match &*code {
+            HeapSyn::Cons { args, .. } => {
+                let field_ref = args.get(idx)?;
+                Some(sc.navigate_local_native(&view, field_ref))
+            }
+            _ => None,
+        }
     }
 
     /// Request an emitter capture for the given format.
