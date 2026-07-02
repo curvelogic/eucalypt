@@ -688,33 +688,13 @@ pub fn machine_return_num_list(
     view: MutatorHeapView,
     list: Vec<f64>,
 ) -> Result<(), ExecutionError> {
-    let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
-    for item in list.into_iter().rev() {
+    let mut items = Vec::with_capacity(list.len());
+    for item in list {
         let n = Number::from_f64(item).unwrap_or_else(|| Number::from(0));
-        bindings.push(LambdaForm::value(
-            view.data(
-                DataConstructor::BoxedNumber.tag(),
-                Array::from_slice(&view, &[Ref::V(Native::Num(n))]),
-            )?
-            .as_ptr(),
-        ));
-        let len = bindings.len();
-        bindings.push(LambdaForm::value(
-            view.data(
-                DataConstructor::ListCons.tag(),
-                Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
-            )?
-            .as_ptr(),
-        ));
+        let native = machine.native_value(view, Native::Num(n))?;
+        items.push(machine.data_value(view, DataConstructor::BoxedNumber.tag(), &[native])?);
     }
-    let list_index = bindings.len() - 1;
-    let syn = view
-        .letrec(
-            Array::from_slice(&view, &bindings),
-            view.atom(Ref::L(list_index))?,
-        )?
-        .as_ptr();
-    machine.set_closure(SynClosure::new(syn, machine.root_env()))
+    machine.return_closure_list(view, items)
 }
 
 /// Return a string list from an iterator, streaming strings directly
@@ -769,32 +749,16 @@ pub fn machine_return_str_list(
     view: MutatorHeapView,
     list: Vec<String>,
 ) -> Result<(), ExecutionError> {
-    let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
-    for item in list.into_iter().rev() {
-        bindings.push(LambdaForm::value(
-            view.data(
-                DataConstructor::BoxedString.tag(),
-                Array::from_slice(&view, &[view.str_ref(item)?]),
-            )?
-            .as_ptr(),
-        ));
-        let len = bindings.len();
-        bindings.push(LambdaForm::value(
-            view.data(
-                DataConstructor::ListCons.tag(),
-                Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
-            )?
-            .as_ptr(),
-        ));
+    let mut items = Vec::with_capacity(list.len());
+    for item in list {
+        // Match `view.str_ref`: intern/allocate the string as a native.
+        let Ref::V(native) = view.str_ref(item)? else {
+            unreachable!("str_ref yields a value ref")
+        };
+        let boxed = machine.native_value(view, native)?;
+        items.push(machine.data_value(view, DataConstructor::BoxedString.tag(), &[boxed])?);
     }
-    let list_index = bindings.len() - 1;
-    let syn = view
-        .letrec(
-            Array::from_slice(&view, &bindings),
-            view.atom(Ref::L(list_index))?,
-        )?
-        .as_ptr();
-    machine.set_closure(SynClosure::new(syn, machine.root_env()))
+    machine.return_closure_list(view, items)
 }
 
 /// Return a list of closures from intrinsic
@@ -803,31 +767,10 @@ pub fn machine_return_closure_list(
     view: MutatorHeapView,
     list: Vec<SynClosure>,
 ) -> Result<(), ExecutionError> {
-    // env of items
-    let item_frame = view.from_closures(
-        list.iter().cloned(),
-        list.len(),
-        machine.env(view),
-        Smid::default(),
-    )?;
-    let len = list.len();
-
-    // env of links [lnull, l0, l1 ..] [i0 i1 i2]
-    let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
-    for i in (0..len + 1).rev() {
-        bindings.push(LambdaForm::value(
-            view.data(
-                DataConstructor::ListCons.tag(),
-                Array::from_slice(&view, &[Ref::L(len + i + 1), Ref::L(len - i)]),
-            )?
-            .as_ptr(),
-        ));
-    }
-
-    let syn = view
-        .letrec(Array::from_slice(&view, &bindings), view.atom(Ref::L(len))?)?
-        .as_ptr();
-    machine.set_closure(SynClosure::new(syn, item_frame))
+    // Delegate to the neutral list builder (HeapSyn items). Bytecode-native
+    // callers should build `AbiClosure`s and call `return_closure_list`
+    // directly.
+    machine.return_closure_list(view, list.into_iter().map(AbiClosure::Heap).collect())
 }
 
 /// Return a list of closures from intrinsic

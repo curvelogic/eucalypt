@@ -398,6 +398,24 @@ mod tests {
     }
 
     #[test]
+    fn agree_on_rendered_split_list() {
+        // RENDER_DOC(__SPLIT("hi", "")) -> renders ["hi"]. Exercises the
+        // migrated list builder (machine_return_str_list -> return_closure_list
+        // + data_value + native_value over templates) end-to-end on bytecode.
+        let split = crate::eval::intrinsics::index_u8("SPLIT");
+        let render_doc = crate::eval::intrinsics::index("RENDER_DOC").expect("RENDER_DOC");
+        let syn = dsl::let_(
+            vec![dsl::value(dsl::app_bif(
+                split,
+                vec![dsl::str("hi"), dsl::str("")],
+            ))],
+            dsl::app(dsl::gref(render_doc), vec![dsl::lref(0)]),
+        );
+        let out = assert_engines_render_agree(syn);
+        assert!(out.contains("hi"), "expected 'hi' in output, got {out:?}");
+    }
+
+    #[test]
     fn agree_on_force_whnf() {
         // let t = __ADD(1, 2) in __FORCE_WHNF(t) -> 3
         let add = crate::eval::intrinsics::index_u8("ADD");

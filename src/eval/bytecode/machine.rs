@@ -2112,6 +2112,50 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
                 .or_else(|| self.field_native(view, closure, 0)),
         }
     }
+
+    fn native_value(
+        &self,
+        _view: MutatorHeapView<'_>,
+        native: Native,
+    ) -> Result<AbiClosure, ExecutionError> {
+        Ok(AbiClosure::Byte(BcValue::Native(native)))
+    }
+
+    fn data_value(
+        &self,
+        view: MutatorHeapView<'_>,
+        tag: Tag,
+        fields: &[AbiClosure],
+    ) -> Result<AbiClosure, ExecutionError> {
+        let bc_fields: Vec<BcValue> = fields
+            .iter()
+            .map(|c| match c {
+                AbiClosure::Byte(v) => v.clone(),
+                AbiClosure::Heap(_) => {
+                    panic!("bytecode BifContext: data_value with a HeapSyn field")
+                }
+            })
+            .collect();
+        Ok(AbiClosure::Byte(self.build_data(view, tag, &bc_fields)?))
+    }
+
+    fn return_closure_list(
+        &mut self,
+        view: MutatorHeapView<'_>,
+        items: Vec<AbiClosure>,
+    ) -> Result<(), ExecutionError> {
+        // Fold ListCons over the items from a ListNil tail, building each cell
+        // from the constructor template (no runtime code synthesis).
+        let mut acc = self.build_data(view, DataConstructor::ListNil.tag(), &[])?;
+        for item in items.into_iter().rev() {
+            let AbiClosure::Byte(head) = item else {
+                panic!("bytecode BifContext: return_closure_list with a HeapSyn item")
+            };
+            acc = self.build_data(view, DataConstructor::ListCons.tag(), &[head, acc])?;
+        }
+        self.state.current = acc;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
