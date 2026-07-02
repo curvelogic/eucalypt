@@ -39,6 +39,29 @@
 
 ## Progress Ledger (living — durable source of truth; update every increment)
 
+### Increment C/D migration — started (branch `feat/bv1-migrate-support-list`)
+- **DONE** (byte-identical on HeapSyn, works on bytecode): list.rs 7 type
+  predicates (`IS{LIST,NUMBER,STRING,SYMBOL,BOOL,TYPEDATA,ZDT}` → `resolve_closure`
+  + `data_tag`); `ISARRAY` (`resolve_native`); `str_list_arg` (redesigned →
+  neutral eager `Vec<String>` via `data_tag`/`field_native`). Differential
+  tests `agree_on_islist_{true,false}`.
+- **NEXT — `data_list_arg` → `Vec<AbiClosure>`** (the interconnected root): same
+  eager-collect design as `str_list_arg` but yielding `AbiClosure` via
+  `data_tag`/`data_field`. Forces migrating all 7 callers at once (block.rs ×4,
+  list.rs ListNth, set.rs SetOf, support.rs:656). Blocker discovered: set.rs/
+  block.rs item processing needs an **`AbiClosure` → `Native`** neutral helper
+  (a set element / boxed scalar's native) — no such ABI method yet; add one
+  (e.g. `IntrinsicMachine::value_native(&AbiClosure) -> Option<Native>` that
+  follows Atom + unwraps a boxed scalar's field 0). ListNth/support.rs:656 are
+  the easy callers (`.nth(n)` / iterate).
+- **HARD cases (runtime code synthesis — need templates/redesign, defer):**
+  `parse_string.rs` (`load()` builds HeapSyn at runtime), typedata.rs / set.rs
+  builders (`set_closure(SynClosure::new(synth))`), the `machine_return_*_list`
+  builders in support.rs (773–978). block.rs (29) mixes easy inspectors + hard
+  builders. debug.rs (20) is diagnostic-only. assert.rs `format_ref` is
+  diagnostic-only (deep field formatting).
+
+
 **Position (2026-07-02, later):** Phases 0, 1, 1.6 complete; Phase 1.5
 (intrinsic ABI) partially done. **Phase 2 machine now runs end-to-end**: the
 `BytecodeMachine` (run/step loop + GC roots), globals frame, PAP, and the
