@@ -38,20 +38,40 @@
 >   `let…in` (use `:let` blocks); `/` is floor division (`÷` exact); catenation
 >   precedence is very low.
 >
-> **NEXT (data-driven):** run more of `tests/harness/*.eu` under `EU_BYTECODE=1`,
-> and migrate whatever intrinsic panics with "…HeapSyn ABI" — the pattern is:
+> **CORPUS TALLY (branch `feat/bv1-migrate-intrinsics`, PR #942):** sweeping the
+> full `tests/harness/*.eu` under `EU_BYTECODE=1` vs HeapSyn: **96 PASS
+> (byte-identical), 0 DIFF**, 4 both-fail (pre-existing), **68 bytecode-only
+> fails** remaining. Was 43 PASS before this increment — `debug.rs` (DbgRepr &
+> trace) migration unblocked ~53. Sweep script:
+> `scratchpad/bv_sweep.sh` (compares stdout of both engines per file).
+>
+> **NEXT (data-driven):** migrate the remaining bytecode-only panics, in
+> impact order (culprit → #tests it blocks, from the sweep backtraces):
+> `support::machine_return_str_iter` (9), `block::Merge` — "block application
+> (MERGE) not yet implemented" (8), `support::resolve_native_unboxing` (7),
+> `render_to_string::RenderToString` (7), `parse_string::ParseString` (5, the
+> hard `load()` runtime-synthesis case), `block::IsBlock` (4), then the
+> singles (vec/time/typedata/stream_prng/stream_intrinsic). The port pattern:
 > `machine.nav(view).resolve(x)` → `machine.resolve_closure(view, x)`;
 > `nav().resolve_native` → `resolve_native`; `HeapSyn::Cons` code-matching →
 > `data_tag`/`data_field`/`field_native`/`value_native`; `set_closure` →
-> `set_result`; list/data construction → `data_value`/`native_value`/
-> `return_closure_list` (already added — no runtime code synthesis). Then the IO
-> path (`io_run`/world-injection not ported; flag path is pure-programs-only),
-> and an automated `.eu`-corpus differential test. **Remaining HeapSyn-typed
-> intrinsic files** (panic on bytecode until migrated): block.rs builders/merge
-> (`deconstruct`, `machine_return_block_pair_closure_list`), debug.rs (20,
-> diagnostic), vec/time/typedata/stream_prng/set(`SetToList`)/parse_string
-> (`load()` = runtime HeapSyn synthesis, the one genuinely hard case),
-> assert.rs `format_ref` (diagnostic).
+> `set_result`; `evaluate_to_whnf(SynClosure)` → `force(AbiClosure)`; list/data
+> construction → `data_value`/`native_value`/`return_closure_list`. Then the IO
+> path (`io_run`/world-injection not ported; flag path is pure-programs-only)
+> and an automated `.eu`-corpus differential test.
+>
+> **⚠️ Neutral-ABI trap (learned this increment):** the HeapSyn `value_native`
+> default previously called `navigate_local_native`, which *panics* on a
+> non-native local (unevaluated `Atom{L}`). A non-forcing peek trips this. Fixed
+> by `try_navigate_local_native` (returns `Option`) so HeapSyn matches the
+> bytecode engine. When you port an intrinsic that inspects *unforced* values,
+> prefer `value_native` (now safe) and never assume a resolved closure is WHNF.
+>
+> **DONE this increment (PR #942, eu-0sst):** `debug.rs` fully on the neutral
+> ABI (DbgRepr/Dbg/TraceEntry/TraceExit + helpers), byte-identical both engines;
+> `value_native` panic fix; `agree_on_dbg_repr` differential test. Follow-up
+> filed: `__DBG` fires a different #times on stderr per engine (thunk-update
+> difference, not render) — see beads.
 >
 > **⚠️ Before any perf work:** see the PERF CAVEAT below — the block-index
 > optimisation is OFF on the bytecode path (O(n) lookups), so block-heavy
