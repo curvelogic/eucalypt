@@ -1,6 +1,6 @@
 //! Block intrinsics
 
-use std::{mem::swap, rc::Rc};
+use std::rc::Rc;
 
 use indexmap::IndexMap;
 
@@ -1666,19 +1666,18 @@ impl StgIntrinsic for MergeWith {
         // thunk via `view.app` (runtime code synthesis), which has no neutral
         // ABI equivalent yet, so MERGEWITH/DEEPMERGE remain HeapSyn-only for
         // now — `as_heap()` bridges the neutral `deconstruct` results.
-        let mut merge: IndexMap<String, SynClosure> = IndexMap::new();
+        let mut merge: IndexMap<String, AbiClosure> = IndexMap::new();
 
         for item in &l {
             let (key, value) = deconstruct(machine, view, item)?;
-            merge.insert(key, value.as_heap().clone());
+            merge.insert(key, value);
         }
 
         for item in &r {
             let (key, nv) = deconstruct(machine, view, item)?;
-            let nv = nv.as_heap().clone();
             if let Some(ov) = merge.get_mut(&key) {
-                let args = [ov.clone(), nv];
-                let mut combined = SynClosure::new(
+                let args = [ov.as_heap().clone(), nv.as_heap().clone()];
+                let combined = AbiClosure::Heap(SynClosure::new(
                     view.app(f.bump(2), Array::from_slice(&view, &[Ref::L(0), Ref::L(1)]))?
                         .as_ptr(),
                     view.from_closures(
@@ -1687,8 +1686,8 @@ impl StgIntrinsic for MergeWith {
                         machine.env(view),
                         Smid::default(),
                     )?,
-                );
-                swap(ov, &mut combined);
+                ));
+                *ov = combined;
             } else {
                 merge.insert(key, nv);
             }

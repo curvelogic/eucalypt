@@ -2055,6 +2055,33 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         }
     }
 
+    fn tail_apply_global(
+        &mut self,
+        view: MutatorHeapView<'_>,
+        global_idx: usize,
+        arg_refs: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        // Resolve the args in the current (bif) env, push an `ApplyTo` for
+        // them, then enter the global closure — the machine's `return_fun`
+        // applies it, mirroring `Op::App`. No runtime code synthesis.
+        let global = view
+            .scoped(self.state.globals)
+            .get(&view, global_idx)
+            .ok_or(ExecutionError::BadGlobalIndex(global_idx))?;
+        if !arg_refs.is_empty() {
+            let args: Vec<BcValue> = arg_refs
+                .iter()
+                .map(|r| self.resolve_value(view, r))
+                .collect::<Result<_, _>>()?;
+            self.state.stack.push(BcContinuation::ApplyTo {
+                args: Array::from_slice(&view, &args),
+                annotation: self.state.annotation,
+            });
+        }
+        self.state.current = global;
+        Ok(())
+    }
+
     fn force(&mut self, closure: AbiClosure) -> Result<AbiClosure, ExecutionError> {
         match closure {
             // A native is already WHNF.

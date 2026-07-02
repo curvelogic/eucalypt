@@ -8,10 +8,9 @@ use serde_json::Number;
 
 use crate::eval::{
     error::ExecutionError,
-    machine::{env::SynClosure, env_builder::EnvBuilder, intrinsic::*},
+    machine::{env::SynClosure, intrinsic::*},
     memory::{
         alloc::{ScopedAllocator, ScopedPtr},
-        array::Array,
         mutator::MutatorHeapView,
         ndarray::HeapNdArray,
         set::HeapSet,
@@ -709,60 +708,25 @@ pub fn machine_return_closure_list(
     machine.return_closure_list(view, list.into_iter().map(AbiClosure::Heap).collect())
 }
 
-/// Return a list of closures from intrinsic
+/// Return a block's kv-list (a cons-list of `BlockPair(sym, value)`) from an
+/// intrinsic, engine-neutrally.
+///
+/// Each key is interned to a symbol native and each pair built via `data_value`;
+/// the list is assembled with `return_closure_list` — no runtime code synthesis.
 pub fn machine_return_block_pair_closure_list(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
-    block: IndexMap<String, SynClosure>,
+    block: IndexMap<String, AbiClosure>,
 ) -> Result<(), ExecutionError> {
-    // env of values
-    let values: Vec<_> = block.values().cloned().collect();
-    let value_frame = view.from_closures(
-        values.iter().cloned(),
-        values.len(),
-        machine.env(view),
-        Smid::default(),
-    )?;
-    let len = block.len();
-
-    // env of pairs
-    let mut pairs = vec![];
-    for (i, k) in block.keys().enumerate() {
-        pairs.push(SynClosure::new(
-            view.data(
-                DataConstructor::BlockPair.tag(),
-                Array::from_slice(
-                    &view,
-                    &[view.sym_ref(machine.symbol_pool_mut(), k)?, Ref::L(i)],
-                ),
-            )?
-            .as_ptr(),
-            value_frame,
-        ));
+    let mut pairs = Vec::with_capacity(block.len());
+    for (k, value) in block {
+        let Ref::V(sym_native) = view.sym_ref(machine.symbol_pool_mut(), &k)? else {
+            unreachable!("sym_ref yields a value ref")
+        };
+        let key = machine.native_value(view, sym_native)?;
+        pairs.push(machine.data_value(view, DataConstructor::BlockPair.tag(), &[key, value])?);
     }
-    let pair_frame = view.from_closures(
-        pairs.iter().cloned(),
-        pairs.len(),
-        value_frame,
-        Smid::default(),
-    )?;
-
-    // env of links [lnull, l0, l1 ..] [p0 p1 p2...] [v0 v1 ..]
-    let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
-    for i in (0..len + 1).rev() {
-        bindings.push(LambdaForm::value(
-            view.data(
-                DataConstructor::ListCons.tag(),
-                Array::from_slice(&view, &[Ref::L(len + i + 1), Ref::L(len - i)]),
-            )?
-            .as_ptr(),
-        ));
-    }
-
-    let syn = view
-        .letrec(Array::from_slice(&view, &bindings), view.atom(Ref::L(len))?)?
-        .as_ptr();
-    machine.set_closure(SynClosure::new(syn, pair_frame))
+    machine.return_closure_list(view, pairs)
 }
 
 pub mod call {
