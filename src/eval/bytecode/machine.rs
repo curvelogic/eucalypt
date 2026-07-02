@@ -21,8 +21,8 @@ use crate::eval::stg::tags::{DataConstructor, Tag};
 
 use super::program::{read_u32, read_u8};
 use super::{
-    BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, CodeRef, NO_BRANCH, REF_G, REF_L,
-    REF_V,
+    BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, CodeRef, Op, NO_BRANCH, REF_G,
+    REF_L, REF_V,
 };
 
 /// A decoded inline `Ref` operand from the byte stream.
@@ -377,6 +377,8 @@ pub fn return_native(
     value: Native,
 ) -> Result<(), ExecutionError> {
     let Some(cont) = state.stack.pop() else {
+        // Nothing left to consume the value: it is the program result.
+        state.current = BcValue::Native(value);
         state.terminated = true;
         return Ok(());
     };
@@ -542,6 +544,161 @@ pub fn return_fun(
         }
     }
     Ok(())
+}
+
+/// Decode the field ref of an arg atom-offset (skip the `OP_ATOM` byte and
+/// read the inline ref).
+fn arg_ref(code: &[u8], atom_off: CodeRef) -> Result<DecodedRef, ExecutionError> {
+    let mut pc = atom_off as usize + 1;
+    read_ref(code, &mut pc)
+}
+
+/// Execute the code node of the current (arity-0) closure. Translated from
+/// `vm.rs` `handle_instruction` (`:390`) for the opcode subset implemented
+/// so far; the remaining opcodes error explicitly.
+///
+/// NOTE: thunk memoisation (blackhole + `Update` push on entering a local
+/// thunk) is not yet wired — a local thunk is entered and re-evaluated on
+/// each access (correct value, extra work). The blackhole template + Update
+/// push land with the App/thunk increment.
+pub fn handle_op(
+    state: &mut BcMachineState,
+    view: MutatorHeapView<'_>,
+    code: &[u8],
+) -> Result<(), ExecutionError> {
+    let closure = *state.current.as_closure().ok_or_else(|| {
+        ExecutionError::Panic(state.annotation, "handle_op on a native value".to_string())
+    })?;
+    let env = closure.env();
+    if closure.annotation().is_valid() {
+        state.annotation = closure.annotation();
+    }
+
+    let mut pc = closure.code() as usize;
+    let op = Op::from_u8(read_u8(code, &mut pc)).ok_or_else(|| {
+        ExecutionError::Panic(state.annotation, "bytecode: invalid opcode".to_string())
+    })?;
+
+    match op {
+        Op::Atom => {
+            let dref = read_ref(code, &mut pc)?;
+            match dref {
+                DecodedRef::Local(i) => {
+                    // Enter the referenced value. (Thunk memoisation TODO.)
+                    state.current = view
+                        .scoped(env)
+                        .get(&view, i as usize)
+                        .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?;
+                }
+                DecodedRef::Global(i) => {
+                    state.current = view
+                        .scoped(state.globals)
+                        .get(&view, i as usize)
+                        .ok_or(ExecutionError::BadGlobalIndex(i as usize))?;
+                }
+                DecodedRef::Value(k) => {
+                    let native = match state.constants.get(k as usize) {
+                        Some(Ref::V(n)) => n.clone(),
+                        _ => {
+                            return Err(ExecutionError::Panic(
+                                state.annotation,
+                                format!("bytecode: constant {k} missing or not a native"),
+                            ))
+                        }
+                    };
+                    return_native(state, view, native)?;
+                }
+            }
+        }
+        Op::Cons => {
+            let tag = read_u8(code, &mut pc);
+            let arg_offs = read_arg_offsets(code, &mut pc);
+            let arg_refs: Vec<DecodedRef> = arg_offs
+                .iter()
+                .map(|off| arg_ref(code, *off))
+                .collect::<Result<_, _>>()?;
+            return_data(state, view, tag, &arg_refs)?;
+        }
+        Op::Case => {
+            let scr_off = read_u32(code, &mut pc);
+            let (min_tag, entries) = read_branch_table(code, &mut pc);
+            let has_fb = read_u8(code, &mut pc);
+            let fallback = if has_fb == 1 {
+                Some(read_u32(code, &mut pc))
+            } else {
+                None
+            };
+            let branch_table: Array<Option<CodeRef>> = view.array(&entries);
+            state.stack.push(BcContinuation::Branch {
+                min_tag,
+                branch_table,
+                fallback,
+                environment: env,
+                annotation: state.annotation,
+            });
+            state.current = BcValue::Closure(BcClosure::new(scr_off, env));
+        }
+        Op::Seq => {
+            let scr_off = read_u32(code, &mut pc);
+            let body_off = read_u32(code, &mut pc);
+            state.stack.push(BcContinuation::SeqBind {
+                body: body_off,
+                environment: env,
+                annotation: state.annotation,
+            });
+            state.current = BcValue::Closure(BcClosure::new(scr_off, env));
+        }
+        Op::Ann => {
+            let smid = Smid::from(read_u32(code, &mut pc));
+            let body_off = read_u32(code, &mut pc);
+            state.annotation = smid;
+            state.current = BcValue::Closure(BcClosure::new(body_off, env));
+        }
+        Op::BlackHole => {
+            return Err(ExecutionError::BlackHole(state.annotation));
+        }
+        Op::App
+        | Op::DirectApp
+        | Op::Bif
+        | Op::Let
+        | Op::LetRec
+        | Op::Meta
+        | Op::DeMeta
+        | Op::LookupLit => {
+            return Err(ExecutionError::Panic(
+                state.annotation,
+                format!("bytecode: opcode {op:?} not yet implemented"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// One machine step: dispatch on the current value.
+///
+/// - `Native` → return it into the top continuation.
+/// - `Closure` with arity > 0 → `return_fun` (apply / partial / default).
+/// - `Closure` with arity 0 → execute its code node.
+pub fn step(
+    state: &mut BcMachineState,
+    view: MutatorHeapView<'_>,
+    code: &[u8],
+) -> Result<(), ExecutionError> {
+    enum Dispatch {
+        Native(Native),
+        Fun,
+        Op,
+    }
+    let dispatch = match &state.current {
+        BcValue::Native(n) => Dispatch::Native(n.clone()),
+        BcValue::Closure(c) if c.arity() > 0 => Dispatch::Fun,
+        BcValue::Closure(_) => Dispatch::Op,
+    };
+    match dispatch {
+        Dispatch::Native(n) => return_native(state, view, n),
+        Dispatch::Fun => return_fun(state, view),
+        Dispatch::Op => handle_op(state, view, code),
+    }
 }
 
 #[cfg(test)]
@@ -815,6 +972,58 @@ mod tests {
         match &state.stack[0] {
             BcContinuation::ApplyTo { args, .. } => assert_eq!(args.len(), 1),
             _ => panic!("expected surplus ApplyTo"),
+        }
+    }
+
+    use crate::eval::memory::symbol::SymbolPool;
+    use crate::eval::stg::tags::DataConstructor;
+
+    /// Drive a freshly-encoded program to termination and return the final
+    /// value.
+    fn run_to_end(syn: &std::rc::Rc<crate::eval::stg::syntax::StgSyn>) -> Native {
+        let (prog, root, _) = encode(syn, &[]);
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let mut pool = SymbolPool::new();
+        let constants = prog.prepare_constants(view, &mut pool);
+        let root_env = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let mut state = BcMachineState::new(
+            BcValue::Closure(BcClosure::new(root, root_env)),
+            root_env,
+            root_env,
+            constants,
+        );
+        let mut guard = 0;
+        while !state.terminated && guard < 1000 {
+            step(&mut state, view, &prog.code).unwrap();
+            guard += 1;
+        }
+        assert!(state.terminated, "machine did not terminate");
+        match state.current {
+            BcValue::Native(n) => n,
+            BcValue::Closure(_) => panic!("expected a native result"),
+        }
+    }
+
+    #[test]
+    fn run_atom_returns_native() {
+        match run_to_end(&dsl::atom(dsl::num(42))) {
+            Native::Num(n) => assert_eq!(n.as_i64(), Some(42)),
+            _ => panic!("expected num"),
+        }
+    }
+
+    #[test]
+    fn run_case_over_nil_matches_branch() {
+        let nil_tag = DataConstructor::ListNil.tag();
+        let syn = dsl::case(
+            dsl::nil(),
+            vec![(nil_tag, dsl::atom(dsl::num(7)))],
+            dsl::atom(dsl::num(0)),
+        );
+        match run_to_end(&syn) {
+            Native::Num(n) => assert_eq!(n.as_i64(), Some(7)),
+            _ => panic!("expected num"),
         }
     }
 }
