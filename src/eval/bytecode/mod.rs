@@ -6,6 +6,9 @@
 /// GC cost — closures holding one need no `scan_and_update` code fixup.
 pub type CodeRef = u32;
 
+mod opcode;
+pub use opcode::*;
+
 /// Whether the bytecode engine is selected for this run. Reads the
 /// `EU_BYTECODE` env var; a CLI flag is added in Phase 2.
 // Removed when wired in Phase 2; inert scaffolding for now.
