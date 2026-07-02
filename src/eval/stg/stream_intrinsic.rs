@@ -9,20 +9,14 @@ use crate::{
     eval::{
         emit::Emitter,
         error::ExecutionError,
-        machine::{
-            env::SynClosure,
-            intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
-        },
-        memory::{
-            array::Array,
-            loader::load,
-            mutator::MutatorHeapView,
-            syntax::{LambdaForm, Ref, StgBuilder},
-        },
+        machine::intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
+        memory::{mutator::MutatorHeapView, syntax::Ref},
     },
 };
 
-use super::{stream::producer_next, support::num_arg, tags::DataConstructor};
+use super::{
+    materialise::materialise_data, stream::producer_next, support::num_arg, tags::DataConstructor,
+};
 
 /// PRODUCER_NEXT(handle)
 ///
@@ -70,42 +64,30 @@ impl StgIntrinsic for ProducerNext {
             Some(Err(e)) => return Err(e),
             None => {
                 // Producer exhausted — return Nil
-                let nil = view.nil()?;
-                return machine.set_closure(SynClosure::new(nil.as_ptr(), machine.root_env()));
+                let nil = machine.data_value(view, DataConstructor::ListNil.tag(), &[])?;
+                return machine.set_result(nil);
             }
         };
 
-        // Build a lazy cons cell:
+        // Build a lazy cons cell `ListCons(value, tail)` where:
         //
-        //   Let([value, tail_thunk],
-        //       Cons(ListCons, [L(0), L(1)]))
+        // - `value` is the current element, materialised as a data value; and
+        // - `tail` is an updatable thunk that re-enters PRODUCER_NEXT(handle)
+        //   when forced, memoised by the machine's Update continuation so the
+        //   producer advances at most once per list position.
         //
-        // - Binding 0 (value): the current element, as a non-updatable value
-        // - Binding 1 (tail_thunk): an updatable thunk (arity=0, update=true)
-        //   whose body calls PRODUCER_NEXT(handle) again — memoised by the STG
-        //   Update continuation so the producer advances at most once per position
-        let value_ptr = load(&view, machine.symbol_pool_mut(), value_stg)?;
+        // Both `value` and `tail` are built via engine-neutral primitives, so
+        // this runs byte-identically on the HeapSyn and bytecode engines. The
+        // element is a pure data literal, materialised through the canonical
+        // shared `materialise_data` (clone the pool so `&machine` and the
+        // interning `&mut pool` do not alias; publish interned symbols after).
+        let mut pool = machine.symbol_pool_mut().clone();
+        let value = materialise_data(&*machine, view, &mut pool, &value_stg, &[])?;
+        *machine.symbol_pool_mut() = pool;
+        let tail = machine.bif_tail_thunk(view, self.index() as u8, handle as u64)?;
+        let cons = machine.data_value(view, DataConstructor::ListCons.tag(), &[value, tail])?;
 
-        let handle_ref = Ref::num(handle as u64);
-        let bif_index = self.index() as u8;
-        let tail_body = view.app_bif(bif_index, Array::from_slice(&view, &[handle_ref]))?;
-
-        let bindings = Array::from_slice(
-            &view,
-            &[
-                LambdaForm::value(value_ptr),
-                LambdaForm::thunk(tail_body.as_ptr()),
-            ],
-        );
-
-        let cons_body = view.data(
-            DataConstructor::ListCons.tag(),
-            Array::from_slice(&view, &[Ref::L(0), Ref::L(1)]),
-        )?;
-
-        let result = view.let_(bindings, cons_body)?;
-
-        machine.set_closure(SynClosure::new(result.as_ptr(), machine.root_env()))
+        machine.set_result(cons)
     }
 }
 

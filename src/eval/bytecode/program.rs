@@ -50,6 +50,16 @@ pub struct BytecodeProgram {
     /// closure that resumes a partially-applied function (spec §6.1 / the
     /// `pap_syn` analogue). Use `pap_offset` to index.
     pub pap: Vec<CodeRef>,
+    /// Fixed-shape apply-two template: an `App(L0, [L1, L2])` node. A runtime
+    /// `f(a0, a1)` application thunk is a `BcClosure(apply2_template, env{f,
+    /// a0, a1})` — used by `MERGEWITH` to combine colliding block values with
+    /// no per-call arena growth (the env frame is GC-heap allocated).
+    pub apply2_template: CodeRef,
+    /// Fixed-shape producer-tail template: an `AppBif(PRODUCER_NEXT, [L0])`
+    /// node. The `PRODUCER_NEXT` tail thunk is an updatable
+    /// `BcClosure(producer_tail_template, env{handle})`; forcing it advances
+    /// the producer once, memoised by the machine's `Update` continuation.
+    pub producer_tail_template: CodeRef,
 }
 
 /// Maximum function arity supported by the PAP trampoline table.

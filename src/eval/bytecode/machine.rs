@@ -367,12 +367,117 @@ impl GcScannable for BcMachineState {
     }
 }
 
+/// Physical-slot pattern for the shared-env optimisation (bytecode mirror of
+/// `vm.rs` `ArgPattern`). Sharing the constructor's backing frame with the
+/// case branch — rather than copying field values — lets a thunk update
+/// (memoisation) in one traversal be visible to every other reference to the
+/// same data value. This is required for the correctness of side-effecting
+/// thunks such as `PRODUCER_NEXT`'s tail, and matches the HeapSyn engine.
+enum BcArgPattern {
+    /// Physical slots are `0, 1, ..., n-1` covering the full backing — share
+    /// with an identity mapping (no remap).
+    SequentialFromZero,
+    /// All args are locals within the top frame (`len <= 4`) — share the full
+    /// backing with a logical→physical remap table.
+    Remapped { remap: [u8; 4], len: usize },
+    /// Non-local refs, more than 4 args, or an index reaching a deeper frame —
+    /// must copy into fresh storage.
+    RequiresCopy,
+}
+
+/// Classify a constructor's arg slice for the shared-env optimisation
+/// (bytecode mirror of `vm.rs` `classify_args`).
+fn bc_classify_args(
+    args: &[DecodedRef],
+    logical_len: usize,
+    backing_len: usize,
+    env_physical_index: impl Fn(usize) -> usize,
+) -> BcArgPattern {
+    if args.len() > 4 {
+        return BcArgPattern::RequiresCopy;
+    }
+    let mut remap = [0u8; 4];
+    let mut is_identity = true;
+    for (j, a) in args.iter().enumerate() {
+        match a {
+            DecodedRef::Local(i) if (*i as usize) < logical_len => {
+                let phys = env_physical_index(*i as usize);
+                if phys > u8::MAX as usize {
+                    return BcArgPattern::RequiresCopy;
+                }
+                remap[j] = phys as u8;
+                if phys != j {
+                    is_identity = false;
+                }
+            }
+            _ => return BcArgPattern::RequiresCopy,
+        }
+    }
+    if is_identity && args.len() == backing_len {
+        BcArgPattern::SequentialFromZero
+    } else {
+        BcArgPattern::Remapped {
+            remap,
+            len: args.len(),
+        }
+    }
+}
+
+/// Build a branch/handler env frame from the constructor's fields, sharing
+/// the constructor's backing array where the arg pattern allows (mirror of
+/// `vm.rs` `env_from_data_args`, `:923`). Sharing preserves thunk
+/// memoisation across traversals; the `RequiresCopy` cases fall back to
+/// `env_from_data_args_copy`.
+fn env_from_data_args(
+    state: &BcMachineState,
+    view: MutatorHeapView<'_>,
+    args: &[DecodedRef],
+    next: RefPtr<BcEnvFrame>,
+) -> Result<RefPtr<BcEnvFrame>, ExecutionError> {
+    let cons_env = state
+        .current
+        .as_closure()
+        .ok_or_else(|| {
+            ExecutionError::Panic(
+                state.annotation,
+                "return_data on a native value".to_string(),
+            )
+        })?
+        .env();
+    let constructor_env = view.scoped(cons_env);
+    let logical_len = (*constructor_env).logical_len();
+    let backing_len = (*constructor_env).backing_len();
+
+    match bc_classify_args(args, logical_len, backing_len, |i| {
+        (*constructor_env).physical_index(i)
+    }) {
+        BcArgPattern::SequentialFromZero => {
+            // Identity mapping over the full backing — share directly.
+            let shared = (*constructor_env).shared_bindings_full();
+            Ok(view
+                .alloc(BcEnvFrame::new(shared, state.annotation, Some(next)))?
+                .as_ptr())
+        }
+        BcArgPattern::Remapped { remap, len } => {
+            // Share the full backing with a logical→physical remap table.
+            let shared = (*constructor_env).shared_bindings_full();
+            Ok(view
+                .alloc(BcEnvFrame::new_remapped(
+                    shared,
+                    &remap[..len],
+                    state.annotation,
+                    Some(next),
+                ))?
+                .as_ptr())
+        }
+        BcArgPattern::RequiresCopy => env_from_data_args_copy(state, view, args, next),
+    }
+}
+
 /// Build a branch/handler env frame by copying the constructor's field
-/// values (the copy path of `vm.rs` `env_from_data_args_copy`, `:978`).
-///
-/// Field closures are `Copy`/`Clone` over the same heap env, so thunk
-/// memoisation is preserved; only the backing array is freshly allocated
-/// (the shared-backing optimisation is a later perf refinement).
+/// values (the copy path of `vm.rs` `env_from_data_args_copy`, `:978`). Used
+/// when the arg pattern cannot share backing (non-local refs, > 4 args, or an
+/// index reaching a deeper frame).
 fn env_from_data_args_copy(
     state: &BcMachineState,
     view: MutatorHeapView<'_>,
@@ -572,7 +677,7 @@ pub fn return_data(
                 let env = if args.is_empty() {
                     environment
                 } else {
-                    env_from_data_args_copy(state, view, args, environment)?
+                    env_from_data_args(state, view, args, environment)?
                 };
                 state.current = BcValue::Closure(BcClosure::new(body, env));
             } else if let Some(fb) = fallback {
@@ -2234,6 +2339,53 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         }
         self.state.current = acc;
         Ok(())
+    }
+
+    // ── Fixed-shape thunk construction (spec §5.5, arena analysis) ──────
+
+    fn apply2_thunk(
+        &self,
+        view: MutatorHeapView<'_>,
+        f: AbiClosure,
+        a0: AbiClosure,
+        a1: AbiClosure,
+    ) -> Result<AbiClosure, ExecutionError> {
+        let (AbiClosure::Byte(fv), AbiClosure::Byte(a0v), AbiClosure::Byte(a1v)) = (f, a0, a1)
+        else {
+            panic!("bytecode BifContext: apply2_thunk with a HeapSyn field")
+        };
+        // A GC-heap env frame `[f, a0, a1]` over the fixed `App(L0,[L1,L2])`
+        // template — zero arena growth.
+        let env = view.from_values(
+            [fv, a0v, a1v].into_iter(),
+            3,
+            self.state.root_env,
+            self.state.annotation,
+        )?;
+        Ok(AbiClosure::Byte(BcValue::Closure(BcClosure::new(
+            self.program.apply2_template,
+            env,
+        ))))
+    }
+
+    fn bif_tail_thunk(
+        &self,
+        view: MutatorHeapView<'_>,
+        _bif_index: u8,
+        handle: u64,
+    ) -> Result<AbiClosure, ExecutionError> {
+        // The template already targets PRODUCER_NEXT; the handle is slot 0.
+        // `InfoTagged::thunk` marks it updatable, so entering it black-holes
+        // and pushes `Update` (memoisation), matching the HeapSyn thunk.
+        let env = view.from_value(
+            BcValue::Native(Native::Num(handle.into())),
+            self.state.root_env,
+            self.state.annotation,
+        )?;
+        Ok(AbiClosure::Byte(BcValue::Closure(BcClosure::close(
+            &InfoTagged::thunk(self.program.producer_tail_template),
+            env,
+        ))))
     }
 }
 

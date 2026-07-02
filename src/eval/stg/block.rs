@@ -1660,12 +1660,11 @@ impl StgIntrinsic for MergeWith {
     ) -> Result<(), ExecutionError> {
         let l = data_list_arg(machine, view, args[0].clone())?;
         let r = data_list_arg(machine, view, args[1].clone())?;
-        let f = args[2].clone();
+        let f = machine.resolve_closure(view, &args[2])?;
 
-        // NB: the value-combining step below builds an `f(ov, nv)` application
-        // thunk via `view.app` (runtime code synthesis), which has no neutral
-        // ABI equivalent yet, so MERGEWITH/DEEPMERGE remain HeapSyn-only for
-        // now — `as_heap()` bridges the neutral `deconstruct` results.
+        // The value-combining step builds a lazy `f(ov, nv)` application thunk
+        // via the neutral `apply2_thunk` primitive (a fixed-shape `App(L0,[L1,
+        // L2])`), so this runs byte-identically on both engines.
         let mut merge: IndexMap<String, AbiClosure> = IndexMap::new();
 
         for item in &l {
@@ -1676,17 +1675,7 @@ impl StgIntrinsic for MergeWith {
         for item in &r {
             let (key, nv) = deconstruct(machine, view, item)?;
             if let Some(ov) = merge.get_mut(&key) {
-                let args = [ov.as_heap().clone(), nv.as_heap().clone()];
-                let combined = AbiClosure::Heap(SynClosure::new(
-                    view.app(f.bump(2), Array::from_slice(&view, &[Ref::L(0), Ref::L(1)]))?
-                        .as_ptr(),
-                    view.from_closures(
-                        args.iter().cloned(),
-                        2,
-                        machine.env(view),
-                        Smid::default(),
-                    )?,
-                ));
+                let combined = machine.apply2_thunk(view, f.clone(), ov.clone(), nv)?;
                 *ov = combined;
             } else {
                 merge.insert(key, nv);

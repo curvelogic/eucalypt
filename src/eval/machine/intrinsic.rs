@@ -18,7 +18,7 @@ use crate::{
         memory::{
             alloc::ScopedAllocator,
             array::Array,
-            infotable::InfoTable,
+            infotable::{InfoTable, InfoTagged},
             mutator::MutatorHeapView,
             symbol::SymbolPool,
             syntax::{HeapSyn, LambdaForm, Native, Ref, RefPtr, StgBuilder},
@@ -402,6 +402,59 @@ pub trait IntrinsicMachine {
             .letrec(Array::from_slice(&view, &bindings), view.atom(Ref::L(len))?)?
             .as_ptr();
         self.set_closure(SynClosure::new(syn, item_frame))
+    }
+
+    // ── Fixed-shape thunk construction (spec §5.5, arena analysis) ──────
+    // Two intrinsics build lazy application thunks as *stored values* (not
+    // tail calls). Their shape is fixed, so the bytecode engine pre-encodes
+    // one template each and overrides these to allocate only a GC-heap env
+    // frame over that template; the HeapSyn defaults build the App/Bif node
+    // directly.
+
+    /// Build a lazy binary application `f(a0, a1)` as a stored (updatable)
+    /// value handle. Used by `MERGEWITH` to combine colliding block values.
+    fn apply2_thunk(
+        &self,
+        view: MutatorHeapView<'_>,
+        f: AbiClosure,
+        a0: AbiClosure,
+        a1: AbiClosure,
+    ) -> Result<AbiClosure, ExecutionError> {
+        // HeapSyn: `App(L0, [L1, L2])` over a fresh `[f, a0, a1]` frame.
+        let frame = view.from_closures(
+            [f.expect_heap(), a0.expect_heap(), a1.expect_heap()].into_iter(),
+            3,
+            self.root_env(),
+            Smid::default(),
+        )?;
+        let code = view
+            .app(Ref::L(0), Array::from_slice(&view, &[Ref::L(1), Ref::L(2)]))?
+            .as_ptr();
+        Ok(AbiClosure::Heap(SynClosure::new(code, frame)))
+    }
+
+    /// Build an updatable tail thunk that re-enters the intrinsic `bif_index`
+    /// applied to `handle` when forced. Used by `PRODUCER_NEXT` to make the
+    /// lazy cons-cell tail; the `Update` continuation memoises it so the
+    /// producer advances at most once per list position.
+    fn bif_tail_thunk(
+        &self,
+        view: MutatorHeapView<'_>,
+        bif_index: u8,
+        handle: u64,
+    ) -> Result<AbiClosure, ExecutionError> {
+        // HeapSyn: an updatable-thunk closure over `AppBif(idx, [handle])`
+        // with the handle inline as a value ref (no env slot needed).
+        let body = view
+            .app_bif(
+                bif_index,
+                Array::from_slice(&view, &[Ref::V(Native::Num(handle.into()))]),
+            )?
+            .as_ptr();
+        Ok(AbiClosure::Heap(SynClosure::close(
+            &InfoTagged::thunk(body),
+            self.root_env(),
+        )))
     }
 
     /// Request an emitter capture for the given format.
