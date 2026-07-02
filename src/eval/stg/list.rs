@@ -7,11 +7,8 @@ use crate::{
     eval::{
         emit::Emitter,
         error::ExecutionError,
-        machine::{
-            env::SynClosure,
-            intrinsic::{
-                CallGlobal0, CallGlobal1, CallGlobal2, Const, IntrinsicMachine, StgIntrinsic,
-            },
+        machine::intrinsic::{
+            CallGlobal0, CallGlobal1, CallGlobal2, Const, IntrinsicMachine, StgIntrinsic,
         },
         memory::{mutator::MutatorHeapView, syntax::Ref},
     },
@@ -225,14 +222,12 @@ impl StgIntrinsic for IsList {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
+        let closure = machine.resolve_closure(view, &args[0])?;
         let is_list = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. }
-                if *tag == DataConstructor::ListCons.tag()
-                    || *tag == DataConstructor::ListNil.tag()
+            machine.data_tag(view, &closure),
+            Some(tag)
+                if tag == DataConstructor::ListCons.tag()
+                    || tag == DataConstructor::ListNil.tag()
         );
         machine_return_bool(machine, view, is_list)
     }
@@ -257,12 +252,10 @@ impl StgIntrinsic for IsNumber {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
+        let closure = machine.resolve_closure(view, &args[0])?;
         let result = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedNumber.tag()
+            machine.data_tag(view, &closure),
+            Some(tag) if tag == DataConstructor::BoxedNumber.tag()
         );
         machine_return_bool(machine, view, result)
     }
@@ -287,12 +280,10 @@ impl StgIntrinsic for IsString {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
+        let closure = machine.resolve_closure(view, &args[0])?;
         let result = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedString.tag()
+            machine.data_tag(view, &closure),
+            Some(tag) if tag == DataConstructor::BoxedString.tag()
         );
         machine_return_bool(machine, view, result)
     }
@@ -317,12 +308,10 @@ impl StgIntrinsic for IsSymbol {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
+        let closure = machine.resolve_closure(view, &args[0])?;
         let result = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedSymbol.tag()
+            machine.data_tag(view, &closure),
+            Some(tag) if tag == DataConstructor::BoxedSymbol.tag()
         );
         machine_return_bool(machine, view, result)
     }
@@ -347,14 +336,12 @@ impl StgIntrinsic for IsBool {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
+        let closure = machine.resolve_closure(view, &args[0])?;
         let is_bool = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. }
-                if *tag == DataConstructor::BoolTrue.tag()
-                    || *tag == DataConstructor::BoolFalse.tag()
+            machine.data_tag(view, &closure),
+            Some(tag)
+                if tag == DataConstructor::BoolTrue.tag()
+                    || tag == DataConstructor::BoolFalse.tag()
         );
         machine_return_bool(machine, view, is_bool)
     }
@@ -379,12 +366,10 @@ impl StgIntrinsic for IsTypeData {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
+        let closure = machine.resolve_closure(view, &args[0])?;
         let result = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedTypeData.tag()
+            machine.data_tag(view, &closure),
+            Some(tag) if tag == DataConstructor::BoxedTypeData.tag()
         );
         machine_return_bool(machine, view, result)
     }
@@ -409,12 +394,10 @@ impl StgIntrinsic for IsZdt {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
+        let closure = machine.resolve_closure(view, &args[0])?;
         let result = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedZdt.tag()
+            machine.data_tag(view, &closure),
+            Some(tag) if tag == DataConstructor::BoxedZdt.tag()
         );
         machine_return_bool(machine, view, result)
     }
@@ -484,13 +467,9 @@ impl StgIntrinsic for ListNth {
             let num = num_arg(machine, view, &args[1])?;
             num.as_u64().unwrap_or(0) as usize
         };
-        let mut iter = data_list_arg(machine, view, args[0].clone())?;
-        let mut current: Option<SynClosure> = None;
-        for _ in 0..=n {
-            current = iter.next().transpose()?;
-        }
-        match current {
-            Some(closure) => machine.set_closure(closure),
+        let items = data_list_arg(machine, view, args[0].clone())?;
+        match items.into_iter().nth(n) {
+            Some(closure) => machine.set_result(closure),
             None => Err(ExecutionError::ListIndexOutOfBounds(
                 machine.annotation(),
                 n,

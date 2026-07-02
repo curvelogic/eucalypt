@@ -39,6 +39,42 @@
 
 ## Progress Ledger (living — durable source of truth; update every increment)
 
+### Increment C/D migration — in progress (branch `feat/bv1-migrate-support-list`, PR #939)
+- **DONE** (byte-identical on HeapSyn, now working on bytecode):
+  - list.rs 7 type predicates (`IS{LIST,NUMBER,STRING,SYMBOL,BOOL,TYPEDATA,ZDT}`
+    → `resolve_closure` + `data_tag`); `ISARRAY` (`resolve_native`).
+  - **`value_native`** added to `IntrinsicMachine` (HeapSyn default +
+    `BcBifContext` override): a WHNF value's native payload (bare `Atom` native
+    or a boxed scalar's field 0).
+  - **`str_list_arg`** → neutral eager `Vec<String>`; **`data_list_arg`** →
+    neutral eager `Vec<AbiClosure>` (both via `data_tag`/`data_field`/
+    `field_native`, spine already forced by callers).
+  - Callers migrated: `collect_num_list`, set `SetOf` (via `value_native`), list
+    `ListNth` (`.nth` + `set_result`). Differential tests
+    `agree_on_islist_{true,false}`, `agree_on_list_nth`.
+  - block `Merge`/`MergeWith` **bridged** with `as_heap()` — compile + HeapSyn
+    byte-identical; bytecode block-merge deferred (downstream needs list-builder
+    templates).
+  - **List-builder templates DONE**: three neutral primitives added to
+    `IntrinsicMachine` — `native_value` (wrap a native), `data_value` (build a
+    data cell from field handles), `return_closure_list` (set result to a
+    cons-list) — each with a HeapSyn default + `BcBifContext` override (bytecode
+    builds via `build_data` over the constructor templates; no runtime code
+    synthesis). `machine_return_{num,str,closure}_list` rewritten on them.
+    **List-returning intrinsics now run on bytecode.** Differential test
+    `agree_on_rendered_split_list` (`RENDER_DOC(__SPLIT("hi",""))` → `["hi"]`,
+    byte-identical).
+- **HARD cases remaining (still runtime code synthesis / SynClosure-typed):**
+  `machine_return_block_pair_closure_list` + block `Merge`/`MergeWith`
+  `deconstruct` (needs neutral block-pair build + key extraction), `SetToList`
+  (uses `data_value`-able boxing but still `set_closure(synth)`), typedata.rs
+  builders, `parse_string.rs` (`load()` builds HeapSyn at runtime → needs
+  parse-to-bytecode or a value representation). block.rs (~25 inspector sites
+  migratable like the predicates). debug.rs (20) + assert.rs `format_ref`
+  diagnostic-only (migrate last). Many builders can now be rebuilt on
+  `data_value`/`native_value`/`return_closure_list`.
+
+
 **Position (2026-07-02, later):** Phases 0, 1, 1.6 complete; Phase 1.5
 (intrinsic ABI) partially done. **Phase 2 machine now runs end-to-end**: the
 `BytecodeMachine` (run/step loop + GC roots), globals frame, PAP, and the

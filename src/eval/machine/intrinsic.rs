@@ -21,7 +21,7 @@ use crate::{
             infotable::InfoTable,
             mutator::MutatorHeapView,
             symbol::SymbolPool,
-            syntax::{HeapSyn, Native, Ref, RefPtr, StgBuilder},
+            syntax::{HeapSyn, LambdaForm, Native, Ref, RefPtr, StgBuilder},
         },
         stg::{
             syntax::{dsl, StgSyn},
@@ -32,6 +32,7 @@ use crate::{
 
 use super::{
     env::{EnvFrame, SynClosure},
+    env_builder::EnvBuilder,
     vm::HeapNavigator,
 };
 
@@ -263,6 +264,92 @@ pub trait IntrinsicMachine {
             }
             _ => None,
         }
+    }
+
+    /// The native payload of a WHNF value: a bare native (an `Atom`) or a
+    /// boxed scalar's field-0 payload (a `Cons`, e.g. `BoxedNumber`). `None`
+    /// for a non-scalar (block/list) or a non-value. Used by native-list
+    /// collectors and set construction.
+    fn value_native(&self, view: MutatorHeapView<'_>, closure: &AbiClosure) -> Option<Native> {
+        let sc = closure.as_heap();
+        let code = view.scoped(sc.code());
+        match &*code {
+            HeapSyn::Atom { evaluand } => Some(sc.navigate_local_native(&view, evaluand.clone())),
+            HeapSyn::Cons { args, .. } => {
+                Some(sc.navigate_local_native(&view, args.get(0)?.clone()))
+            }
+            _ => None,
+        }
+    }
+
+    // ── Neutral value/data construction (spec §5.5) ─────────────────
+    // These build values engine-agnostically, so list/data-returning
+    // intrinsics need no runtime code synthesis on the bytecode path.
+
+    /// Wrap a native as a (WHNF) value closure handle.
+    fn native_value(
+        &self,
+        view: MutatorHeapView<'_>,
+        native: Native,
+    ) -> Result<AbiClosure, ExecutionError> {
+        let env = self.root_env();
+        Ok(AbiClosure::Heap(SynClosure::new(
+            view.alloc(HeapSyn::Atom {
+                evaluand: Ref::V(native),
+            })?
+            .as_ptr(),
+            env,
+        )))
+    }
+
+    /// Build a data-constructor value of `tag` over `fields`, returned as a
+    /// value handle (does not set the machine result).
+    fn data_value(
+        &self,
+        view: MutatorHeapView<'_>,
+        tag: Tag,
+        fields: &[AbiClosure],
+    ) -> Result<AbiClosure, ExecutionError> {
+        let env = self.root_env();
+        let frame = view.from_closures(
+            fields.iter().map(|c| c.as_heap().clone()),
+            fields.len(),
+            env,
+            Smid::default(),
+        )?;
+        let refs: Vec<Ref> = (0..fields.len()).map(Ref::L).collect();
+        let code = view.data(tag, Array::from_slice(&view, &refs))?.as_ptr();
+        Ok(AbiClosure::Heap(SynClosure::new(code, frame)))
+    }
+
+    /// Set the machine result to a cons-list of the given value handles.
+    fn return_closure_list(
+        &mut self,
+        view: MutatorHeapView<'_>,
+        items: Vec<AbiClosure>,
+    ) -> Result<(), ExecutionError> {
+        let list: Vec<SynClosure> = items.into_iter().map(|c| c.expect_heap()).collect();
+        let item_frame = view.from_closures(
+            list.iter().cloned(),
+            list.len(),
+            self.env(view),
+            Smid::default(),
+        )?;
+        let len = list.len();
+        let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
+        for i in (0..len + 1).rev() {
+            bindings.push(LambdaForm::value(
+                view.data(
+                    DataConstructor::ListCons.tag(),
+                    Array::from_slice(&view, &[Ref::L(len + i + 1), Ref::L(len - i)]),
+                )?
+                .as_ptr(),
+            ));
+        }
+        let syn = view
+            .letrec(Array::from_slice(&view, &bindings), view.atom(Ref::L(len))?)?
+            .as_ptr();
+        self.set_closure(SynClosure::new(syn, item_frame))
     }
 
     /// Request an emitter capture for the given format.

@@ -109,8 +109,25 @@ mod tests {
     use crate::eval::stg::arith::{Add, Lt};
     use crate::eval::stg::boolean::{False, True};
     use crate::eval::stg::force::ForceWhnf;
+    use crate::eval::stg::list::IsList;
     use crate::eval::stg::syntax::dsl;
     use crate::eval::stg::tags::DataConstructor;
+
+    /// `case __ISLIST(value) { BoolTrue -> 1 ; BoolFalse -> 0 }`.
+    fn islist_case(value: crate::eval::stg::syntax::LambdaForm) -> Rc<StgSyn> {
+        let islist = crate::eval::intrinsics::index_u8("ISLIST");
+        dsl::let_(
+            vec![value],
+            dsl::case(
+                dsl::app_bif(islist, vec![dsl::lref(0)]),
+                vec![
+                    (DataConstructor::BoolTrue.tag(), dsl::atom(dsl::num(1))),
+                    (DataConstructor::BoolFalse.tag(), dsl::atom(dsl::num(0))),
+                ],
+                dsl::atom(dsl::num(9)),
+            ),
+        )
+    }
 
     #[test]
     fn agree_on_arithmetic() {
@@ -323,6 +340,79 @@ mod tests {
         );
         let out = assert_engines_render_agree(syn);
         assert!(out.contains("k") && out.contains("42"), "got {out:?}");
+    }
+
+    #[test]
+    fn agree_on_islist_true() {
+        // __ISLIST(nil) -> true -> 1. Exercises the migrated list predicate
+        // (resolve_closure + data_tag) on the bytecode path.
+        let syn = islist_case(dsl::value(dsl::nil()));
+        assert_eq!(
+            assert_engines_agree(syn, vec![Box::new(IsList), Box::new(True), Box::new(False)]),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn agree_on_islist_false() {
+        // __ISLIST(boxed 42) -> false -> 0.
+        let syn = islist_case(dsl::value(dsl::data(
+            DataConstructor::BoxedNumber.tag(),
+            vec![dsl::num(42)],
+        )));
+        assert_eq!(
+            assert_engines_agree(syn, vec![Box::new(IsList), Box::new(True), Box::new(False)]),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn agree_on_list_nth() {
+        // case __LIST.NTH(1, [boxed 10, boxed 20]) { BoxedNumber(x) -> x } -> 20.
+        // Exercises the migrated data_list_arg (neutral Vec<AbiClosure>) + the
+        // ListNth intrinsic on the bytecode path.
+        use crate::eval::stg::list::ListNth;
+        let boxed = |n: i64| {
+            dsl::value(dsl::data(
+                DataConstructor::BoxedNumber.tag(),
+                vec![dsl::num(n)],
+            ))
+        };
+        let nth = crate::eval::intrinsics::index_u8("LIST.NTH");
+        let syn = dsl::letrec_(
+            vec![
+                boxed(10),                                         // 0
+                boxed(20),                                         // 1
+                dsl::value(dsl::nil()),                            // 2
+                dsl::value(dsl::cons(dsl::lref(1), dsl::lref(2))), // 3: [20]
+                dsl::value(dsl::cons(dsl::lref(0), dsl::lref(3))), // 4: [10, 20]
+            ],
+            dsl::case(
+                // Bif arg order is (list, n).
+                dsl::app_bif(nth, vec![dsl::lref(4), dsl::num(1)]),
+                vec![(DataConstructor::BoxedNumber.tag(), dsl::local(0))],
+                dsl::atom(dsl::num(0)),
+            ),
+        );
+        assert_eq!(assert_engines_agree(syn, vec![Box::new(ListNth)]), Some(20));
+    }
+
+    #[test]
+    fn agree_on_rendered_split_list() {
+        // RENDER_DOC(__SPLIT("hi", "")) -> renders ["hi"]. Exercises the
+        // migrated list builder (machine_return_str_list -> return_closure_list
+        // + data_value + native_value over templates) end-to-end on bytecode.
+        let split = crate::eval::intrinsics::index_u8("SPLIT");
+        let render_doc = crate::eval::intrinsics::index("RENDER_DOC").expect("RENDER_DOC");
+        let syn = dsl::let_(
+            vec![dsl::value(dsl::app_bif(
+                split,
+                vec![dsl::str("hi"), dsl::str("")],
+            ))],
+            dsl::app(dsl::gref(render_doc), vec![dsl::lref(0)]),
+        );
+        let out = assert_engines_render_agree(syn);
+        assert!(out.contains("hi"), "expected 'hi' in output, got {out:?}");
     }
 
     #[test]
