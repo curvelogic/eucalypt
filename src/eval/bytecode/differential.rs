@@ -494,4 +494,120 @@ mod tests {
             Some(3)
         );
     }
+
+    #[test]
+    fn agree_on_deep_merge_with_fn() {
+        // RENDER_DOC(MERGEWITH({k: 10}, {k: 20}, ADD)) -> {k: 30}. The colliding
+        // key `:k` is combined via a lazy `ADD(ov, nv)` application thunk built
+        // by the fixed-shape `apply2_thunk` primitive (App(L0,[L1,L2])), which
+        // must render byte-identically on both engines.
+        let mergewith = crate::eval::intrinsics::index("MERGEWITH").expect("MERGEWITH");
+        let add = crate::eval::intrinsics::index("ADD").expect("ADD");
+        let render_doc = crate::eval::intrinsics::index("RENDER_DOC").expect("RENDER_DOC");
+        let boxed = |n: i64| {
+            dsl::value(dsl::data(
+                DataConstructor::BoxedNumber.tag(),
+                vec![dsl::num(n)],
+            ))
+        };
+        let syn = dsl::letrec_(
+            vec![
+                boxed(10),                                         // 0: boxed 10
+                dsl::value(dsl::pair("k", dsl::lref(0))),          // 1: (:k, 10)
+                dsl::value(dsl::nil()),                            // 2: nil
+                dsl::value(dsl::cons(dsl::lref(1), dsl::lref(2))), // 3: [(:k,10)]
+                dsl::value(dsl::block(dsl::lref(3))),              // 4: {k: 10}
+                boxed(20),                                         // 5: boxed 20
+                dsl::value(dsl::pair("k", dsl::lref(5))),          // 6: (:k, 20)
+                dsl::value(dsl::cons(dsl::lref(6), dsl::lref(2))), // 7: [(:k,20)]
+                dsl::value(dsl::block(dsl::lref(7))),              // 8: {k: 20}
+                dsl::value(dsl::app(
+                    dsl::gref(mergewith),
+                    vec![dsl::lref(4), dsl::lref(8), dsl::gref(add)],
+                )), // 9: MERGEWITH({k:10}, {k:20}, ADD)
+            ],
+            dsl::app(dsl::gref(render_doc), vec![dsl::lref(9)]),
+        );
+        let out = assert_engines_render_agree(syn);
+        assert!(
+            out.contains("k") && out.contains("30"),
+            "expected merged {{k: 30}}, got {out:?}"
+        );
+    }
+
+    #[test]
+    fn agree_on_producer_next_stream() {
+        // RENDER_DOC(PRODUCER_NEXT(handle)) over a finite producer of 1,2,3. The
+        // lazy cons-cell tail is an updatable thunk built by `bif_tail_thunk`
+        // over the fixed `AppBif(PRODUCER_NEXT,[L0])` template; the shared-env
+        // data-case path memoises it. Each engine gets its own producer handle
+        // (producers are stateful), and both must render the same list.
+        use crate::eval::error::ExecutionError;
+        use crate::eval::stg::make_standard_runtime;
+        use crate::eval::stg::stream::{register_producer, LazyProducer};
+
+        struct VecProducer(std::vec::IntoIter<Rc<StgSyn>>);
+        impl LazyProducer for VecProducer {
+            fn next(&mut self) -> Option<Result<Rc<StgSyn>, ExecutionError>> {
+                self.0.next().map(Ok)
+            }
+        }
+        let items = || vec![dsl::box_num(1), dsl::box_num(2), dsl::box_num(3)].into_iter();
+
+        let pn = crate::eval::intrinsics::index("PRODUCER_NEXT").expect("PRODUCER_NEXT");
+        let render_doc = crate::eval::intrinsics::index("RENDER_DOC").expect("RENDER_DOC");
+        let build = |handle: u32| {
+            dsl::letrec_(
+                vec![
+                    dsl::value(dsl::box_num(handle)), // 0: the handle
+                    dsl::thunk(dsl::app(dsl::gref(pn), vec![dsl::lref(0)])), // 1: PRODUCER_NEXT(h)
+                ],
+                dsl::app(dsl::gref(render_doc), vec![dsl::lref(1)]),
+            )
+        };
+
+        let mut source_map = SourceMap::default();
+        let mut rt = make_standard_runtime(&mut source_map);
+        rt.prepare(&mut source_map);
+        let settings = StgSettings::default();
+
+        // HeapSyn reference on its own producer handle.
+        let heap_handle = register_producer(Box::new(VecProducer(items())));
+        let mut heap_buf: Vec<u8> = Vec::new();
+        {
+            let mut emitter =
+                crate::export::create_emitter("yaml", &mut heap_buf).expect("yaml emitter");
+            emitter.stream_start();
+            let mut m = standard_machine(&settings, build(heap_handle), emitter, rt.as_ref())
+                .expect("build HeapSyn machine");
+            m.run(None).expect("HeapSyn run");
+            m.take_emitter().stream_end();
+        }
+        let heap_out = String::from_utf8(heap_buf).expect("HeapSyn output utf-8");
+
+        // Bytecode under test on a fresh producer handle.
+        let bc_handle = register_producer(Box::new(VecProducer(items())));
+        let mut bc_buf: Vec<u8> = Vec::new();
+        {
+            let mut emitter =
+                crate::export::create_emitter("yaml", &mut bc_buf).expect("yaml emitter");
+            emitter.stream_start();
+            let (prog, root, gforms) = encode(&build(bc_handle), &rt.globals());
+            let mut m =
+                BytecodeMachine::new(prog, root, &gforms, rt.intrinsics(), emitter, 0, false)
+                    .expect("build bytecode machine");
+            m.run(None).expect("bytecode run");
+            m.take_emitter().stream_end();
+        }
+        let bc_out = String::from_utf8(bc_buf).expect("bytecode output utf-8");
+
+        assert_eq!(
+            heap_out, bc_out,
+            "HeapSyn and bytecode engines disagree on producer stream output"
+        );
+        assert!(
+            heap_out.contains('1') && heap_out.contains('2') && heap_out.contains('3'),
+            "expected 1,2,3 in producer output, got {heap_out:?}"
+        );
+    }
 }

@@ -38,14 +38,17 @@
 >   `let…in` (use `:let` blocks); `/` is floor division (`÷` exact); catenation
 >   precedence is very low.
 >
-> **CORPUS TALLY (branch `feat/bv1-parse-typedata`, PR eu-9p9g):** sweeping the
-> full `tests/harness/*.eu` under `EU_BYTECODE=1` vs HeapSyn (comparing stdout +
-> exit code): **160 PASS, 8 DIFF** (was 146 PASS / 22 DIFF before this PR). The
-> 8 remaining DIFFs: `015_block_fns`, `085_deep_merge_dynamic`,
-> `135_dynamic_key_merge`, `127_merge_metadata` (MergeWith/DeepMerge),
-> `079_streams` (ProducerNext), `125_expectations`, and `175_sv2_to_spec` +
-> `183_widen_type_def_literals` (both fail on the *reference* HeapSyn engine —
-> pre-existing prelude bug). Sweep: stdout+exit of both engines per file.
+> **CORPUS TALLY (after `eu-rkje` rebased on `eu-9p9g`, MergeWith +
+> ProducerNext):** sweeping the full `tests/harness/*.eu` under `EU_BYTECODE=1`
+> vs HeapSyn (comparing stdout): **165 PASS, 3 DIFF**. `eu-9p9g` (ParseString +
+> TypeToData) took the corpus to 160 PASS / 8 DIFF; this increment cleared the
+> 5 remaining thunk-synthesis fails — `015_block_fns`, `085_deep_merge_dynamic`,
+> `127_merge_metadata`, `135_dynamic_key_merge` (MergeWith/DeepMerge) and
+> `079_streams` (ProducerNext) — leaving only the 3 diagnostic-rendering DIFFs:
+> `125_expectations` (the known `__DBG` stderr bug, eu-scjv — stdout matches)
+> and `175_sv2_to_spec` + `183_widen_type_def_literals` (both fail on the
+> *reference* HeapSyn engine too — pre-existing prelude bug). Sweep compares
+> stdout of both engines per file.
 >
 > **DONE this PR (all neutral-ABI, byte-identical both engines):**
 > - `debug.rs` — DbgRepr/Dbg/TraceEntry/TraceExit + render/peek/trace helpers.
@@ -87,16 +90,26 @@
 > `result-def` bug), diverging only in partial pre-error emit; unrelated to this
 > migration.**
 >
-> **REMAINING (need code synthesis — not data):**
-> - `block::MergeWith` / DEEPMERGE (4): build a lazy `f(ov, nv)` **application
->   thunk** as a stored value (not a tail call). Needs a neutral "build an
->   application closure value" primitive (bytecode: an `App(L0,[L1,L2])` template
->   over env `[f, ov, nv]`). Smaller than full `load()` but still code synthesis.
-> - `stream_intrinsic::ProducerNext` (1): `load()` **plus** a self-referential
->   updatable BIF thunk (`PRODUCER_NEXT(handle)` tail) — both synthesis forms.
+> **DONE (2026-07-02, `eu-rkje`):**
+> - `block::MergeWith` / DEEPMERGE (4) — the lazy `f(ov, nv)` combine thunk now
+>   uses the neutral `apply2_thunk` primitive over a pre-encoded
+>   `App(L0,[L1,L2])` template (`BytecodeProgram::apply2_template`). Clears
+>   015/085/127/135.
+> - `stream_intrinsic::ProducerNext` (1) — the updatable tail thunk uses
+>   `bif_tail_thunk` over a pre-encoded `AppBif(PRODUCER_NEXT,[L0])` template
+>   (`producer_tail_template`); the element value is materialised via the
+>   canonical shared `stg/materialise.rs::materialise_data` (eu-9p9g),
+>   rebuilding a pure-data STG tree through the neutral value-construction ABI
+>   over constructor templates — no arena growth, no duplicate materialiser.
+>   (This increment originally added its own `load_data_value`/`materialise_data`
+>   pair; that was removed on rebase in favour of eu-9p9g's canonical function.)
+>   Correct memoisation required teaching the bytecode data-case path to
+>   **share the constructor's backing frame** (`env_from_data_args`, mirroring
+>   HeapSyn), so a tail-thunk update is visible to every reference to the same
+>   cons. Clears 079.
 >
-> These share one root: the bytecode path cannot yet synthesise *code* at
-> runtime, only *data* (`data_value`/`return_closure_list`).
+> These shared one root: the bytecode path cannot yet synthesise *code* at
+> runtime, only *data* (`data_value`/`return_closure_list`/`materialise_data`).
 >
 > **⚠️ ARENA-GROWTH ANALYSIS (owner's concern, 2026-07-02): the code arena
 > (`BytecodeProgram.code`) is off-heap and NEVER GC-collected. Appending a fresh
@@ -139,6 +152,49 @@
 > history; the engine is well past them.)*
 
 ## Progress Ledger (living — durable source of truth; update every increment)
+
+### 2026-07-02 — MergeWith + ProducerNext via fixed templates (`eu-rkje`, PR to `integration/0.12.0`)
+Migrated the two remaining fixed-shape-thunk intrinsics to run byte-identically
+on the bytecode engine:
+- **MergeWith / DEEPMERGE**: neutral `apply2_thunk` builds the lazy `f(ov,nv)`
+  combine thunk over a pre-encoded `App(L0,[L1,L2])` template
+  (`BytecodeProgram::apply2_template`). GC-heap env frame `[f,ov,nv]`; zero
+  arena growth.
+- **ProducerNext**: neutral `bif_tail_thunk` builds the updatable tail thunk
+  over a pre-encoded `AppBif(PRODUCER_NEXT,[L0])` template
+  (`producer_tail_template`); the element value is materialised via the
+  canonical shared `stg/materialise.rs::materialise_data` (eu-9p9g), which
+  rebuilds the pure-data STG tree through the neutral value-construction ABI
+  over constructor templates — no arena growth. Both templates are encoded once
+  at init, exactly like the constructor/PAP templates.
+- **Dedup on rebase:** this increment first landed its own
+  `IntrinsicMachine::load_data_value` trait method plus bytecode
+  `materialise_data`/`load_data_value` impls. Once eu-9p9g's canonical
+  engine-agnostic `materialise.rs::materialise_data` merged first, those were
+  deleted and ProducerNext rewired to call the canonical function directly
+  (clone-pool borrow pattern, matching ParseString/TypeToData). Exactly ONE
+  data-materialiser now exists in the tree.
+- **Memoisation fix (required for producer correctness):** the bytecode
+  data-case path copied constructor fields into the branch frame, so a
+  tail-thunk update was invisible to other references (a *stateful* producer
+  would re-advance and diverge). Added `env_from_data_args` mirroring HeapSyn's
+  shared-backing logic (`shared_bindings_full`/`new_remapped` via the generic
+  `EnvironmentFrame`), so thunk updates are shared. Faithful port of proven
+  HeapSyn code; validated GC-safe under `EU_GC_VERIFY=2 EU_GC_STRESS=1` across
+  the whole corpus (0 crashes, 0 new diffs).
+
+**Differential sweep tally (rebased on eu-9p9g):** from **160 PASS / 8 DIFF**
+(post-eu-9p9g) → **165 PASS / 3 DIFF**. The 5 newly-passing files: 015, 079,
+085, 127, 135. Zero new diffs; the remaining 3 are the diagnostic-rendering
+DIFFs — 125_expectations (the known `__DBG` stderr bug, eu-scjv — stdout
+matches) and 175_sv2_to_spec + 183_widen_type_def_literals (both fail on the
+reference HeapSyn engine too — pre-existing prelude bug). `cargo test --lib` =
+1250 (added `agree_on_deep_merge_with_fn` and `agree_on_producer_next_stream`
+in `differential.rs`); clippy `--all-targets` + fmt clean.
+
+**This completes the intrinsic migration (full corpus byte-identical bar the 3
+pre-existing diagnostic DIFFs).** The whole corpus now uses the single canonical
+`materialise.rs::materialise_data` for data-literal materialisation.
 
 ### ⚠️ PERF CAVEAT — block-index optimisation DISABLED on the bytecode path
 `LookupOr`/`SafeLookup` cache a `SymbolId→position` map for a block and reuse it

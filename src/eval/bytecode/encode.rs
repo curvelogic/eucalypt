@@ -433,6 +433,20 @@ pub fn encode(
     let meta_template = enc.encode_node(&dsl::with_meta(dsl::lref(0), dsl::lref(1)));
     let pap = enc.encode_pap_templates();
 
+    // Fixed-shape thunk templates (spec §5.5, arena-growth analysis). Both are
+    // pre-encoded once here; runtime construction allocates only the GC-heap
+    // env frame over the fixed code, so there is no per-call arena growth.
+    //
+    // `apply2_template`: `App(L0, [L1, L2])` — a lazy `f(a0, a1)` thunk.
+    let apply2_template =
+        enc.encode_node(&dsl::app(dsl::lref(0), vec![dsl::lref(1), dsl::lref(2)]));
+    // `producer_tail_template`: `AppBif(PRODUCER_NEXT, [L0])` — the updatable
+    // producer-tail thunk. The bif index is fixed (a static registry lookup).
+    let producer_next_index =
+        crate::eval::intrinsics::index("PRODUCER_NEXT").expect("PRODUCER_NEXT intrinsic") as u8;
+    let producer_tail_template =
+        enc.encode_node(&dsl::app_bif(producer_next_index, vec![dsl::lref(0)]));
+
     let global_forms: Vec<GlobalForm> = globals
         .iter()
         .map(|lf| {
@@ -457,6 +471,8 @@ pub fn encode(
         blackhole,
         meta_template,
         pap,
+        apply2_template,
+        producer_tail_template,
     };
     (program, root_off, global_forms)
 }
