@@ -210,9 +210,9 @@ impl StgIntrinsic for ForceWhnf {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let forced = machine.evaluate_to_whnf(closure)?;
-        machine.set_closure(forced)
+        let closure = machine.resolve_closure(view, &args[0])?;
+        let forced = machine.force(closure)?;
+        machine.set_result(forced)
     }
 }
 
