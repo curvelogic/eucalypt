@@ -39,6 +39,21 @@
 
 ## Progress Ledger (living — durable source of truth; update every increment)
 
+### 🎉 MILESTONE (branch `feat/bv1-migrate-block-builders`): real `.eu` runs on bytecode
+The **`EU_BYTECODE=1` flag path** is wired in `driver/eval.rs` (pure programs:
+recompile with `RenderType::RenderDoc`, encode + full runtime globals, run the
+`BytecodeMachine`). Gating the block-index optimisation (`LookupOr`/`SafeLookup`
+via a neutral `block_index_enabled` capability — bytecode returns `ListNil` →
+STG find loop, same result) removed the #1 corpus blocker. **Verified through
+the real `eu` binary, byte-identical to HeapSyn:** blocks (`a:1 b:2`), lists
+(`[1,2,3]`), arithmetic + block lookup (`sum: a + 10` → 11), strings. HeapSyn
+untouched (branch/capability only active under bytecode). Next: widen coverage
+by running more of the harness corpus under `EU_BYTECODE=1` and migrating
+whatever panics (data-driven), + IO path, + an automated `.eu` differential
+test. To test eucalypt: declaration files not inline `{}` in `-e`; no
+`let…in` (`:let` blocks); `/` = floor.
+
+
 ### Increment C/D migration — in progress (branch `feat/bv1-migrate-support-list`, PR #939)
 - **DONE** (byte-identical on HeapSyn, now working on bytecode):
   - list.rs 7 type predicates (`IS{LIST,NUMBER,STRING,SYMBOL,BOOL,TYPEDATA,ZDT}`
