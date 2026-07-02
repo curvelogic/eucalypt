@@ -60,7 +60,7 @@ struct XmlImporter<'src> {
 impl<'src> XmlImporter<'src> {
     pub fn new(file_id: usize, text: &'src str) -> Self {
         let mut reader = Reader::from_str(text);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
         XmlImporter { file_id, reader }
     }
 
@@ -92,7 +92,11 @@ impl<'src> XmlImporter<'src> {
                     }
                 }
                 Ok(Event::Text(event)) => {
-                    let text = event.unescape().map_err(|e| self.to_source_error(e))?;
+                    // quick-xml 0.41: `BytesText::unescape` was removed; decode
+                    // (character encoding) then unescape XML entities.
+                    let decoded = event.decode().map_err(|e| self.to_source_error(e))?;
+                    let text = quick_xml::escape::unescape(&decoded)
+                        .map_err(|e| self.to_source_error(e))?;
                     if let Some(top) = stack.back_mut() {
                         top.add(acore::str(&text));
                     } else {
@@ -142,11 +146,14 @@ impl<'src> XmlImporter<'src> {
         let mut attrs = Vec::new();
 
         for a in e.attributes() {
-            let attr = a.map_err(|e| self.to_source_error(quick_xml::Error::InvalidAttr(e)))?;
+            let attr = a.map_err(|e| self.to_source_error(e))?;
             let k = self.to_str(attr.key.local_name().as_ref())?;
             let v = acore::str(
-                attr.decode_and_unescape_value(&self.reader)
-                    .map_err(|e| self.to_source_error(e))?,
+                attr.decoded_and_normalized_value(
+                    quick_xml::XmlVersion::Implicit1_0,
+                    self.reader.decoder(),
+                )
+                .map_err(|e| self.to_source_error(e))?,
             );
             attrs.push((k, v));
         }
@@ -154,8 +161,9 @@ impl<'src> XmlImporter<'src> {
         Ok(ProtoElement::new(name, acore::block(attrs)))
     }
 
-    /// Map quick_xml errors to SourceError
-    fn to_source_error(&self, e: quick_xml::Error) -> SourceError {
+    /// Map any XML error type (reader, encoding, escape, attribute) to a
+    /// `SourceError` by its display text.
+    fn to_source_error<E: std::fmt::Display>(&self, e: E) -> SourceError {
         SourceError::InvalidXml(e.to_string(), self.file_id, self.span())
     }
 }
