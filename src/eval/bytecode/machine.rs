@@ -596,19 +596,41 @@ pub fn return_data(
             let cur = state.current.clone();
             view.scoped(environment).update(&view, index, cur)?;
         }
-        BcContinuation::ApplyTo { annotation, .. } => {
-            // Block application delegates to the MERGE global; needs the
-            // globals frame + a G-ref entry (wired with the machine loop).
-            let type_name = DataConstructor::try_from(tag)
-                .map(|dc| dc.to_string())
-                .unwrap_or_else(|()| format!("data (tag {tag})"));
+        BcContinuation::ApplyTo {
+            args: apply_args,
+            annotation,
+        } => {
+            // Block application: blocks are callable as functions, delegating
+            // to the MERGE global. This is the only data type with callable
+            // semantics. Append the block (the callable, held in
+            // `state.current`) as MERGE's final argument, re-push the ApplyTo,
+            // and enter MERGE — it is then applied to [applied-args…, block].
+            // Mirrors `vm.rs` return_data.
             if tag == DataConstructor::Block.tag() {
-                return Err(ExecutionError::Panic(
+                let block_val = state.current.clone();
+                let mut merged: Vec<BcValue> = apply_args.as_slice().to_vec();
+                merged.push(block_val);
+                state.stack.push(BcContinuation::ApplyTo {
+                    args: Array::from_slice(&view, &merged),
                     annotation,
-                    "bytecode: block application (MERGE) not yet implemented".to_string(),
-                ));
+                });
+                // Restore the application-site annotation so any type-mismatch
+                // raised inside the MERGE wrapper carries the user's location.
+                state.annotation = annotation;
+                let merge_idx = crate::eval::intrinsics::index("MERGE")
+                    .expect("MERGE intrinsic must be registered");
+                enter_callable(
+                    state,
+                    view,
+                    state.root_env,
+                    DecodedRef::Global(merge_idx as u32),
+                )?;
+            } else {
+                let type_name = DataConstructor::try_from(tag)
+                    .map(|dc| dc.to_string())
+                    .unwrap_or_else(|()| format!("data (tag {tag})"));
+                return Err(ExecutionError::NotCallable(annotation, type_name));
             }
-            return Err(ExecutionError::NotCallable(annotation, type_name));
         }
         BcContinuation::DeMeta {
             or_else,

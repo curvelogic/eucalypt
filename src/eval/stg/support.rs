@@ -410,9 +410,9 @@ pub fn resolve_native_unboxing(
             | DataConstructor::BoxedSymbol
             | DataConstructor::BoxedZdt
             | DataConstructor::BoxedTypeData,
-        ) => machine.value_native(view, &closure).ok_or_else(|| {
-            ExecutionError::Panic(Smid::default(), "empty boxed value".to_string())
-        }),
+        ) => machine
+            .value_native(view, &closure)
+            .ok_or_else(|| ExecutionError::Panic(Smid::default(), "empty boxed value".to_string())),
         Some(_) => Err(ExecutionError::NotValue(
             machine.annotation(),
             "non-boxed constructor".to_string(),
