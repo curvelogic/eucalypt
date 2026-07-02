@@ -67,6 +67,11 @@ pub const REF_V: u8 = 0x02;
 /// (CG3 `eager_args`).
 pub const FLAG_EAGER: u8 = 0b0000_0001;
 
+/// Sentinel entry in a densified `OP_CASE` branch table meaning "no
+/// branch for this tag". Real branch offsets are always `< code.len()`,
+/// so `u32::MAX` never collides with a valid offset.
+pub const NO_BRANCH: u32 = u32::MAX;
+
 // ── Lambda-form kind bytes ──────────────────────────────────────────
 
 /// A lambda with arity ≥ 1 (carries an annotation).

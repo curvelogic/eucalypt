@@ -2,13 +2,22 @@
 //!
 //! Post-order: children are emitted first at low offsets, parents refer
 //! to them by absolute `u32` offset, and the root is emitted last. This
-//! matches the topological flatten order of `StgArena` (spec §4.2), so a
-//! reconstructed arena node ordering is a valid emission order.
+//! matches the topological flatten order of `StgArena` (spec §4.2).
 //!
-//! Ported from the BV0 spike (`spike/bv0-bytecode:.../encode.rs`) but
-//! natively typed: a single `Op::Atom` followed by an inline `Ref`
-//! (rather than BV0's split `ATOM_L/G/V`), `u32` ref payloads, and the
-//! CG3 `eager_args` flag bit on `App`/`DirectApp`.
+//! **Operand model (plan Task 2.x decision).** Every argument operand
+//! that the runtime may reify into a closure — App/DirectApp/Cons/Bif
+//! args, Meta's meta/body, LookupLit's default — is pre-emitted as its
+//! own `OP_ATOM` node and referenced by the parent as a `u32` offset.
+//! A lazy arg closure is then `BcClosure::new(atom_off, env)` with **zero
+//! per-dispatch code allocation** (the BV0 trap). Because an `OP_ATOM`
+//! node is `[Op::Atom][ref]`, the raw ref is recoverable by decoding at
+//! `atom_off + 1`, so the eager path and data-arg env-sharing (which need
+//! the underlying `L(i)`) still work. Callables stay inline refs (they are
+//! always resolved, never held as lazy closures).
+//!
+//! `Case` branch tables are densified at encode time (mirroring the
+//! `StgSyn → HeapSyn` loader): `min_tag` + a dense table of entry offsets,
+//! gaps filled with `NO_BRANCH`.
 
 use std::rc::Rc;
 
@@ -67,7 +76,6 @@ impl Encoder {
 
     /// Add a native constant to the pool and return its index.
     fn add_constant(&mut self, n: &StgNative) -> u32 {
-        // Dedup is not required for correctness; keep it simple.
         let idx = self.constants.len() as u32;
         self.constants.push(n.clone());
         idx
@@ -92,11 +100,26 @@ impl Encoder {
         }
     }
 
-    /// Emit a `u8` arg count followed by that many inline refs.
-    fn emit_args(&mut self, args: &[Ref]) {
-        self.emit_u8(args.len() as u8);
-        for r in args {
-            self.emit_ref(r);
+    /// Emit a standalone `OP_ATOM` node for a ref and return its offset.
+    /// Used to reify operand refs into addressable lazy closures.
+    fn emit_atom(&mut self, r: &Ref) -> CodeRef {
+        let offset = self.here();
+        self.emit_op(Op::Atom);
+        self.emit_ref(r);
+        offset
+    }
+
+    /// Pre-emit an `OP_ATOM` per arg ref, returning their offsets. Emitted
+    /// before the parent node (post-order).
+    fn emit_arg_atoms(&mut self, args: &[Ref]) -> Vec<CodeRef> {
+        args.iter().map(|r| self.emit_atom(r)).collect()
+    }
+
+    /// Emit an arg-offset list: `u8` count then that many `u32` offsets.
+    fn emit_arg_offsets(&mut self, offs: &[CodeRef]) {
+        self.emit_u8(offs.len() as u8);
+        for off in offs {
+            self.emit_u32(*off);
         }
     }
 
@@ -112,16 +135,9 @@ impl Encoder {
     // ── Node encoding (post-order) ──────────────────────────────────
 
     /// Encode a node, returning its start offset in the code buffer.
-    /// Children are encoded first so their offsets are known before the
-    /// parent is emitted.
     fn encode_node(&mut self, node: &Rc<StgSyn>) -> CodeRef {
         match &**node {
-            StgSyn::Atom { evaluand } => {
-                let offset = self.here();
-                self.emit_op(Op::Atom);
-                self.emit_ref(evaluand);
-                offset
-            }
+            StgSyn::Atom { evaluand } => self.emit_atom(evaluand),
 
             StgSyn::Case {
                 scrutinee,
@@ -139,11 +155,7 @@ impl Encoder {
                 let offset = self.here();
                 self.emit_op(Op::Case);
                 self.emit_u32(scr_off);
-                self.emit_u8(branch_data.len() as u8);
-                for (tag, off) in &branch_data {
-                    self.emit_u8(*tag);
-                    self.emit_u32(*off);
-                }
+                self.emit_dense_branch_table(&branch_data);
                 match fb_off {
                     Some(off) => {
                         self.emit_u8(1);
@@ -155,10 +167,11 @@ impl Encoder {
             }
 
             StgSyn::Cons { tag, args } => {
+                let arg_offs = self.emit_arg_atoms(args);
                 let offset = self.here();
                 self.emit_op(Op::Cons);
                 self.emit_u8(*tag);
-                self.emit_args(args);
+                self.emit_arg_offsets(&arg_offs);
                 offset
             }
 
@@ -167,11 +180,12 @@ impl Encoder {
                 args,
                 eager_args,
             } => {
+                let arg_offs = self.emit_arg_atoms(args);
                 let offset = self.here();
                 self.emit_op(Op::App);
                 self.emit_u8(if *eager_args { FLAG_EAGER } else { 0 });
                 self.emit_ref(callable);
-                self.emit_args(args);
+                self.emit_arg_offsets(&arg_offs);
                 offset
             }
 
@@ -181,20 +195,22 @@ impl Encoder {
                 args,
                 eager_args,
             } => {
+                let arg_offs = self.emit_arg_atoms(args);
                 let offset = self.here();
                 self.emit_op(Op::DirectApp);
                 self.emit_u8(if *eager_args { FLAG_EAGER } else { 0 });
                 self.emit_smid(*smid);
                 self.emit_ref(callable);
-                self.emit_args(args);
+                self.emit_arg_offsets(&arg_offs);
                 offset
             }
 
             StgSyn::Bif { intrinsic, args } => {
+                let arg_offs = self.emit_arg_atoms(args);
                 let offset = self.here();
                 self.emit_op(Op::Bif);
                 self.emit_u8(*intrinsic);
-                self.emit_args(args);
+                self.emit_arg_offsets(&arg_offs);
                 offset
             }
 
@@ -242,10 +258,14 @@ impl Encoder {
             }
 
             StgSyn::Meta { meta, body } => {
+                // Reify meta and body refs as atoms so the runtime can
+                // resolve/close over them without per-tick allocation.
+                let meta_off = self.emit_atom(meta);
+                let body_off = self.emit_atom(body);
                 let offset = self.here();
                 self.emit_op(Op::Meta);
-                self.emit_ref(meta);
-                self.emit_ref(body);
+                self.emit_u32(meta_off);
+                self.emit_u32(body_off);
                 offset
             }
 
@@ -283,12 +303,16 @@ impl Encoder {
                 obj,
                 default,
             } => {
+                // `default` may be a `Ref::V` reified into a closure, so it
+                // is emitted as an atom offset; `key` (always a `V` symbol)
+                // and `obj` (a resolvable L/G) stay inline.
+                let default_off = self.emit_atom(default);
                 let offset = self.here();
                 self.emit_op(Op::LookupLit);
                 self.emit_smid(*smid);
                 self.emit_ref(key);
                 self.emit_ref(obj);
-                self.emit_ref(default);
+                self.emit_u32(default_off);
                 offset
             }
 
@@ -297,6 +321,28 @@ impl Encoder {
                 self.emit_op(Op::BlackHole);
                 offset
             }
+        }
+    }
+
+    /// Emit a densified branch table: `min_tag` (u8), `len` (u8), then
+    /// `len` `u32` entries indexed by `tag - min_tag`, gaps = `NO_BRANCH`.
+    fn emit_dense_branch_table(&mut self, branch_data: &[(u8, CodeRef)]) {
+        if branch_data.is_empty() {
+            self.emit_u8(0); // min_tag
+            self.emit_u8(0); // len
+            return;
+        }
+        let min_tag = branch_data.iter().map(|(t, _)| *t).min().unwrap();
+        let max_tag = branch_data.iter().map(|(t, _)| *t).max().unwrap();
+        let len = (max_tag - min_tag) as usize + 1;
+        let mut table = vec![NO_BRANCH; len];
+        for (tag, off) in branch_data {
+            table[(tag - min_tag) as usize] = *off;
+        }
+        self.emit_u8(min_tag);
+        self.emit_u8(len as u8);
+        for entry in table {
+            self.emit_u32(entry);
         }
     }
 
@@ -356,6 +402,7 @@ pub fn encode(
 
 #[cfg(test)]
 mod tests {
+    use super::super::program::{read_u32, read_u8};
     use super::*;
     use crate::eval::stg::syntax::dsl;
 
@@ -368,7 +415,7 @@ mod tests {
         pc += 1;
         assert_eq!(prog.code[pc], REF_V);
         pc += 1;
-        let ci = super::super::program::read_u32(&prog.code, &mut pc);
+        let ci = read_u32(&prog.code, &mut pc);
         assert_eq!(prog.constants[ci as usize], StgNative::Num(42.into()));
     }
 
@@ -381,37 +428,61 @@ mod tests {
         pc += 1;
         assert_eq!(prog.code[pc], REF_L);
         pc += 1;
-        assert_eq!(super::super::program::read_u32(&prog.code, &mut pc), 3);
+        assert_eq!(read_u32(&prog.code, &mut pc), 3);
     }
 
     #[test]
-    fn encode_case_branches_are_ordered() {
-        // case local(0) of tag2 -> 10; tag3 -> 20; default -> 30
+    fn encode_app_args_are_atom_offsets() {
+        // app(gref(0), [num(7)]): the single arg is an offset to an OP_ATOM.
+        let syn = dsl::app(dsl::gref(0), vec![dsl::num(7)]);
+        let (prog, root, _) = encode(&syn, &[]);
+        let mut pc = root as usize;
+        assert_eq!(prog.code[pc], Op::App as u8);
+        pc += 1;
+        let flags = read_u8(&prog.code, &mut pc);
+        assert_eq!(flags & FLAG_EAGER, 0);
+        // callable inline ref: G(0)
+        assert_eq!(read_u8(&prog.code, &mut pc), REF_G);
+        assert_eq!(read_u32(&prog.code, &mut pc), 0);
+        // one arg, as an offset preceding the parent
+        let argc = read_u8(&prog.code, &mut pc);
+        assert_eq!(argc, 1);
+        let arg_off = read_u32(&prog.code, &mut pc);
+        assert!(arg_off < root, "arg atom must precede the App node");
+        // and it points at an OP_ATOM holding a V ref
+        let mut apc = arg_off as usize;
+        assert_eq!(read_u8(&prog.code, &mut apc), Op::Atom as u8);
+        assert_eq!(read_u8(&prog.code, &mut apc), REF_V);
+    }
+
+    #[test]
+    fn encode_case_dense_table() {
+        // case local(0) of tag2 -> 10; tag4 -> 20; default -> 30.
+        // Gap at tag3 → NO_BRANCH.
         let syn = dsl::case(
             dsl::local(0),
-            vec![(2, dsl::atom(dsl::num(10))), (3, dsl::atom(dsl::num(20)))],
+            vec![(2, dsl::atom(dsl::num(10))), (4, dsl::atom(dsl::num(20)))],
             dsl::atom(dsl::num(30)),
         );
         let (prog, root, _) = encode(&syn, &[]);
         let mut pc = root as usize;
         assert_eq!(prog.code[pc], Op::Case as u8);
         pc += 1;
-        let scr_off = super::super::program::read_u32(&prog.code, &mut pc);
-        // Children precede the parent.
-        assert!(scr_off < root, "scrutinee must precede parent");
-        let n = super::super::program::read_u8(&prog.code, &mut pc);
-        assert_eq!(n, 2);
-        for expected_tag in [2u8, 3u8] {
-            let tag = super::super::program::read_u8(&prog.code, &mut pc);
-            let off = super::super::program::read_u32(&prog.code, &mut pc);
-            assert_eq!(tag, expected_tag);
-            assert!(off < root, "branch body must precede parent");
-            assert!((off as usize) < prog.code.len());
-        }
-        let has_fb = super::super::program::read_u8(&prog.code, &mut pc);
+        let scr_off = read_u32(&prog.code, &mut pc);
+        assert!(scr_off < root);
+        let min_tag = read_u8(&prog.code, &mut pc);
+        let len = read_u8(&prog.code, &mut pc);
+        assert_eq!(min_tag, 2);
+        assert_eq!(len, 3); // tags 2,3,4
+        let e2 = read_u32(&prog.code, &mut pc);
+        let e3 = read_u32(&prog.code, &mut pc);
+        let e4 = read_u32(&prog.code, &mut pc);
+        assert!(e2 < root);
+        assert_eq!(e3, NO_BRANCH);
+        assert!(e4 < root);
+        let has_fb = read_u8(&prog.code, &mut pc);
         assert_eq!(has_fb, 1);
-        let fb_off = super::super::program::read_u32(&prog.code, &mut pc);
-        assert!(fb_off < root, "fallback body must precede parent");
+        assert!(read_u32(&prog.code, &mut pc) < root);
     }
 
     #[test]
@@ -422,9 +493,9 @@ mod tests {
         let mut pc = root as usize;
         assert_eq!(prog.code[pc], Op::DirectApp as u8);
         pc += 1;
-        let flags = super::super::program::read_u8(&prog.code, &mut pc);
+        let flags = read_u8(&prog.code, &mut pc);
         assert_eq!(flags & FLAG_EAGER, FLAG_EAGER);
-        let decoded_smid = Smid::from(super::super::program::read_u32(&prog.code, &mut pc));
+        let decoded_smid = Smid::from(read_u32(&prog.code, &mut pc));
         assert_eq!(decoded_smid, smid);
     }
 
@@ -434,13 +505,12 @@ mod tests {
         let syn = dsl::direct_app(smid, dsl::gref(0), vec![]);
         let (prog, root, _) = encode(&syn, &[]);
         let mut pc = root as usize + 1;
-        let flags = super::super::program::read_u8(&prog.code, &mut pc);
+        let flags = read_u8(&prog.code, &mut pc);
         assert_eq!(flags & FLAG_EAGER, 0);
     }
 
     #[test]
     fn encode_globals_recorded_in_entries() {
-        // A global whose body is `atom(local(0))` (identity-ish arity-1 lambda).
         let g = dsl::lambda(1, dsl::local(0));
         let root = dsl::atom(dsl::gref(0));
         let (prog, _root_off, forms) = encode(&root, std::slice::from_ref(&g));
