@@ -14,15 +14,15 @@ use crate::common::sourcemap::Smid;
 use crate::eval::error::ExecutionError;
 use crate::eval::memory::alloc::ScopedAllocator;
 use crate::eval::memory::array::Array;
-use crate::eval::memory::infotable::InfoTable;
+use crate::eval::memory::infotable::{InfoTable, InfoTagged};
 use crate::eval::memory::mutator::MutatorHeapView;
 use crate::eval::memory::syntax::{Native, Ref, RefPtr};
 use crate::eval::stg::tags::{DataConstructor, Tag};
 
-use super::program::{read_u32, read_u8};
+use super::program::{read_u16, read_u32, read_u8};
 use super::{
-    BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, CodeRef, Op, NO_BRANCH, REF_G,
-    REF_L, REF_V,
+    BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, CodeRef, Op, FORM_LAMBDA,
+    FORM_THUNK, NO_BRANCH, REF_G, REF_L, REF_V,
 };
 
 /// A decoded inline `Ref` operand from the byte stream.
@@ -185,6 +185,9 @@ pub struct BcMachineState {
     /// Set (with `terminated`) when an IO constructor reaches the top with
     /// nothing to consume it — the io-run driver inspects `current`.
     pub yielded_io: bool,
+    /// Offset of the shared `OP_BLACKHOLE` node (`BytecodeProgram::blackhole`),
+    /// used to overwrite a thunk's slot while forcing it.
+    pub blackhole: CodeRef,
 }
 
 impl BcMachineState {
@@ -207,6 +210,7 @@ impl BcMachineState {
             pending_bif: None,
             capture_end_pending: false,
             yielded_io: false,
+            blackhole: 0,
         }
     }
 }
@@ -553,6 +557,103 @@ fn arg_ref(code: &[u8], atom_off: CodeRef) -> Result<DecodedRef, ExecutionError>
     read_ref(code, &mut pc)
 }
 
+/// Build an application's argument array. A lazy arg is a closure over its
+/// pre-encoded `OP_ATOM`; an eager (`FLAG_EAGER`) `Local` arg is resolved
+/// directly from the env (CG3 — avoids O(n) indirection chains).
+fn make_arg_array(
+    view: MutatorHeapView<'_>,
+    code: &[u8],
+    env: RefPtr<BcEnvFrame>,
+    arg_offs: &[CodeRef],
+    eager: bool,
+) -> Result<Array<BcValue>, ExecutionError> {
+    let mut array = Array::with_capacity(&view, arg_offs.len());
+    for off in arg_offs {
+        let v = if eager {
+            match arg_ref(code, *off)? {
+                DecodedRef::Local(i) => view
+                    .scoped(env)
+                    .get(&view, i as usize)
+                    .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?,
+                _ => BcValue::Closure(BcClosure::new(*off, env)),
+            }
+        } else {
+            BcValue::Closure(BcClosure::new(*off, env))
+        };
+        array.push(&view, v);
+    }
+    Ok(array)
+}
+
+/// Build the static part of a closure from a decoded form header.
+fn bc_info(h: &FormHeader) -> InfoTagged<CodeRef> {
+    match h.kind {
+        FORM_THUNK => InfoTagged::thunk(h.body),
+        FORM_LAMBDA => InfoTagged::new(h.arity, h.body, h.smid),
+        _ => InfoTagged::value(h.body), // FORM_VALUE
+    }
+}
+
+/// Read a `Let`/`LetRec` binding-header list (`u16` count then that many
+/// form headers) followed by the body offset.
+fn read_let(code: &[u8], pc: &mut usize) -> (Vec<FormHeader>, CodeRef) {
+    let count = read_u16(code, pc) as usize;
+    let headers = (0..count).map(|_| read_form_header(code, pc)).collect();
+    let body = read_u32(code, pc);
+    (headers, body)
+}
+
+/// Enter a local env slot, black-holing it and pushing an `Update`
+/// continuation if it is a thunk (memoisation + cycle detection). Mirrors
+/// the `Atom{L}` thunk dance in `vm.rs`.
+fn enter_local(
+    state: &mut BcMachineState,
+    view: MutatorHeapView<'_>,
+    env: RefPtr<BcEnvFrame>,
+    i: usize,
+) -> Result<(), ExecutionError> {
+    let v = view
+        .scoped(env)
+        .get(&view, i)
+        .ok_or(ExecutionError::BadEnvironmentIndex(i))?;
+    if let BcValue::Closure(c) = v {
+        if c.update() {
+            let hole = BcValue::Closure(BcClosure::new(state.blackhole, env));
+            view.scoped(env).update(&view, i, hole)?;
+            state.stack.push(BcContinuation::Update {
+                environment: env,
+                index: i,
+            });
+        }
+    }
+    state.current = v;
+    Ok(())
+}
+
+/// Resolve and enter an application's callable (mirrors `resolve_callable`
+/// + the callable thunk dance).
+fn enter_callable(
+    state: &mut BcMachineState,
+    view: MutatorHeapView<'_>,
+    env: RefPtr<BcEnvFrame>,
+    callable: DecodedRef,
+) -> Result<(), ExecutionError> {
+    match callable {
+        DecodedRef::Local(i) => enter_local(state, view, env, i as usize),
+        DecodedRef::Global(i) => {
+            state.current = view
+                .scoped(state.globals)
+                .get(&view, i as usize)
+                .ok_or(ExecutionError::BadGlobalIndex(i as usize))?;
+            Ok(())
+        }
+        DecodedRef::Value(_) => Err(ExecutionError::NotCallable(
+            state.annotation,
+            "native value".to_string(),
+        )),
+    }
+}
+
 /// Execute the code node of the current (arity-0) closure. Translated from
 /// `vm.rs` `handle_instruction` (`:390`) for the opcode subset implemented
 /// so far; the remaining opcodes error explicitly.
@@ -584,11 +685,7 @@ pub fn handle_op(
             let dref = read_ref(code, &mut pc)?;
             match dref {
                 DecodedRef::Local(i) => {
-                    // Enter the referenced value. (Thunk memoisation TODO.)
-                    state.current = view
-                        .scoped(env)
-                        .get(&view, i as usize)
-                        .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?;
+                    enter_local(state, view, env, i as usize)?;
                 }
                 DecodedRef::Global(i) => {
                     state.current = view
@@ -657,14 +754,52 @@ pub fn handle_op(
         Op::BlackHole => {
             return Err(ExecutionError::BlackHole(state.annotation));
         }
-        Op::App
-        | Op::DirectApp
-        | Op::Bif
-        | Op::Let
-        | Op::LetRec
-        | Op::Meta
-        | Op::DeMeta
-        | Op::LookupLit => {
+        Op::App => {
+            let flags = read_u8(code, &mut pc);
+            let eager = flags & super::FLAG_EAGER != 0;
+            let callable = read_ref(code, &mut pc)?;
+            let arg_offs = read_arg_offsets(code, &mut pc);
+            let args = make_arg_array(view, code, env, &arg_offs, eager)?;
+            state.stack.push(BcContinuation::ApplyTo {
+                args,
+                annotation: state.annotation,
+            });
+            enter_callable(state, view, env, callable)?;
+        }
+        Op::Let => {
+            let (headers, body_off) = read_let(code, &mut pc);
+            // Non-recursive: bindings close over the enclosing env.
+            let mut array = Array::with_capacity(&view, headers.len());
+            for h in &headers {
+                array.push(&view, BcValue::Closure(BcClosure::close(&bc_info(h), env)));
+            }
+            let new_env = view
+                .alloc(BcEnvFrame::new(array, state.annotation, Some(env)))?
+                .as_ptr();
+            state.current = BcValue::Closure(BcClosure::new(body_off, new_env));
+        }
+        Op::LetRec => {
+            let (headers, body_off) = read_let(code, &mut pc);
+            // Recursive: bindings close over the new frame itself.
+            let mut array = Array::with_capacity(&view, headers.len());
+            for _ in &headers {
+                array.push(
+                    &view,
+                    BcValue::Closure(BcClosure::new(0, RefPtr::dangling())),
+                );
+            }
+            let frame = view
+                .alloc(BcEnvFrame::new(array.clone(), state.annotation, Some(env)))?
+                .as_ptr();
+            for (i, h) in headers.iter().enumerate() {
+                // SAFETY: array was pre-sized to headers.len() and i < len.
+                unsafe {
+                    array.set_unchecked(i, BcValue::Closure(BcClosure::close(&bc_info(h), frame)));
+                }
+            }
+            state.current = BcValue::Closure(BcClosure::new(body_off, frame));
+        }
+        Op::DirectApp | Op::Bif | Op::Meta | Op::DeMeta | Op::LookupLit => {
             return Err(ExecutionError::Panic(
                 state.annotation,
                 format!("bytecode: opcode {op:?} not yet implemented"),
@@ -993,6 +1128,7 @@ mod tests {
             root_env,
             constants,
         );
+        state.blackhole = prog.blackhole;
         let mut guard = 0;
         while !state.terminated && guard < 1000 {
             step(&mut state, view, &prog.code).unwrap();
@@ -1023,6 +1159,29 @@ mod tests {
         );
         match run_to_end(&syn) {
             Native::Num(n) => assert_eq!(n.as_i64(), Some(7)),
+            _ => panic!("expected num"),
+        }
+    }
+
+    #[test]
+    fn run_let_value() {
+        // let x = 5 in x
+        let syn = dsl::let_(vec![dsl::value(dsl::atom(dsl::num(5)))], dsl::local(0));
+        match run_to_end(&syn) {
+            Native::Num(n) => assert_eq!(n.as_i64(), Some(5)),
+            _ => panic!("expected num"),
+        }
+    }
+
+    #[test]
+    fn run_apply_identity() {
+        // let id = \x.x in id(5)
+        let syn = dsl::let_(
+            vec![dsl::lambda(1, dsl::local(0))],
+            dsl::app(dsl::lref(0), vec![dsl::num(5)]),
+        );
+        match run_to_end(&syn) {
+            Native::Num(n) => assert_eq!(n.as_i64(), Some(5)),
             _ => panic!("expected num"),
         }
     }

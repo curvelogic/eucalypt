@@ -36,6 +36,9 @@ pub struct BytecodeProgram {
     /// so intrinsics/return-helpers construct data with no per-call code
     /// allocation. Indexed by `DataConstructor` tag.
     pub templates: Vec<CodeRef>,
+    /// Offset of a shared `OP_BLACKHOLE` node, used to overwrite a thunk's
+    /// env slot while it is being forced (cycle detection).
+    pub blackhole: CodeRef,
 }
 
 impl BytecodeProgram {

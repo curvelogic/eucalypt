@@ -401,6 +401,8 @@ pub fn encode(
     // Constructor templates first, so their offsets sit at the low end of
     // the arena and are stable regardless of program size.
     let templates = enc.encode_templates();
+    let blackhole = enc.here();
+    enc.emit_op(Op::BlackHole);
 
     let global_forms: Vec<GlobalForm> = globals
         .iter()
@@ -423,6 +425,7 @@ pub fn encode(
         constants: enc.constants,
         global_entries: global_forms.iter().map(|f| f.entry).collect(),
         templates,
+        blackhole,
     };
     (program, root_off, global_forms)
 }
