@@ -61,19 +61,30 @@
 ## Progress Ledger (living — durable source of truth; update every increment)
 
 ### ⚠️ PERF CAVEAT — block-index optimisation DISABLED on the bytecode path
-`LookupOr`/`SafeLookup` cache a `SymbolId→position` map inside a block (mutating
-its index slot in place). The bytecode engine **cannot** do that in-place
-mutation (blocks are template closures), so `block_index_enabled()` returns
-`false` for `BcBifContext` and the bytecode engine falls back to the **STG-level
-find loop** for every block lookup — **O(n) per lookup instead of O(1)**.
-Correct (same result) but slower on lookup-heavy blocks.
-**When BV2–5 benchmark bytecode vs HeapSyn, this is NOT an apples-to-apples
-comparison for block-heavy programs** — either (a) reinstate a bytecode-native
-block index (needs a way to mutate/replace a data value's field or a side table
-keyed by block identity), or (b) also disable the index on the HeapSyn side for
-the comparison run. Do not attribute any bytecode block-lookup slowdown to the
-dispatch engine without controlling for this. (Tracked in the code via the
-`block_index_enabled` doc comment.)
+`LookupOr`/`SafeLookup` cache a `SymbolId→position` map for a block and reuse it
+on later lookups (O(1) vs an O(n) linear scan). On HeapSyn it caches by mutating
+the block's `Cons` node arg array in place (`store_index_in_block`). The bytecode
+engine can't mutate that way — a block is `BcClosure{code, env}` where the `Cons`
+*structure* lives in the **immutable off-heap code arena** — so the index is
+currently **gated off** (`block_index_enabled()` = `false` for `BcBifContext`)
+and lookups fall back to the **STG find loop** (O(n), same result).
+
+**This was a deliberate deferral, NOT a hard limitation.** The bytecode engine
+*can* mutate the field *values* — they live in the (shared, GC-heap) `env`
+frame, so `env.update(index_slot, Native::Index(map))` would propagate to all
+holders. Reinstating a bytecode-native index needs: (1) migrate the index
+machinery (`build_index`/`walk_list_to_position`/`store_index_in_block`/
+`count_list`/`BlockListIterator`) off the `SynClosure`-typed ABI, and (2) point
+`store_index_in_block` at the block closure's env slot instead of the heap node's
+arg array. It was skipped only because it's a pure perf optimisation (correctness
+is fine via the find loop) and gating it was the minimal change to unblock the
+whole corpus.
+
+**When BV2–5 benchmark bytecode vs HeapSyn, this is NOT apples-to-apples for
+block-heavy programs** — either reinstate the bytecode index (above) or also
+disable it on HeapSyn for the comparison run. Do not attribute a bytecode
+block-lookup slowdown to the dispatch engine without controlling for this.
+(Tracked in code via the `block_index_enabled` doc comment.)
 
 ### 🎉 MILESTONE (branch `feat/bv1-migrate-block-builders`): real `.eu` runs on bytecode
 The **`EU_BYTECODE=1` flag path** is wired in `driver/eval.rs` (pure programs:
