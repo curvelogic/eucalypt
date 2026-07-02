@@ -144,6 +144,105 @@ mod tests {
     }
 
     #[test]
+    fn agree_on_demeta_meta_value() {
+        // demeta(with_meta(99, 42), handler=[meta,body]->body, or_else=[v]->v)
+        // A metadata-annotated value takes the handler branch -> body (42).
+        let syn = dsl::demeta(
+            dsl::with_meta(dsl::num(99), dsl::num(42)),
+            dsl::local(1),
+            dsl::local(0),
+        );
+        assert_eq!(assert_engines_agree(syn, vec![]), Some(42));
+    }
+
+    #[test]
+    fn agree_on_demeta_plain_value() {
+        // demeta(7, handler=[meta,body]->body, or_else=[v]->v) -> 7.
+        // A plain (non-Meta) value takes the or_else branch with the value.
+        let syn = dsl::demeta(dsl::atom(dsl::num(7)), dsl::local(1), dsl::local(0));
+        assert_eq!(assert_engines_agree(syn, vec![]), Some(7));
+    }
+
+    #[test]
+    fn agree_on_lookup_lit_hit() {
+        // A block { k: 42 }, then a literal lookup of :k -> 42 (fast path:
+        // the object is already a WHNF block).
+        use crate::common::sourcemap::Smid;
+        use crate::eval::stg::syntax::StgSyn;
+        use std::rc::Rc;
+        let syn = dsl::letrec_(
+            vec![
+                dsl::value(dsl::atom(dsl::num(42))),               // 0: v
+                dsl::value(dsl::atom(dsl::num(7))),                // 1: w (default)
+                dsl::value(dsl::pair("k", dsl::lref(0))),          // 2: BlockPair(:k, v)
+                dsl::value(dsl::nil()),                            // 3: nil
+                dsl::value(dsl::cons(dsl::lref(2), dsl::lref(3))), // 4: [pair]
+                dsl::value(dsl::block(dsl::lref(4))),              // 5: Block([pair], 0)
+            ],
+            Rc::new(StgSyn::LookupLit {
+                smid: Smid::default(),
+                key: dsl::sym("k"),
+                obj: dsl::lref(5),
+                default: dsl::lref(1),
+            }),
+        );
+        assert_eq!(assert_engines_agree(syn, vec![]), Some(42));
+    }
+
+    #[test]
+    fn agree_on_lookup_lit_miss() {
+        // The same block, looking up an absent key -> the default (7).
+        use crate::common::sourcemap::Smid;
+        use crate::eval::stg::syntax::StgSyn;
+        use std::rc::Rc;
+        let syn = dsl::letrec_(
+            vec![
+                dsl::value(dsl::atom(dsl::num(42))),
+                dsl::value(dsl::atom(dsl::num(7))),
+                dsl::value(dsl::pair("k", dsl::lref(0))),
+                dsl::value(dsl::nil()),
+                dsl::value(dsl::cons(dsl::lref(2), dsl::lref(3))),
+                dsl::value(dsl::block(dsl::lref(4))),
+            ],
+            Rc::new(StgSyn::LookupLit {
+                smid: Smid::default(),
+                key: dsl::sym("absent"),
+                obj: dsl::lref(5),
+                default: dsl::lref(1),
+            }),
+        );
+        assert_eq!(assert_engines_agree(syn, vec![]), Some(7));
+    }
+
+    #[test]
+    fn agree_on_lookup_lit_slow_path() {
+        // The object is an unevaluated thunk `id(block)`, not a WHNF block, so
+        // LookupLit forces it (LookupLitForce continuation) before the lookup.
+        use crate::common::sourcemap::Smid;
+        use crate::eval::stg::syntax::StgSyn;
+        use std::rc::Rc;
+        let syn = dsl::letrec_(
+            vec![
+                dsl::value(dsl::atom(dsl::num(42))),                    // 0: v
+                dsl::value(dsl::atom(dsl::num(7))),                     // 1: w
+                dsl::value(dsl::pair("k", dsl::lref(0))),               // 2: pair
+                dsl::value(dsl::nil()),                                 // 3: nil
+                dsl::value(dsl::cons(dsl::lref(2), dsl::lref(3))),      // 4: list
+                dsl::value(dsl::block(dsl::lref(4))),                   // 5: block (WHNF)
+                dsl::lambda(1, dsl::local(0)),                          // 6: id
+                dsl::thunk(dsl::app(dsl::lref(6), vec![dsl::lref(5)])), // 7: id(block)
+            ],
+            Rc::new(StgSyn::LookupLit {
+                smid: Smid::default(),
+                key: dsl::sym("k"),
+                obj: dsl::lref(7),
+                default: dsl::lref(1),
+            }),
+        );
+        assert_eq!(assert_engines_agree(syn, vec![]), Some(42));
+    }
+
+    #[test]
     fn agree_on_force_whnf() {
         // let t = __ADD(1, 2) in __FORCE_WHNF(t) -> 3
         let add = crate::eval::intrinsics::index_u8("ADD");
