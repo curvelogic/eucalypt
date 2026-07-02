@@ -109,8 +109,25 @@ mod tests {
     use crate::eval::stg::arith::{Add, Lt};
     use crate::eval::stg::boolean::{False, True};
     use crate::eval::stg::force::ForceWhnf;
+    use crate::eval::stg::list::IsList;
     use crate::eval::stg::syntax::dsl;
     use crate::eval::stg::tags::DataConstructor;
+
+    /// `case __ISLIST(value) { BoolTrue -> 1 ; BoolFalse -> 0 }`.
+    fn islist_case(value: crate::eval::stg::syntax::LambdaForm) -> Rc<StgSyn> {
+        let islist = crate::eval::intrinsics::index_u8("ISLIST");
+        dsl::let_(
+            vec![value],
+            dsl::case(
+                dsl::app_bif(islist, vec![dsl::lref(0)]),
+                vec![
+                    (DataConstructor::BoolTrue.tag(), dsl::atom(dsl::num(1))),
+                    (DataConstructor::BoolFalse.tag(), dsl::atom(dsl::num(0))),
+                ],
+                dsl::atom(dsl::num(9)),
+            ),
+        )
+    }
 
     #[test]
     fn agree_on_arithmetic() {
@@ -323,6 +340,30 @@ mod tests {
         );
         let out = assert_engines_render_agree(syn);
         assert!(out.contains("k") && out.contains("42"), "got {out:?}");
+    }
+
+    #[test]
+    fn agree_on_islist_true() {
+        // __ISLIST(nil) -> true -> 1. Exercises the migrated list predicate
+        // (resolve_closure + data_tag) on the bytecode path.
+        let syn = islist_case(dsl::value(dsl::nil()));
+        assert_eq!(
+            assert_engines_agree(syn, vec![Box::new(IsList), Box::new(True), Box::new(False)]),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn agree_on_islist_false() {
+        // __ISLIST(boxed 42) -> false -> 0.
+        let syn = islist_case(dsl::value(dsl::data(
+            DataConstructor::BoxedNumber.tag(),
+            vec![dsl::num(42)],
+        )));
+        assert_eq!(
+            assert_engines_agree(syn, vec![Box::new(IsList), Box::new(True), Box::new(False)]),
+            Some(0)
+        );
     }
 
     #[test]
