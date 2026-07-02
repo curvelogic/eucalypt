@@ -1,3 +1,4 @@
+pub mod bytecode;
 pub mod emit;
 pub mod error;
 pub mod intrinsics;
