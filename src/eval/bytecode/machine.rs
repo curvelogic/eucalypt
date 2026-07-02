@@ -12,10 +12,17 @@ use std::cmp::Ordering;
 
 use crate::common::sourcemap::Smid;
 use crate::eval::error::ExecutionError;
+use crate::eval::machine::metrics::{Clock, Metrics, ThreadOccupation};
+use crate::eval::machine::vm::interrupted;
 use crate::eval::memory::alloc::ScopedAllocator;
 use crate::eval::memory::array::Array;
+use crate::eval::memory::collect::{
+    collect as gc_collect, CollectorHeapView, CollectorScope, GcScannable, ScanPtr,
+};
+use crate::eval::memory::heap::Heap;
 use crate::eval::memory::infotable::{InfoTable, InfoTagged};
 use crate::eval::memory::mutator::MutatorHeapView;
+use crate::eval::memory::symbol::SymbolPool;
 use crate::eval::memory::syntax::{Native, Ref, RefPtr};
 use crate::eval::stg::tags::{DataConstructor, Tag};
 
@@ -216,6 +223,104 @@ impl BcMachineState {
             capture_end_pending: false,
             yielded_io: false,
             blackhole: 0,
+        }
+    }
+}
+
+/// Mark the heap pointers embedded in a prepared constant (`Ref::V(native)`).
+/// Mirrors `syntax::mark_ref_heap_pointers` for the bytecode constant pool,
+/// which is an off-heap root set rather than part of the code graph.
+fn scan_const<'a>(
+    r: &'a Ref,
+    scope: &'a dyn CollectorScope,
+    marker: &mut CollectorHeapView<'a>,
+    out: &mut Vec<ScanPtr<'a>>,
+) {
+    match r {
+        Ref::V(Native::Str(ptr)) if marker.mark(*ptr) => {
+            out.push(ScanPtr::from_non_null(scope, *ptr));
+        }
+        Ref::V(Native::Set(ptr)) => {
+            marker.mark(*ptr);
+        }
+        Ref::V(Native::NdArray(ptr)) => {
+            marker.mark(*ptr);
+        }
+        Ref::V(Native::Vec(ptr)) => {
+            marker.mark(*ptr);
+        }
+        _ => {}
+    }
+}
+
+/// Update forwarded heap pointers in a prepared constant (mirrors
+/// `syntax::update_ref_heap_pointers`).
+fn update_const(r: &mut Ref, heap: &CollectorHeapView<'_>) {
+    match r {
+        Ref::V(Native::Str(ptr)) => {
+            if let Some(new) = heap.forwarded_to(*ptr) {
+                *ptr = new;
+            }
+        }
+        Ref::V(Native::Set(ptr)) => {
+            if let Some(new) = heap.forwarded_to(*ptr) {
+                *ptr = new;
+            }
+        }
+        Ref::V(Native::NdArray(ptr)) => {
+            if let Some(new) = heap.forwarded_to(*ptr) {
+                *ptr = new;
+            }
+        }
+        Ref::V(Native::Vec(ptr)) => {
+            if let Some(new) = heap.forwarded_to(*ptr) {
+                *ptr = new;
+            }
+        }
+        _ => {}
+    }
+}
+
+impl GcScannable for BcMachineState {
+    fn scan<'a>(
+        &'a self,
+        scope: &'a dyn CollectorScope,
+        marker: &mut CollectorHeapView<'a>,
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
+        if marker.mark(self.globals) {
+            out.push(ScanPtr::from_non_null(scope, self.globals));
+        }
+        if marker.mark(self.root_env) {
+            out.push(ScanPtr::from_non_null(scope, self.root_env));
+        }
+        // The current value ranges over `BcValue` (a closure or native); its
+        // `GcScannable` impl marks the env pointer / heap-backed native.
+        out.push(ScanPtr::new(scope, &self.current));
+        // Continuations live inline in the `Vec` (off the eucalypt heap); scan
+        // their internal heap pointers directly (mirrors `MachineState::scan`).
+        for cont in &self.stack {
+            cont.scan(scope, marker, out);
+        }
+        // The prepared constant pool is a root set of heap-backed natives.
+        for r in &self.constants {
+            scan_const(r, scope, marker, out);
+        }
+    }
+
+    fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
+        if let Some(new) = heap.forwarded_to(self.root_env) {
+            self.root_env = new;
+        }
+        if let Some(new) = heap.forwarded_to(self.globals) {
+            self.globals = new;
+        }
+        self.current.scan_and_update(heap);
+        for cont in &mut self.stack {
+            cont.scan_and_update(heap);
+        }
+        for r in &mut self.constants {
+            update_const(r, heap);
         }
     }
 }
@@ -957,6 +1062,155 @@ pub fn step(
     }
 }
 
+/// The bytecode execution machine: owns the heap, program and machine state,
+/// and drives the `step` dispatch loop with periodic GC (spec §6). The
+/// parallel-engine counterpart to the HeapSyn `Machine`.
+///
+/// This increment runs self-contained programs (no globals/prelude, no `Bif`
+/// dispatch); intrinsic dispatch, the globals frame and the emitter/capture
+/// lifecycle are wired in the following increments.
+pub struct BytecodeMachine {
+    heap: Heap,
+    program: BytecodeProgram,
+    state: BcMachineState,
+    metrics: Metrics,
+    clock: Clock,
+    dump_heap: bool,
+}
+
+impl BytecodeMachine {
+    /// Build a machine for an encoded program rooted at `root_off`. A
+    /// `heap_limit_mib` of 0 means an unbounded managed heap.
+    pub fn new(
+        program: BytecodeProgram,
+        root_off: CodeRef,
+        heap_limit_mib: usize,
+    ) -> Result<Self, ExecutionError> {
+        let heap = if heap_limit_mib == 0 {
+            Heap::new()
+        } else {
+            Heap::with_limit(heap_limit_mib)
+        };
+        let mut pool = SymbolPool::new();
+        let (constants, root_env) = {
+            let view = MutatorHeapView::new(&heap);
+            let constants = program.prepare_constants(view, &mut pool);
+            let root_env = view.alloc(BcEnvFrame::default())?.as_ptr();
+            (constants, root_env)
+        };
+        // No prelude yet: globals is the empty root frame (wired next increment).
+        let globals = root_env;
+        let mut state = BcMachineState::new(
+            BcValue::Closure(BcClosure::new(root_off, root_env)),
+            globals,
+            root_env,
+            constants,
+        );
+        state.blackhole = program.blackhole;
+        Ok(BytecodeMachine {
+            heap,
+            program,
+            state,
+            metrics: Metrics::default(),
+            clock: Clock::default(),
+            dump_heap: false,
+        })
+    }
+
+    /// Run to termination (or `limit` ticks), returning the process exit
+    /// code. Polls for GC every 500 ticks (mirrors `Machine::run`, spec §6).
+    pub fn run(&mut self, limit: Option<usize>) -> Result<Option<u8>, ExecutionError> {
+        self.clock.switch(ThreadOccupation::Mutator);
+        let gc_check_freq: u32 = 500;
+        let mut gc_countdown: u32 = gc_check_freq;
+
+        while !self.state.terminated {
+            if let Some(limit) = limit {
+                if self.metrics.ticks() as usize >= limit {
+                    return Err(ExecutionError::DidntTerminate(limit));
+                }
+            }
+            gc_countdown -= 1;
+            if gc_countdown == 0 {
+                gc_countdown = gc_check_freq;
+                if interrupted() {
+                    return Err(ExecutionError::Interrupted);
+                }
+                if self.heap.policy_requires_collection() {
+                    gc_collect(
+                        &mut self.state,
+                        &mut self.heap,
+                        &mut self.clock,
+                        self.dump_heap,
+                    );
+                    self.clock.switch(ThreadOccupation::Mutator);
+                }
+            }
+            self.dispatch()?;
+        }
+
+        if self.heap.policy_requires_collection() {
+            gc_collect(
+                &mut self.state,
+                &mut self.heap,
+                &mut self.clock,
+                self.dump_heap,
+            );
+        }
+        self.clock.stop();
+        Ok(self.exit_code())
+    }
+
+    /// One dispatch step over the shared machine state (the free `step`).
+    fn dispatch(&mut self) -> Result<(), ExecutionError> {
+        self.metrics.tick();
+        let view = MutatorHeapView::new(&self.heap);
+        step(&mut self.state, view, &self.program)?;
+        // Bif dispatch is wired in the next increment; until then a captured
+        // pending BIF is an explicit error rather than a silent no-op.
+        if self.state.pending_bif.take().is_some() {
+            return Err(ExecutionError::Panic(
+                self.state.annotation,
+                "bytecode: Bif dispatch not yet wired (needs globals + intrinsics)".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// The process exit code from a terminated machine's result value
+    /// (mirrors `Machine::exit_code`: a numeric result is the code, a
+    /// tag-0 success constructor exits 0, anything else exits 1).
+    fn exit_code(&self) -> Option<u8> {
+        if !self.state.terminated {
+            return None;
+        }
+        Some(match &self.state.current {
+            BcValue::Native(Native::Num(n)) => {
+                n.as_i64().and_then(|i| u8::try_from(i).ok()).unwrap_or(1)
+            }
+            BcValue::Native(_) => 1,
+            BcValue::Closure(c) => {
+                let mut pc = c.code() as usize;
+                match Op::from_u8(read_u8(&self.program.code, &mut pc)) {
+                    Some(Op::Cons) if read_u8(&self.program.code, &mut pc) == 0 => 0,
+                    _ => 1,
+                }
+            }
+        })
+    }
+
+    /// Force a collection now (tests: prove the root set survives GC).
+    #[cfg(test)]
+    fn gc_now(&mut self) {
+        gc_collect(
+            &mut self.state,
+            &mut self.heap,
+            &mut self.clock,
+            self.dump_heap,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1356,5 +1610,32 @@ mod tests {
             Native::Num(n) => assert_eq!(n.as_i64(), Some(5)),
             _ => panic!("expected num"),
         }
+    }
+
+    #[test]
+    fn machine_runs_atom_to_exit_code() {
+        // A numeric top-level result becomes the process exit code.
+        let (prog, root, _) = encode(&dsl::atom(dsl::num(0)), &[]);
+        let mut m = BytecodeMachine::new(prog, root, 0).unwrap();
+        assert_eq!(m.run(Some(10_000)).unwrap(), Some(0));
+    }
+
+    #[test]
+    fn machine_returns_numeric_exit_code() {
+        let (prog, root, _) = encode(&dsl::atom(dsl::num(5)), &[]);
+        let mut m = BytecodeMachine::new(prog, root, 0).unwrap();
+        assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
+    }
+
+    #[test]
+    fn machine_survives_forced_gc() {
+        // let x = 5 in x, forcing a collection after the Let allocates its
+        // env frame: the machine's root set must keep the frame live.
+        let syn = dsl::let_(vec![dsl::value(dsl::atom(dsl::num(5)))], dsl::local(0));
+        let (prog, root, _) = encode(&syn, &[]);
+        let mut m = BytecodeMachine::new(prog, root, 0).unwrap();
+        m.dispatch().unwrap(); // execute the Let (allocates the env frame)
+        m.gc_now(); // roots must survive
+        assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
     }
 }
