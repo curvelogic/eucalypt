@@ -6,8 +6,6 @@
 //!
 //! Together these power the `to-data` / `from-data` round-trip in the prelude.
 
-use std::{cell::RefCell, rc::Rc};
-
 use crate::eval::memory::syntax::{Native, StgBuilder};
 use crate::{
     common::sourcemap::Smid,
@@ -18,16 +16,12 @@ use crate::{
     eval::{
         emit::Emitter,
         error::ExecutionError,
-        machine::{
-            env::SynClosure,
-            intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
-        },
-        memory::{array::Array, loader::load, mutator::MutatorHeapView, syntax::Ref},
+        machine::intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
+        memory::{mutator::MutatorHeapView, syntax::Ref},
         stg::{
-            compiler::Compiler,
+            data_literal,
             support::{resolve_native_unboxing, str_arg},
             tags::DataConstructor,
-            RenderType,
         },
     },
 };
@@ -154,7 +148,10 @@ fn type_to_rcexpr(ty: &Type) -> RcExpr {
 /// 1. Extracts the canonical type-DSL string from the `BoxedTypeData` wrapper.
 /// 2. Parses it via `parse_type`.
 /// 3. Converts the resulting `Type` to the `t-*` vocabulary using `type_to_rcexpr`.
-/// 4. Compiles the resulting core expression to STG and loads it onto the heap.
+/// 4. Builds the resulting core expression directly as a value (BV1 §5.5,
+///    `data_literal::build_value`) — `type_to_rcexpr` emits only data
+///    constructors (literals/lists/blocks), never function application, so
+///    no STG compilation or runtime code loading is needed.
 pub struct TypeToData;
 
 impl StgIntrinsic for TypeToData {
@@ -187,31 +184,10 @@ impl StgIntrinsic for TypeToData {
         let ty = parse_type(&type_str)
             .map_err(|e| ExecutionError::Panic(smid, format!("TYPE_TO_DATA: parse error: {e}")))?;
 
-        // Convert to t-* core expression.
+        // Convert to t-* core expression and build it directly as a value.
         let core_expr = type_to_rcexpr(&ty);
-
-        // Compile to STG.  Data-literal expressions have no free variables or
-        // intrinsic references, so we can use an empty intrinsics list.
-        let compiler = Compiler::new(
-            false, // generate_annotations
-            RenderType::Headless,
-            false,  // suppress_updates
-            true,   // suppress_inlining
-            false,  // suppress_optimiser
-            vec![], // intrinsics — none needed for data literals
-            None,   // prelude_globals
-        );
-        let syntax: Rc<_> = compiler.compile(core_expr).map_err(|e| {
-            ExecutionError::Panic(smid, format!("TYPE_TO_DATA: compile error: {e}"))
-        })?;
-
-        // Load onto heap and return as closure.
-        let pool = RefCell::new(machine.symbol_pool_mut().clone());
-        let heap_ptr = load(&view, &mut pool.borrow_mut(), syntax)
-            .map_err(|e| ExecutionError::Panic(smid, format!("TYPE_TO_DATA: load error: {e}")))?;
-        *machine.symbol_pool_mut() = pool.into_inner();
-
-        machine.set_closure(SynClosure::new(heap_ptr, machine.root_env()))
+        let value = data_literal::build_value(machine, view, &core_expr)?;
+        machine.set_result(value)
     }
 }
 
@@ -223,7 +199,8 @@ impl CallGlobal1 for TypeToData {}
 ///
 /// 1. Validates the input string via `parse_type`.
 /// 2. Normalises to canonical form via the `Type` `Display` impl.
-/// 3. Returns a `BoxedTypeData` (tag 17) wrapping the canonical string.
+/// 3. Returns a `BoxedTypeData` (tag 17) wrapping the canonical string, built
+///    directly via the neutral data-construction ABI (BV1 §5.5).
 ///
 /// Used by the prelude `from-data` function as the final wrapping step.
 pub struct TypeFromString;
@@ -249,16 +226,13 @@ impl StgIntrinsic for TypeFromString {
         })?;
         let canonical = format!("{ty}");
 
-        // Allocate BoxedTypeData on the heap.
-        let s_ref = view.str_ref(canonical)?;
-        let ptr = view
-            .data(
-                DataConstructor::BoxedTypeData.tag(),
-                Array::from_slice(&view, &[s_ref]),
-            )?
-            .as_ptr();
-
-        machine.set_closure(SynClosure::new(ptr, machine.root_env()))
+        // Build BoxedTypeData as a value via the neutral ABI.
+        let Ref::V(native) = view.str_ref(canonical)? else {
+            unreachable!("str_ref yields a value ref")
+        };
+        let boxed = machine.native_value(view, native)?;
+        let value = machine.data_value(view, DataConstructor::BoxedTypeData.tag(), &[boxed])?;
+        machine.set_result(value)
     }
 }
 

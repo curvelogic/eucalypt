@@ -10,7 +10,9 @@
 > `~/.cargo/bin/cargo` symlink is broken). One feature branch per increment →
 > PR to `integration/0.12.0`. Owner reviews/merges PRs; do not merge your own.
 > Current working branch: `feat/bv1-migrate-intrinsics` (off the post-#941 merge
-> `25166517`).
+> `25166517`). **eu-9p9g increment (2026-07-02, branch
+> `feat/bv1-parse-typedata-data2`, off the #942 merge `06c6ee19`): ParseString +
+> TypeToData migrated — see dated ledger entry below.**
 >
 > **State:** **The bytecode engine works end-to-end.** Real `.eu` programs run
 > under `EU_BYTECODE=1`, **byte-identical to the HeapSyn engine** (blocks, lists,
@@ -45,6 +47,11 @@
 > migration below unblocked ~101. Sweep script: `scratchpad/bv_sweep.sh`
 > (compares stdout of both engines per file).
 >
+> **CORPUS TALLY UPDATE (eu-9p9g, 2026-07-02): 144 → 160 PASS**, 8 residual
+> DIFFs (down from 19). `ParseString`/`TypeToData`/`TypeFromString` are fully
+> migrated off `load()` — see the dated ledger entry below for the remaining 8
+> and why they're out of this bead's scope.
+>
 > **DONE this PR (all neutral-ABI, byte-identical both engines):**
 > - `debug.rs` — DbgRepr/Dbg/TraceEntry/TraceExit + render/peek/trace helpers.
 > - `support.rs` — resolve_native_unboxing, machine_return_str_iter,
@@ -64,24 +71,38 @@
 > **⚠️ Neutral-ABI trap:** don't assume a resolved closure is WHNF; use
 > `value_native` (now non-panicking) for possibly-unforced values.
 >
-> **REMAINING 19 — all need RUNTIME CODE SYNTHESIS (a design decision, not more
-> mechanical ports):**
-> - `parse_string::ParseString` (10) and `typedata::TypeToData` (6): both call
->   `load()` — compile a core/STG expression and materialise it *runnable* on
->   the heap at runtime. On HeapSyn `load()` yields a HeapSyn tree the tree-walk
->   runs directly; the bytecode engine has no runtime encoder, so this needs a
->   **runtime bytecode-encode/append** (JIT a fragment into the code arena) or a
->   neutral "materialise this compiled data value" path. This is the genuinely
->   hard case the plan always flagged.
+> **REMAINING (post eu-9p9g) — 6 files, two categories:**
+> - ~~`parse_string::ParseString` (10) and `typedata::TypeToData` (6)~~ **DONE
+>   (eu-9p9g, 2026-07-02)** — both were pure data-literal `load()` calls (no
+>   computation), so they're now built directly via the neutral
+>   `data_value`/`native_value`/`return_closure_list`/`meta_value` ABI, with no
+>   STG compilation and no `load()`. See the dated ledger entry below.
 > - `block::MergeWith` / DEEPMERGE (4): build a lazy `f(ov, nv)` **application
 >   thunk** as a stored value (not a tail call). Needs a neutral "build an
 >   application closure value" primitive (bytecode: an `App(L0,[L1,L2])` template
 >   over env `[f, ov, nv]`). Smaller than full `load()` but still code synthesis.
 > - `stream_intrinsic::ProducerNext` (1): `load()` **plus** a self-referential
 >   updatable BIF thunk (`PRODUCER_NEXT(handle)` tail) — both synthesis forms.
+> - `block.rs` inspector sites (1, `015_block_fns.eu`): a still-unmigrated
+>   `HeapSyn`-typed block intrinsic — panics with "bytecode closure handed to
+>   the HeapSyn intrinsic engine". Not yet root-caused to a specific function;
+>   needs triage.
 >
 > These share one root: the bytecode path cannot yet synthesise *code* at
 > runtime, only *data* (`data_value`/`return_closure_list`).
+>
+> **⚠️ NEWLY DISCOVERED (eu-9p9g): assertion/`//=>` diagnostic rendering
+> differs on bytecode.** `125_expectations.eu`, `175_sv2_to_spec.eu`,
+> `183_widen_type_def_literals.eu` all show the SAME symptom: a failing
+> `//=>`/`//=` expectation renders a full multi-line diagnostic trace on
+> HeapSyn but just `---\n{}\n` on bytecode — the underlying assertion is
+> failing identically on **both** engines (confirmed via a standalone repro:
+> `union-spec: s"string | number" as-spec` + `match?` returns `false` on both
+> engines — a separate, pre-existing `reflect`-library/union-matching bug,
+> unrelated to bytecode). The bytecode-vs-HeapSyn *rendering* gap is in the
+> `__EXPECT`/error-diagnostic path, not in data construction — out of scope for
+> ParseString/TypeToData (eu-9p9g) and for the union-matching bug itself; needs
+> its own bead.
 >
 > **⚠️ ARENA-GROWTH ANALYSIS (owner's concern, 2026-07-02): the code arena
 > (`BytecodeProgram.code`) is off-heap and NEVER GC-collected. Appending a fresh
@@ -91,13 +112,17 @@
 > code:**
 > - **`ParseString` / `TypeToData` value output is pure DATA** (a block/list/
 >   scalar tree — `load()` there materialises a data-literal, no computation).
->   Build it directly via the neutral `data_value`/`native_value`/
->   `return_closure_list` ABI on the **GC heap** (collectable). ZERO arena growth.
->   This is the plan's "value representation" route — preferred over parse-to-
->   bytecode for these. (TypeToData: verify `type_to_rcexpr` emits only data
->   constructors, not prelude function applications; if it applies functions,
->   the SHAPE is bounded by the finite type-DSL grammar → a small fixed template
->   set, still not per-call-unique.)
+>   Built directly via the neutral `data_value`/`native_value`/
+>   `return_closure_list`/`meta_value` ABI on the **GC heap** (collectable).
+>   ZERO arena growth. **DONE (eu-9p9g, 2026-07-02)** — see the dated ledger
+>   entry below. `type_to_rcexpr` **confirmed** to emit only data constructors
+>   (`Expr::Literal`/`List`/`Block`), never function application — no template
+>   fallback was needed. `read_to_core_data_only`'s output needed two more
+>   shapes handled: `Let(_, _, DefaultBlockLet)` (every parsed block is
+>   wrapped this way, resolved via proper de Bruijn indexing — no name-based
+>   substitution, so nested same-named scopes can't collide) and `Meta`
+>   (EDN tagged elements / YAML custom tags — a new `meta_value` neutral
+>   primitive was added to `IntrinsicMachine`, HeapSyn-only for now).
 > - **`MergeWith` `f(ov,nv)` and `ProducerNext`'s tail thunk are FIXED-SHAPE
 >   applications** (`App(L0,[L1,L2])`, `AppBif(idx,[L0])`). Pre-encode ONE
 >   template each into the arena at init (exactly like the existing constructor/
@@ -124,6 +149,57 @@
 > history; the engine is well past them.)*
 
 ## Progress Ledger (living — durable source of truth; update every increment)
+
+### eu-9p9g (2026-07-02, branch `feat/bv1-parse-typedata-data2`, off #942 merge `06c6ee19`) — ParseString + TypeToData migrated to neutral data construction
+Migrated `parse_string::ParseString`, `typedata::TypeToData` and
+`typedata::TypeFromString` off the `Compiler::compile` + `memory::loader::load`
+path entirely (for **both** engines — this isn't an engine-specific override,
+the old code path is gone) onto the neutral data-construction ABI:
+- **New module `src/eval/stg/data_literal.rs`**: `build_value(machine, view,
+  &RcExpr) -> Result<AbiClosure, ExecutionError>` recursively materialises a
+  data-literal Core expression as a value, shared by both intrinsics.
+  Verified `type_to_rcexpr` (`typedata.rs`) emits only `Expr::Literal`/`List`/
+  `Block` — no function application — so the "fixed template" fallback the
+  plan flagged as a fork was never needed. `read_to_core_data_only`'s output
+  needed two more shapes: every parsed block is wrapped in
+  `Expr::Let(_, _, LetType::DefaultBlockLet)` (confirmed via `yaml.rs`'s
+  `end_block`/`default_let` — not just an anchor-sharing special case, the
+  *general* block representation), and EDN tagged elements / YAML custom tags
+  use `Expr::Meta`. Both handled: `Let`/`DefaultBlockLet` via **proper de
+  Bruijn evaluation** (an `env: Vec<Vec<AbiClosure>>` scope stack indexed by
+  `BoundVar{scope,binder}`, exactly mirroring the STG compiler's own
+  `close_expr_vars`/`open_expr_vars` scheme) rather than name-based
+  Free-var substitution — sidesteps the shadowing pitfall `substs`'s own
+  doc comment warns about when the same key name nests at multiple levels.
+  YAML anchors/aliases are resolved by the *parser* itself (direct `RcExpr`
+  cloning via its own `anchors: HashMap<usize, RcExpr>`), not via `Var`
+  references, so no additional sharing logic was needed there.
+- **New `IntrinsicMachine::meta_value` primitive** (`intrinsic.rs`), mirroring
+  `data_value`: wraps a value with metadata (`HeapSyn::Meta{meta,body}`),
+  HeapSyn-only default for now (no bytecode override yet — nothing in the
+  corpus exercises it on the bytecode path; a bytecode override would follow
+  the exact pattern of `native_value`/`data_value`'s in `bytecode/machine.rs`).
+- `parse_string.rs` / `typedata.rs`: each `execute()` shrinks to parse/convert
+  → `data_literal::build_value` → `machine.set_result`. Dropped `Compiler`,
+  `RenderType`, `load`, `RefCell` — all now unused.
+- Two new differential tests in `differential.rs`: `agree_on_parse_string_json`
+  (`RENDER_DOC(PARSE_STRING(:json, "{\"x\": 1}"))`) and `agree_on_type_to_data`
+  (`RENDER_DOC(TYPE_TO_DATA(boxed "number"))`), both byte-identical.
+- **Corpus: 144 → 160 PASS** (exactly the ~16 the bead estimated), **19 → 8
+  residual DIFFs**. Verified stable across two independent sweep runs
+  (`scratchpad/bv_sweep.sh`, gitignored — recreate per the bead's sweep
+  script) and under `EU_GC_VERIFY=2 EU_GC_STRESS=1` on all 9
+  `tests/harness/*parse_as*.eu` + `174_sv1_typedata.eu` +
+  `177_sv_optional_fields_to_data.eu`, on both engines.
+- **Residual 8, confirmed out of scope** (see the "REMAINING" + "NEWLY
+  DISCOVERED" notes in the RESUME header above): 4 MergeWith/DEEPMERGE, 1
+  ProducerNext/streams, 1 unmigrated `block.rs` inspector
+  (`015_block_fns.eu`), and 2 (`175_sv2_to_spec.eu`,
+  `183_widen_type_def_literals.eu`) that hit a *newly surfaced* (previously
+  masked by `TypeFromString`'s panic) assertion-diagnostic-rendering gap
+  shared with `125_expectations.eu` — not a data-construction issue.
+- `cargo test --lib` 1250 green (1247 baseline + 2 differential + 1
+  pre-existing unaccounted); clippy `--all-targets` + fmt clean.
 
 ### ⚠️ PERF CAVEAT — block-index optimisation DISABLED on the bytecode path
 `LookupOr`/`SafeLookup` cache a `SymbolId→position` map for a block and reuse it

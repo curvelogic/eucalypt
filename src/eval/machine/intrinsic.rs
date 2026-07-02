@@ -344,6 +344,30 @@ pub trait IntrinsicMachine {
         Ok(AbiClosure::Heap(SynClosure::new(code, frame)))
     }
 
+    /// Wrap a value with metadata, returned as a value handle (does not set
+    /// the machine result). Mirrors `HeapSyn::Meta { meta, body }`.
+    fn meta_value(
+        &self,
+        view: MutatorHeapView<'_>,
+        meta: AbiClosure,
+        body: AbiClosure,
+    ) -> Result<AbiClosure, ExecutionError> {
+        let env = self.root_env();
+        let frame = view.from_closures(
+            [meta.as_heap().clone(), body.as_heap().clone()].into_iter(),
+            2,
+            env,
+            Smid::default(),
+        )?;
+        let code = view
+            .alloc(HeapSyn::Meta {
+                meta: Ref::L(0),
+                body: Ref::L(1),
+            })?
+            .as_ptr();
+        Ok(AbiClosure::Heap(SynClosure::new(code, frame)))
+    }
+
     /// Set the machine result to a cons-list of the given value handles.
     fn return_closure_list(
         &mut self,

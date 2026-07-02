@@ -11,6 +11,7 @@ pub mod block;
 pub mod boolean;
 pub mod compiler;
 pub mod constant;
+pub mod data_literal;
 pub mod debug;
 pub mod embed;
 pub mod emit;

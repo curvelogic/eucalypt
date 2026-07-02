@@ -453,4 +453,51 @@ mod tests {
             Some(3)
         );
     }
+
+    #[test]
+    fn agree_on_parse_string_json() {
+        // RENDER_DOC(PARSE_STRING(:json, "{\"x\": 1}")) -> byte-identical YAML
+        // block. Exercises the neutral data-literal builder
+        // (`data_literal::build_value`, eu-9p9g) end-to-end: the parsed JSON
+        // is a `DefaultBlockLet`-wrapped block, materialised directly as a
+        // value with no STG compilation / runtime code loading.
+        let parse_string = crate::eval::intrinsics::index_u8("PARSE_STRING");
+        let render_doc = crate::eval::intrinsics::index("RENDER_DOC").expect("RENDER_DOC");
+        let syn = dsl::let_(
+            vec![dsl::value(dsl::app_bif(
+                parse_string,
+                vec![dsl::sym("json"), dsl::str("{\"x\": 1}")],
+            ))],
+            dsl::app(dsl::gref(render_doc), vec![dsl::lref(0)]),
+        );
+        let out = assert_engines_render_agree(syn);
+        assert!(
+            out.contains('1'),
+            "expected the parsed value in output, got {out:?}"
+        );
+    }
+
+    #[test]
+    fn agree_on_type_to_data() {
+        // RENDER_DOC(TYPE_TO_DATA(boxed type-data "number")) -> byte-identical
+        // `[t-prim, number]` list. Exercises `data_literal::build_value` over
+        // `type_to_rcexpr`'s output (list/symbol literals only).
+        let type_to_data = crate::eval::intrinsics::index_u8("TYPE_TO_DATA");
+        let render_doc = crate::eval::intrinsics::index("RENDER_DOC").expect("RENDER_DOC");
+        let syn = dsl::letrec_(
+            vec![
+                dsl::value(dsl::data(
+                    DataConstructor::BoxedTypeData.tag(),
+                    vec![dsl::str("number")],
+                )), // 0: boxed type-data "number"
+                dsl::value(dsl::app_bif(type_to_data, vec![dsl::lref(0)])), // 1: TYPE_TO_DATA(0)
+            ],
+            dsl::app(dsl::gref(render_doc), vec![dsl::lref(1)]),
+        );
+        let out = assert_engines_render_agree(syn);
+        assert!(
+            out.contains("t-prim") && out.contains("number"),
+            "expected t-prim/number in output, got {out:?}"
+        );
+    }
 }
