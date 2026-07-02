@@ -63,6 +63,14 @@ harness. **Branch:** `integration/0.12.0` (worktree
 - `7c2c665f` `&self` relax + `AbiClosure::arity` + migrate render/expect
 - `9f5c952b` this progress ledger (durable tracking)
 - `1a1aa3c6` **Phase 2 start** — `machine.rs`: `DecodedRef`, `read_ref`, `resolve_ref`/`resolve_native` (ref → `BcValue`)
+- `cf2b3e34` Phase 2 — operand decoders (`read_arg_offsets`/`read_branch_table`/`read_form_header`, round-tripped vs encoder) + `BcMachineState` struct
+
+### Phase 2 next steps (fine-grained)
+- [ ] `BytecodeMachine` wiring: own/borrow heap+intrinsics+emitter+metrics (mirror `MachineCore`/`Machine`); hold `BcMachineState`; construct globals frame from `GlobalForm`s + `prepare_constants`.
+- [ ] `step`: value-dispatch — `current` `Native(n)` → `return_native(n)`; `Closure(c)` with arity>0 → `return_fun`; else fetch opcode at `c.code()` → `handle_op`. Plus 500-tick GC poll, `pending_bif` tail.
+- [ ] `handle_op` arms (day11 subset): Atom, App, DirectApp, Bif, Case, Cons, Let/LetRec, Seq, LookupLit; `return_*` for the BcContinuation kinds.
+- [ ] neutral `IntrinsicMachine` impl for the bytecode bif context (`set_result`/`resolve_*`/`data_*`/`return_*` over `BcValue`+templates); `evaluate_to_whnf`.
+- [ ] `EU_BYTECODE` flag path in `driver/eval.rs`; differential harness; day11 byte-identical gate.
 
 ### Neutral `IntrinsicMachine` ABI available (`intrinsic.rs`)
 `resolve_native`, `return_native/unit/boxed_num/bool`, `resolve_closure`,
