@@ -10,9 +10,11 @@
 
 use crate::common::sourcemap::Smid;
 use crate::eval::error::ExecutionError;
+use crate::eval::memory::alloc::ScopedAllocator;
+use crate::eval::memory::array::Array;
 use crate::eval::memory::mutator::MutatorHeapView;
 use crate::eval::memory::syntax::{Native, Ref, RefPtr};
-use crate::eval::stg::tags::Tag;
+use crate::eval::stg::tags::{DataConstructor, Tag};
 
 use super::program::{read_u32, read_u8};
 use super::{
@@ -177,6 +179,9 @@ pub struct BcMachineState {
     /// Set by a `CaptureEnd` continuation to signal `step` to finish an
     /// emitter capture.
     pub capture_end_pending: bool,
+    /// Set (with `terminated`) when an IO constructor reaches the top with
+    /// nothing to consume it — the io-run driver inspects `current`.
+    pub yielded_io: bool,
 }
 
 impl BcMachineState {
@@ -198,8 +203,165 @@ impl BcMachineState {
             annotation: Smid::default(),
             pending_bif: None,
             capture_end_pending: false,
+            yielded_io: false,
         }
     }
+}
+
+/// Build a branch/handler env frame by copying the constructor's field
+/// values (the copy path of `vm.rs` `env_from_data_args_copy`, `:978`).
+///
+/// Field closures are `Copy`/`Clone` over the same heap env, so thunk
+/// memoisation is preserved; only the backing array is freshly allocated
+/// (the shared-backing optimisation is a later perf refinement).
+fn env_from_data_args_copy(
+    state: &BcMachineState,
+    view: MutatorHeapView<'_>,
+    args: &[DecodedRef],
+    next: RefPtr<BcEnvFrame>,
+) -> Result<RefPtr<BcEnvFrame>, ExecutionError> {
+    let cons_env = state
+        .current
+        .as_closure()
+        .ok_or_else(|| {
+            ExecutionError::Panic(
+                state.annotation,
+                "return_data on a native value".to_string(),
+            )
+        })?
+        .env();
+    let local = view.scoped(cons_env);
+    let globals = view.scoped(state.globals);
+
+    let mut array = Array::with_capacity(&view, args.len());
+    for a in args {
+        let v = match a {
+            DecodedRef::Local(i) => (*local)
+                .get(&view, *i as usize)
+                .ok_or(ExecutionError::BadEnvironmentIndex(*i as usize))?,
+            DecodedRef::Global(i) => (*globals)
+                .get(&view, *i as usize)
+                .ok_or(ExecutionError::BadGlobalIndex(*i as usize))?,
+            DecodedRef::Value(k) => match state.constants.get(*k as usize) {
+                Some(Ref::V(n)) => BcValue::Native(n.clone()),
+                _ => {
+                    return Err(ExecutionError::Panic(
+                        state.annotation,
+                        format!("bytecode: constant {k} missing or not a native"),
+                    ))
+                }
+            },
+        };
+        array.push(&view, v);
+    }
+    Ok(view
+        .alloc(BcEnvFrame::new(array, state.annotation, Some(next)))?
+        .as_ptr())
+}
+
+/// Return a data constructor (`current` is the constructor closure) into
+/// the top continuation. Translated from `vm.rs` `return_data` (`:1014`).
+///
+/// `args` are the constructor's field refs (decoded from its `OP_CONS`).
+/// The block-application (`ApplyTo` → `MERGE`) and `LookupLitForce`
+/// block-lookup paths need the globals frame + a bytecode block navigator
+/// and are wired with the full machine loop; they error explicitly here.
+pub fn return_data(
+    state: &mut BcMachineState,
+    view: MutatorHeapView<'_>,
+    tag: Tag,
+    args: &[DecodedRef],
+) -> Result<(), ExecutionError> {
+    let Some(cont) = state.stack.pop() else {
+        state.terminated = true;
+        if DataConstructor::is_io_constructor(tag) {
+            state.yielded_io = true;
+        }
+        return Ok(());
+    };
+    match cont {
+        BcContinuation::Branch {
+            min_tag,
+            branch_table,
+            fallback,
+            environment,
+            annotation,
+        } => {
+            let body = if tag >= min_tag {
+                branch_table.get((tag - min_tag) as usize).flatten()
+            } else {
+                None
+            };
+            if let Some(body) = body {
+                let env = if args.is_empty() {
+                    environment
+                } else {
+                    env_from_data_args_copy(state, view, args, environment)?
+                };
+                state.current = BcValue::Closure(BcClosure::new(body, env));
+            } else if let Some(fb) = fallback {
+                let cur = state.current.clone();
+                let env = view.from_value(cur, environment, state.annotation)?;
+                state.current = BcValue::Closure(BcClosure::new(fb, env));
+            } else {
+                let expected: Vec<u8> = (0..branch_table.len())
+                    .filter(|i| branch_table.get(*i).flatten().is_some())
+                    .map(|i| min_tag + i as u8)
+                    .collect();
+                let ann = if annotation.is_valid() {
+                    annotation
+                } else {
+                    state.annotation
+                };
+                return Err(ExecutionError::NoBranchForDataTag(ann, tag, expected));
+            }
+        }
+        BcContinuation::Update { environment, index } => {
+            let cur = state.current.clone();
+            view.scoped(environment).update(&view, index, cur)?;
+        }
+        BcContinuation::ApplyTo { annotation, .. } => {
+            // Block application delegates to the MERGE global; needs the
+            // globals frame + a G-ref entry (wired with the machine loop).
+            let type_name = DataConstructor::try_from(tag)
+                .map(|dc| dc.to_string())
+                .unwrap_or_else(|()| format!("data (tag {tag})"));
+            if tag == DataConstructor::Block.tag() {
+                return Err(ExecutionError::Panic(
+                    annotation,
+                    "bytecode: block application (MERGE) not yet implemented".to_string(),
+                ));
+            }
+            return Err(ExecutionError::NotCallable(annotation, type_name));
+        }
+        BcContinuation::DeMeta {
+            or_else,
+            environment,
+            ..
+        } => {
+            let cur = state.current.clone();
+            let env = view.from_value(cur, environment, state.annotation)?;
+            state.current = BcValue::Closure(BcClosure::new(or_else, env));
+        }
+        BcContinuation::SeqBind {
+            body,
+            environment,
+            annotation,
+        } => {
+            state.current = BcValue::Closure(BcClosure::new(body, environment));
+            state.annotation = annotation;
+        }
+        BcContinuation::LookupLitForce { .. } => {
+            return Err(ExecutionError::Panic(
+                state.annotation,
+                "bytecode: LookupLitForce block lookup not yet implemented".to_string(),
+            ));
+        }
+        BcContinuation::CaptureEnd => {
+            state.capture_end_pending = true;
+        }
+    }
+    Ok(())
 }
 
 /// Return a native WHNF value into the top continuation (or terminate).
@@ -434,5 +596,72 @@ mod tests {
         });
         let err = return_native(&mut state, view, num(1));
         assert!(matches!(err, Err(ExecutionError::NoBranchForNative(..))));
+    }
+
+    #[test]
+    fn return_data_branch_match_binds_field() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+
+        // Constructor env holding one field: native 5.
+        let cons_env = view
+            .from_saturation(
+                view.array(&[BcValue::Native(num(5))]),
+                root,
+                Default::default(),
+            )
+            .unwrap();
+        let mut state = BcMachineState::new(
+            BcValue::Closure(BcClosure::new(0, cons_env)),
+            root,
+            root,
+            vec![],
+        );
+
+        // Branch matching tag 7 → body offset 42.
+        let bt: Array<Option<CodeRef>> = view.array(&[Some(42u32)]);
+        state.stack.push(BcContinuation::Branch {
+            min_tag: 7,
+            branch_table: bt,
+            fallback: None,
+            environment: root,
+            annotation: Default::default(),
+        });
+
+        return_data(&mut state, view, 7, &[DecodedRef::Local(0)]).unwrap();
+
+        let c = state.current.as_closure().unwrap();
+        assert_eq!(c.code(), 42);
+        let frame = view.scoped(c.env());
+        match frame.get(&view, 0).unwrap() {
+            BcValue::Native(Native::Num(n)) => assert_eq!(n.as_i64(), Some(5)),
+            _ => panic!("expected field bound in branch env"),
+        }
+    }
+
+    #[test]
+    fn return_data_no_branch_no_fallback_errors() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let mut state = BcMachineState::new(
+            BcValue::Closure(BcClosure::new(0, root)),
+            root,
+            root,
+            vec![],
+        );
+
+        let bt: Array<Option<CodeRef>> = view.array(&[Some(1u32)]);
+        state.stack.push(BcContinuation::Branch {
+            min_tag: 7,
+            branch_table: bt,
+            fallback: None,
+            environment: root,
+            annotation: Default::default(),
+        });
+        // Return tag 6 (no branch, no fallback).
+        let err = return_data(&mut state, view, 6, &[]);
+        assert!(matches!(err, Err(ExecutionError::NoBranchForDataTag(..))));
     }
 }
