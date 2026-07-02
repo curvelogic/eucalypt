@@ -179,6 +179,10 @@ pub struct BcMachineState {
     pub annotation: Smid,
     /// Deferred BIF intrinsic index (set by the `Bif` arm, run in `step`).
     pub pending_bif: Option<u8>,
+    /// The deferred BIF's decoded argument refs (spec §6.3): captured by the
+    /// `Bif` arm and read by the deferred dispatch (there is no live node to
+    /// re-read, unlike the HeapSyn path).
+    pub pending_bif_args: Vec<DecodedRef>,
     /// Set by a `CaptureEnd` continuation to signal `step` to finish an
     /// emitter capture.
     pub capture_end_pending: bool,
@@ -208,6 +212,7 @@ impl BcMachineState {
             terminated: false,
             annotation: Smid::default(),
             pending_bif: None,
+            pending_bif_args: Vec::new(),
             capture_end_pending: false,
             yielded_io: false,
             blackhole: 0,
@@ -863,7 +868,20 @@ pub fn handle_op(
                 state.current = callee;
             }
         }
-        Op::Bif | Op::Meta | Op::DeMeta | Op::LookupLit => {
+        Op::Bif => {
+            // Defer execution to the dispatch tail (needs the full machine /
+            // intrinsic context). Capture the intrinsic index and its decoded
+            // arg refs — there is no live node to re-read (spec §6.3).
+            let intrinsic = read_u8(code, &mut pc);
+            let arg_offs = read_arg_offsets(code, &mut pc);
+            let arg_refs: Vec<DecodedRef> = arg_offs
+                .iter()
+                .map(|off| arg_ref(code, *off))
+                .collect::<Result<_, _>>()?;
+            state.pending_bif = Some(intrinsic);
+            state.pending_bif_args = arg_refs;
+        }
+        Op::Meta | Op::DeMeta | Op::LookupLit => {
             return Err(ExecutionError::Panic(
                 state.annotation,
                 format!("bytecode: opcode {op:?} not yet implemented"),
@@ -1248,6 +1266,26 @@ mod tests {
             Native::Num(n) => assert_eq!(n.as_i64(), Some(5)),
             _ => panic!("expected num"),
         }
+    }
+
+    #[test]
+    fn bif_arm_captures_intrinsic_and_args() {
+        let syn = dsl::app_bif(3, vec![dsl::num(1), dsl::num(2)]);
+        let (prog, root, _) = encode(&syn, &[]);
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let mut pool = SymbolPool::new();
+        let constants = prog.prepare_constants(view, &mut pool);
+        let root_env = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let mut state = BcMachineState::new(
+            BcValue::Closure(BcClosure::new(root, root_env)),
+            root_env,
+            root_env,
+            constants,
+        );
+        handle_op(&mut state, view, &prog.code).unwrap();
+        assert_eq!(state.pending_bif, Some(3));
+        assert_eq!(state.pending_bif_args.len(), 2);
     }
 
     #[test]
