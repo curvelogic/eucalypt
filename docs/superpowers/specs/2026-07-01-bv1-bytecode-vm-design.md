@@ -5,9 +5,23 @@
 - **Release:** 0.12 (epic eu-u9xj, paired with BV5 / eu-xfxc)
 - **Integration branch:** `integration/0.12.0` (disposable — if the bytecode bet
   does not pay off, the branch is dropped; nothing lands on master until it does)
-- **Date:** 2026-07-01
+- **Date:** 2026-07-01 (revised 2026-07-02)
 - **Supersedes/learns-from:** BV0 spike (`spike/bv0-bytecode`, commit `16547a6d`,
   NO-GO)
+
+> **Revision 2026-07-02 (during Phase 1 implementation).** Phase 1 (encoder +
+> data structures) is complete on `integration/0.12.0` and green. Two design
+> points were settled and two corrections made to this spec:
+> 1. **Operand encoding (§4.2 note):** argument operands are pre-emitted as
+>    `OP_ATOM` nodes and referenced by `u32` offset, so lazy arg closures are
+>    `BcClosure(atom_off, env)` with zero per-dispatch code allocation (avoids
+>    the BV0 trap). The underlying ref is recoverable at `atom_off + 1`.
+> 2. **Case tables** are densified (`min_tag` + table) at encode time.
+> 3. **Correction — intrinsics are NOT reused for free** (§3, §5.5): the
+>    intrinsic ABI is `SynClosure`-typed and synthesises `HeapSyn` at runtime.
+>    A new §5.5 specifies parameterising the ABI over the code type plus
+>    constructor templates; phasing (§10) gains an intrinsic-layer phase before
+>    the day11 dispatch subset.
 
 ---
 
@@ -94,7 +108,22 @@ scanned exactly as today.
 **Reused for free** (by instantiating the generics with `CodeRef`): the closure
 struct, `InfoFlags` arity/update/annotation packing, `EnvironmentFrame` + cactus
 stack + `cell`/`get` + shared-backing/remap optimisation, the heap + GC + Immix
-allocator, all 192 intrinsics, the emitter, metrics, and the error machinery.
+allocator, the emitter, metrics, and the error machinery.
+
+> **Revision 2026-07-02 — intrinsics are NOT reused for free.** The original
+> draft listed "all 192 intrinsics" here. Implementation review found that
+> claim wrong: the intrinsic ABI is concretely `SynClosure`-typed and, worse,
+> *constructs `HeapSyn` at runtime*. `StgIntrinsic::execute` takes
+> `&mut dyn IntrinsicMachine`; `IntrinsicMachine` deals in `SynClosure` /
+> `RefPtr<EnvFrame>` / `HeapNavigator`; and the ~30 `machine_return_*` helpers
+> in `support.rs` allocate `HeapSyn` nodes (`machine_return_num` → `HeapSyn::Atom`,
+> `machine_return_unit` → a HeapSyn `Cons`, `machine_return_num_list` → a whole
+> HeapSyn list spine) and wrap them in `SynClosure`. A `BcClosure =
+> Closing<CodeRef>` cannot hold a `HeapSyn` pointer, so `Bif` dispatch cannot
+> use this layer as-is — and leaving intrinsic-produced data as `HeapSyn` would
+> keep `GcScannable for HeapSyn` live on the bytecode path, violating §7 and
+> acceptance §8.3. The intrinsic layer therefore moves to *genuinely new work*
+> (see §5.5). This is real added scope the original draft under-estimated.
 
 **Genuinely new work** (the bulk of BV1):
 - a `BcContinuation` enum (today's 7 continuations hard-code `RefPtr<HeapSyn>`);
@@ -102,7 +131,10 @@ allocator, all 192 intrinsics, the emitter, metrics, and the error machinery.
 - the bytecode dispatch loop(s);
 - `BcClosure` builders paralleling `env_builder`'s `create_arg_array` etc.;
 - `GcScannable` impls for `BcContinuation` and `BcClosure` (simpler — no code
-  pointer to trace/fix up).
+  pointer to trace/fix up);
+- **the intrinsic layer (§5.5): parameterise `IntrinsicMachine` / `HeapNavigator`
+  / the `support.rs` return helpers over the code type `S`, and construct all
+  runtime data via fixed constructor templates pre-encoded in the arena.**
 
 ## 4. Bytecode format and encoder
 
@@ -161,6 +193,20 @@ Opcode set (one `u8` per variant; operands as noted):
 "header" carries arity (`u8`), the update flag (is-thunk), value-vs-thunk, and the
 annotation `Smid` — the same information `LambdaForm`/`InfoFlags` carries today.
 
+> **Operand encoding (revised 2026-07-02).** An operand that the runtime must
+> reify into a lazy closure — every App/DirectApp/Cons/Bif argument, Meta's
+> meta/body, LookupLit's default — is **not** stored as an inline `Ref`. Instead
+> the encoder pre-emits a standalone `OP_ATOM ref` node for it and the parent
+> stores that node's `u32` code offset. A lazy arg closure is then
+> `BcClosure::new(atom_off, env)` with **zero per-dispatch code allocation**
+> (the BV0 trap was allocating a `HeapSyn::Atom` per arg per tick). Because an
+> `OP_ATOM` node is `[Op::Atom][ref]`, the underlying ref is recoverable by
+> decoding at `atom_off + 1`, so the eager path (`env.get(i)` for `L(i)`) and
+> data-arg env-sharing (which need the raw index) still work. Callables stay
+> inline refs — they are always resolved, never held as lazy closures. Case
+> branch tables are densified to `min_tag` + a table of entry offsets (gaps =
+> `NO_BRANCH`) at encode time, mirroring the loader.
+
 ### 4.3 CG1/CG2/CG3 preserved as opcodes
 
 The 0.11 codegen wins are represented directly so no perf is lost in the rewrite:
@@ -207,6 +253,59 @@ bytecode directly — and the 85→~25ms startup collapse — is **BV5 (eu-xfxc)
 of scope here. BV1 therefore adds a `StgSyn/ArenaStgSyn → bytecode` encode step at
 startup for prelude + program, replacing the `StgSyn → HeapSyn` loader
 (`src/eval/memory/loader.rs`) on the bytecode path.
+
+## 5.5 Intrinsics and runtime data construction (added 2026-07-02)
+
+The intrinsic layer needs deliberate work — it is not reused for free (see the
+revision note in §3). Two coupled problems:
+
+1. **The ABI is `SynClosure`-typed.** `StgIntrinsic::execute(&mut dyn
+   IntrinsicMachine, view, emitter, args: &[Ref])`; `IntrinsicMachine` exposes
+   `set_closure(SynClosure)`, `nav() -> HeapNavigator` (which yields
+   `SynClosure`), `env() -> RefPtr<EnvFrame>`, and `evaluate_to_whnf(SynClosure)
+   -> SynClosure`. None of this mentions the code type; all of it hard-codes
+   `RefPtr<HeapSyn>` via `SynClosure`/`EnvFrame`.
+2. **Return helpers synthesise `HeapSyn` at runtime.** The ~30 `machine_return_*`
+   helpers in `support.rs` allocate `HeapSyn` code (`Atom` for scalars, `Cons`
+   for `unit`/blocks, full list spines for `*_list`) and wrap it in a
+   `SynClosure`. This is exactly the runtime-code-synthesis pattern BV0 died on,
+   and it re-anchors data to the GC-scanned `HeapSyn` set.
+
+### Design — parameterise + constructor templates
+
+- **Parameterise the ABI over the code type `S`.** `IntrinsicMachine`,
+  `HeapNavigator`, and the `support.rs` helpers become generic over `S: Copy`
+  (or gain a `BcClosure` sibling), so an intrinsic manipulates `Closing<S>` and
+  the caller supplies either `RefPtr<HeapSyn>` (HeapSyn engine) or `CodeRef`
+  (bytecode engine). The 192 intrinsics themselves call the shared helpers and
+  the navigator; they do not name the code type directly, so they are ported by
+  making the *helpers* generic, not by editing each intrinsic.
+- **Construct runtime data via fixed constructor templates.** Instead of
+  allocating a fresh code node per constructed value, the arena carries a small
+  set of pre-encoded **templates** — an `OP_CONS` for each `(tag, arity)` shape a
+  return helper needs, an `OP_ATOM` for scalar returns, and the list-cell shape.
+  A constructed value is a `Closing<CodeRef>` pointing at the relevant template
+  offset, with the field values held in a freshly allocated env frame:
+
+  ```
+  cons cell  = Closing(cons_template_off, env{ head, tail })
+  num result = Closing(atom_template_off, env{})   // with the Native in a V-const, or
+             = Closing(scalar_return_off, ...)      // per the chosen scalar convention
+  ```
+
+  Entering the template runs the ordinary `OP_CONS` / `OP_ATOM` handler, which
+  reads the fields from the env — **no per-return code allocation, and no
+  `HeapSyn`**. This preserves "code off the scan set" (§7, §8.3): the only heap
+  objects a return produces are env frames and `Native` payloads, both already
+  scanned as data, never as code.
+- **`evaluate_to_whnf` from a BIF** re-enters the *bytecode* dispatch loop
+  (§6.4), not the HeapSyn one.
+
+This is a bounded refactor concentrated in `intrinsic.rs`, `vm.rs`
+(`HeapNavigator`, `MachineBifContext`), and `support.rs`, plus the template
+table in the encoder/loader. The alternative — letting intrinsic results stay
+`HeapSyn` (a data-only hybrid) — was rejected: it keeps `GcScannable for
+HeapSyn` reachable on the bytecode path, breaking §7 and acceptance §8.3.
 
 ## 6. The parallel bytecode machine
 
@@ -339,20 +438,28 @@ BV2/3/4/5's remit and is not gated here.
 Each phase is independently landable on `integration/0.12.0` and gated by the
 differential harness once it exists.
 
-1. **Encoder + data structures.** `StgSyn/ArenaStgSyn → BytecodeProgram` encoder
-   (port + native-ise the BV0 encoder); `CodeRef`, `BcClosure = Closing<CodeRef>`,
-   `EnvironmentFrame<BcClosure>` (generic instantiation); `BcContinuation`; the
-   constant pool + root registration; `GcScannable` for `BcClosure` /
-   `BcContinuation`. No execution yet.
-2. **Dispatch loop, day11 subset.** Bytecode `run`/`step` + `evaluate_to_whnf`
+1. **Encoder + data structures.** ✅ *Done 2026-07-02.* `StgSyn/ArenaStgSyn →
+   BytecodeProgram` encoder (port + native-ise the BV0 encoder); `CodeRef`,
+   `BcClosure = Closing<CodeRef>`, `EnvironmentFrame<BcClosure>` (generic
+   instantiation); `BcContinuation`; the constant pool + `prepare_constants`;
+   `GcScannable` for `BcClosure` / `BcContinuation`; `BcEnvBuilder` saturation
+   builders. No execution yet. Two design points were settled here: operands are
+   encoded as **atom-offsets** (§4.2 note) and Case tables are **densified** at
+   encode time.
+2. **Intrinsic layer (added 2026-07-02, §5.5).** Parameterise `IntrinsicMachine`
+   / `HeapNavigator` / `support.rs` return helpers over the code type; add
+   constructor templates to the arena. Prerequisite for any `Bif` dispatch, so it
+   precedes the day11 subset. No corpus behaviour change on the HeapSyn path
+   (the generic instantiation must be byte-identical).
+3. **Dispatch loop, day11 subset.** Bytecode `run`/`step` + `evaluate_to_whnf`
    covering the opcode subset day11-p1 exercises; the `pending_bif` capture
    mechanism; the flag; the differential harness. Gate: day11 byte-identical
    through both engines, GC-verified.
-3. **Full opcode coverage.** Remaining opcodes (Meta/DeMeta, LookupLit slow path,
+4. **Full opcode coverage.** Remaining opcodes (Meta/DeMeta, LookupLit slow path,
    IO, capture/render, over-/under-application, all data constructors); prelude
    encoded to bytecode; full harness green through both engines under
    `EU_GC_VERIFY=2`; no corpus regression. This is the acceptance gate (§8).
-4. **Collapse to pure bytecode.** Delete the HeapSyn machine, `HeapSyn`, its
+5. **Collapse to pure bytecode.** Delete the HeapSyn machine, `HeapSyn`, its
    `GcScannable` impls, the `StgSyn → HeapSyn` loader, and the flag; `CodeRef`
    becomes the only code representation. End state: pure bytecode, no scaffolding.
 
@@ -362,6 +469,14 @@ differential harness once it exists.
   (dispatch, continuations, env-builder). Mitigated by the parallel-machine
   structure + differential testing (both engines cross-check on every case) and the
   disposable integration branch.
+- **High — intrinsic-layer scope (discovered 2026-07-02, §5.5).** The original
+  draft assumed the 192 intrinsics were reused for free; in fact the ABI is
+  `SynClosure`-typed and the return helpers synthesise `HeapSyn`. Parameterising
+  the ABI + return helpers over the code type and routing runtime data through
+  constructor templates is real, previously-unscoped work that gates *every*
+  `Bif` (hence day11). Mitigated by keeping the generic instantiation
+  byte-identical on the HeapSyn path (differential testing on the existing
+  engine) and by concentrating the change in `intrinsic.rs`/`vm.rs`/`support.rs`.
 - **Medium — two loops + re-entrancy.** The `evaluate_to_whnf` re-entrant path and
   `MachineBifContext` must be migrated in lockstep with `step`; a subtle divergence
   between the two bytecode loops is a plausible bug class. Differential testing

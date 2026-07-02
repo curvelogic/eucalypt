@@ -2,6 +2,33 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. This is a deep translation of intricate existing code, not greenfield — where a step says "translate `vm.rs:NNN-MMM`", read that arm and port its semantics; the differential harness (Phase 2) is the exact correctness gate for every such translation.
 
+> ## STATUS (revised 2026-07-02)
+>
+> **Phase 0 (scaffolding) and Phase 1 (encoder + core types): COMPLETE** on
+> `integration/0.12.0`, all lib tests green (1198) + `clippy --all-targets`
+> clean. Commits `9cbb2a0c..10176820` (8). Delivered: `src/eval/bytecode/`
+> {`mod`, `opcode`, `program` (incl. a fully-implemented `prepare_constants`,
+> not the stub the plan called for), `encode`, `closure`, `cont`,
+> `env_builder`}; `env.rs` generalised `EnvironmentFrame`'s `StgObject`/
+> `GcScannable` over `C` + added `Closing::set_env` (behaviourally identical on
+> the SynClosure path).
+>
+> **Design decisions settled during Phase 1** (now in spec §4.2 note / §5.5):
+> - **Operand encoding:** args are pre-emitted `OP_ATOM` nodes referenced by
+>   `u32` offset (lazy arg closure = `BcClosure(atom_off, env)`, zero
+>   per-dispatch code alloc; ref recoverable at `atom_off+1`). Encoder rewritten
+>   accordingly (commit `10176820`). Case tables densified at encode time.
+> - **Deferred to later phases:** `create_arg_array`/`_eager`, `partially_apply`
+>   (pap trampoline), `from_let`/`from_letrec` builders — completed when their
+>   dispatch arms are written.
+>
+> **NEW Phase 1.5 (intrinsic layer) inserted before Phase 2.** Implementation
+> review found spec §3's "192 intrinsics reused for free" is wrong: the intrinsic
+> ABI is `SynClosure`-typed and `support.rs` return helpers synthesise `HeapSyn`
+> at runtime. This blocks *every* `Bif` (hence day11) and must be solved before
+> the dispatch loop. See the new Phase 1.5 section and spec §5.5. This is real,
+> previously-unscoped work — expect Phase 1.5 to be comparable in size to Phase 2.
+
 **Goal:** Replace the `HeapSyn` tree-walk execution IR with a native flat-bytecode machine so compiled code leaves the GC-scanned heap, built as a parallel engine behind a flag and cross-checked against the HeapSyn engine by differential testing.
 
 **Architecture:** A new `src/eval/bytecode/` module: an encoder (`StgSyn`/`ArenaStgSyn` → flat `Vec<u8>` + constant pool), a `BytecodeMachine` reusing the existing heap/GC/env/intrinsics/emitter with a `match u8` dispatch loop, closures typed `BcClosure = Closing<CodeRef>` (`CodeRef = u32`), and a parallel `BcContinuation`. Selected by a flag; the HeapSyn machine is deleted in Phase 4 once the full harness passes byte-identically through both engines.
@@ -262,6 +289,56 @@ git commit -m "feat(bytecode): BcEnvBuilder (arg arrays, let/letrec, saturation)
 
 ---
 
+## Phase 1.5 — Intrinsic layer (parameterise ABI + constructor templates)
+
+**Added 2026-07-02.** Prerequisite for any `Bif` dispatch (spec §5.5). The
+intrinsic ABI (`IntrinsicMachine`, `StgIntrinsic::execute`, `HeapNavigator`) and
+the `support.rs` `machine_return_*` helpers are concretely `SynClosure`-typed and
+allocate `HeapSyn` at runtime. Goal: make them code-type-agnostic so a `Bif` in
+the bytecode engine produces/consumes `BcClosure`s, with runtime data built from
+fixed constructor templates in the arena (no runtime code synthesis, no HeapSyn).
+
+**Milestone:** the whole intrinsic layer is generic over the code type; the
+HeapSyn engine still passes the full lib+harness suite **byte-identically** (the
+generic instantiation must be a no-op refactor for `S = RefPtr<HeapSyn>`); the
+bytecode engine has a working `machine_return_*` + navigator producing
+`BcClosure`s over templates. No bytecode execution yet (that is Phase 2).
+
+### Task 1.5.1: Audit the intrinsic coupling surface
+- [ ] Enumerate every `IntrinsicMachine` method and every `support.rs` helper
+  that names `SynClosure`/`EnvFrame`/`HeapSyn`/`HeapNavigator`. Record which
+  construct data (need templates) vs. which only move closures (need only the
+  type parameter). Output: a checklist of call sites.
+
+### Task 1.5.2: Constructor templates in the arena
+- [ ] Extend the encoder/program so the arena carries a fixed template block:
+  an `OP_ATOM` scalar-return template, an `OP_CONS` per `(tag, arity)` shape the
+  return helpers need (unit, block, list cons/nil, bool via global, etc.), and
+  record their offsets in `BytecodeProgram` (e.g. `templates: Templates`).
+- [ ] Unit test: entering a cons template over an env `{head, tail}` returns the
+  expected data tag/fields (once the dispatch loop exists this becomes a
+  differential check; until then assert the encoded template shape).
+
+### Task 1.5.3: Parameterise the ABI over the code type
+- [ ] Make `IntrinsicMachine`, `HeapNavigator`, and `MachineBifContext` generic
+  over `S: Copy` (or add `BcClosure` siblings), so `set_closure`/`nav`/`env`/
+  `evaluate_to_whnf` operate on `Closing<S>`. Keep the HeapSyn engine compiling
+  and byte-identical (`S = RefPtr<HeapSyn>`).
+- [ ] `cargo test --lib` + full harness on the HeapSyn path: **byte-identical**,
+  no regression. This is the gate for the refactor being a no-op on HeapSyn.
+
+### Task 1.5.4: Parameterise `support.rs` return + arg helpers
+- [ ] Make `machine_return_*` and the arg extractors (`num_arg`, `str_arg`, …)
+  generic; data-constructing returns build `Closing<S>` via the templates rather
+  than `view.alloc(HeapSyn::…)`. HeapSyn path stays byte-identical.
+- [ ] Commit per coherent group; keep clippy clean.
+
+**Phase 1.5 gate:** HeapSyn engine byte-identical across lib + full harness; the
+generic intrinsic layer compiles for both `S = RefPtr<HeapSyn>` and
+`S = CodeRef`. Only then start Phase 2.
+
+---
+
 ## Phase 2 — Dispatch loop for the day11 subset + differential harness
 
 **Milestone:** `day11-p1` runs end-to-end through the native bytecode engine and produces **byte-identical** output to the HeapSyn engine, GC-verified. The architecture is proven.
@@ -316,7 +393,7 @@ Implement, one arm per sub-step, each as a **translation** of the named `vm.rs` 
 - [ ] **Step 2: `return_native`/`return_data`/`return_fun`/`update`** — translate `vm.rs:758-1263` for the continuation kinds the subset uses (Branch, Update, ApplyTo, SeqBind, LookupLitForce, CaptureEnd). This is the largest single arm-set; split further if a sub-part builds independently. Commit `feat(bytecode): return_* handlers`.
 - [ ] **Step 3: `App`** — translate `vm.rs:481-526` (arg array via `BcEnvBuilder`, push `ApplyTo`, callable resolution + thunk blackhole/Update). Commit `feat(bytecode): OP_APP arm`.
 - [ ] **Step 4: `DirectApp`** — translate `vm.rs:527-598` (inline smid → annotation, fast-path `saturate_with_array` skipping `ApplyTo`, fallback to App). Commit `feat(bytecode): OP_DIRECT_APP arm`.
-- [ ] **Step 5: `Bif`** — translate `vm.rs:599-605`: decode arg refs, stash via `take_pending_bif_args` slot, set `pending_bif`. Verify the deferred tail in `step` reads the stashed args. Commit `feat(bytecode): OP_BIF arm + deferred dispatch`.
+- [ ] **Step 5: `Bif`** — translate `vm.rs:599-605`: decode arg refs, stash via `take_pending_bif_args` slot, set `pending_bif`. Verify the deferred tail in `step` reads the stashed args and dispatches through the **Phase 1.5** parameterised intrinsic ABI (the intrinsic returns a `BcClosure` via templates). Commit `feat(bytecode): OP_BIF arm + deferred dispatch`.
 - [ ] **Step 6: `Case`** — translate `vm.rs:466-475`: push `Branch { min_tag, branch_table, fallback, env, annotation }`, enter scrutinee. Commit `feat(bytecode): OP_CASE arm`.
 - [ ] **Step 7: `Cons`** — translate the `return_data` production path: entering a `Cons` closure returns the constructor to the top continuation. Commit `feat(bytecode): OP_CONS arm`.
 - [ ] **Step 8: `Let`/`LetRec`** — translate `vm.rs:606-616` via `BcEnvBuilder::from_let/from_letrec`. Commit `feat(bytecode): OP_LET/LETREC arms`.
