@@ -81,9 +81,37 @@
 >   updatable BIF thunk (`PRODUCER_NEXT(handle)` tail) — both synthesis forms.
 >
 > These share one root: the bytecode path cannot yet synthesise *code* at
-> runtime, only *data* (`data_value`/`return_closure_list`). Next step is a
-> design decision on how to add runtime code (encoder-append vs. a small set of
-> pre-encoded apply/thunk templates vs. keeping these few on a HeapSyn shim).
+> runtime, only *data* (`data_value`/`return_closure_list`).
+>
+> **⚠️ ARENA-GROWTH ANALYSIS (owner's concern, 2026-07-02): the code arena
+> (`BytecodeProgram.code`) is off-heap and NEVER GC-collected. Appending a fresh
+> fragment per `load()` call would leak unboundedly (e.g. parsing 1M JSON records
+> in a loop → 1M fragments). SO WE MUST NOT do naive runtime encode-append.
+> Analysis shows almost none of the remaining 19 actually needs unique runtime
+> code:**
+> - **`ParseString` / `TypeToData` value output is pure DATA** (a block/list/
+>   scalar tree — `load()` there materialises a data-literal, no computation).
+>   Build it directly via the neutral `data_value`/`native_value`/
+>   `return_closure_list` ABI on the **GC heap** (collectable). ZERO arena growth.
+>   This is the plan's "value representation" route — preferred over parse-to-
+>   bytecode for these. (TypeToData: verify `type_to_rcexpr` emits only data
+>   constructors, not prelude function applications; if it applies functions,
+>   the SHAPE is bounded by the finite type-DSL grammar → a small fixed template
+>   set, still not per-call-unique.)
+> - **`MergeWith` `f(ov,nv)` and `ProducerNext`'s tail thunk are FIXED-SHAPE
+>   applications** (`App(L0,[L1,L2])`, `AppBif(idx,[L0])`). Pre-encode ONE
+>   template each into the arena at init (exactly like the existing constructor/
+>   PAP templates); at runtime allocate only a **GC-heap env frame** `[f,ov,nv]`
+>   / `[handle]` over the fixed template. ZERO per-call arena growth.
+> - **Genuinely-dynamic unique code** (arbitrary runtime-varying computation) is
+>   the ONLY case that would need arena append — and none of the remaining 19
+>   clearly requires it. If one does, bound it (dedup/cache by content, or cap)
+>   and `log()` the cap; never append unboundedly.
+>
+> **Conclusion: build NO general runtime encoder. Use (a) neutral data
+> construction for data-literal `load()`, and (b) a small fixed set of pre-
+> encoded apply/thunk templates for the fixed-shape thunks. Arena stays bounded
+> and the GC still owns all per-call allocation.**
 >
 > **Follow-up filed:** `__DBG` fires a different #times on stderr per engine
 > (thunk-update difference, not render) — see beads eu-… .
