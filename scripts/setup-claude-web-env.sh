@@ -147,8 +147,11 @@ install_eucalypt() {
     if command -v eu >/dev/null 2>&1 && eu version 2>/dev/null | grep -qE "v${EUCALYPT_VERSION}([^0-9]|$)"; then
         echo "eu $EUCALYPT_VERSION already present"
     else
-        EUCALYPT_VERSION="$EUCALYPT_VERSION" \
-            curl -sSfL https://raw.githubusercontent.com/curvelogic/eucalypt/master/install.sh | sh
+        # The version must be exported so the piped `sh` (which runs install.sh)
+        # inherits it; a prefix on `curl` would only set it for curl, leaving
+        # install.sh to resolve "latest" via the GitHub API (which 403s here).
+        export EUCALYPT_VERSION
+        curl -sSfL https://raw.githubusercontent.com/curvelogic/eucalypt/master/install.sh | sh
     fi
     command -v eu >/dev/null 2>&1 && eu version || echo "WARNING: eu not on PATH"
 }
