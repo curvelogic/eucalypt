@@ -30,7 +30,7 @@ use crate::eval::memory::collect::{
 use crate::eval::memory::heap::Heap;
 use crate::eval::memory::infotable::{InfoTable, InfoTagged};
 use crate::eval::memory::mutator::MutatorHeapView;
-use crate::eval::memory::symbol::SymbolPool;
+use crate::eval::memory::symbol::{SymbolId, SymbolPool};
 use crate::eval::memory::syntax::{Native, Ref, RefPtr};
 use crate::eval::stg::tags::{DataConstructor, Tag};
 
@@ -418,9 +418,126 @@ fn env_from_data_args_copy(
 /// The block-application (`ApplyTo` → `MERGE`) and `LookupLitForce`
 /// block-lookup paths need the globals frame + a bytecode block navigator
 /// and are wired with the full machine loop; they error explicitly here.
+/// Decode a data-constructor closure's `OP_CONS` node into `(tag, arg
+/// offsets)`; the fields live in `c.env()`. `None` if `c` is not a `Cons`.
+fn decode_cons(prog: &BytecodeProgram, c: &BcClosure) -> Option<(Tag, Vec<CodeRef>)> {
+    let code = prog.code.as_slice();
+    let mut pc = c.code() as usize;
+    if Op::from_u8(read_u8(code, &mut pc)) != Some(Op::Cons) {
+        return None;
+    }
+    let tag = read_u8(code, &mut pc);
+    let offsets = read_arg_offsets(code, &mut pc);
+    Some((tag, offsets))
+}
+
+/// Resolve a runtime value to an interned symbol id, following `OP_ATOM`
+/// indirections and unwrapping a `BoxedSymbol` (the bytecode analogue of
+/// `block::pair_key_symbol_id`'s key resolution).
+fn value_symbol(
+    prog: &BytecodeProgram,
+    state: &BcMachineState,
+    view: MutatorHeapView<'_>,
+    value: BcValue,
+) -> Option<SymbolId> {
+    match value {
+        BcValue::Native(Native::Sym(id)) => Some(id),
+        BcValue::Native(_) => None,
+        BcValue::Closure(c) => {
+            let code = prog.code.as_slice();
+            let mut pc = c.code() as usize;
+            match Op::from_u8(read_u8(code, &mut pc)) {
+                Some(Op::Atom) => {
+                    let dref = read_ref(code, &mut pc).ok()?;
+                    let inner =
+                        resolve_ref(view, &state.constants, c.env(), state.globals, dref).ok()?;
+                    value_symbol(prog, state, view, inner)
+                }
+                Some(Op::Cons) => {
+                    let tag = read_u8(code, &mut pc);
+                    if tag != DataConstructor::BoxedSymbol.tag() {
+                        return None;
+                    }
+                    let offsets = read_arg_offsets(code, &mut pc);
+                    let field_ref = arg_ref(code, *offsets.first()?).ok()?;
+                    let field =
+                        resolve_ref(view, &state.constants, c.env(), state.globals, field_ref)
+                            .ok()?;
+                    value_symbol(prog, state, view, field)
+                }
+                _ => None,
+            }
+        }
+    }
+}
+
+/// The interned symbol key of a `BlockPair` value, if it is one.
+fn pair_key_symbol(
+    prog: &BytecodeProgram,
+    state: &BcMachineState,
+    view: MutatorHeapView<'_>,
+    pair: &BcValue,
+) -> Option<SymbolId> {
+    let BcValue::Closure(c) = pair else {
+        return None;
+    };
+    let (tag, offsets) = decode_cons(prog, c)?;
+    if tag != DataConstructor::BlockPair.tag() {
+        return None;
+    }
+    let key_ref = arg_ref(prog.code.as_slice(), *offsets.first()?).ok()?;
+    let key = resolve_ref(view, &state.constants, c.env(), state.globals, key_ref).ok()?;
+    value_symbol(prog, state, view, key)
+}
+
+/// Literal-key lookup on a forced block (`DataConstructor::Block`). Linear
+/// scan of the entry list of `BlockPair`s (the perf index is skipped — a
+/// linear scan yields the identical result). `None` on miss / non-block.
+/// Translated from `block::lookup_lit_in_block` + `linear_scan_for_key`.
+fn bc_lookup_in_block(
+    prog: &BytecodeProgram,
+    state: &BcMachineState,
+    view: MutatorHeapView<'_>,
+    block: &BcClosure,
+    target: SymbolId,
+) -> Option<BcValue> {
+    let (tag, offsets) = decode_cons(prog, block)?;
+    if tag != DataConstructor::Block.tag() {
+        return None;
+    }
+    // Block args are [entry-list, index]; ignore the index and scan the list.
+    let list_ref = arg_ref(prog.code.as_slice(), *offsets.first()?).ok()?;
+    let mut current =
+        resolve_ref(view, &state.constants, block.env(), state.globals, list_ref).ok()?;
+    loop {
+        let c = match &current {
+            BcValue::Closure(c) => *c,
+            BcValue::Native(_) => return None,
+        };
+        let (ltag, loffs) = decode_cons(prog, &c)?;
+        if ltag != DataConstructor::ListCons.tag() {
+            // ListNil or anything else: key not present.
+            return None;
+        }
+        let head_ref = arg_ref(prog.code.as_slice(), *loffs.first()?).ok()?;
+        let pair = resolve_ref(view, &state.constants, c.env(), state.globals, head_ref).ok()?;
+        if pair_key_symbol(prog, state, view, &pair) == Some(target) {
+            let BcValue::Closure(pc) = &pair else {
+                return None;
+            };
+            let (_, poffs) = decode_cons(prog, pc)?;
+            let val_ref = arg_ref(prog.code.as_slice(), *poffs.get(1)?).ok()?;
+            return resolve_ref(view, &state.constants, pc.env(), state.globals, val_ref).ok();
+        }
+        let tail_ref = arg_ref(prog.code.as_slice(), *loffs.get(1)?).ok()?;
+        current = resolve_ref(view, &state.constants, c.env(), state.globals, tail_ref).ok()?;
+    }
+}
+
 pub fn return_data(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
+    prog: &BytecodeProgram,
     tag: Tag,
     args: &[DecodedRef],
 ) -> Result<(), ExecutionError> {
@@ -503,11 +620,34 @@ pub fn return_data(
             state.current = BcValue::Closure(BcClosure::new(body, environment));
             state.annotation = annotation;
         }
-        BcContinuation::LookupLitForce { .. } => {
-            return Err(ExecutionError::Panic(
-                state.annotation,
-                "bytecode: LookupLitForce block lookup not yet implemented".to_string(),
-            ));
+        BcContinuation::LookupLitForce {
+            key,
+            smid,
+            default_closure,
+        } => {
+            // The forced value has arrived. If it is a block, perform the
+            // deferred key lookup; otherwise it is a type error.
+            if tag == DataConstructor::Block.tag() {
+                let block = *state.current.as_closure().ok_or_else(|| {
+                    ExecutionError::Panic(
+                        state.annotation,
+                        "bytecode: LookupLitForce block is not a closure".to_string(),
+                    )
+                })?;
+                state.current = bc_lookup_in_block(prog, state, view, &block, key)
+                    .unwrap_or(BcValue::Closure(default_closure));
+            } else {
+                let ann = if smid.is_valid() {
+                    smid
+                } else {
+                    state.annotation
+                };
+                return Err(ExecutionError::NoBranchForDataTag(
+                    ann,
+                    tag,
+                    vec![DataConstructor::Block.tag()],
+                ));
+            }
         }
         BcContinuation::CaptureEnd => {
             state.capture_end_pending = true;
@@ -954,7 +1094,7 @@ pub fn handle_op(
                 .iter()
                 .map(|off| arg_ref(code, *off))
                 .collect::<Result<_, _>>()?;
-            return_data(state, view, tag, &arg_refs)?;
+            return_data(state, view, prog, tag, &arg_refs)?;
         }
         Op::Case => {
             let scr_off = read_u32(code, &mut pc);
@@ -1136,10 +1276,87 @@ pub fn handle_op(
             state.current = BcValue::Closure(BcClosure::new(scr_off, env));
         }
         Op::LookupLit => {
-            return Err(ExecutionError::Panic(
-                state.annotation,
-                "bytecode: opcode LookupLit not yet implemented".to_string(),
-            ));
+            let smid = Smid::from(read_u32(code, &mut pc));
+            let key = read_ref(code, &mut pc)?;
+            let obj = read_ref(code, &mut pc)?;
+            let default_off = read_u32(code, &mut pc);
+            state.annotation = smid;
+
+            // The key is always a `V`-const symbol.
+            let sym_id = match key {
+                DecodedRef::Value(k) => match state.constants.get(k as usize) {
+                    Some(Ref::V(Native::Sym(id))) => *id,
+                    _ => {
+                        return Err(ExecutionError::NotValue(
+                            smid,
+                            "non-symbol key in LookupLit".to_string(),
+                        ))
+                    }
+                },
+                _ => {
+                    return Err(ExecutionError::NotValue(
+                        smid,
+                        "non-symbol key in LookupLit".to_string(),
+                    ))
+                }
+            };
+
+            // The default is pre-encoded as an atom; wrap it as a closure.
+            let default_closure = BcClosure::new(default_off, env);
+
+            // Resolve the object (a local or global) to a closure.
+            let (obj_slot, obj_value) = match obj {
+                DecodedRef::Local(i) => (
+                    Some(i as usize),
+                    view.scoped(env)
+                        .get(&view, i as usize)
+                        .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?,
+                ),
+                DecodedRef::Global(i) => (
+                    None,
+                    view.scoped(state.globals)
+                        .get(&view, i as usize)
+                        .ok_or(ExecutionError::BadGlobalIndex(i as usize))?,
+                ),
+                DecodedRef::Value(_) => {
+                    return Err(ExecutionError::NotCallable(
+                        smid,
+                        "native value".to_string(),
+                    ))
+                }
+            };
+            let BcValue::Closure(obj_closure) = obj_value else {
+                return Err(ExecutionError::NotCallable(
+                    smid,
+                    "native value".to_string(),
+                ));
+            };
+
+            // Fast path: the object is already a WHNF block — look up now.
+            let is_block = decode_cons(prog, &obj_closure)
+                .is_some_and(|(t, _)| t == DataConstructor::Block.tag());
+            if is_block {
+                state.current = bc_lookup_in_block(prog, state, view, &obj_closure, sym_id)
+                    .unwrap_or(BcValue::Closure(default_closure));
+            } else {
+                // Slow path: force the object, then do the lookup in the
+                // LookupLitForce continuation.
+                state.stack.push(BcContinuation::LookupLitForce {
+                    key: sym_id,
+                    smid,
+                    default_closure,
+                });
+                // Black-hole + Update if the object is a local thunk.
+                if let (Some(i), true) = (obj_slot, obj_closure.update()) {
+                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, env));
+                    view.scoped(env).update(&view, i, hole)?;
+                    state.stack.push(BcContinuation::Update {
+                        environment: env,
+                        index: i,
+                    });
+                }
+                state.current = BcValue::Closure(obj_closure);
+            }
         }
     }
     Ok(())
@@ -2043,7 +2260,14 @@ mod tests {
             annotation: Default::default(),
         });
 
-        return_data(&mut state, view, 7, &[DecodedRef::Local(0)]).unwrap();
+        return_data(
+            &mut state,
+            view,
+            &BytecodeProgram::default(),
+            7,
+            &[DecodedRef::Local(0)],
+        )
+        .unwrap();
 
         let c = state.current.as_closure().unwrap();
         assert_eq!(c.code(), 42);
@@ -2075,7 +2299,7 @@ mod tests {
             annotation: Default::default(),
         });
         // Return tag 6 (no branch, no fallback).
-        let err = return_data(&mut state, view, 6, &[]);
+        let err = return_data(&mut state, view, &BytecodeProgram::default(), 6, &[]);
         assert!(matches!(err, Err(ExecutionError::NoBranchForDataTag(..))));
     }
 
