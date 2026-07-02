@@ -2,8 +2,18 @@
 # setup-claude-web-env.sh - Provision a Claude Code remote dev environment.
 #
 # This script exists solely to bootstrap Claude Code on the web (remote dev
-# environment) sessions for this repo. Point the environment's startup/setup
-# command at it. It is safe to re-run: every step is idempotent.
+# environment) sessions for this repo. It is safe to re-run: every step is
+# idempotent.
+#
+# The environment's setup phase does NOT run in the repo checkout directory, so
+# a repo-relative path (bash scripts/setup-claude-web-env.sh) fails with
+# exit 127. Set the environment's setup command to fetch and pipe this script,
+# which is working-directory-independent:
+#
+#   curl -fsSL https://raw.githubusercontent.com/curvelogic/eucalypt/master/scripts/setup-claude-web-env.sh | bash
+#
+# It is also safe to run as a file from anywhere: the repo (for the beads sync
+# step) is located independently of the caller's working directory.
 #
 # Installs:
 #   - eucalypt (eu)   the project binary          -> ~/.local/bin/eu
@@ -31,12 +41,26 @@ BEADS_SYNC="${BEADS_SYNC:-1}"
 LOCAL_BIN="$HOME/.local/bin"
 mkdir -p "$LOCAL_BIN"
 
-# Run from the repo root regardless of the caller's working directory, so the
-# beads sync step finds .beads. The script lives in <repo>/scripts/.
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_ROOT"
-
 log() { printf '\n=== %s ===\n' "$*"; }
+
+# Locate the eucalypt checkout (the dir containing .beads) for the sync step.
+# Works whether this script is run as a file or piped via `curl ... | bash`
+# (in which case BASH_SOURCE is unset, hence the ${..:-} guard under `set -u`).
+find_repo_root() {
+    local src="${BASH_SOURCE[0]:-}"
+    if [ -n "$src" ] && [ -f "$src" ]; then
+        local d; d="$(cd "$(dirname "$src")/.." && pwd)"
+        [ -d "$d/.beads" ] && { printf '%s\n' "$d"; return 0; }
+    fi
+    local cand
+    for cand in /home/user/eucalypt "$HOME/eucalypt" "$PWD"; do
+        [ -d "$cand/.beads" ] && { printf '%s\n' "$cand"; return 0; }
+    done
+    local hit
+    hit="$(find /home /root /workspace -maxdepth 4 -type d -name .beads 2>/dev/null | head -1)"
+    [ -n "$hit" ] && { dirname "$hit"; return 0; }
+    return 1
+}
 
 # Ensure ~/.local/bin is on PATH for this process and for later shells.
 ensure_path() {
@@ -136,12 +160,17 @@ sync_beads() {
     [ "$BEADS_SYNC" = "1" ] || return 0
     command -v bd >/dev/null 2>&1 || return 0
     command -v dolt >/dev/null 2>&1 || return 0
-    [ -d .beads ] || return 0
 
-    log "Syncing beads store"
-    chmod 700 .beads 2>/dev/null || true
+    local repo
+    if ! repo="$(find_repo_root)"; then
+        echo "Skipping beads sync: could not locate a .beads checkout."
+        return 0
+    fi
+
+    log "Syncing beads store ($repo)"
+    chmod 700 "$repo/.beads" 2>/dev/null || true
     # Non-fatal: git-ssh sync may be unavailable at provision time.
-    bd sync || echo "WARNING: 'bd sync' failed (network/git access?); run it later."
+    ( cd "$repo" && bd sync ) || echo "WARNING: 'bd sync' failed (network/git access?); run it later."
 }
 
 main() {
