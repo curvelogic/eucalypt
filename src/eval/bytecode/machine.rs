@@ -9,11 +9,18 @@
 //! reference resolution used by every dispatch arm.
 
 use std::cmp::Ordering;
+use std::num::NonZeroUsize;
+
+use lru::LruCache;
+use regex::Regex;
 
 use crate::common::sourcemap::Smid;
+use crate::eval::emit::Emitter;
 use crate::eval::error::ExecutionError;
+use crate::eval::machine::env::{EnvFrame, SynClosure};
+use crate::eval::machine::intrinsic::{IntrinsicMachine, StgIntrinsic};
 use crate::eval::machine::metrics::{Clock, Metrics, ThreadOccupation};
-use crate::eval::machine::vm::interrupted;
+use crate::eval::machine::vm::{interrupted, HeapNavigator};
 use crate::eval::memory::alloc::ScopedAllocator;
 use crate::eval::memory::array::Array;
 use crate::eval::memory::collect::{
@@ -1072,26 +1079,41 @@ pub fn step(
 /// and drives the `step` dispatch loop with periodic GC (spec §6). The
 /// parallel-engine counterpart to the HeapSyn `Machine`.
 ///
-/// This increment runs self-contained programs (no globals/prelude, no `Bif`
-/// dispatch); intrinsic dispatch, the globals frame and the emitter/capture
-/// lifecycle are wired in the following increments.
-pub struct BytecodeMachine {
+/// Intrinsic (`Bif`) dispatch runs through a neutral [`BcBifContext`]. The
+/// emitter/capture lifecycle and re-entrant `evaluate_to_whnf` are wired in
+/// following increments; intrinsics that reach those (or the HeapSyn-typed
+/// ABI methods) surface via the differential harness for migration.
+pub struct BytecodeMachine<'a> {
     heap: Heap,
     program: BytecodeProgram,
     state: BcMachineState,
     metrics: Metrics,
     clock: Clock,
     dump_heap: bool,
+    /// Symbol pool (interned symbols), shared with intrinsic dispatch.
+    symbol_pool: SymbolPool,
+    /// Regex cache used by string intrinsics.
+    rcache: LruCache<String, Regex>,
+    /// Whether `__EXPECT` failures return `false` rather than panicking.
+    test_mode: bool,
+    /// Intrinsic implementations, indexed by intrinsic index (spec §6.3).
+    intrinsics: Vec<&'a dyn StgIntrinsic>,
+    /// Output emitter.
+    emitter: Box<dyn Emitter + 'a>,
 }
 
-impl BytecodeMachine {
+impl<'a> BytecodeMachine<'a> {
     /// Build a machine for an encoded program rooted at `root_off`. A
-    /// `heap_limit_mib` of 0 means an unbounded managed heap.
+    /// `heap_limit_mib` of 0 means an unbounded managed heap. `intrinsics`
+    /// must be indexed by intrinsic index (e.g. `runtime.intrinsics()`).
     pub fn new(
         program: BytecodeProgram,
         root_off: CodeRef,
         global_forms: &[GlobalForm],
+        intrinsics: Vec<&'a dyn StgIntrinsic>,
+        emitter: Box<dyn Emitter + 'a>,
         heap_limit_mib: usize,
+        test_mode: bool,
     ) -> Result<Self, ExecutionError> {
         let heap = if heap_limit_mib == 0 {
             Heap::new()
@@ -1137,6 +1159,13 @@ impl BytecodeMachine {
             metrics: Metrics::default(),
             clock: Clock::default(),
             dump_heap: false,
+            symbol_pool: pool,
+            rcache: LruCache::new(
+                NonZeroUsize::new(100).expect("regex cache size must be non-zero"),
+            ),
+            test_mode,
+            intrinsics,
+            emitter,
         })
     }
 
@@ -1184,18 +1213,47 @@ impl BytecodeMachine {
         Ok(self.exit_code())
     }
 
-    /// One dispatch step over the shared machine state (the free `step`).
+    /// One dispatch step over the shared machine state (the free `step`),
+    /// followed by the deferred `Bif` dispatch tail (spec §6.3): when the
+    /// `Bif` arm captured an intrinsic, run it through a [`BcBifContext`].
     fn dispatch(&mut self) -> Result<(), ExecutionError> {
         self.metrics.tick();
-        let view = MutatorHeapView::new(&self.heap);
-        step(&mut self.state, view, &self.program)?;
-        // Bif dispatch is wired in the next increment; until then a captured
-        // pending BIF is an explicit error rather than a silent no-op.
-        if self.state.pending_bif.take().is_some() {
-            return Err(ExecutionError::Panic(
-                self.state.annotation,
-                "bytecode: Bif dispatch not yet wired (needs globals + intrinsics)".to_string(),
-            ));
+        {
+            let view = MutatorHeapView::new(&self.heap);
+            step(&mut self.state, view, &self.program)?;
+        }
+
+        if let Some(idx) = self.state.pending_bif.take() {
+            // Materialise the captured arg refs. There is no live code node to
+            // re-read (unlike HeapSyn), so we translate the decoded refs back
+            // into `Ref`s the intrinsic ABI understands.
+            let args: Vec<Ref> = std::mem::take(&mut self.state.pending_bif_args)
+                .iter()
+                .map(|d| match *d {
+                    DecodedRef::Local(i) => Ref::L(i as usize),
+                    DecodedRef::Global(i) => Ref::G(i as usize),
+                    DecodedRef::Value(k) => self.state.constants[k as usize].clone(),
+                })
+                .collect();
+            // The Bif closure is still `current`; its env holds the (strict,
+            // pre-evaluated) args that `Ref::L` operands index into.
+            let env = self
+                .state
+                .current
+                .as_closure()
+                .map(|c| c.env())
+                .unwrap_or(self.state.root_env);
+            let bif = self.intrinsics[idx as usize];
+            let view = MutatorHeapView::new(&self.heap);
+            let mut ctx = BcBifContext {
+                state: &mut self.state,
+                program: &self.program,
+                symbol_pool: &mut self.symbol_pool,
+                rcache: &mut self.rcache,
+                test_mode: self.test_mode,
+                env,
+            };
+            bif.execute(&mut ctx, view, self.emitter.as_mut(), &args)?;
         }
         Ok(())
     }
@@ -1234,13 +1292,182 @@ impl BytecodeMachine {
     }
 }
 
+/// The `IntrinsicMachine` implementation for the bytecode engine (spec §5.5).
+///
+/// It overrides the neutral, code-type-agnostic ABI methods to operate over
+/// `BcValue`s (resolving refs against the Bif closure's env / the globals
+/// frame / the constant pool, and returning results by mutating the machine
+/// `current`). The HeapSyn-typed methods (`nav`/`set_closure`/`root_env`/
+/// `env`/`evaluate_to_whnf`) are unreachable on this path and panic; an
+/// intrinsic still using them (or the not-yet-wired capture lifecycle)
+/// surfaces via the differential harness for migration.
+struct BcBifContext<'ctx> {
+    state: &'ctx mut BcMachineState,
+    program: &'ctx BytecodeProgram,
+    symbol_pool: &'ctx mut SymbolPool,
+    rcache: &'ctx mut LruCache<String, Regex>,
+    test_mode: bool,
+    /// Environment of the Bif closure (indexed by `Ref::L` arg operands).
+    env: RefPtr<BcEnvFrame>,
+}
+
+impl BcBifContext<'_> {
+    /// Resolve a runtime value to a native, following `OP_ATOM` indirections
+    /// (the bytecode analogue of `HeapNavigator::resolve_native`).
+    fn native_from_value(
+        &self,
+        view: MutatorHeapView<'_>,
+        value: BcValue,
+    ) -> Result<Native, ExecutionError> {
+        match value {
+            BcValue::Native(n) => Ok(n),
+            BcValue::Closure(c) => {
+                let code = self.program.code.as_slice();
+                let mut pc = c.code() as usize;
+                if Op::from_u8(read_u8(code, &mut pc)) == Some(Op::Atom) {
+                    let dref = read_ref(code, &mut pc)?;
+                    let inner = resolve_ref(
+                        view,
+                        &self.state.constants,
+                        c.env(),
+                        self.state.globals,
+                        dref,
+                    )?;
+                    self.native_from_value(view, inner)
+                } else {
+                    Err(ExecutionError::NotValue(
+                        self.state.annotation,
+                        "expected a native value".to_string(),
+                    ))
+                }
+            }
+        }
+    }
+}
+
+impl IntrinsicMachine for BcBifContext<'_> {
+    fn rcache(&mut self) -> &mut LruCache<String, Regex> {
+        self.rcache
+    }
+
+    fn symbol_pool(&self) -> &SymbolPool {
+        self.symbol_pool
+    }
+
+    fn symbol_pool_mut(&mut self) -> &mut SymbolPool {
+        self.symbol_pool
+    }
+
+    fn annotation(&self) -> Smid {
+        self.state.annotation
+    }
+
+    fn test_mode(&self) -> bool {
+        self.test_mode
+    }
+
+    // ── HeapSyn-typed methods: unreachable on the bytecode path ──────
+    // These name `SynClosure`/`EnvFrame`, which the bytecode engine never
+    // produces. An intrinsic reaching one has not been migrated to the
+    // neutral ABI and is caught by the differential harness.
+
+    fn set_closure(&mut self, _closure: SynClosure) -> Result<(), ExecutionError> {
+        panic!("bytecode BifContext: set_closure(SynClosure) — intrinsic uses the HeapSyn ABI")
+    }
+
+    fn nav<'guard>(&'guard self, _view: MutatorHeapView<'guard>) -> HeapNavigator<'guard> {
+        panic!("bytecode BifContext: nav — intrinsic uses the HeapSyn ABI")
+    }
+
+    fn root_env(&self) -> RefPtr<EnvFrame> {
+        panic!("bytecode BifContext: root_env — intrinsic uses the HeapSyn ABI")
+    }
+
+    fn env(&self, _view: MutatorHeapView) -> RefPtr<EnvFrame> {
+        panic!("bytecode BifContext: env — intrinsic uses the HeapSyn ABI")
+    }
+
+    // ── Emitter capture lifecycle: not yet wired ────────────────────
+
+    fn start_capture(&mut self, _format: &str) -> Result<(), ExecutionError> {
+        Err(ExecutionError::Panic(
+            self.state.annotation,
+            "bytecode: emit capture not yet wired".to_string(),
+        ))
+    }
+
+    fn push_capture_end(&mut self, _view: MutatorHeapView<'_>) -> Result<(), ExecutionError> {
+        Err(ExecutionError::Panic(
+            self.state.annotation,
+            "bytecode: emit capture not yet wired".to_string(),
+        ))
+    }
+
+    fn take_capture_result(&mut self) -> Result<String, ExecutionError> {
+        Err(ExecutionError::Panic(
+            self.state.annotation,
+            "bytecode: emit capture not yet wired".to_string(),
+        ))
+    }
+
+    // ── Neutral ABI over `BcValue` (spec §5.5) ──────────────────────
+
+    fn resolve_native(
+        &self,
+        view: MutatorHeapView<'_>,
+        arg: &Ref,
+    ) -> Result<Native, ExecutionError> {
+        let value = match arg {
+            Ref::V(n) => return Ok(n.clone()),
+            Ref::L(i) => view
+                .scoped(self.env)
+                .get(&view, *i)
+                .ok_or(ExecutionError::BadEnvironmentIndex(*i))?,
+            Ref::G(i) => view
+                .scoped(self.state.globals)
+                .get(&view, *i)
+                .ok_or(ExecutionError::BadGlobalIndex(*i))?,
+        };
+        self.native_from_value(view, value)
+    }
+
+    fn return_native(
+        &mut self,
+        _view: MutatorHeapView<'_>,
+        native: Native,
+    ) -> Result<(), ExecutionError> {
+        self.state.current = BcValue::Native(native);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::eval::bytecode::{encode, BcClosure, BcEnvBuilder};
+    use crate::eval::emit::NullEmitter;
     use crate::eval::memory::alloc::ScopedAllocator;
     use crate::eval::memory::heap::Heap;
     use crate::eval::stg::syntax::dsl;
+
+    /// A machine with no intrinsics and a null emitter (self-contained
+    /// programs).
+    fn bare_machine(
+        program: BytecodeProgram,
+        root_off: CodeRef,
+        global_forms: &[GlobalForm],
+    ) -> BytecodeMachine<'static> {
+        BytecodeMachine::new(
+            program,
+            root_off,
+            global_forms,
+            Vec::new(),
+            Box::new(NullEmitter),
+            0,
+            false,
+        )
+        .unwrap()
+    }
 
     #[test]
     fn read_ref_decodes_tags() {
@@ -1639,14 +1866,14 @@ mod tests {
     fn machine_runs_atom_to_exit_code() {
         // A numeric top-level result becomes the process exit code.
         let (prog, root, gforms) = encode(&dsl::atom(dsl::num(0)), &[]);
-        let mut m = BytecodeMachine::new(prog, root, &gforms, 0).unwrap();
+        let mut m = bare_machine(prog, root, &gforms);
         assert_eq!(m.run(Some(10_000)).unwrap(), Some(0));
     }
 
     #[test]
     fn machine_returns_numeric_exit_code() {
         let (prog, root, gforms) = encode(&dsl::atom(dsl::num(5)), &[]);
-        let mut m = BytecodeMachine::new(prog, root, &gforms, 0).unwrap();
+        let mut m = bare_machine(prog, root, &gforms);
         assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
     }
 
@@ -1656,7 +1883,7 @@ mod tests {
         // env frame: the machine's root set must keep the frame live.
         let syn = dsl::let_(vec![dsl::value(dsl::atom(dsl::num(5)))], dsl::local(0));
         let (prog, root, gforms) = encode(&syn, &[]);
-        let mut m = BytecodeMachine::new(prog, root, &gforms, 0).unwrap();
+        let mut m = bare_machine(prog, root, &gforms);
         m.dispatch().unwrap(); // execute the Let (allocates the env frame)
         m.gc_now(); // roots must survive
         assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
@@ -1668,7 +1895,51 @@ mod tests {
         let globals = vec![dsl::lambda(1, dsl::local(0))];
         let root = dsl::app(dsl::gref(0), vec![dsl::num(7)]);
         let (prog, root_off, gforms) = encode(&root, &globals);
-        let mut m = BytecodeMachine::new(prog, root_off, &gforms, 0).unwrap();
+        let mut m = bare_machine(prog, root_off, &gforms);
         assert_eq!(m.run(Some(10_000)).unwrap(), Some(7));
+    }
+
+    #[test]
+    fn machine_dispatches_add_intrinsic() {
+        // A bare `__ADD(2, 3)` Bif node dispatched through BcBifContext -> 5.
+        use crate::common::sourcemap::SourceMap;
+        use crate::eval::intrinsics;
+        use crate::eval::stg::{make_standard_runtime, runtime::Runtime};
+
+        let mut source_map = SourceMap::new();
+        let runtime = make_standard_runtime(&mut source_map);
+        let intrinsics = runtime.intrinsics();
+        let add = intrinsics::index("ADD").expect("ADD intrinsic") as u8;
+
+        let syn = dsl::app_bif(add, vec![dsl::num(2), dsl::num(3)]);
+        let (prog, root, _gforms) = encode(&syn, &[]);
+        let mut m =
+            BytecodeMachine::new(prog, root, &[], intrinsics, Box::new(NullEmitter), 0, false)
+                .unwrap();
+        assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
+    }
+
+    #[test]
+    fn machine_dispatches_add_with_local_arg() {
+        // let x = 2 in __ADD(x, 3) — exercises resolve_native's L-ref path
+        // (env slot -> OP_ATOM indirection -> native) in BcBifContext.
+        use crate::common::sourcemap::SourceMap;
+        use crate::eval::intrinsics;
+        use crate::eval::stg::{make_standard_runtime, runtime::Runtime};
+
+        let mut source_map = SourceMap::new();
+        let runtime = make_standard_runtime(&mut source_map);
+        let intrinsics = runtime.intrinsics();
+        let add = intrinsics::index("ADD").expect("ADD intrinsic") as u8;
+
+        let syn = dsl::let_(
+            vec![dsl::value(dsl::atom(dsl::num(2)))],
+            dsl::app_bif(add, vec![dsl::lref(0), dsl::num(3)]),
+        );
+        let (prog, root, _gforms) = encode(&syn, &[]);
+        let mut m =
+            BytecodeMachine::new(prog, root, &[], intrinsics, Box::new(NullEmitter), 0, false)
+                .unwrap();
+        assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
     }
 }
