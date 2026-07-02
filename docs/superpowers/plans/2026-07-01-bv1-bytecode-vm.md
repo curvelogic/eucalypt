@@ -55,13 +55,24 @@
   - block `Merge`/`MergeWith` **bridged** with `as_heap()` — compile + HeapSyn
     byte-identical; bytecode block-merge deferred (downstream needs list-builder
     templates).
-- **HARD cases remaining (runtime code synthesis — need list/data-builder
-  templates or redesign):** `machine_return_closure_list`/`machine_return_*_list`
-  + `machine_return_block_pair_closure_list` (support/block list construction),
-  `SetToList`, typedata.rs builders, `parse_string.rs` (`load()` builds HeapSyn
-  at runtime). block.rs (still ~25 sites: inspectors migratable like the
-  predicates; builders hard). debug.rs (20) + assert.rs `format_ref` are
-  diagnostic-only (migrate last).
+  - **List-builder templates DONE**: three neutral primitives added to
+    `IntrinsicMachine` — `native_value` (wrap a native), `data_value` (build a
+    data cell from field handles), `return_closure_list` (set result to a
+    cons-list) — each with a HeapSyn default + `BcBifContext` override (bytecode
+    builds via `build_data` over the constructor templates; no runtime code
+    synthesis). `machine_return_{num,str,closure}_list` rewritten on them.
+    **List-returning intrinsics now run on bytecode.** Differential test
+    `agree_on_rendered_split_list` (`RENDER_DOC(__SPLIT("hi",""))` → `["hi"]`,
+    byte-identical).
+- **HARD cases remaining (still runtime code synthesis / SynClosure-typed):**
+  `machine_return_block_pair_closure_list` + block `Merge`/`MergeWith`
+  `deconstruct` (needs neutral block-pair build + key extraction), `SetToList`
+  (uses `data_value`-able boxing but still `set_closure(synth)`), typedata.rs
+  builders, `parse_string.rs` (`load()` builds HeapSyn at runtime → needs
+  parse-to-bytecode or a value representation). block.rs (~25 inspector sites
+  migratable like the predicates). debug.rs (20) + assert.rs `format_ref`
+  diagnostic-only (migrate last). Many builders can now be rebuilt on
+  `data_value`/`native_value`/`return_closure_list`.
 
 
 **Position (2026-07-02, later):** Phases 0, 1, 1.6 complete; Phase 1.5
