@@ -1242,6 +1242,36 @@ fn enter_local(
     Ok(())
 }
 
+/// Enter a global slot, black-holing it and pushing an `Update` continuation
+/// if it is a thunk. Mirrors [`enter_local`] but targets the shared, long-lived
+/// globals frame, so a prelude global (stored in the blob as an arity-0
+/// updatable thunk) is memoised — computed once and shared by every reference
+/// rather than recomputed each time. Restoring this global-thunk sharing is the
+/// BV5 blob perf fix (eu-fhoo); without it the blob path re-allocates every
+/// prelude combinator/CAF for ~5.6× the allocation of the source pipeline.
+fn enter_global(
+    state: &mut BcMachineState,
+    view: MutatorHeapView<'_>,
+    i: usize,
+) -> Result<(), ExecutionError> {
+    let v = view
+        .scoped(state.globals)
+        .get(&view, i)
+        .ok_or(ExecutionError::BadGlobalIndex(i))?;
+    if let BcValue::Closure(c) = v {
+        if c.update() {
+            let hole = BcValue::Closure(BcClosure::new(state.blackhole, state.globals));
+            view.scoped(state.globals).update(&view, i, hole)?;
+            state.stack.push(BcContinuation::Update {
+                environment: state.globals,
+                index: i,
+            });
+        }
+    }
+    state.current = v;
+    Ok(())
+}
+
 /// Resolve and enter an application's callable (mirrors `resolve_callable`
 /// + the callable thunk dance).
 fn enter_callable(
@@ -1252,13 +1282,7 @@ fn enter_callable(
 ) -> Result<(), ExecutionError> {
     match callable {
         DecodedRef::Local(i) => enter_local(state, view, env, i as usize),
-        DecodedRef::Global(i) => {
-            state.current = view
-                .scoped(state.globals)
-                .get(&view, i as usize)
-                .ok_or(ExecutionError::BadGlobalIndex(i as usize))?;
-            Ok(())
-        }
+        DecodedRef::Global(i) => enter_global(state, view, i as usize),
         DecodedRef::Value(_) => Err(ExecutionError::NotCallable(
             state.annotation,
             "native value".to_string(),
@@ -1301,10 +1325,7 @@ pub fn handle_op(
                     enter_local(state, view, env, i as usize)?;
                 }
                 DecodedRef::Global(i) => {
-                    state.current = view
-                        .scoped(state.globals)
-                        .get(&view, i as usize)
-                        .ok_or(ExecutionError::BadGlobalIndex(i as usize))?;
+                    enter_global(state, view, i as usize)?;
                 }
                 DecodedRef::Value(k) => {
                     let native = match state.constants.get(k as usize) {
@@ -1464,7 +1485,14 @@ pub fn handle_op(
                     args,
                     annotation: state.annotation,
                 });
-                if let DecodedRef::Local(i) = callable {
+                // Memoise the thunk callee. `callee_env` is the local frame for
+                // a `Local` callable and the shared globals frame for a
+                // `Global` one, so the same blackhole + `Update` dance memoises
+                // both: a prelude global (an arity-0 updatable thunk) is
+                // computed once and shared, rather than recomputed on every
+                // reference. Restoring this global-thunk sharing is the BV5
+                // blob perf fix (eu-fhoo); previously only `Local` was memoised.
+                if let DecodedRef::Local(i) | DecodedRef::Global(i) = callable {
                     let hole = BcValue::Closure(BcClosure::new(state.blackhole, callee_env));
                     view.scoped(callee_env).update(&view, i as usize, hole)?;
                     state.stack.push(BcContinuation::Update {
@@ -3790,5 +3818,79 @@ mod tests {
         )
         .unwrap();
         assert_eq!(m.run(Some(100_000)).unwrap(), Some(6));
+    }
+
+    #[test]
+    fn global_thunk_memoised() {
+        // Regression (eu-fhoo): every pre-compiled prelude global is stored in
+        // the blob as an arity-0 updatable thunk in the SHARED globals frame.
+        // Entering such a thunk must MEMOISE it (blackhole the slot + push an
+        // `Update` targeting the globals frame) so its body runs once and the
+        // result is shared by every reference — exactly as the source pipeline
+        // shares prelude bindings compiled as `Ref::L` letrec-locals. Without
+        // memoisation each reference recomputes the global, which on real
+        // programs (day08) meant ~5.6× the allocation of the source prelude and
+        // tipped HeapSyn into a GC death-spiral.
+        //
+        // Here a single global thunk (whose body performs a measurable ADD) is
+        // forced `N` times via nested `seq` scrutinees (each an `Atom{G0}` that
+        // routes through `enter_global`). With memoisation the body executes
+        // once (~one ADD); without it, `N` times. We assert the total tick
+        // count stays far below the non-memoised cost — revert-proven: removing
+        // the `Global` arm from `enter_global`/`DirectApp` makes ticks blow past
+        // the threshold.
+        use crate::common::sourcemap::SourceMap;
+        use crate::eval::intrinsics;
+        use crate::eval::stg::{arith::Add, runtime::Runtime, runtime::StandardRuntime};
+
+        let mut rt = StandardRuntime::default();
+        rt.add(Box::new(Add) as Box<dyn StgIntrinsic>);
+        rt.prepare(&mut SourceMap::default());
+        let intrinsics = rt.intrinsics();
+        let add = intrinsics::index_u8("ADD");
+
+        // Global 0: a deliberately EXPENSIVE thunk — a chain of `K` forced
+        // additions ending in `ADD(1, 2) = 3`. Re-running its body is therefore
+        // clearly measurable in ticks, so the memoised/non-memoised gap is
+        // dominated by body re-evaluation rather than per-reference overhead.
+        const K: usize = 150;
+        let mut g_body = dsl::app_bif(add, vec![dsl::num(1), dsl::num(2)]);
+        for _ in 0..K {
+            g_body = dsl::seq(dsl::app_bif(add, vec![dsl::num(1), dsl::num(1)]), g_body);
+        }
+        let g_thunk = dsl::thunk(g_body);
+        let globals = vec![g_thunk];
+
+        // Root: force G0 `N` times through nested `seq`, then return 0. With
+        // memoisation G0's body runs ONCE; without it, `N` times.
+        const N: usize = 4;
+        let mut body = dsl::atom(dsl::num(0));
+        for _ in 0..N {
+            body = dsl::seq(dsl::atom(dsl::gref(0)), body);
+        }
+        let (prog, root_off, gforms) = encode(&body, &globals);
+        let mut m = BytecodeMachine::new(
+            prog,
+            root_off,
+            &gforms,
+            intrinsics,
+            Box::new(NullEmitter),
+            0,
+            false,
+        )
+        .unwrap();
+        assert_eq!(m.run(Some(100_000)).unwrap(), Some(0));
+
+        // With memoisation G0's ~450-tick body runs once (total ≈ 465 ticks);
+        // without it, all N forces re-run the body (≈ N × 450 ≈ 1800 ticks for
+        // N=4). The threshold sits well inside that gap, so removing the
+        // `Global` arm from `enter_global` (or the `DirectApp` global-thunk
+        // memoisation) makes this test fail.
+        let ticks = m.metrics.ticks();
+        assert!(
+            ticks < 900,
+            "global thunk not memoised: {ticks} ticks for {N} references \
+             (expected the body to run once, not {N} times)"
+        );
     }
 }

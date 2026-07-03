@@ -450,7 +450,7 @@ impl MachineState {
                         }
                     }
                     Ref::G(i) => {
-                        self.closure = self.nav(view).global(*i)?;
+                        self.closure = self.enter_global(view, *i)?;
                     }
                     Ref::V(v) => {
                         self.return_native(view, v)?;
@@ -520,6 +520,12 @@ impl MachineState {
                     } else {
                         self.closure = self.nav(view).resolve_callable(callable)?;
                     }
+                } else if let Ref::G(i) = callable {
+                    // Memoise a global thunk callable (see `enter_global`);
+                    // the `ApplyTo` was already pushed above, so the `Update`
+                    // lands on top and fires first when the thunk yields its
+                    // function value.
+                    self.closure = self.enter_global(view, *i)?;
                 } else {
                     self.closure = self.nav(view).resolve_callable(callable)?;
                 }
@@ -582,7 +588,20 @@ impl MachineState {
                     }
                 } else {
                     let closure = self.nav(view).resolve_callable(callable)?;
-                    if closure.arity() as usize == array.len() {
+                    if let (Ref::G(i), true) = (callable, closure.update()) {
+                        // Global thunk callable: memoise it (see
+                        // `enter_global`), pushing `ApplyTo` first so the
+                        // `Update` fires before the function is applied.
+                        // Mirrors the local-thunk branch.
+                        self.push(
+                            view,
+                            Continuation::ApplyTo {
+                                args: array,
+                                annotation: self.annotation,
+                            },
+                        )?;
+                        self.closure = self.enter_global(view, *i)?;
+                    } else if closure.arity() as usize == array.len() {
                         self.closure = view.saturate_with_array(&closure, array)?;
                     } else {
                         self.push(
@@ -763,6 +782,46 @@ impl MachineState {
     ) -> Result<(), ExecutionError> {
         let cont_env = view.scoped(environment);
         cont_env.update(&view, index, self.closure.clone())
+    }
+
+    /// Resolve global slot `i`, memoising it if it is an updatable thunk.
+    ///
+    /// Every pre-compiled prelude binding is stored in the blob as an arity-0
+    /// updatable thunk in the shared globals frame.  Entering such a thunk
+    /// without memoisation recomputes it (re-allocating its lambda closure or
+    /// CAF value) on *every* reference — the source pipeline instead compiles
+    /// prelude bindings as `Ref::L` letrec locals which are blackholed,
+    /// updated and shared.  This lost sharing was the BV5 blob regression
+    /// (eu-fhoo): ~5.6× more allocation for the same work.
+    ///
+    /// We restore it here by mirroring the local-thunk dance (blackhole the
+    /// slot, push an `Update`) but targeting the long-lived globals frame, so
+    /// the computed WHNF value is written back and shared by every subsequent
+    /// reference.  This is textbook STG CAF memoisation and is safe precisely
+    /// because the globals frame is shared: the single update is visible to
+    /// all closures.  Forcing a prelude thunk reaches WHNF (a lambda closure
+    /// or a data constructor) without re-entering its own slot, so the
+    /// transient blackhole is never hit on the pure prelude.  Caller sets
+    /// `self.closure` to the returned closure (after pushing any `ApplyTo`).
+    fn enter_global(
+        &mut self,
+        view: MutatorHeapView<'_>,
+        i: usize,
+    ) -> Result<SynClosure, ExecutionError> {
+        let global = self.nav(view).global(i)?;
+        if global.update() {
+            let hole = view.alloc(HeapSyn::BlackHole)?;
+            let black_hole = SynClosure::new(hole.as_ptr(), self.globals);
+            view.scoped(self.globals).update(&view, i, black_hole)?;
+            self.push(
+                view,
+                Continuation::Update {
+                    environment: self.globals,
+                    index: i,
+                },
+            )?;
+        }
+        Ok(global)
     }
 
     /// Return meta into a demeta destructuring or just strip metadata
