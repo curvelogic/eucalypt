@@ -1449,21 +1449,30 @@ pub fn handle_op(
                 ));
             };
 
-            // Thunk callee (only reachable for a local): blackhole + Update.
+            // Thunk callee: force it before applying the args. This is
+            // reachable for a *global* callee too — every pre-compiled prelude
+            // binding is stored as an arity-0 updatable thunk (see the xtask
+            // `LambdaForm::thunk` wrapping), so e.g. `cons`/`if`/`nil?` are
+            // thunks that yield their lambda when forced. A local thunk is
+            // memoised (blackhole + `Update`); a global thunk is entered
+            // without memoisation, mirroring `Op::App` (the globals frame is
+            // shared, so we do not blackhole/overwrite it here). Previously
+            // only the local case was handled, and a `DirectApp` to an unforced
+            // global thunk left `state.current` unchanged, spinning forever.
             if c.update() {
+                state.stack.push(BcContinuation::ApplyTo {
+                    args,
+                    annotation: state.annotation,
+                });
                 if let DecodedRef::Local(i) = callable {
                     let hole = BcValue::Closure(BcClosure::new(state.blackhole, callee_env));
                     view.scoped(callee_env).update(&view, i as usize, hole)?;
-                    state.stack.push(BcContinuation::ApplyTo {
-                        args,
-                        annotation: state.annotation,
-                    });
                     state.stack.push(BcContinuation::Update {
                         environment: callee_env,
                         index: i as usize,
                     });
-                    state.current = callee;
                 }
+                state.current = callee;
             } else if c.arity() as usize == args.len() {
                 // Fast path: exact arity → saturate, skip the ApplyTo push.
                 state.current = BcValue::Closure(view.saturate_with_array(&c, args)?);
@@ -3740,5 +3749,46 @@ mod tests {
             BytecodeMachine::new(prog, root, &[], intrinsics, Box::new(NullEmitter), 0, false)
                 .unwrap();
         assert_eq!(m.run(Some(10_000)).unwrap(), Some(3));
+    }
+
+    #[test]
+    fn direct_app_forces_global_thunk() {
+        // Regression (eu-0iba): every pre-compiled prelude global is stored as
+        // an arity-0 updatable thunk (see the xtask `LambdaForm::thunk`
+        // wrapping), so `cons`/`map`/`if`/… are thunks that yield their lambda
+        // when forced. A `DirectApp` to such a global with args must FORCE the
+        // thunk before applying. The previous handler only forced *local*
+        // thunks; a `DirectApp` to an unforced *global* thunk left
+        // `state.current` unchanged and spun forever (the whole bytecode+blob
+        // path hung on any recursive prelude function). With a tick limit this
+        // now surfaces as a clean failure rather than a hang.
+        use crate::common::sourcemap::{Smid, SourceMap};
+        use crate::eval::intrinsics;
+        use crate::eval::stg::{make_standard_runtime, runtime::Runtime};
+
+        let mut source_map = SourceMap::new();
+        let runtime = make_standard_runtime(&mut source_map);
+        let intrinsics = runtime.intrinsics();
+        let add = intrinsics::index_u8("ADD");
+
+        // Global 0: a thunk that, when forced, yields a 1-arg lambda `\x → x+1`.
+        let inc = dsl::lambda(1, dsl::app_bif(add, vec![dsl::lref(0), dsl::num(1)]));
+        let g_thunk = dsl::thunk(dsl::let_(vec![inc], dsl::local(0)));
+        let globals = vec![g_thunk];
+
+        // Root: `DirectApp G0(5)` — invoke the unforced global thunk with an arg.
+        let root = dsl::direct_app(Smid::default(), dsl::gref(0), vec![dsl::num(5)]);
+        let (prog, root_off, gforms) = encode(&root, &globals);
+        let mut m = BytecodeMachine::new(
+            prog,
+            root_off,
+            &gforms,
+            intrinsics,
+            Box::new(NullEmitter),
+            0,
+            false,
+        )
+        .unwrap();
+        assert_eq!(m.run(Some(100_000)).unwrap(), Some(6));
     }
 }
