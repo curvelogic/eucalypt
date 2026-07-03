@@ -1,7 +1,7 @@
 //! Differential tests for the bytecode IO driver (eu-lka7).
 //!
-//! Runs IO programs through the full driver twice — once on the default
-//! HeapSyn engine and once on the parallel bytecode engine (`EU_BYTECODE=1`) —
+//! Runs IO programs through the full driver twice — once on the legacy
+//! HeapSyn engine (`EU_HEAPSYN=1`) and once on the default bytecode engine —
 //! and asserts the rendered output agrees. This exercises the ported io-run /
 //! world-injection loop end to end (io.return, io.shell, io.exec, io.bind
 //! sequencing, and the parameterised shell-with spec block).
@@ -15,7 +15,8 @@ fn eu_binary() -> &'static Path {
 }
 
 /// Run `eu -I -e <expr>` on the given engine, returning `(stdout, exit_code)`.
-/// `bytecode` selects the parallel engine via `EU_BYTECODE=1`.
+/// `bytecode` selects the default bytecode engine; otherwise the legacy
+/// HeapSyn engine is selected via `EU_HEAPSYN=1`.
 fn run(expr: &str, bytecode: bool) -> (String, Option<i32>) {
     let mut cmd = Command::new(eu_binary());
     cmd.arg("-I")
@@ -23,10 +24,13 @@ fn run(expr: &str, bytecode: bool) -> (String, Option<i32>) {
         .arg("2048")
         .arg("-e")
         .arg(expr);
+    // Select engines explicitly and defensively: clear the other engine's
+    // selector so an inherited env var cannot bleed across the two runs.
+    cmd.env_remove("EU_BYTECODE");
     if bytecode {
-        cmd.env("EU_BYTECODE", "1");
+        cmd.env_remove("EU_HEAPSYN");
     } else {
-        cmd.env_remove("EU_BYTECODE");
+        cmd.env("EU_HEAPSYN", "1");
     }
     let output = cmd.output().expect("failed to run eu binary");
     (

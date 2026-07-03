@@ -398,7 +398,8 @@ impl<'a> Executor<'a> {
                 println!("{}", prettify::prettify(&*syn));
                 Ok(None)
             } else if crate::eval::bytecode::bytecode_enabled() {
-                // Experimental parallel bytecode engine (EU_BYTECODE=1).
+                // Default bytecode engine (BV1). HeapSyn is selected instead
+                // via the EU_HEAPSYN=1 opt-out — see `bytecode_enabled`.
                 //
                 // Compile headless (like the HeapSyn path — `syn` above is
                 // already the headless compile) so IO constructors yield to the

@@ -2,7 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. This is a deep translation of intricate existing code, not greenfield — where a step says "translate `vm.rs:NNN-MMM`", read that arm and port its semantics; the differential harness (Phase 2) is the exact correctness gate for every such translation.
 
-> ## ▶ RESUME HERE (cold-start header — read this first) · updated 2026-07-02 (post-#941)
+> ## ▶ RESUME HERE (cold-start header — read this first) · updated 2026-07-03 (post-#948, eu-enyv flip)
+>
+> **eu-enyv (BV1 default flip):** the bytecode engine is now the **default**.
+> `bytecode_enabled()` (`src/eval/bytecode/mod.rs`) returns `true` unless
+> `EU_HEAPSYN=1` selects the legacy HeapSyn machine. `EU_BYTECODE=1` is now a
+> redundant no-op opt-in (kept working; `EU_HEAPSYN=1` wins). HeapSyn is **not**
+> deleted — the Phase 4 collapse (eu-oufc) stays deferred pending an A/B perf
+> study; HeapSyn remains the perf baseline + differential-testing engine. Full
+> harness green both ways: `cargo test --test harness_test` (bytecode default) =
+> 477/477; `EU_HEAPSYN=1 cargo test --test harness_test` = 477/477.
 >
 > **Where:** worktree `/Users/greg/dev/curvelogic/eucalypt-worktrees/integration-0.12.0`,
 > integration branch `integration/0.12.0`. **Toolchain:** prepend

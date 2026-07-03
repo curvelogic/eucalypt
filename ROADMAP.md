@@ -229,7 +229,11 @@ that the cost lives in code materialisation, dispatch and env-walk. Therefore:
   tables (annotation dispatch), superinstructions (hot patterns), and
   serialisability (the startup win). Estimated 3–10× on dispatch-bound code and a
   large drop in GC load, keeping the Immix GC, all intrinsics, the emitter, the
-  error machinery and the `EU_*` tooling.
+  error machinery and the `EU_*` tooling. **Status (BV1, eu-enyv):** the bytecode
+  engine is now the **default**; the legacy HeapSyn tree-walk machine is retained
+  behind `EU_HEAPSYN=1` as the perf baseline and differential-testing engine. The
+  Phase 4 collapse (deleting HeapSyn + retiring `GcScannable`) is deferred pending
+  an A/B perf study.
 - **Demand- and type-directed compilation rides on it** (Pillar CG): the bytecode is
   the substrate the smarter codegen emits into.
 - **The speculative generational-GC rebuild is shelved** (§10), to be revisited only
