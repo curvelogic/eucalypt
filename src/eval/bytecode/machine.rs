@@ -14,6 +14,7 @@ use std::num::NonZeroUsize;
 use lru::LruCache;
 use regex::Regex;
 use serde_json::Number;
+use smallvec::SmallVec;
 
 use crate::common::sourcemap::Smid;
 use crate::eval::emit::{Emitter, NullEmitter};
@@ -41,6 +42,23 @@ use super::{
     BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, BytecodeProgram, CodeRef,
     GlobalForm, Op, FORM_LAMBDA, FORM_THUNK, NO_BRANCH, REF_G, REF_L, REF_V,
 };
+
+/// Inline-capacity buffers for per-instruction operand decoding. On nearly
+/// every reduction step the hot dispatch loop reads a short argument list
+/// (the atom offsets of an App/Cons/Bif, and — for a `Bif` — the decoded arg
+/// refs it defers); backing these with `SmallVec` keeps the common
+/// small-arity case entirely on the stack, eliminating the system-heap
+/// `malloc`/`free` churn a fresh `Vec` per step would incur. Application and
+/// intrinsic arities are naturally small, so the inline capacity of 8 is
+/// never exceeded on the hot path (a larger list would simply spill to the
+/// heap, exactly as a `Vec` does). Operand lists whose length is unbounded
+/// by arity — the densified branch table of a `Case` (up to the full
+/// data-constructor tag range) and a let/letrec binding-header list — are
+/// *not* buffered this way: the branch table is decoded straight into its
+/// final GC `Array` (see `Op::Case`), and let headers keep a `Vec` since a
+/// block literal may bind many names.
+type ArgOffsets = SmallVec<[CodeRef; 8]>;
+type ArgRefs = SmallVec<[DecodedRef; 8]>;
 
 /// A decoded inline `Ref` operand from the byte stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,7 +154,7 @@ fn not_value_description(op: Option<Op>, code: &[u8], pc: &mut usize) -> &'stati
 
 /// Read an arg-offset list (`u8` count then that many `u32` offsets), as
 /// emitted for App/DirectApp/Cons/Bif operands.
-pub fn read_arg_offsets(code: &[u8], pc: &mut usize) -> Vec<CodeRef> {
+pub fn read_arg_offsets(code: &[u8], pc: &mut usize) -> ArgOffsets {
     let n = read_u8(code, pc) as usize;
     (0..n).map(|_| read_u32(code, pc)).collect()
 }
@@ -210,7 +228,7 @@ pub struct BcMachineState {
     /// The deferred BIF's decoded argument refs (spec §6.3): captured by the
     /// `Bif` arm and read by the deferred dispatch (there is no live node to
     /// re-read, unlike the HeapSyn path).
-    pub pending_bif_args: Vec<DecodedRef>,
+    pub pending_bif_args: ArgRefs,
     /// Set by a `CaptureEnd` continuation to signal `step` to finish an
     /// emitter capture.
     pub capture_end_pending: bool,
@@ -251,7 +269,7 @@ impl BcMachineState {
             terminated: false,
             annotation: Smid::default(),
             pending_bif: None,
-            pending_bif_args: Vec::new(),
+            pending_bif_args: SmallVec::new(),
             capture_end_pending: false,
             pending_capture_start: None,
             yielded_io: false,
@@ -604,7 +622,7 @@ fn env_from_data_args_copy(
 /// and are wired with the full machine loop; they error explicitly here.
 /// Decode a data-constructor closure's `OP_CONS` node into `(tag, arg
 /// offsets)`; the fields live in `c.env()`. `None` if `c` is not a `Cons`.
-fn decode_cons(prog: &BytecodeProgram, c: &BcClosure) -> Option<(Tag, Vec<CodeRef>)> {
+fn decode_cons(prog: &BytecodeProgram, c: &BcClosure) -> Option<(Tag, ArgOffsets)> {
     let code = prog.code.as_slice();
     let mut pc = c.code() as usize;
     if Op::from_u8(read_u8(code, &mut pc)) != Some(Op::Cons) {
@@ -1344,7 +1362,7 @@ pub fn handle_op(
         Op::Cons => {
             let tag = read_u8(code, &mut pc);
             let arg_offs = read_arg_offsets(code, &mut pc);
-            let arg_refs: Vec<DecodedRef> = arg_offs
+            let arg_refs: ArgRefs = arg_offs
                 .iter()
                 .map(|off| arg_ref(code, *off))
                 .collect::<Result<_, _>>()?;
@@ -1352,14 +1370,24 @@ pub fn handle_op(
         }
         Op::Case => {
             let scr_off = read_u32(code, &mut pc);
-            let (min_tag, entries) = read_branch_table(code, &mut pc);
+            // Decode the densified branch table straight into its final GC
+            // `Array` (its home in the `Branch` continuation). The table can
+            // span the full data-constructor tag range, so buffering it in a
+            // transient `Vec`/`SmallVec` first would either malloc per `Case`
+            // or overflow an inline buffer — reading directly avoids both.
+            let min_tag = read_u8(code, &mut pc);
+            let len = read_u8(code, &mut pc) as usize;
+            let mut branch_table = Array::with_capacity(&view, len);
+            for _ in 0..len {
+                let e = read_u32(code, &mut pc);
+                branch_table.push(&view, if e == NO_BRANCH { None } else { Some(e) });
+            }
             let has_fb = read_u8(code, &mut pc);
             let fallback = if has_fb == 1 {
                 Some(read_u32(code, &mut pc))
             } else {
                 None
             };
-            let branch_table: Array<Option<CodeRef>> = view.array(&entries);
             state.stack.push(BcContinuation::Branch {
                 min_tag,
                 branch_table,
@@ -1474,12 +1502,12 @@ pub fn handle_op(
             // reachable for a *global* callee too — every pre-compiled prelude
             // binding is stored as an arity-0 updatable thunk (see the xtask
             // `LambdaForm::thunk` wrapping), so e.g. `cons`/`if`/`nil?` are
-            // thunks that yield their lambda when forced. A local thunk is
-            // memoised (blackhole + `Update`); a global thunk is entered
-            // without memoisation, mirroring `Op::App` (the globals frame is
-            // shared, so we do not blackhole/overwrite it here). Previously
-            // only the local case was handled, and a `DirectApp` to an unforced
-            // global thunk left `state.current` unchanged, spinning forever.
+            // thunks that yield their lambda when forced. Both a local and a
+            // global thunk callee are memoised (blackhole + `Update`) below —
+            // see the inner comment for why the shared globals frame is
+            // updated too (eu-fhoo). Earlier this arm only handled the local
+            // case, so a `DirectApp` to an unforced global thunk left
+            // `state.current` unchanged and spun forever (eu-0iba).
             if c.update() {
                 state.stack.push(BcContinuation::ApplyTo {
                     args,
@@ -1519,7 +1547,7 @@ pub fn handle_op(
             // arg refs — there is no live node to re-read (spec §6.3).
             let intrinsic = read_u8(code, &mut pc);
             let arg_offs = read_arg_offsets(code, &mut pc);
-            let arg_refs: Vec<DecodedRef> = arg_offs
+            let arg_refs: ArgRefs = arg_offs
                 .iter()
                 .map(|off| arg_ref(code, *off))
                 .collect::<Result<_, _>>()?;
@@ -2741,7 +2769,7 @@ impl BcBifContext<'_, '_> {
     /// If `value` is a data-constructor closure, return its `(tag, env, arg
     /// offsets)`; otherwise `None`. Decodes the `OP_CONS` node the closure
     /// points at (a template or an encoded `Cons`).
-    fn cons_of(&self, value: &AbiClosure) -> Option<(Tag, RefPtr<BcEnvFrame>, Vec<CodeRef>)> {
+    fn cons_of(&self, value: &AbiClosure) -> Option<(Tag, RefPtr<BcEnvFrame>, ArgOffsets)> {
         let AbiClosure::Byte(BcValue::Closure(c)) = value else {
             return None;
         };
