@@ -104,22 +104,33 @@ pub fn resolve_ref(
     }
 }
 
-/// Resolve a native value directly (arg extractors), erroring if the ref
-/// does not resolve to a `Native`. Locals/globals that hold a native slot
-/// yield it; a `Value` const yields its native.
-pub fn resolve_native(
-    view: MutatorHeapView<'_>,
-    constants: &[Ref],
-    env: RefPtr<BcEnvFrame>,
-    globals: RefPtr<BcEnvFrame>,
-    dref: DecodedRef,
-) -> Result<Native, ExecutionError> {
-    match resolve_ref(view, constants, env, globals, dref)? {
-        BcValue::Native(n) => Ok(n),
-        BcValue::Closure(_) => Err(ExecutionError::NotValue(
-            Default::default(),
-            "expected a native value".to_string(),
-        )),
+/// Describe a non-native closure for a "not a value" error, mirroring the
+/// HeapSyn `HeapNavigator::resolve_native` discrimination (vm.rs): the head
+/// opcode names the shape, and a `Cons` opcode's tag distinguishes the data
+/// constructors (a boolean, a list, a block, …). `pc` must sit just past the
+/// opcode byte; for a `Cons` the tag byte that follows is read here. The
+/// returned string is the `context` passed to `format_not_value` (error.rs).
+fn not_value_description(op: Option<Op>, code: &[u8], pc: &mut usize) -> &'static str {
+    match op {
+        Some(Op::Cons) => match DataConstructor::try_from(read_u8(code, pc)) {
+            Ok(DataConstructor::BoolTrue) => "a boolean (true)",
+            Ok(DataConstructor::BoolFalse) => "a boolean (false)",
+            Ok(DataConstructor::ListCons) | Ok(DataConstructor::ListNil) => "a list",
+            Ok(DataConstructor::Block) => "a block",
+            _ => "a data constructor",
+        },
+        Some(Op::App) | Some(Op::DirectApp) => "a function application",
+        Some(Op::Bif) => "an intrinsic function call",
+        Some(Op::Case) => "a case expression",
+        Some(Op::Let) | Some(Op::LetRec) => "a let binding",
+        Some(Op::Meta) | Some(Op::DeMeta) => "a metadata expression",
+        Some(Op::Seq) => "a strict evaluation",
+        Some(Op::LookupLit) => "a lookup expression",
+        Some(Op::BlackHole) => "an uninitialised value (possible cycle)",
+        Some(Op::Ann) => "an annotated expression",
+        // `Atom` is followed transparently by the caller, so it should not
+        // reach here; treat any residual/unknown opcode as a bare atom.
+        Some(Op::Atom) | None => "an atom",
     }
 }
 
@@ -249,6 +260,67 @@ impl BcMachineState {
             suspended_stacks: Vec::new(),
         }
     }
+
+    /// Collect the annotation trace of the environment chain currently in
+    /// scope, for error diagnostics. Mirrors `MachineState::env_trace`
+    /// (vm.rs), which walks the environment of the closure being evaluated.
+    /// The current value is that closure while an op or BIF is executing; a
+    /// native `current` has no environment and yields an empty trace.
+    pub fn env_trace(&self, view: MutatorHeapView<'_>) -> Vec<Smid> {
+        match self.current.as_closure() {
+            Some(c) => view.scoped(c.env()).annotation_trace(&view),
+            None => Vec::new(),
+        }
+    }
+
+    /// Collect the annotation trace of the continuation stack (innermost
+    /// first, de-duplicating adjacent repeats), for error diagnostics.
+    /// Mirrors `MachineState::stack_trace` / `stack_trace_iter` (vm.rs) over
+    /// the `BcContinuation` variants: the case/apply/seq/lookup continuations
+    /// carry a source annotation directly; update/de-meta continuations
+    /// borrow their captured environment's annotation.
+    pub fn stack_trace(&self, view: MutatorHeapView<'_>) -> Vec<Smid> {
+        let capacity = self.stack.len().min(64);
+        let mut trace = Vec::with_capacity(capacity);
+        let mut prev = Smid::default();
+        for cont in self.stack.iter().rev() {
+            let smid = match cont {
+                BcContinuation::Branch { annotation, .. }
+                | BcContinuation::ApplyTo { annotation, .. }
+                | BcContinuation::SeqBind { annotation, .. } => *annotation,
+                BcContinuation::LookupLitForce { smid, .. } => *smid,
+                BcContinuation::Update { environment, .. }
+                | BcContinuation::DeMeta { environment, .. } => {
+                    view.scoped(*environment).annotation()
+                }
+                BcContinuation::CaptureEnd => Smid::default(),
+            };
+            if smid != Smid::default() && smid != prev {
+                prev = smid;
+                trace.push(smid);
+            }
+        }
+        trace
+    }
+}
+
+/// Wrap a raised machine error with the environment and continuation-stack
+/// annotation traces captured from the current state. Mirrors the HeapSyn
+/// `handle_instruction` / BIF `map_err` sites (vm.rs): building the traces
+/// here — before the Rust stack unwinds — captures the environment and
+/// continuation stack live at the raise point, so `to_diagnostic` can walk
+/// them to recover the user call site when the error's own Smid is synthetic
+/// or points into the prelude. As on the HeapSyn side, the wrap is
+/// unconditional (a nested sub-evaluation error may be wrapped twice; the
+/// outer traces then win in `to_diagnostic`, matching HeapSyn).
+fn attach_trace(
+    state: &BcMachineState,
+    view: MutatorHeapView<'_>,
+    e: ExecutionError,
+) -> ExecutionError {
+    let env_trace = state.env_trace(view);
+    let stack_trace = state.stack_trace(view);
+    ExecutionError::Traced(Box::new(e), env_trace, stack_trace)
 }
 
 /// Mark the heap pointers embedded in a prepared constant (`Ref::V(native)`).
@@ -752,7 +824,16 @@ pub fn return_data(
             annotation,
         } => {
             state.current = BcValue::Closure(BcClosure::new(body, environment));
-            state.annotation = annotation;
+            // Only restore a meaningful annotation. A `force`/`Seq` in an outer
+            // context (e.g. the render loop) captures `Smid::default()` and must
+            // not wipe the live call-site annotation established by an inner
+            // `Ann` before a deferred arg-check BIF runs — mirrors the same
+            // invalid-annotation guard `handle_op` applies on closure entry.
+            // (HeapSyn avoids this by evaluation ordering, raising before the
+            // outer SeqBind is restored.)
+            if annotation.is_valid() {
+                state.annotation = annotation;
+            }
         }
         BcContinuation::LookupLitForce {
             key,
@@ -849,7 +930,16 @@ pub fn return_native(
         } => {
             // Force-and-discard: enter the body without binding the result.
             state.current = BcValue::Closure(BcClosure::new(body, environment));
-            state.annotation = annotation;
+            // Only restore a meaningful annotation. A `force`/`Seq` in an outer
+            // context (e.g. the render loop) captures `Smid::default()` and must
+            // not wipe the live call-site annotation established by an inner
+            // `Ann` before a deferred arg-check BIF runs — mirrors the same
+            // invalid-annotation guard `handle_op` applies on closure entry.
+            // (HeapSyn avoids this by evaluation ordering, raising before the
+            // outer SeqBind is restored.)
+            if annotation.is_valid() {
+                state.annotation = annotation;
+            }
         }
         BcContinuation::LookupLitForce { smid, .. } => {
             // A native is not a block — type error.
@@ -954,7 +1044,16 @@ pub fn return_fun(
             annotation,
         } => {
             state.current = BcValue::Closure(BcClosure::new(body, environment));
-            state.annotation = annotation;
+            // Only restore a meaningful annotation. A `force`/`Seq` in an outer
+            // context (e.g. the render loop) captures `Smid::default()` and must
+            // not wipe the live call-site annotation established by an inner
+            // `Ann` before a deferred arg-check BIF runs — mirrors the same
+            // invalid-annotation guard `handle_op` applies on closure entry.
+            // (HeapSyn avoids this by evaluation ordering, raising before the
+            // outer SeqBind is restored.)
+            if annotation.is_valid() {
+                state.annotation = annotation;
+            }
         }
         BcContinuation::LookupLitForce { smid, .. } => {
             let ann = if smid.is_valid() {
@@ -1672,7 +1771,11 @@ impl<'a> BytecodeMachine<'a> {
         self.metrics.tick();
         {
             let view = MutatorHeapView::new(&self.heap);
-            step(&mut self.state, view, &self.program)?;
+            // Mirror the HeapSyn `handle_instruction` map_err (vm.rs): attach
+            // the env/stack traces at the raise point before unwinding.
+            if let Err(e) = step(&mut self.state, view, &self.program) {
+                return Err(attach_trace(&self.state, view, e));
+            }
         }
 
         if let Some(idx) = self.state.pending_bif.take() {
@@ -1701,25 +1804,35 @@ impl<'a> BytecodeMachine<'a> {
             // nested `evaluate_to_whnf`. This mirrors the HeapSyn `bif_view`
             // aliasing in `vm.rs`.
             let view = unsafe { MutatorHeapView::from_raw_heap(&self.heap as *const Heap) };
-            let mut ctx = BcBifContext {
-                state: &mut self.state,
-                program: &self.program,
-                symbol_pool: &mut self.symbol_pool,
-                rcache: &mut self.rcache,
-                test_mode: self.test_mode,
-                env,
-                heap: &mut self.heap,
-                intrinsics: &self.intrinsics,
-                metrics: &mut self.metrics,
-                clock: &mut self.clock,
-                dump_heap: self.dump_heap,
+            // Scope `ctx`/`emitter` so their `&mut self` borrows are released
+            // before we build the error trace (which reborrows `self.state`).
+            let bif_result = {
+                let mut ctx = BcBifContext {
+                    state: &mut self.state,
+                    program: &self.program,
+                    symbol_pool: &mut self.symbol_pool,
+                    rcache: &mut self.rcache,
+                    test_mode: self.test_mode,
+                    env,
+                    heap: &mut self.heap,
+                    intrinsics: &self.intrinsics,
+                    metrics: &mut self.metrics,
+                    clock: &mut self.clock,
+                    dump_heap: self.dump_heap,
+                };
+                // Emit BIFs route to the active capture emitter, else the main one.
+                let emitter: &mut dyn Emitter = match self.capture_emitters.last_mut() {
+                    Some(capture) => capture,
+                    None => self.emitter.as_mut(),
+                };
+                bif.execute(&mut ctx, view, emitter, &args)
             };
-            // Emit BIFs route to the active capture emitter, else the main one.
-            let emitter: &mut dyn Emitter = match self.capture_emitters.last_mut() {
-                Some(capture) => capture,
-                None => self.emitter.as_mut(),
-            };
-            bif.execute(&mut ctx, view, emitter, &args)?;
+            // Mirror the HeapSyn BIF-result map_err (vm.rs): the Bif closure is
+            // still `current`, so its env yields the trace at the raise point.
+            if let Err(e) = bif_result {
+                let view = MutatorHeapView::new(&self.heap);
+                return Err(attach_trace(&self.state, view, e));
+            }
         }
 
         // Capture lifecycle (mirrors `Machine::step`, vm.rs). A `render-as`
@@ -2506,7 +2619,8 @@ impl BcBifContext<'_, '_> {
             BcValue::Closure(c) => {
                 let code = self.program.code.as_slice();
                 let mut pc = c.code() as usize;
-                if Op::from_u8(read_u8(code, &mut pc)) == Some(Op::Atom) {
+                let op = Op::from_u8(read_u8(code, &mut pc));
+                if op == Some(Op::Atom) {
                     let dref = read_ref(code, &mut pc)?;
                     let inner = resolve_ref(
                         view,
@@ -2517,9 +2631,16 @@ impl BcBifContext<'_, '_> {
                     )?;
                     self.native_from_value(view, inner)
                 } else {
+                    // Classify the non-native closure so the diagnostic names
+                    // what was found (a boolean, a list, a block, …). Mirrors
+                    // the HeapSyn `HeapNavigator::resolve_native` discrimination
+                    // (vm.rs): decode the head opcode, reading a `Cons` tag to
+                    // distinguish the data constructors. `pc` already sits just
+                    // past the opcode byte.
+                    let description = not_value_description(op, code, &mut pc);
                     Err(ExecutionError::NotValue(
                         self.state.annotation,
-                        "expected a native value".to_string(),
+                        description.to_string(),
                     ))
                 }
             }
@@ -2664,7 +2785,14 @@ impl BcBifContext<'_, '_> {
                 // dropped before any `&mut self.heap` use; this mirrors the
                 // HeapSyn `bif_view` aliasing (`vm.rs`).
                 let view = unsafe { MutatorHeapView::from_raw_heap(self.heap as *const Heap) };
-                step(self.state, view, self.program)?;
+                // Mirror the sub-evaluation step map_err (vm.rs
+                // `evaluate_to_whnf_impl`): wrap the step error with traces
+                // here. The nested BIF error (below) is left raw, matching the
+                // HeapSyn sub-evaluation loop — it is wrapped once at the outer
+                // BIF site when it unwinds.
+                if let Err(e) = step(self.state, view, self.program) {
+                    return Err(attach_trace(self.state, view, e));
+                }
             }
             if let Some(idx) = self.state.pending_bif.take() {
                 self.dispatch_pending_bif(idx, &mut null)?;

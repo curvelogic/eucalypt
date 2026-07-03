@@ -169,6 +169,73 @@ fn assert_engines_lookup_fail_agree(syntax: Rc<StgSyn>, bifs: Vec<Box<dyn StgInt
     }
 }
 
+/// Run `syntax` — which must raise a `NotValue` — through both engines and
+/// assert they agree on both the source `Smid` and the "found" context string.
+/// Regression guard for the bytecode diagnostic parity work (eu-v6c4 / eu-0lvf):
+/// RC2 gave the bytecode `resolve_native` the same closure classification as
+/// HeapSyn (a boolean, a block, …) instead of a garbled default, and the
+/// annotation must flow to the raised error identically on both engines.
+fn assert_engines_not_value_agree(
+    syntax: Rc<StgSyn>,
+    bifs: Vec<Box<dyn StgIntrinsic>>,
+    expected_context: &str,
+) {
+    use crate::eval::error::ExecutionError;
+
+    let mut rt = StandardRuntime::default();
+    for b in bifs {
+        rt.add(b);
+    }
+    rt.prepare(&mut SourceMap::default());
+    let settings = StgSettings::default();
+
+    let heap_err = {
+        let mut m = standard_machine(&settings, syntax.clone(), Box::new(NullEmitter), &rt)
+            .expect("build HeapSyn machine");
+        m.run(Some(1_000_000))
+            .expect_err("HeapSyn should raise NotValue")
+    };
+
+    // The bytecode error must be `Traced` (RC1 wraps raised errors with the
+    // env/stack annotation traces, as HeapSyn does) before we unwrap it.
+    let bc_err = {
+        let globals = rt.globals();
+        let (prog, root, gforms) = encode(&syntax, &globals);
+        let mut m = BytecodeMachine::new(
+            prog,
+            root,
+            &gforms,
+            rt.intrinsics(),
+            Box::new(NullEmitter),
+            0,
+            false,
+        )
+        .expect("build bytecode machine");
+        m.run(Some(1_000_000))
+            .expect_err("bytecode should raise NotValue")
+    };
+    assert!(
+        matches!(bc_err, ExecutionError::Traced(..)),
+        "bytecode error should be Traced (RC1), got {bc_err:?}"
+    );
+
+    fn unwrap_traced(e: &ExecutionError) -> &ExecutionError {
+        match e {
+            ExecutionError::Traced(inner, _, _) => unwrap_traced(inner),
+            other => other,
+        }
+    }
+
+    match (unwrap_traced(&heap_err), unwrap_traced(&bc_err)) {
+        (ExecutionError::NotValue(hs, hc), ExecutionError::NotValue(bs, bc)) => {
+            assert_eq!(hs, bs, "engines disagree on the NotValue source Smid");
+            assert_eq!(hc, bc, "engines disagree on the NotValue context string");
+            assert_eq!(bc, expected_context, "unexpected NotValue context");
+        }
+        _ => panic!("expected NotValue from both engines, got heap={heap_err:?} bc={bc_err:?}"),
+    }
+}
+
 mod tests {
     use super::*;
     use crate::eval::stg::arith::{Add, Lt};
@@ -235,6 +302,45 @@ mod tests {
         // let x = 5 in x -> 5
         let syn = dsl::let_(vec![dsl::value(dsl::atom(dsl::num(5)))], dsl::local(0));
         assert_eq!(assert_engines_agree(syn, vec![]), Some(5));
+    }
+
+    #[test]
+    fn agree_on_not_value_boolean() {
+        // Ann(S, __STR(true)) — passing a boolean to an intrinsic that resolves
+        // its argument to a native. Both engines must classify the boolean
+        // identically ("a boolean (true)", not the pre-fix garbled "expected a
+        // native value") and carry the enclosing annotation `S` on the raised
+        // NotValue. Regresses eu-v6c4 RC2 (resolve_native classification).
+        use crate::common::sourcemap::Smid;
+        use crate::eval::stg::string::Str;
+        let str_idx = crate::eval::intrinsics::index_u8("STR");
+        let smid = Smid::from(4242);
+        let syn = dsl::letrec_(
+            vec![dsl::value(dsl::data(
+                DataConstructor::BoolTrue.tag(),
+                vec![],
+            ))],
+            dsl::ann(smid, dsl::app_bif(str_idx, vec![dsl::lref(0)])),
+        );
+        assert_engines_not_value_agree(syn, vec![Box::new(Str)], "a boolean (true)");
+    }
+
+    #[test]
+    fn agree_on_not_value_block() {
+        // Ann(S, __STR({})) — passing a block where a native is expected. Both
+        // engines classify it as "a block" and agree on the annotation `S`.
+        use crate::common::sourcemap::Smid;
+        use crate::eval::stg::string::Str;
+        let str_idx = crate::eval::intrinsics::index_u8("STR");
+        let smid = Smid::from(99);
+        let syn = dsl::letrec_(
+            vec![
+                dsl::value(dsl::nil()),               // 0: empty entry list
+                dsl::value(dsl::block(dsl::lref(0))), // 1: {} block
+            ],
+            dsl::ann(smid, dsl::app_bif(str_idx, vec![dsl::lref(1)])),
+        );
+        assert_engines_not_value_agree(syn, vec![Box::new(Str)], "a block");
     }
 
     #[test]
