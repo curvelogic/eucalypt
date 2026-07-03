@@ -408,8 +408,36 @@ impl<'a> Executor<'a> {
                 // in three cases exactly as the HeapSyn path below: a direct IO
                 // yield, a terminated IO function (inject world), or a plain
                 // document (RENDER_DOC in place).
-                let globals = rt.globals();
-                let (prog, root, gforms) = crate::eval::bytecode::encode(&syn, &globals);
+                // BV5 (eu-amp9): when the blob carries a pre-encoded prelude
+                // BytecodeProgram, run straight off it — append only the user
+                // program root and the per-invocation __args/__io override
+                // globals — instead of re-encoding every prelude and intrinsic
+                // global on this run. When absent (source-prelude fallback or a
+                // pre-BV5 blob), encode the whole program from STG as before.
+                #[cfg(not(target_arch = "wasm32"))]
+                let embedded = self.prelude_blob.as_ref().and_then(|b| b.bytecode.as_ref());
+                #[cfg(target_arch = "wasm32")]
+                let embedded: Option<
+                    &crate::eval::stg::blob::PreludeBytecodeImage,
+                > = None;
+
+                let (prog, root, gforms) = match embedded {
+                    Some(image) => {
+                        let mut gforms = image.global_forms.clone();
+                        let overrides = rt.prelude_global_overrides();
+                        let (prog, root) = crate::eval::bytecode::encode_overrides_and_root(
+                            &image.program,
+                            &overrides,
+                            &mut gforms,
+                            &syn,
+                        );
+                        (prog, root, gforms)
+                    }
+                    None => {
+                        let globals = rt.globals();
+                        crate::eval::bytecode::encode(&syn, &globals)
+                    }
+                };
                 emitter.stream_start();
                 let heap_mib = stg_settings.heap_limit_mib.unwrap_or(0);
                 let mut m = crate::eval::bytecode::BytecodeMachine::new(
