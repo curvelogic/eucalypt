@@ -28,7 +28,7 @@ use crate::eval::memory::array::Array;
 use crate::eval::memory::collect::{
     collect as gc_collect, CollectorHeapView, CollectorScope, GcScannable, ScanPtr,
 };
-use crate::eval::memory::heap::Heap;
+use crate::eval::memory::heap::{Heap, HeapStats};
 use crate::eval::memory::infotable::{InfoTable, InfoTagged};
 use crate::eval::memory::mutator::MutatorHeapView;
 use crate::eval::memory::string::HeapString;
@@ -249,6 +249,12 @@ pub struct BcMachineState {
     /// their heap pointers must stay live for the sub-evaluation (mirrors
     /// `MachineState::suspended_stacks`).
     pub suspended_stacks: Vec<Vec<BcContinuation>>,
+    /// Closures allocated by `let`/`letrec` bindings, accumulated across every
+    /// execution phase (main run, io-run drives, nested `evaluate_to_whnf`).
+    /// Counted the same way as the HeapSyn machine's `Metrics::allocs`
+    /// (`vm.rs` — one per `let`/`letrec` binding) so `-S` allocation counts
+    /// are cross-engine comparable.
+    pub allocs: u64,
 }
 
 impl BcMachineState {
@@ -276,6 +282,7 @@ impl BcMachineState {
             blackhole: 0,
             stash: Vec::new(),
             suspended_stacks: Vec::new(),
+            allocs: 0,
         }
     }
 
@@ -1431,6 +1438,7 @@ pub fn handle_op(
         Op::Let => {
             let (headers, body_off) = read_let(code, &mut pc);
             // Non-recursive: bindings close over the enclosing env.
+            state.allocs += headers.len() as u64;
             let mut array = Array::with_capacity(&view, headers.len());
             for h in &headers {
                 array.push(&view, BcValue::Closure(BcClosure::close(&bc_info(h), env)));
@@ -1443,6 +1451,7 @@ pub fn handle_op(
         Op::LetRec => {
             let (headers, body_off) = read_let(code, &mut pc);
             // Recursive: bindings close over the new frame itself.
+            state.allocs += headers.len() as u64;
             let mut array = Array::with_capacity(&view, headers.len());
             for _ in &headers {
                 array.push(
@@ -1829,11 +1838,38 @@ impl<'a> BytecodeMachine<'a> {
         Ok(self.exit_code())
     }
 
+    /// Machine metrics (ticks, max stack) accumulated across every phase.
+    /// Note: allocation counts live on the shared machine state (see
+    /// [`Self::allocs`]) because they are recorded inside the free `handle_op`
+    /// dispatch, which has no access to the metrics record.
+    pub fn metrics(&self) -> &Metrics {
+        &self.metrics
+    }
+
+    /// Closures allocated by `let`/`letrec` across every execution phase,
+    /// counted equivalently to the HeapSyn `Metrics::allocs` so `-S`
+    /// allocation figures are comparable across engines.
+    pub fn allocs(&self) -> u64 {
+        self.state.allocs
+    }
+
+    /// GC / occupation timings (mirrors `Machine::clock`).
+    pub fn clock(&self) -> &Clock {
+        &self.clock
+    }
+
+    /// Heap statistics (blocks, LOBs, collection counts) — the same
+    /// `HeapStats` the HeapSyn machine reports.
+    pub fn heap_stats(&self) -> HeapStats {
+        self.heap.stats()
+    }
+
     /// One dispatch step over the shared machine state (the free `step`),
     /// followed by the deferred `Bif` dispatch tail (spec §6.3): when the
     /// `Bif` arm captured an intrinsic, run it through a [`BcBifContext`].
     fn dispatch(&mut self) -> Result<(), ExecutionError> {
         self.metrics.tick();
+        self.metrics.stack(self.state.stack.len());
         {
             let view = MutatorHeapView::new(&self.heap);
             // Mirror the HeapSyn `handle_instruction` map_err (vm.rs): attach
@@ -2845,6 +2881,7 @@ impl BcBifContext<'_, '_> {
                 }
             }
             self.metrics.tick();
+            self.metrics.stack(self.state.stack.len());
             {
                 // SAFETY: the view borrows the heap for this scope only and is
                 // dropped before any `&mut self.heap` use; this mirrors the
@@ -3713,6 +3750,48 @@ mod tests {
         m.dispatch().unwrap(); // execute the Let (allocates the env frame)
         m.gc_now(); // roots must survive
         assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
+    }
+
+    #[test]
+    fn bytecode_reports_machine_heap_gc_stats() {
+        // The bytecode engine must expose the same Machine/Heap/GC statistics
+        // the driver reports under `-S` (eu-s2oz): ticks and allocations
+        // (Machine), heap blocks (Heap), and collection counts / timings (GC).
+        // `let x = 5 in x` performs one heap allocation; a forced collection
+        // advances the GC counters, exactly as a real run's periodic GC would.
+        let syn = dsl::let_(vec![dsl::value(dsl::atom(dsl::num(5)))], dsl::local(0));
+        let (prog, root, gforms) = encode(&syn, &[]);
+        let mut m = bare_machine(prog, root, &gforms);
+
+        m.dispatch().unwrap(); // execute the Let (allocates the env frame)
+        m.gc_now(); // exercise the GC counters
+        assert_eq!(m.run(Some(10_000)).unwrap(), Some(5));
+
+        // Machine counters — non-zero and sensible.
+        assert!(m.metrics().ticks() > 0, "ticks should be non-zero");
+        assert!(
+            m.allocs() > 0,
+            "allocs should be non-zero (the `let` binding)"
+        );
+
+        // Heap counters.
+        let heap_stats = m.heap_stats();
+        assert!(
+            heap_stats.blocks_allocated > 0,
+            "heap blocks should have been allocated"
+        );
+
+        // GC counters — a collection ran, so counts and timings advance.
+        assert!(
+            heap_stats.collections_count > 0,
+            "a collection should have been recorded"
+        );
+        let total_gc = m.clock().duration(ThreadOccupation::CollectorMark)
+            + m.clock().duration(ThreadOccupation::CollectorSweep);
+        assert!(
+            total_gc > std::time::Duration::ZERO,
+            "GC mark/sweep time should have been recorded"
+        );
     }
 
     #[test]

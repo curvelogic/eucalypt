@@ -104,6 +104,44 @@ fn collect_machine_stats(machine: &crate::eval::machine::vm::Machine<'_>, stats:
     stats.set_total_sweep_time(machine.clock().duration(ThreadOccupation::CollectorSweep));
 }
 
+/// Collect machine, GC, and heap statistics from the bytecode machine after
+/// all execution phases (eval, render, IO) have completed.
+///
+/// The bytecode engine keeps the same `Metrics`/`Clock`/`HeapStats` records
+/// as the HeapSyn machine, so `-S` reports a comparable, single-counted set on
+/// both engines. Allocation counts come from the shared machine state (see
+/// `BytecodeMachine::allocs`) rather than `Metrics`, because they are recorded
+/// inside the free `handle_op` dispatch.
+fn collect_bytecode_stats(
+    machine: &crate::eval::bytecode::BytecodeMachine<'_>,
+    stats: &mut Statistics,
+) {
+    use crate::eval::machine::metrics::ThreadOccupation;
+
+    // GC phase timings
+    for (k, v) in machine.clock().report() {
+        stats.timings_mut().record(k, v);
+    }
+
+    // Machine counters
+    stats.set_ticks(machine.metrics().ticks());
+    stats.set_allocs(machine.allocs());
+    stats.set_max_stack(machine.metrics().max_stack());
+
+    // Heap stats
+    let heap_stats = machine.heap_stats();
+    stats.set_blocks_allocated(heap_stats.blocks_allocated);
+    stats.set_lobs_allocated(heap_stats.lobs_allocated);
+    stats.set_blocks_used(heap_stats.used);
+    stats.set_blocks_recycled(heap_stats.recycled);
+    stats.set_collections_count(heap_stats.collections_count);
+    stats.set_peak_heap_blocks(heap_stats.peak_heap_blocks);
+
+    // Aggregate GC timings
+    stats.set_total_mark_time(machine.clock().duration(ThreadOccupation::CollectorMark));
+    stats.set_total_sweep_time(machine.clock().duration(ThreadOccupation::CollectorSweep));
+}
+
 /// Run the prepared core expression and output to selected emitter
 /// Run result: statistics and an optional process exit code override.
 ///
@@ -503,6 +541,13 @@ impl<'a> Executor<'a> {
                     ret.map(|_| None)
                 };
                 m.take_emitter().stream_end();
+
+                // Collect machine/GC statistics from all execution phases so
+                // that -S reports bytecode Machine/Heap/GC stats comparable to
+                // the HeapSyn path (collected even on error, mirroring the
+                // HeapSyn branch below).
+                collect_bytecode_stats(&m, stats);
+
                 result
             } else {
                 emitter.stream_start();
