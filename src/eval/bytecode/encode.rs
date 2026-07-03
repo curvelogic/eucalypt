@@ -21,6 +21,8 @@
 
 use std::rc::Rc;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     common::sourcemap::Smid,
     eval::stg::{
@@ -33,7 +35,10 @@ use super::{opcode::*, program::BytecodeProgram, CodeRef};
 
 /// Encoded global form header: everything the machine needs to build a
 /// global closure — its kind, arity, source annotation and entry offset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Derives `Serialize`/`Deserialize` so the prelude's global forms can be
+/// embedded in the blob alongside the pre-encoded `BytecodeProgram` (BV5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GlobalForm {
     pub kind: u8,
     pub arity: u8,
@@ -411,18 +416,25 @@ fn classify_lambda_form(lf: &LambdaForm) -> (u8, u8, Smid) {
     }
 }
 
-/// Encode a program root and its global lambda forms into one
-/// `BytecodeProgram`.
-///
-/// Returns `(program, root_offset, global_forms)`; `program.global_entries`
-/// is populated with each global's entry offset (spec §5). Globals are
-/// encoded before the root so their offsets are stable.
-pub fn encode(
-    root: &Rc<StgSyn>,
-    globals: &[LambdaForm],
-) -> (BytecodeProgram, CodeRef, Vec<GlobalForm>) {
-    let mut enc = Encoder::new();
+/// The fixed-shape templates and global entry table shared by every
+/// program built from a given set of globals. Emitted before any program
+/// root so their offsets are stable (spec §4.2 / §5.5).
+struct Fixtures {
+    templates: Vec<CodeRef>,
+    blackhole: CodeRef,
+    meta_template: CodeRef,
+    pap: Vec<CodeRef>,
+    apply1_template: CodeRef,
+    apply2_template: CodeRef,
+    producer_tail_template: CodeRef,
+    global_forms: Vec<GlobalForm>,
+}
 
+/// Emit the constructor/PAP/thunk templates and every global lambda-form
+/// body into `enc`, returning the resulting `Fixtures`. Shared by `encode`
+/// (which then appends a program root) and `encode_prelude` (which stops
+/// here, leaving a reusable pre-encoded prelude image).
+fn emit_fixtures_and_globals(enc: &mut Encoder, globals: &[LambdaForm]) -> Fixtures {
     // Constructor templates first, so their offsets sit at the low end of
     // the arena and are stable regardless of program size.
     let templates = enc.encode_templates();
@@ -463,12 +475,7 @@ pub fn encode(
         })
         .collect();
 
-    let root_off = enc.encode_node(root);
-
-    let program = BytecodeProgram {
-        code: enc.code,
-        constants: enc.constants,
-        global_entries: global_forms.iter().map(|f| f.entry).collect(),
+    Fixtures {
         templates,
         blackhole,
         meta_template,
@@ -476,8 +483,140 @@ pub fn encode(
         apply1_template,
         apply2_template,
         producer_tail_template,
+        global_forms,
+    }
+}
+
+/// Assemble a `BytecodeProgram` from an encoder's accumulated `code`/
+/// `constants` and the shared `Fixtures`.
+fn build_program(enc: Encoder, f: &Fixtures) -> BytecodeProgram {
+    BytecodeProgram {
+        code: enc.code,
+        constants: enc.constants,
+        global_entries: f.global_forms.iter().map(|g| g.entry).collect(),
+        templates: f.templates.clone(),
+        blackhole: f.blackhole,
+        meta_template: f.meta_template,
+        pap: f.pap.clone(),
+        apply1_template: f.apply1_template,
+        apply2_template: f.apply2_template,
+        producer_tail_template: f.producer_tail_template,
+    }
+}
+
+/// Encode a program root and its global lambda forms into one
+/// `BytecodeProgram`.
+///
+/// Returns `(program, root_offset, global_forms)`; `program.global_entries`
+/// is populated with each global's entry offset (spec §5). Globals are
+/// encoded before the root so their offsets are stable.
+pub fn encode(
+    root: &Rc<StgSyn>,
+    globals: &[LambdaForm],
+) -> (BytecodeProgram, CodeRef, Vec<GlobalForm>) {
+    let mut enc = Encoder::new();
+    let fixtures = emit_fixtures_and_globals(&mut enc, globals);
+    let root_off = enc.encode_node(root);
+    let program = build_program(enc, &fixtures);
+    (program, root_off, fixtures.global_forms)
+}
+
+/// Encode only the fixed templates and prelude global bodies — no program
+/// root — producing a reusable pre-encoded prelude image (BV5, eu-amp9).
+///
+/// The returned program's `code` ends immediately after the last global
+/// body, so a subsequent [`encode_root_onto`] appends the program root at
+/// exactly the offset `encode` would have used, yielding byte-identical
+/// output. Embedded in the prelude blob so the loader can run straight off
+/// serialised bytecode instead of re-encoding hundreds of prelude globals
+/// on every invocation.
+pub fn encode_prelude(globals: &[LambdaForm]) -> (BytecodeProgram, Vec<GlobalForm>) {
+    let mut enc = Encoder::new();
+    let fixtures = emit_fixtures_and_globals(&mut enc, globals);
+    let program = build_program(enc, &fixtures);
+    (program, fixtures.global_forms)
+}
+
+/// Append a program root to a pre-encoded prelude `base`, reusing its
+/// `code`/`constants` prefix unchanged, and return the extended program and
+/// the root's entry offset (BV5, eu-amp9).
+///
+/// Because every cross-reference is by global slot (`Ref::G`, resolved via
+/// the global entry table) or constant-pool index — never a raw byte offset
+/// into another global — appending the root leaves every existing offset
+/// valid and produces exactly what a full `encode(root, globals)` would.
+pub fn encode_root_onto(base: &BytecodeProgram, root: &Rc<StgSyn>) -> (BytecodeProgram, CodeRef) {
+    let mut enc = Encoder {
+        code: base.code.clone(),
+        constants: base.constants.clone(),
     };
-    (program, root_off, global_forms)
+    let root_off = enc.encode_node(root);
+    let program = BytecodeProgram {
+        code: enc.code,
+        constants: enc.constants,
+        global_entries: base.global_entries.clone(),
+        templates: base.templates.clone(),
+        blackhole: base.blackhole,
+        meta_template: base.meta_template,
+        pap: base.pap.clone(),
+        apply1_template: base.apply1_template,
+        apply2_template: base.apply2_template,
+        producer_tail_template: base.producer_tail_template,
+    };
+    (program, root_off)
+}
+
+/// Re-encode a set of override global forms and a program root onto a
+/// pre-encoded prelude `base` (BV5, eu-amp9).
+///
+/// The prelude blob bakes stale bodies for the `__args` / `__io` globals
+/// (their real values depend on the invocation). This mirrors the STG blob
+/// path's `set_prelude_slot_override`: each `(slot, form)` body is encoded
+/// afresh and its `global_entries[slot]` / `global_forms[slot]` patched to
+/// point at the new bytecode. The old (dead) bytecode remains in the buffer
+/// but is never referenced. Only these few globals plus the root are
+/// re-encoded — the hundreds of ordinary prelude/intrinsic globals are used
+/// straight from `base`.
+pub fn encode_overrides_and_root(
+    base: &BytecodeProgram,
+    overrides: &[(usize, LambdaForm)],
+    global_forms: &mut [GlobalForm],
+    root: &Rc<StgSyn>,
+) -> (BytecodeProgram, CodeRef) {
+    let mut enc = Encoder {
+        code: base.code.clone(),
+        constants: base.constants.clone(),
+    };
+    let mut global_entries = base.global_entries.clone();
+    for (slot, lf) in overrides {
+        let entry = enc.encode_node(lf.body());
+        let (kind, arity, smid) = classify_lambda_form(lf);
+        if let Some(e) = global_entries.get_mut(*slot) {
+            *e = entry;
+        }
+        if let Some(g) = global_forms.get_mut(*slot) {
+            *g = GlobalForm {
+                kind,
+                arity,
+                smid,
+                entry,
+            };
+        }
+    }
+    let root_off = enc.encode_node(root);
+    let program = BytecodeProgram {
+        code: enc.code,
+        constants: enc.constants,
+        global_entries,
+        templates: base.templates.clone(),
+        blackhole: base.blackhole,
+        meta_template: base.meta_template,
+        pap: base.pap.clone(),
+        apply1_template: base.apply1_template,
+        apply2_template: base.apply2_template,
+        producer_tail_template: base.producer_tail_template,
+    };
+    (program, root_off)
 }
 
 #[cfg(test)]

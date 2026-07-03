@@ -35,8 +35,30 @@ use serde::{Deserialize, Serialize};
 use crate::{
     core::{expr::RcExpr, typecheck::check::PreludeSummary},
     driver::unit_interface::OperatorInfo,
-    eval::stg::arena::{ArenaLambdaForm, ArenaStgSyn, FormIdx},
+    eval::{
+        bytecode::{BytecodeProgram, GlobalForm},
+        stg::arena::{ArenaLambdaForm, ArenaStgSyn, FormIdx},
+    },
 };
+
+// ── PreludeBytecodeImage ──────────────────────────────────────────────────────
+
+/// The pre-encoded prelude bytecode embedded in the blob (BV5, eu-amp9).
+///
+/// Holds the flat `BytecodeProgram` for the prelude (fixed templates plus
+/// every intrinsic-wrapper and prelude-binding global body — no program
+/// root) together with the parallel `global_forms` the machine needs to
+/// build the globals frame. The loader appends the user program root (and
+/// re-encodes the per-invocation `__args` / `__io` overrides) onto this
+/// image rather than re-encoding the whole prelude on every run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreludeBytecodeImage {
+    /// Pre-encoded prelude program: templates + all global bodies, no root.
+    pub program: BytecodeProgram,
+    /// Global forms (kind/arity/smid/entry) for every global slot, in slot
+    /// order (intrinsic wrappers `0..INTRINSIC_COUNT`, then prelude bindings).
+    pub global_forms: Vec<GlobalForm>,
+}
 
 // ── PreludeBlob ───────────────────────────────────────────────────────────────
 
@@ -106,6 +128,17 @@ pub struct PreludeBlob {
     /// `Var::Free` references resolve at compile time via `Ref::G`.
     #[serde(default)]
     pub inline_cores: Vec<(String, RcExpr)>,
+
+    /// Pre-encoded prelude BytecodeProgram + global forms (BV5, eu-amp9).
+    ///
+    /// Present alongside the STG arena form (`nodes` / `forms_pool`): the
+    /// HeapSyn engine loads the STG form, while the bytecode engine loads
+    /// this pre-encoded program directly instead of re-encoding the prelude
+    /// on every run. `Option` + `#[serde(default)]` so a blob generated
+    /// before BV5 (or one deliberately omitting it) deserialises to `None`
+    /// and the loader degrades gracefully to encode-from-STG.
+    #[serde(default)]
+    pub bytecode: Option<PreludeBytecodeImage>,
 }
 
 impl PreludeBlob {
@@ -138,6 +171,7 @@ mod tests {
             monad_specs: HashMap::new(),
             monad_type_hints: HashMap::new(),
             inline_cores: vec![],
+            bytecode: None,
         }
     }
 
@@ -238,6 +272,66 @@ mod tests {
         assert!(restored.monad_specs.is_empty());
         assert!(restored.monad_type_hints.is_empty());
         assert!(restored.inline_cores.is_empty());
+        // A blob generated before BV5 has no bytecode image; the loader must
+        // see `None` and degrade to encode-from-STG.
+        assert!(restored.bytecode.is_none());
+    }
+
+    #[test]
+    fn bytecode_image_round_trip() {
+        use crate::common::sourcemap::Smid;
+        use crate::eval::bytecode::GlobalForm;
+        use crate::eval::stg::syntax::Native;
+
+        let mut blob = minimal_blob();
+        // A small hand-built program with one constant and one global form.
+        let mut program = BytecodeProgram {
+            code: vec![1, 2, 3, 4, 5],
+            constants: vec![Native::Num(7.into()), Native::Sym("k".to_string())],
+            global_entries: vec![0, 3],
+            templates: vec![10, 11, 12],
+            blackhole: 4,
+            meta_template: 2,
+            ..Default::default()
+        };
+        program.pap = vec![13, 14];
+        program.apply1_template = 1;
+        program.apply2_template = 2;
+        program.producer_tail_template = 3;
+
+        blob.bytecode = Some(PreludeBytecodeImage {
+            program,
+            global_forms: vec![
+                GlobalForm {
+                    kind: 1,
+                    arity: 0,
+                    smid: Smid::default(),
+                    entry: 0,
+                },
+                GlobalForm {
+                    kind: 3,
+                    arity: 2,
+                    smid: Smid::default(),
+                    entry: 3,
+                },
+            ],
+        });
+
+        let bytes = blob.to_bytes().unwrap();
+        let restored = PreludeBlob::from_bytes(&bytes).unwrap();
+        let img = restored.bytecode.expect("bytecode image must round-trip");
+
+        assert_eq!(img.program.code, vec![1, 2, 3, 4, 5]);
+        assert_eq!(img.program.constants.len(), 2);
+        assert_eq!(img.program.constants[0], Native::Num(7.into()));
+        assert_eq!(img.program.global_entries, vec![0, 3]);
+        assert_eq!(img.program.templates, vec![10, 11, 12]);
+        assert_eq!(img.program.blackhole, 4);
+        assert_eq!(img.program.pap, vec![13, 14]);
+        assert_eq!(img.program.producer_tail_template, 3);
+        assert_eq!(img.global_forms.len(), 2);
+        assert_eq!(img.global_forms[1].arity, 2);
+        assert_eq!(img.global_forms[1].entry, 3);
     }
 
     #[test]
@@ -347,6 +441,88 @@ mod tests {
         assert!(
             result.is_err(),
             "corrupted bytes should produce a deserialisation error"
+        );
+    }
+
+    #[test]
+    #[cfg(prelude_blob_ok)]
+    fn embedded_bytecode_matches_fresh_encode() {
+        use crate::common::sourcemap::SourceMap;
+        use crate::eval::bytecode::encode;
+        use crate::eval::stg::runtime::Runtime;
+        use crate::eval::stg::{make_standard_runtime, syntax::dsl};
+
+        let bytes = crate::driver::resources::PRELUDE_BLOB_BYTES;
+        let blob = PreludeBlob::from_bytes(bytes).expect("embedded blob should deserialise");
+        let image = blob
+            .bytecode
+            .as_ref()
+            .expect("embedded blob must carry pre-encoded bytecode (BV5)");
+
+        // Rebuild the runtime globals exactly as the loader does, then encode
+        // a trivial root. The prelude image must be a byte-identical prefix.
+        let mut sm = SourceMap::new();
+        let mut rt = make_standard_runtime(&mut sm);
+        let mut names = vec![String::new(); blob.binding_entries.len()];
+        for (name, &slot) in &blob.name_to_slot {
+            if slot < names.len() {
+                names[slot] = name.clone();
+            }
+        }
+        rt.set_prelude_bindings(
+            blob.nodes.clone(),
+            blob.forms_pool.clone(),
+            blob.binding_entries.clone(),
+            names,
+        );
+        let globals = rt.globals();
+        let (fresh, _root, fresh_forms) = encode(&dsl::atom(dsl::num(0)), &globals);
+
+        assert_eq!(
+            image.global_forms, fresh_forms,
+            "embedded global_forms must match a fresh encode"
+        );
+        assert_eq!(
+            image.program.templates, fresh.templates,
+            "templates must survive the postcard round-trip"
+        );
+        assert_eq!(image.program.blackhole, fresh.blackhole, "blackhole");
+        assert_eq!(image.program.meta_template, fresh.meta_template, "meta");
+        assert_eq!(image.program.pap, fresh.pap, "pap templates");
+        assert_eq!(
+            image.program.apply1_template, fresh.apply1_template,
+            "apply1"
+        );
+        assert_eq!(
+            image.program.apply2_template, fresh.apply2_template,
+            "apply2"
+        );
+        assert_eq!(
+            image.program.producer_tail_template, fresh.producer_tail_template,
+            "producer tail"
+        );
+        assert_eq!(
+            image.program.global_entries,
+            fresh.global_entries[..image.program.global_entries.len()],
+            "global entry table prefix"
+        );
+        assert!(
+            image.program.constants.len() <= fresh.constants.len(),
+            "prelude image constants must be a prefix (no root)"
+        );
+        assert_eq!(
+            image.program.constants,
+            fresh.constants[..image.program.constants.len()],
+            "embedded prelude constants must be a byte-identical prefix"
+        );
+        assert!(
+            image.program.code.len() <= fresh.code.len(),
+            "prelude image code must be a prefix (no root)"
+        );
+        assert_eq!(
+            image.program.code,
+            fresh.code[..image.program.code.len()],
+            "embedded prelude code must be a byte-identical prefix of a fresh encode"
         );
     }
 

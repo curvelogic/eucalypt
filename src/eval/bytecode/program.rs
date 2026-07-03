@@ -6,6 +6,8 @@
 //! literals (strings, symbols) cannot live in the byte stream, so they are
 //! hoisted once into the constant pool and rooted for the run (spec §4.4).
 
+use serde::{Deserialize, Serialize};
+
 use crate::eval::{
     memory::{
         alloc::ScopedAllocator,
@@ -21,7 +23,13 @@ use super::CodeRef;
 
 /// A compiled bytecode program: a flat opcode stream plus the constant
 /// pool and per-global entry offsets it refers to.
-#[derive(Debug, Default)]
+///
+/// Derives `Serialize`/`Deserialize` (postcard) so the pre-encoded prelude
+/// program can be embedded in the prelude blob (BV5, eu-amp9). Every field
+/// is a plain `Vec<u8>`, `Vec<u32>`, `u32`, or `Vec<StgNative>` (whose
+/// `Number`s serialise via their decimal-string form), so no field needs
+/// special handling.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct BytecodeProgram {
     /// Flat opcode + inline-operand stream (non-GC).
     pub code: Vec<u8>,

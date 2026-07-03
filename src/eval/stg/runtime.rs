@@ -162,6 +162,31 @@ impl StandardRuntime {
         self.prelude_slot_overrides
             .push((slot, arena.nodes, arena.forms, entry_idx));
     }
+
+    /// Reconstruct the per-invocation override globals as `(full global
+    /// slot, LambdaForm)` pairs, for the bytecode blob loader.
+    ///
+    /// The pre-encoded prelude bytecode in the blob bakes stale `__args` /
+    /// `__io` bodies; the loader re-encodes these fresh forms onto the
+    /// embedded program (mirroring how `globals()` substitutes them into the
+    /// STG path). The returned slot is the full `Ref::G` index
+    /// (`INTRINSIC_COUNT + prelude slot`), matching the `global_forms` order.
+    pub fn prelude_global_overrides(&self) -> Vec<(usize, LambdaForm)> {
+        let intrinsic_count = self.impls.len();
+        self.prelude_slot_overrides
+            .iter()
+            .filter_map(|(slot, nodes, forms, entry)| {
+                let arena = StgArena {
+                    nodes: nodes.clone(),
+                    forms: forms.clone(),
+                };
+                arena
+                    .reconstruct_form(*entry)
+                    .ok()
+                    .map(|form| (intrinsic_count + slot, form))
+            })
+            .collect()
+    }
 }
 
 impl ToPretty for StandardRuntime {
