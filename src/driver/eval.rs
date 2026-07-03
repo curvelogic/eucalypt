@@ -317,7 +317,16 @@ impl<'a> Executor<'a> {
             }
 
             if let Some(&io_slot) = b.name_to_slot.get("__io") {
-                let io_expr = crate::driver::io::create_io_pseudoblock(self.seed);
+                // Inspection-only invocations (`eu dump runtime`/`stg`) print
+                // the runtime globals, which include this overridden `__io`
+                // slot.  Use a sanitised (empty-env) pseudoblock so the real
+                // process environment is never embedded in dump output; eval
+                // (`opt.run()`) still substitutes the live environment.
+                let io_expr = if opt.inspects_ir() {
+                    crate::driver::io::create_io_pseudoblock_deterministic()
+                } else {
+                    crate::driver::io::create_io_pseudoblock(self.seed)
+                };
                 if let Ok(stg_syn) = stg::compile(&override_settings, io_expr, rt.as_ref()) {
                     rt.set_prelude_slot_override(io_slot, stg::syntax::LambdaForm::thunk(stg_syn));
                 }

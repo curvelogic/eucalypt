@@ -145,3 +145,80 @@ fn test_io_random_seed_values_differ_per_seed() {
         "different --seed flags must produce different io.RANDOM_SEED values"
     );
 }
+
+/// Marker written into the process environment for the dump-leak regression
+/// tests below.  If it turns up in `eu dump` output the compiled unit is
+/// embedding the real process environment — a secrets-leak (see eu-9uhq).
+const SECRET_MARKER: &str = "eu-9uhq-secret-should-not-leak";
+
+/// Run `eu dump <phase> <extra_args> <file>` with a planted secret env var and
+/// return combined stdout+stderr.  Unlike `eu_eval`, this does not assert
+/// success — dump phases exit 0 but we care about output content.
+fn eu_dump_with_secret(phase: &str, extra_args: &[&str]) -> String {
+    // A trivial source file that still triggers the full compile pipeline
+    // (and, for `stg`/`runtime`, the blob runtime-globals override).
+    let mut file = std::env::temp_dir();
+    file.push(format!("eu_9uhq_dump_{phase}.eu"));
+    std::fs::write(&file, "h: 1\n").expect("failed to write temp source");
+
+    let mut args = vec!["dump", phase];
+    args.extend_from_slice(extra_args);
+    let file_str = file.to_string_lossy().to_string();
+    args.push(&file_str);
+
+    let output = std::process::Command::new(eu_binary())
+        .args(&args)
+        // Plant fake secrets in the child's environment.
+        .env("ANTHROPIC_API_KEY", SECRET_MARKER)
+        .env("OPENAI_API_KEY", SECRET_MARKER)
+        .output()
+        .expect("failed to run eu dump");
+
+    let _ = std::fs::remove_file(&file);
+
+    let mut combined = String::from_utf8_lossy(&output.stdout).to_string();
+    combined.push_str(&String::from_utf8_lossy(&output.stderr));
+    combined
+}
+
+/// Regression for eu-9uhq: no `eu dump <phase>` variant may embed the real
+/// process environment (and therefore secrets held in env vars) into its
+/// output.  Covers every dump phase in both plain and `--embed` forms.
+#[test]
+fn test_dump_does_not_leak_process_env() {
+    for phase in [
+        "ast",
+        "desugared",
+        "cooked",
+        "inlined",
+        "pruned",
+        "stg",
+        "runtime",
+    ] {
+        for extra in [&[][..], &["--embed"][..]] {
+            let out = eu_dump_with_secret(phase, extra);
+            assert!(
+                !out.contains(SECRET_MARKER),
+                "eu dump {phase} {extra:?} leaked the planted secret into its output"
+            );
+        }
+    }
+}
+
+/// The inspection sanitisation must not touch eval/run: `io.env` reads the
+/// real environment at evaluation time (the correctness boundary).
+#[test]
+fn test_eval_still_reads_real_env() {
+    let output = std::process::Command::new(eu_binary())
+        .arg("-e")
+        .arg("io.env lookup(:EU_9UHQ_REAL_ENV_MARKER)")
+        .env("EU_9UHQ_REAL_ENV_MARKER", SECRET_MARKER)
+        .output()
+        .expect("failed to run eu binary");
+    assert!(output.status.success(), "eu eval failed");
+    let out = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        out.contains(SECRET_MARKER),
+        "eval must observe the real environment, got: {out}"
+    );
+}
