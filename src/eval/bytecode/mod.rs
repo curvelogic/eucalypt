@@ -30,8 +30,22 @@ pub use machine::*;
 #[cfg(test)]
 mod differential;
 
-/// Whether the experimental bytecode engine is selected for this run
-/// (`EU_BYTECODE=1`). Wired into `driver/eval.rs` for pure programs.
+/// Whether the bytecode engine is selected for this run. Wired into
+/// `driver/eval.rs` for pure programs.
+///
+/// As of BV1 (eu-enyv) the bytecode engine is the **default**. Set
+/// `EU_HEAPSYN=1` to opt out and select the legacy HeapSyn machine, which is
+/// retained as the performance baseline and differential-testing engine
+/// (Phase 4 collapse is deferred pending an A/B perf study).
+///
+/// `EU_BYTECODE=1` is still accepted as a now-redundant explicit opt-in so
+/// existing invocations keep working; `EU_HEAPSYN=1` takes precedence over it.
 pub fn bytecode_enabled() -> bool {
-    std::env::var("EU_BYTECODE").as_deref() == Ok("1")
+    !heapsyn_enabled()
+}
+
+/// Whether the legacy HeapSyn engine has been explicitly requested via the
+/// `EU_HEAPSYN=1` opt-out.
+pub fn heapsyn_enabled() -> bool {
+    std::env::var("EU_HEAPSYN").as_deref() == Ok("1")
 }
