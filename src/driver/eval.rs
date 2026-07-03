@@ -7,7 +7,8 @@ use crate::{
     core::{expr::*, typecheck::error::TypeWarning},
     driver::{
         error::EucalyptError,
-        io_run::{inject_world_and_run, io_run_and_render, render_headless_result, IoRunError},
+        io_common::IoRunError,
+        io_run::{inject_world_and_run, io_run_and_render, render_headless_result},
         options::{ErrorFormat, EucalyptOptions},
         source::SourceLoader,
     },
@@ -399,19 +400,15 @@ impl<'a> Executor<'a> {
             } else if crate::eval::bytecode::bytecode_enabled() {
                 // Experimental parallel bytecode engine (EU_BYTECODE=1).
                 //
-                // Pure programs only: recompile with a self-contained
-                // RenderDoc wrapper (the bytecode engine has no runtime code
-                // synthesis for the headless-render path) and run the
-                // BytecodeMachine. IO / world-injection is not yet ported;
-                // intrinsics still on the HeapSyn-typed ABI will panic and
-                // surface which ones the corpus needs.
-                let bc_settings = StgSettings {
-                    render_type: RenderType::RenderDoc,
-                    ..stg_settings.clone()
-                };
-                let bc_syn = stg::compile(&bc_settings, self.evaluand.clone(), rt.as_ref())?;
+                // Compile headless (like the HeapSyn path — `syn` above is
+                // already the headless compile) so IO constructors yield to the
+                // bytecode io-run driver rather than being consumed by a
+                // RENDER_DOC wrapper. After the first run the result is handled
+                // in three cases exactly as the HeapSyn path below: a direct IO
+                // yield, a terminated IO function (inject world), or a plain
+                // document (RENDER_DOC in place).
                 let globals = rt.globals();
-                let (prog, root, gforms) = crate::eval::bytecode::encode(&bc_syn, &globals);
+                let (prog, root, gforms) = crate::eval::bytecode::encode(&syn, &globals);
                 emitter.stream_start();
                 let heap_mib = stg_settings.heap_limit_mib.unwrap_or(0);
                 let mut m = crate::eval::bytecode::BytecodeMachine::new(
@@ -428,8 +425,47 @@ impl<'a> Executor<'a> {
                 stats
                     .timings_mut()
                     .record("bytecode-eval", t_exec.elapsed());
+
+                use crate::driver::bytecode_io_run::{
+                    inject_world_and_run, io_run_and_render, render_headless_result,
+                };
+                let result = if ret.is_ok() {
+                    if m.io_yielded() {
+                        let t_io = Instant::now();
+                        let io_result = io_run_and_render(&mut m, opt.allow_io)
+                            .map_err(io_run_error_to_execution);
+                        stats.timings_mut().record("io-run", t_io.elapsed());
+                        io_result
+                    } else {
+                        // Terminated without yielding: try world injection to
+                        // handle IO functions, else render as a plain document.
+                        let io_yielded =
+                            inject_world_and_run(&mut m).map_err(io_run_error_to_execution);
+                        match io_yielded {
+                            Ok(true) => {
+                                let t_io = Instant::now();
+                                let io_result = io_run_and_render(&mut m, opt.allow_io)
+                                    .map_err(io_run_error_to_execution);
+                                stats.timings_mut().record("io-run", t_io.elapsed());
+                                io_result
+                            }
+                            Ok(false) => {
+                                let t_render = Instant::now();
+                                let render_result = render_headless_result(&mut m)
+                                    .map_err(io_run_error_to_execution);
+                                stats
+                                    .timings_mut()
+                                    .record("bytecode-render", t_render.elapsed());
+                                render_result
+                            }
+                            Err(e) => Err(e),
+                        }
+                    }
+                } else {
+                    ret.map(|_| None)
+                };
                 m.take_emitter().stream_end();
-                ret
+                result
             } else {
                 emitter.stream_start();
                 let mut machine = standard_machine(&stg_settings, syn, emitter, rt.as_ref())?;

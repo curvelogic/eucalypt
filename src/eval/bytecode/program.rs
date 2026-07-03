@@ -50,10 +50,18 @@ pub struct BytecodeProgram {
     /// closure that resumes a partially-applied function (spec §6.1 / the
     /// `pap_syn` analogue). Use `pap_offset` to index.
     pub pap: Vec<CodeRef>,
+    /// Fixed-shape apply-one template: an `App(L0, [L1])` node. A runtime
+    /// `f(a)` application thunk is a `BcClosure(apply1_template, env{f, a})` —
+    /// used by the io-run driver to apply the world token to an IO action, the
+    /// unit token to an IO function, and the `RENDER_DOC` global to the final
+    /// value, all with no per-call arena growth (the env frame is GC-heap
+    /// allocated).
+    pub apply1_template: CodeRef,
     /// Fixed-shape apply-two template: an `App(L0, [L1, L2])` node. A runtime
     /// `f(a0, a1)` application thunk is a `BcClosure(apply2_template, env{f,
     /// a0, a1})` — used by `MERGEWITH` to combine colliding block values with
-    /// no per-call arena growth (the env frame is GC-heap allocated).
+    /// no per-call arena growth (the env frame is GC-heap allocated), and by
+    /// the io-run driver to apply an IO continuation to (result, world).
     pub apply2_template: CodeRef,
     /// Fixed-shape producer-tail template: an `AppBif(PRODUCER_NEXT, [L0])`
     /// node. The `PRODUCER_NEXT` tail thunk is an updatable
