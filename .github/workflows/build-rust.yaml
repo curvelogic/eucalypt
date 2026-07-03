@@ -103,6 +103,30 @@ jobs:
           EU_GC_STRESS: "1"
           EU_GC_POISON: "1"
 
+  test-bytecode-blob:
+    name: Bytecode + blob harness
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Generate the prelude blob so the *release-shaped* bytecode + blob path
+      # is exercised (bytecode is the default engine post eu-enyv). Without
+      # this step the binary falls back to the source prelude and the blob
+      # path — the one released binaries embed — goes completely untested.
+      # That gap let eu-0iba (a `DirectApp` to an unforced global thunk hung
+      # every recursive prelude function, e.g. `map`/`filter`) reach
+      # release-candidate builds uncaught while every CI job stayed green.
+      - name: Generate prelude blob
+        run: cargo run --package xtask -- prelude-compile
+      - name: Build release binary
+        run: cargo build --release
+      - name: Run harness on the bytecode + blob path
+        run: ./target/release/eu test --allow-io tests/harness
+
   test-source-prelude:
     name: Source-prelude harness (x86-64)
     runs-on: ubuntu-latest
