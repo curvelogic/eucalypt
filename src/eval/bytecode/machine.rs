@@ -1788,6 +1788,685 @@ impl<'a> BytecodeMachine<'a> {
     }
 }
 
+// ── io-run driver support (spec §6; eu-lka7) ────────────────────────────────
+//
+// The public surface the bytecode io-run driver (`driver::bytecode_io_run`)
+// needs to drive the IO monad: yield inspection, GC-safe stashing, re-entry,
+// re-entrant WHNF sub-evaluation, and the data-synthesis / navigation helpers
+// that build IO result values and read IO action spec blocks. This mirrors the
+// HeapSyn `Machine` surface used by `driver::io_run` (`vm.rs`), one method per
+// analogue, kept in a single additive block to localise the addition.
+impl BytecodeMachine<'_> {
+    /// Whether the machine has yielded on an IO constructor at the top.
+    pub fn io_yielded(&self) -> bool {
+        self.state.yielded_io
+    }
+
+    /// The current source annotation (stamped onto IO errors).
+    pub fn annotation(&self) -> Smid {
+        self.state.annotation
+    }
+
+    /// The current machine value (a clone; GC roots stay in the state).
+    pub fn current(&self) -> BcValue {
+        self.state.current.clone()
+    }
+
+    /// The empty root environment frame.
+    pub fn root_env(&self) -> RefPtr<BcEnvFrame> {
+        self.state.root_env
+    }
+
+    /// Intern a symbol into the machine's pool, returning its id.
+    pub fn intern_symbol(&mut self, s: &str) -> SymbolId {
+        self.symbol_pool.intern(s)
+    }
+
+    /// Push a value onto the GC-visible stash (a root across `run`/WHNF calls).
+    pub fn stash_push(&mut self, value: BcValue) {
+        self.state.stash.push(value);
+    }
+
+    /// Pop the top stashed value.
+    pub fn stash_pop(&mut self) -> BcValue {
+        self.state
+            .stash
+            .pop()
+            .expect("bytecode io-run stash underflow")
+    }
+
+    /// Peek a stashed value `depth` slots from the top (0 = top).
+    pub fn stash_peek(&self, depth: usize) -> BcValue {
+        let len = self.state.stash.len();
+        self.state.stash[len - 1 - depth].clone()
+    }
+
+    /// Resume execution with a new value after an IO yield: clear the
+    /// terminated / yielded flags and re-seat `current` (mirrors `vm.rs`
+    /// `resume`). A subsequent `run` drives from the new value.
+    pub fn resume(&mut self, value: BcValue) {
+        self.state.terminated = false;
+        self.state.yielded_io = false;
+        self.state.current = value;
+    }
+
+    /// The IO constructor tag the machine yielded on, or `None` if it has not
+    /// yielded on an IO constructor.
+    pub fn yielded_io_tag(&self) -> Option<Tag> {
+        if !self.state.yielded_io {
+            return None;
+        }
+        let c = self.state.current.as_closure()?;
+        decode_cons(&self.program, c).map(|(tag, _)| tag)
+    }
+
+    /// Resolve the argument values of the IO constructor the machine yielded
+    /// on, in declaration order. `None` if it has not yielded on one.
+    pub fn yielded_io_args(&self) -> Option<Vec<BcValue>> {
+        if !self.state.yielded_io {
+            return None;
+        }
+        let view = MutatorHeapView::new(&self.heap);
+        let c = *self.state.current.as_closure()?;
+        let (_, offsets) = decode_cons(&self.program, &c)?;
+        let code = self.program.code.as_slice();
+        let mut out = Vec::with_capacity(offsets.len());
+        for off in offsets {
+            let dref = arg_ref(code, off).ok()?;
+            let v = resolve_ref(
+                view,
+                &self.state.constants,
+                c.env(),
+                self.state.globals,
+                dref,
+            )
+            .ok()?;
+            out.push(v);
+        }
+        Some(out)
+    }
+
+    /// Evaluate `value` to WHNF on a fresh continuation stack, then restore the
+    /// IO yield state so the driver sees a consistent post-yield machine
+    /// (mirrors `vm.rs` `evaluate_to_whnf_for_io`). Errors if the
+    /// sub-evaluation itself yields an IO constructor (spec fields are pure).
+    pub fn evaluate_to_whnf_for_io(&mut self, value: BcValue) -> Result<BcValue, ExecutionError> {
+        // Suspend the caller's (empty) stack and stash its current value so the
+        // collector traces both across the sub-run.
+        let saved_stack = std::mem::take(&mut self.state.stack);
+        self.state.suspended_stacks.push(saved_stack);
+        let saved_current = std::mem::replace(&mut self.state.current, value);
+        self.state.stash.push(saved_current);
+        self.state.terminated = false;
+        self.state.yielded_io = false;
+
+        let run_result = self.drive_whnf();
+
+        let saved_current = self
+            .state
+            .stash
+            .pop()
+            .expect("bytecode io whnf stash underflow");
+        let saved_stack = self
+            .state
+            .suspended_stacks
+            .pop()
+            .expect("bytecode io whnf suspended-stack underflow");
+
+        let sub_yielded = self.state.yielded_io;
+        let result = std::mem::replace(&mut self.state.current, saved_current);
+        // Restore the IO yield termination state unconditionally so the driver
+        // sees a consistent yield whether or not an error occurred.
+        self.state.terminated = true;
+        self.state.yielded_io = true;
+        self.state.stack = saved_stack;
+
+        run_result?;
+        if sub_yielded {
+            return Err(ExecutionError::Panic(
+                self.state.annotation,
+                "bytecode: IO spec field evaluation unexpectedly yielded an IO constructor"
+                    .to_string(),
+            ));
+        }
+        Ok(result)
+    }
+
+    /// The re-entrant dispatch loop for `evaluate_to_whnf_for_io`: drives
+    /// `dispatch` (which runs the deferred `Bif` tail + capture lifecycle)
+    /// until the sub-evaluation terminates. Mirrors `run`'s loop body.
+    fn drive_whnf(&mut self) -> Result<(), ExecutionError> {
+        self.clock.switch(ThreadOccupation::Mutator);
+        let gc_check_freq: u32 = 500;
+        let mut gc_countdown: u32 = gc_check_freq;
+        while !self.state.terminated {
+            gc_countdown -= 1;
+            if gc_countdown == 0 {
+                gc_countdown = gc_check_freq;
+                if interrupted() {
+                    return Err(ExecutionError::Interrupted);
+                }
+                if self.heap.policy_requires_collection() {
+                    gc_collect(
+                        &mut self.state,
+                        &mut self.heap,
+                        &mut self.clock,
+                        self.dump_heap,
+                    );
+                    self.clock.switch(ThreadOccupation::Mutator);
+                }
+            }
+            self.dispatch()?;
+        }
+        Ok(())
+    }
+
+    /// Statically peel an `IoAction` spec block, mirroring `io_run::peel_meta`.
+    ///
+    /// The spec block produced by `io.shell`/`io.exec`/`io.fail` is a
+    /// `let`-bound `Meta(tag, block-thunk)` value whose field refs are relative
+    /// to the **let frame** (the container), while the `Meta` closure's own env
+    /// is the enclosing scope. Forcing the `Meta` naively resolves its body ref
+    /// against the wrong (own) env — grabbing an enclosing binding rather than
+    /// the block — so we follow `OP_ATOM` indirections tracking the container
+    /// frame, and when we reach a `Meta` resolve its body ref against that
+    /// container, yielding the block-thunk closure (whose own env is correct
+    /// for its interior refs). For parameterised (App-thunk) spec blocks
+    /// (`io.shell-with`, `io.exec-with`) no static `Meta` is visible; the spec
+    /// is returned unchanged and forcing it evaluates the application to the
+    /// block directly (the machine strips the `Meta` as nothing consumes it).
+    pub fn peel_io_spec(&self, spec: BcValue) -> BcValue {
+        let view = MutatorHeapView::new(&self.heap);
+        let code = self.program.code.as_slice();
+        let mut current = spec;
+        let mut container: Option<RefPtr<BcEnvFrame>> = None;
+        for _ in 0..64 {
+            let c = match &current {
+                BcValue::Closure(c) => *c,
+                BcValue::Native(_) => break,
+            };
+            let mut pc = c.code() as usize;
+            match Op::from_u8(read_u8(code, &mut pc)) {
+                Some(Op::Atom) => {
+                    let Ok(dref) = read_ref(code, &mut pc) else {
+                        break;
+                    };
+                    match dref {
+                        DecodedRef::Local(i) => {
+                            let env = c.env();
+                            match view.scoped(env).get(&view, i as usize) {
+                                Some(inner) => {
+                                    container = Some(env);
+                                    current = inner;
+                                }
+                                None => break,
+                            }
+                        }
+                        DecodedRef::Global(i) => {
+                            match view.scoped(self.state.globals).get(&view, i as usize) {
+                                Some(inner) => current = inner,
+                                None => break,
+                            }
+                        }
+                        DecodedRef::Value(_) => break,
+                    }
+                }
+                Some(Op::Ann) => {
+                    // Source annotation: transparent to spec navigation.
+                    let _smid = read_u32(code, &mut pc);
+                    let body_off = read_u32(code, &mut pc);
+                    current = BcValue::Closure(BcClosure::new(body_off, c.env()));
+                }
+                Some(Op::Meta) => {
+                    let _meta_off = read_u32(code, &mut pc);
+                    let body_off = read_u32(code, &mut pc);
+                    let Ok(body_ref) = arg_ref(code, body_off) else {
+                        break;
+                    };
+                    // Resolve the body against the container frame (the let
+                    // frame that holds this Meta binding), falling back to the
+                    // Meta's own env when reached without an indirection.
+                    let env = container.unwrap_or_else(|| c.env());
+                    match resolve_ref(
+                        view,
+                        &self.state.constants,
+                        env,
+                        self.state.globals,
+                        body_ref,
+                    ) {
+                        Ok(body) => return body,
+                        Err(_) => break,
+                    }
+                }
+                _ => break,
+            }
+        }
+        current
+    }
+
+    // ── Data synthesis (pre-encoded templates; no per-call code alloc) ──────
+
+    /// Build a data-constructor value of `tag` over `fields` using the
+    /// pre-encoded constructor template (mirrors `BcBifContext::build_data`).
+    pub fn build_data(&self, tag: Tag, fields: &[BcValue]) -> Result<BcValue, ExecutionError> {
+        let view = MutatorHeapView::new(&self.heap);
+        let code = self
+            .program
+            .templates
+            .get(tag as usize)
+            .copied()
+            .ok_or_else(|| {
+                ExecutionError::Panic(
+                    self.state.annotation,
+                    format!("bytecode: no constructor template for tag {tag}"),
+                )
+            })?;
+        let env = if fields.is_empty() {
+            self.state.root_env
+        } else {
+            view.from_values(
+                fields.iter().cloned(),
+                fields.len(),
+                self.state.root_env,
+                self.state.annotation,
+            )?
+        };
+        Ok(BcValue::Closure(BcClosure::new(code, env)))
+    }
+
+    /// Build a lazy `f(arg)` application thunk via the `apply1` template.
+    pub fn build_apply1(&self, f: BcValue, arg: BcValue) -> Result<BcValue, ExecutionError> {
+        let view = MutatorHeapView::new(&self.heap);
+        let env = view.from_values(
+            [f, arg].into_iter(),
+            2,
+            self.state.root_env,
+            self.state.annotation,
+        )?;
+        Ok(BcValue::Closure(BcClosure::new(
+            self.program.apply1_template,
+            env,
+        )))
+    }
+
+    /// Build a lazy `f(a0, a1)` application thunk via the `apply2` template.
+    pub fn build_apply2(
+        &self,
+        f: BcValue,
+        a0: BcValue,
+        a1: BcValue,
+    ) -> Result<BcValue, ExecutionError> {
+        let view = MutatorHeapView::new(&self.heap);
+        let env = view.from_values(
+            [f, a0, a1].into_iter(),
+            3,
+            self.state.root_env,
+            self.state.annotation,
+        )?;
+        Ok(BcValue::Closure(BcClosure::new(
+            self.program.apply2_template,
+            env,
+        )))
+    }
+
+    /// The zero-field `Unit` constructor value (the initial world token).
+    pub fn build_unit(&self) -> Result<BcValue, ExecutionError> {
+        self.build_data(DataConstructor::Unit.tag(), &[])
+    }
+
+    /// Resolve a global slot to its runtime value (e.g. the `RENDER_DOC`
+    /// intrinsic wrapper closure) so it can be applied as an ordinary callable.
+    pub fn global_value(&self, index: usize) -> Result<BcValue, ExecutionError> {
+        let view = MutatorHeapView::new(&self.heap);
+        view.scoped(self.state.globals)
+            .get(&view, index)
+            .ok_or(ExecutionError::BadGlobalIndex(index))
+    }
+
+    /// Build the shell result block `{stdout: Str, stderr: Str, exit-code: Num}`
+    /// on the heap (mirrors `io_run::BuildResultBlock`). Strings are wrapped in
+    /// `BoxedString` and the exit code in `BoxedNumber` so eucalypt intrinsics
+    /// that case-match those tags receive them in the expected form.
+    pub fn build_io_result_block(
+        &mut self,
+        stdout: &str,
+        stderr: &str,
+        exit_code: i64,
+    ) -> Result<BcValue, ExecutionError> {
+        let stdout_sym = self.symbol_pool.intern("stdout");
+        let stderr_sym = self.symbol_pool.intern("stderr");
+        let exitcode_sym = self.symbol_pool.intern("exit-code");
+
+        let view = MutatorHeapView::new(&self.heap);
+        let stdout_ptr = view.alloc(HeapString::from_str(&view, stdout))?.as_ptr();
+        let stderr_ptr = view.alloc(HeapString::from_str(&view, stderr))?.as_ptr();
+
+        let stdout_box = self.build_data(
+            DataConstructor::BoxedString.tag(),
+            &[BcValue::Native(Native::Str(stdout_ptr))],
+        )?;
+        let stderr_box = self.build_data(
+            DataConstructor::BoxedString.tag(),
+            &[BcValue::Native(Native::Str(stderr_ptr))],
+        )?;
+        let exit_box = self.build_data(
+            DataConstructor::BoxedNumber.tag(),
+            &[BcValue::Native(Native::Num(Number::from(exit_code)))],
+        )?;
+
+        // Three BlockPair(key-sym, value) entries.
+        let pair0 = self.build_data(
+            DataConstructor::BlockPair.tag(),
+            &[BcValue::Native(Native::Sym(stdout_sym)), stdout_box],
+        )?;
+        let pair1 = self.build_data(
+            DataConstructor::BlockPair.tag(),
+            &[BcValue::Native(Native::Sym(stderr_sym)), stderr_box],
+        )?;
+        let pair2 = self.build_data(
+            DataConstructor::BlockPair.tag(),
+            &[BcValue::Native(Native::Sym(exitcode_sym)), exit_box],
+        )?;
+
+        // Cons list, tail-first: nil → [pair2] → [pair1] → [pair0].
+        let nil = self.build_data(DataConstructor::ListNil.tag(), &[])?;
+        let c2 = self.build_data(DataConstructor::ListCons.tag(), &[pair2, nil])?;
+        let c1 = self.build_data(DataConstructor::ListCons.tag(), &[pair1, c2])?;
+        let c0 = self.build_data(DataConstructor::ListCons.tag(), &[pair0, c1])?;
+
+        // Block { entry-list, no-index } — the index arg is ignored on lookup.
+        let no_index = BcValue::Native(Native::Num(Number::from(0)));
+        self.build_data(DataConstructor::Block.tag(), &[c0, no_index])
+    }
+
+    /// Build `IoReturn(world, value)` to resume the io-run loop.
+    pub fn build_io_return(
+        &self,
+        world: BcValue,
+        value: BcValue,
+    ) -> Result<BcValue, ExecutionError> {
+        self.build_data(DataConstructor::IoReturn.tag(), &[world, value])
+    }
+
+    // ── Navigation of forced IO values (read-only) ─────────────────────────
+
+    /// If `value` is a WHNF scalar (native, boxed scalar, unit, bool), extract
+    /// its string form (mirrors `render_to_string::extract_scalar_string` over
+    /// `BcValue`). `None` for complex values (blocks, lists) or non-scalars.
+    pub fn whnf_scalar_string(&self, value: &BcValue) -> Option<String> {
+        let view = MutatorHeapView::new(&self.heap);
+        self.scalar_string_inner(view, value)
+    }
+
+    fn scalar_string_inner(&self, view: MutatorHeapView<'_>, value: &BcValue) -> Option<String> {
+        match value {
+            BcValue::Native(n) => scalar_from_native(&self.symbol_pool, view, n),
+            BcValue::Closure(c) => {
+                let code = self.program.code.as_slice();
+                let mut pc = c.code() as usize;
+                match Op::from_u8(read_u8(code, &mut pc)) {
+                    Some(Op::Atom) => {
+                        let dref = read_ref(code, &mut pc).ok()?;
+                        let inner = resolve_ref(
+                            view,
+                            &self.state.constants,
+                            c.env(),
+                            self.state.globals,
+                            dref,
+                        )
+                        .ok()?;
+                        self.scalar_string_inner(view, &inner)
+                    }
+                    Some(Op::Cons) => {
+                        let tag = read_u8(code, &mut pc);
+                        let dc = DataConstructor::try_from(tag).ok()?;
+                        match dc {
+                            DataConstructor::Unit => Some(String::new()),
+                            DataConstructor::BoolTrue => Some("true".to_string()),
+                            DataConstructor::BoolFalse => Some("false".to_string()),
+                            DataConstructor::BoxedNumber
+                            | DataConstructor::BoxedString
+                            | DataConstructor::BoxedSymbol
+                            | DataConstructor::BoxedZdt => {
+                                let offsets = read_arg_offsets(code, &mut pc);
+                                let field_ref = arg_ref(code, *offsets.first()?).ok()?;
+                                let inner = resolve_ref(
+                                    view,
+                                    &self.state.constants,
+                                    c.env(),
+                                    self.state.globals,
+                                    field_ref,
+                                )
+                                .ok()?;
+                                self.scalar_string_inner(view, &inner)
+                            }
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                }
+            }
+        }
+    }
+
+    /// Whether `value` is a list (`ListCons`/`ListNil`) constructor.
+    pub fn value_is_list(&self, value: &BcValue) -> bool {
+        let BcValue::Closure(c) = value else {
+            return false;
+        };
+        match decode_cons(&self.program, c) {
+            Some((tag, _)) => {
+                tag == DataConstructor::ListCons.tag() || tag == DataConstructor::ListNil.tag()
+            }
+            None => false,
+        }
+    }
+
+    /// Collect the raw (unevaluated) element values of a `ListCons` chain.
+    /// Mirrors `io_run::CollectListElements`.
+    pub fn list_element_values(&self, value: &BcValue) -> Result<Vec<BcValue>, ExecutionError> {
+        let view = MutatorHeapView::new(&self.heap);
+        let code = self.program.code.as_slice();
+        let mut out = Vec::new();
+        let mut current = value.clone();
+        while let BcValue::Closure(c) = current.clone() {
+            let Some((tag, offsets)) = decode_cons(&self.program, &c) else {
+                break;
+            };
+            if tag == DataConstructor::ListNil.tag() {
+                break;
+            }
+            if tag != DataConstructor::ListCons.tag() {
+                break;
+            }
+            let head_ref = arg_ref(
+                code,
+                *offsets.first().ok_or_else(|| {
+                    ExecutionError::Panic(self.state.annotation, "malformed list cons".to_string())
+                })?,
+            )?;
+            let head = resolve_ref(
+                view,
+                &self.state.constants,
+                c.env(),
+                self.state.globals,
+                head_ref,
+            )?;
+            out.push(head);
+            let tail_ref = arg_ref(
+                code,
+                *offsets.get(1).ok_or_else(|| {
+                    ExecutionError::Panic(self.state.annotation, "malformed list cons".to_string())
+                })?,
+            )?;
+            current = resolve_ref(
+                view,
+                &self.state.constants,
+                c.env(),
+                self.state.globals,
+                tail_ref,
+            )?;
+        }
+        Ok(out)
+    }
+
+    /// If `value` is a boxed scalar whose inner field is still an unevaluated
+    /// closure (e.g. `BoxedString` wrapping a format-expr thunk), return the
+    /// inner value so the driver can force it. `None` if already a native or
+    /// not a box. Mirrors `io_run::peel_box_inner`.
+    pub fn peel_box_inner(&self, value: &BcValue) -> Option<BcValue> {
+        let view = MutatorHeapView::new(&self.heap);
+        let BcValue::Closure(c) = value else {
+            return None;
+        };
+        let (tag, offsets) = decode_cons(&self.program, c)?;
+        let is_box = tag == DataConstructor::BoxedString.tag()
+            || tag == DataConstructor::BoxedNumber.tag()
+            || tag == DataConstructor::BoxedSymbol.tag()
+            || tag == DataConstructor::BoxedZdt.tag();
+        if !is_box {
+            return None;
+        }
+        let field_ref = arg_ref(self.program.code.as_slice(), *offsets.first()?).ok()?;
+        let inner = resolve_ref(
+            view,
+            &self.state.constants,
+            c.env(),
+            self.state.globals,
+            field_ref,
+        )
+        .ok()?;
+        // Only re-force closures; a native is already fully evaluated.
+        match inner {
+            BcValue::Closure(_) => Some(inner),
+            BcValue::Native(_) => None,
+        }
+    }
+
+    /// Read the raw (unevaluated) field values of an evaluated IO spec block,
+    /// keyed by symbol-key name. Mirrors `io_run::collect_raw_block_fields`;
+    /// keys that are not readable symbols are skipped.
+    pub fn block_field_values(
+        &self,
+        block: &BcValue,
+    ) -> Result<Vec<(String, BcValue)>, ExecutionError> {
+        let view = MutatorHeapView::new(&self.heap);
+        let code = self.program.code.as_slice();
+        let BcValue::Closure(bc) = block else {
+            return Err(ExecutionError::Panic(
+                self.state.annotation,
+                "bytecode: IO spec block is not a block value".to_string(),
+            ));
+        };
+        let (btag, boffs) = decode_cons(&self.program, bc).ok_or_else(|| {
+            ExecutionError::Panic(
+                self.state.annotation,
+                "bytecode: IO spec block did not evaluate to a Block constructor".to_string(),
+            )
+        })?;
+        if btag != DataConstructor::Block.tag() {
+            return Err(ExecutionError::Panic(
+                self.state.annotation,
+                "bytecode: IO spec block did not evaluate to a Block constructor".to_string(),
+            ));
+        }
+        let list_ref = arg_ref(
+            code,
+            *boffs.first().ok_or_else(|| {
+                ExecutionError::Panic(self.state.annotation, "malformed Block".to_string())
+            })?,
+        )?;
+        let mut current = resolve_ref(
+            view,
+            &self.state.constants,
+            bc.env(),
+            self.state.globals,
+            list_ref,
+        )?;
+
+        let mut fields = Vec::new();
+        while let BcValue::Closure(c) = current.clone() {
+            let Some((tag, offs)) = decode_cons(&self.program, &c) else {
+                break;
+            };
+            if tag == DataConstructor::ListNil.tag() {
+                break;
+            }
+            if tag != DataConstructor::ListCons.tag() {
+                break;
+            }
+            let head_ref = arg_ref(
+                code,
+                *offs.first().ok_or_else(|| {
+                    ExecutionError::Panic(self.state.annotation, "malformed list cons".to_string())
+                })?,
+            )?;
+            let head = resolve_ref(
+                view,
+                &self.state.constants,
+                c.env(),
+                self.state.globals,
+                head_ref,
+            )?;
+            if let BcValue::Closure(pc) = &head {
+                if let Some((ptag, poffs)) = decode_cons(&self.program, pc) {
+                    if ptag == DataConstructor::BlockPair.tag() && poffs.len() >= 2 {
+                        let key_ref = arg_ref(code, poffs[0])?;
+                        let key = resolve_ref(
+                            view,
+                            &self.state.constants,
+                            pc.env(),
+                            self.state.globals,
+                            key_ref,
+                        )?;
+                        if let Some(sym) = value_symbol(&self.program, &self.state, view, key) {
+                            let val_ref = arg_ref(code, poffs[1])?;
+                            let val = resolve_ref(
+                                view,
+                                &self.state.constants,
+                                pc.env(),
+                                self.state.globals,
+                                val_ref,
+                            )?;
+                            fields.push((self.symbol_pool.resolve(sym).to_string(), val));
+                        }
+                    }
+                }
+            }
+            let tail_ref = arg_ref(
+                code,
+                *offs.get(1).ok_or_else(|| {
+                    ExecutionError::Panic(self.state.annotation, "malformed list cons".to_string())
+                })?,
+            )?;
+            current = resolve_ref(
+                view,
+                &self.state.constants,
+                c.env(),
+                self.state.globals,
+                tail_ref,
+            )?;
+        }
+        Ok(fields)
+    }
+}
+
+/// Convert a native value to its string representation (bytecode analogue of
+/// `render_to_string::scalar_from_native`).
+fn scalar_from_native(
+    pool: &SymbolPool,
+    view: MutatorHeapView<'_>,
+    native: &Native,
+) -> Option<String> {
+    match native {
+        Native::Num(n) => Some(n.to_string()),
+        Native::Str(s) => Some((*view.scoped(*s)).as_str().to_string()),
+        Native::Sym(id) => Some(pool.resolve(*id).to_string()),
+        Native::Zdt(dt) => Some(dt.to_string()),
+        _ => None,
+    }
+}
+
 /// The `IntrinsicMachine` implementation for the bytecode engine (spec §5.5).
 ///
 /// It overrides the neutral, code-type-agnostic ABI methods to operate over

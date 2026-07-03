@@ -437,6 +437,8 @@ pub fn encode(
     // pre-encoded once here; runtime construction allocates only the GC-heap
     // env frame over the fixed code, so there is no per-call arena growth.
     //
+    // `apply1_template`: `App(L0, [L1])` — a lazy `f(a)` thunk (io-run driver).
+    let apply1_template = enc.encode_node(&dsl::app(dsl::lref(0), vec![dsl::lref(1)]));
     // `apply2_template`: `App(L0, [L1, L2])` — a lazy `f(a0, a1)` thunk.
     let apply2_template =
         enc.encode_node(&dsl::app(dsl::lref(0), vec![dsl::lref(1), dsl::lref(2)]));
@@ -471,6 +473,7 @@ pub fn encode(
         blackhole,
         meta_template,
         pap,
+        apply1_template,
         apply2_template,
         producer_tail_template,
     };
