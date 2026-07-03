@@ -127,6 +127,35 @@ jobs:
       - name: Run harness on the bytecode + blob path
         run: ./target/release/eu test --allow-io tests/harness
 
+  blob-determinism:
+    name: Prelude blob determinism
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # The released binary embeds `lib/prelude.blob`, so its generation must
+      # be byte-for-byte reproducible: otherwise builds are non-reproducible
+      # and blob-path perf is unstable (eu-c2ue). Regenerate the blob twice
+      # and assert the two outputs are identical.
+      - name: Generate prelude blob (run 1)
+        run: |
+          cargo run --package xtask -- prelude-compile
+          cp lib/prelude.blob /tmp/prelude-run1.blob
+      - name: Generate prelude blob (run 2)
+        run: |
+          cargo run --package xtask -- prelude-compile
+          cp lib/prelude.blob /tmp/prelude-run2.blob
+      - name: Assert blobs are byte-identical
+        run: |
+          if ! cmp -s /tmp/prelude-run1.blob /tmp/prelude-run2.blob; then
+            echo "::error::prelude.blob generation is non-deterministic (eu-c2ue regression)"
+            sha256sum /tmp/prelude-run1.blob /tmp/prelude-run2.blob
+            cmp /tmp/prelude-run1.blob /tmp/prelude-run2.blob || true
+            exit 1
+          fi
+          echo "prelude.blob is byte-identical across two runs"
+          sha256sum /tmp/prelude-run1.blob
+
   test-source-prelude:
     name: Source-prelude harness (x86-64)
     runs-on: ubuntu-latest

@@ -88,6 +88,33 @@ pub fn create_io_pseudoblock(seed: Option<i64>) -> RcExpr {
     ])
 }
 
+/// Construct a deterministic `__io` pseudoblock for blob generation.
+///
+/// The blob's `__io` slot is always overridden at runtime with a freshly
+/// constructed pseudoblock reflecting the real invocation (see
+/// `Executor::execute`), so the values baked into the blob at generation
+/// time are never observed by a running program.  Building it from live
+/// `SystemTime::now()`, `env::vars()` and the current timezone would bake
+/// invocation-specific data (an epoch timestamp, a nanosecond random seed,
+/// the whole environment) into the blob, making `cargo xtask
+/// prelude-compile` non-reproducible.  Using fixed placeholders (epoch 0,
+/// empty env, seed 0, UTC) keeps the generated blob byte-for-byte identical
+/// across runs without affecting runtime behaviour.
+pub fn create_io_pseudoblock_deterministic() -> RcExpr {
+    acore::block(vec![
+        (
+            "ENV".to_string(),
+            acore::block(std::iter::empty::<(String, RcExpr)>()),
+        ),
+        ("EPOCHTIME".to_string(), acore::num(0i64)),
+        (
+            "TZ".to_string(),
+            acore::block(vec![("offset".to_string(), acore::str("+00:00"))]),
+        ),
+        ("RANDOM_SEED".to_string(), acore::num(0i64)),
+    ])
+}
+
 /// Construct a core list containing command-line arguments passed
 /// after the -- separator.
 pub fn create_args_pseudoblock(args: &[String]) -> RcExpr {

@@ -108,7 +108,11 @@ fn cmd_prelude_compile() -> Result<()> {
         prelude_input.clone(),
     ];
 
-    let mut loader = SourceLoader::new(vec![]);
+    // Build the `__io` pseudoblock deterministically: the blob must not embed
+    // the current epoch time / random seed / environment (all overridden at
+    // runtime anyway), or two prelude-compile runs would produce differing
+    // blobs (see eu-c2ue).
+    let mut loader = SourceLoader::new(vec![]).with_deterministic_io(true);
     for inp in &all_inputs {
         loader.load(inp).with_context(|| format!("load {inp}"))?;
     }
