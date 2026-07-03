@@ -213,7 +213,7 @@ impl Display for Statistics {
         let parts = self.timings.partition();
 
         // Summary bar
-        let summary = render_summary_bar(&parts.pipeline, &parts.io, &parts.vm);
+        let summary = render_summary_bar(&parts.pipeline, &parts.io);
         if !summary.is_empty() {
             writeln!(f, "{summary}")?;
             writeln!(f)?;
@@ -352,11 +352,18 @@ fn render_bar(value: f64, max_value: f64) -> String {
 }
 
 /// Render a top-level summary bar showing where total time was spent.
-fn render_summary_bar(
-    pipeline: &[(String, Duration)],
-    io: &[(String, Duration)],
-    vm: &[(String, Duration)],
-) -> String {
+///
+/// The `Total` is the end-to-end wall clock: the sum of the sequential
+/// pipeline phases (parse, desugar, cook, compile, eval, render) plus IO.
+///
+/// The VM occupation timings (mutator vs GC) are deliberately excluded from
+/// this sum: they partition the *same* eval/render/IO span a second way, so
+/// adding them would double-count evaluation (the bug found in eu-mhjz where
+/// HeapSyn's `Total` was ~2× the real wall clock while the bytecode engine —
+/// which reported no VM timings — counted once). Excluding VM here makes the
+/// `Total` single-counted and directly comparable across both engines. The
+/// mutator/GC breakdown remains visible in the dedicated VM and GC sections.
+fn render_summary_bar(pipeline: &[(String, Duration)], io: &[(String, Duration)]) -> String {
     let mut fractions: Vec<(String, f64)> = Vec::new();
 
     for (name, dur) in pipeline {
@@ -367,16 +374,6 @@ fn render_summary_bar(
     let io_total: f64 = io.iter().map(|(_, v)| v.as_secs_f64()).sum();
     if io_total > 0.0 {
         fractions.push(("IO".to_string(), io_total));
-    }
-
-    // Add VM as a single entry (exclude the VM-Total synthetic key)
-    let vm_total: f64 = vm
-        .iter()
-        .filter(|(k, _)| k != "VM-Total")
-        .map(|(_, v)| v.as_secs_f64())
-        .sum();
-    if vm_total > 0.0 {
-        fractions.push(("VM".to_string(), vm_total));
     }
 
     let total: f64 = fractions.iter().map(|(_, s)| s).sum();
@@ -573,23 +570,34 @@ mod tests {
     #[test]
     fn summary_bar_single_entry() {
         let pipeline = vec![("parse".to_string(), Duration::from_millis(100))];
-        let bar = render_summary_bar(&pipeline, &[], &[]);
+        let bar = render_summary_bar(&pipeline, &[]);
         assert!(bar.contains("Total: 0.100s"));
         assert!(bar.contains("parse 100%"));
     }
 
     #[test]
     fn summary_bar_empty() {
-        assert_eq!(render_summary_bar(&[], &[], &[]), "Total: 0.000s");
+        assert_eq!(render_summary_bar(&[], &[]), "Total: 0.000s");
     }
 
     #[test]
-    fn summary_bar_with_vm() {
+    fn summary_bar_with_io() {
         let pipeline = vec![("parse".to_string(), Duration::from_millis(80))];
-        let vm = vec![("VM-Mutator".to_string(), Duration::from_millis(20))];
-        let bar = render_summary_bar(&pipeline, &[], &vm);
+        let io = vec![("io-run".to_string(), Duration::from_millis(20))];
+        let bar = render_summary_bar(&pipeline, &io);
         assert!(bar.contains("parse 80%"));
-        assert!(bar.contains("VM 20%"));
+        assert!(bar.contains("IO 20%"));
+    }
+
+    #[test]
+    fn summary_bar_excludes_vm_from_total() {
+        // VM occupation timings must NOT contribute to the summary Total —
+        // they are a second view of the eval span, not additive time.
+        // The Total should reflect only the pipeline wall clock.
+        let pipeline = vec![("stg-eval".to_string(), Duration::from_millis(100))];
+        let bar = render_summary_bar(&pipeline, &[]);
+        assert!(bar.contains("Total: 0.100s"));
+        assert!(!bar.contains("VM"));
     }
 
     #[test]
