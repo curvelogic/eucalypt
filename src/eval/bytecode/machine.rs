@@ -824,7 +824,16 @@ pub fn return_data(
             annotation,
         } => {
             state.current = BcValue::Closure(BcClosure::new(body, environment));
-            state.annotation = annotation;
+            // Only restore a meaningful annotation. A `force`/`Seq` in an outer
+            // context (e.g. the render loop) captures `Smid::default()` and must
+            // not wipe the live call-site annotation established by an inner
+            // `Ann` before a deferred arg-check BIF runs — mirrors the same
+            // invalid-annotation guard `handle_op` applies on closure entry.
+            // (HeapSyn avoids this by evaluation ordering, raising before the
+            // outer SeqBind is restored.)
+            if annotation.is_valid() {
+                state.annotation = annotation;
+            }
         }
         BcContinuation::LookupLitForce {
             key,
@@ -921,7 +930,16 @@ pub fn return_native(
         } => {
             // Force-and-discard: enter the body without binding the result.
             state.current = BcValue::Closure(BcClosure::new(body, environment));
-            state.annotation = annotation;
+            // Only restore a meaningful annotation. A `force`/`Seq` in an outer
+            // context (e.g. the render loop) captures `Smid::default()` and must
+            // not wipe the live call-site annotation established by an inner
+            // `Ann` before a deferred arg-check BIF runs — mirrors the same
+            // invalid-annotation guard `handle_op` applies on closure entry.
+            // (HeapSyn avoids this by evaluation ordering, raising before the
+            // outer SeqBind is restored.)
+            if annotation.is_valid() {
+                state.annotation = annotation;
+            }
         }
         BcContinuation::LookupLitForce { smid, .. } => {
             // A native is not a block — type error.
@@ -1026,7 +1044,16 @@ pub fn return_fun(
             annotation,
         } => {
             state.current = BcValue::Closure(BcClosure::new(body, environment));
-            state.annotation = annotation;
+            // Only restore a meaningful annotation. A `force`/`Seq` in an outer
+            // context (e.g. the render loop) captures `Smid::default()` and must
+            // not wipe the live call-site annotation established by an inner
+            // `Ann` before a deferred arg-check BIF runs — mirrors the same
+            // invalid-annotation guard `handle_op` applies on closure entry.
+            // (HeapSyn avoids this by evaluation ordering, raising before the
+            // outer SeqBind is restored.)
+            if annotation.is_valid() {
+                state.annotation = annotation;
+            }
         }
         BcContinuation::LookupLitForce { smid, .. } => {
             let ann = if smid.is_valid() {
