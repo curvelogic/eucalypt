@@ -79,11 +79,17 @@ impl StgIntrinsic for ProducerNext {
         // Both `value` and `tail` are built via engine-neutral primitives, so
         // this runs byte-identically on the HeapSyn and bytecode engines. The
         // element is a pure data literal, materialised through the canonical
-        // shared `materialise_data` (clone the pool so `&machine` and the
-        // interning `&mut pool` do not alias; publish interned symbols after).
-        let mut pool = machine.symbol_pool_mut().clone();
-        let value = materialise_data(&*machine, view, &mut pool, &value_stg, &[])?;
+        // shared `materialise_data`, which needs `&mut pool` to intern symbols
+        // while `&machine` is borrowed (shared) for value construction — the two
+        // cannot both borrow the machine at once. Rather than clone the whole
+        // pool for every element (O(pool_size) each — quadratic over a long
+        // stream), move it out with `mem::take` (O(1)), materialise, then move it
+        // back. The machine's value-construction methods never read the pool
+        // during this window, so the temporarily-empty pool is unobserved.
+        let mut pool = std::mem::take(machine.symbol_pool_mut());
+        let materialised = materialise_data(&*machine, view, &mut pool, &value_stg, &[]);
         *machine.symbol_pool_mut() = pool;
+        let value = materialised?;
         let tail = machine.bif_tail_thunk(view, self.index() as u8, handle as u64)?;
         let cons = machine.data_value(view, DataConstructor::ListCons.tag(), &[value, tail])?;
 
