@@ -201,10 +201,12 @@ pub struct PreludeSummary {
     ///
     /// Polymorphic schemes are preserved so that every use-site freshens
     /// the type variables independently.
+    #[serde(with = "crate::common::serde_sorted")]
     pub bindings: HashMap<String, TypeScheme>,
 
     /// Type aliases the prelude registers (from `type-def:` / `types:`
     /// metadata).  User-file annotations can reference these alias names.
+    #[serde(with = "crate::common::serde_sorted")]
     pub aliases: AliasMap,
 
     /// BranchShape classification for recognised brancher combinators,
@@ -213,6 +215,7 @@ pub struct PreludeSummary {
     /// With prelude caching, prelude functions appear as `Var::Free` in user
     /// code.  `recognise_brancher` consults this map when the head is a
     /// free variable so that `if`, `then`, `and`, etc. are still recognised.
+    #[serde(with = "crate::common::serde_sorted")]
     pub branch_shapes: HashMap<String, BranchShape>,
 
     /// Pre-cook operator type overloads for constraint discharge (§B2).
@@ -222,6 +225,7 @@ pub struct PreludeSummary {
     /// the type checker.  This map captures the annotations before cook and
     /// allows `discharge_constraint` to verify operator constraints even when
     /// the scope-stack entry for the operator is `Any`.
+    #[serde(with = "crate::common::serde_sorted")]
     pub operator_overloads: HashMap<String, TypeScheme>,
 }
 

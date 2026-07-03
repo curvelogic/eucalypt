@@ -96,9 +96,11 @@ pub struct PreludeBlob {
     pub binding_entries: Vec<FormIdx>,
 
     /// Binding name → index into `binding_entries` (= global slot − `INTRINSIC_COUNT`).
+    #[serde(with = "crate::common::serde_sorted")]
     pub name_to_slot: HashMap<String, usize>,
 
     /// Operator metadata for seeding cook's `Distributor`.
+    #[serde(with = "crate::common::serde_sorted")]
     pub operators: HashMap<String, OperatorInfo>,
 
     /// Type schemes, aliases, branch shapes for seeding the type checker.
@@ -108,11 +110,11 @@ pub struct PreludeBlob {
     ///
     /// Extracted from prelude source during translate/desugar.  Seeded into
     /// the desugarer so that `{ :for ... }` blocks are recognised as monadic.
-    #[serde(default)]
+    #[serde(default, with = "crate::common::serde_sorted")]
     pub monad_specs: HashMap<String, crate::core::desugar::desugarer::MonadSpec>,
 
     /// Monad wrapper type hints for LSP display (e.g. `"io"` → `"IO(a)"`).
-    #[serde(default)]
+    #[serde(default, with = "crate::common::serde_sorted")]
     pub monad_type_hints: HashMap<String, String>,
 
     /// Core expressions for inlinable prelude bindings.
