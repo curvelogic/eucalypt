@@ -116,6 +116,23 @@ jobs:
         env:
           EU_SOURCE_PRELUDE: "1"
 
+  test-heapsyn-baseline:
+    name: HeapSyn harness (baseline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release
+      # Bytecode is the default engine post-flip (eu-enyv); the standard
+      # `test` job exercises it. HeapSyn is retained as the A/B perf baseline
+      # and differential engine, so run the full harness on it too (behind
+      # EU_HEAPSYN=1) to keep the baseline from silently rotting.
+      - name: Run harness on HeapSyn baseline engine
+        run: ./target/release/eu test --allow-io tests/harness
+        env:
+          EU_HEAPSYN: "1"
+
   test-aarch64-sequential:
     name: Sequential harness (aarch64 release)
     runs-on: ubuntu-24.04-arm
