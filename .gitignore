@@ -31,9 +31,6 @@ gc-bench-baseline.json
 .beads/sync_base.jsonl
 .beads-wisp/
 
-# Gas Town (added by gt)
-.beads/
-
 # VS Code extension build artefacts
 editors/vscode/node_modules/
 editors/vscode/out/
@@ -59,3 +56,11 @@ lib/.result/
 fuzz/corpus/
 fuzz/artifacts/
 lib/prelude.blob
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+
+# Beads / Dolt files (added by bd init)
+.beads/proxieddb/

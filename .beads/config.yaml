@@ -1,0 +1,12 @@
+sync:
+    mode: dolt-native
+
+# Dolt-native sync uses the git-backed remote refs refs/dolt/data and
+# refs/heads/__dolt_remote_info__ — NOT a normal branch. (The old
+# `sync-branch: beads-sync` key was a pre-Dolt vestige; no such branch exists
+# on the remote, so it has been removed.)
+#
+# sync.remote is ssh for local development. Web (Claude Code on the web)
+# sessions have no ssh binary; scripts/setup-claude-web-env.sh points beads at
+# the proxy-brokered https remote per-container instead of editing this file.
+sync.remote: "git+ssh://git@github.com/curvelogic/eucalypt.git"
