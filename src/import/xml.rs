@@ -148,25 +148,21 @@ impl<'src> XmlImporter<'src> {
         for a in e.attributes() {
             let attr = a.map_err(|e| self.to_source_error(e))?;
             let k = self.to_str(attr.key.local_name().as_ref())?;
-            // Restore the pre-0.12 VERBATIM attribute-value behaviour (eu-cgys):
-            // decode the raw bytes, then unescape entities WITHOUT applying XML
-            // attribute-value whitespace normalisation. quick-xml 0.41's
-            // `decoded_and_normalized_value` family all normalise per the XML
-            // spec — literal tabs/newlines in an attribute value collapse to
-            // spaces — which silently altered imported data vs every previous
-            // release. 0.41 has no non-normalising decode+unescape method, so we
-            // compose one from `Decoder::decode` + `escape::unescape` (predefined
-            // entities only, matching the old `decode_and_unescape_value`).
-            // GUARANTEE: embedded newlines/tabs in attribute values survive
-            // verbatim through import.
-            let decoded = self
-                .reader
-                .decoder()
-                .decode(attr.value.as_ref())
-                .map_err(|e| self.to_source_error(e))?;
-            let unescaped = quick_xml::escape::unescape(decoded.as_ref())
-                .map_err(|e| self.to_source_error(e))?;
-            let v = acore::str(unescaped.as_ref());
+            // DELIBERATE (eu-cgys, post-review owner decision): apply XML 1.0
+            // §3.3.3 attribute-value normalisation. Literal whitespace (tab, CR,
+            // LF) in an attribute value becomes a space, as required of a
+            // conforming processor; character references such as `&#10;` / `&#9;`
+            // are resolved *before* normalisation and so still yield real
+            // newlines/tabs. This is a behaviour change from pre-0.12 eucalypt
+            // (which was non-conformant) — see CHANGELOG 0.12.0. Element *text*
+            // content is unaffected (it is unescaped without normalisation).
+            let v = acore::str(
+                attr.decoded_and_normalized_value(
+                    quick_xml::XmlVersion::Implicit1_0,
+                    self.reader.decoder(),
+                )
+                .map_err(|e| self.to_source_error(e))?,
+            );
             attrs.push((k, v));
         }
 
@@ -185,19 +181,11 @@ mod tests {
     use super::*;
     use crate::common::sourcemap::SourceMap;
 
-    /// eu-cgys regression: attribute values must be imported VERBATIM. Literal
-    /// newlines and tabs inside an attribute value must survive unchanged — the
-    /// XML-spec attribute-value whitespace normalisation (which collapses them
-    /// to spaces) is deliberately NOT applied, matching every release before the
-    /// quick-xml 0.25→0.41 bump.
-    #[test]
-    fn attribute_whitespace_is_preserved_verbatim() {
+    /// Extract the `a` attribute string of the (single) root element from the
+    /// hiccup import `[:root {a: "..."} ...]`.
+    fn import_attr_a(xml: &str) -> String {
         let mut sm = SourceMap::new();
-        // Real newline + tab embedded in the `a` attribute value.
-        let xml = "<root a=\"x\nY\tZ\"/>";
         let expr = read_xml(&mut sm, 0, xml).expect("xml import should succeed");
-
-        // Hiccup shape: [:root {a: "..."}] — the attrs block is element 1.
         let attrs = match &*expr.inner {
             Expr::List(_, xs) => xs.get(1).cloned().expect("attrs block present"),
             other => panic!("expected a hiccup list, got {other:?}"),
@@ -207,11 +195,39 @@ mod tests {
             other => panic!("expected an attrs block, got {other:?}"),
         };
         match &*value.inner {
-            Expr::Literal(_, Primitive::Str(s)) => assert_eq!(
-                s, "x\nY\tZ",
-                "attribute whitespace must survive import verbatim (no normalisation)"
-            ),
+            Expr::Literal(_, Primitive::Str(s)) => s.clone(),
             other => panic!("expected a string literal, got {other:?}"),
         }
+    }
+
+    /// eu-cgys: DELIBERATE spec-conformant behaviour. XML 1.0 §3.3.3 requires a
+    /// conforming processor to normalise attribute values — each literal
+    /// whitespace character (tab, CR, LF) in an attribute value is replaced by a
+    /// single space. Post quick-xml 0.25→0.41 bump, eucalypt now conforms (it
+    /// previously did not). This test pins that behaviour so a future change
+    /// away from it is caught.
+    #[test]
+    fn literal_attribute_whitespace_is_normalised_to_space() {
+        // Real newline + tab embedded in the `a` attribute value.
+        assert_eq!(
+            import_attr_a("<root a=\"x\nY\tZ\"/>"),
+            "x Y Z",
+            "literal newline/tab in an attribute value must normalise to a \
+             single space each (XML 1.0 §3.3.3)"
+        );
+    }
+
+    /// eu-cgys: the escape hatch. Per XML 1.0 §3.3.3, *character references* to
+    /// whitespace are resolved before normalisation, so `&#10;` (LF) and `&#9;`
+    /// (tab) yield real control characters that survive verbatim — this is how a
+    /// document author requests literal whitespace in an attribute value.
+    #[test]
+    fn attribute_whitespace_character_references_survive() {
+        assert_eq!(
+            import_attr_a("<root a=\"x&#10;Y&#9;Z\"/>"),
+            "x\nY\tZ",
+            "character references to whitespace must survive normalisation \
+             (XML 1.0 §3.3.3)"
+        );
     }
 }
