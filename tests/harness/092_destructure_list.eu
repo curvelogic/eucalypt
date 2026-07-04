@@ -43,6 +43,14 @@ tests: {
     b: (f-rest([10, 20, 30, 40]) = [30, 40]) //= true
   }
 
+  ` "Lazy tail — LIST.NTH/LIST.DROP must not force the spine beyond the destructured indices (eu-xk49, eu-mr5e)"
+  lazy-tail: {
+    ` "extracting a, b does not force the erroring tail beyond index 1"
+    a: f-multi-head(cons(10, cons(20, panic("tail must not be forced")))) //= 30
+    ` "the head/tail rest is returned lazily; only its own head is forced"
+    b: (f-rest(cons(1, cons(2, cons(3, panic("tail must not be forced"))))) head) //= 3
+  }
+
 }
 
 RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)

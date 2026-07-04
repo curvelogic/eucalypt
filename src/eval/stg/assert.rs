@@ -10,10 +10,10 @@ use std::convert::TryInto;
 use crate::eval::{
     emit::Emitter,
     error::ExecutionError,
-    machine::intrinsic::{CallGlobal2, IntrinsicMachine, StgIntrinsic},
+    machine::intrinsic::{AbiClosure, CallGlobal2, IntrinsicMachine, StgIntrinsic},
     memory::{
         mutator::MutatorHeapView,
-        syntax::{HeapSyn, Native, Ref},
+        syntax::{Native, Ref},
     },
 };
 
@@ -21,58 +21,50 @@ use super::tags::DataConstructor;
 
 /// Format a value ref as a human-readable string for assertion messages.
 ///
-/// Resolves the closure at `r` to WHNF and formats it:
+/// Resolves the closure at `r` and formats it:
 /// - Boxed scalars (number, string, symbol, zdt) — their literal form
 /// - Booleans and null — their literal form
 /// - Lists and blocks — a type label such as `[list]` or `{block}`
 /// - Unevaluated / unknown — `<unevaluated>`
+///
+/// Classification goes through the engine-neutral ABI (`resolve_closure`/
+/// `data_tag`/`value_native`), so it runs on both the HeapSyn and bytecode
+/// engines. The HeapSyn-only `nav` navigator panics on the bytecode engine
+/// (eu-mr5e). The value is already at WHNF — the `//=>` operator forced both
+/// sides via the equality check — so no forcing is needed here.
 fn format_ref(machine: &dyn IntrinsicMachine, view: MutatorHeapView<'_>, r: &Ref) -> String {
-    // Resolve to a closure, following Atom indirections.
-    // The closure should already be at WHNF since the //=> operator
-    // forced both sides via the equality check.
-    let closure = match machine.nav(view).resolve(r) {
+    let closure = match machine.resolve_closure(view, r) {
         Ok(c) => c,
         Err(_) => return "<unknown>".to_string(),
     };
 
-    let code = view.scoped(closure.code());
-    let env = view.scoped(closure.env());
-
-    match &*code {
-        HeapSyn::Cons { tag, args } => {
-            let dc: Result<DataConstructor, _> = (*tag).try_into();
+    match machine.data_tag(view, &closure) {
+        Some(tag) => {
+            let dc: Result<DataConstructor, _> = tag.try_into();
             match dc {
                 Ok(DataConstructor::BoolTrue) => "true".to_string(),
                 Ok(DataConstructor::BoolFalse) => "false".to_string(),
                 Ok(DataConstructor::Unit) => "null".to_string(),
                 Ok(DataConstructor::ListNil) => "[]".to_string(),
                 Ok(DataConstructor::ListCons) => "[list]".to_string(),
-                Ok(DataConstructor::Block) => "{block}".to_string(),
-                Ok(DataConstructor::BlockPair) | Ok(DataConstructor::BlockKvList) => {
-                    "{block}".to_string()
-                }
+                Ok(DataConstructor::Block)
+                | Ok(DataConstructor::BlockPair)
+                | Ok(DataConstructor::BlockKvList) => "{block}".to_string(),
                 Ok(DataConstructor::BoxedNumber) => {
-                    // The inner ref is args[0]: try to get it as a native num
-                    args.get(0)
-                        .and_then(|inner| format_inner_ref(machine, view, &env, &inner))
-                        .unwrap_or_else(|| "<number>".to_string())
+                    boxed_scalar(machine, view, &closure, "<number>")
                 }
-                Ok(DataConstructor::BoxedString) => args
-                    .get(0)
-                    .and_then(|inner| format_inner_ref(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<string>".to_string()),
-                Ok(DataConstructor::BoxedSymbol) => args
-                    .get(0)
-                    .and_then(|inner| format_inner_ref(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<symbol>".to_string()),
-                Ok(DataConstructor::BoxedZdt) => args
-                    .get(0)
-                    .and_then(|inner| format_inner_ref(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<datetime>".to_string()),
-                Ok(DataConstructor::BoxedTypeData) => args
-                    .get(0)
-                    .and_then(|inner| format_inner_ref(machine, view, &env, &inner))
-                    .unwrap_or_else(|| "<type-data>".to_string()),
+                Ok(DataConstructor::BoxedString) => {
+                    boxed_scalar(machine, view, &closure, "<string>")
+                }
+                Ok(DataConstructor::BoxedSymbol) => {
+                    boxed_scalar(machine, view, &closure, "<symbol>")
+                }
+                Ok(DataConstructor::BoxedZdt) => {
+                    boxed_scalar(machine, view, &closure, "<datetime>")
+                }
+                Ok(DataConstructor::BoxedTypeData) => {
+                    boxed_scalar(machine, view, &closure, "<type-data>")
+                }
                 Ok(DataConstructor::IoReturn) => "<io-return>".to_string(),
                 Ok(DataConstructor::IoBind) => "<io-bind>".to_string(),
                 Ok(DataConstructor::IoAction) => "<io-action>".to_string(),
@@ -81,38 +73,29 @@ fn format_ref(machine: &dyn IntrinsicMachine, view: MutatorHeapView<'_>, r: &Ref
                 Err(_) => "<value>".to_string(),
             }
         }
-        HeapSyn::Atom {
-            evaluand: Ref::V(n),
-        } => format_native(n, view, machine),
-        _ => "<unevaluated>".to_string(),
+        None => {
+            // Not a data constructor: a bare native atom renders as its
+            // literal; anything else is still unevaluated.
+            match machine.value_native(view, &closure) {
+                Some(n) => format_native(&n, view, machine),
+                None => "<unevaluated>".to_string(),
+            }
+        }
     }
 }
 
-/// Format an inner ref (arg of a boxed constructor) as a string.
-///
-/// Handles `Ref::V` directly and resolves `Ref::L` through the given
-/// env frame.
-fn format_inner_ref(
+/// Render a boxed scalar's inner native (field 0) as a string, falling back to
+/// `placeholder` when the inner value is not (yet) available as a native.
+fn boxed_scalar(
     machine: &dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
-    env: &crate::eval::machine::env::EnvFrame,
-    r: &Ref,
-) -> Option<String> {
-    let native = match r {
-        Ref::V(n) => n.clone(),
-        Ref::L(idx) => {
-            let closure = env.get(&view, *idx)?;
-            let code = view.scoped(closure.code());
-            match &*code {
-                HeapSyn::Atom {
-                    evaluand: Ref::V(n),
-                } => n.clone(),
-                _ => return None,
-            }
-        }
-        _ => return None,
-    };
-    Some(format_native(&native, view, machine))
+    closure: &AbiClosure,
+    placeholder: &str,
+) -> String {
+    match machine.value_native(view, closure) {
+        Some(n) => format_native(&n, view, machine),
+        None => placeholder.to_string(),
+    }
 }
 
 /// Render a `Native` value as a human-readable string.

@@ -1,0 +1,2 @@
+exit: 1
+stderr: "assertion failed: expected 2, got 1"
