@@ -83,3 +83,26 @@ fn io_shell_with_stdin_agrees() {
     // Parameterised (App-thunk) spec block with an options block (stdin).
     assert_engines_agree("io.shell-with({ stdin: \"piped\\n\" }, \"cat\")");
 }
+
+#[test]
+fn io_tag_field_mismatch_dispatches_on_tag_agrees() {
+    // eu-xqab: a spec whose FIELD set disagrees with its meta TAG. The block is
+    // tagged `:io-shell` but also carries an `args` field. The HeapSyn driver
+    // dispatches on the meta tag (→ shell, so the pipe is interpreted by the
+    // shell); the bytecode driver historically inferred the action from the
+    // field set (`args` ⇒ exec), running the whole command string as a single
+    // binary name — a divergent result. Both engines must now dispatch on the
+    // tag and agree.
+    assert_engines_agree(
+        "__IO_ACTION({:io-shell cmd: \"echo hi | tr a-z A-Z\", args: []}) io.map(_.stdout)",
+    );
+}
+
+#[test]
+fn io_exec_tag_with_shellish_cmd_agrees() {
+    // The mirror case: an `:io-exec`-tagged spec must run as exec on both
+    // engines (direct binary, no shell interpretation of the argument).
+    assert_engines_agree(
+        "__IO_ACTION({:io-exec cmd: \"echo\", args: [\"a\", \"b\"]}) io.map(_.stdout)",
+    );
+}

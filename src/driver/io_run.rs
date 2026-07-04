@@ -692,91 +692,19 @@ fn evaluate_spec_block(
         eval_fields.insert(key, value_str);
     }
 
-    // ── Determine tag ─────────────────────────────────────────────────────────
+    // ── Build the ActionSpec via the shared policy ────────────────────────────
     //
-    // For inline blocks the tag was captured statically above.
-    // For App-thunk blocks the Meta was stripped by evaluation; infer from fields.
-    let tag_name = static_tag.unwrap_or_else(|| {
-        if eval_fields.contains_key("args") {
-            "io-exec".to_string()
-        } else {
-            "io-shell".to_string()
-        }
-    });
-
-    // Step 4: build ActionSpec from evaluated fields.
-    let timeout_secs = eval_fields
-        .get("timeout")
-        .and_then(|opt| opt.as_deref())
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(30);
-
-    let stdin = eval_fields
-        .get("stdin")
-        .and_then(|opt| opt.clone())
-        .filter(|s| !s.is_empty() && s != "null");
-
-    let is_shell = tag_name == "io-shell";
-    let is_exec = tag_name == "io-exec";
-
-    // Capture the call-site annotation before the branching so closures below
-    // can reference it without re-borrowing `machine`.
+    // For inline blocks the tag was captured statically above; for App-thunk
+    // blocks (shell-with / exec-with) the Meta was stripped during evaluation
+    // so `static_tag` is None and the shared policy infers from the field set.
+    // Both engines call the same `io_common::action_spec_from_fields`, so their
+    // tag dispatch, timeout / stdin handling, and error wording cannot drift.
     let call_smid = machine.annotation();
-
-    if is_shell {
-        let cmd = eval_fields
-            .get("cmd")
-            .and_then(|opt| opt.clone())
-            .ok_or_else(|| {
-                IoRunError::MachineError(Box::new(ExecutionError::IoFail(
-                    call_smid,
-                    "io.shell: 'cmd' field is required in the action spec".to_string(),
-                )))
-            })?;
-        Ok(ActionSpec::Shell {
-            cmd,
-            stdin,
-            timeout_secs,
-        })
-    } else if is_exec {
-        let cmd = eval_fields
-            .get("cmd")
-            .and_then(|opt| opt.clone())
-            .ok_or_else(|| {
-                IoRunError::MachineError(Box::new(ExecutionError::IoFail(
-                    call_smid,
-                    "io.exec: 'cmd' field is required in the action spec".to_string(),
-                )))
-            })?;
-        let args = eval_fields
-            .get("args")
-            .and_then(|opt| opt.clone())
-            .map(|s| {
-                if s.is_empty() {
-                    vec![]
-                } else {
-                    s.split('\x00').map(|x| x.to_string()).collect()
-                }
-            })
-            .unwrap_or_default();
-        Ok(ActionSpec::Exec {
-            cmd,
-            args,
-            stdin,
-            timeout_secs,
-        })
-    } else if tag_name == "io-fail" {
-        let message = eval_fields
-            .get("message")
-            .and_then(|opt| opt.clone())
-            .unwrap_or_else(|| "io.fail".to_string());
-        Err(IoRunError::Fail(message))
-    } else {
-        Err(IoRunError::MachineError(Box::new(ExecutionError::IoFail(
-            call_smid,
-            format!("unknown IO action tag '{tag_name}'"),
-        ))))
-    }
+    crate::driver::io_common::action_spec_from_fields(
+        static_tag.as_deref(),
+        &eval_fields,
+        call_smid,
+    )
 }
 
 // ─── Mutator: build result block {stdout, stderr, exit-code} ─────────────────

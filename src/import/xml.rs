@@ -148,13 +148,25 @@ impl<'src> XmlImporter<'src> {
         for a in e.attributes() {
             let attr = a.map_err(|e| self.to_source_error(e))?;
             let k = self.to_str(attr.key.local_name().as_ref())?;
-            let v = acore::str(
-                attr.decoded_and_normalized_value(
-                    quick_xml::XmlVersion::Implicit1_0,
-                    self.reader.decoder(),
-                )
-                .map_err(|e| self.to_source_error(e))?,
-            );
+            // Restore the pre-0.12 VERBATIM attribute-value behaviour (eu-cgys):
+            // decode the raw bytes, then unescape entities WITHOUT applying XML
+            // attribute-value whitespace normalisation. quick-xml 0.41's
+            // `decoded_and_normalized_value` family all normalise per the XML
+            // spec — literal tabs/newlines in an attribute value collapse to
+            // spaces — which silently altered imported data vs every previous
+            // release. 0.41 has no non-normalising decode+unescape method, so we
+            // compose one from `Decoder::decode` + `escape::unescape` (predefined
+            // entities only, matching the old `decode_and_unescape_value`).
+            // GUARANTEE: embedded newlines/tabs in attribute values survive
+            // verbatim through import.
+            let decoded = self
+                .reader
+                .decoder()
+                .decode(attr.value.as_ref())
+                .map_err(|e| self.to_source_error(e))?;
+            let unescaped = quick_xml::escape::unescape(decoded.as_ref())
+                .map_err(|e| self.to_source_error(e))?;
+            let v = acore::str(unescaped.as_ref());
             attrs.push((k, v));
         }
 
@@ -165,5 +177,41 @@ impl<'src> XmlImporter<'src> {
     /// `SourceError` by its display text.
     fn to_source_error<E: std::fmt::Display>(&self, e: E) -> SourceError {
         SourceError::InvalidXml(e.to_string(), self.file_id, self.span())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::sourcemap::SourceMap;
+
+    /// eu-cgys regression: attribute values must be imported VERBATIM. Literal
+    /// newlines and tabs inside an attribute value must survive unchanged — the
+    /// XML-spec attribute-value whitespace normalisation (which collapses them
+    /// to spaces) is deliberately NOT applied, matching every release before the
+    /// quick-xml 0.25→0.41 bump.
+    #[test]
+    fn attribute_whitespace_is_preserved_verbatim() {
+        let mut sm = SourceMap::new();
+        // Real newline + tab embedded in the `a` attribute value.
+        let xml = "<root a=\"x\nY\tZ\"/>";
+        let expr = read_xml(&mut sm, 0, xml).expect("xml import should succeed");
+
+        // Hiccup shape: [:root {a: "..."}] — the attrs block is element 1.
+        let attrs = match &*expr.inner {
+            Expr::List(_, xs) => xs.get(1).cloned().expect("attrs block present"),
+            other => panic!("expected a hiccup list, got {other:?}"),
+        };
+        let value = match &*attrs.inner {
+            Expr::Block(_, bm) => bm.get("a").cloned().expect("attribute `a` present"),
+            other => panic!("expected an attrs block, got {other:?}"),
+        };
+        match &*value.inner {
+            Expr::Literal(_, Primitive::Str(s)) => assert_eq!(
+                s, "x\nY\tZ",
+                "attribute whitespace must survive import verbatim (no normalisation)"
+            ),
+            other => panic!("expected a string literal, got {other:?}"),
+        }
     }
 }
