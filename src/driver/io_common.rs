@@ -9,6 +9,7 @@
 //! differs between the two engines.
 
 use std::{
+    collections::HashMap,
     io::Write as IoWrite,
     process::{Command, Stdio},
     sync::mpsc,
@@ -70,6 +71,131 @@ pub enum ActionSpec {
         stdin: Option<String>,
         timeout_secs: u64,
     },
+}
+
+// ─── Action-spec policy (shared by both engine drivers) ──────────────────────
+
+/// Resolve an [`ActionSpec`] (or an io-fail) from the statically-recovered meta
+/// tag and the evaluated spec-block field set.
+///
+/// This is the single, representation-agnostic IO-action policy shared by the
+/// HeapSyn ([`crate::driver::io_run`]) and bytecode
+/// ([`crate::driver::bytecode_io_run`]) drivers. Each driver navigates its own
+/// heap representation to (a) recover the spec block's meta tag — `io-shell` /
+/// `io-exec` / `io-fail` — when it is statically visible, and (b) evaluate each
+/// field to a rendered string; it then hands both to this function, which owns
+/// all the actual *policy*:
+///
+/// - `timeout` defaults to 30 seconds when absent or unparseable;
+/// - `stdin` is dropped when empty or the literal `"null"`;
+/// - the action is chosen by the meta **tag** when present, falling back to
+///   field inference only when the tag is genuinely unavailable (App-thunk spec
+///   blocks — `io.shell-with` / `io.exec-with` — whose `Meta` wrapper is
+///   stripped during forcing). Both engines therefore dispatch identically;
+/// - `args` is split on NUL (the element separator used by both drivers);
+/// - a missing `cmd` is a hard error; an `io-fail` becomes `IoRunError::Fail`.
+///
+/// Keeping this here guarantees the two engines cannot drift (they previously
+/// hand-rolled subtly different copies of this logic).
+pub fn action_spec_from_fields(
+    tag: Option<&str>,
+    fields: &HashMap<String, Option<String>>,
+    call_smid: Smid,
+) -> Result<ActionSpec, IoRunError> {
+    let timeout_secs = fields
+        .get("timeout")
+        .and_then(|opt| opt.as_deref())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(30);
+
+    let stdin = fields
+        .get("stdin")
+        .and_then(|opt| opt.clone())
+        .filter(|s| !s.is_empty() && s != "null");
+
+    // Prefer the meta tag; fall back to field inference only when unavailable.
+    let resolved = tag.map(str::to_string).or_else(|| infer_action_tag(fields));
+
+    match resolved.as_deref() {
+        Some("io-exec") => {
+            let cmd = require_cmd(fields, "io.exec", call_smid)?;
+            let args = fields
+                .get("args")
+                .and_then(|opt| opt.clone())
+                .map(split_nul_args)
+                .unwrap_or_default();
+            Ok(ActionSpec::Exec {
+                cmd,
+                args,
+                stdin,
+                timeout_secs,
+            })
+        }
+        Some("io-shell") => {
+            let cmd = require_cmd(fields, "io.shell", call_smid)?;
+            Ok(ActionSpec::Shell {
+                cmd,
+                stdin,
+                timeout_secs,
+            })
+        }
+        Some("io-fail") => {
+            let message = fields
+                .get("message")
+                .and_then(|opt| opt.clone())
+                .unwrap_or_else(|| "io.fail".to_string());
+            Err(IoRunError::Fail(message))
+        }
+        _ => Err(IoRunError::MachineError(Box::new(ExecutionError::IoFail(
+            call_smid,
+            "unknown IO action spec: no io-shell/io-exec/io-fail tag and no \
+             cmd/args/message field"
+                .to_string(),
+        )))),
+    }
+}
+
+/// Field-based action inference — the shared fallback for App-thunk spec blocks
+/// whose meta tag was stripped during forcing: `args` ⇒ exec, `cmd` ⇒ shell,
+/// `message` ⇒ fail.
+fn infer_action_tag(fields: &HashMap<String, Option<String>>) -> Option<String> {
+    if fields.contains_key("args") {
+        Some("io-exec".to_string())
+    } else if fields.contains_key("cmd") {
+        Some("io-shell".to_string())
+    } else if fields.contains_key("message") {
+        Some("io-fail".to_string())
+    } else {
+        None
+    }
+}
+
+/// Read the required `cmd` field, erroring with an action-qualified message.
+fn require_cmd(
+    fields: &HashMap<String, Option<String>>,
+    action: &str,
+    call_smid: Smid,
+) -> Result<String, IoRunError> {
+    fields
+        .get("cmd")
+        .and_then(|opt| opt.clone())
+        .ok_or_else(|| {
+            IoRunError::MachineError(Box::new(ExecutionError::IoFail(
+                call_smid,
+                format!("{action}: 'cmd' field is required in the action spec"),
+            )))
+        })
+}
+
+/// Split a rendered list field into its elements. Both drivers join list
+/// elements with NUL (`\x00`) before handing the field to this policy, so the
+/// inverse split lives here too.
+fn split_nul_args(s: String) -> Vec<String> {
+    if s.is_empty() {
+        vec![]
+    } else {
+        s.split('\x00').map(|x| x.to_string()).collect()
+    }
 }
 
 // ─── Shell execution ──────────────────────────────────────────────────────────

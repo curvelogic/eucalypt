@@ -2258,6 +2258,84 @@ impl BytecodeMachine<'_> {
         current
     }
 
+    /// Recover the static meta tag symbol (`io-shell` / `io-exec` / `io-fail`)
+    /// of an `IoAction` spec block, if it is an inline `Meta`-tagged block.
+    ///
+    /// This mirrors the navigation of [`Self::peel_io_spec`] but resolves the
+    /// `Meta` node's *meta* ref (rather than its body) to a symbol name. It is
+    /// a purely additive, read-only accessor introduced for the cross-engine IO
+    /// action dispatch parity fix (eu-xqab): forcing the spec block strips the
+    /// `Meta` wrapper, so the tag must be read statically here — before forcing
+    /// — for the bytecode driver to dispatch on the tag exactly as the HeapSyn
+    /// driver's `peel_meta` does.
+    ///
+    /// Returns `None` for parameterised (App-thunk) spec blocks
+    /// (`io.shell-with` / `io.exec-with`) whose `Meta` is not statically
+    /// visible; the caller then falls back to field-based inference.
+    pub fn peel_io_spec_tag(&self, spec: BcValue) -> Option<String> {
+        let view = MutatorHeapView::new(&self.heap);
+        let code = self.program.code.as_slice();
+        let mut current = spec;
+        let mut container: Option<RefPtr<BcEnvFrame>> = None;
+        for _ in 0..64 {
+            let c = match &current {
+                BcValue::Closure(c) => *c,
+                BcValue::Native(_) => return None,
+            };
+            let mut pc = c.code() as usize;
+            match Op::from_u8(read_u8(code, &mut pc)) {
+                Some(Op::Atom) => {
+                    let dref = read_ref(code, &mut pc).ok()?;
+                    match dref {
+                        DecodedRef::Local(i) => {
+                            let env = c.env();
+                            match view.scoped(env).get(&view, i as usize) {
+                                Some(inner) => {
+                                    container = Some(env);
+                                    current = inner;
+                                }
+                                None => return None,
+                            }
+                        }
+                        DecodedRef::Global(i) => {
+                            match view.scoped(self.state.globals).get(&view, i as usize) {
+                                Some(inner) => current = inner,
+                                None => return None,
+                            }
+                        }
+                        DecodedRef::Value(_) => return None,
+                    }
+                }
+                Some(Op::Ann) => {
+                    let _smid = read_u32(code, &mut pc);
+                    let body_off = read_u32(code, &mut pc);
+                    current = BcValue::Closure(BcClosure::new(body_off, c.env()));
+                }
+                Some(Op::Meta) => {
+                    let meta_off = read_u32(code, &mut pc);
+                    let _body_off = read_u32(code, &mut pc);
+                    let meta_ref = arg_ref(code, meta_off).ok()?;
+                    // Resolve the meta ref against the container frame (the let
+                    // frame that holds this Meta binding), falling back to the
+                    // Meta's own env when reached without an indirection.
+                    let env = container.unwrap_or_else(|| c.env());
+                    let meta_v = resolve_ref(
+                        view,
+                        &self.state.constants,
+                        env,
+                        self.state.globals,
+                        meta_ref,
+                    )
+                    .ok()?;
+                    return value_symbol(&self.program, &self.state, view, meta_v)
+                        .map(|id| self.symbol_pool.resolve(id).to_string());
+                }
+                _ => return None,
+            }
+        }
+        None
+    }
+
     // ── Data synthesis (pre-encoded templates; no per-call code alloc) ──────
 
     /// Build a data-constructor value of `tag` over `fields` using the

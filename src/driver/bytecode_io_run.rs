@@ -44,6 +44,16 @@ fn evaluate_spec_block(
     machine: &mut BytecodeMachine<'_>,
     spec_block: BcValue,
 ) -> Result<ActionSpec, IoRunError> {
+    // Recover the spec block's meta tag (`io-shell` / `io-exec` / `io-fail`)
+    // statically, BEFORE forcing strips the `Meta` wrapper. This lets the
+    // bytecode engine dispatch on the actual tag exactly as the HeapSyn driver
+    // does, so a spec whose field set disagrees with its tag (e.g.
+    // `{:io-shell cmd: ..., args: []}`) runs the SAME action on both engines
+    // (eu-xqab). `None` for App-thunk specs (`io.shell-with` / `io.exec-with`)
+    // whose `Meta` is not statically visible — the shared policy then falls
+    // back to field inference, matching HeapSyn's `peel_meta` behaviour.
+    let tag = machine.peel_io_spec_tag(spec_block.clone());
+
     // Statically peel the `Meta` wrapper (see `BytecodeMachine::peel_io_spec`):
     // an inline spec block is a `let`-bound `Meta` whose body ref is relative
     // to the let frame, so it cannot be forced naively — we resolve the block
@@ -103,7 +113,11 @@ fn evaluate_spec_block(
         eval_fields.insert(key.clone(), value_str);
     }
 
-    build_action_spec(machine, eval_fields)
+    // Hand the recovered tag and evaluated fields to the shared, representation-
+    // agnostic policy so both engines apply identical tag dispatch, timeout /
+    // stdin handling, NUL-split args, required-cmd errors, and io-fail wording.
+    let call_smid = machine.annotation();
+    crate::driver::io_common::action_spec_from_fields(tag.as_deref(), &eval_fields, call_smid)
 }
 
 /// Force a spec-block field to WHNF, peeling a boxed scalar whose inner field
@@ -119,84 +133,6 @@ fn force_field(machine: &mut BytecodeMachine<'_>, value: BcValue) -> Result<BcVa
             .map_err(IoRunError::from)
     } else {
         Ok(whnf)
-    }
-}
-
-/// Turn the evaluated spec fields into an [`ActionSpec`], inferring the action
-/// tag from the field set (see module docs).
-fn build_action_spec(
-    machine: &BytecodeMachine<'_>,
-    eval_fields: HashMap<String, Option<String>>,
-) -> Result<ActionSpec, IoRunError> {
-    let timeout_secs = eval_fields
-        .get("timeout")
-        .and_then(|opt| opt.as_deref())
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(30);
-
-    let stdin = eval_fields
-        .get("stdin")
-        .and_then(|opt| opt.clone())
-        .filter(|s| !s.is_empty() && s != "null");
-
-    let call_smid = machine.annotation();
-
-    if eval_fields.contains_key("args") {
-        // io-exec: cmd + args.
-        let cmd = eval_fields
-            .get("cmd")
-            .and_then(|opt| opt.clone())
-            .ok_or_else(|| {
-                IoRunError::MachineError(Box::new(ExecutionError::IoFail(
-                    call_smid,
-                    "io.exec: 'cmd' field is required in the action spec".to_string(),
-                )))
-            })?;
-        let args = eval_fields
-            .get("args")
-            .and_then(|opt| opt.clone())
-            .map(|s| {
-                if s.is_empty() {
-                    vec![]
-                } else {
-                    s.split('\x00').map(|x| x.to_string()).collect()
-                }
-            })
-            .unwrap_or_default();
-        Ok(ActionSpec::Exec {
-            cmd,
-            args,
-            stdin,
-            timeout_secs,
-        })
-    } else if eval_fields.contains_key("cmd") {
-        // io-shell: cmd, no args.
-        let cmd = eval_fields
-            .get("cmd")
-            .and_then(|opt| opt.clone())
-            .ok_or_else(|| {
-                IoRunError::MachineError(Box::new(ExecutionError::IoFail(
-                    call_smid,
-                    "io.shell: 'cmd' field is required in the action spec".to_string(),
-                )))
-            })?;
-        Ok(ActionSpec::Shell {
-            cmd,
-            stdin,
-            timeout_secs,
-        })
-    } else if eval_fields.contains_key("message") {
-        // io-fail: a message, no command.
-        let message = eval_fields
-            .get("message")
-            .and_then(|opt| opt.clone())
-            .unwrap_or_else(|| "io.fail".to_string());
-        Err(IoRunError::Fail(message))
-    } else {
-        Err(IoRunError::MachineError(Box::new(ExecutionError::IoFail(
-            call_smid,
-            "unknown IO action spec (no cmd/args/message field)".to_string(),
-        ))))
     }
 }
 
