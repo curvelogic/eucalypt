@@ -1345,39 +1345,61 @@ fn collect_block_keys(
 ) -> Vec<String> {
     let mut keys = Vec::new();
 
-    // Resolve and force the block to WHNF; it should be a `Block` cell whose
-    // field 0 is the kv-pair list.
-    let block = match machine.resolve_closure(view, block_ref) {
-        Ok(c) => c,
-        Err(_) => return keys,
-    };
-    let block = match machine.force(block) {
-        Ok(c) => c,
-        Err(_) => return keys,
-    };
-    if machine.data_tag(view, &block) != Some(DataConstructor::Block.tag()) {
-        return keys;
-    }
-    let mut current = match machine.data_field(view, &block, 0) {
-        Some(c) => c,
-        None => return keys,
-    };
-
-    // Walk the list spine, reading each pair's key (field 0).
-    while let Ok(cell) = machine.force(current) {
-        if machine.data_tag(view, &cell) != Some(DataConstructor::ListCons.tag()) {
-            break; // ListNil or an unexpected shape
-        }
-        if let Some(key) = pair_key_name(machine, view, &cell) {
-            keys.push(key);
-        }
-        match machine.data_field(view, &cell, 1) {
-            Some(tail) => current = tail,
+    // Walk the kv-pair spine one cell at a time, re-deriving each cell from
+    // the rooted `block_ref` (a GC-stable `Ref` into the machine env) rather
+    // than carrying a spine handle across the `force` that reads each pair's
+    // key. A forced sub-evaluation can evacuate the heap, so any `AbiClosure`
+    // held across it would dangle (eu-f3ss); re-resolving from the root after
+    // every force keeps every handle fresh. This mirrors `get_list_element_at`
+    // in debug.rs. It is the error path (a lookup has already failed), so the
+    // extra spine walks are cheap.
+    for index in 0.. {
+        match nth_block_pair_cell(machine, view, block_ref, index) {
+            Some(cell) => {
+                if let Some(key) = pair_key_name(machine, view, &cell) {
+                    keys.push(key);
+                }
+            }
             None => break,
         }
     }
 
     keys
+}
+
+/// Re-derive the `index`-th `ListCons` cell of a block's kv-pair spine from the
+/// rooted `block_ref`, forcing the spine as far as needed. Returns `None` once
+/// the spine ends (nil), on any error, or on any non-list shape.
+///
+/// Deriving from the GC-stable `Ref` on each call — rather than caching a spine
+/// handle across the per-pair `force` in `collect_block_keys` — keeps the walk
+/// safe against heap evacuation during those forces (eu-f3ss). The walk itself
+/// holds no handle across an allocation: each `force` consumes the handle it is
+/// given, and the intervening `data_field` reads do not allocate.
+fn nth_block_pair_cell(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    block_ref: &Ref,
+    index: usize,
+) -> Option<AbiClosure> {
+    let block = machine.resolve_closure(view, block_ref).ok()?;
+    let block = machine.force(block).ok()?;
+    if machine.data_tag(view, &block) != Some(DataConstructor::Block.tag()) {
+        return None;
+    }
+    let mut current = machine.data_field(view, &block, 0)?;
+    for _ in 0..index {
+        let cell = machine.force(current).ok()?;
+        if machine.data_tag(view, &cell) != Some(DataConstructor::ListCons.tag()) {
+            return None;
+        }
+        current = machine.data_field(view, &cell, 1)?;
+    }
+    let cell = machine.force(current).ok()?;
+    if machine.data_tag(view, &cell) != Some(DataConstructor::ListCons.tag()) {
+        return None;
+    }
+    Some(cell)
 }
 
 /// Best-effort read of a kv-list cell's head `BlockPair` key as a string,
