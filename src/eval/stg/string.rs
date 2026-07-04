@@ -118,7 +118,7 @@ impl StgIntrinsic for Str {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let nat = machine.nav(view).resolve_native(&args[0])?;
+        let nat = machine.resolve_native(view, &args[0])?;
         let text = match nat {
             Native::Sym(id) => machine.symbol_pool().resolve(id).to_string(),
             Native::Str(s) => (*view.scoped(s)).as_str().to_string(),
@@ -171,8 +171,7 @@ impl StgIntrinsic for Join {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let sep = str_arg(machine, view, &args[1])?;
-        let strings: Vec<String> =
-            str_list_arg(machine, view, args[0].clone())?.collect::<Result<Vec<_>, _>>()?;
+        let strings: Vec<String> = str_list_arg(machine, view, args[0].clone())?;
         let result = strings.join(&sep);
         machine_return_str(machine, view, result)
     }
@@ -410,7 +409,7 @@ impl StgIntrinsic for Fmt {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let nat = machine.nav(view).resolve_native(&args[0])?;
+        let nat = machine.resolve_native(view, &args[0])?;
         let fmt_string = str_arg(machine, view, &args[1])?;
 
         match printf::fmt(view, machine.symbol_pool(), &fmt_string, &nat) {

@@ -93,8 +93,8 @@ impl StgIntrinsic for Add {
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
         // Dispatch to array arithmetic if either operand is an NdArray
-        let a_native = machine.nav(view).resolve_native(&args[0]);
-        let b_native = machine.nav(view).resolve_native(&args[1]);
+        let a_native = machine.resolve_native(view, &args[0]);
+        let b_native = machine.resolve_native(view, &args[1]);
         if let (Ok(ref a), Ok(ref b)) = (&a_native, &b_native) {
             if matches!(a, Native::NdArray(_)) || matches!(b, Native::NdArray(_)) {
                 return array_binop(machine, view, &args[0], &args[1], |a, b| a + b);
@@ -160,8 +160,8 @@ impl StgIntrinsic for Sub {
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
         // Dispatch to array arithmetic if either operand is an NdArray
-        let a_native = machine.nav(view).resolve_native(&args[0]);
-        let b_native = machine.nav(view).resolve_native(&args[1]);
+        let a_native = machine.resolve_native(view, &args[0]);
+        let b_native = machine.resolve_native(view, &args[1]);
         if let (Ok(ref a), Ok(ref b)) = (&a_native, &b_native) {
             if matches!(a, Native::NdArray(_)) || matches!(b, Native::NdArray(_)) {
                 return array_binop(machine, view, &args[0], &args[1], |a, b| a - b);
@@ -227,8 +227,8 @@ impl StgIntrinsic for Mul {
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
         // Dispatch to array arithmetic if either operand is an NdArray
-        let a_native = machine.nav(view).resolve_native(&args[0]);
-        let b_native = machine.nav(view).resolve_native(&args[1]);
+        let a_native = machine.resolve_native(view, &args[0]);
+        let b_native = machine.resolve_native(view, &args[1]);
         if let (Ok(ref a), Ok(ref b)) = (&a_native, &b_native) {
             if matches!(a, Native::NdArray(_)) || matches!(b, Native::NdArray(_)) {
                 return array_binop(machine, view, &args[0], &args[1], |a, b| a * b);
@@ -294,8 +294,8 @@ impl StgIntrinsic for Div {
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
         // Dispatch to array arithmetic if either operand is an NdArray
-        let a_native = machine.nav(view).resolve_native(&args[0]);
-        let b_native = machine.nav(view).resolve_native(&args[1]);
+        let a_native = machine.resolve_native(view, &args[0]);
+        let b_native = machine.resolve_native(view, &args[1]);
         if let (Ok(ref a), Ok(ref b)) = (&a_native, &b_native) {
             if matches!(a, Native::NdArray(_)) || matches!(b, Native::NdArray(_)) {
                 return array_binop(machine, view, &args[0], &args[1], |a, b| a / b);
@@ -548,8 +548,8 @@ fn ordered_cmp(
     pred: fn(std::cmp::Ordering) -> bool,
     name: &str,
 ) -> Result<bool, ExecutionError> {
-    let x = machine.nav(view).resolve_native(&args[0])?;
-    let y = machine.nav(view).resolve_native(&args[1])?;
+    let x = machine.resolve_native(view, &args[0])?;
+    let y = machine.resolve_native(view, &args[1])?;
     match (x, y) {
         (Native::Num(ref nx), Native::Num(ref ny)) => {
             Ok(pred(num_ord(machine.annotation(), nx, ny)?))

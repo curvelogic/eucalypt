@@ -268,11 +268,11 @@ impl StgIntrinsic for Eq {
         // The wrapper always unboxes before calling the BIF; if a non-native
         // arg slips through (e.g. a cross-type comparison in the native-x
         // fallback), it cannot be equal to a primitive — return false.
-        let x = match machine.nav(view).resolve_native(&args[0]) {
+        let x = match machine.resolve_native(view, &args[0]) {
             Ok(v) => v,
             Err(_) => return machine_return_bool(machine, view, false),
         };
-        let y = match machine.nav(view).resolve_native(&args[1]) {
+        let y = match machine.resolve_native(view, &args[1]) {
             Ok(v) => v,
             Err(_) => return machine_return_bool(machine, view, false),
         };

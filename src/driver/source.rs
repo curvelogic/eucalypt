@@ -51,7 +51,9 @@ use std::path::PathBuf;
 use std::{collections::HashMap, path::Path};
 use std::{fs, iter};
 
-use super::io::{create_args_pseudoblock, create_io_pseudoblock};
+use super::io::{
+    create_args_pseudoblock, create_io_pseudoblock, create_io_pseudoblock_deterministic,
+};
 use super::unit_interface::UnitInterface;
 
 /// A loader for source code that stores the bytes for error reporting
@@ -83,6 +85,12 @@ pub struct SourceLoader {
     args: Vec<String>,
     /// Seed for random number generation
     seed: Option<i64>,
+    /// When set, the `__io` pseudoblock is built with deterministic
+    /// placeholder values (epoch 0, empty env, seed 0, UTC) rather than live
+    /// invocation data.  Used by `cargo xtask prelude-compile` so the
+    /// generated blob is byte-for-byte reproducible; the runtime always
+    /// overrides the `__io` slot with real values anyway.
+    deterministic_io: bool,
     /// Prelude override: set when a loaded unit specifies `prelude:` metadata.
     /// The `Input` replaces the default `Resource("prelude")` in the inputs list.
     prelude_override: Option<Input>,
@@ -130,6 +138,7 @@ impl Default for SourceLoader {
             lib_path: Vec::new(),
             args: Vec::new(),
             seed: None,
+            deterministic_io: false,
             prelude_override: None,
             unit_interface: UnitInterface::default(),
             pending_parse_errors: Vec::new(),
@@ -156,6 +165,7 @@ impl SourceLoader {
             lib_path,
             args: Vec::new(),
             seed: None,
+            deterministic_io: false,
             prelude_override: None,
             unit_interface: UnitInterface::default(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -174,6 +184,17 @@ impl SourceLoader {
     /// Set the random seed for the __io pseudoblock
     pub fn with_seed(mut self, seed: Option<i64>) -> Self {
         self.seed = seed;
+        self
+    }
+
+    /// Build the `__io` pseudoblock deterministically (for blob generation).
+    ///
+    /// When enabled, the `__io` pseudoblock uses fixed placeholder values
+    /// instead of live invocation data, so `cargo xtask prelude-compile`
+    /// produces a byte-for-byte reproducible blob.  The runtime always
+    /// overrides the `__io` slot with real values, so behaviour is unchanged.
+    pub fn with_deterministic_io(mut self, deterministic: bool) -> Self {
+        self.deterministic_io = deterministic;
         self
     }
 
@@ -459,6 +480,7 @@ impl SourceLoader {
         // Dispatch based on pseudo name
         let core = match input.locator() {
             Locator::Pseudo(name) if name == "args" => create_args_pseudoblock(&self.args),
+            _ if self.deterministic_io => create_io_pseudoblock_deterministic(),
             _ => create_io_pseudoblock(self.seed),
         };
 

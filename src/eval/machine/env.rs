@@ -77,6 +77,11 @@ impl<S: Copy> Closing<S> {
         self.1
     }
 
+    /// Redirect the closure's environment pointer (used by GC fixup).
+    pub fn set_env(&mut self, env: RefPtr<EnvironmentFrame<Closing<S>>>) {
+        self.1 = env;
+    }
+
     /// Reference to the closure's code
     pub fn code(&self) -> S {
         self.0.body()
@@ -128,6 +133,38 @@ impl Closing<RefPtr<HeapSyn>> {
             code_ptr = ScopedPtr::from_non_null(guard, closure.code());
         }
         panic!("could not navigate to native")
+    }
+
+    /// Non-panicking variant of [`Self::navigate_local_native`].
+    ///
+    /// Follows `Atom` indirections through the local environment to a native
+    /// value, returning `None` — rather than panicking — when the chain ends
+    /// at a non-native (e.g. an unevaluated thunk, a data constructor, an
+    /// out-of-range or global ref). Used by the neutral `value_native` ABI so
+    /// that inspecting an unforced value (debug peek) cannot crash, matching
+    /// the bytecode engine's behaviour.
+    pub fn try_navigate_local_native(&self, guard: &dyn MutatorScope, arg: Ref) -> Option<Native> {
+        let i = match arg {
+            Ref::L(i) => i,
+            Ref::G(_) => return None,
+            Ref::V(n) => return Some(n),
+        };
+        let mut closure = {
+            let env = &*ScopedPtr::from_non_null(guard, self.env());
+            env.get(guard, i)?
+        };
+        let mut code_ptr = ScopedPtr::from_non_null(guard, closure.code());
+        while let HeapSyn::Atom { evaluand: r } = &*code_ptr {
+            let next_i = match r {
+                Ref::L(i) => *i,
+                Ref::G(_) => return None,
+                Ref::V(n) => return Some(n.clone()),
+            };
+            let env = &*ScopedPtr::from_non_null(guard, closure.env());
+            closure = env.get(guard, next_i)?;
+            code_ptr = ScopedPtr::from_non_null(guard, closure.code());
+        }
+        None
     }
 }
 
@@ -493,9 +530,13 @@ impl GcScannable for SynClosure {
 
 /// For now, an EnvFrame is an environment frame with HeapSyn Closures
 pub type EnvFrame = EnvironmentFrame<SynClosure>;
-impl StgObject for EnvFrame {}
 
-impl GcScannable for EnvFrame {
+// The environment-frame layout is independent of the closure code type
+// `C`; the same scan/scan_and_update logic serves both the HeapSyn
+// `SynClosure` frames and the bytecode `BcClosure` frames (spec §3).
+impl<C: Clone> StgObject for EnvironmentFrame<C> {}
+
+impl<C: Clone + GcScannable> GcScannable for EnvironmentFrame<C> {
     fn scan<'a>(
         &'a self,
         scope: &'a dyn crate::eval::memory::collect::CollectorScope,

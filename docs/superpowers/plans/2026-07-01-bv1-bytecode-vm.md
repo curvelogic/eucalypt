@@ -1,0 +1,960 @@
+# BV1: Full Bytecode VM Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. This is a deep translation of intricate existing code, not greenfield — where a step says "translate `vm.rs:NNN-MMM`", read that arm and port its semantics; the differential harness (Phase 2) is the exact correctness gate for every such translation.
+
+> ## ▶ RESUME HERE (cold-start header — read this first) · updated 2026-07-03 (post-#948, eu-enyv flip)
+>
+> **eu-enyv (BV1 default flip):** the bytecode engine is now the **default**.
+> `bytecode_enabled()` (`src/eval/bytecode/mod.rs`) returns `true` unless
+> `EU_HEAPSYN=1` selects the legacy HeapSyn machine. `EU_BYTECODE=1` is now a
+> redundant no-op opt-in (kept working; `EU_HEAPSYN=1` wins). HeapSyn is **not**
+> deleted — the Phase 4 collapse (eu-oufc) stays deferred pending an A/B perf
+> study; HeapSyn remains the perf baseline + differential-testing engine. Full
+> harness green both ways: `cargo test --test harness_test` (bytecode default) =
+> 477/477; `EU_HEAPSYN=1 cargo test --test harness_test` = 477/477.
+>
+> **Where:** worktree `/Users/greg/dev/curvelogic/eucalypt-worktrees/integration-0.12.0`,
+> integration branch `integration/0.12.0`. **Toolchain:** prepend
+> `~/.rustup/toolchains/stable-aarch64-apple-darwin/bin` to `PATH` (the
+> `~/.cargo/bin/cargo` symlink is broken). One feature branch per increment →
+> PR to `integration/0.12.0`. Owner reviews/merges PRs; do not merge your own.
+> Current working branch: `feat/bv1-migrate-intrinsics` (off the post-#941 merge
+> `25166517`).
+>
+> **State:** **The bytecode engine works end-to-end.** Real `.eu` programs run
+> under `EU_BYTECODE=1`, **byte-identical to the HeapSyn engine** (blocks, lists,
+> arithmetic, block lookups, strings — verified via the `eu` binary). Complete:
+> the whole day11 opcode set, GC roots + `evaluate_to_whnf`, the neutral
+> intrinsic ABI, rendering, the list/data builders, and the `EU_BYTECODE` flag
+> path in `driver/eval.rs`. HeapSyn is untouched (bytecode is behind the flag).
+> `cargo test --lib` = **1247 green**; clippy `--all-targets` + fmt clean.
+>
+> **Merged PRs (in order):** #927, #930 (machine spine + PAP + globals + Bif),
+> #932 (evaluate_to_whnf + closure ABI), #933 (differential harness), #934 (data
+> ABI), #935 (Meta/DeMeta/LookupLit), #937 (emit/render), #939 (Increment C/D:
+> iterators + list builders), **#941 (MERGED 2026-07-02 — flag path + block-index
+> gating, the "real .eu runs" milestone; merge commit `25166517`).**
+> *(All BV1 PRs to date are merged into `integration/0.12.0`.)*
+>
+> **How to run/verify the bytecode engine:**
+> - `EU_BYTECODE=1 timeout 90 ./target/debug/eu <file.eu>` vs the same without
+>   the env var → compare output (must be identical).
+> - Synthetic differential tests: `src/eval/bytecode/differential.rs`
+>   (`assert_engines_agree` = exit code; `assert_engines_render_agree` = YAML).
+>   `cargo test --lib bytecode::differential`.
+> - **Test-eu gotchas** (read `docs/appendices/syntax-gotchas.md`): use
+>   declaration files (`a: 1` / `b: 2`), NOT inline `{ }` in `eu -e`; no
+>   `let…in` (use `:let` blocks); `/` is floor division (`÷` exact); catenation
+>   precedence is very low.
+>
+> **CORPUS TALLY (after `eu-rkje` rebased on `eu-9p9g`, MergeWith +
+> ProducerNext):** sweeping the full `tests/harness/*.eu` under `EU_BYTECODE=1`
+> vs HeapSyn (comparing stdout): **165 PASS, 3 DIFF**. `eu-9p9g` (ParseString +
+> TypeToData) took the corpus to 160 PASS / 8 DIFF; this increment cleared the
+> 5 remaining thunk-synthesis fails — `015_block_fns`, `085_deep_merge_dynamic`,
+> `127_merge_metadata`, `135_dynamic_key_merge` (MergeWith/DeepMerge) and
+> `079_streams` (ProducerNext) — leaving only the 3 diagnostic-rendering DIFFs:
+> `125_expectations` (the known `__DBG` stderr bug, eu-scjv — stdout matches)
+> and `175_sv2_to_spec` + `183_widen_type_def_literals` (both fail on the
+> *reference* HeapSyn engine too — pre-existing prelude bug). Sweep compares
+> stdout of both engines per file.
+>
+> **DONE this PR (all neutral-ABI, byte-identical both engines):**
+> - `debug.rs` — DbgRepr/Dbg/TraceEntry/TraceExit + render/peek/trace helpers.
+> - `support.rs` — resolve_native_unboxing, machine_return_str_iter,
+>   machine_return_num_list_of_lists, machine_return_block_pair_closure_list,
+>   cons_tag_of; added `list_value` helper.
+> - `block.rs` — **block-application MERGE dispatch** in the bytecode machine
+>   (`return_data` ApplyTo → append block, enter MERGE global), plus
+>   Merge/IsBlock/deconstruct.
+> - `render_to_string.rs`, `time.rs` (ZdtFields), `vec.rs` (VecOf/VecNth/
+>   VecToList), `set.rs` (SetToList), `stream_prng.rs` (all stream returns).
+> - **Two new neutral primitives:** (1) `IntrinsicMachine::tail_apply_global`
+>   (tail-call a global on runtime args — HeapSyn builds the App, bytecode
+>   pushes ApplyTo + enters the global); (2) `try_navigate_local_native` so the
+>   HeapSyn `value_native` default no longer panics on an unforced `Atom{L}`
+>   (matches bytecode). Differential test `agree_on_dbg_repr` added.
+>
+> **⚠️ Neutral-ABI trap:** don't assume a resolved closure is WHNF; use
+> `value_native` (now non-panicking) for possibly-unforced values.
+>
+> **✅ DONE 2026-07-02 (eu-9p9g, branch `feat/bv1-parse-typedata`):
+> `parse_string::ParseString` + `typedata::{TypeToData, TypeFromString}`** —
+> migrated off `load()` via the **value-representation route** (NO runtime code
+> synthesis, zero arena growth). New shared `stg/materialise.rs::materialise_data`
+> walks the compiled data-only STG (a flat/nested letrec of value-form
+> `Cons`/`Meta`/`Atom` cells with backward refs) and rebuilds the value directly
+> through the neutral `native_value`/`data_value`/`meta_value`/`resolve_closure`
+> ABI — engine-agnostic, on the GC heap. Verified `type_to_rcexpr` emits **only
+> data constructors** (no function applications) → data-only confirmed, no split
+> needed. One new neutral primitive `meta_value` (HeapSyn default builds
+> `HeapSyn::Meta`; bytecode override builds a `Meta` value over a new pre-encoded
+> `meta_template` in the arena — the "small fixed template" route, bounded).
+> Corpus **146→160 PASS** (fixed all 9 `parse_as_*`, `128_parse_args`, and
+> `174/177/178/182`), **zero new DIFFs**. Differential tests
+> `agree_on_parse_string_json` + `agree_on_type_to_data`. `EU_GC_VERIFY=2 +
+> EU_GC_STRESS=1` clean both engines. **NB `175_sv2_to_spec` and
+> `183_widen_type_def_literals` still DIFF — but they fail an assertion/warning
+> on the *reference HeapSyn* engine too (pre-existing prelude `union-spec`/
+> `result-def` bug), diverging only in partial pre-error emit; unrelated to this
+> migration.**
+>
+> **DONE (2026-07-02, `eu-rkje`):**
+> - `block::MergeWith` / DEEPMERGE (4) — the lazy `f(ov, nv)` combine thunk now
+>   uses the neutral `apply2_thunk` primitive over a pre-encoded
+>   `App(L0,[L1,L2])` template (`BytecodeProgram::apply2_template`). Clears
+>   015/085/127/135.
+> - `stream_intrinsic::ProducerNext` (1) — the updatable tail thunk uses
+>   `bif_tail_thunk` over a pre-encoded `AppBif(PRODUCER_NEXT,[L0])` template
+>   (`producer_tail_template`); the element value is materialised via the
+>   canonical shared `stg/materialise.rs::materialise_data` (eu-9p9g),
+>   rebuilding a pure-data STG tree through the neutral value-construction ABI
+>   over constructor templates — no arena growth, no duplicate materialiser.
+>   (This increment originally added its own `load_data_value`/`materialise_data`
+>   pair; that was removed on rebase in favour of eu-9p9g's canonical function.)
+>   Correct memoisation required teaching the bytecode data-case path to
+>   **share the constructor's backing frame** (`env_from_data_args`, mirroring
+>   HeapSyn), so a tail-thunk update is visible to every reference to the same
+>   cons. Clears 079.
+>
+> These shared one root: the bytecode path cannot yet synthesise *code* at
+> runtime, only *data* (`data_value`/`return_closure_list`/`materialise_data`).
+>
+> **⚠️ ARENA-GROWTH ANALYSIS (owner's concern, 2026-07-02): the code arena
+> (`BytecodeProgram.code`) is off-heap and NEVER GC-collected. Appending a fresh
+> fragment per `load()` call would leak unboundedly (e.g. parsing 1M JSON records
+> in a loop → 1M fragments). SO WE MUST NOT do naive runtime encode-append.
+> Analysis shows almost none of the remaining 19 actually needs unique runtime
+> code:**
+> - **`ParseString` / `TypeToData` value output is pure DATA** (a block/list/
+>   scalar tree — `load()` there materialises a data-literal, no computation).
+>   Build it directly via the neutral `data_value`/`native_value`/
+>   `return_closure_list` ABI on the **GC heap** (collectable). ZERO arena growth.
+>   This is the plan's "value representation" route — preferred over parse-to-
+>   bytecode for these. (TypeToData: verify `type_to_rcexpr` emits only data
+>   constructors, not prelude function applications; if it applies functions,
+>   the SHAPE is bounded by the finite type-DSL grammar → a small fixed template
+>   set, still not per-call-unique.)
+> - **`MergeWith` `f(ov,nv)` and `ProducerNext`'s tail thunk are FIXED-SHAPE
+>   applications** (`App(L0,[L1,L2])`, `AppBif(idx,[L0])`). Pre-encode ONE
+>   template each into the arena at init (exactly like the existing constructor/
+>   PAP templates); at runtime allocate only a **GC-heap env frame** `[f,ov,nv]`
+>   / `[handle]` over the fixed template. ZERO per-call arena growth.
+> - **Genuinely-dynamic unique code** (arbitrary runtime-varying computation) is
+>   the ONLY case that would need arena append — and none of the remaining 19
+>   clearly requires it. If one does, bound it (dedup/cache by content, or cap)
+>   and `log()` the cap; never append unboundedly.
+>
+> **Conclusion: build NO general runtime encoder. Use (a) neutral data
+> construction for data-literal `load()`, and (b) a small fixed set of pre-
+> encoded apply/thunk templates for the fixed-shape thunks. Arena stays bounded
+> and the GC still owns all per-call allocation.**
+>
+> **Follow-up filed:** `__DBG` fires a different #times on stderr per engine
+> (thunk-update difference, not render) — see beads eu-… .
+>
+> **⚠️ Before any perf work:** see the PERF CAVEAT below — the block-index
+> optimisation is OFF on the bytecode path (O(n) lookups), so block-heavy
+> benchmarks are not apples-to-apples.
+>
+> *(Historical Phase 0/1/1.5/1.6 notes preserved in the Done ledger + git
+> history; the engine is well past them.)*
+
+## Progress Ledger (living — durable source of truth; update every increment)
+
+### 2026-07-02 — MergeWith + ProducerNext via fixed templates (`eu-rkje`, PR to `integration/0.12.0`)
+Migrated the two remaining fixed-shape-thunk intrinsics to run byte-identically
+on the bytecode engine:
+- **MergeWith / DEEPMERGE**: neutral `apply2_thunk` builds the lazy `f(ov,nv)`
+  combine thunk over a pre-encoded `App(L0,[L1,L2])` template
+  (`BytecodeProgram::apply2_template`). GC-heap env frame `[f,ov,nv]`; zero
+  arena growth.
+- **ProducerNext**: neutral `bif_tail_thunk` builds the updatable tail thunk
+  over a pre-encoded `AppBif(PRODUCER_NEXT,[L0])` template
+  (`producer_tail_template`); the element value is materialised via the
+  canonical shared `stg/materialise.rs::materialise_data` (eu-9p9g), which
+  rebuilds the pure-data STG tree through the neutral value-construction ABI
+  over constructor templates — no arena growth. Both templates are encoded once
+  at init, exactly like the constructor/PAP templates.
+- **Dedup on rebase:** this increment first landed its own
+  `IntrinsicMachine::load_data_value` trait method plus bytecode
+  `materialise_data`/`load_data_value` impls. Once eu-9p9g's canonical
+  engine-agnostic `materialise.rs::materialise_data` merged first, those were
+  deleted and ProducerNext rewired to call the canonical function directly
+  (clone-pool borrow pattern, matching ParseString/TypeToData). Exactly ONE
+  data-materialiser now exists in the tree.
+- **Memoisation fix (required for producer correctness):** the bytecode
+  data-case path copied constructor fields into the branch frame, so a
+  tail-thunk update was invisible to other references (a *stateful* producer
+  would re-advance and diverge). Added `env_from_data_args` mirroring HeapSyn's
+  shared-backing logic (`shared_bindings_full`/`new_remapped` via the generic
+  `EnvironmentFrame`), so thunk updates are shared. Faithful port of proven
+  HeapSyn code; validated GC-safe under `EU_GC_VERIFY=2 EU_GC_STRESS=1` across
+  the whole corpus (0 crashes, 0 new diffs).
+
+**Differential sweep tally (rebased on eu-9p9g):** from **160 PASS / 8 DIFF**
+(post-eu-9p9g) → **165 PASS / 3 DIFF**. The 5 newly-passing files: 015, 079,
+085, 127, 135. Zero new diffs; the remaining 3 are the diagnostic-rendering
+DIFFs — 125_expectations (the known `__DBG` stderr bug, eu-scjv — stdout
+matches) and 175_sv2_to_spec + 183_widen_type_def_literals (both fail on the
+reference HeapSyn engine too — pre-existing prelude bug). `cargo test --lib` =
+1250 (added `agree_on_deep_merge_with_fn` and `agree_on_producer_next_stream`
+in `differential.rs`); clippy `--all-targets` + fmt clean.
+
+**This completes the intrinsic migration (full corpus byte-identical bar the 3
+pre-existing diagnostic DIFFs).** The whole corpus now uses the single canonical
+`materialise.rs::materialise_data` for data-literal materialisation.
+
+### ⚠️ PERF CAVEAT — block-index optimisation DISABLED on the bytecode path
+`LookupOr`/`SafeLookup` cache a `SymbolId→position` map for a block and reuse it
+on later lookups (O(1) vs an O(n) linear scan). On HeapSyn it caches by mutating
+the block's `Cons` node arg array in place (`store_index_in_block`). The bytecode
+engine can't mutate that way — a block is `BcClosure{code, env}` where the `Cons`
+*structure* lives in the **immutable off-heap code arena** — so the index is
+currently **gated off** (`block_index_enabled()` = `false` for `BcBifContext`)
+and lookups fall back to the **STG find loop** (O(n), same result).
+
+**This was a deliberate deferral, NOT a hard limitation — but the reinstatement
+is subtler than "update the env slot", because it depends on how a block was
+created:**
+- **Dynamically-built blocks** (intrinsic output via `build_data`/`data_value`):
+  every field, including the index slot, is a `BcValue` in the shared GC-heap
+  `env` frame, so `env.update(index_slot, Native::Index(map))` works and
+  propagates. Mutable. ✓
+- **Static block literals** (`{a: 1}` in source): the encoder bakes the `Cons`
+  into the arena and compiles the index field (`no_index()` = `num(0)`) as a
+  **`V`-const reference into the constant pool, inline in the immutable arena
+  node** — there is no mutable env slot to overwrite. ✗ *(VERIFY in `encode.rs`
+  / the block compiler before designing the fix — this is reasoned from the
+  value model, not yet confirmed.)* Contrast HeapSyn, where even a literal is
+  loaded into a **heap** `Cons` node at runtime, so its arg array is always
+  mutable — which is why HeapSyn can cache the index regardless of origin.
+
+Reinstatement options: (1) migrate the index machinery (`build_index`/
+`walk_list_to_position`/`store_index_in_block`/`count_list`/`BlockListIterator`)
+off the `SynClosure`-typed ABI; **and** for literal blocks either (2a) change
+the encoder to give a block's index field a real mutable env slot even for
+literals, (2b) use a **side table keyed by block identity** (env pointer), or
+(2c) cache only dynamic blocks and leave literals on the find loop. Skipped for
+now only because it's pure perf (correctness is fine via the find loop) and
+gating was the minimal change to unblock the whole corpus.
+
+**When BV2–5 benchmark bytecode vs HeapSyn, this is NOT apples-to-apples for
+block-heavy programs** — either reinstate the bytecode index (above) or also
+disable it on HeapSyn for the comparison run. Do not attribute a bytecode
+block-lookup slowdown to the dispatch engine without controlling for this.
+(Tracked in code via the `block_index_enabled` doc comment.)
+
+### 🎉 MILESTONE (branch `feat/bv1-migrate-block-builders`): real `.eu` runs on bytecode
+The **`EU_BYTECODE=1` flag path** is wired in `driver/eval.rs` (pure programs:
+recompile with `RenderType::RenderDoc`, encode + full runtime globals, run the
+`BytecodeMachine`). Gating the block-index optimisation (`LookupOr`/`SafeLookup`
+via a neutral `block_index_enabled` capability — bytecode returns `ListNil` →
+STG find loop, same result) removed the #1 corpus blocker. **Verified through
+the real `eu` binary, byte-identical to HeapSyn:** blocks (`a:1 b:2`), lists
+(`[1,2,3]`), arithmetic + block lookup (`sum: a + 10` → 11), strings. HeapSyn
+untouched (branch/capability only active under bytecode). Next: widen coverage
+by running more of the harness corpus under `EU_BYTECODE=1` and migrating
+whatever panics (data-driven), + IO path, + an automated `.eu` differential
+test. To test eucalypt: declaration files not inline `{}` in `-e`; no
+`let…in` (`:let` blocks); `/` = floor.
+
+
+### Increment C/D migration — in progress (branch `feat/bv1-migrate-support-list`, PR #939)
+- **DONE** (byte-identical on HeapSyn, now working on bytecode):
+  - list.rs 7 type predicates (`IS{LIST,NUMBER,STRING,SYMBOL,BOOL,TYPEDATA,ZDT}`
+    → `resolve_closure` + `data_tag`); `ISARRAY` (`resolve_native`).
+  - **`value_native`** added to `IntrinsicMachine` (HeapSyn default +
+    `BcBifContext` override): a WHNF value's native payload (bare `Atom` native
+    or a boxed scalar's field 0).
+  - **`str_list_arg`** → neutral eager `Vec<String>`; **`data_list_arg`** →
+    neutral eager `Vec<AbiClosure>` (both via `data_tag`/`data_field`/
+    `field_native`, spine already forced by callers).
+  - Callers migrated: `collect_num_list`, set `SetOf` (via `value_native`), list
+    `ListNth` (`.nth` + `set_result`). Differential tests
+    `agree_on_islist_{true,false}`, `agree_on_list_nth`.
+  - block `Merge`/`MergeWith` **bridged** with `as_heap()` — compile + HeapSyn
+    byte-identical; bytecode block-merge deferred (downstream needs list-builder
+    templates).
+  - **List-builder templates DONE**: three neutral primitives added to
+    `IntrinsicMachine` — `native_value` (wrap a native), `data_value` (build a
+    data cell from field handles), `return_closure_list` (set result to a
+    cons-list) — each with a HeapSyn default + `BcBifContext` override (bytecode
+    builds via `build_data` over the constructor templates; no runtime code
+    synthesis). `machine_return_{num,str,closure}_list` rewritten on them.
+    **List-returning intrinsics now run on bytecode.** Differential test
+    `agree_on_rendered_split_list` (`RENDER_DOC(__SPLIT("hi",""))` → `["hi"]`,
+    byte-identical).
+- **HARD cases remaining (still runtime code synthesis / SynClosure-typed):**
+  `machine_return_block_pair_closure_list` + block `Merge`/`MergeWith`
+  `deconstruct` (needs neutral block-pair build + key extraction), `SetToList`
+  (uses `data_value`-able boxing but still `set_closure(synth)`), typedata.rs
+  builders, `parse_string.rs` (`load()` builds HeapSyn at runtime → needs
+  parse-to-bytecode or a value representation). block.rs (~25 inspector sites
+  migratable like the predicates). debug.rs (20) + assert.rs `format_ref`
+  diagnostic-only (migrate last). Many builders can now be rebuilt on
+  `data_value`/`native_value`/`return_closure_list`.
+
+
+**Position (2026-07-02, later):** Phases 0, 1, 1.6 complete; Phase 1.5
+(intrinsic ABI) partially done. **Phase 2 machine now runs end-to-end**: the
+`BytecodeMachine` (run/step loop + GC roots), globals frame, PAP, and the
+**`Bif` dispatch spine** (`BcBifContext: IntrinsicMachine`) are landed and
+tested — `__ADD(2,3)`/`let x=2 in __ADD(x,3)` execute through the real runtime
+intrinsics. **Next:** widen `BcBifContext`'s neutral overrides
+(`return_unit`/`return_boxed_num`/`return_bool`/`resolve_closure`/`data_*`/
+`force`), `evaluate_to_whnf`, the `Meta`/`DeMeta`/`LookupLit` arms, then encode
+the **full runtime globals + prelude** and wire the `EU_BYTECODE` flag path in
+`driver/eval.rs` → differential harness (synthetic-first per REFINEMENT B) →
+day11 gate. **Branch:** `feat/bv1-bytecode-vm` → PRs to `integration/0.12.0`
+(PR #927 merged). Worktree `eucalypt-worktrees/integration-0.12.0`.
+**Toolchain:** prepend `~/.rustup/toolchains/stable-aarch64-apple-darwin/bin`
+to PATH. Committed on the feature branch; not yet PR'd.
+
+### Done (commit → what)
+- `9cbb2a0c` Phase 0 scaffold (module + `EU_BYTECODE` flag)
+- `31973ca3` opcodes; `2bb05deb` `BytecodeProgram` + LE readers
+- `5bc6a387` encoder → `10176820` reworked to **atom-offset operands + dense case table**
+- `9eb97f4a` `BcClosure` + GC + **`env.rs` generalised `EnvironmentFrame` `StgObject`/`GcScannable` over `C` + `Closing::set_env`**
+- `ba690ad1` `BcContinuation`; `fa965358` `BcEnvBuilder`
+- `44b88d03` **spec/plan revision 1** (intrinsics not free → Phase 1.5)
+- `cbcc5c3b` Increment A (neutral scalar ABI + `support.rs` scalars)
+- `9bb9c0c1` Increment B (set/vec/ndarray → `return_native`)
+- `ef5fc399` C1 (`AbiClosure` + neutral closure ABI)
+- `a81f4356` migrate force/eq/arith; `d5bdaf50` string/array
+- `3e144b15` **Task 1.5.2 constructor templates** (`BytecodeProgram.templates[tag]`)
+- `d21ece03` **spec/plan revision 2** (`BcValue` value model → Phase 1.6)
+- `372c4b08` **Phase 1.6** `BcValue` rework (closure/cont/env_builder)
+- `7c2c665f` `&self` relax + `AbiClosure::arity` + migrate render/expect
+- `9f5c952b` this progress ledger (durable tracking)
+- `1a1aa3c6` **Phase 2 start** — `machine.rs`: `DecodedRef`, `read_ref`, `resolve_ref`/`resolve_native` (ref → `BcValue`)
+- `cf2b3e34` Phase 2 — operand decoders (`read_arg_offsets`/`read_branch_table`/`read_form_header`, round-tripped vs encoder) + `BcMachineState` struct
+- `0b66403b` Phase 2 — `return_native` handler (WHNF native → continuation; Branch/Update/DeMeta/SeqBind/LookupLitForce/CaptureEnd), tested. Building return_* handlers as standalone tested units before the full loop.
+- `0bd7b7f9` Phase 2 — `return_data` handler (branch match + copy-path `env_from_data_args`; Update/DeMeta/SeqBind/CaptureEnd/IO-yield), tested. STUBBED (need globals + bytecode block navigator): ApplyTo block-application → MERGE, LookupLitForce block-lookup — wire with the machine loop. Also deferred: shared-backing env optimisation (perf); `nearest_stack_annotation` fallback (used `state.annotation` — revisit if differential harness flags error-location diffs).
+- `0ddd1075` Phase 2 — `return_fun` handler (ApplyTo exact→saturate / over→saturate+push surplus; Branch fallback→`CannotReturnFunToCase`; Update/DeMeta/SeqBind/LookupLitForce/CaptureEnd), tested. STUBBED: PAP (ApplyTo Less) — needs pap trampoline templates (next).
+- `6f005e44` Phase 2 — **`step` dispatch + `handle_op` — FIRST END-TO-END EXECUTION**. `step`: Native→return_native / Closure arity>0→return_fun / arity0→handle_op. `handle_op` arms: Atom(L/G/V), Cons, Case, Seq, Ann, BlackHole. Two end-to-end tests run through `step`: `atom(42)`→Native 42; `case nil→7`.
+- `0a010546` Phase 2 — **App arm + thunk memoisation + blackhole template + Let/LetRec**. `make_arg_array` (lazy/eager CG3), `enter_local`/`enter_callable` (blackhole slot + push Update for thunks), blackhole template in the arena (`BytecodeProgram.blackhole`, `state.blackhole`). End-to-end: `let x=5 in x`→5; `let id=\x.x in id(5)`→5.
+- `2c48cf2f` Phase 2 — **DirectApp arm** (CG1: inline smid, exact-arity fast-path saturate skipping ApplyTo, thunk/fallback). End-to-end: `id(5)` via DirectApp→5.
+- `0b6cb09a` Phase 2 — **Bif arm (capture)**: decode intrinsic index + arg refs into `pending_bif`/`pending_bif_args` (spec §6.3) for deferred dispatch. Tested (capture only; dispatch pending — see below).
+
+### Increment (2026-07-02, eu-9p9g) — ParseString + TypeToData/TypeFromString via value representation
+- **New `src/eval/stg/materialise.rs`** — `materialise_data(machine, view, pool,
+  syn, frame)` walks a compiled *data-only* STG value (letrec of value-form
+  `Cons`/`Meta`/`Atom` cells, backward refs, empty-list global) and rebuilds it
+  on the GC heap through the neutral ABI (`native_value`/`data_value`/
+  `meta_value`/`resolve_closure`). Errors cleanly on any code-bearing form
+  (`App`/`Bif`/`Case`/lambda/forward-ref) so a non-data input can never yield a
+  wrong value. Nested structures are self-contained fresh frames.
+- **New neutral primitive `meta_value`** (`intrinsic.rs`): HeapSyn default builds
+  `HeapSyn::Meta` over env `[meta, body]`; **bytecode override** builds a `Meta`
+  value over a new pre-encoded **`meta_template`** (`BytecodeProgram.meta_template`,
+  `encode.rs` emits `Meta L0 L1` once after blackhole). Bounded — one template,
+  no per-call arena growth. Needed for YAML `!tag` scalars (`115_parse_as_data_only`).
+- **`parse_string.rs` / `typedata.rs`** now `materialise_data` + `set_result`
+  instead of `load()` + `set_closure(SynClosure)`. `TypeFromString` builds its
+  `BoxedTypeData` cell via `data_value`/`native_value`. Same code runs on both
+  engines. Verified `type_to_rcexpr` is data-only (no fn-application → no split).
+- **Corpus 146→160 PASS**, zero new DIFFs. `cargo test --lib` 1250 green; clippy
+  `--all-targets` + fmt clean; `EU_GC_VERIFY=2 + EU_GC_STRESS=1` clean both engines.
+- **Follow-up:** MergeWith/DeepMerge (4) + ProducerNext (1) still need the
+  application/thunk *code* templates (not data). `175`/`183` are a pre-existing
+  prelude assertion bug on HeapSyn (out of scope here).
+
+### ARCHITECTURAL BOUNDARY (2026-07-02) — handlers need machine/program context
+The self-contained handler arms are done (Atom/Cons/Case/Seq/Ann/App/DirectApp/Let/LetRec + all three return_* + thunk memoisation). The machine executes real expressions end-to-end. The REMAINING features all need broader context than the current free-fn handlers `(state, view, code)` take:
+- **Bif dispatch**: needs a `BifContext` impl of `IntrinsicMachine` over `BcValue`+templates, the intrinsics slice, symbol pool, and the templates table. (Trait strategy — an implementation call, no user decision needed: the bytecode `BifContext` will impl the neutral methods over `BcValue` and `panic!`/error on the 5 `SynClosure`-typed methods (`nav`/`set_closure`/`env`/`root_env`/`evaluate_to_whnf`); intrinsics still using those on the bytecode path will surface via the differential harness and get migrated — avoids gating on finishing Increment C/D.)
+- **PAP** (return_fun Less): needs pap trampoline templates (`App(L(pending),[…])` per (supplied,pending)) in the program → return_fun needs the program.
+- **Data construction** (`return_data`/`machine_return_*` on the bytecode path): needs the templates table.
+So the next unit is the **machine wiring**: a `BytecodeMachine`/run-context owning the `BytecodeProgram` (code/constants/templates/blackhole/pap/global_entries) + heap + intrinsics + emitter + metrics + symbol pool; build the globals frame of `BcClosure`s from the encoded `GlobalForm`s (intrinsic wrappers + prelude — needs prelude encoded to bytecode); refactor handlers to take/deref this context; then Bif dispatch, PAP, Meta/DeMeta/LookupLit arms, `EU_BYTECODE` flag path in `driver/eval.rs`, and the differential harness → day11 gate.
+
+- `1fda104d` Phase 2 — **PAP trampoline templates** in the arena (`BytecodeProgram.pap` + `pap_offset(supplied,pending)`, `PAP_MAX_ARITY=16`). Ready to wire into `return_fun`'s Less case once handlers take the program.
+- `7c4c84d9` **fix(deps)** — bump `quick-xml` 0.25→0.41 (RUSTSEC-2026-0194/0195, newly-published, unrelated to BV1) + migrate `src/import/xml.rs` API. Fixed the PR's Security Audit CI failure. XML harness test byte-identical; `cargo audit` clean.
+- `5048ecde` **PR #927 merged** to `integration/0.12.0` (feat branch rebased onto the merge tip; work continues on `feat/bv1-bytecode-vm`).
+- `ac2f11aa` **Machine-wiring steps 1–2**: threaded `&BytecodeProgram` through `step`/`handle_op`/`return_fun` (handlers now reach `templates`/`blackhole`/`pap`); wired **PAP** (`return_fun` `Ordering::Less`) via a `partially_apply` helper building the `[f, supplied…]` env over `prog.pap_offset(supplied,pending)` with arity `pending`. New end-to-end test `run_partial_application` (`letrec k=\x y.x; p=k(5) in p(6)` → 5). 37 bytecode tests green, clippy clean.
+- `1aa2a4fa` **Machine-wiring step 3a — `BytecodeMachine`**: owns heap/program/state/metrics/clock; `run` loop mirroring `Machine::run` (500-tick GC poll → `gc_collect`, tick metering, `exit_code`); `dispatch()` drives the free `step`. `impl GcScannable for BcMachineState` (marks globals/root_env, scans `current`+stack inline, scans the constant pool via `scan_const`/`update_const`). Tests incl. `machine_survives_forced_gc` (step → force collect → run → 5). 40 green.
+- `eef945f0` **Step 3b-i — globals frame**: `BytecodeMachine::new` takes `&[GlobalForm]` and builds the globals frame (one closure per form via `form_info`, closed over `root_env`; cross-global refs are `Ref::G`). Test `machine_resolves_global_ref` (`id(7)` via G-ref). NB global-thunk memoisation deferred (pure → values agree). 41 green.
+- `dc8fe6ea` **Step 3b-ii — `Bif` dispatch spine**: machine gains intrinsics table / symbol pool / rcache / emitter / test-mode. `dispatch()` tail materialises `pending_bif_args` → `&[Ref]` and runs the intrinsic through **`BcBifContext: IntrinsicMachine`** (overrides `resolve_native` incl. `OP_ATOM` indirection via `native_from_value`, and `return_native`; the 5 HeapSyn-typed methods + capture lifecycle panic/error → unmigrated intrinsics surface via the harness). Tests `machine_dispatches_add_intrinsic` + `..._with_local_arg`. 43 bytecode + full lib (1228) green. **[PR #930 merged — covers PAP through the Bif spine.]**
+- `8ab424cd` **Emit/render pipeline + capture lifecycle** — the bytecode engine now produces **byte-identical rendered output**. (1) Migrated emit.rs's 3 `nav().resolve_native` → neutral `resolve_native` (no-op on HeapSyn); emit/render intrinsics + pure-wrapper RenderDoc/Render otherwise run unchanged. (2) `BytecodeMachine` gains a `capture_emitters` stack + the step() capture lifecycle (emit routing to top capture; `start_capture`/`pending_capture_start`; `CaptureEnd`→pop+`into_string`→current); `take_emitter()` added. (3) `assert_engines_render_agree` (YAML-buffer output diff): `agree_on_rendered_{boxed_number,block}` — `RENDER_DOC` of a scalar and of `{k:42}` — byte-identical on both engines. NB render-as (`RenderToString`) still HeapSyn-typed (runtime App synthesis) — top-level RenderDoc does not need it. 1243 lib green.
+- `bef3ad5c` + `bc03129e` **Meta/DeMeta/LookupLit arms** — completes the day11 opcode subset. `Op::Meta`→`return_meta` (DeMeta cont binds `[meta,body]`; Update memoises; else strip); `Op::DeMeta` pushes the cont + enters scrutinee (non-Meta→or_else already in the return_* handlers). `Op::LookupLit`: V-symbol key, fast path (WHNF block→`bc_lookup_in_block` linear scan of `BlockPair` entries, symbol-id compare via `value_symbol` incl. `OP_ATOM`/`BoxedSymbol`; perf index skipped—same result) / slow path (push `LookupLitForce`, blackhole+Update a local thunk, force; the `LookupLitForce` arm in `return_data` scans the forced block or falls to default). `return_data` now takes `&BytecodeProgram`. Differential tests: demeta {meta,plain}, lookup-lit {hit,miss,slow_path} — all agree with the reference. **Full day11 subset now runs on bytecode.** 1241 lib green.
+- `4dc68b85` **Data ABI** — `BcBifContext` gains template returns (`return_unit`/`return_boxed_num`/`return_bool` via `build_data` over `program.templates[tag]`) + data inspection (`data_tag`/`data_field`/`field_native` decoding the `OP_CONS` node via `cons_of`). Differential test `agree_on_comparison_bool` (`case __LT(2,3){BoolTrue->42;BoolFalse->7}` → 42) validates `return_bool` + case-on-bool vs the reference. Full lib (1236) green. *(data_tag/data_field/field_native + unit/boxed_num mirror the HeapSyn readers; direct end-to-end coverage comes with the corpus harness.)*
+- `191ce534` **Synthetic differential harness** (REFINEMENT B, `differential.rs`). `assert_engines_agree` runs a `StgSyn` through both the reference HeapSyn `standard_machine` and the `BytecodeMachine` with the **same** runtime globals, comparing exit codes. Six cases proven to agree: arithmetic, let, case-over-nil, application, PAP, thunk-forcing. Validates the spine + `evaluate_to_whnf` against the reference before the prelude/flag-path. NB bare `Bif` nodes require WHNF args (the wrapper's force is compiler-inserted) — synthetic nested-bif programs need explicit forcing; the full `.eu` rendered-output harness lands with the flag path. Full lib (1235) green.
+- `010ab5fe` **Re-entrant `evaluate_to_whnf` + closure ABI** (on `feat/bv1-globals-prelude`). `BcMachineState` gains `stash`+`suspended_stacks` roots (scanned). **REFINEMENT A done**: `AbiClosure::Byte(BcValue)` (a resolved ref may be a bare native). `BcBifContext` gains the core borrows (heap/intrinsics/metrics/clock/dump_heap); `run_to_whnf`/`drive_to_whnf` suspend the caller stack and drive a fresh nested loop (NullEmitter + Bif tail) to termination — the analogue of `Machine::evaluate_to_whnf`; outer+nested views use the `from_raw_heap` aliasing. Neutral overrides added: `resolve_closure`/`resolve_callable_closure`/`set_result`/`force`. Test `machine_forces_thunk_via_force_whnf` (`let t=__ADD(1,2) in __FORCE_WHNF(t)` → 3). 44 bytecode + full lib (1229) green.
+
+### Machine-wiring integration — ordered plan + two refinements to settle in-flight
+The core machine is complete + tested (all return_* handlers; Atom/Cons/Case/Seq/Ann/App/DirectApp/Let/LetRec; thunk memoisation; Bif capture; data + blackhole + pap templates; value model + GC + decoders). Remaining is one coherent integration:
+1. **[DONE `ac2f11aa`]** **Refactor** `step`/`handle_op`/`return_fun` to take `&BytecodeProgram` (not `&[u8]`) so handlers reach `templates`/`blackhole`/`pap`. (Mechanical; update tests.)
+2. **[DONE `ac2f11aa`]** **Wire PAP** (`return_fun` Less) via `prog.pap_offset` + a `partially_apply` building the PAP closure env `[f, supplied…]`.
+3. **[DONE `1aa2a4fa`+`eef945f0`] `BytecodeMachine`** owning heap/intrinsics/emitter/metrics/symbol-pool + the program + `BcMachineState`; `run` loop (500-tick GC poll; `pending_bif` dispatch tail; capture lifecycle). *(Globals frame done; emitter capture lifecycle still stubbed — errors on use.)*
+4. **[SPINE DONE `dc8fe6ea`] Bif dispatch** — a `BcBifContext` impl of `IntrinsicMachine`: neutral methods over `BcValue`+templates; the 5 `SynClosure`-typed methods `panic!`. Convert `pending_bif_args` (`DecodedRef`) → `&[Ref]` for `execute`. *(Done for `resolve_native`/`return_native`; REMAINING overrides: `return_unit`/`return_boxed_num`/`return_bool` (templates + globals TRUE/FALSE), `resolve_closure`/`resolve_callable_closure`/`set_result`/`force` (needs `evaluate_to_whnf` + REFINEMENT A), `data_tag`/`data_field`/`field_native`.)*
+   - **REFINEMENT A (resolve_closure vs native):** `AbiClosure` is `Heap(SynClosure)|Byte(BcClosure)`, but a bytecode ref can resolve to a bare `Native` (not a closure). Plan: change `AbiClosure::Byte` to hold a `BcValue` (Closure|Native) so `resolve_closure`/`set_result`/`force` round-trip natives too. (My call; implement when wiring those overrides.)
+5. **[NEXT] Globals + prelude**: encode the **full runtime globals** (intrinsic wrappers + prelude) to bytecode + build the full globals frame (unblocks `return_bool` TRUE/FALSE, prelude G-refs, real programs). Also global-thunk memoisation (Atom `Global` arm: blackhole + Update into the globals frame).
+   - **REFINEMENT B (harness-first):** stand up the differential harness on tiny **synthetic** programs (no prelude) first — validate the core end-to-end through both engines — *before* encoding the full prelude. (My call; do harness-first.)
+6. **Meta/DeMeta/LookupLit** arms (+ `return_meta`, bytecode block navigator for LookupLit/MERGE).
+7. **`EU_BYTECODE` flag path** in `driver/eval.rs`; full differential harness → day11 gate (§8).
+
+### Phase 2 remaining (updated)
+- [ ] PAP trampoline templates in the arena + wire `return_fun` Less case + `partially_apply`.
+- [ ] `handle_op` arms (day11): Atom, App, DirectApp, Bif, Case, Cons, Let/LetRec, Seq, LookupLit — each fetches operands (decoders done) and produces/consumes via the return_* handlers (done).
+- [ ] value-dispatch `step`: `Native`→`return_native`; `Closure` arity>0→`return_fun`; else fetch opcode→`handle_op`. 500-tick GC poll + `pending_bif` tail.
+- [ ] `BytecodeMachine` wiring (heap/intrinsics/emitter/metrics; build globals frame from `GlobalForm`s + `prepare_constants`); neutral `IntrinsicMachine` impl over `BcValue`+templates; `evaluate_to_whnf`.
+- [ ] `EU_BYTECODE` flag path (`driver/eval.rs`) + differential harness + day11 gate.
+
+### Phase 2 next steps (fine-grained)
+- [ ] `BytecodeMachine` wiring: own/borrow heap+intrinsics+emitter+metrics (mirror `MachineCore`/`Machine`); hold `BcMachineState`; construct globals frame from `GlobalForm`s + `prepare_constants`.
+- [ ] `step`: value-dispatch — `current` `Native(n)` → `return_native(n)`; `Closure(c)` with arity>0 → `return_fun`; else fetch opcode at `c.code()` → `handle_op`. Plus 500-tick GC poll, `pending_bif` tail.
+- [ ] `handle_op` arms (day11 subset): Atom, App, DirectApp, Bif, Case, Cons, Let/LetRec, Seq, LookupLit; `return_*` for the BcContinuation kinds.
+- [ ] neutral `IntrinsicMachine` impl for the bytecode bif context (`set_result`/`resolve_*`/`data_*`/`return_*` over `BcValue`+templates); `evaluate_to_whnf`.
+- [ ] `EU_BYTECODE` flag path in `driver/eval.rs`; differential harness; day11 byte-identical gate.
+
+### Neutral `IntrinsicMachine` ABI available (`intrinsic.rs`)
+`resolve_native`, `return_native/unit/boxed_num/bool`, `resolve_closure`,
+`resolve_callable_closure`, `set_result`, `force`, `data_tag`, `data_field`,
+`field_native`; `AbiClosure{Heap,Byte}` + `arity`/`as_heap`/`expect_heap`.
+`BcValue = Closure(BcClosure) | Native(Native)`; `BcEnvFrame = EnvironmentFrame<BcValue>`.
+
+### Remaining (checklist)
+- [ ] **Phase 2** — `BytecodeMachine` (state over `BcValue`; `run`/`step`/`handle_op`;
+  `pending_bif`; `evaluate_to_whnf`); its neutral `IntrinsicMachine` impl (`BcValue`
+  over templates); flag path; **differential harness**; day11 byte-identical gate.
+- [ ] **Finish Increment C alongside Phase 2** — `return_data` + `machine_return_*_list`
+  over templates; `DataIterator`/`StrListIterator` neutral redesign; migrate
+  block/debug/list/parse_string/typedata/set/vec/stream_prng/etc.
+- [ ] **Increment D** — move `nav`/`set_closure`/`env`/`root_env`/`evaluate_to_whnf`
+  to a HeapSyn-only sub-trait; make neutral methods required (no default).
+- [ ] **Phase 3** — full opcode coverage + prelude encoded + full-harness differential
+  + GC stress + no-regression (acceptance §8).
+- [ ] **Phase 4** — collapse: delete HeapSyn machine/loader/flag.
+
+---
+
+**Goal:** Replace the `HeapSyn` tree-walk execution IR with a native flat-bytecode machine so compiled code leaves the GC-scanned heap, built as a parallel engine behind a flag and cross-checked against the HeapSyn engine by differential testing.
+
+**Architecture:** A new `src/eval/bytecode/` module: an encoder (`StgSyn`/`ArenaStgSyn` → flat `Vec<u8>` + constant pool), a `BytecodeMachine` reusing the existing heap/GC/env/intrinsics/emitter with a `match u8` dispatch loop, closures typed `BcClosure = Closing<CodeRef>` (`CodeRef = u32`), and a parallel `BcContinuation`. Selected by a flag; the HeapSyn machine is deleted in Phase 4 once the full harness passes byte-identically through both engines.
+
+**Tech Stack:** Rust; the existing Immix GC (`src/eval/memory/`), STG compiler + arena (`src/eval/stg/`), and STG machine (`src/eval/machine/`). `postcard` (only relevant later for BV5, not here).
+
+## Global Constraints
+
+- **Branch:** all work on `integration/0.12.0` (disposable). Do NOT open PRs to master; commit directly to the integration branch.
+- **Spec:** `docs/superpowers/specs/2026-07-01-bv1-bytecode-vm-design.md` — the authority; this plan implements it. Re-read §3–§7 before Phase 1.
+- **UK English** in all comments/docs (optimise, colour, behaviour).
+- **No clippy warnings** — `cargo clippy --all-targets -- -D warnings` must stay clean at every commit (CLAUDE.md, non-negotiable).
+- **`cargo fmt --all`** before every commit.
+- **Wrap every `eu` run in `timeout`** (e.g. `timeout 120 ./target/release/eu …`); default heap limit is fine.
+- **Rust toolchain:** the pinned stable (`/Users/greg/.rustup/toolchains/stable-aarch64-apple-darwin/bin` — `cargo` is a broken symlink under `~/.cargo/bin`, so ensure that toolchain bin is on PATH).
+- **Acceptance bar (spec §8):** correctness + no-regression. Byte-identical corpus via differential testing; `EU_GC_VERIFY=2` clean; code off the scan set; no corpus regression. A dispatch win is a bonus, not required.
+- **No new surface syntax, no new intrinsics** — this is a pure execution-engine change; observable output must be byte-identical.
+
+---
+
+## File Structure
+
+**New module `src/eval/bytecode/`:**
+- `mod.rs` — module root; `CodeRef` type; `pub use` re-exports; the `bytecode_enabled()` flag reader.
+- `opcode.rs` — `Op` (`#[repr(u8)]` enum), ref-tag bytes, flag-bit constants; `u8`↔`Op` helpers.
+- `program.rs` — `BytecodeProgram { code, constants, global_entries }`; LE `read_u8/u16/u32` readers; `prepare_constants` (stg `Native` → heap `Ref`, interning/allocating once).
+- `encode.rs` — `Encoder` walking `StgSyn`/`ArenaStgSyn` → `BytecodeProgram`; post-order, `u32` offset back-refs; ports the BV0 encoder (`git show spike/bv0-bytecode:src/eval/bytecode/encode.rs`), natively (no HeapSyn stubs).
+- `closure.rs` — `BcClosure = Closing<CodeRef>`; `GcScannable for BcClosure` (env only, no code fixup); `BcClosure` constructors mirroring `env.rs:47-73`.
+- `cont.rs` — `BcContinuation` (7 variants, `CodeRef` in place of `RefPtr<HeapSyn>`); `match_tag`; `GcScannable` (heap values only).
+- `env_builder.rs` — `BcEnvBuilder`: `create_arg_array`/`_eager`, `from_let`/`from_letrec`, `saturate*` for `BcClosure` (mirrors `src/eval/machine/env_builder.rs`).
+- `machine.rs` — `BytecodeMachine`: `run`/`step`/`handle_op` dispatch loop, `evaluate_to_whnf`, `pending_bif` capture, the `return_*` handlers; reuses `MachineState` heap/globals/stack/intrinsics.
+- `differential.rs` (test support) — run a unit through both engines, compare stdout/stderr/exit.
+
+**Touch points in existing code (minimal until Phase 4):**
+- `src/eval/mod.rs` — add `pub mod bytecode;`.
+- `src/eval/machine/env.rs` — `EnvironmentFrame<C>` is already generic; confirm `EnvironmentFrame<BcClosure>` instantiates (StgObject/GcScannable). No behaviour change.
+- `src/driver/eval.rs` / `src/driver/options.rs` — the flag plumbing (Phase 2) and the encode-and-run-bytecode path.
+- Phase 4 only: delete `src/eval/memory/syntax.rs` `HeapSyn` + its `GcScannable`, `src/eval/memory/loader.rs`, the HeapSyn dispatch in `src/eval/machine/vm.rs`, and the flag.
+
+---
+
+## Phase 0 — Scaffolding (module + flag, no behaviour)
+
+**Milestone:** the crate builds with an empty `bytecode` module and a wired-but-inert flag; full existing test suite still green.
+
+### Task 0.1: Create the module skeleton
+
+**Files:**
+- Create: `src/eval/bytecode/mod.rs`
+- Modify: `src/eval/mod.rs` (add `pub mod bytecode;`)
+
+**Interfaces:**
+- Produces: `pub type CodeRef = u32;`, `pub fn bytecode_enabled() -> bool`.
+
+- [ ] **Step 1:** Create `src/eval/bytecode/mod.rs`:
+
+```rust
+//! Native flat-bytecode execution engine (BV1). See
+//! docs/superpowers/specs/2026-07-01-bv1-bytecode-vm-design.md.
+
+/// A code reference: a byte offset into a `BytecodeProgram.code` buffer.
+/// Unlike `RefPtr<HeapSyn>`, a `CodeRef` never moves, so it carries zero
+/// GC cost — closures holding one need no `scan_and_update` code fixup.
+pub type CodeRef = u32;
+
+/// Whether the bytecode engine is selected for this run. Reads the
+/// `EU_BYTECODE` env var; a CLI flag is added in Phase 2.
+pub fn bytecode_enabled() -> bool {
+    std::env::var("EU_BYTECODE").as_deref() == Ok("1")
+}
+```
+
+- [ ] **Step 2:** Add `pub mod bytecode;` to `src/eval/mod.rs` (alphabetical with the other `pub mod` lines).
+
+- [ ] **Step 3:** Build.
+
+Run: `cargo build 2>&1 | tail -5`
+Expected: `Finished` (a dead-code warning on `bytecode_enabled` is acceptable *only* this task; silence it by `#[allow(dead_code)]` on the fn with a `// removed when wired in Phase 2` comment to keep clippy clean).
+
+- [ ] **Step 4:** Full lint + test to prove no regression.
+
+Run: `cargo clippy --all-targets -- -D warnings 2>&1 | tail -3 && cargo test --lib 2>&1 | grep "test result:"`
+Expected: clippy clean; lib tests pass.
+
+- [ ] **Step 5:** Commit.
+
+```bash
+git add src/eval/bytecode/mod.rs src/eval/mod.rs
+git commit -m "feat(bytecode): scaffold bytecode module + EU_BYTECODE flag reader (eu-vi3a)"
+```
+
+---
+
+## Phase 1 — Encoder + core types (no execution)
+
+**Milestone:** `StgSyn` encodes to a `BytecodeProgram`; the closure/continuation types instantiate and GC-scan correctly; round-trip *structural* tests pass. Nothing executes yet.
+
+### Task 1.1: Opcode + operand encoding constants
+
+**Files:**
+- Create: `src/eval/bytecode/opcode.rs`
+- Modify: `src/eval/bytecode/mod.rs` (`mod opcode; pub use opcode::*;`)
+
+**Interfaces:**
+- Produces: `#[repr(u8)] pub enum Op {…}`; `pub const REF_L/REF_G/REF_V: u8`; `pub const FLAG_EAGER: u8`; `pub const FORM_LAMBDA/THUNK/VALUE: u8`; `impl Op { fn from_u8(u8) -> Option<Op> }`.
+
+- [ ] **Step 1:** Write `opcode.rs`. Mirror the spec §4.2 table and the BV0 vocabulary (`git show spike/bv0-bytecode:src/eval/bytecode/opcode.rs`). One `u8` per `StgSyn` variant plus ref-tag and form-kind bytes:
+
+```rust
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Op {
+    Atom = 0x01, Case = 0x02, Cons = 0x03, App = 0x04, DirectApp = 0x05,
+    Bif = 0x06, Let = 0x07, LetRec = 0x08, Ann = 0x09, Meta = 0x0A,
+    DeMeta = 0x0B, Seq = 0x0C, LookupLit = 0x0D, BlackHole = 0x0E,
+}
+impl Op {
+    pub fn from_u8(b: u8) -> Option<Op> { /* match each discriminant */ }
+}
+pub const REF_L: u8 = 0x00; pub const REF_G: u8 = 0x01; pub const REF_V: u8 = 0x02;
+pub const FLAG_EAGER: u8 = 0b0000_0001;
+pub const FORM_LAMBDA: u8 = 0x00; pub const FORM_THUNK: u8 = 0x01; pub const FORM_VALUE: u8 = 0x02;
+```
+
+- [ ] **Step 2:** Add a unit test `op_roundtrips_through_u8` asserting `Op::from_u8(op as u8) == Some(op)` for every variant.
+
+- [ ] **Step 3:** `cargo test --lib bytecode::opcode 2>&1 | grep "test result:"` — Expected: PASS.
+
+- [ ] **Step 4:** Commit.
+
+```bash
+git add src/eval/bytecode/opcode.rs src/eval/bytecode/mod.rs
+git commit -m "feat(bytecode): opcode + operand encoding constants (eu-vi3a)"
+```
+
+### Task 1.2: `BytecodeProgram` container + readers
+
+**Files:**
+- Create: `src/eval/bytecode/program.rs`
+- Modify: `src/eval/bytecode/mod.rs`
+
+**Interfaces:**
+- Consumes: `CodeRef`.
+- Produces: `pub struct BytecodeProgram { pub code: Vec<u8>, pub constants: Vec<stg::syntax::Native>, pub global_entries: Vec<CodeRef> }`; `#[inline(always)]` `read_u8/read_u16/read_u32(&[u8], &mut usize)`; `pub fn prepare_constants(&self, view) -> Vec<memory::Ref>` (stub returning `vec![]` this task; filled in Task 3.x when constants are executed).
+
+- [ ] **Step 1:** Write the struct + LE readers (port `git show spike/bv0-bytecode:src/eval/bytecode/program.rs`). Use `stg::syntax::Native` as the constant element type (matches the encoder's source; strings/syms are decimal/interned there).
+
+- [ ] **Step 2:** Unit test `readers_are_little_endian`: build a `code` buffer with known bytes, assert `read_u32` returns the expected value and advances `pc` by 4.
+
+- [ ] **Step 3:** `cargo test --lib bytecode::program 2>&1 | grep "test result:"` — Expected: PASS.
+
+- [ ] **Step 4:** Commit.
+
+```bash
+git add src/eval/bytecode/program.rs src/eval/bytecode/mod.rs
+git commit -m "feat(bytecode): BytecodeProgram container + LE readers (eu-vi3a)"
+```
+
+### Task 1.3: The encoder (`StgSyn`/`ArenaStgSyn` → `BytecodeProgram`)
+
+**Files:**
+- Create: `src/eval/bytecode/encode.rs`
+- Modify: `src/eval/bytecode/mod.rs`
+
+**Interfaces:**
+- Consumes: `Op`, ref/form constants, `BytecodeProgram`, `stg::syntax::{StgSyn, Ref, LambdaForm, Native}`, `stg::arena::StgArena`.
+- Produces: `pub struct Encoder { … }`; `pub fn encode(root: &Rc<StgSyn>, globals: &[LambdaForm]) -> (BytecodeProgram, CodeRef, Vec<GlobalForm>)` where `pub struct GlobalForm { kind: u8, arity: u8, smid: Smid, entry: CodeRef }`. Post-order: emit children first, parents back-reference by absolute `u32` offset (reuse `StgArena` flatten order, `arena.rs:190-201`).
+
+- [ ] **Step 1:** Port the BV0 encoder body, adapting it to emit the natively-typed operands (no HeapSyn concepts). For each `StgSyn` variant, emit `Op` byte + operands per the spec §4.2 table. Emit `Ref` via a helper `emit_ref(&mut self, &Ref)` → tag byte + payload; push `Native` into `constants` and emit its `REF_V` index. Emit lambda-form headers (kind/arity/annotation/body-offset).
+
+- [ ] **Step 2:** Unit test `encode_atom_v_number`: encode `StgSyn::Atom { evaluand: Ref::V(Native::num(42)) }`; assert `code[root]` is `Op::Atom as u8`, followed by `REF_V` and a constant index whose pool entry is `Native::num(42)`.
+
+- [ ] **Step 3:** Unit test `encode_case_branches_are_ordered`: encode a small `Case` with two branches + fallback; assert the branch table maps `tag → offset` and every referenced offset is `< code.len()` and `< the parent's own offset` (children precede parents).
+
+- [ ] **Step 4:** Unit test `encode_direct_app_carries_smid_and_eager_flag`: encode a `DirectApp { smid, …, eager_args: true }`; assert the inline smid round-trips and `FLAG_EAGER` is set.
+
+- [ ] **Step 5:** `cargo test --lib bytecode::encode 2>&1 | grep "test result:"` — Expected: PASS.
+
+- [ ] **Step 6:** `cargo clippy --all-targets -- -D warnings 2>&1 | tail -3` — Expected: clean. Then commit.
+
+```bash
+git add src/eval/bytecode/encode.rs src/eval/bytecode/mod.rs
+git commit -m "feat(bytecode): StgSyn -> bytecode encoder (eu-vi3a)"
+```
+
+### Task 1.4: `BcClosure` + its GC scanning
+
+**Files:**
+- Create: `src/eval/bytecode/closure.rs`
+- Modify: `src/eval/bytecode/mod.rs`
+
+**Interfaces:**
+- Consumes: `CodeRef`; `Closing<S>` (`env.rs:19`), `InfoTagged` (`infotable.rs:43`), `EnvironmentFrame` (`env.rs:191`).
+- Produces: `pub type BcClosure = Closing<CodeRef>;`; constructors `new`, `new_annotated`, `new_annotated_lambda`, `close` (mirror `env.rs:47-73` for `S = CodeRef`); `impl GcScannable for BcClosure` scanning **only the env pointer** (no `forwarded_to(code())` — offsets don't move).
+
+- [ ] **Step 1:** Define `BcClosure = Closing<CodeRef>`. Confirm `Closing<S>`'s constructors are generic (they take `S`); if some are `impl SynClosure`-specific, add the `CodeRef` equivalents in `closure.rs`.
+
+- [ ] **Step 2:** Write `impl GcScannable for BcClosure`: `scan` marks/pushes the env frame (`self.env()`); `scan_and_update` calls `forwarded_to` **only on the env pointer**, never the code field. (Contrast `SynClosure::scan_and_update`, `env.rs:484-491`, which fixes up both.)
+
+- [ ] **Step 3:** Unit test `bcclosure_scan_ignores_code_field`: construct a `BcClosure` with a bogus large `CodeRef` and a real (allocated) env; run `scan_and_update` under a heap view; assert it does not panic / touch the code offset and leaves it unchanged. (Use the existing GC test harness patterns — grep `mod tests` in `env.rs` for the setup.)
+
+- [ ] **Step 4:** `cargo test --lib bytecode::closure 2>&1 | grep "test result:"` — Expected: PASS.
+
+- [ ] **Step 5:** Commit.
+
+```bash
+git add src/eval/bytecode/closure.rs src/eval/bytecode/mod.rs
+git commit -m "feat(bytecode): BcClosure = Closing<CodeRef> + GC scan (env-only) (eu-vi3a)"
+```
+
+### Task 1.5: `BcContinuation`
+
+**Files:**
+- Create: `src/eval/bytecode/cont.rs`
+- Modify: `src/eval/bytecode/mod.rs`
+
+**Interfaces:**
+- Consumes: `CodeRef`, `BcClosure`, `EnvironmentFrame<BcClosure>`, `Tag`, `Smid`, `SymbolId`, `Array`.
+- Produces: `pub enum BcContinuation { Branch { min_tag, branch_table: Array<Option<CodeRef>>, fallback: Option<CodeRef>, environment, annotation }, Update { environment, index }, ApplyTo { args: Array<BcClosure>, annotation }, DeMeta { handler: CodeRef, or_else: CodeRef, environment }, SeqBind { body: CodeRef, environment, annotation }, LookupLitForce { key: SymbolId, smid, default_closure: BcClosure }, CaptureEnd }`; `fn match_tag(&self, tag) -> Option<CodeRef>` (mirror `cont.rs:101-111`); `impl GcScannable for BcContinuation` (heap values only — envs, `ApplyTo`/`LookupLitForce` closure envs, `Array` backings; `CodeRef` fields inert).
+
+- [ ] **Step 1:** Define the enum (mirror `src/eval/machine/cont.rs:34-96`, swapping `RefPtr<HeapSyn>` → `CodeRef`).
+
+- [ ] **Step 2:** Implement `match_tag` and the `GcScannable` impl (mirror `cont.rs:173-356` but omit code-pointer marking; keep the `OpaqueHeapBytes` registration for `branch_table`/`args` backings — those are still heap `Array`s).
+
+- [ ] **Step 3:** Unit test `branch_match_tag_indexes_table`: build a `Branch` with `min_tag=5` and a 2-entry table; assert `match_tag(6)` returns the second entry and `match_tag(99)` returns `None`.
+
+- [ ] **Step 4:** `cargo test --lib bytecode::cont 2>&1 | grep "test result:"` — Expected: PASS.
+
+- [ ] **Step 5:** Commit.
+
+```bash
+git add src/eval/bytecode/cont.rs src/eval/bytecode/mod.rs
+git commit -m "feat(bytecode): BcContinuation (7 kinds, CodeRef bodies) + GC scan (eu-vi3a)"
+```
+
+### Task 1.6: `BcEnvBuilder`
+
+**Files:**
+- Create: `src/eval/bytecode/env_builder.rs`
+- Modify: `src/eval/bytecode/mod.rs`
+
+**Interfaces:**
+- Consumes: `BcClosure`, `EnvironmentFrame<BcClosure>`, `BytecodeProgram` (to resolve arg refs), the heap view.
+- Produces: `BcEnvBuilder` with `create_arg_array`, `create_arg_array_eager`, `from_let`, `from_letrec`, `from_saturation`, `saturate`, `saturate_with_array`, `partially_apply`, `pap` — the `BcClosure` analogues of `src/eval/machine/env_builder.rs:113-320`. `atom(ref)` builds a `BcClosure` whose code points at an `OP_ATOM` for the ref (or resolves `Ref::L` eagerly in `_eager`).
+
+- [ ] **Step 1:** Port `env_builder.rs`'s builders, typed on `BcClosure`. Note: `create_arg_array` today wraps each arg as `SynClosure::new(atom(syn), env)` (`env_builder.rs:266-280`); the bytecode analogue wraps each as a `BcClosure` whose `CodeRef` points at a pre-encoded `OP_ATOM` for that ref (the encoder must emit these atom stubs for app args, OR the builder synthesises a tiny per-arg atom offset — decide during Task 2.x when the App arm is written; prefer the encoder emitting arg-atoms so no runtime encoding happens).
+
+- [ ] **Step 2:** Unit test `saturate_reuses_code_with_new_env`: build a `BcClosure` with arity 1 and an env; `saturate_with_array` with one arg; assert the result closure's `code()` equals the callee's `code()` and its env is a fresh frame chaining the arg onto the callee env. (Mirror the assertion style of `env_builder.rs` tests if present.)
+
+- [ ] **Step 3:** `cargo test --lib bytecode::env_builder 2>&1 | grep "test result:"` — Expected: PASS.
+
+- [ ] **Step 4:** `cargo clippy --all-targets -- -D warnings` clean; commit.
+
+```bash
+git add src/eval/bytecode/env_builder.rs src/eval/bytecode/mod.rs
+git commit -m "feat(bytecode): BcEnvBuilder (arg arrays, let/letrec, saturation) (eu-vi3a)"
+```
+
+---
+
+## Phase 1.5 — Intrinsic layer (parameterise ABI + constructor templates)
+
+**Added 2026-07-02.** Prerequisite for any `Bif` dispatch (spec §5.5). The
+intrinsic ABI (`IntrinsicMachine`, `StgIntrinsic::execute`, `HeapNavigator`) and
+the `support.rs` `machine_return_*` helpers are concretely `SynClosure`-typed and
+allocate `HeapSyn` at runtime. Goal: make them code-type-agnostic so a `Bif` in
+the bytecode engine produces/consumes `BcClosure`s, with runtime data built from
+fixed constructor templates in the arena (no runtime code synthesis, no HeapSyn).
+
+**Milestone:** the whole intrinsic layer is generic over the code type; the
+HeapSyn engine still passes the full lib+harness suite **byte-identically** (the
+generic instantiation must be a no-op refactor for `S = RefPtr<HeapSyn>`); the
+bytecode engine has a working `machine_return_*` + navigator producing
+`BcClosure`s over templates. No bytecode execution yet (that is Phase 2).
+
+### Task 1.5.1: Audit the intrinsic coupling surface
+- [ ] Enumerate every `IntrinsicMachine` method and every `support.rs` helper
+  that names `SynClosure`/`EnvFrame`/`HeapSyn`/`HeapNavigator`. Record which
+  construct data (need templates) vs. which only move closures (need only the
+  type parameter). Output: a checklist of call sites.
+
+### Task 1.5.2: Constructor templates in the arena
+- [ ] Extend the encoder/program so the arena carries a fixed template block:
+  an `OP_ATOM` scalar-return template, an `OP_CONS` per `(tag, arity)` shape the
+  return helpers need (unit, block, list cons/nil, bool via global, etc.), and
+  record their offsets in `BytecodeProgram` (e.g. `templates: Templates`).
+- [ ] Unit test: entering a cons template over an env `{head, tail}` returns the
+  expected data tag/fields (once the dispatch loop exists this becomes a
+  differential check; until then assert the encoded template shape).
+
+### Task 1.5.3: Parameterise the ABI over the code type
+- [ ] Make `IntrinsicMachine`, `HeapNavigator`, and `MachineBifContext` generic
+  over `S: Copy` (or add `BcClosure` siblings), so `set_closure`/`nav`/`env`/
+  `evaluate_to_whnf` operate on `Closing<S>`. Keep the HeapSyn engine compiling
+  and byte-identical (`S = RefPtr<HeapSyn>`).
+- [ ] `cargo test --lib` + full harness on the HeapSyn path: **byte-identical**,
+  no regression. This is the gate for the refactor being a no-op on HeapSyn.
+
+### Task 1.5.4: Parameterise `support.rs` return + arg helpers
+- [ ] Make `machine_return_*` and the arg extractors (`num_arg`, `str_arg`, …)
+  generic; data-constructing returns build `Closing<S>` via the templates rather
+  than `view.alloc(HeapSyn::…)`. HeapSyn path stays byte-identical.
+- [ ] Commit per coherent group; keep clippy clean.
+
+**Phase 1.5 gate:** HeapSyn engine byte-identical across lib + full harness; the
+generic intrinsic layer compiles for both `S = RefPtr<HeapSyn>` and
+`S = CodeRef`. Only then start Phase 2.
+
+---
+
+## Phase 1.6 — Value model (`BcValue`) rework
+
+**Added 2026-07-02 (spec §3 revision).** A runtime native cannot live in an
+off-heap `CodeRef`, so the bytecode value model is
+`BcValue = enum { Closure(BcClosure), Native(Native) }`, with `BcClosure` a
+bespoke struct `{ info: InfoTagged<CodeRef>, env: RefPtr<EnvironmentFrame<BcValue>> }`.
+Phase 1 built `BcClosure = Closing<CodeRef>` as a first cut; this phase reworks it.
+
+**Milestone:** `BcValue`/`BcClosure` defined; `EnvironmentFrame<BcValue>`,
+`BcContinuation`, and `BcEnvBuilder` use them; `GcScannable` for all three; Phase 1
+unit tests updated and green. Still no execution.
+
+### Task 1.6.1: Define `BcValue` + bespoke `BcClosure`
+- [ ] Replace `pub type BcClosure = Closing<CodeRef>` with a struct carrying
+  `InfoTagged<CodeRef>` + `RefPtr<EnvironmentFrame<BcValue>>`; define
+  `enum BcValue { Closure(BcClosure), Native(Native) }`. Provide the constructors
+  the builders need (`new`, `new_annotated`, `new_annotated_lambda`, `close`,
+  `code`, `env`, `set_env`, arity/update/annotation via `InfoTable`).
+
+### Task 1.6.2: GC scanning for `BcValue`/`BcClosure`
+- [ ] `GcScannable for BcClosure` (env only; code inert) and `for BcValue`
+  (`Closure` → delegate; `Native` → mark heap-pointer natives). Update the
+  `closure.rs` `bcclosure_code_field_is_inert` test to the new type.
+
+### Task 1.6.3: Propagate through `cont.rs` / `env_builder.rs`
+- [ ] `BcContinuation` env/args fields use `EnvironmentFrame<BcValue>` /
+  `Array<BcValue>`; `BcEnvBuilder` builds `BcValue` slots. Update the Phase 1
+  unit tests (`branch_match_tag_indexes_table`, `saturate_reuses_code_with_new_env`).
+
+**Phase 1.6 gate:** `cargo test --lib bytecode` green with the new model; clippy
+clean. Then the bytecode engine can implement the neutral intrinsic ABI (§5.5)
+producing `BcValue`s over templates, unblocking Phase 2.
+
+---
+
+## Phase 2 — Dispatch loop for the day11 subset + differential harness
+
+**Milestone:** `day11-p1` runs end-to-end through the native bytecode engine and produces **byte-identical** output to the HeapSyn engine, GC-verified. The architecture is proven.
+
+The day11-p1 opcode subset (per the BV0 spec): `Atom` (L/G/V), `App`, `DirectApp`, `Bif`, `Case`, `Cons`, `Let`, `LetRec`, `Seq`, `LookupLit` — plus the arity/return path. `Meta`/`DeMeta`/`Ann` may be stubbed as `unimplemented!("BV1 phase 3: <op>")` until Phase 3.
+
+### Task 2.1: `MachineState` reuse + `pending_bif` capture field
+
+**Files:**
+- Modify: `src/eval/machine/vm.rs` (add a bytecode-arg capture field to `MachineState`, e.g. `pub bc_pending_args: Option<SmallVec<[Ref; 8]>>`), or hold it in the `BytecodeMachine`. Prefer the latter (no change to `MachineState`) if the deferred-BIF path can read it there.
+
+**Interfaces:**
+- Produces: a place to stash the `Bif` opcode's decoded arg `Ref`s so the deferred intrinsic handler reads them (replacing the live-node re-read at `vm.rs:1971`).
+
+- [ ] **Step 1:** Decide the stash location (prefer `BytecodeMachine`). Write the field + a `take_pending_bif_args()` accessor.
+
+- [ ] **Step 2:** No standalone test yet (exercised in 2.3). Build + clippy clean.
+
+- [ ] **Step 3:** Commit.
+
+```bash
+git add src/eval/bytecode/machine.rs src/eval/machine/vm.rs
+git commit -m "feat(bytecode): pending-bif arg capture slot (eu-vi3a)"
+```
+
+### Task 2.2: `BytecodeMachine` skeleton + `handle_op` dispatch shell
+
+**Files:**
+- Create: `src/eval/bytecode/machine.rs`
+- Modify: `src/eval/bytecode/mod.rs`
+
+**Interfaces:**
+- Consumes: `BytecodeProgram`, `BcClosure`, `BcContinuation`, `BcEnvBuilder`, the shared heap/globals/intrinsics/emitter/metrics (reuse `MachineState`'s fields or a parallel struct that borrows them).
+- Produces: `pub struct BytecodeMachine { … }`; `pub fn run(&mut self) -> Result<u8, ExecutionError>`; `fn step(&mut self)`; `fn handle_op(&mut self, view) -> Result<(), ExecutionError>` with a `match Op::from_u8(byte)` shell where each arm is `unimplemented!()` for now.
+
+- [ ] **Step 1:** Write `run`/`step` mirroring `Machine::run`/`step` (`vm.rs:2081`/`:1901`): the 500-tick GC poll (`vm.rs:2092-2114`), `metrics.tick()`, the `pending_bif` dispatch tail (`vm.rs:1961-2008`), the capture lifecycle (`vm.rs:2013-2035`). Reuse the existing `facilities()` split.
+
+- [ ] **Step 2:** Write `handle_op`: fetch `closure.code(): u32`, read the opcode byte, `match` on `Op::from_u8`, each arm `unimplemented!("op N")`. Include the arity short-circuit (`remaining_arity > 0 → return_fun`, `vm.rs:423-424`) and the annotation update (`vm.rs:418-421`) before the match.
+
+- [ ] **Step 3:** Build + clippy clean (arms are `unimplemented!`, no dead-code). Commit.
+
+```bash
+git add src/eval/bytecode/machine.rs src/eval/bytecode/mod.rs
+git commit -m "feat(bytecode): BytecodeMachine run/step + handle_op dispatch shell (eu-vi3a)"
+```
+
+### Task 2.3: Implement the day11 dispatch arms
+
+Implement, one arm per sub-step, each as a **translation** of the named `vm.rs` arm with `CodeRef`/`BcContinuation`/`BcEnvBuilder` in place of HeapSyn types. There is no per-arm unit test — the differential harness (Task 2.5) is the correctness gate; commit after each arm builds + clippy-clean, and run the day11 differential check once the subset is complete.
+
+- [ ] **Step 1: `Atom`** — translate `vm.rs:428-457` (L: force/blackhole/Update; G: re-enter global; V: `return_native`). Commit `feat(bytecode): OP_ATOM arm`.
+- [ ] **Step 2: `return_native`/`return_data`/`return_fun`/`update`** — translate `vm.rs:758-1263` for the continuation kinds the subset uses (Branch, Update, ApplyTo, SeqBind, LookupLitForce, CaptureEnd). This is the largest single arm-set; split further if a sub-part builds independently. Commit `feat(bytecode): return_* handlers`.
+- [ ] **Step 3: `App`** — translate `vm.rs:481-526` (arg array via `BcEnvBuilder`, push `ApplyTo`, callable resolution + thunk blackhole/Update). Commit `feat(bytecode): OP_APP arm`.
+- [ ] **Step 4: `DirectApp`** — translate `vm.rs:527-598` (inline smid → annotation, fast-path `saturate_with_array` skipping `ApplyTo`, fallback to App). Commit `feat(bytecode): OP_DIRECT_APP arm`.
+- [ ] **Step 5: `Bif`** — translate `vm.rs:599-605`: decode arg refs, stash via `take_pending_bif_args` slot, set `pending_bif`. Verify the deferred tail in `step` reads the stashed args and dispatches through the **Phase 1.5** parameterised intrinsic ABI (the intrinsic returns a `BcClosure` via templates). Commit `feat(bytecode): OP_BIF arm + deferred dispatch`.
+- [ ] **Step 6: `Case`** — translate `vm.rs:466-475`: push `Branch { min_tag, branch_table, fallback, env, annotation }`, enter scrutinee. Commit `feat(bytecode): OP_CASE arm`.
+- [ ] **Step 7: `Cons`** — translate the `return_data` production path: entering a `Cons` closure returns the constructor to the top continuation. Commit `feat(bytecode): OP_CONS arm`.
+- [ ] **Step 8: `Let`/`LetRec`** — translate `vm.rs:606-616` via `BcEnvBuilder::from_let/from_letrec`. Commit `feat(bytecode): OP_LET/LETREC arms`.
+- [ ] **Step 9: `Seq`** — translate `vm.rs:639-647` (push `SeqBind`, enter scrutinee). Commit `feat(bytecode): OP_SEQ arm`.
+- [ ] **Step 10: `LookupLit`** — translate `vm.rs:684-744` (fast-path block scan; slow path pushes `LookupLitForce`). Commit `feat(bytecode): OP_LOOKUP_LIT arm`.
+
+### Task 2.4: `evaluate_to_whnf` (re-entrant loop) for the subset
+
+**Files:** Modify `src/eval/bytecode/machine.rs`.
+
+- [ ] **Step 1:** Translate `evaluate_to_whnf_impl` (`vm.rs:1541-1629`) to a bytecode version using `handle_op` + the same suspend/stash-for-GC discipline and `NullEmitter`. Needed when a BIF forces a thunk mid-execution.
+- [ ] **Step 2:** Build + clippy clean; commit `feat(bytecode): evaluate_to_whnf re-entrant loop`.
+
+### Task 2.5: The flag path + differential harness
+
+**Files:**
+- Modify: `src/driver/eval.rs` (a bytecode execution path: encode globals+program → run `BytecodeMachine`), `src/driver/options.rs` (a `--bytecode` global flag OR keep `EU_BYTECODE`).
+- Create: `src/eval/bytecode/differential.rs` + a test in `tests/` that runs a unit through both engines.
+
+**Interfaces:**
+- Consumes: `bytecode_enabled()`, the encoder, `BytecodeMachine`, the existing HeapSyn execution path.
+- Produces: `pub fn run_bytecode(...) -> Result<Output, ExecutionError>`; a differential test entry `assert_engines_agree(path: &Path)`.
+
+- [ ] **Step 1:** Wire `src/driver/eval.rs`: when `bytecode_enabled()`, encode the runtime globals (from the blob's `ArenaStgSyn` via `reconstruct_form`, or source `StgSyn`) + the program into one `BytecodeProgram`, record `global_entries`, `prepare_constants`, and run `BytecodeMachine` instead of the HeapSyn machine. Mirror the existing `make_standard_runtime` / global-slot wiring (`eval.rs:268-299`).
+
+- [ ] **Step 2:** Write `assert_engines_agree`: run a `.eu` unit with the HeapSyn engine and with `EU_BYTECODE=1`, capture stdout/stderr/exit for both, assert equal. (For non-deterministic IO units — unseeded `random`, `io.epoch-time` — compare against the `.expect` sidecar / structural equality instead; see spec §9. Maintain a small skip-strict-identity set.)
+
+- [ ] **Step 3:** Add `test_bytecode_day11_p1_matches`: `assert_engines_agree("examples/aoc25/…/day11-p1…")` (find the exact day11-p1 harness/example path first).
+
+- [ ] **Step 4:** Build release, run the differential test:
+
+Run: `cargo test --release test_bytecode_day11_p1_matches 2>&1 | grep "test result:"`
+Expected: PASS (byte-identical output through both engines).
+
+- [ ] **Step 5:** GC-verify the bytecode path on day11:
+
+Run: `EU_BYTECODE=1 EU_GC_VERIFY=2 EU_GC_POISON=1 timeout 120 ./target/release/eu <day11-p1 path>`
+Expected: same output, no GC panic.
+
+- [ ] **Step 6:** Commit.
+
+```bash
+git add src/driver/eval.rs src/driver/options.rs src/eval/bytecode/differential.rs tests/
+git commit -m "feat(bytecode): flag path + differential harness; day11-p1 byte-identical (eu-vi3a)"
+```
+
+**Phase 2 gate:** day11-p1 byte-identical through both engines under `EU_GC_VERIFY=2`. If the bytecode path is *slower* than the tree-walk here (0-GC pure dispatch), record the number but continue — the bar is no-regression across the corpus (Phase 3), not day11 alone. If it is dramatically slower, pause and diagnose (the spec's whole thesis is that native dispatch is at worst neutral; a large slowdown means a hidden per-tick allocation crept in — the BV0 trap).
+
+---
+
+## Phase 3 — Full opcode coverage + full harness green
+
+**Milestone:** the entire harness + conformance corpus passes byte-identically through both engines under `EU_GC_VERIFY=2`; no corpus regression. **This is the acceptance gate (spec §8).**
+
+### Task 3.1: Remaining opcodes
+
+For each, translate the named `vm.rs` arm (as in Task 2.3), commit per arm:
+- [ ] **`Ann`** — `vm.rs:617-620` (set annotation, enter body).
+- [ ] **`Meta`** — the `Meta` return/whnf path (`is_whnf` treats `Meta` as WHNF).
+- [ ] **`DeMeta`** — `vm.rs:629-636` + `return_meta` (`vm.rs:778-794`).
+- [ ] **`BlackHole`** — the blackhole-encountered error path.
+- [ ] **Over/under-application, PAP** — the `return_fun` partial/over-apply branches (`vm.rs:1181-1194`) via `BcEnvBuilder::partially_apply`/`pap`.
+- [ ] **Block application / MERGE, `NotCallable`, type-error returns** — the remaining `return_native`/`return_data` continuation mismatches (`vm.rs:823-1263`).
+- [ ] **Capture/render** (`render-as` string capture) — `CaptureEnd` + `push_capture_end` (`vm.rs:1399-1401`, `:2024-2035`).
+- [ ] **IO** — the IO yield / `io_run` path (BV0 explicitly stubbed this; it must work now). Cross-reference `src/driver/io_run.rs`.
+
+### Task 3.2: Encode the prelude to bytecode
+
+**Files:** Modify `src/driver/eval.rs`, `src/eval/bytecode/encode.rs`.
+
+- [ ] **Step 1:** At machine init on the bytecode path, encode **all** runtime globals into the shared arena (not just the program), populating `global_entries[slot]`. Source: blob `ArenaStgSyn` (`reconstruct_form` → `StgSyn` → encode) or source-prelude `StgSyn`. This removes any fallback-to-HeapSyn for globals (the BV0 hybrid trap).
+- [ ] **Step 2:** Differential-test a prelude-heavy unit (e.g. `tests/harness/010_prelude.eu`): `assert_engines_agree`. Commit.
+
+### Task 3.3: Full differential harness run
+
+- [ ] **Step 1:** Extend the differential test to iterate the **entire** `tests/harness/` corpus (respecting `--allow-io` and the non-deterministic skip-strict set). 
+
+Run: `cargo test --release test_bytecode_harness_matches 2>&1 | grep "test result:"`
+Expected: PASS for every case (byte-identical or `.expect`-satisfied through both engines).
+
+- [ ] **Step 2:** GC-stress the whole harness on the bytecode path:
+
+Run: `EU_BYTECODE=1 EU_GC_VERIFY=2 EU_GC_POISON=1 EU_GC_STRESS=1 timeout 600 ./target/release/eu test --allow-io tests/harness 2>&1 | tail -20`
+Expected: all PASS, no GC panic.
+
+- [ ] **Step 3:** No-regression benchmark: run the AoC-2025 corpus through both engines (A/B on the same binary), confirm no wall-time/alloc regression. Record the deltas in `examples/aoc25/` notes.
+
+- [ ] **Step 4:** Confirm **code off the scan set**: add/enable instrumentation (a GC-scanned-object-kind counter, or assert `GcScannable for HeapSyn` is never invoked on the bytecode path — e.g. a debug assertion / counter). Run a GC-heavy program (day10-p1) and confirm zero code nodes scanned.
+
+- [ ] **Step 5:** Commit the acceptance evidence.
+
+```bash
+git add tests/ examples/aoc25/
+git commit -m "test(bytecode): full harness byte-identical through both engines; acceptance gate green (eu-vi3a)"
+```
+
+**Phase 3 gate = acceptance (spec §8).** If green: the bytecode bet has paid off; proceed to Phase 4. If a class of cases can't be made byte-identical, STOP and report — do not delete the HeapSyn machine.
+
+---
+
+## Phase 4 — Collapse to pure bytecode
+
+**Milestone:** the HeapSyn machine, loader, and flag are gone; `CodeRef` is the only code representation; the tree is pure bytecode. **Do not start until Phase 3's gate is green.**
+
+### Task 4.1: Make bytecode the default, delete the flag
+
+- [ ] **Step 1:** Remove `bytecode_enabled()` and the flag; always take the bytecode path in `src/driver/eval.rs`. Keep the differential harness temporarily (it now compares against a soon-deleted engine — convert it to golden-output tests before deleting the HeapSyn engine, or run it once more then retire).
+- [ ] **Step 2:** Full harness green (single engine now). Commit.
+
+### Task 4.2: Delete the HeapSyn machine + loader
+
+- [ ] **Step 1:** Delete `src/eval/memory/loader.rs`; delete `HeapSyn` and its `GcScannable`/`LambdaForm` impls from `src/eval/memory/syntax.rs`; delete the HeapSyn dispatch (`handle_instruction`, the HeapSyn `return_*`) from `src/eval/machine/vm.rs`; delete `SynClosure`-specific code that only served HeapSyn. Fix all resulting compile errors (the reused generic env/closure/heap code stays).
+- [ ] **Step 2:** `cargo build && cargo clippy --all-targets -- -D warnings && cargo test --release` — all green.
+- [ ] **Step 3:** GC-verify the full harness once more (single engine).
+- [ ] **Step 4:** Commit `refactor(bytecode): delete HeapSyn machine + loader; bytecode is the sole engine (eu-vi3a)`.
+
+### Task 4.3: Collapse `CodeRef` scaffolding + close out
+
+- [ ] **Step 1:** Confirm `CodeRef = u32` is the only code type; remove any transitional shims.
+- [ ] **Step 2:** Update `bd` bead `eu-vi3a` to closed with a reference to the acceptance evidence; note BV5 (eu-xfxc) is now unblocked (blob stores bytecode directly + startup win).
+- [ ] **Step 3:** Final commit + push the integration branch.
+
+---
+
+## Self-Review
+
+**Spec coverage:** §1 (purpose/BV0 reframing) → informs all phases; §2 (decisions) → Phase 2 flag + differential harness (2.5), §8 acceptance (Phase 3); §3 (CodeRef/generic seam) → Tasks 1.4, 1.6; §4 (format/encoder) → Tasks 1.1–1.3, 3.2; §5 (prelude/globals) → Task 3.2; §6 (parallel machine: dispatch/BcContinuation/pending_bif/two loops/annotations) → Tasks 1.5, 2.1–2.4, 3.1; §7 (GC retires) → Task 1.4 (no code fixup) + Task 4.2 (deletion) + Task 3.3 step 4 (code-off-scan-set evidence); §8 (acceptance) → Phase 3 gate; §9 (testing) → Task 2.5 (differential), 3.3 (full + GC stress + benchmarks); §10 (phasing) → the four phases; §11 (risks) → Phase 2 gate note (BV0-trap watch), Task 1.4 (root lifetime via POISON). No uncovered spec requirement.
+
+**Placeholder scan:** dispatch-arm steps intentionally reference exact `vm.rs` line ranges to translate rather than pre-listing hundreds of lines of uncompilable Rust — this is deliberate for a translation-heavy systems rewrite (noted at the top), and every such step is gated by the concrete differential test. Novel code (types, encoder, readers, flag path, tests) has real code/commands. No `TBD`/`TODO`/"handle edge cases" left.
+
+**Type consistency:** `CodeRef` (u32), `BcClosure = Closing<CodeRef>`, `BytecodeProgram { code, constants, global_entries }`, `BcContinuation` variant fields, `Op` names, `take_pending_bif_args` — used consistently across tasks. `assert_engines_agree` / `bytecode_enabled` / `run_bytecode` names stable throughout.

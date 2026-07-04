@@ -16,7 +16,7 @@ use crate::{
         memory::{
             mutator::MutatorHeapView,
             set::HeapSet,
-            syntax::{HeapSyn, Native, Ref},
+            syntax::{Native, Ref},
         },
         stg::tags::DataConstructor,
     },
@@ -122,45 +122,22 @@ impl StgIntrinsic for SetFromList {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let iter = data_list_arg(machine, view, args[0].clone())?;
+        // Each element is a bare native (Atom) or a boxed scalar (BoxedNumber
+        // / BoxedString / BoxedSymbol); `value_native` handles both.
+        let items = data_list_arg(machine, view, args[0].clone())?;
         let mut primitives = Vec::new();
-        for item_result in iter {
-            let item_closure = item_result?;
-            let code = view.scoped(item_closure.code());
-            match &*code {
-                HeapSyn::Atom { evaluand } => {
-                    let native = item_closure.navigate_local_native(&view, evaluand.clone());
-                    primitives.push(native_to_set_primitive(
-                        machine.annotation(),
-                        view,
-                        &native,
-                    )?);
-                }
-                HeapSyn::Cons {
-                    tag: _,
-                    args: cargs,
-                } => {
-                    // Handle boxed values (BoxedNumber, BoxedString, BoxedSymbol)
-                    let inner_ref = cargs.get(0).ok_or_else(|| {
-                        ExecutionError::Panic(
-                            Smid::default(),
-                            "empty boxed value in set".to_string(),
-                        )
-                    })?;
-                    let native = item_closure.navigate_local_native(&view, inner_ref.clone());
-                    primitives.push(native_to_set_primitive(
-                        machine.annotation(),
-                        view,
-                        &native,
-                    )?);
-                }
-                _ => {
-                    return Err(ExecutionError::Panic(
-                        Smid::default(),
-                        "non-primitive value in set construction".to_string(),
-                    ))
-                }
-            }
+        for item in &items {
+            let native = machine.value_native(view, item).ok_or_else(|| {
+                ExecutionError::Panic(
+                    Smid::default(),
+                    "non-primitive value in set construction".to_string(),
+                )
+            })?;
+            primitives.push(native_to_set_primitive(
+                machine.annotation(),
+                view,
+                &native,
+            )?);
         }
         machine_return_set(
             machine,
@@ -187,25 +164,13 @@ impl StgIntrinsic for SetToList {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::{
-            alloc::ScopedAllocator, array::Array, syntax::LambdaForm, syntax::StgBuilder,
-        };
-
         let set = set_arg(machine, view, &args[0])?;
         let sorted = set.sorted_elements();
 
-        // Build a list of boxed values in reverse
-        let mut bindings = vec![LambdaForm::value(
-            view.alloc(HeapSyn::Cons {
-                tag: DataConstructor::ListNil.tag(),
-                args: Array::default(),
-            })?
-            .as_ptr(),
-        )];
-
-        for prim in sorted.into_iter().rev() {
+        // Box each element and assemble the (sorted) list via the neutral ABI.
+        let mut items = Vec::with_capacity(sorted.len());
+        for prim in sorted {
             let native = set_primitive_to_native(machine, view, prim)?;
-            // Determine the box tag
             let box_tag = match &native {
                 Native::Num(_) => DataConstructor::BoxedNumber.tag(),
                 Native::Str(_) => DataConstructor::BoxedString.tag(),
@@ -217,36 +182,11 @@ impl StgIntrinsic for SetToList {
                     ))
                 }
             };
-            // Box the value
-            bindings.push(LambdaForm::value(
-                view.alloc(HeapSyn::Cons {
-                    tag: box_tag,
-                    args: Array::from_slice(&view, &[Ref::V(native)]),
-                })?
-                .as_ptr(),
-            ));
-            // Cons it onto the list
-            let len = bindings.len();
-            bindings.push(LambdaForm::value(
-                view.alloc(HeapSyn::Cons {
-                    tag: DataConstructor::ListCons.tag(),
-                    args: Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
-                })?
-                .as_ptr(),
-            ));
+            let boxed = machine.native_value(view, native)?;
+            items.push(machine.data_value(view, box_tag, &[boxed])?);
         }
 
-        let list_index = bindings.len() - 1;
-        let syn = view
-            .letrec(
-                Array::from_slice(&view, &bindings),
-                view.atom(Ref::L(list_index))?,
-            )?
-            .as_ptr();
-        machine.set_closure(crate::eval::machine::env::SynClosure::new(
-            syn,
-            machine.root_env(),
-        ))
+        machine.return_closure_list(view, items)
     }
 }
 

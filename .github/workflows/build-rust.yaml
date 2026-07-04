@@ -103,6 +103,59 @@ jobs:
           EU_GC_STRESS: "1"
           EU_GC_POISON: "1"
 
+  test-bytecode-blob:
+    name: Bytecode + blob harness
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Generate the prelude blob so the *release-shaped* bytecode + blob path
+      # is exercised (bytecode is the default engine post eu-enyv). Without
+      # this step the binary falls back to the source prelude and the blob
+      # path — the one released binaries embed — goes completely untested.
+      # That gap let eu-0iba (a `DirectApp` to an unforced global thunk hung
+      # every recursive prelude function, e.g. `map`/`filter`) reach
+      # release-candidate builds uncaught while every CI job stayed green.
+      - name: Generate prelude blob
+        run: cargo run --package xtask -- prelude-compile
+      - name: Build release binary
+        run: cargo build --release
+      - name: Run harness on the bytecode + blob path
+        run: ./target/release/eu test --allow-io tests/harness
+
+  blob-determinism:
+    name: Prelude blob determinism
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # The released binary embeds `lib/prelude.blob`, so its generation must
+      # be byte-for-byte reproducible: otherwise builds are non-reproducible
+      # and blob-path perf is unstable (eu-c2ue). Regenerate the blob twice
+      # and assert the two outputs are identical.
+      - name: Generate prelude blob (run 1)
+        run: |
+          cargo run --package xtask -- prelude-compile
+          cp lib/prelude.blob /tmp/prelude-run1.blob
+      - name: Generate prelude blob (run 2)
+        run: |
+          cargo run --package xtask -- prelude-compile
+          cp lib/prelude.blob /tmp/prelude-run2.blob
+      - name: Assert blobs are byte-identical
+        run: |
+          if ! cmp -s /tmp/prelude-run1.blob /tmp/prelude-run2.blob; then
+            echo "::error::prelude.blob generation is non-deterministic (eu-c2ue regression)"
+            sha256sum /tmp/prelude-run1.blob /tmp/prelude-run2.blob
+            cmp /tmp/prelude-run1.blob /tmp/prelude-run2.blob || true
+            exit 1
+          fi
+          echo "prelude.blob is byte-identical across two runs"
+          sha256sum /tmp/prelude-run1.blob
+
   test-source-prelude:
     name: Source-prelude harness (x86-64)
     runs-on: ubuntu-latest
@@ -115,6 +168,23 @@ jobs:
         run: ./target/release/eu test --allow-io tests/harness
         env:
           EU_SOURCE_PRELUDE: "1"
+
+  test-heapsyn-baseline:
+    name: HeapSyn harness (baseline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release
+      # Bytecode is the default engine post-flip (eu-enyv); the standard
+      # `test` job exercises it. HeapSyn is retained as the A/B perf baseline
+      # and differential engine, so run the full harness on it too (behind
+      # EU_HEAPSYN=1) to keep the baseline from silently rotting.
+      - name: Run harness on HeapSyn baseline engine
+        run: ./target/release/eu test --allow-io tests/harness
+        env:
+          EU_HEAPSYN: "1"
 
   test-aarch64-sequential:
     name: Sequential harness (aarch64 release)

@@ -2516,6 +2516,21 @@ pub fn test_error_172() {
 }
 
 #[test]
+/// A failing numeric assertion must render actual/expected through the
+/// engine-neutral ABI and raise `AssertionFailed`, not panic in the
+/// HeapSyn-only navigator on the default (bytecode) engine (eu-mr5e).
+pub fn test_error_179() {
+    run_error_test(&error_opts("179_assert_fail_scalar.eu"));
+}
+
+#[test]
+/// A key-not-found lookup on a large block walks the whole kv-pair spine to
+/// build the "did you mean?" hint; the walk must stay GC-safe (eu-f3ss).
+pub fn test_error_180() {
+    run_error_test(&error_opts("180_lookup_fail_large_block.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:

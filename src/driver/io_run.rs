@@ -10,14 +10,7 @@
 //! `io_run_and_render` is called from `eval.rs` after `machine.run()` when
 //! `machine.io_yielded()` is true.
 
-use std::{
-    collections::HashMap,
-    io::Write as IoWrite,
-    process::{Command, Stdio},
-    sync::mpsc,
-    thread,
-    time::Duration,
-};
+use std::collections::HashMap;
 
 use crate::common::sourcemap::Smid;
 use crate::eval::machine::env::EnvFrame;
@@ -36,56 +29,10 @@ use crate::eval::{
     stg::{render_to_string::extract_scalar_string, tags::DataConstructor},
 };
 
-// ─── Public error type ────────────────────────────────────────────────────────
-
-/// Error from running the IO monad interpret loop
-#[derive(Debug, thiserror::Error)]
-pub enum IoRunError {
-    #[error("io.fail: {0}")]
-    Fail(String),
-    #[error("IO operations are not permitted; use the --allow-io (-I) flag to enable")]
-    IoNotAllowed(Smid),
-    #[error("io.shell-with: command timed out after {0} seconds")]
-    Timeout(Smid, u64),
-    #[error("io.shell-with: command execution error: {0}")]
-    CommandError(Smid, String),
-    /// Boxed to keep the error variant size small (ExecutionError is large).
-    #[error("STG machine error: {0}")]
-    MachineError(Box<ExecutionError>),
-}
-
-impl From<ExecutionError> for IoRunError {
-    fn from(e: ExecutionError) -> Self {
-        IoRunError::MachineError(Box::new(e))
-    }
-}
-
-// ─── Command result ───────────────────────────────────────────────────────────
-
-/// The outcome of a shell command execution
-#[derive(Debug)]
-struct CommandResult {
-    stdout: String,
-    stderr: String,
-    exit_code: i64,
-}
-
-// ─── Action spec (extracted from IoAction spec block) ────────────────────────
-
-#[derive(Debug)]
-enum ActionSpec {
-    Shell {
-        cmd: String,
-        stdin: Option<String>,
-        timeout_secs: u64,
-    },
-    Exec {
-        cmd: String,
-        args: Vec<String>,
-        stdin: Option<String>,
-        timeout_secs: u64,
-    },
-}
+// The shell / exec execution side (the action spec, its execution, the command
+// result, and the driver error type) is representation-agnostic and shared with
+// the bytecode io-run driver.
+use crate::driver::io_common::{run_spec, ActionSpec, IoRunError};
 
 // ─── Heap navigation helpers ──────────────────────────────────────────────────
 
@@ -745,91 +692,19 @@ fn evaluate_spec_block(
         eval_fields.insert(key, value_str);
     }
 
-    // ── Determine tag ─────────────────────────────────────────────────────────
+    // ── Build the ActionSpec via the shared policy ────────────────────────────
     //
-    // For inline blocks the tag was captured statically above.
-    // For App-thunk blocks the Meta was stripped by evaluation; infer from fields.
-    let tag_name = static_tag.unwrap_or_else(|| {
-        if eval_fields.contains_key("args") {
-            "io-exec".to_string()
-        } else {
-            "io-shell".to_string()
-        }
-    });
-
-    // Step 4: build ActionSpec from evaluated fields.
-    let timeout_secs = eval_fields
-        .get("timeout")
-        .and_then(|opt| opt.as_deref())
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(30);
-
-    let stdin = eval_fields
-        .get("stdin")
-        .and_then(|opt| opt.clone())
-        .filter(|s| !s.is_empty() && s != "null");
-
-    let is_shell = tag_name == "io-shell";
-    let is_exec = tag_name == "io-exec";
-
-    // Capture the call-site annotation before the branching so closures below
-    // can reference it without re-borrowing `machine`.
+    // For inline blocks the tag was captured statically above; for App-thunk
+    // blocks (shell-with / exec-with) the Meta was stripped during evaluation
+    // so `static_tag` is None and the shared policy infers from the field set.
+    // Both engines call the same `io_common::action_spec_from_fields`, so their
+    // tag dispatch, timeout / stdin handling, and error wording cannot drift.
     let call_smid = machine.annotation();
-
-    if is_shell {
-        let cmd = eval_fields
-            .get("cmd")
-            .and_then(|opt| opt.clone())
-            .ok_or_else(|| {
-                IoRunError::MachineError(Box::new(ExecutionError::IoFail(
-                    call_smid,
-                    "io.shell: 'cmd' field is required in the action spec".to_string(),
-                )))
-            })?;
-        Ok(ActionSpec::Shell {
-            cmd,
-            stdin,
-            timeout_secs,
-        })
-    } else if is_exec {
-        let cmd = eval_fields
-            .get("cmd")
-            .and_then(|opt| opt.clone())
-            .ok_or_else(|| {
-                IoRunError::MachineError(Box::new(ExecutionError::IoFail(
-                    call_smid,
-                    "io.exec: 'cmd' field is required in the action spec".to_string(),
-                )))
-            })?;
-        let args = eval_fields
-            .get("args")
-            .and_then(|opt| opt.clone())
-            .map(|s| {
-                if s.is_empty() {
-                    vec![]
-                } else {
-                    s.split('\x00').map(|x| x.to_string()).collect()
-                }
-            })
-            .unwrap_or_default();
-        Ok(ActionSpec::Exec {
-            cmd,
-            args,
-            stdin,
-            timeout_secs,
-        })
-    } else if tag_name == "io-fail" {
-        let message = eval_fields
-            .get("message")
-            .and_then(|opt| opt.clone())
-            .unwrap_or_else(|| "io.fail".to_string());
-        Err(IoRunError::Fail(message))
-    } else {
-        Err(IoRunError::MachineError(Box::new(ExecutionError::IoFail(
-            call_smid,
-            format!("unknown IO action tag '{tag_name}'"),
-        ))))
-    }
+    crate::driver::io_common::action_spec_from_fields(
+        static_tag.as_deref(),
+        &eval_fields,
+        call_smid,
+    )
 }
 
 // ─── Mutator: build result block {stdout, stderr, exit-code} ─────────────────
@@ -1055,155 +930,6 @@ impl Mutator for BuildRenderDoc {
             .as_ptr();
         Ok(SynClosure::new(app_syn, env))
     }
-}
-
-// ─── Shell execution ──────────────────────────────────────────────────────────
-
-/// Execute a shell command via the platform shell.
-///
-/// On Unix, uses `sh -c`. On Windows, uses `pwsh -NoProfile -Command`
-/// (PowerShell Core). Shell command strings are inherently
-/// platform-specific.
-fn execute_shell(
-    cmd: &str,
-    stdin_data: Option<&str>,
-    timeout_secs: u64,
-    call_smid: Smid,
-) -> Result<CommandResult, IoRunError> {
-    let command = if cfg!(windows) {
-        let mut c = Command::new("pwsh");
-        c.args(["-NoProfile", "-Command", cmd]);
-        c
-    } else {
-        let mut c = Command::new("sh");
-        c.args(["-c", cmd]);
-        c
-    };
-    run_command(command, stdin_data, timeout_secs, call_smid)
-}
-
-/// Execute a binary directly.
-fn execute_exec(
-    cmd: &str,
-    args: &[String],
-    stdin_data: Option<&str>,
-    timeout_secs: u64,
-    call_smid: Smid,
-) -> Result<CommandResult, IoRunError> {
-    let mut command = Command::new(cmd);
-    command.args(args);
-    run_command(command, stdin_data, timeout_secs, call_smid)
-}
-
-/// Core helper: spawn the command, optionally write stdin, and wait with timeout.
-fn run_command(
-    mut command: Command,
-    stdin_data: Option<&str>,
-    timeout_secs: u64,
-    call_smid: Smid,
-) -> Result<CommandResult, IoRunError> {
-    command
-        .stdin(if stdin_data.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let mut child = match command.spawn() {
-        Ok(child) => child,
-        Err(e) => {
-            // Spawn failure (e.g. binary not found) returns a result block
-            // rather than a hard error, matching shell conventions.
-            let exit_code = match e.kind() {
-                std::io::ErrorKind::NotFound => 127,
-                std::io::ErrorKind::PermissionDenied => 126,
-                _ => -1,
-            };
-            return Ok(CommandResult {
-                stdout: String::new(),
-                stderr: e.to_string(),
-                exit_code,
-            });
-        }
-    };
-
-    if let Some(input) = stdin_data {
-        if let Some(mut pipe) = child.stdin.take() {
-            pipe.write_all(input.as_bytes())
-                .map_err(|e| IoRunError::CommandError(call_smid, e.to_string()))?;
-            // Drop `pipe` to close stdin and signal EOF to the child
-        }
-    }
-
-    // Use a worker thread to implement timeout, since `wait_timeout` is not a
-    // project dependency.
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let _ = tx.send(child.wait_with_output());
-    });
-
-    match rx.recv_timeout(Duration::from_secs(timeout_secs)) {
-        Ok(Ok(output)) => {
-            let exit_code = output.status.code().unwrap_or(-1) as i64;
-            let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-            let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-            Ok(CommandResult {
-                stdout,
-                stderr,
-                exit_code,
-            })
-        }
-        Ok(Err(e)) => Err(IoRunError::CommandError(call_smid, e.to_string())),
-        Err(_timeout) => Err(IoRunError::Timeout(call_smid, timeout_secs)),
-    }
-}
-
-/// Whether IO tracing is enabled (cached from `EU_IO_TRACE` env var).
-static IO_TRACE: std::sync::LazyLock<bool> =
-    std::sync::LazyLock::new(|| std::env::var("EU_IO_TRACE").is_ok());
-
-/// Dispatch an `ActionSpec` to the appropriate executor.
-fn run_spec(spec: &ActionSpec, call_smid: Smid) -> Result<CommandResult, IoRunError> {
-    if *IO_TRACE {
-        match spec {
-            ActionSpec::Shell { cmd, stdin, .. } => {
-                eprintln!(
-                    "IO TRACE: shell {cmd:?}{}",
-                    if stdin.is_some() { " (with stdin)" } else { "" }
-                );
-            }
-            ActionSpec::Exec {
-                cmd, args, stdin, ..
-            } => {
-                eprintln!(
-                    "IO TRACE: exec {cmd:?} {args:?}{}",
-                    if stdin.is_some() { " (with stdin)" } else { "" }
-                );
-            }
-        }
-    }
-    let result = match spec {
-        ActionSpec::Shell {
-            cmd,
-            stdin,
-            timeout_secs,
-        } => execute_shell(cmd, stdin.as_deref(), *timeout_secs, call_smid),
-        ActionSpec::Exec {
-            cmd,
-            args,
-            stdin,
-            timeout_secs,
-        } => execute_exec(cmd, args, stdin.as_deref(), *timeout_secs, call_smid),
-    };
-    if *IO_TRACE {
-        match &result {
-            Ok(r) => eprintln!("IO TRACE: → exit {}", r.exit_code),
-            Err(e) => eprintln!("IO TRACE: → error: {e}"),
-        }
-    }
-    result
 }
 
 // ─── Error message extraction ─────────────────────────────────────────────────

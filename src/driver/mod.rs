@@ -1,4 +1,6 @@
 #[cfg(not(target_arch = "wasm32"))]
+pub mod bytecode_io_run;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod check;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod doc;
@@ -8,6 +10,8 @@ pub mod eval;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod format;
 pub mod io;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod io_common;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod io_run;
 #[cfg(not(target_arch = "wasm32"))]

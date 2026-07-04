@@ -7,11 +7,8 @@ use crate::{
     eval::{
         emit::Emitter,
         error::ExecutionError,
-        machine::{
-            env::SynClosure,
-            intrinsic::{
-                CallGlobal0, CallGlobal1, CallGlobal2, Const, IntrinsicMachine, StgIntrinsic,
-            },
+        machine::intrinsic::{
+            CallGlobal0, CallGlobal1, CallGlobal2, Const, IntrinsicMachine, StgIntrinsic,
         },
         memory::{mutator::MutatorHeapView, syntax::Ref},
     },
@@ -19,17 +16,13 @@ use crate::{
 
 use super::{
     force::SeqNumList,
-    support::{
-        collect_num_list, data_list_arg, machine_return_bool, machine_return_num_list, num_arg,
-    },
+    support::{collect_num_list, machine_return_bool, machine_return_num_list, num_arg},
     syntax::{
         dsl::{app_bif, case, data, f, force, lambda, local, lref, t, value},
         LambdaForm,
     },
     tags::DataConstructor,
 };
-
-use crate::eval::memory::syntax::HeapSyn;
 
 /// A constant for CONS
 pub struct Cons;
@@ -225,14 +218,12 @@ impl StgIntrinsic for IsList {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
+        let closure = machine.resolve_closure(view, &args[0])?;
         let is_list = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. }
-                if *tag == DataConstructor::ListCons.tag()
-                    || *tag == DataConstructor::ListNil.tag()
+            machine.data_tag(view, &closure),
+            Some(tag)
+                if tag == DataConstructor::ListCons.tag()
+                    || tag == DataConstructor::ListNil.tag()
         );
         machine_return_bool(machine, view, is_list)
     }
@@ -257,12 +248,10 @@ impl StgIntrinsic for IsNumber {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
+        let closure = machine.resolve_closure(view, &args[0])?;
         let result = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedNumber.tag()
+            machine.data_tag(view, &closure),
+            Some(tag) if tag == DataConstructor::BoxedNumber.tag()
         );
         machine_return_bool(machine, view, result)
     }
@@ -287,12 +276,10 @@ impl StgIntrinsic for IsString {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
+        let closure = machine.resolve_closure(view, &args[0])?;
         let result = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedString.tag()
+            machine.data_tag(view, &closure),
+            Some(tag) if tag == DataConstructor::BoxedString.tag()
         );
         machine_return_bool(machine, view, result)
     }
@@ -317,12 +304,10 @@ impl StgIntrinsic for IsSymbol {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
+        let closure = machine.resolve_closure(view, &args[0])?;
         let result = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedSymbol.tag()
+            machine.data_tag(view, &closure),
+            Some(tag) if tag == DataConstructor::BoxedSymbol.tag()
         );
         machine_return_bool(machine, view, result)
     }
@@ -347,14 +332,12 @@ impl StgIntrinsic for IsBool {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
+        let closure = machine.resolve_closure(view, &args[0])?;
         let is_bool = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. }
-                if *tag == DataConstructor::BoolTrue.tag()
-                    || *tag == DataConstructor::BoolFalse.tag()
+            machine.data_tag(view, &closure),
+            Some(tag)
+                if tag == DataConstructor::BoolTrue.tag()
+                    || tag == DataConstructor::BoolFalse.tag()
         );
         machine_return_bool(machine, view, is_bool)
     }
@@ -379,12 +362,10 @@ impl StgIntrinsic for IsTypeData {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
+        let closure = machine.resolve_closure(view, &args[0])?;
         let result = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedTypeData.tag()
+            machine.data_tag(view, &closure),
+            Some(tag) if tag == DataConstructor::BoxedTypeData.tag()
         );
         machine_return_bool(machine, view, result)
     }
@@ -409,12 +390,10 @@ impl StgIntrinsic for IsZdt {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        use crate::eval::memory::syntax;
-        let closure = machine.nav(view).resolve(&args[0])?;
-        let code = view.scoped(closure.code());
+        let closure = machine.resolve_closure(view, &args[0])?;
         let result = matches!(
-            &*code,
-            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedZdt.tag()
+            machine.data_tag(view, &closure),
+            Some(tag) if tag == DataConstructor::BoxedZdt.tag()
         );
         machine_return_bool(machine, view, result)
     }
@@ -463,9 +442,10 @@ impl CallGlobal1 for SortNumList {}
 
 /// LIST.NTH(list, n) — return the nth element (0-indexed) of a list.
 ///
-/// Both arguments are forced (strict: [0, 1]). The list must be a
-/// fully-evaluated cons structure. Panics if the list has fewer than
-/// n+1 elements.
+/// Walks exactly n+1 cons cells, forcing only as far as needed, and returns
+/// the n-th element unforced. The list head is already forced (strict:
+/// [0, 1]); successive tails are forced as the walk advances. Raises
+/// `ListIndexOutOfBounds` if the list has fewer than n+1 elements.
 pub struct ListNth;
 
 impl StgIntrinsic for ListNth {
@@ -484,16 +464,49 @@ impl StgIntrinsic for ListNth {
             let num = num_arg(machine, view, &args[1])?;
             num.as_u64().unwrap_or(0) as usize
         };
-        let mut iter = data_list_arg(machine, view, args[0].clone())?;
-        let mut current: Option<SynClosure> = None;
-        for _ in 0..=n {
-            current = iter.next().transpose()?;
+        let smid = machine.annotation();
+
+        // Bounded traversal via the engine-neutral data_tag/data_field ABI
+        // (works on both engines; the HeapSyn-only navigator is not used).
+        // Forcing only the n+1 cells we visit restores the lazy invariant: a
+        // list well-formed up to index n succeeds even when its tail beyond n
+        // would error if forced (eu-xk49). No handle is held across a force —
+        // each `force` consumes the handle it is given — so it is GC-safe.
+        let mut current = machine.resolve_closure(view, &args[0])?;
+        for _ in 0..n {
+            let cell = machine.force(current)?;
+            match machine.data_tag(view, &cell) {
+                Some(tag) if tag == DataConstructor::ListCons.tag() => {
+                    current = machine.data_field(view, &cell, 1).ok_or_else(|| {
+                        ExecutionError::Panic(smid, "malformed cons cell".to_string())
+                    })?;
+                }
+                Some(tag) if tag == DataConstructor::ListNil.tag() => {
+                    return Err(ExecutionError::ListIndexOutOfBounds(smid, n));
+                }
+                _ => {
+                    return Err(ExecutionError::NotValue(
+                        smid,
+                        "expected list data".to_string(),
+                    ));
+                }
+            }
         }
-        match current {
-            Some(closure) => machine.set_closure(closure),
-            None => Err(ExecutionError::ListIndexOutOfBounds(
-                machine.annotation(),
-                n,
+
+        let cell = machine.force(current)?;
+        match machine.data_tag(view, &cell) {
+            Some(tag) if tag == DataConstructor::ListCons.tag() => {
+                let head = machine.data_field(view, &cell, 0).ok_or_else(|| {
+                    ExecutionError::Panic(smid, "malformed cons cell".to_string())
+                })?;
+                machine.set_result(head)
+            }
+            Some(tag) if tag == DataConstructor::ListNil.tag() => {
+                Err(ExecutionError::ListIndexOutOfBounds(smid, n))
+            }
+            _ => Err(ExecutionError::NotValue(
+                smid,
+                "expected list data".to_string(),
             )),
         }
     }
@@ -524,37 +537,24 @@ impl StgIntrinsic for ListDrop {
             let num = num_arg(machine, view, &args[0])?;
             num.as_u64().unwrap_or(0) as usize
         };
-
         let smid = machine.annotation();
-        // Navigate through the cons structure, skipping n elements.
-        // We traverse the tail links directly so we can return the
-        // remaining cons cell (rather than reconstructing the list).
-        let mut closure = machine.nav(view).resolve(&args[1])?;
+
+        // Walk the cons spine, skipping n elements, then return the remaining
+        // cell. Uses the engine-neutral data_tag/data_field ABI (the strict
+        // wrapper has forced the spine), so it runs on both engines rather
+        // than the HeapSyn-only navigator, which panics on the bytecode engine
+        // (eu-mr5e). No handle is held across an allocation, so it is GC-safe.
+        let mut current = machine.resolve_closure(view, &args[1])?;
         for _ in 0..n {
-            let code = view.scoped(closure.code());
-            match &*code {
-                HeapSyn::Cons {
-                    tag,
-                    args: cons_args,
-                } => {
-                    match (*tag).try_into() {
-                        Ok(DataConstructor::ListCons) => {
-                            let tail_ref = cons_args.get(1).ok_or_else(|| {
-                                ExecutionError::Panic(smid, "malformed cons cell".to_string())
-                            })?;
-                            closure = closure.navigate_local(&view, tail_ref);
-                        }
-                        Ok(DataConstructor::ListNil) => {
-                            // Ran out of elements — return the nil (empty list)
-                            return machine.set_closure(closure);
-                        }
-                        _ => {
-                            return Err(ExecutionError::NotValue(
-                                smid,
-                                "drop: expected a list".to_string(),
-                            ));
-                        }
-                    }
+            match machine.data_tag(view, &current) {
+                Some(tag) if tag == DataConstructor::ListCons.tag() => {
+                    current = machine.data_field(view, &current, 1).ok_or_else(|| {
+                        ExecutionError::Panic(smid, "malformed cons cell".to_string())
+                    })?;
+                }
+                Some(tag) if tag == DataConstructor::ListNil.tag() => {
+                    // Ran out of elements — return the nil (empty list).
+                    return machine.set_result(current);
                 }
                 _ => {
                     return Err(ExecutionError::NotValue(
@@ -564,7 +564,7 @@ impl StgIntrinsic for ListDrop {
                 }
             }
         }
-        machine.set_closure(closure)
+        machine.set_result(current)
     }
 }
 

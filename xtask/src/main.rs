@@ -37,7 +37,7 @@ use eucalypt::{
     driver::source::SourceLoader,
     eval::stg::{
         arena::{ArenaLambdaForm, ArenaStgSyn, StgArena},
-        blob::PreludeBlob,
+        blob::{PreludeBlob, PreludeBytecodeImage},
         make_standard_runtime,
         syntax::LambdaForm,
     },
@@ -108,7 +108,11 @@ fn cmd_prelude_compile() -> Result<()> {
         prelude_input.clone(),
     ];
 
-    let mut loader = SourceLoader::new(vec![]);
+    // Build the `__io` pseudoblock deterministically: the blob must not embed
+    // the current epoch time / random seed / environment (all overridden at
+    // runtime anyway), or two prelude-compile runs would produce differing
+    // blobs (see eu-c2ue).
+    let mut loader = SourceLoader::new(vec![]).with_deterministic_io(true);
     for inp in &all_inputs {
         loader.load(inp).with_context(|| format!("load {inp}"))?;
     }
@@ -342,6 +346,47 @@ fn cmd_prelude_compile() -> Result<()> {
         binding_entries.len()
     );
 
+    // ── 8b. Pre-encode the prelude BytecodeProgram (BV5, eu-amp9) ─────────────
+    // Encode the fixed templates plus every global body (intrinsic wrappers
+    // followed by the prelude bindings, in the same slot order the runtime
+    // uses) with no program root. The bytecode engine loads this image
+    // directly and appends only the user root (and the per-invocation
+    // __args/__io overrides) at run time, instead of re-encoding the prelude.
+    //
+    // `runtime.globals()` here returns just the intrinsic wrappers (this
+    // runtime has no prelude bindings set); `forms` are the prelude bindings.
+    let bytecode = {
+        use eucalypt::eval::stg::runtime::Runtime;
+        // Encode the prelude bindings from the SAME arena-reconstructed forms
+        // the runtime uses in `globals()`, so the baked bytecode is identical
+        // to what a fresh `encode(&syn, &rt.globals())` would produce.
+        let arena = StgArena {
+            nodes: nodes.clone(),
+            forms: forms_pool.clone(),
+        };
+        let prelude_forms: Vec<LambdaForm> = binding_entries
+            .iter()
+            .map(|&e| {
+                arena
+                    .reconstruct_form(e)
+                    .expect("reconstruct prelude form for bytecode encode")
+            })
+            .collect();
+        let mut all_globals = runtime.globals();
+        all_globals.extend(prelude_forms);
+        let (program, global_forms) = eucalypt::eval::bytecode::encode_prelude(&all_globals);
+        println!(
+            "  bytecode: {} bytes, {} constants, {} global forms",
+            program.code.len(),
+            program.constants.len(),
+            global_forms.len(),
+        );
+        Some(PreludeBytecodeImage {
+            program,
+            global_forms,
+        })
+    };
+
     // ── 9. Serialise and write ────────────────────────────────────────────────
     let blob = PreludeBlob {
         source_hash,
@@ -354,6 +399,7 @@ fn cmd_prelude_compile() -> Result<()> {
         monad_specs,
         monad_type_hints,
         inline_cores,
+        bytecode,
     };
 
     let bytes = blob.to_bytes().context("serialise PreludeBlob")?;

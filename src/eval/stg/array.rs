@@ -402,8 +402,7 @@ impl StgIntrinsic for ArrayIsArray {
         // resolve_native returns Err for non-natives (e.g. lists, blocks).
         // In that case, the value is definitely not an array.
         let is_array = machine
-            .nav(view)
-            .resolve_native(&args[0])
+            .resolve_native(view, &args[0])
             .map(|n| matches!(n, Native::NdArray(_)))
             .unwrap_or(false);
         machine_return_bool(machine, view, is_array)
@@ -795,8 +794,8 @@ pub(crate) fn array_binop<F: Fn(f64, f64) -> f64>(
     b_ref: &Ref,
     f: F,
 ) -> Result<(), ExecutionError> {
-    let a_native = machine.nav(view).resolve_native(a_ref)?;
-    let b_native = machine.nav(view).resolve_native(b_ref)?;
+    let a_native = machine.resolve_native(view, a_ref)?;
+    let b_native = machine.resolve_native(view, b_ref)?;
 
     let smid = machine.annotation();
     match (a_native, b_native) {

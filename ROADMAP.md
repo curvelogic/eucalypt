@@ -67,10 +67,13 @@ plan:
   arena-flattened, index-referenced, **postcard-serialisable** form
   (`ArenaStgSyn`/`PreludeBlob`, `src/eval/stg/blob.rs`). This is, in effect, a
   proto-bytecode.
-- **`HeapSyn`** (`src/eval/memory/syntax.rs:227`) — the on-heap form the VM
-  actually executes. The loader translates `StgSyn → HeapSyn` into the GC heap on
-  **every run**, and **compiled code is GC-scanned and evacuated like data**
-  (`impl GcScannable for HeapSyn`, `src/eval/memory/syntax.rs:400-547`).
+- **`HeapSyn`** (`src/eval/memory/syntax.rs:227`) — the on-heap form the legacy
+  tree-walk VM executes. On this path the loader translates `StgSyn → HeapSyn`
+  into the GC heap on **every run**, and **compiled code is GC-scanned and
+  evacuated like data** (`impl GcScannable for HeapSyn`,
+  `src/eval/memory/syntax.rs:400-547`). *(Since 0.12/BV1 this describes only the
+  `EU_HEAPSYN=1` opt-out engine — the default bytecode engine executes a flat
+  opcode stream from an off-heap arena and none of this applies to it.)*
 
 - **The VM** is a Spineless Tagless G-machine (`src/eval/machine/vm.rs`): the loop
   `run`→`step`→`handle_instruction` (`vm.rs:1842,1663,389`) dispatches a `match` on
@@ -229,7 +232,11 @@ that the cost lives in code materialisation, dispatch and env-walk. Therefore:
   tables (annotation dispatch), superinstructions (hot patterns), and
   serialisability (the startup win). Estimated 3–10× on dispatch-bound code and a
   large drop in GC load, keeping the Immix GC, all intrinsics, the emitter, the
-  error machinery and the `EU_*` tooling.
+  error machinery and the `EU_*` tooling. **Status (BV1, eu-enyv):** the bytecode
+  engine is now the **default**; the legacy HeapSyn tree-walk machine is retained
+  behind `EU_HEAPSYN=1` as the perf baseline and differential-testing engine. The
+  Phase 4 collapse (deleting HeapSyn + retiring `GcScannable`) is deferred pending
+  an A/B perf study.
 - **Demand- and type-directed compilation rides on it** (Pillar CG): the bytecode is
   the substrate the smarter codegen emits into.
 - **The speculative generational-GC rebuild is shelved** (§10), to be revisited only
@@ -319,6 +326,12 @@ compile from. Post-1.0 candidate (§10 records the analysis).
   type-gated tier depends on.
 - **BV5** (serialisable bytecode) makes **PP** workers cheapest to spawn, and is the
   natural successor to the existing `ArenaStgSyn`/postcard blob.
+- **Per-unit incremental caching** (the successor to BV5's whole-program unit cache)
+  is gated on **separate unit compilation**: today the pipeline merges units
+  immediately after per-unit desugar, so everything downstream is whole-program.
+  Restructuring to defer the merge (and replay the cross-unit `UnitInterface`
+  state) is a pillar-scale prerequisite, tracked as eu-nzps — sequence it with
+  **W18** (modules), which wants the same per-unit boundary.
 - **SV** is independent of the runtime work; **optional fields** and the
   **prefix-list type** are type-vocabulary enrichments it surfaces; **W8/W22**
   (doc/schema) consume the same type-data.
@@ -342,9 +355,10 @@ reordered as the cadence dictates.
 | Release | Theme | Items |
 |---|---|---|
 | **0.11** | Codegen wins, typing on, type-value foundation, bytecode spike | CG type-free tier; TY default-on; SV `s"…"` + `as-spec`; **optional record fields**; **BV0** gate |
-| **0.12** | The bytecode core + the startup win | **BV1** (code out of the heap) + **BV5** (serialised/embedded prelude, 85→~25 ms) |
+| **0.12** *(shipped scope)* | The bytecode core + the startup win | **BV1** (default engine, code out of the heap; Phase-4 collapse deferred) + **BV5 embedded prelude** (dual-form blob, deterministic; startup win on release binaries). *Unit cache spec'd + held (eu-lb0r)* |
+| **0.12.1** | Close the engine gap | **BV4** superinstructions / decode-cost fusion (eu-9mvh) + `ExecutionError` boxing (eu-adnu) → then the **Phase-4 collapse** (eu-oufc); bytecode block index (eu-4zhi); unit cache build (eu-lb0r) if green-lit |
 | **0.13** | Frames, annotations, type-gated codegen, prefix-lists | **BV2** side tables; **BV3** register frames + CG selective lifting; **CG** type-gated (unboxing); **prefix-list type** |
-| **0.14** | Polish, parallelism, effects, contracts | **BV4** superinstructions; **PP** `par-map`/`par-fold`; **EF2** native filesystem IO + **EF1** effect-composition combinators; **W16** contracts; presence inference |
+| **0.14** | Polish, parallelism, effects, contracts | **PP** `par-map`/`par-fold`; **EF2** native filesystem IO + **EF1** effect-composition combinators; **W16** contracts; presence inference |
 | **0.15+** | Value model, ecosystem, surface | **DS** persistent blocks + `vec`; **EF1** unified effect context; **W18** modules; **W19** watch/REPL; **W17** hermetic; **W22** schema interop |
 | **1.0** *(milestone)* | Decide, prove, freeze | *No features.* Surface complete + **W5** conformance green → ratify and freeze the stable-surface tiers, turn on the version contract (§4.6) |
 | **post-1.0** | Curated bets | EF1.3 algebraic effect-rows; WASM-as-distribution; parallel Model B (maybe-never); a true separate-nursery GC *iff* a workload demands it |
@@ -363,15 +377,27 @@ startup floor) is banked early:
    ≥~2×; otherwise reassess. Weeks, low commitment.
 2. **BV1 — threaded-code interpreter, code out of the GC heap.** Replace the
    `HeapSyn` tree-walk (`vm.rs:389`) with opcode dispatch over arena-resident
-   bytecode; retire `impl GcScannable for HeapSyn` (code stops being scanned and
-   evacuated); keep continuations, env frames and the intrinsic boundary intact to
+   bytecode; keep continuations, env frames and the intrinsic boundary intact to
    isolate variables. The big correctness lift; full harness green under
-   `EU_GC_VERIFY=2`.
+   `EU_GC_VERIFY=2`. **Shipped in 0.12 as the default engine** — on the default
+   path code never enters the GC heap. The *physical* retirement of
+   `impl GcScannable for HeapSyn` (deleting the HeapSyn machine + loader) is the
+   **Phase-4 collapse, deferred** (eu-oufc; see §4.5): HeapSyn is retained behind
+   `EU_HEAPSYN=1` as the perf baseline and differential reference until the
+   decode-cost gap closes (eu-9mvh).
 3. **BV5 — serialisation, embedded prelude, unit cache.** Execute directly from
-   serialised bytecode; embed the prelude bytecode at build time (superseding the
-   heap-graph blob; the loader stops re-allocating the program each run); content-hash
-   unit caching. Closes the startup story for *every* build (85→~20–30 ms), the
-   single most user-visible win. Reuses the postcard/`cfg(prelude_blob_ok)` plumbing.
+   serialised bytecode; embed the prelude bytecode at build time; content-hash
+   unit caching. Reuses the postcard/`cfg(prelude_blob_ok)` plumbing. **Shipped in
+   0.12 in dual-form** — the blob carries the pre-encoded `BytecodeProgram`
+   *alongside* the `ArenaStgSyn` heap-graph form (not superseding it) while
+   HeapSyn is retained; the bytecode engine executes the embedded program without
+   per-run re-encoding, and blob generation is deterministic and CI-guarded. The
+   startup floor (~10 ms measured) lands on **release/CI binaries** (which run
+   `xtask prelude-compile`); a plain dev `cargo build` still falls back to
+   source-prelude. The **content-hash unit cache did not ship** — spec + plan are
+   merged (`docs/superpowers/specs/2026-07-03-bv5-unit-cache-design.md`) and the
+   build is held (eu-lb0r); per-unit *incremental* caching additionally needs the
+   separate-unit-compilation restructuring (deferred merge, eu-nzps).
 4. **BV2 — side tables for annotations.** Move `Smid`s out of the instruction stream
    (retire the `Ann` dispatch step, `vm.rs:536`) into offset-keyed side tables the
    error machinery reads. Additive, low risk.
@@ -449,9 +475,22 @@ dispatch, 0 GC). **Go if ≥~2×; reassess otherwise.** Weeks of work, and the e
 seeds BV1 — nothing is thrown away.
 
 **Success.** BV1: code no longer appears in GC scans; `day11-p1` dispatch improves by
-the BV0-measured factor; full harness byte-identical under `EU_GC_VERIFY=2`. BV5:
+the BV0-measured factor; full harness byte-identical under `EU_GC_VERIFY=2`.
+*(Realised, 0.12: harness byte-identical ✓ and code off the scan set on the default
+path ✓, but the dispatch criterion landed at **parity** (day11-p1 bc/hs ≈ 0.93–0.97),
+not a multiple — the leaner dispatch is offset by instruction-stream decode
+(`read_*`, ~40% of CPU on call-dense code) and per-instruction `ExecutionError` drops.
+The measured verdict — see `docs/superpowers/reports/2026-07-03-bytecode-vs-heapsyn-ab-rerun.md`
+— is a competitive co-engine: parity-or-faster on pure-dispatch and env-walk
+workloads (higher-order `count` 0.66×, `foldl` 0.89×), 1.2–2.05× behind on
+allocation+call-dense compute. Closing that gap is eu-9mvh/eu-adnu and the BV4
+fusion work, and gates the Phase-4 collapse.)* BV5:
 `eu -e true` startup floor drops to ~20–30 ms on a plain build with no separate blob
-step. BV3: `EnvironmentFrame::get` falls out of the top of the AoC profiles, **and a
+step. *(Realised, 0.12: ~10 ms measured — but on release/CI binaries only, where
+`xtask prelude-compile` embeds the blob; a plain dev `cargo build` still runs
+source-prelude. The "no separate blob step for every build" promise is open — it
+needs either a committed blob (rejected: reproducibility) or a two-stage build.)*
+BV3: `EnvironmentFrame::get` falls out of the top of the AoC profiles, **and a
 higher-order fold `range(0,N) foldl((_+_),0)` scales linearly** — the cleanest
 regression benchmark for the env-walk line (it is O(n²) today purely from local-`op`
 resolution; the first-order equivalent is already O(n)). Every phase: rendered output
@@ -901,9 +940,11 @@ Recorded so they are not forgotten, able to swap in if priorities shift:
 ## 8. The critical path
 
 **CG type-free tier + TY default-on + SV `s"…"` + optional fields (0.11) → BV0 gate →
-BV1 + BV5 (0.12, the bytecode core + startup win) → BV3 + CG type-gated (0.13) → SV
+BV1 + BV5-prelude (0.12, the bytecode core; shipped) → BV4 decode-fusion +
+ExecutionError boxing → Phase-4 collapse (0.12.1, close the engine gap, retire
+HeapSyn) → BV2 + BV3 + CG type-gated (0.13) → SV
 contracts + DS + modules (0.14–0.15) → W5 conformance green → the 1.0 milestone:
-ratify and freeze the surface (§4.6).** BV4, DS, PP and the post-1.0 candidates slot
+ratify and freeze the surface (§4.6).** DS, PP and the post-1.0 candidates slot
 alongside or follow. The 1.0 freeze is gated on the surface and conformance, not on
 the bytecode programme being finished — and no feature is scheduled *for* 1.0; they all
 land in point releases first.
@@ -913,11 +954,11 @@ land in point releases first.
 | ID | Item | Release |
 |---|---|:---:|
 | **BV0** | Bytecode encoding + dispatch-ceiling spike (gate) | 0.11 |
-| **BV1** | Threaded interpreter; code out of the GC heap | 0.12 |
-| **BV5** | Serialised/embedded prelude + unit cache (startup win) | 0.12 |
+| **BV1** | Threaded interpreter; code out of the GC heap *(shipped — default engine; Phase-4 collapse deferred to 0.12.1)* | 0.12 |
+| **BV5** | Embedded bytecode prelude *(shipped, dual-form)*; unit cache *(spec'd, held — eu-lb0r)* | 0.12 / 0.12.1 |
 | **BV2** | Side tables for annotations | 0.13 |
 | **BV3** | Register frames | 0.13 |
-| **BV4** | Superinstructions | 0.14 |
+| **BV4** | Superinstructions / decode-cost fusion *(promoted — gates Phase-4)* | 0.12.1 |
 | **CG1–4** | Type-free codegen (direct dispatch, key resolution, strict folds, lifting) | 0.11 |
 | **CG5** | Type-gated codegen (unboxing, dead-branch, interpolation) | 0.13 |
 | **TY** | Typing default-on | 0.11 |

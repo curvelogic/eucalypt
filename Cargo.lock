@@ -700,6 +700,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "similar",
+ "smallvec",
  "tempfile",
  "thiserror 1.0.69",
  "toml",

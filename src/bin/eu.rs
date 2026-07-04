@@ -121,7 +121,13 @@ fn run() -> i32 {
     // Anything else is going to involve reading the inputs
     let mut loader = SourceLoader::new(opt.lib_path().to_vec())
         .with_args(opt.args().to_vec())
-        .with_seed(opt.seed());
+        .with_seed(opt.seed())
+        // Inspection-only invocations (`eu dump <phase>`) embed the compiled
+        // unit — including the `__io` pseudoblock — into their output.  Build
+        // a sanitised `__io` (empty env) so the real process environment, and
+        // any secrets held in env vars, are never printed.  Eval/run keeps the
+        // real environment.
+        .with_deterministic_io(opt.inspects_ir());
 
     // Load the pre-compiled prelude blob once and store it in the loader.
     // cook() will seed the Distributor with blob.operators; after prepare(),

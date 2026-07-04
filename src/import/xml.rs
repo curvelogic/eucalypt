@@ -148,6 +148,14 @@ impl<'src> XmlImporter<'src> {
         for a in e.attributes() {
             let attr = a.map_err(|e| self.to_source_error(e))?;
             let k = self.to_str(attr.key.local_name().as_ref())?;
+            // DELIBERATE (eu-cgys, post-review owner decision): apply XML 1.0
+            // §3.3.3 attribute-value normalisation. Literal whitespace (tab, CR,
+            // LF) in an attribute value becomes a space, as required of a
+            // conforming processor; character references such as `&#10;` / `&#9;`
+            // are resolved *before* normalisation and so still yield real
+            // newlines/tabs. This is a behaviour change from pre-0.12 eucalypt
+            // (which was non-conformant) — see CHANGELOG 0.12.0. Element *text*
+            // content is unaffected (it is unescaped without normalisation).
             let v = acore::str(
                 attr.decoded_and_normalized_value(
                     quick_xml::XmlVersion::Implicit1_0,
@@ -165,5 +173,61 @@ impl<'src> XmlImporter<'src> {
     /// `SourceError` by its display text.
     fn to_source_error<E: std::fmt::Display>(&self, e: E) -> SourceError {
         SourceError::InvalidXml(e.to_string(), self.file_id, self.span())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::sourcemap::SourceMap;
+
+    /// Extract the `a` attribute string of the (single) root element from the
+    /// hiccup import `[:root {a: "..."} ...]`.
+    fn import_attr_a(xml: &str) -> String {
+        let mut sm = SourceMap::new();
+        let expr = read_xml(&mut sm, 0, xml).expect("xml import should succeed");
+        let attrs = match &*expr.inner {
+            Expr::List(_, xs) => xs.get(1).cloned().expect("attrs block present"),
+            other => panic!("expected a hiccup list, got {other:?}"),
+        };
+        let value = match &*attrs.inner {
+            Expr::Block(_, bm) => bm.get("a").cloned().expect("attribute `a` present"),
+            other => panic!("expected an attrs block, got {other:?}"),
+        };
+        match &*value.inner {
+            Expr::Literal(_, Primitive::Str(s)) => s.clone(),
+            other => panic!("expected a string literal, got {other:?}"),
+        }
+    }
+
+    /// eu-cgys: DELIBERATE spec-conformant behaviour. XML 1.0 §3.3.3 requires a
+    /// conforming processor to normalise attribute values — each literal
+    /// whitespace character (tab, CR, LF) in an attribute value is replaced by a
+    /// single space. Post quick-xml 0.25→0.41 bump, eucalypt now conforms (it
+    /// previously did not). This test pins that behaviour so a future change
+    /// away from it is caught.
+    #[test]
+    fn literal_attribute_whitespace_is_normalised_to_space() {
+        // Real newline + tab embedded in the `a` attribute value.
+        assert_eq!(
+            import_attr_a("<root a=\"x\nY\tZ\"/>"),
+            "x Y Z",
+            "literal newline/tab in an attribute value must normalise to a \
+             single space each (XML 1.0 §3.3.3)"
+        );
+    }
+
+    /// eu-cgys: the escape hatch. Per XML 1.0 §3.3.3, *character references* to
+    /// whitespace are resolved before normalisation, so `&#10;` (LF) and `&#9;`
+    /// (tab) yield real control characters that survive verbatim — this is how a
+    /// document author requests literal whitespace in an attribute value.
+    #[test]
+    fn attribute_whitespace_character_references_survive() {
+        assert_eq!(
+            import_attr_a("<root a=\"x&#10;Y&#9;Z\"/>"),
+            "x\nY\tZ",
+            "character references to whitespace must survive normalisation \
+             (XML 1.0 §3.3.3)"
+        );
     }
 }

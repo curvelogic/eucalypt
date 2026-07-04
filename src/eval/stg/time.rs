@@ -15,14 +15,12 @@ use crate::{
     eval::{
         emit::Emitter,
         error::ExecutionError,
-        machine::{
-            env::SynClosure,
-            intrinsic::{CallGlobal1, CallGlobal7, IntrinsicMachine, StgIntrinsic},
+        machine::intrinsic::{
+            AbiClosure, CallGlobal1, CallGlobal7, IntrinsicMachine, StgIntrinsic,
         },
         memory::{
-            array::Array,
             mutator::MutatorHeapView,
-            syntax::{Ref, StgBuilder},
+            syntax::{Native, Ref, StgBuilder},
         },
     },
 };
@@ -153,6 +151,29 @@ impl StgIntrinsic for Zdt {
 
 impl CallGlobal7 for Zdt {}
 
+/// Build a `BoxedNumber` value handle via the neutral ABI.
+fn boxed_num(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    n: Number,
+) -> Result<AbiClosure, ExecutionError> {
+    let nv = machine.native_value(view, Native::Num(n))?;
+    machine.data_value(view, DataConstructor::BoxedNumber.tag(), &[nv])
+}
+
+/// Build a `BoxedString` value handle via the neutral ABI.
+fn boxed_str(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    s: String,
+) -> Result<AbiClosure, ExecutionError> {
+    let Ref::V(native) = view.str_ref(s)? else {
+        unreachable!("str_ref yields a value ref")
+    };
+    let sv = machine.native_value(view, native)?;
+    machine.data_value(view, DataConstructor::BoxedString.tag(), &[sv])
+}
+
 /// ZDT.FIELDS - convert ZDT to (sym, val) pairs (which can be
 /// converted to block)
 ///
@@ -180,89 +201,27 @@ impl StgIntrinsic for ZdtFields {
         let sec = (dt.second() as f64) + (dt.timestamp_subsec_millis() as f64) / 1000f64;
         let tz = dt.offset().to_string().replace(':', "");
 
-        let mut fields = IndexMap::new();
-        fields.insert(
-            "y".to_string(),
-            SynClosure::new(
-                view.data(
-                    DataConstructor::BoxedNumber.tag(),
-                    Array::from_slice(&view, &[Ref::num(y)]),
-                )?
-                .as_ptr(),
-                machine.root_env(),
-            ),
-        );
-        fields.insert(
-            "m".to_string(),
-            SynClosure::new(
-                view.data(
-                    DataConstructor::BoxedNumber.tag(),
-                    Array::from_slice(&view, &[Ref::num(m)]),
-                )?
-                .as_ptr(),
-                machine.root_env(),
-            ),
-        );
-        fields.insert(
-            "d".to_string(),
-            SynClosure::new(
-                view.data(
-                    DataConstructor::BoxedNumber.tag(),
-                    Array::from_slice(&view, &[Ref::num(d)]),
-                )?
-                .as_ptr(),
-                machine.root_env(),
-            ),
-        );
+        let mut fields: IndexMap<String, AbiClosure> = IndexMap::new();
+        fields.insert("y".to_string(), boxed_num(machine, view, Number::from(y))?);
+        fields.insert("m".to_string(), boxed_num(machine, view, Number::from(m))?);
+        fields.insert("d".to_string(), boxed_num(machine, view, Number::from(d))?);
         fields.insert(
             "H".to_string(),
-            SynClosure::new(
-                view.data(
-                    DataConstructor::BoxedNumber.tag(),
-                    Array::from_slice(&view, &[Ref::num(hour)]),
-                )?
-                .as_ptr(),
-                machine.root_env(),
-            ),
+            boxed_num(machine, view, Number::from(hour))?,
         );
         fields.insert(
             "M".to_string(),
-            SynClosure::new(
-                view.data(
-                    DataConstructor::BoxedNumber.tag(),
-                    Array::from_slice(&view, &[Ref::num(min)]),
-                )?
-                .as_ptr(),
-                machine.root_env(),
-            ),
+            boxed_num(machine, view, Number::from(min))?,
         );
         fields.insert(
             "S".to_string(),
-            SynClosure::new(
-                view.data(
-                    DataConstructor::BoxedNumber.tag(),
-                    Array::from_slice(
-                        &view,
-                        &[Ref::num(
-                            Number::from_f64(sec).expect("seconds must be finite"),
-                        )],
-                    ),
-                )?
-                .as_ptr(),
-                machine.root_env(),
-            ),
+            boxed_num(
+                machine,
+                view,
+                Number::from_f64(sec).expect("seconds must be finite"),
+            )?,
         );
-        fields.insert(
-            "Z".to_string(),
-            SynClosure::new(
-                view.data(
-                    DataConstructor::BoxedString.tag(),
-                    Array::from_slice(&view, &[view.str_ref(tz)?]),
-                )?
-                .as_ptr(),
-                machine.root_env(),
-            ),
-        );
+        fields.insert("Z".to_string(), boxed_str(machine, view, tz)?);
 
         machine_return_block_pair_closure_list(machine, view, fields)
     }

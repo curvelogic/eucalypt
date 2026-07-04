@@ -7,14 +7,15 @@ use crate::{
     core::{expr::*, typecheck::error::TypeWarning},
     driver::{
         error::EucalyptError,
-        io_run::{inject_world_and_run, io_run_and_render, render_headless_result, IoRunError},
+        io_common::IoRunError,
+        io_run::{inject_world_and_run, io_run_and_render, render_headless_result},
         options::{ErrorFormat, EucalyptOptions},
         source::SourceLoader,
     },
     eval::{
         error::ExecutionError,
         machine::standard_machine,
-        stg::{self, make_standard_runtime, RenderType, StgSettings},
+        stg::{self, make_standard_runtime, runtime::Runtime, RenderType, StgSettings},
     },
     export,
 };
@@ -87,6 +88,44 @@ fn collect_machine_stats(machine: &crate::eval::machine::vm::Machine<'_>, stats:
     // Machine counters
     stats.set_ticks(machine.metrics().ticks());
     stats.set_allocs(machine.metrics().allocs());
+    stats.set_max_stack(machine.metrics().max_stack());
+
+    // Heap stats
+    let heap_stats = machine.heap_stats();
+    stats.set_blocks_allocated(heap_stats.blocks_allocated);
+    stats.set_lobs_allocated(heap_stats.lobs_allocated);
+    stats.set_blocks_used(heap_stats.used);
+    stats.set_blocks_recycled(heap_stats.recycled);
+    stats.set_collections_count(heap_stats.collections_count);
+    stats.set_peak_heap_blocks(heap_stats.peak_heap_blocks);
+
+    // Aggregate GC timings
+    stats.set_total_mark_time(machine.clock().duration(ThreadOccupation::CollectorMark));
+    stats.set_total_sweep_time(machine.clock().duration(ThreadOccupation::CollectorSweep));
+}
+
+/// Collect machine, GC, and heap statistics from the bytecode machine after
+/// all execution phases (eval, render, IO) have completed.
+///
+/// The bytecode engine keeps the same `Metrics`/`Clock`/`HeapStats` records
+/// as the HeapSyn machine, so `-S` reports a comparable, single-counted set on
+/// both engines. Allocation counts come from the shared machine state (see
+/// `BytecodeMachine::allocs`) rather than `Metrics`, because they are recorded
+/// inside the free `handle_op` dispatch.
+fn collect_bytecode_stats(
+    machine: &crate::eval::bytecode::BytecodeMachine<'_>,
+    stats: &mut Statistics,
+) {
+    use crate::eval::machine::metrics::ThreadOccupation;
+
+    // GC phase timings
+    for (k, v) in machine.clock().report() {
+        stats.timings_mut().record(k, v);
+    }
+
+    // Machine counters
+    stats.set_ticks(machine.metrics().ticks());
+    stats.set_allocs(machine.allocs());
     stats.set_max_stack(machine.metrics().max_stack());
 
     // Heap stats
@@ -316,7 +355,16 @@ impl<'a> Executor<'a> {
             }
 
             if let Some(&io_slot) = b.name_to_slot.get("__io") {
-                let io_expr = crate::driver::io::create_io_pseudoblock(self.seed);
+                // Inspection-only invocations (`eu dump runtime`/`stg`) print
+                // the runtime globals, which include this overridden `__io`
+                // slot.  Use a sanitised (empty-env) pseudoblock so the real
+                // process environment is never embedded in dump output; eval
+                // (`opt.run()`) still substitutes the live environment.
+                let io_expr = if opt.inspects_ir() {
+                    crate::driver::io::create_io_pseudoblock_deterministic()
+                } else {
+                    crate::driver::io::create_io_pseudoblock(self.seed)
+                };
                 if let Ok(stg_syn) = stg::compile(&override_settings, io_expr, rt.as_ref()) {
                     rt.set_prelude_slot_override(io_slot, stg::syntax::LambdaForm::thunk(stg_syn));
                 }
@@ -396,6 +444,111 @@ impl<'a> Executor<'a> {
             if opt.dump_stg() {
                 println!("{}", prettify::prettify(&*syn));
                 Ok(None)
+            } else if crate::eval::bytecode::bytecode_enabled() {
+                // Default bytecode engine (BV1). HeapSyn is selected instead
+                // via the EU_HEAPSYN=1 opt-out — see `bytecode_enabled`.
+                //
+                // Compile headless (like the HeapSyn path — `syn` above is
+                // already the headless compile) so IO constructors yield to the
+                // bytecode io-run driver rather than being consumed by a
+                // RENDER_DOC wrapper. After the first run the result is handled
+                // in three cases exactly as the HeapSyn path below: a direct IO
+                // yield, a terminated IO function (inject world), or a plain
+                // document (RENDER_DOC in place).
+                // BV5 (eu-amp9): when the blob carries a pre-encoded prelude
+                // BytecodeProgram, run straight off it — append only the user
+                // program root and the per-invocation __args/__io override
+                // globals — instead of re-encoding every prelude and intrinsic
+                // global on this run. When absent (source-prelude fallback or a
+                // pre-BV5 blob), encode the whole program from STG as before.
+                #[cfg(not(target_arch = "wasm32"))]
+                let embedded = self.prelude_blob.as_ref().and_then(|b| b.bytecode.as_ref());
+                #[cfg(target_arch = "wasm32")]
+                let embedded: Option<
+                    &crate::eval::stg::blob::PreludeBytecodeImage,
+                > = None;
+
+                let (prog, root, gforms) = match embedded {
+                    Some(image) => {
+                        let mut gforms = image.global_forms.clone();
+                        let overrides = rt.prelude_global_overrides();
+                        let (prog, root) = crate::eval::bytecode::encode_overrides_and_root(
+                            &image.program,
+                            &overrides,
+                            &mut gforms,
+                            &syn,
+                        );
+                        (prog, root, gforms)
+                    }
+                    None => {
+                        let globals = rt.globals();
+                        crate::eval::bytecode::encode(&syn, &globals)
+                    }
+                };
+                emitter.stream_start();
+                let heap_mib = stg_settings.heap_limit_mib.unwrap_or(0);
+                let mut m = crate::eval::bytecode::BytecodeMachine::new(
+                    prog,
+                    root,
+                    &gforms,
+                    rt.intrinsics(),
+                    emitter,
+                    heap_mib,
+                    stg_settings.test_mode,
+                )?;
+                let t_exec = Instant::now();
+                let ret = m.run(None);
+                stats
+                    .timings_mut()
+                    .record("bytecode-eval", t_exec.elapsed());
+
+                use crate::driver::bytecode_io_run::{
+                    inject_world_and_run, io_run_and_render, render_headless_result,
+                };
+                let result = if ret.is_ok() {
+                    if m.io_yielded() {
+                        let t_io = Instant::now();
+                        let io_result = io_run_and_render(&mut m, opt.allow_io)
+                            .map_err(io_run_error_to_execution);
+                        stats.timings_mut().record("io-run", t_io.elapsed());
+                        io_result
+                    } else {
+                        // Terminated without yielding: try world injection to
+                        // handle IO functions, else render as a plain document.
+                        let io_yielded =
+                            inject_world_and_run(&mut m).map_err(io_run_error_to_execution);
+                        match io_yielded {
+                            Ok(true) => {
+                                let t_io = Instant::now();
+                                let io_result = io_run_and_render(&mut m, opt.allow_io)
+                                    .map_err(io_run_error_to_execution);
+                                stats.timings_mut().record("io-run", t_io.elapsed());
+                                io_result
+                            }
+                            Ok(false) => {
+                                let t_render = Instant::now();
+                                let render_result = render_headless_result(&mut m)
+                                    .map_err(io_run_error_to_execution);
+                                stats
+                                    .timings_mut()
+                                    .record("bytecode-render", t_render.elapsed());
+                                render_result
+                            }
+                            Err(e) => Err(e),
+                        }
+                    }
+                } else {
+                    ret.map(|_| None)
+                };
+                m.take_emitter().stream_end();
+
+                // Collect machine/GC statistics from all execution phases so
+                // that -S reports bytecode Machine/Heap/GC stats comparable to
+                // the HeapSyn path (collected even on error, mirroring the
+                // HeapSyn branch below).
+                collect_bytecode_stats(&m, stats);
+
+                result
             } else {
                 emitter.stream_start();
                 let mut machine = standard_machine(&stg_settings, syn, emitter, rt.as_ref())?;

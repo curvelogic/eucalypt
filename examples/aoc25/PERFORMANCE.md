@@ -22,7 +22,7 @@ Performance characteristics of the AoC 2025 eucalypt example programs, benchmark
 | day06-p2 | 4.970s | 3.966s | −20% | 126,918,682 | 10,646,539 | Env walk (dominant) |
 | day07-p1 | 1.890s | 1.231s | −35% | 45,470,121 | 16,354,405 | VM dispatch |
 | day07-p2 | 3.260s | 2.495s | −23% | 29,729,386 | 10,369,387 | Handle-instruction |
-| day08-p1 | 11.50s | 6.082s | −47% | 247,753,409 | 118,607,839 | Alloc + VM dispatch |
+| day08-p1 | 11.50s | 6.082s | −47% | 228,931,827 | 18,517,451 | Alloc + VM dispatch |
 | day08-p2 | >600s | >600s | — | — | — | Pair generation (timeout) |
 | day09-p1 | 8.520s | 5.005s | −41% | 208,578,165 | 81,203,655 | VM dispatch + alloc |
 | day09-p2 | >600s | >600s | — | — | — | Continuation overhead (timeout) |
@@ -81,7 +81,7 @@ The 0.11.0 release introduced three code generation (CG) optimisations that redu
 
 **Timeout cases unchanged:** day04-p2, day08-p2, day09-p2, day10-p2 all remain at >600s. These are fundamentally algorithmic or env-walk bound; per-tick cost reduction is insufficient to bring them within the timeout window.
 
-**Note on heap limits:** The 0.10.0 baselines were collected with `--heap-limit-mib 12288`. Under 0.11.0, alloc-heavy programs (day08-p1 with 118M allocs, day10-p1 with 229M allocs) now trigger GC at this limit, causing catastrophic slowdown (>10× overhead). The 0.11.0 benchmarks use the default 32 GiB heap limit. The root cause appears to be slightly higher per-allocation memory footprint from the CG changes, pushing these programs just past the 12 GiB threshold. This is not a functional regression — the programs complete correctly and faster with adequate heap.
+**Note on heap limits:** The 0.10.0 baselines were collected with `--heap-limit-mib 12288`. Under 0.11.0, alloc-heavy programs (day08-p1 with ~18.5M allocs, day10-p1 with 229M allocs) now trigger GC at this limit, causing catastrophic slowdown (>10× overhead). The 0.11.0 benchmarks use the default 32 GiB heap limit. The root cause appears to be slightly higher per-allocation memory footprint from the CG changes, pushing these programs just past the 12 GiB threshold. This is not a functional regression — the programs complete correctly and faster with adequate heap.
 
 ---
 

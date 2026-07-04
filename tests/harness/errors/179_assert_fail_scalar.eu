@@ -1,0 +1,4 @@
+# Error test (eu-mr5e): a failing numeric assertion must render the actual and
+# expected values through the engine-neutral ABI on the default engine, not
+# panic in the HeapSyn-only navigator.
+x: 1 //=> 2

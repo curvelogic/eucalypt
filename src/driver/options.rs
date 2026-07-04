@@ -1019,6 +1019,31 @@ impl EucalyptOptions {
             && !self.doc_mode
     }
 
+    /// True when the invocation merely inspects/prints a compiled unit's
+    /// intermediate representation (any `eu dump <phase>` command) rather
+    /// than evaluating it.
+    ///
+    /// Such inspection embeds the whole compiled unit — including the `__io`
+    /// pseudoblock — into its output.  Capturing the real process environment
+    /// there would leak any secrets held in env vars (e.g. `ANTHROPIC_API_KEY`)
+    /// into dump output that is routinely pasted into bug reports, CI logs and
+    /// chat transcripts.  When this is set the loader (and the runtime-globals
+    /// override for the blob path) build a sanitised, deterministic `__io`
+    /// (empty env, epoch 0, seed 0, UTC).  Env/time/seed capture only matters
+    /// for eval/run, which is unaffected.
+    pub fn inspects_ir(&self) -> bool {
+        self.parse
+            || self.dump_desugared
+            || self.dump_cooked
+            || self.dump_split
+            || self.dump_inlined
+            || self.dump_pruned
+            || self.dump_demands
+            || self.dump_reflatten
+            || self.dump_stg
+            || self.dump_runtime
+    }
+
     pub fn target(&self) -> Option<&str> {
         self.target.as_deref()
     }
