@@ -201,6 +201,24 @@ pub fn read_branch_table(code: &[u8], pc: &mut usize) -> (Tag, Vec<Option<CodeRe
     (min_tag, entries)
 }
 
+/// A single active BIF dispatch: the env the intrinsic's `Ref::L` operands
+/// index into, plus its resolved argument refs. Held on the [`BcMachineState`]
+/// `bif_frames` stack — and therefore scanned as GC roots — so that a
+/// collection triggered mid-`execute` (an intrinsic force → `run_to_whnf` →
+/// `gc_collect`) forwards the env frame and any `Ref::V` heap-backed constant
+/// the still-running intrinsic dereferences afterwards (eu-zryh). Re-entrant:
+/// one frame per nested dispatch, innermost on top. This is the bytecode
+/// analogue of the HeapSyn engine reading env/args back through the rooted
+/// `state.closure` Bif node (`vm.rs`), which never go stale because the node
+/// itself is a heap root the collector updates.
+pub struct BifFrame {
+    /// The dispatching Bif closure's env frame.
+    pub env: RefPtr<BcEnvFrame>,
+    /// The intrinsic's resolved argument refs; `Ref::V` constants carry heap
+    /// string/set/vec pointers the collector must forward across a force.
+    pub args: Vec<Ref>,
+}
+
 /// The bytecode machine's runtime state (its GC roots point in from here).
 ///
 /// The current value, the continuation stack, and the two environment
@@ -249,6 +267,10 @@ pub struct BcMachineState {
     /// their heap pointers must stay live for the sub-evaluation (mirrors
     /// `MachineState::suspended_stacks`).
     pub suspended_stacks: Vec<Vec<BcContinuation>>,
+    /// Active BIF dispatch frames (env + resolved arg refs), kept as GC roots
+    /// so a collection triggered by an intrinsic force forwards the pointers
+    /// the in-flight intrinsic still dereferences (eu-zryh). See [`BifFrame`].
+    pub bif_frames: Vec<BifFrame>,
     /// Closures allocated by `let`/`letrec` bindings, accumulated across every
     /// execution phase (main run, io-run drives, nested `evaluate_to_whnf`).
     /// Counted the same way as the HeapSyn machine's `Metrics::allocs`
@@ -282,6 +304,7 @@ impl BcMachineState {
             blackhole: 0,
             stash: Vec::new(),
             suspended_stacks: Vec::new(),
+            bif_frames: Vec::new(),
             allocs: 0,
         }
     }
@@ -402,6 +425,107 @@ fn update_const(r: &mut Ref, heap: &CollectorHeapView<'_>) {
     }
 }
 
+/// Materialise the deferred BIF's captured `DecodedRef`s into ABI `Ref`s. Local
+/// / global refs become indices; a `Value(k)` clones the prepared constant
+/// `state.constants[k]` (a `Ref::V` that may carry a heap pointer — rooted for
+/// the dispatch via the `BifFrame`, see [`BifFrame`] and eu-zryh). Shared by
+/// the top-level dispatch tail and the re-entrant sub-loop.
+fn materialize_bif_args(state: &mut BcMachineState) -> Vec<Ref> {
+    std::mem::take(&mut state.pending_bif_args)
+        .iter()
+        .map(|d| match *d {
+            DecodedRef::Local(i) => Ref::L(i as usize),
+            DecodedRef::Global(i) => Ref::G(i as usize),
+            DecodedRef::Value(k) => state.constants[k as usize].clone(),
+        })
+        .collect()
+}
+
+/// One GC poll shared by every drive loop (`run`, `drive_whnf`,
+/// `drive_to_whnf`), so the interrupt check and collection cadence cannot drift
+/// between the three hand-written loops (eu-apn7). Returns `Err(Interrupted)`
+/// if an interrupt is pending, otherwise collects when the heap policy asks.
+fn gc_poll(
+    state: &mut BcMachineState,
+    heap: &mut Heap,
+    clock: &mut Clock,
+    dump_heap: bool,
+) -> Result<(), ExecutionError> {
+    if interrupted() {
+        return Err(ExecutionError::Interrupted);
+    }
+    if heap.policy_requires_collection() {
+        gc_collect(state, heap, clock, dump_heap);
+        clock.switch(ThreadOccupation::Mutator);
+    }
+    Ok(())
+}
+
+/// Enter a WHNF sub-evaluation: suspend the caller's continuation stack and
+/// stash its `current` value (both become GC roots for the sub-run), seat
+/// `value` as the new `current`, and clear the termination / yield flags.
+/// Returns the caller's `terminated` flag for [`exit_whnf_subrun`] to restore.
+///
+/// This is the single shared entry half of the stash/suspend/swap/restore
+/// choreography used by both `run_to_whnf` (a BIF forcing a thunk) and
+/// `evaluate_to_whnf_for_io` (the io-run driver forcing a spec field), so the
+/// protocol can no longer drift between them (eu-apn7).
+fn enter_whnf_subrun(state: &mut BcMachineState, value: BcValue) -> bool {
+    let saved_stack = std::mem::take(&mut state.stack);
+    state.suspended_stacks.push(saved_stack);
+    let saved_current = std::mem::replace(&mut state.current, value);
+    state.stash.push(saved_current);
+    let saved_terminated = state.terminated;
+    state.terminated = false;
+    state.yielded_io = false;
+    saved_terminated
+}
+
+/// Exit a WHNF sub-evaluation: pop the stashed `current` and suspended stack
+/// and restore them, then the requested post-run flags.
+///
+/// INVARIANT (eu-apn7): the caller's stack / current / flags are restored
+/// **before** `run_result` is propagated, so an intrinsic that swallows a
+/// sub-run force error (e.g. `debug::boxed_native` `.ok()`,
+/// `block::collect_block_keys` `Err(_) =>`) resumes stepping on the intact
+/// caller continuation stack rather than the truncated sub-run stack. Mirrors
+/// the ordering `evaluate_to_whnf_for_io` already relied on.
+///
+/// `post_terminated` / `post_yielded_io` are the flag values the caller wants
+/// after the sub-run (the io path forces a yield; the thunk path restores the
+/// saved flag). `yield_err_msg` is raised if the sub-run itself yielded on an
+/// IO constructor (spec fields / forced thunks must be pure).
+fn exit_whnf_subrun(
+    state: &mut BcMachineState,
+    run_result: Result<(), ExecutionError>,
+    post_terminated: bool,
+    post_yielded_io: bool,
+    yield_err_msg: &'static str,
+) -> Result<BcValue, ExecutionError> {
+    let saved_current = state.stash.pop().expect("bytecode whnf stash underflow");
+    let saved_stack = state
+        .suspended_stacks
+        .pop()
+        .expect("bytecode whnf suspended-stack underflow");
+
+    let sub_yielded = state.yielded_io;
+    let result = std::mem::replace(&mut state.current, saved_current);
+    state.terminated = post_terminated;
+    state.yielded_io = post_yielded_io;
+    state.stack = saved_stack;
+
+    // Restore-before-propagate: state is now the caller's; only now unwind.
+    run_result?;
+
+    if sub_yielded {
+        return Err(ExecutionError::Panic(
+            state.annotation,
+            yield_err_msg.to_string(),
+        ));
+    }
+    Ok(result)
+}
+
 impl GcScannable for BcMachineState {
     fn scan<'a>(
         &'a self,
@@ -437,6 +561,15 @@ impl GcScannable for BcMachineState {
                 cont.scan(scope, marker, out);
             }
         }
+        // Active BIF dispatch frames — env + resolved arg refs (eu-zryh).
+        for frame in &self.bif_frames {
+            if marker.mark(frame.env) {
+                out.push(ScanPtr::from_non_null(scope, frame.env));
+            }
+            for r in &frame.args {
+                scan_const(r, scope, marker, out);
+            }
+        }
     }
 
     fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
@@ -459,6 +592,14 @@ impl GcScannable for BcMachineState {
         for suspended in &mut self.suspended_stacks {
             for cont in suspended {
                 cont.scan_and_update(heap);
+            }
+        }
+        for frame in &mut self.bif_frames {
+            if let Some(new) = heap.forwarded_to(frame.env) {
+                frame.env = new;
+            }
+            for r in &mut frame.args {
+                update_const(r, heap);
             }
         }
     }
@@ -1810,18 +1951,12 @@ impl<'a> BytecodeMachine<'a> {
             gc_countdown -= 1;
             if gc_countdown == 0 {
                 gc_countdown = gc_check_freq;
-                if interrupted() {
-                    return Err(ExecutionError::Interrupted);
-                }
-                if self.heap.policy_requires_collection() {
-                    gc_collect(
-                        &mut self.state,
-                        &mut self.heap,
-                        &mut self.clock,
-                        self.dump_heap,
-                    );
-                    self.clock.switch(ThreadOccupation::Mutator);
-                }
+                gc_poll(
+                    &mut self.state,
+                    &mut self.heap,
+                    &mut self.clock,
+                    self.dump_heap,
+                )?;
             }
             self.dispatch()?;
         }
@@ -1880,31 +2015,39 @@ impl<'a> BytecodeMachine<'a> {
         }
 
         if let Some(idx) = self.state.pending_bif.take() {
-            // Materialise the captured arg refs. There is no live code node to
-            // re-read (unlike HeapSyn), so we translate the decoded refs back
-            // into `Ref`s the intrinsic ABI understands.
-            let args: Vec<Ref> = std::mem::take(&mut self.state.pending_bif_args)
-                .iter()
-                .map(|d| match *d {
-                    DecodedRef::Local(i) => Ref::L(i as usize),
-                    DecodedRef::Global(i) => Ref::G(i as usize),
-                    DecodedRef::Value(k) => self.state.constants[k as usize].clone(),
-                })
-                .collect();
-            // The Bif closure is still `current`; its env holds the (strict,
-            // pre-evaluated) args that `Ref::L` operands index into.
+            // Materialise the captured arg refs (there is no live code node to
+            // re-read, unlike HeapSyn) and push a rooted `BifFrame` holding the
+            // env + args, so a collection triggered by an intrinsic force
+            // forwards both across the dispatch (eu-zryh). The Bif closure is
+            // still `current`; its env holds the (strict, pre-evaluated) args
+            // that `Ref::L` operands index into.
+            let args = materialize_bif_args(&mut self.state);
             let env = self
                 .state
                 .current
                 .as_closure()
                 .map(|c| c.env())
                 .unwrap_or(self.state.root_env);
+            self.state.bif_frames.push(BifFrame { env, args });
             let bif = self.intrinsics[idx as usize];
             // SAFETY: the view borrows the heap only for the `execute` call and
             // is not retained; `ctx` also holds `&mut heap` for a possible
             // nested `evaluate_to_whnf`. This mirrors the HeapSyn `bif_view`
             // aliasing in `vm.rs`.
             let view = unsafe { MutatorHeapView::from_raw_heap(&self.heap as *const Heap) };
+            // Borrow the rooted args by raw pointer so the `&mut state` in `ctx`
+            // can coexist. A GC during `execute` rewrites the `BifFrame` in
+            // place (the `Vec<Ref>` buffer address is stable — pushing a nested
+            // frame may move the `BifFrame` struct but not its args buffer), so
+            // the slice stays valid and its `Ref::V` pointers are forwarded.
+            // Mirrors HeapSyn re-deriving args from the rooted Bif node (vm.rs).
+            let args_ptr: *const [Ref] = self
+                .state
+                .bif_frames
+                .last()
+                .expect("bif frame just pushed")
+                .args
+                .as_slice();
             // Scope `ctx`/`emitter` so their `&mut self` borrows are released
             // before we build the error trace (which reborrows `self.state`).
             let bif_result = {
@@ -1914,7 +2057,6 @@ impl<'a> BytecodeMachine<'a> {
                     symbol_pool: &mut self.symbol_pool,
                     rcache: &mut self.rcache,
                     test_mode: self.test_mode,
-                    env,
                     heap: &mut self.heap,
                     intrinsics: &self.intrinsics,
                     metrics: &mut self.metrics,
@@ -1926,8 +2068,12 @@ impl<'a> BytecodeMachine<'a> {
                     Some(capture) => capture,
                     None => self.emitter.as_mut(),
                 };
-                bif.execute(&mut ctx, view, emitter, &args)
+                // SAFETY: see the `args_ptr` comment — the slice aliases the
+                // rooted frame, which is only read (never resized) during
+                // `execute`; GC updates it in place.
+                bif.execute(&mut ctx, view, emitter, unsafe { &*args_ptr })
             };
+            self.state.bif_frames.pop();
             // Mirror the HeapSyn BIF-result map_err (vm.rs): the Bif closure is
             // still `current`, so its env yields the trace at the raise point.
             if let Err(e) = bif_result {
@@ -2105,45 +2251,19 @@ impl BytecodeMachine<'_> {
     /// (mirrors `vm.rs` `evaluate_to_whnf_for_io`). Errors if the
     /// sub-evaluation itself yields an IO constructor (spec fields are pure).
     pub fn evaluate_to_whnf_for_io(&mut self, value: BcValue) -> Result<BcValue, ExecutionError> {
-        // Suspend the caller's (empty) stack and stash its current value so the
-        // collector traces both across the sub-run.
-        let saved_stack = std::mem::take(&mut self.state.stack);
-        self.state.suspended_stacks.push(saved_stack);
-        let saved_current = std::mem::replace(&mut self.state.current, value);
-        self.state.stash.push(saved_current);
-        self.state.terminated = false;
-        self.state.yielded_io = false;
-
+        // Shared suspend/stash/swap choreography (eu-apn7). The io path forces
+        // the yield state (`terminated`/`yielded_io` = true) on exit so the
+        // driver sees a consistent post-yield machine, whether or not the
+        // sub-run errored.
+        let _ = enter_whnf_subrun(&mut self.state, value);
         let run_result = self.drive_whnf();
-
-        let saved_current = self
-            .state
-            .stash
-            .pop()
-            .expect("bytecode io whnf stash underflow");
-        let saved_stack = self
-            .state
-            .suspended_stacks
-            .pop()
-            .expect("bytecode io whnf suspended-stack underflow");
-
-        let sub_yielded = self.state.yielded_io;
-        let result = std::mem::replace(&mut self.state.current, saved_current);
-        // Restore the IO yield termination state unconditionally so the driver
-        // sees a consistent yield whether or not an error occurred.
-        self.state.terminated = true;
-        self.state.yielded_io = true;
-        self.state.stack = saved_stack;
-
-        run_result?;
-        if sub_yielded {
-            return Err(ExecutionError::Panic(
-                self.state.annotation,
-                "bytecode: IO spec field evaluation unexpectedly yielded an IO constructor"
-                    .to_string(),
-            ));
-        }
-        Ok(result)
+        exit_whnf_subrun(
+            &mut self.state,
+            run_result,
+            true,
+            true,
+            "bytecode: IO spec field evaluation unexpectedly yielded an IO constructor",
+        )
     }
 
     /// The re-entrant dispatch loop for `evaluate_to_whnf_for_io`: drives
@@ -2157,18 +2277,12 @@ impl BytecodeMachine<'_> {
             gc_countdown -= 1;
             if gc_countdown == 0 {
                 gc_countdown = gc_check_freq;
-                if interrupted() {
-                    return Err(ExecutionError::Interrupted);
-                }
-                if self.heap.policy_requires_collection() {
-                    gc_collect(
-                        &mut self.state,
-                        &mut self.heap,
-                        &mut self.clock,
-                        self.dump_heap,
-                    );
-                    self.clock.switch(ThreadOccupation::Mutator);
-                }
+                gc_poll(
+                    &mut self.state,
+                    &mut self.heap,
+                    &mut self.clock,
+                    self.dump_heap,
+                )?;
             }
             self.dispatch()?;
         }
@@ -2696,8 +2810,6 @@ struct BcBifContext<'ctx, 'a> {
     symbol_pool: &'ctx mut SymbolPool,
     rcache: &'ctx mut LruCache<String, Regex>,
     test_mode: bool,
-    /// Environment of the Bif closure (indexed by `Ref::L` arg operands).
-    env: RefPtr<BcEnvFrame>,
     /// The machine heap (for the re-entrant `evaluate_to_whnf` sub-run).
     heap: &'ctx mut Heap,
     /// Intrinsics, indexed by intrinsic index (for nested `Bif` dispatch).
@@ -2708,6 +2820,18 @@ struct BcBifContext<'ctx, 'a> {
 }
 
 impl BcBifContext<'_, '_> {
+    /// The env of the innermost active BIF dispatch — the frame this
+    /// intrinsic's `Ref::L` operands index into. Read from the rooted
+    /// `bif_frames` stack (not a cached copy) so a collection triggered by a
+    /// force resolves to the forwarded frame (eu-zryh).
+    fn bif_env(&self) -> RefPtr<BcEnvFrame> {
+        self.state
+            .bif_frames
+            .last()
+            .map(|f| f.env)
+            .unwrap_or(self.state.root_env)
+    }
+
     /// Resolve a runtime value to a native, following `OP_ATOM` indirections
     /// (the bytecode analogue of `HeapNavigator::resolve_native`).
     fn native_from_value(
@@ -2758,7 +2882,7 @@ impl BcBifContext<'_, '_> {
         match arg {
             Ref::V(n) => Ok(BcValue::Native(n.clone())),
             Ref::L(i) => view
-                .scoped(self.env)
+                .scoped(self.bif_env())
                 .get(&view, *i)
                 .ok_or(ExecutionError::BadEnvironmentIndex(*i)),
             Ref::G(i) => view
@@ -2823,43 +2947,20 @@ impl BcBifContext<'_, '_> {
     /// caller's stack/current afterwards. The bytecode analogue of
     /// `Machine::evaluate_to_whnf` (`vm.rs`). Used by `force`.
     fn run_to_whnf(&mut self, value: BcValue) -> Result<BcValue, ExecutionError> {
-        // Suspend the caller's stack and stash its current value (GC roots).
-        let saved_stack = std::mem::take(&mut self.state.stack);
-        self.state.suspended_stacks.push(saved_stack);
-        let saved_current = std::mem::replace(&mut self.state.current, value);
-        self.state.stash.push(saved_current);
-        let saved_terminated = self.state.terminated;
-        self.state.terminated = false;
-        self.state.yielded_io = false;
-
+        // Shared suspend/stash/swap choreography (eu-apn7). `exit_whnf_subrun`
+        // restores the caller's stack/current/flags BEFORE propagating a
+        // sub-run error, so an intrinsic that swallows the force error resumes
+        // on the intact caller stack (was: the error was propagated first,
+        // leaving the caller on the truncated sub-run stack).
+        let saved_terminated = enter_whnf_subrun(self.state, value);
         let run_result = self.drive_to_whnf();
-
-        let saved_current = self
-            .state
-            .stash
-            .pop()
-            .expect("bytecode whnf stash underflow");
-        let saved_stack = self
-            .state
-            .suspended_stacks
-            .pop()
-            .expect("bytecode whnf suspended-stack underflow");
-
-        run_result?;
-
-        let sub_yielded = self.state.yielded_io;
-        let result = std::mem::replace(&mut self.state.current, saved_current);
-        self.state.terminated = saved_terminated;
-        self.state.yielded_io = false;
-        self.state.stack = saved_stack;
-
-        if sub_yielded {
-            return Err(ExecutionError::Panic(
-                self.state.annotation,
-                "bytecode: thunk evaluation unexpectedly yielded an IO constructor".to_string(),
-            ));
-        }
-        Ok(result)
+        exit_whnf_subrun(
+            self.state,
+            run_result,
+            saved_terminated,
+            false,
+            "bytecode: thunk evaluation unexpectedly yielded an IO constructor",
+        )
     }
 
     /// The re-entrant dispatch loop for `run_to_whnf`: drives `step` (with a
@@ -2873,12 +2974,7 @@ impl BcBifContext<'_, '_> {
             gc_countdown -= 1;
             if gc_countdown == 0 {
                 gc_countdown = gc_check_freq;
-                if interrupted() {
-                    return Err(ExecutionError::Interrupted);
-                }
-                if self.heap.policy_requires_collection() {
-                    gc_collect(self.state, self.heap, self.clock, self.dump_heap);
-                }
+                gc_poll(self.state, self.heap, self.clock, self.dump_heap)?;
             }
             self.metrics.tick();
             self.metrics.stack(self.state.stack.len());
@@ -2899,37 +2995,69 @@ impl BcBifContext<'_, '_> {
             if let Some(idx) = self.state.pending_bif.take() {
                 self.dispatch_pending_bif(idx, &mut null)?;
             }
+            // Capture-emitter lifecycle inside the force sub-run (eu-fgl0).
+            // A `render-as` forced by an intrinsic sets `pending_capture_start`;
+            // consume it here (previously the sub-loop ignored it, letting it
+            // leak into the outer dispatch, which then pushed a spurious late
+            // capture emitter — a divergence from HeapSyn). This mirrors
+            // HeapSyn's `evaluate_to_whnf_impl` (vm.rs) exactly, keeping the two
+            // engines byte-identical.
+            self.run_subrun_capture_lifecycle()?;
+        }
+        Ok(())
+    }
+
+    /// Consume any `pending_capture_start` that fired during a force sub-run,
+    /// mirroring HeapSyn's `evaluate_to_whnf_impl` (vm.rs) for byte-identical
+    /// behaviour: BIF-internal forcing runs against a `NullEmitter`, so a nested
+    /// `render-as` is created only to validate its format and then discarded.
+    ///
+    /// `capture_end_pending` is deliberately left untouched — HeapSyn also
+    /// leaves it, so it surfaces in the outer dispatch identically on both
+    /// engines. (Fully capturing a render-as forced inside a force sub-run is a
+    /// shared limitation of both engines and out of scope for this bug, which
+    /// concerns the bytecode/HeapSyn divergence, not the shared limitation.)
+    fn run_subrun_capture_lifecycle(&mut self) -> Result<(), ExecutionError> {
+        if let Some(format) = self.state.pending_capture_start.take() {
+            let mut capture = OwnedCaptureEmitter::new(&format, self.state.annotation)?;
+            capture.stream_start();
+            drop(capture);
         }
         Ok(())
     }
 
     /// Run one captured pending BIF through `self` (re-entrant): materialise
-    /// its args, point `env` at the Bif closure's frame, and execute.
+    /// its args and push a rooted [`BifFrame`] pointing at the Bif closure's
+    /// frame, so the env + `Ref::V` args survive a collection triggered inside
+    /// `execute` (eu-zryh).
     fn dispatch_pending_bif(
         &mut self,
         idx: u8,
         emitter: &mut dyn Emitter,
     ) -> Result<(), ExecutionError> {
-        let args: Vec<Ref> = std::mem::take(&mut self.state.pending_bif_args)
-            .iter()
-            .map(|d| match *d {
-                DecodedRef::Local(i) => Ref::L(i as usize),
-                DecodedRef::Global(i) => Ref::G(i as usize),
-                DecodedRef::Value(k) => self.state.constants[k as usize].clone(),
-            })
-            .collect();
+        let args = materialize_bif_args(self.state);
         let bif_env = self
             .state
             .current
             .as_closure()
             .map(|c| c.env())
             .unwrap_or(self.state.root_env);
+        self.state.bif_frames.push(BifFrame { env: bif_env, args });
         let bif = self.intrinsics[idx as usize];
         // SAFETY: as above — the view is confined to the execute call.
         let view = unsafe { MutatorHeapView::from_raw_heap(self.heap as *const Heap) };
-        let saved_env = std::mem::replace(&mut self.env, bif_env);
-        let result = bif.execute(self, view, emitter, &args);
-        self.env = saved_env;
+        // Borrow the rooted args by raw pointer (see the outer dispatch tail
+        // for the aliasing rationale); GC forwards the frame in place.
+        let args_ptr: *const [Ref] = self
+            .state
+            .bif_frames
+            .last()
+            .expect("bif frame just pushed")
+            .args
+            .as_slice();
+        // SAFETY: the slice aliases the rooted frame, only read during execute.
+        let result = bif.execute(self, view, emitter, unsafe { &*args_ptr });
+        self.state.bif_frames.pop();
         result
     }
 }
@@ -3015,7 +3143,7 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         let value = match arg {
             Ref::V(n) => return Ok(n.clone()),
             Ref::L(i) => view
-                .scoped(self.env)
+                .scoped(self.bif_env())
                 .get(&view, *i)
                 .ok_or(ExecutionError::BadEnvironmentIndex(*i))?,
             Ref::G(i) => view
@@ -3998,6 +4126,209 @@ mod tests {
             ticks < 900,
             "global thunk not memoised: {ticks} ticks for {N} references \
              (expected the body to run once, not {N} times)"
+        );
+    }
+
+    #[test]
+    fn exit_whnf_subrun_restores_state_before_propagating_error() {
+        // eu-apn7: on a sub-run error, the caller's continuation stack, current
+        // value and termination flag must be restored BEFORE the error is
+        // propagated, so an intrinsic that swallows the force error (e.g. debug
+        // `boxed_native` `.ok()`) resumes on the intact caller stack. The buggy
+        // ordering returned the error first, leaving the truncated sub-run
+        // stack in place. Revert-proof: move the `run_result?` in
+        // `exit_whnf_subrun` above the restores and this test fails.
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let mut state = BcMachineState::new(BcValue::Native(num(1)), root, root, vec![]);
+
+        // The caller's continuation stack: a single marker continuation.
+        state.stack.push(BcContinuation::Update {
+            environment: root,
+            index: 7,
+        });
+        state.terminated = true; // the caller's saved flag
+
+        // Enter a sub-run for value `2`; the caller stack is suspended.
+        let saved_terminated = enter_whnf_subrun(&mut state, BcValue::Native(num(2)));
+        assert!(state.stack.is_empty(), "enter suspends the caller stack");
+        assert!(!state.terminated, "enter clears the termination flag");
+
+        // Simulate the sub-run leaving a truncated stack + leftover current.
+        state.stack.push(BcContinuation::Update {
+            environment: root,
+            index: 99,
+        });
+        state.current = BcValue::Native(num(42));
+
+        // Exit with a sub-run error.
+        let err = ExecutionError::Panic(Smid::default(), "sub-run failed".to_string());
+        let result = exit_whnf_subrun(&mut state, Err(err), saved_terminated, false, "unused");
+
+        assert!(result.is_err(), "the sub-run error must still propagate");
+        // …but only AFTER the caller's state was restored:
+        assert_eq!(
+            state.stack.len(),
+            1,
+            "caller stack restored, not the sub-run's"
+        );
+        match state.stack[0] {
+            BcContinuation::Update { index, .. } => {
+                assert_eq!(
+                    index, 7,
+                    "restored the caller's continuation, not the sub-run's"
+                )
+            }
+            _ => panic!("wrong continuation restored"),
+        }
+        match &state.current {
+            BcValue::Native(Native::Num(n)) => {
+                assert_eq!(n.as_i64(), Some(1), "caller current restored")
+            }
+            _ => panic!("caller current not restored"),
+        }
+        assert_eq!(
+            state.terminated, saved_terminated,
+            "caller termination flag restored"
+        );
+    }
+
+    #[test]
+    fn bif_frame_roots_survive_gc_evacuation() {
+        // eu-zryh: the env + `Ref::V` heap-string args of an in-flight BIF
+        // dispatch live on `bif_frames`, which must be scanned + updated as GC
+        // roots (using the same `scan_const`/`update_const` helpers as the
+        // already-rooted `constants`/`stash`). Here an env frame and a string
+        // are reachable ONLY through a bif frame; a real mark + evacuate
+        // collection must keep them live and forward their pointers, and the
+        // reads below must succeed — including under EU_GC_STRESS / POISON /
+        // VERIFY=2. (The strong end-to-end guard against the stale-pointer
+        // failure mode is the full harness run under those flags; a single
+        // object cannot be reclaimed deterministically at the unit level — the
+        // sibling `collect` tests skip-if-inconclusive for the same reason.)
+        use crate::common::sourcemap::Smid;
+        use crate::eval::machine::metrics::ThreadOccupation;
+        use crate::eval::memory::collect::{collect, collect_with_evacuation};
+        use crate::eval::memory::string::HeapString;
+        use std::iter::repeat_with;
+
+        let mut heap = Heap::new();
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+
+        let (root, env, str_ptr) = {
+            let view = MutatorHeapView::new(&heap);
+            let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+            // The canary string is allocated EARLY, then buried under many
+            // unrooted fillers so its block fills up and becomes a `rest`
+            // (evacuation candidate) block whose surrounding lines are dead.
+            let str_ptr = view
+                .alloc(HeapString::from_str(&view, "furnace-canary"))
+                .unwrap()
+                .as_ptr();
+            let _fillers: Vec<_> = repeat_with(|| {
+                view.alloc(HeapString::from_str(
+                    &view,
+                    "filler-0123456789abcdef0123456789",
+                ))
+                .unwrap()
+                .as_ptr()
+            })
+            .take(8192)
+            .collect();
+            // The env frame is allocated last (in the bump area) with one
+            // closure slot (code offset 3 over root).
+            let env = view
+                .from_saturation(
+                    view.array(&[BcValue::Closure(BcClosure::new(3, root))]),
+                    root,
+                    Smid::default(),
+                )
+                .unwrap();
+            (root, env, str_ptr)
+        };
+
+        let mut state = BcMachineState::new(BcValue::Native(num(0)), root, root, vec![]);
+        // The ONLY live references to `env` and `str_ptr`: an active bif frame.
+        state.bif_frames.push(BifFrame {
+            env,
+            args: vec![Ref::V(Native::Str(str_ptr))],
+        });
+
+        // Mark-in-place to settle live objects, then force evacuation of every
+        // block (head, overflow and all rest blocks) so the canary — reachable
+        // only via the bif frame — must be marked and forwarded to survive.
+        collect(&mut state, &mut heap, &mut clock, false);
+        heap.flush_unswept();
+        let rest = heap.rest_block_count();
+        let candidates: Vec<usize> = (0..2 + rest).collect();
+        collect_with_evacuation(&mut state, &mut heap, &mut clock, &candidates, false);
+
+        // The frame's env + string pointers must be forwarded and readable.
+        let frame = state.bif_frames.last().expect("bif frame present");
+        let view = MutatorHeapView::new(&heap);
+        let slot = view
+            .scoped(frame.env)
+            .get(&view, 0)
+            .expect("env slot 0 must survive GC");
+        assert_eq!(
+            slot.as_closure().unwrap().code(),
+            3,
+            "bif frame env not rooted/forwarded across evacuation"
+        );
+        match &frame.args[0] {
+            Ref::V(Native::Str(p)) => assert_eq!(
+                (*view.scoped(*p)).as_str(),
+                "furnace-canary",
+                "bif frame string arg not rooted across GC evacuation"
+            ),
+            _ => panic!("arg 0 is not a string"),
+        }
+    }
+
+    #[test]
+    fn drive_to_whnf_consumes_pending_capture_start() {
+        // eu-fgl0: a `render-as` forced inside a force sub-run sets
+        // `pending_capture_start`. The bytecode `drive_to_whnf` sub-loop must
+        // consume it (via `run_subrun_capture_lifecycle`) exactly as HeapSyn's
+        // `evaluate_to_whnf_impl` does — BIF-internal render-as runs against a
+        // NullEmitter and its capture is discarded — so nothing leaks into the
+        // outer dispatch to push a spurious late capture emitter. `pending_bif`
+        // handling is unchanged.
+        //
+        // This locks in the helper's HeapSyn-parity semantics (consume start,
+        // leave end): flip either behaviour and an assert below fails. The
+        // call-site wiring in `drive_to_whnf` is covered by the full
+        // both-engines harness parity run.
+        let (prog, root, gforms) = encode(&dsl::atom(dsl::num(0)), &[]);
+        let mut m = bare_machine(prog, root, &gforms);
+        m.state.pending_capture_start = Some("json".to_string());
+        m.state.capture_end_pending = true;
+        {
+            let mut ctx = BcBifContext {
+                state: &mut m.state,
+                program: &m.program,
+                symbol_pool: &mut m.symbol_pool,
+                rcache: &mut m.rcache,
+                test_mode: m.test_mode,
+                heap: &mut m.heap,
+                intrinsics: &m.intrinsics,
+                metrics: &mut m.metrics,
+                clock: &mut m.clock,
+                dump_heap: m.dump_heap,
+            };
+            ctx.run_subrun_capture_lifecycle().unwrap();
+        }
+        assert!(
+            m.state.pending_capture_start.is_none(),
+            "the sub-loop must consume pending_capture_start (was leaking to the outer dispatch)"
+        );
+        // `capture_end_pending` is deliberately left for the outer dispatch,
+        // mirroring HeapSyn's `evaluate_to_whnf_impl` for byte-identical parity.
+        assert!(
+            m.state.capture_end_pending,
+            "capture_end_pending must be left untouched (HeapSyn parity)"
         );
     }
 }
