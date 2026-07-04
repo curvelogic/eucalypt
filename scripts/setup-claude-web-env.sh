@@ -162,39 +162,15 @@ install_eucalypt() {
 # The authoritative issue store is Dolt (refs/dolt/data on the remote); the
 # dolt/ runtime store is gitignored, so a fresh checkout has no usable database
 # until it is rebuilt. `bd bootstrap` is beads' purpose-built command for this.
-# (The old `bd sync` this script used to call no longer exists in beads >= 1.0.)
 #
-# Caveat that this function works around: `bd bootstrap` is priority-ordered,
-# and a configured `sync.remote` is the FIRST rule — it clones from that remote
-# and short-circuits every fallback (git-origin dolt data, backup, JSONL). This
-# repo pins `sync.remote: git+ssh://…`, but the Claude-web container has no ssh
-# binary and dolt shells out to ssh directly (bypassing the proxy's git-ssh
-# rewrite), so the clone dead-ends and leaves an empty store — every later `bd`
-# call then reports "database … not found". The fallback below neutralises
-# `sync.remote` and retries, so bd falls through to the git origin (the same
-# refs/dolt/data, reached as https via the agent proxy).
+# The bootstrap itself lives in scripts/beads-bootstrap-if-needed.sh (idempotent,
+# read-only, safe to re-run). See that file's header for the full rationale; in
+# short: the pinned ssh `sync.remote` is unusable in the no-ssh container, and
+# the git-origin http URL carries a per-session proxy port that is not up during
+# this setup phase, so it bootstraps over the stable git+https remote instead.
 
 # True when the beads store is materialised (`bd list` exits 0 only then).
 _beads_store_ok() { ( cd "$1" && bd list >/dev/null 2>&1 ); }
-
-# Retry bootstrap with `sync.remote` temporarily disabled so bd uses the git
-# origin / JSONL instead of the unusable ssh remote. Always restores
-# config.yaml (a git-tracked file) so the working tree — and the ssh remote
-# relied on for local dev — is left untouched, even on error under `set -e`.
-_bootstrap_without_ssh_remote() {
-    # Separate `local` statements: a single `local a=… b="$a"` expands every
-    # RHS before assigning, so `$repo` would be unbound under `set -u`.
-    local repo="$1"
-    local cfg="$repo/.beads/config.yaml"
-    local bak
-    [ -f "$cfg" ] && grep -q '^[[:space:]]*sync\.remote:' "$cfg" || return 1
-    bak="$(mktemp)"
-    cp "$cfg" "$bak"
-    # shellcheck disable=SC2064
-    trap "cp '$bak' '$cfg'; rm -f '$bak'; trap - RETURN" RETURN
-    sed -i 's/^\([[:space:]]*\)sync\.remote:/\1# sync.remote:/' "$cfg"
-    ( cd "$repo" && bd bootstrap --yes ) || true
-}
 
 bootstrap_beads() {
     [ "$BEADS_SYNC" = "1" ] || return 0
@@ -208,30 +184,7 @@ bootstrap_beads() {
     fi
 
     log "Bootstrapping beads store ($repo)"
-    chmod 700 "$repo/.beads" 2>/dev/null || true
-
-    # Idempotency guard: skip once the store is already usable. `bd bootstrap`
-    # is NOT self-idempotent when sync.remote is set — a second run re-attempts
-    # the clone and errors with "database exists".
-    if _beads_store_ok "$repo"; then
-        echo "beads store already materialised; skipping bootstrap."
-        return 0
-    fi
-
-    # First attempt: honour the configured sync.remote (ssh, for local dev).
-    ( cd "$repo" && bd bootstrap --yes ) || true
-
-    # Fallback for the no-ssh container: retry over the git origin / JSONL.
-    if ! _beads_store_ok "$repo"; then
-        echo "bootstrap via sync.remote failed; retrying over the git origin (no ssh)."
-        _bootstrap_without_ssh_remote "$repo" || true
-    fi
-
-    if _beads_store_ok "$repo"; then
-        echo "beads store materialised."
-    else
-        echo "WARNING: 'bd bootstrap' failed (network/git access?); run 'bd bootstrap' later."
-    fi
+    bash "$repo/scripts/beads-bootstrap-if-needed.sh" || true
 }
 
 # ---------------------------------------------------------------------------
