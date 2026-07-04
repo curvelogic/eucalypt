@@ -2268,7 +2268,20 @@ impl BytecodeMachine<'_> {
 
     /// The re-entrant dispatch loop for `evaluate_to_whnf_for_io`: drives
     /// `dispatch` (which runs the deferred `Bif` tail + capture lifecycle)
-    /// until the sub-evaluation terminates. Mirrors `run`'s loop body.
+    /// until the sub-evaluation terminates. Mirrors `run` — both the loop body
+    /// and, crucially, its tail: the clock is **stopped** on return so the
+    /// mutator segment does not keep ticking after the sub-run ends.
+    ///
+    /// `evaluate_to_whnf_for_io` is invoked directly by the io-run driver
+    /// (`bytecode_io_run`), which then blocks on a subprocess wait (`run_spec`)
+    /// before re-entering the machine. If the clock were left running in the
+    /// mutator segment (as it was before eu-yhih), that blocking wait would be
+    /// committed to VM-Mutator on the next `switch`, so an IO-dominated
+    /// program's whole subprocess wait would be mis-attributed to the mutator —
+    /// contradicting the `-S` top bar's "IO ~100%" and diverging from HeapSyn,
+    /// whose `evaluate_to_whnf_for_io` delegates to `run` and so stops its clock
+    /// on return. Mirroring `run`'s tail here keeps `-S` clock semantics
+    /// identical across the two engines.
     fn drive_whnf(&mut self) -> Result<(), ExecutionError> {
         self.clock.switch(ThreadOccupation::Mutator);
         let gc_check_freq: u32 = 500;
@@ -2286,6 +2299,16 @@ impl BytecodeMachine<'_> {
             }
             self.dispatch()?;
         }
+
+        if self.heap.policy_requires_collection() {
+            gc_collect(
+                &mut self.state,
+                &mut self.heap,
+                &mut self.clock,
+                self.dump_heap,
+            );
+        }
+        self.clock.stop();
         Ok(())
     }
 
@@ -3997,6 +4020,51 @@ mod tests {
         assert!(
             total_gc > std::time::Duration::ZERO,
             "GC mark/sweep time should have been recorded"
+        );
+    }
+
+    #[test]
+    fn drive_whnf_stops_clock_so_io_wait_is_excluded_from_mutator() {
+        // eu-yhih: the io-run driver (`bytecode_io_run`) forces IO spec fields
+        // via `evaluate_to_whnf_for_io` (→ `drive_whnf`), then blocks on a
+        // subprocess wait (`run_spec`) OUTSIDE the machine before re-entering.
+        // If `drive_whnf` left the clock running in the mutator segment (the
+        // regression), that blocking wait would be committed to VM-Mutator on
+        // the next `switch`, so an IO-dominated program's whole subprocess wait
+        // would be mis-attributed to the mutator — contradicting the `-S` top
+        // bar's "IO ~100%" and diverging from HeapSyn, whose
+        // `evaluate_to_whnf_for_io` delegates to `run` (which stops its clock).
+        // This test asserts the invariant the bug violated: a blocking wait
+        // that happens between two io-run sub-evaluations is NOT absorbed by
+        // the mutator segment.
+        let syn = dsl::let_(vec![dsl::value(dsl::atom(dsl::num(5)))], dsl::local(0));
+        let (prog, root, gforms) = encode(&syn, &[]);
+        let mut m = bare_machine(prog, root, &gforms);
+
+        // Force to WHNF via the io-run entry point (drives `drive_whnf`).
+        let v1 = m.current();
+        m.evaluate_to_whnf_for_io(v1).unwrap();
+        let mutator_after_subrun = m.clock().duration(ThreadOccupation::Mutator);
+
+        // Simulate the blocking subprocess wait the driver performs between
+        // `evaluate_to_whnf_for_io` and re-entering the machine.
+        let wait = std::time::Duration::from_millis(200);
+        std::thread::sleep(wait);
+
+        // Re-enter the machine (as the driver does after `run_spec`). Its first
+        // act is `clock.switch(Mutator)`, which commits whatever segment was
+        // current: if `drive_whnf` stopped the clock the wait is excluded; if it
+        // left the mutator segment running, the wait is absorbed here.
+        let v2 = m.current();
+        m.evaluate_to_whnf_for_io(v2).unwrap();
+        let mutator_after_wait = m.clock().duration(ThreadOccupation::Mutator);
+
+        let absorbed = mutator_after_wait - mutator_after_subrun;
+        assert!(
+            absorbed < wait / 2,
+            "the mutator clock absorbed {absorbed:?} of the {wait:?} blocking \
+             wait — drive_whnf must stop the clock so io-run subprocess waits \
+             stay out of VM-Mutator (eu-yhih)"
         );
     }
 
