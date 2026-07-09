@@ -420,7 +420,7 @@ pub fn collect(roots: &mut dyn GcScannable, heap: &mut Heap, clock: &mut Clock, 
     }
 
     if dump_heap {
-        eprintln!("Heap after mark:\n\n{:?}", &heap_view.heap)
+        eprintln!("Heap after mark:\n\n{:?}", heap_view.heap)
     }
 
     // Post-mark verification (level 2 already verified inline during mark)
@@ -440,7 +440,7 @@ pub fn collect(roots: &mut dyn GcScannable, heap: &mut Heap, clock: &mut Clock, 
     }
 
     if dump_heap {
-        eprintln!("Heap after defer_sweep:\n\n{:?}", &heap_view.heap)
+        eprintln!("Heap after defer_sweep:\n\n{:?}", heap_view.heap)
     }
 
     // Record collection count and update peak blocks
@@ -511,7 +511,7 @@ pub fn collect_with_evacuation(
         }
 
         if dump_heap {
-            eprintln!("Heap after mark:\n\n{:?}", &heap_view.heap)
+            eprintln!("Heap after mark:\n\n{:?}", heap_view.heap)
         }
     }
 
@@ -795,7 +795,7 @@ pub mod tests {
 
         heap.flush_unswept();
         let stats_c = heap.stats();
-        eprintln!("Final stats: {:?}", &stats_c);
+        eprintln!("Final stats: {:?}", stats_c);
 
         // Original test logic: removing let_ptr root should cause more blocks to be recycled
         assert!(stats_a.recycled < stats_b.recycled,
@@ -1242,7 +1242,7 @@ pub mod tests {
 
         heap.flush_unswept();
         let stats_c = heap.stats();
-        eprintln!("Final stats: {:?}", &stats_c);
+        eprintln!("Final stats: {:?}", stats_c);
 
         // Original test logic: removing let_ptr root should cause more blocks to be recycled
         assert!(stats_a.recycled < stats_b.recycled,

@@ -2426,19 +2426,12 @@ impl BytecodeMachine<'_> {
                     match dref {
                         DecodedRef::Local(i) => {
                             let env = c.env();
-                            match view.scoped(env).get(&view, i as usize) {
-                                Some(inner) => {
-                                    container = Some(env);
-                                    current = inner;
-                                }
-                                None => return None,
-                            }
+                            let inner = view.scoped(env).get(&view, i as usize)?;
+                            container = Some(env);
+                            current = inner;
                         }
                         DecodedRef::Global(i) => {
-                            match view.scoped(self.state.globals).get(&view, i as usize) {
-                                Some(inner) => current = inner,
-                                None => return None,
-                            }
+                            current = view.scoped(self.state.globals).get(&view, i as usize)?;
                         }
                         DecodedRef::Value(_) => return None,
                     }
