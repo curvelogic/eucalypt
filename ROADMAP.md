@@ -356,8 +356,8 @@ reordered as the cadence dictates.
 |---|---|---|
 | **0.11** | Codegen wins, typing on, type-value foundation, bytecode spike | CG type-free tier; TY default-on; SV `s"…"` + `as-spec`; **optional record fields**; **BV0** gate |
 | **0.12** *(shipped scope)* | The bytecode core + the startup win | **BV1** (default engine, code out of the heap; Phase-4 collapse deferred) + **BV5 embedded prelude** (dual-form blob, deterministic; startup win on release binaries). *Unit cache spec'd + held (eu-lb0r)* |
-| **0.12.1** | Close the engine gap | **BV4** superinstructions / decode-cost fusion (eu-9mvh) + `ExecutionError` boxing (eu-adnu) → then the **Phase-4 collapse** (eu-oufc); bytecode block index (eu-4zhi) |
-| **0.13** | Frames, annotations, type-gated codegen, prefix-lists | **BV5-cache** whole-program unit cache (eu-lb0r); **BV2** side tables; **BV3** register frames + CG selective lifting; **CG** type-gated (unboxing); **prefix-list type** |
+| **0.12.1** | Close the engine gap | **BV4** superinstructions / decode-cost fusion (eu-9mvh) + `ExecutionError` boxing (eu-adnu); bytecode block index (eu-4zhi). *Gap-close only — the Phase-4 collapse it unlocks lands in 0.13.* |
+| **0.13** | Frames, annotations, type-gated codegen, prefix-lists | **Phase-4 collapse** — retire HeapSyn once at parity (eu-oufc); **BV5-cache** whole-program unit cache (eu-lb0r); **BV2** side tables; **BV3** register frames + CG selective lifting; **CG** type-gated (unboxing); **prefix-list type** |
 | **0.14** | Polish, parallelism, effects, contracts | **PP** `par-map`/`par-fold`; **EF2** native filesystem IO + **EF1** effect-composition combinators; **W16** contracts; presence inference |
 | **0.15+** | Value model, ecosystem, surface | **DS** persistent blocks + `vec`; **EF1** unified effect context; **W18** modules + **CU1** separate-unit compilation; **W19** watch/REPL + **CU2** per-unit incremental cache; **W17** hermetic; **W22** schema interop |
 | **1.0** *(milestone)* | Decide, prove, freeze | *No features.* Surface complete + **W5** conformance green → ratify and freeze the stable-surface tiers, turn on the version contract (§4.6) |
@@ -953,8 +953,8 @@ Recorded so they are not forgotten, able to swap in if priorities shift:
 
 **CG type-free tier + TY default-on + SV `s"…"` + optional fields (0.11) → BV0 gate →
 BV1 + BV5-prelude (0.12, the bytecode core; shipped) → BV4 decode-fusion +
-ExecutionError boxing → Phase-4 collapse (0.12.1, close the engine gap, retire
-HeapSyn) → BV2 + BV3 + CG type-gated (0.13) → SV
+ExecutionError boxing (0.12.1, close the engine gap) → Phase-4 collapse (retire
+HeapSyn, 0.13) → BV2 + BV3 + CG type-gated (0.13) → SV
 contracts + DS + modules (0.14–0.15) → W5 conformance green → the 1.0 milestone:
 ratify and freeze the surface (§4.6).** DS, PP and the post-1.0 candidates slot
 alongside or follow. The 1.0 freeze is gated on the surface and conformance, not on
@@ -966,7 +966,7 @@ land in point releases first.
 | ID | Item | Release |
 |---|---|:---:|
 | **BV0** | Bytecode encoding + dispatch-ceiling spike (gate) | 0.11 |
-| **BV1** | Threaded interpreter; code out of the GC heap *(shipped — default engine; Phase-4 collapse deferred to 0.12.1)* | 0.12 |
+| **BV1** | Threaded interpreter; code out of the GC heap *(shipped — default engine; Phase-4 collapse deferred to 0.13)* | 0.12 |
 | **BV5** | Embedded bytecode prelude *(shipped, dual-form)* | 0.12 |
 | **BV5-cache** | Content-hash whole-program unit cache (spec `#953`; dispatch-ready, unbuilt — eu-lb0r) | 0.13 |
 | **BV2** | Side tables for annotations | 0.13 |
