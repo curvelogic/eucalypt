@@ -888,10 +888,9 @@ impl Checker {
 
         let (type_str, is_hint): (String, bool) = if let Some(e) = block.get("type") {
             (extract_string_literal(e)?, false)
-        } else if let Some(e) = block.get("__type_hint") {
-            (extract_string_literal(e)?, true)
         } else {
-            return None;
+            let e = block.get("__type_hint")?;
+            (extract_string_literal(e)?, true)
         };
 
         // A leading `!` marks the annotation as asserted (body not verified)

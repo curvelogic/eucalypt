@@ -345,19 +345,19 @@ impl InProcessTester {
             // embedded for testing expectations against
             let output = Input::new(
                 Locator::Literal(result.stdout.clone()),
-                Some(format!("{}-{}-result", &target_name, &format)),
+                Some(format!("{}-{}-result", target_name, format)),
                 format.clone(),
             );
             // Literal stdout
             let stdout = Input::new(
                 Locator::Literal(result.stdout.clone()),
-                Some(format!("{}-{}-stdout-text", &target_name, &format)),
+                Some(format!("{}-{}-stdout-text", target_name, format)),
                 "text",
             );
             // Literal stderr
             let stderr = Input::new(
                 Locator::Literal(result.stderr),
-                Some(format!("{}-{}-stderr-text", &target_name, &format)),
+                Some(format!("{}-{}-stderr-text", target_name, format)),
                 "text",
             );
 
@@ -398,8 +398,8 @@ impl InProcessTester {
     expectations: [{}]
     stats: {}{benchmark_field}
   }}"#,
-                &target_name,
-                &format,
+                target_name,
+                format,
                 result.exit_code.unwrap_or(1),
                 stdout.name().as_ref().expect("stdout temp file has a name"),
                 stderr.name().as_ref().expect("stderr temp file has a name"),

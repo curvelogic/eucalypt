@@ -1012,15 +1012,8 @@ fn linear_scan_for_key(
                         }
                     }
                 }
-                if let Some(tail_ref) = args.get(1) {
-                    if let Some(next) = resolve_ref_in_closure(nav, &current, tail_ref.clone()) {
-                        current = next;
-                    } else {
-                        return None;
-                    }
-                } else {
-                    return None;
-                }
+                let tail_ref = args.get(1)?;
+                current = resolve_ref_in_closure(nav, &current, tail_ref.clone())?;
             }
             _ => return None,
         }
