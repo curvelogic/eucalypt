@@ -10,3 +10,9 @@ sync:
 # sessions have no ssh binary; scripts/setup-claude-web-env.sh points beads at
 # the proxy-brokered https remote per-container instead of editing this file.
 sync.remote: "git+ssh://git@github.com/curvelogic/eucalypt.git"
+
+# Commit config-table writes automatically so the Dolt working set stays clean
+# after every bd command. Without this, `bd dolt pull` fails with "cannot merge
+# with uncommitted changes" (the pull wrapper dirties the config table, then its
+# own merge refuses). Requires a server restart to take effect (bd dolt stop/start).
+dolt.auto-commit: "on"
