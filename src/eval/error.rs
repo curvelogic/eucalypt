@@ -588,9 +588,11 @@ fn display_expected_tags(tags: &[u8]) -> String {
 
 #[derive(Debug, Error)]
 pub enum ExecutionError {
-    /// wrapped, env trace and stack trace
+    /// wrapped, env trace and stack trace (traces boxed together to keep
+    /// this variant — constructed on every VM error-propagation step —
+    /// pointer-sized rather than carrying two inline `Vec`s)
     #[error("{0}")]
-    Traced(Box<ExecutionError>, Vec<Smid>, Vec<Smid>),
+    Traced(Box<ExecutionError>, Box<(Vec<Smid>, Vec<Smid>)>),
     #[error("allocation error")]
     AllocationError,
     #[error("expected {1} received {2}")]
@@ -609,20 +611,23 @@ pub enum ExecutionError {
     FreeVar(Smid, String),
     #[error("code not valid for execution")]
     InvalidCode(Smid),
-    #[error("{}", format_lookup_failure(.1, .2, .3))]
-    LookupFailure(Smid, String, Vec<String>, Vec<String>),
-    #[error("{}", format_type_mismatch(.1, .2, .3))]
-    TypeMismatch(Smid, Box<IntrinsicType>, Box<IntrinsicType>, Option<String>),
+    #[error("{}", format_lookup_failure(&.1.0, &.1.1, &.1.2))]
+    LookupFailure(Smid, Box<(String, Vec<String>, Vec<String>)>),
+    #[error("{}", format_type_mismatch(&.1.0, &.1.1, &.1.2))]
+    TypeMismatch(Smid, Box<(IntrinsicType, IntrinsicType, Option<String>)>),
     #[error("unknown intrinsic {1}")]
     UnknownIntrinsic(Smid, String),
     #[error("{}", format_not_callable(.1))]
     NotCallable(Smid, String),
     #[error("{}", format_not_value(.1))]
     NotValue(Smid, String),
-    #[error("bad regex: {2}\n  help: the pattern '{1}' is not a valid regular expression")]
-    BadRegex(Smid, String, String),
-    #[error("{}", format_bad_datetime_components(.1, .2, .3, .4, .5, .6, .7))]
-    BadDateTimeComponents(Smid, Number, Number, Number, Number, Number, Number, String),
+    #[error("bad regex: {}\n  help: the pattern '{}' is not a valid regular expression", .1.1, .1.0)]
+    BadRegex(Smid, Box<(String, String)>),
+    #[error("{}", format_bad_datetime_components(&.1.0, &.1.1, &.1.2, &.1.3, &.1.4, &.1.5, &.1.6))]
+    BadDateTimeComponents(
+        Smid,
+        Box<(Number, Number, Number, Number, Number, Number, String)>,
+    ),
     #[error("{}", format_bad_timezone(.1))]
     BadTimeZone(Smid, String),
     #[error("bad timestamp ({1})")]
@@ -639,8 +644,8 @@ pub enum ExecutionError {
     BadNumericTypeForFormat(Smid),
     #[error("bad number format: {1}")]
     BadNumberFormat(Smid, String),
-    #[error("could not format {2} with {1}")]
-    FormatError(Smid, String, Number),
+    #[error("could not format {} with {}", .1.1, .1.0)]
+    FormatError(Smid, Box<(String, Number)>),
     #[error("expected scalar value")]
     NotScalar(Smid),
     #[error("{}", format_unknown_format(.0))]
@@ -673,10 +678,10 @@ pub enum ExecutionError {
     /// call to `panic()` reflected in the error message.
     #[error("panic: {1}")]
     UserPanic(Smid, String),
-    #[error("parse-as({1}): {2}")]
-    ParseError(Smid, String, String),
-    #[error("version requirement not satisfied: eucalypt {1} does not satisfy '{2}'")]
-    VersionRequirementFailed(Smid, String, String),
+    #[error("parse-as({}): {}", .1.0, .1.1)]
+    ParseError(Smid, Box<(String, String)>),
+    #[error("version requirement not satisfied: eucalypt {} does not satisfy '{}'", .1.0, .1.1)]
+    VersionRequirementFailed(Smid, Box<(String, String)>),
     #[error("IO operations are not permitted; use the --allow-io (-I) flag to enable")]
     IoNotAllowed(Smid),
     #[error("io.fail: {1}")]
@@ -689,8 +694,8 @@ pub enum ExecutionError {
     InvalidBase64(Smid, String),
     #[error("str.base64-decode: decoded bytes are not valid UTF-8: {1}")]
     InvalidBase64Utf8(Smid, String),
-    #[error("assertion failed: expected {2}, got {1}")]
-    AssertionFailed(Smid, String, String),
+    #[error("assertion failed: expected {}, got {}", .1.1, .1.0)]
+    AssertionFailed(Smid, Box<(String, String)>),
     #[error("shift amount {1} is out of range: must be between 0 and 63 for 64-bit integers")]
     BitshiftRangeError(Smid, i64),
     #[error("unknown render format '{1}'\n  help: supported formats for render-as are: :yaml, :json, :toml, :text, :edn, :html")]
@@ -766,13 +771,13 @@ impl From<super::memory::heap::HeapError> for ExecutionError {
 impl HasSmid for ExecutionError {
     fn smid(&self) -> Smid {
         match self {
-            ExecutionError::Traced(e, _, _) => e.smid(),
+            ExecutionError::Traced(e, _) => e.smid(),
             ExecutionError::ArityMismatch(s, _, _) => *s,
             ExecutionError::NotFound(s) => *s,
             ExecutionError::FreeVar(s, _) => *s,
             ExecutionError::InvalidCode(s) => *s,
-            ExecutionError::LookupFailure(s, _, _, _) => *s,
-            ExecutionError::TypeMismatch(s, _, _, _) => *s,
+            ExecutionError::LookupFailure(s, _) => *s,
+            ExecutionError::TypeMismatch(s, _) => *s,
             ExecutionError::UnknownIntrinsic(s, _) => *s,
             ExecutionError::NotCallable(s, _) => *s,
             ExecutionError::NotValue(s, _) => *s,
@@ -783,11 +788,11 @@ impl HasSmid for ExecutionError {
             ExecutionError::BlackHole(s) => *s,
             ExecutionError::Panic(s, _) => *s,
             ExecutionError::UserPanic(s, _) => *s,
-            ExecutionError::ParseError(s, _, _) => *s,
-            ExecutionError::VersionRequirementFailed(s, _, _) => *s,
+            ExecutionError::ParseError(s, _) => *s,
+            ExecutionError::VersionRequirementFailed(s, _) => *s,
             ExecutionError::InvalidBase64(s, _) => *s,
             ExecutionError::InvalidBase64Utf8(s, _) => *s,
-            ExecutionError::AssertionFailed(s, _, _) => *s,
+            ExecutionError::AssertionFailed(s, _) => *s,
             ExecutionError::BitshiftRangeError(s, _) => *s,
             ExecutionError::UnknownRenderFormat(s, _) => *s,
             ExecutionError::ComparisonTypeMismatch(s, _) => *s,
@@ -805,19 +810,19 @@ impl HasSmid for ExecutionError {
             ExecutionError::HeadOfEmptyList(s) => *s,
             ExecutionError::TailOfEmptyList(s) => *s,
             ExecutionError::BadDateTimeString(s, _) => *s,
-            ExecutionError::BadRegex(s, _, _) => *s,
+            ExecutionError::BadRegex(s, _) => *s,
             ExecutionError::BadFormatString(s, _) => *s,
             ExecutionError::BadTimeZone(s, _) => *s,
             ExecutionError::BadTimestamp(s, _) => *s,
             ExecutionError::FormatFailure(s) => *s,
             ExecutionError::BadNumericTypeForFormat(s) => *s,
             ExecutionError::BadNumberFormat(s, _) => *s,
-            ExecutionError::FormatError(s, _, _) => *s,
+            ExecutionError::FormatError(s, _) => *s,
             ExecutionError::NumericDomainError(s, _, _) => *s,
             ExecutionError::ComplexResult(s, _, _) => *s,
             ExecutionError::NumericRangeError(s, _, _) => *s,
             ExecutionError::DivisionByZero(s, _) => *s,
-            ExecutionError::BadDateTimeComponents(s, _, _, _, _, _, _, _) => *s,
+            ExecutionError::BadDateTimeComponents(s, _) => *s,
             ExecutionError::BitwiseIntegerRequired(s, _) => *s,
             _ => Smid::default(),
         }
@@ -835,7 +840,9 @@ impl ExecutionError {
         let mut diag = source_map.diagnostic(self);
         // Unwrap Traced to get at the inner error for note generation
         let (inner, env_trace, stack_trace) = match self {
-            ExecutionError::Traced(e, env, stack) => (e.as_ref(), env.as_slice(), stack.as_slice()),
+            ExecutionError::Traced(e, trace) => {
+                (e.as_ref(), trace.0.as_slice(), trace.1.as_slice())
+            }
             other => (other, [].as_slice(), [].as_slice()),
         };
 
@@ -1021,9 +1028,7 @@ impl ExecutionError {
         }
 
         let notes = match inner {
-            ExecutionError::TypeMismatch(_, expected, actual, _) => {
-                type_mismatch_notes(expected, actual)
-            }
+            ExecutionError::TypeMismatch(_, detail) => type_mismatch_notes(&detail.0, &detail.1),
             ExecutionError::NoBranchForDataTag(_, actual, expected) => {
                 data_tag_mismatch_notes(*actual, expected)
             }
@@ -1081,9 +1086,7 @@ impl ExecutionError {
                 ]
             }
             ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name),
-            ExecutionError::LookupFailure(_, key, suggestions, _) => {
-                lookup_failure_notes(key, suggestions)
-            }
+            ExecutionError::LookupFailure(_, detail) => lookup_failure_notes(&detail.0, &detail.1),
             ExecutionError::CannotReturnFunToCase(_, expected_tags) => {
                 let expects_bool = expected_tags.contains(&DataConstructor::BoolTrue.tag())
                     || expected_tags.contains(&DataConstructor::BoolFalse.tag());
@@ -1141,7 +1144,7 @@ impl ExecutionError {
                 }
                 notes
             }
-            ExecutionError::BadDateTimeComponents(_, _, _, _, _, _, _, _) => {
+            ExecutionError::BadDateTimeComponents(_, _) => {
                 vec![
                     "valid ranges: year (any integer), month (1–12), day (1–28/29/30/31 \
                      depending on month), hour (0–23), minute (0–59), second (0–59)"
@@ -1204,15 +1207,15 @@ impl ExecutionError {
     pub fn is_interrupted(&self) -> bool {
         match self {
             ExecutionError::Interrupted => true,
-            ExecutionError::Traced(inner, _, _) => inner.is_interrupted(),
+            ExecutionError::Traced(inner, _) => inner.is_interrupted(),
             _ => false,
         }
     }
 
     /// Access environment trace if present
     pub fn env_trace(&self) -> Option<&[Smid]> {
-        if let ExecutionError::Traced(_, trace, _) = self {
-            Some(trace)
+        if let ExecutionError::Traced(_, trace) = self {
+            Some(&trace.0)
         } else {
             None
         }
@@ -1220,8 +1223,8 @@ impl ExecutionError {
 
     /// Access stack trace if present
     pub fn stack_trace(&self) -> Option<&[Smid]> {
-        if let ExecutionError::Traced(_, _, trace) = self {
-            Some(trace)
+        if let ExecutionError::Traced(_, trace) = self {
+            Some(&trace.1)
         } else {
             None
         }

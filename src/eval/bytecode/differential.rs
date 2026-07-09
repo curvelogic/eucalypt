@@ -149,19 +149,16 @@ fn assert_engines_lookup_fail_agree(syntax: Rc<StgSyn>, bifs: Vec<Box<dyn StgInt
     // the underlying diagnostic on equal terms with the bytecode engine.
     fn unwrap_traced(e: &ExecutionError) -> &ExecutionError {
         match e {
-            ExecutionError::Traced(inner, _, _) => unwrap_traced(inner),
+            ExecutionError::Traced(inner, _) => unwrap_traced(inner),
             other => other,
         }
     }
 
     match (unwrap_traced(&heap_err), unwrap_traced(&bc_err)) {
-        (
-            ExecutionError::LookupFailure(_, hk, hs, ha),
-            ExecutionError::LookupFailure(_, bk, bs, ba),
-        ) => {
-            assert_eq!(hk, bk, "engines disagree on the failing key");
-            assert_eq!(hs, bs, "engines disagree on the suggestions");
-            assert_eq!(ha, ba, "engines disagree on the available keys");
+        (ExecutionError::LookupFailure(_, hd), ExecutionError::LookupFailure(_, bd)) => {
+            assert_eq!(hd.0, bd.0, "engines disagree on the failing key");
+            assert_eq!(hd.1, bd.1, "engines disagree on the suggestions");
+            assert_eq!(hd.2, bd.2, "engines disagree on the available keys");
         }
         _ => {
             panic!("expected LookupFailure from both engines, got heap={heap_err:?} bc={bc_err:?}")
@@ -221,7 +218,7 @@ fn assert_engines_not_value_agree(
 
     fn unwrap_traced(e: &ExecutionError) -> &ExecutionError {
         match e {
-            ExecutionError::Traced(inner, _, _) => unwrap_traced(inner),
+            ExecutionError::Traced(inner, _) => unwrap_traced(inner),
             other => other,
         }
     }

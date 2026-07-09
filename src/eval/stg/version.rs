@@ -48,8 +48,7 @@ impl StgIntrinsic for Requires {
         } else {
             Err(ExecutionError::VersionRequirementFailed(
                 machine.annotation(),
-                version.to_string(),
-                constraint_str,
+                Box::new((version.to_string(), constraint_str)),
             ))
         }
     }

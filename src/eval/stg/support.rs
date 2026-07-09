@@ -98,9 +98,11 @@ pub fn num_arg(
         Ok(Native::Num(n)) => Ok(n),
         Ok(native) => Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            Box::new(IntrinsicType::Number),
-            Box::new(native_type(&native)),
-            describe_native(&native, machine, view),
+            Box::new((
+                IntrinsicType::Number,
+                native_type(&native),
+                describe_native(&native, machine, view),
+            )),
         )),
         Err(_) => {
             // resolve_native failed — likely a Cons (block/list). Inspect the
@@ -127,9 +129,11 @@ pub fn str_arg(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            Box::new(IntrinsicType::String),
-            Box::new(native_type(&native)),
-            describe_native(&native, machine, view),
+            Box::new((
+                IntrinsicType::String,
+                native_type(&native),
+                describe_native(&native, machine, view),
+            )),
         ))
     }
 }
@@ -184,9 +188,11 @@ pub fn str_arg_ref(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            Box::new(IntrinsicType::String),
-            Box::new(native_type(&native)),
-            describe_native(&native, machine, view),
+            Box::new((
+                IntrinsicType::String,
+                native_type(&native),
+                describe_native(&native, machine, view),
+            )),
         ))
     }
 }
@@ -203,9 +209,11 @@ pub fn sym_arg(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            Box::new(IntrinsicType::Symbol),
-            Box::new(native_type(&native)),
-            describe_native(&native, machine, view),
+            Box::new((
+                IntrinsicType::Symbol,
+                native_type(&native),
+                describe_native(&native, machine, view),
+            )),
         ))
     }
 }
@@ -222,9 +230,11 @@ pub fn zdt_arg(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            Box::new(IntrinsicType::ZonedDateTime),
-            Box::new(native_type(&native)),
-            describe_native(&native, machine, view),
+            Box::new((
+                IntrinsicType::ZonedDateTime,
+                native_type(&native),
+                describe_native(&native, machine, view),
+            )),
         ))
     }
 }
@@ -291,9 +301,7 @@ pub fn str_list_arg(
                     other => {
                         return Err(ExecutionError::TypeMismatch(
                             smid,
-                            Box::new(IntrinsicType::String),
-                            Box::new(native_type(&other)),
-                            None,
+                            Box::new((IntrinsicType::String, native_type(&other), None)),
                         ))
                     }
                 }
@@ -454,9 +462,11 @@ pub fn native_to_set_primitive(
         Native::Sym(id) => Ok(SetPrim::Sym(*id)),
         _ => Err(ExecutionError::TypeMismatch(
             smid,
-            Box::new(crate::eval::types::IntrinsicType::Set),
-            Box::new(native_type(native)),
-            None,
+            Box::new((
+                crate::eval::types::IntrinsicType::Set,
+                native_type(native),
+                None,
+            )),
         )),
     }
 }
@@ -494,9 +504,11 @@ pub fn set_arg<'guard>(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            Box::new(crate::eval::types::IntrinsicType::Set),
-            Box::new(native_type(&native)),
-            describe_native(&native, machine, view),
+            Box::new((
+                crate::eval::types::IntrinsicType::Set,
+                native_type(&native),
+                describe_native(&native, machine, view),
+            )),
         ))
     }
 }
@@ -523,9 +535,7 @@ pub fn ndarray_arg<'guard>(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            Box::new(IntrinsicType::Array),
-            Box::new(native_type(&native)),
-            None,
+            Box::new((IntrinsicType::Array, native_type(&native), None)),
         ))
     }
 }
@@ -552,9 +562,7 @@ pub fn vec_arg<'guard>(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            Box::new(IntrinsicType::Vec),
-            Box::new(native_type(&native)),
-            None,
+            Box::new((IntrinsicType::Vec, native_type(&native), None)),
         ))
     }
 }
