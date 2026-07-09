@@ -326,12 +326,12 @@ compile from. Post-1.0 candidate (§10 records the analysis).
   type-gated tier depends on.
 - **BV5** (serialisable bytecode) makes **PP** workers cheapest to spawn, and is the
   natural successor to the existing `ArenaStgSyn`/postcard blob.
-- **Per-unit incremental caching** (the successor to BV5's whole-program unit cache)
-  is gated on **separate unit compilation**: today the pipeline merges units
-  immediately after per-unit desugar, so everything downstream is whole-program.
-  Restructuring to defer the merge (and replay the cross-unit `UnitInterface`
-  state) is a pillar-scale prerequisite, tracked as eu-nzps — sequence it with
-  **W18** (modules), which wants the same per-unit boundary.
+- **Per-unit incremental caching** (**CU2**, the successor to the whole-program
+  **BV5-cache**) is gated on **separate unit compilation** (**CU1**): today the
+  pipeline merges units immediately after per-unit desugar, so everything downstream
+  is whole-program. Restructuring to defer the merge (and replay the cross-unit
+  `UnitInterface` state) is a pillar-scale prerequisite (**CU1**, eu-nzps) — sequence
+  it with **W18** (modules), which wants the same per-unit boundary.
 - **SV** is independent of the runtime work; **optional fields** and the
   **prefix-list type** are type-vocabulary enrichments it surfaces; **W8/W22**
   (doc/schema) consume the same type-data.
@@ -356,10 +356,10 @@ reordered as the cadence dictates.
 |---|---|---|
 | **0.11** | Codegen wins, typing on, type-value foundation, bytecode spike | CG type-free tier; TY default-on; SV `s"…"` + `as-spec`; **optional record fields**; **BV0** gate |
 | **0.12** *(shipped scope)* | The bytecode core + the startup win | **BV1** (default engine, code out of the heap; Phase-4 collapse deferred) + **BV5 embedded prelude** (dual-form blob, deterministic; startup win on release binaries). *Unit cache spec'd + held (eu-lb0r)* |
-| **0.12.1** | Close the engine gap | **BV4** superinstructions / decode-cost fusion (eu-9mvh) + `ExecutionError` boxing (eu-adnu) → then the **Phase-4 collapse** (eu-oufc); bytecode block index (eu-4zhi); unit cache build (eu-lb0r) if green-lit |
-| **0.13** | Frames, annotations, type-gated codegen, prefix-lists | **BV2** side tables; **BV3** register frames + CG selective lifting; **CG** type-gated (unboxing); **prefix-list type** |
+| **0.12.1** | Close the engine gap | **BV4** superinstructions / decode-cost fusion (eu-9mvh) + `ExecutionError` boxing (eu-adnu) → then the **Phase-4 collapse** (eu-oufc); bytecode block index (eu-4zhi) |
+| **0.13** | Frames, annotations, type-gated codegen, prefix-lists | **BV5-cache** whole-program unit cache (eu-lb0r); **BV2** side tables; **BV3** register frames + CG selective lifting; **CG** type-gated (unboxing); **prefix-list type** |
 | **0.14** | Polish, parallelism, effects, contracts | **PP** `par-map`/`par-fold`; **EF2** native filesystem IO + **EF1** effect-composition combinators; **W16** contracts; presence inference |
-| **0.15+** | Value model, ecosystem, surface | **DS** persistent blocks + `vec`; **EF1** unified effect context; **W18** modules; **W19** watch/REPL; **W17** hermetic; **W22** schema interop |
+| **0.15+** | Value model, ecosystem, surface | **DS** persistent blocks + `vec`; **EF1** unified effect context; **W18** modules + **CU1** separate-unit compilation; **W19** watch/REPL + **CU2** per-unit incremental cache; **W17** hermetic; **W22** schema interop |
 | **1.0** *(milestone)* | Decide, prove, freeze | *No features.* Surface complete + **W5** conformance green → ratify and freeze the stable-surface tiers, turn on the version contract (§4.6) |
 | **post-1.0** | Curated bets | EF1.3 algebraic effect-rows; WASM-as-distribution; parallel Model B (maybe-never); a true separate-nursery GC *iff* a workload demands it |
 
@@ -385,19 +385,20 @@ startup floor) is banked early:
    **Phase-4 collapse, deferred** (eu-oufc; see §4.5): HeapSyn is retained behind
    `EU_HEAPSYN=1` as the perf baseline and differential reference until the
    decode-cost gap closes (eu-9mvh).
-3. **BV5 — serialisation, embedded prelude, unit cache.** Execute directly from
-   serialised bytecode; embed the prelude bytecode at build time; content-hash
-   unit caching. Reuses the postcard/`cfg(prelude_blob_ok)` plumbing. **Shipped in
-   0.12 in dual-form** — the blob carries the pre-encoded `BytecodeProgram`
-   *alongside* the `ArenaStgSyn` heap-graph form (not superseding it) while
-   HeapSyn is retained; the bytecode engine executes the embedded program without
-   per-run re-encoding, and blob generation is deterministic and CI-guarded. The
-   startup floor (~10 ms measured) lands on **release/CI binaries** (which run
-   `xtask prelude-compile`); a plain dev `cargo build` still falls back to
-   source-prelude. The **content-hash unit cache did not ship** — spec + plan are
-   merged (`docs/superpowers/specs/2026-07-03-bv5-unit-cache-design.md`) and the
-   build is held (eu-lb0r); per-unit *incremental* caching additionally needs the
-   separate-unit-compilation restructuring (deferred merge, eu-nzps).
+3. **BV5 — serialisation & embedded prelude.** Execute directly from
+   serialised bytecode; embed the prelude bytecode at build time. Reuses the
+   postcard/`cfg(prelude_blob_ok)` plumbing. **Shipped in 0.12 in dual-form** — the
+   blob carries the pre-encoded `BytecodeProgram` *alongside* the `ArenaStgSyn`
+   heap-graph form (not superseding it) while HeapSyn is retained; the bytecode
+   engine executes the embedded program without per-run re-encoding, and blob
+   generation is deterministic and CI-guarded. The startup floor (~10 ms measured)
+   lands on **release/CI binaries** (which run `xtask prelude-compile`); a plain dev
+   `cargo build` still falls back to source-prelude. The **content-hash
+   whole-program unit cache did not ship** — spec + plan are merged
+   (`docs/superpowers/specs/2026-07-03-bv5-unit-cache-design.md`, `#953`); it is a
+   separate deliverable (**BV5-cache**, §9, 0.13, eu-lb0r), and the *per-unit
+   incremental* cache is a further step behind the defer-merge restructure
+   (**CU1/CU2**, §7, eu-nzps/eu-y7le).
 4. **BV2 — side tables for annotations.** Move `Smid`s out of the instruction stream
    (retire the `Ann` dispatch step, `vm.rs:536`) into offset-keyed side tables the
    error machinery reads. Additive, low risk.
@@ -876,6 +877,17 @@ The surviving cross-unit and surface work that lets 1.0 be declared and frozen.
   inputs; composes with content-addressed imports and PP's deterministic merge.
 - **W7 Incremental, query-based core (continue).** The memoised query graph over the
   Unit Interface; front-end scope for 1.0, serving both LSP and CLI re-compiles.
+- **CU Separate unit compilation & per-unit incremental cache.** Today the pipeline
+  merges units *early* (`prepare.rs:169-188`) — before cook / hoist / DCE / inline /
+  verify / STG-compile — and desugar threads cross-unit state via `UnitInterface`, so
+  a per-unit "edit one file → fast recompile" is impossible without **deferring merge**
+  and replaying interface state (**CU1**). Once units compile independently, cache each
+  unit's compiled form keyed on its transitive-source hash, reusing **BV5-cache**'s
+  serialisation format and version/build-id invalidation envelope (**CU2**). CU2 is the
+  payoff `eu watch`/REPL (W19) most wants; CU1 is the enabler shared with the module
+  system (W18). Both 0.15+. (BV5-cache's *whole-program* cache — a hit only when the
+  entire input set is byte-identical — is the 0.13 step that comes first and builds the
+  reusable envelope.)
 - **W5 Conformance, property tests & fuzzing (continue to the 1.0 bar).** The golden
   corpus + properties + fuzzers — and now the **proof that every BV phase changes
   nothing observable** (the dual-engine conformance the corpus was built for). Bar:
@@ -955,7 +967,8 @@ land in point releases first.
 |---|---|:---:|
 | **BV0** | Bytecode encoding + dispatch-ceiling spike (gate) | 0.11 |
 | **BV1** | Threaded interpreter; code out of the GC heap *(shipped — default engine; Phase-4 collapse deferred to 0.12.1)* | 0.12 |
-| **BV5** | Embedded bytecode prelude *(shipped, dual-form)*; unit cache *(spec'd, held — eu-lb0r)* | 0.12 / 0.12.1 |
+| **BV5** | Embedded bytecode prelude *(shipped, dual-form)* | 0.12 |
+| **BV5-cache** | Content-hash whole-program unit cache (spec `#953`; dispatch-ready, unbuilt — eu-lb0r) | 0.13 |
 | **BV2** | Side tables for annotations | 0.13 |
 | **BV3** | Register frames | 0.13 |
 | **BV4** | Superinstructions / decode-cost fusion *(promoted — gates Phase-4)* | 0.12.1 |
@@ -973,6 +986,8 @@ land in point releases first.
 | **EF1** | Effect composition (combinators → unified context → effect-rows) | 0.14 → post-1.0 |
 | **EF2** | Native filesystem/IO capabilities (`walk`/`read`/`stat`, streamable) | 0.14 |
 | **W18** | Module & package system (git, content-addressed) | 0.15+ |
+| **CU1** | Separate unit compilation — defer merge (per-unit incremental prerequisite) | 0.15+ |
+| **CU2** | Per-unit incremental cache (`edit one file → fast recompile`) | 0.15+ |
 | **W19** | `eu watch` & REPL (Phase 1) | 0.15+ |
 | **W17** | Hermetic mode | 0.15+ |
 | **EC-embed** | Embedding bridge: `.eu` code export, harden + exemplify (macro substrate) | 0.12+ |
