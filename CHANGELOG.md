@@ -4,6 +4,12 @@ All notable changes to eucalypt are documented here.
 
 ## [Unreleased]
 
+## [0.12.1] - Unreleased
+
+### Changed
+
+- **Bytecode-vs-HeapSyn engine gap closed** — entries added as the gap-close work (superinstructions/decode fusion, ExecutionError boxing, block index) lands.
+
 ## [0.12.0] - 2026-07-04
 
 ### Changed
