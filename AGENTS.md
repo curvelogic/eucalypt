@@ -1,5 +1,10 @@
 # Agent Instructions
 
+<!-- bd-doctor-divergence: ok -->
+<!-- AGENTS.md (generic agent onboarding) and CLAUDE.md (curated Claude Code +
+     eucalypt project doc) are intentionally distinct documents for different
+     audiences; only the BEADS INTEGRATION marker sections are meant to match. -->
+
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
 ## Quick Reference
