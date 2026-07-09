@@ -152,6 +152,33 @@ impl Encoder {
                 branches,
                 fallback,
             } => {
+                // Uniform-branch downgrade (eu-9mvh, W1, lever (c)): when
+                // every branch and the fallback share an *identical*
+                // continuation body that provably never reads the value
+                // `Case` would bind (see `uniform_seq_body` for exactly
+                // what "provably" requires), the case exists purely to
+                // force the scrutinee to WHNF and discards both the tag
+                // and the value — so emit the existing cheap `Op::Seq`
+                // (force-then-continue, no branch-table decode, no
+                // per-Case `Array` allocation) instead of `Op::Case`. Note
+                // this does *not* fire for the profiled `<=`/`-`/`+`
+                // operand-forcing `Case`-of-`Case` chains themselves —
+                // their whole point is to read the forced value — see the
+                // module-level note above `uniform_seq_body` for the full
+                // account, including a soundness pitfall this ran into
+                // during development. This is bytecode-encoder-only: the
+                // shared `StgSyn::Case` node is untouched, so HeapSyn
+                // (which walks the original tree) sees no change at all.
+                if let Some(seq_body) = uniform_seq_body(branches, fallback) {
+                    let scr_off = self.encode_node(scrutinee);
+                    let body_off = self.encode_node(&seq_body);
+                    let offset = self.here();
+                    self.emit_op(Op::Seq);
+                    self.emit_u32(scr_off);
+                    self.emit_u32(body_off);
+                    return offset;
+                }
+
                 // Children first (post-order).
                 let scr_off = self.encode_node(scrutinee);
                 let branch_data: Vec<(u8, CodeRef)> = branches
@@ -402,6 +429,357 @@ impl Encoder {
     #[inline(always)]
     fn here(&self) -> CodeRef {
         self.code.len() as CodeRef
+    }
+}
+
+// ── Uniform-branch Case → Seq downgrade (eu-9mvh, W1, lever (c)) ────────
+//
+// `Op::Case` binds whatever it matches into a *new* environment frame:
+// each explicit branch prepends the matched constructor's fields (arity
+// `DataConstructor::arity(tag)` new locals, `env_from_data_args`), and the
+// fallback — taken for both an unmatched data tag and any raw native atom
+// — always prepends exactly one new local holding the value itself
+// (`from_value`, both in `return_data` and `return_native`). `Op::Seq`
+// does neither: it forces the scrutinee to WHNF (memoising the thunk in
+// place) and continues in the *same*, unextended environment.
+//
+// Substituting `Seq` for a `Case` is therefore only sound when dropping
+// that new frame cannot change what the shared body observes. That holds
+// exactly when:
+//
+//   1. Every branch **and** the fallback are present-and-uniform: they all
+//      share the identical body (so there is only one possible
+//      continuation regardless of which alternative actually matched —
+//      `Seq`'s missing tag dispatch cannot pick the wrong one), and they
+//      all introduce the *same* number of new bindings (`shift`) — a
+//      branch on a 0-arity tag and a 1-arity tag sharing a body could
+//      only be uniform if the body never reads a local at all, which the
+//      occurs-check below verifies directly.
+//   2. A fallback is required. Without one, `Case` raises
+//      `NoBranchForDataTag`/`NoBranchForNative` for any tag the explicit
+//      branches don't cover; `Seq` has no tag check at all and would
+//      silently run the shared body for *any* value. Requiring the
+//      fallback makes the alternative set exhaustive by construction,
+//      matching `Seq`'s unconditional-success semantics. (This loses
+//      nothing in practice: every `force`/`unbox_any`-style
+//      operand-forcing site in `src/eval/stg/arith.rs` etc. already uses
+//      `case()`, which always carries a fallback, never `switch()`.)
+//   3. The shared body has no *free* reference into the dropped range
+//      `0..shift` — i.e. it never reads the value(s) `Case` would have
+//      bound. `drop_outer_bindings` is a combined occurs-check-and-shift:
+//      it walks the body once, returning `None` the moment it finds a
+//      free `Ref::L` inside the dropped range (so the caller must fall
+//      back to ordinary `Op::Case` encoding), or the body with every
+//      *other* free local renumbered down by `shift` to match the
+//      environment `Seq` will actually produce.
+//
+// Point 3's occurs-check is necessarily conservative: it declines whenever
+// the body reads the bound value at all, which is precisely what defeats
+// it for the profiled `force`/`unbox_any`-style operand-forcing chains in
+// `src/eval/stg/arith.rs` — the entire point of forcing an operand is to
+// then use it. (An earlier version of this change additionally rewrote
+// `force(local(j), body)` — no explicit branches, scrutinee a bare local
+// reference — by aliasing the dropped binding back onto `local(j)` itself,
+// on the theory that forcing a local reference updates it in place so
+// nothing needs to move. That argument is correct in isolation, but the
+// index arithmetic for anything *below* a nested `Case` inside such a body
+// assumed that nested `Case` would keep ordinary `Op::Case` semantics —
+// and `encode_node` tries this very downgrade on every `Case` node
+// independently, including ones inside an already-rewritten body. When a
+// nested `Case` also qualified, it was encoded as `Op::Seq` too and
+// contributed no frame at runtime, silently invalidating indices the
+// outer rewrite had computed on the opposite assumption — a real,
+// reproduced bug (`{x: 42}."{x}"` returned a type error instead of
+// `"42"`). Chasing that down cost more than the aliasing rule was worth on
+// its own, so it was dropped; `contains_case` below keeps the door open
+// for reintroducing it later, correctly, without a subsequent change
+// needing to rediscover why it is unsafe on its own.)
+//
+// This is bytecode-encoder-only: it interprets the existing, unmodified
+// `StgSyn::Case` node differently when *emitting bytecode* for it; the
+// shared STG tree itself (and HeapSyn, which walks it directly) is never
+// touched.
+
+/// If `branches`/`fallback` form a uniform, value-discarding `Case` (see
+/// the module-level note above), return the shared body rewritten for
+/// direct use as `Op::Seq`'s body. Otherwise `None` — the caller must
+/// encode an ordinary `Op::Case`.
+fn uniform_seq_body(
+    branches: &[(u8, Rc<StgSyn>)],
+    fallback: &Option<Rc<StgSyn>>,
+) -> Option<Rc<StgSyn>> {
+    let mut alts: Vec<(usize, &Rc<StgSyn>)> = Vec::with_capacity(branches.len() + 1);
+    for (tag, body) in branches {
+        let arity = DataConstructor::try_from(*tag).ok()?.arity();
+        alts.push((arity, body));
+    }
+    // A fallback is required — see point 2 above: without one the
+    // alternative set is not provably exhaustive, and `Seq` has no tag
+    // check to reject an uncovered value the way `Case` would.
+    let fallback = fallback.as_ref()?;
+    alts.push((1, fallback));
+
+    let (shift, first) = *alts.first()?;
+    if alts
+        .iter()
+        .any(|&(s, b)| s != shift || !(Rc::ptr_eq(b, first) || *b == *first))
+    {
+        return None;
+    }
+
+    // `drop_outer_bindings` computes a depth/index adjustment for
+    // everything in `first` on the assumption that any *nested* `Case` it
+    // walks through keeps its own default `Op::Case` (frame-introducing)
+    // encoding. But `encode_node` tries this very downgrade on every
+    // `Case` node it reaches, independently — including ones sitting
+    // inside a body this function has already rewritten. If such a nested
+    // `Case` also qualified for the downgrade, it would be encoded as
+    // `Op::Seq` too and contribute no frame at runtime, silently
+    // invalidating every index computed here for anything below it — see
+    // `contains_case`'s doc comment for the full argument (a variant
+    // build of this change once got exactly this wrong). Requiring
+    // `first` to be `Case`-free sidesteps the composition hazard
+    // entirely, at the cost of not rewriting chained
+    // `force(force(...))`/`unbox_any` patterns — left as ordinary,
+    // correct `Op::Case`.
+    if contains_case(first) {
+        return None;
+    }
+
+    drop_outer_bindings(first, shift, 0)
+}
+
+/// Combined occurs-check-and-shift for the uniform-Case → Seq downgrade.
+///
+/// Walks `node`, tracking `depth` — the number of bindings introduced by
+/// constructs *nested inside* `node` since this walk began (Case branch
+/// arity/fallback, Let/LetRec binding counts, Lambda arity, DeMeta
+/// handler/or_else arity) — mirroring exactly the shift bookkeeping the
+/// STG compiler itself uses (see `AllocationPruner` in
+/// `src/eval/stg/optimiser.rs`, which this deliberately parallels without
+/// depending on it, since that pass is shared with HeapSyn and must not
+/// change).
+///
+/// A `Ref::L(n)` with `n < depth` is bound *within* `node` and is always
+/// left untouched. A `Ref::L(n)` with `n >= depth` is free with respect to
+/// `node`: if it falls inside the dropped range (`n - depth < shift`) the
+/// whole transform is unsound — `node` genuinely needs one of the
+/// bindings `Case` would have supplied and `Seq` does not — so this
+/// returns `None` immediately. Otherwise it is renumbered down by `shift`
+/// to land where it will actually be under `Seq`'s unextended
+/// environment.
+fn drop_outer_bindings(node: &Rc<StgSyn>, shift: usize, depth: usize) -> Option<Rc<StgSyn>> {
+    if shift == 0 {
+        return Some(node.clone());
+    }
+    match &**node {
+        StgSyn::Atom { evaluand } => Some(Rc::new(StgSyn::Atom {
+            evaluand: shift_ref(evaluand, shift, depth)?,
+        })),
+        StgSyn::Case {
+            scrutinee,
+            branches,
+            fallback,
+        } => {
+            let scrutinee = drop_outer_bindings(scrutinee, shift, depth)?;
+            let mut new_branches = Vec::with_capacity(branches.len());
+            for (tag, body) in branches {
+                let arity = DataConstructor::try_from(*tag).ok()?.arity();
+                new_branches.push((*tag, drop_outer_bindings(body, shift, depth + arity)?));
+            }
+            let fallback = match fallback {
+                Some(fb) => Some(drop_outer_bindings(fb, shift, depth + 1)?),
+                None => None,
+            };
+            Some(Rc::new(StgSyn::Case {
+                scrutinee,
+                branches: new_branches,
+                fallback,
+            }))
+        }
+        StgSyn::Cons { tag, args } => Some(Rc::new(StgSyn::Cons {
+            tag: *tag,
+            args: shift_refs(args, shift, depth)?,
+        })),
+        StgSyn::App {
+            callable,
+            args,
+            eager_args,
+        } => Some(Rc::new(StgSyn::App {
+            callable: shift_ref(callable, shift, depth)?,
+            args: shift_refs(args, shift, depth)?,
+            eager_args: *eager_args,
+        })),
+        StgSyn::DirectApp {
+            smid,
+            callable,
+            args,
+            eager_args,
+        } => Some(Rc::new(StgSyn::DirectApp {
+            smid: *smid,
+            callable: shift_ref(callable, shift, depth)?,
+            args: shift_refs(args, shift, depth)?,
+            eager_args: *eager_args,
+        })),
+        StgSyn::Bif { intrinsic, args } => Some(Rc::new(StgSyn::Bif {
+            intrinsic: *intrinsic,
+            args: shift_refs(args, shift, depth)?,
+        })),
+        StgSyn::Let { bindings, body } => {
+            // Non-recursive: each binding's own body sees the *current*
+            // depth (it closes over the enclosing scope only, not its
+            // siblings); the trailing `body` sees `depth + bindings.len()`.
+            // Mirrors `AllocationPruner`'s `StgSyn::Let` arm exactly.
+            let mut new_bindings = Vec::with_capacity(bindings.len());
+            for b in bindings {
+                new_bindings.push(drop_outer_bindings_lambda_form(b, shift, depth)?);
+            }
+            let body = drop_outer_bindings(body, shift, depth + bindings.len())?;
+            Some(Rc::new(StgSyn::Let {
+                bindings: new_bindings,
+                body,
+            }))
+        }
+        StgSyn::LetRec { bindings, body } => {
+            // Recursive: bindings see each other and the trailing body all
+            // at `depth + bindings.len()`.
+            let new_depth = depth + bindings.len();
+            let mut new_bindings = Vec::with_capacity(bindings.len());
+            for b in bindings {
+                new_bindings.push(drop_outer_bindings_lambda_form(b, shift, new_depth)?);
+            }
+            let body = drop_outer_bindings(body, shift, new_depth)?;
+            Some(Rc::new(StgSyn::LetRec {
+                bindings: new_bindings,
+                body,
+            }))
+        }
+        StgSyn::Ann { smid, body } => Some(Rc::new(StgSyn::Ann {
+            smid: *smid,
+            body: drop_outer_bindings(body, shift, depth)?,
+        })),
+        StgSyn::Meta { meta, body } => Some(Rc::new(StgSyn::Meta {
+            meta: shift_ref(meta, shift, depth)?,
+            body: shift_ref(body, shift, depth)?,
+        })),
+        StgSyn::DeMeta {
+            scrutinee,
+            handler,
+            or_else,
+        } => Some(Rc::new(StgSyn::DeMeta {
+            scrutinee: drop_outer_bindings(scrutinee, shift, depth)?,
+            handler: drop_outer_bindings(handler, shift, depth + 2)?,
+            or_else: drop_outer_bindings(or_else, shift, depth + 1)?,
+        })),
+        StgSyn::Seq { scrutinee, body } => Some(Rc::new(StgSyn::Seq {
+            scrutinee: drop_outer_bindings(scrutinee, shift, depth)?,
+            body: drop_outer_bindings(body, shift, depth)?,
+        })),
+        StgSyn::LookupLit {
+            smid,
+            key,
+            obj,
+            default,
+        } => Some(Rc::new(StgSyn::LookupLit {
+            smid: *smid,
+            key: shift_ref(key, shift, depth)?,
+            obj: shift_ref(obj, shift, depth)?,
+            default: shift_ref(default, shift, depth)?,
+        })),
+        StgSyn::BlackHole => Some(node.clone()),
+    }
+}
+
+/// As `drop_outer_bindings`, for a `LambdaForm`'s body — a `Lambda`'s
+/// parameters introduce `bound` further nested bindings; `Thunk`/`Value`
+/// introduce none of their own.
+fn drop_outer_bindings_lambda_form(
+    lf: &LambdaForm,
+    shift: usize,
+    depth: usize,
+) -> Option<LambdaForm> {
+    match lf {
+        LambdaForm::Lambda {
+            bound,
+            body,
+            annotation,
+        } => Some(LambdaForm::Lambda {
+            bound: *bound,
+            body: drop_outer_bindings(body, shift, depth + *bound as usize)?,
+            annotation: *annotation,
+        }),
+        LambdaForm::Thunk { body } => Some(LambdaForm::Thunk {
+            body: drop_outer_bindings(body, shift, depth)?,
+        }),
+        LambdaForm::Value { body } => Some(LambdaForm::Value {
+            body: drop_outer_bindings(body, shift, depth)?,
+        }),
+    }
+}
+
+/// Shift (or reject) a single `Ref`. See `drop_outer_bindings` for the
+/// depth/shift contract; non-local refs (`G`/`V`) are always untouched.
+fn shift_ref(r: &Ref, shift: usize, depth: usize) -> Option<Ref> {
+    match r {
+        Ref::L(n) => {
+            if *n < depth {
+                Some(Ref::L(*n))
+            } else {
+                let rel = *n - depth;
+                if rel < shift {
+                    // Free reference into the range Seq would drop: unsound.
+                    None
+                } else {
+                    Some(Ref::L(depth + (rel - shift)))
+                }
+            }
+        }
+        other => Some(other.clone()),
+    }
+}
+
+fn shift_refs(refs: &[Ref], shift: usize, depth: usize) -> Option<Vec<Ref>> {
+    refs.iter().map(|r| shift_ref(r, shift, depth)).collect()
+}
+
+/// `true` if `node` contains a `StgSyn::Case` anywhere within it (including
+/// `node` itself).
+///
+/// The aliasing rule (`alias_seq_body`) computes, for everything nested
+/// below a `force(local(j), body)` it is rewriting, a depth that assumes
+/// every nested `Case` it walks through will itself be encoded as an
+/// ordinary `Op::Case` (contributing its branch arity / fallback's `+1` to
+/// the shift). But `encode_node` tries this same uniform-branch downgrade
+/// on *every* `Case` node it reaches, independently, including ones
+/// sitting inside an already-rewritten body — and if such a nested `Case`
+/// *also* qualifies (very plausible: nested `force`/`unbox_any` chains are
+/// exactly this shape, one force wrapping another), it is encoded as
+/// `Op::Seq` too and contributes **no** shift at runtime, silently
+/// invalidating every depth the outer rewrite computed assuming otherwise.
+/// Requiring the aliased body to be `Case`-free sidesteps this composition
+/// hazard entirely, at the cost of not rewriting the deeper chained
+/// `force(force(...))` patterns — left as `Op::Case`, correct if
+/// unoptimised.
+fn contains_case(node: &Rc<StgSyn>) -> bool {
+    match &**node {
+        StgSyn::Case { .. } => true,
+        StgSyn::Atom { .. } | StgSyn::BlackHole => false,
+        StgSyn::Cons { .. }
+        | StgSyn::App { .. }
+        | StgSyn::DirectApp { .. }
+        | StgSyn::Bif { .. } => false,
+        StgSyn::Let { bindings, body } | StgSyn::LetRec { bindings, body } => {
+            bindings.iter().any(|b| contains_case(b.body())) || contains_case(body)
+        }
+        StgSyn::Ann { body, .. } => contains_case(body),
+        StgSyn::Meta { .. } => false,
+        StgSyn::DeMeta {
+            scrutinee,
+            handler,
+            or_else,
+        } => contains_case(scrutinee) || contains_case(handler) || contains_case(or_else),
+        StgSyn::Seq { scrutinee, body } => contains_case(scrutinee) || contains_case(body),
+        StgSyn::LookupLit { .. } => false,
     }
 }
 

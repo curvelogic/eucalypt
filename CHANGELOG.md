@@ -9,6 +9,7 @@ All notable changes to eucalypt are documented here.
 ### Changed
 
 - **Bytecode-vs-HeapSyn engine gap closed** — entries added as the gap-close work (superinstructions/decode fusion, ExecutionError boxing, block index) lands.
+- **Uniform-branch `Case` compiles to `Op::Seq` where provably safe** — the bytecode encoder now detects `Case` nodes whose branches and fallback all share an identical body that provably never reads the value `Case` would bind (i.e. the case exists purely to force the scrutinee to WHNF and discards the tag *and* the value), and emits the existing cheap `Op::Seq` instead of the branch-table-decoding, heap-allocating `Op::Case`. Encoder-only; STG is unchanged and HeapSyn is unaffected. **Measured impact on the regression set (fib/005/007/day03-p2/day09-p1) is nil**: the profiled `<=`/`-`/`+` operand-forcing `Case`-of-`Case` pattern always reads the forced value (that is the entire point of forcing it), so it never qualifies under a rule provable sound without also renumbering references through nested `Case`s — an extension attempted during development, found unsound (a reproduced, since-reverted bug), and not reintroduced. This lever alone does not close the gap; a further lever (e.g. superinstruction fusion) is needed (eu-9mvh).
 
 ## [0.12.0] - 2026-07-04
 
