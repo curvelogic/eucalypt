@@ -368,7 +368,7 @@ fn attach_trace(
 ) -> ExecutionError {
     let env_trace = state.env_trace(view);
     let stack_trace = state.stack_trace(view);
-    ExecutionError::Traced(Box::new(e), env_trace, stack_trace)
+    ExecutionError::Traced(Box::new(e), Box::new((env_trace, stack_trace)))
 }
 
 /// Mark the heap pointers embedded in a prepared constant (`Ref::V(native)`).

@@ -91,8 +91,7 @@ impl StgIntrinsic for Expect {
                 // Normal mode: panic with assertion failure
                 Err(ExecutionError::AssertionFailed(
                     machine.annotation(),
-                    actual_repr,
-                    expected_repr,
+                    Box::new((actual_repr, expected_repr)),
                 ))
             }
         }

@@ -68,8 +68,7 @@ impl StgIntrinsic for ParseString {
                 .map_err(|e| {
                     ExecutionError::ParseError(
                         machine.annotation(),
-                        format_name.clone(),
-                        e.to_string(),
+                        Box::new((format_name.clone(), e.to_string())),
                     )
                 })?;
 

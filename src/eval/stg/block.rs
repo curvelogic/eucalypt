@@ -1315,9 +1315,7 @@ impl StgIntrinsic for LookupFail {
 
         Err(ExecutionError::LookupFailure(
             machine.annotation(),
-            key_name,
-            suggestions,
-            available_keys,
+            Box::new((key_name, suggestions, available_keys)),
         ))
     }
 }

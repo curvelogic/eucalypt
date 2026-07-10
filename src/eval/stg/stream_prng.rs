@@ -44,9 +44,11 @@ fn prng_arg(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            Box::new(crate::eval::types::IntrinsicType::Unknown),
-            Box::new(crate::eval::types::IntrinsicType::Unknown),
-            None,
+            Box::new((
+                crate::eval::types::IntrinsicType::Unknown,
+                crate::eval::types::IntrinsicType::Unknown,
+                None,
+            )),
         ))
     }
 }

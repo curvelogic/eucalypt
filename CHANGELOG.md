@@ -9,6 +9,7 @@ All notable changes to eucalypt are documented here.
 ### Changed
 
 - **Bytecode-vs-HeapSyn engine gap closed** — entries added as the gap-close work (superinstructions/decode fusion, ExecutionError boxing, block index) lands.
+- **Bytecode hot-path error payload boxed** — `ExecutionError`'s heavy variants (`Traced`, `LookupFailure`, `TypeMismatch`, `BadDateTimeComponents`, `BadRegex`, `ParseError`, `VersionRequirementFailed`, `AssertionFailed`, `FormatError`) now carry their string/vector/tuple payloads behind a single `Box`, shrinking `size_of::<ExecutionError>()` from 128 to 40 bytes (68.75%). This retires the oversized `Result<_, ExecutionError>` the bytecode VM's per-instruction dispatch loop was moving and dropping on every step. Layout-only change: error messages, diagnostics, and harness output are byte-identical on both engines (eu-adnu).
 
 ## [0.12.0] - 2026-07-04
 

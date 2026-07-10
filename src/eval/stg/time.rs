@@ -104,13 +104,15 @@ impl StgIntrinsic for Zdt {
         let err = || {
             ExecutionError::BadDateTimeComponents(
                 smid,
-                y.clone(),
-                m.clone(),
-                d.clone(),
-                hour.clone(),
-                min.clone(),
-                sec.clone(),
-                tz.clone(),
+                Box::new((
+                    y.clone(),
+                    m.clone(),
+                    d.clone(),
+                    hour.clone(),
+                    min.clone(),
+                    sec.clone(),
+                    tz.clone(),
+                )),
             )
         };
 

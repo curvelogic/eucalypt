@@ -1648,8 +1648,7 @@ fn evaluate_to_whnf_impl(
             .map_err(|e| {
                 ExecutionError::Traced(
                     Box::new(e),
-                    state.nav(view).env_trace(),
-                    state.stack_trace(&view),
+                    Box::new((state.nav(view).env_trace(), state.stack_trace(&view))),
                 )
             });
         if let Err(e) = step_result {
@@ -2006,8 +2005,7 @@ impl<'a> Machine<'a> {
             .map_err(|e| {
                 ExecutionError::Traced(
                     Box::new(e),
-                    state.nav(view).env_trace(),
-                    state.stack_trace(&view),
+                    Box::new((state.nav(view).env_trace(), state.stack_trace(&view))),
                 )
             })?;
 
@@ -2057,11 +2055,13 @@ impl<'a> Machine<'a> {
             bif_result.map_err(|e| {
                 ExecutionError::Traced(
                     Box::new(e),
-                    self.state
-                        .nav(MutatorHeapView::new(&self.core.heap))
-                        .env_trace(),
-                    self.state
-                        .stack_trace(&MutatorHeapView::new(&self.core.heap)),
+                    Box::new((
+                        self.state
+                            .nav(MutatorHeapView::new(&self.core.heap))
+                            .env_trace(),
+                        self.state
+                            .stack_trace(&MutatorHeapView::new(&self.core.heap)),
+                    )),
                 )
             })?;
         }
