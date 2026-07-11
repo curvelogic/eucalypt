@@ -1042,53 +1042,83 @@ pub fn return_data(
             environment,
             annotation,
         } => {
-            // Resolve (and unbox, if boxed-native) before overwriting
-            // `state.current` below — `resolve_fused_operand`'s non-boxed
-            // fallback reads `state.current` (design §5.5).
-            let resolved = resolve_fused_operand(state, view, tag, args)?;
-            state.stack.push(BcContinuation::FusedPrimopRight {
-                primop_id,
-                left: resolved,
-                environment,
-                annotation,
-            });
-            state.current = BcValue::Closure(BcClosure::new(right, environment));
+            if let Some(field) = fused_boxed_field(state, view, tag, args)? {
+                // Boxed native (e.g. `Zdt(field)`): the box has been forced to
+                // WHNF, but its *field* may itself be an unevaluated thunk —
+                // for `BoxedZdt` it is the `ZDT(..)` intrinsic call
+                // (`arith.rs`), an `Op::Bif` node that `native_from_value` will
+                // not force. The unfused `binary_wrapper` handles this by
+                // `force(local(0), ..)` *after* `unbox_any` (`arith.rs`), so
+                // the fused path must force the field too. Re-push this same
+                // continuation and re-enter with the field as the value being
+                // forced; when it reaches WHNF the `return_native`/`return_data`
+                // arm captures the raw native (handling a nested box the same
+                // way, if one ever occurs).
+                state.stack.push(BcContinuation::FusedPrimopLeft {
+                    primop_id,
+                    right,
+                    environment,
+                    annotation,
+                });
+                state.current = field;
+            } else {
+                // Non-boxed data operand (bool/list/block/…): bind the whole
+                // value; `execute()`'s `num_arg`/`ordered_cmp` classify and
+                // error on it exactly as the unfused path does.
+                let resolved = state.current.clone();
+                state.stack.push(BcContinuation::FusedPrimopRight {
+                    primop_id,
+                    left: resolved,
+                    environment,
+                    annotation,
+                });
+                state.current = BcValue::Closure(BcClosure::new(right, environment));
+            }
         }
         BcContinuation::FusedPrimopRight {
             primop_id,
             left,
             environment,
-            ..
+            annotation,
         } => {
-            let resolved = resolve_fused_operand(state, view, tag, args)?;
-            finish_fused_primop(state, view, primop_id, left, resolved, environment)?;
+            if let Some(field) = fused_boxed_field(state, view, tag, args)? {
+                // As above (left operand): force the boxed field to WHNF before
+                // capturing it, re-entering this continuation.
+                state.stack.push(BcContinuation::FusedPrimopRight {
+                    primop_id,
+                    left,
+                    environment,
+                    annotation,
+                });
+                state.current = field;
+            } else {
+                let resolved = state.current.clone();
+                finish_fused_primop(state, view, primop_id, left, resolved, environment)?;
+            }
         }
     }
     Ok(())
 }
 
-/// Resolve a `FusedPrimop` operand that returned as a data value
-/// (`return_data`'s own `tag`/`args`). Design §5.5: for the four boxed-native
-/// constructors, extract and resolve the single field (mirroring the STG
-/// level's `unbox_any`, `arith.rs:419-430`) — otherwise bind the whole data
-/// value as-is (covers both non-numeric data, e.g. booleans/blocks/lists, and
-/// — defensively — a function value forced as an operand; `execute()`'s own
-/// `resolve_native`/`num_arg`/`ordered_cmp` classify and error on it exactly
-/// as the unfused path does today).
-fn resolve_fused_operand(
+/// A `FusedPrimop` operand has returned as a data value (`return_data`'s own
+/// `tag`/`args`). If it is one of the four boxed-native constructors
+/// (`BoxedNumber`/`BoxedString`/`BoxedSymbol`/`BoxedZdt`, all arity 1), return
+/// `Some(field_value)` — the single field, resolved against the constructor's
+/// own env exactly as `env_from_data_args` reads it — so the caller can force
+/// that field to WHNF (mirroring `unbox_any` + `force` in `binary_wrapper`,
+/// `arith.rs`). Return `None` for any other tag (bool/list/block/…), signalling
+/// the caller to bind the whole value and let `execute()` classify/error on it.
+fn fused_boxed_field(
     state: &BcMachineState,
     view: MutatorHeapView<'_>,
     tag: Tag,
     args: &[DecodedRef],
-) -> Result<BcValue, ExecutionError> {
+) -> Result<Option<BcValue>, ExecutionError> {
     match DataConstructor::try_from(tag) {
         Ok(DataConstructor::BoxedNumber)
         | Ok(DataConstructor::BoxedString)
         | Ok(DataConstructor::BoxedSymbol)
         | Ok(DataConstructor::BoxedZdt) => {
-            // These constructors are always arity 1 (tags.rs) — the field ref
-            // resolves against the constructor's own env, exactly as
-            // `env_from_data_args` reads it elsewhere in this file.
             let cons_env = state
                 .current
                 .as_closure()
@@ -1105,9 +1135,15 @@ fn resolve_fused_operand(
                     "bytecode: boxed-native constructor missing its field".to_string(),
                 )
             })?;
-            resolve_ref(view, &state.constants, cons_env, state.globals, *field)
+            Ok(Some(resolve_ref(
+                view,
+                &state.constants,
+                cons_env,
+                state.globals,
+                *field,
+            )?))
         }
-        _ => Ok(state.current.clone()),
+        _ => Ok(None),
     }
 }
 
