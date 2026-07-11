@@ -1165,7 +1165,11 @@ fn finish_fused_primop(
     backing.push(&view, left);
     backing.push(&view, right);
     let scratch_env = view
-        .alloc(BcEnvFrame::new(backing, state.annotation, Some(environment)))?
+        .alloc(BcEnvFrame::new(
+            backing,
+            state.annotation,
+            Some(environment),
+        ))?
         .as_ptr();
 
     state.pending_bif = Some(primop_id);
