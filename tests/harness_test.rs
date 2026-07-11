@@ -2647,6 +2647,11 @@ pub fn test_183_widen_type_def_literals() {
 }
 
 #[test]
+pub fn test_184_fused_primop_gc() {
+    run_test(&opts("184_fused_primop_gc.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }
