@@ -23,6 +23,13 @@ pub enum Op {
     Seq = 0x0C,
     LookupLit = 0x0D,
     BlackHole = 0x0E,
+    /// Fused strict-binary-primop dispatch (eu-9mvh, lever a): force both
+    /// operands to WHNF, unbox them if boxed, and defer to the intrinsic
+    /// table by index — replacing the `binary_wrapper`/`wrap()`-compiled
+    /// force-dispatch `Case`-of-`Case` tree for a whitelisted set of
+    /// strict binary primops with a single opcode. See
+    /// `docs/superpowers/specs/2026-07-10-fused-primop-superinstruction-design.md`.
+    FusedPrimop = 0x0F,
 }
 
 impl Op {
@@ -43,6 +50,7 @@ impl Op {
             0x0C => Some(Op::Seq),
             0x0D => Some(Op::LookupLit),
             0x0E => Some(Op::BlackHole),
+            0x0F => Some(Op::FusedPrimop),
             _ => None,
         }
     }
@@ -102,6 +110,7 @@ mod tests {
             Op::Seq,
             Op::LookupLit,
             Op::BlackHole,
+            Op::FusedPrimop,
         ];
         for op in all {
             assert_eq!(Op::from_u8(op as u8), Some(op));

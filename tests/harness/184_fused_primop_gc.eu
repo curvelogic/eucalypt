@@ -1,0 +1,61 @@
+"Fused-primop GC hazard stress (eu-9mvh, design note §6.4)."
+
+# This exercises the two GC surfaces the fused-primop superinstruction adds:
+#
+#   1. `FusedPrimopRight.left` holds a resolved operand (a `BcValue`). When the
+#      left operand is a heap-backed native (a String carries a `RefPtr`), that
+#      pointer must be marked AND forwarded if a collection fires while the
+#      SECOND operand is still being forced. Here every left operand is a heavy,
+#      freshly-allocated heap string, and every right operand is an independent
+#      heavy allocation whose forcing drives the collector (aggressively so
+#      under EU_GC_STRESS=1).
+#
+#   2. The scratch env-frame built in `finish_fused_primop`: it must be reachable
+#      (via `state.current`'s closure) before the deferred `Op::Bif` dispatch —
+#      which itself allocates — can trigger a collection.
+#
+# Run under EU_GC_VERIFY=2 / EU_GC_POISON=1 / EU_GC_STRESS=1: a missed mark or a
+# stale (un-forwarded) `left` pointer surfaces as a verify panic, a poison
+# use-after-free, or a wrong comparison result here.
+
+` :suppress
+lo: iota(0) take(600) map(str.of) str.join-on("-")
+
+` :suppress
+hi: iota(1000) take(600) map(str.of) str.join-on("-")
+
+# Distinct heavy heap strings: `lo` starts '0' (0x30), `hi` starts '1' (0x31),
+# so the ordering is deterministic regardless of the (large) tails.
+string-cmp: {
+  a: (lo < hi) //= true
+  b: (hi > lo) //= true
+  c: (lo <= hi) //= true
+  d: (hi >= lo) //= true
+  e: (lo < lo) //= false
+  f: (lo <= lo) //= true
+  g: (lo >= lo) //= true
+}
+
+# Fused arithmetic threaded through heavy list allocation: each `+` in `sum`'s
+# `foldl(+, 0, l)` binds a scratch env then dispatches, over a large list.
+arith: {
+  a: sum(iota(0) take(2000)) //= 1999000
+  b: sum(iota(1) take(2000)) //= 2001000
+  c: (sum(iota(0) take(1000)) - sum(iota(0) take(500))) //= 374750
+}
+
+# Polymorphic boxed comparisons (BoxedZdt field-forcing) under the same
+# allocation pressure — the boxed operand's inner native must be forced to WHNF
+# then survive while the other operand allocates.
+earlier: cal.zdt(2020, 1, 1, 0, 0, 0, "+0000")
+later: cal.zdt(2025, 6, 15, 12, 30, 0, "+0000")
+zdt-cmp: {
+  a: (earlier < later) //= true
+  b: (min(earlier, later) < max(earlier, later)) //= true
+}
+
+RESULT: {
+  s: string-cmp values all-true?
+  a: arith values all-true?
+  z: zdt-cmp values all-true?
+} values all-true? then(:PASS, :FAIL)
