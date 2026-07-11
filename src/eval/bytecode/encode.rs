@@ -438,6 +438,18 @@ static FUSIBLE_PRIMOPS: std::sync::LazyLock<[(&'static str, usize); 8]> =
         })
     });
 
+/// Whether an intrinsic (identified by its global index) is in the fusible-
+/// primop whitelist that the encoder intercepts as a single `Op::FusedPrimop`.
+///
+/// Shared with the STG compiler's inline guard (`compiler.rs`) so that
+/// "Option A" — suppressing wrapper inlining at direct call sites so direct
+/// arithmetic routes through the fused global form — stays in lockstep with
+/// exactly the set the encoder actually fuses. Sharing the single source of
+/// truth (`FUSIBLE_PRIMOPS`) keeps the two sites from drifting apart.
+pub fn is_fusible_primop_index(index: usize) -> bool {
+    FUSIBLE_PRIMOPS.iter().any(|(_, idx)| *idx == index)
+}
+
 /// Structural shape guard (design §9.4): confirms a whitelisted intrinsic's
 /// `LambdaForm` has `binary_wrapper`'s known shape (`lambda(2,
 /// case(local(0), ...))`) before the encoder substitutes the fused body.

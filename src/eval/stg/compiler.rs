@@ -1182,7 +1182,18 @@ impl ProtoSyntax for ProtoAppGroup {
             Some(bif)
                 if !compiler.suppress_inlining
                     && bif.inlinable()
-                    && bif.info().arity() == arg_indexes.len() =>
+                    && bif.info().arity() == arg_indexes.len()
+                    // Option A (experiment, eu-9mvh): for the whitelisted
+                    // fusible primops, do NOT inline the wrapper body at the
+                    // direct call site. Instead fall through to normal
+                    // App/global-form dispatch so the call routes through the
+                    // global lambda-form — which the bytecode encoder emits as
+                    // a single `Op::FusedPrimop` (PR #980). The whitelist is
+                    // shared verbatim with the encoder to keep the two sites
+                    // consistent.
+                    && !intrinsic_index
+                        .map(crate::eval::bytecode::is_fusible_primop_index)
+                        .unwrap_or(false) =>
             {
                 let inline_body = bif.wrapper(Smid::default()).body().clone();
                 local_binder.set_body(Box::new(ProtoInline::new(arg_indexes, inline_body)))?;
