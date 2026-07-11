@@ -78,6 +78,28 @@ pub enum BcContinuation {
     },
     /// Marks the end of an emitter capture.
     CaptureEnd,
+    /// Fused primop (eu-9mvh, lever a): waiting for the first operand of a
+    /// `FusedPrimop` to reach WHNF.
+    FusedPrimopLeft {
+        /// Intrinsic index to dispatch once both operands are resolved.
+        primop_id: u8,
+        /// Pre-emitted `Op::Atom` offset for the second operand.
+        right: CodeRef,
+        /// Environment the fused-primop site itself runs in.
+        environment: RefPtr<BcEnvFrame>,
+        /// Source annotation at the fused-primop site.
+        annotation: Smid,
+    },
+    /// Fused primop: first operand resolved (forced to WHNF, and unboxed if
+    /// it was a boxed native — see `resolve_fused_operand`); waiting for the
+    /// second.
+    FusedPrimopRight {
+        primop_id: u8,
+        /// The first operand's resolved value.
+        left: BcValue,
+        environment: RefPtr<BcEnvFrame>,
+        annotation: Smid,
+    },
 }
 
 impl StgObject for BcContinuation {}
@@ -185,6 +207,23 @@ impl GcScannable for BcContinuation {
             BcContinuation::CaptureEnd => {
                 // No heap pointers to scan.
             }
+            BcContinuation::FusedPrimopLeft { environment, .. } => {
+                if marker.mark(*environment) {
+                    out.push(ScanPtr::from_non_null(scope, *environment));
+                }
+            }
+            BcContinuation::FusedPrimopRight {
+                left, environment, ..
+            } => {
+                if marker.mark(*environment) {
+                    out.push(ScanPtr::from_non_null(scope, *environment));
+                }
+                // `left` is an embedded BcValue (Native may carry a heap
+                // pointer; Closure carries an env pointer) — not
+                // independently heap-allocated, so `ScanPtr::new` (not
+                // `from_non_null`), mirroring `ApplyTo`'s per-arg scanning.
+                out.push(ScanPtr::new(scope, left));
+            }
         }
     }
 
@@ -241,6 +280,19 @@ impl GcScannable for BcContinuation {
                 default_closure.scan_and_update(heap);
             }
             BcContinuation::CaptureEnd => {}
+            BcContinuation::FusedPrimopLeft { environment, .. } => {
+                if let Some(new) = heap.forwarded_to(*environment) {
+                    *environment = new;
+                }
+            }
+            BcContinuation::FusedPrimopRight {
+                left, environment, ..
+            } => {
+                if let Some(new) = heap.forwarded_to(*environment) {
+                    *environment = new;
+                }
+                left.scan_and_update(heap);
+            }
         }
     }
 }

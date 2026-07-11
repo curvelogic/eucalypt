@@ -146,6 +146,7 @@ fn not_value_description(op: Option<Op>, code: &[u8], pc: &mut usize) -> &'stati
         Some(Op::LookupLit) => "a lookup expression",
         Some(Op::BlackHole) => "an uninitialised value (possible cycle)",
         Some(Op::Ann) => "an annotated expression",
+        Some(Op::FusedPrimop) => "a fused primop dispatch",
         // `Atom` is followed transparently by the caller, so it should not
         // reach here; treat any residual/unknown opcode as a bare atom.
         Some(Op::Atom) | None => "an atom",
@@ -335,7 +336,9 @@ impl BcMachineState {
             let smid = match cont {
                 BcContinuation::Branch { annotation, .. }
                 | BcContinuation::ApplyTo { annotation, .. }
-                | BcContinuation::SeqBind { annotation, .. } => *annotation,
+                | BcContinuation::SeqBind { annotation, .. }
+                | BcContinuation::FusedPrimopLeft { annotation, .. }
+                | BcContinuation::FusedPrimopRight { annotation, .. } => *annotation,
                 BcContinuation::LookupLitForce { smid, .. } => *smid,
                 BcContinuation::Update { environment, .. }
                 | BcContinuation::DeMeta { environment, .. } => {
@@ -1033,7 +1036,115 @@ pub fn return_data(
         BcContinuation::CaptureEnd => {
             state.capture_end_pending = true;
         }
+        BcContinuation::FusedPrimopLeft {
+            primop_id,
+            right,
+            environment,
+            annotation,
+        } => {
+            // Resolve (and unbox, if boxed-native) before overwriting
+            // `state.current` below — `resolve_fused_operand`'s non-boxed
+            // fallback reads `state.current` (design §5.5).
+            let resolved = resolve_fused_operand(state, view, tag, args)?;
+            state.stack.push(BcContinuation::FusedPrimopRight {
+                primop_id,
+                left: resolved,
+                environment,
+                annotation,
+            });
+            state.current = BcValue::Closure(BcClosure::new(right, environment));
+        }
+        BcContinuation::FusedPrimopRight {
+            primop_id,
+            left,
+            environment,
+            ..
+        } => {
+            let resolved = resolve_fused_operand(state, view, tag, args)?;
+            finish_fused_primop(state, view, primop_id, left, resolved, environment)?;
+        }
     }
+    Ok(())
+}
+
+/// Resolve a `FusedPrimop` operand that returned as a data value
+/// (`return_data`'s own `tag`/`args`). Design §5.5: for the four boxed-native
+/// constructors, extract and resolve the single field (mirroring the STG
+/// level's `unbox_any`, `arith.rs:419-430`) — otherwise bind the whole data
+/// value as-is (covers both non-numeric data, e.g. booleans/blocks/lists, and
+/// — defensively — a function value forced as an operand; `execute()`'s own
+/// `resolve_native`/`num_arg`/`ordered_cmp` classify and error on it exactly
+/// as the unfused path does today).
+fn resolve_fused_operand(
+    state: &BcMachineState,
+    view: MutatorHeapView<'_>,
+    tag: Tag,
+    args: &[DecodedRef],
+) -> Result<BcValue, ExecutionError> {
+    match DataConstructor::try_from(tag) {
+        Ok(DataConstructor::BoxedNumber)
+        | Ok(DataConstructor::BoxedString)
+        | Ok(DataConstructor::BoxedSymbol)
+        | Ok(DataConstructor::BoxedZdt) => {
+            // These constructors are always arity 1 (tags.rs) — the field ref
+            // resolves against the constructor's own env, exactly as
+            // `env_from_data_args` reads it elsewhere in this file.
+            let cons_env = state
+                .current
+                .as_closure()
+                .ok_or_else(|| {
+                    ExecutionError::Panic(
+                        state.annotation,
+                        "bytecode: fused-primop operand resolution on a native value".to_string(),
+                    )
+                })?
+                .env();
+            let field = args.first().ok_or_else(|| {
+                ExecutionError::Panic(
+                    state.annotation,
+                    "bytecode: boxed-native constructor missing its field".to_string(),
+                )
+            })?;
+            resolve_ref(view, &state.constants, cons_env, state.globals, *field)
+        }
+        _ => Ok(state.current.clone()),
+    }
+}
+
+/// Complete a `FusedPrimop` dispatch once both operands are resolved: bind
+/// them into a small scratch environment and defer to the *unmodified*
+/// `Op::Bif` dispatch tail via `pending_bif`/`pending_bif_args` — the same
+/// mechanism `Op::Bif` itself uses (design §5.6). This function's only job is
+/// operand-gathering; it does not perform, or know anything about, the
+/// arithmetic/comparison the deferred intrinsic will run.
+fn finish_fused_primop(
+    state: &mut BcMachineState,
+    view: MutatorHeapView<'_>,
+    primop_id: u8,
+    left: BcValue,
+    right: BcValue,
+    environment: RefPtr<BcEnvFrame>,
+) -> Result<(), ExecutionError> {
+    let mut backing = Array::with_capacity(&view, 2);
+    backing.push(&view, left);
+    backing.push(&view, right);
+    let scratch_env = view
+        .alloc(BcEnvFrame::new(backing, state.annotation, Some(environment)))?
+        .as_ptr();
+
+    state.pending_bif = Some(primop_id);
+    let mut pending_args = ArgRefs::new();
+    pending_args.push(DecodedRef::Local(0));
+    pending_args.push(DecodedRef::Local(1));
+    state.pending_bif_args = pending_args;
+    // `dispatch()`'s tail reads `state.current.as_closure().map(|c| c.env())`
+    // for the `BifFrame`'s rooted env (machine.rs `dispatch`) — this closure
+    // is never entered (`pending_bif` short-circuits normal execution before
+    // `state.current` is re-entered), so any harmless code offset works;
+    // `state.blackhole` is the existing sentinel used for exactly this
+    // "placeholder closure, only its env matters" role elsewhere (e.g.
+    // `enter_local`'s black-holing).
+    state.current = BcValue::Closure(BcClosure::new(state.blackhole, scratch_env));
     Ok(())
 }
 
@@ -1121,6 +1232,35 @@ pub fn return_native(
         }
         BcContinuation::CaptureEnd => {
             state.capture_end_pending = true;
+        }
+        BcContinuation::FusedPrimopLeft {
+            primop_id,
+            right,
+            environment,
+            annotation,
+        } => {
+            state.stack.push(BcContinuation::FusedPrimopRight {
+                primop_id,
+                left: BcValue::Native(value),
+                environment,
+                annotation,
+            });
+            state.current = BcValue::Closure(BcClosure::new(right, environment));
+        }
+        BcContinuation::FusedPrimopRight {
+            primop_id,
+            left,
+            environment,
+            ..
+        } => {
+            finish_fused_primop(
+                state,
+                view,
+                primop_id,
+                left,
+                BcValue::Native(value),
+                environment,
+            )?;
         }
     }
     Ok(())
@@ -1231,6 +1371,40 @@ pub fn return_fun(
         }
         BcContinuation::CaptureEnd => {
             state.capture_end_pending = true;
+        }
+        BcContinuation::FusedPrimopLeft {
+            primop_id,
+            right,
+            environment,
+            annotation,
+        } => {
+            // A function value is not a valid primop operand, but this path
+            // does not special-case that: bind it opaque, exactly like
+            // `return_data`'s non-boxed-native fallback, and let `execute()`'s
+            // `resolve_native`/`num_arg`/`ordered_cmp` raise the identical
+            // type error the unfused path raises today.
+            state.stack.push(BcContinuation::FusedPrimopRight {
+                primop_id,
+                left: BcValue::Closure(fun),
+                environment,
+                annotation,
+            });
+            state.current = BcValue::Closure(BcClosure::new(right, environment));
+        }
+        BcContinuation::FusedPrimopRight {
+            primop_id,
+            left,
+            environment,
+            ..
+        } => {
+            finish_fused_primop(
+                state,
+                view,
+                primop_id,
+                left,
+                BcValue::Closure(fun),
+                environment,
+            )?;
         }
     }
     Ok(())
@@ -1560,6 +1734,21 @@ pub fn handle_op(
             let body_off = read_u32(code, &mut pc);
             state.annotation = smid;
             state.current = BcValue::Closure(BcClosure::new(body_off, env));
+        }
+        Op::FusedPrimop => {
+            // Force the first (source-order) operand to WHNF, mirroring
+            // `Op::Seq`'s decode exactly (design §5.4/§6.2) — the second
+            // operand is entered only once the first has resolved.
+            let primop_id = read_u8(code, &mut pc);
+            let left_off = read_u32(code, &mut pc);
+            let right_off = read_u32(code, &mut pc);
+            state.stack.push(BcContinuation::FusedPrimopLeft {
+                primop_id,
+                right: right_off,
+                environment: env,
+                annotation: state.annotation,
+            });
+            state.current = BcValue::Closure(BcClosure::new(left_off, env));
         }
         Op::BlackHole => {
             return Err(ExecutionError::BlackHole(state.annotation));
