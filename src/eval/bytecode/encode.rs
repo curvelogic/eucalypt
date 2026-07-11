@@ -117,6 +117,24 @@ impl Encoder {
         offset
     }
 
+    /// Emit a `FusedPrimop` node in place of a whitelisted intrinsic's
+    /// `binary_wrapper`-compiled `Case`-of-`Case` body (design §4/§5.4).
+    /// `binary_wrapper` always builds `lambda(2, body)`, so the wrapper's own
+    /// bound args are exactly `local(0)`/`local(1)`; these are pre-emitted as
+    /// standalone `Op::Atom` nodes (the same convention every other operand
+    /// uses — see the module doc comment) and referenced by offset, mirroring
+    /// `Op::Seq`'s scrutinee encoding.
+    fn emit_fused_primop(&mut self, primop_id: u8) -> CodeRef {
+        let left_off = self.emit_atom(&Ref::L(0));
+        let right_off = self.emit_atom(&Ref::L(1));
+        let offset = self.here();
+        self.emit_op(Op::FusedPrimop);
+        self.emit_u8(primop_id);
+        self.emit_u32(left_off);
+        self.emit_u32(right_off);
+        offset
+    }
+
     /// Pre-emit an `OP_ATOM` per arg ref, returning their offsets. Emitted
     /// before the parent node (post-order).
     fn emit_arg_atoms(&mut self, args: &[Ref]) -> Vec<CodeRef> {
@@ -405,6 +423,45 @@ impl Encoder {
     }
 }
 
+/// Intrinsic names whose global-form body is fusible into a single
+/// `Op::FusedPrimop` (design §3.1, "first cut" — the `binary_wrapper`
+/// family): resolved once to `(name, intrinsic index)` via
+/// `intrinsics::index`, never hardcoded magic numbers, mirroring the
+/// project's existing convention (e.g. `PRODUCER_NEXT` above).
+static FUSIBLE_PRIMOPS: std::sync::LazyLock<[(&'static str, usize); 8]> =
+    std::sync::LazyLock::new(|| {
+        ["ADD", "SUB", "MUL", "DIV", "GT", "GTE", "LT", "LTE"].map(|n| {
+            (
+                n,
+                crate::eval::intrinsics::index(n).expect("fusible primop registered"),
+            )
+        })
+    });
+
+/// Structural shape guard (design §9.4): confirms a whitelisted intrinsic's
+/// `LambdaForm` has `binary_wrapper`'s known shape (`lambda(2,
+/// case(local(0), ...))`) before the encoder substitutes the fused body.
+///
+/// This *gates* fusion rather than asserting it (a deliberate strengthening
+/// of §9.4's "panic loudly" mitigation): a mismatch — either a future
+/// `arith.rs` refactor that changes the wrapper's shape, or (routinely, in
+/// tests — see `differential.rs`'s `assert_engines_agree`, which builds a
+/// `StandardRuntime` with only a handful of intrinsics registered, leaving
+/// the rest as arity-0 `Unimplemented` stubs) an intrinsic that simply isn't
+/// wired up as the real `binary_wrapper` implementation at all — silently
+/// falls back to the ordinary `encode_node(lf.body())` path. This can only
+/// ever cost a missed fusion (a perf-only regression for that slot), never a
+/// wrong-shaped `Op::FusedPrimop`, so it is strictly safer than a hard panic
+/// while remaining just as effective at preventing silent miscompilation.
+fn is_fusible_shape(lf: &LambdaForm) -> bool {
+    lf.arity() == 2
+        && matches!(
+            &**lf.body(),
+            StgSyn::Case { scrutinee, .. }
+                if matches!(&**scrutinee, StgSyn::Atom { evaluand: Ref::L(0) })
+        )
+}
+
 /// Classify a `LambdaForm` for encoding: `(kind, arity, annotation)`.
 fn classify_lambda_form(lf: &LambdaForm) -> (u8, u8, Smid) {
     if lf.update() {
@@ -463,8 +520,19 @@ fn emit_fixtures_and_globals(enc: &mut Encoder, globals: &[LambdaForm]) -> Fixtu
 
     let global_forms: Vec<GlobalForm> = globals
         .iter()
-        .map(|lf| {
-            let entry = enc.encode_node(lf.body());
+        .enumerate()
+        .map(|(i, lf)| {
+            // Intercept by intrinsic *identity* (index), not by pattern-
+            // matching the compiled `StgSyn` tree (design §4): the fusible
+            // shape is exactly and only the compiler-emitted body of this
+            // small, known, fixed set of intrinsic global forms, so no tree
+            // walk/rewrite is needed — StgSyn/HeapSyn stay entirely untouched.
+            let entry = if FUSIBLE_PRIMOPS.iter().any(|(_, idx)| *idx == i) && is_fusible_shape(lf)
+            {
+                enc.emit_fused_primop(i as u8)
+            } else {
+                enc.encode_node(lf.body())
+            };
             let (kind, arity, smid) = classify_lambda_form(lf);
             GlobalForm {
                 kind,
