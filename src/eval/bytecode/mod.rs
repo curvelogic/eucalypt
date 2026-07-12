@@ -49,3 +49,13 @@ pub fn bytecode_enabled() -> bool {
 pub fn heapsyn_enabled() -> bool {
     std::env::var("EU_HEAPSYN").as_deref() == Ok("1")
 }
+
+/// Whether the pre-decoded typed-instruction execution path is selected via
+/// `EU_PREDECODE=1` (the eu-2sa6.9 falsification spike). When set, the bytecode
+/// engine decodes each opcode ONCE into a typed `Instr` record (cached by byte
+/// offset in a non-GC `Vec`) and dispatches over the typed fields instead of
+/// re-reading the byte stream on every execution. Flag OFF ⇒ byte-identical
+/// current behaviour; the decode is the same, so tick counts are unchanged.
+pub fn predecode_enabled() -> bool {
+    std::env::var("EU_PREDECODE").as_deref() == Ok("1")
+}
