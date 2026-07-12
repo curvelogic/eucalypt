@@ -777,6 +777,12 @@ mod tests {
         // beyond it (checked without a multi-gigabyte allocation).
         assert!(code_len_fits(0));
         assert!(code_len_fits(u32::MAX as usize));
+        // Only meaningful on targets where `usize` can represent a value
+        // beyond `u32::MAX` (on wasm32, `usize` is 32-bit, so
+        // `usize::MAX == u32::MAX` and this case cannot arise — the literal
+        // `u32::MAX as usize + 1` would itself overflow `usize` at compile
+        // time there under `#[deny(arithmetic_overflow)]`).
+        #[cfg(target_pointer_width = "64")]
         assert!(!code_len_fits(u32::MAX as usize + 1));
     }
 
