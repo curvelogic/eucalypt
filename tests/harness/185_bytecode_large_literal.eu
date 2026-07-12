@@ -1,0 +1,28 @@
+#!/usr/bin/env eu
+#
+# Regression: bytecode engine panicked `bytecode: invalid opcode` on a large
+# imported literal (eu-2sa6.11). An imported TOML array-of-tables compiles to a
+# single STG `LetRec` recursive group; once that group held more than 65535
+# bindings the encoder's `u16` binding-count field truncated, misaligning every
+# downstream form header and corrupting the byte stream. The fixture below has
+# 3000 eight-field records — well over 65536 STG bindings once imported — so the
+# whole document would have failed to evaluate on the default (bytecode) engine
+# before the count field was widened to `u32`. HeapSyn was always unaffected.
+#
+# Regenerate the fixture (short field names keep it small; the binding count
+# comes from record structure, not string length):
+#   for i in 0..3000: [[r]] a=i b=i%7 c=i%5 d=i%3 e=i%2 f=i%9 g=i%4 h=i%6
+
+{ import: "data=testdata/large_toml_records.toml" }
+
+get-a(x): x.a
+
+checks: {
+  # Full spine forced: the whole imported literal must evaluate.
+  records-ok: data.r count //= 3000
+  # Fold over every record's first field: sum(0..2999) = 4498500.
+  sum-ok: data.r map(get-a) sum //= 4498500
+  pass: records-ok ∧ sum-ok
+}
+
+RESULT: if(checks.pass, :PASS, :FAIL)

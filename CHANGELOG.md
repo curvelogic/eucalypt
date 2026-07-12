@@ -6,6 +6,10 @@ All notable changes to eucalypt are documented here.
 
 ## [0.12.1] - Unreleased
 
+### Fixed
+
+- **Bytecode panic on very large imported literals** — importing a document that splices into a single recursive binding group of more than 65,535 bindings (e.g. a TOML array-of-tables above ~2,500 full-schema records) truncated the `LetRec` binding count (`u16`), desynchronising the byte stream and crashing the VM with `bytecode: invalid opcode`. The binding count is now 32-bit (bytecode wire format v2; the embedded prelude blob auto-regenerates via a format-version hash), and the one residual hard limit — a compiled code section exceeding the 32-bit offset space — is now reported as a proper compile error instead of a panic. Regression-tested at the previously failing size on both engines (eu-2sa6.11)
+
 ### Changed
 
 - **Bytecode-vs-HeapSyn decode-bound gap substantially narrowed (not closed)** — primop fusion (`Op::FusedPrimop`, inlined at strict-binary-primop call sites) cuts VM ticks materially on arithmetic-heavy code (naive `fib`: −23% ticks); per-op transient system-heap `malloc`/`free` was removed from the `LET`/`BIF` hot paths; `ExecutionError`'s hot-path payload was boxed (128 → 40 bytes). A residual per-tick decode/dispatch envelope on allocation- and call-dense workloads remains — it is architectural (re-reading the byte stream on every step) rather than fusion-addressable, and is characterised, not eliminated, by this work. Its removal (decode-once into a pre-decoded, off-heap execution IR) is the ratified plan of record for 0.13; see `docs/superpowers/specs/2026-07-12-bytecode-transition-review.md`. (The W3 block index was evaluated and deferred — eu-4zhi, PR #985 — pending real static-large-block evidence; it is not part of this release.)

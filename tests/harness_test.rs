@@ -2720,6 +2720,11 @@ pub fn test_184_fused_primop_gc() {
 }
 
 #[test]
+pub fn test_185_bytecode_large_literal() {
+    run_test(&opts("185_bytecode_large_literal.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

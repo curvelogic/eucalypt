@@ -32,6 +32,7 @@ use crate::{
 };
 
 use super::{opcode::*, program::BytecodeProgram, CodeRef};
+use crate::eval::stg::compiler::CompileError;
 
 /// Encoded global form header: everything the machine needs to build a
 /// global closure — its kind, arity, source annotation and entry offset.
@@ -64,10 +65,6 @@ impl Encoder {
 
     fn emit_u8(&mut self, v: u8) {
         self.code.push(v);
-    }
-
-    fn emit_u16(&mut self, v: u16) {
-        self.code.extend_from_slice(&v.to_le_bytes());
     }
 
     fn emit_u32(&mut self, v: u32) {
@@ -256,7 +253,12 @@ impl Encoder {
 
                 let offset = self.here();
                 self.emit_op(Op::Let);
-                self.emit_u16(bindings.len() as u16);
+                // Binding count is a `u32` (BV1 wire format v2, eu-2sa6.11): a
+                // large imported literal compiles to a single recursive group
+                // with tens of thousands of bindings, which a `u16` count
+                // truncated — misaligning every downstream form header and
+                // corrupting the byte stream (`bytecode: invalid opcode`).
+                self.emit_u32(bindings.len() as u32);
                 for (lf, boff) in bindings.iter().zip(&body_offs) {
                     self.emit_form_header(lf, *boff);
                 }
@@ -273,7 +275,8 @@ impl Encoder {
 
                 let offset = self.here();
                 self.emit_op(Op::LetRec);
-                self.emit_u16(bindings.len() as u16);
+                // `u32` binding count — see the `Op::Let` note above (eu-2sa6.11).
+                self.emit_u32(bindings.len() as u32);
                 for (lf, boff) in bindings.iter().zip(&body_offs) {
                     self.emit_form_header(lf, *boff);
                 }
@@ -587,6 +590,37 @@ fn build_program(enc: Encoder, f: &Fixtures) -> BytecodeProgram {
     }
 }
 
+/// Reject a program whose code buffer overruns the 32-bit code-offset space.
+///
+/// Every inter-node reference in the stream is an absolute `u32` byte offset
+/// (`CodeRef`), and the encoder derives them from `Encoder::here()`, which
+/// truncates once `code.len()` passes `u32::MAX`. Beyond that point the emitted
+/// offsets no longer address the nodes they name, so the VM would later decode a
+/// mid-node byte as an opcode and panic (`bytecode: invalid opcode`). This turns
+/// that residual hard limit into an explicit, actionable diagnostic *before* the
+/// corrupt program can reach the machine (eu-2sa6.11).
+///
+/// Every other bounded field is already guarded upstream: App/Cons/Bif arg
+/// counts (`u8`) cannot exceed the `u8` lambda-arity cap
+/// (`CompileError::MaxLambdaArgs`), `Case` branch-table spans are bounded by the
+/// `u8` data-constructor tag range, and Let/LetRec binding counts are `u32`
+/// (this fix). All of those overflow only *after* the code buffer would already
+/// exceed `u32::MAX`, so this single check backstops them too.
+pub fn ensure_code_fits(prog: &BytecodeProgram) -> Result<(), CompileError> {
+    if !code_len_fits(prog.code.len()) {
+        return Err(CompileError::BytecodeCodeTooLarge(prog.code.len()));
+    }
+    Ok(())
+}
+
+/// Whether a code-buffer length is addressable by a 32-bit `CodeRef`. Offset 0
+/// through `u32::MAX` inclusive are valid; a length strictly greater than
+/// `u32::MAX` means some node sits at an offset that no longer round-trips.
+#[inline]
+fn code_len_fits(len: usize) -> bool {
+    len <= u32::MAX as usize
+}
+
 /// Encode a program root and its global lambda forms into one
 /// `BytecodeProgram`.
 ///
@@ -707,6 +741,50 @@ mod tests {
     use super::super::program::{read_u32, read_u8};
     use super::*;
     use crate::eval::stg::syntax::dsl;
+
+    /// Regression (eu-2sa6.11): a `LetRec` recursive group with more than
+    /// 65535 bindings must round-trip its count intact. A `u16` count field
+    /// (the original encoding) truncated `n` to `n & 0xFFFF`, so the machine
+    /// read the wrong number of form headers and the byte stream desynced into
+    /// `bytecode: invalid opcode`. The count is a `u32`, so a large imported
+    /// literal encodes correctly.
+    #[test]
+    fn encode_letrec_binding_count_exceeds_u16() {
+        let n = 70_000usize; // > u16::MAX; would truncate to 4464 under `u16`.
+        let bindings: Vec<_> = (0..n).map(|_| dsl::value(dsl::atom(dsl::num(0)))).collect();
+        let syn = dsl::letrec_(bindings, dsl::local(0));
+        let (prog, root, _) = encode(&syn, &[]);
+        let mut pc = root as usize;
+        assert_eq!(prog.code[pc], Op::LetRec as u8);
+        pc += 1;
+        assert_eq!(
+            read_u32(&prog.code, &mut pc) as usize,
+            n,
+            "binding count must survive as a full u32"
+        );
+    }
+
+    /// The residual hard limit — a code buffer overrunning the 32-bit offset
+    /// space — is reported as a proper `CompileError`, not left to panic the VM
+    /// with a truncated offset (eu-2sa6.11). Checked directly on the guard so no
+    /// multi-gigabyte allocation is needed.
+    #[test]
+    fn oversized_code_is_rejected() {
+        // A real small program passes the guard.
+        let (prog, _root, _) = encode(&dsl::atom(dsl::num(0)), &[]);
+        assert!(ensure_code_fits(&prog).is_ok());
+        // The boundary predicate: valid up to and including u32::MAX, rejected
+        // beyond it (checked without a multi-gigabyte allocation).
+        assert!(code_len_fits(0));
+        assert!(code_len_fits(u32::MAX as usize));
+        // Only meaningful on targets where `usize` can represent a value
+        // beyond `u32::MAX` (on wasm32, `usize` is 32-bit, so
+        // `usize::MAX == u32::MAX` and this case cannot arise — the literal
+        // `u32::MAX as usize + 1` would itself overflow `usize` at compile
+        // time there under `#[deny(arithmetic_overflow)]`).
+        #[cfg(target_pointer_width = "64")]
+        assert!(!code_len_fits(u32::MAX as usize + 1));
+    }
 
     #[test]
     fn encode_atom_v_number() {
