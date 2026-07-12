@@ -3,7 +3,7 @@
 # Modes per case, interleaved as triples each round: bc-predecode, bc-normal, hs.
 # Wall time via /usr/bin/time -p (real), timeout 600, --heap-limit-mib 12288.
 set -u
-EU=./target/release/eu
+EU=/tmp/eu-predecode/target/release/eu
 ROUNDS=${ROUNDS:-11}
 HEAP="--heap-limit-mib 12288"
 
