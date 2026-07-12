@@ -53,12 +53,21 @@ use super::{
 /// never exceeded on the hot path (a larger list would simply spill to the
 /// heap, exactly as a `Vec` does). Operand lists whose length is unbounded
 /// by arity — the densified branch table of a `Case` (up to the full
-/// data-constructor tag range) and a let/letrec binding-header list — are
-/// *not* buffered this way: the branch table is decoded straight into its
-/// final GC `Array` (see `Op::Case`), and let headers keep a `Vec` since a
-/// block literal may bind many names.
+/// data-constructor tag range) and a let/letrec binding-header list — avoid the
+/// system heap differently: the branch table and a non-recursive `Let`'s
+/// headers are decoded straight into their final GC `Array` (see `Op::Case`,
+/// `Op::Let`); a recursive `LetRec`, which must fill its array in a second pass
+/// over the frame, buffers its headers in an inline `FormHeaders` `SmallVec`
+/// (decoded once, spilling to the heap only for an unusually large group).
 type ArgOffsets = SmallVec<[CodeRef; 8]>;
 type ArgRefs = SmallVec<[DecodedRef; 8]>;
+/// Inline buffer for a `LetRec`'s form headers. Recursive bindings must be
+/// closed over the frame *after* it is allocated, so — unlike `Op::Let`, which
+/// reads each header straight into the managed array in one pass — `Op::LetRec`
+/// buffers the headers to fill the array in a second pass. Decoding once into
+/// an inline `SmallVec` keeps the common small-arity case off the system heap
+/// (no per-`LETREC` `malloc`) without re-decoding the byte stream (eu-cj1h.3).
+type FormHeaders = SmallVec<[FormHeader; 8]>;
 
 /// A decoded inline `Ref` operand from the byte stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -217,6 +226,16 @@ pub struct BifFrame {
     pub env: RefPtr<BcEnvFrame>,
     /// The intrinsic's resolved argument refs; `Ref::V` constants carry heap
     /// string/set/vec pointers the collector must forward across a force.
+    ///
+    /// This is a `Vec<Ref>` (not an inline `SmallVec`) *deliberately*: the
+    /// dispatch tail captures a raw `*const [Ref]` into this buffer and holds
+    /// it across `execute`, during which a nested BIF dispatch may push another
+    /// `BifFrame` and reallocate the `bif_frames` `Vec` — moving this struct.
+    /// A `Vec`'s backing buffer lives on the system heap independent of the
+    /// struct, so the raw slice stays valid; inline storage would move with the
+    /// struct and dangle. The per-dispatch `malloc`/`free` this would otherwise
+    /// incur is avoided by recycling buffers through `BcMachineState`'s
+    /// `bif_arg_pool` (eu-cj1h.3).
     pub args: Vec<Ref>,
 }
 
@@ -272,6 +291,13 @@ pub struct BcMachineState {
     /// so a collection triggered by an intrinsic force forwards the pointers
     /// the in-flight intrinsic still dereferences (eu-zryh). See [`BifFrame`].
     pub bif_frames: Vec<BifFrame>,
+    /// Free-list of recycled `BifFrame::args` buffers. Each BIF dispatch draws
+    /// a `Vec<Ref>` from here (or allocates one on a cold miss) and returns it,
+    /// cleared, when the frame is popped — eliminating per-dispatch system-heap
+    /// `malloc`/`free` after warmup while keeping the args buffer address-stable
+    /// (see [`BifFrame::args`]). Pooled buffers are always empty, so they hold
+    /// no live `Ref`s and need no GC scanning (eu-cj1h.3).
+    pub bif_arg_pool: Vec<Vec<Ref>>,
     /// Closures allocated by `let`/`letrec` bindings, accumulated across every
     /// execution phase (main run, io-run drives, nested `evaluate_to_whnf`).
     /// Counted the same way as the HeapSyn machine's `Metrics::allocs`
@@ -306,6 +332,7 @@ impl BcMachineState {
             stash: Vec::new(),
             suspended_stacks: Vec::new(),
             bif_frames: Vec::new(),
+            bif_arg_pool: Vec::new(),
             allocs: 0,
         }
     }
@@ -434,14 +461,31 @@ fn update_const(r: &mut Ref, heap: &CollectorHeapView<'_>) {
 /// the dispatch via the `BifFrame`, see [`BifFrame`] and eu-zryh). Shared by
 /// the top-level dispatch tail and the re-entrant sub-loop.
 fn materialize_bif_args(state: &mut BcMachineState) -> Vec<Ref> {
-    std::mem::take(&mut state.pending_bif_args)
-        .iter()
-        .map(|d| match *d {
+    // Take the decoded refs into an owned local so the constant-pool access
+    // below does not conflict with borrowing `state.pending_bif_args`.
+    let pending = std::mem::take(&mut state.pending_bif_args);
+    // Recycle a buffer from the pool (cold miss allocates) rather than
+    // `malloc`ing a fresh `Vec` per dispatch (eu-cj1h.3).
+    let mut args = state.bif_arg_pool.pop().unwrap_or_default();
+    args.clear();
+    args.reserve(pending.len());
+    for d in &pending {
+        args.push(match *d {
             DecodedRef::Local(i) => Ref::L(i as usize),
             DecodedRef::Global(i) => Ref::G(i as usize),
             DecodedRef::Value(k) => state.constants[k as usize].clone(),
-        })
-        .collect()
+        });
+    }
+    args
+}
+
+/// Return a popped `BifFrame`'s args buffer to the recycling pool, cleared so
+/// it holds no live `Ref`s (see [`BcMachineState::bif_arg_pool`]). Paired with
+/// every `bif_frames.pop()` that follows a `materialize_bif_args` dispatch.
+fn recycle_bif_args(state: &mut BcMachineState, frame: BifFrame) {
+    let mut args = frame.args;
+    args.clear();
+    state.bif_arg_pool.push(args);
 }
 
 /// One GC poll shared by every drive loop (`run`, `drive_whnf`,
@@ -1586,15 +1630,6 @@ fn bc_info(h: &FormHeader) -> InfoTagged<CodeRef> {
     form_info(h.kind, h.arity, h.smid, h.body)
 }
 
-/// Read a `Let`/`LetRec` binding-header list (`u16` count then that many
-/// form headers) followed by the body offset.
-fn read_let(code: &[u8], pc: &mut usize) -> (Vec<FormHeader>, CodeRef) {
-    let count = read_u16(code, pc) as usize;
-    let headers = (0..count).map(|_| read_form_header(code, pc)).collect();
-    let body = read_u32(code, pc);
-    (headers, body)
-}
-
 /// Enter a local env slot, black-holing it and pushing an `Update`
 /// continuation if it is a thunk (memoisation + cycle detection). Mirrors
 /// the `Atom{L}` thunk dance in `vm.rs`.
@@ -1806,24 +1841,39 @@ pub fn handle_op(
             enter_callable(state, view, env, callable)?;
         }
         Op::Let => {
-            let (headers, body_off) = read_let(code, &mut pc);
-            // Non-recursive: bindings close over the enclosing env.
-            state.allocs += headers.len() as u64;
-            let mut array = Array::with_capacity(&view, headers.len());
-            for h in &headers {
-                array.push(&view, BcValue::Closure(BcClosure::close(&bc_info(h), env)));
+            // Non-recursive: bindings close over the enclosing env. Decode the
+            // `u16` count then read each form header straight into the managed
+            // env-frame `Array` — mirroring `Op::Case`'s branch-table read — so
+            // no transient `Vec<FormHeader>` is malloc'd on the system heap per
+            // `LET` (the dominant alloc-bound per-op cost, eu-cj1h.3).
+            let count = read_u16(code, &mut pc) as usize;
+            state.allocs += count as u64;
+            let mut array = Array::with_capacity(&view, count);
+            for _ in 0..count {
+                let h = read_form_header(code, &mut pc);
+                array.push(&view, BcValue::Closure(BcClosure::close(&bc_info(&h), env)));
             }
+            let body_off = read_u32(code, &mut pc);
             let new_env = view
                 .alloc(BcEnvFrame::new(array, state.annotation, Some(env)))?
                 .as_ptr();
             state.current = BcValue::Closure(BcClosure::new(body_off, new_env));
         }
         Op::LetRec => {
-            let (headers, body_off) = read_let(code, &mut pc);
-            // Recursive: bindings close over the new frame itself.
-            state.allocs += headers.len() as u64;
-            let mut array = Array::with_capacity(&view, headers.len());
-            for _ in &headers {
+            // Recursive: bindings close over the new frame itself, so buffer the
+            // form headers (decoded once into an inline `SmallVec` — no system
+            // heap for the common small-arity case, no re-decode), pre-size the
+            // array with dangling closures, allocate the frame, then fill each
+            // slot with a closure over that frame (eu-cj1h.3).
+            let count = read_u16(code, &mut pc) as usize;
+            let mut headers: FormHeaders = SmallVec::with_capacity(count);
+            for _ in 0..count {
+                headers.push(read_form_header(code, &mut pc));
+            }
+            let body_off = read_u32(code, &mut pc);
+            state.allocs += count as u64;
+            let mut array = Array::with_capacity(&view, count);
+            for _ in 0..count {
                 array.push(
                     &view,
                     BcValue::Closure(BcClosure::new(0, RefPtr::dangling())),
@@ -1833,7 +1883,7 @@ pub fn handle_op(
                 .alloc(BcEnvFrame::new(array.clone(), state.annotation, Some(env)))?
                 .as_ptr();
             for (i, h) in headers.iter().enumerate() {
-                // SAFETY: array was pre-sized to headers.len() and i < len.
+                // SAFETY: array was pre-sized to `count` and i < count.
                 unsafe {
                     array.set_unchecked(i, BcValue::Closure(BcClosure::close(&bc_info(h), frame)));
                 }
@@ -2302,7 +2352,9 @@ impl<'a> BytecodeMachine<'a> {
                 // `execute`; GC updates it in place.
                 bif.execute(&mut ctx, view, emitter, unsafe { &*args_ptr })
             };
-            self.state.bif_frames.pop();
+            if let Some(frame) = self.state.bif_frames.pop() {
+                recycle_bif_args(&mut self.state, frame);
+            }
             // Mirror the HeapSyn BIF-result map_err (vm.rs): the Bif closure is
             // still `current`, so its env yields the trace at the raise point.
             if let Err(e) = bif_result {
@@ -3380,7 +3432,9 @@ impl BcBifContext<'_, '_> {
             .as_slice();
         // SAFETY: the slice aliases the rooted frame, only read during execute.
         let result = bif.execute(self, view, emitter, unsafe { &*args_ptr });
-        self.state.bif_frames.pop();
+        if let Some(frame) = self.state.bif_frames.pop() {
+            recycle_bif_args(self.state, frame);
+        }
         result
     }
 }
