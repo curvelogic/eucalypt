@@ -1,0 +1,18 @@
+"Higher-order / env-walk benchmark (workload class C). Freezes the
+ad-hoc env-walk fold `range(0,10000) foldl((_+_),0)` that ROADMAP
+section 7 and the A/B reports used as the O(n^2) env-walk case, so it
+stops being an uncommitted spike. Both engines share the O(n^2)
+cactus-environment-walk ceiling here (review A D5; BV3 register-frame
+territory), so this is informational for the bc/hs comparison rather
+than a win for either engine. sum 0..9999 == 49995000. Runs >1s on the
+faster engine."
+
+# (_ + _) is a two-argument add; the range is the fold's list (catenated last).
+grand: range(0, 10000) foldl((_ + _), 0)
+
+` { target: :bench-hof-fold
+    verify: ["default-expectation"] }
+bench-hof-fold: {
+  total: grand
+  RESULT: if(grand = 49995000, :PASS, :FAIL)
+}

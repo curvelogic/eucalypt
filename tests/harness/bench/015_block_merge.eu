@@ -1,0 +1,38 @@
+"Block construction & merge benchmark (workload class D). Builds a
+large base block, then folds the deep-merge operator `<<` over several
+override layers on top of it -- the product's core operation (layering
+config defaults with overrides), which had no engine benchmark before
+eu-2sa6.6. Both `block` construction and `<<` merge are O(n^2) on
+cons-list blocks (ROADMAP section 2), so the base is sized to 3000 keys
+to keep the bench in the >1.5s band (~2.5s) rather than the ~5s a
+5000-key base would cost. Runs >1.5s on the faster engine."
+
+# One [key, value] element with a computed key.
+pa(i): [sym("k{i}"), i]
+
+# One override element for the same key space, offset by a per-layer amount.
+pl(off, i): [sym("k{i}"), i + off]
+
+# The 3000-key base block, built once via block/elements.
+` :suppress
+defaults: block(range(0, 3000) map(pa))
+
+# A 500-key override layer j (overrides keys k0..k499).
+mk-layer(j): block(range(0, 500) map(pl((j + 1) * 100000)))
+
+# Fold four override layers onto the base with `<<` (deep-merge).
+` :suppress
+merged: range(0, 4) map(mk-layer) foldl((<<), defaults)
+
+key-count: merged keys count
+value-sum: merged values sum
+
+` { target: :bench-block-merge
+    verify: ["default-expectation"] }
+bench-block-merge: {
+  keys: key-count
+  sum: value-sum
+  RESULT: if(key-count = 3000,
+             if(value-sum = 204498500, :PASS, :FAIL),
+             :FAIL)
+}

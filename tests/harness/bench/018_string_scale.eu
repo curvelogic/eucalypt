@@ -1,0 +1,31 @@
+"String / interpolation-at-scale benchmark (workload class G). Runs a
+large interpolate+concat loop: each iteration builds a config line by
+interpolating four fields (the desugarer lowers interpolation to string
+concatenation), and every line is forced by a fold. Template rendering
+(host-and-port string building) is a real product workload that had
+only sub-50ms smoke tests before eu-2sa6.6.
+
+NOTE ON SIZE: review C specified 50k iterations. Traversing/forcing a
+lazy list of that length hits the shared O(n^2) fold/env-walk ceiling
+(ROADMAP; review C class H), which runs into minutes. N is tuned to
+7000 to land in the >1.5s band while still exercising interpolation and
+concatenation under that traversal -- the genuine engine-comparison
+surface for string work at scale."
+
+# Interpolate four fields into one config line.
+mk-line(i): "host-{i}.svc.local port={i} backend=be-{i} weight={i}"
+
+# Force each interpolated string to WHNF via a cheap non-empty compare,
+# counting the (all non-empty) lines. `s = ""` forces the concatenation
+# but short-circuits on the length mismatch, so the per-line cost is the
+# interpolation itself, not a full character walk.
+force-count(acc, s): acc + if(s = "", 0, 1)
+
+count-forced: range(0, 7000) map(mk-line) foldl(force-count, 0)
+
+` { target: :bench-string-scale
+    verify: ["default-expectation"] }
+bench-string-scale: {
+  lines: count-forced
+  RESULT: if(count-forced = 7000, :PASS, :FAIL)
+}

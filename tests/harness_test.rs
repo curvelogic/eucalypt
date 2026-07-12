@@ -454,6 +454,58 @@ pub fn test_harness_070() {
     run_test(&opts("070_bench_validation.eu"));
 }
 
+// ── Engine A/B canonical suite (eu-2sa6.6) ──────────────────────────────────
+//
+// The seven new class-coverage benches plus the frozen env-walk fold. Each
+// carries a PASS/FAIL RESULT gated by an explicit `verify: ["default-expectation"]`
+// (a bare `bench-*` target would otherwise auto-pass). These run under `cargo
+// test` on the default (bytecode) engine and under `EU_HEAPSYN=1 cargo test` on
+// HeapSyn, so both engines are exercised. See docs/superpowers/engine-ab/.
+//
+// They are >1s each by design (to escape the startup-noise floor), so the whole
+// group adds ~15-20s to the suite. The full interleaved timing run lives in
+// `cargo xtask engine-ab`, not here.
+
+#[test]
+pub fn test_bench_015_block_merge() {
+    run_test(&opts("bench/015_block_merge.eu"));
+}
+
+#[test]
+pub fn test_bench_016_import_export_yaml() {
+    run_test(&opts("bench/016_import_export_yaml.eu"));
+}
+
+#[test]
+pub fn test_bench_017_import_export_toml() {
+    run_test(&opts("bench/017_import_export_toml.eu"));
+}
+
+#[test]
+pub fn test_bench_018_string_scale() {
+    run_test(&opts("bench/018_string_scale.eu"));
+}
+
+#[test]
+pub fn test_bench_019_list_scale() {
+    run_test(&opts("bench/019_list_scale.eu"));
+}
+
+#[test]
+pub fn test_bench_020_lookup_curve() {
+    run_test(&opts("bench/020_lookup_curve.eu"));
+}
+
+#[test]
+pub fn test_bench_021_io_loop() {
+    run_test(&io_opts("bench/021_io_loop.eu"));
+}
+
+#[test]
+pub fn test_bench_022_hof_fold() {
+    run_test(&opts("bench/022_hof_fold.eu"));
+}
+
 #[test]
 pub fn test_harness_071() {
     run_test(&opts("071_sorting_lists.eu"));
