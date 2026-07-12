@@ -267,4 +267,4 @@ for removing it is this document.
 | Date | Decision | Evidence | Owner |
 |---|---|---|---|
 | 2026-07-12 | This review gates 0.13 (bead eu-2sa6.4) | — | greg |
-| *(pending)* | Ratify §1–§7 as plan of record | this doc + reviews A–D | |
+| 2026-07-12 | §1–§7 ratified as the transition plan of record; pre-decode spike authorised to run in parallel with Tier 0 | this doc + reviews A–D | greg |
