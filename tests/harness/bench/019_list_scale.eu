@@ -1,0 +1,16 @@
+"List / stream-processing benchmark (workload class H). A range → map →
+sum pipeline over a lazy list. Frozen from review C's suggested class-H
+probe. Both engines are O(n^2) here (the shared env-walk ceiling,
+ROADMAP; review A D5), so N is tuned to 6000 to land in the >1s band
+rather than a round figure -- the value is the bc/hs comparison on the
+shared ceiling, not raw throughput. Runs >1s on the faster engine."
+
+# sum of (i + 1) for i in 0..5999  ==  sum 1..6000  ==  18003000
+grand: range(0, 6000) map(_ + 1) sum
+
+` { target: :bench-list-scale
+    verify: ["default-expectation"] }
+bench-list-scale: {
+  total: grand
+  RESULT: if(grand = 18003000, :PASS, :FAIL)
+}

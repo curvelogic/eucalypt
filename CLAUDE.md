@@ -171,6 +171,23 @@ Add `--debug-format` for the Rust Debug representation (shows full structure inc
 - **Always wrap `eu` in `timeout`** to guard against divergent programs: `timeout 60 ./target/release/eu ...`
 - **Benchmark verification**: Agent-reported benchmark numbers MUST be independently verified before acceptance. Always do a clean build (`cargo clean && cargo build --release`) when verifying.
 
+## Engine Performance Claims — Mandatory Protocol
+
+Any bytecode-vs-HeapSyn performance number that enters CHANGELOG, ROADMAP, a
+release gate, a bead, or a report **must** be produced under the checked-in
+measurement standard and cite a dated report or a ledger row:
+
+- **Protocol:** `docs/superpowers/engine-ab/PROTOCOL.md` — interleaved bc/hs
+  pairs on a quiet machine, ticks-first, wall median-of-N with spread, one
+  binary/one blob for both engines, nothing under ~200 ms in ratio analysis,
+  and a confidence label (measured-verified / measured-single / projected) on
+  every figure. Read it before quoting any engine number.
+- **Canonical suite:** the eight `tests/harness/bench/{015..022}` benches (run
+  under `cargo test` and `EU_HEAPSYN=1 cargo test`).
+- **Runner + ledger:** `cargo xtask engine-ab` runs the suite interleaved and
+  appends to `docs/superpowers/engine-ab/results.jsonl`; `cargo xtask engine-ab
+  --check` flags regressions vs the previous run.
+
 ## Code Quality, Style, and Security
 
 - **Never allow clippy warnings**: fix every one (don't suppress with `#[allow(...)]`) unless the user explicitly permits it. Use `cargo clippy --all-targets -- -D warnings` — `--all-targets` matters, since `--lib` alone misses tests and benches that CI validates.

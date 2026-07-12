@@ -454,6 +454,74 @@ pub fn test_harness_070() {
     run_test(&opts("070_bench_validation.eu"));
 }
 
+// ── Engine A/B canonical suite (eu-2sa6.6) ──────────────────────────────────
+//
+// The seven new class-coverage benches plus the frozen env-walk fold. Each
+// carries a PASS/FAIL RESULT gated by an explicit `verify: ["default-expectation"]`
+// (a bare `bench-*` target would otherwise auto-pass). These run under `cargo
+// test` on the default (bytecode) engine and under `EU_HEAPSYN=1 cargo test` on
+// HeapSyn, so both engines are exercised. See docs/superpowers/engine-ab/.
+//
+// They are >1s each by design (to escape the startup-noise floor), so the whole
+// group adds ~15-20s to the suite. The full interleaved timing run lives in
+// `cargo xtask engine-ab`, not here.
+
+#[test]
+pub fn test_bench_015_block_merge() {
+    run_test(&opts("bench/015_block_merge.eu"));
+}
+
+#[test]
+pub fn test_bench_016_import_export_yaml() {
+    run_test(&opts("bench/016_import_export_yaml.eu"));
+}
+
+#[test]
+pub fn test_bench_017_import_export_toml() {
+    run_test(&opts("bench/017_import_export_toml.eu"));
+}
+
+#[test]
+pub fn test_bench_018_string_scale() {
+    run_test(&opts("bench/018_string_scale.eu"));
+}
+
+#[test]
+pub fn test_bench_019_list_scale() {
+    run_test(&opts("bench/019_list_scale.eu"));
+}
+
+#[test]
+pub fn test_bench_020_lookup_curve() {
+    run_test(&opts("bench/020_lookup_curve.eu"));
+}
+
+#[test]
+pub fn test_bench_021_io_loop() {
+    // `io.map-m` over 1000 actions builds its bind chain via the prelude's
+    // recursive `sequence` (non-tail: `seq-step` recurses into `sequence`
+    // before constructing the bind), which recurses natively in Rust once
+    // per IO step. In a release build this is cheap enough per frame to fit
+    // comfortably in the default thread stack; in the unoptimised debug
+    // build `cargo test` uses in CI, the much larger per-frame footprint
+    // overflows the default test-thread stack (observed on ubuntu-latest,
+    // windows-latest, and reproduced locally on macOS debug builds — this
+    // is a debug-build stack-depth issue, not a platform/io.shell
+    // portability issue). Run on a dedicated thread with a generous stack
+    // rather than shrinking the bench's iteration count.
+    std::thread::Builder::new()
+        .stack_size(256 * 1024 * 1024)
+        .spawn(|| run_test(&io_opts("bench/021_io_loop.eu")))
+        .expect("spawn test_bench_021_io_loop thread")
+        .join()
+        .expect("test_bench_021_io_loop thread panicked");
+}
+
+#[test]
+pub fn test_bench_022_hof_fold() {
+    run_test(&opts("bench/022_hof_fold.eu"));
+}
+
 #[test]
 pub fn test_harness_071() {
     run_test(&opts("071_sorting_lists.eu"));

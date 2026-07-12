@@ -45,15 +45,20 @@ use eucalypt::{
 };
 use sha2::{Digest, Sha256};
 
+mod engine_ab;
+
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("prelude-compile") => cmd_prelude_compile(),
+        Some("engine-ab") => engine_ab::run(&mut args),
         Some(cmd) => bail!("unknown xtask command: {cmd}"),
         None => {
             eprintln!("Usage: cargo xtask <command>");
             eprintln!("Commands:");
             eprintln!("  prelude-compile   Compile lib/prelude.eu → lib/prelude.blob");
+            eprintln!("  engine-ab         Run the engine A/B suite; append results.jsonl");
+            eprintln!("  engine-ab --check Flag regressions vs the previous ledger run");
             std::process::exit(1);
         }
     }

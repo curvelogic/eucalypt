@@ -1,0 +1,20 @@
+"IO / subprocess benchmark (workload class L). Drives 1000 io.shell echo
+round-trips via io.map-m and counts the results. Exercises the IO monad
+plumbing (bind/sequence over 1000 actions) and external-process latency,
+a workload that had no engine benchmark before eu-2sa6.6. Expected to be
+engine-neutral (dominated by subprocess spawn cost, not VM dispatch).
+Requires --allow-io. Runs >1s on the faster engine (~3s, both engines)."
+
+# echo the iteration index (portable across shells).
+` :suppress
+echo-cmd(i): if(eu.os = "windows", "Write-Output {i}", "echo {i}")
+
+run-echo(i): io.shell(echo-cmd(i))
+
+` { target: :bench-io-loop
+    requires-io: true
+    verify: ["default-expectation"] }
+bench-io-loop: { :io results: range(0, 1000) io.map-m(run-echo) }.(
+  if((results count) = 1000,
+     { RESULT: :PASS },
+     { RESULT: :FAIL }))
