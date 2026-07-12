@@ -199,9 +199,44 @@ pub enum StgSyn {
         obj: Ref,
         default: Ref,
     },
+    /// Fused strict-binary-primop inline site (eu-9mvh, Option C).
+    ///
+    /// A marker wrapping the ordinary inlined wrapper body (`inner`): the
+    /// bytecode encoder emits a single `Op::FusedPrimop(primop_id, left,
+    /// right)` at the inline site — no App+enter, no operand env frame — while
+    /// the HeapSyn loader and every other `StgSyn` consumer transparently use
+    /// `inner`, keeping HeapSyn byte-identical to the pre-fusion inline.
+    ///
+    /// `left`/`right` are the two operand refs resolved in the enclosing scope
+    /// (identical to the refs `inner`'s wrapper `Let` binds); `primop_id` is
+    /// the intrinsic index that names its `Op::Bif` dispatch slot. The
+    /// optimiser transforms `left`/`right` and rewrites `inner` in lockstep
+    /// (same de Bruijn scope), so the two never drift.
+    FusedPrimop {
+        primop_id: u8,
+        left: Ref,
+        right: Ref,
+        inner: Rc<StgSyn>,
+    },
     /// Blackhole - invalid / uninitialised code
     #[default]
     BlackHole,
+}
+
+/// Whether `body` is the `binary_wrapper`-compiled force-dispatch body of a
+/// strict binary primop — a `case` whose scrutinee is the first bound operand
+/// `L(0)` (design §9.4). Shared by the bytecode encoder (global-form fusion)
+/// and the STG compiler (inline-site interception) so the shape guard is
+/// defined once. Gates fusion rather than asserting it: a shape mismatch
+/// (future `arith.rs` refactor, or a stubbed intrinsic in differential tests)
+/// simply falls back to the ordinary un-fused encoding — a missed fusion is
+/// perf-only, never a miscompilation.
+pub fn is_fusible_primop_body(body: &StgSyn) -> bool {
+    matches!(
+        body,
+        StgSyn::Case { scrutinee, .. }
+            if matches!(&**scrutinee, StgSyn::Atom { evaluand: Reference::L(0) })
+    )
 }
 
 impl StgSyn {
@@ -269,6 +304,14 @@ impl fmt::Display for StgSyn {
             }
             StgSyn::LookupLit { key, obj, .. } => {
                 write!(f, "⌕({obj},{key})")
+            }
+            StgSyn::FusedPrimop {
+                primop_id,
+                left,
+                right,
+                ..
+            } => {
+                write!(f, "FUSED[{primop_id}]({left},{right})")
             }
             StgSyn::BlackHole => {
                 write!(f, "⊙")

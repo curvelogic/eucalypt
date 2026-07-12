@@ -126,6 +126,7 @@ pub fn materialise_data(
         StgSyn::DeMeta { .. } => Err(unsupported(smid, "demeta")),
         StgSyn::Seq { .. } => Err(unsupported(smid, "seq")),
         StgSyn::LookupLit { .. } => Err(unsupported(smid, "lookup")),
+        StgSyn::FusedPrimop { .. } => Err(unsupported(smid, "fused-primop")),
         StgSyn::BlackHole => Err(unsupported(smid, "blackhole")),
     }
 }

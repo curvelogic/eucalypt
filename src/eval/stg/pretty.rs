@@ -235,6 +235,15 @@ impl ToPretty for StgSyn {
                 .append(allocator.text(" or "))
                 .append(allocator.text(format!("{default}")))
                 .group(),
+            StgSyn::FusedPrimop {
+                primop_id,
+                left,
+                right,
+                inner,
+            } => allocator
+                .text(format!("fused[{primop_id}]({left},{right}) "))
+                .append(inner.pretty(allocator))
+                .group(),
             StgSyn::BlackHole => allocator.text("HOLE"),
         }
     }

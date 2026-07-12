@@ -210,6 +210,10 @@ pub fn load<'scope, T: ScopedAllocator<'scope>>(
             obj: stg_to_heap(view, pool, obj),
             default: stg_to_heap(view, pool, default),
         }),
+        // The fusion marker is bytecode-only: HeapSyn transparently executes
+        // the ordinary inlined wrapper body, staying byte-identical to the
+        // pre-fusion inline (eu-9mvh, Option C).
+        StgSyn::FusedPrimop { inner, .. } => return load(view, pool, inner.clone()),
         StgSyn::BlackHole => view.alloc(HeapSyn::BlackHole {}),
     }
     .map(|sp| sp.as_ptr())

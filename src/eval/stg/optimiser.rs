@@ -381,6 +381,24 @@ impl AllocationPruner {
                     or_else,
                 })
             }
+            StgSyn::FusedPrimop {
+                primop_id,
+                left,
+                right,
+                inner,
+            } => {
+                // The marker adds no binding scope, so `left`/`right` and
+                // `inner` are rewritten under the *same* de Bruijn context and
+                // stay in lockstep: whatever remapping the operand refs undergo
+                // (including `inner`'s wrapper `Let` being stripped or kept) is
+                // applied identically to the carried refs (eu-9mvh, Option C).
+                Rc::new(StgSyn::FusedPrimop {
+                    primop_id: *primop_id,
+                    left: self.transform(left),
+                    right: self.transform(right),
+                    inner: self.apply(inner.clone()),
+                })
+            }
             _ => stg.clone(),
         }
     }

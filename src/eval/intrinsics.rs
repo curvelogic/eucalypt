@@ -1055,6 +1055,19 @@ pub fn intrinsic(index: usize) -> &'static Intrinsic {
     &INTRINSICS[index]
 }
 
+/// Names of the strict binary primops whose `binary_wrapper`-compiled
+/// force-dispatch body is fusible into a single `Op::FusedPrimop`
+/// superinstruction (eu-9mvh). Shared by the bytecode encoder (global-form
+/// and inline-site fusion) and the STG compiler (inline-site interception)
+/// so the two whitelists can never drift out of step.
+pub const FUSIBLE_PRIMOP_NAMES: [&str; 8] = ["ADD", "SUB", "MUL", "DIV", "GT", "GTE", "LT", "LTE"];
+
+/// Whether the intrinsic at `idx` is a fusible strict binary primop. Resolved
+/// against [`FUSIBLE_PRIMOP_NAMES`] via the catalogue, never a hardcoded index.
+pub fn is_fusible_primop_index(idx: usize) -> bool {
+    FUSIBLE_PRIMOP_NAMES.iter().any(|n| index(n) == Some(idx))
+}
+
 /// Retrieve the whole ordered catalogue of intrinsics
 pub fn catalogue() -> &'static [Intrinsic] {
     &INTRINSICS

@@ -165,6 +165,12 @@ pub enum ArenaStgSyn {
         obj: Ref,
         default: Ref,
     },
+    FusedPrimop {
+        primop_id: u8,
+        left: Ref,
+        right: Ref,
+        inner: NodeIdx,
+    },
     BlackHole,
 }
 
@@ -312,6 +318,20 @@ impl StgArena {
                 obj: obj.clone(),
                 default: default.clone(),
             },
+            StgSyn::FusedPrimop {
+                primop_id,
+                left,
+                right,
+                inner,
+            } => {
+                let inner_idx = self.alloc_node(inner);
+                ArenaStgSyn::FusedPrimop {
+                    primop_id: *primop_id,
+                    left: left.clone(),
+                    right: right.clone(),
+                    inner: inner_idx,
+                }
+            }
             StgSyn::BlackHole => ArenaStgSyn::BlackHole,
         }
     }
@@ -478,6 +498,17 @@ impl StgArena {
                 key: key.clone(),
                 obj: obj.clone(),
                 default: default.clone(),
+            },
+            ArenaStgSyn::FusedPrimop {
+                primop_id,
+                left,
+                right,
+                inner,
+            } => StgSyn::FusedPrimop {
+                primop_id: *primop_id,
+                left: left.clone(),
+                right: right.clone(),
+                inner: self.reconstruct_node(*inner)?,
             },
             ArenaStgSyn::BlackHole => StgSyn::BlackHole,
         })

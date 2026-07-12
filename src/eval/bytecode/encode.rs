@@ -117,16 +117,23 @@ impl Encoder {
         offset
     }
 
-    /// Emit a `FusedPrimop` node in place of a whitelisted intrinsic's
-    /// `binary_wrapper`-compiled `Case`-of-`Case` body (design §4/§5.4).
-    /// `binary_wrapper` always builds `lambda(2, body)`, so the wrapper's own
-    /// bound args are exactly `local(0)`/`local(1)`; these are pre-emitted as
-    /// standalone `Op::Atom` nodes (the same convention every other operand
-    /// uses — see the module doc comment) and referenced by offset, mirroring
-    /// `Op::Seq`'s scrutinee encoding.
+    /// Emit a `FusedPrimop` node for a whitelisted intrinsic's *global form*,
+    /// whose `binary_wrapper` body binds its operands as `local(0)`/`local(1)`
+    /// (design §4/§5.4). Delegates to [`Encoder::emit_fused_primop_refs`].
     fn emit_fused_primop(&mut self, primop_id: u8) -> CodeRef {
-        let left_off = self.emit_atom(&Ref::L(0));
-        let right_off = self.emit_atom(&Ref::L(1));
+        self.emit_fused_primop_refs(primop_id, &Ref::L(0), &Ref::L(1))
+    }
+
+    /// Emit a `FusedPrimop` node reading two explicit operand refs. The refs
+    /// are pre-emitted as standalone `Op::Atom` nodes (the same convention
+    /// every other operand uses — see the module doc comment) and referenced
+    /// by offset, mirroring `Op::Seq`'s scrutinee encoding. Used for both the
+    /// global form (`L(0)`/`L(1)`) and the direct inline site (arbitrary
+    /// enclosing-scope operand refs — no App+enter, no operand env frame;
+    /// eu-9mvh, Option C).
+    fn emit_fused_primop_refs(&mut self, primop_id: u8, left: &Ref, right: &Ref) -> CodeRef {
+        let left_off = self.emit_atom(left);
+        let right_off = self.emit_atom(right);
         let offset = self.here();
         self.emit_op(Op::FusedPrimop);
         self.emit_u8(primop_id);
@@ -342,6 +349,19 @@ impl Encoder {
                 offset
             }
 
+            StgSyn::FusedPrimop {
+                primop_id,
+                left,
+                right,
+                ..
+            } => {
+                // Inline the fused op directly at the call site: a single
+                // `Op::FusedPrimop` reading the two operand refs from the
+                // enclosing env (no App+enter, no operand frame). HeapSyn and
+                // every other consumer use `inner` instead (eu-9mvh, Option C).
+                self.emit_fused_primop_refs(*primop_id, left, right)
+            }
+
             StgSyn::BlackHole => {
                 let offset = self.here();
                 self.emit_op(Op::BlackHole);
@@ -430,7 +450,7 @@ impl Encoder {
 /// project's existing convention (e.g. `PRODUCER_NEXT` above).
 static FUSIBLE_PRIMOPS: std::sync::LazyLock<[(&'static str, usize); 8]> =
     std::sync::LazyLock::new(|| {
-        ["ADD", "SUB", "MUL", "DIV", "GT", "GTE", "LT", "LTE"].map(|n| {
+        crate::eval::intrinsics::FUSIBLE_PRIMOP_NAMES.map(|n| {
             (
                 n,
                 crate::eval::intrinsics::index(n).expect("fusible primop registered"),
@@ -454,12 +474,7 @@ static FUSIBLE_PRIMOPS: std::sync::LazyLock<[(&'static str, usize); 8]> =
 /// wrong-shaped `Op::FusedPrimop`, so it is strictly safer than a hard panic
 /// while remaining just as effective at preventing silent miscompilation.
 fn is_fusible_shape(lf: &LambdaForm) -> bool {
-    lf.arity() == 2
-        && matches!(
-            &**lf.body(),
-            StgSyn::Case { scrutinee, .. }
-                if matches!(&**scrutinee, StgSyn::Atom { evaluand: Ref::L(0) })
-        )
+    lf.arity() == 2 && crate::eval::stg::syntax::is_fusible_primop_body(lf.body())
 }
 
 /// Classify a `LambdaForm` for encoding: `(kind, arity, annotation)`.
