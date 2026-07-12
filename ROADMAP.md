@@ -443,6 +443,17 @@ stops re-allocating the program each run. The six-kind continuation machine
    pool*, not a linear stream; the encoder builds *from* `StgSyn`/`ArenaStgSyn`, reusing
    that arena machinery. (Fallback if BV0 disappoints: a flattened-node interpreter —
    lower risk, smaller win.)
+   *(Revised 2026-07-12, per the ratified transition review —*
+   *`docs/superpowers/specs/2026-07-12-bytecode-transition-review.md` §3, §7 —*
+   *the linearised byte stream is confirmed as the **serialisation** format only*
+   *(blob/cache wire, BV5 unchanged); the re-decode-on-every-step cost of*
+   *executing that stream directly is the dominant source of the residual*
+   *bytecode/HeapSyn per-tick gap. The "flattened-node interpreter" fallback*
+   *named above is upgraded from rejected fallback to the leading candidate*
+   *execution representation: a pre-decoded, fixed-width, typed instruction*
+   *array in a non-GC `Vec`, decoded once at load, with the byte stream*
+   *retained purely as its on-disk/blob encoding. This is gated on a 1–2 day*
+   *pre-decode spike (eu-2sa6.9) before commitment; see review §7 items 6–7.)*
 2. **Constant/heap split.** Code lives in the non-GC arena; the **values it references**
    (interned symbols, `HeapString` literals) must stay GC-/pool-managed. Decide the
    constants-pool boundary so no GC scan ever touches code and no arena offset is ever
@@ -481,11 +492,15 @@ the BV0-measured factor; full harness byte-identical under `EU_GC_VERIFY=2`.
 path ✓, but the dispatch criterion landed at **parity** (day11-p1 bc/hs ≈ 0.93–0.97),
 not a multiple — the leaner dispatch is offset by instruction-stream decode
 (`read_*`, ~40% of CPU on call-dense code) and per-instruction `ExecutionError` drops.
-The measured verdict — see `docs/superpowers/reports/2026-07-03-bytecode-vs-heapsyn-ab-rerun.md`
+The measured verdict — see `docs/superpowers/reports/2026-07-03-bytecode-vs-heapsyn-ab.md`
 — is a competitive co-engine: parity-or-faster on pure-dispatch and env-walk
-workloads (higher-order `count` 0.66×, `foldl` 0.89×), 1.2–2.05× behind on
-allocation+call-dense compute. Closing that gap is eu-9mvh/eu-adnu and the BV4
-fusion work, and gates the Phase-4 collapse.)* BV5:
+workloads, ≈1.2–2.1× behind on allocation+call-dense compute (extant worst
+measured ratio: fib 2.14×). Closing that gap is eu-9mvh/eu-adnu and the BV4
+fusion work; per the 2026-07-12 transition review
+(`docs/superpowers/specs/2026-07-12-bytecode-transition-review.md`), fusion
+substantially narrows but does not close the residual per-tick decode
+envelope, and Phase-4 collapse is now gated on that document's §6 falsifiable
+criteria rather than on BV4 alone.)* BV5:
 `eu -e true` startup floor drops to ~20–30 ms on a plain build with no separate blob
 step. *(Realised, 0.12: ~10 ms measured — but on release/CI binaries only, where
 `xtask prelude-compile` embeds the blob; a plain dev `cargo build` still runs
@@ -953,13 +968,24 @@ Recorded so they are not forgotten, able to swap in if priorities shift:
 
 **CG type-free tier + TY default-on + SV `s"…"` + optional fields (0.11) → BV0 gate →
 BV1 + BV5-prelude (0.12, the bytecode core; shipped) → BV4 decode-fusion +
-ExecutionError boxing (0.12.1, close the engine gap) → Phase-4 collapse (retire
-HeapSyn, 0.13) → BV2 + BV3 + CG type-gated (0.13) → SV
+ExecutionError boxing (0.12.1, substantially narrows but does not close the
+engine gap) → Tier-0 gate artefacts (measurement protocol + canonical suite +
+results ledger, eu-2sa6.6; clean-room re-baseline, eu-2sa6.7; this record
+truth-up) → pre-decode spike decision point (eu-2sa6.9) → *if confirmed:*
+lever (a) pre-decoded execution IR with BV2 side tables folded in (eu-2sa6.1)
+→ BV3 register frames (eu-2sa6.2) → CG type-gated (0.13) → Phase-4 collapse
+(retire HeapSyn, eu-oufc) *only if* the falsifiable performance and
+non-performance criteria in the ratified transition review's §6 are met —
+otherwise HeapSyn stays behind `EU_HEAPSYN=1` another release → SV
 contracts + DS + modules (0.14–0.15) → W5 conformance green → the 1.0 milestone:
 ratify and freeze the surface (§4.6).** DS, PP and the post-1.0 candidates slot
 alongside or follow. The 1.0 freeze is gated on the surface and conformance, not on
 the bytecode programme being finished — and no feature is scheduled *for* 1.0; they all
-land in point releases first.
+land in point releases first. *(Revised 2026-07-12 per the ratified
+bytecode-transition review —
+`docs/superpowers/specs/2026-07-12-bytecode-transition-review.md` §7 — which
+supersedes the prior "BV4 closes the gap → Phase-4 follows automatically"
+sequencing.)*
 
 ## 9. Index
 
@@ -969,9 +995,11 @@ land in point releases first.
 | **BV1** | Threaded interpreter; code out of the GC heap *(shipped — default engine; Phase-4 collapse deferred to 0.13)* | 0.12 |
 | **BV5** | Embedded bytecode prelude *(shipped, dual-form)* | 0.12 |
 | **BV5-cache** | Content-hash whole-program unit cache (spec `#953`; dispatch-ready, unbuilt — eu-lb0r) | 0.13 |
-| **BV2** | Side tables for annotations | 0.13 |
-| **BV3** | Register frames | 0.13 |
-| **BV4** | Superinstructions / decode-cost fusion *(promoted — gates Phase-4)* | 0.12.1 |
+| **T0** | Tier-0 gate artefacts: measurement protocol + canonical suite + results ledger + `xtask engine-ab` (eu-2sa6.6); clean-room re-baseline, source-vs-source and blob-vs-blob (eu-2sa6.7) *(gates all further engine work — transition review §7)* | 0.13 |
+| **BV-spike** | Pre-decode spike: hand-rolled pre-decoded inner loop for `drop_cons` hot opcodes, falsification experiment and decision point (eu-2sa6.9) | 0.13 |
+| **BV2** | Side tables for annotations *(folded into lever (a) pre-decoded execution IR if the spike confirms — transition review §7 item 7)* | 0.13 |
+| **BV3** | Register frames *(sequenced after lever (a) — transition review §7 item 8)* | 0.13 |
+| **BV4** | Superinstructions / decode-cost fusion *(shipped 0.12.1 — substantially narrows the decode-bound gap; does not by itself close it or gate Phase-4, see transition review §1–§2)* | 0.12.1 |
 | **CG1–4** | Type-free codegen (direct dispatch, key resolution, strict folds, lifting) | 0.11 |
 | **CG5** | Type-gated codegen (unboxing, dead-branch, interpolation) | 0.13 |
 | **TY** | Typing default-on | 0.11 |
