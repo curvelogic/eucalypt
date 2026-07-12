@@ -498,7 +498,23 @@ pub fn test_bench_020_lookup_curve() {
 
 #[test]
 pub fn test_bench_021_io_loop() {
-    run_test(&io_opts("bench/021_io_loop.eu"));
+    // `io.map-m` over 1000 actions builds its bind chain via the prelude's
+    // recursive `sequence` (non-tail: `seq-step` recurses into `sequence`
+    // before constructing the bind), which recurses natively in Rust once
+    // per IO step. In a release build this is cheap enough per frame to fit
+    // comfortably in the default thread stack; in the unoptimised debug
+    // build `cargo test` uses in CI, the much larger per-frame footprint
+    // overflows the default test-thread stack (observed on ubuntu-latest,
+    // windows-latest, and reproduced locally on macOS debug builds — this
+    // is a debug-build stack-depth issue, not a platform/io.shell
+    // portability issue). Run on a dedicated thread with a generous stack
+    // rather than shrinking the bench's iteration count.
+    std::thread::Builder::new()
+        .stack_size(256 * 1024 * 1024)
+        .spawn(|| run_test(&io_opts("bench/021_io_loop.eu")))
+        .expect("spawn test_bench_021_io_loop thread")
+        .join()
+        .expect("test_bench_021_io_loop thread panicked");
 }
 
 #[test]

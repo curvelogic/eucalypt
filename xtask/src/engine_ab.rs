@@ -48,14 +48,62 @@ struct Bench {
 
 /// The canonical suite (review C section 3; eu-2sa6.6).
 const SUITE: &[Bench] = &[
-    Bench { id: "015_block_merge", file: "tests/harness/bench/015_block_merge.eu", target: "bench-block-merge", class: "D", requires_io: false },
-    Bench { id: "016_import_export_yaml", file: "tests/harness/bench/016_import_export_yaml.eu", target: "bench-import-yaml", class: "I", requires_io: false },
-    Bench { id: "017_import_export_toml", file: "tests/harness/bench/017_import_export_toml.eu", target: "bench-import-toml", class: "I", requires_io: false },
-    Bench { id: "018_string_scale", file: "tests/harness/bench/018_string_scale.eu", target: "bench-string-scale", class: "G", requires_io: false },
-    Bench { id: "019_list_scale", file: "tests/harness/bench/019_list_scale.eu", target: "bench-list-scale", class: "H", requires_io: false },
-    Bench { id: "020_lookup_curve", file: "tests/harness/bench/020_lookup_curve.eu", target: "bench-lookup-curve", class: "E", requires_io: false },
-    Bench { id: "021_io_loop", file: "tests/harness/bench/021_io_loop.eu", target: "bench-io-loop", class: "L", requires_io: true },
-    Bench { id: "022_hof_fold", file: "tests/harness/bench/022_hof_fold.eu", target: "bench-hof-fold", class: "C", requires_io: false },
+    Bench {
+        id: "015_block_merge",
+        file: "tests/harness/bench/015_block_merge.eu",
+        target: "bench-block-merge",
+        class: "D",
+        requires_io: false,
+    },
+    Bench {
+        id: "016_import_export_yaml",
+        file: "tests/harness/bench/016_import_export_yaml.eu",
+        target: "bench-import-yaml",
+        class: "I",
+        requires_io: false,
+    },
+    Bench {
+        id: "017_import_export_toml",
+        file: "tests/harness/bench/017_import_export_toml.eu",
+        target: "bench-import-toml",
+        class: "I",
+        requires_io: false,
+    },
+    Bench {
+        id: "018_string_scale",
+        file: "tests/harness/bench/018_string_scale.eu",
+        target: "bench-string-scale",
+        class: "G",
+        requires_io: false,
+    },
+    Bench {
+        id: "019_list_scale",
+        file: "tests/harness/bench/019_list_scale.eu",
+        target: "bench-list-scale",
+        class: "H",
+        requires_io: false,
+    },
+    Bench {
+        id: "020_lookup_curve",
+        file: "tests/harness/bench/020_lookup_curve.eu",
+        target: "bench-lookup-curve",
+        class: "E",
+        requires_io: false,
+    },
+    Bench {
+        id: "021_io_loop",
+        file: "tests/harness/bench/021_io_loop.eu",
+        target: "bench-io-loop",
+        class: "L",
+        requires_io: true,
+    },
+    Bench {
+        id: "022_hof_fold",
+        file: "tests/harness/bench/022_hof_fold.eu",
+        target: "bench-hof-fold",
+        class: "C",
+        requires_io: false,
+    },
 ];
 
 /// Per-class "bytecode wins" threshold (review C section 3 / review section 6).
@@ -128,7 +176,10 @@ pub fn run(args: &mut dyn Iterator<Item = String>) -> Result<()> {
         "source"
     };
 
-    println!("engine-ab: {} benches, {runs} interleaved runs each", SUITE.len());
+    println!(
+        "engine-ab: {} benches, {runs} interleaved runs each",
+        SUITE.len()
+    );
     println!("  eu     = {}", eu.display());
     println!("  commit = {commit}   host = {host}   prelude = {prelude_config}");
     println!("  ticks/allocs/gc read from the HeapSyn (-S) pass\n");
@@ -346,8 +397,8 @@ fn append_rows(root: &Path, rows: &[String]) -> Result<()> {
 
 fn cmd_check(root: &Path) -> Result<()> {
     let path = root.join(LEDGER);
-    let text = std::fs::read_to_string(&path)
-        .with_context(|| format!("read {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
 
     // Collect rows per bench in file order (append-only ⇒ chronological).
     let mut per_bench: std::collections::BTreeMap<String, Vec<serde_json::Value>> =
@@ -357,8 +408,8 @@ fn cmd_check(root: &Path) -> Result<()> {
         if line.is_empty() {
             continue;
         }
-        let v: serde_json::Value = serde_json::from_str(line)
-            .with_context(|| format!("parse ledger row: {line}"))?;
+        let v: serde_json::Value =
+            serde_json::from_str(line).with_context(|| format!("parse ledger row: {line}"))?;
         if let Some(bench) = v.get("bench").and_then(|b| b.as_str()) {
             per_bench.entry(bench.to_string()).or_default().push(v);
         }
@@ -473,9 +524,7 @@ fn today() -> String {
     // Cheap ISO date without a chrono dependency: shell out to `date`.
     let out = Command::new("date").arg("+%Y-%m-%d").output().ok();
     match out {
-        Some(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout).trim().to_string()
-        }
+        Some(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         _ => "unknown".to_string(),
     }
 }
