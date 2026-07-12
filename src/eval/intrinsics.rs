@@ -1065,9 +1065,7 @@ pub const FUSIBLE_PRIMOP_NAMES: [&str; 8] = ["ADD", "SUB", "MUL", "DIV", "GT", "
 /// Whether the intrinsic at `idx` is a fusible strict binary primop. Resolved
 /// against [`FUSIBLE_PRIMOP_NAMES`] via the catalogue, never a hardcoded index.
 pub fn is_fusible_primop_index(idx: usize) -> bool {
-    FUSIBLE_PRIMOP_NAMES
-        .iter()
-        .any(|n| index(n) == Some(idx))
+    FUSIBLE_PRIMOP_NAMES.iter().any(|n| index(n) == Some(idx))
 }
 
 /// Retrieve the whole ordered catalogue of intrinsics
