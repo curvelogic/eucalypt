@@ -47,6 +47,12 @@ use sha2::{Digest, Sha256};
 
 mod engine_ab;
 
+/// BV1 bytecode wire-format version, folded into the prelude-blob source hash.
+/// MUST match `BYTECODE_WIRE_FORMAT_VERSION` in the crate root `build.rs`.
+/// See that constant's doc comment for the version history (v2: eu-2sa6.11
+/// Let/LetRec binding count widened `u16` → `u32`).
+const BYTECODE_WIRE_FORMAT_VERSION: u32 = 2;
+
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
@@ -77,7 +83,13 @@ fn cmd_prelude_compile() -> Result<()> {
     // ── 1. Hash the prelude source ────────────────────────────────────────────
     let source_bytes = std::fs::read(&prelude_src)
         .with_context(|| format!("reading {}", prelude_src.display()))?;
-    let source_hash: [u8; 32] = Sha256::digest(&source_bytes).into();
+    // Fold the bytecode wire-format version into the hash so a format change
+    // (not just a source change) invalidates a stale blob at build time
+    // (must match `build.rs`).
+    let mut hasher = Sha256::new();
+    hasher.update(&source_bytes);
+    hasher.update(BYTECODE_WIRE_FORMAT_VERSION.to_le_bytes());
+    let source_hash: [u8; 32] = hasher.finalize().into();
 
     // ── 2. Run the front-end pipeline ────────────────────────────────────────
     // The prelude references `__build` (from build-meta.yaml) and intrinsics

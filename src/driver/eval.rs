@@ -485,6 +485,11 @@ impl<'a> Executor<'a> {
                         crate::eval::bytecode::encode(&syn, &globals)
                     }
                 };
+                // Refuse a program whose code buffer overruns the 32-bit
+                // code-offset space rather than handing the VM corrupt,
+                // truncated offsets that decode as an invalid opcode
+                // (eu-2sa6.11).
+                crate::eval::bytecode::ensure_code_fits(&prog)?;
                 emitter.stream_start();
                 let heap_mib = stg_settings.heap_limit_mib.unwrap_or(0);
                 let mut m = crate::eval::bytecode::BytecodeMachine::new(

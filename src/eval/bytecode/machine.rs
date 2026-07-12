@@ -37,7 +37,7 @@ use crate::eval::memory::syntax::{Native, Ref, RefPtr};
 use crate::eval::stg::render_to_string::OwnedCaptureEmitter;
 use crate::eval::stg::tags::{DataConstructor, Tag};
 
-use super::program::{read_u16, read_u32, read_u8};
+use super::program::{read_u32, read_u8};
 use super::{
     BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, BytecodeProgram, CodeRef,
     GlobalForm, Op, FORM_LAMBDA, FORM_THUNK, NO_BRANCH, REF_G, REF_L, REF_V,
@@ -1842,11 +1842,13 @@ pub fn handle_op(
         }
         Op::Let => {
             // Non-recursive: bindings close over the enclosing env. Decode the
-            // `u16` count then read each form header straight into the managed
-            // env-frame `Array` — mirroring `Op::Case`'s branch-table read — so
-            // no transient `Vec<FormHeader>` is malloc'd on the system heap per
-            // `LET` (the dominant alloc-bound per-op cost, eu-cj1h.3).
-            let count = read_u16(code, &mut pc) as usize;
+            // `u32` count (BV1 wire format v2, eu-2sa6.11 — a large imported
+            // literal exceeds the old `u16` limit) then read each form header
+            // straight into the managed env-frame `Array` — mirroring
+            // `Op::Case`'s branch-table read — so no transient `Vec<FormHeader>`
+            // is malloc'd on the system heap per `LET` (the dominant alloc-bound
+            // per-op cost, eu-cj1h.3).
+            let count = read_u32(code, &mut pc) as usize;
             state.allocs += count as u64;
             let mut array = Array::with_capacity(&view, count);
             for _ in 0..count {
@@ -1865,7 +1867,8 @@ pub fn handle_op(
             // heap for the common small-arity case, no re-decode), pre-size the
             // array with dangling closures, allocate the frame, then fill each
             // slot with a closure over that frame (eu-cj1h.3).
-            let count = read_u16(code, &mut pc) as usize;
+            // `u32` binding count (BV1 wire format v2, eu-2sa6.11).
+            let count = read_u32(code, &mut pc) as usize;
             let mut headers: FormHeaders = SmallVec::with_capacity(count);
             for _ in 0..count {
                 headers.push(read_form_header(code, &mut pc));
@@ -3908,8 +3911,7 @@ mod tests {
         let syn = dsl::let_(vec![dsl::thunk(dsl::atom(dsl::num(5)))], dsl::local(0));
         let (prog, root, _) = encode(&syn, &[]);
         let mut pc = root as usize + 1; // skip Op::Let
-        let count = u16::from_le_bytes([prog.code[pc], prog.code[pc + 1]]);
-        pc += 2;
+        let count = read_u32(&prog.code, &mut pc);
         assert_eq!(count, 1);
         let hdr = read_form_header(&prog.code, &mut pc);
         assert_eq!(hdr.kind, crate::eval::bytecode::FORM_THUNK);

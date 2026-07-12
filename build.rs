@@ -14,6 +14,25 @@
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
+/// BV1 bytecode wire-format version, folded into the prelude-blob source hash
+/// so that a change to the serialised code-stream layout invalidates a blob
+/// that still carries the old encoding — even though `lib/prelude.eu` is
+/// unchanged. Bump this whenever the encoder's byte layout changes.
+///
+/// - v1: original BV1 stream.
+/// - v2: Let/LetRec binding count widened `u16` → `u32` (eu-2sa6.11).
+///
+/// MUST match `BYTECODE_WIRE_FORMAT_VERSION` in `xtask/src/main.rs`.
+const BYTECODE_WIRE_FORMAT_VERSION: u32 = 2;
+
+/// Compute the blob source hash: `SHA-256(prelude source ‖ wire-format version)`.
+fn blob_source_hash(source_bytes: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(source_bytes);
+    hasher.update(BYTECODE_WIRE_FORMAT_VERSION.to_le_bytes());
+    hasher.finalize().into()
+}
+
 fn main() {
     // ── Rerun triggers ────────────────────────────────────────────────────────
     // Ensure cargo recompiles when baked-in resource files change.
@@ -37,8 +56,10 @@ fn main() {
 }
 
 /// Check that `lib/prelude.blob` exists and its embedded source hash matches
-/// `SHA-256(lib/prelude.eu)`.  Emits `cfg(prelude_blob_ok)` or
-/// `cfg(prelude_blob_stale)` accordingly.
+/// `SHA-256(lib/prelude.eu ‖ BYTECODE_WIRE_FORMAT_VERSION)` — so a bytecode
+/// wire-format change invalidates a stale-format blob as well as a source
+/// change.  Emits `cfg(prelude_blob_ok)` or `cfg(prelude_blob_stale)`
+/// accordingly.
 fn verify_prelude_blob() {
     let prelude_src = Path::new("lib/prelude.eu");
     let blob_path = Path::new("lib/prelude.blob");
@@ -52,7 +73,7 @@ fn verify_prelude_blob() {
             return;
         }
     };
-    let source_hash: [u8; 32] = Sha256::digest(&source_bytes).into();
+    let source_hash: [u8; 32] = blob_source_hash(&source_bytes);
 
     // Check the blob.
     match std::fs::read(blob_path) {
