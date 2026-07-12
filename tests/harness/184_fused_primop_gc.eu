@@ -38,10 +38,19 @@ string-cmp: {
 
 # Fused arithmetic threaded through heavy list allocation: each `+` in `sum`'s
 # `foldl(+, 0, l)` binds a scratch env then dispatches, over a large list.
+#
+# `d`/`e` exercise the *inline* fused path (eu-9mvh, Option C): a direct `<`/`-`
+# call site compiled to an inline `Op::FusedPrimop` reading its two operand refs
+# straight from the enclosing env (no App+enter, no operand frame). Both
+# operands are heavy heap-allocating computations, so the resolved (boxed-
+# number) left operand held in `FusedPrimopRight.left` must survive — marked and
+# forwarded — while the right operand's forcing drives the collector.
 arith: {
   a: sum(iota(0) take(2000)) //= 1999000
   b: sum(iota(1) take(2000)) //= 2001000
   c: (sum(iota(0) take(1000)) - sum(iota(0) take(500))) //= 374750
+  d: (sum(iota(0) take(1500)) < sum(iota(1) take(1500))) //= true
+  e: (sum(iota(1) take(1500)) - sum(iota(0) take(1500))) //= 1500
 }
 
 # Polymorphic boxed comparisons (BoxedZdt field-forcing) under the same
