@@ -1185,7 +1185,27 @@ impl ProtoSyntax for ProtoAppGroup {
                     && bif.info().arity() == arg_indexes.len() =>
             {
                 let inline_body = bif.wrapper(Smid::default()).body().clone();
-                local_binder.set_body(Box::new(ProtoInline::new(arg_indexes, inline_body)))?;
+                // Direct-arithmetic fusion (eu-9mvh, Option C): a whitelisted
+                // binary primop whose wrapper body has the fusible force-
+                // dispatch shape is inlined as a `FusedPrimop` marker so the
+                // bytecode encoder emits a single `Op::FusedPrimop` in place of
+                // the 25-leaf `Case`-of-`Case` tree. Gated on the shared
+                // whitelist + shape guard; anything else uses the plain inline.
+                let fusible = intrinsic_index.is_some_and(|idx| {
+                    intrinsics::is_fusible_primop_index(idx)
+                        && arg_indexes.len() == 2
+                        && crate::eval::stg::syntax::is_fusible_primop_body(&inline_body)
+                });
+                if fusible {
+                    let primop_id = intrinsic_index.unwrap() as u8;
+                    local_binder.set_body(Box::new(ProtoFusedInline::new(
+                        primop_id,
+                        arg_indexes,
+                        inline_body,
+                    )))?;
+                } else {
+                    local_binder.set_body(Box::new(ProtoInline::new(arg_indexes, inline_body)))?;
+                }
             }
             _ => {
                 // Check conditions for DirectApp (exact-arity known-callee dispatch).
@@ -1468,6 +1488,57 @@ impl ProtoSyntax for ProtoInline {
         let bindings = refs.into_iter().map(|r| dsl::value(dsl::atom(r))).collect();
 
         Ok(Rc::new(StgSyn::Let { bindings, body }))
+    }
+}
+
+/// Inline a whitelisted strict binary primop at its direct call site, wrapping
+/// the ordinary [`ProtoInline`] result in a [`StgSyn::FusedPrimop`] marker
+/// (eu-9mvh, Option C). The bytecode encoder collapses the marker to a single
+/// `Op::FusedPrimop`; HeapSyn and every other consumer use the wrapped
+/// `inner` body verbatim, so HeapSyn stays byte-identical.
+pub struct ProtoFusedInline {
+    primop_id: u8,
+    args: Vec<Box<dyn ProtoReference>>,
+    body: Rc<StgSyn>,
+}
+
+impl ProtoFusedInline {
+    pub fn new(primop_id: u8, args: Vec<Box<dyn ProtoReference>>, body: Rc<StgSyn>) -> Self {
+        ProtoFusedInline {
+            primop_id,
+            args,
+            body,
+        }
+    }
+}
+
+impl ProtoSyntax for ProtoFusedInline {
+    fn take_syntax(
+        &mut self,
+        _compiler: &Compiler,
+        context: &Context,
+    ) -> Result<Rc<StgSyn>, CompileError> {
+        let body = self.body.clone();
+
+        let refs = self
+            .args
+            .drain(..)
+            .map(|mut pr| pr.take_reference(context))
+            .collect::<Result<Vec<Ref>, CompileError>>()?;
+
+        // Whitelist admits only binary primops (arity 2), guaranteed by the
+        // call site; carry the two operand refs to the encoder and reuse the
+        // identical `Let`-of-atoms body for the HeapSyn/consumer path.
+        let (left, right) = (refs[0].clone(), refs[1].clone());
+        let bindings = refs.into_iter().map(|r| dsl::value(dsl::atom(r))).collect();
+        let inner = Rc::new(StgSyn::Let { bindings, body });
+
+        Ok(Rc::new(StgSyn::FusedPrimop {
+            primop_id: self.primop_id,
+            left,
+            right,
+            inner,
+        }))
     }
 }
 

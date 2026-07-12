@@ -254,6 +254,9 @@ fn embed_stg(syn: &StgSyn) -> Option<rowan_ast::Soup> {
             b.token(&embed_ref(default));
             b.finish()
         }
+        // The fusion marker is bytecode-only; embed the ordinary inlined
+        // wrapper body so `--embed` output stays identical (eu-9mvh, Option C).
+        StgSyn::FusedPrimop { inner, .. } => embed_stg(inner),
         StgSyn::BlackHole => StgEmbedBuilder::new("s-hole").finish(),
     }
 }
