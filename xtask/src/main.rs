@@ -205,6 +205,34 @@ fn cmd_prelude_compile() -> Result<()> {
 
     println!("  prelude bindings (peeled): {}", binding_bodies.len());
 
+    // ── 4a. Reflatten each peeled binding body (eu-2sa6.12) ───────────────────
+    // Blob generation deliberately skips `inline()` (see the note above at
+    // `fuse_destructure`) to keep one `LambdaForm` per prelude name. That skip
+    // also throws away `inline()`'s intra-body Let-chain flattening, so each
+    // binding's own internal nested `let`/`where`-style local bindings survive
+    // as a literal chain of nested `Let` scopes (one `EnvFrame` per link at
+    // runtime). `EnvironmentFrame::get` (HeapSyn) and bytecode `enter_local`
+    // are O(chain depth), so calling into these bindings costs strictly more
+    // per tick than the same logic compiled flat — see
+    // docs/superpowers/reports/2026-07-13-blob-string-penalty-diagnosis.md.
+    //
+    // `core::reflatten::reflatten` merges chains of directly-nested `OtherLet`
+    // scopes back into a single scope (it normally undoes `split-letrecs`
+    // nesting before STG compile in the main pipeline). Run per binding body
+    // — after peeling, before STG compile — it only merges `Let` chains
+    // *within* a body; `Var::Free` cross-binding references (the peeled slot
+    // structure) are untouched, so the blob's one-form-per-name property and
+    // wire format are unaffected. `DefaultBlockLet` scopes (block literals)
+    // are never merged, matching normal-pipeline behaviour.
+    let (let_count_before, max_depth_before) = nesting_stats(&binding_bodies);
+    for (_, body) in binding_bodies.iter_mut() {
+        *body = eucalypt::core::reflatten::reflatten(body);
+    }
+    let (let_count_after, max_depth_after) = nesting_stats(&binding_bodies);
+    println!(
+        "  reflatten: Let nodes {let_count_before} → {let_count_after}, max nesting depth {max_depth_before} → {max_depth_after}"
+    );
+
     // Count hoisted namespace members: names matching `__<ns>_<member>` where
     // `<ns>` is a non-empty lowercase segment and `<member>` is non-empty.
     // These are the new globals produced by the `hoist_namespaces` step above.
@@ -444,6 +472,71 @@ fn workspace_root() -> Result<PathBuf> {
         return Ok(cwd);
     }
     bail!("could not find workspace root (no Cargo.toml in {cwd:?})")
+}
+
+/// Compute `(total Let-node count, max Let-nesting depth)` across a set of
+/// binding bodies — a deterministic, core-level (pre-STG-compile) proxy for
+/// the "thunk / nesting depth" figures in the blob-string-penalty diagnosis
+/// (`docs/superpowers/reports/2026-07-13-blob-string-penalty-diagnosis.md`,
+/// which measured post-STG-compile `dump runtime` pretty-print nesting).
+/// Computed identically before and after `reflatten` so the delta is
+/// directly attributable to that pass.
+fn nesting_stats(bindings: &[(String, RcExpr)]) -> (usize, usize) {
+    fn walk(expr: &RcExpr, depth: usize, count: &mut usize, max_depth: &mut usize) {
+        match &*expr.inner {
+            Expr::Let(_, scope, _) => {
+                *count += 1;
+                let d = depth + 1;
+                if d > *max_depth {
+                    *max_depth = d;
+                }
+                for b in &scope.pattern {
+                    walk(&b.expr, d, count, max_depth);
+                }
+                walk(&scope.body, d, count, max_depth);
+            }
+            Expr::Lam(_, _, scope) => walk(&scope.body, depth, count, max_depth),
+            Expr::App(_, f, args) => {
+                walk(f, depth, count, max_depth);
+                for a in args {
+                    walk(a, depth, count, max_depth);
+                }
+            }
+            Expr::Lookup(_, obj, _, fb) => {
+                walk(obj, depth, count, max_depth);
+                if let Some(fb) = fb {
+                    walk(fb, depth, count, max_depth);
+                }
+            }
+            Expr::List(_, xs) | Expr::ArgTuple(_, xs) => {
+                for x in xs {
+                    walk(x, depth, count, max_depth);
+                }
+            }
+            Expr::Soup(_, xs, _) => {
+                for x in xs {
+                    walk(x, depth, count, max_depth);
+                }
+            }
+            Expr::Block(_, bm) => {
+                for (_, v) in bm.iter() {
+                    walk(v, depth, count, max_depth);
+                }
+            }
+            Expr::Meta(_, e, m) => {
+                walk(e, depth, count, max_depth);
+                walk(m, depth, count, max_depth);
+            }
+            Expr::Operator(_, _, _, e) => walk(e, depth, count, max_depth),
+            _ => {}
+        }
+    }
+    let mut count = 0;
+    let mut max_depth = 0;
+    for (_, body) in bindings {
+        walk(body, 0, &mut count, &mut max_depth);
+    }
+    (count, max_depth)
 }
 
 /// Peel through `Meta` wrappers to reach the underlying expression node.
