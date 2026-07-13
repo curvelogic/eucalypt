@@ -367,3 +367,125 @@ prelude-only compile at all.
   transcript (not separately archived; reproducible via
   `cargo xtask prelude-compile` with/without the `reflatten` call added at the
   point documented in the branch diff).
+
+---
+
+## 7. Second addendum (2026-07-13, validation spike): §6.4 demand-sig hypothesis is ALSO REFUTED
+
+**Status of §6.4's open candidate: REFUTED by end-to-end implementation and
+measurement.** This closes eu-2sa6.12's search for a wire-format-preserving
+generation-time fix; both candidate mechanisms have now been tried, measured,
+and ruled out. Implementation evidence: branch `spike/named-demand-sigs`
+(worktree `/tmp/eu-blobsig`; throwaway hack-quality spike, not pushed — see
+§7.6). No production PR resulted, per instruction.
+
+### 7.1 What was implemented
+
+End-to-end wiring, minimal/hack quality:
+
+1. `PreludeBlob` gained a `named_demand_sigs: HashMap<String, DemandSignature>`
+   field (`src/eval/stg/blob.rs`), populated at blob-generation time in
+   `xtask/src/main.rs` by running `core::analyse_demand::analyse_demands` over
+   the merged (pre-peel) prelude core expression and keeping the returned
+   `NamedSignatureTable` — **the peeled binding bodies themselves were left
+   untouched** (this spike, unlike §6, does not modify the compiled prelude
+   forms at all; it only adds a side-table to the blob).
+2. `src/driver/eval.rs` (~line 406-414, the per-invocation demand-analysis
+   step that already runs on `self.evaluand` for every `eu` invocation, blob
+   or source) now merges `blob.named_demand_sigs` into
+   `stg_settings.user_demand_sigs` via `.extend()` whenever a prelude blob is
+   active, so user-code call sites into prelude globals gain access to the
+   blob-computed signatures — exactly the missing link described in §6.4.
+
+### 7.2 Result: also a no-op — `dump stg` byte-identical for the user program
+
+- `xtask prelude-compile` collected **103 named signatures**. Blob file grew
+  (461,636 vs 460,201 bytes) — the table really is being generated and
+  serialised.
+- But **`dump stg` for `018_string_scale.eu` is byte-identical** (0-line diff)
+  between the unmodified blob and the spike blob carrying + merging
+  `named_demand_sigs`. The merge reaches the compiler (`stg_settings` is
+  populated) but changes **nothing** about how the user's benchmark compiles.
+- Deterministic ticks/allocs/blocks/max-stack for 018, 019, and fib are all
+  **unchanged** from the unmodified blob (018: 76,814,993 ticks; 019:
+  55,803,488 ticks; fib HeapSyn: 115,779,125 ticks — exact matches).
+- Wall times unchanged: 018 blob-config still ~2.3 s bc / ~3.8–4.2 s HS —
+  **no movement toward source's ~1.68 s / ~1.86 s.**
+
+### 7.3 Why: the two hot-path function classes both bypass the mechanism
+
+Probing `named_demand_sigs` for the benchmark's own hot symbols
+(`range(0, 7000) map(mk-line) foldl(force-count, 0)`, with
+`force-count(acc, s): acc + if(s = "", 0, 1)`) explains it completely:
+
+| Symbol | In `named_demand_sigs`? | Why |
+|---|---|---|
+| `map`, `foldl`, `range`, `sum`, `cons`, `nil?` | **absent** | `analyse_lam`'s signature-recording (`analyse_demand.rs` ~L609-617) only fires when a `Let`-binding's RHS is **literally `Expr::Lam`**. These prelude functions are written **point-free** (combinator composition, per the project's own style guide), so their RHS is never a bare `Lam` and no signature is ever recorded — in blob **or** source config. This is not a blob-vs-source gap; the mechanism structurally cannot see point-free definitions. |
+| `+`, `=` | **present**, and genuinely strict (`[Strict/AtMostOnce, Strict/AtMostOnce]`) | But irrelevant: `(l + r): __ADD(l, r)` (`lib/prelude.eu:657`) is exactly the "combinator lambda whose body is `App(Intrinsic, vars)`" shape that the **pre-existing** `inline_cores` fixed-point (§3.3 of the original report; already shipped, not part of this spike) already collects and pre-expands. By the time STG-compile runs, `l + r` and `s = ""` have already been substituted to the raw intrinsic application by the core-level inline pass (`inline_cores` are "injected as Let bindings before the inline pass" per `blob.rs`'s own doc comment) — the compiler never sees a `Var::Free("+")` call site to look a signature up against; it resolves via `Expr::Intrinsic` / the compiler's separate `intrinsic_demand_sigs` table instead (`compiler.rs` ~L1122-1134), which already existed and is unaffected by this spike. |
+
+Both hot-path classes bypass the injected table for structurally different,
+independent reasons — one because no signature is ever recorded for
+point-free code, the other because the call site is inlined away before the
+lookup would occur. There is no adjustment to the injection point that fixes
+both without a fundamentally different mechanism (e.g. actually inlining
+prelude bodies into user code, which is the `inline()`/`eliminate` route
+already ruled out of blob generation for the one-form-per-name property, or
+computing signatures for combinator-shaped point-free bindings too — a
+non-trivial extension to `analyse_demand`'s extraction rule, not a
+generation-time wiring change).
+
+### 7.4 Safety check (requested): do the injected sigs match what source-mode would compute?
+
+For `+`/`=`, yes, necessarily: `analyse_lam`'s signature extraction is a
+pure, bottom-up structural function of a `Lam`'s own body and has no
+dependency on the enclosing scope or call site — `(l + r): __ADD(l, r)` has
+no free variables to pick up outer context from, so applying `analyse_demands`
+to it in isolation (blob generation, this spike) or embedded in the full
+merged program (source config) is the same deterministic computation over the
+same sub-tree and must produce the same signature. This isn't independently
+re-verifiable via a source-mode "named-signature dump" for the same reason the
+mechanism is moot in practice: source config inlines `+`/`=` away before any
+per-name signature would be surfaced for comparison. The algorithmic argument
+stands in place of a live A/B; it does not change the §7.2/§7.3 finding, since
+the signatures — correct or not — never reach a call site that matters for
+`map`/`foldl`/`range`, which is where the actual wall-clock cost lives (§3.1's
+profile evidence attributes the dominant cost to exactly these functions'
+call/env-resolution paths, not to `+`/`=`).
+
+### 7.5 Correctness smoke (harness, both engines)
+
+`cargo test --release --lib --tests` (bytecode) and
+`EU_HEAPSYN=1 cargo test --release --lib --tests` (HeapSyn), full suite
+(doctests excluded — a pre-existing, unrelated `rustdoc`/`RUSTC`-override
+toolchain-invocation issue on this box, not a code regression), worktree
+`/tmp/eu-blobsig`:
+
+| Engine | Tests | Failures |
+|---|--:|--:|
+| bytecode | **1,908** | **0** |
+| HeapSyn | **1,908** | **0** |
+
+Both green. The change is additive and gated (`#[serde(default)]` on the new
+blob field, `#[cfg(not(target_arch = "wasm32"))]` on the merge site,
+`.extend()` never removes existing signatures), so no behavioural regression
+was expected; the full harness pass confirms it. §7.2's byte-identical
+`dump stg` for the one workload that exercises the new path is itself
+stronger evidence of no observable-behaviour change for that program.
+
+### 7.6 Disposition
+
+**eu-2sa6.12 characterised-but-unfixed.** Both wire-format-preserving,
+generation-time candidate fixes (§4.1 reflatten, §6.4/§7 demand-sig boundary)
+are implemented, measured, and refuted. The root mechanism (§3.1: deep
+runtime lexical-environment chains under blob, `EnvironmentFrame::get` /
+`enter_local` dominating the profile) is confirmed and stands; no fix that
+preserves the current blob wire format and one-form-per-name generation
+approach has been found. Closing this bead as characterised; the redesign bead
+(in-memory blob pipeline, filed separately) inherits the problem and should
+be evaluated for whether a from-scratch pipeline can co-compile
+prelude+user (recovering real inlining and demand propagation) without
+reintroducing the "recompile prelude source every run" cost blob generation
+exists to avoid.
+
+Both spike branches (`perf/blob-reflatten`, `spike/named-demand-sigs`) are
+kept as evidence artefacts; neither is intended to merge.
