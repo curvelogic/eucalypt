@@ -12,6 +12,150 @@ use crate::eval::memory::{
     syntax::{HeapSyn, Native, Ref, RefPtr},
 };
 
+/// DIAGNOSTIC ONLY (bead eu-ttpl): heap-layout forensics for the runtime
+/// environment walk, gated by `EU_ENV_LAYOUT_HISTOGRAM=1` (same cached-flag
+/// precedent as `EU_STACK_DIAG` and eu-qm7f's `EU_ENV_DEPTH_HISTOGRAM`).
+///
+/// Where eu-qm7f measured *how far* an `EnvironmentFrame::get` lookup walks
+/// (depth), this measures *where in the heap* the frame it lands on
+/// physically lives: which Immix block (`bump::block_base_of`, a pre-existing
+/// production helper — no new address-masking logic), how many distinct
+/// frame addresses share a block (packing density / occupancy), and whether
+/// consecutive lookups tend to land in the same block (a locality proxy: a
+/// "hit" means the CPU cache line/page touched by the previous lookup is
+/// likely still hot, without needing real hardware counters, which are out
+/// of scope for this diagnosis-only spike).
+///
+/// Same safety argument as eu-qm7f: a **read-only shadow walk** alongside
+/// the unmodified `cell()`/`get()`, touching no `bindings` and returning
+/// nothing, so it cannot alter lookup behaviour. Process-global state (a
+/// `Mutex`-guarded map, not thread-local) so the single `dump()` call at
+/// process exit — potentially on a different thread than the eval thread —
+/// sees the accumulated data regardless of which thread recorded it.
+pub mod env_layout_diag {
+    use super::Smid;
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+
+    pub fn enabled() -> bool {
+        *ENABLED.get_or_init(|| std::env::var("EU_ENV_LAYOUT_HISTOGRAM").as_deref() == Ok("1"))
+    }
+
+    /// Per-block stats: total touches, and the distinct frame addresses
+    /// observed within that block (packing density / occupancy).
+    #[derive(Default)]
+    struct BlockStats {
+        blocks: HashMap<usize, (u64, std::collections::HashSet<usize>)>,
+    }
+
+    impl BlockStats {
+        fn record(&mut self, block: usize, frame_addr: usize) {
+            let entry = self.blocks.entry(block).or_default();
+            entry.0 += 1;
+            entry.1.insert(frame_addr);
+        }
+
+        fn distinct_blocks(&self) -> usize {
+            self.blocks.len()
+        }
+
+        fn total_touches(&self) -> u64 {
+            self.blocks.values().map(|(count, _)| *count).sum()
+        }
+
+        fn distinct_frames(&self) -> usize {
+            self.blocks.values().map(|(_, set)| set.len()).sum()
+        }
+
+        fn dump(&self, label: &str) {
+            let distinct_blocks = self.distinct_blocks();
+            let total_touches = self.total_touches();
+            let distinct_frames = self.distinct_frames();
+            let frames_per_block = if distinct_blocks > 0 {
+                distinct_frames as f64 / distinct_blocks as f64
+            } else {
+                0.0
+            };
+            eprintln!(
+                "ENV_LAYOUT[{label}]: distinct_blocks={distinct_blocks} \
+                 distinct_frames={distinct_frames} total_touches={total_touches} \
+                 mean_frames_per_block={frames_per_block:.4}"
+            );
+            let mut ranked: Vec<_> = self.blocks.iter().collect();
+            ranked.sort_by_key(|(_, (touches, _))| std::cmp::Reverse(*touches));
+            for (i, (block, (touches, frames))) in ranked.iter().take(10).enumerate() {
+                eprintln!(
+                    "  top[{i}] block=0x{block:x} touches={touches} distinct_frames={}",
+                    frames.len()
+                );
+            }
+        }
+    }
+
+    #[derive(Default)]
+    struct LayoutState {
+        annotated: BlockStats,
+        unannotated: BlockStats,
+        same_block_as_prev: u64,
+        diff_block_from_prev: u64,
+        last_block: Option<usize>,
+        total_lookups: u64,
+    }
+
+    static STATE: OnceLock<Mutex<LayoutState>> = OnceLock::new();
+
+    fn state() -> &'static Mutex<LayoutState> {
+        STATE.get_or_init(|| Mutex::new(LayoutState::default()))
+    }
+
+    /// Record one lookup landing on the frame at `frame_addr` (in block
+    /// `block`), attributed to `start_annotation` (the annotation of the
+    /// frame the lookup *started* from — same "blob-loaded prelude vs
+    /// user/source code" proxy as eu-qm7f, via `Smid::default()` for
+    /// blob-stripped locations).
+    pub(super) fn record(start_annotation: Smid, block: usize, frame_addr: usize) {
+        let mut s = state().lock().unwrap();
+        s.total_lookups += 1;
+        if start_annotation.is_valid() {
+            s.annotated.record(block, frame_addr);
+        } else {
+            s.unannotated.record(block, frame_addr);
+        }
+        match s.last_block {
+            Some(prev) if prev == block => s.same_block_as_prev += 1,
+            Some(_) => s.diff_block_from_prev += 1,
+            None => {}
+        }
+        s.last_block = Some(block);
+    }
+
+    /// Dump layout stats to stderr. No-op unless `EU_ENV_LAYOUT_HISTOGRAM=1`.
+    /// Called once at process exit (`src/bin/eu.rs`).
+    pub fn dump() {
+        if !enabled() {
+            return;
+        }
+        let s = state().lock().unwrap();
+        eprintln!("ENV_LAYOUT[total_lookups]={}", s.total_lookups);
+        let sequential_total = s.same_block_as_prev + s.diff_block_from_prev;
+        let hit_rate = if sequential_total > 0 {
+            s.same_block_as_prev as f64 / sequential_total as f64
+        } else {
+            0.0
+        };
+        eprintln!(
+            "ENV_LAYOUT[sequential_locality]: same_block_as_prev={} diff_block_from_prev={} hit_rate={hit_rate:.6}",
+            s.same_block_as_prev, s.diff_block_from_prev
+        );
+        s.annotated
+            .dump("annotated: user code / source-compiled prelude");
+        s.unannotated
+            .dump("unannotated: blob-loaded prelude (Smid::default())");
+    }
+}
+
 /// Closure as stored in an environment frame
 ///
 /// A closure consist of a static part (InfoTable) that can be
@@ -380,6 +524,40 @@ where
         }
     }
 
+    /// DIAGNOSTIC ONLY (bead eu-ttpl, `EU_ENV_LAYOUT_HISTOGRAM=1`): shadow-walk
+    /// the same chain `cell()` would traverse for `idx`, purely to record
+    /// which heap block and frame address the lookup lands on. Does not
+    /// touch `self.bindings` or return a value, so it cannot affect `get()`'s
+    /// result. No-op (a single cached-bool check) unless the env var is set.
+    fn diag_record_layout(&self, guard: &dyn MutatorScope, idx: usize) {
+        if !env_layout_diag::enabled() {
+            return;
+        }
+        let start_annotation = self.annotation;
+        let mut remaining = idx;
+        let mut len = self.logical_len();
+        let mut frame_ptr: RefPtr<Self> = RefPtr::from(self);
+        let mut next = self.next;
+        loop {
+            if remaining < len {
+                let block = crate::eval::memory::bump::block_base_of(frame_ptr);
+                env_layout_diag::record(start_annotation, block, frame_ptr.as_ptr() as usize);
+                return;
+            }
+            remaining -= len;
+            match next {
+                Some(env_ptr) => {
+                    let scoped = ScopedPtr::from_non_null(guard, env_ptr);
+                    len = scoped.logical_len();
+                    next = scoped.next;
+                    frame_ptr = env_ptr;
+                }
+                // Bad index (error path) -- not a normal lookup, skip.
+                None => return,
+            }
+        }
+    }
+
     /// Zero-based closure access (from top of environment)
     ///
     /// Uses guard for scoping derefs during navigation but then
@@ -387,6 +565,7 @@ where
     /// the returned value is not affected by subsequent updates and
     /// is useful mainly for immediate evaluation.
     pub fn get(&self, guard: &dyn MutatorScope, idx: usize) -> Option<C> {
+        self.diag_record_layout(guard, idx);
         if let Some((arr, i)) = self.cell(guard, idx) {
             arr.get(i)
         } else {
