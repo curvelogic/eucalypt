@@ -108,6 +108,7 @@ enum Token {
     ColonColon, // ::
     Comma,      // ,
     DotDot,     // ..
+    Ellipsis,   // `…` (U+2026) or `...` — the prefix-list rest marker
     Dot,        // . (for forall binders: `forall a.`)
     Star,       // *  (kind)
     // The ExecutionError nullary type (written as `ExecutionError` or implied by `T?`)
@@ -199,8 +200,18 @@ impl<'a> Lexer<'a> {
                 self.pos += 1;
                 Ok((Token::Comma, start))
             }
+            '…' => {
+                // U+2026 HORIZONTAL ELLIPSIS — the canonical rest marker.
+                self.pos += '…'.len_utf8();
+                Ok((Token::Ellipsis, start))
+            }
             '.' => {
-                if self.remaining().starts_with("..") {
+                // Longest-match first: `...` (prefix-list rest) before `..`
+                // (record row tail).
+                if self.remaining().starts_with("...") {
+                    self.pos += 3;
+                    Ok((Token::Ellipsis, start))
+                } else if self.remaining().starts_with("..") {
                     self.pos += 2;
                     Ok((Token::DotDot, start))
                 } else {
@@ -654,10 +665,36 @@ impl<'a> Parser<'a> {
                 }
             }
             Token::LBracket => {
-                // `[` type `]`
-                let inner = self.parse_type()?;
-                self.expect(&Token::RBracket)?;
-                Ok(Type::list(inner))
+                // Two forms share the `[` bracket:
+                //   `[` type `]`                          — homogeneous list
+                //   `[` type ( `,` type )* ELLIPSIS `]`   — prefix-list
+                // The element immediately before the ellipsis is the tail; the
+                // earlier elements form the fixed prefix.
+                let mut elems = vec![self.parse_type()?];
+                while self.peek()? == &Token::Comma {
+                    self.advance()?; // consume ','
+                    elems.push(self.parse_type()?);
+                }
+                if self.peek()? == &Token::Ellipsis {
+                    self.advance()?; // consume the ellipsis marker
+                    self.expect(&Token::RBracket)?;
+                    // Safe: `elems` always has at least one element. The final
+                    // element is the homogeneous tail; the rest is the prefix.
+                    let tail = elems.pop().unwrap();
+                    Ok(Type::prefix_list(elems, tail))
+                } else if elems.len() == 1 {
+                    self.expect(&Token::RBracket)?;
+                    Ok(Type::list(elems.pop().unwrap()))
+                } else {
+                    // `[A, B]` with no trailing ellipsis is deliberately not a
+                    // tuple surface (that is `(A, B)`); reserve comma-in-brackets
+                    // for the ellipsis-terminated prefix-list only (design §2.1).
+                    Err(ParseError::new(
+                        tok_pos,
+                        "comma-separated bracket type requires a trailing ellipsis \
+                         (`[A, B, C…]`); use `(A, B)` for a fixed tuple",
+                    ))
+                }
             }
             Token::LParen => self.parse_paren_body(tok_pos),
             Token::LBrace => self.parse_record(tok_pos),
@@ -1673,6 +1710,86 @@ mod tests {
         roundtrip("[number]");
         roundtrip("[a]");
         roundtrip("[[string]]");
+    }
+
+    // ── Prefix-lists ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_prefix_list_basic() {
+        // `[A, B, C…]` → PrefixList { prefix: [A, B], tail: C }.
+        assert_eq!(
+            parse_type("[symbol, block, string…]").unwrap(),
+            Type::prefix_list(
+                vec![
+                    Type::Symbol,
+                    Type::Record {
+                        fields: BTreeMap::new(),
+                        open: true,
+                        rows: vec![],
+                    },
+                ],
+                Type::String,
+            ),
+        );
+    }
+
+    #[test]
+    fn parse_prefix_list_grouped_union_tail() {
+        // The tail may be a grouped union: `(string | Element)…`.
+        assert_eq!(
+            parse_type("[symbol, block, (string | Element)…]").unwrap(),
+            Type::prefix_list(
+                vec![
+                    Type::Symbol,
+                    Type::Record {
+                        fields: BTreeMap::new(),
+                        open: true,
+                        rows: vec![],
+                    },
+                ],
+                Type::union([Type::String, var("Element")]),
+            ),
+        );
+    }
+
+    #[test]
+    fn ellipsis_spellings_are_equivalent() {
+        // Both `…` (U+2026) and ASCII `...` lex to the same token, so the two
+        // spellings produce the exact same `Type` value (owner decision Q1).
+        let uni = parse_type("[symbol, number, string…]").unwrap();
+        let ascii = parse_type("[symbol, number, string...]").unwrap();
+        assert_eq!(uni, ascii);
+        // Display always renders the canonical `…` regardless of spelling.
+        assert_eq!(format!("{ascii}"), "[symbol, number, string…]");
+    }
+
+    #[test]
+    fn prefix_list_single_element_normalises_to_list() {
+        // `[C…]` (empty prefix) canonicalises to `List(C)` at construction time,
+        // not a distinct `PrefixList` (owner decision Q3).
+        assert_eq!(parse_type("[string…]").unwrap(), Type::list(Type::String));
+        assert_eq!(parse_type("[string...]").unwrap(), Type::list(Type::String));
+    }
+
+    #[test]
+    fn prefix_list_without_ellipsis_errors() {
+        // `[A, B]` (comma, no trailing ellipsis) is deliberately a parse error;
+        // fixed tuples are spelled `(A, B)`.
+        assert!(parse_type("[symbol, string]").is_err());
+    }
+
+    #[test]
+    fn ellipsis_does_not_disturb_record_row_tail() {
+        // The `...` longest-match must not break the record row tail `..r`.
+        roundtrip("{name: string, ..}");
+        roundtrip("{a: number, ..r}");
+    }
+
+    #[test]
+    fn roundtrip_prefix_list() {
+        roundtrip("[symbol, block, string…]");
+        roundtrip("[symbol, block, (string | Element)…]");
+        roundtrip("[number, number, number…]");
     }
 
     #[test]

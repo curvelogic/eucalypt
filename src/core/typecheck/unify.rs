@@ -85,6 +85,13 @@ pub fn structural_subst(pattern: &Type, var: &TypeVarId, concrete: &Type) -> Typ
                 .map(|e| structural_subst(e, var, concrete))
                 .collect(),
         ),
+        Type::PrefixList { prefix, tail } => Type::prefix_list(
+            prefix
+                .iter()
+                .map(|p| structural_subst(p, var, concrete))
+                .collect(),
+            structural_subst(tail, var, concrete),
+        ),
         Type::Forall(binders, body) => {
             if binders.iter().any(|(id, _)| id == var) {
                 // `var` is bound here — do not substitute inside.
@@ -290,6 +297,30 @@ pub fn unify(t1: &Type, t2: &Type, subst: &mut Substitution) -> Result<(), Unify
                 unify(&a, &b, subst)?;
             }
             Ok(())
+        }
+
+        // Structural: prefix-list types — unify prefixes pointwise (same length)
+        // and the tails.
+        (
+            Type::PrefixList {
+                prefix: p1,
+                tail: t1,
+            },
+            Type::PrefixList {
+                prefix: p2,
+                tail: t2,
+            },
+        ) if p1.len() == p2.len() => {
+            let pairs: Vec<_> = p1
+                .iter()
+                .zip(p2.iter())
+                .map(|(a, b)| (a.clone(), b.clone()))
+                .collect();
+            for (a, b) in pairs {
+                unify(&a, &b, subst)?;
+            }
+            let (t1, t2) = (t1.as_ref().clone(), t2.as_ref().clone());
+            unify(&t1, &t2, subst)
         }
 
         // Structural: record types.
@@ -534,6 +565,10 @@ pub fn apply_subst(ty: &Type, subst: &Substitution) -> Type {
         }
         Type::Con(_) => ty.clone(),
         Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| apply_subst(e, subst)).collect()),
+        Type::PrefixList { prefix, tail } => Type::prefix_list(
+            prefix.iter().map(|p| apply_subst(p, subst)).collect(),
+            apply_subst(tail, subst),
+        ),
         Type::Function(a, b) => Type::Function(
             Box::new(apply_subst(a, subst)),
             Box::new(apply_subst(b, subst)),
@@ -730,6 +765,15 @@ pub fn var_kind_in_type(var: &TypeVarId, ty: &Type) -> Kind {
             }
             Kind::Star
         }
+        Type::PrefixList { prefix, tail } => {
+            for e in prefix.iter().chain(std::iter::once(tail.as_ref())) {
+                let k = var_kind_in_type(var, e);
+                if k != Kind::Star {
+                    return k;
+                }
+            }
+            Kind::Star
+        }
         Type::Union(variants) => {
             for v in variants {
                 let k = var_kind_in_type(var, v);
@@ -801,6 +845,12 @@ fn collect_free_vars(ty: &Type, vars: &mut Vec<TypeVarId>, seen: &mut HashSet<Ty
                 collect_free_vars(e, vars, seen);
             }
         }
+        Type::PrefixList { prefix, tail } => {
+            for e in prefix {
+                collect_free_vars(e, vars, seen);
+            }
+            collect_free_vars(tail, vars, seen);
+        }
         Type::Record { fields, rows, .. } => {
             for fp in fields.values() {
                 collect_free_vars(fp.ty(), vars, seen);
@@ -847,6 +897,9 @@ fn occurs(id: &TypeVarId, ty: &Type) -> bool {
         Type::Con(_) => false,
         Type::Function(a, b) => occurs(id, a) || occurs(id, b),
         Type::Tuple(elems) => elems.iter().any(|e| occurs(id, e)),
+        Type::PrefixList { prefix, tail } => {
+            prefix.iter().any(|e| occurs(id, e)) || occurs(id, tail)
+        }
         Type::Record { fields, rows, .. } => {
             fields.values().any(|fp| occurs(id, fp.ty())) || rows.iter().any(|r| r == id)
         }

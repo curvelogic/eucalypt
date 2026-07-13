@@ -147,6 +147,56 @@ fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
                     .all(|(a, b)| is_subtype_co(a, b, assumed))
         }
 
+        // ── Prefix-list ───────────────────────────────────────────────────────
+        // A raw empty-prefix PrefixList is only reachable if the smart
+        // constructor was bypassed; treat it as `List(tail)` in both directions
+        // so the `[C…] ≡ List(C)` identity holds structurally (§10.1 Q3).
+        (Type::PrefixList { prefix, tail }, _) if prefix.is_empty() => {
+            is_subtype_co(&Type::list(tail.as_ref().clone()), t, assumed)
+        }
+        (_, Type::PrefixList { prefix, tail }) if prefix.is_empty() => {
+            is_subtype_co(s, &Type::list(tail.as_ref().clone()), assumed)
+        }
+        // Tuple <: PrefixList — the load-bearing rule (§4.2).  A literal markup
+        // element synthesises to a `Tuple`; for it to check against a
+        // `[Symbol, Block, String…]` annotation this must hold, else prefix-lists
+        // would be uninhabitable by ordinary literals.
+        (Type::Tuple(elems), Type::PrefixList { prefix, tail }) => {
+            tuple_matches_prefix_list(elems, prefix, tail, assumed)
+        }
+        // PrefixList <: PrefixList — prefix widening + tail covariance (§4.1).
+        (
+            Type::PrefixList {
+                prefix: p,
+                tail: s2,
+            },
+            Type::PrefixList {
+                prefix: p2,
+                tail: t2,
+            },
+        ) => {
+            p.len() >= p2.len()
+                && p.iter()
+                    .zip(p2.iter())
+                    .all(|(a, b)| is_subtype_co(a, b, assumed))
+                // The source's extra fixed elements are absorbed by the tail.
+                && p[p2.len()..].iter().all(|e| is_subtype_co(e, t2, assumed))
+                && is_subtype_co(s2, t2, assumed)
+        }
+        // PrefixList <: List(U) — homogenise (§4.3).
+        (Type::PrefixList { prefix, tail }, _) if s_is_app_con(t, "List") => {
+            let u = t.as_list().unwrap();
+            prefix.iter().all(|e| is_subtype_co(e, u, assumed)) && is_subtype_co(tail, u, assumed)
+        }
+        // NonEmpty([U]) <: PrefixList — sound only when the single guaranteed
+        // element covers a length-1 prefix (§4.3); `len(p) ≥ 2` is unsatisfiable.
+        (_, Type::PrefixList { prefix, tail }) if s_is_app_con(s, "NonEmpty") => {
+            let u = s.as_non_empty().unwrap();
+            prefix.len() == 1
+                && is_subtype_co(u, &prefix[0], assumed)
+                && is_subtype_co(u, tail, assumed)
+        }
+
         // ── Record — width + depth subtyping ──────────────────────────────────
         (
             Type::Record {
@@ -259,6 +309,43 @@ fn is_subtype_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool {
 /// Helper: is `ty` an `App(Con(name), _)`?
 fn s_is_app_con(ty: &Type, name: &str) -> bool {
     ty.as_applied_single().is_some_and(|(n, _)| n == name)
+}
+
+/// `Tuple(elems) <: PrefixList{prefix, tail}` (§4.2): the tuple must be at least
+/// as long as the fixed prefix, match it pointwise, and every element beyond the
+/// prefix must be absorbed by the homogeneous `tail`.
+fn tuple_matches_prefix_list(
+    elems: &[Type],
+    prefix: &[Type],
+    tail: &Type,
+    assumed: &mut Vec<(Type, Type)>,
+) -> bool {
+    elems.len() >= prefix.len()
+        && elems
+            .iter()
+            .zip(prefix.iter())
+            .all(|(e, p)| is_subtype_co(e, p, assumed))
+        && elems[prefix.len()..]
+            .iter()
+            .all(|e| is_subtype_co(e, tail, assumed))
+}
+
+/// Gradual consistency between a `Tuple` and a `PrefixList` (§4.4), symmetric in
+/// the two arguments.
+fn tuple_consistent_with_prefix_list(
+    elems: &[Type],
+    prefix: &[Type],
+    tail: &Type,
+    assumed: &mut Vec<(Type, Type)>,
+) -> bool {
+    elems.len() >= prefix.len()
+        && elems
+            .iter()
+            .zip(prefix.iter())
+            .all(|(e, p)| is_consistent_co(e, p, assumed))
+        && elems[prefix.len()..]
+            .iter()
+            .all(|e| is_consistent_co(e, tail, assumed))
 }
 
 /// Subtyping for `App` types.
@@ -395,6 +482,50 @@ fn is_consistent_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool
         (_, Type::Tuple(elems)) if s_is_app_con(s, "NonEmpty") => {
             let a = s.as_non_empty().unwrap();
             !elems.is_empty() && elems.iter().all(|e| is_consistent_co(a, e, assumed))
+        }
+
+        // ── Prefix-list (gradual consistency, §4.4) ────────────────────────────
+        // Element-wise up to the shorter prefix length; each side's overflow
+        // prefix must be consistent with the other's tail; and the tails must be
+        // consistent.  (`any` in any position is handled by the escape hatch at
+        // the top of this function.)
+        (
+            Type::PrefixList {
+                prefix: p,
+                tail: s2,
+            },
+            Type::PrefixList {
+                prefix: p2,
+                tail: t2,
+            },
+        ) => {
+            let n = p.len().min(p2.len());
+            p[..n]
+                .iter()
+                .zip(p2[..n].iter())
+                .all(|(a, b)| is_consistent_co(a, b, assumed))
+                && p[n..].iter().all(|e| is_consistent_co(e, t2, assumed))
+                && p2[n..].iter().all(|e| is_consistent_co(s2, e, assumed))
+                && is_consistent_co(s2, t2, assumed)
+        }
+        // Tuple ~ PrefixList in both directions — a literal tuple is consistent
+        // with a prefix-list annotation under the gradual relation.
+        (Type::Tuple(elems), Type::PrefixList { prefix, tail }) => {
+            tuple_consistent_with_prefix_list(elems, prefix, tail, assumed)
+        }
+        (Type::PrefixList { prefix, tail }, Type::Tuple(elems)) => {
+            tuple_consistent_with_prefix_list(elems, prefix, tail, assumed)
+        }
+        // PrefixList ~ List(U) in both directions — homogenise.
+        (Type::PrefixList { prefix, tail }, _) if s_is_app_con(t, "List") => {
+            let u = t.as_list().unwrap();
+            prefix.iter().all(|e| is_consistent_co(e, u, assumed))
+                && is_consistent_co(tail, u, assumed)
+        }
+        (_, Type::PrefixList { prefix, tail }) if s_is_app_con(s, "List") => {
+            let u = s.as_list().unwrap();
+            prefix.iter().all(|e| is_consistent_co(u, e, assumed))
+                && is_consistent_co(u, tail, assumed)
         }
 
         // ── Function ─────────────────────────────────────────────────────────
@@ -710,6 +841,118 @@ mod tests {
         let t = Type::Tuple(vec![Type::Number]);
         assert!(!is_subtype(&s, &t));
         assert!(!is_subtype(&t, &s));
+    }
+
+    // ── Prefix-lists ─────────────────────────────────────────────────────────
+
+    fn plist(prefix: Vec<Type>, tail: Type) -> Type {
+        Type::prefix_list(prefix, tail)
+    }
+
+    #[test]
+    fn tuple_subtype_of_prefix_list() {
+        // §4.2 (load-bearing): a literal markup element `[:div, {}, "a", "b"]`
+        // synthesises to a Tuple and must check against a prefix-list annotation.
+        let elem = Type::Tuple(vec![
+            Type::LiteralSymbol("div".to_string()),
+            Type::Record {
+                fields: std::collections::BTreeMap::new(),
+                open: true,
+                rows: vec![],
+            },
+            Type::String,
+            Type::String,
+        ]);
+        let ann = plist(
+            vec![
+                Type::Symbol,
+                Type::Record {
+                    fields: std::collections::BTreeMap::new(),
+                    open: true,
+                    rows: vec![],
+                },
+            ],
+            Type::String,
+        );
+        assert!(is_subtype(&elem, &ann));
+    }
+
+    #[test]
+    fn tuple_too_short_for_prefix_not_subtype() {
+        // A tuple shorter than the fixed prefix cannot satisfy it.
+        let short = Type::Tuple(vec![Type::Symbol]);
+        let ann = plist(
+            vec![
+                Type::Symbol,
+                Type::Record {
+                    fields: std::collections::BTreeMap::new(),
+                    open: true,
+                    rows: vec![],
+                },
+            ],
+            Type::String,
+        );
+        assert!(!is_subtype(&short, &ann));
+    }
+
+    #[test]
+    fn prefix_list_prefix_widening() {
+        // §4.1: a longer, more specific prefix is a subtype of a shorter one
+        // whose tail absorbs the extra fixed elements.
+        let s = plist(vec![Type::Symbol, Type::Number], Type::String);
+        let t = plist(vec![Type::Symbol], union(vec![Type::Number, Type::String]));
+        assert!(is_subtype(&s, &t));
+    }
+
+    #[test]
+    fn prefix_list_tail_covariance() {
+        let s = plist(vec![Type::Symbol], Type::Never);
+        let t = plist(vec![Type::Symbol], Type::Number);
+        assert!(is_subtype(&s, &t));
+        assert!(!is_subtype(&t, &s));
+    }
+
+    #[test]
+    fn prefix_list_subtype_of_any_list() {
+        // §4.3: homogenise — every fixed element and the tail must be <: U.
+        let s = plist(vec![Type::Symbol, Type::Number], Type::String);
+        assert!(is_subtype(&s, &list(Type::Any)));
+        // [String, String…] <: [String]
+        let s2 = plist(vec![Type::String], Type::String);
+        assert!(is_subtype(&s2, &list(Type::String)));
+    }
+
+    #[test]
+    fn list_not_subtype_of_prefix_list() {
+        // §4.3: an arbitrary list may be empty, so it cannot guarantee the fixed
+        // prefix — this is intentional, protecting the markup element shape.
+        let l = list(Type::Any);
+        let ann = plist(vec![Type::Symbol], Type::String);
+        assert!(!is_subtype(&l, &ann));
+    }
+
+    #[test]
+    fn single_element_prefix_list_equiv_to_list_both_directions() {
+        // §10.1 Q3 defensive check: even though construction normalises the
+        // empty-prefix form away, `[C…]` and `List(C)` must be mutual subtypes.
+        // Build the degenerate PrefixList directly, bypassing the smart ctor.
+        let raw = Type::PrefixList {
+            prefix: vec![],
+            tail: Box::new(Type::String),
+        };
+        assert!(is_subtype(&raw, &list(Type::String)));
+        assert!(is_subtype(&list(Type::String), &raw));
+    }
+
+    #[test]
+    fn prefix_list_any_consistency_both_directions() {
+        // §4.4: `any` in a prefix or tail is vacuously consistent.
+        let partial = plist(vec![Type::Any], Type::Any);
+        let concrete = plist(vec![Type::Symbol], Type::String);
+        assert!(is_consistent(&partial, &concrete));
+        assert!(is_consistent(&concrete, &partial));
+        assert!(is_consistent(&Type::Any, &concrete));
+        assert!(is_consistent(&concrete, &Type::Any));
     }
 
     // ── Records ──────────────────────────────────────────────────────────────

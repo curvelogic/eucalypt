@@ -58,6 +58,13 @@ fn resolve_aliases(ty: Type, aliases: &HashMap<String, Type>, resolving: &mut Ve
                 .map(|e| resolve_aliases(e, aliases, resolving))
                 .collect(),
         ),
+        Type::PrefixList { prefix, tail } => Type::prefix_list(
+            prefix
+                .into_iter()
+                .map(|p| resolve_aliases(p, aliases, resolving))
+                .collect(),
+            resolve_aliases(*tail, aliases, resolving),
+        ),
         Type::Function(a, b) => Type::Function(
             Box::new(resolve_aliases(*a, aliases, resolving)),
             Box::new(resolve_aliases(*b, aliases, resolving)),
