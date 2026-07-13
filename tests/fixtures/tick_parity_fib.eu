@@ -1,0 +1,11 @@
+# Fixture for the source-prelude tick-parity tripwire (eu-2sa6.5).
+#
+# Deliberately small (fib(20), not fib(30) as in the bench suite) so the
+# comparison runs twice per `cargo test` invocation without materially
+# slowing the suite down. Exercises the same strict-recursion + fused
+# arithmetic shape (`<=`, `-`, `+`) that exposed the ~10.6% source-prelude
+# tick handicap.
+fib(n): if(n <= 1, 1, fib(n - 1) + fib(n - 2))
+
+` { target: :tick-parity-fib }
+tick-parity-fib: fib(20)

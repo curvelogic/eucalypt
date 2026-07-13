@@ -17,7 +17,10 @@ eu --help # lists command line options
 
 - `--source-prelude` - Force the source-prelude pipeline even when a pre-compiled
   prelude blob is available. Use this when you need to trace through prelude source
-  during debugging, or when the cached blob is suspected to be stale.
+  during debugging, or when the cached blob is suspected to be stale. Note this
+  pipeline is correctness-equivalent to the blob path but carries a documented
+  performance handicap (~10% on arithmetic-dense code) — see
+  [`docs/development/prelude-blob.md`](../development/prelude-blob.md).
 
 ## Command Structure
 
