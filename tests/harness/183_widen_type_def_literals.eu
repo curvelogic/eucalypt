@@ -1,4 +1,4 @@
-{ import: "resource:reflect"
+{ import: "reflect.eu"
   doc: "183 widen literal types in synthesised type-def aliases" }
 
 ` { target: :test }

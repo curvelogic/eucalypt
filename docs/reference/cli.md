@@ -296,9 +296,12 @@ using the `-x` command line option:
 ```sh
 eu -x json # for JSON
 eu -x text # for plain text
+eu -x html # for HTML
 ```
 
-JSON is such a common case that there is a shortcut: `-j`.
+JSON is such a common case that there is a shortcut: `-j`. See
+[Export Formats](export-formats.md) for the complete list (yaml, json,
+toml, edn, text, html, eu).
 
 ### Output targets
 
@@ -485,14 +488,19 @@ eu --error-format human file.eu     # default human-readable (explicit)
 
 ### Type Checking
 
-Run the type checker before evaluation with `--type-check`. Type warnings
-are reported to stderr but do not abort evaluation unless `--strict` is also
-passed:
+The type checker runs unconditionally on every `eu` invocation. Type
+warnings are reported to stderr but do not abort evaluation unless
+`--strict` is also passed:
 
 ```sh
-eu --type-check file.eu             # warn on type issues, then evaluate
-eu --type-check --strict file.eu    # abort on first type warning
+eu file.eu                          # warn on type issues, then evaluate
+eu file.eu --strict                 # abort before evaluation on first type warning
+eu file.eu --suppress-type-warnings # evaluate, silencing warning output (checker still runs)
 ```
+
+`--type-check` is a deprecated no-op flag (kept for backwards
+compatibility) — type checking already runs whether or not it is
+passed.
 
 For checking without evaluating, use the `check` subcommand (see below).
 

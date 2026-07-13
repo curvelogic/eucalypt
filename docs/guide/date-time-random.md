@@ -35,8 +35,8 @@ values:
 # Parse from a string
 d: cal.parse("2024-03-15T14:30:00Z")
 
-# Format to a custom string
-label: t"2024-03-15" cal.format("%Y-%m-%d")  # "2024-03-15"
+# Format as ISO8601 (cal.format takes no format-string argument)
+label: t"2024-03-15" cal.format  # "2024-03-15T00:00:00+00:00"
 ```
 
 ### Date-Time Arithmetic

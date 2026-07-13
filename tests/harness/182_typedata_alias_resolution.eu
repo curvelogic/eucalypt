@@ -1,4 +1,4 @@
-{ import: "resource:reflect"
+{ import: "reflect.eu"
   doc: "182 typedata alias resolution" }
 
 # Type aliases in s-strings should be resolved after type checking,

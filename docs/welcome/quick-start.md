@@ -50,10 +50,10 @@ cargo install --path .
 eu --version
 ```
 
-...prints the version:
+...prints the version, e.g.:
 
 ```text
-eu 0.3.0
+eu - Eucalypt v0.12.1
 ```
 
 ...and...
@@ -78,20 +78,23 @@ Commands:
   list-targets  List targets defined in the source
   fmt           Format eucalypt source files
   lsp           Start the Language Server Protocol server
+  check         Check type annotations in eucalypt source files
+  doc           Extract documentation from eucalypt source files
   help          Print this message or the help of the given subcommand(s)
 
 Arguments:
   [FILES]...  Files to process (used when no subcommand specified)
 
 Options:
-  -L, --lib-path <LIB_PATH>                Add directory to lib path
-  -Q, --no-prelude                         Don't load the standard prelude
-  -d, --debug                              Turn on debug features
-  -S, --statistics                         Print metrics to stderr before exiting
-      --statistics-file <STATISTICS_FILE>  Write statistics as JSON to a file
-  -h, --help                               Print help
-  -V, --version                            Print version
+      --source-prelude  Force source-prelude pipeline even when pre-compiled blob is available
+  -h, --help            Print help
+  -V, --version         Print version
 ```
+
+Most of the options familiar from older versions (`-L`, `-Q`, `-d`,
+`-S`, `--statistics-file`, and many more) now live under the `run`
+subcommand — see `eu run --help` or the [CLI
+Reference](../reference/cli.md) for the full list.
 
 Use `eu <command> --help` for detailed help on each subcommand.
 

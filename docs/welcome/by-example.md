@@ -28,7 +28,7 @@ needed.
 **Problem:** Given a list of users in JSON, extract just their names.
 
 ```sh
-eu -e 'map(.name)' <<'JSON'
+eu u=- -e 'u map(.name)' <<'JSON'
 [
   {"name": "Alice", "role": "admin"},
   {"name": "Bob", "role": "user"},
@@ -56,9 +56,9 @@ threshold and format them.
 ```eu
 # products.eu
 products: [
-  { name: "Widget" price: 9.99 }
-  { name: "Gadget" price: 24.99 }
-  { name: "Gizmo" price: 49.99 }
+  { name: "Widget" price: 9.99 },
+  { name: "Gadget" price: 24.99 },
+  { name: "Gizmo" price: 49.99 },
   { name: "Doohickey" price: 4.99 }
 ]
 
@@ -281,12 +281,12 @@ while `deep-query("**.port", data)` matches at any depth.
 
 **Problem:** Extract timestamps and levels from log lines.
 
-```eu,notest
+```eu
 # logs.eu
 lines: [
-  "2024-03-15 10:30:00 ERROR Connection timeout"
-  "2024-03-15 10:30:05 INFO Retry attempt 1"
-  "2024-03-15 10:30:10 ERROR Connection timeout"
+  "2024-03-15 10:30:00 ERROR Connection timeout",
+  "2024-03-15 10:30:05 INFO Retry attempt 1",
+  "2024-03-15 10:30:10 ERROR Connection timeout",
   "2024-03-15 10:30:15 INFO Connected"
 ]
 
@@ -309,10 +309,10 @@ eu logs.eu -e errors
 **Output:**
 
 ```yaml
-- timestamp: '2024-03-15 10:30:00'
+- timestamp: "2024-03-15 10:30:00"
   level: ERROR
   message: Connection timeout
-- timestamp: '2024-03-15 10:30:10'
+- timestamp: "2024-03-15 10:30:10"
   level: ERROR
   message: Connection timeout
 ```
@@ -348,8 +348,8 @@ repetitive structure.
 ```eu
 # events.eu
 events: [
-  { name: "Launch" date: t"2024-01-15" }
-  { name: "Review" date: t"2024-06-01" }
+  { name: "Launch" date: t"2024-01-15" },
+  { name: "Review" date: t"2024-06-01" },
   { name: "Release" date: t"2024-09-30" }
 ]
 
@@ -430,8 +430,8 @@ overlaps.
 
 ```eu
 items: [
-  { name: "A" tags: ["fast", "reliable", "cheap"] }
-  { name: "B" tags: ["fast", "expensive"] }
+  { name: "A" tags: ["fast", "reliable", "cheap"] },
+  { name: "B" tags: ["fast", "expensive"] },
   { name: "C" tags: ["reliable", "cheap", "slow"] }
 ]
 

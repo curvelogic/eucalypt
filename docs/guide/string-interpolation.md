@@ -140,15 +140,22 @@ These use printf-style format codes:
 
 ```eu
 pi: 3.14159
+n: 42
 formatted: "{pi:%.2f}"
-padded: "{42:%06d}"
+padded: "{n:%06d}"
 ```
 
 ```yaml
 pi: 3.14159
+n: 42
 formatted: '3.14'
 padded: '000042'
 ```
+
+Bind the value to a name first, as above — a bare numeral inside the
+braces (e.g. `"{42:%06d}"`) is parsed as numbered string anaphora
+(`{0}`, `{1}`, ...), not a literal value, and silently produces an
+uncallable high-arity function instead of a formatted string.
 
 ## String Anaphora
 
@@ -365,7 +372,7 @@ endpoints:
 
 ```eu
 rows: [
-  { name: "Alice" score: 85 }
+  { name: "Alice" score: 85 },
   { name: "Bob" score: 92 }
 ]
 

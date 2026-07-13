@@ -405,9 +405,9 @@ Here is a more complete example combining multiple list operations:
 
 ```eu
 data: [
-  { name: "Alice" score: 85 }
-  { name: "Bob" score: 92 }
-  { name: "Charlie" score: 78 }
+  { name: "Alice" score: 85 },
+  { name: "Bob" score: 92 },
+  { name: "Charlie" score: 78 },
   { name: "Diana" score: 95 }
 ]
 

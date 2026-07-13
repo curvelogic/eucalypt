@@ -302,16 +302,16 @@ sophisticated means of combining block data are available too.
 
 > **Note:** This merge is similar to the effect of *merge keys* in
 > YAML, where a special `<<` mapping key causes a similar merge to
-> occur. Not all YAML processors support this and nor does eucalypt at
-> present, but it probably will some day.
+> occur. Eucalypt's YAML importer supports merge keys too — see
+> [Import Formats](../reference/import-formats.md#merge-keys).
 
 Be aware that eucalypt has nothing like virtual functions. The
 functions in scope when an expression is created are the ones that are
 applied. So if you redefine an `f` like this, in an overriding
 block...
 
-```eu,notest
-{ f(x): x+1 a: f(2) } { f(x): x-2 }
+```eu
+{ f(x): x+1 a: f(2) } { f(x): x - 2 }
 ```
 
 ...the definition of `a` will not see it.
@@ -526,10 +526,10 @@ cargo install --path .
 eu --version
 ```
 
-...prints the version:
+...prints the version, e.g.:
 
 ```text
-eu 0.3.0
+eu - Eucalypt v0.12.1
 ```
 
 ...and...
@@ -554,20 +554,23 @@ Commands:
   list-targets  List targets defined in the source
   fmt           Format eucalypt source files
   lsp           Start the Language Server Protocol server
+  check         Check type annotations in eucalypt source files
+  doc           Extract documentation from eucalypt source files
   help          Print this message or the help of the given subcommand(s)
 
 Arguments:
   [FILES]...  Files to process (used when no subcommand specified)
 
 Options:
-  -L, --lib-path <LIB_PATH>                Add directory to lib path
-  -Q, --no-prelude                         Don't load the standard prelude
-  -d, --debug                              Turn on debug features
-  -S, --statistics                         Print metrics to stderr before exiting
-      --statistics-file <STATISTICS_FILE>  Write statistics as JSON to a file
-  -h, --help                               Print help
-  -V, --version                            Print version
+      --source-prelude  Force source-prelude pipeline even when pre-compiled blob is available
+  -h, --help            Print help
+  -V, --version         Print version
 ```
+
+Most of the options familiar from older versions (`-L`, `-Q`, `-d`,
+`-S`, `--statistics-file`, and many more) now live under the `run`
+subcommand — see `eu run --help` or the [CLI
+Reference](../reference/cli.md) for the full list.
 
 Use `eu <command> --help` for detailed help on each subcommand.
 
@@ -641,7 +644,7 @@ needed.
 **Problem:** Given a list of users in JSON, extract just their names.
 
 ```sh
-eu -e 'map(.name)' <<'JSON'
+eu u=- -e 'u map(.name)' <<'JSON'
 [
   {"name": "Alice", "role": "admin"},
   {"name": "Bob", "role": "user"},
@@ -669,9 +672,9 @@ threshold and format them.
 ```eu
 # products.eu
 products: [
-  { name: "Widget" price: 9.99 }
-  { name: "Gadget" price: 24.99 }
-  { name: "Gizmo" price: 49.99 }
+  { name: "Widget" price: 9.99 },
+  { name: "Gadget" price: 24.99 },
+  { name: "Gizmo" price: 49.99 },
   { name: "Doohickey" price: 4.99 }
 ]
 
@@ -894,12 +897,12 @@ while `deep-query("**.port", data)` matches at any depth.
 
 **Problem:** Extract timestamps and levels from log lines.
 
-```eu,notest
+```eu
 # logs.eu
 lines: [
-  "2024-03-15 10:30:00 ERROR Connection timeout"
-  "2024-03-15 10:30:05 INFO Retry attempt 1"
-  "2024-03-15 10:30:10 ERROR Connection timeout"
+  "2024-03-15 10:30:00 ERROR Connection timeout",
+  "2024-03-15 10:30:05 INFO Retry attempt 1",
+  "2024-03-15 10:30:10 ERROR Connection timeout",
   "2024-03-15 10:30:15 INFO Connected"
 ]
 
@@ -922,10 +925,10 @@ eu logs.eu -e errors
 **Output:**
 
 ```yaml
-- timestamp: '2024-03-15 10:30:00'
+- timestamp: "2024-03-15 10:30:00"
   level: ERROR
   message: Connection timeout
-- timestamp: '2024-03-15 10:30:10'
+- timestamp: "2024-03-15 10:30:10"
   level: ERROR
   message: Connection timeout
 ```
@@ -961,8 +964,8 @@ repetitive structure.
 ```eu
 # events.eu
 events: [
-  { name: "Launch" date: t"2024-01-15" }
-  { name: "Review" date: t"2024-06-01" }
+  { name: "Launch" date: t"2024-01-15" },
+  { name: "Review" date: t"2024-06-01" },
   { name: "Release" date: t"2024-09-30" }
 ]
 
@@ -1043,8 +1046,8 @@ overlaps.
 
 ```eu
 items: [
-  { name: "A" tags: ["fast", "reliable", "cheap"] }
-  { name: "B" tags: ["fast", "expensive"] }
+  { name: "A" tags: ["fast", "reliable", "cheap"] },
+  { name: "B" tags: ["fast", "expensive"] },
   { name: "C" tags: ["reliable", "cheap", "slow"] }
 ]
 
@@ -1630,8 +1633,8 @@ A more complete example:
 
 ```eu
 people: [
-  { name: "Alice" age: 30 }
-  { name: "Bob" age: 25 }
+  { name: "Alice" age: 30 },
+  { name: "Bob" age: 25 },
   { name: "Charlie" age: 35 }
 ]
 
@@ -2093,9 +2096,9 @@ Here is a more complete example combining multiple list operations:
 
 ```eu
 data: [
-  { name: "Alice" score: 85 }
-  { name: "Bob" score: 92 }
-  { name: "Charlie" score: 78 }
+  { name: "Alice" score: 85 },
+  { name: "Bob" score: 92 },
+  { name: "Charlie" score: 78 },
   { name: "Diana" score: 95 }
 ]
 
@@ -2274,15 +2277,22 @@ These use printf-style format codes:
 
 ```eu
 pi: 3.14159
+n: 42
 formatted: "{pi:%.2f}"
-padded: "{42:%06d}"
+padded: "{n:%06d}"
 ```
 
 ```yaml
 pi: 3.14159
+n: 42
 formatted: '3.14'
 padded: '000042'
 ```
+
+Bind the value to a name first, as above — a bare numeral inside the
+braces (e.g. `"{42:%06d}"`) is parsed as numbered string anaphora
+(`{0}`, `{1}`, ...), not a literal value, and silently produces an
+uncallable high-arity function instead of a formatted string.
 
 ## String Anaphora
 
@@ -2499,7 +2509,7 @@ endpoints:
 
 ```eu
 rows: [
-  { name: "Alice" score: 85 }
+  { name: "Alice" score: 85 },
   { name: "Bob" score: 92 }
 ]
 
@@ -2796,8 +2806,12 @@ result: 5 ops.double ops.negate
 ```
 
 ```yaml
+ops: {}
 result: -10
 ```
+
+(`ops` renders as `{}` because its members are functions, which are
+never rendered — only the block itself, being a property, appears.)
 
 ## Currying
 
@@ -3004,11 +3018,19 @@ eu -e 'flip(-, 1, 3)'
 
 `flip` is useful for adapting functions to a pipeline:
 
-```eu,notest
+```eu
 ` :suppress
-with-tags: merge flip ({ tags: [:a, :b] })
+with-tags: flip(merge)({ tags: [:a, :b] })
 
 result: { name: "foo" } with-tags
+```
+
+```yaml
+result:
+  name: foo
+  tags:
+    - a
+    - b
 ```
 
 ### `complement`
@@ -3163,8 +3185,13 @@ result: ∅ set.to-list
 ```
 
 ```yaml
+∅: []
 result: []
 ```
+
+Unlike prefix/postfix/binary operator declarations, a nullary
+declaration has no parameter list — structurally it is a property
+declaration, so (unlike a function) it *is* rendered in the output.
 
 The empty set `∅` is the only nullary operator in the standard prelude,
 but you can define your own:
@@ -3208,21 +3235,24 @@ The prelude defines the standard precedence levels:
 | Level | Name | Operators |
 |-------|------|-----------|
 | 95 | prefix | `↑` (head) |
-| 90 | lookup | `.` |
-| 88 | bool-unary | `!`, `¬` |
+| 90 | lookup | `.`, `~` (safe lookup) |
+| 88 | bool-unary | `!`, `¬` (prefix); `✓` (postfix not-null) |
+| 88 | -- | `∘`, `;` (composition) |
 | 85 | exp | `^`, `!!` (nth) |
 | 80 | prod | `*`, `/`, `÷`, `%` |
 | 75 | sum | `+`, `-` |
-| 60 | shift | (shift operators) |
-| 55 | bitwise | (bitwise operators) |
+| 60 | shift | (shift operators, reserved) |
+| 55 | bitwise | (bitwise operators, reserved) — `‖` (cons) also uses this numeric level |
 | 50 | cmp | `<`, `>`, `<=`, `>=` |
 | 45 | append | `++`, `<<` |
+| 42 | map | `<$>` (functor map) |
 | 40 | eq | `=`, `!=` |
 | 35 | bool-prod | `&&`, `∧` |
 | 30 | bool-sum | `\|\|`, `∨` |
 | 20 | cat | (catenation) |
+| 15 | clause | `=>`, `⇒` (cond clause builder) |
 | 10 | apply | `@` |
-| 5 | meta | `//`, `//=`, `//=>`, `//=?`, `//!` |
+| 5 | meta | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//=?>`, `//!` |
 
 Higher numbers bind more tightly:
 
@@ -3275,21 +3305,23 @@ Associativity can be `:left`, `:right`, or omitted (defaults to
 
 Two special operators are provided for testing:
 
-### `//=` (assert equals)
+### `//=` (expect equals)
 
-Asserts that the left side equals the right side at runtime, and
-returns the value if true. Panics if false:
+Expects the left side to equal the right side at runtime, returning
+`true` on success. Panics if false (or, in `eu test` mode, returns
+`false` instead of panicking):
 
 ```eu
-result: 2 + 2 //= 4
+result: 2 + 2 //= 4   # result: true
 ```
 
 ### `//=>` (assert equals with metadata)
 
-Like `//=` but also attaches the assertion as metadata:
+Like `//=` but returns the asserted *value* (not a boolean) on
+success, and also attaches the assertion as metadata:
 
 ```eu
-checked: 2 + 2 //=> 4
+checked: 2 + 2 //=> 4   # checked: 4
 ```
 
 Both are useful for embedding tests and sanity checks in code.
@@ -4122,8 +4154,8 @@ Because `~` is a regular operator (left-associative, precedence
 
 ```eu
 people: [
-  { name: "Alice", email: "alice@example.com" }
-  { name: "Bob" }
+  { name: "Alice", email: "alice@example.com" },
+  { name: "Bob" },
   { name: "Charlie", email: "charlie@example.com" }
 ]
 
@@ -4241,8 +4273,8 @@ applied predicate — perfect for `filter` and `when`:
 
 ```eu
 servers: [
-  { host: "10.0.0.1", port: 8080 }
-  { name: "cache" }
+  { host: "10.0.0.1", port: 8080 },
+  { name: "cache" },
   { host: "10.0.0.2", port: 5432 }
 ]
 
@@ -4452,7 +4484,7 @@ the original positions.
 | Find by key at any depth | `deep-find` | `data deep-find(:host)` |
 | Get a value deep in a known structure | `view` + lens | `data view(‹:server :host›)` |
 | Modify a value deep in a structure | `over` + lens | `data over(‹:server :port›, + 1)` |
-| Transform all elements | `over` + `each` | `items over(each ∘ at(:name), str.upper)` |
+| Transform all elements | `over` + `each` | `items over(each ∘ at(:name), str.to-upper)` |
 | Collect values from all elements | `to-list-of` + `each` | `items to-list-of(each ∘ at(:name))` |
 | Sort/reverse/replace all foci | `parts-of` + traversal | `items over(parts-of(each ∘ at(:score)), sort-nums)` |
 
@@ -5305,7 +5337,7 @@ summary:
 eu sales=sales.csv -j -e '{
   total: sales map(.amount num) foldl(+, 0)
   count: sales count
-  regions: sales map(.region) unique
+  regions: sales map(.region) set.from-list set.to-list
 }'
 ```
 
@@ -5377,6 +5409,8 @@ eu file.eu          # same as: eu run file.eu
 | `list-targets` | List export targets |
 | `fmt` | Format source files |
 | `lsp` | Start the Language Server Protocol server |
+| `check` | Check type annotations without evaluating |
+| `doc` | Extract documentation from source |
 
 ## Inputs
 
@@ -5577,6 +5611,21 @@ reproducible output:
 eu --seed 42 template.eu
 ```
 
+## IO Permission
+
+Programs that use the IO monad (`io.shell`, `io.exec`, and friends)
+must be run with `-I`/`--allow-io`, or evaluation fails with a
+permission error before any shell command runs:
+
+```sh
+eu -I deploy.eu
+eu --allow-io deploy.eu
+```
+
+This is a safety gate — code that shells out is not allowed to run
+by accident. See [IO and Shell Commands](io.md) for the full IO
+monad guide.
+
 ## The Formatter
 
 Format eucalypt source files:
@@ -5659,6 +5708,103 @@ Provides syntax error diagnostics and formatting support.
 - `--` passes arguments available via `io.args`
 - `eu fmt` formats source files; `eu test` runs tests; `eu lsp`
   starts the language server
+
+---
+
+# Language Server Protocol (LSP) Support
+
+Eucalypt includes a built-in LSP server for editor integration.
+Start it with `eu lsp`.
+
+## Editor Setup
+
+### Emacs (eglot)
+
+Add to your eucalypt-mode configuration:
+
+```elisp
+(add-to-list 'eglot-server-programs '(eucalypt-mode "eu" "lsp"))
+```
+
+### VS Code
+
+Install the eucalypt VS Code extension, which configures the
+language server automatically.
+
+## Features
+
+### Diagnostics
+
+- Parse errors appear as you type
+- Type warnings from `eu check` appear after a short debounce
+  (300ms after the last keystroke)
+- Pipeline errors (e.g. invalid monad spec) surface as warnings
+  with source locations
+
+### Hover
+
+- Declaration names show documentation and type annotations
+- Prelude functions show their type signatures
+- Monad tags (`:for`, `:io`) show monad description and binding
+  type
+- Bracket pair delimiters show pair name, mode, and documentation
+
+### Completion
+
+- Names from the current file, prelude, and imported files
+- Monad tag completion after `{ :`
+- Dotted access completion (e.g. `str.` offers string functions)
+
+### Go-to-definition
+
+- Jump to declaration in the current file
+- Jump into imported files
+- Jump to prelude source (via temp file)
+- Jump to bracket pair definitions from bracket delimiters
+
+### Inlay Hints
+
+- Monadic block binding types (e.g. `x: number` for
+  `{ :for x: [1,2,3] }`)
+- Operator fixity on operator declarations
+- Parameter names at multi-argument call sites
+
+### Code Actions
+
+- **Wrap as namespace** — wrap a single declaration's value into
+  a block, or wrap multiple selected declarations into a new
+  namespace with reference prefixing
+- **Promote metadata** — expand shortcut form to block
+  (e.g. `` ` "doc" `` → `` ` { doc: "doc" } ``)
+- **Demote metadata** — collapse single-field block to shortcut
+- **Add metadata field** — add type, doc, target, export, monad,
+  format, or type-def metadata
+- **Let-block toggle** — convert between `{ x: 1 }` and
+  `{ :let x: 1 }`
+- **Qualify name** — suggest `str.split` for unresolved `split`
+
+### Other
+
+- Document symbols (outline)
+- Folding ranges
+- Semantic tokens (syntax highlighting)
+- Document highlight (matching bracket pairs)
+- Find references
+- Rename symbol
+- Selection range
+- Formatting
+
+## Architecture
+
+The LSP server uses a two-tier architecture:
+
+1. **AST-level** (immediate): parse errors, completion, hover,
+   semantic tokens — works on every keystroke, even on broken
+   input
+2. **Pipeline-level** (debounced): type checking, import
+   resolution, monadic binding types — runs the full
+   desugarer/type checker pipeline after 300ms of no changes,
+   with green node comparison to skip unchanged documents
 
 ---
 
@@ -5890,8 +6036,8 @@ values:
 # Parse from a string
 d: cal.parse("2024-03-15T14:30:00Z")
 
-# Format to a custom string
-label: t"2024-03-15" cal.format("%Y-%m-%d")  # "2024-03-15"
+# Format as ISO8601 (cal.format takes no format-string argument)
+label: t"2024-03-15" cal.format  # "2024-03-15T00:00:00+00:00"
 ```
 
 ### Date-Time Arithmetic
@@ -6185,9 +6331,14 @@ The pipeline style reads naturally: the command string flows into
 the first action:
 
 ```eu,notest
-io.bind(io.shell("echo hello"),
-  _(r): io.shell("echo got: {r.stdout}"))
+say(r): io.shell("echo got: {r.stdout}")
+
+io.bind(io.shell("echo hello"), say)
 ```
+
+(Eucalypt has no anonymous-lambda syntax — `_(r): expr` is
+declaration syntax, not a function value; the continuation must be a
+named function or a partially-applied one.)
 
 The `{ :io ... }` block is almost always preferable to explicit
 `io.bind` calls.
@@ -6347,7 +6498,8 @@ The most common form tags the block with `:io`:
 }.(r.stdout)
 ```
 
-This desugars to:
+This desugars to (pseudocode — `λ` is not real eucalypt syntax;
+eucalypt has no lambda expressions):
 
 ```eu,notest
 io.bind(io.shell("echo hello"),
@@ -6849,8 +7001,8 @@ same problem that `{ :random ... }` solves for PRNG streams.
 
 ```eu
 s0: { count: 0, name: "init" }
-s1: s0 merge({count: 1})
-s2: s1 merge({name: "updated"})
+s1: merge(s0, {count: 1})
+s2: merge(s1, {name: "updated"})
 ```
 
 ```yaml
@@ -7043,19 +7195,23 @@ declarations through `state.bind` / `state.return` automatically.
 
 # Type Checking
 
-Eucalypt includes an optional, advisory type checker. It never prevents
-your code from running — all existing code continues to work exactly as
-before. Think of it as a second pair of eyes that can catch common
-mistakes before they become confusing runtime errors.
+Eucalypt includes an advisory type checker that runs **unconditionally**
+on every `eu` invocation (evaluate, dump, test). It never prevents your
+code from running by default — all existing code continues to work
+exactly as before. Think of it as a second pair of eyes that can catch
+common mistakes before they become confusing runtime errors.
 
 ```sh
-eu check file.eu              # type-check, report warnings
-eu check file.eu --strict     # treat type warnings as errors
-eu --type-check file.eu       # check then evaluate
+eu check file.eu              # check-only: report warnings, don't evaluate
+eu check file.eu --strict     # treat type warnings as errors (exit 1)
+eu file.eu --strict           # evaluate, but abort first if there are warnings
+eu file.eu --suppress-type-warnings  # evaluate, silencing warning output
 ```
 
-Type issues are reported as **warnings**, not errors. Your code runs
-regardless.
+Type issues are reported as **warnings**, not errors, and only abort
+evaluation when `--strict` is passed. `--type-check` is a deprecated
+no-op flag kept for backwards compatibility — type checking already
+runs whether or not it is passed.
 
 ---
 
@@ -8452,8 +8608,8 @@ Group list elements by a key function:
 
 ```eu
 items: [
-  { type: "fruit" name: "apple" }
-  { type: "veg" name: "carrot" }
+  { type: "fruit" name: "apple" },
+  { type: "veg" name: "carrot" },
   { type: "fruit" name: "banana" }
 ]
 
@@ -9296,6 +9452,52 @@ But:
 - they cannot be accessed by lookup, so there is no way of forming a
   qualified name to access an operator
 - they cannot be overridden by generalised lookup
+
+## Operator Precedence Table
+
+Operator precedence determines how operator expressions are parsed
+when parentheses are omitted — higher numbers bind more tightly. This
+table is verified against `named_precedence` in
+`src/core/metadata.rs` and the operator declarations in
+`lib/prelude.eu`:
+
+| Prec | Name | Assoc | Operators | Description |
+|------|------|-------|-----------|-------------|
+| 95 | -- | prefix | `↑` | Head (tight prefix) |
+| 90 | lookup | left | `.` (built-in) | Property lookup |
+| 90 | lookup | left | `~` | Safe key lookup (null-propagating) |
+| 90 | call | left | (built-in) | Function call |
+| 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
+| 88 | bool-unary | postfix | `✓` | Not-null check (true if not null) |
+| 88 | -- | -- | `∘`, `;` | Composition |
+| 85 | exp | right | `^` | Power |
+| 85 | exp | -- | `!!` (nth) | Indexing |
+| 80 | prod | left | `*`, `/`, `÷`, `%` | Multiplication, floor division, precise division, floor modulo |
+| 75 | sum | left | `+`, `-` | Addition, subtraction |
+| 60 | shift | -- | (shift ops) | Reserved |
+| 55 | bitwise | -- | (bitwise ops) | Reserved — `‖` (cons) also uses this numeric level, `precedence: 55` in `lib/prelude.eu` |
+| 50 | cmp | left | `<`, `>`, `<=`, `>=` | Comparison |
+| 45 | append | left | `++` | List concatenation |
+| 45 | append | left | `<<` | Deep merge |
+| 42 | map | left | `<$>` | Functor map |
+| 40 | eq | left | `=`, `!=` | Equality |
+| 35 | bool-prod | left | `&&`, `∧` | Logical AND |
+| 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
+| 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
+| 15 | clause | left | `=>`, `⇒` | Cond clause builder (`condition => result`) |
+| 10 | apply | left | `@` | Function application |
+| 5 | meta | left | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//=?>`, `//!` | Metadata and assertions |
+
+**User-defined operators** default to left-associative, precedence 50.
+Set custom values via metadata:
+
+```eu,notest
+` { associates: :right precedence: :sum }
+(x +++ y): x + y
+```
+
+See [Agent Reference §2](agent-reference.md) for the full named-level
+list and more examples.
 
 ---
 
@@ -10415,9 +10617,12 @@ using the `-x` command line option:
 ```sh
 eu -x json # for JSON
 eu -x text # for plain text
+eu -x html # for HTML
 ```
 
-JSON is such a common case that there is a shortcut: `-j`.
+JSON is such a common case that there is a shortcut: `-j`. See
+[Export Formats](export-formats.md) for the complete list (yaml, json,
+toml, edn, text, html, eu).
 
 ### Output targets
 
@@ -10604,14 +10809,19 @@ eu --error-format human file.eu     # default human-readable (explicit)
 
 ### Type Checking
 
-Run the type checker before evaluation with `--type-check`. Type warnings
-are reported to stderr but do not abort evaluation unless `--strict` is also
-passed:
+The type checker runs unconditionally on every `eu` invocation. Type
+warnings are reported to stderr but do not abort evaluation unless
+`--strict` is also passed:
 
 ```sh
-eu --type-check file.eu             # warn on type issues, then evaluate
-eu --type-check --strict file.eu    # abort on first type warning
+eu file.eu                          # warn on type issues, then evaluate
+eu file.eu --strict                 # abort before evaluation on first type warning
+eu file.eu --suppress-type-warnings # evaluate, silencing warning output (checker still runs)
 ```
+
+`--type-check` is a deprecated no-op flag (kept for backwards
+compatibility) — type checking already runs whether or not it is
+passed.
 
 For checking without evaluating, use the `check` subcommand (see below).
 
@@ -11122,6 +11332,7 @@ Eucalypt can export to the following formats:
 | TOML | `-x toml` | TOML output |
 | EDN | `-x edn` | EDN output |
 | Text | `-x text` | Plain text output |
+| HTML | `-x html` | HTML output |
 | Eucalypt | `-x eu` | Eucalypt-syntax output; preserves symbols as `:name` |
 
 The output format can also be inferred from the output file extension
@@ -13336,6 +13547,18 @@ Validates transformed expressions before STG compilation:
 
 Eucalypt uses a Spineless Tagless G-machine (STG) as its evaluation model, providing lazy evaluation with memoisation.
 
+> **Note on execution engines**: the sections below describe the STG
+> tree-walk machine (`src/eval/machine/vm.rs`), historically the only
+> engine and still the differential-testing/performance baseline
+> (select it with `EU_HEAPSYN=1`). Since 0.12.0 the **default** engine
+> instead compiles the same STG syntax to a bytecode program and runs
+> it on a separate bytecode VM (`src/eval/bytecode/`: `opcode.rs`,
+> `program.rs`, `machine.rs`, `closure.rs`, `cont.rs`, `env_builder.rs`,
+> `encode.rs`). `EU_BYTECODE=1` is a redundant no-op now that bytecode
+> is the default. A full description of the bytecode engine's design
+> is a tracked documentation gap — see `docs/superpowers/specs/` for
+> the implementation-level design documents in the meantime.
+
 ### STG Syntax
 
 *Implementation*: `src/eval/stg/syntax.rs`
@@ -13751,12 +13974,11 @@ The prelude is:
 
 ## Further Reading
 
-- `implementation.md` - Brief implementation overview
-- `gc-implementation.md` - Detailed GC documentation
-- `command-line.md` - CLI usage guide
-- `syntax.md` - Language syntax reference
-- `operators-and-identifiers.md` - Operator definitions
-- `anaphora-and-lambdas.md` - Implicit parameter handling
+- [`development/gc-implementation.md`](development/gc-implementation.md) - Detailed GC documentation
+- [`guide/command-line.md`](guide/command-line.md) - CLI usage guide
+- [`reference/syntax.md`](reference/syntax.md) - Language syntax reference
+- [`reference/operators-and-identifiers.md`](reference/operators-and-identifiers.md) - Operator definitions
+- [`guide/anaphora.md`](guide/anaphora.md) - Implicit parameter handling
 
 ---
 
@@ -14914,9 +15136,10 @@ eu -Q file.eu               # Suppress prelude
 eu fmt file.eu              # Format source
 eu dump stg file.eu         # Dump STG syntax
 eu -- arg1 arg2             # Pass arguments (io.args)
-eu check file.eu            # Type-check, report warnings
+eu check file.eu            # Type-check only, report warnings
 eu check --strict file.eu   # Treat type warnings as errors
-eu --type-check file.eu     # Check then evaluate
+eu file.eu --strict         # Evaluate, abort first if type warnings
+eu file.eu --suppress-type-warnings  # Evaluate, silence warnings
 eu doc file.eu              # Extract documentation (Markdown)
 eu doc --format json file.eu # Extract as JSON Schema
 eu doc --check file.eu      # Report documentation coverage

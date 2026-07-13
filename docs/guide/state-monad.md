@@ -17,8 +17,8 @@ same problem that `{ :random ... }` solves for PRNG streams.
 
 ```eu
 s0: { count: 0, name: "init" }
-s1: s0 merge({count: 1})
-s2: s1 merge({name: "updated"})
+s1: merge(s0, {count: 1})
+s2: merge(s1, {name: "updated"})
 ```
 
 ```yaml

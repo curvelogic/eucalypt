@@ -1,5 +1,5 @@
 #!/usr/bin/env eu
-{ import: "resource:reflect" }
+{ import: "reflect.eu" }
 # Criterion 9: to-spec handles optional fields correctly in match? patterns.
 
 schema: s"{ name: string, age?: number }" as-spec

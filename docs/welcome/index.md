@@ -296,16 +296,16 @@ sophisticated means of combining block data are available too.
 
 > **Note:** This merge is similar to the effect of *merge keys* in
 > YAML, where a special `<<` mapping key causes a similar merge to
-> occur. Not all YAML processors support this and nor does eucalypt at
-> present, but it probably will some day.
+> occur. Eucalypt's YAML importer supports merge keys too — see
+> [Import Formats](../reference/import-formats.md#merge-keys).
 
 Be aware that eucalypt has nothing like virtual functions. The
 functions in scope when an expression is created are the ones that are
 applied. So if you redefine an `f` like this, in an overriding
 block...
 
-```eu,notest
-{ f(x): x+1 a: f(2) } { f(x): x-2 }
+```eu
+{ f(x): x+1 a: f(2) } { f(x): x - 2 }
 ```
 
 ...the definition of `a` will not see it.

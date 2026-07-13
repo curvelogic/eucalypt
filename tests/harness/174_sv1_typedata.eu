@@ -1,5 +1,5 @@
 #!/usr/bin/env eu
-{ import: "resource:reflect" }
+{ import: "reflect.eu" }
 # Tests for SV1 s-string type-data semantics:
 # compile-time validation, to-data projection, from-data round-trip.
 
