@@ -40,6 +40,8 @@ pub fn main() {
         .expect("failed to spawn main thread")
         .join()
         .expect("main thread panicked");
+    // DIAGNOSTIC ONLY (bead eu-qm7f): no-op unless EU_ENV_DEPTH_HISTOGRAM=1.
+    eucalypt::eval::machine::env::env_depth_diag::dump();
     // DIAGNOSTIC ONLY (bead eu-ttpl): no-op unless EU_ENV_LAYOUT_HISTOGRAM=1.
     eucalypt::eval::machine::env::env_layout_diag::dump();
     process::exit(exit_code);

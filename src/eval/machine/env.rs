@@ -12,6 +12,127 @@ use crate::eval::memory::{
     syntax::{HeapSyn, Native, Ref, RefPtr},
 };
 
+/// DIAGNOSTIC ONLY (bead eu-qm7f): runtime environment chain-walk depth
+/// histogram, gated by `EU_ENV_DEPTH_HISTOGRAM=1` (follows the
+/// `EU_STACK_DIAG` precedent — env-var gated, cached once, stderr output).
+///
+/// Measures the hop count of every [`EnvironmentFrame::get`] lookup — the
+/// single walk implementation shared by HeapSyn's `Closing<S>` frames and
+/// both bytecode engines' `BcEnvFrame` (a type alias for this same generic
+/// struct) — without altering the lookup's behaviour or return value. The
+/// diagnostic performs its own read-only shadow traversal alongside the real
+/// one; it never influences what `get` returns, so enabling it cannot change
+/// program output, only add (deterministic, not wall-time) counters. Disabled
+/// (the default), this is a single cached-bool check per lookup.
+///
+/// Lookups are split into two histograms by the *starting* frame's
+/// `annotation` validity: `lib/prelude.blob`-loaded closures are documented
+/// (`common/sourcemap.rs`: "Pre-compiled blobs use `Smid::default()` (0) for
+/// all prelude locations") to carry an invalid (default) SMID, while
+/// user-authored and source-compiled-prelude code carries real source
+/// locations. This gives a coarse, free "prelude-blob code vs user/source
+/// code" attribution for which lookups are in the deep tail, without needing
+/// per-call-site instrumentation.
+pub mod env_depth_diag {
+    use super::Smid;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::OnceLock;
+
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+
+    pub fn enabled() -> bool {
+        *ENABLED.get_or_init(|| std::env::var("EU_ENV_DEPTH_HISTOGRAM").as_deref() == Ok("1"))
+    }
+
+    const BUCKET_NAMES: [&str; 8] = ["0", "1", "2", "3-4", "5-8", "9-16", "17-32", "33+"];
+
+    fn bucket(depth: usize) -> usize {
+        match depth {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+            3..=4 => 3,
+            5..=8 => 4,
+            9..=16 => 5,
+            17..=32 => 6,
+            _ => 7,
+        }
+    }
+
+    struct Histogram {
+        buckets: [AtomicU64; 8],
+        count: AtomicU64,
+        sum: AtomicU64,
+        max: AtomicU64,
+    }
+
+    impl Histogram {
+        const fn new() -> Self {
+            Histogram {
+                buckets: [
+                    AtomicU64::new(0),
+                    AtomicU64::new(0),
+                    AtomicU64::new(0),
+                    AtomicU64::new(0),
+                    AtomicU64::new(0),
+                    AtomicU64::new(0),
+                    AtomicU64::new(0),
+                    AtomicU64::new(0),
+                ],
+                count: AtomicU64::new(0),
+                sum: AtomicU64::new(0),
+                max: AtomicU64::new(0),
+            }
+        }
+
+        fn record(&self, depth: usize) {
+            self.buckets[bucket(depth)].fetch_add(1, Ordering::Relaxed);
+            self.count.fetch_add(1, Ordering::Relaxed);
+            self.sum.fetch_add(depth as u64, Ordering::Relaxed);
+            self.max.fetch_max(depth as u64, Ordering::Relaxed);
+        }
+
+        fn dump(&self, label: &str) {
+            let count = self.count.load(Ordering::Relaxed);
+            let sum = self.sum.load(Ordering::Relaxed);
+            let max = self.max.load(Ordering::Relaxed);
+            let mean = if count > 0 {
+                sum as f64 / count as f64
+            } else {
+                0.0
+            };
+            eprintln!("ENV_DEPTH_HISTOGRAM[{label}]: count={count} mean={mean:.4} max={max}");
+            for (i, name) in BUCKET_NAMES.iter().enumerate() {
+                eprintln!(
+                    "  bucket[{name}] = {}",
+                    self.buckets[i].load(Ordering::Relaxed)
+                );
+            }
+        }
+    }
+
+    static ANNOTATED: Histogram = Histogram::new();
+    static UNANNOTATED: Histogram = Histogram::new();
+
+    pub(super) fn record(start_annotation: Smid, depth: usize) {
+        if start_annotation.is_valid() {
+            ANNOTATED.record(depth);
+        } else {
+            UNANNOTATED.record(depth);
+        }
+    }
+
+    /// Dump both histograms to stderr. No-op unless `EU_ENV_DEPTH_HISTOGRAM=1`.
+    /// Called once at process exit (`src/bin/eu.rs`).
+    pub fn dump() {
+        if !enabled() {
+            return;
+        }
+        ANNOTATED.dump("annotated: user code / source-compiled prelude");
+        UNANNOTATED.dump("unannotated: blob-loaded prelude (Smid::default())");
+    }
+}
+
 /// DIAGNOSTIC ONLY (bead eu-ttpl): heap-layout forensics for the runtime
 /// environment walk, gated by `EU_ENV_LAYOUT_HISTOGRAM=1` (same cached-flag
 /// precedent as `EU_STACK_DIAG` and eu-qm7f's `EU_ENV_DEPTH_HISTOGRAM`).
@@ -524,6 +645,39 @@ where
         }
     }
 
+    /// DIAGNOSTIC ONLY (bead eu-qm7f, `EU_ENV_DEPTH_HISTOGRAM=1`): shadow-walk
+    /// the same chain `cell()` would traverse for `idx`, purely to count hops
+    /// into `env_depth_diag`'s histograms. Does not touch `self.bindings` or
+    /// return a value, so it cannot affect `get()`'s result. No-op (a single
+    /// cached-bool check) unless the env var is set.
+    fn diag_record_depth(&self, guard: &dyn MutatorScope, idx: usize) {
+        if !env_depth_diag::enabled() {
+            return;
+        }
+        let start_annotation = self.annotation;
+        let mut depth = 0usize;
+        let mut remaining = idx;
+        let mut len = self.logical_len();
+        let mut next = self.next;
+        loop {
+            if remaining < len {
+                env_depth_diag::record(start_annotation, depth);
+                return;
+            }
+            remaining -= len;
+            depth += 1;
+            match next {
+                Some(env_ptr) => {
+                    let scoped = ScopedPtr::from_non_null(guard, env_ptr);
+                    len = scoped.logical_len();
+                    next = scoped.next;
+                }
+                // Bad index (error path) -- not a normal lookup depth, skip.
+                None => return,
+            }
+        }
+    }
+
     /// DIAGNOSTIC ONLY (bead eu-ttpl, `EU_ENV_LAYOUT_HISTOGRAM=1`): shadow-walk
     /// the same chain `cell()` would traverse for `idx`, purely to record
     /// which heap block and frame address the lookup lands on. Does not
@@ -565,6 +719,7 @@ where
     /// the returned value is not affected by subsequent updates and
     /// is useful mainly for immediate evaluation.
     pub fn get(&self, guard: &dyn MutatorScope, idx: usize) -> Option<C> {
+        self.diag_record_depth(guard, idx);
         self.diag_record_layout(guard, idx);
         if let Some((arr, i)) = self.cell(guard, idx) {
             arr.get(i)

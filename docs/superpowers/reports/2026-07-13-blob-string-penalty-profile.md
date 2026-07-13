@@ -1,5 +1,21 @@
 # Blob prelude string/list penalty — predecode-engine profiling (eu-7xvv)
 
+> **CORRECTION (2026-07-13, eu-qm7f):** the "deep runtime lexical-environment
+> chains" mechanism this report treats as confirmed (§1, §5) has since been
+> **refuted by direct measurement**. A follow-on spike instrumented the
+> shared `EnvironmentFrame::get` walk with a hop-count histogram and found
+> runtime chain depth shallow and near-identical between blob and source on
+> both 018 and 019 (max depth 2-3, mean <1, lookup counts within ~0.3% of
+> each other) — not deeper under blob, contrary to this report's central
+> claim. See `docs/superpowers/reports/2026-07-13-env-walk-depth.md` for the
+> full measurement. **What still stands:** the profile-share evidence below
+> (§4 — `enter_local`'s self-time share genuinely grows under blob) is not
+> contradicted; only the *causal explanation* (longer walks) is. The
+> surviving candidate is a locality/per-hop cost, currently **projected**,
+> not measured. This banner is a correction notice only — the body below is
+> kept as the historical record and has not been rewritten; read it with
+> the above in mind.
+
 - **Date:** 2026-07-13
 - **Bead:** eu-7xvv (diagnose the MECHANISM of the blob-prelude per-tick string
   penalty under the pre-decoded engine). Report-only; no code changes.
