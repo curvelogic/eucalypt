@@ -4,7 +4,10 @@
   type-gated codegen, prefix-lists)
 - **Pillar:** SV — the type-value surface (`ROADMAP.md` §Pillar SV, ~line 703;
   roadmap table line 1008)
-- **Status:** design note for owner sign-off. **No implementation.**
+- **Status:** **Owner-approved design (owner decision 2026-07-13).** The three
+  open questions from the original draft are resolved in §10.1. **Still no
+  implementation** — this remains a design note; landing follows the sequencing
+  in §10.
 - **Scope:** frontend / type checker (`src/core/typecheck/`) plus the prelude
   `t-*` projection consumers (`lib/reflect.eu`, `lib/prelude.eu`) and JSON-Schema
   export (`src/driver/doc/render.rs`).
@@ -122,6 +125,15 @@ introduce.
 
 ### 2.3 Lexer changes
 
+**Decided (owner decision 2026-07-13, §10.1 Q1): both spellings are accepted,
+`…` canonical.** `…` (U+2026) is the preferred/canonical spelling — it is what
+`Display` emits and what docs lead with — and ASCII `...` is an equivalent
+fallback for editors/keyboards without easy unicode input. This follows the
+codebase's existing unicode-preferred-with-ASCII-fallback pattern (cf. `÷` for
+exact division alongside `/` for floor division). Both spellings lex to the
+**same** `Token::Ellipsis` — there is exactly one rest-element token, not two
+grammar productions, so downstream parsing/AST is spelling-agnostic.
+
 Add `Token::Ellipsis`. In `next_token` (`parse.rs:150`):
 
 - In the `'.'` arm (`parse.rs:202`), check `starts_with("...")` **before**
@@ -159,8 +171,15 @@ PrefixList { prefix: Vec<Type>, tail: Box<Type> },
   then the tail type, then `…`: `[symbol, block, string | Element…]`. Round-trips
   through `parse_type` (a `roundtrip` unit test, `parse.rs:1650`).
 - Smart constructor `Type::prefix_list(prefix, tail)` that **normalises**: empty
-  prefix → `Type::list(tail)`; this keeps `[C…]` and `[C]`-of-homogeneous
-  identical and avoids a redundant node.
+  prefix → `Type::list(tail)`. **Decided (owner decision 2026-07-13, §10.1
+  Q3):** this normalisation is mandatory, not optional — `[C…]` and `List(C)`
+  are the same type and must have exactly **one internal representation**
+  (`Type::list(C)`, i.e. `App(Con("List"), C)`), never a `PrefixList` with an
+  empty prefix. The **surface syntax** `[C…]` remains valid and continues to
+  parse (a user may still write it, e.g. for symmetry in generated code) — only
+  the internal `Type` value it produces is canonicalised. This avoids two
+  representations of one type ever diverging in `Display`, subtyping, or the
+  `t-*` projection.
 
 ### 3.2 Relationship to existing nodes (why a new variant, not reuse)
 
@@ -168,7 +187,12 @@ PrefixList { prefix: Vec<Type>, tail: Box<Type> },
 
 - `Tuple([e₀…eₙ])` ≅ `PrefixList { prefix: [e₀…eₙ], tail: Never }` (empty tail:
   the residue list must be `[Never]`, i.e. exactly the prefix).
-- `List(T)` ≅ `PrefixList { prefix: [], tail: T }`.
+- `List(T)` ≅ `PrefixList { prefix: [], tail: T }` — and per the §3.1 / §10.1 Q3
+  decision this is not merely a subtyping-provable equivalence but an **actual
+  identity**: the empty-prefix form is never *constructed*, so `[C…] ≡
+  List(C)` holds by construction (same `Type` value, not just mutual
+  subtypes) — see the §8 test plan for the subtyping-both-directions check
+  that guards this regardless.
 
 We nevertheless **keep `Tuple` and the `List` encoding as the canonical forms**
 for their own shapes and only ever *produce* `PrefixList` from (a) the DSL
@@ -307,11 +331,20 @@ project index i on PrefixList{p, t}:
 ```
 
 `attrs = second` → index 1 on prefix `[Symbol, Block]` → `Block`. For
-`i ≥ len(p)` the element is only *possibly* present (the tail may be empty), so
-the result should be widened to `t?` (`t | ExecutionError`, `Type::partial`,
-`types.rs:385`) or accompanied by an "index may be out of range" note — mirroring
-the existing out-of-range tuple warning (`check.rs:1396-1402`). First cut:
-return `t` with a soft note rather than a hard warning, to stay warning-quiet.
+`i ≥ len(p)` the element is only *possibly* present (the tail may be empty).
+
+**Decided (owner decision 2026-07-13, §10.1 Q2): return `t?`.** Project
+out-of-prefix indices to `t?` (`t | ExecutionError`, `Type::partial`,
+`types.rs:385`), not bare `t` — this is the honest answer, since indexing past
+the fixed prefix genuinely may fail at runtime if the tail is empty (unlike a
+fixed-prefix index, which is always present). This is consistent with how the
+checker already surfaces partiality elsewhere (`T?` sugar for a partial
+function's return type) rather than silently trusting an index that isn't
+statically guaranteed. No separate "index may be out of range" note is needed
+once the type itself carries the possible-absence signal — `t?` *is* the
+warning, carried in the type rather than as a side warning, so call sites that
+don't handle the `ExecutionError` arm get their own downstream type warning
+naturally.
 
 ---
 
@@ -404,18 +437,40 @@ inside a prefix-list's prefix/tail resolve — mirrors the `Tuple` arm at line 5
 
 ### 8.1 Unit tests (co-located, following existing patterns)
 
-- **`parse.rs` tests** (line 1281+): `[A, B, C…]` and `[A, B, C...]` parse to the
-  same `PrefixList`; `[C…]` normalises to `List(C)`; `[Symbol, Block, (String |
-  Element)…]` parses with a grouped-union tail; round-trip (`roundtrip`,
-  `parse.rs:1650`) for each; `[A, B]` (no ellipsis) still errors; ellipsis
-  longest-match vs `..` (`[A…]` vs record `{..r}` unaffected).
+- **`parse.rs` tests** (line 1281+):
+  - **Both spellings parse identically (§2.3, §10.1 Q1):** `parse_type("[A, B,
+    C…]") == parse_type("[A, B, C...]")` — a dedicated
+    `ellipsis_spellings_are_equivalent` test asserting the two produce the
+    exact same `Type` value, plus that `Display` always renders `…` regardless
+    of which spelling was parsed (canonical-output check).
+  - `[Symbol, Block, (String | Element)…]` parses with a grouped-union tail;
+    round-trip (`roundtrip`, `parse.rs:1650`) for each; `[A, B]` (no ellipsis)
+    still errors; ellipsis longest-match vs `..` (`[A…]` vs record `{..r}`
+    unaffected).
+  - **`[C…]` normalises to `List(C)` (§3.1, §10.1 Q3):** `parse_type("[C…]") ==
+    Type::list(C)` exactly (not merely subtype-equivalent) — asserted via
+    `assert_eq!`, confirming the single-representation invariant at
+    construction time, not just at the subtyping layer.
 - **`types.rs` tests** (line 880+): `Display` round-trip; `kind_of` = `Star`;
   `widen_literals`, `humanise`, `unfold_mu` arms.
 - **`subtype.rs` tests** (line 679+): every §4 rule — prefix widening,
   `Tuple <: PrefixList` (§4.2), `PrefixList <: [any]`, `List </: PrefixList`,
   `any` consistency both directions, degenerate `PrefixList <: Tuple`.
+  - **`[C…]` ≡ `List(C)` in subtyping both directions (§10.1 Q3):** even though
+    construction normalises away the empty-prefix `PrefixList`, add a defensive
+    subtyping test asserting `is_subtype([C…], List(C))` and
+    `is_subtype(List(C), [C…])` both hold — this guards the property at the
+    subtyping layer independently of the constructor invariant, so a future
+    code path that manually builds `PrefixList{prefix: vec![], tail}` (bypassing
+    the smart constructor) can't silently break equivalence.
 - **`check.rs` tests**: `head`/`tail`/`second` projection on a prefix-list-typed
   binding gives the precise element types from §5.1's table.
+  - **`t?` out-of-prefix projection (§5.2, §10.1 Q2):** a named projection past
+    the fixed prefix (e.g. a `third`-equivalent accessor on a 2-element prefix)
+    synthesises as `tail | ExecutionError`, not bare `tail` — assert the
+    returned type is `Type::partial(tail)` and that `Display` renders it with
+    the `?` sugar (`t?`, not `t | ExecutionError` unsugared, per the existing
+    `Union` re-sugar rule at `types.rs:632-641`).
 
 ### 8.2 Harness tests
 
@@ -472,7 +527,44 @@ sign-off criterion.
 
 ---
 
-## 10. Sequencing & sign-off
+## 10. Decisions & sequencing
+
+### 10.1 Decisions (owner decision 2026-07-13)
+
+The original draft posed three open questions for owner sign-off. All three
+are now **DECIDED**. The alternatives considered are kept below as rationale.
+
+- **Q1 — ellipsis spelling → DECIDED: both, `…` canonical.** Accept both `…`
+  (U+2026) and ASCII `...`; both lex to the same `Token::Ellipsis` (§2.3); `…`
+  is the canonical spelling `Display` renders and docs lead with, ASCII `...`
+  is an equivalent fallback. This follows the codebase's existing
+  unicode-preferred-with-ASCII-fallback pattern (cf. `÷` exact division
+  alongside `/` floor division — a precedent for "unicode primary spelling,
+  ASCII alternative accepted"). *Alternative considered and rejected: ASCII
+  `...` only, for editor-friendliness — rejected because it breaks the
+  established unicode-primary convention and TypeScript readers already expect
+  `…`/`...` to mean the same thing.*
+- **Q2 — out-of-prefix indexed projection → DECIDED: `t?`.** A named
+  projection past the fixed prefix (§5.2) synthesises as `t?` (`t |
+  ExecutionError`), not bare `t` — honest about the tail possibly being empty,
+  consistent with how partiality is surfaced elsewhere in the checker (`T?`
+  sugar). *Alternative considered and rejected: bare `t` with a soft
+  out-of-range note — rejected as too trusting; a note is easy to miss where a
+  type carries the signal structurally and propagates through downstream
+  checks.*
+- **Q3 — normalise `[C…]` → DECIDED: canonicalise to `List(C)`.** The
+  empty-prefix degenerate form is never constructed internally — `Type::
+  prefix_list([], C)` always returns `Type::list(C)` (§3.1), so `[C…]` and
+  `List(C)` are the same `Type` value, not merely mutual subtypes. Surface
+  syntax `[C…]` still parses (a user may still write it for symmetry with
+  generated or templated annotations); only the internal representation is
+  unified. *Alternative considered and rejected: keep `PrefixList{prefix: [],
+  tail}` as a distinct-but-equivalent internal form — rejected because two
+  representations of one type is exactly the kind of divergence risk (Display,
+  subtyping, `t-*` projection all having to agree) the note explicitly wants to
+  avoid (§3.2).*
+
+### 10.2 Sequencing
 
 Independent of the runtime pillars; pure frontend + prelude + doc work. Suggested
 landing order, each a reviewable PR to `master`:
@@ -489,13 +581,3 @@ Docs to update at implementation time (not in this note): `docs/guide/type-
 checking.md` (a "Prefix-lists" subsection after "Tuples", line 195),
 `docs/reference/agent-reference.md` and `docs/appendices/cheat-sheet.md` (the
 type-DSL summary).
-
-**Open questions for owner sign-off:**
-
-- **Q1 — ellipsis spelling.** Accept both `…` and `...`, or ASCII `...` only for
-  editor-friendliness? (Recommendation: both, with `…` canonical in Display.)
-- **Q2 — out-of-prefix projection.** Return `t` (tail element) with a soft note,
-  or `t?` (partial, acknowledging possible absence)? (Recommendation: `t?` is
-  more honest; soft `t` is quieter. Leaning `t?`.)
-- **Q3 — normalise `[C…]` to `List(C)`?** (Recommendation: yes — no distinct
-  meaning, avoids a redundant node.)
