@@ -835,6 +835,19 @@ pub fn test_lib_lens() {
     run_test(&opt);
 }
 
+/// Runs `lib/markup.eu` as the top-level file so its own `test-*` target
+/// (`test-deconstruct-head`) is auto-discovered and executed (eu-8t2j).
+/// Mirrors `test_lib_lens` above, which does the same for `lib/lens.eu`'s
+/// eight `test-*` targets — every baked-in library resource that ships an
+/// embedded test target must have a harness test exercising it this way.
+#[test]
+pub fn test_lib_markup() {
+    let opt = EucalyptOptions::default()
+        .with_explicit_inputs(vec![Input::from_str("markup.eu").unwrap()])
+        .with_lib_path(vec![PathBuf::from("lib")]);
+    run_test(&opt);
+}
+
 #[test]
 pub fn test_harness_134() {
     run_test(&opts("134_match_predicate.eu"));

@@ -16,8 +16,18 @@ Both syntaxes can be mixed.
 deconstruct_head(text): {
   parts: str.of(text) str.split-on("\b") remove(= "")
   tag: parts head sym
-  qualifier(l): (head(l) = "#") then({id: l second}, {class: l second})
-  qualifiers: parts tail partition(2) map(qualifier) foldl(merge, {})
+  # Each fragment is a [marker, value] pair, e.g. ["#", "foo"] or [".", "red"].
+  is-id?(fragment): head(fragment) = "#"
+  fragment-value(fragment): fragment second
+  fragments: parts tail partition(2)
+  ids: fragments filter(is-id?) map(fragment-value)
+  # Hiccup convention allows multiple `.class` fragments — space-join them
+  # rather than letting a later fragment overwrite an earlier one. Only one
+  # `#id` is expected per tag, so the first is taken.
+  classes: fragments filter(complement(is-id?)) map(fragment-value)
+  id-part: ids nil? then({}, {id: ids head})
+  class-part: classes nil? then({}, {class: classes str.join-on(" ")})
+  qualifiers: merge(id-part, class-part)
 }.[tag, qualifiers]
 
 ` { target: :test-deconstruct-head }
