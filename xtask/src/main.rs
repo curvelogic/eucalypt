@@ -299,7 +299,63 @@ fn cmd_prelude_compile() -> Result<()> {
         resolved_map.insert(name.clone(), expanded.clone());
         resolved_cores.push((name.clone(), expanded));
     }
-    let inline_cores = resolved_cores;
+    let mut inline_cores = resolved_cores;
+
+    // ── 4c. Spike (eu-v8n8, flag-gated): fuse the low-density recursive hot
+    // helper cluster into inline_cores ────────────────────────────────────────
+    //
+    // Option A for the blob locality penalty (eu-ttpl blob-layout-forensics):
+    // the packing-density hit on string/list workloads comes from the recursive
+    // list helpers `map`/`foldl` running as un-fused standalone global closures
+    // (blob 018 same-block hit-rate 0.642 / ~65 frames-per-block vs source 0.870
+    // / 170). Their `cons`/`head`/`tail`/`nil?`/`if` operands are already in
+    // inline_cores; only these recursive wrappers are missing, because the
+    // fixed-point above admits only *closed* combinators and a self-referential
+    // lambda is not closed (the exact case eu-2sa6.12 §4.1 deferred).
+    //
+    // We force their outer lambda's closed flag so the runtime inline pass
+    // distributes them into user call sites (carrying their operands inline,
+    // packing densely). This is bounded and terminating: `reduce::distribute`
+    // substitutes inline_cores exactly once per Let scope and does not
+    // re-substitute into nested lambda bodies, and `prepare.rs` runs only two
+    // inline iterations — so recursion unrolls a fixed ~2 levels and the
+    // residual self-call stays `Var::Free` and resolves to the global slot
+    // (`Ref::G`) at STG compile. Semantics are preserved (the inlined copies are
+    // the same body); the effect is purely how densely their frames pack.
+    //
+    // Added AFTER the pre-expansion pass so the recursion never enters the
+    // forward-substitution loop. Injected alongside the pre-expanded operands in
+    // one Let scope (`inject_prelude_inline_cores`), so their `Var::Free`
+    // operand references bind to those siblings.
+    //
+    // OFF by default: without `EU_BLOB_INLINE_CLUSTER=1` the blob is generated
+    // byte-identically to master.
+    if std::env::var("EU_BLOB_INLINE_CLUSTER").as_deref() == Ok("1") {
+        const CLUSTER: &[&str] = &["map", "foldl"];
+        let mut added = 0usize;
+        for wanted in CLUSTER {
+            if inlinable_names.contains(*wanted) {
+                continue; // already fused by the fixed-point
+            }
+            let Some((name, body)) = binding_bodies.iter().find(|(n, _)| n == wanted) else {
+                continue;
+            };
+            let tagged = tag_combinators(body)
+                .with_context(|| format!("tag_combinators on cluster '{name}'"))?;
+            let peeled = peel_meta(&tagged);
+            // Force the outer lambda closed so the inline pass distributes it.
+            let forced = match &*peeled.inner {
+                Expr::Lam(smid, _, scope) => RcExpr::from(Expr::Lam(*smid, true, scope.clone())),
+                _ => peeled.clone(),
+            };
+            inline_cores.push((name.clone(), forced));
+            added += 1;
+        }
+        println!(
+            "  [SPIKE eu-v8n8] forced hot cluster into inline_cores: +{added} (total {})",
+            inline_cores.len()
+        );
+    }
 
     // ── 5. Build name→slot mapping from peeled bindings ──────────────────────
     let name_to_slot: HashMap<String, usize> = binding_bodies
