@@ -1,0 +1,15 @@
+{ doc: "186 markup library element accessor test — regression for eu-2sa6.16
+        (tag/attrs declared with '=' instead of ':' were silently
+        lenient-parsed as metadata, leaving tag/attrs undefined)."
+  import: "markup.eu" }
+
+` { target: :test }
+test: {
+  element: [:div, {class: "highlight"}, "Hello", "world"]
+
+  t-tag: element tag //= :div
+  t-attrs: element attrs //= {class: "highlight"}
+  t-content: element content //= ["Hello", "world"]
+
+  RESULT: [t-tag, t-attrs, t-content] all-true? then(:PASS, :FAIL)
+}
