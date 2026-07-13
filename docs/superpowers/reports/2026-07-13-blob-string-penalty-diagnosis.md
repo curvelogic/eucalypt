@@ -255,3 +255,237 @@ blob and pay up to ~2× on string-heavy workloads *today*, landing it promptly i
 - STG/runtime dumps: `/tmp/{blob,source}-stg.txt`, `/tmp/{blob,source}-rt.txt`.
 - Root cause: `xtask/src/main.rs` §168–175; `src/eval/stg/runtime.rs` `globals()`;
   `src/eval/stg/blob.rs` `PreludeBlob`.
+
+---
+
+## 6. Addendum (2026-07-13, Phase-2): the §4.1 fix is REFUTED — record correction
+
+**Status of §4.1 ("flatten each peeled binding body / apply `reflatten`"): REFUTED
+by implementation and measurement.** Do not carry it forward as the fix
+recommendation. This addendum documents why, and states the open candidate that
+replaces it. Implementation evidence: branch `perf/blob-reflatten` (worktree
+`/tmp/eu-blobfix`, pushed, no PR — a spike/evidence artefact, not a production
+change).
+
+### 6.1 What was implemented
+
+Exactly what §4.1 recommended: `core::reflatten::reflatten()` applied to each
+peeled binding body in `xtask/src/main.rs`, immediately after
+`peel_all_let_bindings` and before STG compile, with deterministic
+before/after instrumentation (Let-node count, max nesting depth) printed by
+`xtask prelude-compile`.
+
+### 6.2 Result: a byte-for-byte no-op
+
+- **Core-level stats, all 352 peeled bindings: Let nodes 124 → 124, max nesting
+  depth 4 → 4 — unchanged.** There was essentially nothing for a Let-chain-merge
+  pass to find.
+- `dump runtime` output is **byte-identical** (0-line diff) between the
+  unmodified blob and the reflattened blob, for both `018_string_scale.eu` and
+  `001_naive_fib.eu`.
+- Ticks/allocs/blocks/max-stack identical for 018 (76,814,993 ticks, unchanged)
+  and fib (HeapSyn ticks 115,779,125 → 115,779,125, exact same-commit A/B — safe,
+  zero regression, but also zero effect).
+- Wall times unchanged: 018 blob-config still ~4.5–4.6 s HS / ~2.1–2.2 s bc vs
+  source's ~1.86 s / ~1.68 s. **No movement at all.**
+
+### 6.3 Why §4.1 was wrong: the whole-file metric flaw
+
+The "1874 thunks / 538 letrec / max nesting 171" figures in §3.2 came from
+`dump runtime`'s pretty-printer over the **entire loaded prelude** — all 352
+bindings' `:doc`/`:type` metadata blocks and bodies concatenated into one
+output, with indentation measured as the single deepest point *anywhere in that
+file*. That is a coarse whole-file proxy, not the hot path's actual per-call
+lexical env-chain depth, and it does not correspond to Core-level Let nesting
+within any individual binding. §3.2 should have been checked at the Core level
+(pre-STG-compile) before recommending a Core-level flattening pass — it wasn't,
+and the recommendation followed the wrong number.
+
+The §3.1 profile evidence (`EnvironmentFrame::get` / `enter_local` dominating
+the eval-thread samples, 55% vs 38% on HeapSyn 018) remains valid and was
+re-confirmed; only the §3.2/§4.1 causal attribution and fix were wrong. Deep
+runtime env chains are real and measured — they just are not caused by
+un-flattened per-binding Let nesting, since there isn't any material nesting to
+flatten (124 Lets total, max depth 4, entirely within normal function-body
+range).
+
+### 6.4 Open candidate hypothesis: the user→prelude demand-signature boundary
+
+A follow-on spike (reverted, not in the pushed branch) wired
+`analyse_demands`-derived signatures into the **blob's own internal** STG
+compile (prelude-binding-to-prelude-binding calls only). It also produced no
+measurable tick or wall change, and tracing why exposed the likely real
+mechanism:
+
+`src/driver/eval.rs:406-414` runs demand analysis like this on every `eu`
+invocation, blob or source:
+
+```rust
+if !stg_settings.suppress_demand_analysis {
+    let (annotated, _signatures, named_signatures) =
+        crate::core::analyse_demand::analyse_demands(&self.evaluand);
+    self.evaluand = annotated;
+    stg_settings.user_demand_sigs = named_signatures;
+    ...
+}
+```
+
+This analyses **only `self.evaluand`** — the user's own program. In blob mode
+the prelude source is never loaded into the user compile at all
+(`driver/prepare.rs`: "skip loading the prelude" when the blob is active), so
+`named_signatures` — and therefore `stg_settings.user_demand_sigs` — is
+necessarily **empty at every call site where user code calls into a prelude
+global** (`map`, `foldl`, `+`, structural `=`, string `JOIN`, …). Under
+source config, the prelude is compiled *together with* the user program, so
+these same call sites get real, analysed strictness signatures for free.
+
+**Candidate mechanism:** the STG compiler falls back to a conservative
+(lazier, more thunk-building) calling convention at every user→prelude call
+site in blob mode, because it has no demand signature to consult there — not
+because of any structural difference in the prelude bodies themselves. This
+is consistent with the §2.1 finding that blob has *fewer* allocations but
+*more* resident blocks (bigger, more general-purpose closures rather than
+demand-specialised ones) and a *shallower* continuation stack (deferred/lazy
+work rather than direct strict recursion).
+
+**Status: untested at the user→prelude boundary, stated as the open candidate
+only.** Validating it — whether merging a blob-carried
+`named_demand_sigs: HashMap<String, DemandSignature>` into
+`stg_settings.user_demand_sigs` under blob mode moves 018/019 materially
+toward source levels, without breaking fib ticks or byte-identical harness
+output — is the subject of a separate, explicitly-scoped validation spike (not
+this report). If validated, an audited production bead follows; if refuted,
+this defect's fix is deferred to the in-memory blob pipeline redesign (filed
+separately), which sidesteps the whole boundary by not needing an isolated
+prelude-only compile at all.
+
+### 6.5 Evidence index (addendum)
+
+- Reflatten implementation + instrumentation: branch `perf/blob-reflatten`
+  (worktree `/tmp/eu-blobfix`, pushed, no PR), `xtask/src/main.rs`.
+- Byte-identical `dump runtime` diffs, fib exact-A/B tick match: this session's
+  transcript (not separately archived; reproducible via
+  `cargo xtask prelude-compile` with/without the `reflatten` call added at the
+  point documented in the branch diff).
+
+---
+
+## 7. Second addendum (2026-07-13, validation spike): §6.4 demand-sig hypothesis is ALSO REFUTED
+
+**Status of §6.4's open candidate: REFUTED by end-to-end implementation and
+measurement.** This closes eu-2sa6.12's search for a wire-format-preserving
+generation-time fix; both candidate mechanisms have now been tried, measured,
+and ruled out. Implementation evidence: branch `spike/named-demand-sigs`
+(worktree `/tmp/eu-blobsig`; throwaway hack-quality spike, not pushed — see
+§7.6). No production PR resulted, per instruction.
+
+### 7.1 What was implemented
+
+End-to-end wiring, minimal/hack quality:
+
+1. `PreludeBlob` gained a `named_demand_sigs: HashMap<String, DemandSignature>`
+   field (`src/eval/stg/blob.rs`), populated at blob-generation time in
+   `xtask/src/main.rs` by running `core::analyse_demand::analyse_demands` over
+   the merged (pre-peel) prelude core expression and keeping the returned
+   `NamedSignatureTable` — **the peeled binding bodies themselves were left
+   untouched** (this spike, unlike §6, does not modify the compiled prelude
+   forms at all; it only adds a side-table to the blob).
+2. `src/driver/eval.rs` (~line 406-414, the per-invocation demand-analysis
+   step that already runs on `self.evaluand` for every `eu` invocation, blob
+   or source) now merges `blob.named_demand_sigs` into
+   `stg_settings.user_demand_sigs` via `.extend()` whenever a prelude blob is
+   active, so user-code call sites into prelude globals gain access to the
+   blob-computed signatures — exactly the missing link described in §6.4.
+
+### 7.2 Result: also a no-op — `dump stg` byte-identical for the user program
+
+- `xtask prelude-compile` collected **103 named signatures**. Blob file grew
+  (461,636 vs 460,201 bytes) — the table really is being generated and
+  serialised.
+- But **`dump stg` for `018_string_scale.eu` is byte-identical** (0-line diff)
+  between the unmodified blob and the spike blob carrying + merging
+  `named_demand_sigs`. The merge reaches the compiler (`stg_settings` is
+  populated) but changes **nothing** about how the user's benchmark compiles.
+- Deterministic ticks/allocs/blocks/max-stack for 018, 019, and fib are all
+  **unchanged** from the unmodified blob (018: 76,814,993 ticks; 019:
+  55,803,488 ticks; fib HeapSyn: 115,779,125 ticks — exact matches).
+- Wall times unchanged: 018 blob-config still ~2.3 s bc / ~3.8–4.2 s HS —
+  **no movement toward source's ~1.68 s / ~1.86 s.**
+
+### 7.3 Why: the two hot-path function classes both bypass the mechanism
+
+Probing `named_demand_sigs` for the benchmark's own hot symbols
+(`range(0, 7000) map(mk-line) foldl(force-count, 0)`, with
+`force-count(acc, s): acc + if(s = "", 0, 1)`) explains it completely:
+
+| Symbol | In `named_demand_sigs`? | Why |
+|---|---|---|
+| `map`, `foldl`, `range`, `sum`, `cons`, `nil?` | **absent** | `analyse_lam`'s signature-recording (`analyse_demand.rs` ~L609-617) only fires when a `Let`-binding's RHS is **literally `Expr::Lam`**. These prelude functions are written **point-free** (combinator composition, per the project's own style guide), so their RHS is never a bare `Lam` and no signature is ever recorded — in blob **or** source config. This is not a blob-vs-source gap; the mechanism structurally cannot see point-free definitions. |
+| `+`, `=` | **present**, and genuinely strict (`[Strict/AtMostOnce, Strict/AtMostOnce]`) | But irrelevant: `(l + r): __ADD(l, r)` (`lib/prelude.eu:657`) is exactly the "combinator lambda whose body is `App(Intrinsic, vars)`" shape that the **pre-existing** `inline_cores` fixed-point (§3.3 of the original report; already shipped, not part of this spike) already collects and pre-expands. By the time STG-compile runs, `l + r` and `s = ""` have already been substituted to the raw intrinsic application by the core-level inline pass (`inline_cores` are "injected as Let bindings before the inline pass" per `blob.rs`'s own doc comment) — the compiler never sees a `Var::Free("+")` call site to look a signature up against; it resolves via `Expr::Intrinsic` / the compiler's separate `intrinsic_demand_sigs` table instead (`compiler.rs` ~L1122-1134), which already existed and is unaffected by this spike. |
+
+Both hot-path classes bypass the injected table for structurally different,
+independent reasons — one because no signature is ever recorded for
+point-free code, the other because the call site is inlined away before the
+lookup would occur. There is no adjustment to the injection point that fixes
+both without a fundamentally different mechanism (e.g. actually inlining
+prelude bodies into user code, which is the `inline()`/`eliminate` route
+already ruled out of blob generation for the one-form-per-name property, or
+computing signatures for combinator-shaped point-free bindings too — a
+non-trivial extension to `analyse_demand`'s extraction rule, not a
+generation-time wiring change).
+
+### 7.4 Safety check (requested): do the injected sigs match what source-mode would compute?
+
+For `+`/`=`, yes, necessarily: `analyse_lam`'s signature extraction is a
+pure, bottom-up structural function of a `Lam`'s own body and has no
+dependency on the enclosing scope or call site — `(l + r): __ADD(l, r)` has
+no free variables to pick up outer context from, so applying `analyse_demands`
+to it in isolation (blob generation, this spike) or embedded in the full
+merged program (source config) is the same deterministic computation over the
+same sub-tree and must produce the same signature. This isn't independently
+re-verifiable via a source-mode "named-signature dump" for the same reason the
+mechanism is moot in practice: source config inlines `+`/`=` away before any
+per-name signature would be surfaced for comparison. The algorithmic argument
+stands in place of a live A/B; it does not change the §7.2/§7.3 finding, since
+the signatures — correct or not — never reach a call site that matters for
+`map`/`foldl`/`range`, which is where the actual wall-clock cost lives (§3.1's
+profile evidence attributes the dominant cost to exactly these functions'
+call/env-resolution paths, not to `+`/`=`).
+
+### 7.5 Correctness smoke (harness, both engines)
+
+`cargo test --release --lib --tests` (bytecode) and
+`EU_HEAPSYN=1 cargo test --release --lib --tests` (HeapSyn), full suite
+(doctests excluded — a pre-existing, unrelated `rustdoc`/`RUSTC`-override
+toolchain-invocation issue on this box, not a code regression), worktree
+`/tmp/eu-blobsig`:
+
+| Engine | Tests | Failures |
+|---|--:|--:|
+| bytecode | **1,908** | **0** |
+| HeapSyn | **1,908** | **0** |
+
+Both green. The change is additive and gated (`#[serde(default)]` on the new
+blob field, `#[cfg(not(target_arch = "wasm32"))]` on the merge site,
+`.extend()` never removes existing signatures), so no behavioural regression
+was expected; the full harness pass confirms it. §7.2's byte-identical
+`dump stg` for the one workload that exercises the new path is itself
+stronger evidence of no observable-behaviour change for that program.
+
+### 7.6 Disposition
+
+**eu-2sa6.12 characterised-but-unfixed.** Both wire-format-preserving,
+generation-time candidate fixes (§4.1 reflatten, §6.4/§7 demand-sig boundary)
+are implemented, measured, and refuted. The root mechanism (§3.1: deep
+runtime lexical-environment chains under blob, `EnvironmentFrame::get` /
+`enter_local` dominating the profile) is confirmed and stands; no fix that
+preserves the current blob wire format and one-form-per-name generation
+approach has been found. Closing this bead as characterised; the redesign bead
+(in-memory blob pipeline, filed separately) inherits the problem and should
+be evaluated for whether a from-scratch pipeline can co-compile
+prelude+user (recovering real inlining and demand propagation) without
+reintroducing the "recompile prelude source every run" cost blob generation
+exists to avoid.
+
+Both spike branches (`perf/blob-reflatten`, `spike/named-demand-sigs`) are
+kept as evidence artefacts; neither is intended to merge.
