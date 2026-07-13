@@ -61,19 +61,24 @@ localisation and the demand specialisation are required.
 
 ### 0.2 The experimental matrix
 
-Four experiments, adjudicated by Wicket on hash-verified `cargo clean`
-disposable worktrees at commit `f8686d0a` (flag-on blob SHA256 `d6cd1555…`,
-flag-off `e59640e6…`). Bench is the verbatim committed `022_hof_fold.eu`
-(`grand: range(0, 10000) foldl((_ + _), 0)`); scaling variants change only `N`.
-All figures deterministic (ticks / allocs / stack); no wall.
+Five experiments, adjudicated by Wicket on hash-verified `cargo clean`
+disposable worktrees at commit `f8686d0a`: flag-off (`/tmp/eu-adjudicate-flagoff`,
+binary `b2bf8a67…`, blob `e59640e6…`) and flag-on (`/tmp/eu-adjudicate-flagon`,
+binary `af644ce8…`, blob `d6cd1555…`). Bench is the verbatim committed
+`022_hof_fold.eu` (`grand: range(0, 10000) foldl((_ + _), 0)`); scaling variants
+change only `N`. All figures deterministic (ticks / allocs / stack); no wall.
+Ticks are **bytecode engine** with explicit `-t <target>` unless a row says
+otherwise (Wicket found the no-`-t` render can double-count or short-circuit
+targets). The 022 mechanism cell is reported on both engines: HeapSyn
+`52,225,448 → 2,230,410`, bytecode `52,125,436 → 2,130,398`.
 
 | # | Experiment | Result | What it establishes | Provenance |
 |---|---|---|---|---|
 | 1 | **Residual call target** — inspect the fused STG | flag-on dump is a fused structure that **opens with `letrec [0] λ{3}`**; its general (recursive) case **tail-calls `✳5(…)` — the letrec's own binding**, not the global slot. flag-off is the un-fused global call. STG line counts: fused ≈ 382–386, un-fused ≈ 164–168. | The whole recursion runs in **one local specialised copy**; it does **not** escape to the shared global after any number of steps. Disposes of the peeling/arithmetic objection. | Wicket adjudicated (flag-on/flag-off worktrees @ `f8686d0a`) |
-| 2 | **Inline-depth sensitivity** — vary `prepare.rs:329` iteration count | depth-0 (no inline pass) = **baseline quadratic** (= `52,225,448` ticks @ N=10000); depth-1 = **exact `2.0000×` per doubling (linear)**; depth ≥1 gives no further change. | One distribution pass suffices to create the local copy. **There is no unroll-depth constant** — `PEEL_UNROLL_DEPTH` is removed from the design. | Wicket adjudicated |
-| 3 | **Demand dependence** — `--suppress-demand-analysis` with the local copy present | with demand = `2.0000×` linear; suppress-demand = **quadratic-trending (`3.47×` / `3.69×` per doubling)** *even though the local copy is present*. | Demand analysis is **necessary, not merely a consequence** of localisation. Localisation alone does not linearise; the copy's operator must also be specialised strict. | Wicket adjudicated |
-| 4 | **Quantity scaling of the un-fused quadratic** (5k/10k/20k) | **ticks quadratic** (13.6M / 52.2M / 204.4M); **allocs linear** (90,135 / 180,135 / 360,135); **blocks linear**; **max-stack linear** (5,011 / 10,011 / 20,011); GC 0. | The quadratic is in reduction ticks; allocation, blocks and stack are all O(N). Isolates the quadratic to reduction work; the *which quantity within reduction* is settled by Exp 5. | Furnace cross-check, confirmed by Wicket |
-| 5 | **Env-lookup histogram** — `EU_ENV_DEPTH_HISTOGRAM`, N-scaling | **per-lookup depth flat at all N** (mean ~0.98–0.99, max exactly 2); **total `get()` calls 13,157,734 / 51,315,234 / 202,630,234** (5k/10k/20k), tracking the triangular number `N(N−1)/2` (within ~0.7–3%); **lookups/ticks ratio 0.967 → 0.991**, converging on ~1:1. | The quadratic is a quadratic **count** of shallow env lookups — **env resolution by count, not by walk depth, and not thunk-chain reduction**. Settles §0.4. | Wicket adjudicated (`EU_ENV_DEPTH_HISTOGRAM`, flag-off worktree @ `f8686d0a`) |
+| 2 | **Inline-depth sensitivity** — vary `prepare.rs:329` iteration count (`-t bench-scale`) | depth-0 (no inline pass) = **baseline quadratic** (`13,597,816 / 52,195,316 / 204,390,316` at 5k/10k/20k, ratios `3.838×`/`3.916×`); depth-1 = `1,025,304 / 2,050,304 / 4,100,304` = **exact `2.0000×`/`1.9999×` (linear)**; depth ≥1 gives no further change. | One distribution pass suffices to create the local copy. **There is no unroll-depth constant** — `PEEL_UNROLL_DEPTH` is removed from the design. | Wicket adjudicated (binaries `depth0` `b818e1e6…`, `depth1` `417b858a…`) |
+| 3 | **Demand dependence** — `--suppress-demand-analysis` **on the fused (flag-on) binary** | normal `1,065,279 / 2,130,279 / 4,260,279` (ratios exactly `2.0000×`); suppress-demand `4,200,265 / 14,650,265 / 54,300,265` (ratios `3.49×`/`3.71×`, **quadratic-trending**) *with the local copy present*. **Methodology:** suppression is only meaningful flag-**on** — on the un-fused binary it is a null test (no concrete operator to specialise, ticks unchanged to 1 part in 1e6). | Demand analysis is **necessary, not merely a consequence** of localisation. Localisation alone does not linearise; the copy's operator must also be specialised strict. | Wicket adjudicated |
+| 4 | **Quantity scaling of the un-fused quadratic** (5k/10k/20k, `-t`) | **ticks quadratic** (`13,562,816 / 52,125,316 / 204,250,316`, ratios `3.84×`/`3.92×`); **allocs linear** (`90,137 / 180,137 / 360,137`, `~2.0×`); **blocks linear** (`1,046 / 2,087 / 4,168`); **max-stack linear** (`5,011 / 10,011 / 20,011`); GC 0. | The quadratic is in reduction ticks; allocation, blocks and stack are all O(N). Isolates the quadratic to reduction work; *which quantity within reduction* is settled by Exp 5. | Wicket adjudicated (Furnace cross-check within ~0.1%) |
+| 5 | **Env-lookup histogram** — `EU_ENV_DEPTH_HISTOGRAM` (`env.rs:36-134`, eu-qm7f), N-scaling | **per-lookup depth flat at all N** (mean `0.979 / 0.989 / 0.995`, **max exactly 2**); **total `EnvironmentFrame::get` calls `13,157,734 / 51,315,234 / 202,630,234`** (5k/10k/20k), tracking `N(N−1)/2` (`12,497,500 / 49,995,000 / 199,990,000`) to within `0.7–3%`; **lookups/ticks `0.967 / 0.983 / 0.991`**, converging on ~1:1. | The quadratic is a quadratic **count** of shallow env lookups — **env resolution by count, not by walk depth, and not thunk-chain reduction**. Settles §0.4. | Wicket adjudicated (flag-off worktree @ `f8686d0a`) |
 
 ### 0.3 The causal account (survives the arithmetic)
 
@@ -95,13 +100,15 @@ legs are load-bearing.
 Direct measurement (Exp 5, `EU_ENV_DEPTH_HISTOGRAM` on the hash-verified
 flag-off worktree, N-scaling) settles what the O(N²) is:
 
-- **Per-lookup depth is flat at every N** — mean ~0.98–0.99, max exactly 2. The
-  environment walk does **not** get longer with N or with chain position.
-- **The number of lookups is quadratic.** Total `get()` calls are
+- **Per-lookup depth is flat at every N** — mean `0.979 / 0.989 / 0.995`, max
+  exactly 2. The environment walk does **not** get longer with N or with chain
+  position (unchanged from eu-qm7f's original shallow-walk finding).
+- **The number of lookups is quadratic.** Total `EnvironmentFrame::get` calls are
   `13,157,734 / 51,315,234 / 202,630,234` at N = 5k/10k/20k, tracking the
-  triangular number `N(N−1)/2` (within ~0.7–3%). The **lookups-per-tick ratio is
-  `0.967 → 0.991`**, converging on ~1:1 — i.e. the tick cost *is* the lookup
-  count.
+  triangular number `N(N−1)/2` (`12,497,500 / 49,995,000 / 199,990,000`) to
+  within ~0.7–3% and converging — the classic "position k does ~k lookups"
+  signature. The **lookups-per-tick ratio is `0.967 / 0.983 / 0.991`**,
+  converging on ~1:1 — i.e. the tick cost *is* the lookup count.
 
 So the quadratic is a **quadratic count of individually-shallow environment
 lookups**: resolving the lazily-threaded operator/bindings is repeated for every
@@ -233,41 +240,69 @@ a qualifying combinator, so they fuse once their callee is copy-specialised):
 `take`/`drop`/`repeat`/`iota`/`cycle`/`interleave`/`stream-advance`/`window`/
 `window-all`; and nested-`aux` recursion: `take-while`/`take-until`.
 
-### 2.2 Full-set bloat and blob-gen cost — **pending re-verification (Wicket)**
+### 2.2 Full-set bloat and blob-gen cost
 
-The original draft reported the full-8 set at **+1,505 blob bytes**, bytecode
-image unchanged, arena +43 nodes, prelude-compile 0.07–0.08 s (no change). These
-figures were produced via the eu-v8n8 flag mechanism, and given the mechanism
-phase's confounds they are marked **pending re-verification under the
-gold-standard protocol** and must not be cited as evidence until an adjudicated
-cell exists. The *shape* of the claim (bloat is small and one-off per admitted
-combinator; bytecode image unchanged because the growth is source-side
-`inline_cores` payload) is what the design relies on and is what
-re-verification must confirm. Gate: the implementation PR carries an adjudicated
-blob-size + bytecode-size + arena-node cell before/after.
+The `map`+`foldl` cell is **Wicket-adjudicated** (re-derived by
+`xtask prelude-compile` in both worktrees, blob SHA256 byte-identical
+before/after each derivation — a safe re-derivation, not a rebuild-drift risk):
+
+| Metric | flag-off (map+foldl absent) | flag-on (map+foldl only) | Δ |
+|---|---|---|---|
+| blob file size | 461,638 B | 461,979 B | **+341 B** |
+| inline_cores count | 133 | 135 | +2 |
+| arena nodes | 7,104 | 7,104 | **0** |
+| STG lambda forms | 352 | 352 | 0 |
+| bytecode size | 269,176 B | 269,176 B | **0** |
+
+Wicket's mechanistic note: **the bytecode image is unchanged, and this
+generalises to *any* `inline_cores` membership change** — bytecode compiles from
+the prelude's own STG forms unconditionally, whereas `inline_cores` membership
+only affects which raw Core is additionally serialised for injection
+(structurally independent of *which* combinators are in the set). So the
+qualitative "bytecode-image unchanged" claim holds for the full-8 set too.
+
+The **full-8-combinator bloat figure is not measurable from existing code** and
+is tagged **requires a prototype** (not "pending re-verification"): the spike's
+`CLUSTER` list is hardcoded to `["map", "foldl"]` (`xtask/src/main.rs:334`); the
+other six combinators are not implemented in any buildable branch, so no rerun
+can produce the number. The original draft's **+1,505 B for 8** is *consistent in
+shape* with the adjudicated **+341 B for 2** (~188 vs ~170 B/combinator) — a
+plausibility check, not proof. Gate: the implementation PR carries an
+adjudicated full-set blob-size + bytecode-size + arena-node cell before/after.
 
 ### 2.3 Full-set tick effect on the canonical suite
 
-Only the **022** cell is adjudicated. All other cells are carried from the spike
-and are **pending re-verification (Wicket)** under the gold-standard protocol;
-they are shown for shape, not cited as evidence.
+**All eight cells are Wicket-adjudicated** (bytecode engine, `-t <target>`,
+`-I` for 021; worktrees @ `f8686d0a`, binaries `b2bf8a67`/`af644ce8`). The
+`map`+`foldl` flag reproduces the carried-over spike figures to within 0.1–0.3%
+for seven rows; **020 was corrected** (see below).
 
-| Bench | class | baseline (flag-off) | full-set (flag-on) | Δ | Provenance |
-|---|---|---|---|---|---|
-| 022_hof_fold | C | **52,225,448** | **2,230,410** | **−95.73%** | **Wicket adjudicated** (blob `e59640e6`/`d6cd1555` @ `f8686d0a`) |
-| 018_string_scale | G | 76,814,993 | 46,104,199 | −40.0% | pending re-verification (Wicket) |
-| 019_list_scale | H | 55,803,488 | 51,244,975 | −8.2% | pending re-verification (Wicket) |
-| 016_import_export_yaml | I | 59,894,595 | 56,226,115 | −6.1% | pending re-verification (Wicket) |
-| 017_import_export_toml | I | 59,721,271 | 56,052,791 | −6.1% | pending re-verification (Wicket) |
-| 020_lookup_curve | E | 1,721,105 | 1,556,643 | −9.6% | pending re-verification (Wicket) |
-| 015_block_merge | D | 98,788,746 | 96,175,898 | −2.6% | pending re-verification (Wicket) |
-| 021_io_loop | L | 3,971,300 | 3,971,300 | 0% (io-bound) | pending re-verification (Wicket) |
+| Bench | class | flag-off | flag-on | Δ | allocs off/on | Provenance |
+|---|---|---|---|---|---|---|
+| 022_hof_fold | C | 52,125,436 | 2,130,398 | **−95.91%** | 180,163 / 217,643 | Wicket adjudicated |
+| 018_string_scale | G | 76,730,983 | 46,020,189 | −40.02% | 364,176 / 395,650 | Wicket adjudicated |
+| 019_list_scale | H | 55,719,473 | 51,160,960 | −8.18% | 156,182 / 160,676 | Wicket adjudicated |
+| 016_import_export_yaml | I | 59,711,048 | 56,042,568 | −6.14% | 1,794,817 / 1,814,846 | Wicket adjudicated |
+| 017_import_export_toml | I | 59,537,724 | 55,869,244 | −6.16% | 1,158,667 / 1,178,696 | Wicket adjudicated |
+| **020_lookup_curve** | E | **164,630,267** | **164,465,805** | **−0.10%** | 5,553,215 / 5,595,923 | Wicket adjudicated (**corrected**, see note) |
+| 015_block_merge | D | 98,669,543 | 96,056,695 | −2.65% | 448,718 / 456,248 | Wicket adjudicated |
+| 021_io_loop | L | 3,958,278 | 3,958,278 | 0% (io-bound) | 499,537 / 499,537 | Wicket adjudicated |
 
-If the pending cells re-verify, the full set is monotonically beneficial and
-extends the win beyond `map`/`foldl` to the import (016/017) and lookup (020)
-workloads via `filter`/`foldr`/`all`/`any` transitively — the concrete argument
-for **admitting the whole criterion-qualifying set, not a curated list**. That
-argument stands or falls on the re-verified numbers.
+**020 correction.** The original draft cited baseline `1,721,105` / `1,556,643`
+(−9.6%). That baseline was measured on **HeapSyn by mistake** — `EU_HEAPSYN=1`
+on the identical flag-off binary/file reproduces `1,721,105` exactly, while the
+bytecode engine (every other row) gives `164,630,267 → 164,465,805 = −0.10%`. A
+one-row engine mix-up, not a re-verification gap. Corrected, **020 does not
+meaningfully benefit** from `map`/`foldl` fusion (its `foldl` call is a minor
+fraction of a lookup-dominated workload).
+
+The full set is monotonically non-regressive and **extends the win beyond
+`map`/`foldl` to the import (016/017) workloads** via `filter`/`foldr`/`all`/
+`any` transitively — the concrete argument for **admitting the whole
+criterion-qualifying set, not a curated list**. (The earlier claim that the win
+also extends to the lookup workload 020 is **withdrawn** — 020 is
+lookup-dominated and does not benefit, as the corrected row shows.) These are
+`map`+`foldl`-only figures; the full-8-set deltas require a prototype (§2.2).
 
 ---
 
@@ -346,8 +381,11 @@ not provide.
 `analyse_demands` runs per-invocation on the user's core expression
 (`driver/prepare.rs:374`). The original draft called the strict specialisation a
 mere *consequence* of exposing the concrete operator. **Exp 3 corrects this:**
-with the local specialised copy present but demand analysis suppressed, the
-workload is still quadratic-trending (`3.47×`/`3.69×`). So localisation and
+on the **fused (flag-on)** binary with demand analysis suppressed, the workload
+is still quadratic-trending (`3.49×`/`3.71×`). (Methodology: suppression is only
+meaningful flag-on — on the un-fused binary it is a null test, since there is no
+concrete operator to specialise before fusion; ticks are unchanged there.) So
+localisation and
 demand specialisation are **two independently necessary legs**: the copy exposes
 the concrete operator, and demand analysis must then specialise it strict so the
 repeated per-position env lookups (§0.4) collapse to O(1) per step. Neither alone
@@ -387,7 +425,7 @@ version.**
 ### 5.1 eu-v8n8 spike / PR #1007 — **quantitative claims reinstated; still superseded in form**
 
 #1007 is a blob-only `inline_cores` hook behind `EU_BLOB_INLINE_CLUSTER`. Its
-headline numbers are **adjudicated and reinstated** (022 −95.73%, §2.3). The
+headline numbers are **adjudicated and reinstated** (022 −95.91%, §2.3). The
 production form supersedes it in *form* (shared pipeline, both configs, no flag,
 user combinators) but relies on its evidence. Recommend the owner decide #1007's
 disposition (merge as evidence vehicle vs close-once-superseded) at design
@@ -434,16 +472,19 @@ ticks are the primary evidence; wall is corroboration.
 ## 6. Risks
 
 1. **Code-size growth at scale.** Copy-specialisation reproduces each admitted
-   body as one local copy **per qualifying call site**. The spike measured
-   full-set blob +1,505 B with the bytecode image unchanged (§2.2, **pending
-   re-verification**). User-code growth is bounded by the size cap and the
-   call-site count. **Low-to-medium risk**; the size cap (§1.2) is the explicit
-   guard. Gate: an adjudicated blob-size + representative-user-compile core-node
-   count before/after.
+   body as one local copy **per qualifying call site**. Adjudicated for
+   `map`+`foldl`: blob +341 B, **bytecode image unchanged**, arena nodes
+   unchanged (§2.2); the bytecode-invariance generalises to any `inline_cores`
+   membership (§2.2 note). The full-8-set blob figure **requires a prototype**
+   (§2.2). User-code growth is bounded by the size cap and the call-site count.
+   **Low-to-medium risk**; the size cap (§1.2) is the explicit guard. Gate: an
+   adjudicated full-set blob-size + representative-user-compile core-node count
+   before/after.
 2. **Compile-time cost.** The inline pass already runs on every compile; the
    criterion admits ~8 more inlinable lambdas. Spike prelude-compile: 0.07–0.08 s
-   (**pending re-verification**). Gate: an adjudicated `eu`-compile wall (via
-   `-S` phase timing) on a `map`/`foldl`-heavy user program before/after.
+   (**pending re-verification** — a wall figure, not yet on the gold-standard
+   protocol). Gate: an adjudicated `eu`-compile wall (via `-S` phase timing) on a
+   `map`/`foldl`-heavy user program before/after.
 3. **Typechecker / LSP interaction.** `tag_combinators` runs in the inline pass,
    **after** type-checking and cook; copy-specialisation is a post-typecheck core
    transform, so inference and warnings are computed on the pre-transform form
