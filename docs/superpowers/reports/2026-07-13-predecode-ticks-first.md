@@ -8,41 +8,58 @@
 - **Protocol:** `docs/superpowers/engine-ab/PROTOCOL.md`
 - **Status:** TICKS-FIRST only. Wall median-of-N runs are **deferred** to a quiet
   window (the measurement box was under concurrent build/review load); no wall
-  ratio is quoted here, per PROTOCOL §2 ("if the machine is loaded, say so").
-  The `results.jsonl` rows will be appended once the wall medians exist, using
-  the deterministic figures below unchanged.
+  ratio is quoted here, per PROTOCOL §2. The `results.jsonl` rows will be
+  appended once the wall medians exist, using the deterministic figures below
+  unchanged.
 
-## 1. Deterministic reference (HeapSyn `-S`) — the load-independent layer
+> **Correction (2026-07-13, post-review).** The first version of this report
+> measured with `eu run <file>` and **no `-t <target>`** (and, for `021`, no
+> `--allow-io`). That renders the *whole document*, which for some benches
+> evaluates extra work the bench target does not: `020_lookup_curve` defines
+> `total40`/`total250` as top-level bindings that the `bench-lookup-curve`
+> target *also* references, so the whole-document render evaluated them twice
+> (Wicket's "2× + 682" signature — thank you); `015` rendered extra top-level
+> blocks (+35 M ticks); and `021_io_loop` ran with no `--allow-io`, so its io
+> loop never executed (1,518 ticks instead of 3.97 M). Every figure below is
+> now measured the way the canonical suite / `cargo xtask engine-ab` measures
+> (`base_cmd`, `xtask/src/engine_ab.rs`): `EU_HEAPSYN=1 eu -S --heap-limit-mib
+> 12288 [--allow-io] -t <target> <file>`, parsing the `-S` `Ticks`/`Allocs`/
+> `Collections` lines. Rows corrected: **015, 020, 021** (others moved by
+> ≤~1,200 ticks — the small whole-document render overhead). The step-neutral
+> conclusion in §2 is unchanged.
 
-Read from `EU_HEAPSYN=1 eu -S`, `--heap-limit-mib 12288` (0 collections, matching
-production). These are the `hs_ticks`/`hs_allocs`/`gc` columns of the eventual
-ledger rows. **Confidence: measured-verified** (deterministic).
+## 1. Deterministic reference (HeapSyn `-S -t <target>`) — the load-independent layer
 
-| Bench | Class | hs_ticks | hs_allocs | gc |
-|---|---|---|---|---|
-| 015_block_merge | D | 134,179,383 | 645,066 | 0 |
-| 016_import_export_yaml | I | 59,895,722 | 1,922,943 | 0 |
-| 017_import_export_toml | I | 59,722,384 | 1,286,727 | 0 |
-| 018_string_scale | G | 76,815,495 | 364,229 | 0 |
-| 019_list_scale | H | 55,803,922 | 156,222 | 0 |
-| 020_lookup_curve | E | 3,442,892 | 11,107,135 | 0 |
-| 021_io_loop | L | 1,518 | 552 | 0 |
-| 022_hof_fold | C | 52,225,882 | 180,203 | 0 |
+`--heap-limit-mib 12288` (0 collections, matching production). These are the
+`hs_ticks`/`hs_allocs`/`gc` columns of the eventual ledger rows. **Confidence:
+measured-verified** (deterministic; `020` independently reproduced by review).
 
-## 2. Engine dispatch-step counts (bytecode `machine_ticks`) — byte vs pre-decode
+| Bench | Class | Target | hs_ticks | hs_allocs | gc |
+|---|---|---|---|---|---|
+| 015_block_merge | D | bench-block-merge | 98,788,746 | 472,734 | 0 |
+| 016_import_export_yaml | I | bench-import-yaml | 59,894,595 | 1,922,737 | 0 |
+| 017_import_export_toml | I | bench-import-toml | 59,721,271 | 1,286,587 | 0 |
+| 018_string_scale | G | bench-string-scale | 76,814,993 | 364,176 | 0 |
+| 019_list_scale | H | bench-list-scale | 55,803,488 | 156,182 | 0 |
+| 020_lookup_curve | E | bench-lookup-curve | 1,721,105 | 5,553,215 | 0 |
+| 021_io_loop | L | bench-io-loop | 3,971,300 | 545,675 | 0 |
+| 022_hof_fold | C | bench-hof-fold | 52,225,448 | 180,163 | 0 |
 
-The bytecode engine's own `machine_ticks` counts dispatch steps. This is
-deterministic and characterises whether the pre-decoded representation changes
-*how many* steps run (as opposed to the per-step cost). **Confidence:
-measured-verified** (deterministic).
+## 2. Engine dispatch-step counts (bytecode `-S -t <target>` Ticks) — byte vs pre-decode
+
+The bytecode engine's own `Ticks` counts dispatch steps; deterministic, so it
+characterises whether the pre-decoded representation changes *how many* steps
+run (vs. the per-step cost). Compute benches only (io/import excluded).
+**Confidence: measured-verified** (`020` independently reproduced by review:
+byte 164,630,267 / predecode 164,589,685).
 
 | Bench | byte steps | predecode steps | Δ |
 |---|---|---|---|
-| 015_block_merge | 134,020,092 | 133,968,976 | −0.0% |
-| 018_string_scale | 76,731,485 | 76,689,477 | −0.1% |
-| 019_list_scale | 55,719,907 | 55,707,901 | −0.0% |
-| 020_lookup_curve | 329,261,216 | 329,180,052 | −0.0% |
-| 022_hof_fold | 52,125,870 | 52,105,864 | −0.0% |
+| 015_block_merge | 98,669,543 | 98,633,467 | −0.04% |
+| 018_string_scale | 76,730,983 | 76,688,977 | −0.05% |
+| 019_list_scale | 55,719,473 | 55,707,469 | −0.02% |
+| 020_lookup_curve | 164,630,267 | 164,589,685 | −0.02% |
+| 022_hof_fold | 52,125,436 | 52,105,432 | −0.04% |
 
 **Reading this honestly:** on the canonical suite the pre-decoded engine is
 **step-count-neutral** — it runs essentially the same number of dispatch steps
@@ -54,7 +71,7 @@ as the byte engine. This is expected and correct:
   measurement — and cannot show up in a step count.
 - BV2 Ann-elimination *does* remove steps, but only where `Op::Ann` nodes sit in
   the hot path. The canonical compute benches have very few (their hot loops are
-  prelude combinators over data), so the step reduction here is ~0.0–0.1%. A
+  prelude combinators over data), so the step reduction here is ~0.0–0.05%. A
   heavily-annotated hot path shows more: `fib(30)` drops 722,435→623,927 bc
   steps (−13.6%) — a workload-dependent figure, not representative of this suite.
 
