@@ -86,10 +86,19 @@ struct Instr {
     a: u32,         // primary operand — meaning is opcode-dependent (see table)
     b: u32,         // secondary operand
     c: u32,         // tertiary operand / side-pool start index
-    smid_idx: u32,  // BV2 (§3): index into the smid side table; u32::MAX = no annotation
 }
-// size_of::<Instr>() == 16 bytes (1+1+2+4+4+4+4, no padding) on a 4-byte-aligned struct.
+// size_of::<Instr>() == 16 bytes (1+1+2+4+4+4, no padding) on a 4-byte-aligned struct.
 ```
+
+> **Post-sign-off correction (2026-07-13, eu-2sa6.13 implementation).** As
+> originally written this struct also listed a `smid_idx: u32` field, which made
+> the record `1+1+2+4+4+4+4 = 20` bytes, not the 16 the surrounding prose (and
+> the bead title) claims. That field is redundant with §3's decision — smids
+> live in a **side table keyed by ordinal** (`smids[ord]`), *not* inline on the
+> record — so it is dropped here. The record is `1+1+2+4+4+4 = 16` bytes exactly
+> (enforced by a `const _: () = assert!(size_of::<Instr>() == 16)` in the
+> implementation). This resolves the arithmetic in favour of §3; no other change
+> to the field semantics. Owner-signed.
 
 Per-opcode field mapping (mirrors `handle_op`, `machine.rs:1716-2090`, and the
 byte layout each `read_*` helper already decodes):
@@ -262,6 +271,18 @@ user-code delta (small, appended after `base.code.clone()`, §2.1) gets its own
 ordinals lazily as `encode_overrides_and_root`'s output executes. The two
 `Vec<Instr>`/pool sets are logically one array (concatenated ordinal space)
 but populated by two different schedules.
+
+> **Phase 1 status & deferred optimisation (2026-07-13, eu-2sa6.13).** Phase 1
+> ships a single **eager full-reachability decode** from every root (§2.2's eager
+> path applied to user code too), not the eager-prelude + lazy-first-touch split
+> above. The lazy schedule is a **startup optimisation, not a correctness
+> requirement** — walking from the user program's own root already decodes only
+> code reachable from it, and the prelude (the bulk) is decoded eagerly either
+> way — so the split was dropped for Phase 1 to keep one decode path. **Deferred
+> follow-up:** re-introduce lazy first-touch *decode-fill* for user code (eager
+> ordinal discovery, lazy `Instr` population) if the startup measurement (§8
+> risk 2) shows the eager user-code decode is a measurable share of the BV5
+> startup floor. Owner-signed for Phase 1.
 
 ### 2.3 `CodeRef` changes meaning: byte offset → instruction ordinal
 

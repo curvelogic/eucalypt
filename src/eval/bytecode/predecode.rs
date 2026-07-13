@@ -20,9 +20,11 @@
 //!   the machine remaps `root`/`global_forms` through the same table so the
 //!   initial roots dispatch correctly.
 //! - **Source annotations live in a `smids` side table keyed by ordinal**, not
-//!   inline on every record. `Op::Ann` is *not* eliminated here (that is the
-//!   BV2 follow-up, §3); it remains a dispatchable [`Instr::ANN`] whose smid is
-//!   read from the side table, exactly reproducing the byte path's behaviour.
+//!   inline on every record, and **`Op::Ann` is eliminated from dispatch** (BV2,
+//!   design §3): an `Ann` node is peeled at decode (see [`Decoder::ordinal_for`])
+//!   — it never gets its own ordinal or [`Instr`]. Its wrapped body takes the
+//!   ordinal and the `Ann`'s smid is recorded on that ordinal, applied once in
+//!   the dispatch prologue. The dispatch loop therefore never steps an `Ann`.
 //!
 //! **GC invariant (design §4):** nothing in these structures is a GC pointer.
 //! `Instr` fields are scalars/ordinals/packed refs; the pools hold
@@ -410,18 +412,11 @@ impl<'a> Decoder<'a> {
                     c: 0,
                 }
             }
+            // `Op::Ann` is peeled in `ordinal_for` (BV2 §3): it never gets an
+            // ordinal, so it is never enqueued and never decoded here. The arm
+            // stays for match exhaustiveness and to assert the invariant.
             Op::Ann => {
-                let smid = Smid::from(read_u32(code, &mut pc));
-                let body = self.ordinal_for(read_u32(code, &mut pc));
-                self.smids[ord as usize] = smid;
-                Instr {
-                    op,
-                    flags: 0,
-                    len: 0,
-                    a: body,
-                    b: 0,
-                    c: 0,
-                }
+                unreachable!("Op::Ann is peeled at decode and never reaches decode_node (BV2 §3)")
             }
             Op::FusedPrimop => {
                 let primop_id = read_u8(code, &mut pc);
