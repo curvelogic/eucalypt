@@ -53,6 +53,10 @@ from-data(td):
 
     tuple-str(ts): ts map(to-str) str.join-on(", ") "({})"
 
+    prefix-list-str(prefix, tail):
+      { tail-str: to-str(tail)
+      }.(prefix map(to-str) snoc("{tail-str}…") str.join-on(", ") "[{}]")
+
     to-str[tag : rest]:
       { r0: rest first
         r1: rest second
@@ -67,6 +71,7 @@ from-data(td):
         , tag = :t-union   => rest map(to-str) str.join-on(" | ")
         , tag = :t-partial => "{s0}?"
         , tag = :t-tuple   => tuple-str(rest)
+        , tag = :t-prefix-list => prefix-list-str(r0, r1)
         , tag = :t-record  => record-str(r0)
         , tag = :t-var     => "{r0}"
         , tag = :t-lit-sym => ":{r0}"

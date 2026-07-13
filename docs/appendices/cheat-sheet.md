@@ -618,6 +618,7 @@ origin: { x: 0, y: 0 }
 | `NonEmpty([T])`    | non-empty list of T                    |
 | `(A, B)`           | 2-tuple; `(A, B, C)` for triple        |
 | `(A,)`             | 1-tuple                                |
+| `[A, B, C…]`       | prefix-list: fixed A, B then zero+ C (`...` = `…`) |
 | `{k: T}`           | closed record                          |
 | `{k: T, ..}`       | open record (at least k: T)            |
 | `{k: T, ..r}`      | named row variable (in string: `{{k: T, ..r}}`) |

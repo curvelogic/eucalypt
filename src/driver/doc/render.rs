@@ -215,6 +215,19 @@ fn type_to_json_schema(ty: &Type) -> Option<String> {
             ))
         }
 
+        // Prefix-list — the JSON-Schema 2020-12 tuple-with-rest idiom: fixed
+        // `prefixItems` plus an OPEN `items` schema for the homogeneous tail
+        // (the tuple case above closes it with `"items": false`).
+        Type::PrefixList { prefix, tail } => {
+            let items: Vec<String> = prefix.iter().filter_map(type_to_json_schema).collect();
+            let tail_schema = type_to_json_schema(tail).unwrap_or_else(|| "{}".to_string());
+            Some(format!(
+                r#"{{"type": "array", "prefixItems": [{}], "items": {}}}"#,
+                items.join(", "),
+                tail_schema
+            ))
+        }
+
         // Record type → object with properties
         Type::Record { fields, open, .. } => {
             if fields.is_empty() {
@@ -368,6 +381,30 @@ mod tests {
     fn function_type_returns_none() {
         assert_eq!(schema("string -> number"), None);
         assert_eq!(schema("string → number"), None);
+    }
+
+    #[test]
+    fn prefix_list_type() {
+        // Prefix-list is the JSON-Schema 2020-12 tuple-with-rest idiom: fixed
+        // `prefixItems` plus an OPEN `items` schema for the homogeneous tail.
+        let s = schema("[symbol, number, string…]").unwrap();
+        assert_eq!(s["type"], "array");
+        let prefix = s["prefixItems"].as_array().unwrap();
+        assert_eq!(prefix.len(), 2);
+        assert_eq!(prefix[0], serde_json::json!({"type": "string"}));
+        assert_eq!(prefix[1], serde_json::json!({"type": "number"}));
+        // The tail is open (a schema), unlike a tuple which closes with `false`.
+        assert_eq!(s["items"], serde_json::json!({"type": "string"}));
+    }
+
+    #[test]
+    fn tuple_closes_items_prefix_list_opens_them() {
+        // A fixed tuple closes the array (`"items": false`); a prefix-list
+        // leaves it open with the tail schema.
+        let tuple = schema("(symbol, number)").unwrap();
+        assert_eq!(tuple["items"], serde_json::json!(false));
+        let plist = schema("[symbol, number…]").unwrap();
+        assert_eq!(plist["items"], serde_json::json!({"type": "number"}));
     }
 
     #[test]

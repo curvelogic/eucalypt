@@ -4765,6 +4765,51 @@ mod tests {
         assert_eq!(normalise_tuple_to_list(Type::Number), Type::Number);
     }
 
+    // ── Prefix-list projection (§5.1) ────────────────────────────────────────
+
+    #[test]
+    fn prefix_list_head_is_first_prefix_element() {
+        let pl = Type::prefix_list(vec![Type::Symbol, Type::Number], Type::String);
+        assert_eq!(
+            apply_head_tail_to_tuple(HeadTailProjection::Head, &pl),
+            Some(Type::Symbol)
+        );
+    }
+
+    #[test]
+    fn prefix_list_tail_drops_first_prefix_element() {
+        // tail([symbol, number, string…]) → [number, string…]
+        let pl = Type::prefix_list(vec![Type::Symbol, Type::Number], Type::String);
+        assert_eq!(
+            apply_head_tail_to_tuple(HeadTailProjection::Tail, &pl),
+            Some(Type::prefix_list(vec![Type::Number], Type::String))
+        );
+    }
+
+    #[test]
+    fn prefix_list_tail_of_single_prefix_normalises_to_list() {
+        // tail([symbol, string…]) → [string] (residual prefix empty → List).
+        let pl = Type::prefix_list(vec![Type::Symbol], Type::String);
+        assert_eq!(
+            apply_head_tail_to_tuple(HeadTailProjection::Tail, &pl),
+            Some(Type::list(Type::String))
+        );
+    }
+
+    #[test]
+    fn prefix_list_projection_sees_through_mu() {
+        // A recursive alias (`Element`) is Mu-wrapped; projection unfolds it.
+        let inner = Type::prefix_list(
+            vec![Type::Symbol, Type::Number],
+            Type::union([Type::String, Type::var(TypeVarId("Element".to_string()))]),
+        );
+        let mu = Type::Mu(TypeVarId("Element".to_string()), Box::new(inner));
+        assert_eq!(
+            apply_head_tail_to_tuple(HeadTailProjection::Head, &mu),
+            Some(Type::Symbol)
+        );
+    }
+
     #[test]
     fn a10_monadic_bind_lambda_params_recorded() {
         // The A10 pre-pass should record `x: number` in `lambda_params` when

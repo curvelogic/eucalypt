@@ -236,6 +236,46 @@ second(pair) # type: number  (index 1)
 Any user-defined function whose body is `xs tail head` (or `xs tail tail head`,
 etc.) acquires the same precise projection typing automatically.
 
+### Prefix-lists
+
+A **prefix-list** sits between a fixed tuple and a homogeneous list: a
+fixed-shape **prefix** followed by a homogeneous variable **tail**. It uses
+brackets, with the last element carrying a trailing ellipsis:
+
+| Syntax                             | Meaning                                        |
+|------------------------------------|------------------------------------------------|
+| `[A, B, C…]`                       | an `A`, then a `B`, then zero or more `C`       |
+| `[A, B, C...]`                     | the same — ASCII `...` is accepted for `…`      |
+| `[C…]`                             | normalises to `[C]` (a plain homogeneous list)  |
+
+The ellipsis binds to the immediately preceding element, which may be a grouped
+union: `[symbol, block, (string | Element)…]`. Both `…` (U+2026, canonical —
+what `Display` emits) and ASCII `...` are accepted. A comma-separated bracket
+type **without** a trailing ellipsis is an error — fixed tuples remain `(A, B)`.
+
+The canonical use is the hiccup/markup element shape `[tag, attrs, …content]`:
+
+```eu,notest
+` { types: { Element: "[symbol, block, (string | Element)…]" } }
+
+` { type: "Element → symbol" }         tag = head
+` { type: "Element → block"  }         attrs = second
+` { type: "Element → [string | Element]" }  content = _ tail tail
+```
+
+Subtyping is covariant throughout. A literal element `[:div, {}, "a", "b"]`
+(which synthesises to a `Tuple`) checks against a prefix-list annotation because
+`Tuple <: PrefixList`. Projection is precise: `head` gives the first prefix
+element, `second` the next, and `tail` drops one prefix element (eventually
+normalising to `[tail]`). A named projection **past** the fixed prefix lands in
+the tail, which may be empty at runtime, so it synthesises as `T?` (`T |
+ExecutionError`) rather than bare `T`.
+
+An unstructured `[T]` list is **not** a subtype of a prefix-list with a
+non-empty prefix (it might be empty or too short), so a genuine list cannot be
+passed where a markup element is required — widen the annotation or use `any` if
+that is intended.
+
 ### Records
 
 Records describe the shape of blocks:
