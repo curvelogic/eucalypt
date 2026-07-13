@@ -24,6 +24,9 @@ pub use cont::*;
 mod env_builder;
 pub use env_builder::*;
 
+mod predecode;
+pub use predecode::*;
+
 mod machine;
 pub use machine::*;
 
@@ -48,4 +51,15 @@ pub fn bytecode_enabled() -> bool {
 /// `EU_HEAPSYN=1` opt-out.
 pub fn heapsyn_enabled() -> bool {
     std::env::var("EU_HEAPSYN").as_deref() == Ok("1")
+}
+
+/// Whether the pre-decoded execution IR (lever a, bead eu-2sa6.13) is selected
+/// via `EU_PREDECODE=1`. When set, the bytecode engine decodes the whole
+/// program once at load into a flat [`DecodedProgram`] of typed [`Instr`]
+/// records plus off-heap side pools, and dispatches over the typed fields
+/// instead of re-reading the byte stream every tick. Flag OFF ⇒ byte-identical
+/// current behaviour (the byte path is untouched). Only meaningful when the
+/// bytecode engine is selected (`EU_HEAPSYN=1` takes precedence).
+pub fn predecode_enabled() -> bool {
+    std::env::var("EU_PREDECODE").as_deref() == Ok("1")
 }
