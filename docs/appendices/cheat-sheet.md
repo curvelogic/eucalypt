@@ -563,9 +563,10 @@ eu -Q file.eu               # Suppress prelude
 eu fmt file.eu              # Format source
 eu dump stg file.eu         # Dump STG syntax
 eu -- arg1 arg2             # Pass arguments (io.args)
-eu check file.eu            # Type-check, report warnings
+eu check file.eu            # Type-check only, report warnings
 eu check --strict file.eu   # Treat type warnings as errors
-eu --type-check file.eu     # Check then evaluate
+eu file.eu --strict         # Evaluate, abort first if type warnings
+eu file.eu --suppress-type-warnings  # Evaluate, silence warnings
 eu doc file.eu              # Extract documentation (Markdown)
 eu doc --format json file.eu # Extract as JSON Schema
 eu doc --check file.eu      # Report documentation coverage

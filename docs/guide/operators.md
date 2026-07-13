@@ -37,8 +37,13 @@ result: ∅ set.to-list
 ```
 
 ```yaml
+∅: []
 result: []
 ```
+
+Unlike prefix/postfix/binary operator declarations, a nullary
+declaration has no parameter list — structurally it is a property
+declaration, so (unlike a function) it *is* rendered in the output.
 
 The empty set `∅` is the only nullary operator in the standard prelude,
 but you can define your own:
@@ -82,21 +87,24 @@ The prelude defines the standard precedence levels:
 | Level | Name | Operators |
 |-------|------|-----------|
 | 95 | prefix | `↑` (head) |
-| 90 | lookup | `.` |
-| 88 | bool-unary | `!`, `¬` |
+| 90 | lookup | `.`, `~` (safe lookup) |
+| 88 | bool-unary | `!`, `¬` (prefix); `✓` (postfix not-null) |
+| 88 | -- | `∘`, `;` (composition) |
 | 85 | exp | `^`, `!!` (nth) |
 | 80 | prod | `*`, `/`, `÷`, `%` |
 | 75 | sum | `+`, `-` |
-| 60 | shift | (shift operators) |
-| 55 | bitwise | (bitwise operators) |
+| 60 | shift | (shift operators, reserved) |
+| 55 | bitwise | (bitwise operators, reserved) — `‖` (cons) also uses this numeric level |
 | 50 | cmp | `<`, `>`, `<=`, `>=` |
 | 45 | append | `++`, `<<` |
+| 42 | map | `<$>` (functor map) |
 | 40 | eq | `=`, `!=` |
 | 35 | bool-prod | `&&`, `∧` |
 | 30 | bool-sum | `\|\|`, `∨` |
 | 20 | cat | (catenation) |
+| 15 | clause | `=>`, `⇒` (cond clause builder) |
 | 10 | apply | `@` |
-| 5 | meta | `//`, `//=`, `//=>`, `//=?`, `//!` |
+| 5 | meta | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//=?>`, `//!` |
 
 Higher numbers bind more tightly:
 
@@ -149,21 +157,23 @@ Associativity can be `:left`, `:right`, or omitted (defaults to
 
 Two special operators are provided for testing:
 
-### `//=` (assert equals)
+### `//=` (expect equals)
 
-Asserts that the left side equals the right side at runtime, and
-returns the value if true. Panics if false:
+Expects the left side to equal the right side at runtime, returning
+`true` on success. Panics if false (or, in `eu test` mode, returns
+`false` instead of panicking):
 
 ```eu
-result: 2 + 2 //= 4
+result: 2 + 2 //= 4   # result: true
 ```
 
 ### `//=>` (assert equals with metadata)
 
-Like `//=` but also attaches the assertion as metadata:
+Like `//=` but returns the asserted *value* (not a boolean) on
+success, and also attaches the assertion as metadata:
 
 ```eu
-checked: 2 + 2 //=> 4
+checked: 2 + 2 //=> 4   # checked: 4
 ```
 
 Both are useful for embedding tests and sanity checks in code.

@@ -6,7 +6,8 @@
 
 This document gathers hypotheses about how eucalypt's gradual type system
 could evolve beyond the current spec ([gradual-typing-spec.md](./gradual-typing-spec.md))
-and the monad metadata follow-up ([monad-type-checking-spec.md](./monad-type-checking-spec.md)).
+and the monad metadata follow-up (`monad-type-checking-spec.md` — shipped
+in 0.6.2/0.7.0, spec file removed; see `ROADMAP.md`).
 Each hypothesis is sketched in enough detail to argue about. Nothing here
 is decided.
 
@@ -316,8 +317,8 @@ so annotating `merge` and the lens `over`-family activates it (the main
 remaining task is freshening row variables per use). Inferring *fresh*
 row variables for *unannotated* functions — so a generic block
 combinator becomes row-polymorphic without an annotation — is deferred
-to Phase B, bead **TS-B9**. See
-[row-polymorphism-and-dict-spec.md](./row-polymorphism-and-dict-spec.md).
+to Phase B, bead **TS-B9**. See `row-polymorphism-and-dict-spec.md`
+(shipped in 0.6.2/0.7.0, spec file removed; see `ROADMAP.md`).
 
 ---
 
@@ -627,7 +628,8 @@ of scope. B7 = check the prelude standalone once → cache a summary of
 its binding schemes *and* type aliases → seed every user-file check.
 LSP responsiveness is the motivation: for a tooling-first language the
 checker exists to support writing eucalypt. See
-[prelude-type-cache-spec.md](./prelude-type-cache-spec.md).
+`prelude-type-cache-spec.md` (shipped in 0.6.2/0.7.0, spec file
+removed; see `ROADMAP.md`).
 
 **Recommendation.** Phase B (TS-B7), prelude-scoped. Skip whole-program
 inference and general per-user-module summaries.
@@ -1037,7 +1039,8 @@ hang narrowing on.
 The consequence: narrowing cannot be a general mechanism keyed on
 syntax. It is a *special case in `synthesise_app`* that fires when the
 callee is a recognised brancher. The detailed design — settled in
-[literal-types-and-narrowing-spec.md](./literal-types-and-narrowing-spec.md)
+`literal-types-and-narrowing-spec.md` (shipped in 0.6.2/0.7.0, spec
+file removed; see `ROADMAP.md`)
 — makes recognition **structural**, not a table of prelude names:
 
 - The branch *intrinsics* `__IF`/`__AND`/`__OR`/`__COND` are recognised

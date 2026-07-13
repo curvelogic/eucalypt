@@ -1,18 +1,22 @@
 # Type Checking
 
-Eucalypt includes an optional, advisory type checker. It never prevents
-your code from running — all existing code continues to work exactly as
-before. Think of it as a second pair of eyes that can catch common
-mistakes before they become confusing runtime errors.
+Eucalypt includes an advisory type checker that runs **unconditionally**
+on every `eu` invocation (evaluate, dump, test). It never prevents your
+code from running by default — all existing code continues to work
+exactly as before. Think of it as a second pair of eyes that can catch
+common mistakes before they become confusing runtime errors.
 
 ```sh
-eu check file.eu              # type-check, report warnings
-eu check file.eu --strict     # treat type warnings as errors
-eu --type-check file.eu       # check then evaluate
+eu check file.eu              # check-only: report warnings, don't evaluate
+eu check file.eu --strict     # treat type warnings as errors (exit 1)
+eu file.eu --strict           # evaluate, but abort first if there are warnings
+eu file.eu --suppress-type-warnings  # evaluate, silencing warning output
 ```
 
-Type issues are reported as **warnings**, not errors. Your code runs
-regardless.
+Type issues are reported as **warnings**, not errors, and only abort
+evaluation when `--strict` is passed. `--type-check` is a deprecated
+no-op flag kept for backwards compatibility — type checking already
+runs whether or not it is passed.
 
 ---
 

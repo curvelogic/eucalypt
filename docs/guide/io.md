@@ -177,9 +177,14 @@ The pipeline style reads naturally: the command string flows into
 the first action:
 
 ```eu,notest
-io.bind(io.shell("echo hello"),
-  _(r): io.shell("echo got: {r.stdout}"))
+say(r): io.shell("echo got: {r.stdout}")
+
+io.bind(io.shell("echo hello"), say)
 ```
+
+(Eucalypt has no anonymous-lambda syntax — `_(r): expr` is
+declaration syntax, not a function value; the continuation must be a
+named function or a partially-applied one.)
 
 The `{ :io ... }` block is almost always preferable to explicit
 `io.bind` calls.

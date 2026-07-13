@@ -53,8 +53,8 @@ Because `~` is a regular operator (left-associative, precedence
 
 ```eu
 people: [
-  { name: "Alice", email: "alice@example.com" }
-  { name: "Bob" }
+  { name: "Alice", email: "alice@example.com" },
+  { name: "Bob" },
   { name: "Charlie", email: "charlie@example.com" }
 ]
 
@@ -172,8 +172,8 @@ applied predicate — perfect for `filter` and `when`:
 
 ```eu
 servers: [
-  { host: "10.0.0.1", port: 8080 }
-  { name: "cache" }
+  { host: "10.0.0.1", port: 8080 },
+  { name: "cache" },
   { host: "10.0.0.2", port: 5432 }
 ]
 
@@ -383,7 +383,7 @@ the original positions.
 | Find by key at any depth | `deep-find` | `data deep-find(:host)` |
 | Get a value deep in a known structure | `view` + lens | `data view(‹:server :host›)` |
 | Modify a value deep in a structure | `over` + lens | `data over(‹:server :port›, + 1)` |
-| Transform all elements | `over` + `each` | `items over(each ∘ at(:name), str.upper)` |
+| Transform all elements | `over` + `each` | `items over(each ∘ at(:name), str.to-upper)` |
 | Collect values from all elements | `to-list-of` + `each` | `items to-list-of(each ∘ at(:name))` |
 | Sort/reverse/replace all foci | `parts-of` + traversal | `items over(parts-of(each ∘ at(:score)), sort-nums)` |
 

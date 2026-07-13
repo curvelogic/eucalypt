@@ -3,7 +3,7 @@
 **Status**: Specification — ready to implement.
 **Date**: 2026-05-20
 **Branch**: `type-system-exploration`
-**Companions**: [alias-reference-tooling-spec.md](./alias-reference-tooling-spec.md) (A7 — alias-reference LSP support), [unit-visibility-spec.md](./unit-visibility-spec.md) (related metadata-convention work).
+**Companions**: `alias-reference-tooling-spec.md` (A7 — alias-reference LSP support; shipped in 0.6.2/0.7.0, spec file removed, see `ROADMAP.md`), [unit-visibility-spec.md](./unit-visibility-spec.md) (related metadata-convention work).
 
 **Scope note**: a metadata + alias-system extension; independent of the
 type-system roadmap (TS-A/TS-B). Earns its own bead.

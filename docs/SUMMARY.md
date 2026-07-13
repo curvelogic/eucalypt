@@ -23,6 +23,7 @@
 - [Imports and Modules](guide/imports-and-modules.md)
 - [Working with Data](guide/working-with-data.md)
 - [The Command Line](guide/command-line.md)
+- [Language Server Protocol](guide/lsp.md)
 - [YAML Embedding](guide/yaml-embedding.md)
 - [Testing with Eucalypt](guide/testing.md)
 - [Date, Time, and Random Numbers](guide/date-time-random.md)

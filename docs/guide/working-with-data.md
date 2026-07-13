@@ -219,7 +219,7 @@ summary:
 eu sales=sales.csv -j -e '{
   total: sales map(.amount num) foldl(+, 0)
   count: sales count
-  regions: sales map(.region) unique
+  regions: sales map(.region) set.from-list set.to-list
 }'
 ```
 

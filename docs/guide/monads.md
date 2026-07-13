@@ -42,7 +42,8 @@ The most common form tags the block with `:io`:
 }.(r.stdout)
 ```
 
-This desugars to:
+This desugars to (pseudocode — `λ` is not real eucalypt syntax;
+eucalypt has no lambda expressions):
 
 ```eu,notest
 io.bind(io.shell("echo hello"),

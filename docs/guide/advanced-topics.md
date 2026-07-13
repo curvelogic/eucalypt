@@ -460,8 +460,8 @@ Group list elements by a key function:
 
 ```eu
 items: [
-  { type: "fruit" name: "apple" }
-  { type: "veg" name: "carrot" }
+  { type: "fruit" name: "apple" },
+  { type: "veg" name: "carrot" },
   { type: "fruit" name: "banana" }
 ]
 

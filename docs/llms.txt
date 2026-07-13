@@ -29,30 +29,37 @@ evaluation and purely functional semantics.
 - [Operators](https://curvelogic.github.io/eucalypt/guide/operators.html): Custom binary/prefix/postfix operators, precedence, associativity, assertion operators, metadata operator, deep merge, and functor map
 - [Anaphora (Implicit Parameters)](https://curvelogic.github.io/eucalypt/guide/anaphora.html): Expression anaphora, block anaphora, string anaphora, generalised lookup, sections, and pseudo-lambdas
 - [Block Manipulation](https://curvelogic.github.io/eucalypt/guide/block-manipulation.html): Block merge, deep merge, inspecting blocks, reconstructing blocks, transforming blocks, and modifying nested values
+- [Navigating Nested Data](https://curvelogic.github.io/eucalypt/guide/navigating-nested-data.html): Safe key access with `~`, shape checks with `match?`, and lenses/traversals for deep get/set operations
+- [Lenses](https://curvelogic.github.io/eucalypt/guide/lenses.html): What a lens and a traversal are, `view`/`over`/`to-list-of`/`parts-of`, and composing optics with `∘` and `‹›`
 - [Imports and Modules](https://curvelogic.github.io/eucalypt/guide/imports-and-modules.html): Basic imports, scoped imports, named imports, data file imports, git imports, and streaming imports
 - [Working with Data](https://curvelogic.github.io/eucalypt/guide/working-with-data.html): Processing JSON/YAML/TOML/CSV/XML, named inputs, combining sources, evaluands, collecting inputs, and output formats
 - [The Command Line](https://curvelogic.github.io/eucalypt/guide/command-line.html): Command structure, subcommands, inputs/outputs, evaluands, targets, arguments, environment variables, formatter, and debugging
+- [Language Server Protocol](https://curvelogic.github.io/eucalypt/guide/lsp.html): Editor setup, diagnostics, hover, completion, go-to-definition, inlay hints, and code actions provided by `eu lsp`
 - [YAML Embedding](https://curvelogic.github.io/eucalypt/guide/yaml-embedding.html): The eu, eu::suppress, and eu::fn YAML tags for embedding eucalypt expressions in YAML files
 - [Testing with Eucalypt](https://curvelogic.github.io/eucalypt/guide/testing.html): Built-in test runner, simple tests, test files, test formats, and custom validators
 - [Date, Time, and Random Numbers](https://curvelogic.github.io/eucalypt/guide/date-time-random.html): ZDT literals, parsing/formatting dates, date arithmetic, the random stream, and random generation functions
+- [IO and Shell Commands](https://curvelogic.github.io/eucalypt/guide/io.html): The IO monad, `io.shell`/`io.exec`, `{ :io ... }` blocks, and the `--allow-io` safety gate
+- [Monads and the monad() Utility](https://curvelogic.github.io/eucalypt/guide/monads.html): Built-in `io`/`random` monads, monadic blocks and bracket pairs, and building custom monads with `monad()`
+- [The State Monad](https://curvelogic.github.io/eucalypt/guide/state-monad.html): Threading block-valued state through a sequence of operations with the optional `state.eu` library
+- [Type Checking](https://curvelogic.github.io/eucalypt/guide/type-checking.html): The always-on gradual type checker, annotation syntax, `eu check`, `--strict`, and what it does and doesn't catch
 - [Advanced Topics](https://curvelogic.github.io/eucalypt/guide/advanced-topics.html): Metadata system, sets, deep find/query with wildcards, type predicates, sorting, grouping, format specifiers, and version assertions
 
 ## Reference
 
 - [Language Syntax Reference](https://curvelogic.github.io/eucalypt/reference/syntax.html): Complete syntax reference for the block DSL and expression DSL, including primitives, declarations, operators, and anaphora
-- [Operator Precedence Table](https://curvelogic.github.io/eucalypt/reference/operators-and-identifiers.html): Normal and operator identifiers, scope rules, single-quote identifiers, and prefix operators
-- [Prelude Reference](https://curvelogic.github.io/eucalypt/reference/prelude/index.html): Index of all 218 prelude functions across 11 categories
-- [Lists](https://curvelogic.github.io/eucalypt/reference/prelude/lists.html): 64 list functions including construction, transformation, combining, splitting, folding, predicates, and sorting
-- [Blocks](https://curvelogic.github.io/eucalypt/reference/prelude/blocks.html): 52 block functions including construction, merging, lookup, transformation, alteration, and deep find/query
-- [Strings](https://curvelogic.github.io/eucalypt/reference/prelude/strings.html): 26 string functions including splitting, joining, regex, case conversion, base64, and SHA-256
-- [Numbers and Arithmetic](https://curvelogic.github.io/eucalypt/reference/prelude/numbers.html): 14 numeric functions including inc/dec, predicates, parsing, rounding, and min/max
-- [Booleans and Comparison](https://curvelogic.github.io/eucalypt/reference/prelude/booleans.html): 13 entries including true/false/null, if/then/when, panic/assert, and boolean logic operators
-- [Combinators](https://curvelogic.github.io/eucalypt/reference/prelude/combinators.html): 12 combinators including identity, const, compose, flip, apply, curry, uncurry, and cond
-- [Calendar](https://curvelogic.github.io/eucalypt/reference/prelude/calendar.html): 5 date-time functions for creating, parsing, formatting, and decomposing ZDT values
-- [Sets](https://curvelogic.github.io/eucalypt/reference/prelude/sets.html): 11 set operations including from-list, to-list, add, remove, contains, union, intersect, and diff
-- [Random Numbers](https://curvelogic.github.io/eucalypt/reference/prelude/random.html): monadic random namespace with stream, int, float, choice, shuffle, sample, and derived combinators
-- [Metadata](https://curvelogic.github.io/eucalypt/reference/prelude/metadata.html): 7 metadata functions including with-meta, meta, merge-meta, validator, check, and checked
-- [IO](https://curvelogic.github.io/eucalypt/reference/prelude/io.html): 9 IO bindings including io.env, io.args, io.random, eu.build, and eu.requires
+- [Operators and Identifiers](https://curvelogic.github.io/eucalypt/reference/operators-and-identifiers.html): Normal and operator identifiers, scope rules, single-quote identifiers, and prefix operators
+- [Prelude Reference](https://curvelogic.github.io/eucalypt/reference/prelude/index.html): Index of all 370 prelude functions across 11 categories
+- [Lists](https://curvelogic.github.io/eucalypt/reference/prelude/lists.html): 91 list functions including construction, transformation, combining, splitting, folding, predicates, and sorting
+- [Blocks](https://curvelogic.github.io/eucalypt/reference/prelude/blocks.html): 66 block functions including construction, merging, lookup, transformation, alteration, and deep find/query
+- [Strings](https://curvelogic.github.io/eucalypt/reference/prelude/strings.html): 36 string functions including splitting, joining, regex, case conversion, base64, and SHA-256
+- [Numbers and Arithmetic](https://curvelogic.github.io/eucalypt/reference/prelude/numbers.html): 30 numeric functions including inc/dec, predicates, parsing, rounding, and min/max
+- [Booleans and Comparison](https://curvelogic.github.io/eucalypt/reference/prelude/booleans.html): 12 entries including true/false/null, if/then/when, panic/assert, and boolean logic operators
+- [Combinators](https://curvelogic.github.io/eucalypt/reference/prelude/combinators.html): 14 combinators including identity, const, compose, flip, apply, curry, uncurry, and cond
+- [Calendar](https://curvelogic.github.io/eucalypt/reference/prelude/calendar.html): 8 date-time functions for creating, parsing, formatting, and decomposing ZDT values
+- [Sets](https://curvelogic.github.io/eucalypt/reference/prelude/sets.html): 14 set operations including from-list, to-list, add, remove, contains, union, intersect, and diff
+- [Random Numbers](https://curvelogic.github.io/eucalypt/reference/prelude/random.html): 15 entries in the monadic random namespace — stream, int, float, choice, shuffle, sample, and derived combinators
+- [Metadata](https://curvelogic.github.io/eucalypt/reference/prelude/metadata.html): 4 metadata functions — with-meta, meta, raw-meta, and merge-meta
+- [IO](https://curvelogic.github.io/eucalypt/reference/prelude/io.html): 80 IO bindings including io.env, io.args, io.random, eu.build, and eu.requires
 - [CLI Reference](https://curvelogic.github.io/eucalypt/reference/cli.html): Complete command line reference including subcommands, inputs, outputs, evaluands, targets, formatting, LSP, and debugging
 - [Import Formats](https://curvelogic.github.io/eucalypt/reference/import-formats.html): Import scopes, simple and git imports, YAML features (anchors, merge keys, timestamps), and streaming imports
 - [Export Formats](https://curvelogic.github.io/eucalypt/reference/export-formats.html): Supported export formats (YAML, JSON, TOML, EDN, text) and output options

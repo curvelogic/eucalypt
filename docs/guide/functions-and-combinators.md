@@ -273,8 +273,12 @@ result: 5 ops.double ops.negate
 ```
 
 ```yaml
+ops: {}
 result: -10
 ```
+
+(`ops` renders as `{}` because its members are functions, which are
+never rendered — only the block itself, being a property, appears.)
 
 ## Currying
 
@@ -481,11 +485,19 @@ eu -e 'flip(-, 1, 3)'
 
 `flip` is useful for adapting functions to a pipeline:
 
-```eu,notest
+```eu
 ` :suppress
-with-tags: merge flip ({ tags: [:a, :b] })
+with-tags: flip(merge)({ tags: [:a, :b] })
 
 result: { name: "foo" } with-tags
+```
+
+```yaml
+result:
+  name: foo
+  tags:
+    - a
+    - b
 ```
 
 ### `complement`

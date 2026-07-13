@@ -133,3 +133,49 @@ But:
 - they cannot be accessed by lookup, so there is no way of forming a
   qualified name to access an operator
 - they cannot be overridden by generalised lookup
+
+## Operator Precedence Table
+
+Operator precedence determines how operator expressions are parsed
+when parentheses are omitted — higher numbers bind more tightly. This
+table is verified against `named_precedence` in
+`src/core/metadata.rs` and the operator declarations in
+`lib/prelude.eu`:
+
+| Prec | Name | Assoc | Operators | Description |
+|------|------|-------|-----------|-------------|
+| 95 | -- | prefix | `↑` | Head (tight prefix) |
+| 90 | lookup | left | `.` (built-in) | Property lookup |
+| 90 | lookup | left | `~` | Safe key lookup (null-propagating) |
+| 90 | call | left | (built-in) | Function call |
+| 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
+| 88 | bool-unary | postfix | `✓` | Not-null check (true if not null) |
+| 88 | -- | -- | `∘`, `;` | Composition |
+| 85 | exp | right | `^` | Power |
+| 85 | exp | -- | `!!` (nth) | Indexing |
+| 80 | prod | left | `*`, `/`, `÷`, `%` | Multiplication, floor division, precise division, floor modulo |
+| 75 | sum | left | `+`, `-` | Addition, subtraction |
+| 60 | shift | -- | (shift ops) | Reserved |
+| 55 | bitwise | -- | (bitwise ops) | Reserved — `‖` (cons) also uses this numeric level, `precedence: 55` in `lib/prelude.eu` |
+| 50 | cmp | left | `<`, `>`, `<=`, `>=` | Comparison |
+| 45 | append | left | `++` | List concatenation |
+| 45 | append | left | `<<` | Deep merge |
+| 42 | map | left | `<$>` | Functor map |
+| 40 | eq | left | `=`, `!=` | Equality |
+| 35 | bool-prod | left | `&&`, `∧` | Logical AND |
+| 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
+| 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
+| 15 | clause | left | `=>`, `⇒` | Cond clause builder (`condition => result`) |
+| 10 | apply | left | `@` | Function application |
+| 5 | meta | left | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//=?>`, `//!` | Metadata and assertions |
+
+**User-defined operators** default to left-associative, precedence 50.
+Set custom values via metadata:
+
+```eu,notest
+` { associates: :right precedence: :sum }
+(x +++ y): x + y
+```
+
+See [Agent Reference §2](agent-reference.md) for the full named-level
+list and more examples.

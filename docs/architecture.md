@@ -295,6 +295,18 @@ Validates transformed expressions before STG compilation:
 
 Eucalypt uses a Spineless Tagless G-machine (STG) as its evaluation model, providing lazy evaluation with memoisation.
 
+> **Note on execution engines**: the sections below describe the STG
+> tree-walk machine (`src/eval/machine/vm.rs`), historically the only
+> engine and still the differential-testing/performance baseline
+> (select it with `EU_HEAPSYN=1`). Since 0.12.0 the **default** engine
+> instead compiles the same STG syntax to a bytecode program and runs
+> it on a separate bytecode VM (`src/eval/bytecode/`: `opcode.rs`,
+> `program.rs`, `machine.rs`, `closure.rs`, `cont.rs`, `env_builder.rs`,
+> `encode.rs`). `EU_BYTECODE=1` is a redundant no-op now that bytecode
+> is the default. A full description of the bytecode engine's design
+> is a tracked documentation gap — see `docs/superpowers/specs/` for
+> the implementation-level design documents in the meantime.
+
 ### STG Syntax
 
 *Implementation*: `src/eval/stg/syntax.rs`
@@ -710,9 +722,8 @@ The prelude is:
 
 ## Further Reading
 
-- `implementation.md` - Brief implementation overview
-- `gc-implementation.md` - Detailed GC documentation
-- `command-line.md` - CLI usage guide
-- `syntax.md` - Language syntax reference
-- `operators-and-identifiers.md` - Operator definitions
-- `anaphora-and-lambdas.md` - Implicit parameter handling
+- [`development/gc-implementation.md`](development/gc-implementation.md) - Detailed GC documentation
+- [`guide/command-line.md`](guide/command-line.md) - CLI usage guide
+- [`reference/syntax.md`](reference/syntax.md) - Language syntax reference
+- [`reference/operators-and-identifiers.md`](reference/operators-and-identifiers.md) - Operator definitions
+- [`guide/anaphora.md`](guide/anaphora.md) - Implicit parameter handling

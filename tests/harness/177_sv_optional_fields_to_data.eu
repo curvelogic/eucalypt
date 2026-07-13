@@ -1,5 +1,5 @@
 #!/usr/bin/env eu
-{ import: "resource:reflect" }
+{ import: "reflect.eu" }
 # Criterion 8: to-data of a record with optional fields emits [:t-field :optional T] wrappers.
 # Round-trip: from-data re-renders optional fields with the ? suffix.
 

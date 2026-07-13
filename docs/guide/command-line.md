@@ -31,6 +31,8 @@ eu file.eu          # same as: eu run file.eu
 | `list-targets` | List export targets |
 | `fmt` | Format source files |
 | `lsp` | Start the Language Server Protocol server |
+| `check` | Check type annotations without evaluating |
+| `doc` | Extract documentation from source |
 
 ## Inputs
 
@@ -230,6 +232,21 @@ reproducible output:
 ```sh
 eu --seed 42 template.eu
 ```
+
+## IO Permission
+
+Programs that use the IO monad (`io.shell`, `io.exec`, and friends)
+must be run with `-I`/`--allow-io`, or evaluation fails with a
+permission error before any shell command runs:
+
+```sh
+eu -I deploy.eu
+eu --allow-io deploy.eu
+```
+
+This is a safety gate — code that shells out is not allowed to run
+by accident. See [IO and Shell Commands](io.md) for the full IO
+monad guide.
 
 ## The Formatter
 
