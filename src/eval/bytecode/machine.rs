@@ -363,6 +363,7 @@ impl BcMachineState {
         for cont in self.stack.iter().rev() {
             let smid = match cont {
                 BcContinuation::Branch { annotation, .. }
+                | BcContinuation::BranchPredecoded { annotation, .. }
                 | BcContinuation::ApplyTo { annotation, .. }
                 | BcContinuation::SeqBind { annotation, .. }
                 | BcContinuation::FusedPrimopLeft { annotation, .. }
@@ -991,6 +992,38 @@ pub fn return_data(
                 return Err(ExecutionError::NoBranchForDataTag(ann, tag, expected));
             }
         }
+        BcContinuation::BranchPredecoded {
+            min_tag,
+            branch_start,
+            branch_len,
+            fallback,
+            environment,
+            annotation,
+        } => {
+            // Same control flow as `Branch`, resolving the branch run from the
+            // off-heap `branches` pool instead of a GC `Array`.
+            let body = branch_pool_match(decoded, branch_start, branch_len, min_tag, tag);
+            if let Some(body) = body {
+                let env = if args.is_empty() {
+                    environment
+                } else {
+                    env_from_data_args(state, view, args, environment)?
+                };
+                state.current = BcValue::Closure(BcClosure::new(body, env));
+            } else if fallback != NO_BRANCH {
+                let cur = state.current.clone();
+                let env = view.from_value(cur, environment, state.annotation)?;
+                state.current = BcValue::Closure(BcClosure::new(fallback, env));
+            } else {
+                let expected = branch_pool_expected(decoded, branch_start, branch_len, min_tag);
+                let ann = if annotation.is_valid() {
+                    annotation
+                } else {
+                    state.annotation
+                };
+                return Err(ExecutionError::NoBranchForDataTag(ann, tag, expected));
+            }
+        }
         BcContinuation::Update { environment, index } => {
             let cur = state.current.clone();
             view.scoped(environment).update(&view, index, cur)?;
@@ -1273,6 +1306,23 @@ pub fn return_native(
                 ));
             }
         }
+        BcContinuation::BranchPredecoded {
+            fallback,
+            environment,
+            ..
+        } => {
+            // A native only ever takes the fallback (it matches no data tag), so
+            // the branch pool is not consulted here.
+            if fallback != NO_BRANCH {
+                let env = view.from_value(BcValue::Native(value), environment, state.annotation)?;
+                state.current = BcValue::Closure(BcClosure::new(fallback, env));
+            } else {
+                return Err(ExecutionError::NoBranchForNative(
+                    state.annotation,
+                    value.type_description().to_string(),
+                ));
+            }
+        }
         BcContinuation::Update { environment, index } => {
             // Memoise the value into the thunk's slot; leave `current` as the
             // native so it is re-processed against the next continuation.
@@ -1368,6 +1418,7 @@ pub fn return_fun(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
     prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
 ) -> Result<(), ExecutionError> {
     let Some(cont) = state.stack.pop() else {
         state.terminated = true;
@@ -1417,6 +1468,29 @@ pub fn return_fun(
                     .filter(|i| branch_table.get(*i).flatten().is_some())
                     .map(|i| min_tag + i as u8)
                     .collect();
+                let ann = if annotation.is_valid() {
+                    annotation
+                } else {
+                    state.annotation
+                };
+                return Err(ExecutionError::CannotReturnFunToCase(ann, expected));
+            }
+        }
+        BcContinuation::BranchPredecoded {
+            min_tag,
+            branch_start,
+            branch_len,
+            fallback,
+            environment,
+            annotation,
+        } => {
+            // Dynamic typing: a `case` scrutinee may resolve to a lambda; it
+            // takes the fallback, or errors listing the branched tags.
+            if fallback != NO_BRANCH {
+                let env = view.from_value(BcValue::Closure(fun), environment, state.annotation)?;
+                state.current = BcValue::Closure(BcClosure::new(fallback, env));
+            } else {
+                let expected = branch_pool_expected(decoded, branch_start, branch_len, min_tag);
                 let ann = if annotation.is_valid() {
                     annotation
                 } else {
@@ -2126,7 +2200,7 @@ pub fn step(
     };
     match dispatch {
         Dispatch::Native(n) => return_native(state, view, n),
-        Dispatch::Fun => return_fun(state, view, prog),
+        Dispatch::Fun => return_fun(state, view, prog, decoded),
         Dispatch::Op => handle_op(state, view, prog, decoded),
     }
 }
@@ -2171,6 +2245,44 @@ fn make_arg_array_pd(
         array.push(&view, v);
     }
     Ok(array)
+}
+
+/// Resolve a [`BcContinuation::BranchPredecoded`] run for `tag`: the body
+/// ordinal for that tag, or `None` if the tag is out of range or has no branch.
+/// Reads the off-heap `branches` pool by index (no per-Case GC allocation).
+fn branch_pool_match(
+    decoded: &DecodedProgram,
+    branch_start: u32,
+    branch_len: u16,
+    min_tag: Tag,
+    tag: Tag,
+) -> Option<CodeRef> {
+    if tag < min_tag {
+        return None;
+    }
+    let idx = (tag - min_tag) as usize;
+    if idx >= branch_len as usize {
+        return None;
+    }
+    match decoded.branches[branch_start as usize + idx] {
+        NO_BRANCH => None,
+        ord => Some(ord),
+    }
+}
+
+/// The data tags a [`BcContinuation::BranchPredecoded`] run actually branches
+/// on, for the "no branch for tag" error messages. Mirrors the byte path's
+/// `Branch` error-list construction over the pool instead of a GC `Array`.
+fn branch_pool_expected(
+    decoded: &DecodedProgram,
+    branch_start: u32,
+    branch_len: u16,
+    min_tag: Tag,
+) -> Vec<u8> {
+    (0..branch_len as usize)
+        .filter(|i| decoded.branches[branch_start as usize + i] != NO_BRANCH)
+        .map(|i| min_tag + i as u8)
+        .collect()
 }
 
 /// Execute the current (arity-0) closure's node from its pre-decoded `Instr`.
@@ -2244,20 +2356,16 @@ pub fn handle_op_predecoded(
             state.pending_bif_args = decoded.refs[start..start + len].iter().copied().collect();
         }
         Op::Case => {
+            // Reference the decode-time branch run in the off-heap `branches`
+            // pool by `(start, len)` — no per-Case GC `Array` rebuild (design
+            // §1.2). `min_tag`/`fallback` (with the `NO_BRANCH` sentinel) and the
+            // indices are inert, so the pushed continuation scans only its env.
             let (start, len) = instr.pool();
-            let mut branch_table = Array::with_capacity(&view, len);
-            for e in &decoded.branches[start..start + len] {
-                branch_table.push(&view, if *e == NO_BRANCH { None } else { Some(*e) });
-            }
-            let fallback = if instr.b == NO_BRANCH {
-                None
-            } else {
-                Some(instr.b)
-            };
-            state.stack.push(BcContinuation::Branch {
+            state.stack.push(BcContinuation::BranchPredecoded {
                 min_tag: instr.min_tag(),
-                branch_table,
-                fallback,
+                branch_start: start as u32,
+                branch_len: len as u16,
+                fallback: instr.b,
                 environment: env,
                 annotation: state.annotation,
             });
@@ -2540,7 +2648,7 @@ pub fn step_predecoded(
     };
     match dispatch {
         Dispatch::Native(n) => return_native(state, view, n),
-        Dispatch::Fun => return_fun(state, view, prog),
+        Dispatch::Fun => return_fun(state, view, prog, decoded),
         Dispatch::Op => handle_op_predecoded(state, view, prog, decoded),
     }
 }
@@ -4568,7 +4676,13 @@ mod tests {
             annotation: Default::default(),
         });
 
-        return_fun(&mut state, view, &BytecodeProgram::default()).unwrap();
+        return_fun(
+            &mut state,
+            view,
+            &BytecodeProgram::default(),
+            &DecodedProgram::default(),
+        )
+        .unwrap();
 
         let c = state.current.as_closure().unwrap();
         assert_eq!(c.code(), 10);
@@ -4595,7 +4709,13 @@ mod tests {
             annotation: Default::default(),
         });
 
-        return_fun(&mut state, view, &BytecodeProgram::default()).unwrap();
+        return_fun(
+            &mut state,
+            view,
+            &BytecodeProgram::default(),
+            &DecodedProgram::default(),
+        )
+        .unwrap();
 
         assert_eq!(state.current.as_closure().unwrap().code(), 10);
         assert_eq!(state.stack.len(), 1);

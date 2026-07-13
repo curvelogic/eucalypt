@@ -37,6 +37,32 @@ pub enum BcContinuation {
         /// Source annotation at the point the case was pushed.
         annotation: Smid,
     },
+    /// The pre-decoded (`EU_PREDECODE`) form of [`BcContinuation::Branch`]
+    /// (design §1.2, drop_cons residual): instead of owning a fresh GC-heap
+    /// `Array<Option<CodeRef>>` rebuilt on every `Case` dispatch, it references
+    /// the Case's densified branch table by `(start, len)` index into the
+    /// **off-heap, immutable** `DecodedProgram::branches` pool. Every field is
+    /// inert — the pool indices, the fallback ordinal (with the `NO_BRANCH`
+    /// sentinel) and `min_tag` are all plain scalars — so the only GC pointer to
+    /// scan is `environment` (see the `GcScannable` impl below), strictly less
+    /// surface than `Branch`'s scanned `Array` backing. `(start, len)` indices
+    /// (not a slice) are used deliberately so the reference survives any pool
+    /// growth (the pool is a `Vec`); the resolver reads `branches[start + (tag -
+    /// min_tag)]` at match time.
+    BranchPredecoded {
+        /// Lowest tag in the branch run.
+        min_tag: Tag,
+        /// Start index into `DecodedProgram::branches`.
+        branch_start: u32,
+        /// Number of entries in this Case's branch run.
+        branch_len: u16,
+        /// Fallback body ordinal, or `NO_BRANCH` for none.
+        fallback: CodeRef,
+        /// Environment of the case statement.
+        environment: RefPtr<BcEnvFrame>,
+        /// Source annotation at the point the case was pushed.
+        annotation: Smid,
+    },
     /// Update thunk in environment at index i.
     Update {
         environment: RefPtr<BcEnvFrame>,
@@ -174,6 +200,14 @@ impl GcScannable for BcContinuation {
                     out.push(ScanPtr::from_non_null(scope, *environment));
                 }
             }
+            BcContinuation::BranchPredecoded { environment, .. } => {
+                // The branch run lives in the off-heap `branches` pool; the
+                // `(start, len)`/`fallback`/`min_tag` fields are inert scalars.
+                // Only the case environment is a GC pointer.
+                if marker.mark(*environment) {
+                    out.push(ScanPtr::from_non_null(scope, *environment));
+                }
+            }
             BcContinuation::ApplyTo { args, .. } => {
                 if marker.mark_array(args) {
                     if let Some(backing_ptr) = args.allocated_data() {
@@ -248,6 +282,13 @@ impl GcScannable for BcContinuation {
                 }
             }
             BcContinuation::Update { environment, .. } => {
+                if let Some(new) = heap.forwarded_to(*environment) {
+                    *environment = new;
+                }
+            }
+            BcContinuation::BranchPredecoded { environment, .. } => {
+                // Only the environment can be forwarded; the pool indices,
+                // fallback ordinal and min_tag are inert.
                 if let Some(new) = heap.forwarded_to(*environment) {
                     *environment = new;
                 }
