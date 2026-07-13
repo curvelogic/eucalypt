@@ -51,12 +51,13 @@ The blob string/list penalty (eu-2sa6.12 → eu-7xvv → eu-qm7f → eu-ttpl →
 resolves to a single mechanism on the recursive **higher-order** list combinators
 (`map`, `foldl`, …). Run as un-fused standalone global closures, their
 function/operator argument is a lazy parameter the compiler cannot see through,
-so each element builds a thunk for `op(acc, x)` / `f(x)` and reduction over the
-resulting chain is **O(N²)** in ticks. When the inline pass distributes the
-combinator into a call site, it produces a **local, self-recursive, operator-
-specialised copy**; demand analysis then specialises that copy's now-concrete
-operator strictly, and the workload becomes **O(N)**. Both the localisation and
-the demand specialisation are required.
+so resolving it per element forces a **quadratic *count* of individually-shallow
+environment lookups** — the reduction cost is env resolution by count, not by
+walk depth (§0.4). When the inline pass distributes the combinator into a call
+site, it produces a **local, self-recursive, operator-specialised copy**; demand
+analysis then specialises that copy's now-concrete operator strictly, collapsing
+the per-position repeated lookups, and the workload becomes **O(N)**. Both the
+localisation and the demand specialisation are required.
 
 ### 0.2 The experimental matrix
 
@@ -71,42 +72,57 @@ All figures deterministic (ticks / allocs / stack); no wall.
 | 1 | **Residual call target** — inspect the fused STG | flag-on dump is a fused structure that **opens with `letrec [0] λ{3}`**; its general (recursive) case **tail-calls `✳5(…)` — the letrec's own binding**, not the global slot. flag-off is the un-fused global call. STG line counts: fused ≈ 382–386, un-fused ≈ 164–168. | The whole recursion runs in **one local specialised copy**; it does **not** escape to the shared global after any number of steps. Disposes of the peeling/arithmetic objection. | Wicket adjudicated (flag-on/flag-off worktrees @ `f8686d0a`) |
 | 2 | **Inline-depth sensitivity** — vary `prepare.rs:329` iteration count | depth-0 (no inline pass) = **baseline quadratic** (= `52,225,448` ticks @ N=10000); depth-1 = **exact `2.0000×` per doubling (linear)**; depth ≥1 gives no further change. | One distribution pass suffices to create the local copy. **There is no unroll-depth constant** — `PEEL_UNROLL_DEPTH` is removed from the design. | Wicket adjudicated |
 | 3 | **Demand dependence** — `--suppress-demand-analysis` with the local copy present | with demand = `2.0000×` linear; suppress-demand = **quadratic-trending (`3.47×` / `3.69×` per doubling)** *even though the local copy is present*. | Demand analysis is **necessary, not merely a consequence** of localisation. Localisation alone does not linearise; the copy's operator must also be specialised strict. | Wicket adjudicated |
-| 4 | **Quantity scaling of the un-fused quadratic** (5k/10k/20k) | **ticks quadratic** (13.6M / 52.2M / 204.4M); **allocs linear** (90,135 / 180,135 / 360,135); **blocks linear**; **max-stack linear** (5,011 / 10,011 / 20,011), composed of **~N `Update` frames** (Branch=0); GC 0. | The quadratic is in reduction ticks; allocation, blocks and stack are all O(N). **Interpretation is left open** (§0.4). | Furnace cross-check, **pending re-verification (Wicket)** |
+| 4 | **Quantity scaling of the un-fused quadratic** (5k/10k/20k) | **ticks quadratic** (13.6M / 52.2M / 204.4M); **allocs linear** (90,135 / 180,135 / 360,135); **blocks linear**; **max-stack linear** (5,011 / 10,011 / 20,011); GC 0. | The quadratic is in reduction ticks; allocation, blocks and stack are all O(N). Isolates the quadratic to reduction work; the *which quantity within reduction* is settled by Exp 5. | Furnace cross-check, confirmed by Wicket |
+| 5 | **Env-lookup histogram** — `EU_ENV_DEPTH_HISTOGRAM`, N-scaling | **per-lookup depth flat at all N** (mean ~0.98–0.99, max exactly 2); **total `get()` calls 13,157,734 / 51,315,234 / 202,630,234** (5k/10k/20k), tracking the triangular number `N(N−1)/2` (within ~0.7–3%); **lookups/ticks ratio 0.967 → 0.991**, converging on ~1:1. | The quadratic is a quadratic **count** of shallow env lookups — **env resolution by count, not by walk depth, and not thunk-chain reduction**. Settles §0.4. | Wicket adjudicated (`EU_ENV_DEPTH_HISTOGRAM`, flag-off worktree @ `f8686d0a`) |
 
 ### 0.3 The causal account (survives the arithmetic)
 
-Un-fused, `foldl`'s operator is an opaque lazy parameter; each element builds an
-`op(acc, x)` thunk and the chain forces to **O(N²)** ticks (Exp 4). The inline
-pass (`Loader::inline` = `tag_combinators` then `reduce::inline_pass` =
-`distribute ∘ beta_reduce`) **distributes the combinator body into the call
-site as one local `letrec` copy that recurses on its own binding** (Exp 1) —
-so every one of the N iterations runs the local copy, with the concrete operator
-`(_ + _)` beta-substituted in. Demand analysis, running per-invocation on the
-user core, then sees a concrete operator and specialises it **strict** (Exp 3),
-so the accumulator is forced each step and no thunk chain is built — **O(N)**.
-Remove *either* the localisation (Exp 2, depth-0) *or* the demand specialisation
-(Exp 3, suppress-demand) and the quadratic returns. Both legs are load-bearing.
+Un-fused, `foldl`'s operator is an opaque lazy parameter; resolving it per
+element drives a **quadratic count of shallow environment lookups** (Exp 4+5,
+§0.4). The inline pass (`Loader::inline` = `tag_combinators` then
+`reduce::inline_pass` = `distribute ∘ beta_reduce`) **distributes the combinator
+body into the call site as one local `letrec` copy that recurses on its own
+binding** (Exp 1) — so every one of the N iterations runs the local copy, with
+the concrete operator `(_ + _)` beta-substituted in. Demand analysis, running
+per-invocation on the user core, then sees a concrete operator and specialises it
+**strict** (Exp 3), collapsing the repeated per-position lookups to O(1) each —
+**O(N)** overall. Remove *either* the localisation (Exp 2, depth-0) *or* the
+demand specialisation (Exp 3, suppress-demand) and the quadratic returns. Both
+legs are load-bearing.
 
-### 0.4 The quadratic's shape — measured facts, interpretation OPEN
+### 0.4 The quadratic's shape — SETTLED (env resolution by count, not depth)
 
-Exp 4 establishes that the un-fused quadratic is **quadratic in ticks with
-linear allocs, blocks and stack**, the stack being ~N `Update`
-(thunk-memoisation) frames. Two readings are on the table and **this note does
-not adjudicate between them**:
+Direct measurement (Exp 5, `EU_ENV_DEPTH_HISTOGRAM` on the hash-verified
+flag-off worktree, N-scaling) settles what the O(N²) is:
 
-- **Consistent-with-§6.4** (Wicket): the per-tick cost includes an
-  environment-walk whose length grows with position in the chain, so O(N)
-  positions × O(position) walk = O(N²); the linear stack is not in tension with
-  this.
-- **Update-chain reduction** (Furnace Exp-4 note): the O(N²) is reduction over
-  the O(N)-deep `Update` chain, and the deep structure is thunk-memoisation
-  frames rather than environment re-resolution, which would sit awkwardly with
-  eu-qm7f's shallow (depth 2–3) env-walk measurement.
+- **Per-lookup depth is flat at every N** — mean ~0.98–0.99, max exactly 2. The
+  environment walk does **not** get longer with N or with chain position.
+- **The number of lookups is quadratic.** Total `get()` calls are
+  `13,157,734 / 51,315,234 / 202,630,234` at N = 5k/10k/20k, tracking the
+  triangular number `N(N−1)/2` (within ~0.7–3%). The **lookups-per-tick ratio is
+  `0.967 → 0.991`**, converging on ~1:1 — i.e. the tick cost *is* the lookup
+  count.
 
-The design does **not** hinge on which is correct. **BV3/CG4 re-examination
-does** (the register-frame / codegen levers were partly motivated by the 022
-env-walk ceiling, §5.3), so this is flagged as a **follow-up diagnosis** rather
-than settled here. Whoever runs it must do so on the gold-standard protocol.
+So the quadratic is a **quadratic count of individually-shallow environment
+lookups**: resolving the lazily-threaded operator/bindings is repeated for every
+position below the one being forced, giving the triangular signature. It is
+**env resolution by count, not by walk depth** — and it is **not** thunk-chain
+reduction per se (Exp 4's linear stack is the deep structure being consumed, not
+the source of the quadratic).
+
+This reconciles the prior accounts cleanly:
+- **ROADMAP §6.4's instinct was right, its literal mechanism wrong.** The cost is
+  environment resolution — but not because walk *depth* grows (it never does);
+  because the *count* of shallow lookups grows quadratically.
+- **My earlier "NOT env re-resolution" reading was wrong.** It *is* env
+  resolution — measured by count rather than depth.
+- **eu-qm7f is unaffected.** It measured walk *depth* (shallow, 2–3) and stands;
+  Exp 5 adds the orthogonal *count* half.
+
+The design does not hinge on this, but it fixes the **BV3/CG4 sizing target**
+(§5.3): the lever must eliminate the *repeated per-position lookups* (CG4
+operator lifting / BV3 register frames replacing `get()`-indirection), **not
+shorten walk distance** — walk distance was never the bottleneck.
 
 ---
 
@@ -333,8 +349,9 @@ mere *consequence* of exposing the concrete operator. **Exp 3 corrects this:**
 with the local specialised copy present but demand analysis suppressed, the
 workload is still quadratic-trending (`3.47×`/`3.69×`). So localisation and
 demand specialisation are **two independently necessary legs**: the copy exposes
-the concrete operator, and demand analysis must then specialise it strict for
-the thunk chain to disappear. Neither alone linearises 022.
+the concrete operator, and demand analysis must then specialise it strict so the
+repeated per-position env lookups (§0.4) collapse to O(1) per step. Neither alone
+linearises 022.
 
 ### 4.2 Where it cannot specialise (and why that is safe)
 
@@ -390,16 +407,20 @@ global-form / demand-signature handicap on strict first-order recursion (the fib
 tripwire). Independent mechanisms; recommend eu-npp9's scope be narrowed in its
 bead to (a) only, with a pointer here.
 
-### 5.3 BV3 / CG4 — **the O(N²) fold motivation is removed; §6.4 diagnosis pending**
+### 5.3 BV3 / CG4 — **the O(N²) fold motivation is removed; sizing target corrected**
 
 The canonical O(n²) fold case (022-class) was a headline motivator for the
 register-frame (BV3) and codegen (CG4) levers. **If this lands, that specific
 motivation is gone** — 022 drops to O(N) (§2.3, adjudicated). What remains of
-BV3/CG4's win case is dispatch/env-walk cost on non-combinator hot paths.
-However, **the precise reading of the un-fused quadratic is still open (§0.4)**,
-and BV3/CG4's motivating benchmark should be re-selected only after that
-diagnosis is run on the gold-standard protocol — flag this to the BV3/CG4 owners
-as a re-baselining + diagnosis trigger, not a cancellation.
+BV3/CG4's win case is dispatch/env-lookup cost on non-combinator hot paths.
+
+The mechanism diagnosis is now **settled** (§0.4): the un-fused quadratic is a
+quadratic *count* of shallow env lookups, not growing walk depth. This corrects
+the BV3/CG4 sizing target: the lever must **eliminate the repeated per-position
+lookups** — CG4 lifting the operator / BV3 register frames replacing
+`get()`-indirection — **not shorten walk distance**, which was never the
+bottleneck (walk depth is flat at max 2). Flag this to the BV3/CG4 owners as a
+re-baselining trigger with the corrected target, not a cancellation.
 
 ### 5.4 Wall / ledger — **PROTOCOL run required post-landing**
 
