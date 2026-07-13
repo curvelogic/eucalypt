@@ -2290,7 +2290,7 @@ pub fn handle_op_predecoded(
             enter_callable(state, view, env, callable)?;
         }
         Op::Let => {
-            let (start, len) = instr.pool();
+            let (start, len) = instr.header_pool();
             state.allocs += len as u64;
             let mut array = Array::with_capacity(&view, len);
             for h in &decoded.headers[start..start + len] {
@@ -2302,7 +2302,7 @@ pub fn handle_op_predecoded(
             state.current = BcValue::Closure(BcClosure::new(instr.a, new_env));
         }
         Op::LetRec => {
-            let (start, len) = instr.pool();
+            let (start, len) = instr.header_pool();
             state.allocs += len as u64;
             let mut array = Array::with_capacity(&view, len);
             for _ in 0..len {

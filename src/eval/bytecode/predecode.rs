@@ -61,13 +61,15 @@ pub struct Instr {
     /// `min_tag`, or the FusedPrimop `primop_id`. Unused (0) otherwise.
     pub flags: u8,
     /// Side-pool run length (Cons/Bif arity, App/DirectApp arg count, Case
-    /// branch count, Let/LetRec binding count); 0 for fixed-arity ops.
+    /// branch count); 0 for fixed-arity ops. A Let/LetRec binding count is a
+    /// `u32` (it can exceed 65535 for imported literals) and lives in `b`, not
+    /// here.
     pub len: u16,
     /// Primary operand (scrutinee/body/left ordinal, or first packed ref
     /// payload, or Cons tag / Bif intrinsic index in its low byte).
     pub a: u32,
-    /// Secondary operand (fallback/body/right/handler ordinal, or second
-    /// packed ref payload).
+    /// Secondary operand (fallback/body/right/handler ordinal, second packed
+    /// ref payload, or a Let/LetRec `u32` binding count).
     pub b: u32,
     /// Tertiary operand (side-pool start index, or or_else/default ordinal).
     pub c: u32,
@@ -162,6 +164,13 @@ impl Instr {
     #[inline]
     pub fn pool(&self) -> (usize, usize) {
         (self.c as usize, self.len as usize)
+    }
+
+    /// The Let/LetRec form-header pool run as `(start, count)`. The binding
+    /// count is the full-width `b` field (a group can exceed 65535 bindings).
+    #[inline]
+    pub fn header_pool(&self) -> (usize, usize) {
+        (self.c as usize, self.b as usize)
     }
 }
 
@@ -443,6 +452,11 @@ impl<'a> Decoder<'a> {
                 }
             }
             Op::Let | Op::LetRec => {
+                // The binding count is a `u32` in the wire format (eu-2sa6.11: an
+                // imported literal can hold far more than 65535 recursive
+                // bindings), so it is stored in the full-width `b` field, not the
+                // `u16` `len` — using `len` here would re-truncate exactly the
+                // count that motivated widening the byte format.
                 let count = read_u32(code, &mut pc) as usize;
                 let start = self.headers.len() as u32;
                 // Reserve then fill: `read_form_header` borrows `code`, while
@@ -457,9 +471,9 @@ impl<'a> Decoder<'a> {
                 Instr {
                     op,
                     flags: 0,
-                    len: count as u16,
+                    len: 0,
                     a: body,
-                    b: 0,
+                    b: count as u32,
                     c: start,
                 }
             }
