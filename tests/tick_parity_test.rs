@@ -74,6 +74,22 @@ use std::path::Path;
 /// measurement noise but still fails if the gap widens materially.
 const MAX_SOURCE_PRELUDE_RATIO: f64 = 1.12;
 
+/// Under the pre-decoded engine (`EU_PREDECODE=1`, bead eu-2sa6.13) the same
+/// handicap reads as a slightly larger ratio, capped here at 13%.
+///
+/// This is **not** a handicap regression — it is a pure baseline-shrink
+/// artifact of BV2 Ann-elimination. Eliminating `Op::Ann` from dispatch removes
+/// the *same absolute number* of `machine_ticks` (dispatch steps) from both
+/// configs — on `fib`, blob 722,435→623,927 and source 799,059→700,551, both
+/// −98,508 — so the **absolute** handicap the tripwire guards is unchanged at
+/// 76,624 ticks. Subtracting the same constant from a larger numerator and a
+/// smaller denominator raises their quotient: the byte-engine ratio 1.106
+/// becomes 1.1228 under pre-decode. The 1.13 cap keeps this a real gate — a
+/// genuine handicap regression (a *wider* absolute gap) still pushes the ratio
+/// well past 1.13 — while tolerating the accounting shift. The byte-engine cap
+/// (1.12) is deliberately left untouched. Owner-signed (2026-07-13).
+const MAX_SOURCE_PRELUDE_RATIO_PREDECODE: f64 = 1.13;
+
 fn eu_binary() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_eu"))
 }
@@ -119,11 +135,24 @@ fn source_prelude_tick_parity_tripwire() {
 
     let ratio = source_ticks as f64 / blob_ticks as f64;
 
+    // The pre-decoded engine (`EU_PREDECODE=1`) shrinks `machine_ticks`
+    // uniformly via Ann-elimination, inflating this ratio without changing the
+    // absolute handicap (see `MAX_SOURCE_PRELUDE_RATIO_PREDECODE`). The spawned
+    // `eu` inherits `EU_PREDECODE` from this process, so both `run_ticks` calls
+    // above measured whichever engine this test itself runs under — select the
+    // matching cap.
+    let predecode = std::env::var("EU_PREDECODE").as_deref() == Ok("1");
+    let cap = if predecode {
+        MAX_SOURCE_PRELUDE_RATIO_PREDECODE
+    } else {
+        MAX_SOURCE_PRELUDE_RATIO
+    };
+
     assert!(
-        source_ticks as f64 <= blob_ticks as f64 * MAX_SOURCE_PRELUDE_RATIO,
+        source_ticks as f64 <= blob_ticks as f64 * cap,
         "source-prelude tick handicap has grown beyond the documented bound \
          (eu-2sa6.5): default={blob_ticks} ticks, --source-prelude={source_ticks} ticks, \
-         ratio={ratio:.4} > {MAX_SOURCE_PRELUDE_RATIO}. If this binary embeds no prelude \
+         ratio={ratio:.4} > {cap} (predecode={predecode}). If this binary embeds no prelude \
          blob, default and --source-prelude use the identical code path and this assertion \
          should be trivially satisfied — a failure here with no blob present points at a \
          different regression, not the known handicap."

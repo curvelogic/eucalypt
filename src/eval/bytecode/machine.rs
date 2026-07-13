@@ -39,8 +39,9 @@ use crate::eval::stg::tags::{DataConstructor, Tag};
 
 use super::program::{read_u32, read_u8};
 use super::{
-    BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, BytecodeProgram, CodeRef,
-    GlobalForm, Op, FORM_LAMBDA, FORM_THUNK, NO_BRANCH, REF_G, REF_L, REF_V,
+    decode_program, BcClosure, BcContinuation, BcEnvBuilder, BcEnvFrame, BcValue, BytecodeProgram,
+    CodeRef, DecodedProgram, GlobalForm, Op, FORM_LAMBDA, FORM_THUNK, NO_BRANCH, REF_G, REF_L,
+    REF_V,
 };
 
 /// Inline-capacity buffers for per-instruction operand decoding. On nearly
@@ -817,9 +818,13 @@ fn env_from_data_args_copy(
 /// and are wired with the full machine loop; they error explicitly here.
 /// Decode a data-constructor closure's `OP_CONS` node into `(tag, arg
 /// offsets)`; the fields live in `c.env()`. `None` if `c` is not a `Cons`.
-fn decode_cons(prog: &BytecodeProgram, c: &BcClosure) -> Option<(Tag, ArgOffsets)> {
+fn decode_cons(
+    prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
+    c: &BcClosure,
+) -> Option<(Tag, ArgOffsets)> {
     let code = prog.code.as_slice();
-    let mut pc = c.code() as usize;
+    let mut pc = peek_pc(decoded, c);
     if Op::from_u8(read_u8(code, &mut pc)) != Some(Op::Cons) {
         return None;
     }
@@ -833,6 +838,7 @@ fn decode_cons(prog: &BytecodeProgram, c: &BcClosure) -> Option<(Tag, ArgOffsets
 /// `block::pair_key_symbol_id`'s key resolution).
 fn value_symbol(
     prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
     state: &BcMachineState,
     view: MutatorHeapView<'_>,
     value: BcValue,
@@ -842,13 +848,13 @@ fn value_symbol(
         BcValue::Native(_) => None,
         BcValue::Closure(c) => {
             let code = prog.code.as_slice();
-            let mut pc = c.code() as usize;
+            let mut pc = peek_pc(decoded, &c);
             match Op::from_u8(read_u8(code, &mut pc)) {
                 Some(Op::Atom) => {
                     let dref = read_ref(code, &mut pc).ok()?;
                     let inner =
                         resolve_ref(view, &state.constants, c.env(), state.globals, dref).ok()?;
-                    value_symbol(prog, state, view, inner)
+                    value_symbol(prog, decoded, state, view, inner)
                 }
                 Some(Op::Cons) => {
                     let tag = read_u8(code, &mut pc);
@@ -860,7 +866,7 @@ fn value_symbol(
                     let field =
                         resolve_ref(view, &state.constants, c.env(), state.globals, field_ref)
                             .ok()?;
-                    value_symbol(prog, state, view, field)
+                    value_symbol(prog, decoded, state, view, field)
                 }
                 _ => None,
             }
@@ -871,6 +877,7 @@ fn value_symbol(
 /// The interned symbol key of a `BlockPair` value, if it is one.
 fn pair_key_symbol(
     prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
     state: &BcMachineState,
     view: MutatorHeapView<'_>,
     pair: &BcValue,
@@ -878,13 +885,13 @@ fn pair_key_symbol(
     let BcValue::Closure(c) = pair else {
         return None;
     };
-    let (tag, offsets) = decode_cons(prog, c)?;
+    let (tag, offsets) = decode_cons(prog, decoded, c)?;
     if tag != DataConstructor::BlockPair.tag() {
         return None;
     }
     let key_ref = arg_ref(prog.code.as_slice(), *offsets.first()?).ok()?;
     let key = resolve_ref(view, &state.constants, c.env(), state.globals, key_ref).ok()?;
-    value_symbol(prog, state, view, key)
+    value_symbol(prog, decoded, state, view, key)
 }
 
 /// Literal-key lookup on a forced block (`DataConstructor::Block`). Linear
@@ -893,12 +900,13 @@ fn pair_key_symbol(
 /// Translated from `block::lookup_lit_in_block` + `linear_scan_for_key`.
 fn bc_lookup_in_block(
     prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
     state: &BcMachineState,
     view: MutatorHeapView<'_>,
     block: &BcClosure,
     target: SymbolId,
 ) -> Option<BcValue> {
-    let (tag, offsets) = decode_cons(prog, block)?;
+    let (tag, offsets) = decode_cons(prog, decoded, block)?;
     if tag != DataConstructor::Block.tag() {
         return None;
     }
@@ -911,18 +919,18 @@ fn bc_lookup_in_block(
             BcValue::Closure(c) => *c,
             BcValue::Native(_) => return None,
         };
-        let (ltag, loffs) = decode_cons(prog, &c)?;
+        let (ltag, loffs) = decode_cons(prog, decoded, &c)?;
         if ltag != DataConstructor::ListCons.tag() {
             // ListNil or anything else: key not present.
             return None;
         }
         let head_ref = arg_ref(prog.code.as_slice(), *loffs.first()?).ok()?;
         let pair = resolve_ref(view, &state.constants, c.env(), state.globals, head_ref).ok()?;
-        if pair_key_symbol(prog, state, view, &pair) == Some(target) {
+        if pair_key_symbol(prog, decoded, state, view, &pair) == Some(target) {
             let BcValue::Closure(pc) = &pair else {
                 return None;
             };
-            let (_, poffs) = decode_cons(prog, pc)?;
+            let (_, poffs) = decode_cons(prog, decoded, pc)?;
             let val_ref = arg_ref(prog.code.as_slice(), *poffs.get(1)?).ok()?;
             return resolve_ref(view, &state.constants, pc.env(), state.globals, val_ref).ok();
         }
@@ -935,6 +943,7 @@ pub fn return_data(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
     prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
     tag: Tag,
     args: &[DecodedRef],
 ) -> Result<(), ExecutionError> {
@@ -1062,7 +1071,7 @@ pub fn return_data(
                         "bytecode: LookupLitForce block is not a closure".to_string(),
                     )
                 })?;
-                state.current = bc_lookup_in_block(prog, state, view, &block, key)
+                state.current = bc_lookup_in_block(prog, decoded, state, view, &block, key)
                     .unwrap_or(BcValue::Closure(default_closure));
             } else {
                 let ann = if smid.is_valid() {
@@ -1717,6 +1726,7 @@ pub fn handle_op(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
     prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
 ) -> Result<(), ExecutionError> {
     let code = prog.code.as_slice();
     let closure = *state.current.as_closure().ok_or_else(|| {
@@ -1763,7 +1773,7 @@ pub fn handle_op(
                 .iter()
                 .map(|off| arg_ref(code, *off))
                 .collect::<Result<_, _>>()?;
-            return_data(state, view, prog, tag, &arg_refs)?;
+            return_data(state, view, prog, decoded, tag, &arg_refs)?;
         }
         Op::Case => {
             let scr_off = read_u32(code, &mut pc);
@@ -2063,11 +2073,12 @@ pub fn handle_op(
             };
 
             // Fast path: the object is already a WHNF block — look up now.
-            let is_block = decode_cons(prog, &obj_closure)
+            let is_block = decode_cons(prog, decoded, &obj_closure)
                 .is_some_and(|(t, _)| t == DataConstructor::Block.tag());
             if is_block {
-                state.current = bc_lookup_in_block(prog, state, view, &obj_closure, sym_id)
-                    .unwrap_or(BcValue::Closure(default_closure));
+                state.current =
+                    bc_lookup_in_block(prog, decoded, state, view, &obj_closure, sym_id)
+                        .unwrap_or(BcValue::Closure(default_closure));
             } else {
                 // Slow path: force the object, then do the lookup in the
                 // LookupLitForce continuation.
@@ -2101,6 +2112,7 @@ pub fn step(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
     prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
 ) -> Result<(), ExecutionError> {
     enum Dispatch {
         Native(Native),
@@ -2115,7 +2127,421 @@ pub fn step(
     match dispatch {
         Dispatch::Native(n) => return_native(state, view, n),
         Dispatch::Fun => return_fun(state, view, prog),
-        Dispatch::Op => handle_op(state, view, prog),
+        Dispatch::Op => handle_op(state, view, prog, decoded),
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Pre-decoded execution IR dispatch (EU_PREDECODE, bead eu-2sa6.13)
+//
+// The typed twin of `handle_op`/`step`: identical control flow and side
+// effects, but every operand comes from a pre-decoded `Instr` record (and the
+// side pools of `decoded`) instead of a byte read. Closures and continuations
+// carry instruction *ordinals*, indexed straight into `decoded.instrs`. The
+// shared runtime helpers (`return_data`/`return_fun`/`return_native`/
+// `enter_*`/`partially_apply`/the io-run driver) build closures from ordinals
+// too — the machine remaps every root offset table into ordinal space at load
+// (see `BytecodeMachine::new`), so no helper needs a byte-vs-ordinal branch.
+// ════════════════════════════════════════════════════════════════════════
+
+/// Build an application's argument array from the `offsets` pool (App/
+/// DirectApp). Each entry is the *ordinal* of a pre-decoded `OP_ATOM` node: a
+/// lazy arg is a closure over that ordinal; an eager (`FLAG_EAGER`) `Local`
+/// arg is resolved directly from the env. The typed twin of `make_arg_array`.
+fn make_arg_array_pd(
+    view: MutatorHeapView<'_>,
+    decoded: &DecodedProgram,
+    env: RefPtr<BcEnvFrame>,
+    arg_ords: &[CodeRef],
+    eager: bool,
+) -> Result<Array<BcValue>, ExecutionError> {
+    let mut array = Array::with_capacity(&view, arg_ords.len());
+    for ord in arg_ords {
+        let v = if eager {
+            match decoded.instrs[*ord as usize].atom_ref() {
+                DecodedRef::Local(i) => view
+                    .scoped(env)
+                    .get(&view, i as usize)
+                    .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?,
+                _ => BcValue::Closure(BcClosure::new(*ord, env)),
+            }
+        } else {
+            BcValue::Closure(BcClosure::new(*ord, env))
+        };
+        array.push(&view, v);
+    }
+    Ok(array)
+}
+
+/// Execute the current (arity-0) closure's node from its pre-decoded `Instr`.
+/// The typed twin of [`handle_op`].
+pub fn handle_op_predecoded(
+    state: &mut BcMachineState,
+    view: MutatorHeapView<'_>,
+    prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
+) -> Result<(), ExecutionError> {
+    let closure = *state.current.as_closure().ok_or_else(|| {
+        ExecutionError::Panic(state.annotation, "handle_op on a native value".to_string())
+    })?;
+    let env = closure.env();
+    if closure.annotation().is_valid() {
+        state.annotation = closure.annotation();
+    }
+
+    let ord = closure.code() as usize;
+
+    // BV2 fold-in (design §3): `Op::Ann` is gone from dispatch. Its role — set
+    // `state.annotation` before the wrapped node runs — is folded into every
+    // op's prologue as a single `smids` side-table read, so an annotated node
+    // carries its source location without a separate dispatch step. The
+    // `DirectApp`/`LookupLit` inline smids live in the same table (recorded at
+    // decode), so their arms no longer set the annotation themselves. Applied
+    // only for a valid smid, exactly as the byte path set the annotation only
+    // for the ops that carried one.
+    let smid = decoded.smids[ord];
+    if smid.is_valid() {
+        state.annotation = smid;
+    }
+
+    let instr = decoded.instrs[ord];
+
+    match instr.op {
+        Op::Atom => match instr.atom_ref() {
+            DecodedRef::Local(i) => {
+                enter_local(state, view, env, i as usize)?;
+            }
+            DecodedRef::Global(i) => {
+                enter_global(state, view, i as usize)?;
+            }
+            DecodedRef::Value(k) => {
+                let native = match state.constants.get(k as usize) {
+                    Some(Ref::V(n)) => n.clone(),
+                    _ => {
+                        return Err(ExecutionError::Panic(
+                            state.annotation,
+                            format!("bytecode: constant {k} missing or not a native"),
+                        ))
+                    }
+                };
+                return_native(state, view, native)?;
+            }
+        },
+        Op::Cons => {
+            let (start, len) = instr.pool();
+            return_data(
+                state,
+                view,
+                prog,
+                decoded,
+                instr.tag_byte(),
+                &decoded.refs[start..start + len],
+            )?;
+        }
+        Op::Bif => {
+            let (start, len) = instr.pool();
+            state.pending_bif = Some(instr.tag_byte());
+            state.pending_bif_args = decoded.refs[start..start + len].iter().copied().collect();
+        }
+        Op::Case => {
+            let (start, len) = instr.pool();
+            let mut branch_table = Array::with_capacity(&view, len);
+            for e in &decoded.branches[start..start + len] {
+                branch_table.push(&view, if *e == NO_BRANCH { None } else { Some(*e) });
+            }
+            let fallback = if instr.b == NO_BRANCH {
+                None
+            } else {
+                Some(instr.b)
+            };
+            state.stack.push(BcContinuation::Branch {
+                min_tag: instr.min_tag(),
+                branch_table,
+                fallback,
+                environment: env,
+                annotation: state.annotation,
+            });
+            state.current = BcValue::Closure(BcClosure::new(instr.a, env));
+        }
+        Op::Seq => {
+            state.stack.push(BcContinuation::SeqBind {
+                body: instr.b,
+                environment: env,
+                annotation: state.annotation,
+            });
+            state.current = BcValue::Closure(BcClosure::new(instr.a, env));
+        }
+        Op::Ann => {
+            // BV2 (design §3): `Ann` is peeled at decode and never gets an
+            // ordinal, so no `Instr` is ever an `Ann` — this arm is unreachable.
+            unreachable!("Op::Ann is eliminated from the pre-decoded dispatch (BV2 §3)");
+        }
+        Op::FusedPrimop => {
+            state.stack.push(BcContinuation::FusedPrimopLeft {
+                primop_id: instr.primop_id(),
+                right: instr.b,
+                environment: env,
+                annotation: state.annotation,
+            });
+            state.current = BcValue::Closure(BcClosure::new(instr.a, env));
+        }
+        Op::BlackHole => {
+            return Err(ExecutionError::BlackHole(state.annotation));
+        }
+        Op::App => {
+            let (start, len) = instr.pool();
+            let args = make_arg_array_pd(
+                view,
+                decoded,
+                env,
+                &decoded.offsets[start..start + len],
+                instr.eager(),
+            )?;
+            let callable = instr.callable_ref();
+            state.stack.push(BcContinuation::ApplyTo {
+                args,
+                annotation: state.annotation,
+            });
+            enter_callable(state, view, env, callable)?;
+        }
+        Op::Let => {
+            let (start, len) = instr.header_pool();
+            state.allocs += len as u64;
+            let mut array = Array::with_capacity(&view, len);
+            for h in &decoded.headers[start..start + len] {
+                array.push(&view, BcValue::Closure(BcClosure::close(&bc_info(h), env)));
+            }
+            let new_env = view
+                .alloc(BcEnvFrame::new(array, state.annotation, Some(env)))?
+                .as_ptr();
+            state.current = BcValue::Closure(BcClosure::new(instr.a, new_env));
+        }
+        Op::LetRec => {
+            let (start, len) = instr.header_pool();
+            state.allocs += len as u64;
+            let mut array = Array::with_capacity(&view, len);
+            for _ in 0..len {
+                array.push(
+                    &view,
+                    BcValue::Closure(BcClosure::new(0, RefPtr::dangling())),
+                );
+            }
+            let frame = view
+                .alloc(BcEnvFrame::new(array.clone(), state.annotation, Some(env)))?
+                .as_ptr();
+            for (i, h) in decoded.headers[start..start + len].iter().enumerate() {
+                // SAFETY: array was pre-sized to `len` and i < len.
+                unsafe {
+                    array.set_unchecked(i, BcValue::Closure(BcClosure::close(&bc_info(h), frame)));
+                }
+            }
+            state.current = BcValue::Closure(BcClosure::new(instr.a, frame));
+        }
+        Op::DirectApp => {
+            // Annotation already applied from the smid side table in the
+            // prologue (BV2 §3), replacing the byte path's inline `Ann`.
+            let (start, len) = instr.pool();
+            let args = make_arg_array_pd(
+                view,
+                decoded,
+                env,
+                &decoded.offsets[start..start + len],
+                instr.eager(),
+            )?;
+            let callable = instr.callable_ref();
+
+            let (callee_env, callee) = match callable {
+                DecodedRef::Local(i) => (
+                    env,
+                    view.scoped(env)
+                        .get(&view, i as usize)
+                        .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?,
+                ),
+                DecodedRef::Global(i) => (
+                    state.globals,
+                    view.scoped(state.globals)
+                        .get(&view, i as usize)
+                        .ok_or(ExecutionError::BadGlobalIndex(i as usize))?,
+                ),
+                DecodedRef::Value(_) => {
+                    return Err(ExecutionError::NotCallable(
+                        state.annotation,
+                        "native value".to_string(),
+                    ))
+                }
+            };
+            let BcValue::Closure(c) = callee else {
+                return Err(ExecutionError::NotCallable(
+                    state.annotation,
+                    "native value".to_string(),
+                ));
+            };
+
+            if c.update() {
+                state.stack.push(BcContinuation::ApplyTo {
+                    args,
+                    annotation: state.annotation,
+                });
+                if let DecodedRef::Local(i) | DecodedRef::Global(i) = callable {
+                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, callee_env));
+                    view.scoped(callee_env).update(&view, i as usize, hole)?;
+                    state.stack.push(BcContinuation::Update {
+                        environment: callee_env,
+                        index: i as usize,
+                    });
+                }
+                state.current = callee;
+            } else if c.arity() as usize == args.len() {
+                state.current = BcValue::Closure(view.saturate_with_array(&c, args)?);
+            } else {
+                state.stack.push(BcContinuation::ApplyTo {
+                    args,
+                    annotation: state.annotation,
+                });
+                state.current = callee;
+            }
+        }
+        Op::Meta => {
+            return_meta(state, view, env, instr.first_ref(), instr.second_ref())?;
+        }
+        Op::DeMeta => {
+            state.stack.push(BcContinuation::DeMeta {
+                handler: instr.b,
+                or_else: instr.c,
+                environment: env,
+            });
+            state.current = BcValue::Closure(BcClosure::new(instr.a, env));
+        }
+        Op::LookupLit => {
+            // Annotation already applied from the smid side table in the
+            // prologue (BV2 §3); `smid` is kept here for the error messages.
+            let smid = decoded.smids[ord];
+
+            let sym_id = match instr.first_ref() {
+                DecodedRef::Value(k) => match state.constants.get(k as usize) {
+                    Some(Ref::V(Native::Sym(id))) => *id,
+                    _ => {
+                        return Err(ExecutionError::NotValue(
+                            smid,
+                            "non-symbol key in LookupLit".to_string(),
+                        ))
+                    }
+                },
+                _ => {
+                    return Err(ExecutionError::NotValue(
+                        smid,
+                        "non-symbol key in LookupLit".to_string(),
+                    ))
+                }
+            };
+
+            let default_closure = BcClosure::new(instr.c, env);
+
+            let (obj_slot, obj_value) = match instr.second_ref() {
+                DecodedRef::Local(i) => (
+                    Some(i as usize),
+                    view.scoped(env)
+                        .get(&view, i as usize)
+                        .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?,
+                ),
+                DecodedRef::Global(i) => (
+                    None,
+                    view.scoped(state.globals)
+                        .get(&view, i as usize)
+                        .ok_or(ExecutionError::BadGlobalIndex(i as usize))?,
+                ),
+                DecodedRef::Value(_) => {
+                    return Err(ExecutionError::NotCallable(
+                        smid,
+                        "native value".to_string(),
+                    ))
+                }
+            };
+            let BcValue::Closure(obj_closure) = obj_value else {
+                return Err(ExecutionError::NotCallable(
+                    smid,
+                    "native value".to_string(),
+                ));
+            };
+
+            let is_block = decode_cons(prog, decoded, &obj_closure)
+                .is_some_and(|(t, _)| t == DataConstructor::Block.tag());
+            if is_block {
+                state.current =
+                    bc_lookup_in_block(prog, decoded, state, view, &obj_closure, sym_id)
+                        .unwrap_or(BcValue::Closure(default_closure));
+            } else {
+                state.stack.push(BcContinuation::LookupLitForce {
+                    key: sym_id,
+                    smid,
+                    default_closure,
+                });
+                if let (Some(i), true) = (obj_slot, obj_closure.update()) {
+                    let hole = BcValue::Closure(BcClosure::new(state.blackhole, env));
+                    view.scoped(env).update(&view, i, hole)?;
+                    state.stack.push(BcContinuation::Update {
+                        environment: env,
+                        index: i,
+                    });
+                }
+                state.current = BcValue::Closure(obj_closure);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The byte offset a static-peel helper reads from for closure `c`. Under
+/// pre-decode the closure carries an instruction ordinal, so recover its byte
+/// offset via `decoded.off_of`; on the byte path `decoded` is empty (a
+/// `DecodedProgram::default()`) and the code field is already a byte offset.
+/// Lets every byte-stream peeker (`decode_cons`, the io-run driver, the
+/// intrinsic-support helpers) work unchanged under either dispatch path — only
+/// this entry conversion differs.
+#[inline]
+fn peek_pc(decoded: &DecodedProgram, c: &BcClosure) -> usize {
+    if decoded.off_of.is_empty() {
+        c.code() as usize
+    } else {
+        decoded.byte_off(c.code())
+    }
+}
+
+/// The `code` field for a closure a static-peel helper builds over a child byte
+/// offset it read from the byte stream: an ordinal under pre-decode (so the
+/// closure dispatches / re-peels uniformly), the byte offset itself on the byte
+/// path.
+#[inline]
+fn peek_code_ref(decoded: &DecodedProgram, byte_off: CodeRef) -> CodeRef {
+    if decoded.off_of.is_empty() {
+        byte_off
+    } else {
+        decoded.ordinal(byte_off)
+    }
+}
+
+/// The pre-decoded twin of [`step`]: dispatch on the current value, routing an
+/// arity-0 closure through [`handle_op_predecoded`].
+pub fn step_predecoded(
+    state: &mut BcMachineState,
+    view: MutatorHeapView<'_>,
+    prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
+) -> Result<(), ExecutionError> {
+    enum Dispatch {
+        Native(Native),
+        Fun,
+        Op,
+    }
+    let dispatch = match &state.current {
+        BcValue::Native(n) => Dispatch::Native(n.clone()),
+        BcValue::Closure(c) if c.arity() > 0 => Dispatch::Fun,
+        BcValue::Closure(_) => Dispatch::Op,
+    };
+    match dispatch {
+        Dispatch::Native(n) => return_native(state, view, n),
+        Dispatch::Fun => return_fun(state, view, prog),
+        Dispatch::Op => handle_op_predecoded(state, view, prog, decoded),
     }
 }
 
@@ -2147,6 +2573,13 @@ pub struct BytecodeMachine<'a> {
     /// Active `render-as` capture emitters (a stack); emit BIFs route to the
     /// top one when non-empty, else to `emitter` (mirrors `Machine`).
     capture_emitters: Vec<OwnedCaptureEmitter>,
+    /// Pre-decoded IR (EU_PREDECODE, eu-2sa6.13): when true, dispatch runs the
+    /// typed `Instr` records in `decoded` instead of re-reading the byte
+    /// stream. Off ⇒ byte-identical current behaviour.
+    predecode: bool,
+    /// Pre-decoded program (empty unless `predecode`). Holds no GC pointers and
+    /// is never scanned by the collector — code stays off the GC heap.
+    decoded: DecodedProgram,
 }
 
 impl<'a> BytecodeMachine<'a> {
@@ -2154,7 +2587,7 @@ impl<'a> BytecodeMachine<'a> {
     /// `heap_limit_mib` of 0 means an unbounded managed heap. `intrinsics`
     /// must be indexed by intrinsic index (e.g. `runtime.intrinsics()`).
     pub fn new(
-        program: BytecodeProgram,
+        mut program: BytecodeProgram,
         root_off: CodeRef,
         global_forms: &[GlobalForm],
         intrinsics: Vec<&'a dyn StgIntrinsic>,
@@ -2168,6 +2601,32 @@ impl<'a> BytecodeMachine<'a> {
             Heap::with_limit(heap_limit_mib)
         };
         let mut pool = SymbolPool::new();
+
+        // Pre-decoded IR (eu-2sa6.13): decode the whole program once into typed
+        // `Instr` records + side pools, then remap `program`'s root offset
+        // tables into ordinal space so the shared runtime helpers
+        // (`return_data`/`partially_apply`/the io-run driver) build closures
+        // whose `code` is an ordinal without any per-helper byte-vs-ordinal
+        // branch. The byte stream stays as the blob wire format but is not read
+        // by the pre-decoded dispatch path.
+        let predecode = super::predecode_enabled();
+        let decoded = if predecode {
+            let d = decode_program(&program, root_off, global_forms)?;
+            program.blackhole = d.blackhole;
+            program.templates = d.templates.clone();
+            program.meta_template = d.meta_template;
+            program.apply1_template = d.apply1_template;
+            program.apply2_template = d.apply2_template;
+            program.producer_tail_template = d.producer_tail_template;
+            program.pap = d.pap.clone();
+            d
+        } else {
+            DecodedProgram::default()
+        };
+        // The program root and each global-form body, in whichever space the
+        // active dispatch reads (ordinal under `predecode`, byte offset else).
+        let root_entry = if predecode { decoded.root } else { root_off };
+
         let (constants, root_env, globals) = {
             let view = MutatorHeapView::new(&heap);
             let constants = program.prepare_constants(view, &mut pool);
@@ -2179,9 +2638,14 @@ impl<'a> BytecodeMachine<'a> {
                 root_env
             } else {
                 view.from_values(
-                    global_forms.iter().map(|gf| {
+                    global_forms.iter().enumerate().map(|(i, gf)| {
+                        let entry = if predecode {
+                            decoded.global_entries[i]
+                        } else {
+                            gf.entry
+                        };
                         BcValue::Closure(BcClosure::close(
-                            &form_info(gf.kind, gf.arity, gf.smid, gf.entry),
+                            &form_info(gf.kind, gf.arity, gf.smid, entry),
                             root_env,
                         ))
                     }),
@@ -2193,7 +2657,7 @@ impl<'a> BytecodeMachine<'a> {
             (constants, root_env, globals)
         };
         let mut state = BcMachineState::new(
-            BcValue::Closure(BcClosure::new(root_off, root_env)),
+            BcValue::Closure(BcClosure::new(root_entry, root_env)),
             globals,
             root_env,
             constants,
@@ -2214,6 +2678,8 @@ impl<'a> BytecodeMachine<'a> {
             intrinsics,
             emitter,
             capture_emitters: Vec::new(),
+            predecode,
+            decoded,
         })
     }
 
@@ -2291,7 +2757,12 @@ impl<'a> BytecodeMachine<'a> {
             let view = MutatorHeapView::new(&self.heap);
             // Mirror the HeapSyn `handle_instruction` map_err (vm.rs): attach
             // the env/stack traces at the raise point before unwinding.
-            if let Err(e) = step(&mut self.state, view, &self.program) {
+            let res = if self.predecode {
+                step_predecoded(&mut self.state, view, &self.program, &self.decoded)
+            } else {
+                step(&mut self.state, view, &self.program, &self.decoded)
+            };
+            if let Err(e) = res {
                 return Err(attach_trace(&self.state, view, e));
             }
         }
@@ -2344,6 +2815,8 @@ impl<'a> BytecodeMachine<'a> {
                     metrics: &mut self.metrics,
                     clock: &mut self.clock,
                     dump_heap: self.dump_heap,
+                    predecode: self.predecode,
+                    decoded: &self.decoded,
                 };
                 // Emit BIFs route to the active capture emitter, else the main one.
                 let emitter: &mut dyn Emitter = match self.capture_emitters.last_mut() {
@@ -2411,7 +2884,7 @@ impl<'a> BytecodeMachine<'a> {
             }
             BcValue::Native(_) => 1,
             BcValue::Closure(c) => {
-                let mut pc = c.code() as usize;
+                let mut pc = peek_pc(&self.decoded, c);
                 match Op::from_u8(read_u8(&self.program.code, &mut pc)) {
                     Some(Op::Cons) if read_u8(&self.program.code, &mut pc) == 0 => 0,
                     _ => 1,
@@ -2501,7 +2974,7 @@ impl BytecodeMachine<'_> {
             return None;
         }
         let c = self.state.current.as_closure()?;
-        decode_cons(&self.program, c).map(|(tag, _)| tag)
+        decode_cons(&self.program, &self.decoded, c).map(|(tag, _)| tag)
     }
 
     /// Resolve the argument values of the IO constructor the machine yielded
@@ -2512,7 +2985,7 @@ impl BytecodeMachine<'_> {
         }
         let view = MutatorHeapView::new(&self.heap);
         let c = *self.state.current.as_closure()?;
-        let (_, offsets) = decode_cons(&self.program, &c)?;
+        let (_, offsets) = decode_cons(&self.program, &self.decoded, &c)?;
         let code = self.program.code.as_slice();
         let mut out = Vec::with_capacity(offsets.len());
         for off in offsets {
@@ -2620,7 +3093,7 @@ impl BytecodeMachine<'_> {
                 BcValue::Closure(c) => *c,
                 BcValue::Native(_) => break,
             };
-            let mut pc = c.code() as usize;
+            let mut pc = peek_pc(&self.decoded, &c);
             match Op::from_u8(read_u8(code, &mut pc)) {
                 Some(Op::Atom) => {
                     let Ok(dref) = read_ref(code, &mut pc) else {
@@ -2650,7 +3123,10 @@ impl BytecodeMachine<'_> {
                     // Source annotation: transparent to spec navigation.
                     let _smid = read_u32(code, &mut pc);
                     let body_off = read_u32(code, &mut pc);
-                    current = BcValue::Closure(BcClosure::new(body_off, c.env()));
+                    current = BcValue::Closure(BcClosure::new(
+                        peek_code_ref(&self.decoded, body_off),
+                        c.env(),
+                    ));
                 }
                 Some(Op::Meta) => {
                     let _meta_off = read_u32(code, &mut pc);
@@ -2703,7 +3179,7 @@ impl BytecodeMachine<'_> {
                 BcValue::Closure(c) => *c,
                 BcValue::Native(_) => return None,
             };
-            let mut pc = c.code() as usize;
+            let mut pc = peek_pc(&self.decoded, &c);
             match Op::from_u8(read_u8(code, &mut pc)) {
                 Some(Op::Atom) => {
                     let dref = read_ref(code, &mut pc).ok()?;
@@ -2723,7 +3199,10 @@ impl BytecodeMachine<'_> {
                 Some(Op::Ann) => {
                     let _smid = read_u32(code, &mut pc);
                     let body_off = read_u32(code, &mut pc);
-                    current = BcValue::Closure(BcClosure::new(body_off, c.env()));
+                    current = BcValue::Closure(BcClosure::new(
+                        peek_code_ref(&self.decoded, body_off),
+                        c.env(),
+                    ));
                 }
                 Some(Op::Meta) => {
                     let meta_off = read_u32(code, &mut pc);
@@ -2741,7 +3220,7 @@ impl BytecodeMachine<'_> {
                         meta_ref,
                     )
                     .ok()?;
-                    return value_symbol(&self.program, &self.state, view, meta_v)
+                    return value_symbol(&self.program, &self.decoded, &self.state, view, meta_v)
                         .map(|id| self.symbol_pool.resolve(id).to_string());
                 }
                 _ => return None,
@@ -2909,7 +3388,7 @@ impl BytecodeMachine<'_> {
             BcValue::Native(n) => scalar_from_native(&self.symbol_pool, view, n),
             BcValue::Closure(c) => {
                 let code = self.program.code.as_slice();
-                let mut pc = c.code() as usize;
+                let mut pc = peek_pc(&self.decoded, c);
                 match Op::from_u8(read_u8(code, &mut pc)) {
                     Some(Op::Atom) => {
                         let dref = read_ref(code, &mut pc).ok()?;
@@ -2960,7 +3439,7 @@ impl BytecodeMachine<'_> {
         let BcValue::Closure(c) = value else {
             return false;
         };
-        match decode_cons(&self.program, c) {
+        match decode_cons(&self.program, &self.decoded, c) {
             Some((tag, _)) => {
                 tag == DataConstructor::ListCons.tag() || tag == DataConstructor::ListNil.tag()
             }
@@ -2976,7 +3455,7 @@ impl BytecodeMachine<'_> {
         let mut out = Vec::new();
         let mut current = value.clone();
         while let BcValue::Closure(c) = current.clone() {
-            let Some((tag, offsets)) = decode_cons(&self.program, &c) else {
+            let Some((tag, offsets)) = decode_cons(&self.program, &self.decoded, &c) else {
                 break;
             };
             if tag == DataConstructor::ListNil.tag() {
@@ -3025,7 +3504,7 @@ impl BytecodeMachine<'_> {
         let BcValue::Closure(c) = value else {
             return None;
         };
-        let (tag, offsets) = decode_cons(&self.program, c)?;
+        let (tag, offsets) = decode_cons(&self.program, &self.decoded, c)?;
         let is_box = tag == DataConstructor::BoxedString.tag()
             || tag == DataConstructor::BoxedNumber.tag()
             || tag == DataConstructor::BoxedSymbol.tag()
@@ -3064,7 +3543,7 @@ impl BytecodeMachine<'_> {
                 "bytecode: IO spec block is not a block value".to_string(),
             ));
         };
-        let (btag, boffs) = decode_cons(&self.program, bc).ok_or_else(|| {
+        let (btag, boffs) = decode_cons(&self.program, &self.decoded, bc).ok_or_else(|| {
             ExecutionError::Panic(
                 self.state.annotation,
                 "bytecode: IO spec block did not evaluate to a Block constructor".to_string(),
@@ -3092,7 +3571,7 @@ impl BytecodeMachine<'_> {
 
         let mut fields = Vec::new();
         while let BcValue::Closure(c) = current.clone() {
-            let Some((tag, offs)) = decode_cons(&self.program, &c) else {
+            let Some((tag, offs)) = decode_cons(&self.program, &self.decoded, &c) else {
                 break;
             };
             if tag == DataConstructor::ListNil.tag() {
@@ -3115,7 +3594,7 @@ impl BytecodeMachine<'_> {
                 head_ref,
             )?;
             if let BcValue::Closure(pc) = &head {
-                if let Some((ptag, poffs)) = decode_cons(&self.program, pc) {
+                if let Some((ptag, poffs)) = decode_cons(&self.program, &self.decoded, pc) {
                     if ptag == DataConstructor::BlockPair.tag() && poffs.len() >= 2 {
                         let key_ref = arg_ref(code, poffs[0])?;
                         let key = resolve_ref(
@@ -3125,7 +3604,9 @@ impl BytecodeMachine<'_> {
                             self.state.globals,
                             key_ref,
                         )?;
-                        if let Some(sym) = value_symbol(&self.program, &self.state, view, key) {
+                        if let Some(sym) =
+                            value_symbol(&self.program, &self.decoded, &self.state, view, key)
+                        {
                             let val_ref = arg_ref(code, poffs[1])?;
                             let val = resolve_ref(
                                 view,
@@ -3195,6 +3676,12 @@ struct BcBifContext<'ctx, 'a> {
     metrics: &'ctx mut Metrics,
     clock: &'ctx mut Clock,
     dump_heap: bool,
+    /// Pre-decoded IR (eu-2sa6.13): route the re-entrant force loop
+    /// (`drive_to_whnf`) and the static-peel helpers through the pre-decoded
+    /// representation, matching the main dispatch loop.
+    predecode: bool,
+    /// The machine's pre-decoded program (shared, read-only).
+    decoded: &'ctx DecodedProgram,
 }
 
 impl BcBifContext<'_, '_> {
@@ -3221,7 +3708,7 @@ impl BcBifContext<'_, '_> {
             BcValue::Native(n) => Ok(n),
             BcValue::Closure(c) => {
                 let code = self.program.code.as_slice();
-                let mut pc = c.code() as usize;
+                let mut pc = peek_pc(self.decoded, &c);
                 let op = Op::from_u8(read_u8(code, &mut pc));
                 if op == Some(Op::Atom) {
                     let dref = read_ref(code, &mut pc)?;
@@ -3312,7 +3799,7 @@ impl BcBifContext<'_, '_> {
             return None;
         };
         let code = self.program.code.as_slice();
-        let mut pc = c.code() as usize;
+        let mut pc = peek_pc(self.decoded, c);
         if Op::from_u8(read_u8(code, &mut pc)) != Some(Op::Cons) {
             return None;
         }
@@ -3366,7 +3853,12 @@ impl BcBifContext<'_, '_> {
                 // here. The nested BIF error (below) is left raw, matching the
                 // HeapSyn sub-evaluation loop — it is wrapped once at the outer
                 // BIF site when it unwinds.
-                if let Err(e) = step(self.state, view, self.program) {
+                let res = if self.predecode {
+                    step_predecoded(self.state, view, self.program, self.decoded)
+                } else {
+                    step(self.state, view, self.program, self.decoded)
+                };
+                if let Err(e) = res {
                     return Err(attach_trace(self.state, view, e));
                 }
             }
@@ -4015,6 +4507,7 @@ mod tests {
             &mut state,
             view,
             &BytecodeProgram::default(),
+            &DecodedProgram::default(),
             7,
             &[DecodedRef::Local(0)],
         )
@@ -4050,7 +4543,14 @@ mod tests {
             annotation: Default::default(),
         });
         // Return tag 6 (no branch, no fallback).
-        let err = return_data(&mut state, view, &BytecodeProgram::default(), 6, &[]);
+        let err = return_data(
+            &mut state,
+            view,
+            &BytecodeProgram::default(),
+            &DecodedProgram::default(),
+            6,
+            &[],
+        );
         assert!(matches!(err, Err(ExecutionError::NoBranchForDataTag(..))));
     }
 
@@ -4126,7 +4626,7 @@ mod tests {
         state.blackhole = prog.blackhole;
         let mut guard = 0;
         while !state.terminated && guard < 1000 {
-            step(&mut state, view, &prog).unwrap();
+            step(&mut state, view, &prog, &DecodedProgram::default()).unwrap();
             guard += 1;
         }
         assert!(state.terminated, "machine did not terminate");
@@ -4196,7 +4696,7 @@ mod tests {
             root_env,
             constants,
         );
-        handle_op(&mut state, view, &prog).unwrap();
+        handle_op(&mut state, view, &prog, &DecodedProgram::default()).unwrap();
         assert_eq!(state.pending_bif, Some(3));
         assert_eq!(state.pending_bif_args.len(), 2);
     }
@@ -4741,6 +5241,8 @@ mod tests {
                 metrics: &mut m.metrics,
                 clock: &mut m.clock,
                 dump_heap: m.dump_heap,
+                predecode: m.predecode,
+                decoded: &m.decoded,
             };
             ctx.run_subrun_capture_lifecycle().unwrap();
         }
