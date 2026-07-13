@@ -2725,6 +2725,15 @@ pub fn test_185_bytecode_large_literal() {
 }
 
 #[test]
+/// Regression for eu-2sa6.16: `lib/markup.eu` declared `tag`/`attrs`/
+/// `content` with `=` instead of `:`, which Rowan lenient-parsed as
+/// declaration metadata rather than raising a parse error, leaving the
+/// accessors silently undefined.
+pub fn test_186_markup_accessors() {
+    run_test(&opts("186_markup_accessors.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

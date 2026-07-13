@@ -44,6 +44,11 @@ impl Default for Resources {
                 .expect("reflect.eu is valid UTF-8"),
         );
         content.insert(
+            "markup".to_string(),
+            String::from_utf8(include_bytes!("../../lib/markup.eu").to_vec())
+                .expect("markup.eu is valid UTF-8"),
+        );
+        content.insert(
             "package".to_string(),
             String::from_utf8(include_bytes!("../../Cargo.lock").to_vec())
                 .expect("Cargo.lock is valid UTF-8"),

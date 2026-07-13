@@ -32,10 +32,10 @@ test: {
 # Accessors
 
 ` "tag(element) - returns the tag"
-tag = head
+tag: head
 
 ` "attrs(element) - return the attribute block for the tag"
-attrs = second
+attrs: second
 
-` "content(element)" - return a list
-content = _ tail tail
+` "content(element) - return a list"
+content: _ tail tail
