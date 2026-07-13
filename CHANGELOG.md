@@ -4,6 +4,10 @@ All notable changes to eucalypt are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Documented and tripwired the source-prelude fallback's performance handicap** — root-caused the +10.6% tick regression on arithmetic-dense, strictly-recursive code (`fib(30)`: 88,853,885 blob-path ticks vs 98,277,770 on `--source-prelude`/`EU_SOURCE_PRELUDE=1`) to demand-analysis strictness divergence, *not* a fused-primop gap (`emit_fixtures_and_globals` already emits byte-identical fused encodings on both paths). The blob path keeps prelude references `Var::Free` until `inject_prelude_inline_cores` exposes their strict shape to demand analysis before the general inline pass; the source-prelude path merges the prelude directly, resolving every reference to `Var::Bound` before `cook()` runs, so no free-variable name is left for an equivalent injection to catch (confirmed via `eu dump cooked --debug-format`: zero `Var::Free` nodes on that path). A full unification of the two prelude-loading pipelines is deferred to a follow-on bead so it doesn't run ahead of the 0.13 lever-(a) predecoded-IR work. This is **not a fix** — it adds `tests/tick_parity_test.rs`, a tripwire asserting the source-prelude handicap on a small fused/strict-recursion fixture stays within its documented bound (capped at 12%), and `docs/development/prelude-blob.md`, documenting the handicap and its cause. Released binaries are unaffected — they always embed the pre-compiled blob (eu-2sa6.5)
+
 ## [0.12.1] - Unreleased
 
 ### Fixed

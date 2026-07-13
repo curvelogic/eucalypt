@@ -127,6 +127,24 @@ jobs:
       - name: Run harness on the bytecode + blob path
         run: ./target/release/eu test --allow-io tests/harness
 
+  tick-parity:
+    name: Source-prelude tick-parity tripwire
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # This test (tests/tick_parity_test.rs) compares default vs
+      # --source-prelude tick counts on a fused, strict-recursion fixture
+      # and only has teeth when the eu binary it spawns embeds a prelude
+      # blob (eu-2sa6.5) — without this step, default and --source-prelude
+      # would exercise the identical code path and the comparison would be
+      # vacuously true. Generate the blob before `cargo test` so the
+      # compiled CARGO_BIN_EXE_eu carries it.
+      - name: Generate prelude blob
+        run: cargo run --package xtask -- prelude-compile
+      - name: Run tick-parity tripwire
+        run: cargo test --test tick_parity_test
+
   blob-determinism:
     name: Prelude blob determinism
     runs-on: ubuntu-latest
