@@ -285,9 +285,34 @@ impl<'a> Decoder<'a> {
     /// The ordinal for a byte offset, assigning (and enqueueing) a fresh one on
     /// first encounter. Cycles and forward references are safe: the ordinal is
     /// fixed at assignment, before the offset's own body is decoded.
+    ///
+    /// **BV2 fold-in (design §3): `Op::Ann` is eliminated from dispatch.** An
+    /// `Ann` node never gets its own ordinal or `Instr`; instead its wrapped
+    /// body is given the ordinal and the `Ann`'s smid is recorded on that
+    /// ordinal in the `smids` side table. Every reference to the `Ann` offset
+    /// therefore resolves straight to the body ordinal (cached in `ord_of`), so
+    /// the dispatch loop never steps an `Ann`. Chained `Ann`s collapse onto the
+    /// same body ordinal, innermost-smid-wins (first assignment) — matching the
+    /// byte path, where the innermost `Ann` sets `state.annotation` last before
+    /// the body runs. The body's own smid (a `DirectApp`/`LookupLit` inline
+    /// smid, set when it is decoded later) still overwrites, matching the byte
+    /// path's per-op `state.annotation = smid`.
     fn ordinal_for(&mut self, byte_off: CodeRef) -> CodeRef {
         if let Some(&ord) = self.ord_of.get(&byte_off) {
             return ord;
+        }
+        if self.code[byte_off as usize] == Op::Ann as u8 {
+            let mut pc = byte_off as usize + 1;
+            let smid = Smid::from(read_u32(self.code, &mut pc));
+            let body_off = read_u32(self.code, &mut pc);
+            let body_ord = self.ordinal_for(body_off);
+            if !self.smids[body_ord as usize].is_valid() {
+                self.smids[body_ord as usize] = smid;
+            }
+            // Alias the Ann offset to the body ordinal so repeated references
+            // (and the static-peel helpers' `ord_of` lookups) skip the Ann too.
+            self.ord_of.insert(byte_off, body_ord);
+            return body_ord;
         }
         let ord = self.instrs.len() as u32;
         self.ord_of.insert(byte_off, ord);

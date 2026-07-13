@@ -2190,6 +2190,20 @@ pub fn handle_op_predecoded(
     }
 
     let ord = closure.code() as usize;
+
+    // BV2 fold-in (design §3): `Op::Ann` is gone from dispatch. Its role — set
+    // `state.annotation` before the wrapped node runs — is folded into every
+    // op's prologue as a single `smids` side-table read, so an annotated node
+    // carries its source location without a separate dispatch step. The
+    // `DirectApp`/`LookupLit` inline smids live in the same table (recorded at
+    // decode), so their arms no longer set the annotation themselves. Applied
+    // only for a valid smid, exactly as the byte path set the annotation only
+    // for the ops that carried one.
+    let smid = decoded.smids[ord];
+    if smid.is_valid() {
+        state.annotation = smid;
+    }
+
     let instr = decoded.instrs[ord];
 
     match instr.op {
@@ -2258,8 +2272,9 @@ pub fn handle_op_predecoded(
             state.current = BcValue::Closure(BcClosure::new(instr.a, env));
         }
         Op::Ann => {
-            state.annotation = decoded.smids[ord];
-            state.current = BcValue::Closure(BcClosure::new(instr.a, env));
+            // BV2 (design §3): `Ann` is peeled at decode and never gets an
+            // ordinal, so no `Instr` is ever an `Ann` — this arm is unreachable.
+            unreachable!("Op::Ann is eliminated from the pre-decoded dispatch (BV2 §3)");
         }
         Op::FusedPrimop => {
             state.stack.push(BcContinuation::FusedPrimopLeft {
@@ -2323,7 +2338,8 @@ pub fn handle_op_predecoded(
             state.current = BcValue::Closure(BcClosure::new(instr.a, frame));
         }
         Op::DirectApp => {
-            state.annotation = decoded.smids[ord];
+            // Annotation already applied from the smid side table in the
+            // prologue (BV2 §3), replacing the byte path's inline `Ann`.
             let (start, len) = instr.pool();
             let args = make_arg_array_pd(
                 view,
@@ -2397,8 +2413,9 @@ pub fn handle_op_predecoded(
             state.current = BcValue::Closure(BcClosure::new(instr.a, env));
         }
         Op::LookupLit => {
+            // Annotation already applied from the smid side table in the
+            // prologue (BV2 §3); `smid` is kept here for the error messages.
             let smid = decoded.smids[ord];
-            state.annotation = smid;
 
             let sym_id = match instr.first_ref() {
                 DecodedRef::Value(k) => match state.constants.get(k as usize) {
