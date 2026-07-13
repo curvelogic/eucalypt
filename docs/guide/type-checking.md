@@ -256,11 +256,19 @@ type **without** a trailing ellipsis is an error — fixed tuples remain `(A, B)
 The canonical use is the hiccup/markup element shape `[tag, attrs, …content]`:
 
 ```eu,notest
-` { types: { Element: "[symbol, block, (string | Element)…]" } }
+{ types: { Element: "[symbol, block, (string | Element)…]" } }
 
-` { type: "Element → symbol" }         tag = head
-` { type: "Element → block"  }         attrs = second
-` { type: "Element → [string | Element]" }  content = _ tail tail
+` { type: "Element → symbol" }
+tag: head
+
+` { type: "Element → block" }
+attrs: second
+
+` { type: "Element → [string | Element]" }
+content: _ tail tail
+
+sample: [:div, {}, "a", "b"]
+result: [sample tag, sample attrs, sample content]
 ```
 
 Subtyping is covariant throughout. A literal element `[:div, {}, "a", "b"]`

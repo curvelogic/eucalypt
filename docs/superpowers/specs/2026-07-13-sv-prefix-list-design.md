@@ -491,18 +491,35 @@ inside a prefix-list's prefix/tail resolve — mirrors the `Tuple` arm at line 5
 The acceptance goal (ROADMAP Pillar SV "Success"): annotate the markup element
 type and check `lib/markup.eu`'s accessors end-to-end.
 
+> **Correction (post-sign-off, 2026-07-13, eu-2sa6.3 implementation):** the
+> illustrative code block below originally used `=` (the `const` operator, not a
+> binding) instead of `:` declarations, capitalised primitive names (`Symbol`
+> etc., which parse as alias references rather than the `symbol`/`block`/`string`
+> primitives), and a `type-def:` form; it did not parse. Corrected to the
+> verified working idiom (unit-level `types:` alias + `:` declarations,
+> lowercase primitives). This corrects illustrative pseudocode only — **no
+> signed decision (§10.1) is altered.**
+
 ```eu,notest
-` { type-def: s"[Symbol, Block, (String | Element)…]" }
-Element: ...
-` { type: "Element → Symbol" }  tag = head
-` { type: "Element → Block"  }  attrs = second
-` { type: "Element → [String | Element]" }  content = _ tail tail
+{ types: { Element: "[symbol, block, (string | Element)…]" } }
+
+` { type: "Element → symbol" }
+tag: head
+
+` { type: "Element → block" }
+attrs: second
+
+` { type: "Element → [string | Element]" }
+content: _ tail tail
 ```
 
 `eu check lib/markup.eu` must report **no** type warnings for these accessors,
 confirming `head`/`second`/`tail` project the prefix-list precisely and the
-`content` residue lands as `[String | Element]`. This is the concrete
-sign-off criterion.
+`content` residue lands as `[string | Element]`. This is the concrete
+sign-off criterion. (Implementation note: point-free accessors like `tag: head`
+type-check *vacuously* against their annotations — precise projection is
+exercised when an accessor is **applied** to a value, e.g. `sample tag`; see the
+harness test `tests/harness/typecheck/109_prefix_list_no_warning.eu`.)
 
 ---
 

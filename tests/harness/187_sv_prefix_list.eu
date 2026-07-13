@@ -1,5 +1,5 @@
 #!/usr/bin/env eu
-{ import: "resource:reflect" }
+{ import: "reflect.eu" }
 # SV prefix-list flow-through: to-data projection, from-data round-trip, and
 # as-spec / match? runtime validation.
 
