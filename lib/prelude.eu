@@ -2202,6 +2202,14 @@ as-spec(t):
 
     tuple-spec(ts): match?(ts map(to-spec-td))
 
+    prefix-list-spec(prefix, tail, v): {
+      p-specs: prefix map(to-spec-td)
+      tail-spec: tail to-spec-td
+      n: prefix count
+      prefix-ok: zip-with(match?, p-specs, v take(n)) all-true?
+      tail-ok: v drop(n) all(match?(tail-spec))
+    }.((v list?) ∧ ((v count) >= n) ∧ prefix-ok ∧ tail-ok)
+
     record-spec(rec): {
 
       check-entry(v, [k, fp]):
@@ -2222,6 +2230,7 @@ as-spec(t):
         , tag = :t-union   => union-spec(rest)
         , tag = :t-partial => partial-spec(rest first)
         , tag = :t-tuple   => tuple-spec(rest)
+        , tag = :t-prefix-list => prefix-list-spec(rest first, rest second)
         , tag = :t-record  => record-spec(rest first)
         , tag = :t-forall  => to-spec-td(rest second)
         , any?

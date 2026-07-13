@@ -1,0 +1,8 @@
+# Projecting `second` off a prefix-list gives the precise fixed element type
+# (`block`), so annotating the accessor's result as `symbol` must warn.
+{ types: { Element: "[symbol, block, string…]" } }
+
+` { type: "Element → symbol" }
+attrs(e): e second
+
+result: attrs([:div, {}, "a"])

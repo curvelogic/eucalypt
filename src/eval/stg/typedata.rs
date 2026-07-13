@@ -72,6 +72,18 @@ fn type_to_rcexpr(ty: &Type) -> RcExpr {
             expr::core::list(s, elems)
         }
 
+        // `[:t-prefix-list <prefix (list of type-data)> <tail type-data>]`.
+        // The prefix is carried as a single nested list so the tail position is
+        // unambiguous regardless of prefix length.
+        Type::PrefixList { prefix, tail } => {
+            let prefix_expr =
+                expr::core::list(s, prefix.iter().map(type_to_rcexpr).collect::<Vec<_>>());
+            expr::core::list(
+                s,
+                vec![sym("t-prefix-list"), prefix_expr, type_to_rcexpr(tail)],
+            )
+        }
+
         Type::Record {
             fields,
             open: _,

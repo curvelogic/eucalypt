@@ -1,0 +1,27 @@
+#!/usr/bin/env eu
+{ import: "reflect.eu" }
+# SV prefix-list flow-through: to-data projection, from-data round-trip, and
+# as-spec / match? runtime validation.
+
+# ── to-data projection ──────────────────────────────────────────────────────
+td: s"[symbol, number, string…]" to-data
+    //= [:t-prefix-list, [[:t-prim, :symbol], [:t-prim, :number]], [:t-prim, :string]]
+
+# `[C…]` (empty prefix) normalises to a plain list at the type level, so it
+# projects as `t-list`, never an empty-prefix `t-prefix-list`.
+td-norm: s"[string…]" to-data  //= [:t-list, [:t-prim, :string]]
+
+# ── from-data round-trip ────────────────────────────────────────────────────
+rt-plain: (s"[symbol, number, string…]" to-data from-data) = s"[symbol, number, string…]"
+    //= true
+rt-union: (s"[symbol, number, (string | number)…]" to-data from-data)
+            = s"[symbol, number, (string | number)…]"
+    //= true
+
+# ── as-spec / match? runtime validation ─────────────────────────────────────
+spec: s"[symbol, block, string…]" as-spec
+good-full: [:div, {}, "a", "b"] match?(spec)  //= true
+good-min:  [:div, {}] match?(spec)            //= true
+bad-short: [:div] match?(spec)                //= false
+bad-head:  [42, {}, "a"] match?(spec)         //= false
+bad-tail:  [:div, {}, 99] match?(spec)        //= false

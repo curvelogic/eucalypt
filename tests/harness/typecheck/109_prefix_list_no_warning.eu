@@ -1,0 +1,19 @@
+# A literal markup element checks clean against a prefix-list annotation, and
+# head/second/tail projections synthesise the precise element types.
+{ types: { Element: "[symbol, block, (string | Element)…]" } }
+
+# A literal element `[:div, {}, "a", "b"]` synthesises to a Tuple and must
+# check against the prefix-list Element annotation (Tuple <: PrefixList).
+` { type: "Element" }
+elt: [:div, {}, "a", "b"]
+
+` { type: "Element → symbol" }
+tag(e): e head
+
+` { type: "Element → block" }
+attrs(e): e second
+
+` { type: "Element → [string | Element]" }
+content(e): e tail tail
+
+result: [tag(elt), attrs(elt), content(elt)]

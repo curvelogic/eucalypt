@@ -36,7 +36,7 @@ use crate::{
             error::TypeWarning,
             parse,
             subtype::{is_consistent, is_subtype},
-            types::{Constraint, Type, TypeScheme, TypeVarId},
+            types::{unfold_mu, Constraint, Type, TypeScheme, TypeVarId},
             unify::{
                 apply_subst, freshen, freshen_forall, freshen_with_constraints, infer_scheme,
                 unify, Substitution,
@@ -720,6 +720,13 @@ impl Checker {
                     .map(|e| self.resolve_aliases_inner(e, resolving))
                     .collect(),
             ),
+            Type::PrefixList { prefix, tail } => Type::prefix_list(
+                prefix
+                    .into_iter()
+                    .map(|p| self.resolve_aliases_inner(p, resolving))
+                    .collect(),
+                self.resolve_aliases_inner(*tail, resolving),
+            ),
             Type::Function(a, b) => Type::Function(
                 Box::new(self.resolve_aliases_inner(*a, resolving)),
                 Box::new(self.resolve_aliases_inner(*b, resolving)),
@@ -1388,7 +1395,13 @@ impl Checker {
         // this path covers index ≥ 1 (and also 0 for completeness via bound vars).
         if spine_args.len() == 1 {
             if let Some(index) = self.recognise_projection_index(head) {
-                let arg_type = self.synthesise(spine_args[0]);
+                let synth = self.synthesise(spine_args[0]);
+                // Unfold a recursive alias one step so a `Mu`-wrapped prefix-list
+                // (the markup `Element` shape) is projected precisely.
+                let arg_type = match &synth {
+                    Type::Mu(x, body) => unfold_mu(x, body, &synth),
+                    _ => synth.clone(),
+                };
                 if let Type::Tuple(ref elems) = arg_type {
                     if let Some(ty) = elems.get(index) {
                         return ty.clone();
@@ -1402,7 +1415,23 @@ impl Checker {
                         return Type::Any;
                     }
                 }
-                // Not a Tuple — fall through to generic annotation path.
+                // Prefix-list projection (§5.2).  An index inside the fixed
+                // prefix is precise; an index past it lands in the homogeneous
+                // tail, which may be empty at runtime, so it synthesises as `t?`
+                // (`t | ExecutionError`) rather than bare `t` — the possible
+                // absence is carried in the type (owner decision Q2).
+                if let Type::PrefixList {
+                    ref prefix,
+                    ref tail,
+                } = arg_type
+                {
+                    if let Some(ty) = prefix.get(index) {
+                        return ty.clone();
+                    } else {
+                        return Type::partial(tail.as_ref().clone());
+                    }
+                }
+                // Not a Tuple or prefix-list — fall through to generic path.
             }
         }
 
@@ -2895,17 +2924,31 @@ fn is_tail_fn(expr: &RcExpr) -> bool {
     matches!(is_head_or_tail(expr), Some(HeadTailProjection::Tail))
 }
 
-/// Apply a `head`/`tail` projection to a known `Tuple` type.
+/// Apply a `head`/`tail` projection to a known `Tuple` or `PrefixList` type.
 ///
+/// Tuple (§A6.8):
 /// - `head(Tuple([T₀, …])) → T₀`
 /// - `tail(Tuple([T₀, T₁, …])) → Tuple([T₁, …])`
 /// - `tail(Tuple([T₀])) → List(Any)` (tail of a 1-element list is the empty list)
 ///
-/// Returns `None` when `arg_type` is not a `Tuple` (caller falls through to the
+/// Prefix-list (§5.1) — the prefix is never empty (constructor invariant):
+/// - `head(PrefixList{p, t}) → p[0]` (precise, guaranteed present)
+/// - `tail(PrefixList{p, t}) → PrefixList{p[1..], t}` (normalises to `List(t)`
+///   once the residual prefix is empty)
+///
+/// Returns `None` when `arg_type` is neither shape (caller falls through to the
 /// generic annotation path).
 fn apply_head_tail_to_tuple(proj: HeadTailProjection, arg_type: &Type) -> Option<Type> {
-    if let Type::Tuple(elems) = arg_type {
-        match proj {
+    // Unfold a recursive alias one step so projection sees the underlying shape
+    // (the markup `Element` alias is `Mu`-wrapped because its tail is
+    // self-referential).  Unfolding a `Mu(List(_))` yields a `List` which this
+    // helper does not handle, so the plain recursive-list path is unaffected.
+    if let Type::Mu(x, body) = arg_type {
+        let unfolded = unfold_mu(x, body, arg_type);
+        return apply_head_tail_to_tuple(proj, &unfolded);
+    }
+    match arg_type {
+        Type::Tuple(elems) => match proj {
             HeadTailProjection::Head => elems.first().cloned(),
             HeadTailProjection::Tail => {
                 if elems.len() <= 1 {
@@ -2915,9 +2958,15 @@ fn apply_head_tail_to_tuple(proj: HeadTailProjection, arg_type: &Type) -> Option
                     Some(Type::Tuple(elems[1..].to_vec()))
                 }
             }
-        }
-    } else {
-        None
+        },
+        Type::PrefixList { prefix, tail } => match proj {
+            HeadTailProjection::Head => prefix.first().cloned(),
+            HeadTailProjection::Tail => Some(Type::prefix_list(
+                prefix[1..].to_vec(),
+                tail.as_ref().clone(),
+            )),
+        },
+        _ => None,
     }
 }
 
@@ -3034,6 +3083,9 @@ pub fn contains_var_named(ty: &Type, name: &str) -> bool {
         }
         Type::Function(a, b) => contains_var_named(a, name) || contains_var_named(b, name),
         Type::Tuple(elems) => elems.iter().any(|e| contains_var_named(e, name)),
+        Type::PrefixList { prefix, tail } => {
+            prefix.iter().any(|e| contains_var_named(e, name)) || contains_var_named(tail, name)
+        }
         Type::Record { fields, .. } => fields.values().any(|fp| contains_var_named(fp.ty(), name)),
         Type::Union(variants) => variants.iter().any(|v| contains_var_named(v, name)),
         // Mu: the binder name `x` is bound, not free — stop if it shadows `name`.
@@ -4711,6 +4763,51 @@ mod tests {
             Type::list(Type::Number)
         );
         assert_eq!(normalise_tuple_to_list(Type::Number), Type::Number);
+    }
+
+    // ── Prefix-list projection (§5.1) ────────────────────────────────────────
+
+    #[test]
+    fn prefix_list_head_is_first_prefix_element() {
+        let pl = Type::prefix_list(vec![Type::Symbol, Type::Number], Type::String);
+        assert_eq!(
+            apply_head_tail_to_tuple(HeadTailProjection::Head, &pl),
+            Some(Type::Symbol)
+        );
+    }
+
+    #[test]
+    fn prefix_list_tail_drops_first_prefix_element() {
+        // tail([symbol, number, string…]) → [number, string…]
+        let pl = Type::prefix_list(vec![Type::Symbol, Type::Number], Type::String);
+        assert_eq!(
+            apply_head_tail_to_tuple(HeadTailProjection::Tail, &pl),
+            Some(Type::prefix_list(vec![Type::Number], Type::String))
+        );
+    }
+
+    #[test]
+    fn prefix_list_tail_of_single_prefix_normalises_to_list() {
+        // tail([symbol, string…]) → [string] (residual prefix empty → List).
+        let pl = Type::prefix_list(vec![Type::Symbol], Type::String);
+        assert_eq!(
+            apply_head_tail_to_tuple(HeadTailProjection::Tail, &pl),
+            Some(Type::list(Type::String))
+        );
+    }
+
+    #[test]
+    fn prefix_list_projection_sees_through_mu() {
+        // A recursive alias (`Element`) is Mu-wrapped; projection unfolds it.
+        let inner = Type::prefix_list(
+            vec![Type::Symbol, Type::Number],
+            Type::union([Type::String, Type::var(TypeVarId("Element".to_string()))]),
+        );
+        let mu = Type::Mu(TypeVarId("Element".to_string()), Box::new(inner));
+        assert_eq!(
+            apply_head_tail_to_tuple(HeadTailProjection::Head, &mu),
+            Some(Type::Symbol)
+        );
     }
 
     #[test]

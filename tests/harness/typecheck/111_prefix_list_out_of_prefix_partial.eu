@@ -1,0 +1,12 @@
+# Projecting past the fixed prefix lands in the homogeneous tail, which may be
+# empty at runtime, so the index synthesises as `t?` (`t | ExecutionError`).
+# Here `third` is a projector at index 2 and the prefix has length 2, so the
+# result is `string?`; annotating it as bare `string` must warn.
+{ types: { Element: "[symbol, block, string…]" } }
+
+third(x): x tail tail head
+
+` { type: "Element → string" }
+kids(e): third(e)
+
+result: kids([:div, {}, "a"])

@@ -339,6 +339,7 @@ non-function binding emits a warning and is skipped.
 | `[T]`              | list of T                              |
 | `NonEmpty([T])`    | non-empty list of T                    |
 | `(A, B)`           | tuple                                  |
+| `[A, B, C…]`       | prefix-list: fixed A, B then zero+ C (ASCII `...` = `…`); `[C…]` ≡ `[C]` |
 | `{{k: T, ..}}`     | open record (at least k: T)            |
 | `{{k: T, ..r}}`    | named row variable (extra fields in r) |
 | `{{..r, ..s}}`     | row concatenation (union of r and s)   |
@@ -885,6 +886,7 @@ schema: s"{ name: string, age: number }" as-spec
 | `A \| B` union | Predicate: true if value matches any branch |
 | `T?` partial/nullable | Predicate: `null?` or `T-spec` |
 | `(T1, T2, …)` tuple | List pattern `[T1-spec, T2-spec, …]` (exact length) |
+| `[A, B, C…]` prefix-list | Predicate: `list?` of length ≥ prefix, each prefix element matches, remainder matches the tail spec |
 | `A → B` function | Predicate: `__SATURATED not` (checks it is a function) |
 | `forall …` | Erase quantifier, spec the body |
 | Type variables | `any?` (unconstrained at runtime) |

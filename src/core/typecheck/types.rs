@@ -143,6 +143,7 @@ pub fn kind_of(ty: &Type) -> Kind {
         | Type::Record { .. }
         | Type::Function(_, _)
         | Type::Tuple(_)
+        | Type::PrefixList { .. }
         | Type::Union(_)
         | Type::Mu(_, _) => Kind::Star,
 
@@ -291,6 +292,17 @@ pub enum Type {
     /// Tuple: `(A, B)` or the 1-tuple `(A,)`.
     Tuple(Vec<Type>),
 
+    /// Prefix-list: a fixed-shape prefix followed by a homogeneous variable tail.
+    ///
+    /// `[A, B, C…]` = `PrefixList { prefix: [A, B], tail: C }` — an `A`, then a
+    /// `B`, then zero or more `C`.  The canonical hiccup/markup element shape
+    /// `[Symbol, Block, (String | Element)…]` is a prefix-list.
+    ///
+    /// Invariant: the prefix is never empty — `Type::prefix_list` normalises an
+    /// empty-prefix form to `List(tail)`, so `[C…]` and `List(C)` are the same
+    /// `Type` value, never a distinct `PrefixList`.
+    PrefixList { prefix: Vec<Type>, tail: Box<Type> },
+
     /// Record type (open or closed, with optional named row variables).
     Record {
         fields: BTreeMap<String, FieldPresence>,
@@ -386,6 +398,23 @@ impl Type {
         Type::Union(vec![inner, Type::ExecutionError])
     }
 
+    /// `[A, B, C…]` — prefix-list with a fixed `prefix` and homogeneous `tail`.
+    ///
+    /// **Normalises** an empty prefix to `List(tail)`: `[C…]` and `List(C)` are
+    /// the same type and must have exactly one internal representation, so a
+    /// `PrefixList` with an empty prefix is never constructed (design §3.1,
+    /// owner decision Q3).
+    pub fn prefix_list(prefix: Vec<Type>, tail: Type) -> Self {
+        if prefix.is_empty() {
+            Type::list(tail)
+        } else {
+            Type::PrefixList {
+                prefix,
+                tail: Box::new(tail),
+            }
+        }
+    }
+
     /// Star-kinded type variable (the common case).
     pub fn var(id: TypeVarId) -> Self {
         Type::Var(id, Kind::Star)
@@ -450,6 +479,15 @@ impl Type {
             .map(|(_, t)| t)
     }
 
+    /// If `self` is a `PrefixList`, return `(prefix, tail)`.
+    pub fn as_prefix_list(&self) -> Option<(&[Type], &Type)> {
+        if let Type::PrefixList { prefix, tail } = self {
+            Some((prefix.as_slice(), tail.as_ref()))
+        } else {
+            None
+        }
+    }
+
     /// If `self` is a single-argument built-in constructor application
     /// (List, IO, Dict, or NonEmpty), return the inner type.
     pub fn as_unary_con_inner(&self) -> Option<&Type> {
@@ -467,6 +505,10 @@ impl Type {
             Type::LiteralSymbol(_) => Type::Symbol,
             Type::LiteralString(_) => Type::String,
             Type::Tuple(ts) => Type::Tuple(ts.into_iter().map(Type::widen_literals).collect()),
+            Type::PrefixList { prefix, tail } => Type::prefix_list(
+                prefix.into_iter().map(Type::widen_literals).collect(),
+                tail.widen_literals(),
+            ),
             Type::Union(ts) => Type::Union(ts.into_iter().map(Type::widen_literals).collect()),
             Type::Function(a, b) => {
                 Type::Function(Box::new(a.widen_literals()), Box::new(b.widen_literals()))
@@ -587,6 +629,15 @@ impl fmt::Display for Type {
                     }
                 }
                 Ok(())
+            }
+            // `[A, B, C…]` — prefix elements comma-joined, then the tail type
+            // followed by the canonical `…` ellipsis (owner decision Q1).
+            Type::PrefixList { prefix, tail } => {
+                write!(f, "[")?;
+                for p in prefix {
+                    write!(f, "{p}, ")?;
+                }
+                write!(f, "{tail}…]")
             }
             Type::Record { fields, open, rows } => {
                 write!(f, "{{")?;
@@ -718,6 +769,12 @@ pub fn humanise(ty: &Type) -> Type {
                     collect_fresh_vars(e, seen);
                 }
             }
+            Type::PrefixList { prefix, tail } => {
+                for p in prefix {
+                    collect_fresh_vars(p, seen);
+                }
+                collect_fresh_vars(tail, seen);
+            }
             Type::Function(a, b) => {
                 collect_fresh_vars(a, seen);
                 collect_fresh_vars(b, seen);
@@ -765,6 +822,10 @@ pub fn humanise(ty: &Type) -> Type {
             ),
             Type::Con(_) => ty.clone(),
             Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| replace(e, mapping)).collect()),
+            Type::PrefixList { prefix, tail } => Type::prefix_list(
+                prefix.iter().map(|p| replace(p, mapping)).collect(),
+                replace(tail, mapping),
+            ),
             Type::Function(a, b) => {
                 Type::Function(Box::new(replace(a, mapping)), Box::new(replace(b, mapping)))
             }
@@ -837,6 +898,13 @@ pub fn unfold_mu(x: &TypeVarId, ty: &Type, replacement: &Type) -> Type {
         Type::Tuple(elems) => {
             Type::Tuple(elems.iter().map(|e| unfold_mu(x, e, replacement)).collect())
         }
+        Type::PrefixList { prefix, tail } => Type::prefix_list(
+            prefix
+                .iter()
+                .map(|p| unfold_mu(x, p, replacement))
+                .collect(),
+            unfold_mu(x, tail, replacement),
+        ),
         Type::Function(a, b) => Type::Function(
             Box::new(unfold_mu(x, a, replacement)),
             Box::new(unfold_mu(x, b, replacement)),
@@ -916,6 +984,54 @@ mod tests {
     #[test]
     fn display_list() {
         assert_eq!(Type::list(Type::Number).to_string(), "[number]");
+    }
+
+    #[test]
+    fn display_prefix_list() {
+        assert_eq!(
+            Type::prefix_list(vec![Type::Symbol, Type::Number], Type::String).to_string(),
+            "[symbol, number, string…]"
+        );
+        // Union tail displays inline.
+        assert_eq!(
+            Type::prefix_list(
+                vec![Type::Symbol],
+                Type::union([Type::String, var("Element")])
+            )
+            .to_string(),
+            "[symbol, string | Element…]"
+        );
+    }
+
+    #[test]
+    fn prefix_list_kind_is_star() {
+        assert_eq!(
+            kind_of(&Type::prefix_list(vec![Type::Symbol], Type::String)),
+            Kind::Star
+        );
+    }
+
+    #[test]
+    fn prefix_list_empty_prefix_normalises_to_list() {
+        // The smart constructor never produces an empty-prefix PrefixList; it
+        // canonicalises to List(tail) (owner decision Q3).
+        assert_eq!(
+            Type::prefix_list(vec![], Type::String),
+            Type::list(Type::String)
+        );
+    }
+
+    #[test]
+    fn prefix_list_widen_literals() {
+        // Literal element types widen through the prefix and tail.
+        assert_eq!(
+            Type::prefix_list(
+                vec![Type::LiteralSymbol("div".to_string())],
+                Type::LiteralString("x".to_string())
+            )
+            .widen_literals(),
+            Type::prefix_list(vec![Type::Symbol], Type::String)
+        );
     }
 
     #[test]

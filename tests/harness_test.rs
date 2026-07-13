@@ -2747,6 +2747,11 @@ pub fn test_186_markup_accessors() {
 }
 
 #[test]
+pub fn test_187_sv_prefix_list() {
+    run_test(&opts("187_sv_prefix_list.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }
@@ -2824,6 +2829,21 @@ pub fn test_typecheck_107_optional_field_missing_required_warns() {
 #[test]
 pub fn test_typecheck_108_optional_field_wrong_type_warns() {
     run_typecheck_test("108_optional_field_wrong_type_warns.eu");
+}
+
+#[test]
+pub fn test_typecheck_109_prefix_list_no_warning() {
+    run_typecheck_test("109_prefix_list_no_warning.eu");
+}
+
+#[test]
+pub fn test_typecheck_110_prefix_list_wrong_shape_warns() {
+    run_typecheck_test("110_prefix_list_wrong_shape_warns.eu");
+}
+
+#[test]
+pub fn test_typecheck_111_prefix_list_out_of_prefix_partial() {
+    run_typecheck_test("111_prefix_list_out_of_prefix_partial.eu");
 }
 
 // ── eu doc tests ──────────────────────────────────────────────────────────────
