@@ -205,6 +205,35 @@ pub struct DecodedProgram {
     /// Per-slot global entry bodies, as ordinals (parallel to the
     /// `global_forms` passed to the machine).
     pub global_entries: Vec<CodeRef>,
+
+    // ── Ordinal ↔ byte-offset maps (for the static-peel helpers) ────────
+    /// Ordinal → original byte offset. The io-run driver and intrinsic-support
+    /// helpers statically peel a closure's code by reading the byte stream;
+    /// under pre-decode a closure carries an ordinal, so `off_of[ord]` recovers
+    /// the byte offset those peekers start from. Indexed by ordinal (small —
+    /// one entry per instruction, not per byte).
+    pub off_of: Vec<CodeRef>,
+    /// Byte offset → ordinal (the inverse of `off_of`). The peekers convert a
+    /// child byte offset they read from the stream into an ordinal before
+    /// building a closure over it, so every closure — synthetic or resolved —
+    /// carries an ordinal uniformly.
+    pub ord_of: HashMap<CodeRef, CodeRef>,
+}
+
+impl DecodedProgram {
+    /// The byte offset a closure's `code` ordinal was decoded from (for the
+    /// static-peel helpers, which read the byte stream).
+    #[inline]
+    pub fn byte_off(&self, ordinal: CodeRef) -> usize {
+        self.off_of[ordinal as usize] as usize
+    }
+
+    /// The ordinal a byte offset was assigned, for building a closure over a
+    /// child offset peeled from the byte stream.
+    #[inline]
+    pub fn ordinal(&self, byte_off: CodeRef) -> CodeRef {
+        self.ord_of[&byte_off]
+    }
 }
 
 /// Worklist decoder: assigns each reachable byte offset an ordinal in
@@ -215,6 +244,8 @@ struct Decoder<'a> {
     code: &'a [u8],
     /// Byte offset → assigned ordinal.
     ord_of: HashMap<u32, u32>,
+    /// Ordinal → byte offset (the inverse of `ord_of`).
+    off_of: Vec<u32>,
     /// Decoded instruction per ordinal (`None` until its offset is processed).
     instrs: Vec<Option<Instr>>,
     smids: Vec<Smid>,
@@ -231,6 +262,7 @@ impl<'a> Decoder<'a> {
         Decoder {
             code,
             ord_of: HashMap::new(),
+            off_of: Vec::new(),
             instrs: Vec::new(),
             smids: Vec::new(),
             refs: Vec::new(),
@@ -250,6 +282,7 @@ impl<'a> Decoder<'a> {
         }
         let ord = self.instrs.len() as u32;
         self.ord_of.insert(byte_off, ord);
+        self.off_of.push(byte_off);
         self.instrs.push(None);
         self.smids.push(Smid::default());
         self.queue.push((byte_off, ord));
@@ -568,5 +601,7 @@ pub fn decode_program(
         producer_tail_template,
         pap,
         global_entries,
+        off_of: d.off_of,
+        ord_of: d.ord_of,
     })
 }
