@@ -1,0 +1,90 @@
+# Files the tree-sitter grammar cannot currently parse, even though the
+# Rowan parser (src/syntax/rowan/) accepts them as valid eucalypt.
+#
+# Catalogued by the eu-wrf7 parser-equivalence audit:
+#   docs/superpowers/reports/2026-07-13-parser-equivalence-audit.md
+#
+# Checked by: python3 scripts/check-tree-sitter-corpus.py
+# Re-seed (after deliberately confirming new entries) with:
+#   python3 scripts/check-tree-sitter-corpus.py --write-expected
+#
+# This list should only shrink over time. When a grammar fix resolves an
+# entry, delete it here — the check script will flag stale/resolved entries
+# as informational but only fails the build on entries NOT in this list, so
+# it does not enforce pruning; do it anyway to keep the list honest.
+
+## Gradual-typing syntax (0.10-0.12) has no grammar coverage at all — the
+## largest divergence category. Audit report §2.2.
+tests/harness/typecheck/010_for_number_binding.eu
+tests/harness/typecheck/011_for_string_binding.eu
+tests/harness/typecheck/012_for_correct_binding.eu
+tests/harness/typecheck/013_io_number_binding.eu
+tests/harness/typecheck/014_let_any_binding.eu
+tests/harness/typecheck/023_for_map_no_warning.eu
+tests/harness/typecheck/024_for_bind_no_warning.eu
+tests/harness/typecheck/034_literal_string_synthesis.eu
+tests/harness/typecheck/035_literal_string_dsl.eu
+tests/harness/typecheck/037_union_absorbs_literal_string.eu
+tests/harness/typecheck/038_literal_string_annotation_widens.eu
+tests/harness/typecheck/054_io_elem_type_correct.eu
+
+## Bracket-expr declaration heads unsupported (custom bracket/monad
+## literals: ⟦ x ⟧: x, ⟦{}⟧: { :monad ... }, ⌊xs⌋: ...). Audit report §2.3.
+tests/harness/097_idiot_brackets.eu
+tests/harness/149_bracket_inline_monad.eu
+tests/harness/096_monadic_blocks.eu
+tests/harness/129_monadic_implicit_return.eu
+tests/harness/172_idiot_bracket_juxtaposed_call.eu
+tests/harness/testdata/155_cross_import_bracket_lib.eu
+
+## lib/prelude.eu (the shipped stdlib) does not parse at all: hits the
+## operator-prefix-collision bug (`<` then `<=` in the same scope) plus the
+## bracket-expr gap above (⌈[x]⌉/⌊[x]⌋) plus nested-brace s-strings below.
+## Audit report §2.4.
+lib/prelude.eu
+
+## lib/lens.eu: nested braces inside s"..." type-literal strings
+## (s"symbol → Lens({..r}, a)"). Audit report §2.7.
+lib/lens.eu
+
+## lib/markup.eu: `tag = head` / `attrs = second` use `=` instead of `:` —
+## Rowan lenient-parses this as block metadata (silently dropping the
+## declaration; tag/attrs are undefined at runtime, a separate latent bug
+## filed for quill), tree-sitter correctly rejects it as a parse error.
+## Audit report §3.
+lib/markup.eu
+
+## List-destructuring pattern gaps: multi-head cons patterns
+## `[a, b : rest]`, and nested-list patterns `[a, [b, c]]`. Audit report §2.6.
+tests/harness/092_destructure_list.eu
+tests/harness/095_destructuring_integration.eu
+tests/harness/141_deep_destructuring.eu
+tests/harness/102_destructure_list_in_block.eu
+
+## Operator-prefix-collision declaration bug: declaring an operator whose
+## characters are a strict prefix of a previously-declared operator's
+## characters in the same scope (e.g. `<` then `<=`) corrupts the parse.
+## Audit report §2.4.
+tests/harness/020_op_precedence.eu
+
+## Prefix-operator usage followed by a (different) prefix-operator
+## declaration in the same block. Audit report §2.5. (020_op_precedence.eu
+## above also triggers this; 020 is listed once.)
+
+## Nested braces inside s"..." type-literal strings. Audit report §2.7.
+tests/harness/175_sv2_to_spec.eu
+
+## Chained multi-arg call f(a)(b, c) where the second call has 2+ args.
+## Audit report §2.8.
+tests/harness/010_prelude.eu
+
+## Identifier lexing excludes the Letterlike Symbols Unicode block (ℕ,
+## U+2115) — a companion gap to eu-fbyk (which covers operator characters).
+## Audit report §2.9.
+examples/aoc25/day08.eu
+examples/aoc25/day10.eu
+
+## aoc25/day12.eu: divergence confirmed but standalone root cause not
+## isolated during the audit (flagged for follow-up, likely one of the
+## above rather than a new class). Audit report §2.9.
+examples/aoc25/day12.eu

@@ -1,0 +1,58 @@
+name: tree-sitter grammar
+
+on:
+  pull_request:
+    paths:
+      - 'editors/tree-sitter-eucalypt/**'
+      - 'src/syntax/rowan/**'
+      - 'lib/**/*.eu'
+      - 'tests/harness/**/*.eu'
+      - 'examples/aoc25/**/*.eu'
+      - 'scripts/check-tree-sitter-corpus.py'
+      - '.github/workflows/tree-sitter.yaml'
+  push:
+    branches: [master]
+    paths:
+      - 'editors/tree-sitter-eucalypt/**'
+      - 'src/syntax/rowan/**'
+      - 'lib/**/*.eu'
+      - 'tests/harness/**/*.eu'
+      - 'examples/aoc25/**/*.eu'
+      - 'scripts/check-tree-sitter-corpus.py'
+      - '.github/workflows/tree-sitter.yaml'
+  workflow_dispatch:
+
+jobs:
+  corpus-parse:
+    name: Corpus parse equivalence (eu-wrf7)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: editors/tree-sitter-eucalypt/node_modules
+          key: ${{ runner.os }}-ts-eucalypt-node-${{ hashFiles('editors/tree-sitter-eucalypt/package-lock.json') }}
+
+      - name: Install tree-sitter CLI
+        run: npm install
+        working-directory: editors/tree-sitter-eucalypt
+
+      - name: Generate parser from grammar.js
+        run: npx tree-sitter generate
+        working-directory: editors/tree-sitter-eucalypt
+
+      - name: Run tree-sitter's own corpus tests
+        run: npx tree-sitter test
+        working-directory: editors/tree-sitter-eucalypt
+
+      - name: Make tree-sitter CLI available on PATH
+        run: echo "$PWD/editors/tree-sitter-eucalypt/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Run corpus-parse divergence check
+        run: python3 scripts/check-tree-sitter-corpus.py

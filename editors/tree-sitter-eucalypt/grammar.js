@@ -8,12 +8,14 @@
  * rendering structured data formats (YAML, JSON, TOML).
  */
 
-// Helper to define operator characters.
-// Includes: standard punctuation operators, Unicode math/arrows, and
-// special characters used in the prelude.
+// Single source of truth for operator characters — referenced by the
+// `operator` rule below. Includes: standard punctuation operators, Unicode
+// math/arrows, and special characters used in the prelude.
 // Notable inclusions: ? (for //=?, //!?), $ (for <$>), ∸ (unary minus),
 // ‖ (U+2016 DOUBLE VERTICAL LINE — the cons operator),
-// ✓ (U+2713 CHECK MARK — postfix non-nil check).
+// ✓ (U+2713 CHECK MARK — postfix non-nil check),
+// ▶ (U+25B6 BLACK RIGHT-POINTING TRIANGLE — debug trace),
+// ⊝ (U+229D CIRCLED MINUS — bitwise NOT).
 // Note: bracket characters (⟦⟧⟨⟩⟪⟫⌈⌉⌊⌋‹›) are intentionally excluded here;
 // they are handled by the bracket_expr rule instead.
 const OPER_CHARS = /[.!@£%^&*|><\/+\=\-~;?$∸∧∨∘‖✓▶⊝→←⊕⊗⊙⊡⊞⊟¬∀∃∈∉⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪⊂⊃⊄⊅⊆⊇⊈⊉⊊⊋¡££€⨈∅∏]+/;
@@ -456,7 +458,10 @@ module.exports = grammar({
     // Bracket characters (⟦⟧⟨⟩⟪⟫⌈⌉⌊⌋) are deliberately excluded here;
     // they are matched by the bracket_expr rule via BRACKET_OPEN_RE/BRACKET_CLOSE_RE.
     // ‖ (U+2016 DOUBLE VERTICAL LINE) is included as the cons operator.
-    operator: $ => token(prec(-1, /[.!@£%^&*|><\/+\=\-~;?$∸∧∨∘‖→←⊕⊗⊙⊡⊞⊟¬∀∃∈∉⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪⊂⊃⊄⊅⊆⊇⊈⊉⊊⊋¡££€⨈∅∏]+/)),
+    // NB: this rule must stay in sync with OPER_CHARS above (single source of
+    // truth) — a hand-duplicated copy previously drifted and silently dropped
+    // ✓ ▶ ⊝, breaking real prelude syntax (eu-wrf7).
+    operator: $ => token(prec(-1, OPER_CHARS)),
 
     // Anaphora: _ or _0, _1, etc., or • or •0, •1, etc.
     // NOTE: bare _ and • also match the identifier regex.  Because tree-sitter's
