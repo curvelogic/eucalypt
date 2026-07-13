@@ -255,3 +255,115 @@ blob and pay up to ~2× on string-heavy workloads *today*, landing it promptly i
 - STG/runtime dumps: `/tmp/{blob,source}-stg.txt`, `/tmp/{blob,source}-rt.txt`.
 - Root cause: `xtask/src/main.rs` §168–175; `src/eval/stg/runtime.rs` `globals()`;
   `src/eval/stg/blob.rs` `PreludeBlob`.
+
+---
+
+## 6. Addendum (2026-07-13, Phase-2): the §4.1 fix is REFUTED — record correction
+
+**Status of §4.1 ("flatten each peeled binding body / apply `reflatten`"): REFUTED
+by implementation and measurement.** Do not carry it forward as the fix
+recommendation. This addendum documents why, and states the open candidate that
+replaces it. Implementation evidence: branch `perf/blob-reflatten` (worktree
+`/tmp/eu-blobfix`, pushed, no PR — a spike/evidence artefact, not a production
+change).
+
+### 6.1 What was implemented
+
+Exactly what §4.1 recommended: `core::reflatten::reflatten()` applied to each
+peeled binding body in `xtask/src/main.rs`, immediately after
+`peel_all_let_bindings` and before STG compile, with deterministic
+before/after instrumentation (Let-node count, max nesting depth) printed by
+`xtask prelude-compile`.
+
+### 6.2 Result: a byte-for-byte no-op
+
+- **Core-level stats, all 352 peeled bindings: Let nodes 124 → 124, max nesting
+  depth 4 → 4 — unchanged.** There was essentially nothing for a Let-chain-merge
+  pass to find.
+- `dump runtime` output is **byte-identical** (0-line diff) between the
+  unmodified blob and the reflattened blob, for both `018_string_scale.eu` and
+  `001_naive_fib.eu`.
+- Ticks/allocs/blocks/max-stack identical for 018 (76,814,993 ticks, unchanged)
+  and fib (HeapSyn ticks 115,779,125 → 115,779,125, exact same-commit A/B — safe,
+  zero regression, but also zero effect).
+- Wall times unchanged: 018 blob-config still ~4.5–4.6 s HS / ~2.1–2.2 s bc vs
+  source's ~1.86 s / ~1.68 s. **No movement at all.**
+
+### 6.3 Why §4.1 was wrong: the whole-file metric flaw
+
+The "1874 thunks / 538 letrec / max nesting 171" figures in §3.2 came from
+`dump runtime`'s pretty-printer over the **entire loaded prelude** — all 352
+bindings' `:doc`/`:type` metadata blocks and bodies concatenated into one
+output, with indentation measured as the single deepest point *anywhere in that
+file*. That is a coarse whole-file proxy, not the hot path's actual per-call
+lexical env-chain depth, and it does not correspond to Core-level Let nesting
+within any individual binding. §3.2 should have been checked at the Core level
+(pre-STG-compile) before recommending a Core-level flattening pass — it wasn't,
+and the recommendation followed the wrong number.
+
+The §3.1 profile evidence (`EnvironmentFrame::get` / `enter_local` dominating
+the eval-thread samples, 55% vs 38% on HeapSyn 018) remains valid and was
+re-confirmed; only the §3.2/§4.1 causal attribution and fix were wrong. Deep
+runtime env chains are real and measured — they just are not caused by
+un-flattened per-binding Let nesting, since there isn't any material nesting to
+flatten (124 Lets total, max depth 4, entirely within normal function-body
+range).
+
+### 6.4 Open candidate hypothesis: the user→prelude demand-signature boundary
+
+A follow-on spike (reverted, not in the pushed branch) wired
+`analyse_demands`-derived signatures into the **blob's own internal** STG
+compile (prelude-binding-to-prelude-binding calls only). It also produced no
+measurable tick or wall change, and tracing why exposed the likely real
+mechanism:
+
+`src/driver/eval.rs:406-414` runs demand analysis like this on every `eu`
+invocation, blob or source:
+
+```rust
+if !stg_settings.suppress_demand_analysis {
+    let (annotated, _signatures, named_signatures) =
+        crate::core::analyse_demand::analyse_demands(&self.evaluand);
+    self.evaluand = annotated;
+    stg_settings.user_demand_sigs = named_signatures;
+    ...
+}
+```
+
+This analyses **only `self.evaluand`** — the user's own program. In blob mode
+the prelude source is never loaded into the user compile at all
+(`driver/prepare.rs`: "skip loading the prelude" when the blob is active), so
+`named_signatures` — and therefore `stg_settings.user_demand_sigs` — is
+necessarily **empty at every call site where user code calls into a prelude
+global** (`map`, `foldl`, `+`, structural `=`, string `JOIN`, …). Under
+source config, the prelude is compiled *together with* the user program, so
+these same call sites get real, analysed strictness signatures for free.
+
+**Candidate mechanism:** the STG compiler falls back to a conservative
+(lazier, more thunk-building) calling convention at every user→prelude call
+site in blob mode, because it has no demand signature to consult there — not
+because of any structural difference in the prelude bodies themselves. This
+is consistent with the §2.1 finding that blob has *fewer* allocations but
+*more* resident blocks (bigger, more general-purpose closures rather than
+demand-specialised ones) and a *shallower* continuation stack (deferred/lazy
+work rather than direct strict recursion).
+
+**Status: untested at the user→prelude boundary, stated as the open candidate
+only.** Validating it — whether merging a blob-carried
+`named_demand_sigs: HashMap<String, DemandSignature>` into
+`stg_settings.user_demand_sigs` under blob mode moves 018/019 materially
+toward source levels, without breaking fib ticks or byte-identical harness
+output — is the subject of a separate, explicitly-scoped validation spike (not
+this report). If validated, an audited production bead follows; if refuted,
+this defect's fix is deferred to the in-memory blob pipeline redesign (filed
+separately), which sidesteps the whole boundary by not needing an isolated
+prelude-only compile at all.
+
+### 6.5 Evidence index (addendum)
+
+- Reflatten implementation + instrumentation: branch `perf/blob-reflatten`
+  (worktree `/tmp/eu-blobfix`, pushed, no PR), `xtask/src/main.rs`.
+- Byte-identical `dump runtime` diffs, fib exact-A/B tick match: this session's
+  transcript (not separately archived; reproducible via
+  `cargo xtask prelude-compile` with/without the `reflatten` call added at the
+  point documented in the branch diff).
