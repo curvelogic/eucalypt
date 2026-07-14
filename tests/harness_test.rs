@@ -2752,6 +2752,11 @@ pub fn test_187_sv_prefix_list() {
 }
 
 #[test]
+pub fn test_188_v8n8_cluster_laziness() {
+    run_test(&opts("188_v8n8_cluster_laziness.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

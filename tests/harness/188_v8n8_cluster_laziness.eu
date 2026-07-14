@@ -1,0 +1,31 @@
+#!/usr/bin/env eu
+# eu-v8n8 laziness preservation — the precise soundness property the fusion relies on.
+#
+# The flag-gated inline_cores fusion (EU_BLOB_INLINE_CLUSTER) inlines map/foldl into user
+# code, exposing them to per-invocation demand analysis. The hazard is NOT list elements
+# (eucalypt evaluates lists eagerly, so there is no element-laziness to break) but whether
+# inlining a fused body into an UNUSED, never-demanded position wrongly promotes it to
+# strict. Here an argument threaded through recursion but never scrutinised (the shape of
+# 181_cg3_bomb) has as its value a map / foldl application whose MAPPED FUNCTION / FOLD
+# OPERATOR is a bomb — so nothing fires at list construction (the elements are safe); only
+# actually running the map/foldl would apply the bomb. A correctly-lazy unused argument is
+# never demanded, so the bomb never fires.
+#
+# Must pass with the flag ON and OFF, on all three engines (bytecode / predecode /
+# HeapSyn). A failure means the demand-driven specialisation over-forced the inlined copy.
+# Complements 181_cg3_bomb (unused divergent arg) and 171_strict_prelude_args.
+
+# Bombs that fire only if the map/foldl actually runs (function applied / operator folded).
+bomb-fn(x): panic("laziness violated: an unused fused-map application was forced")
+bomb-op(acc, el): panic("laziness violated: an unused fused-foldl application was forced")
+
+# 181's pattern: lazy-arg is threaded through self-recursion but never scrutinised.
+pass-through(n, lazy-arg): if(n = 0, :PASS, pass-through(n - 1, lazy-arg))
+
+` :suppress
+unused-map: pass-through(30, [1, 2, 3] map(bomb-fn))
+
+` :suppress
+unused-fold: pass-through(30, foldl(bomb-op, 0, [1, 2, 3]))
+
+RESULT: [unused-map = :PASS, unused-fold = :PASS] all-true? then(:PASS, :FAIL)

@@ -31,7 +31,7 @@ use anyhow::{bail, Context, Result};
 use eucalypt::{
     core::{
         expr::{open_let_scope_full, Expr, RcExpr},
-        inline::tag::{all_free_vars_in_set, tag_combinators},
+        inline::tag::{all_free_vars_in_set_with_self, tag_combinators_named},
         typecheck::check::{parse_operator_overloads, type_check_for_prelude},
     },
     driver::source::SourceLoader,
@@ -254,11 +254,13 @@ fn cmd_prelude_compile() -> Result<()> {
             if inlinable_names.contains(name) {
                 continue;
             }
-            let tagged =
-                tag_combinators(body).with_context(|| format!("tag_combinators on '{name}'"))?;
+            let tagged = tag_combinators_named(body, Some(name))
+                .with_context(|| format!("tag_combinators on '{name}'"))?;
             let peeled = peel_meta(&tagged);
             if let Expr::Lam(_, true, scope) = &*peeled.inner {
-                if all_free_vars_in_set(&scope.body, &inlinable_names) {
+                // The binding's own name counts as resolvable so a self-recursive
+                // combinator is not rejected on its recursive reference (§3.2).
+                if all_free_vars_in_set_with_self(&scope.body, &inlinable_names, name) {
                     inlinable_names.insert(name.clone());
                     inline_cores.push((name.clone(), peeled.clone()));
                     added += 1;
