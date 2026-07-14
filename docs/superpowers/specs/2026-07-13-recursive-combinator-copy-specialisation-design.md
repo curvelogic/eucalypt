@@ -322,6 +322,40 @@ lambdas inlinable, and `inline_pass` distributes each into the user's call sites
 as a local specialised copy. No new source-path wiring is needed — the criterion
 change alone activates it.
 
+> **⚠ AMENDMENT (post-sign-off, eu-dp0k, 2026-07-14) — §3.1 above is WRONG.**
+> Implementation found the criterion alone does **not** fuse the source-prelude
+> path; `EU_SOURCE_PRELUDE=1` bench 022 stays quadratic (~52M ticks). Two
+> independent blockers, neither anticipated here:
+>
+> 1. **`distribute` is metadata-blind.** Prelude combinators are
+>    `Meta(Lam, docstring)`; `reduce::inlinable()` matches only bare
+>    `Lam(_, true, _)`, so documented combinators are never distributed on the
+>    source path. (The blob path works only because xtask `peel_meta`s the
+>    `inline_cores` before storing them.) This *is* the mechanism behind the
+>    §3.4 source-vs-blob divergence.
+> 2. **Demand-specialisation needs pre-expansion parity.** Even once the local
+>    copy exists, the source-path copy is not specialised strict (it stays
+>    quadratic) because it lacks the blob's pre-expanded `inline_cores`; the
+>    blob path gets a fully-specialised local `letrec`, the source path a
+>    partial one.
+>
+> **⚠ Type-annotation hazard (landmine for any fix).** A naive fix — peeling
+> `Meta` in `distribute` to make combinators inlinable — is *unsound*: type
+> annotations are also `Meta` nodes, so peeling strips them, and an annotated
+> identity like `` `{type:"number->number"} wrap(x): x`` inlined at
+> `wrap("hello")` silently loses its annotation and the type mismatch goes
+> undetected. Harness test **`104_suppress_type_warnings_ok.eu`** is the
+> tripwire; any source-path meta handling must preserve type/annotation
+> metadata while enabling combinator inlining.
+>
+> Source-path closure is tracked as the 0.13 release-blocker **eu-rb5n** (its
+> two sub-problems are the blockers above). eu-dp0k lands the **blob (default)
+> path only**; the "both configs fuse" gate is deferred to eu-rb5n by owner
+> decision. `EU_SOURCE_PRELUDE` is opt-in, so the default build is unaffected.
+> eu-rb5n also notes the eu-npp9 relationship: the Meta-blindness looks like the
+> same source-path mechanism behind the global-form divergence, so one PR may
+> close both.
+
 ### 3.2 Blob (generation) path
 
 On the blob path the prelude is pre-compiled; the combinator body reaches the
