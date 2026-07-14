@@ -121,6 +121,14 @@ pub struct SourceLoader {
     /// resolution (the `eu` binary, the tester) retrieve these via
     /// `type_aliases()` after `prepare()` completes.
     early_type_aliases: HashMap<String, crate::core::typecheck::types::Type>,
+
+    /// Type warnings captured from the **pre-inline** (post-prune) core in
+    /// `prepare()`. Diagnostics must be computed before the inline pass, which
+    /// is an optimisation that can eliminate the very applications a mismatch
+    /// hangs on (e.g. inlining `wrap("hello")` to `"hello"`). Emitted by the
+    /// `eu` binary after `prepare()`; keeps eval-path warnings aligned with
+    /// `eu check` (which also checks pre-inline).
+    type_warnings: Vec<crate::core::typecheck::error::TypeWarning>,
 }
 
 impl Default for SourceLoader {
@@ -145,6 +153,7 @@ impl Default for SourceLoader {
             #[cfg(not(target_arch = "wasm32"))]
             prelude_blob: None,
             early_type_aliases: HashMap::new(),
+            type_warnings: Vec::new(),
         }
     }
 }
@@ -172,6 +181,7 @@ impl SourceLoader {
             prelude_blob: None,
             pending_parse_errors: Vec::new(),
             early_type_aliases: HashMap::new(),
+            type_warnings: Vec::new(),
         }
     }
 
@@ -857,6 +867,16 @@ impl SourceLoader {
     /// Retrieve pre-pruning type aliases for TypeData resolution.
     pub fn type_aliases(&self) -> &HashMap<String, crate::core::typecheck::types::Type> {
         &self.early_type_aliases
+    }
+
+    /// Store type warnings captured from the pre-inline (post-prune) core.
+    pub fn set_type_warnings(&mut self, warnings: Vec<crate::core::typecheck::error::TypeWarning>) {
+        self.type_warnings = warnings;
+    }
+
+    /// Retrieve the pre-inline type warnings for the `eu` binary to emit.
+    pub fn type_warnings(&self) -> &[crate::core::typecheck::error::TypeWarning] {
+        &self.type_warnings
     }
 
     /// Return a reference to the cross-unit interface.

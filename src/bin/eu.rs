@@ -155,24 +155,19 @@ fn run() -> i32 {
         Ok(Command::Continue) => {}
     }
 
-    // Type checker runs on the pruned expression for warnings.
-    // Alias collection already happened pre-pruning inside prepare().
+    // Emit type warnings computed on the PRE-INLINE core inside prepare().
+    // Diagnostics must not depend on the inline pass (an optimisation that can
+    // eliminate the applications a mismatch hangs on); this keeps eval-path
+    // warnings aligned with `eu check`. Alias collection also happened inside
+    // prepare(), pre-pruning.
     {
-        let t = std::time::Instant::now();
-        let core_expr = loader.core().expr.clone();
-        let (warnings, _post_prune_aliases) =
-            eucalypt::core::typecheck::check::type_check(&core_expr);
-        let elapsed = t.elapsed();
+        let warnings: Vec<_> = loader.type_warnings().to_vec();
 
         if !opt.suppress_type_warnings() {
             for w in &warnings {
                 let diag = w.to_diagnostic(loader.source_map());
                 loader.diagnose_to_stderr(&diag);
             }
-        }
-
-        if opt.statistics() {
-            statistics.timings_mut().record("type-check", elapsed);
         }
 
         // --strict: abort before evaluation if there are type warnings
@@ -182,6 +177,7 @@ fn run() -> i32 {
 
         // Resolve type aliases inside TypeData primitives using the
         // pre-pruning aliases (which include definitions removed by DCE).
+        let core_expr = loader.core().expr.clone();
         let aliases = loader.type_aliases();
         if !aliases.is_empty() {
             let resolved = eucalypt::core::typecheck::resolve_typedata::resolve_typedata_aliases(

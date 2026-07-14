@@ -314,6 +314,18 @@ pub fn prepare(
         }
     }
 
+    // Capture type-check warnings on the pruned, PRE-INLINE core. The inline
+    // pass is an optimisation that can eliminate the very applications a type
+    // mismatch hangs on (e.g. inlining `wrap("hello")` to `"hello"`), so
+    // diagnostics must be computed here, before inject/inline. The `eu` binary
+    // emits these instead of re-checking the post-inline core, keeping
+    // eval-path warnings aligned with `eu check` (which also checks pre-inline).
+    {
+        let core_expr = loader.core().expr.clone();
+        let (warnings, _aliases) = crate::core::typecheck::check::type_check(&core_expr);
+        loader.set_type_warnings(warnings);
+    }
+
     // Inject inlinable prelude combinators from blob before inline pass.
     // In the blob path the prelude is not loaded, so prelude function names
     // appear as Var::Free in user code.  Injecting the combinator lambdas as
