@@ -122,12 +122,12 @@ pub struct SourceLoader {
     /// `type_aliases()` after `prepare()` completes.
     early_type_aliases: HashMap<String, crate::core::typecheck::types::Type>,
 
-    /// Type warnings captured from the **pre-inline** (post-prune) core in
-    /// `prepare()`. Diagnostics must be computed before the inline pass, which
-    /// is an optimisation that can eliminate the very applications a mismatch
-    /// hangs on (e.g. inlining `wrap("hello")` to `"hello"`). Emitted by the
-    /// `eu` binary after `prepare()`; keeps eval-path warnings aligned with
-    /// `eu check` (which also checks pre-inline).
+    /// Type warnings for the eval path, computed on the PRE-INLINE user core in
+    /// `prepare()` and seeded with the blob's prelude type summary — the
+    /// designed fast, correct check (no prelude source load; not the
+    /// inline-transformed core, whose diagnostics the inline pass would change).
+    /// Only populated on the blob path; source/alternative-prelude configs fall
+    /// back to `run_type_checker` in the binary. Emitted by `bin/eu.rs`.
     type_warnings: Vec<crate::core::typecheck::error::TypeWarning>,
 }
 
@@ -869,14 +869,27 @@ impl SourceLoader {
         &self.early_type_aliases
     }
 
-    /// Store type warnings captured from the pre-inline (post-prune) core.
-    pub fn set_type_warnings(&mut self, warnings: Vec<crate::core::typecheck::error::TypeWarning>) {
+    /// Store the eval-path type warnings computed in `prepare()`.
+    pub fn set_type_warnings(
+        &mut self,
+        warnings: Vec<crate::core::typecheck::error::TypeWarning>,
+    ) {
         self.type_warnings = warnings;
     }
 
-    /// Retrieve the pre-inline type warnings for the `eu` binary to emit.
+    /// Retrieve the eval-path type warnings for `bin/eu.rs` to emit.
     pub fn type_warnings(&self) -> &[crate::core::typecheck::error::TypeWarning] {
         &self.type_warnings
+    }
+
+    /// The blob's prelude type summary, for seeding the eval-path check without
+    /// loading the prelude source. `None` on non-blob (source/alternative
+    /// prelude) configs, which fall back to the merged `run_type_checker`.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn prelude_type_summary(
+        &self,
+    ) -> Option<&crate::core::typecheck::check::PreludeSummary> {
+        self.prelude_blob.as_ref().map(|b| &b.type_summary)
     }
 
     /// Return a reference to the cross-unit interface.

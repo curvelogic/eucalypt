@@ -314,16 +314,23 @@ pub fn prepare(
         }
     }
 
-    // Capture type-check warnings on the pruned, PRE-INLINE core. The inline
-    // pass is an optimisation that can eliminate the very applications a type
-    // mismatch hangs on (e.g. inlining `wrap("hello")` to `"hello"`), so
-    // diagnostics must be computed here, before inject/inline. The `eu` binary
-    // emits these instead of re-checking the post-inline core, keeping
-    // eval-path warnings aligned with `eu check` (which also checks pre-inline).
+    // Type-check the PRE-INLINE user core, seeded with the blob's prelude type
+    // summary. This is the fast, correct eval-path check: the summary supplies
+    // the prelude type context without loading the prelude source (preserving
+    // the blob's startup win), and checking here — before inject/inline — keeps
+    // diagnostics independent of the inline pass (which can eliminate the very
+    // application a mismatch hangs on, or expose spurious ones). Only the blob
+    // path is handled here; source/alternative-prelude configs have no summary
+    // and fall back to `run_type_checker` in `bin/eu.rs`.
+    #[cfg(not(target_arch = "wasm32"))]
     {
         let core_expr = loader.core().expr.clone();
-        let (warnings, _aliases) = crate::core::typecheck::check::type_check(&core_expr);
-        loader.set_type_warnings(warnings);
+        let warnings = loader
+            .prelude_type_summary()
+            .map(|s| crate::core::typecheck::check::type_check_with_seed(&core_expr, s));
+        if let Some(warnings) = warnings {
+            loader.set_type_warnings(warnings);
+        }
     }
 
     // Inject inlinable prelude combinators from blob before inline pass.

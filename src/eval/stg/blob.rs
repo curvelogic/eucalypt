@@ -131,6 +131,15 @@ pub struct PreludeBlob {
     #[serde(default)]
     pub inline_cores: Vec<(String, RcExpr)>,
 
+    /// Postcard-encoded prelude core expression (post-translate, pre-merge),
+    /// for the eval-path MERGED type check without parsing prelude source
+    /// (eu-rb5n). Stored as raw bytes so blob load stays cheap — the `RcExpr`
+    /// is decoded lazily via [`PreludeBlob::decode_prelude_core`] only when the
+    /// type check actually runs (never under `--suppress-type-warnings`). Empty
+    /// on blobs generated before this field, which fall back to source compile.
+    #[serde(default)]
+    pub prelude_core: Vec<u8>,
+
     /// Pre-encoded prelude BytecodeProgram + global forms (BV5, eu-amp9).
     ///
     /// Present alongside the STG arena form (`nodes` / `forms_pool`): the
@@ -153,6 +162,17 @@ impl PreludeBlob {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, postcard::Error> {
         postcard::from_bytes(bytes)
     }
+
+    /// Lazily decode the baked prelude core expression, if present. Called only
+    /// when the eval-path type check actually runs, so the decode cost is not
+    /// paid at blob load or under `--suppress-type-warnings`.
+    pub fn decode_prelude_core(&self) -> Option<RcExpr> {
+        if self.prelude_core.is_empty() {
+            None
+        } else {
+            postcard::from_bytes(&self.prelude_core).ok()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -173,6 +193,7 @@ mod tests {
             monad_specs: HashMap::new(),
             monad_type_hints: HashMap::new(),
             inline_cores: vec![],
+            prelude_core: vec![],
             bytecode: None,
         }
     }

@@ -23,7 +23,7 @@ use std::path::Path;
 /// - v2: Let/LetRec binding count widened `u16` → `u32` (eu-2sa6.11).
 ///
 /// MUST match `BYTECODE_WIRE_FORMAT_VERSION` in `xtask/src/main.rs`.
-const BYTECODE_WIRE_FORMAT_VERSION: u32 = 2;
+const BYTECODE_WIRE_FORMAT_VERSION: u32 = 3;
 
 /// Compute the blob source hash: `SHA-256(prelude source ‖ wire-format version)`.
 fn blob_source_hash(source_bytes: &[u8]) -> [u8; 32] {

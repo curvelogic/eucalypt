@@ -435,12 +435,12 @@ fn type_check_path_merged(
 }
 
 /// Result of running the type checker through the full pipeline.
-struct PipelineCheckResult {
-    warnings: Vec<crate::core::typecheck::error::TypeWarning>,
+pub struct PipelineCheckResult {
+    pub warnings: Vec<crate::core::typecheck::error::TypeWarning>,
     /// Static errors detected by the content verifier (e.g. trivial self-assignment).
-    core_errors: Vec<CoreError>,
-    files: codespan_reporting::files::SimpleFiles<String, String>,
-    source_map: crate::common::sourcemap::SourceMap,
+    pub core_errors: Vec<CoreError>,
+    pub files: codespan_reporting::files::SimpleFiles<String, String>,
+    pub source_map: crate::common::sourcemap::SourceMap,
 }
 
 /// Run the bidirectional type checker by loading files through the pipeline.
@@ -449,7 +449,7 @@ struct PipelineCheckResult {
 /// resolving Smids to source locations).  Returns an `Err` if the pipeline
 /// fails (e.g. parse error in the source) — the caller logs this and continues
 /// with only the annotation syntax check results.
-fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, EucalyptError> {
+pub fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, EucalyptError> {
     let mut loader = SourceLoader::new(opt.lib_path().to_vec());
     let inputs = opt.inputs();
 

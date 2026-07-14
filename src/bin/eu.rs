@@ -155,28 +155,60 @@ fn run() -> i32 {
         Ok(Command::Continue) => {}
     }
 
-    // Emit type warnings computed on the PRE-INLINE core inside prepare().
-    // Diagnostics must not depend on the inline pass (an optimisation that can
-    // eliminate the applications a mismatch hangs on); this keeps eval-path
-    // warnings aligned with `eu check`. Alias collection also happened inside
-    // prepare(), pre-pruning.
-    {
-        let warnings: Vec<_> = loader.type_warnings().to_vec();
+    // Emit type warnings. Diagnostics must not depend on the eval pipeline's
+    // inline pass (it can eliminate the application a mismatch hangs on, hiding
+    // a warning, or expose spurious ones), so on the blob path they are computed
+    // on the PRE-INLINE user core seeded with the blob's prelude type summary
+    // inside `prepare()` (fast: no prelude source load). On non-blob configs
+    // (source/alternative prelude, stale blob) there is no summary, so fall back
+    // to the merged `run_type_checker` — the same check `eu check` runs; those
+    // configs already pay the prelude-source compile, so this adds no new
+    // startup regression. Skipped entirely under `--suppress-type-warnings`.
+    if !opt.suppress_type_warnings() {
+        #[cfg(not(target_arch = "wasm32"))]
+        let have_blob = loader.has_prelude_blob();
+        #[cfg(target_arch = "wasm32")]
+        let have_blob = false;
 
-        if !opt.suppress_type_warnings() {
+        if have_blob {
+            let warnings: Vec<_> = loader.type_warnings().to_vec();
             for w in &warnings {
                 let diag = w.to_diagnostic(loader.source_map());
                 loader.diagnose_to_stderr(&diag);
             }
+            if opt.check_strict() && !warnings.is_empty() {
+                return exit_code(&opt, 1, &statistics);
+            }
+        } else {
+            match eucalypt::driver::check::run_type_checker(&opt) {
+                Ok(result) => {
+                    let writer = codespan_reporting::term::termcolor::StandardStream::stderr(
+                        codespan_reporting::term::termcolor::ColorChoice::Auto,
+                    );
+                    let config = codespan_reporting::term::Config::default();
+                    for w in &result.warnings {
+                        let diag = w.to_diagnostic(&result.source_map);
+                        let _ = codespan_reporting::term::emit(
+                            &mut writer.lock(),
+                            &config,
+                            &result.files,
+                            &diag,
+                        );
+                    }
+                    if opt.check_strict() && !result.warnings.is_empty() {
+                        return exit_code(&opt, 1, &statistics);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("eu: type-check pipeline warning: {e}");
+                }
+            }
         }
+    }
 
-        // --strict: abort before evaluation if there are type warnings
-        if opt.check_strict() && !warnings.is_empty() {
-            return exit_code(&opt, 1, &statistics);
-        }
-
-        // Resolve type aliases inside TypeData primitives using the
-        // pre-pruning aliases (which include definitions removed by DCE).
+    // Resolve type aliases inside TypeData primitives using the pre-pruning
+    // aliases (which include definitions removed by DCE).
+    {
         let core_expr = loader.core().expr.clone();
         let aliases = loader.type_aliases();
         if !aliases.is_empty() {

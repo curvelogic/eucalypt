@@ -51,7 +51,7 @@ mod engine_ab;
 /// MUST match `BYTECODE_WIRE_FORMAT_VERSION` in the crate root `build.rs`.
 /// See that constant's doc comment for the version history (v2: eu-2sa6.11
 /// Let/LetRec binding count widened `u16` → `u32`).
-const BYTECODE_WIRE_FORMAT_VERSION: u32 = 2;
+const BYTECODE_WIRE_FORMAT_VERSION: u32 = 3;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -418,6 +418,11 @@ fn cmd_prelude_compile() -> Result<()> {
         monad_specs,
         monad_type_hints,
         inline_cores,
+        // TODO(eu-rb5n Z): bake the prelude post-translate unit core(s) here so
+        // the eval path can run the merged type-check without parsing prelude
+        // source. Empty for now → the eval binary falls back to
+        // `run_type_checker` (correct, but pays the prelude-source compile).
+        prelude_core: Vec::new(),
         bytecode,
     };
 
