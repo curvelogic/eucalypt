@@ -20,6 +20,7 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use crate::core::error::CoreError;
+use crate::core::expr::RcExpr;
 use crate::core::typecheck::{
     check::{
         parse_operator_overloads, type_check, type_check_for_prelude, type_check_full,
@@ -27,6 +28,7 @@ use crate::core::typecheck::{
     },
     parse,
 };
+use crate::core::unit::TranslationUnit;
 use crate::core::verify::deprecation::check_deprecated_references;
 use crate::driver::error::EucalyptError;
 use crate::driver::options::EucalyptOptions;
@@ -511,6 +513,124 @@ pub fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eu
     warnings.extend(deprecation_warnings);
 
     // Run content verifier to catch static errors (e.g. trivial self-assignment).
+    let core_errors = loader.verify().unwrap_or_default();
+
+    let (files, source_map, _, _, _) = loader.complete();
+    Ok(PipelineCheckResult {
+        warnings,
+        core_errors,
+        files,
+        source_map,
+    })
+}
+
+/// The four prelude-side prologue inputs, tagged to match the `(tag, expr)`
+/// pairs baked into `PreludeBlob::prelude_core` by `cargo xtask
+/// prelude-compile`. Order and construction mirror
+/// `EucalyptOptions::finalize`'s `prepend_input` calls exactly (locator,
+/// name, format) so the `Input`s hash-match what `opt.inputs()` produces.
+fn tag_for_prelude_side_input(input: &Input) -> Option<&'static str> {
+    match (input.locator(), input.name().as_deref()) {
+        (Locator::Resource(name), Some("__build")) if name == "build-meta" => Some("build"),
+        (Locator::Pseudo(name), Some("__io")) if name == "io" => Some("io"),
+        (Locator::Pseudo(name), Some("__args")) if name == "args" => Some("args"),
+        (Locator::Resource(name), None) if name == "prelude" => Some("prelude"),
+        _ => None,
+    }
+}
+
+/// Run the bidirectional type checker using the prelude blob's baked
+/// post-translate cores instead of loading and translating prelude source
+/// (eu-rb5n).
+///
+/// Mirrors [`run_type_checker`] exactly — same `merge_units` →
+/// `extract_operators`/`extract_visibility` → `cook` → `eliminate` →
+/// `extract_demands` → `check_deprecated_references` →
+/// `type_check`/`type_check_with_operator_overloads` → `verify` pipeline —
+/// except that the four prelude-side inputs (`__build`, `__io`, `__args`,
+/// the prelude itself) are injected from `prelude_units` (as decoded via
+/// [`crate::eval::stg::blob::PreludeBlob::decode_prelude_core`]) rather than
+/// loaded and translated from source. This is the only step skipped; the
+/// resulting warning set must be byte-equal to `run_type_checker`'s for the
+/// same inputs (verified by the eu-rb5n test matrix).
+///
+/// `prelude_units` entries missing a recognised tag are silently not
+/// injected — the corresponding input falls through to a normal load +
+/// translate, degrading to `run_type_checker`'s cost for that unit only
+/// (e.g. a partial or stale blob still produces a correct, if slower,
+/// result).
+pub fn run_type_checker_from_blob_core(
+    opt: &EucalyptOptions,
+    prelude_units: &[(String, RcExpr)],
+) -> Result<PipelineCheckResult, EucalyptError> {
+    let mut loader = SourceLoader::new(opt.lib_path().to_vec());
+    let inputs = opt.inputs();
+
+    // Inject the prelude-side units the blob supplied a baked core for, and
+    // record which inputs that covers so the load loop below can skip them.
+    let mut injected: std::collections::HashSet<&Input> = std::collections::HashSet::new();
+    for input in &inputs {
+        let Some(tag) = tag_for_prelude_side_input(input) else {
+            continue;
+        };
+        let Some((_, expr)) = prelude_units.iter().find(|(t, _)| t == tag) else {
+            continue;
+        };
+        let unit = TranslationUnit {
+            expr: expr.clone(),
+            targets: Default::default(),
+            own_targets: Default::default(),
+            docs: Vec::new(),
+            deprecations: Default::default(),
+        };
+        loader.inject_prelude_units(vec![(input.clone(), unit)]);
+        injected.insert(input);
+    }
+
+    // Load every input that wasn't just injected (the user's files, plus any
+    // prelude-side input the blob didn't cover).
+    for input in &inputs {
+        if injected.contains(input) {
+            continue;
+        }
+        loader.load(input)?;
+    }
+
+    let parse_errors = loader.drain_parse_errors();
+    for e in &parse_errors {
+        let diag = e.to_diagnostic(loader.source_map());
+        loader.diagnose_to_stderr(&diag);
+    }
+
+    // Translate every input — injected prelude-side units short-circuit
+    // immediately (see `translate()`'s existing-key check), so this only
+    // does real work for the user's files.
+    for input in &inputs {
+        loader.translate(input)?;
+    }
+
+    loader.merge_units(&inputs)?;
+
+    loader.extract_operators();
+    loader.extract_visibility();
+    let operator_type_strings = loader.unit_interface().operator_type_strings();
+    let operator_overloads = parse_operator_overloads(&operator_type_strings);
+
+    loader.cook()?;
+    loader.eliminate()?;
+    loader.extract_demands();
+
+    let deprecation_warnings =
+        check_deprecated_references(&loader.core().expr, &loader.core().deprecations);
+
+    let core_expr = loader.core().expr.clone();
+    let mut warnings = if operator_overloads.is_empty() {
+        type_check(&core_expr).0
+    } else {
+        type_check_with_operator_overloads(&core_expr, operator_overloads)
+    };
+    warnings.extend(deprecation_warnings);
+
     let core_errors = loader.verify().unwrap_or_default();
 
     let (files, source_map, _, _, _) = loader.complete();

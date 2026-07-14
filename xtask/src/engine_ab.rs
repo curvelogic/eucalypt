@@ -416,8 +416,8 @@ fn cmd_check(root: &Path) -> Result<()> {
     }
 
     println!(
-        "{:<26} {:>3} {:>8} {:>8} {:>8} {:>8}  {}",
-        "bench", "cls", "prev", "last", "delta%", "thresh", "status"
+        "{:<26} {:>3} {:>8} {:>8} {:>8} {:>8}  status",
+        "bench", "cls", "prev", "last", "delta%", "thresh"
     );
 
     let mut regressed = false;

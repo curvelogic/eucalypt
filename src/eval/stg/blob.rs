@@ -131,12 +131,16 @@ pub struct PreludeBlob {
     #[serde(default)]
     pub inline_cores: Vec<(String, RcExpr)>,
 
-    /// Postcard-encoded prelude core expression (post-translate, pre-merge),
-    /// for the eval-path MERGED type check without parsing prelude source
-    /// (eu-rb5n). Stored as raw bytes so blob load stays cheap — the `RcExpr`
-    /// is decoded lazily via [`PreludeBlob::decode_prelude_core`] only when the
-    /// type check actually runs (never under `--suppress-type-warnings`). Empty
-    /// on blobs generated before this field, which fall back to source compile.
+    /// Postcard-encoded, tagged post-translate cores of the four prelude-side
+    /// units — `"build"`, `"io"`, `"args"`, `"prelude"` (matching the
+    /// `__build`/`__io`/`__args` pseudoblocks and the prelude itself) — for
+    /// the eval-path MERGED type check without parsing prelude source
+    /// (eu-rb5n). Each entry is the unit's `expr` exactly as captured after
+    /// `SourceLoader::translate`, before `merge_units`. Stored as raw bytes so
+    /// blob load stays cheap — decoded lazily via
+    /// [`PreludeBlob::decode_prelude_core`] only when the type check actually
+    /// runs (never under `--suppress-type-warnings`). Empty on blobs generated
+    /// before this field, which fall back to source compile.
     #[serde(default)]
     pub prelude_core: Vec<u8>,
 
@@ -163,10 +167,14 @@ impl PreludeBlob {
         postcard::from_bytes(bytes)
     }
 
-    /// Lazily decode the baked prelude core expression, if present. Called only
-    /// when the eval-path type check actually runs, so the decode cost is not
-    /// paid at blob load or under `--suppress-type-warnings`.
-    pub fn decode_prelude_core(&self) -> Option<RcExpr> {
+    /// Lazily decode the baked prelude-side unit cores, if present. Called
+    /// only when the eval-path type check actually runs, so the decode cost
+    /// is not paid at blob load or under `--suppress-type-warnings`.
+    ///
+    /// Returns `(tag, expr)` pairs — tags are `"build"`, `"io"`, `"args"`,
+    /// `"prelude"` — for [`crate::driver::check::run_type_checker_from_blob_core`]
+    /// to re-key against the matching `Input`s.
+    pub fn decode_prelude_core(&self) -> Option<Vec<(String, RcExpr)>> {
         if self.prelude_core.is_empty() {
             None
         } else {
@@ -278,6 +286,49 @@ mod tests {
             restored.monad_type_hints.get("io"),
             Some(&"IO(a)".to_string())
         );
+    }
+
+    #[test]
+    fn prelude_core_empty_decodes_to_none() {
+        // A blob with no baked prelude_core (stale format, or generated
+        // before this field existed) must decode to `None` so the caller
+        // (`bin/eu.rs`) falls back explicitly to `run_type_checker` (eu-rb5n
+        // condition 3) rather than panicking or silently checking nothing.
+        let blob = minimal_blob();
+        assert!(blob.prelude_core.is_empty());
+        assert!(blob.decode_prelude_core().is_none());
+    }
+
+    #[test]
+    fn prelude_core_round_trips_tagged_units() {
+        use crate::common::sourcemap::Smid;
+        use crate::core::expr::{Expr, Primitive, RcExpr};
+
+        let sym = |s: &str| {
+            RcExpr::from(Expr::Literal(
+                Smid::default(),
+                Primitive::Sym(s.to_string()),
+            ))
+        };
+        let units: Vec<(String, RcExpr)> = vec![
+            ("build".to_string(), sym("b")),
+            ("io".to_string(), sym("i")),
+            ("args".to_string(), sym("a")),
+            ("prelude".to_string(), sym("p")),
+        ];
+
+        let mut blob = minimal_blob();
+        blob.prelude_core = postcard::to_allocvec(&units).unwrap();
+
+        let bytes = blob.to_bytes().unwrap();
+        let restored = PreludeBlob::from_bytes(&bytes).unwrap();
+
+        let decoded = restored
+            .decode_prelude_core()
+            .expect("non-empty prelude_core must decode");
+        assert_eq!(decoded.len(), 4);
+        let tags: Vec<&str> = decoded.iter().map(|(t, _)| t.as_str()).collect();
+        assert_eq!(tags, vec!["build", "io", "args", "prelude"]);
     }
 
     #[test]

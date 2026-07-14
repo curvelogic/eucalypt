@@ -133,10 +133,20 @@ fn cmd_prelude_compile() -> Result<()> {
     for inp in &all_inputs {
         loader.load(inp).with_context(|| format!("load {inp}"))?;
     }
-    for inp in &all_inputs {
-        loader
+    // Tags match `all_inputs`' fixed order (build-meta, io, args, prelude) and
+    // must match `tag_for_prelude_side_input` in `src/driver/check.rs`, which
+    // re-keys these by `Input` identity (locator/name/format), not position.
+    let unit_tags = ["build", "io", "args", "prelude"];
+    let mut prelude_core_units: Vec<(String, RcExpr)> = Vec::with_capacity(all_inputs.len());
+    for (inp, tag) in all_inputs.iter().zip(unit_tags.iter()) {
+        // Capture each unit's post-translate core (before merge_units) for
+        // the eval-path merged type check (eu-rb5n): baking these lets
+        // `run_type_checker_from_blob_core` reproduce `run_type_checker`
+        // exactly while skipping prelude load + translate.
+        let unit = loader
             .translate(inp)
             .with_context(|| format!("translate {inp}"))?;
+        prelude_core_units.push((tag.to_string(), unit.expr.clone()));
     }
     loader.merge_units(&all_inputs).context("merge_units")?;
 
@@ -214,7 +224,7 @@ fn cmd_prelude_compile() -> Result<()> {
             n.starts_with("__")
                 && n[2..]
                     .find('_')
-                    .map_or(false, |sep| sep > 0 && sep + 1 < n[2..].len())
+                    .is_some_and(|sep| sep > 0 && sep + 1 < n[2..].len())
         })
         .count();
     println!("  namespace members hoisted: {hoisted_count}");
@@ -406,7 +416,15 @@ fn cmd_prelude_compile() -> Result<()> {
         })
     };
 
-    // ── 9. Serialise and write ────────────────────────────────────────────────
+    // ── 9. Encode the tagged prelude-side unit cores (eu-rb5n) ────────────────
+    let prelude_core = postcard::to_allocvec(&prelude_core_units).context("encode prelude_core")?;
+    println!(
+        "  prelude_core: {} bytes ({} tagged units)",
+        prelude_core.len(),
+        prelude_core_units.len(),
+    );
+
+    // ── 10. Serialise and write ───────────────────────────────────────────────
     let blob = PreludeBlob {
         source_hash,
         nodes,
@@ -418,11 +436,7 @@ fn cmd_prelude_compile() -> Result<()> {
         monad_specs,
         monad_type_hints,
         inline_cores,
-        // TODO(eu-rb5n Z): bake the prelude post-translate unit core(s) here so
-        // the eval path can run the merged type-check without parsing prelude
-        // source. Empty for now → the eval binary falls back to
-        // `run_type_checker` (correct, but pays the prelude-source compile).
-        prelude_core: Vec::new(),
+        prelude_core,
         bytecode,
     };
 

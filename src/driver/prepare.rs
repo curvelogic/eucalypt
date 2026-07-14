@@ -314,24 +314,14 @@ pub fn prepare(
         }
     }
 
-    // Type-check the PRE-INLINE user core, seeded with the blob's prelude type
-    // summary. This is the fast, correct eval-path check: the summary supplies
-    // the prelude type context without loading the prelude source (preserving
-    // the blob's startup win), and checking here — before inject/inline — keeps
-    // diagnostics independent of the inline pass (which can eliminate the very
-    // application a mismatch hangs on, or expose spurious ones). Only the blob
-    // path is handled here; source/alternative-prelude configs have no summary
-    // and fall back to `run_type_checker` in `bin/eu.rs`.
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let core_expr = loader.core().expr.clone();
-        let warnings = loader
-            .prelude_type_summary()
-            .map(|s| crate::core::typecheck::check::type_check_with_seed(&core_expr, s));
-        if let Some(warnings) = warnings {
-            loader.set_type_warnings(warnings);
-        }
-    }
+    // Eval-path type warnings are computed separately by `bin/eu.rs`, after
+    // `prepare()` returns: the blob path calls
+    // `run_type_checker_from_blob_core` (merged check against the blob's
+    // baked prelude-side cores, no prelude source load); non-blob configs
+    // call `run_type_checker` (eu-rb5n). An interim version of this check ran
+    // here, seeded only with the blob's prelude type *summary* rather than
+    // its definitions — that missed record-membership constraints that need
+    // the actual prelude bindings (harness 065), so it was replaced.
 
     // Inject inlinable prelude combinators from blob before inline pass.
     // In the blob path the prelude is not loaded, so prelude function names

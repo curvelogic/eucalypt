@@ -155,53 +155,52 @@ fn run() -> i32 {
         Ok(Command::Continue) => {}
     }
 
-    // Emit type warnings. Diagnostics must not depend on the eval pipeline's
-    // inline pass (it can eliminate the application a mismatch hangs on, hiding
-    // a warning, or expose spurious ones), so on the blob path they are computed
-    // on the PRE-INLINE user core seeded with the blob's prelude type summary
-    // inside `prepare()` (fast: no prelude source load). On non-blob configs
-    // (source/alternative prelude, stale blob) there is no summary, so fall back
-    // to the merged `run_type_checker` — the same check `eu check` runs; those
-    // configs already pay the prelude-source compile, so this adds no new
-    // startup regression. Skipped entirely under `--suppress-type-warnings`.
+    // Run the bidirectional type checker and emit warnings — the same check
+    // `eu check` runs. On the blob path, the blob's baked prelude-side unit
+    // cores (`prelude_core`) let `run_type_checker_from_blob_core` reproduce
+    // this merged check without loading or translating prelude source (the
+    // dominant cost `run_type_checker` would otherwise pay); the cores are
+    // decoded lazily here, so the decode cost is only paid when the check
+    // actually runs (never under `--suppress-type-warnings`). A blob without
+    // baked cores (stale format, or generated before this field existed)
+    // falls back explicitly to `run_type_checker` — always correct, just
+    // paying the prelude-source compile for this invocation. Non-blob configs
+    // (source prelude, alternative prelude) always use `run_type_checker`.
+    // See eu-rb5n.
     if !opt.suppress_type_warnings() {
         #[cfg(not(target_arch = "wasm32"))]
-        let have_blob = loader.has_prelude_blob();
+        let blob_prelude_units = loader.prelude_blob().and_then(|b| b.decode_prelude_core());
         #[cfg(target_arch = "wasm32")]
-        let have_blob = false;
+        let blob_prelude_units: Option<Vec<(String, eucalypt::core::expr::RcExpr)>> = None;
 
-        if have_blob {
-            let warnings: Vec<_> = loader.type_warnings().to_vec();
-            for w in &warnings {
-                let diag = w.to_diagnostic(loader.source_map());
-                loader.diagnose_to_stderr(&diag);
+        let check_result = match &blob_prelude_units {
+            Some(prelude_units) => {
+                eucalypt::driver::check::run_type_checker_from_blob_core(&opt, prelude_units)
             }
-            if opt.check_strict() && !warnings.is_empty() {
-                return exit_code(&opt, 1, &statistics);
-            }
-        } else {
-            match eucalypt::driver::check::run_type_checker(&opt) {
-                Ok(result) => {
-                    let writer = codespan_reporting::term::termcolor::StandardStream::stderr(
-                        codespan_reporting::term::termcolor::ColorChoice::Auto,
+            None => eucalypt::driver::check::run_type_checker(&opt),
+        };
+
+        match check_result {
+            Ok(result) => {
+                let writer = codespan_reporting::term::termcolor::StandardStream::stderr(
+                    codespan_reporting::term::termcolor::ColorChoice::Auto,
+                );
+                let config = codespan_reporting::term::Config::default();
+                for w in &result.warnings {
+                    let diag = w.to_diagnostic(&result.source_map);
+                    let _ = codespan_reporting::term::emit(
+                        &mut writer.lock(),
+                        &config,
+                        &result.files,
+                        &diag,
                     );
-                    let config = codespan_reporting::term::Config::default();
-                    for w in &result.warnings {
-                        let diag = w.to_diagnostic(&result.source_map);
-                        let _ = codespan_reporting::term::emit(
-                            &mut writer.lock(),
-                            &config,
-                            &result.files,
-                            &diag,
-                        );
-                    }
-                    if opt.check_strict() && !result.warnings.is_empty() {
-                        return exit_code(&opt, 1, &statistics);
-                    }
                 }
-                Err(e) => {
-                    eprintln!("eu: type-check pipeline warning: {e}");
+                if opt.check_strict() && !result.warnings.is_empty() {
+                    return exit_code(&opt, 1, &statistics);
                 }
+            }
+            Err(e) => {
+                eprintln!("eu: type-check pipeline warning: {e}");
             }
         }
     }
