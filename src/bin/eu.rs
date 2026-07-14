@@ -156,20 +156,23 @@ fn run() -> i32 {
     }
 
     // Run the bidirectional type checker and emit warnings — the same check
-    // `eu check` runs. On the blob path, the blob's baked prelude-side unit
-    // cores (`prelude_core`) let `run_type_checker_from_blob_core` reproduce
-    // this merged check without loading or translating prelude source (the
-    // dominant cost `run_type_checker` would otherwise pay); the cores are
-    // decoded lazily here, so the decode cost is only paid when the check
-    // actually runs (never under `--suppress-type-warnings`). A blob without
-    // baked cores (stale format, or generated before this field existed)
-    // falls back explicitly to `run_type_checker` — always correct, just
-    // paying the prelude-source compile for this invocation. Non-blob configs
-    // (source prelude, alternative prelude) always use `run_type_checker`.
+    // `eu check` runs. On the blob path, the blob's baked desugared,
+    // per-unit prelude-side cores (`desugared_unit_cores`) let
+    // `run_type_checker_from_blob_core` reproduce this merged check without
+    // loading or translating prelude source (the dominant cost
+    // `run_type_checker` would otherwise pay); the cores are decoded lazily
+    // here, so the decode cost is only paid when the check actually runs
+    // (never under `--suppress-type-warnings`). A blob without baked cores
+    // (stale format, or generated before this field existed) falls back
+    // explicitly to `run_type_checker` — always correct, just paying the
+    // prelude-source compile for this invocation. Non-blob configs (source
+    // prelude, alternative prelude) always use `run_type_checker`.
     // See eu-rb5n.
     if !opt.suppress_type_warnings() {
         #[cfg(not(target_arch = "wasm32"))]
-        let blob_prelude_units = loader.prelude_blob().and_then(|b| b.decode_prelude_core());
+        let blob_prelude_units = loader
+            .prelude_blob()
+            .and_then(|b| b.decode_desugared_unit_cores());
         #[cfg(target_arch = "wasm32")]
         let blob_prelude_units: Option<Vec<(String, eucalypt::core::expr::RcExpr)>> = None;
 

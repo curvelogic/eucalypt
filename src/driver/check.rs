@@ -525,7 +525,7 @@ pub fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eu
 }
 
 /// The four prelude-side prologue inputs, tagged to match the `(tag, expr)`
-/// pairs baked into `PreludeBlob::prelude_core` by `cargo xtask
+/// pairs baked into `PreludeBlob::desugared_unit_cores` by `cargo xtask
 /// prelude-compile`. Order and construction mirror
 /// `EucalyptOptions::finalize`'s `prepend_input` calls exactly (locator,
 /// name, format) so the `Input`s hash-match what `opt.inputs()` produces.
@@ -540,8 +540,8 @@ fn tag_for_prelude_side_input(input: &Input) -> Option<&'static str> {
 }
 
 /// Run the bidirectional type checker using the prelude blob's baked
-/// post-translate cores instead of loading and translating prelude source
-/// (eu-rb5n).
+/// desugared, per-unit cores instead of loading and translating prelude
+/// source (eu-rb5n).
 ///
 /// Mirrors [`run_type_checker`] exactly — same `merge_units` →
 /// `extract_operators`/`extract_visibility` → `cook` → `eliminate` →
@@ -549,10 +549,11 @@ fn tag_for_prelude_side_input(input: &Input) -> Option<&'static str> {
 /// `type_check`/`type_check_with_operator_overloads` → `verify` pipeline —
 /// except that the four prelude-side inputs (`__build`, `__io`, `__args`,
 /// the prelude itself) are injected from `prelude_units` (as decoded via
-/// [`crate::eval::stg::blob::PreludeBlob::decode_prelude_core`]) rather than
-/// loaded and translated from source. This is the only step skipped; the
-/// resulting warning set must be byte-equal to `run_type_checker`'s for the
-/// same inputs (verified by the eu-rb5n test matrix).
+/// [`crate::eval::stg::blob::PreludeBlob::decode_desugared_unit_cores`])
+/// rather than loaded and translated from source. This is the only step
+/// skipped; the resulting warning set must be byte-equal to
+/// `run_type_checker`'s for the same inputs (verified by the eu-rb5n test
+/// matrix).
 ///
 /// `prelude_units` entries missing a recognised tag are silently not
 /// injected — the corresponding input falls through to a normal load +
@@ -871,8 +872,8 @@ bad(x): x
         assert_eq!(byte_offset_to_line_col(src, 6), "2:1");
     }
 
-    /// eu-rb5n / Wicket review: the baked `prelude_core` carries `Smid`
-    /// values minted by the offline `cargo xtask prelude-compile` process's
+    /// eu-rb5n / Wicket review: the baked `desugared_unit_cores` carry
+    /// `Smid` values minted by the offline `cargo xtask prelude-compile` process's
     /// own `SourceMap`. `Smid` (`src/common/sourcemap.rs`) is a bare index
     /// into a process-local `Vec`, so those indices are foreign once
     /// injected into a fresh runtime `SourceMap` — if a diagnostic's

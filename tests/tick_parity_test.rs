@@ -21,10 +21,11 @@
 //! - **Blob path**: the prelude source is never merged into the user's
 //!   core expression (`prepare.rs` filters it out of `inputs` once
 //!   `has_prelude_blob()` is true). References like `<=`/`+`/`-` in user
-//!   code stay `Var::Free` until `Loader::inject_prelude_inline_cores`
+//!   code stay `Var::Free` until `Loader::inject_prelude_inlinable_bindings`
 //!   (`src/driver/source.rs`) injects the blob's pre-resolved
-//!   `inline_cores` set as a flat `Let`, matched purely by free-variable
-//!   name, immediately before the general inline pass. That exposes the
+//!   `inlinable_bindings` set as a flat `Let`, matched purely by
+//!   free-variable name, immediately before the general inline pass. That
+//!   exposes the
 //!   strict `Case`-on-`L(0)` shape of the arithmetic/comparison
 //!   intrinsics to demand analysis, which infers `fib`'s recursive
 //!   argument as `Strict` — no per-call thunk allocation.
@@ -34,7 +35,7 @@
 //!   resolved to `Var::Bound` (verified directly: `eu dump cooked
 //!   --debug-format` on the source path contains zero `Free(...)` nodes
 //!   and thousands of `Bound(...)` ones) — there is no `Var::Free` name
-//!   left for a `inject_prelude_inline_cores`-style injection to catch.
+//!   left for a `inject_prelude_inlinable_bindings`-style injection to catch.
 //!   `fib`'s argument demand is inferred `Lazy`, so each recursive call
 //!   allocates and later forces a thunk for `n - 1` / `n - 2`.
 //!

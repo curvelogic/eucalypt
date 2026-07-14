@@ -329,7 +329,7 @@ pub fn prepare(
     // a Let scope gives the inline pass visible definitions to distribute.
     // No-op when EU_SOURCE_PRELUDE=1 or no blob is active.
     #[cfg(not(target_arch = "wasm32"))]
-    loader.inject_prelude_inline_cores();
+    loader.inject_prelude_inlinable_bindings();
 
     // Run inline pass
     {

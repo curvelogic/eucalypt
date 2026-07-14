@@ -581,7 +581,7 @@ impl DemandAnalyser {
         // binding to prevent update elision.
         //
         // Note: we check the body rather than the LetType because pipeline
-        // transforms (inject_prelude_inline_cores + compress) can convert
+        // transforms (inject_prelude_inlinable_bindings + compress) can convert
         // DefaultBlockLet scopes to OtherLet while preserving the Block body.
         if matches!(&*new_body.inner, Expr::Block(_, _)) {
             for d in &mut demands {

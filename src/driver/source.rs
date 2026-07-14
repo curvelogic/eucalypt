@@ -715,9 +715,9 @@ impl SourceLoader {
 
     /// Peek at the stored prelude blob without taking it.
     ///
-    /// Used by `bin/eu.rs` to decode `prelude_core` for the eval-path merged
-    /// type check (eu-rb5n) — this runs before `take_prelude_blob()` hands the
-    /// blob to the `Executor`, so the blob must still be present.
+    /// Used by `bin/eu.rs` to decode `desugared_unit_cores` for the eval-path
+    /// merged type check (eu-rb5n) — this runs before `take_prelude_blob()`
+    /// hands the blob to the `Executor`, so the blob must still be present.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn prelude_blob(&self) -> Option<&crate::eval::stg::blob::PreludeBlob> {
         self.prelude_blob.as_ref()
@@ -745,17 +745,17 @@ impl SourceLoader {
     /// as regular let-bindings; after inlining, any that are no longer referenced
     /// are removed by the subsequent eliminate pass.
     ///
-    /// No-op when no blob is present or when `inline_cores` is empty.
+    /// No-op when no blob is present or when `inlinable_bindings` is empty.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn inject_prelude_inline_cores(&mut self) {
+    pub fn inject_prelude_inlinable_bindings(&mut self) {
         let Some(ref blob) = self.prelude_blob else {
             return;
         };
-        if blob.inline_cores.is_empty() {
+        if blob.inlinable_bindings.is_empty() {
             return;
         }
         let bindings: Vec<CoreBinding<RcExpr>> = blob
-            .inline_cores
+            .inlinable_bindings
             .iter()
             .map(|(name, expr)| CoreBinding::new(name.clone(), expr.clone()))
             .collect();
