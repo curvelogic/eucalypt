@@ -1,5 +1,25 @@
 # Post-copy-specialisation re-profile: enter_local share collapse (eu-98zg)
 
+> **CORRECTION (2026-07-14, Wicket's #1011 review).** §5 originally claimed
+> day07's `foldl(row-step, [b0, 0])` call was a "hand-written beam-fold...
+> not a prelude combinator... not touched by copy-specialisation." **This is
+> wrong.** `solve` calls the prelude's own `foldl` directly; Wicket verified
+> at the STG level (`eu dump stg day07.eu -t part-1`) that it fuses via the
+> same local self-recursive specialised-copy signature established for
+> `022_hof_fold`, and this was independently re-confirmed here from the
+> source (`row-step` has no self-recursion anywhere in day07.eu) and the STG
+> dump's `letrec [0] λ{3}` head node. **The fold is not the residual cost.**
+> The actual source: `row-step` is a substantial *non-recursive* operator
+> function that calls sibling helpers (`to-splitters`, `zip-with`,
+> `shift-left`, `shift-right`) as free variables — ordinary
+> cross-function-call environment lookups, once per fold iteration, not
+> "fold outside the qualifying set." §5 and §8 below are corrected in place
+> to reflect this; the **finding itself is unchanged** (20.5% share on
+> day07, defer-BV3-not-retire recommendation stands) — only the causal
+> explanation was wrong, and the corrected account is, if anything, a
+> *broader and structurally cleaner* case for BV3's continued relevance (see
+> corrected §5). Full detail in Wicket's PR #1011 review comment.
+
 - **Date:** 2026-07-14
 - **Bead:** eu-98zg, owner-commissioned re-profile contingent on eu-dp0k/#1010
   (copy-specialisation) merging. Verdict feeds eu-2sa6.2 (BV3: register
@@ -163,38 +183,49 @@ retiring it outright**, for three reasons the data itself supports:
    second-largest leaf in every profile taken this session (see raw data,
    §7) — dispatch and `handle_op_predecoded` are comparable in magnitude,
    but env-frame access has not become a rounding error.
-2. **The qualifying set is deliberately narrow.** Copy-specialisation's
-   `MAX_COPY_BODY_NODES = 48` criterion and the specific 8-combinator
-   admission list (PR #1010) mean many other recursive/higher-order
-   patterns in real code (day07's own beam-folding logic, for instance,
-   which is user-authored, not a prelude combinator) are **not** covered by
-   this fix and still pay full env-walk cost per lookup — day07's 20.5%
-   share, the lowest of the four, is still a genuinely fold-shaped
-   real-world workload not touched by copy-specialisation at all (it never
-   calls the 8 qualifying prelude combinators in its hot path; its own
-   recursive fold is hand-written). This is direct evidence that BV3's
-   value proposition — a **selective, compiler-decided** transform per
-   ROADMAP §10.2, not the reverted universal one — still has a real target
-   population: user-authored recursive folds that copy-specialisation's
-   narrow criterion doesn't reach.
+2. **[CORRECTED] The residual cost is not "folds outside the qualifying
+   set" — it's general cross-function-call lookup cost, which no
+   `tag_combinators` criterion relaxation could ever reach.** day07's
+   `solve` calls the prelude's own `foldl(row-step, [b0, 0])` directly, and
+   that call *does* fuse (verified at the STG level: `solve`'s compiled body
+   contains the same local self-recursive specialised-copy signature as
+   `022_hof_fold`'s fused form). The 20.5% residual share is not fold-walk
+   cost at all — it comes from `row-step`, a substantial **non-recursive**
+   operator function called once per fold iteration, whose body itself
+   calls sibling top-level helpers (`to-splitters`, `zip-with`,
+   `shift-left`, `shift-right`) as free variables. Each such call is an
+   ordinary global reference needing environment resolution — ~150 grid
+   rows × several helper calls per row. `row-step` was never a candidate
+   for copy-specialisation's criterion (leg 1 requires self-recursion,
+   which a plain operator function doesn't have), so this isn't a gap in
+   the *combinator* admission list — it's a structurally different
+   workload shape entirely: **any multi-function-call operator with
+   sibling helper calls**, fold-adjacent or not. This is, if anything, a
+   *broader* and *more structurally distinct* target population than "user
+   folds outside the 8-combinator set" — one no plausible extension of
+   `tag_combinators` (which is fundamentally about recursive self-calls)
+   could reach, because it isn't recursion-shaped at all.
 3. **The eu-2sa6.2 motivating example needs replacing, not the bead
    itself.** The original framing ("higher-order foldl is O(n²)... register
    frames make it O(1)") is now solved for the *prelude's own* `foldl` by
-   copy-specialisation. BV3's live case, if pursued, should be reframed
-   around **user-authored** recursive higher-order functions (which cannot
-   be blob-side copy-specialised, since they're compiled in the user's own
-   program) — day07's beam-fold is a concrete example available for a future
-   design note.
+   copy-specialisation — including in day07, where the fold itself fuses
+   cleanly. BV3's live case, if pursued, should be reframed around
+   **general cross-function-call environment-lookup cost** in
+   non-recursive but call-heavy operator functions (day07's `row-step` is a
+   concrete, measured example: 20.5% residual share with its own fold
+   already fused) — a population copy-specialisation cannot reach by
+   construction, since it only targets self-recursive combinators, not
+   ordinary sibling-helper composition.
 
 **What would justify full retirement instead:** if a future re-profile
 (after eu-rb5n, the source-path closure of copy-specialisation — see PR
 #1010's "honest divergence disclosure") shows share continuing to fall
-toward single digits across a broader workload sample including
-user-authored recursive folds, or if CG4 (selective lambda-lifting) is
-shown to capture the same win more cheaply without BV3's higher
-implementation risk. Neither is demonstrated here — this session only
-re-tested the four named/chosen workloads under the current (blob-path-only)
-copy-specialisation scope.
+toward single digits across a broader workload sample of call-heavy
+operator functions, or if CG4 (selective lambda-lifting) is shown to
+capture the same win more cheaply without BV3's higher implementation risk.
+Neither is demonstrated here — this session only re-tested the four
+named/chosen workloads under the current (blob-path-only) copy-specialisation
+scope.
 
 **eu-2sa6.2 bead notes updated** (§8) with this verdict, unblocking it for
 re-scoping (not for implementation as originally framed).
@@ -263,12 +294,17 @@ difference between builds, not a change in what work is being measured.
 
 ## 8. eu-2sa6.2 bead update
 
-Appended via `bd note eu-2sa6.2` (see bead history): verdict from this
-report — share collapsed on all four tested workloads (27%/29.5%/20.5%/
+Appended via `bd note eu-2sa6.2` (see bead history; **updated again** per
+this correction — see the banner and §5): verdict from this report — share
+collapsed on all four tested workloads (27%/29.5%/20.5%/
 unmeasurable-but-96%-faster), below the ~40% threshold; recommend deferring
-BV3 to 0.14+ with a reframed motivating case (user-authored recursive folds
-outside copy-specialisation's narrow 8-combinator scope, e.g. day07's
-beam-fold), not retiring outright; full retirement would need a broader
+BV3 to 0.14+ with a reframed motivating case — **general cross-function-call
+environment-lookup cost in non-recursive, call-heavy operator functions**
+(day07's `row-step`, 20.5% share, is the concrete measured example; its own
+`foldl` call fuses cleanly — the residual cost is `row-step`'s own calls to
+sibling helpers, not an unfused fold), a population copy-specialisation
+cannot reach by construction since it only targets self-recursive
+combinators — not retiring outright; full retirement would need a broader
 post-eu-rb5n re-profile showing continued collapse. Bead unblocked for
 re-scoping.
 
