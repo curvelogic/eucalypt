@@ -257,14 +257,17 @@ fn all_free_vars_resolvable(expr: &RcExpr, set: &HashSet<String>, self_name: Opt
         Expr::Var(_, Var::Bound(_)) => true,
         Expr::Literal(_, _) => true,
         Expr::Intrinsic(_, _) => true,
-        Expr::App(_, f, xs) => {
-            all_free_vars_resolvable(f, set, self_name)
-                && xs
-                    .iter()
-                    .all(|x| all_free_vars_resolvable(x, set, self_name))
-        }
+        // Metadata (docstrings, type annotations) does not gate admission —
+        // only the wrapped value's free variables matter.
         Expr::Meta(_, inner, _) => all_free_vars_resolvable(inner, set, self_name),
-        _ => false,
+        // Every other shape (App, Let, Block, Lam, List, Lookup, Operator,
+        // ArgTuple): locally-bound names are `Var::Bound` (resolvable), so it
+        // suffices to check that every free variable among the children is in
+        // the set. This admits recursive combinators with `Let`/`Block` bodies
+        // (e.g. `scanr`) to `inline_cores`, completing the qualifying set.
+        _ => child_exprs(expr)
+            .iter()
+            .all(|c| all_free_vars_resolvable(c, set, self_name)),
     }
 }
 
@@ -363,15 +366,15 @@ pub mod tests {
         let set: HashSet<String> = HashSet::new();
         assert!(all_free_vars_in_set(&num(1), &set));
         assert!(all_free_vars_in_set(&bif("ADD"), &set));
-        // Lam nodes are not traversed by all_free_vars_in_set (falls through
-        // to the `_ => false` arm) — this is intentional: the function is
-        // used on lambda bodies, not on the Lam wrappers themselves.
+        // Lam bodies are now traversed (needed to admit combinators with
+        // nested-lambda or `Let`/`Block` bodies): a Lam whose body has no
+        // unresolved free vars is resolvable; its parameters are `Var::Bound`.
         let x = free("x");
-        let lam_expr = lam(vec![x.clone()], num(42));
-        assert!(
-            !all_free_vars_in_set(&lam_expr, &set),
-            "Lam node returns false (checked on body separately, not the wrapper)"
-        );
+        let lam_closed = lam(vec![x.clone()], num(42));
+        assert!(all_free_vars_in_set(&lam_closed, &set));
+        // A Lam whose body references an out-of-set free var is not resolvable.
+        let lam_free = lam(vec![x.clone()], var(free("external")));
+        assert!(!all_free_vars_in_set(&lam_free, &set));
         let _ = x;
     }
 
@@ -416,6 +419,31 @@ pub mod tests {
         let inner = var(free("if"));
         let meta_expr = RcExpr::from(Expr::Meta(Smid::default(), inner, num(42)));
         assert!(all_free_vars_in_set(&meta_expr, &set));
+    }
+
+    /// A `Let`-bodied expression is traversed: locally-bound names are
+    /// `Var::Bound` (resolvable), and external free vars are checked against the
+    /// set. This admits recursive combinators with `Let`/`Block` bodies (§3.2).
+    #[test]
+    pub fn test_all_free_vars_let_body_traversed() {
+        use std::collections::HashSet;
+        let mut set: HashSet<String> = HashSet::new();
+        set.insert("cons".to_string());
+        // let acc = cons(x, y) in acc  — `acc` is locally bound (Bound), `cons`
+        // is external and in the set, `x`/`y` are lambda-scoped Bound vars.
+        let body = let_(
+            vec![(
+                free("acc"),
+                app(var(free("cons")), vec![var(free("x")), var(free("y"))]),
+            )],
+            var(free("acc")),
+        );
+        let expr = lam(vec![free("x"), free("y")], body);
+        assert!(all_free_vars_in_set(&expr, &set));
+
+        // With `cons` absent from the set, the Let body's free var fails.
+        let empty: HashSet<String> = HashSet::new();
+        assert!(!all_free_vars_in_set(&expr, &empty));
     }
 
     #[test]
