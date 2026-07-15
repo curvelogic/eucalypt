@@ -214,6 +214,10 @@ measurement standard and cite a dated report or a ledger row:
 
 A PR that touches GC or memory management, unsafe code, the blob wire format, engine defaults, or release machinery is merged only after a review comment from someone other than its author appears on the PR. The merging agent confirms that recorded review exists as part of its merge checklist. See `docs/superpowers/reports/2026-07-15-0.13-merge-digest.md` for the factual basis.
 
+### Owner-hold PRs
+
+A PR whose body or comments carry "Do not merge — owner review" (or an equivalent explicit hold) is merged by the owner alone. The hold binds every agent regardless of later activity, review state, or CI, and is released only when the owner says so on the PR or to the coordinator. See the PR #1002 formal re-review comment (2026-07-15) for the factual basis.
+
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
 ## Beads Issue Tracker

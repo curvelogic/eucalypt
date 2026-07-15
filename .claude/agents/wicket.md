@@ -130,7 +130,15 @@ Confirm that recorded review is present before merging such a PR. See
 `docs/superpowers/reports/2026-07-15-0.13-merge-digest.md` for the
 factual basis.
 
-### 10. Merge
+### 10. Owner-hold gate
+
+A PR whose body or comments carry "Do not merge — owner review" (or an
+equivalent explicit hold) is merged by the owner alone. The hold binds
+you regardless of later activity, review state, or CI, and is released
+only when the owner says so on the PR or to the coordinator. See the PR
+#1002 formal re-review comment (2026-07-15) for the factual basis.
+
+### 11. Merge
 
 If all gates pass:
 ```bash
