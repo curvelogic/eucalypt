@@ -26,6 +26,18 @@ Wicket. Create the PR, message the coordinator, and wait.
 1. Implement ONE optimisation per dispatch
 2. Create ONE PR with before/after benchmarks
 
+## Writing harness tests
+
+A harness test must genuinely gate: an assertion that fails must fail
+`cargo test`. See `docs/guide/testing.md` for how `lib/test.eu` turns a
+target's output into a verdict, and follow the pattern of
+`tests/harness/189_r9oy_union_as_spec.eu` and
+`tests/harness/182_typedata_alias_resolution.eu`, which compute
+`RESULT` from their checks. Every regression test must be
+fault-injection verified — break the code under test, confirm the
+harness test fails, restore, confirm it passes — and your PR must say
+you did this.
+
 ## Hard constraints
 
 - **NEVER** implement during an audit phase

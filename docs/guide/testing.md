@@ -31,6 +31,49 @@ test: {
 Several test targets can be embedded in one file. Each is run as a
 separate test.
 
+## How the default verdict is computed
+
+Each test target is rendered to output, and that output is parsed back
+into eucalypt data as `result`. An *expectation function* maps the
+evidence to `:PASS` or `:FAIL`. Unless a target names its own validator
+(see [Custom validators](#custom-validators)), the built-in
+`default-expectation` in `lib/test.eu` is used, and it derives the
+verdict from `result` as follows:
+
+- if `result` is a block containing a `RESULT` key, the verdict is that
+  key's value — `true` gives `:PASS`, `false` gives `:FAIL`, and any
+  other value is used as the verdict directly;
+- otherwise, if `result` is a block, it passes when every value in the
+  block is `true`;
+- otherwise `result` is treated as a bare boolean, passing on `true`.
+
+Because the `RESULT` key takes precedence, a target that defines
+`RESULT` is judged solely on that value; its other bindings reach the
+verdict only through whatever computes `RESULT`. Computing `RESULT`
+from the checks keeps every check in the verdict — see
+`tests/harness/189_r9oy_union_as_spec.eu` and
+`tests/harness/182_typedata_alias_resolution.eu`, which gather their
+checks into a list and finish with `all-true? then(:PASS, :FAIL)`.
+
+## Inline assertions
+
+An expression can carry an inline expected value with the `//=>`
+operator:
+
+```eu
+sum: [1, 2, 3] sum //=> 6
+```
+
+`//=>` is a pass-through assertion: when it holds, the expression keeps
+its value and so composes inside larger expressions. When it does not
+hold, eucalypt emits an `EXPECT FAILED` diagnostic to `stderr`; in test
+mode the expression then evaluates to `false` and execution continues
+(outside test mode an assertion error is raised instead). Like any
+binding, an inline assertion reaches a target's verdict only through
+the `result` the expectation function sees — for instance by feeding
+its value into `RESULT`, or via the all-values-true inference when no
+`RESULT` key is present.
+
 ## Test files
 
 If your intention is not to embed tests in a eucalypt file but instead

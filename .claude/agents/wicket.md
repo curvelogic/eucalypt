@@ -85,6 +85,21 @@ code and tests in the PR.
 
 Every PR MUST include harness tests. No tests = send back.
 
+For any PR that adds or modifies harness tests (`tests/harness/`),
+confirm the tests genuinely gate — an assertion that fails must fail
+`cargo test`:
+
+- Verify each target's verdict is computed from its checks. See
+  `docs/guide/testing.md` for how `lib/test.eu` derives a verdict, and
+  `tests/harness/189_r9oy_union_as_spec.eu` /
+  `182_typedata_alias_resolution.eu` for the pattern.
+- For a bug-fix regression test, **independently repeat the
+  fault-injection check**: break the code under test, confirm the
+  harness test FAILs, restore, confirm it PASSes. Do not take the
+  author's word for it.
+- A test that cannot fail is a **review-blocking finding** — send it
+  back.
+
 ### 6. Code quality gate
 
 ```bash
@@ -106,7 +121,16 @@ cargo fmt --all --check
 
 New features need docs. Changed behaviour needs updated docs.
 
-### 9. Merge
+### 9. Recorded-review gate
+
+A PR that touches GC or memory management, unsafe code, the blob wire
+format, engine defaults, or release machinery is merged only after a
+review comment from someone other than its author appears on the PR.
+Confirm that recorded review is present before merging such a PR. See
+`docs/superpowers/reports/2026-07-15-0.13-merge-digest.md` for the
+factual basis.
+
+### 10. Merge
 
 If all gates pass:
 ```bash
