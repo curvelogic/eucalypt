@@ -106,6 +106,12 @@ Type checking runs **unconditionally** on every `eu` invocation (evaluate, dump,
 **Test Execution**:
 - Tests are run via `tests/harness_test.rs`, one test per file in `tests/harness/`, using the `tester` module
 
+#### Writing harness tests that gate
+
+A harness test must genuinely gate: an assertion that fails must fail `cargo test`. How `lib/test.eu` turns a target's output into a PASS/FAIL verdict — the `RESULT` key, all-values-true inference, and `//=>` inline assertions — is documented in `docs/guide/testing.md` ("How the default verdict is computed"). Compute a target's `RESULT` from its checks so each one is in the verdict, following `tests/harness/189_r9oy_union_as_spec.eu` and `tests/harness/182_typedata_alias_resolution.eu`.
+
+Every regression test must be **fault-injection verified**: break the code under test, confirm the harness test FAILs, restore it, confirm it PASSes — and the PR must state this was done. Further tester improvements are tracked by **eu-ntwg.2**.
+
 ### Memory Management
 
 The project includes a sophisticated garbage collector:

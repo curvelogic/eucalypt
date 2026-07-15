@@ -85,6 +85,21 @@ code and tests in the PR.
 
 Every PR MUST include harness tests. No tests = send back.
 
+For any PR that adds or modifies harness tests (`tests/harness/`),
+confirm the tests genuinely gate — an assertion that fails must fail
+`cargo test`:
+
+- Verify each target's verdict is computed from its checks. See
+  `docs/guide/testing.md` for how `lib/test.eu` derives a verdict, and
+  `tests/harness/189_r9oy_union_as_spec.eu` /
+  `182_typedata_alias_resolution.eu` for the pattern.
+- For a bug-fix regression test, **independently repeat the
+  fault-injection check**: break the code under test, confirm the
+  harness test FAILs, restore, confirm it PASSes. Do not take the
+  author's word for it.
+- A test that cannot fail is a **review-blocking finding** — send it
+  back.
+
 ### 6. Code quality gate
 
 ```bash
