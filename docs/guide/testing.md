@@ -61,7 +61,7 @@ An expression can carry an inline expected value with the `//=>`
 operator:
 
 ```eu
-sum: [1, 2, 3] sum //=> 6
+total: [1, 2, 3] sum //=> 6
 ```
 
 `//=>` is a pass-through assertion: when it holds, the expression keeps
