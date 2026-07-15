@@ -17,13 +17,13 @@ test: {
 
   # `:square` is a symbol and `4.0` is a number — should match the
   # widened alias `{ type: symbol, area: number }`.
-  t-matches: {type: :square, area: 4.0} match?(shape-spec)     //=> true
+  t-matches: {type: :square, area: 4.0} match?(shape-spec)
 
   # `"big"` is a string, not a number — should NOT match.
-  t-rejects: {type: :square, area: "big"} match?(shape-spec)   //=> false
+  t-rejects: ({type: :square, area: "big"} match?(shape-spec)) not
 
   # The original exemplar should still match too.
-  t-original: {type: :circle, area: 3.4} match?(shape-spec)    //=> true
+  t-original: {type: :circle, area: 3.4} match?(shape-spec)
 
   # to-data should show base types, not literal types.
   # i.e. `[:t-prim, :symbol]` not `[:t-lit-sym, :circle]` for `type`.
@@ -31,12 +31,29 @@ test: {
   # `[:t-prim, :symbol]`.
 
   # ── result-def widening ──────────────────────────────────────────
-  ` { result-def: true }
+  #
+  # eu-2sa6.23: `result-def` without a `type:` annotation can only
+  # capture a return type when the checker synthesises a genuine
+  # function type for the binding. A plain lambda with no
+  # block-destructured parameter synthesises to `any`
+  # (`synthesise_lam`'s documented fast path), so unannotated
+  # `result-def` on an ordinary function has no function type to pull
+  # a return type from — the checker correctly warns and `as-spec`
+  # correctly degrades to `any?` rather than fabricating a shape.
+  # Every `result-def` unit test in check.rs, and the working
+  # `parse-nums` example in 182_typedata_alias_resolution.eu, use an
+  # explicit `type:` annotation for exactly this reason — so does
+  # this one. `result-def: "Tag"` also names the alias explicitly,
+  # since `result-def: true` would register it under the binding's
+  # own name (`make-tag`), not `Tag`.
+  ` { result-def: "Tag"
+      type: s"any → { tag: symbol, value: any }" }
   make-tag(x): { tag: :default, value: x }
 
   tag-spec: s"Tag" as-spec
-  t-result-match: {tag: :other, value: 42} match?(tag-spec)    //=> true
-  t-result-reject: {tag: 123, value: 42} match?(tag-spec)      //=> false
+  t-result-match: {tag: :other, value: 42} match?(tag-spec)
+  t-result-reject: ({tag: 123, value: 42} match?(tag-spec)) not
 
-  RESULT: :PASS
+  RESULT: [t-matches, t-rejects, t-original, t-result-match, t-result-reject]
+    all-true? then(:PASS, :FAIL)
 }
