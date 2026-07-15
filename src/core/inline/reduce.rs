@@ -92,17 +92,101 @@ fn inlinable(expr: &RcExpr) -> bool {
     matches!(&*expr.inner, Expr::Lam(_, true, _) | Expr::Intrinsic(_, _))
 }
 
+/// Peel `Meta` wrappers from an expression, returning the innermost non-Meta
+/// node (cloned — cheap, `RcExpr` is `Rc`-backed).
+///
+/// Source-path prelude combinators are `Meta(Lam(_, true, _), {doc, type})` —
+/// `tag_combinators_named` already tags the inner `Lam` inlinable through the
+/// `Meta` wrapper (it threads `self_name` through `Expr::Meta`), but
+/// `inlinable()` above only recognises a *bare* `Lam(_, true, _)` /
+/// `Intrinsic`, so a documented/annotated combinator's `Meta` wrapper hides it
+/// from `distribute`'s inline-collection step entirely (eu-rb5n sub-problem
+/// 1 — this is the actual mechanism of the source-vs-blob fusion divergence:
+/// the blob path never hits this because `xtask` peels `Meta` before storing
+/// `inlinable_bindings`). Peeling here is safe: the pre-inline type check
+/// (eu-rb5n Q1, `prepare.rs`) has already run and captured any
+/// type-annotation warnings on the *unpeeled* core before this pass ever
+/// runs, so peeling here affects only the inline/fusion machinery, never
+/// diagnostics — harness 104 (`104_suppress_type_warnings_ok.eu`) is the
+/// type-safety tripwire for this claim.
+fn peel_meta(expr: &RcExpr) -> RcExpr {
+    match &*expr.inner {
+        Expr::Meta(_, inner, _) => peel_meta(inner),
+        _ => expr.clone(),
+    }
+}
+
+/// Pre-expand a Let scope's inlinable bindings against each other, to a
+/// fixed point, before they are substituted into call sites.
+///
+/// Without this, a self-recursive combinator's *recursive* branch stays
+/// under-resolved even after localisation: `distribute`'s single-pass
+/// substitution replaces a combinator's own self-reference with its
+/// **pre-substitution** value (substitution never re-enters the value it
+/// just inserted — see `RcExpr::substs`), so the embedded recursive
+/// continuation still calls through wrapper-function siblings (e.g.
+/// `foldl`'s `if(nil?(...))`/`head(...)`/`tail(...)`) instead of their
+/// resolved (here, raw-intrinsic) bodies. Demand analysis can then only
+/// see an opaque, un-specialised recursive body, and the source path stays
+/// quadratic even though the copy is correctly localised (eu-rb5n
+/// sub-problem 2 — pre-expansion parity with the blob path's xtask-baked
+/// `inlinable_bindings`, which are pre-expanded the same way, just once at
+/// blob-gen time instead of here on every compile).
+///
+/// Each entry is repeatedly substituted against its **siblings**
+/// (excluding itself, so a binding's own self-reference is never touched —
+/// recursion must still resolve to itself, not unroll) until a round makes
+/// no further change. `RcExpr::substs`'s `try_walk` short-circuits via
+/// `ptr_eq` when nothing changed, so convergence is checked cheaply.
+/// Bounded to `inlines.len()` rounds: monotonic (each round can only
+/// resolve more references, never fewer), so this is enough for any DAG of
+/// dependencies among the scope's own inlinable members.
+fn pre_expand_inlines(mut inlines: Vec<(String, RcExpr)>) -> Vec<(String, RcExpr)> {
+    for _ in 0..inlines.len() {
+        let mut changed = false;
+        let next: Vec<(String, RcExpr)> = inlines
+            .iter()
+            .map(|(name, v)| {
+                let siblings: Vec<(String, RcExpr)> =
+                    inlines.iter().filter(|(n, _)| n != name).cloned().collect();
+                let expanded = v.substs(&siblings);
+                if !expanded.ptr_eq(v) {
+                    changed = true;
+                }
+                (name.clone(), expanded)
+            })
+            .collect();
+        inlines = next;
+        if !changed {
+            break;
+        }
+    }
+    inlines
+}
+
 /// Distribute inline lambdas to call site
 fn distribute(expr: &RcExpr) -> Result<RcExpr, CoreError> {
     match &*expr.inner {
         Expr::Let(s, scope, _) => {
             let (open_bindings, body) = open_let_scope_full(scope);
 
+            // Peel `Meta` wrappers before the `inlinable` check so a
+            // documented/annotated combinator (the source path's shape for
+            // every prelude binding) is recognised the same way the blob
+            // path's pre-peeled `inlinable_bindings` already are. The
+            // *peeled* value is what gets substituted into call sites below
+            // — substituting the original `Meta`-wrapped value would leave
+            // `beta_reduce`'s `Expr::Lam(_, true, scope)` match unable to see
+            // through the wrapper at the call site.
             let inlines: Vec<(String, RcExpr)> = open_bindings
                 .iter()
-                .filter(|(_, v)| inlinable(v))
-                .cloned()
+                .filter_map(|(name, v)| {
+                    let peeled = peel_meta(v);
+                    inlinable(&peeled).then(|| (name.clone(), peeled))
+                })
                 .collect();
+
+            let inlines = pre_expand_inlines(inlines);
 
             if inlines.is_empty() {
                 Ok(expr.clone())
@@ -256,9 +340,35 @@ pub mod tests {
             ],
             var(z.clone()),
         );
+        // `z`'s value is now `compose`'s own Lam value applied directly to
+        // `[n, m]` — a valid partial application (`compose` takes 3
+        // parameters, `∘` only forwards 2) rather than a bare call to
+        // `compose` by name. `pre_expand_inlines` (eu-rb5n sub-problem 2)
+        // pre-expands `∘`'s own stored `inlines` entry against its sibling
+        // `compose` *before* `∘` is substituted into `z`'s call site, so the
+        // embedded `compose` Lam arrives already-expanded, not a reference.
+        // `beta_reduce` deliberately never reduces an under-saturated
+        // application (`binders.len() != xs.len()`, see its own comment) —
+        // exactly the same shape as a genuine curried call (e.g.
+        // `range(...) foldl(op, i)`), which the compiler already handles
+        // correctly downstream (proven by the 022 benchmark). `∘`'s own
+        // stored binding is unaffected: its reconstruction substitutes the
+        // *original* (not pre-expanded) `∘` value, unchanged from before.
         let expected = let_(
             vec![
-                (z.clone(), app(var(compose.clone()), vec![var(n), var(m)])),
+                (
+                    z.clone(),
+                    app(
+                        inline(
+                            vec![f.clone(), g.clone(), x.clone()],
+                            app(
+                                var(f.clone()),
+                                vec![app(var(g.clone()), vec![var(x.clone())])],
+                            ),
+                        ),
+                        vec![var(n), var(m)],
+                    ),
+                ),
                 (
                     compose,
                     inline(
@@ -356,6 +466,9 @@ pub mod tests {
             var(a.clone()),
         );
 
+        // See `test_with_partially_closed_term`'s comment: `d`'s value is
+        // now `compose`'s Lam value applied directly to `[n, m]` (a valid
+        // partial application), not a bare call to `compose` by name.
         let expected = let_(
             vec![
                 (
@@ -369,7 +482,19 @@ pub mod tests {
                                     let_(
                                         vec![(
                                             d.clone(),
-                                            app(var(compose.clone()), vec![var(n), var(m)]),
+                                            app(
+                                                inline(
+                                                    vec![f.clone(), g.clone(), x.clone()],
+                                                    app(
+                                                        var(f.clone()),
+                                                        vec![app(
+                                                            var(g.clone()),
+                                                            vec![var(x.clone())],
+                                                        )],
+                                                    ),
+                                                ),
+                                                vec![var(n), var(m)],
+                                            ),
                                         )],
                                         block(iter::once(("d".to_string(), var(d)))),
                                     ),

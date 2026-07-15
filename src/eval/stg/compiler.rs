@@ -1770,8 +1770,29 @@ impl<'rt> Compiler<'rt> {
             }
             Expr::Name(s, _) => Err(CompileError::UnexpectedExpression(*s)),
             Expr::Meta(s, body, meta) => {
+                // `self_recurse` must thread through to `body`: a
+                // self-recursive combinator's canonical binding (e.g. every
+                // prelude combinator on the source path) is still
+                // `Meta(Lam(...), {doc, type})` at compile time (the Meta
+                // wrapper is preserved on the canonical binding — only the
+                // inline pass's `inlines` substitution list, not the
+                // binding's own stored value, is meta-peeled). Dropping
+                // `self_recurse` here (passing `None`) meant a source-path
+                // self-recursive combinator's own recursive call was never
+                // recognised as self-recursive at compile time, silently
+                // losing the eager-argument optimisation that prevents
+                // O(n) thunk-chain build-up per recursive step (eu-rb5n
+                // sub-problem 2 — the actual mechanism, not pre-expansion).
+                // The metadata block itself is never a recursion target, so
+                // it still compiles with `None`.
                 let m = self.compile_binding(binder, meta.clone(), *s, Demand::default(), None)?;
-                let b = self.compile_binding(binder, body.clone(), *s, Demand::default(), None)?;
+                let b = self.compile_binding(
+                    binder,
+                    body.clone(),
+                    *s,
+                    Demand::default(),
+                    self_recurse,
+                )?;
                 binder.add(dsl::with_meta(m, b))
             }
             Expr::ArgTuple(s, _) => Err(CompileError::BadArgTupleExpression(*s)),
