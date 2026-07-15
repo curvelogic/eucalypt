@@ -351,6 +351,7 @@ non-function binding emits a warning and is skipped.
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
 | `T?`               | partial — sugar for `T \| ExecutionError` |
+| `!T` (leading `!`) | asserted — checker trusts the annotation, does not verify the body (see syntax-gotchas.md) |
 | `ExecutionError`   | the type of a raised runtime error     |
 | `a`, `b`           | type variable (kind `*`)               |
 | `m a`              | constructor application (`m` of kind `* -> *` applied to `a`) |

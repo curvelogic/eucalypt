@@ -295,17 +295,31 @@ Validates transformed expressions before STG compilation:
 
 Eucalypt uses a Spineless Tagless G-machine (STG) as its evaluation model, providing lazy evaluation with memoisation.
 
-> **Note on execution engines**: the sections below describe the STG
-> tree-walk machine (`src/eval/machine/vm.rs`), historically the only
-> engine and still the differential-testing/performance baseline
-> (select it with `EU_HEAPSYN=1`). Since 0.12.0 the **default** engine
-> instead compiles the same STG syntax to a bytecode program and runs
-> it on a separate bytecode VM (`src/eval/bytecode/`: `opcode.rs`,
-> `program.rs`, `machine.rs`, `closure.rs`, `cont.rs`, `env_builder.rs`,
-> `encode.rs`). `EU_BYTECODE=1` is a redundant no-op now that bytecode
-> is the default. A full description of the bytecode engine's design
-> is a tracked documentation gap — see `docs/superpowers/specs/` for
-> the implementation-level design documents in the meantime.
+### Two execution engines share one STG
+
+The STG syntax described below is the intermediate representation that
+**both** of eucalypt's execution engines consume. The engines differ only
+in how they *run* that syntax, not in what it means:
+
+- **The HeapSyn tree-walk engine** (`src/eval/machine/vm.rs`) walks a
+  materialised STG tree of heap-allocated nodes directly. It was
+  historically the only engine and is retained as the performance
+  baseline and the differential-testing oracle. Select it with
+  `EU_HEAPSYN=1`.
+- **The bytecode engine (BV1)** (`src/eval/bytecode/`) compiles the same
+  STG syntax to a flat bytecode program and runs that. Since 0.12.0 it is
+  the **default**; `EU_BYTECODE=1` is a now-redundant explicit opt-in, and
+  `EU_HEAPSYN=1` takes precedence over it.
+
+Both engines produce byte-identical rendered output on every input — this
+is enforced by a differential test suite (`src/eval/bytecode/differential.rs`)
+and is the invariant that lets the bytecode engine be the default while
+HeapSyn remains as a cross-check.
+
+The next four subsections (STG Syntax, STG Compiler, the tree-walk Virtual
+Machine, Continuations and Lazy Evaluation) describe the shared IR and the
+HeapSyn engine that walks it. [The Bytecode Engine](#the-bytecode-engine-bv1-the-default)
+below then describes how the default engine executes the same syntax.
 
 ### STG Syntax
 
@@ -435,6 +449,97 @@ Continuation::Update { environment, index } => {
 }
 ```
 
+### The Bytecode Engine (BV1, the default)
+
+*Implementation*: `src/eval/bytecode/` (`opcode.rs`, `program.rs`,
+`encode.rs`, `closure.rs`, `cont.rs`, `env_builder.rs`, `machine.rs`,
+`predecode.rs`)
+
+The default engine compiles STG syntax one step further, into a flat
+bytecode program, and interprets that. The motivation is a garbage-collection
+one: in the HeapSyn engine the *code* itself is a tree of heap-allocated
+`HeapSyn` nodes, so every code node must be scanned, marked and potentially
+evacuated by the collector. Bytecode moves the code **off the GC heap**
+entirely — it lives in a plain `Vec<u8>` that never moves — so closures need
+no code-pointer fix-up during collection.
+
+#### What gets compiled
+
+`encode.rs` flattens each STG tree into a post-order byte stream: children
+are emitted first at low offsets and parents refer to them by absolute `u32`
+offset (a `CodeRef`). There is one opcode per `StgSyn` variant — `Atom`,
+`Case`, `Cons`, `App`, `Bif`, `Let`, `LetRec`, `Meta`, `DeMeta` and so on
+(`opcode.rs`) — plus two encoder-introduced superinstructions: `DirectApp`
+for known-callable applications and `FusedPrimop`, which collapses the
+force-both-operands-then-dispatch tree of a whitelisted set of strict binary
+primops (arithmetic and comparison) into a single opcode.
+
+Values that cannot live in a byte stream — heap-backed strings and interned
+symbols — are hoisted once into a **constant pool** (`program.rs`) and
+referenced by index; they are rooted for the whole run. The compiled
+`BytecodeProgram` also carries pre-encoded *templates* (data-constructor
+nodes, partial-application trampolines, fixed-shape apply nodes) so that
+intrinsics and the IO runner can build closures with no per-call code
+allocation.
+
+A bytecode runtime value (`closure.rs`) is either a code closure — an info
+table carrying a `CodeRef` plus a pointer to its environment frame — or a
+WHNF native carried directly. The **environment-frame cactus stack and the
+continuation model are shared verbatim with the HeapSyn engine**
+(`cont.rs` mirrors `machine::cont::Continuation` one-for-one, with `CodeRef`
+offsets in place of node pointers); only the code representation differs.
+
+#### How dispatch works
+
+The interpreter loop (`machine.rs`) keeps a program counter into the code
+buffer. Each step reads one opcode byte, decodes it (`Op::from_u8`), reads
+that opcode's inline operands from the following bytes, and acts —
+pushing continuations, allocating environment frames, forcing thunks and
+returning data constructors exactly as the tree-walk machine does. GC is
+polled on a countdown (every 500 steps by default), matching HeapSyn.
+
+#### The pre-decoded IR (lever a, `EU_PREDECODE`)
+
+The classic byte-stream interpreter re-reads and re-decodes operands from
+the buffer on *every* tick. A newly merged **pre-decoded execution IR**
+(`predecode.rs`, currently behind `EU_PREDECODE=1`) removes that per-tick
+cost: at machine load the whole program is decoded **once** into a flat
+array of fixed-width, typed `Instr` records (16 bytes each) plus a set of
+off-heap side pools (argument-reference lists, application arg ordinals,
+`Let`/`LetRec` form headers and densified `Case` branch tables). Dispatch
+then reads typed fields instead of re-parsing bytes. Two representation
+changes accompany the decode: a `CodeRef` becomes an *instruction ordinal*
+rather than a byte offset, and source annotations move into a side table
+keyed by ordinal so `Ann` nodes are peeled at decode time and never cost a
+dispatch step. The byte stream is retained unchanged as the *serialisation*
+format; pre-decoding is purely an execution-time transform, and with the
+flag off behaviour is byte-identical to the byte-stream path. Nothing in the
+pre-decoded structures is a GC pointer, so code stays off the collector's
+scan set just as the byte stream does.
+
+#### Why bytecode is the default, and the performance story
+
+The bytecode engine wins decisively on garbage-collection-heavy and
+allocation-bound workloads, where keeping code off the managed heap and out
+of every mark/sweep pays for itself; it also starts faster, because the
+prelude ships pre-encoded in the blob (below) rather than being compiled
+from source. On op-dense, allocation-light workloads the byte-stream
+interpreter's per-tick re-decode cost historically left it slower per tick
+than the HeapSyn tree-walk; closing that remaining gap is exactly what the
+pre-decoded IR and the fused-primop superinstructions target.
+
+All engine-versus-engine performance numbers in this project are governed by
+a checked-in measurement protocol
+([`docs/superpowers/engine-ab/PROTOCOL.md`](superpowers/engine-ab/PROTOCOL.md)):
+deterministic VM ticks and allocation counts first, interleaved
+median-of-N wall timings second, a canonical eight-bench suite, and a
+mandatory confidence label (*measured-verified* / *measured-single* /
+*projected*) on every figure. Because those figures are machine- and
+load-sensitive and evolve release to release, this document deliberately
+states the shape of the trade-off rather than quoting ratios; consult the
+protocol's ledger (`results.jsonl`) and the dated transition-review reports
+under `docs/superpowers/reports/` for current, labelled measurements.
+
 ## Memory Management and Garbage Collection
 
 Eucalypt uses an Immix-inspired memory layout with mark-and-sweep collection.
@@ -546,6 +651,45 @@ The prelude (~29KB) is written entirely in eucalypt, wrapping intrinsics with er
 **Loading:**
 - Prelude is embedded in the binary at compile time
 - Loaded by default unless `--no-prelude` / `-Q` flag is used
+
+### The Pre-Compiled Prelude Blob
+
+*Implementation*: `src/eval/stg/blob.rs`, generated by
+`cargo xtask prelude-compile`
+
+Compiling ~2,200 lines of prelude source on every `eu` invocation would
+dominate startup, so the prelude is pre-compiled once, at development time,
+into `lib/prelude.blob` and embedded in the binary. The blob is serialised
+with **postcard** (a compact binary format) and is the runtime's default
+source for the prelude; the build falls back to compiling from source only
+when the blob is absent or stale.
+
+Staleness is detected by a hash: the blob records
+`SHA-256(lib/prelude.eu ‖ bytecode-wire-format-version)`, and `build.rs`
+recomputes it. Folding the **bytecode wire-format version** (currently 3)
+into the hash means a change to the serialised code layout invalidates a
+stale-format blob even when the prelude source itself is unchanged.
+
+The blob is not a single artefact but a set of sections, each a snapshot or
+derived artefact of a specific compiler stage. `blob.rs`'s module
+documentation is the authoritative anatomy; the load-bearing sections are:
+
+| Section | What it is | Consumer |
+|---|---|---|
+| `nodes` / `forms_pool` / `binding_entries` | Shared STG arena — compiled lambda forms for every prelude global | HeapSyn engine loader |
+| `bytecode` | Pre-encoded `BytecodeProgram` plus global forms | Bytecode engine loader |
+| `name_to_slot` | Binding name → global slot index | STG compiler (`Ref::G` resolution) and loaders |
+| `operators` | Operator fixity/precedence extracted pre-`cook` | Seeds the cooker's operator distributor |
+| `desugared_unit_cores` | Each prelude-side unit's post-translate (desugared) core, exactly as `SourceLoader::translate` produced it | Eval-path merged type check |
+| `inlinable_bindings` | Pre-expanded, `Ref::G`-linked combinator bodies tagged for inlining | Pre-inline injection into user code |
+| `monad_specs` / `type_summary` | Monad namespace specs and type schemes/aliases | Desugarer seeding, LSP, type checker |
+
+A naming convention keeps these honest: the word *core* is reserved for
+fields that are a faithful snapshot of a named pipeline stage at a named
+granularity (hence `desugared_unit_cores` — the *desugared* stage, per
+*unit*). A field that has been pre-expanded, re-tagged or otherwise
+transformed beyond a stage snapshot is named for the artefact it actually
+is — hence `inlinable_bindings`, not a "core".
 
 ## Driver and CLI Architecture
 
@@ -713,8 +857,9 @@ The prelude is:
 | `src/core/` | Expression representation | `expr.rs` |
 | `src/core/desugar/` | AST to core | `desugarer.rs` |
 | `src/core/cook/` | Operator resolution | `shunt.rs`, `fixity.rs` |
-| `src/eval/stg/` | STG syntax and compiler | `syntax.rs`, `compiler.rs` |
-| `src/eval/machine/` | Virtual machine | `vm.rs`, `cont.rs`, `env.rs` |
+| `src/eval/stg/` | STG syntax, compiler, prelude blob | `syntax.rs`, `compiler.rs`, `blob.rs` |
+| `src/eval/machine/` | HeapSyn tree-walk engine | `vm.rs`, `cont.rs`, `env.rs` |
+| `src/eval/bytecode/` | Bytecode engine (BV1, default) | `machine.rs`, `encode.rs`, `predecode.rs` |
 | `src/eval/memory/` | Heap and GC | `heap.rs`, `collect.rs` |
 | `src/driver/` | CLI orchestration | `options.rs`, `eval.rs` |
 | `src/export/` | Output formats | `yaml.rs`, `json.rs` |

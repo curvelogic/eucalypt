@@ -232,6 +232,53 @@ function value rather than a boolean.  The not-nil postfix `✓` is
 often the most natural way to introduce the outer anaphor when you
 want to also guard against null.
 
+### A Bare Numeral in Interpolation Braces Is an Anaphor Index
+
+**Problem**: Inside a string, `{...}` is interpolation, and a **bare
+number** in the braces — `"{42}"` — is not the literal text `42`. It is
+**numbered string anaphora**: `{0}`, `{1}`, `{2}`, … refer to the 1st,
+2nd, 3rd positional argument of the string-as-a-function. So `{42}` makes
+the string a **function of 43 arguments**, referencing the 43rd.
+
+**Gotcha**: This is silent. A string with a bare-numeral brace becomes a
+function value, and functions are not rendered — so the whole binding just
+vanishes from the output with no error:
+
+```eu,notest
+answer: "the answer is {42}"   # answer is now a 43-arg function
+other: 1
+```
+
+```text
+$ eu example.eu
+---
+other: 1
+```
+
+`answer` produced no output at all. Forcing the value (e.g. with `eu -e
+'"{42}"'`) turns the silence into a crash instead:
+
+```text
+error: bytecode: PAP arity out of range (supplied 1, pending 42, max 16)
+```
+
+**Fixes**:
+
+```eu,notest
+# Literal braces — double them
+answer: "the answer is {{42}}"   # => "the answer is {42}"
+
+# Interpolate a *value* named 42 — bind it to a name first
+n: 42
+answer: "the answer is {n}"      # => "the answer is 42"
+```
+
+**Rule**: a number inside interpolation braces is always an anaphor index,
+never a literal. Use `{{` `}}` for literal braces, and interpolate values
+through named bindings (`{name}`) or a format specifier (`{value:%d}`),
+never a bare numeral. Small indices bite the same way — `"{0}"` is a
+one-argument function, not the digit zero.
+
 ## Metadata vs Comments
 
 ### Backtick Is Metadata, Not a Comment
@@ -292,6 +339,49 @@ z: home.'notes.txt'          # Looks up identifier: notes.txt
 'hello' = 'hello'            # Compares two variable references (not strings)
 "hello" = "hello"            # Compares two string literals (correct)
 ```
+
+## Hyphens and Digits Are Identifier Characters — `x-2` Is One Name
+
+**Problem**: Eucalypt identifiers are kebab-case: after the initial
+letter, an unquoted name may contain hyphens, digits, and the characters
+`* ! ? _`. So `x-2` is not `x - 2` — it lexes as a **single identifier**
+named `x-2`:
+
+```eu,notest
+x: 10
+r: x-2        # r is not 8 — 'x-2' is one name
+```
+
+```text
+error: unresolved variable 'x-2'
+```
+
+**Gotcha**: this is asymmetric with the other arithmetic operators,
+because `+`, `/`, `<`, `>`, `=` and friends are **not** identifier
+characters, but `-` and `*` **are**:
+
+```eu,notest
+r: x+1        # => x + 1   (+ is not an identifier character)
+r: x-1        # => identifier 'x-1'   (- IS an identifier character)
+r: x*2        # => identifier 'x*2'   (* IS an identifier character)
+```
+
+Leading digits also disambiguate — the lexer only starts a normal
+identifier on a letter, so `2-x` is `2 - x`, while `x-2` is one name. And a
+space after the hyphen forces the operator reading, but a space *before*
+it makes the `-2` a negative literal in catenation position:
+
+```eu,notest
+r: 2-x        # => 2 - x   (subtraction — identifiers can't start with a digit)
+r: x - 2      # => x - 2   (spaces on both sides — subtraction, the fix)
+r: x -2       # => catenation of x and the literal -2 (calls -2 as a function)
+```
+
+**Rule**: put spaces around `-` (and `*`) whenever you mean the arithmetic
+operator next to a name: write `x - 2`, never `x-2`. This bites hardest
+right after another operator, where the eye reads arithmetic but the lexer
+reads a name: `n * x-2` is `n * (x-2)` with `x-2` unresolved; you want
+`n * x - 2`.
 
 ## Division Operators
 
@@ -536,6 +626,57 @@ Two things to remember when a `type:` annotation contains literal types:
   argument position needs brackets: `(:block | :log) -> bool`, not
   `:block | :log -> bool` (which is an overloaded-function type). Naming
   the union in a `types:` alias avoids the question.
+
+## The `!` Asserted-Type Prefix
+
+A `type:` (or `types:`) annotation string that begins with `!` is an
+**asserted** annotation: the checker **trusts it without verifying the
+body**. The `!` is stripped and the remainder parsed as the type; the
+declaration is simply taken to have that type, whatever its right-hand
+side actually is.
+
+**Why it exists**: it lets you hand the checker a type it could not (or
+should not) infer — for example a **closed** record shape so that
+`lookup(:key, …)` resolves precisely, where the inferred open shape would
+not warn on a key typo. This is the `!{{…}}` you may see in the
+[Type Checking](../guide/type-checking.md) guide:
+
+```eu,notest
+` { type: "!{{name: string, age: number}}" }
+person: { name: "Alice", age: 30 }
+
+lookup(:naem, person)   # now warns: unknown record key :naem
+```
+
+**Gotcha**: because the body is not checked, an asserted annotation
+**silences a genuine mismatch**. A plain annotation catches it; adding `!`
+makes the warning disappear:
+
+```eu,notest
+# Plain annotation — the checker verifies the body and WARNS:
+` { type: "number" }
+x: "hello"                # warning: expected number, found "hello"
+
+# Asserted — the checker trusts the annotation and stays SILENT:
+` { type: "!number" }
+x: "hello"                # no warning, even though x is a string
+```
+
+```text
+$ eu check plain.eu
+warning: expression type does not match annotation
+  ┌─ plain.eu:1:1
+  ...
+        expected number, found "hello"
+
+$ eu check asserted.eu
+# (no output — asserted annotation trusted)
+```
+
+**Rule**: reach for `!` only to *supply* a type the checker cannot verify
+for itself, never to quiet a warning you have not understood — an asserted
+type is a promise the checker will believe and propagate to every use
+site, so a wrong one hides the mistake and misleads everything downstream.
 
 ## Flow-Sensitive Narrowing and User-Defined Branchers
 
