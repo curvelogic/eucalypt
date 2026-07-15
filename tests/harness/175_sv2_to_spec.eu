@@ -49,6 +49,12 @@ test: {
   t-union-str: "hello" match?(union-spec)      //=> true
   t-union-num: 42 match?(union-spec)           //=> true
   t-union-miss: true match?(union-spec)        //=> false
+  t-union-miss-sym: :sym match?(union-spec)    //=> false
+
+  # AC4b: Union nested inside a list (eu-r9oy regression)
+  nested-union-list-spec: s"[number | string]" as-spec
+  t-nested-union: [1, "two", 3] match?(nested-union-list-spec)          //=> true
+  t-nested-union-miss: [1, "two", :sym] match?(nested-union-list-spec) //=> false
 
   # AC5: Partial (nullable) specs
   partial-spec: s"string?" as-spec

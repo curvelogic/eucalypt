@@ -2757,6 +2757,11 @@ pub fn test_188_v8n8_cluster_laziness() {
 }
 
 #[test]
+pub fn test_189_r9oy_union_as_spec() {
+    run_test(&opts("189_r9oy_union_as_spec.eu"));
+}
+
+#[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
 }

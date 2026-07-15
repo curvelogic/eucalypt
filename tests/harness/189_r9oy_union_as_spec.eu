@@ -1,0 +1,38 @@
+#!/usr/bin/env eu
+{ import: "reflect.eu" }
+# eu-r9oy: union-spec's predicate was always false. `union-spec(ts, v): ts
+# map(to-spec-td) any(v match?)` partially applied `v` as match?'s FIRST
+# (pattern) argument via `v match?`, instead of testing each sub-spec as
+# the pattern against `v` as the value. Fixed to `any(matches-v)` with
+# `matches-v(s): v match?(s)`.
+#
+# Uses direct match? results (not `//=>`) so RESULT genuinely reflects
+# every assertion — see 175_sv2_to_spec.eu's AC4 for `//=>`-style
+# documentation coverage of the same fix, which does not gate the build.
+
+schema: s"number | string" as-spec
+
+# Accepts a number
+t1: 42 match?(schema)
+
+# Accepts a string
+t2: "hello" match?(schema)
+
+# Rejects a symbol
+t3: not(:sym match?(schema))
+
+# Rejects a bool
+t4: not(true match?(schema))
+
+# Nested: union inside a list
+list-schema: s"[number | string]" as-spec
+t5: [1, "two", 3] match?(list-schema)
+t6: not([1, "two", :sym] match?(list-schema))
+
+# Nested: union inside a record field
+rec-schema: s"{ v: number | string }" as-spec
+t7: { v: 42 } match?(rec-schema)
+t8: { v: "hi" } match?(rec-schema)
+t9: not({ v: :sym } match?(rec-schema))
+
+RESULT: if([t1, t2, t3, t4, t5, t6, t7, t8, t9] all-true?, :PASS, :FAIL)

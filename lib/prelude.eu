@@ -2196,7 +2196,9 @@ as-spec(t):
 
     list-spec(inner, v): (v list?) ∧ (v all(match?(inner to-spec-td)))
 
-    union-spec(ts, v): ts map(to-spec-td) any(v match?)
+    union-spec(ts, v): {
+      matches-v(s): v match?(s)
+    }.(ts map(to-spec-td) any(matches-v))
 
     partial-spec(inner, v): (v null?) ∨ (v match?(inner to-spec-td))
 
