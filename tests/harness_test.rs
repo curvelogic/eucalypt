@@ -3047,3 +3047,66 @@ pub fn test_strict_aborts_on_type_warnings() {
         "eu --strict should still print type warnings:\n{stderr}"
     );
 }
+
+/// The eval path (`eu <file>`, no subcommand) must produce the same type
+/// warning as `eu check --strict` for a record-membership constraint that
+/// needs the prelude's actual *definitions* (not just declared type
+/// schemes) to check — `lookup(:naem, person)` against a closed record type
+/// (eu-rb5n). This is the regression the blob-core merged check
+/// (`run_type_checker_from_blob_core`) exists to fix: seeding the checker
+/// with only the blob's prelude type *summary* cannot see that `lookup`'s
+/// body indexes into the record, so it silently missed this warning.
+#[test]
+pub fn test_eval_path_warns_on_record_key_typo() {
+    let output = std::process::Command::new(eu_binary())
+        .arg("tests/harness/typecheck/065_lookup_key_typo_warns.eu")
+        .output()
+        .expect("failed to run eu");
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        exit_code, 1,
+        "eval path should exit 1 (execution error after the warning):\n{stderr}"
+    );
+    assert!(
+        stderr.contains("unknown record key :naem"),
+        "eval path should warn on the record key typo, matching `eu check`:\n{stderr}"
+    );
+}
+
+/// The blob-core merged check (default config) and the source-prelude merged
+/// check (`EU_SOURCE_PRELUDE=1`) must produce byte-identical `eu check
+/// --strict` output for the same file (eu-rb5n condition 2/4: the blob path
+/// is only a startup optimisation, never a different answer). Covers both
+/// config branches for a representative spread: a warning case, a clean
+/// case, and a case needing the deeper prefix-list inference.
+#[test]
+pub fn test_config_matrix_blob_vs_source_prelude_byte_equal() {
+    let files = [
+        "tests/harness/typecheck/065_lookup_key_typo_warns.eu",
+        "tests/harness/typecheck/104_suppress_type_warnings_ok.eu",
+        "tests/harness/typecheck/111_prefix_list_out_of_prefix_partial.eu",
+    ];
+    for file in files {
+        let blob = std::process::Command::new(eu_binary())
+            .args(["check", "--strict", file])
+            .output()
+            .expect("failed to run eu check (blob-core)");
+        let source = std::process::Command::new(eu_binary())
+            .env("EU_SOURCE_PRELUDE", "1")
+            .args(["check", "--strict", file])
+            .output()
+            .expect("failed to run eu check (source prelude)");
+
+        assert_eq!(
+            blob.status.code(),
+            source.status.code(),
+            "exit code differs between blob-core and source-prelude checks for {file}"
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&blob.stderr),
+            String::from_utf8_lossy(&source.stderr),
+            "stderr differs between blob-core and source-prelude checks for {file}"
+        );
+    }
+}

@@ -314,13 +314,22 @@ pub fn prepare(
         }
     }
 
+    // Eval-path type warnings are computed separately by `bin/eu.rs`, after
+    // `prepare()` returns: the blob path calls
+    // `run_type_checker_from_blob_core` (merged check against the blob's
+    // baked prelude-side cores, no prelude source load); non-blob configs
+    // call `run_type_checker` (eu-rb5n). An interim version of this check ran
+    // here, seeded only with the blob's prelude type *summary* rather than
+    // its definitions — that missed record-membership constraints that need
+    // the actual prelude bindings (harness 065), so it was replaced.
+
     // Inject inlinable prelude combinators from blob before inline pass.
     // In the blob path the prelude is not loaded, so prelude function names
     // appear as Var::Free in user code.  Injecting the combinator lambdas as
     // a Let scope gives the inline pass visible definitions to distribute.
     // No-op when EU_SOURCE_PRELUDE=1 or no blob is active.
     #[cfg(not(target_arch = "wasm32"))]
-    loader.inject_prelude_inline_cores();
+    loader.inject_prelude_inlinable_bindings();
 
     // Run inline pass
     {

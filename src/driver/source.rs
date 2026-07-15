@@ -594,6 +594,26 @@ impl SourceLoader {
         Ok(&self.translation_units[input])
     }
 
+    /// Pre-populate `translation_units` for a set of `(Input, TranslationUnit)`
+    /// pairs, skipping the normal load + translate for those inputs.
+    ///
+    /// Used by [`crate::driver::check::run_type_checker_from_blob_core`]
+    /// (eu-rb5n): the prelude blob carries each prelude-side unit's
+    /// post-translate core (baked once at `cargo xtask prelude-compile`
+    /// time), decoded once per process. Injecting those units directly here
+    /// lets `merge_units` combine them with a freshly translated user unit
+    /// without loading or translating prelude source. A subsequent call to
+    /// `translate()` for an injected input is a no-op (see the existing-key
+    /// short-circuit at the top of `translate()`).
+    ///
+    /// Entries for inputs that already have a translation (e.g. re-entrant
+    /// calls) are left untouched — first write wins.
+    pub fn inject_prelude_units(&mut self, units: Vec<(Input, TranslationUnit)>) {
+        for (input, unit) in units {
+            self.translation_units.entry(input).or_insert(unit);
+        }
+    }
+
     /// Set the body of the core expression to the specified target
     /// and return the target's format if specified
     pub fn retarget(&mut self, target: &str) -> Result<(), EucalyptError> {
@@ -693,6 +713,16 @@ impl SourceLoader {
         self.prelude_blob.is_some()
     }
 
+    /// Peek at the stored prelude blob without taking it.
+    ///
+    /// Used by `bin/eu.rs` to decode `desugared_unit_cores` for the eval-path
+    /// merged type check (eu-rb5n) — this runs before `take_prelude_blob()`
+    /// hands the blob to the `Executor`, so the blob must still be present.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn prelude_blob(&self) -> Option<&crate::eval::stg::blob::PreludeBlob> {
+        self.prelude_blob.as_ref()
+    }
+
     /// Take the stored prelude blob out of the loader, leaving `None` behind.
     ///
     /// Called by `eval::run()` to pass the blob to the `Executor` without
@@ -715,17 +745,17 @@ impl SourceLoader {
     /// as regular let-bindings; after inlining, any that are no longer referenced
     /// are removed by the subsequent eliminate pass.
     ///
-    /// No-op when no blob is present or when `inline_cores` is empty.
+    /// No-op when no blob is present or when `inlinable_bindings` is empty.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn inject_prelude_inline_cores(&mut self) {
+    pub fn inject_prelude_inlinable_bindings(&mut self) {
         let Some(ref blob) = self.prelude_blob else {
             return;
         };
-        if blob.inline_cores.is_empty() {
+        if blob.inlinable_bindings.is_empty() {
             return;
         }
         let bindings: Vec<CoreBinding<RcExpr>> = blob
-            .inline_cores
+            .inlinable_bindings
             .iter()
             .map(|(name, expr)| CoreBinding::new(name.clone(), expr.clone()))
             .collect();

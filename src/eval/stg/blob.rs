@@ -4,16 +4,44 @@
 //! without re-compiling its source.  It is generated once at development time
 //! by `cargo xtask prelude-compile` and stored as `lib/prelude.blob`.
 //!
+//! ## Naming convention (ratified 2026-07-14, eu-rb5n Z review)
+//!
+//! The word **"core(s)"** is reserved for fields that are faithful snapshots
+//! of a pipeline stage — every such name states both the **phase** and the
+//! **granularity**:
+//!
+//! - **Phase** names come from the `eu dump` vocabulary (`desugared`,
+//!   `cooked`, `inlined`, `pruned`, …). `SourceLoader::translate` produces
+//!   the **desugared** stage — the same representation `eu dump desugared`
+//!   shows.
+//! - **Granularity** is one of: **unit** (per translation unit — only
+//!   possible at `desugared` or earlier, since `merge_units`/`cook`/
+//!   `eliminate` are cross-unit passes), **merged** (a merged unit set), or
+//!   **binding** (per individual binding).
+//!
+//! A field that is a *derived* compiler artefact — pre-expanded, re-tagged,
+//! summarised, or otherwise transformed beyond a faithful stage snapshot —
+//! is **not** a "core" and must be named as the artefact it actually is
+//! (e.g. `inlinable_bindings`, not `inline_cores`).
+//!
+//! This convention doesn't (yet) have compiler-enforced typed-stage
+//! wrappers (a `CoreStage` enum / `StagedCore<Phase>` wrapper) — that's
+//! deliberately deferred to eu-2sa6.18 (unit-blob generalisation), so
+//! naming discipline is the only thing keeping this honest today.
+//!
 //! ## Contents
 //!
-//! | Field | Purpose |
-//! |---|---|
-//! | `source_hash` | SHA-256 of `lib/prelude.eu`; checked by `build.rs` |
-//! | `nodes` | Shared arena node pool for all lambda form bodies |
-//! | `bindings` | One `ArenaLambdaForm` per prelude global slot, in slot order |
-//! | `name_to_slot` | Binding name → index into `bindings` |
-//! | `operators` | Operator metadata for cook seeding |
-//! | `type_summary` | Type schemes, aliases, branch shapes for type-checker seeding |
+//! | Field | Purpose | Granularity | Pipeline stage | Consumer | Snapshot / derived |
+//! |---|---|---|---|---|---|
+//! | `source_hash` | SHA-256 of `lib/prelude.eu`; checked by `build.rs` | — | — | `build.rs` staleness check | — |
+//! | `nodes` / `forms_pool` / `binding_entries` | Shared STG arena: compiled lambda forms for every prelude global | binding (compiled) | `stg` (post `eu dump stg`) | HeapSyn engine loader | derived (compiled, not a source-structure snapshot) |
+//! | `name_to_slot` | Binding name → global slot index | — | — | STG compiler (`Ref::G` resolution), loader | — |
+//! | `operators` | Operator fixity/precedence, extracted pre-`cook` | merged | pre-`cook` (desugared-adjacent) | `cook`'s `Distributor` seeding | derived (extracted subset, not a full snapshot) |
+//! | `type_summary` | Type schemes/aliases/branch shapes (`PreludeSummary`) | merged | post type-check | *(currently unread by the runtime; `run_type_checker_from_blob_core` uses `desugared_unit_cores` instead — retained for blob-format stability, not removed as out of scope for eu-rb5n)* | derived summary |
+//! | `monad_specs` / `monad_type_hints` | Monad namespace specs (e.g. `:for`) and LSP type hints | merged | desugared | Desugarer seeding, LSP | derived |
+//! | `inlinable_bindings` | Pre-expanded, `Ref::G`-linked, `Lam(_, true, _)`-tagged combinator bodies | binding | derived from desugared | `inject_prelude_inlinable_bindings` (pre-inline injection into user code) | **derived** (pre-expanded/re-tagged — not a stage snapshot, hence no "core" in the name) |
+//! | `desugared_unit_cores` | Each of the 4 prelude-side units' (`__build`/`__io`/`__args`/prelude) `expr`, exactly as `SourceLoader::translate` produced it | **unit** | **desugared**, pre-merge | `run_type_checker_from_blob_core` (eval-path merged type check, eu-rb5n) | **canonical snapshot** |
+//! | `bytecode` | Pre-encoded `BytecodeProgram` + global forms (BV5) | binding (compiled) | bytecode (post-`stg`) | Bytecode engine loader | derived (compiled, further downstream than `nodes`/`forms_pool`) |
 //!
 //! ## Global slot numbering
 //!
@@ -117,19 +145,37 @@ pub struct PreludeBlob {
     #[serde(default, with = "crate::common::serde_sorted")]
     pub monad_type_hints: HashMap<String, String>,
 
-    /// Core expressions for inlinable prelude bindings.
+    /// Pre-expanded, self-contained bodies for inlinable prelude bindings.
     ///
-    /// Each entry is `(name, tagged_lambda)` where the lambda is tagged
-    /// `Lam(_, true, _)` (inlinable combinator).  Injected as Let bindings
-    /// before the inline pass so the existing inliner can distribute and
-    /// beta-reduce prelude calls even when the full prelude source is not
-    /// loaded (blob path).
+    /// **Not a "core"** (see the module-level naming convention above): each
+    /// entry is `(name, tagged_lambda)` where the lambda is tagged
+    /// `Lam(_, true, _)` (inlinable combinator) and every inter-prelude
+    /// reference has already been substituted in at blob-generation time —
+    /// a derived, pre-expanded artefact, not a faithful stage snapshot.
+    /// Injected as Let bindings before the inline pass so the existing
+    /// inliner can distribute and beta-reduce prelude calls even when the
+    /// full prelude source is not loaded (blob path).
     ///
     /// Bindings are self-contained: their bodies only reference intrinsics
     /// and the lambda's own parameters.  Any remaining inter-prelude
     /// `Var::Free` references resolve at compile time via `Ref::G`.
     #[serde(default)]
-    pub inline_cores: Vec<(String, RcExpr)>,
+    pub inlinable_bindings: Vec<(String, RcExpr)>,
+
+    /// Postcard-encoded, tagged **desugared**, per-**unit** cores of the four
+    /// prelude-side units — `"build"`, `"io"`, `"args"`, `"prelude"`
+    /// (matching the `__build`/`__io`/`__args` pseudoblocks and the prelude
+    /// itself) — for the eval-path MERGED type check without parsing
+    /// prelude source (eu-rb5n). Each entry is the unit's `expr` exactly as
+    /// `SourceLoader::translate` produced it (the `desugared` stage, per
+    /// `eu dump desugared`), before `merge_units` — a genuine stage
+    /// snapshot, unlike `inlinable_bindings` above. Stored as raw bytes so
+    /// blob load stays cheap — decoded lazily via
+    /// [`PreludeBlob::decode_desugared_unit_cores`] only when the type check
+    /// actually runs (never under `--suppress-type-warnings`). Empty on
+    /// blobs generated before this field, which fall back to source compile.
+    #[serde(default)]
+    pub desugared_unit_cores: Vec<u8>,
 
     /// Pre-encoded prelude BytecodeProgram + global forms (BV5, eu-amp9).
     ///
@@ -153,6 +199,22 @@ impl PreludeBlob {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, postcard::Error> {
         postcard::from_bytes(bytes)
     }
+
+    /// Lazily decode the baked desugared, per-unit prelude-side cores, if
+    /// present. Called only when the eval-path type check actually runs, so
+    /// the decode cost is not paid at blob load or under
+    /// `--suppress-type-warnings`.
+    ///
+    /// Returns `(tag, expr)` pairs — tags are `"build"`, `"io"`, `"args"`,
+    /// `"prelude"` — for [`crate::driver::check::run_type_checker_from_blob_core`]
+    /// to re-key against the matching `Input`s.
+    pub fn decode_desugared_unit_cores(&self) -> Option<Vec<(String, RcExpr)>> {
+        if self.desugared_unit_cores.is_empty() {
+            None
+        } else {
+            postcard::from_bytes(&self.desugared_unit_cores).ok()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -172,7 +234,8 @@ mod tests {
             type_summary: PreludeSummary::default(),
             monad_specs: HashMap::new(),
             monad_type_hints: HashMap::new(),
-            inline_cores: vec![],
+            inlinable_bindings: vec![],
+            desugared_unit_cores: vec![],
             bytecode: None,
         }
     }
@@ -260,6 +323,50 @@ mod tests {
     }
 
     #[test]
+    fn desugared_unit_cores_empty_decodes_to_none() {
+        // A blob with no baked desugared_unit_cores (stale format, or
+        // generated before this field existed) must decode to `None` so the
+        // caller (`bin/eu.rs`) falls back explicitly to `run_type_checker`
+        // (eu-rb5n condition 3) rather than panicking or silently checking
+        // nothing.
+        let blob = minimal_blob();
+        assert!(blob.desugared_unit_cores.is_empty());
+        assert!(blob.decode_desugared_unit_cores().is_none());
+    }
+
+    #[test]
+    fn desugared_unit_cores_round_trips_tagged_units() {
+        use crate::common::sourcemap::Smid;
+        use crate::core::expr::{Expr, Primitive, RcExpr};
+
+        let sym = |s: &str| {
+            RcExpr::from(Expr::Literal(
+                Smid::default(),
+                Primitive::Sym(s.to_string()),
+            ))
+        };
+        let units: Vec<(String, RcExpr)> = vec![
+            ("build".to_string(), sym("b")),
+            ("io".to_string(), sym("i")),
+            ("args".to_string(), sym("a")),
+            ("prelude".to_string(), sym("p")),
+        ];
+
+        let mut blob = minimal_blob();
+        blob.desugared_unit_cores = postcard::to_allocvec(&units).unwrap();
+
+        let bytes = blob.to_bytes().unwrap();
+        let restored = PreludeBlob::from_bytes(&bytes).unwrap();
+
+        let decoded = restored
+            .decode_desugared_unit_cores()
+            .expect("non-empty desugared_unit_cores must decode");
+        assert_eq!(decoded.len(), 4);
+        let tags: Vec<&str> = decoded.iter().map(|(t, _)| t.as_str()).collect();
+        assert_eq!(tags, vec!["build", "io", "args", "prelude"]);
+    }
+
+    #[test]
     fn empty_blob_round_trip() {
         let blob = minimal_blob();
         let bytes = blob.to_bytes().unwrap();
@@ -273,7 +380,7 @@ mod tests {
         assert!(restored.operators.is_empty());
         assert!(restored.monad_specs.is_empty());
         assert!(restored.monad_type_hints.is_empty());
-        assert!(restored.inline_cores.is_empty());
+        assert!(restored.inlinable_bindings.is_empty());
         // A blob generated before BV5 has no bytecode image; the loader must
         // see `None` and degrade to encode-from-STG.
         assert!(restored.bytecode.is_none());

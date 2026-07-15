@@ -155,33 +155,63 @@ fn run() -> i32 {
         Ok(Command::Continue) => {}
     }
 
-    // Type checker runs on the pruned expression for warnings.
-    // Alias collection already happened pre-pruning inside prepare().
-    {
-        let t = std::time::Instant::now();
-        let core_expr = loader.core().expr.clone();
-        let (warnings, _post_prune_aliases) =
-            eucalypt::core::typecheck::check::type_check(&core_expr);
-        let elapsed = t.elapsed();
+    // Run the bidirectional type checker and emit warnings — the same check
+    // `eu check` runs. On the blob path, the blob's baked desugared,
+    // per-unit prelude-side cores (`desugared_unit_cores`) let
+    // `run_type_checker_from_blob_core` reproduce this merged check without
+    // loading or translating prelude source (the dominant cost
+    // `run_type_checker` would otherwise pay); the cores are decoded lazily
+    // here, so the decode cost is only paid when the check actually runs
+    // (never under `--suppress-type-warnings`). A blob without baked cores
+    // (stale format, or generated before this field existed) falls back
+    // explicitly to `run_type_checker` — always correct, just paying the
+    // prelude-source compile for this invocation. Non-blob configs (source
+    // prelude, alternative prelude) always use `run_type_checker`.
+    // See eu-rb5n.
+    if !opt.suppress_type_warnings() {
+        #[cfg(not(target_arch = "wasm32"))]
+        let blob_prelude_units = loader
+            .prelude_blob()
+            .and_then(|b| b.decode_desugared_unit_cores());
+        #[cfg(target_arch = "wasm32")]
+        let blob_prelude_units: Option<Vec<(String, eucalypt::core::expr::RcExpr)>> = None;
 
-        if !opt.suppress_type_warnings() {
-            for w in &warnings {
-                let diag = w.to_diagnostic(loader.source_map());
-                loader.diagnose_to_stderr(&diag);
+        let check_result = match &blob_prelude_units {
+            Some(prelude_units) => {
+                eucalypt::driver::check::run_type_checker_from_blob_core(&opt, prelude_units)
+            }
+            None => eucalypt::driver::check::run_type_checker(&opt),
+        };
+
+        match check_result {
+            Ok(result) => {
+                let writer = codespan_reporting::term::termcolor::StandardStream::stderr(
+                    codespan_reporting::term::termcolor::ColorChoice::Auto,
+                );
+                let config = codespan_reporting::term::Config::default();
+                for w in &result.warnings {
+                    let diag = w.to_diagnostic(&result.source_map);
+                    let _ = codespan_reporting::term::emit(
+                        &mut writer.lock(),
+                        &config,
+                        &result.files,
+                        &diag,
+                    );
+                }
+                if opt.check_strict() && !result.warnings.is_empty() {
+                    return exit_code(&opt, 1, &statistics);
+                }
+            }
+            Err(e) => {
+                eprintln!("eu: type-check pipeline warning: {e}");
             }
         }
+    }
 
-        if opt.statistics() {
-            statistics.timings_mut().record("type-check", elapsed);
-        }
-
-        // --strict: abort before evaluation if there are type warnings
-        if opt.check_strict() && !warnings.is_empty() {
-            return exit_code(&opt, 1, &statistics);
-        }
-
-        // Resolve type aliases inside TypeData primitives using the
-        // pre-pruning aliases (which include definitions removed by DCE).
+    // Resolve type aliases inside TypeData primitives using the pre-pruning
+    // aliases (which include definitions removed by DCE).
+    {
+        let core_expr = loader.core().expr.clone();
         let aliases = loader.type_aliases();
         if !aliases.is_empty() {
             let resolved = eucalypt::core::typecheck::resolve_typedata::resolve_typedata_aliases(

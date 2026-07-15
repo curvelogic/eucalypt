@@ -264,7 +264,7 @@ fn all_free_vars_resolvable(expr: &RcExpr, set: &HashSet<String>, self_name: Opt
         // ArgTuple): locally-bound names are `Var::Bound` (resolvable), so it
         // suffices to check that every free variable among the children is in
         // the set. This admits recursive combinators with `Let`/`Block` bodies
-        // (e.g. `scanr`) to `inline_cores`, completing the qualifying set.
+        // (e.g. `scanr`) to `inlinable_bindings`, completing the qualifying set.
         _ => child_exprs(expr)
             .iter()
             .all(|c| all_free_vars_resolvable(c, set, self_name)),

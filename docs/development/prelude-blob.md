@@ -42,22 +42,22 @@ recursive functions on the two paths:
 
 - **Blob path**: the prelude is never merged into user code, so
   references like `<=`, `+`, `-` remain `Var::Free` in the user's core
-  expression. `Loader::inject_prelude_inline_cores`
-  (`src/driver/source.rs`) injects the blob's pre-computed `inline_cores`
-  set — a small, already-resolved subset of prelude combinators and
-  intrinsic aliases — as a flat `Let` immediately before the general
-  inline pass, matched by free-variable name. This exposes the strict,
-  `Case`-on-first-argument shape of the arithmetic/comparison intrinsics
-  to demand analysis, which can then infer that (e.g.) a naive `fib`'s
-  recursive argument is used strictly — no thunk is allocated for `n - 1`
-  before the recursive call.
+  expression. `Loader::inject_prelude_inlinable_bindings`
+  (`src/driver/source.rs`) injects the blob's pre-computed
+  `inlinable_bindings` set — a small, already-resolved subset of prelude
+  combinators and intrinsic aliases — as a flat `Let` immediately before
+  the general inline pass, matched by free-variable name. This exposes the
+  strict, `Case`-on-first-argument shape of the arithmetic/comparison
+  intrinsics to demand analysis, which can then infer that (e.g.) a naive
+  `fib`'s recursive argument is used strictly — no thunk is allocated for
+  `n - 1` before the recursive call.
 - **Source-prelude path**: the prelude *is* merged into user code
   (`merge_units`), so by the time `cook()` runs every prelude reference
   has already been resolved to `Var::Bound` inside one large merged
   `letrec` — confirmed directly via `eu dump cooked --debug-format`, which
   shows zero `Var::Free` nodes and thousands of `Var::Bound` ones on this
   path. There is no free-variable name left for a
-  `inject_prelude_inline_cores`-style injection to intercept, and the
+  `inject_prelude_inlinable_bindings`-style injection to intercept, and the
   general inline pass (`tag_combinators` + `reduce::inline_pass`) does not
   perform the same fold — a sweep of 2 through 12 inline iterations left
   ticks unchanged at 98,277,770, ruling out "just iterate further" as a

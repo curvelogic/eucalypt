@@ -60,6 +60,22 @@ impl From<&str> for Locator {
             Locator::Resource(stripped.trim().to_string())
         } else if let Some(stripped) = url_text.strip_prefix("pseudo:") {
             Locator::Pseudo(stripped.trim().to_string())
+        } else if is_windows_drive_path(url_text) {
+            // A Windows absolute path (`C:\...` or `C:/...`) has a drive
+            // letter that is *also* a syntactically valid single-letter URL
+            // scheme under RFC 3986 (`scheme = ALPHA *( ALPHA / DIGIT / "+"
+            // / "-" / "." )`), so `Url::parse` below would happily accept it
+            // as `Locator::Url` instead of a filesystem path — and no code
+            // path actually reads a `Locator::Url` back (see
+            // `SourceLoader::load_source`'s catch-all), so every
+            // fully-qualified Windows path would silently fail to load
+            // (eu-2sa6.19). None of eucalypt's supported schemes are a
+            // single letter (`resource:`/`pseudo:` are handled above as
+            // literal prefixes, not via `Url::parse`; `Url::parse` here only
+            // ever matters for genuine multi-letter schemes such as `file:`,
+            // which `normalise()` converts to `Locator::Fs` anyway), so this
+            // check cannot misclassify a real URL.
+            Locator::Fs(PathBuf::from(url_text))
         } else {
             match Url::parse(url_text) {
                 Ok(u) => Locator::Url(u).normalise(),
@@ -67,6 +83,18 @@ impl From<&str> for Locator {
             }
         }
     }
+}
+
+/// True if `s` starts with a Windows drive-letter prefix (`C:\` or `C:/`,
+/// case-insensitive): a single ASCII letter, then `:`, then a path
+/// separator. This is the shape that RFC 3986 would otherwise parse as a
+/// (bogus) single-letter URL scheme — see the call site above.
+fn is_windows_drive_path(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/')
 }
 
 /// Convert to Locator from Path or PathBuf
@@ -289,6 +317,63 @@ pub mod tests {
             Locator::from("../dir/test.eu"),
             Locator::Fs(PathBuf::from("../dir/test.eu"))
         );
+    }
+
+    /// eu-2sa6.19: a Windows absolute path's drive letter (`C:\...`) is
+    /// syntactically a valid single-letter URL scheme under RFC 3986, so
+    /// `Locator::from` must recognise and route it to `Locator::Fs` before
+    /// attempting `Url::parse` — otherwise every fully-qualified Windows
+    /// path is misclassified as `Locator::Url`, which no downstream code
+    /// path actually reads (`SourceLoader::load_source`'s catch-all returns
+    /// `FileCouldNotBeRead("unsupported locator: ...")`for any `Url` locator
+    /// that isn't `resource:`/`file:`).
+    ///
+    /// Deliberately not `#[cfg(windows)]`: this is pure string parsing with
+    /// no filesystem interaction, and the regression must be caught on any
+    /// platform's CI, not only a Windows runner.
+    #[test]
+    pub fn test_windows_drive_letter_path_is_filesystem_locator() {
+        assert_eq!(
+            Locator::from("C:\\foo\\bar.eu"),
+            Locator::Fs(PathBuf::from("C:\\foo\\bar.eu")),
+            "uppercase drive letter with backslashes must be Locator::Fs, not Locator::Url"
+        );
+        assert_eq!(
+            Locator::from("c:\\foo\\bar.eu"),
+            Locator::Fs(PathBuf::from("c:\\foo\\bar.eu")),
+            "lowercase drive letter must also be Locator::Fs"
+        );
+        assert_eq!(
+            Locator::from("C:/foo/bar.eu"),
+            Locator::Fs(PathBuf::from("C:/foo/bar.eu")),
+            "drive letter with forward slashes must also be Locator::Fs"
+        );
+    }
+
+    /// Sanity check alongside the drive-letter fix above: genuine URLs
+    /// (multi-letter schemes) must still parse as `Locator::Url` (or the
+    /// `resource:`/`file:` locators `normalise()` converts them to), not be
+    /// accidentally swept into the new drive-letter branch.
+    #[test]
+    pub fn test_real_urls_still_parse_as_url_locators() {
+        assert!(matches!(
+            Locator::from("https://example.com/x.eu"),
+            Locator::Url(_)
+        ));
+        assert!(matches!(
+            Locator::from("http://example.com/x.eu"),
+            Locator::Url(_)
+        ));
+        assert_eq!(
+            Locator::from("resource:prelude"),
+            Locator::Resource("prelude".to_string())
+        );
+        // `file:` URLs normalise to `Locator::Fs`, same destination as the
+        // drive-letter fix, via a different (genuine URL scheme) route.
+        assert!(matches!(
+            Locator::from("file:///foo/bar.eu"),
+            Locator::Fs(_)
+        ));
     }
 
     #[test]

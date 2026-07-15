@@ -51,7 +51,7 @@ mod engine_ab;
 /// MUST match `BYTECODE_WIRE_FORMAT_VERSION` in the crate root `build.rs`.
 /// See that constant's doc comment for the version history (v2: eu-2sa6.11
 /// Let/LetRec binding count widened `u16` → `u32`).
-const BYTECODE_WIRE_FORMAT_VERSION: u32 = 2;
+const BYTECODE_WIRE_FORMAT_VERSION: u32 = 3;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -133,10 +133,21 @@ fn cmd_prelude_compile() -> Result<()> {
     for inp in &all_inputs {
         loader.load(inp).with_context(|| format!("load {inp}"))?;
     }
-    for inp in &all_inputs {
-        loader
+    // Tags match `all_inputs`' fixed order (build-meta, io, args, prelude) and
+    // must match `tag_for_prelude_side_input` in `src/driver/check.rs`, which
+    // re-keys these by `Input` identity (locator/name/format), not position.
+    let unit_tags = ["build", "io", "args", "prelude"];
+    let mut desugared_unit_cores: Vec<(String, RcExpr)> = Vec::with_capacity(all_inputs.len());
+    for (inp, tag) in all_inputs.iter().zip(unit_tags.iter()) {
+        // Capture each unit's desugared core — exactly as `translate()`
+        // produced it, before `merge_units` — for the eval-path merged type
+        // check (eu-rb5n): baking these lets `run_type_checker_from_blob_core`
+        // reproduce `run_type_checker` exactly while skipping prelude load +
+        // translate.
+        let unit = loader
             .translate(inp)
             .with_context(|| format!("translate {inp}"))?;
+        desugared_unit_cores.push((tag.to_string(), unit.expr.clone()));
     }
     loader.merge_units(&all_inputs).context("merge_units")?;
 
@@ -161,7 +172,7 @@ fn cmd_prelude_compile() -> Result<()> {
     // `vec`) to individual `OtherLet` bindings named `__<ns>_<member>`.
     // After hoisting, the peel step produces one `binding_body` entry per
     // hoisted member, giving each its own global slot in the blob.  The
-    // `inline_cores` fixed-point then picks up hoisted intrinsics (e.g.
+    // `inlinable_bindings` fixed-point then picks up hoisted intrinsics (e.g.
     // `__str_to-upper`) exactly like other prelude combinators.
     loader.hoist_namespaces().context("hoist_namespaces")?;
 
@@ -214,12 +225,12 @@ fn cmd_prelude_compile() -> Result<()> {
             n.starts_with("__")
                 && n[2..]
                     .find('_')
-                    .map_or(false, |sep| sep > 0 && sep + 1 < n[2..].len())
+                    .is_some_and(|sep| sep > 0 && sep + 1 < n[2..].len())
         })
         .count();
     println!("  namespace members hoisted: {hoisted_count}");
 
-    // ── 4b. Collect inlinable combinator bindings for inline_cores ────────────
+    // ── 4b. Collect inlinable combinator bindings ─────────────────────────────
     // After peeling, intra-prelude references are Var::Free(name) rather than
     // de Bruijn Var::Bound indices.  For combinator lambdas (bodies that are
     // App(Intrinsic, vars) or Var), the lambda parameter references are
@@ -232,19 +243,19 @@ fn cmd_prelude_compile() -> Result<()> {
     // Each subsequent round adds lambdas whose only free variables are names
     // already in the set, repeating until no new names are added.
     let mut inlinable_names: HashSet<String> = HashSet::new();
-    let mut inline_cores: Vec<(String, RcExpr)> = Vec::new();
+    let mut inlinable_bindings: Vec<(String, RcExpr)> = Vec::new();
 
     // Round 0: bare intrinsics (after peel_meta)
     for (name, body) in &binding_bodies {
         let peeled = peel_meta(body);
         if matches!(&*peeled.inner, Expr::Intrinsic(_, _)) {
             inlinable_names.insert(name.clone());
-            inline_cores.push((name.clone(), peeled.clone()));
+            inlinable_bindings.push((name.clone(), peeled.clone()));
         }
     }
     println!(
-        "  inline cores round 0 (intrinsic aliases): {}",
-        inline_cores.len()
+        "  inlinable bindings round 0 (intrinsic aliases): {}",
+        inlinable_bindings.len()
     );
 
     // Iterate: add lambdas whose Free vars are all in the set
@@ -262,7 +273,7 @@ fn cmd_prelude_compile() -> Result<()> {
                 // combinator is not rejected on its recursive reference (§3.2).
                 if all_free_vars_in_set_with_self(&scope.body, &inlinable_names, name) {
                     inlinable_names.insert(name.clone());
-                    inline_cores.push((name.clone(), peeled.clone()));
+                    inlinable_bindings.push((name.clone(), peeled.clone()));
                     added += 1;
                 }
             }
@@ -271,24 +282,27 @@ fn cmd_prelude_compile() -> Result<()> {
             break;
         }
         println!(
-            "  inline cores round: +{added} (total {})",
-            inline_cores.len()
+            "  inlinable bindings round: +{added} (total {})",
+            inlinable_bindings.len()
         );
     }
-    println!("  inline cores total (fixed-point): {}", inline_cores.len());
+    println!(
+        "  inlinable bindings total (fixed-point): {}",
+        inlinable_bindings.len()
+    );
 
     // Pre-expand: substitute collected definitions into each other so the blob
     // carries fully-resolved expressions (no Var::Free). Since the fixed-point
     // collects in dependency order (round 0 first), a single forward pass
     // suffices.
     //
-    // The inline_cores are pre-expanded: all Var::Free references to other set
-    // members are substituted with their definitions at blob generation time.
-    // This means the runtime inline pass sees them as immediately closed bodies
-    // (no multi-pass resolution needed).
+    // The inlinable_bindings are pre-expanded: all Var::Free references to
+    // other set members are substituted with their definitions at blob
+    // generation time. This means the runtime inline pass sees them as
+    // immediately closed bodies (no multi-pass resolution needed).
     let mut resolved_map: HashMap<String, RcExpr> = HashMap::new();
-    let mut resolved_cores: Vec<(String, RcExpr)> = Vec::new();
-    for (name, body) in &inline_cores {
+    let mut resolved_bindings: Vec<(String, RcExpr)> = Vec::new();
+    for (name, body) in &inlinable_bindings {
         let subs: Vec<(String, RcExpr)> = resolved_map
             .iter()
             .map(|(n, e)| (n.clone(), e.clone()))
@@ -299,9 +313,9 @@ fn cmd_prelude_compile() -> Result<()> {
             body.substs(&subs)
         };
         resolved_map.insert(name.clone(), expanded.clone());
-        resolved_cores.push((name.clone(), expanded));
+        resolved_bindings.push((name.clone(), expanded));
     }
-    let inline_cores = resolved_cores;
+    let inlinable_bindings = resolved_bindings;
 
     // ── 5. Build name→slot mapping from peeled bindings ──────────────────────
     let name_to_slot: HashMap<String, usize> = binding_bodies
@@ -406,7 +420,16 @@ fn cmd_prelude_compile() -> Result<()> {
         })
     };
 
-    // ── 9. Serialise and write ────────────────────────────────────────────────
+    // ── 9. Encode the tagged desugared, per-unit prelude-side cores (eu-rb5n) ─
+    let desugared_unit_cores_bytes =
+        postcard::to_allocvec(&desugared_unit_cores).context("encode desugared_unit_cores")?;
+    println!(
+        "  desugared_unit_cores: {} bytes ({} tagged units)",
+        desugared_unit_cores_bytes.len(),
+        desugared_unit_cores.len(),
+    );
+
+    // ── 10. Serialise and write ───────────────────────────────────────────────
     let blob = PreludeBlob {
         source_hash,
         nodes,
@@ -417,7 +440,8 @@ fn cmd_prelude_compile() -> Result<()> {
         type_summary: summary,
         monad_specs,
         monad_type_hints,
-        inline_cores,
+        inlinable_bindings,
+        desugared_unit_cores: desugared_unit_cores_bytes,
         bytecode,
     };
 
