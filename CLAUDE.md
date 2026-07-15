@@ -210,6 +210,10 @@ measurement standard and cite a dated report or a ledger row:
 4. `cargo test` - run the full suite (not just `--lib`) when the change might affect harness tests
 5. `git commit` and `git push`
 
+### Recorded review before merge
+
+A PR that touches GC or memory management, unsafe code, the blob wire format, engine defaults, or release machinery is merged only after a review comment from someone other than its author appears on the PR. The merging agent confirms that recorded review exists as part of its merge checklist. See `docs/superpowers/reports/2026-07-15-0.13-merge-digest.md` for the factual basis.
+
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
 ## Beads Issue Tracker

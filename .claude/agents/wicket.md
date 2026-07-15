@@ -121,7 +121,16 @@ cargo fmt --all --check
 
 New features need docs. Changed behaviour needs updated docs.
 
-### 9. Merge
+### 9. Recorded-review gate
+
+A PR that touches GC or memory management, unsafe code, the blob wire
+format, engine defaults, or release machinery is merged only after a
+review comment from someone other than its author appears on the PR.
+Confirm that recorded review is present before merging such a PR. See
+`docs/superpowers/reports/2026-07-15-0.13-merge-digest.md` for the
+factual basis.
+
+### 10. Merge
 
 If all gates pass:
 ```bash
