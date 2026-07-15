@@ -1,0 +1,35 @@
+#!/usr/bin/env eu
+# eu-2sa6 — branch-gated self-recursion demand regression (Wicket review of PR #1016).
+#
+# Wicket's review of PR #1016 flagged this exact shape: a self-recursive local
+# function with a cond/pattern-match where only SOME branches reference the
+# recursive calls. The worry was that eager-argument resolution for
+# self-recursive DirectApp calls (an optimisation that avoids O(n^2)
+# indirection build-up across iterations, see src/eval/stg/compiler.rs) might
+# force every locally-bound recursive call unconditionally at each
+# invocation, even when the selected branch references neither -- breaking
+# laziness for a case that MUST NOT be forced (its argument is not
+# list-shaped, so destructuring it would fail).
+#
+# This mirrors lib/reflect.eu's `to-str[tag:rest]`, which has exactly this
+# shape (r0/r1/s0/s1 bindings feeding a cond, some branches use only one of
+# s0/s1, some use neither) and is the function whose exercise originally
+# surfaced this concern.
+#
+# bomb() blows up loudly if ever forced; the :leaf branch below references
+# neither s0 nor s1, so under correct lazy semantics it must never fire.
+
+bomb(_): panic("laziness violated: branch-gated recursive call forced despite not being on the demanded path")
+
+f[tag : rest]:
+  { r0: rest first
+    r1: rest second
+    s0: f(r0)
+    s1: bomb(r1)
+  }.(cond[
+      tag = :leaf => "leaf"
+    , tag = :node => "{s0}-{s1}"
+    , "unreachable"
+    ])
+
+RESULT: (f([:leaf, [:node, 1, 2], 42]) = "leaf") then(:PASS, :FAIL)
