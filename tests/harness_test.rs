@@ -2756,6 +2756,15 @@ pub fn test_188_v8n8_cluster_laziness() {
     run_test(&opts("188_v8n8_cluster_laziness.eu"));
 }
 
+/// eu-2sa6 — regression test for Wicket's PR #1016 review concern: a
+/// self-recursive local function with a cond/pattern-match where only some
+/// branches reference the recursive calls must not force branches that
+/// aren't on the demanded path. See the .eu file for full context.
+#[test]
+pub fn test_189_branch_gated_self_recursion() {
+    run_test(&opts("189_branch_gated_self_recursion.eu"));
+}
+
 #[test]
 pub fn test_189_r9oy_union_as_spec() {
     run_test(&opts("189_r9oy_union_as_spec.eu"));

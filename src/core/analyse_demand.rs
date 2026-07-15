@@ -44,6 +44,18 @@ pub type SignatureTable = HashMap<SigKey, DemandSignature>;
 /// apply per-argument demands at user function call sites.
 pub type NamedSignatureTable = HashMap<String, DemandSignature>;
 
+/// Peel `Meta` wrappers from an expression, returning the innermost non-Meta
+/// node. Source-path bindings (every prelude combinator, and any
+/// user-annotated binding) are `Meta(Lam(...), {doc, type})`, not a bare
+/// `Lam`; used to look through that wrapper when recording named demand
+/// signatures (see `analyse_let`).
+fn peel_meta(expr: &RcExpr) -> &RcExpr {
+    match &*expr.inner {
+        Expr::Meta(_, inner, _) => peel_meta(inner),
+        _ => expr,
+    }
+}
+
 /// Build intrinsic seed signatures from the INTRINSICS catalogue.
 ///
 /// For each intrinsic, strict arguments get `(Strict, AtMostOnce)` per
@@ -608,7 +620,20 @@ impl DemandAnalyser {
 
             // If the binding's RHS is a Lam with a known signature, record
             // the signature under the binding name for STG compiler use.
-            if let Expr::Lam(_, _, ref lam_scope) = &*new_rhs_exprs[i].inner {
+            //
+            // Peel `Meta` first: on the source-prelude path every binding
+            // (including recursive higher-order combinators such as
+            // `foldl`) is `Meta(Lam(_, true, _), {doc, type})`, not a bare
+            // `Lam`, so without peeling this check never fires there — the
+            // named signature table stays empty and the STG compiler falls
+            // back to conservative (lazy) treatment of the recursive copy's
+            // higher-order parameter, defeating demand specialisation even
+            // though `tag_combinators`/`distribute`'s meta-peel (eu-rb5n
+            // sub-problem 1) has already localised the recursive copy. The
+            // blob path never hits this: `inlinable_bindings` are peeled at
+            // blob-gen time (`xtask`), so their injected values are already
+            // bare `Lam`s here.
+            if let Expr::Lam(_, _, ref lam_scope) = &*peel_meta(&new_rhs_exprs[i]).inner {
                 let key = Rc::as_ptr(&lam_scope.body.inner) as usize;
                 if let Some(sig) = self.signatures.get(&key) {
                     self.named_signatures

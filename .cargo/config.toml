@@ -1,0 +1,12 @@
+# Give `cargo test`'s per-test worker threads the same stack headroom the
+# production `eu` binary already provisions for itself (see STACK_SIZE in
+# src/bin/eu.rs). Harness tests call driver/tester logic in-process on the
+# libtest worker thread, which never goes through `eu`'s own main() and so
+# never gets that dedicated stack. Debug builds have a much larger per-frame
+# footprint than release, and self-recursive combinator calls that are
+# eligible for eager-argument resolution (an intentional optimisation, see
+# eu-rb5n/eu-dp0k) legitimately need more native stack depth in debug builds
+# for the same reason test_bench_021_io_loop already documents. This mirrors
+# `eu`'s own STACK_SIZE constant rather than inventing a new figure.
+[env]
+RUST_MIN_STACK = "67108864"
