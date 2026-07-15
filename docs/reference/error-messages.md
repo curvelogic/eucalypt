@@ -162,17 +162,28 @@ error: assignment-style syntax: 'count = ...' is not a valid eucalypt declaratio
 The type checker reports mismatches as warnings. A mismatch at a call site
 names the function and points at the offending argument:
 
-```text
-warning: type mismatch calling 'double'
-  ┌─ example.eu:3:16
-  │
-3 │ result: double("hello")
-  │                ^^^^^^^ expected number, found "hello"
+```eu,notest
+` { type: "number -> string" }
+describe(n): "value: {n}"
+result: describe("hello")
 ```
 
-Under `--strict` this same finding becomes an error and exits `1`. See
-[Type Checking](../guide/type-checking.md) for what the checker does and
-does not catch.
+```text
+$ eu example.eu
+warning: type mismatch calling 'describe'
+  ┌─ example.eu:3:18
+  │
+3 │ result: describe("hello")
+  │                  ^^^^^^^ expected number, found "hello"
+
+---
+result: "value: hello"
+```
+
+The warning is advisory: it went to stderr, the program still evaluated,
+and the exit code was `0`. Under `--strict` this same finding becomes an
+error and exits `1`. See [Type Checking](../guide/type-checking.md) for
+what the checker does and does not catch.
 
 ### Execution errors
 
