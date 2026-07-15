@@ -37,7 +37,6 @@
 //! | `nodes` / `forms_pool` / `binding_entries` | Shared STG arena: compiled lambda forms for every prelude global | binding (compiled) | `stg` (post `eu dump stg`) | HeapSyn engine loader | derived (compiled, not a source-structure snapshot) |
 //! | `name_to_slot` | Binding name → global slot index | — | — | STG compiler (`Ref::G` resolution), loader | — |
 //! | `operators` | Operator fixity/precedence, extracted pre-`cook` | merged | pre-`cook` (desugared-adjacent) | `cook`'s `Distributor` seeding | derived (extracted subset, not a full snapshot) |
-//! | `type_summary` | Type schemes/aliases/branch shapes (`PreludeSummary`) | merged | post type-check | *(currently unread by the runtime; `run_type_checker_from_blob_core` uses `desugared_unit_cores` instead — retained for blob-format stability, not removed as out of scope for eu-rb5n)* | derived summary |
 //! | `monad_specs` / `monad_type_hints` | Monad namespace specs (e.g. `:for`) and LSP type hints | merged | desugared | Desugarer seeding, LSP | derived |
 //! | `inlinable_bindings` | Pre-expanded, `Ref::G`-linked, `Lam(_, true, _)`-tagged combinator bodies | binding | derived from desugared | `inject_prelude_inlinable_bindings` (pre-inline injection into user code) | **derived** (pre-expanded/re-tagged — not a stage snapshot, hence no "core" in the name) |
 //! | `desugared_unit_cores` | Each of the 4 prelude-side units' (`__build`/`__io`/`__args`/prelude) `expr`, exactly as `SourceLoader::translate` produced it | **unit** | **desugared**, pre-merge | `run_type_checker_from_blob_core` (eval-path merged type check, eu-rb5n) | **canonical snapshot** |
@@ -61,7 +60,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    core::{expr::RcExpr, typecheck::check::PreludeSummary},
+    core::expr::RcExpr,
     driver::unit_interface::OperatorInfo,
     eval::{
         bytecode::{BytecodeProgram, GlobalForm},
@@ -130,9 +129,6 @@ pub struct PreludeBlob {
     /// Operator metadata for seeding cook's `Distributor`.
     #[serde(with = "crate::common::serde_sorted")]
     pub operators: HashMap<String, OperatorInfo>,
-
-    /// Type schemes, aliases, branch shapes for seeding the type checker.
-    pub type_summary: PreludeSummary,
 
     /// Monad namespace specifications (e.g. `:for` → list monad, `:random`).
     ///
@@ -231,7 +227,6 @@ mod tests {
             binding_entries: vec![],
             name_to_slot: HashMap::new(),
             operators: HashMap::new(),
-            type_summary: PreludeSummary::default(),
             monad_specs: HashMap::new(),
             monad_type_hints: HashMap::new(),
             inlinable_bindings: vec![],

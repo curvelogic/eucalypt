@@ -9,8 +9,9 @@
 //!
 //! 1. Load `lib/prelude.eu` through the full front-end pipeline
 //!    (parse → desugar → cook → fuse → type-check).
-//! 2. Extract `OperatorInfo` (before cook strips `Meta` wrappers) and the
-//!    `PreludeSummary` from the type checker.
+//! 2. Extract `OperatorInfo` (before cook strips `Meta` wrappers); type-check
+//!    the prelude as a build-time sanity pass (warnings only — not baked
+//!    into the blob).
 //! 3. Peel the merged `Let` expression back into individual `(name, body)` pairs
 //!    using `open_let_scope_full`, converting `Var::Bound` intra-prelude
 //!    references back to `Var::Free(name)`.
@@ -32,7 +33,7 @@ use eucalypt::{
     core::{
         expr::{open_let_scope_full, Expr, RcExpr},
         inline::tag::{all_free_vars_in_set_with_self, tag_combinators_named},
-        typecheck::check::{parse_operator_overloads, type_check_for_prelude},
+        typecheck::check::type_check,
     },
     driver::source::SourceLoader,
     eval::stg::{
@@ -50,8 +51,9 @@ mod engine_ab;
 /// BV1 bytecode wire-format version, folded into the prelude-blob source hash.
 /// MUST match `BYTECODE_WIRE_FORMAT_VERSION` in the crate root `build.rs`.
 /// See that constant's doc comment for the version history (v2: eu-2sa6.11
-/// Let/LetRec binding count widened `u16` → `u32`).
-const BYTECODE_WIRE_FORMAT_VERSION: u32 = 3;
+/// Let/LetRec binding count widened `u16` → `u32`; v4: eu-2sa6.20
+/// `PreludeBlob::type_summary` field removed).
+const BYTECODE_WIRE_FORMAT_VERSION: u32 = 4;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -155,7 +157,6 @@ fn cmd_prelude_compile() -> Result<()> {
     loader.extract_operators();
     loader.extract_visibility();
 
-    let operator_type_strings = loader.unit_interface().operator_type_strings();
     let operators = loader.unit_interface().operators.clone();
 
     // Extract monad specs (e.g. :for, :random) populated during translate.
@@ -184,18 +185,17 @@ fn cmd_prelude_compile() -> Result<()> {
     // per prelude name, which Phase 5 loads into global slots INTRINSIC_COUNT+i.
     loader.fuse_destructure().context("fuse_destructure")?;
     // No eliminate — every prelude binding must be retained in the blob.
-    // The type checker needs to see all bindings for their type schemes.
 
-    // ── 3. Type-check to extract PreludeSummary ───────────────────────────────
+    // ── 3. Type-check as a sanity pass over the prelude source ────────────────
+    //
+    // Not baked into the blob (eu-2sa6.20 removed `PreludeBlob::type_summary`,
+    // the only consumer of a captured `PreludeSummary` here) — this just
+    // surfaces prelude authoring mistakes as build-time diagnostics.
     let core_expr = loader.core().expr.clone();
-    let (tc_warnings, mut summary) = type_check_for_prelude(&core_expr);
+    let (tc_warnings, _) = type_check(&core_expr);
     if !tc_warnings.is_empty() {
         eprintln!("  {} type-check warning(s) (non-fatal)", tc_warnings.len());
     }
-
-    // Populate operator_overloads from the pre-cook operator info.
-    let operator_overloads = parse_operator_overloads(&operator_type_strings);
-    summary.operator_overloads = operator_overloads;
 
     // ── 4. Peel the merged Let expression into individual binding bodies ──────
     // After merge_units + cook, the prelude is a nested Let where all
@@ -437,7 +437,6 @@ fn cmd_prelude_compile() -> Result<()> {
         binding_entries,
         name_to_slot,
         operators,
-        type_summary: summary,
         monad_specs,
         monad_type_hints,
         inlinable_bindings,
