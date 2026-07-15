@@ -7431,6 +7431,54 @@ second(pair) # type: number  (index 1)
 Any user-defined function whose body is `xs tail head` (or `xs tail tail head`,
 etc.) acquires the same precise projection typing automatically.
 
+### Prefix-lists
+
+A **prefix-list** sits between a fixed tuple and a homogeneous list: a
+fixed-shape **prefix** followed by a homogeneous variable **tail**. It uses
+brackets, with the last element carrying a trailing ellipsis:
+
+| Syntax                             | Meaning                                        |
+|------------------------------------|------------------------------------------------|
+| `[A, B, C…]`                       | an `A`, then a `B`, then zero or more `C`       |
+| `[A, B, C...]`                     | the same — ASCII `...` is accepted for `…`      |
+| `[C…]`                             | normalises to `[C]` (a plain homogeneous list)  |
+
+The ellipsis binds to the immediately preceding element, which may be a grouped
+union: `[symbol, block, (string | Element)…]`. Both `…` (U+2026, canonical —
+what `Display` emits) and ASCII `...` are accepted. A comma-separated bracket
+type **without** a trailing ellipsis is an error — fixed tuples remain `(A, B)`.
+
+The canonical use is the hiccup/markup element shape `[tag, attrs, …content]`:
+
+```eu,notest
+{ types: { Element: "[symbol, block, (string | Element)…]" } }
+
+` { type: "Element → symbol" }
+tag: head
+
+` { type: "Element → block" }
+attrs: second
+
+` { type: "Element → [string | Element]" }
+content: _ tail tail
+
+sample: [:div, {}, "a", "b"]
+result: [sample tag, sample attrs, sample content]
+```
+
+Subtyping is covariant throughout. A literal element `[:div, {}, "a", "b"]`
+(which synthesises to a `Tuple`) checks against a prefix-list annotation because
+`Tuple <: PrefixList`. Projection is precise: `head` gives the first prefix
+element, `second` the next, and `tail` drops one prefix element (eventually
+normalising to `[tail]`). A named projection **past** the fixed prefix lands in
+the tail, which may be empty at runtime, so it synthesises as `T?` (`T |
+ExecutionError`) rather than bare `T`.
+
+An unstructured `[T]` list is **not** a subtype of a prefix-list with a
+non-empty prefix (it might be empty or too short), so a genuine list cannot be
+passed where a markup element is required — widen the annotation or use `any` if
+that is intended.
+
 ### Records
 
 Records describe the shape of blocks:
@@ -8111,6 +8159,107 @@ memory — it persists for the lifetime of the `eu` or LSP server process
 but is not written to disk.
 
 ---
+
+## Runtime type reflection (`reflect.eu`)
+
+The type annotations discussed so far are consumed by the checker at
+*check time*. Sometimes you want to work with a type as an ordinary
+**value** at *runtime* — to inspect its structure, or to turn it into a
+predicate that validates data. The `reflect.eu` library provides that
+bridge. Import it the same way as any other library:
+
+```eu,notest
+{ import: "reflect.eu" }
+```
+
+### Type-data values and the `s"…"` prefix
+
+The **s-string** prefix `s"…"` parses a type expression — the same
+type language used in `type:` annotations — into a first-class
+**type-data** value. A type-data value renders as its canonical string
+form:
+
+```eu,notest
+{ import: "reflect.eu" }
+t: s"{ name: string, age: number }"
+# t => "{age: number, name: string}"
+```
+
+### `to-data` and `from-data`
+
+`to-data(v)` projects a type-data value into a structured, tagged list
+you can traverse with ordinary list and block functions. Each node is a
+list whose head is a `:t-*` symbol tag (`:t-prim`, `:t-list`, `:t-fn`,
+`:t-union`, `:t-record`, `:t-field`, `:t-tuple`, `:t-partial`, and so on):
+
+```eu,notest
+{ import: "reflect.eu" }
+a: s"[number]" to-data
+# a => [:t-list, [:t-prim, :number]]
+
+b: s"{ name: string }" to-data
+# b => [:t-record, { name: [:t-field, :required, [:t-prim, :string]] }]
+```
+
+`from-data(td)` is the inverse — it rebuilds a type-data value from such
+a tagged list, so the two round-trip:
+
+```eu,notest
+{ import: "reflect.eu" }
+r: s"{ name: string, age: number }" to-data from-data
+# r => "{age: number, name: string}"
+
+# Constructing type-data by hand from tags:
+h: [:t-list, [:t-prim, :string]] from-data
+# h => "[string]"
+```
+
+`to-data` passes non-type-data values through unchanged, so it is safe to
+apply speculatively.
+
+### `as-spec`: types as runtime validators
+
+`as-spec(t)` converts a type-data value into a **`match?`-compatible
+pattern** — a predicate you can test data against at runtime. This is the
+most directly useful reflection operation: it turns a type into a schema
+check.
+
+```eu,notest
+{ import: "reflect.eu" }
+schema: s"{ name: string, age: number }" as-spec
+
+good: { name: "Alice", age: 30 } match?(schema)   # => true
+bad:  { name: "Alice", age: "old" } match?(schema) # => false
+```
+
+Record matching is **open** — extra keys in the data are ignored, only the
+named fields are checked. The mapping covers the common type forms:
+
+| Type form | Runtime check |
+|---|---|
+| `number`, `string`, `symbol`, `bool`, `null`, `datetime` | the corresponding predicate (`number?`, `string?`, …) |
+| `any` and type variables | `any?` (always matches) |
+| `[T]` list | `list?` and every element matches `T` |
+| `{ k: T, … }` record | each named field present and matching (open — extra keys ignored) |
+| `(A, B, …)` tuple | a list of exactly that length, element-wise |
+| `[A, B, C…]` prefix-list | `list?` of length ≥ the prefix, prefix element-wise, remainder matches the tail |
+| `T?` partial / nullable | `null?` or `T` |
+| `A → B` function | is a function (not yet saturated) |
+
+Nested forms compose as you would expect:
+
+```eu,notest
+{ import: "reflect.eu" }
+spec: s"{ tags: [string] }" as-spec
+a: { tags: ["x", "y"] } match?(spec)   # => true
+b: { tags: [1, 2] }     match?(spec)   # => false
+```
+
+> **Known limitation**: `as-spec` on a **union** type
+> (`s"number | string"`) currently produces a predicate that never
+> matches — a defect tracked as bead `eu-r9oy`. Until it is fixed, build a
+> union validator directly, e.g. `v number? or v string?`, rather than via
+> `as-spec`.
 
 ## Summary
 
@@ -10338,7 +10487,10 @@ eu --help # lists command line options
 
 - `--source-prelude` - Force the source-prelude pipeline even when a pre-compiled
   prelude blob is available. Use this when you need to trace through prelude source
-  during debugging, or when the cached blob is suspected to be stale.
+  during debugging, or when the cached blob is suspected to be stale. Note this
+  pipeline is correctness-equivalent to the blob path but carries a documented
+  performance handicap (~10% on arithmetic-dense code) — see
+  [`docs/development/prelude-blob.md`](../development/prelude-blob.md).
 
 ## Command Structure
 
@@ -11347,8 +11499,261 @@ eu input.eu -o output.toml  # infers TOML format
 
 # Error Messages Guide
 
-*This reference is under construction. It will provide a guide to
-understanding eucalypt error messages with examples and solutions.*
+This page explains how to read the diagnostics eucalypt prints when
+something goes wrong — their layout, the main categories you will meet,
+the difference between warnings and errors, and how to interpret stack
+traces and source locations.
+
+All the transcripts below were produced by running small broken programs
+against the `eu` binary. They are shown without terminal colour; in a
+real terminal the severity word and the underlines are colourised.
+
+## Anatomy of a diagnostic
+
+Eucalypt renders diagnostics in the `codespan` style — the same style
+used by `rustc`. There are no numeric error codes to memorise; a
+diagnostic is identified by its **message**, and the location is shown by
+pointing at the offending source span.
+
+A typical diagnostic has four parts:
+
+```text
+error: unresolved variable 'subtotal'
+  ┌─ example.eu:1:8
+  │
+1 │ total: subtotal + tax
+  │        ^^^^^^^^
+  │
+  = check that the variable is defined and in scope
+```
+
+1. **Severity and message** — the first line. `error:` (evaluation cannot
+   proceed) or `warning:` (advisory; see below).
+2. **The source pointer** — `┌─ file:line:column` names where the problem
+   is.
+3. **The primary label** — the `^^^^^^^^` underline marks the exact span
+   the message is about. Some diagnostics add *secondary* labels (further
+   underlines with their own text) to relate two spans, for example the
+   annotation and the value it disagrees with.
+4. **Notes and help** — the `=` lines carry advice: what the problem
+   usually means and how to fix it. Some errors also print `help:` lines
+   immediately under the message.
+
+When an error originates inside an intrinsic or a piece of code with no
+usable source span, the pointer may be omitted and replaced by an `in
+<name>` note instead.
+
+## Warnings versus errors, and `--strict`
+
+Type checking runs on **every** `eu` invocation, but its findings are
+**warnings**: they print to stderr and do **not** stop evaluation or
+change the exit code. Everything else here — parse failures, unresolved
+variables, runtime faults — are **errors**: they stop evaluation and set a
+non-zero exit code.
+
+A type warning that does not correspond to a real runtime fault leaves the
+program running normally:
+
+```text
+$ eu example.eu
+warning: expression type does not match annotation
+  ┌─ example.eu:1:1
+  │
+1 │ ╭ ` { type: "number" }
+2 │ │ first-score: [10, 20, 30] nth(0)
+  │ ╰────────────────────────────────^ expected number, found number?
+
+---
+first-score: 10
+```
+
+The warning went to stderr; the result (`first-score: 10`) still went to
+stdout and the exit code was `0`.
+
+Pass `--strict` to promote type warnings to errors and abort:
+
+| Command | Behaviour | Exit |
+|---|---|---|
+| `eu file.eu` | evaluate; type issues are warnings only | `0` |
+| `eu check file.eu` | type-check only, report warnings, do not evaluate | `0` |
+| `eu check file.eu --strict` | type-check only; any warning is an error | `1` |
+| `eu file.eu --strict` | abort before evaluation if there are type warnings | `1` |
+| `eu file.eu --suppress-type-warnings` | evaluate, silencing warning output | `0` |
+
+`--type-check` is a deprecated no-op kept for backwards compatibility —
+the checker already runs whether or not it is passed. See
+[Type Checking](../guide/type-checking.md) for the full guide to the
+checker.
+
+## Error categories
+
+Errors surface at different stages of the pipeline (parse → desugar →
+cook → verify → type-check → evaluate). The stage rarely matters to a
+user, but the *category* of message does.
+
+### Parse errors
+
+Raised when the source text is not well-formed — an unclosed delimiter,
+a stray token, a malformed declaration head. The pointer shows where the
+parser gave up; for an unterminated bracket the span often spills onto the
+following line, because that is where the missing close-delimiter was
+expected:
+
+```text
+error: unterminated block (missing '}')
+  ┌─ example.eu:1:11
+  │
+1 │ ╭ greeting: { name: "Alice"
+  │ ╭───────────^
+2 │ │
+  │ ╰^
+```
+
+### Binding errors (unresolved and self-referential names)
+
+Once the syntax is valid, eucalypt resolves every name to a binding. A
+name with no binding in scope is the single most common error:
+
+```text
+error: unresolved variable 'subtotal'
+  ┌─ example.eu:1:8
+  │
+1 │ total: subtotal + tax
+  │        ^^^^^^^^
+  │
+  = check that the variable is defined and in scope
+```
+
+This is also what you get for an **operator** that is not defined:
+operators are ordinary names in eucalypt, so an unknown operator such as
+`<?>` reports as `unresolved variable '<?>'`.
+
+A binding whose right-hand side refers to itself (rather than to an outer
+value of the same name — a frequent surprise, since a block key shadows any
+outer binding of that name) is caught before it can diverge:
+
+```text
+error: binding 'loop' refers to itself — this will always diverge
+  ┌─ example.eu:1:7
+  │
+1 │ loop: loop
+  │       ^^^^
+  │
+  = the binding `loop: loop` (or `loop: loop(…)`) always loops
+  = if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`
+```
+
+Declarations use `:` , not `=`; the assignment form is caught with a
+targeted hint:
+
+```text
+error: assignment-style syntax: 'count = ...' is not a valid eucalypt declaration
+  ┌─ example.eu:1:7
+  │
+1 │ count = 3
+  │       ^
+  │
+  = eucalypt uses ':' for declarations, not '='; write 'count: <value>' instead of 'count = <value>'
+```
+
+### Type warnings
+
+The type checker reports mismatches as warnings. A mismatch at a call site
+names the function and points at the offending argument:
+
+```eu,notest
+` { type: "number -> string" }
+describe(n): "value: {n}"
+result: describe("hello")
+```
+
+```text
+$ eu example.eu
+warning: type mismatch calling 'describe'
+  ┌─ example.eu:3:18
+  │
+3 │ result: describe("hello")
+  │                  ^^^^^^^ expected number, found "hello"
+
+---
+result: "value: hello"
+```
+
+The warning is advisory: it went to stderr, the program still evaluated,
+and the exit code was `0`. Under `--strict` this same finding becomes an
+error and exits `1`. See [Type Checking](../guide/type-checking.md) for
+what the checker does and does not catch.
+
+### Execution errors
+
+Raised while the program runs — applying a non-function, indexing past the
+end of a list, taking the `head` of an empty list, an explicit `panic`, a
+failed `requires:` constraint, and so on. These carry help text and,
+importantly, a **stack trace**:
+
+```text
+error: tried to call a number as a function
+  help: only functions and blocks can be called with arguments
+  help: this often means too many arguments were passed to a function
+  ┌─ example.eu:1:11
+  │
+1 │ result: 3(4)
+  │           ^
+  │
+  = a number value is not a function; check for a missing operator or extra argument
+  = note: catenation (juxtaposition) has low precedence — 'f(a) + 1' binds as 'f(a + 1)'; add parentheses to disambiguate
+```
+
+The last note is a recurring hint: because catenation binds very loosely,
+an unexpected "tried to call X as a function" often means an infix
+operator captured an argument you meant to apply separately. See
+[Syntax Gotchas](../appendices/syntax-gotchas.md) for the precedence
+traps behind these messages.
+
+## Reading stack traces and source locations
+
+When an error is raised deep inside a chain of calls, the diagnostic's
+primary pointer shows **where the fault occurred**, and the `stack trace`
+note shows **how execution got there**. Consider:
+
+```eu,notest
+first-elem(xs): xs head
+process(xs): first-elem(xs)
+main: process([])
+```
+
+Running it:
+
+```text
+error: head of empty list
+  ┌─ example.eu:1:20
+  │
+1 │ first-elem(xs): xs head
+  │                    ^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+  = stack trace:
+    - first-elem at example.eu:1:20
+```
+
+The pointer and the trace both land on `xs head` inside `first-elem` — the
+actual failure site — rather than on `main`, which merely started the
+chain. Each trace entry is `function at file:line:column`. Note that the
+trace reflects the *evaluated* call structure: because eucalypt is lazy
+and inlines aggressively, tail calls and fully-inlined helpers may not each
+appear as a separate frame, so a trace can be shorter than the source call
+chain suggests.
+
+### Getting more location detail
+
+Source spans are threaded through the pipeline as *source-map ids*
+(`Smid`s). Occasionally an error's own span is synthetic (it came from an
+intrinsic), and the renderer falls back to the nearest enclosing span with
+a real file location. If you are debugging a diagnostic that points at a
+surprising place, set `EU_ERROR_TRACE_DUMP=1` to dump the full environment
+and stack traces with their `Smid` details to stderr, which shows every
+source location available at the point of failure.
 
 ---
 
@@ -11693,6 +12098,7 @@ non-function binding emits a warning and is skipped.
 | `[T]`              | list of T                              |
 | `NonEmpty([T])`    | non-empty list of T                    |
 | `(A, B)`           | tuple                                  |
+| `[A, B, C…]`       | prefix-list: fixed A, B then zero+ C (ASCII `...` = `…`); `[C…]` ≡ `[C]` |
 | `{{k: T, ..}}`     | open record (at least k: T)            |
 | `{{k: T, ..r}}`    | named row variable (extra fields in r) |
 | `{{..r, ..s}}`     | row concatenation (union of r and s)   |
@@ -11704,6 +12110,7 @@ non-function binding emits a warning and is skipped.
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
 | `T?`               | partial — sugar for `T \| ExecutionError` |
+| `!T` (leading `!`) | asserted — checker trusts the annotation, does not verify the body ([gotcha](../appendices/syntax-gotchas.md#the--asserted-type-prefix)) |
 | `ExecutionError`   | the type of a raised runtime error     |
 | `a`, `b`           | type variable (kind `*`)               |
 | `m a`              | constructor application (`m` of kind `* -> *` applied to `a`) |
@@ -12239,6 +12646,7 @@ schema: s"{ name: string, age: number }" as-spec
 | `A \| B` union | Predicate: true if value matches any branch |
 | `T?` partial/nullable | Predicate: `null?` or `T-spec` |
 | `(T1, T2, …)` tuple | List pattern `[T1-spec, T2-spec, …]` (exact length) |
+| `[A, B, C…]` prefix-list | Predicate: `list?` of length ≥ prefix, each prefix element matches, remainder matches the tail spec |
 | `A → B` function | Predicate: `__SATURATED not` (checks it is a function) |
 | `forall …` | Erase quantifier, spec the body |
 | Type variables | `any?` (unconstrained at runtime) |
@@ -13547,17 +13955,31 @@ Validates transformed expressions before STG compilation:
 
 Eucalypt uses a Spineless Tagless G-machine (STG) as its evaluation model, providing lazy evaluation with memoisation.
 
-> **Note on execution engines**: the sections below describe the STG
-> tree-walk machine (`src/eval/machine/vm.rs`), historically the only
-> engine and still the differential-testing/performance baseline
-> (select it with `EU_HEAPSYN=1`). Since 0.12.0 the **default** engine
-> instead compiles the same STG syntax to a bytecode program and runs
-> it on a separate bytecode VM (`src/eval/bytecode/`: `opcode.rs`,
-> `program.rs`, `machine.rs`, `closure.rs`, `cont.rs`, `env_builder.rs`,
-> `encode.rs`). `EU_BYTECODE=1` is a redundant no-op now that bytecode
-> is the default. A full description of the bytecode engine's design
-> is a tracked documentation gap — see `docs/superpowers/specs/` for
-> the implementation-level design documents in the meantime.
+### Two execution engines share one STG
+
+The STG syntax described below is the intermediate representation that
+**both** of eucalypt's execution engines consume. The engines differ only
+in how they *run* that syntax, not in what it means:
+
+- **The HeapSyn tree-walk engine** (`src/eval/machine/vm.rs`) walks a
+  materialised STG tree of heap-allocated nodes directly. It was
+  historically the only engine and is retained as the performance
+  baseline and the differential-testing oracle. Select it with
+  `EU_HEAPSYN=1`.
+- **The bytecode engine (BV1)** (`src/eval/bytecode/`) compiles the same
+  STG syntax to a flat bytecode program and runs that. Since 0.12.0 it is
+  the **default**; `EU_BYTECODE=1` is a now-redundant explicit opt-in, and
+  `EU_HEAPSYN=1` takes precedence over it.
+
+Both engines produce byte-identical rendered output on every input — this
+is enforced by a differential test suite (`src/eval/bytecode/differential.rs`)
+and is the invariant that lets the bytecode engine be the default while
+HeapSyn remains as a cross-check.
+
+The next four subsections (STG Syntax, STG Compiler, the tree-walk Virtual
+Machine, Continuations and Lazy Evaluation) describe the shared IR and the
+HeapSyn engine that walks it. [The Bytecode Engine](#the-bytecode-engine-bv1-the-default)
+below then describes how the default engine executes the same syntax.
 
 ### STG Syntax
 
@@ -13687,6 +14109,97 @@ Continuation::Update { environment, index } => {
 }
 ```
 
+### The Bytecode Engine (BV1, the default)
+
+*Implementation*: `src/eval/bytecode/` (`opcode.rs`, `program.rs`,
+`encode.rs`, `closure.rs`, `cont.rs`, `env_builder.rs`, `machine.rs`,
+`predecode.rs`)
+
+The default engine compiles STG syntax one step further, into a flat
+bytecode program, and interprets that. The motivation is a garbage-collection
+one: in the HeapSyn engine the *code* itself is a tree of heap-allocated
+`HeapSyn` nodes, so every code node must be scanned, marked and potentially
+evacuated by the collector. Bytecode moves the code **off the GC heap**
+entirely — it lives in a plain `Vec<u8>` that never moves — so closures need
+no code-pointer fix-up during collection.
+
+#### What gets compiled
+
+`encode.rs` flattens each STG tree into a post-order byte stream: children
+are emitted first at low offsets and parents refer to them by absolute `u32`
+offset (a `CodeRef`). There is one opcode per `StgSyn` variant — `Atom`,
+`Case`, `Cons`, `App`, `Bif`, `Let`, `LetRec`, `Meta`, `DeMeta` and so on
+(`opcode.rs`) — plus two encoder-introduced superinstructions: `DirectApp`
+for known-callable applications and `FusedPrimop`, which collapses the
+force-both-operands-then-dispatch tree of a whitelisted set of strict binary
+primops (arithmetic and comparison) into a single opcode.
+
+Values that cannot live in a byte stream — heap-backed strings and interned
+symbols — are hoisted once into a **constant pool** (`program.rs`) and
+referenced by index; they are rooted for the whole run. The compiled
+`BytecodeProgram` also carries pre-encoded *templates* (data-constructor
+nodes, partial-application trampolines, fixed-shape apply nodes) so that
+intrinsics and the IO runner can build closures with no per-call code
+allocation.
+
+A bytecode runtime value (`closure.rs`) is either a code closure — an info
+table carrying a `CodeRef` plus a pointer to its environment frame — or a
+WHNF native carried directly. The **environment-frame cactus stack and the
+continuation model are shared verbatim with the HeapSyn engine**
+(`cont.rs` mirrors `machine::cont::Continuation` one-for-one, with `CodeRef`
+offsets in place of node pointers); only the code representation differs.
+
+#### How dispatch works
+
+The interpreter loop (`machine.rs`) keeps a program counter into the code
+buffer. Each step reads one opcode byte, decodes it (`Op::from_u8`), reads
+that opcode's inline operands from the following bytes, and acts —
+pushing continuations, allocating environment frames, forcing thunks and
+returning data constructors exactly as the tree-walk machine does. GC is
+polled on a countdown (every 500 steps by default), matching HeapSyn.
+
+#### The pre-decoded IR (lever a, `EU_PREDECODE`)
+
+The classic byte-stream interpreter re-reads and re-decodes operands from
+the buffer on *every* tick. A newly merged **pre-decoded execution IR**
+(`predecode.rs`, currently behind `EU_PREDECODE=1`) removes that per-tick
+cost: at machine load the whole program is decoded **once** into a flat
+array of fixed-width, typed `Instr` records (16 bytes each) plus a set of
+off-heap side pools (argument-reference lists, application arg ordinals,
+`Let`/`LetRec` form headers and densified `Case` branch tables). Dispatch
+then reads typed fields instead of re-parsing bytes. Two representation
+changes accompany the decode: a `CodeRef` becomes an *instruction ordinal*
+rather than a byte offset, and source annotations move into a side table
+keyed by ordinal so `Ann` nodes are peeled at decode time and never cost a
+dispatch step. The byte stream is retained unchanged as the *serialisation*
+format; pre-decoding is purely an execution-time transform, and with the
+flag off behaviour is byte-identical to the byte-stream path. Nothing in the
+pre-decoded structures is a GC pointer, so code stays off the collector's
+scan set just as the byte stream does.
+
+#### Why bytecode is the default, and the performance story
+
+The bytecode engine wins decisively on garbage-collection-heavy and
+allocation-bound workloads, where keeping code off the managed heap and out
+of every mark/sweep pays for itself; it also starts faster, because the
+prelude ships pre-encoded in the blob (below) rather than being compiled
+from source. On op-dense, allocation-light workloads the byte-stream
+interpreter's per-tick re-decode cost historically left it slower per tick
+than the HeapSyn tree-walk; closing that remaining gap is exactly what the
+pre-decoded IR and the fused-primop superinstructions target.
+
+All engine-versus-engine performance numbers in this project are governed by
+a checked-in measurement protocol
+([`docs/superpowers/engine-ab/PROTOCOL.md`](superpowers/engine-ab/PROTOCOL.md)):
+deterministic VM ticks and allocation counts first, interleaved
+median-of-N wall timings second, a canonical eight-bench suite, and a
+mandatory confidence label (*measured-verified* / *measured-single* /
+*projected*) on every figure. Because those figures are machine- and
+load-sensitive and evolve release to release, this document deliberately
+states the shape of the trade-off rather than quoting ratios; consult the
+protocol's ledger (`results.jsonl`) and the dated transition-review reports
+under `docs/superpowers/reports/` for current, labelled measurements.
+
 ## Memory Management and Garbage Collection
 
 Eucalypt uses an Immix-inspired memory layout with mark-and-sweep collection.
@@ -13798,6 +14311,45 @@ The prelude (~29KB) is written entirely in eucalypt, wrapping intrinsics with er
 **Loading:**
 - Prelude is embedded in the binary at compile time
 - Loaded by default unless `--no-prelude` / `-Q` flag is used
+
+### The Pre-Compiled Prelude Blob
+
+*Implementation*: `src/eval/stg/blob.rs`, generated by
+`cargo xtask prelude-compile`
+
+Compiling ~2,200 lines of prelude source on every `eu` invocation would
+dominate startup, so the prelude is pre-compiled once, at development time,
+into `lib/prelude.blob` and embedded in the binary. The blob is serialised
+with **postcard** (a compact binary format) and is the runtime's default
+source for the prelude; the build falls back to compiling from source only
+when the blob is absent or stale.
+
+Staleness is detected by a hash: the blob records
+`SHA-256(lib/prelude.eu ‖ bytecode-wire-format-version)`, and `build.rs`
+recomputes it. Folding the **bytecode wire-format version** (currently 3)
+into the hash means a change to the serialised code layout invalidates a
+stale-format blob even when the prelude source itself is unchanged.
+
+The blob is not a single artefact but a set of sections, each a snapshot or
+derived artefact of a specific compiler stage. `blob.rs`'s module
+documentation is the authoritative anatomy; the load-bearing sections are:
+
+| Section | What it is | Consumer |
+|---|---|---|
+| `nodes` / `forms_pool` / `binding_entries` | Shared STG arena — compiled lambda forms for every prelude global | HeapSyn engine loader |
+| `bytecode` | Pre-encoded `BytecodeProgram` plus global forms | Bytecode engine loader |
+| `name_to_slot` | Binding name → global slot index | STG compiler (`Ref::G` resolution) and loaders |
+| `operators` | Operator fixity/precedence extracted pre-`cook` | Seeds the cooker's operator distributor |
+| `desugared_unit_cores` | Each prelude-side unit's post-translate (desugared) core, exactly as `SourceLoader::translate` produced it | Eval-path merged type check |
+| `inlinable_bindings` | Pre-expanded, `Ref::G`-linked combinator bodies tagged for inlining | Pre-inline injection into user code |
+| `monad_specs` / `type_summary` | Monad namespace specs and type schemes/aliases | Desugarer seeding, LSP, type checker |
+
+A naming convention keeps these honest: the word *core* is reserved for
+fields that are a faithful snapshot of a named pipeline stage at a named
+granularity (hence `desugared_unit_cores` — the *desugared* stage, per
+*unit*). A field that has been pre-expanded, re-tagged or otherwise
+transformed beyond a stage snapshot is named for the artefact it actually
+is — hence `inlinable_bindings`, not a "core".
 
 ## Driver and CLI Architecture
 
@@ -13965,8 +14517,9 @@ The prelude is:
 | `src/core/` | Expression representation | `expr.rs` |
 | `src/core/desugar/` | AST to core | `desugarer.rs` |
 | `src/core/cook/` | Operator resolution | `shunt.rs`, `fixity.rs` |
-| `src/eval/stg/` | STG syntax and compiler | `syntax.rs`, `compiler.rs` |
-| `src/eval/machine/` | Virtual machine | `vm.rs`, `cont.rs`, `env.rs` |
+| `src/eval/stg/` | STG syntax, compiler, prelude blob | `syntax.rs`, `compiler.rs`, `blob.rs` |
+| `src/eval/machine/` | HeapSyn tree-walk engine | `vm.rs`, `cont.rs`, `env.rs` |
+| `src/eval/bytecode/` | Bytecode engine (BV1, default) | `machine.rs`, `encode.rs`, `predecode.rs` |
 | `src/eval/memory/` | Heap and GC | `heap.rs`, `collect.rs` |
 | `src/driver/` | CLI orchestration | `options.rs`, `eval.rs` |
 | `src/export/` | Output formats | `yaml.rs`, `json.rs` |
@@ -15191,6 +15744,7 @@ origin: { x: 0, y: 0 }
 | `NonEmpty([T])`    | non-empty list of T                    |
 | `(A, B)`           | 2-tuple; `(A, B, C)` for triple        |
 | `(A,)`             | 1-tuple                                |
+| `[A, B, C…]`       | prefix-list: fixed A, B then zero+ C (`...` = `…`) |
 | `{k: T}`           | closed record                          |
 | `{k: T, ..}`       | open record (at least k: T)            |
 | `{k: T, ..r}`      | named row variable (in string: `{{k: T, ..r}}`) |
@@ -15201,6 +15755,7 @@ origin: { x: 0, y: 0 }
 | `"value"`          | literal string type (subtype of `string`); c-string escapes for the quotes: `c"\"value\""` |
 | `:name`            | literal symbol type (subtype of `symbol`)      |
 | `T?`               | partial — sugar for `T \| ExecutionError`; marks functions that may raise an error |
+| `!T` (leading `!`) | asserted — checker trusts the annotation without verifying the body ([gotcha](syntax-gotchas.md#the--asserted-type-prefix)) |
 | `ExecutionError`   | the type of a raised runtime error     |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |
@@ -15459,6 +16014,53 @@ function value rather than a boolean.  The not-nil postfix `✓` is
 often the most natural way to introduce the outer anaphor when you
 want to also guard against null.
 
+### A Bare Numeral in Interpolation Braces Is an Anaphor Index
+
+**Problem**: Inside a string, `{...}` is interpolation, and a **bare
+number** in the braces — `"{42}"` — is not the literal text `42`. It is
+**numbered string anaphora**: `{0}`, `{1}`, `{2}`, … refer to the 1st,
+2nd, 3rd positional argument of the string-as-a-function. So `{42}` makes
+the string a **function of 43 arguments**, referencing the 43rd.
+
+**Gotcha**: This is silent. A string with a bare-numeral brace becomes a
+function value, and functions are not rendered — so the whole binding just
+vanishes from the output with no error:
+
+```eu,notest
+answer: "the answer is {42}"   # answer is now a 43-arg function
+other: 1
+```
+
+```text
+$ eu example.eu
+---
+other: 1
+```
+
+`answer` produced no output at all. Forcing the value (e.g. with `eu -e
+'"{42}"'`) turns the silence into a crash instead:
+
+```text
+error: bytecode: PAP arity out of range (supplied 1, pending 42, max 16)
+```
+
+**Fixes**:
+
+```eu,notest
+# Literal braces — double them
+answer: "the answer is {{42}}"   # => "the answer is {42}"
+
+# Interpolate a *value* named 42 — bind it to a name first
+n: 42
+answer: "the answer is {n}"      # => "the answer is 42"
+```
+
+**Rule**: a number inside interpolation braces is always an anaphor index,
+never a literal. Use `{{` `}}` for literal braces, and interpolate values
+through named bindings (`{name}`) or a format specifier (`{value:%d}`),
+never a bare numeral. Small indices bite the same way — `"{0}"` is a
+one-argument function, not the digit zero.
+
 ## Metadata vs Comments
 
 ### Backtick Is Metadata, Not a Comment
@@ -15519,6 +16121,49 @@ z: home.'notes.txt'          # Looks up identifier: notes.txt
 'hello' = 'hello'            # Compares two variable references (not strings)
 "hello" = "hello"            # Compares two string literals (correct)
 ```
+
+## Hyphens and Digits Are Identifier Characters — `x-2` Is One Name
+
+**Problem**: Eucalypt identifiers are kebab-case: after the initial
+letter, an unquoted name may contain hyphens, digits, and the characters
+`* ! ? _`. So `x-2` is not `x - 2` — it lexes as a **single identifier**
+named `x-2`:
+
+```eu,notest
+x: 10
+r: x-2        # r is not 8 — 'x-2' is one name
+```
+
+```text
+error: unresolved variable 'x-2'
+```
+
+**Gotcha**: this is asymmetric with the other arithmetic operators,
+because `+`, `/`, `<`, `>`, `=` and friends are **not** identifier
+characters, but `-` and `*` **are**:
+
+```eu,notest
+r: x+1        # => x + 1   (+ is not an identifier character)
+r: x-1        # => identifier 'x-1'   (- IS an identifier character)
+r: x*2        # => identifier 'x*2'   (* IS an identifier character)
+```
+
+Leading digits also disambiguate — the lexer only starts a normal
+identifier on a letter, so `2-x` is `2 - x`, while `x-2` is one name. And a
+space after the hyphen forces the operator reading, but a space *before*
+it makes the `-2` a negative literal in catenation position:
+
+```eu,notest
+r: 2-x        # => 2 - x   (subtraction — identifiers can't start with a digit)
+r: x - 2      # => x - 2   (spaces on both sides — subtraction, the fix)
+r: x -2       # => catenation of x and the literal -2 (calls -2 as a function)
+```
+
+**Rule**: put spaces around `-` (and `*`) whenever you mean the arithmetic
+operator next to a name: write `x - 2`, never `x-2`. This bites hardest
+right after another operator, where the eye reads arithmetic but the lexer
+reads a name: `n * x-2` is `n * (x-2)` with `x-2` unresolved; you want
+`n * x - 2`.
 
 ## Division Operators
 
@@ -15763,6 +16408,57 @@ Two things to remember when a `type:` annotation contains literal types:
   argument position needs brackets: `(:block | :log) -> bool`, not
   `:block | :log -> bool` (which is an overloaded-function type). Naming
   the union in a `types:` alias avoids the question.
+
+## The `!` Asserted-Type Prefix
+
+A `type:` (or `types:`) annotation string that begins with `!` is an
+**asserted** annotation: the checker **trusts it without verifying the
+body**. The `!` is stripped and the remainder parsed as the type; the
+declaration is simply taken to have that type, whatever its right-hand
+side actually is.
+
+**Why it exists**: it lets you hand the checker a type it could not (or
+should not) infer — for example a **closed** record shape so that
+`lookup(:key, …)` resolves precisely, where the inferred open shape would
+not warn on a key typo. This is the `!{{…}}` you may see in the
+[Type Checking](../guide/type-checking.md) guide:
+
+```eu,notest
+` { type: "!{{name: string, age: number}}" }
+person: { name: "Alice", age: 30 }
+
+lookup(:naem, person)   # now warns: unknown record key :naem
+```
+
+**Gotcha**: because the body is not checked, an asserted annotation
+**silences a genuine mismatch**. A plain annotation catches it; adding `!`
+makes the warning disappear:
+
+```eu,notest
+# Plain annotation — the checker verifies the body and WARNS:
+` { type: "number" }
+x: "hello"                # warning: expected number, found "hello"
+
+# Asserted — the checker trusts the annotation and stays SILENT:
+` { type: "!number" }
+x: "hello"                # no warning, even though x is a string
+```
+
+```text
+$ eu check plain.eu
+warning: expression type does not match annotation
+  ┌─ plain.eu:1:1
+  ...
+        expected number, found "hello"
+
+$ eu check asserted.eu
+# (no output — asserted annotation trusted)
+```
+
+**Rule**: reach for `!` only to *supply* a type the checker cannot verify
+for itself, never to quiet a warning you have not understood — an asserted
+type is a promise the checker will believe and propagate to every use
+site, so a wrong one hides the mistake and misleads everything downstream.
 
 ## Flow-Sensitive Narrowing and User-Defined Branchers
 

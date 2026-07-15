@@ -629,6 +629,7 @@ origin: { x: 0, y: 0 }
 | `"value"`          | literal string type (subtype of `string`); c-string escapes for the quotes: `c"\"value\""` |
 | `:name`            | literal symbol type (subtype of `symbol`)      |
 | `T?`               | partial — sugar for `T \| ExecutionError`; marks functions that may raise an error |
+| `!T` (leading `!`) | asserted — checker trusts the annotation without verifying the body ([gotcha](syntax-gotchas.md#the--asserted-type-prefix)) |
 | `ExecutionError`   | the type of a raised runtime error     |
 | `A -> B`           | function                               |
 | `A \| B`           | union                                  |

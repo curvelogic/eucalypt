@@ -965,6 +965,107 @@ but is not written to disk.
 
 ---
 
+## Runtime type reflection (`reflect.eu`)
+
+The type annotations discussed so far are consumed by the checker at
+*check time*. Sometimes you want to work with a type as an ordinary
+**value** at *runtime* — to inspect its structure, or to turn it into a
+predicate that validates data. The `reflect.eu` library provides that
+bridge. Import it the same way as any other library:
+
+```eu,notest
+{ import: "reflect.eu" }
+```
+
+### Type-data values and the `s"…"` prefix
+
+The **s-string** prefix `s"…"` parses a type expression — the same
+type language used in `type:` annotations — into a first-class
+**type-data** value. A type-data value renders as its canonical string
+form:
+
+```eu,notest
+{ import: "reflect.eu" }
+t: s"{ name: string, age: number }"
+# t => "{age: number, name: string}"
+```
+
+### `to-data` and `from-data`
+
+`to-data(v)` projects a type-data value into a structured, tagged list
+you can traverse with ordinary list and block functions. Each node is a
+list whose head is a `:t-*` symbol tag (`:t-prim`, `:t-list`, `:t-fn`,
+`:t-union`, `:t-record`, `:t-field`, `:t-tuple`, `:t-partial`, and so on):
+
+```eu,notest
+{ import: "reflect.eu" }
+a: s"[number]" to-data
+# a => [:t-list, [:t-prim, :number]]
+
+b: s"{ name: string }" to-data
+# b => [:t-record, { name: [:t-field, :required, [:t-prim, :string]] }]
+```
+
+`from-data(td)` is the inverse — it rebuilds a type-data value from such
+a tagged list, so the two round-trip:
+
+```eu,notest
+{ import: "reflect.eu" }
+r: s"{ name: string, age: number }" to-data from-data
+# r => "{age: number, name: string}"
+
+# Constructing type-data by hand from tags:
+h: [:t-list, [:t-prim, :string]] from-data
+# h => "[string]"
+```
+
+`to-data` passes non-type-data values through unchanged, so it is safe to
+apply speculatively.
+
+### `as-spec`: types as runtime validators
+
+`as-spec(t)` converts a type-data value into a **`match?`-compatible
+pattern** — a predicate you can test data against at runtime. This is the
+most directly useful reflection operation: it turns a type into a schema
+check.
+
+```eu,notest
+{ import: "reflect.eu" }
+schema: s"{ name: string, age: number }" as-spec
+
+good: { name: "Alice", age: 30 } match?(schema)   # => true
+bad:  { name: "Alice", age: "old" } match?(schema) # => false
+```
+
+Record matching is **open** — extra keys in the data are ignored, only the
+named fields are checked. The mapping covers the common type forms:
+
+| Type form | Runtime check |
+|---|---|
+| `number`, `string`, `symbol`, `bool`, `null`, `datetime` | the corresponding predicate (`number?`, `string?`, …) |
+| `any` and type variables | `any?` (always matches) |
+| `[T]` list | `list?` and every element matches `T` |
+| `{ k: T, … }` record | each named field present and matching (open — extra keys ignored) |
+| `(A, B, …)` tuple | a list of exactly that length, element-wise |
+| `[A, B, C…]` prefix-list | `list?` of length ≥ the prefix, prefix element-wise, remainder matches the tail |
+| `T?` partial / nullable | `null?` or `T` |
+| `A → B` function | is a function (not yet saturated) |
+
+Nested forms compose as you would expect:
+
+```eu,notest
+{ import: "reflect.eu" }
+spec: s"{ tags: [string] }" as-spec
+a: { tags: ["x", "y"] } match?(spec)   # => true
+b: { tags: [1, 2] }     match?(spec)   # => false
+```
+
+> **Known limitation**: `as-spec` on a **union** type
+> (`s"number | string"`) currently produces a predicate that never
+> matches — a defect tracked as bead `eu-r9oy`. Until it is fixed, build a
+> union validator directly, e.g. `v number? or v string?`, rather than via
+> `as-spec`.
+
 ## Summary
 
 | What                     | How                                              |
