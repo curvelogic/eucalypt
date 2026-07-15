@@ -21,9 +21,13 @@ use std::path::Path;
 ///
 /// - v1: original BV1 stream.
 /// - v2: Let/LetRec binding count widened `u16` → `u32` (eu-2sa6.11).
+/// - v3: `desugared_unit_cores` field added (eu-rb5n Z).
+/// - v4: `PreludeBlob::type_summary` (`PreludeSummary`) field removed — it
+///   was write-only (sole writer `xtask`, zero readers; its only consumer
+///   was deleted in PR #1012) (eu-2sa6.20).
 ///
 /// MUST match `BYTECODE_WIRE_FORMAT_VERSION` in `xtask/src/main.rs`.
-const BYTECODE_WIRE_FORMAT_VERSION: u32 = 3;
+const BYTECODE_WIRE_FORMAT_VERSION: u32 = 4;
 
 /// Compute the blob source hash: `SHA-256(prelude source ‖ wire-format version)`.
 fn blob_source_hash(source_bytes: &[u8]) -> [u8; 32] {
