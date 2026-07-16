@@ -94,8 +94,9 @@ use std::path::Path;
 /// divergence) will trip this long before the true ratio approaches 1.06.
 const MAX_SOURCE_PRELUDE_RATIO: f64 = 1.06;
 
-/// Regression tripwire cap under the pre-decoded engine (`EU_PREDECODE=1`,
-/// bead eu-2sa6.13). Kept marginally above [`MAX_SOURCE_PRELUDE_RATIO`] for
+/// Regression tripwire cap under the pre-decoded engine (the default as of
+/// Phase 2, eu-vcr8; bead eu-2sa6.13). Kept marginally above
+/// [`MAX_SOURCE_PRELUDE_RATIO`] for
 /// consistency with the byte-dispatch cap's historical relationship (BV2's
 /// `Op::Ann` elimination shrinks `machine_ticks` uniformly on both configs,
 /// which mechanically inflates a ratio computed from smaller numbers by the
@@ -149,16 +150,27 @@ fn source_prelude_tick_parity_tripwire() {
 
     let ratio = source_ticks as f64 / blob_ticks as f64;
 
-    // The pre-decoded engine (`EU_PREDECODE=1`) shrinks `machine_ticks`
-    // uniformly via Ann-elimination, inflating this ratio without changing the
-    // absolute handicap (see `MAX_SOURCE_PRELUDE_RATIO_PREDECODE`). The spawned
-    // `eu` inherits `EU_PREDECODE` from this process, so both `run_ticks` calls
-    // above measured whichever engine this test itself runs under — select the
-    // matching cap.
-    let predecode = std::env::var("EU_PREDECODE").as_deref() == Ok("1");
+    // The pre-decoded engine shrinks `machine_ticks` uniformly via
+    // Ann-elimination, inflating this ratio without changing the absolute
+    // handicap (see `MAX_SOURCE_PRELUDE_RATIO_PREDECODE`). The spawned `eu`
+    // inherits `EU_PREDECODE`/`EU_HEAPSYN` from this process, so both
+    // `run_ticks` calls above measured whichever engine this test itself
+    // runs under — select the matching cap.
+    //
+    // Since Phase 2 (eu-vcr8) pre-decoded dispatch is the *default*: it is
+    // selected unless `EU_PREDECODE=0` opts out, and only when the bytecode
+    // engine itself is selected (`EU_HEAPSYN=1` takes precedence over
+    // `EU_PREDECODE` entirely, per `bytecode::predecode_enabled`). Mirror
+    // that precedence here rather than re-deriving it, so this test always
+    // picks the cap for the engine actually under test.
+    let heapsyn = std::env::var("EU_HEAPSYN").as_deref() == Ok("1");
+    let predecode = !heapsyn && std::env::var("EU_PREDECODE").as_deref() != Ok("0");
     let cap = if predecode {
         MAX_SOURCE_PRELUDE_RATIO_PREDECODE
     } else {
+        // Covers both the byte-dispatch engine (bytecode with EU_PREDECODE=0)
+        // and the HeapSyn baseline (EU_HEAPSYN=1): both measured at
+        // near-exact parity (eu-npp9), well inside this cap.
         MAX_SOURCE_PRELUDE_RATIO
     };
 

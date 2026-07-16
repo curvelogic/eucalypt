@@ -53,13 +53,26 @@ pub fn heapsyn_enabled() -> bool {
     std::env::var("EU_HEAPSYN").as_deref() == Ok("1")
 }
 
-/// Whether the pre-decoded execution IR (lever a, bead eu-2sa6.13) is selected
-/// via `EU_PREDECODE=1`. When set, the bytecode engine decodes the whole
+/// Whether the pre-decoded execution IR (lever a, bead eu-2sa6.13) is
+/// selected for dispatch. When true, the bytecode engine decodes the whole
 /// program once at load into a flat [`DecodedProgram`] of typed [`Instr`]
 /// records plus off-heap side pools, and dispatches over the typed fields
-/// instead of re-reading the byte stream every tick. Flag OFF ⇒ byte-identical
-/// current behaviour (the byte path is untouched). Only meaningful when the
-/// bytecode engine is selected (`EU_HEAPSYN=1` takes precedence).
+/// instead of re-reading the byte stream every tick. Disabled ⇒
+/// byte-identical byte-dispatch behaviour (the byte path is untouched, and
+/// stays retained for the Phase 2 soak per eu-vcr8). Only meaningful when the
+/// bytecode engine is selected (`EU_HEAPSYN=1` takes precedence and makes
+/// this flag a no-op).
+///
+/// As of Phase 2 (eu-vcr8, mirroring how BV1 itself flipped from opt-in
+/// bytecode to opt-out `EU_HEAPSYN`) pre-decoded dispatch is the **default**:
+/// unset or `EU_PREDECODE=1` selects it; `EU_PREDECODE=0` is the explicit
+/// opt-out that selects the byte-dispatch path. Any other value (besides
+/// `"0"`) is treated as "on", matching `EU_PREDECODE=1`'s pre-flip meaning so
+/// existing invocations that set it explicitly keep working unchanged. The
+/// byte-dispatch path is retained, soaked, and CI-tested
+/// (`test-byte-dispatch-baseline`) through this release; Phase 3 deletes it
+/// after the soak period, per the design's Step D
+/// (`docs/superpowers/specs/2026-07-13-predecoded-execution-ir-design.md`).
 pub fn predecode_enabled() -> bool {
-    std::env::var("EU_PREDECODE").as_deref() == Ok("1")
+    std::env::var("EU_PREDECODE").as_deref() != Ok("0")
 }

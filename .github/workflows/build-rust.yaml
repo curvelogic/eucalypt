@@ -204,6 +204,25 @@ jobs:
         env:
           EU_HEAPSYN: "1"
 
+  test-byte-dispatch-baseline:
+    name: Byte-dispatch harness (soak baseline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release
+      # Pre-decoded dispatch is the default within the bytecode engine as of
+      # Phase 2 (eu-vcr8); the standard `test` job exercises it. The
+      # byte-dispatch path is retained for the soak period ahead of Phase 3
+      # deletion (docs/superpowers/specs/2026-07-13-predecoded-execution-ir-
+      # design.md §6, Step D), so run the full harness on it too (behind
+      # EU_PREDECODE=0) to keep it from silently rotting before deletion.
+      - name: Run harness on byte-dispatch path
+        run: ./target/release/eu test --allow-io tests/harness
+        env:
+          EU_PREDECODE: "0"
+
   test-aarch64-sequential:
     name: Sequential harness (aarch64 release)
     runs-on: ubuntu-24.04-arm
