@@ -27,6 +27,7 @@ proptest = "1"
 tempfile = "3"
 walkdir = "2"
 regex = "1"
+wait-timeout = "0.2"
 
 [dependencies]
 regex = "1.6.0"

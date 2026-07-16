@@ -61,6 +61,52 @@ fn eu_binary() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_eu"))
 }
 
+/// Run `cmd`, killing it and returning `None` if it doesn't complete
+/// within `deadline`.
+///
+/// Typecheck fixtures are check-only test material: some are not
+/// designed to terminate under plain evaluation at all (e.g.
+/// `092_self_assign_arg_pos_ok.eu`, `ones: cons(1, ones)` — a
+/// deliberate infinite lazy fixpoint used only to verify the checker
+/// doesn't flag argument-position self-reference), so a bounded wait is
+/// required rather than `Command::output()`'s indefinite block.
+fn run_with_deadline(
+    mut cmd: std::process::Command,
+    deadline: std::time::Duration,
+) -> Option<std::process::Output> {
+    use std::io::Read;
+    use wait_timeout::ChildExt;
+
+    let mut child = cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn eu");
+
+    match child.wait_timeout(deadline).expect("wait_timeout failed") {
+        Some(status) => {
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            if let Some(mut s) = child.stdout.take() {
+                let _ = s.read_to_end(&mut stdout);
+            }
+            if let Some(mut s) = child.stderr.take() {
+                let _ = s.read_to_end(&mut stderr);
+            }
+            Some(std::process::Output {
+                status,
+                stdout,
+                stderr,
+            })
+        }
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            None
+        }
+    }
+}
+
 /// Run an error test — validates against `.expect` sidecar if present,
 /// otherwise passes as unvalidated.
 fn run_error_test(opt: &EucalyptOptions) {
@@ -71,6 +117,34 @@ fn run_error_test(opt: &EucalyptOptions) {
 /// Run a type check test via `eu check --strict`.
 ///
 /// Validates exit code and stderr content against the `.expect` sidecar.
+/// When the sidecar declares a non-empty `stderr:` pattern (`eu check
+/// --strict` is genuinely expected to warn), also runs the plain eval
+/// path (`eu <file>`, no subcommand) and asserts the *same* pattern
+/// appears on its stderr too (eu-ntwg.1).
+///
+/// Type checking runs unconditionally on every invocation, independent
+/// of `--strict` (see `docs/reference/...` / CLAUDE.md), so a warning
+/// correctly detected under `check` must not go silently missing under
+/// eval — that divergence (blob-core vs. source-compiled checker seeing
+/// different things) is exactly what shipped invisibly in the
+/// `065_lookup_key_typo_warns.eu` regression (`eu-rb5n`) before a
+/// dedicated single-file test (`test_eval_path_warns_on_record_key_typo`
+/// below) was added for it. This generalises that coverage to every
+/// warning-bearing typecheck fixture rather than just the one file that
+/// happened to trip it.
+///
+/// Deliberately scoped to the warning-bearing subset, not all 111
+/// typecheck fixtures: many are check-only test material with no
+/// meaningful eval-path contract, and some don't even terminate under
+/// evaluation — `092_self_assign_arg_pos_ok.eu` (`ones: cons(1, ones)`)
+/// is a deliberate infinite lazy fixpoint that exists purely to verify
+/// the checker doesn't flag it, never to be evaluated. A full-fixture
+/// eval sweep measured ~50s of added wall time (vs. ~16s for the
+/// warning-bearing subset) for comparatively low incremental value: the
+/// only extra signal it would catch is a *new* spurious warning
+/// appearing solely on the eval path, a failure mode with no known
+/// precedent (unlike 065's "warning goes missing" direction) — see the
+/// eu-ntwg.1 PR description for the full measurement.
 fn run_typecheck_test(filename: &str) {
     let path = format!("tests/harness/typecheck/{filename}");
     let expect_path = format!("{path}.expect");
@@ -115,6 +189,44 @@ fn run_typecheck_test(filename: &str) {
         assert!(
             stderr.contains(pattern.as_str()),
             "stderr for {filename} does not contain \"{pattern}\"\nactual stderr:\n{stderr}"
+        );
+    }
+
+    // Eval-path coverage (eu-ntwg.1): only for fixtures where `eu check
+    // --strict` genuinely warns (a non-empty expected pattern) — see the
+    // doc comment above for why the other fixtures are out of scope.
+    //
+    // 004_invalid_annotation.eu is a KNOWN, tracked exception (eu-5q08):
+    // this new check caught a genuine, previously-invisible divergence —
+    // `eu check`'s annotation-syntax validation (a pre-pass unique to the
+    // `check` subcommand) rejects a malformed `type:` annotation string,
+    // but the type checker used on the plain-eval path silently discards
+    // the same parse failure (`parse_scheme(..).ok()?` at three call
+    // sites in core/typecheck/check.rs) and treats it as "no annotation".
+    // Fixing that is a type-checker change, out of scope for this harness
+    // PR; excluded here (not silently — see eu-5q08) so the other 35
+    // warning-bearing fixtures still gate.
+    if filename == "004_invalid_annotation.eu" {
+        return;
+    }
+
+    if let Some(pattern) = expected_stderr.as_deref().filter(|p| !p.is_empty()) {
+        let mut eval_cmd = std::process::Command::new(eu_binary());
+        eval_cmd.args(["--heap-limit-mib", "2048", &path]);
+        let eval_output = run_with_deadline(eval_cmd, std::time::Duration::from_secs(30))
+            .unwrap_or_else(|| {
+                panic!(
+                    "eval path for {filename} did not complete within 30s \
+                     (expected warning \"{pattern}\")"
+                )
+            });
+        let eval_stderr = String::from_utf8_lossy(&eval_output.stderr);
+        assert!(
+            eval_stderr.contains(pattern),
+            "eval path (`eu {filename}`, no subcommand) does not surface the \
+             warning `eu check --strict` reports for the same file — \
+             checker/eval divergence (eu-ntwg.1). Expected to find \
+             \"{pattern}\" in stderr:\n{eval_stderr}"
         );
     }
 }
