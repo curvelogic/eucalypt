@@ -82,7 +82,9 @@ impl StgIntrinsic for Expect {
         } else {
             let expected_repr = str_arg(machine, view, &args[1])?;
             let actual_repr = render_debug_repr_forced(machine, view, &args[0]);
-            eprintln!("EXPECT FAILED: expected {expected_repr}, got {actual_repr}");
+            machine.record_diagnostic(format!(
+                "EXPECT FAILED: expected {expected_repr}, got {actual_repr}"
+            ));
 
             if machine.test_mode() {
                 // Test mode: return false, continue execution

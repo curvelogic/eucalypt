@@ -19,10 +19,13 @@ A validation function accepts an evidence context with the following keys:
 as described below and must return :PASS or :FAIL.
 "
 validation: {
-  ` "By default we expect a RESULT key (PASS/FAIL) or infer from all values being true"
-  default-expectation(context): {
-    r: context.result
-    # Handle bare boolean results directly
+  ` "Core verdict computation shared by `default-expectation` and
+  `unguarded-expectation`: if `result` is a block containing a RESULT
+  key, the verdict is that key's value (true/false mapped to
+  :PASS/:FAIL, anything else used directly); otherwise if `result` is
+  a block, the verdict is whether every value in it is true;
+  otherwise `result` is treated as a bare boolean."
+  compute-verdict(r): {
     is-block: r block?
     has-result: if(is-block, r has(:RESULT), false)
     explicit: if(has-result, {
@@ -31,6 +34,30 @@ validation: {
     bare: if(r = true, :PASS, if(r = false, :FAIL, null))
     auto: if(is-block, r values all(= true) then(:PASS, :FAIL), null)
   }.( if(has-result, explicit, if(is-block, auto, bare)) )
+
+  ` "True if stderr contains an `EXPECT FAILED` diagnostic, meaning a
+  `//=`, `//!`, `//=>`, `//=?` or `//=?>` assertion genuinely
+  mismatched somewhere during evaluation of the target."
+  has-assertion-failure?(context): context.stderr any(str.contains?("EXPECT FAILED"))
+
+  ` "By default we expect a RESULT key (PASS/FAIL) or infer from all
+  values being true — see `compute-verdict`. A RESULT key that is
+  present but doesn't derive from the target's checks (e.g. a
+  hardcoded `RESULT: :PASS`) could otherwise let a failing `//=>` (or
+  other assertion) pass silently; to close that gap, any `EXPECT
+  FAILED` diagnostic on stderr forces the verdict to :FAIL regardless
+  of what RESULT says (eu-ntwg.2). Tests that deliberately exercise
+  the assertion-failure diagnostic path itself — verifying that `//=`
+  and friends correctly emit `false` on mismatch, e.g.
+  125_expectations.eu — should use `unguarded-expectation` instead."
+  default-expectation(context): if(has-assertion-failure?(context), :FAIL, compute-verdict(context.result))
+
+  ` "Like `default-expectation`, but does not fail merely because
+  stderr contains an `EXPECT FAILED` diagnostic. For tests that
+  deliberately construct assertions expected to fail, to verify the
+  assertion mechanism itself reports failure correctly — see
+  125_expectations.eu."
+  unguarded-expectation(context): compute-verdict(context.result)
 
   ` "Benchmark targets without explicit validations are report-only and always pass"
   bench-expectation(context): :PASS

@@ -1,6 +1,12 @@
 "125 unified expectations"
 
-` { target: :test }
+` { target: :test
+    doc: "Deliberately constructs assertions expected to fail (eq-fail,
+      true-fail) to verify //= and //! report `false` correctly on
+      mismatch — this genuinely emits EXPECT FAILED diagnostics on
+      stderr as part of correct operation, so it must opt out of
+      default-expectation's stderr gate (eu-ntwg.2)."
+    verify: ["unguarded-expectation"] }
 test: {
   ` "//= returns true on success"
   eq-pass: (2 + 3 //= 5) //= true

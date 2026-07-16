@@ -321,6 +321,14 @@ pub struct MachineState {
     pending_capture_start: Option<String>,
     /// Test mode flag — `__EXPECT` failures return false instead of panicking.
     test_mode: bool,
+    /// Diagnostic messages recorded during this run (e.g. `EXPECT FAILED`
+    /// from `__EXPECT`), drained by the driver after `run()` and written to
+    /// whichever stderr sink is active — a captured buffer under the test
+    /// harness (so evidence.yaml can see them), or the process stderr
+    /// otherwise. Kept as data rather than printed directly from the
+    /// intrinsic so the test harness can observe assertion failures instead
+    /// of them silently bypassing output capture (eu-ntwg.2).
+    diagnostics: Vec<String>,
     /// Pending BIF intrinsic index, set by `handle_instruction` when it
     /// encounters a `HeapSyn::Bif` node.
     ///
@@ -353,6 +361,7 @@ impl Default for MachineState {
             capture_results: Vec::new(),
             pending_capture_start: None,
             test_mode: false,
+            diagnostics: Vec::new(),
             pending_bif: None,
         }
     }
@@ -377,6 +386,12 @@ impl MachineState {
     /// from a normal termination.
     pub fn yielded_io(&self) -> bool {
         self.yielded_io
+    }
+
+    /// Drain diagnostic messages recorded during this run (see
+    /// `diagnostics` field doc). Leaves the buffer empty for the next run.
+    pub fn take_diagnostics(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.diagnostics)
     }
 
     /// Push a new continuation onto the stack
@@ -1468,6 +1483,10 @@ impl IntrinsicMachine for MachineState {
     fn test_mode(&self) -> bool {
         self.test_mode
     }
+
+    fn record_diagnostic(&mut self, msg: String) {
+        self.diagnostics.push(msg);
+    }
 }
 
 /// MachineState contains all the garbage collection roots
@@ -1784,6 +1803,10 @@ impl IntrinsicMachine for MachineBifContext<'_, '_> {
 
     fn test_mode(&self) -> bool {
         self.state.test_mode
+    }
+
+    fn record_diagnostic(&mut self, msg: String) {
+        self.state.diagnostics.push(msg);
     }
 
     /// Force `closure` to WHNF.
@@ -2282,6 +2305,13 @@ impl<'a> Machine<'a> {
     /// distinguish IO yield from normal termination.
     pub fn io_yielded(&self) -> bool {
         self.state.yielded_io()
+    }
+
+    /// Drain diagnostic messages recorded during this run (see
+    /// `MachineState::diagnostics` doc). Leaves the buffer empty for the
+    /// next run.
+    pub fn take_diagnostics(&mut self) -> Vec<String> {
+        self.state.take_diagnostics()
     }
 
     /// Return the IO constructor tag the machine yielded on.

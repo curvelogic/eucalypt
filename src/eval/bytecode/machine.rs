@@ -305,6 +305,9 @@ pub struct BcMachineState {
     /// (`vm.rs` — one per `let`/`letrec` binding) so `-S` allocation counts
     /// are cross-engine comparable.
     pub allocs: u64,
+    /// Diagnostic messages recorded during this run (e.g. `EXPECT FAILED`
+    /// from `__EXPECT`) — mirrors `MachineState::diagnostics` in `vm.rs`.
+    pub diagnostics: Vec<String>,
 }
 
 impl BcMachineState {
@@ -335,6 +338,7 @@ impl BcMachineState {
             bif_frames: Vec::new(),
             bif_arg_pool: Vec::new(),
             allocs: 0,
+            diagnostics: Vec::new(),
         }
     }
 
@@ -3073,6 +3077,13 @@ impl BytecodeMachine<'_> {
         self.state.yielded_io
     }
 
+    /// Drain diagnostic messages recorded during this run (see
+    /// `BcMachineState::diagnostics` doc). Leaves the buffer empty for the
+    /// next run.
+    pub fn take_diagnostics(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.state.diagnostics)
+    }
+
     /// The current source annotation (stamped onto IO errors).
     pub fn annotation(&self) -> Smid {
         self.state.annotation
@@ -4107,6 +4118,10 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
 
     fn test_mode(&self) -> bool {
         self.test_mode
+    }
+
+    fn record_diagnostic(&mut self, msg: String) {
+        self.state.diagnostics.push(msg);
     }
 
     fn block_index_enabled(&self) -> bool {

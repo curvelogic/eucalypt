@@ -55,6 +55,19 @@ from the checks keeps every check in the verdict — see
 `tests/harness/182_typedata_alias_resolution.eu`, which gather their
 checks into a list and finish with `all-true? then(:PASS, :FAIL)`.
 
+Regardless of `RESULT`, `default-expectation` also fails the target if
+`stderr` contains an `EXPECT FAILED` diagnostic (see
+[Inline assertions](#inline-assertions) below) — a target can no longer
+mask a genuinely failing `//=`/`//!`/`//=>`/`//=?`/`//=?>` assertion
+behind a `RESULT` that doesn't account for it, such as a hardcoded
+`RESULT: :PASS`. Tests that deliberately construct assertions expected
+to fail, to verify the assertion mechanism itself reports failure
+correctly, should use `unguarded-expectation` instead (a target-level
+`verify: ["unguarded-expectation"]`) — see
+`tests/harness/125_expectations.eu`, which checks that `//=` and `//!`
+correctly return `false` on mismatch and therefore genuinely triggers
+`EXPECT FAILED` diagnostics as part of passing.
+
 ## Inline assertions
 
 An expression can carry an inline expected value with the `//=>`
@@ -72,7 +85,20 @@ mode the expression then evaluates to `false` and execution continues
 binding, an inline assertion reaches a target's verdict only through
 the `result` the expectation function sees — for instance by feeding
 its value into `RESULT`, or via the all-values-true inference when no
-`RESULT` key is present.
+`RESULT` key is present — and, independently of `result`, through
+`default-expectation`'s `stderr` gate described above.
+
+Because a failing `//=>` returns `false` in test mode regardless of
+whether the *expected* value was `true` or `false`, an assertion that
+expects `false` cannot be told apart from a passing one by its return
+value alone: `x //=> false` evaluates to `false` both when `x` really
+is `false` (pass) and when `x` mismatches (fail). Hand-computing a
+`RESULT` with `all-true?` over such bindings therefore cannot
+distinguish pass from fail for expecting-`false` assertions. Use the
+raw predicate result instead (with `not()` where you want to assert
+absence), as `tests/harness/182_typedata_alias_resolution.eu` and
+`tests/harness/183_widen_type_def_literals.eu` do, rather than folding
+a `//=>`-wrapped expecting-`false` value into the aggregate.
 
 ## Test files
 
