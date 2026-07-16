@@ -1,0 +1,8 @@
+---
+list-commas:
+  α: true
+block-commas:
+  α: true
+  β: true
+  γ: true
+RESULT: PASS

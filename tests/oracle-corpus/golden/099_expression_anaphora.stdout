@@ -1,0 +1,16 @@
+---
+id-map: true
+plus-one: true
+times-two: true
+filter-gt: true
+anon-plus: true
+two-param: true
+numbered-add: true
+same-param: true
+num-soup: true
+pipe-section: true
+pipe-times: true
+sub: true
+comp-true: true
+comp-false: true
+RESULT: PASS

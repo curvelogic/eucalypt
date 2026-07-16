@@ -1,0 +1,23 @@
+[0m[1m[38;5;11mwarning[0m[1m: type mismatch calling 'interleave'[0m
+    [0m[34m┌─[0m tests/harness/010_prelude.eu:186:33
+    [0m[34m│[0m
+[0m[34m186[0m [0m[34m│[0m     t15d: interleave([1, 2, 3], [0m[33m[:a, :b][0m) = [1, :a, 2, :b, 3]
+    [0m[34m│[0m                                 [0m[33m^^^^^^^^[0m [0m[33mexpected [number], found [:a | :b][0m
+
+[0m[1m[38;5;11mwarning[0m[1m: type mismatch calling 'interleave'[0m
+    [0m[34m┌─[0m tests/harness/010_prelude.eu:187:26
+    [0m[34m│[0m
+[0m[34m187[0m [0m[34m│[0m     t15e: interleave([], [0m[33m[:a, :b][0m) = [:a, :b]
+    [0m[34m│[0m                          [0m[33m^^^^^^^^[0m [0m[33mexpected [never], found [:a | :b][0m
+
+[0m[1m[38;5;11mwarning[0m[1m: type mismatch calling 'interleave'[0m
+    [0m[34m┌─[0m tests/harness/010_prelude.eu:191:39
+    [0m[34m│[0m
+[0m[34m191[0m [0m[34m│[0m     t15i: interleave([1, 2, 3, 4, 5], [0m[33m[:a][0m) = [1, :a, 2, 3, 4, 5]
+    [0m[34m│[0m                                       [0m[33m^^^^[0m [0m[33mexpected [number], found [:a][0m
+
+[0m[1m[38;5;11mwarning[0m[1m: type mismatch calling 'interleave'[0m
+    [0m[34m┌─[0m tests/harness/010_prelude.eu:192:28
+    [0m[34m│[0m
+[0m[34m192[0m [0m[34m│[0m     t15j: interleave([:x], [0m[33m[1, 2, 3, 4, 5][0m) = [:x, 1, 2, 3, 4, 5]
+    [0m[34m│[0m                            [0m[33m^^^^^^^^^^^^^^^[0m [0m[33mexpected [symbol], found [number][0m

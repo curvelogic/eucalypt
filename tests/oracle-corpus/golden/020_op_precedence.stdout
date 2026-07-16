@@ -1,0 +1,31 @@
+---
+checks:
+  _a: true
+  _b: true
+  _c: true
+  _d: true
+  _e: true
+  rarr_act: ( a -> ( b -> c ) )
+  rarr_exp: ( a -> ( b -> c ) )
+  larr_act: ( ( a <- b ) <- c )
+  larr_exp: ( ( a <- b ) <- c )
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+  pass: true
+unary-ops:
+  f: false
+  r: 66 after ring
+  z: -99
+  pass: true
+unary-prec:
+  res: 2
+  res2: 1
+  pass: true
+but: true
+RESULT: PASS

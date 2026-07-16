@@ -1,0 +1,82 @@
+---
+integer-arithmetic:
+  trues:
+    a: true
+    b: true
+    c: true
+    d: true
+    e: true
+    f: true
+  falses:
+    a: false
+    b: false
+    c: false
+    d: false
+    e: false
+    f: false
+  true-calcs:
+    four: true
+    also-four: true
+    three: true
+    twelve: true
+    two: true
+    floor-neg: true
+    floor-mod-neg: true
+  pass: true
+floating-point-arithmetic:
+  trues:
+    a: true
+    b: true
+    c: true
+    d: true
+    e: true
+    f: true
+  falses:
+    a: false
+    b: false
+    c: false
+    d: false
+    e: false
+    f: false
+  vals:
+    fourish: true
+    also-fourish: true
+    threeish: true
+    twelveish: true
+  pass: true
+mixed-arithmetic:
+  trues:
+    a: true
+    b: true
+    c: true
+    d: true
+    e: true
+    f: true
+  falses:
+    a: false
+    b: false
+    c: false
+    d: false
+    e: false
+    f: false
+  trues2:
+    a: true
+    b: true
+    c: true
+    d: true
+    e: true
+    f: true
+  falses2:
+    a: false
+    b: false
+    c: false
+    d: false
+    e: false
+    f: false
+  vals:
+    fourish: true
+    also-fourish: true
+    threeish: true
+    twelveish: true
+  pass: true
+RESULT: PASS

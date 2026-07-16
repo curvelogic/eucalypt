@@ -1,0 +1,4 @@
+→ add(x: <thunk>, y: <thunk>)
+← add: <thunk>
+→ add(x: <thunk>, y: <thunk>)
+← add: <thunk>

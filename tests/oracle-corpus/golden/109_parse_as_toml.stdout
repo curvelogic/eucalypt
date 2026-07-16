@@ -1,0 +1,9 @@
+---
+toml-str: "x = 7\ny = 8\n\n"
+data:
+  x: 7
+  y: 8
+tests:
+  key-x: true
+  key-y: true
+RESULT: PASS

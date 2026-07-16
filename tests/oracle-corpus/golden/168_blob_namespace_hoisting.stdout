@@ -1,0 +1,16 @@
+---
+upper-got: EUCALYPT
+upper-ok: true
+lower-got: eucalypt
+lower-ok: true
+trim-got: hello
+trim-ok: true
+split-got:
+  - a
+  - b
+  - c
+split-ok: true
+join-got: x-y-z
+join-ok: true
+ns-block-ok: true
+RESULT: PASS

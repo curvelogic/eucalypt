@@ -1,0 +1,65 @@
+---
+tests:
+  floor-div-positive:
+    a: true
+    b: true
+    c: true
+    d: true
+    e: true
+  floor-div-negative:
+    a: true
+    b: true
+    c: true
+    d: true
+    e: true
+  floor-div-float-inputs:
+    a: true
+    b: true
+    c: true
+  precise-div:
+    a: true
+    b: true
+    c: true
+    d: true
+  floor-mod-positive:
+    a: true
+    b: true
+    c: true
+    d: true
+  floor-mod-negative:
+    a: true
+    b: true
+    c: true
+  quot-truncation:
+    a: true
+    b: true
+    c: true
+    d: true
+  rem-truncation:
+    a: true
+    b: true
+    c: true
+    d: true
+  div-mod-identity:
+    a: true
+    b: true
+    c: true
+    d: true
+    e: true
+    f: true
+  quot-rem-identity:
+    a: true
+    b: true
+    c: true
+    d: true
+    e: true
+    f: true
+  sum-function:
+    a: true
+    b: true
+    c: true
+  product-function:
+    a: true
+    b: true
+    c: true
+RESULT: PASS

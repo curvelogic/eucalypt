@@ -1,0 +1,28 @@
+---
+tests:
+  eu-symbol:
+    result: ":hello"
+    pass: true
+  eu-string:
+    result: "\"world\""
+    n: 7
+    pass: true
+  eu-number:
+    result: "42"
+    pass: true
+  eu-true:
+    result: "true"
+    pass: true
+  eu-null:
+    result: "null"
+    pass: true
+  eu-block:
+    result: "{ x: 1 }\n"
+    pass: true
+  eu-list:
+    result: "[1, 2, 3]\n"
+    pass: true
+  eu-sym-not-string:
+    result: "{ tag: :ok }\n"
+    pass: true
+RESULT: PASS

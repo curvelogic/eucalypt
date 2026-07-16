@@ -1,0 +1,22 @@
+---
+seed: 42
+trues:
+  - true
+  - true
+  - true
+  - true
+  - true
+  - true
+  - true
+  - true
+  - true
+  - true
+  - true
+  - true
+  - true
+  - true
+  - true
+  - true
+  - true
+pass: true
+RESULT: PASS

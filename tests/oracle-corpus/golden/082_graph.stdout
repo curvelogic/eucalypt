@@ -1,0 +1,35 @@
+---
+tests:
+  union-find-no-edges:
+    a: true
+  union-find-self-loop:
+    a: true
+  union-find-single-component:
+    a: true
+    b: true
+  union-find-two-components:
+    a: true
+    b: true
+  topo-sort-linear:
+    a: true
+  topo-sort-no-edges:
+    a: true
+  topo-sort-diamond:
+    a: true
+    b: true
+    c: true
+  topo-sort-cycle:
+    a: true
+  kruskal-edges-triangle:
+    a: true
+    b: true
+    c: true
+    d: true
+    e: true
+  kruskal-edges-no-edges:
+    a: true
+  kruskal-edges-redundant:
+    a: true
+    b: true
+    c: true
+RESULT: PASS

@@ -1,0 +1,104 @@
+---
+test:
+  initial:
+    count: 0
+    items: []
+  get-test:
+    result:
+      value:
+        count: 0
+        items: []
+      state:
+        count: 0
+        items: []
+    value-ok: true
+    state-ok: true
+  put-test:
+    result:
+      value: ~
+      state:
+        count: 42
+        items: []
+    value-ok: true
+    state-ok: true
+  query-test:
+    result:
+      value: 0
+      state:
+        count: 0
+        items: []
+    value-ok: true
+  modify-test:
+    result:
+      value: ~
+      state:
+        count: 5
+        items: []
+    state-ok: true
+  bind-test:
+    result:
+      r:
+        value: ~
+        state:
+          count: 1
+          items: []
+      run:
+        value: 1
+        state:
+          count: 1
+          items: []
+      value: 1
+      state:
+        count: 1
+        items: []
+    value-ok: true
+  block-test:
+    result:
+      r:
+        value: 0
+        state:
+          count: 0
+          items: []
+      run:
+        r:
+          value: ~
+          state:
+            count: 10
+            items: []
+        run:
+          value: 0
+          state:
+            count: 10
+            items: []
+        value: 0
+        state:
+          count: 10
+          items: []
+      value: 0
+      state:
+        count: 10
+        items: []
+    value-ok: true
+    state-ok: true
+  eval-test:
+    final-val: ~
+    final-val-ok: true
+  exec-test:
+    final-s:
+      count: 99
+      items: []
+    state-ok: true
+  op-set-test:
+    result:
+      value: ~
+      state:
+        count: 7
+        items: []
+    state-ok: true
+  op-mod-test:
+    result:
+      value: ~
+      state:
+        count: 12
+    state-ok: true
+  RESULT: PASS

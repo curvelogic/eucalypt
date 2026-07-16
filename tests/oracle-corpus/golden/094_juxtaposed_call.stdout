@@ -1,0 +1,14 @@
+---
+tests:
+  block-call:
+    a: true
+    b: true
+  list-call:
+    a: true
+    b: true
+  named-args:
+    a: true
+    b: true
+  renamed:
+    a: true
+RESULT: PASS

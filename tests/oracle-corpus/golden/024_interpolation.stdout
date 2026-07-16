@@ -1,0 +1,35 @@
+---
+interpolation:
+  x: 1
+  y: 2
+  z: 3
+  truths:
+    - true
+lambdafied:
+  zones:
+    - eu-west-2a
+    - eu-west-2b
+    - eu-west-2c
+  truths:
+    - true
+    - true
+    - true
+mixed:
+  x: Hello
+  truths:
+    - true
+escapes:
+  braces: "{...}"
+  m:
+    - "0123"
+  truths:
+    - true
+nested:
+  data:
+    foo:
+      bar: 99
+  α: true
+  β: true
+  γ: true
+  pass: true
+RESULT: PASS

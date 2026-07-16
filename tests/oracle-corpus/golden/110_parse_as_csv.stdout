@@ -1,0 +1,12 @@
+---
+csv-str: "name,age\nalice,30\nbob,25\n"
+parsed:
+  - name: alice
+    age: "30"
+  - name: bob
+    age: "25"
+tests:
+  name-ok: true
+  age-ok: true
+  row-count: true
+RESULT: PASS

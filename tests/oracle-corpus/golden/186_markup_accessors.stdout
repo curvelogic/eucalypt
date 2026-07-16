@@ -1,0 +1,11 @@
+---
+test:
+  element:
+    - div
+    - class: highlight
+    - Hello
+    - world
+  t-tag: true
+  t-attrs: true
+  t-content: true
+  RESULT: PASS

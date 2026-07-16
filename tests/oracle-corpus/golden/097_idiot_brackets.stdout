@@ -1,0 +1,17 @@
+---
+test:
+  id-nums: true
+  id-single: true
+  id-syms: true
+  id-parens: true
+  id-parens2: true
+  id-pipeline: true
+  id-calls: true
+  id-calls2: true
+  id-lists: true
+  angle: true
+  lookup-test: true
+  coal-mid: true
+  coal-all-null: true
+  idiom: true
+  RESULT: PASS

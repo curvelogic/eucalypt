@@ -1,0 +1,10 @@
+---
+data:
+  - root
+  - {}
+  - - item
+    - {}
+    - hello
+tests:
+  root-tag: true
+RESULT: PASS

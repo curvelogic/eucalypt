@@ -1,0 +1,51 @@
+---
+Shape:
+  type: circle
+  area: 3.4
+Origin:
+  x: 0
+  y: 0
+test:
+  shape-data:
+    - t-record
+    - area:
+        - t-field
+        - required
+        - - t-prim
+          - number
+      type:
+        - t-field
+        - required
+        - - t-prim
+          - symbol
+  td-not-var: true
+  td-is-record: true
+  matches-shape: true
+  rejects-non-shape: true
+  missing-key: true
+  wrong-type: true
+  origin-data:
+    - t-record
+    - x:
+        - t-field
+        - required
+        - - t-prim
+          - number
+      y:
+        - t-field
+        - required
+        - - t-prim
+          - number
+  od-not-var: true
+  od-is-record: true
+  matches-origin: true
+  rejects-origin: true
+  pn-data:
+    - t-list
+    - - t-prim
+      - number
+  pn-not-var: true
+  pn-is-list: true
+  matches-pn: true
+  rejects-pn: true
+  RESULT: PASS

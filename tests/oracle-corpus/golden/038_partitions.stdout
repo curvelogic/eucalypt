@@ -1,0 +1,9 @@
+---
+tests:
+  α: true
+  β: true
+  γ: true
+  δ: true
+  ε: true
+  ζ: true
+RESULT: PASS

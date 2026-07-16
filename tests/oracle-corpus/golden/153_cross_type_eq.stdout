@@ -1,0 +1,8 @@
+---
+checks:
+  - false
+  - false
+  - false
+  - false
+  - false
+RESULT: PASS

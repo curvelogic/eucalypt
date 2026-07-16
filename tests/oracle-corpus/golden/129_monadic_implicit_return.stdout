@@ -1,0 +1,71 @@
+---
+id: {}
+tests:
+  bracket-single:
+    ⟦⟧: {}
+    result:
+      r: 42
+    RESULT: PASS
+  bracket-multi:
+    ⌈⌉: {}
+    result:
+      a: 10
+      b: 20
+    RESULT: PASS
+  bracket-underscore:
+    ⟪⟫: {}
+    result:
+      r: 7
+    RESULT: PASS
+  ns-single:
+    result:
+      r: 42
+    RESULT: PASS
+  ns-multi:
+    result:
+      a: 1
+      b: 2
+    RESULT: PASS
+  ns-underscore:
+    result:
+      r: 7
+    RESULT: PASS
+  explicit-return:
+    result: 15
+    RESULT: PASS
+  closure-values:
+    ⟨⟩: {}
+    result:
+      value:
+        a: 10
+        b: 30
+    RESULT: PASS
+  random-implicit:
+    result:
+      a: 13
+      b: 1
+      c: 0
+    ok: true
+    RESULT: PASS
+  let-explicit:
+    x: 2
+    result: 40
+    RESULT: PASS
+  let-equiv:
+    a:
+      a: 1
+      b: 2
+    b:
+      a: 1
+      b: 2
+    RESULT: PASS
+  let-shadow-implicit:
+    result:
+      a: 2
+    RESULT: PASS
+  no-monad-true:
+    maybe: {}
+    result:
+      r: 42
+    RESULT: PASS
+RESULT: PASS

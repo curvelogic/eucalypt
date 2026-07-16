@@ -1,0 +1,11 @@
+---
+td-is-type-data: true
+str-is-not-type-data: false
+not-equal: true
+equal-td: true
+td-not-str: true
+td-not-sym: true
+not-equal-td: true
+literal-braces: true
+no-interp: true
+RESULT: PASS

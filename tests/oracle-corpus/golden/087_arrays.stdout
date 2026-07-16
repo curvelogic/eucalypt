@@ -1,0 +1,82 @@
+---
+construction-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+type-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+access-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+set-checks:
+  trues:
+    - true
+    - true
+to-list-checks:
+  trues:
+    - true
+    - true
+    - true
+transform-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+arithmetic-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+bang-bang-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+poly-arith-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+indices-checks:
+  trues:
+    - true
+    - true
+map-checks:
+  trues:
+    - true
+    - true
+fold-checks:
+  trues:
+    - true
+    - true
+neighbours-checks:
+  trues:
+    - true
+    - true
+pass: true
+RESULT: PASS

@@ -1,0 +1,8 @@
+---
+test:
+  list-syms: true
+  block-syms: true
+  nested: true
+  nums: true
+  identity: true
+  mixed: true

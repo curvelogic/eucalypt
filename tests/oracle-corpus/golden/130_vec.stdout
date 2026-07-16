@@ -1,0 +1,37 @@
+---
+test:
+  data:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+  len: true
+  first: true
+  last: true
+  middle: true
+  mid-first: true
+  round-trip: true
+  round-trip-eq: true
+  names:
+    - alice
+    - bob
+    - charlie
+  name-count: true
+  name-first: true
+  sample-len: true
+  shuffle-len: true
+  set-sample-size: true
+  interp:
+    - x-a
+    - x-b
+    - x-c
+  interp-len: true
+  interp-first: true
+  computed-nums:
+    - 11
+    - 12
+    - 13
+  computed-nums-len: true
+  computed-nums-trip: true
+  RESULT: PASS

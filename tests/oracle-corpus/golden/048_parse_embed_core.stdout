@@ -1,0 +1,6 @@
+---
+box:
+  value: 5
+box2:
+  value: 5
+RESULT: PASS

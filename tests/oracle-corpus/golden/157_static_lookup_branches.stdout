@@ -1,0 +1,14 @@
+---
+id: {}
+name-branch:
+  a: true
+  b: true
+wildcard-branch:
+  a: true
+  b: true
+monad-r1: 42
+monad-r2: 7
+monad-branch:
+  a: true
+  b: true
+RESULT: PASS

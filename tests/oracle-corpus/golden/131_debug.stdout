@@ -1,0 +1,13 @@
+---
+test:
+  num-repr: true
+  str-repr: true
+  sym-repr: true
+  bool-true-repr: true
+  bool-false-repr: true
+  null-repr: true
+  empty-list-repr: true
+  dbg-transparent: true
+  dbg-labelled: true
+  tri-transparent: true
+  RESULT: PASS

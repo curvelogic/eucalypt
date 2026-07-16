@@ -1,0 +1,49 @@
+---
+bare-key-checks:
+  trues:
+    - true
+    - true
+    - true
+explicit-dstar-checks:
+  trues:
+    - true
+dotted-path-checks:
+  trues:
+    - true
+    - true
+    - true
+wildcard-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+first-checks:
+  trues:
+    - true
+    - true
+    - true
+paths-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+edge-checks:
+  trues:
+    - true
+    - true
+    - true
+advanced-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+fixture-checks:
+  trues:
+    - true
+    - true
+pass: true
+RESULT: PASS

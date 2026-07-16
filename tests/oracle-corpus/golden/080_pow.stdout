@@ -1,0 +1,25 @@
+---
+tests:
+  int-base-cases:
+    a: true
+    b: true
+    c: true
+    d: true
+    e: true
+    f: true
+    g: true
+  negative-base:
+    a: true
+    b: true
+    c: true
+    d: true
+  negative-exponent:
+    a: true
+    b: true
+    c: true
+  float-base:
+    a: true
+    b: true
+  large-int:
+    a: true
+RESULT: PASS

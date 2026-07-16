@@ -1,0 +1,17 @@
+[0m[1m[38;5;11mwarning[0m[1m: argument type does not match function parameter[0m
+   [0m[34m┌─[0m tests/harness/047_xml_import.eu:11:11
+   [0m[34m│[0m
+[0m[34m11[0m [0m[34m│[0m   γ: root [0m[33mcontent[0m map(tag) //= [:foo, :bar, :zxdrsfas, :quux]
+   [0m[34m│[0m           [0m[33m^^^^^^^[0m [0m[33mexpected [[a]], found [:abc | {..} | (:foo, {..}) | (:bar, {a: "a", b: "b", ..}, "blah") | (:zxdrsfas, {..}) | (:quux, {..}, "a", (:b, {..}), "c", (:d, {..}))][0m
+
+[0m[1m[38;5;11mwarning[0m[1m: type mismatch calling 'content'[0m
+   [0m[34m┌─[0m tests/harness/047_xml_import.eu:12:45
+   [0m[34m│[0m
+[0m[34m12[0m [0m[34m│[0m   δ: root content filter((_ = :quux) ∘ tag) [0m[33mhead[0m content //= ["a", [:b, {}], "c", [:d, {}]]
+   [0m[34m│[0m                                             [0m[33m^^^^[0m [0m[33mexpected [a], found :abc | {..} | (:foo, {..}) | (:bar, {a: "a", b: "b", ..}, "blah") | (:zxdrsfas, {..}) | (:quux, {..}, "a", (:b, {..}), "c", (:d, {..}))[0m
+
+[0m[1m[38;5;11mwarning[0m[1m: type mismatch calling 'attrs'[0m
+   [0m[34m┌─[0m tests/harness/047_xml_import.eu:13:19
+   [0m[34m│[0m
+[0m[34m13[0m [0m[34m│[0m   ε: root content [0m[33msecond[0m attrs //= { a: "a" b: "b" }
+   [0m[34m│[0m                   [0m[33m^^^^^^[0m [0m[33mexpected [a], found :abc | {..} | (:foo, {..}) | (:bar, {a: "a", b: "b", ..}, "blah") | (:zxdrsfas, {..}) | (:quux, {..}, "a", (:b, {..}), "c", (:d, {..}))[0m

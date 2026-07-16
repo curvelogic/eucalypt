@@ -1,0 +1,19 @@
+---
+str-cmp-tests:
+  α: true
+  β: true
+  γ: true
+  δ: true
+  ε: true
+  ζ: true
+  η: true
+  θ: true
+sort-keys-tests:
+  α: true
+  β: true
+  γ: true
+  δ: true
+  ε: true
+sort-keys-values:
+  α: true
+RESULT: PASS

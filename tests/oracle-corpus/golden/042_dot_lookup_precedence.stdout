@@ -1,0 +1,9 @@
+---
+a:
+  b:
+    c: {}
+x: {}
+tests:
+  α: true
+  β: true
+RESULT: PASS

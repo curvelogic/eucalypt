@@ -1,0 +1,7 @@
+---
+scans:
+  α: true
+  β: true
+  γ: true
+  δ: true
+RESULT: PASS

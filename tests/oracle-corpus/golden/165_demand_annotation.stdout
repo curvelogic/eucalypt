@@ -1,0 +1,9 @@
+---
+single-use-ok: true
+multi-use-ok: true
+unused-ok: true
+nested-ok: true
+chain-ok: true
+multi-chain-ok: true
+mixed-ok: true
+RESULT: PASS

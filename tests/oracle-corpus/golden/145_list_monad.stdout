@@ -1,0 +1,11 @@
+---
+test:
+  map-ok: true
+  cart-ok: true
+  dep-ok: true
+  filter-ok: true
+  filter-rebind: true
+  implicit-ok: true
+  implicit-multi: true
+  empty-ok: true
+  seq-ok: true

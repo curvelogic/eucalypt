@@ -1,0 +1,33 @@
+---
+sections-as-args:
+  fold-add: true
+  fold-sub: true
+  fold-add2: true
+  fold-sub2: true
+  pass: true
+sections-as-values:
+  add-check: true
+  sub-check: true
+  add2-check: true
+  sub2-check: true
+  pass: true
+lookup-on-anaphora:
+  xs:
+    - a: 1
+      b: 2
+    - a: 3
+      b: 4
+  x:
+    - a: 1
+      b: 2
+  a1:
+    a: 1
+    b: 2
+  a2:
+    a: 3
+    b: 4
+  pass: true
+dot-sections:
+  pass: true
+pass: true
+RESULT: PASS

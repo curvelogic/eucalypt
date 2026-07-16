@@ -1,0 +1,24 @@
+---
+independent-a: 10
+independent-b: 20
+independent-ok: true
+chain-a: 1
+chain-b: 2
+chain-c: 3
+chain-ok: true
+even-ok: true
+odd-ok: true
+factorial-ok: true
+mix-base: 10
+mix-ok: true
+block-val:
+  x: 1
+  y: 2
+  z: 3
+block-ok: true
+mapped:
+  - 2
+  - 4
+  - 6
+mapped-ok: true
+RESULT: PASS

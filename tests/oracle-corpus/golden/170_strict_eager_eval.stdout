@@ -1,0 +1,11 @@
+---
+strict-multi-ok: true
+chain-strict-ok: true
+mixed-ok: true
+list-ok: true
+intrinsic-ok: true
+nested-ok: true
+cond-ok: true
+memo-ok: true
+fib-ok: true
+RESULT: PASS

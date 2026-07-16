@@ -1,0 +1,30 @@
+---
+test:
+  defs:
+    verbose: false
+    output: default.txt
+    count: 1
+  long-opt: true
+  short-opt: true
+  long-flag: true
+  short-flag: true
+  equals-syntax: true
+  numeric-long: true
+  numeric-equals: true
+  positional: true
+  defaults-v: true
+  defaults-o: true
+  defaults-c: true
+  defaults-a: true
+  mixed-v: true
+  mixed-o: true
+  mixed-c: true
+  mixed-a: true
+  combo1-v: true
+  combo1-o: true
+  combo2-o: true
+  combo3-v: true
+  combo3-o: true
+  all-pos: true
+  empty-defs: true
+  RESULT: PASS

@@ -1,0 +1,28 @@
+---
+list:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+h: 1
+one: true
+t:
+  - 2
+  - 3
+  - 4
+  - 5
+list2:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+check: true
+h0: 1
+h2: 1
+h3: 1
+check0: true
+check1: true
+check2: true
+RESULT: PASS

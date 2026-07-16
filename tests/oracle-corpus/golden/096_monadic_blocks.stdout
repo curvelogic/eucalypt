@@ -1,0 +1,42 @@
+---
+⟦⟧: {}
+⌈⌉: {}
+id: {}
+maybe: {}
+⟪⟫:
+  namespace: {}
+tests:
+  id-single:
+    a: true
+    b: true
+  id-two:
+    a: true
+    b: true
+  id-three:
+    a: true
+    b: true
+  maybe-just:
+    a: true
+  maybe-nothing:
+    a: true
+    b: true
+  form1-bare-symbol:
+    a: true
+    b: true
+    c: true
+  form2-monad-key:
+    a: true
+    b: true
+    c: true
+  form3-monad-namespace:
+    a: true
+    b: true
+    c: true
+  form4-inline-bind-return:
+    a: true
+    b: true
+    c: true
+  form5-bracket-namespace:
+    a: true
+    b: true
+RESULT: PASS

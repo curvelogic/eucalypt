@@ -1,0 +1,26 @@
+---
+seed: 42
+test-stream:
+  RESULT: PASS
+test-float:
+  RESULT: PASS
+test-int:
+  RESULT: PASS
+test-choice:
+  RESULT: PASS
+test-shuffle:
+  RESULT: PASS
+test-sample:
+  RESULT: PASS
+test-map:
+  RESULT: PASS
+test-sequence:
+  RESULT: PASS
+test-map-m:
+  RESULT: PASS
+test-bind-threads-state:
+  RESULT: PASS
+test-as-list:
+  RESULT: PASS
+test-split:
+  RESULT: PASS

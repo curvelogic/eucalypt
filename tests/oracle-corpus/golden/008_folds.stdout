@@ -1,0 +1,20 @@
+---
+"true": true
+"false": false
+left-folds:
+  trues:
+    a: true
+    b: true
+  falses:
+    a: false
+    b: false
+  pass: true
+right-folds:
+  trues:
+    a: true
+    b: true
+  falses:
+    a: false
+    b: false
+  pass: true
+RESULT: PASS

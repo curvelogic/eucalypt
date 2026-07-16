@@ -1,0 +1,5 @@
+[0m[1m[38;5;11mwarning[0m[1m: argument type does not match function parameter[0m
+   [0m[34m┌─[0m tests/harness/129_monadic_implicit_return.eu:48:34
+   [0m[34m│[0m
+[0m[34m48[0m [0m[34m│[0m     RESULT: if(result.r = 7 && !([0m[33mresult[0m has(:_)), :PASS, :FAIL)
+   [0m[34m│[0m                                  [0m[33m^^^^^^[0m [0m[33mexpected {..}, found number[0m

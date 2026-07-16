@@ -1,0 +1,10 @@
+---
+td: true
+td-norm: true
+rt-plain: true
+rt-union: true
+good-full: true
+good-min: true
+bad-short: true
+bad-head: true
+bad-tail: true

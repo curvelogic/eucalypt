@@ -1,0 +1,18 @@
+---
+nth-ok: true
+take-ok: true
+drop-ok: true
+foldl-ok: true
+map-ok: true
+filter-ok: true
+nested-ok: true
+range-ok: true
+reverse-ok: true
+sum-ok: true
+product-ok: true
+max-ok: true
+min-ok: true
+abs-ok: true
+chain-ok: true
+compose-ok: true
+RESULT: PASS

@@ -1,0 +1,25 @@
+---
+∅: 42
+∏: 3.14159
+basic-nullary:
+  n: 42
+  pass: true
+nullary-in-expression:
+  result: 50
+  pass: true
+multiple-nullary:
+  result: 84
+  pass: true
+nullary-with-multiplication:
+  result: 84
+  pass: true
+two-different-nullary:
+  result: 45.14159
+  pass: true
+mixed-arity:
+  result: false
+  pass: true
+nullary-in-function:
+  result: 50
+  pass: true
+RESULT: PASS

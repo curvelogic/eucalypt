@@ -1,0 +1,58 @@
+---
+test:
+  t-any: true
+  t-lit: true
+  t-lit-miss: false
+  t-bool: true
+  t-bool-miss: false
+  t-pred: true
+  t-pred-miss: false
+  t-type: true
+  t-type-miss: false
+  t-open: true
+  t-miss-key: false
+  t-empty-pat: true
+  t-nested: true
+  t-nested-miss: false
+  t-deep: true
+  t-list: true
+  t-list-lit: true
+  t-list-short: false
+  t-list-long: false
+  t-list-empty: true
+  t-list-empty-miss: false
+  t-non-block: false
+  t-null-block: false
+  t-list-block: false
+  t-non-list: false
+  t-null-list: false
+  t-str-pred: true
+  items:
+    - active: true
+      name: a
+    - active: false
+      name: b
+    - active: true
+      name: c
+  t-filter:
+    - a
+    - c
+  data:
+    server:
+      host: localhost
+  t-when: localhost
+  t-when-miss:
+    other: 1
+  deep-data:
+    a:
+      host: 10.0.0.1
+      port: 8080
+    b:
+      name: cache
+    c:
+      host: 10.0.0.2
+      port: 5432
+  t-deep-fold:
+    - 10.0.0.1
+    - 10.0.0.2
+  RESULT: PASS

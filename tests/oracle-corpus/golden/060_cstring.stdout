@@ -1,0 +1,16 @@
+---
+test-hex: true
+test-unicode-4: true
+test-unicode-8: true
+test-differs: true
+test-backslash: true
+test-braces: true
+name: Alice
+test-interp: true
+test-raw: true
+test-plain-eq-raw: true
+test-raw-interp: true
+test-raw-braces: true
+test-plain-braces: true
+all-pass: true
+RESULT: PASS

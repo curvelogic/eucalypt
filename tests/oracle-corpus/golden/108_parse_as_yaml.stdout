@@ -1,0 +1,9 @@
+---
+yaml-str: "---\nx: 10\ny: 20\n"
+data:
+  x: 10
+  y: 20
+tests:
+  key-x: true
+  key-y: true
+RESULT: PASS

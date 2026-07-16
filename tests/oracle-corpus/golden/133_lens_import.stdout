@@ -1,0 +1,35 @@
+---
+test:
+  data:
+    server:
+      host: localhost
+      port: 5432
+  t-view: true
+  t-over: true
+  items:
+    - 10
+    - 20
+    - 30
+  t-ix: true
+  t-ix-over: true
+  nested:
+    a:
+      - b:
+          c: 42
+  t-path: true
+  t-path-over: true
+  t-each: true
+  t-each-over: true
+  t-filtered: true
+  blk:
+    a: 1
+    b: 2
+    c: 3
+  t-element: true
+  records:
+    - id: 1
+      v: x
+    - id: 2
+      v: y
+  t-item: true
+  RESULT: PASS

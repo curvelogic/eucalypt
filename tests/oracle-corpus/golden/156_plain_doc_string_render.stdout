@@ -1,0 +1,12 @@
+---
+greeting: hello
+farewell: goodbye
+composed: "hello, world"
+counts:
+  - one
+  - two
+  - three
+nested:
+  a: alpha
+  b: beta
+RESULT: PASS

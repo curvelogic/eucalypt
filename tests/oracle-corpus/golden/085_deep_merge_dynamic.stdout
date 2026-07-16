@@ -1,0 +1,21 @@
+---
+static-merge:
+  eq1: true
+  eq2: true
+  eq3: true
+  eq4: true
+dyn-a:
+  a: 1
+  b: 2
+dyn-b:
+  b: 3
+  c: 4
+dynamic-merge:
+  eq1: true
+  eq2: true
+  eq3: true
+  eq4: true
+  eq5: true
+  eq6: true
+pass: true
+RESULT: PASS

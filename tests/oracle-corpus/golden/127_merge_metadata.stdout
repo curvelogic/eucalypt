@@ -1,0 +1,68 @@
+---
+shallow-merge:
+  left:
+    x: 1
+  right:
+    y: 2
+  plain-l:
+    x: 1
+  plain-r:
+    y: 2
+  both:
+    x: 1
+    y: 2
+  both-meta-tag: true
+  left-only:
+    x: 1
+    y: 2
+  left-meta-tag: true
+  right-only:
+    x: 1
+    y: 2
+  right-meta-tag: true
+  neither:
+    x: 1
+    y: 2
+  neither-meta: true
+  both-has-x: true
+  both-has-y: true
+  left-only-x: true
+  left-only-y: true
+  pass: true
+deep-merge:
+  left:
+    x:
+      a: 1
+  right:
+    x:
+      b: 2
+  plain-l:
+    x:
+      a: 1
+  plain-r:
+    x:
+      b: 2
+  both:
+    x:
+      a: 1
+      b: 2
+  both-meta-tag: true
+  left-only:
+    x:
+      a: 1
+      b: 2
+  left-meta-tag: true
+  right-only:
+    x:
+      a: 1
+      b: 2
+  right-meta-tag: true
+  neither:
+    x:
+      a: 1
+      b: 2
+  neither-meta: true
+  both-a: true
+  both-b: true
+  pass: true
+RESULT: PASS

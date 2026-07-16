@@ -1,0 +1,17 @@
+---
+test-map-pure:
+  RESULT: PASS
+test-then-pure:
+  RESULT: PASS
+test-join-pure:
+  RESULT: PASS
+test-sequence-pure:
+  RESULT: PASS
+test-map-m-pure:
+  RESULT: PASS
+test-filter-m-pure:
+  RESULT: PASS
+test-then-pipeline:
+  RESULT: PASS
+test-and-then-pure:
+  RESULT: PASS

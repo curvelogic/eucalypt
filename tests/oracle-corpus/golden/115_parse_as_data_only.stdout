@@ -1,0 +1,8 @@
+---
+yaml-with-eu-tag: "result: !eu '6 * 7'"
+data:
+  result: 6 * 7
+result-val: 6 * 7
+tests:
+  content: true
+RESULT: PASS
