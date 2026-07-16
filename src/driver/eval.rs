@@ -274,6 +274,26 @@ impl<'a> Executor<'a> {
         self.err = Some(err);
     }
 
+    /// Write diagnostic messages recorded during a run (e.g. `EXPECT
+    /// FAILED` from `__EXPECT`, via `IntrinsicMachine::record_diagnostic`)
+    /// to the active error sink: the captured buffer if `capture_output`
+    /// installed one (so the test harness's evidence.yaml can see them),
+    /// else the process stderr — mirroring where `diagnose()` sends
+    /// execution-error output (eu-ntwg.2).
+    ///
+    /// Takes `err` by explicit field reference (not `&mut self`) so it can
+    /// be called while another field (e.g. `self.out`, borrowed by the
+    /// still-live output emitter) is also mutably borrowed.
+    fn flush_diagnostics(err: &mut Option<Box<dyn Write + 'a>>, messages: Vec<String>) {
+        for msg in messages {
+            if let Some(err) = err {
+                let _ = writeln!(err, "{msg}");
+            } else {
+                eprintln!("{msg}");
+            }
+        }
+    }
+
     /// Use the STG machine
     pub fn execute(
         &mut self,
@@ -553,6 +573,9 @@ impl<'a> Executor<'a> {
                 // HeapSyn branch below).
                 collect_bytecode_stats(&m, stats);
 
+                let diagnostics = m.take_diagnostics();
+                Self::flush_diagnostics(&mut self.err, diagnostics);
+
                 result
             } else {
                 emitter.stream_start();
@@ -626,6 +649,9 @@ impl<'a> Executor<'a> {
                 // even on error (e.g. Interrupted) so that -S output is
                 // available.
                 collect_machine_stats(&machine, stats);
+
+                let diagnostics = machine.take_diagnostics();
+                Self::flush_diagnostics(&mut self.err, diagnostics);
 
                 result
             }

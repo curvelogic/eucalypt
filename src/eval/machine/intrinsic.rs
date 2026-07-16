@@ -477,6 +477,16 @@ pub trait IntrinsicMachine {
     /// panicking, allowing test harnesses to collect results.
     fn test_mode(&self) -> bool;
 
+    /// Record a diagnostic message (e.g. an `EXPECT FAILED` report from
+    /// `__EXPECT`) for the driver to flush to the active stderr sink once
+    /// the run completes.
+    ///
+    /// Intrinsics must not `eprintln!` diagnostics directly: that bypasses
+    /// the `Box<dyn Write>` stderr capture the test harness installs via
+    /// `Executor::capture_output`, so the diagnostic never reaches
+    /// `evidence.yaml` and can't gate a test's verdict (eu-ntwg.2).
+    fn record_diagnostic(&mut self, msg: String);
+
     /// Whether the mutable block-index optimisation is available.
     ///
     /// The optimisation caches a `SymbolId → position` map inside a block by
