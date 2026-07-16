@@ -1715,16 +1715,20 @@ fn evaluate_to_whnf_impl(
         .pop()
         .expect("suspended_stacks underflow in evaluate_to_whnf");
 
-    // Propagate run error only after restoring state.
-    run_result?;
-
     let sub_yielded = state.yielded_io;
     let result = state.closure.clone();
 
+    // Restore the caller's state BEFORE propagating any run error (eu-dy96,
+    // mirrors eu-apn7's fix on the bytecode engine): a BIF that swallows a
+    // sub-run force error (e.g. `debug::boxed_native`'s `.ok()`,
+    // `block::collect_block_keys`'s `Err(_) =>`) must resume stepping on the
+    // intact caller stack, not a truncated/leftover sub-run stack.
     state.terminated = false;
     state.yielded_io = false;
     state.closure = saved_closure;
     state.stack = saved_stack;
+
+    run_result?;
 
     if sub_yielded {
         return Err(ExecutionError::Panic(
@@ -2448,19 +2452,21 @@ impl<'a> Machine<'a> {
             .pop()
             .expect("suspended_stacks underflow in evaluate_to_whnf");
 
-        // Propagate any run error only after retrieving the GC-safe copies,
-        // to leave the machine in a consistent state.
-        run_result?;
-
         // Capture the result before restoring state.
         let sub_yielded = self.state.yielded_io;
         let result = self.state.closure.clone();
 
-        // Restore the outer evaluation state.
+        // Restore the outer evaluation state BEFORE propagating any run
+        // error (eu-dy96, mirrors eu-apn7's fix on the bytecode engine and
+        // the identical latent bug in the sibling `evaluate_to_whnf_impl`
+        // above): a caller that swallows a sub-run error must resume on the
+        // intact caller stack, not a truncated/leftover sub-run stack.
         self.state.terminated = false;
         self.state.yielded_io = false;
         self.state.closure = saved_closure;
         self.state.stack = saved_stack;
+
+        run_result?;
 
         if sub_yielded {
             return Err(ExecutionError::Panic(
@@ -2613,6 +2619,7 @@ pub mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
+    use crate::eval::machine::cont::Continuation;
     use crate::eval::machine::env::{EnvFrame, SynClosure};
     use crate::eval::machine::intrinsic::StgIntrinsic;
 
@@ -2624,7 +2631,7 @@ pub mod tests {
     use crate::eval::stg::syntax::{ex::*, StgSyn};
     use crate::eval::{emit::DebugEmitter, stg::syntax::dsl::*};
 
-    use super::Machine;
+    use super::{evaluate_to_whnf_impl, Machine};
 
     lazy_static! {
         static ref EMPTY_INTRINSICS: Vec<Box<dyn StgIntrinsic>> = vec![];
@@ -2896,5 +2903,136 @@ pub mod tests {
         assert!(m.terminated());
         assert!(!m.io_yielded(), "second run must not yield on IO");
         assert_eq!(m.native_return(), Some(Native::Num(7.into())));
+    }
+
+    /// eu-dy96: `evaluate_to_whnf_impl` (used by BIF-triggered `force`, e.g.
+    /// `debug::boxed_native`, `block::collect_block_keys`) must restore the
+    /// caller's continuation stack and closure BEFORE propagating a sub-run
+    /// error — mirroring eu-apn7's fix on the bytecode engine
+    /// (`exit_whnf_subrun` in `src/eval/bytecode/machine.rs`). A BIF that
+    /// swallows the force error (e.g. via `.ok()`) must resume stepping on
+    /// the intact caller stack, not a truncated/leftover sub-run stack.
+    ///
+    /// Revert-proof: moving the `run_result?` back above the
+    /// `state.closure`/`state.stack` restoration in `evaluate_to_whnf_impl`
+    /// makes this fail (the assertions below observe the sub-run's leftover
+    /// state instead of the caller's).
+    #[test]
+    pub fn test_evaluate_to_whnf_impl_restores_caller_state_before_propagating_error() {
+        let mut m = machine(atom(num(1)));
+        m.run(Some(10)).unwrap();
+        assert!(m.terminated());
+
+        let root = m.root_env();
+
+        // Give the "caller" a real, checkable continuation stack and a
+        // distinguishable closure.
+        m.state.stack.push(Continuation::Update {
+            environment: root,
+            index: 7,
+        });
+        let caller_closure = m
+            .mutate(
+                Load {
+                    syntax: atom(num(1234)),
+                    pool: RefCell::new(SymbolPool::new()),
+                },
+                root,
+            )
+            .unwrap();
+        m.state.closure = caller_closure.clone();
+
+        // A sub-evaluation closure that errors immediately: an out-of-range
+        // local reference in the (empty) root environment.
+        let erroring = m
+            .mutate(
+                Load {
+                    syntax: local(99),
+                    pool: RefCell::new(SymbolPool::new()),
+                },
+                root,
+            )
+            .unwrap();
+
+        let result = evaluate_to_whnf_impl(&mut m.state, &mut m.core, erroring);
+
+        assert!(result.is_err(), "the sub-run error must still propagate");
+        assert_eq!(
+            m.state.stack.len(),
+            1,
+            "caller stack must be restored, not left as the sub-run's"
+        );
+        match &m.state.stack[0] {
+            Continuation::Update { index, .. } => assert_eq!(
+                *index, 7,
+                "restored the caller's own continuation, not the sub-run's"
+            ),
+            _ => panic!("wrong continuation restored"),
+        }
+        assert_eq!(
+            m.state.closure.code(),
+            caller_closure.code(),
+            "caller closure restored, not left as the sub-run's"
+        );
+    }
+
+    /// eu-dy96 (sibling instance found alongside the bead's reported
+    /// `evaluate_to_whnf_impl`): `Machine::evaluate_to_whnf` — used by
+    /// `evaluate_to_whnf_for_io` to force IO spec-block fields — has the
+    /// identical buggy ordering (propagate before restore). Same fix, same
+    /// invariant, same revert-proof shape as the sibling test above.
+    #[test]
+    pub fn test_machine_evaluate_to_whnf_restores_caller_state_before_propagating_error() {
+        let mut m = machine(atom(num(1)));
+        m.run(Some(10)).unwrap();
+        assert!(m.terminated());
+
+        let root = m.root_env();
+
+        m.state.stack.push(Continuation::Update {
+            environment: root,
+            index: 11,
+        });
+        let caller_closure = m
+            .mutate(
+                Load {
+                    syntax: atom(num(4321)),
+                    pool: RefCell::new(SymbolPool::new()),
+                },
+                root,
+            )
+            .unwrap();
+        m.state.closure = caller_closure.clone();
+
+        let erroring = m
+            .mutate(
+                Load {
+                    syntax: local(99),
+                    pool: RefCell::new(SymbolPool::new()),
+                },
+                root,
+            )
+            .unwrap();
+
+        let result = m.evaluate_to_whnf(erroring);
+
+        assert!(result.is_err(), "the sub-run error must still propagate");
+        assert_eq!(
+            m.state.stack.len(),
+            1,
+            "caller stack must be restored, not left as the sub-run's"
+        );
+        match &m.state.stack[0] {
+            Continuation::Update { index, .. } => assert_eq!(
+                *index, 11,
+                "restored the caller's own continuation, not the sub-run's"
+            ),
+            _ => panic!("wrong continuation restored"),
+        }
+        assert_eq!(
+            m.state.closure.code(),
+            caller_closure.code(),
+            "caller closure restored, not left as the sub-run's"
+        );
     }
 }
