@@ -1,22 +1,22 @@
 #![cfg(not(target_arch = "wasm32"))]
-//! Source-prelude tick-parity tripwire (eu-2sa6.5).
+//! Source-prelude tick-parity tripwire (eu-2sa6.5 / eu-npp9).
 //!
 //! Spawns the compiled `eu` binary as a subprocess and depends on
 //! `tempfile` (a non-wasm32 dev-dependency, `Cargo.toml`), so this test is
 //! excluded from the wasm32 target — matching `property_test.rs` /
 //! `fuzz_regression_test.rs`.
 //!
-//! ## Background
+//! ## Background (historical handicap, now closed)
 //!
-//! `fib(30)` executes in 88,853,885 VM ticks when `lib/prelude.blob` is
-//! embedded in the binary, but 98,277,770 ticks (+10.6%) when the blob is
-//! absent and the driver falls back to compiling the prelude from source
-//! (`--source-prelude` / `EU_SOURCE_PRELUDE=1`, or simply no blob present
-//! at build time). Root-caused 2026-07-13 (bead eu-2sa6.5): this is *not*
-//! a fusion gap — `emit_fixtures_and_globals` in
+//! Between 2026-07-13 and 2026-07-15, `fib(30)` executed in 88,853,885 VM
+//! ticks when `lib/prelude.blob` was embedded in the binary, but 98,277,770
+//! ticks (+10.6%) when the blob was absent and the driver fell back to
+//! compiling the prelude from source (`--source-prelude` /
+//! `EU_SOURCE_PRELUDE=1`, or simply no blob present at build time).
+//! Root-caused 2026-07-13 (bead eu-2sa6.5) as a demand-analysis strictness
+//! divergence rather than a fusion gap — `emit_fixtures_and_globals` in
 //! `src/eval/bytecode/encode.rs` fuses the same intrinsic global forms on
-//! both paths, byte-identically. The real cause is demand-analysis
-//! strictness divergence:
+//! both paths, byte-identically:
 //!
 //! - **Blob path**: the prelude source is never merged into the user's
 //!   core expression (`prepare.rs` filters it out of `inputs` once
@@ -25,39 +25,53 @@
 //!   (`src/driver/source.rs`) injects the blob's pre-resolved
 //!   `inlinable_bindings` set as a flat `Let`, matched purely by
 //!   free-variable name, immediately before the general inline pass. That
-//!   exposes the
-//!   strict `Case`-on-`L(0)` shape of the arithmetic/comparison
-//!   intrinsics to demand analysis, which infers `fib`'s recursive
+//!   exposed the strict `Case`-on-`L(0)` shape of the arithmetic/comparison
+//!   intrinsics to demand analysis, which inferred `fib`'s recursive
 //!   argument as `Strict` — no per-call thunk allocation.
 //! - **Source-prelude path**: the prelude *is* one of the merge inputs, so
-//!   `merge_units` folds it directly into the user's core expression.  By
-//!   the time `cook()` runs, every prelude reference has already been
-//!   resolved to `Var::Bound` (verified directly: `eu dump cooked
-//!   --debug-format` on the source path contains zero `Free(...)` nodes
-//!   and thousands of `Bound(...)` ones) — there is no `Var::Free` name
-//!   left for a `inject_prelude_inlinable_bindings`-style injection to catch.
-//!   `fib`'s argument demand is inferred `Lazy`, so each recursive call
-//!   allocates and later forces a thunk for `n - 1` / `n - 2`.
+//!   `merge_units` folds it directly into the user's core expression. By
+//!   the time `cook()` ran, every prelude reference had already been
+//!   resolved to `Var::Bound` — there was no `Var::Free` name left for a
+//!   `inject_prelude_inlinable_bindings`-style injection to catch, and
+//!   every prelude binding (including the arithmetic operators) carries a
+//!   `Meta(Lam, {doc, type})` wrapper that `analyse_demand`'s named-signature
+//!   recording did not see through (it checked `Expr::Lam` directly against
+//!   a Meta-wrapped RHS). `fib`'s argument demand was inferred `Lazy`, so
+//!   each recursive call allocated and later forced a thunk for `n - 1` /
+//!   `n - 2`.
 //!
-//! A sweep of the general inline pass's iteration count (2 through 12)
-//! confirmed this isn't an under-iterated fixed point either: ticks were
-//! flat at 98,277,770 regardless, because the general inliner simply
-//! doesn't perform the same fold as the blob path's dedicated
-//! peel/fixed-point/pre-substitute pipeline.
-//!
-//! Unifying the two paths (making the source-prelude fallback build the
-//! same in-memory global-slot/`Ref::G` structure the blob embeds, instead
-//! of merging the prelude source directly) is a substantial redesign,
-//! deliberately deferred to a follow-on bead so it doesn't run ahead of
-//! the lever-(a) predecoded-IR work. See `docs/development/prelude-blob.md`
-//! for the user-facing summary of the handicap.
+//! **Closed 2026-07-15** by PR #1016 (bead eu-rb5n), which fixed
+//! `analyse_demand`'s Meta-blindness as one of three independent fixes
+//! needed to close the *separate* HOF-combinator source-path fusion gap.
+//! That fix corrects demand-signature recording for any Meta-wrapped
+//! binding, not just the HOF combinators eu-rb5n was targeting — since
+//! `+`/`<=` (and every other prelude binding fib's naive recursion depends
+//! on) carry doc/type Meta annotations too, the fix incidentally restored
+//! correct strictness-demand visibility for them on the source path as a
+//! side effect. Confirmed by direct measurement on master post-#1016
+//! (bead eu-npp9, closed 2026-07-15): `fib(30)`, clean release build, blob
+//! vs `EU_SOURCE_PRELUDE=1`, both engines —
+//! bytecode 88,853,753 vs 88,853,755 ticks (ratio 1.0000000225), HeapSyn
+//! 115,779,125 vs 115,779,127 ticks (ratio 1.0000000173). The residual
+//! +2-tick gap is Smid/annotation bookkeeping, not an algorithmic
+//! divergence — this is full parity, not merely "improved." See
+//! `docs/development/prelude-blob.md` for the user-facing summary.
 //!
 //! ## What this test asserts
 //!
 //! Not an exact tick count (too brittle across codegen changes) — instead
 //! that the source-prelude handicap on a fused, strict-recursion program
-//! stays within its documented bound (~10.6%, capped here at 12% to leave
-//! headroom for measurement noise while still catching regressions).
+//! stays within a small bound. Since the handicap is now closed (ratio
+//! ~1.0000000225, i.e. real parity), the caps below are pure regression
+//! tripwires, not a documented-handicap allowance: they exist to catch a
+//! *reintroduction* of the demand-analysis divergence (e.g. a future
+//! `analyse_demand` or inline-pass change that reintroduces Meta-blindness
+//! for some binding class), not to tolerate a known gap. Halved 2026-07-16
+//! (owner ruling, eu-vcr8) from the pre-closure caps of 1.12 / 1.13 — with
+//! the measured ratio at ~1.00000002, even the halved caps (1.06 / 1.065)
+//! leave roughly six orders of magnitude of headroom over the actual noise
+//! floor, so tightening costs nothing in false-positive risk while cutting
+//! the regression window in half.
 //!
 //! If the binary under test was built *without* a prelude blob (e.g. a
 //! bare `cargo test` run without first running `cargo xtask
@@ -70,26 +84,25 @@
 
 use std::path::Path;
 
-/// The documented handicap is ~10.6% (98,277,770 / 88,853,885 on
-/// `fib(30)`); cap at 12% so the tripwire has a little headroom for
-/// measurement noise but still fails if the gap widens materially.
-const MAX_SOURCE_PRELUDE_RATIO: f64 = 1.12;
+/// Regression tripwire cap for the byte-dispatch engine. The handicap this
+/// guards is closed (measured ratio ~1.0000000225 on `fib(30)`, bead
+/// eu-npp9) — 1.06 is not a documented allowance, it is headroom over
+/// measurement noise for a ratio that should sit at ~1.00. Halved
+/// 2026-07-16 from 1.12 (owner ruling, eu-vcr8) now that parity is
+/// confirmed; still enormous relative to the actual noise floor, so a
+/// regression that reopens the old demand-analysis gap (or any similar
+/// divergence) will trip this long before the true ratio approaches 1.06.
+const MAX_SOURCE_PRELUDE_RATIO: f64 = 1.06;
 
-/// Under the pre-decoded engine (`EU_PREDECODE=1`, bead eu-2sa6.13) the same
-/// handicap reads as a slightly larger ratio, capped here at 13%.
-///
-/// This is **not** a handicap regression — it is a pure baseline-shrink
-/// artifact of BV2 Ann-elimination. Eliminating `Op::Ann` from dispatch removes
-/// the *same absolute number* of `machine_ticks` (dispatch steps) from both
-/// configs — on `fib`, blob 722,435→623,927 and source 799,059→700,551, both
-/// −98,508 — so the **absolute** handicap the tripwire guards is unchanged at
-/// 76,624 ticks. Subtracting the same constant from a larger numerator and a
-/// smaller denominator raises their quotient: the byte-engine ratio 1.106
-/// becomes 1.1228 under pre-decode. The 1.13 cap keeps this a real gate — a
-/// genuine handicap regression (a *wider* absolute gap) still pushes the ratio
-/// well past 1.13 — while tolerating the accounting shift. The byte-engine cap
-/// (1.12) is deliberately left untouched. Owner-signed (2026-07-13).
-const MAX_SOURCE_PRELUDE_RATIO_PREDECODE: f64 = 1.13;
+/// Regression tripwire cap under the pre-decoded engine (`EU_PREDECODE=1`,
+/// bead eu-2sa6.13). Kept marginally above [`MAX_SOURCE_PRELUDE_RATIO`] for
+/// consistency with the byte-dispatch cap's historical relationship (BV2's
+/// `Op::Ann` elimination shrinks `machine_ticks` uniformly on both configs,
+/// which mechanically inflates a ratio computed from smaller numbers by the
+/// same absolute gap) — but with the underlying handicap now closed, that
+/// baseline-shrink effect acts on an already-negligible ~2-tick gap and is
+/// itself noise-scale. Halved 2026-07-16 from 1.13 (owner ruling, eu-vcr8).
+const MAX_SOURCE_PRELUDE_RATIO_PREDECODE: f64 = 1.065;
 
 fn eu_binary() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_eu"))
@@ -151,11 +164,12 @@ fn source_prelude_tick_parity_tripwire() {
 
     assert!(
         source_ticks as f64 <= blob_ticks as f64 * cap,
-        "source-prelude tick handicap has grown beyond the documented bound \
-         (eu-2sa6.5): default={blob_ticks} ticks, --source-prelude={source_ticks} ticks, \
+        "source-prelude tick handicap has grown beyond the tripwire bound \
+         (eu-2sa6.5 / eu-npp9 — the handicap itself is closed, this is a pure \
+         regression guard): default={blob_ticks} ticks, --source-prelude={source_ticks} ticks, \
          ratio={ratio:.4} > {cap} (predecode={predecode}). If this binary embeds no prelude \
          blob, default and --source-prelude use the identical code path and this assertion \
          should be trivially satisfied — a failure here with no blob present points at a \
-         different regression, not the known handicap."
+         different regression, not the (closed) historical handicap."
     );
 }
