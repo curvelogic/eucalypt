@@ -231,6 +231,34 @@ fn run_typecheck_test(filename: &str) {
     }
 }
 
+/// Run the plain `eu` eval path (no subcommand) on a `tests/harness/typecheck`
+/// fixture and assert that stderr contains `pattern` (eu-5q08).
+///
+/// Type checking runs unconditionally on every `eu` invocation, not just
+/// `eu check`, so a fixture whose `eu check --strict` run produces a
+/// warning must produce the same warning text on plain eval too. This is
+/// deliberately narrower than a general eval/check parity harness (tracked
+/// as `PR #1026`, `eu-ntwg.1`, which asserts this across the whole
+/// `tests/harness/typecheck` fixture set and specifically excludes
+/// `004_invalid_annotation.eu` with a comment citing this bead) — it exists
+/// so eu-5q08's regression is gated on its own even if #1026 has not yet
+/// merged. If #1026 lands first, its exclusion for `004_invalid_annotation.eu`
+/// should be removed so the two mechanisms do not silently overlap.
+fn run_typecheck_eval_path_test(filename: &str, pattern: &str) {
+    let path = format!("tests/harness/typecheck/{filename}");
+
+    let output = std::process::Command::new(eu_binary())
+        .args([&path, "--heap-limit-mib", "2048"])
+        .output()
+        .expect("failed to run eu (eval path)");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(pattern),
+        "eval-path stderr for {filename} does not contain \"{pattern}\"\nactual stderr:\n{stderr}"
+    );
+}
+
 /// Run `eu doc` on a fixture file and assert that stdout contains all the given patterns.
 fn run_doc_test(path: &str, extra_args: &[&str], expected_patterns: &[&str]) {
     let output = std::process::Command::new(eu_binary())
@@ -2084,6 +2112,19 @@ pub fn test_typecheck_003_annotation_mismatch() {
 #[test]
 pub fn test_typecheck_004_invalid_annotation() {
     run_typecheck_test("004_invalid_annotation.eu");
+}
+
+/// Regression for eu-5q08: a malformed `type:` annotation used to be a hard
+/// error under `eu check --strict` but silently discarded (no diagnostic at
+/// all, exit 0) under plain `eu` evaluation, even though type checking runs
+/// unconditionally on every invocation. `extract_annotation` in
+/// `core/typecheck/check.rs` discarded the `parse_scheme` `Err` via
+/// `.ok()?` instead of surfacing it as a `TypeWarning`. See
+/// `run_typecheck_eval_path_test` for how this differs from — and is meant
+/// to be superseded by — the broader eval/check parity harness in #1026.
+#[test]
+pub fn test_typecheck_004_invalid_annotation_eval_path_warns() {
+    run_typecheck_eval_path_test("004_invalid_annotation.eu", "invalid type annotation");
 }
 
 #[test]
