@@ -196,20 +196,14 @@ fn run_typecheck_test(filename: &str) {
     // --strict` genuinely warns (a non-empty expected pattern) — see the
     // doc comment above for why the other fixtures are out of scope.
     //
-    // 004_invalid_annotation.eu is a KNOWN, tracked exception (eu-5q08):
-    // this new check caught a genuine, previously-invisible divergence —
-    // `eu check`'s annotation-syntax validation (a pre-pass unique to the
-    // `check` subcommand) rejects a malformed `type:` annotation string,
-    // but the type checker used on the plain-eval path silently discards
-    // the same parse failure (`parse_scheme(..).ok()?` at three call
-    // sites in core/typecheck/check.rs) and treats it as "no annotation".
-    // Fixing that is a type-checker change, out of scope for this harness
-    // PR; excluded here (not silently — see eu-5q08) so the other 35
-    // warning-bearing fixtures still gate.
-    if filename == "004_invalid_annotation.eu" {
-        return;
-    }
-
+    // 004_invalid_annotation.eu used to be excluded here (eu-5q08): `eu
+    // check`'s annotation-syntax pre-pass rejected a malformed `type:`
+    // string, but the plain-eval-path checker silently discarded the same
+    // parse failure via `parse_scheme(..).ok()?`, treating it as "no
+    // annotation". That divergence is fixed (`extract_annotation` in
+    // `core/typecheck/check.rs` now emits an `invalid type annotation`
+    // warning), so 004 is covered by this general mechanism like every
+    // other warning-bearing fixture.
     if let Some(pattern) = expected_stderr.as_deref().filter(|p| !p.is_empty()) {
         let mut eval_cmd = std::process::Command::new(eu_binary());
         eval_cmd.args(["--heap-limit-mib", "2048", &path]);
@@ -229,34 +223,6 @@ fn run_typecheck_test(filename: &str) {
              \"{pattern}\" in stderr:\n{eval_stderr}"
         );
     }
-}
-
-/// Run the plain `eu` eval path (no subcommand) on a `tests/harness/typecheck`
-/// fixture and assert that stderr contains `pattern` (eu-5q08).
-///
-/// Type checking runs unconditionally on every `eu` invocation, not just
-/// `eu check`, so a fixture whose `eu check --strict` run produces a
-/// warning must produce the same warning text on plain eval too. This is
-/// deliberately narrower than a general eval/check parity harness (tracked
-/// as `PR #1026`, `eu-ntwg.1`, which asserts this across the whole
-/// `tests/harness/typecheck` fixture set and specifically excludes
-/// `004_invalid_annotation.eu` with a comment citing this bead) — it exists
-/// so eu-5q08's regression is gated on its own even if #1026 has not yet
-/// merged. If #1026 lands first, its exclusion for `004_invalid_annotation.eu`
-/// should be removed so the two mechanisms do not silently overlap.
-fn run_typecheck_eval_path_test(filename: &str, pattern: &str) {
-    let path = format!("tests/harness/typecheck/{filename}");
-
-    let output = std::process::Command::new(eu_binary())
-        .args([&path, "--heap-limit-mib", "2048"])
-        .output()
-        .expect("failed to run eu (eval path)");
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains(pattern),
-        "eval-path stderr for {filename} does not contain \"{pattern}\"\nactual stderr:\n{stderr}"
-    );
 }
 
 /// Run `eu doc` on a fixture file and assert that stdout contains all the given patterns.
@@ -2109,22 +2075,18 @@ pub fn test_typecheck_003_annotation_mismatch() {
     run_typecheck_test("003_annotation_mismatch.eu");
 }
 
+/// Also gates the eu-5q08 regression: a malformed `type:` annotation used to
+/// be a hard error under `eu check --strict` but silently discarded (no
+/// diagnostic at all, exit 0) under plain `eu` evaluation, even though type
+/// checking runs unconditionally on every invocation. `extract_annotation`
+/// in `core/typecheck/check.rs` discarded the `parse_scheme` `Err` via
+/// `.ok()?` instead of surfacing it as a `TypeWarning`. Now that the fix is
+/// in place, `run_typecheck_test`'s general eval-path parity check (see its
+/// doc comment) covers this fixture like every other warning-bearing one,
+/// so the once-separate standalone eval-path test has been folded in here.
 #[test]
 pub fn test_typecheck_004_invalid_annotation() {
     run_typecheck_test("004_invalid_annotation.eu");
-}
-
-/// Regression for eu-5q08: a malformed `type:` annotation used to be a hard
-/// error under `eu check --strict` but silently discarded (no diagnostic at
-/// all, exit 0) under plain `eu` evaluation, even though type checking runs
-/// unconditionally on every invocation. `extract_annotation` in
-/// `core/typecheck/check.rs` discarded the `parse_scheme` `Err` via
-/// `.ok()?` instead of surfacing it as a `TypeWarning`. See
-/// `run_typecheck_eval_path_test` for how this differs from — and is meant
-/// to be superseded by — the broader eval/check parity harness in #1026.
-#[test]
-pub fn test_typecheck_004_invalid_annotation_eval_path_warns() {
-    run_typecheck_eval_path_test("004_invalid_annotation.eu", "invalid type annotation");
 }
 
 #[test]
