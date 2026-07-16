@@ -202,15 +202,17 @@ impl UnitInterface {
         collect_demands(expr, &mut self.demands);
     }
 
-    /// Build a `HashMap<String, String>` of operator name → raw `type:` annotation
-    /// from `self.operators`, suitable for `parse_operator_overloads`.
-    pub fn operator_type_strings(&self) -> HashMap<String, String> {
+    /// Build a `HashMap<String, (String, Smid)>` of operator name → (raw
+    /// `type:` annotation, definition location) from `self.operators`,
+    /// suitable for `parse_operator_overloads`. The `Smid` lets a malformed
+    /// annotation's warning (eu-5q08) point at the operator's definition.
+    pub fn operator_type_strings(&self) -> HashMap<String, (String, Smid)> {
         self.operators
             .iter()
             .filter_map(|(name, info)| {
                 info.type_annotation
                     .as_ref()
-                    .map(|s| (name.clone(), s.clone()))
+                    .map(|s| (name.clone(), (s.clone(), info.smid)))
             })
             .collect()
     }

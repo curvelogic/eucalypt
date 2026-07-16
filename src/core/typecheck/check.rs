@@ -23,7 +23,7 @@
 //!
 //! Type issues are always warnings — they never prevent evaluation.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
@@ -346,6 +346,17 @@ pub struct Checker {
     /// `recognise_brancher` and `classify_lam_body` when the head
     /// expression is a `Var::Free` in prelude-cached user-file checks.
     seed_branch_shapes: HashMap<String, BranchShape>,
+
+    /// `Smid`s of `type:`/`__type_hint:` annotations whose syntax has
+    /// already produced an `invalid type annotation` warning (eu-5q08).
+    ///
+    /// `extract_annotation` is invoked more than once per malformed
+    /// annotation in normal control flow — once while pre-seeding a `Let`
+    /// frame (`annotation_scheme_of`), once during synthesis
+    /// (`synthesise_meta`), and again if the binding also carries
+    /// `type-def:`/`result-def:` metadata — so this set prevents the same
+    /// parse failure from being reported more than once.
+    warned_annotation_smids: HashSet<Smid>,
 }
 
 impl Default for Checker {
@@ -370,6 +381,7 @@ impl Checker {
             keep_root_scope: false,
             seed_branch_shapes: HashMap::new(),
             operator_overloads: HashMap::new(),
+            warned_annotation_smids: HashSet::new(),
         }
     }
 
@@ -887,7 +899,7 @@ impl Checker {
     /// - `is_hint`: came from `__type_hint` (monad binding) — the
     ///   annotation is for checking only, not for overriding the
     ///   synthesised type
-    fn extract_annotation(&self, meta: &RcExpr) -> Option<(Type, Vec<Constraint>, bool, bool)> {
+    fn extract_annotation(&mut self, meta: &RcExpr) -> Option<(Type, Vec<Constraint>, bool, bool)> {
         let block = match &*meta.inner {
             Expr::Block(_, b) => b,
             _ => return None,
@@ -907,13 +919,38 @@ impl Checker {
             (type_str, false)
         };
 
-        let (parsed, constraints) = parse::parse_scheme(&type_str).ok()?;
-        Some((
-            self.resolve_aliases_in_type(parsed),
-            constraints,
-            asserted,
-            is_hint,
-        ))
+        match parse::parse_scheme(&type_str) {
+            Ok((parsed, constraints)) => Some((
+                self.resolve_aliases_in_type(parsed),
+                constraints,
+                asserted,
+                is_hint,
+            )),
+            Err(e) => {
+                self.warn_invalid_annotation(meta.smid(), &e);
+                None
+            }
+        }
+    }
+
+    /// Emit an `invalid type annotation` warning for a `type:`/`__type_hint:`
+    /// string that failed to parse (eu-5q08).
+    ///
+    /// Previously the parse error was discarded (`.ok()?`), silently
+    /// treating a malformed annotation as if it were absent — a hard error
+    /// under `eu check --strict` but invisible under plain `eu` evaluation,
+    /// even though type checking runs unconditionally on every invocation.
+    /// The message mirrors `eu check`'s `check_annotation_syntax` pre-pass
+    /// (`invalid type annotation on '<name>': <parse error>`) so the two
+    /// paths agree; the binding name is not always available at this call
+    /// site, so it is omitted here in favour of the warning's `Smid`
+    /// location, which `to_diagnostic` renders as a source label.
+    /// Deduplicated by `Smid` — see `warned_annotation_smids`.
+    fn warn_invalid_annotation(&mut self, smid: Smid, err: &parse::ParseError) {
+        if self.warned_annotation_smids.insert(smid) {
+            self.warnings
+                .push(TypeWarning::new(format!("invalid type annotation: {err}")).at(smid));
+        }
     }
 
     /// Try to extract a `TypeScheme` from a binding value's `Meta` wrapper.
@@ -922,7 +959,7 @@ impl Checker {
     /// carries a `type:` or `__type_hint:` annotation, `None` otherwise.  The
     /// type variables in the annotation are quantified into the scheme via
     /// `infer_scheme`.  Alias references are resolved before quantification.
-    fn annotation_scheme_of(&self, value: &RcExpr) -> Option<TypeScheme> {
+    fn annotation_scheme_of(&mut self, value: &RcExpr) -> Option<TypeScheme> {
         if let Expr::Meta(_, _, meta) = &*value.inner {
             self.extract_annotation(meta)
                 .map(|(ty, constraints, _asserted, _is_hint)| {
@@ -3464,19 +3501,35 @@ pub fn type_check_with_operator_overloads(
     checker.into_warnings()
 }
 
-/// Parse a map of operator name → annotation string into TypeSchemes.
+/// Parse a map of operator name → (annotation string, definition `Smid`)
+/// into TypeSchemes.
 ///
-/// Strings that fail to parse are silently skipped (the constraint will
-/// stay gradual for those operators).
-pub fn parse_operator_overloads(raw: &HashMap<String, String>) -> HashMap<String, TypeScheme> {
-    raw.iter()
-        .filter_map(|(name, type_str)| {
-            let (ty, constraints) = parse::parse_scheme(type_str).ok()?;
-            let mut scheme = infer_scheme(ty);
-            scheme.constraints = constraints;
-            Some((name.clone(), scheme))
-        })
-        .collect()
+/// Strings that fail to parse produce an `invalid type annotation` warning
+/// (eu-5q08) instead of being silently skipped; the constraint stays
+/// gradual for that operator. Operator annotations are captured from the
+/// pre-cook expression (see `UnitInterface::extract_operators_from_expr`)
+/// because cook's `distribute_fixities` strips the `Meta` wrapper that
+/// carries `type:`, so this is the only call site that ever sees an
+/// operator's annotation — unlike `extract_annotation`, there is no
+/// duplicate-visit risk here, so no `Smid` dedup is needed.
+pub fn parse_operator_overloads(
+    raw: &HashMap<String, (String, Smid)>,
+) -> (HashMap<String, TypeScheme>, Vec<TypeWarning>) {
+    let mut overloads = HashMap::new();
+    let mut warnings = Vec::new();
+    for (name, (type_str, smid)) in raw {
+        match parse::parse_scheme(type_str) {
+            Ok((ty, constraints)) => {
+                let mut scheme = infer_scheme(ty);
+                scheme.constraints = constraints;
+                overloads.insert(name.clone(), scheme);
+            }
+            Err(e) => {
+                warnings.push(TypeWarning::new(format!("invalid type annotation: {e}")).at(*smid));
+            }
+        }
+    }
+    (overloads, warnings)
 }
 
 /// Extract type alias definitions from `expr` without running full type checking.

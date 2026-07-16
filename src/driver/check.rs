@@ -112,8 +112,15 @@ fn build_prelude_interface_for(prelude_key: &str) -> Result<UnitInterface, Eucal
 
     // Populate operator_overloads in the type summary from the pre-cook
     // operator info stored in unit_interface.
+    //
+    // Any operator-annotation parse-error warnings are discarded here, same
+    // as the primary `type_check_for_prelude` warnings above — the prelude
+    // is expected to stay warning-free (verified by `cargo xtask
+    // prelude-compile` and the full test suite), so there is nothing for a
+    // per-invocation cache build to usefully report.
     let operator_type_strings = loader.unit_interface().operator_type_strings();
-    let operator_overloads = parse_operator_overloads(&operator_type_strings);
+    let (operator_overloads, _operator_annotation_warnings) =
+        parse_operator_overloads(&operator_type_strings);
     summary.operator_overloads = operator_overloads;
 
     let mut ui = loader.unit_interface().clone();
@@ -487,7 +494,8 @@ pub fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eu
     loader.extract_operators();
     loader.extract_visibility();
     let operator_type_strings = loader.unit_interface().operator_type_strings();
-    let operator_overloads = parse_operator_overloads(&operator_type_strings);
+    let (operator_overloads, operator_annotation_warnings) =
+        parse_operator_overloads(&operator_type_strings);
 
     // Cook (resolve operator precedence).
     loader.cook()?;
@@ -510,6 +518,7 @@ pub fn run_type_checker(opt: &EucalyptOptions) -> Result<PipelineCheckResult, Eu
     } else {
         type_check_with_operator_overloads(&core_expr, operator_overloads)
     };
+    warnings.extend(operator_annotation_warnings);
     warnings.extend(deprecation_warnings);
 
     // Run content verifier to catch static errors (e.g. trivial self-assignment).
@@ -640,7 +649,8 @@ pub fn run_type_checker_from_blob_core(
     loader.extract_operators();
     loader.extract_visibility();
     let operator_type_strings = loader.unit_interface().operator_type_strings();
-    let operator_overloads = parse_operator_overloads(&operator_type_strings);
+    let (operator_overloads, operator_annotation_warnings) =
+        parse_operator_overloads(&operator_type_strings);
 
     loader.cook()?;
     loader.eliminate()?;
@@ -655,6 +665,7 @@ pub fn run_type_checker_from_blob_core(
     } else {
         type_check_with_operator_overloads(&core_expr, operator_overloads)
     };
+    warnings.extend(operator_annotation_warnings);
     warnings.extend(deprecation_warnings);
 
     let core_errors = loader.verify().unwrap_or_default();

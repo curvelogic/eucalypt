@@ -4,6 +4,10 @@ All notable changes to eucalypt are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A malformed `type:` annotation was a hard error under `eu check --strict` but silently discarded (exit 0, no diagnostic) under plain `eu` evaluation** — despite type checking running unconditionally on every invocation (per the documented contract). Three call sites in `core/typecheck/check.rs` and `driver/check.rs` (`extract_annotation`, used for ordinary declarations, and `parse_operator_overloads`, used for operator definitions whose `Meta` wrapper is stripped before the checker's normal per-node walk ever sees it) discarded the `parse_scheme` parse error via `.ok()?`, treating the annotation as though it were simply absent. Parse failures now surface as an `invalid type annotation: <parse error>` `TypeWarning`, flowing through the same unconditional warning pipeline as every other type diagnostic — visible on stderr under plain `eu`, promoted to a hard error under `--strict`, silenced by `--suppress-type-warnings`. Deduplicated by source location (`Smid`) so the same malformed annotation, which the checker's `Let` pre-seeding and synthesis passes each visit independently, is not reported twice. The prelude remains warning-free (`cargo xtask prelude-compile` unaffected; the prelude's cached type-check path discards operator-annotation warnings the same way it already discarded its primary check warnings). Regression-tested via `tests/harness_test.rs`'s `test_typecheck_004_invalid_annotation_eval_path_warns`, fault-injection verified (eu-5q08)
+
 ## [0.13.0] - Unreleased
 
 ### Added
