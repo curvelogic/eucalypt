@@ -2653,6 +2653,52 @@ pub fn step_predecoded(
     }
 }
 
+// Test-only override for which dispatch path `BytecodeMachine::new` selects
+// (eu-ntwg.3, the 3-mode differential gate). Production construction always
+// reads `EU_PREDECODE` via `predecode_enabled()`; the differential harness
+// needs to build a byte-path machine and a pre-decoded machine in the same
+// process without racing on that process-global env var across parallel
+// `cargo test` threads, so it uses a thread-local override instead. A
+// `thread_local` gives each test thread independent state, and `None` (the
+// default) falls back to `predecode_enabled()` — byte-identical to
+// production behaviour when the override is never used.
+#[cfg(test)]
+thread_local! {
+    static PREDECODE_OVERRIDE: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+/// Run `f` with the pre-decoded dispatch path forced to `force` for any
+/// `BytecodeMachine::new` call made on this thread during `f`, regardless of
+/// `EU_PREDECODE`. `#[cfg(test)]`-only; used by the differential harness
+/// (eu-ntwg.3) to construct byte-path and pre-decoded machines side by side.
+#[cfg(test)]
+pub(crate) fn with_predecode_override<T>(force: bool, f: impl FnOnce() -> T) -> T {
+    // RAII guard so the override is cleared even if `f` panics (e.g. an
+    // `.expect()` on a failed build) — an unwinding panic must not leak a
+    // forced dispatch mode into whichever test runs next on this thread.
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            PREDECODE_OVERRIDE.with(|c| c.set(None));
+        }
+    }
+    PREDECODE_OVERRIDE.with(|c| c.set(Some(force)));
+    let _guard = Guard;
+    f()
+}
+
+#[cfg(not(test))]
+fn resolve_predecode() -> bool {
+    super::predecode_enabled()
+}
+
+#[cfg(test)]
+fn resolve_predecode() -> bool {
+    PREDECODE_OVERRIDE
+        .with(|c| c.get())
+        .unwrap_or_else(super::predecode_enabled)
+}
+
 /// The bytecode execution machine: owns the heap, program and machine state,
 /// and drives the `step` dispatch loop with periodic GC (spec §6). The
 /// parallel-engine counterpart to the HeapSyn `Machine`.
@@ -2717,7 +2763,7 @@ impl<'a> BytecodeMachine<'a> {
         // whose `code` is an ordinal without any per-helper byte-vs-ordinal
         // branch. The byte stream stays as the blob wire format but is not read
         // by the pre-decoded dispatch path.
-        let predecode = super::predecode_enabled();
+        let predecode = resolve_predecode();
         let decoded = if predecode {
             let d = decode_program(&program, root_off, global_forms)?;
             program.blackhole = d.blackhole;

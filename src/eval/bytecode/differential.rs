@@ -1,6 +1,24 @@
-//! Differential testing: run a synthetic `StgSyn` program through both the
-//! HeapSyn engine and the bytecode engine and assert they agree (spec §9,
-//! REFINEMENT B — harness-first on synthetic programs, before the prelude).
+//! Differential testing: run a synthetic `StgSyn` program through all three
+//! engine configurations — the HeapSyn tree-walk machine, the bytecode
+//! machine on its byte-path dispatch, and the bytecode machine on its
+//! pre-decoded dispatch (`EU_PREDECODE`, eu-2sa6.13) — and assert all three
+//! agree in one mechanism (spec §9, REFINEMENT B — harness-first on
+//! synthetic programs, before the prelude; 3-mode gate per the
+//! pre-decoded-IR design doc §6 Step A, docs/superpowers/specs/
+//! 2026-07-13-predecoded-execution-ir-design.md, built under eu-ntwg.3).
+//!
+//! Earlier revisions of this harness ran two separate pairwise comparisons
+//! (HeapSyn vs. byte-path bytecode, with pre-decoded bytecode covered by a
+//! different, disjoint mechanism) and inferred three-way agreement
+//! transitively. That is a weaker guarantee than the design specified: it
+//! never observes all three configurations disagreeing in a cyclic way in a
+//! single assertion, and a bug that only manifests as a divergence between
+//! the two *bytecode* dispatch paths (byte vs. pre-decoded) with HeapSyn
+//! coincidentally agreeing with one of them could slip through unreported.
+//! [`assert_three_way`] is the single mechanism: every comparison in this
+//! file runs a case under all three configurations and asserts pairwise
+//! equality across all three in one place, naming exactly which mode(s)
+//! diverged on failure.
 //!
 //! This validates the bytecode machine against the reference engine at the
 //! value level (exit code) using the same runtime globals for both. The full
@@ -9,9 +27,11 @@
 
 #![cfg(test)]
 
+use std::fmt::Debug;
 use std::rc::Rc;
 
 use crate::common::sourcemap::SourceMap;
+use crate::eval::bytecode::machine::with_predecode_override;
 use crate::eval::bytecode::{encode, BytecodeMachine};
 use crate::eval::emit::NullEmitter;
 use crate::eval::machine::intrinsic::StgIntrinsic;
@@ -20,8 +40,44 @@ use crate::eval::stg::runtime::{Runtime, StandardRuntime};
 use crate::eval::stg::syntax::StgSyn;
 use crate::eval::stg::StgSettings;
 
-/// Run `syntax` through both engines with a runtime built from `bifs`, and
-/// assert the exit codes agree. Returns the (shared) exit code.
+/// The single 3-mode agreement mechanism (design doc §6 Step A gate,
+/// eu-ntwg.3): given the same case's result from all three engine
+/// configurations, assert they are pairwise equal. On failure, names exactly
+/// which configuration(s) diverged rather than just asserting two values
+/// unequal — the point of running all three in one mechanism instead of two
+/// pairwise checks is that a mismatch report can distinguish "pre-decode
+/// broke it" (byte-path still agrees with HeapSyn) from "the byte-path
+/// itself is wrong" (both bytecode modes disagree with HeapSyn) from "the
+/// two bytecode dispatch paths disagree with each other" (a predecode-only
+/// bug that a HeapSyn-vs-bytecode pairwise check alone would not localise).
+fn assert_three_way<T: PartialEq + Debug>(heap: T, byte: T, predecode: T) -> T {
+    let mut diverging = Vec::new();
+    if heap != byte {
+        diverging.push(format!(
+            "HeapSyn ({heap:?}) != bytecode byte-path ({byte:?})"
+        ));
+    }
+    if heap != predecode {
+        diverging.push(format!(
+            "HeapSyn ({heap:?}) != bytecode pre-decoded ({predecode:?})"
+        ));
+    }
+    if byte != predecode {
+        diverging.push(format!(
+            "bytecode byte-path ({byte:?}) != bytecode pre-decoded ({predecode:?})"
+        ));
+    }
+    assert!(
+        diverging.is_empty(),
+        "3-mode differential gate: engines disagree:\n{}",
+        diverging.join("\n")
+    );
+    heap
+}
+
+/// Run `syntax` through all three engine configurations with a runtime built
+/// from `bifs`, and assert the exit codes agree via [`assert_three_way`].
+/// Returns the (shared) exit code.
 fn assert_engines_agree(syntax: Rc<StgSyn>, bifs: Vec<Box<dyn StgIntrinsic>>) -> Option<u8> {
     let mut rt = StandardRuntime::default();
     for b in bifs {
@@ -37,10 +93,28 @@ fn assert_engines_agree(syntax: Rc<StgSyn>, bifs: Vec<Box<dyn StgIntrinsic>>) ->
         m.run(Some(1_000_000)).expect("HeapSyn run")
     };
 
-    // Under test: the bytecode machine, sharing the same runtime globals.
-    let bc_exit = {
-        let globals = rt.globals();
-        let (prog, root, gforms) = encode(&syntax, &globals);
+    let globals = rt.globals();
+    let (prog, root, gforms) = encode(&syntax, &globals);
+
+    // Under test, mode 1: the bytecode machine on its byte-path dispatch
+    // (EU_PREDECODE off), sharing the same runtime globals.
+    let byte_exit = with_predecode_override(false, || {
+        let mut m = BytecodeMachine::new(
+            prog.clone(),
+            root,
+            &gforms,
+            rt.intrinsics(),
+            Box::new(NullEmitter),
+            0,
+            false,
+        )
+        .expect("build bytecode machine (byte path)");
+        m.run(Some(1_000_000)).expect("bytecode run (byte path)")
+    });
+
+    // Under test, mode 2: the bytecode machine on its pre-decoded dispatch
+    // (EU_PREDECODE on), sharing the same runtime globals.
+    let predecode_exit = with_predecode_override(true, || {
         let mut m = BytecodeMachine::new(
             prog,
             root,
@@ -50,19 +124,16 @@ fn assert_engines_agree(syntax: Rc<StgSyn>, bifs: Vec<Box<dyn StgIntrinsic>>) ->
             0,
             false,
         )
-        .expect("build bytecode machine");
-        m.run(Some(1_000_000)).expect("bytecode run")
-    };
+        .expect("build bytecode machine (pre-decoded)");
+        m.run(Some(1_000_000)).expect("bytecode run (pre-decoded)")
+    });
 
-    assert_eq!(
-        heap_exit, bc_exit,
-        "HeapSyn and bytecode engines disagree on exit code"
-    );
-    heap_exit
+    assert_three_way(heap_exit, byte_exit, predecode_exit)
 }
 
-/// Run `syntax` through both engines with a YAML emitter capturing to a
-/// buffer, and assert the rendered output agrees. Uses the full standard
+/// Run `syntax` through all three engine configurations with a YAML emitter
+/// capturing to a buffer, and assert the rendered output agrees via
+/// [`assert_three_way`]. Uses the full standard
 /// runtime (all emit/render intrinsics). Returns the shared output string.
 fn assert_engines_render_agree(syntax: Rc<StgSyn>) -> String {
     use crate::eval::stg::make_standard_runtime;
@@ -84,33 +155,80 @@ fn assert_engines_render_agree(syntax: Rc<StgSyn>) -> String {
     }
     let heap_out = String::from_utf8(heap_buf).expect("HeapSyn output utf-8");
 
-    // Under test: bytecode engine, same runtime globals + intrinsics.
-    let mut bc_buf: Vec<u8> = Vec::new();
-    {
-        let mut emitter = crate::export::create_emitter("yaml", &mut bc_buf).expect("yaml emitter");
-        emitter.stream_start();
-        let (prog, root, gforms) = encode(&syntax, &rt.globals());
-        let mut m = BytecodeMachine::new(prog, root, &gforms, rt.intrinsics(), emitter, 0, false)
-            .expect("build bytecode machine");
-        m.run(None).expect("bytecode run");
-        m.take_emitter().stream_end();
-    }
-    let bc_out = String::from_utf8(bc_buf).expect("bytecode output utf-8");
+    let (prog, root, gforms) = encode(&syntax, &rt.globals());
 
-    assert_eq!(
-        heap_out, bc_out,
-        "HeapSyn and bytecode engines disagree on rendered output"
-    );
-    heap_out
+    // Under test, mode 1: bytecode engine on its byte-path dispatch, same
+    // runtime globals + intrinsics.
+    let byte_out = {
+        let mut buf: Vec<u8> = Vec::new();
+        {
+            let mut emitter =
+                crate::export::create_emitter("yaml", &mut buf).expect("yaml emitter");
+            emitter.stream_start();
+            with_predecode_override(false, || {
+                let mut m = BytecodeMachine::new(
+                    prog.clone(),
+                    root,
+                    &gforms,
+                    rt.intrinsics(),
+                    emitter,
+                    0,
+                    false,
+                )
+                .expect("build bytecode machine (byte path)");
+                m.run(None).expect("bytecode run (byte path)");
+                m.take_emitter().stream_end();
+            });
+        }
+        String::from_utf8(buf).expect("bytecode byte-path output utf-8")
+    };
+
+    // Under test, mode 2: bytecode engine on its pre-decoded dispatch, same
+    // runtime globals + intrinsics.
+    let predecode_out = {
+        let mut buf: Vec<u8> = Vec::new();
+        {
+            let mut emitter =
+                crate::export::create_emitter("yaml", &mut buf).expect("yaml emitter");
+            emitter.stream_start();
+            with_predecode_override(true, || {
+                let mut m =
+                    BytecodeMachine::new(prog, root, &gforms, rt.intrinsics(), emitter, 0, false)
+                        .expect("build bytecode machine (pre-decoded)");
+                m.run(None).expect("bytecode run (pre-decoded)");
+                m.take_emitter().stream_end();
+            });
+        }
+        String::from_utf8(buf).expect("bytecode pre-decoded output utf-8")
+    };
+
+    assert_three_way(heap_out, byte_out, predecode_out)
 }
 
-/// Run `syntax` — which must raise a `LookupFailure` — through both engines and
-/// assert they agree on the failing key, its suggestions and the available
-/// keys. Regression guard for the `LOOKUP_FAIL` diagnostic path on the bytecode
-/// engine (eu-ter9): its key collection must go through the neutral ABI, not
-/// the HeapSyn-only `nav` navigator (which panics on the bytecode engine).
+/// Run `syntax` — which must raise a `LookupFailure` — through all three
+/// engine configurations and assert they agree on the failing key, its
+/// suggestions and the available keys via [`assert_three_way`]. Regression
+/// guard for the `LOOKUP_FAIL` diagnostic path on the bytecode engine
+/// (eu-ter9): its key collection must go through the neutral ABI, not the
+/// HeapSyn-only `nav` navigator (which panics on the bytecode engine).
 fn assert_engines_lookup_fail_agree(syntax: Rc<StgSyn>, bifs: Vec<Box<dyn StgIntrinsic>>) {
     use crate::eval::error::ExecutionError;
+
+    // The HeapSyn machine wraps raised errors in `Traced`; unwrap to compare
+    // the underlying diagnostic on equal terms with the bytecode engine.
+    fn unwrap_traced(e: &ExecutionError) -> &ExecutionError {
+        match e {
+            ExecutionError::Traced(inner, _) => unwrap_traced(inner),
+            other => other,
+        }
+    }
+
+    fn lookup_detail(e: &ExecutionError, mode: &str) -> (String, Vec<String>, Vec<String>) {
+        match unwrap_traced(e) {
+            ExecutionError::LookupFailure(_, d) => (d.0.clone(), d.1.clone(), d.2.clone()),
+            other => panic!("expected LookupFailure from {mode}, got {other:?}"),
+        }
+    }
 
     let mut rt = StandardRuntime::default();
     for b in bifs {
@@ -127,10 +245,27 @@ fn assert_engines_lookup_fail_agree(syntax: Rc<StgSyn>, bifs: Vec<Box<dyn StgInt
             .expect_err("HeapSyn should raise LookupFailure")
     };
 
-    // Under test: the bytecode machine, sharing the same runtime globals.
-    let bc_err = {
-        let globals = rt.globals();
-        let (prog, root, gforms) = encode(&syntax, &globals);
+    let globals = rt.globals();
+    let (prog, root, gforms) = encode(&syntax, &globals);
+
+    // Under test, mode 1: bytecode machine on its byte-path dispatch.
+    let byte_err = with_predecode_override(false, || {
+        let mut m = BytecodeMachine::new(
+            prog.clone(),
+            root,
+            &gforms,
+            rt.intrinsics(),
+            Box::new(NullEmitter),
+            0,
+            false,
+        )
+        .expect("build bytecode machine (byte path)");
+        m.run(Some(1_000_000))
+            .expect_err("bytecode (byte path) should raise LookupFailure")
+    });
+
+    // Under test, mode 2: bytecode machine on its pre-decoded dispatch.
+    let predecode_err = with_predecode_override(true, || {
         let mut m = BytecodeMachine::new(
             prog,
             root,
@@ -140,13 +275,34 @@ fn assert_engines_lookup_fail_agree(syntax: Rc<StgSyn>, bifs: Vec<Box<dyn StgInt
             0,
             false,
         )
-        .expect("build bytecode machine");
+        .expect("build bytecode machine (pre-decoded)");
         m.run(Some(1_000_000))
-            .expect_err("bytecode should raise LookupFailure")
-    };
+            .expect_err("bytecode (pre-decoded) should raise LookupFailure")
+    });
 
-    // The HeapSyn machine wraps raised errors in `Traced`; unwrap to compare
-    // the underlying diagnostic on equal terms with the bytecode engine.
+    let heap_d = lookup_detail(&heap_err, "HeapSyn");
+    let byte_d = lookup_detail(&byte_err, "bytecode byte-path");
+    let predecode_d = lookup_detail(&predecode_err, "bytecode pre-decoded");
+
+    assert_three_way(heap_d, byte_d, predecode_d);
+}
+
+/// Run `syntax` — which must raise a `NotValue` — through all three engine
+/// configurations and assert they agree on both the source `Smid` and the
+/// "found" context string via [`assert_three_way`]. Regression guard for the
+/// bytecode diagnostic parity work (eu-v6c4 / eu-0lvf): RC2 gave the
+/// bytecode `resolve_native` the same closure classification as HeapSyn (a
+/// boolean, a block, …) instead of a garbled default, and the annotation
+/// must flow to the raised error identically across all three
+/// configurations.
+fn assert_engines_not_value_agree(
+    syntax: Rc<StgSyn>,
+    bifs: Vec<Box<dyn StgIntrinsic>>,
+    expected_context: &str,
+) {
+    use crate::common::sourcemap::Smid;
+    use crate::eval::error::ExecutionError;
+
     fn unwrap_traced(e: &ExecutionError) -> &ExecutionError {
         match e {
             ExecutionError::Traced(inner, _) => unwrap_traced(inner),
@@ -154,30 +310,12 @@ fn assert_engines_lookup_fail_agree(syntax: Rc<StgSyn>, bifs: Vec<Box<dyn StgInt
         }
     }
 
-    match (unwrap_traced(&heap_err), unwrap_traced(&bc_err)) {
-        (ExecutionError::LookupFailure(_, hd), ExecutionError::LookupFailure(_, bd)) => {
-            assert_eq!(hd.0, bd.0, "engines disagree on the failing key");
-            assert_eq!(hd.1, bd.1, "engines disagree on the suggestions");
-            assert_eq!(hd.2, bd.2, "engines disagree on the available keys");
-        }
-        _ => {
-            panic!("expected LookupFailure from both engines, got heap={heap_err:?} bc={bc_err:?}")
+    fn not_value_detail(e: &ExecutionError, mode: &str) -> (Smid, String) {
+        match unwrap_traced(e) {
+            ExecutionError::NotValue(s, c) => (*s, c.clone()),
+            other => panic!("expected NotValue from {mode}, got {other:?}"),
         }
     }
-}
-
-/// Run `syntax` — which must raise a `NotValue` — through both engines and
-/// assert they agree on both the source `Smid` and the "found" context string.
-/// Regression guard for the bytecode diagnostic parity work (eu-v6c4 / eu-0lvf):
-/// RC2 gave the bytecode `resolve_native` the same closure classification as
-/// HeapSyn (a boolean, a block, …) instead of a garbled default, and the
-/// annotation must flow to the raised error identically on both engines.
-fn assert_engines_not_value_agree(
-    syntax: Rc<StgSyn>,
-    bifs: Vec<Box<dyn StgIntrinsic>>,
-    expected_context: &str,
-) {
-    use crate::eval::error::ExecutionError;
 
     let mut rt = StandardRuntime::default();
     for b in bifs {
@@ -193,11 +331,31 @@ fn assert_engines_not_value_agree(
             .expect_err("HeapSyn should raise NotValue")
     };
 
-    // The bytecode error must be `Traced` (RC1 wraps raised errors with the
-    // env/stack annotation traces, as HeapSyn does) before we unwrap it.
-    let bc_err = {
-        let globals = rt.globals();
-        let (prog, root, gforms) = encode(&syntax, &globals);
+    let globals = rt.globals();
+    let (prog, root, gforms) = encode(&syntax, &globals);
+
+    // The bytecode errors must be `Traced` (RC1 wraps raised errors with the
+    // env/stack annotation traces, as HeapSyn does) before unwrapping.
+    let byte_err = with_predecode_override(false, || {
+        let mut m = BytecodeMachine::new(
+            prog.clone(),
+            root,
+            &gforms,
+            rt.intrinsics(),
+            Box::new(NullEmitter),
+            0,
+            false,
+        )
+        .expect("build bytecode machine (byte path)");
+        m.run(Some(1_000_000))
+            .expect_err("bytecode (byte path) should raise NotValue")
+    });
+    assert!(
+        matches!(byte_err, ExecutionError::Traced(..)),
+        "byte-path bytecode error should be Traced (RC1), got {byte_err:?}"
+    );
+
+    let predecode_err = with_predecode_override(true, || {
         let mut m = BytecodeMachine::new(
             prog,
             root,
@@ -207,30 +365,24 @@ fn assert_engines_not_value_agree(
             0,
             false,
         )
-        .expect("build bytecode machine");
+        .expect("build bytecode machine (pre-decoded)");
         m.run(Some(1_000_000))
-            .expect_err("bytecode should raise NotValue")
-    };
+            .expect_err("bytecode (pre-decoded) should raise NotValue")
+    });
     assert!(
-        matches!(bc_err, ExecutionError::Traced(..)),
-        "bytecode error should be Traced (RC1), got {bc_err:?}"
+        matches!(predecode_err, ExecutionError::Traced(..)),
+        "pre-decoded bytecode error should be Traced (RC1), got {predecode_err:?}"
     );
 
-    fn unwrap_traced(e: &ExecutionError) -> &ExecutionError {
-        match e {
-            ExecutionError::Traced(inner, _) => unwrap_traced(inner),
-            other => other,
-        }
-    }
+    let heap_d = not_value_detail(&heap_err, "HeapSyn");
+    let byte_d = not_value_detail(&byte_err, "bytecode byte-path");
+    let predecode_d = not_value_detail(&predecode_err, "bytecode pre-decoded");
 
-    match (unwrap_traced(&heap_err), unwrap_traced(&bc_err)) {
-        (ExecutionError::NotValue(hs, hc), ExecutionError::NotValue(bs, bc)) => {
-            assert_eq!(hs, bs, "engines disagree on the NotValue source Smid");
-            assert_eq!(hc, bc, "engines disagree on the NotValue context string");
-            assert_eq!(bc, expected_context, "unexpected NotValue context");
-        }
-        _ => panic!("expected NotValue from both engines, got heap={heap_err:?} bc={bc_err:?}"),
-    }
+    let (_, agreed_context) = assert_three_way(heap_d, byte_d, predecode_d);
+    assert_eq!(
+        agreed_context, expected_context,
+        "unexpected NotValue context"
+    );
 }
 
 mod tests {
@@ -734,8 +886,9 @@ mod tests {
         // RENDER_DOC(PRODUCER_NEXT(handle)) over a finite producer of 1,2,3. The
         // lazy cons-cell tail is an updatable thunk built by `bif_tail_thunk`
         // over the fixed `AppBif(PRODUCER_NEXT,[L0])` template; the shared-env
-        // data-case path memoises it. Each engine gets its own producer handle
-        // (producers are stateful), and both must render the same list.
+        // data-case path memoises it. Each of the three engine configurations
+        // gets its own producer handle (producers are stateful), and all
+        // three must render the same list.
         use crate::eval::error::ExecutionError;
         use crate::eval::stg::make_standard_runtime;
         use crate::eval::stg::stream::{register_producer, LazyProducer};
@@ -779,29 +932,64 @@ mod tests {
         }
         let heap_out = String::from_utf8(heap_buf).expect("HeapSyn output utf-8");
 
-        // Bytecode under test on a fresh producer handle.
-        let bc_handle = register_producer(Box::new(VecProducer(items())));
-        let mut bc_buf: Vec<u8> = Vec::new();
-        {
-            let mut emitter =
-                crate::export::create_emitter("yaml", &mut bc_buf).expect("yaml emitter");
-            emitter.stream_start();
-            let (prog, root, gforms) = encode(&build(bc_handle), &rt.globals());
-            let mut m =
-                BytecodeMachine::new(prog, root, &gforms, rt.intrinsics(), emitter, 0, false)
-                    .expect("build bytecode machine");
-            m.run(None).expect("bytecode run");
-            m.take_emitter().stream_end();
-        }
-        let bc_out = String::from_utf8(bc_buf).expect("bytecode output utf-8");
+        // Under test, mode 1: byte-path bytecode on a fresh producer handle.
+        let byte_handle = register_producer(Box::new(VecProducer(items())));
+        let byte_out = {
+            let mut buf: Vec<u8> = Vec::new();
+            {
+                let mut emitter =
+                    crate::export::create_emitter("yaml", &mut buf).expect("yaml emitter");
+                emitter.stream_start();
+                let (prog, root, gforms) = encode(&build(byte_handle), &rt.globals());
+                with_predecode_override(false, || {
+                    let mut m = BytecodeMachine::new(
+                        prog,
+                        root,
+                        &gforms,
+                        rt.intrinsics(),
+                        emitter,
+                        0,
+                        false,
+                    )
+                    .expect("build bytecode machine (byte path)");
+                    m.run(None).expect("bytecode run (byte path)");
+                    m.take_emitter().stream_end();
+                });
+            }
+            String::from_utf8(buf).expect("bytecode byte-path output utf-8")
+        };
 
-        assert_eq!(
-            heap_out, bc_out,
-            "HeapSyn and bytecode engines disagree on producer stream output"
-        );
+        // Under test, mode 2: pre-decoded bytecode on a fresh producer handle.
+        let predecode_handle = register_producer(Box::new(VecProducer(items())));
+        let predecode_out = {
+            let mut buf: Vec<u8> = Vec::new();
+            {
+                let mut emitter =
+                    crate::export::create_emitter("yaml", &mut buf).expect("yaml emitter");
+                emitter.stream_start();
+                let (prog, root, gforms) = encode(&build(predecode_handle), &rt.globals());
+                with_predecode_override(true, || {
+                    let mut m = BytecodeMachine::new(
+                        prog,
+                        root,
+                        &gforms,
+                        rt.intrinsics(),
+                        emitter,
+                        0,
+                        false,
+                    )
+                    .expect("build bytecode machine (pre-decoded)");
+                    m.run(None).expect("bytecode run (pre-decoded)");
+                    m.take_emitter().stream_end();
+                });
+            }
+            String::from_utf8(buf).expect("bytecode pre-decoded output utf-8")
+        };
+
+        let agreed = assert_three_way(heap_out, byte_out, predecode_out);
         assert!(
-            heap_out.contains('1') && heap_out.contains('2') && heap_out.contains('3'),
-            "expected 1,2,3 in producer output, got {heap_out:?}"
+            agreed.contains('1') && agreed.contains('2') && agreed.contains('3'),
+            "expected 1,2,3 in producer output, got {agreed:?}"
         );
     }
 }
