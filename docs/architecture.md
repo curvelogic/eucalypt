@@ -501,21 +501,27 @@ polled on a countdown (every 500 steps by default), matching HeapSyn.
 #### The pre-decoded IR (lever a, `EU_PREDECODE`)
 
 The classic byte-stream interpreter re-reads and re-decodes operands from
-the buffer on *every* tick. A newly merged **pre-decoded execution IR**
-(`predecode.rs`, currently behind `EU_PREDECODE=1`) removes that per-tick
-cost: at machine load the whole program is decoded **once** into a flat
-array of fixed-width, typed `Instr` records (16 bytes each) plus a set of
-off-heap side pools (argument-reference lists, application arg ordinals,
-`Let`/`LetRec` form headers and densified `Case` branch tables). Dispatch
-then reads typed fields instead of re-parsing bytes. Two representation
-changes accompany the decode: a `CodeRef` becomes an *instruction ordinal*
-rather than a byte offset, and source annotations move into a side table
-keyed by ordinal so `Ann` nodes are peeled at decode time and never cost a
-dispatch step. The byte stream is retained unchanged as the *serialisation*
-format; pre-decoding is purely an execution-time transform, and with the
-flag off behaviour is byte-identical to the byte-stream path. Nothing in the
-pre-decoded structures is a GC pointer, so code stays off the collector's
-scan set just as the byte stream does.
+the buffer on *every* tick. The **pre-decoded execution IR** (`predecode.rs`)
+removes that per-tick cost: at machine load the whole program is decoded
+**once** into a flat array of fixed-width, typed `Instr` records (16 bytes
+each) plus a set of off-heap side pools (argument-reference lists,
+application arg ordinals, `Let`/`LetRec` form headers and densified `Case`
+branch tables). Dispatch then reads typed fields instead of re-parsing bytes.
+Two representation changes accompany the decode: a `CodeRef` becomes an
+*instruction ordinal* rather than a byte offset, and source annotations move
+into a side table keyed by ordinal so `Ann` nodes are peeled at decode time
+and never cost a dispatch step. The byte stream is retained unchanged as the
+*serialisation* format; pre-decoding is purely an execution-time transform,
+and with pre-decoded dispatch off, behaviour is byte-identical to the
+byte-stream path. Nothing in the pre-decoded structures is a GC pointer, so
+code stays off the collector's scan set just as the byte stream does.
+
+As of Phase 2 of the lever-(a) rollout (eu-vcr8), pre-decoded dispatch is the
+**default** — unset or `EU_PREDECODE=1` selects it; `EU_PREDECODE=0` opts
+out to the byte-dispatch path, which is retained and soaked through this
+release (CI's `test-byte-dispatch-baseline` job keeps it exercised) before
+Phase 3 deletes it, per the design's phased landing plan
+(`docs/superpowers/specs/2026-07-13-predecoded-execution-ir-design.md` §6).
 
 #### Why bytecode is the default, and the performance story
 
