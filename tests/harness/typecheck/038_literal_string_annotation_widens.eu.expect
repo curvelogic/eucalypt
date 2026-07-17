@@ -1,1 +1,2 @@
-exit: 0
+exit: 1
+stderr: "expected number, found string"

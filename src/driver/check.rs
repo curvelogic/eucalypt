@@ -11,7 +11,12 @@
 //!    result cached; user files are seeded with the cached prelude types,
 //!    avoiding redundant prelude re-checking on every file.
 //!
-//! Type issues are always warnings unless `--strict` is passed.
+//! Type issues are always warnings unless `--strict` is passed. Genuine
+//! parse errors and content-verifier errors (e.g. always-divergent
+//! bindings) are exceptions to that rule: both are unconditional hard
+//! errors — `eu check` exits non-zero for them with or without `--strict`
+//! (eu-3621) — because they are more fundamental than a type-annotation
+//! mismatch and the plain `eu` eval path already treats them as fatal.
 
 use std::collections::HashMap;
 use std::fs;
@@ -152,6 +157,7 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
     // ── Phase 1: annotation syntax validation ──────────────────────────────
     let t_phase1 = Instant::now();
     let mut syntax_errors = 0usize;
+    let mut parse_errors = 0usize;
 
     for input in &files {
         let path_str = input.locator().to_string();
@@ -166,7 +172,10 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
         let source = fs::read_to_string(path)
             .map_err(|e| format!("Failed to read '{}': {}", path_str, e))?;
 
-        syntax_errors += check_annotation_syntax(&path_str, &source, opt.check_strict());
+        let (ann_errors, file_parse_errors) =
+            check_annotation_syntax(&path_str, &source, opt.check_strict());
+        syntax_errors += ann_errors;
+        parse_errors += file_parse_errors;
     }
     let phase1_elapsed = t_phase1.elapsed();
 
@@ -222,13 +231,19 @@ pub fn check(opt: &EucalyptOptions) -> Result<i32, String> {
         );
     }
 
-    let total_issues = syntax_errors + type_warning_count + content_error_count;
+    let total_issues = syntax_errors + type_warning_count + content_error_count + parse_errors;
 
     if total_issues == 0 {
         Ok(0)
-    } else if opt.check_strict() || content_error_count > 0 {
-        // Content verifier errors (e.g. always-divergent bindings) are always
-        // hard errors, regardless of --strict.
+    } else if opt.check_strict() || content_error_count > 0 || parse_errors > 0 {
+        // Content verifier errors (e.g. always-divergent bindings) and
+        // genuine rowan parse errors (eu-3621) are always hard errors,
+        // regardless of --strict. A parse error is a more fundamental
+        // failure than a type warning — the file never produced a syntax
+        // tree at all — and the plain `eu` eval path (no subcommand)
+        // already aborts unconditionally on one (`run` in
+        // `src/driver/eval.rs`), so `eu check`, strict or not, must not
+        // report success for a file that failed to parse.
         Ok(1)
     } else {
         // Type warnings never cause non-zero exit unless --strict.
@@ -683,11 +698,23 @@ pub fn run_type_checker_from_blob_core(
 
 /// Check annotation syntax in a single source string.
 ///
-/// Returns the number of annotation syntax errors found.
-fn check_annotation_syntax(filename: &str, source: &str, strict: bool) -> usize {
+/// Returns `(annotation_syntax_error_count, file_parse_error_count)`: the
+/// number of malformed `type:` annotation strings, and separately the number
+/// of genuine rowan parse errors in the file itself (eu-3621). The two are
+/// deliberately distinct counts — the caller (`check`) treats a file parse
+/// error as an unconditional hard error (like content-verifier errors),
+/// whereas an annotation syntax error's severity historically already gates
+/// on `--strict` via the `syntax_errors` accumulator in `check`.
+fn check_annotation_syntax(filename: &str, source: &str, strict: bool) -> (usize, usize) {
     let parse_result = parse_unit(source);
 
-    // Report any eucalypt syntax errors first (always real errors).
+    // Report any eucalypt syntax errors first (always real errors) and count
+    // them — a genuine parse error means the file never produced a usable
+    // syntax tree, which is more fundamental than a type warning and must
+    // fail `eu check` regardless of --strict (eu-3621; previously these were
+    // printed here but silently uncounted, so `eu check --strict` exited 0
+    // despite a parse error).
+    let file_parse_error_count = parse_result.errors().len();
     for err in parse_result.errors() {
         eprintln!("{filename}: parse error: {err}");
     }
@@ -710,7 +737,7 @@ fn check_annotation_syntax(filename: &str, source: &str, strict: bool) -> usize 
         }
     }
 
-    error_count
+    (error_count, file_parse_error_count)
 }
 
 /// Convert a byte offset to a `line:col` string (1-based).
@@ -825,7 +852,7 @@ mod tests {
 ` { type: "number -> number" }
 double(x): x * 2
 "#;
-        assert_eq!(check_annotation_syntax("<test>", src, false), 0);
+        assert_eq!(check_annotation_syntax("<test>", src, false), (0, 0));
     }
 
     #[test]
@@ -834,7 +861,7 @@ double(x): x * 2
 ` { type: "number ->" }
 bad(x): x
 "#;
-        assert_eq!(check_annotation_syntax("<test>", src, false), 1);
+        assert_eq!(check_annotation_syntax("<test>", src, false), (1, 0));
     }
 
     #[test]
@@ -843,7 +870,7 @@ bad(x): x
 ` { doc: "just a doc" }
 no_type(x): x
 "#;
-        assert_eq!(check_annotation_syntax("<test>", src, false), 0);
+        assert_eq!(check_annotation_syntax("<test>", src, false), (0, 0));
     }
 
     #[test]
@@ -855,7 +882,7 @@ map(f, xs): __MAP
 ` { type: "(a -> bool) -> [a] -> [a]" }
 filter(p, xs): __FILTER
 "#;
-        assert_eq!(check_annotation_syntax("<test>", src, false), 0);
+        assert_eq!(check_annotation_syntax("<test>", src, false), (0, 0));
     }
 
     #[test]
@@ -867,7 +894,75 @@ map(f, xs): __MAP
 ` { type: "number ->" }
 bad(x): x
 "#;
-        assert_eq!(check_annotation_syntax("<test>", src, false), 1);
+        assert_eq!(check_annotation_syntax("<test>", src, false), (1, 0));
+    }
+
+    /// Regression for eu-3621: a genuine rowan parse error in the file body
+    /// (not an annotation-string parse error) must be counted, not just
+    /// printed. Previously `check_annotation_syntax` reported these via
+    /// `eprintln!` but never incremented any counter, so `eu check --strict`
+    /// exited 0 despite the file failing to parse at all.
+    #[test]
+    fn counts_file_parse_errors_separately_from_annotation_errors() {
+        // `x: "hello" : "string"` is not valid syntax anywhere in Eucalypt —
+        // a second top-level colon after a property's value is a malformed
+        // declaration head, not an inline type ascription.
+        let src = r#"
+x: "hello" : "string"
+"#;
+        let (annotation_errors, file_parse_errors) = check_annotation_syntax("<test>", src, false);
+        assert_eq!(annotation_errors, 0);
+        assert!(
+            file_parse_errors > 0,
+            "expected at least one file-level parse error"
+        );
+    }
+
+    /// Regression for eu-3621: `eu check` — with or without `--strict` —
+    /// must exit non-zero on a file with a genuine parse error, not just
+    /// print it. This is the actual bug reported (`eu check --strict`
+    /// exited 0 for a file that never parsed at all) and exercises the full
+    /// `check()` decision path end-to-end, unlike
+    /// `counts_file_parse_errors_separately_from_annotation_errors` above,
+    /// which only checks `check_annotation_syntax`'s tallied counts in
+    /// isolation. Both strict and non-strict are asserted here: a parse
+    /// error is a more fundamental failure than a type warning (the file
+    /// produced no syntax tree at all) and the plain `eu` eval path already
+    /// aborts unconditionally on one, so `eu check` must not report success
+    /// either way — see the rationale comment on the `parse_errors > 0`
+    /// branch in `check`.
+    #[test]
+    fn check_exits_nonzero_on_genuine_parse_error_strict_and_non_strict() {
+        use crate::driver::options::EucalyptCli;
+        use clap::Parser;
+        use std::io::Write;
+
+        let mut file = tempfile::Builder::new()
+            .suffix(".eu")
+            .tempfile()
+            .expect("create temp file");
+        // Same malformed-declaration-head shape as the original bug report:
+        // a second top-level colon is not valid syntax anywhere in Eucalypt.
+        writeln!(file, "x: \"hello\" : \"string\"").expect("write temp file");
+        let path = file.path().to_str().expect("utf8 path").to_string();
+
+        for strict_flag in [true, false] {
+            let mut args = vec!["eu", "check"];
+            if strict_flag {
+                args.push("--strict");
+            }
+            args.push(&path);
+            let cli = EucalyptCli::try_parse_from(args).expect("should parse");
+            let opt = EucalyptOptions::from(cli);
+            let exit = check(&opt).expect("check() should not itself error");
+            assert_eq!(
+                exit,
+                1,
+                "eu check{} on a file with a genuine parse error must exit 1, got {}",
+                if strict_flag { " --strict" } else { "" },
+                exit
+            );
+        }
     }
 
     #[test]
