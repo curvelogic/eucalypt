@@ -1,0 +1,21 @@
+---
+tests:
+  running-max-basic:
+    a: true
+  running-max-empty:
+    a: true
+  running-max-single:
+    a: true
+  running-max-descending:
+    a: true
+  running-min-basic:
+    a: true
+  running-min-ascending:
+    a: true
+  running-sum-basic:
+    a: true
+  running-sum-empty:
+    a: true
+  running-sum-negatives:
+    a: true
+RESULT: PASS

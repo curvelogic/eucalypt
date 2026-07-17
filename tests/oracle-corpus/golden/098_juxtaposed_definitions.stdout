@@ -1,0 +1,14 @@
+---
+tests:
+  list-def:
+    a: true
+    b: true
+  block-def:
+    a: true
+    b: true
+  cons-def:
+    a: true
+    b: true
+  rename-def:
+    a: true
+RESULT: PASS

@@ -1,0 +1,131 @@
+---
+block1:
+  k: 1
+  z: hello
+  bibble-wibble: a
+block2:
+  k: 1
+  z: hello
+  bibble-wibble: a
+block3:
+  k: 1
+  z: hello
+  bibble-wibble: a
+block4:
+  x: 9999
+  k: 1
+  z: hello
+  bibble-wibble: a
+block5:
+  x: 9999
+  k: 1
+  z: hello
+  bibble-wibble: a
+checks:
+  trues:
+    a: true
+    b: true
+    c: true
+merging:
+  m:
+    a: 2
+    b: 3
+  m2:
+    a: 3
+  a: 2
+  a2: 3
+  m-tagged:
+    a: 2
+    b: 3
+    tags:
+      - a
+      - b
+      - c
+  m2-tagged:
+    a: 3
+    tags:
+      - a
+      - b
+      - c
+  checks:
+    trues:
+      - true
+      - true
+      - true
+      - true
+      - true
+deep-merge:
+  tests:
+    eq1: true
+    eq2: true
+    eq3: true
+    eq4: true
+    eq5: true
+    eq6: true
+    eq7: true
+    eq8: true
+    eq9: true
+    eq10: true
+    eq11: true
+    eq12: true
+    eq13: true
+    eq14: true
+    eq15: true
+  pass: true
+equality:
+  tests:
+    eq1: true
+    eq2: true
+  pass: true
+lookups:
+  page1:
+    title: page one
+    body: blah blah
+  page2:
+    title: page two
+    body: blah blah
+  page3:
+    title: page three
+    body: blah blah
+    epilogue: "."
+  pages:
+    - title: page one
+      body: blah blah
+    - title: page two
+      body: blah blah
+    - title: page three
+      body: blah blah
+      epilogue: "."
+  titles:
+    - page one
+    - page two
+    - page three
+  epilogues:
+    - x
+    - x
+    - "."
+  checks:
+    trues:
+      - true
+      - true
+map-elements-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+select-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+dissoc-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+pass: true
+RESULT: PASS

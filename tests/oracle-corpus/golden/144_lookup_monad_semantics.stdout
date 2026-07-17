@@ -1,0 +1,36 @@
+---
+outer: 999
+dyn-a:
+  x: 10
+  y: 20
+test:
+  s-key-found: true
+  s-dyn-key: true
+  s-call-key: true
+  s-monad-key: true
+  s-chain: true
+  g-paren: true
+  g-paren-outer: true
+  g-dyn-paren: true
+  g-call-paren: true
+  g-block: true
+  g-block-outer: true
+  g-dyn-block: true
+  g-call-block: true
+  g-string: true
+  g-list: true
+  m-static-let: true
+  m-dyn-let: true
+  m-call-let: true
+  m-static-let-gen: true
+  r-paren: true
+  r-block: true
+  r-name: true
+  r-implicit: true
+  r-string: true
+  r-list: true
+  c-block-paren: true
+  c-block-name: true
+  c-chain-expr: true
+  c-monad-monad: true
+  c-scope-chain: true

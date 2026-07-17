@@ -1,0 +1,17 @@
+---
+jsonl-count: true
+jsonl-names: true
+jsonl-ages: true
+csv-count: true
+csv-a-first: true
+txt-count: true
+txt-first: true
+jl-head:
+  age: 30
+  name: Alice
+memo-head-name: true
+memo-head-age: true
+memo-head-name-again: true
+memo-head-age-again: true
+memo-count-after-map: true
+RESULT: PASS

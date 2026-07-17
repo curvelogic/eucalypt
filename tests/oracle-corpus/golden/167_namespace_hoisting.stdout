@@ -1,0 +1,16 @@
+---
+upper-got: HELLO
+upper-ok: true
+lower-got: world
+lower-ok: true
+of-got: "42"
+of-ok: true
+split-got:
+  - a
+  - b
+  - c
+split-ok: true
+chained-got: hello world
+chained-ok: true
+ns-is-block-ok: true
+RESULT: PASS

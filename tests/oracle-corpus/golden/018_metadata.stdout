@@ -1,0 +1,14 @@
+---
+k: 1
+k2: 2
+checks:
+  trues:
+    - true
+    - true
+assertions:
+  a1: true
+  a1meta: {}
+tags:
+  x: !Ref 9
+test: 2
+RESULT: PASS

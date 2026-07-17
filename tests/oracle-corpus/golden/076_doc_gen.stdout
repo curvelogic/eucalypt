@@ -1,0 +1,21 @@
+---
+fixture:
+  plain: 42
+  ns: {}
+doc-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+element-checks:
+  trues:
+    - true
+    - true
+    - true
+pass: true
+RESULT: PASS

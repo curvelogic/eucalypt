@@ -1,0 +1,172 @@
+---
+tests:
+  metadata:
+    prelude: 0.1.0
+    eu-version: "0.0.0.dev working-copy https://github.com/curvelogic/eucalypt/runs"
+    pass: true
+  environment:
+    pwd: /private/tmp/eu-furnace-oracle-plan
+    launch-time: 1784202084
+    cli-args: []
+    pass: true
+  basics:
+    n: ~
+    t: true
+    f: false
+    pass: true
+  list-basics:
+    t1: true
+    t2: true
+    t3: true
+    pass: true
+  up-arrow-operator:
+    t1: true
+    t2: true
+    t3: true
+    t4: true
+    t5: true
+    t6: true
+    t7: true
+    t8: true
+    pass: true
+  block-basics:
+    t1: true
+    t2: true
+    t3: true
+    t4: true
+    t5: true
+    t6: true
+    t7: true
+    t8: true
+    pass: true
+  boolean:
+    t1: true
+    t2: true
+    t3: true
+    t4: true
+    t5: true
+    pass: true
+  equality:
+    t1: true
+    t2: true
+    t3: true
+    t4: true
+    t5: true
+    t6: true
+    t7: true
+    pass: true
+  unicode-comparison:
+    t1: true
+    t2: true
+    t3: true
+    t4: true
+    t5: true
+    t6: true
+    t7: true
+    t8: true
+    t9: true
+    pass: true
+  arithmetic:
+    t1: true
+    t2: true
+    t3: true
+    t4: true
+    t5: true
+    t6: true
+    t7: true
+    t8: true
+    pass: true
+  strings:
+    t1: true
+    t2: true
+    t3: true
+    t4: true
+    t5: true
+    t6: true
+    t7: true
+    t8: true
+    t9: true
+    pass: true
+  combinators:
+    t1: true
+    t2: true
+    t3: true
+    t4: true
+    t5: true
+    t6: true
+    t7: true
+    t8: true
+    t9: true
+    pass: true
+  lists:
+    t1: true
+    t2: true
+    t3: true
+    t4: true
+    t5: true
+    t6: true
+    t7: true
+    t8: true
+    t9: true
+    t10: true
+    t11: true
+    t12: true
+    t13: true
+    t14: true
+    t15: true
+    t15b: true
+    t15c: true
+    t15d: true
+    t15e: true
+    t15f: true
+    t15g: true
+    t15h: true
+    t15i: true
+    t15j: true
+    t16: true
+    t17: true
+    t18: true
+    t19: true
+    t20: true
+    t21: true
+    pass: true
+  block-lib:
+    t1: true
+    t2: true
+    t3: true
+    t4: true
+    t5: true
+    t6: true
+    t7: true
+    t8: true
+    t9: true
+    t10: true
+    t11: true
+    t12: true
+    t13: true
+    t14: true
+    t15: true
+    t16: true
+    t17: true
+    t18: true
+    t19: true
+    pass: true
+  update-nth-tests:
+    t1: true
+    t2: true
+    t3: true
+    t4: true
+    pass: true
+  update-first-tests:
+    t1: true
+    t2: true
+    t3: true
+    t4: true
+    pass: true
+  split-when-tests:
+    t1: true
+    t2: true
+    t3: true
+    t4: true
+    pass: true
+RESULT: PASS

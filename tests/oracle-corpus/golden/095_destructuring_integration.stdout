@@ -1,0 +1,39 @@
+---
+data-blocks:
+  - x: 1
+    y: 2
+  - x: 3
+    y: 4
+data-pairs:
+  - - 1
+    - 2
+  - - 3
+    - 4
+  - - 5
+    - 6
+data-lists:
+  - - 1
+    - 2
+    - 3
+  - - 4
+    - 5
+    - 6
+tests:
+  pipeline:
+    a: true
+    b: true
+  coexist:
+    a: true
+    b: true
+    c: true
+  list-pipeline:
+    a: true
+  head-tail-pipeline:
+    a: true
+    b: true
+  cons-context:
+    a: true
+    b: true
+  mixed-patterns:
+    a: true
+RESULT: PASS

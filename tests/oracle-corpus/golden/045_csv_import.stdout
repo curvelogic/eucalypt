@@ -1,0 +1,9 @@
+---
+scoped:
+  pass: true
+checks:
+  α: true
+  β: true
+  γ: true
+  ƍ: true
+RESULT: PASS

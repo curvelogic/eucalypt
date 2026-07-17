@@ -1,0 +1,30 @@
+---
+tagged-sym: !Ref blah
+homogeneous-tagged-list: !Periwabble
+  - 1
+  - 2
+  - 3
+  - 4
+tagged-block: !Blah
+  a: 1
+mblock:
+  tag: "!Blah"
+test-meta:
+  α: true
+  β: true
+  γ: true
+  RESULT: PASS
+test-render:
+  sym: !Ref blah
+  lsa: !Fn::Join
+    - "-"
+    - - a
+      - b
+      - c
+  lsb: !Periwabble
+    - 1
+    - 2
+    - 3
+    - 4
+  blk: !Blah
+    a: 1

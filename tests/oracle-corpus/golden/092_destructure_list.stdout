@@ -1,0 +1,18 @@
+---
+tests:
+  fixed:
+    a: true
+    b: true
+  pair:
+    a: true
+    b: true
+  head-tail:
+    a: true
+    b: true
+  multi-head:
+    a: true
+    b: true
+  lazy-tail:
+    a: true
+    b: true
+RESULT: PASS

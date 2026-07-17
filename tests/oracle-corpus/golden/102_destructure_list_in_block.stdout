@@ -1,0 +1,33 @@
+---
+test1: 7
+test2:
+  - 3
+  - 7
+  - 11
+test3:
+  - - []
+    - 1
+  - - []
+    - 2
+test4: 13
+test5:
+  - - []
+    - a: 1
+test6:
+  - 1
+  - 2
+  - 3
+test7:
+  - 1
+  - 2
+  - - 3
+    - 4
+tests:
+  a: true
+  b: true
+  c: true
+  d: true
+  e: true
+  f: true
+  g: true
+RESULT: PASS

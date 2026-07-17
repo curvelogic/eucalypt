@@ -1,0 +1,12 @@
+---
+tests:
+  single:
+    a: true
+    b: true
+  chain:
+    a: true
+    b: true
+  empty:
+    a: true
+    b: true
+RESULT: PASS

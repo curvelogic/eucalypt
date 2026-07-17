@@ -1,0 +1,5 @@
+---
+test:
+  common-accessible: true
+  b-accessible: true
+  b-derived: true

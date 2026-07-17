@@ -1,0 +1,17 @@
+[0m[1m[38;5;11mwarning[0m[1m: argument type does not match function parameter[0m
+   [0m[34m┌─[0m tests/harness/144_lookup_monad_semantics.eu:47:19
+   [0m[34m│[0m
+[0m[34m47[0m [0m[34m│[0m   c-block-paren: ([0m[33m{ :let x: 1 }[0m.{ a: x }.(a)) //= 1
+   [0m[34m│[0m                   [0m[33m^^^^^^^^^^^^^[0m [0m[33mexpected {.._r79, ..}, found number[0m
+
+[0m[1m[38;5;11mwarning[0m[1m: argument type does not match function parameter[0m
+   [0m[34m┌─[0m tests/harness/144_lookup_monad_semantics.eu:49:18
+   [0m[34m│[0m
+[0m[34m49[0m [0m[34m│[0m   c-chain-expr: ([0m[33m{ :let x: 1, y: 2 }[0m.{ sum: x + y, product: x * y }.(sum + product)) //= 5
+   [0m[34m│[0m                  [0m[33m^^^^^^^^^^^^^^^^^^^[0m [0m[33mexpected {.._r86, ..}, found number[0m
+
+[0m[1m[38;5;11mwarning[0m[1m: argument type does not match function parameter[0m
+   [0m[34m┌─[0m tests/harness/144_lookup_monad_semantics.eu:50:19
+   [0m[34m│[0m
+[0m[34m50[0m [0m[34m│[0m   c-monad-monad: ([0m[33m{ :let x: 1 }[0m.{ :let y: x + 10 }.(y)) //= 11
+   [0m[34m│[0m                   [0m[33m^^^^^^^^^^^^^[0m [0m[33mexpected {.._r92, ..}, found number[0m

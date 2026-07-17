@@ -1,0 +1,5 @@
+[0m[1m[38;5;11mwarning[0m[1m: argument type does not match function parameter[0m
+    [0m[34m┌─[0m tests/harness/015_block_fns.eu:103:11
+    [0m[34m│[0m
+[0m[34m103[0m [0m[34m│[0m   titles: [0m[33mpages[0m map(title)
+    [0m[34m│[0m           [0m[33m^^^^^[0m [0m[33mexpected [Dict(a)], found [{body: "blah blah", title: "page one", ..} | {body: "blah blah", title: "page two", ..} | {body: "blah blah", epilogue: ".", title: "page three", ..}][0m

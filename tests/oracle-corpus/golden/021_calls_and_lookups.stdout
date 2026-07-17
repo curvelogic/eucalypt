@@ -1,0 +1,21 @@
+---
+x: 6
+y: 6
+z: 6
+checks:
+  trues:
+    - true
+    - true
+    - true
+a:
+  b: {}
+p: true
+q: true
+r: true
+checks2:
+  trues:
+    - true
+    - true
+    - true
+scoped: 5555
+RESULT: PASS

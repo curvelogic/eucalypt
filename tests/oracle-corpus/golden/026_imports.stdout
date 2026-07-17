@@ -1,0 +1,14 @@
+---
+a:
+  result: foo&bar
+b:
+  result: 6
+both:
+  result: 6&foo&bar
+deep:
+  nest:
+    down:
+      here:
+        imp:
+          footoo: foo
+RESULT: PASS

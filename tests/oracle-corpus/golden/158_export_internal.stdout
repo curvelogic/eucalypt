@@ -1,0 +1,6 @@
+---
+public-accessible: true
+shorthand-works: true
+extra-ok: true
+lib2-ok: true
+trans-ok: true

@@ -1,0 +1,67 @@
+---
+construction-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+empty-checks:
+  trues:
+    - true
+    - true
+    - true
+membership-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+size-checks:
+  trues:
+    - true
+    - true
+    - true
+mutation-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+algebra-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+render-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+computed-checks:
+  trues:
+    - true
+    - true
+    - true
+operator-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+pass: true
+RESULT: PASS

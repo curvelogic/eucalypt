@@ -1,0 +1,29 @@
+---
+x: 8
+z: 12
+a1:
+  a: 1
+ab:
+  a: 1
+  b: 2
+abc:
+  a: 1
+  b: 2
+  c: 3
+tests:
+  α: true
+  β: true
+  γ: true
+  δ: true
+  ε: true
+  ζ: true
+  η: true
+  ι: true
+  κ: true
+  λ: true
+  μ: true
+  ν: true
+  ξ: true
+  ο: true
+  π: true
+RESULT: PASS

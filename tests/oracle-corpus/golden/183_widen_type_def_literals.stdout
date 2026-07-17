@@ -1,0 +1,23 @@
+---
+test:
+  Shape:
+    type: circle
+    area: 3.4
+  shape-data:
+    - t-record
+    - area:
+        - t-field
+        - required
+        - - t-prim
+          - number
+      type:
+        - t-field
+        - required
+        - - t-prim
+          - symbol
+  t-matches: true
+  t-rejects: true
+  t-original: true
+  t-result-match: true
+  t-result-reject: true
+  RESULT: PASS

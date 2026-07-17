@@ -1,0 +1,11 @@
+---
+fn: {}
+refs:
+  env:
+    "Fn::Ref": EnvironmentName
+env:
+  "Fn::Ref": EnvironmentName
+checks:
+  trues:
+    - true
+RESULT: PASS

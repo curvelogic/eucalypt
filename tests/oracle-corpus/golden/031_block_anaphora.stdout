@@ -1,0 +1,21 @@
+---
+unnumbered:
+  α: true
+numbered:
+  α: true
+  β: true
+  γ: true
+lambdas:
+  α: true
+  β: true
+  γ: true
+with-expr-anaphora:
+  α: true
+  β: true
+n: 10
+outer-scope:
+  γ: true
+  δ: true
+  ε: true
+  ζ: true
+RESULT: PASS

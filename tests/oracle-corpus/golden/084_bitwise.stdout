@@ -1,0 +1,37 @@
+---
+tests:
+  bitwise-and:
+    a: true
+    b: true
+    c: true
+  bitwise-or:
+    a: true
+    b: true
+  bitwise-xor:
+    a: true
+    b: true
+  bitwise-not:
+    a: true
+    b: true
+    c: true
+    d: true
+  shifts:
+    a: true
+    b: true
+    c: true
+    d: true
+  popcount:
+    a: true
+    b: true
+    c: true
+  ctz:
+    a: true
+    b: true
+    c: true
+  clz:
+    a: true
+    b: true
+  combined:
+    a: true
+    b: true
+RESULT: PASS

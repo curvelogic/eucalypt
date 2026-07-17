@@ -1,0 +1,31 @@
+---
+test:
+  newline: true
+  tab: true
+  cr: true
+  backslash: true
+  null-char: true
+  dquote-len: true
+  dquote-start: true
+  dquote-end: true
+  dquote-both: true
+  dquote-adjacent: true
+  dquote-multi: true
+  lbrace-len: true
+  rbrace-len: true
+  braces-len: true
+  braces-content-len: true
+  quoted-braces-len: true
+  hex-a: true
+  unicode-alpha: true
+  mixed-len: true
+  plain-match: true
+  newline-match: true
+  backslash-end: true
+  multi-escape: true
+  RESULT: PASS
+test-interpolation:
+  x: 42
+  interp: "\"42\""
+  interp-len: true
+  RESULT: PASS

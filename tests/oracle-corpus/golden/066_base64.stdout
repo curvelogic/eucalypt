@@ -1,0 +1,18 @@
+---
+encode-tests:
+  α: true
+  β: true
+  γ: true
+  δ: true
+  ε: true
+decode-tests:
+  α: true
+  β: true
+  γ: true
+  δ: true
+  ε: true
+roundtrip-tests:
+  α: true
+  β: true
+  γ: true
+RESULT: PASS

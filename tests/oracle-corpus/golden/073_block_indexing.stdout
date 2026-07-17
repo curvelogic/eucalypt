@@ -1,0 +1,134 @@
+---
+below:
+  k01: 1
+  k02: 2
+  k03: 3
+  k04: 4
+  k05: 5
+  k06: 6
+  k07: 7
+  k08: 8
+  k09: 9
+  k10: 10
+  k11: 11
+  k12: 12
+  k13: 13
+  k14: 14
+  k15: 15
+at-threshold:
+  k01: 1
+  k02: 2
+  k03: 3
+  k04: 4
+  k05: 5
+  k06: 6
+  k07: 7
+  k08: 8
+  k09: 9
+  k10: 10
+  k11: 11
+  k12: 12
+  k13: 13
+  k14: 14
+  k15: 15
+  k16: 16
+above:
+  k01: 1
+  k02: 2
+  k03: 3
+  k04: 4
+  k05: 5
+  k06: 6
+  k07: 7
+  k08: 8
+  k09: 9
+  k10: 10
+  k11: 11
+  k12: 12
+  k13: 13
+  k14: 14
+  k15: 15
+  k16: 16
+  k17: 17
+below-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+at-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+above-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+repeated-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+merged:
+  k01: 1
+  k02: 2
+  k03: 3
+  k04: 4
+  k05: 5
+  k06: 6
+  k07: 7
+  k08: 8
+  k09: 9
+  k10: 10
+  k11: 11
+  k12: 12
+  k13: 13
+  k14: 14
+  k15: 15
+  k16: 16
+  k17: 17
+merged-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+large:
+  a01: 1
+  a02: 2
+  a03: 3
+  a04: 4
+  a05: 5
+  a06: 6
+  a07: 7
+  a08: 8
+  a09: 9
+  a10: 10
+  a11: 11
+  a12: 12
+  a13: 13
+  a14: 14
+  a15: 15
+  a16: 16
+  a17: 17
+  a18: 18
+  a19: 19
+  a20: 20
+  a21: 21
+  a22: 22
+  a23: 23
+  a24: 24
+  a25: 25
+large-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+pass: true
+RESULT: PASS

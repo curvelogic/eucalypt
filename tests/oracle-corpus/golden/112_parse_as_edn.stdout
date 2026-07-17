@@ -1,0 +1,9 @@
+---
+edn-str: "{:x 1 :y 2}"
+data:
+  x: 1
+  y: 2
+tests:
+  x-val: true
+  y-val: true
+RESULT: PASS

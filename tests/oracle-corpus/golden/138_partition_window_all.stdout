@@ -1,0 +1,9 @@
+---
+test:
+  pa-short-tail: true
+  pa-exact: true
+  pa-larger: true
+  pa-empty: true
+  wa-overlapping: true
+  wa-sliding: true
+  wa-empty: true

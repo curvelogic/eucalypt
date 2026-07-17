@@ -1,0 +1,6 @@
+---
+tests:
+  basic: 6
+  left-assoc: 60
+  pass: true
+RESULT: PASS

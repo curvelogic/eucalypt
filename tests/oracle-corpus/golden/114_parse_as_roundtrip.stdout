@@ -1,0 +1,18 @@
+---
+original:
+  x: 1
+  y: 2
+json-str: "{\n  \"x\": 1,\n  \"y\": 2\n}\n"
+recovered:
+  x: 1
+  y: 2
+yaml-str: "---\nx: 1\ny: 2\n"
+recovered-yaml:
+  x: 1
+  y: 2
+tests:
+  json-x: true
+  json-y: true
+  yaml-x: true
+  yaml-y: true
+RESULT: PASS

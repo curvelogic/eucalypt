@@ -1,0 +1,41 @@
+---
+tests:
+  json-number:
+    result: "42"
+    pass: true
+  json-list:
+    result: "[\n  1,\n  2,\n  3\n]\n"
+    pass: true
+  json-true:
+    result: "true"
+    pass: true
+  json-false:
+    result: "false"
+    pass: true
+  json-null:
+    result: "null"
+    pass: true
+  json-block:
+    result: "{\n  \"x\": 1\n}\n"
+    pass: true
+  yaml-block:
+    result: "---\na: 1\n"
+    pass: true
+  json-nested:
+    result: "{\n  \"items\": [\n    1,\n    2\n  ]\n}\n"
+    pass: true
+  json-string:
+    result: "\"hello\""
+    n: 7
+    pass: true
+  text-number:
+    result: "42"
+    pass: true
+  nested-render:
+    inner: "{\n  \"x\": 1,\n  \"y\": 2\n}\n"
+    outer: "---\nnested: \"{\\n  \\\"x\\\": 1,\\n  \\\"y\\\": 2\\n}\\n\"\n"
+    pass: true
+  deep-nested:
+    result: "{\n  \"inner\": {\n    \"inner\": {\n      \"inner\": {\n        \"inner\": {\n          \"inner\": {\n            \"inner\": {\n              \"inner\": {\n                \"inner\": {\n                  \"inner\": {\n                    \"inner\": \"leaf\"\n                  }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n"
+    pass: true
+RESULT: PASS

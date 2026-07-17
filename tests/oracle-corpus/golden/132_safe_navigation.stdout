@@ -1,0 +1,42 @@
+---
+test:
+  basic: true
+  missing: true
+  null-prop: true
+  num-nav: true
+  str-nav: true
+  list-nav: true
+  bool-nav: true
+  chain: true
+  chain-miss: true
+  section: true
+  section-miss: true
+  map-extract: true
+  data:
+    a:
+      b:
+        c:
+          d: 42
+  mix-1: true
+  data2:
+    a:
+      b:
+        c:
+          d: 99
+  mix-2: true
+  mix-3: true
+  data3:
+    a:
+      b:
+        c: 7
+  mix-4: true
+  mix-5: true
+  config:
+    server:
+      db:
+        host: localhost
+        port: 5432
+  mix-6: true
+  mix-7: true
+  mix-8: true
+  RESULT: PASS

@@ -1,0 +1,58 @@
+---
+ty-req: "{name: string}"
+ty-opt: "{age?: number, name: string}"
+req-td:
+  - t-record
+  - name:
+      - t-field
+      - required
+      - - t-prim
+        - string
+req-block:
+  name:
+    - t-field
+    - required
+    - - t-prim
+      - string
+req-name-fp:
+  - t-field
+  - required
+  - - t-prim
+    - string
+req-tf-tag: t-field
+req-presence: required
+req-is-req: true
+opt-td:
+  - t-record
+  - age:
+      - t-field
+      - optional
+      - - t-prim
+        - number
+    name:
+      - t-field
+      - required
+      - - t-prim
+        - string
+opt-block:
+  age:
+    - t-field
+    - optional
+    - - t-prim
+      - number
+  name:
+    - t-field
+    - required
+    - - t-prim
+      - string
+opt-age-fp:
+  - t-field
+  - optional
+  - - t-prim
+    - number
+opt-tf-tag: t-field
+opt-presence: optional
+opt-is-opt: true
+rt-opt: "{age?: number, name: string}"
+rt-ok: true
+RESULT: PASS

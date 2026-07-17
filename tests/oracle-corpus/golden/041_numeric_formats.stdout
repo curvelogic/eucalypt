@@ -1,0 +1,53 @@
+---
+int-widths:
+  α: true
+  β: true
+  γ: true
+  δ: true
+int-pads:
+  α: true
+  β: true
+  γ: true
+  δ: true
+  ε: true
+int-justs:
+  α: true
+  β: true
+  γ: true
+  δ: true
+  ε: true
+hex-ints:
+  α: true
+  β: true
+oct-ints:
+  α: true
+float-fmts:
+  α: true
+  β: true
+  γ: true
+  δ: true
+  ε: true
+  ζ: true
+  η: true
+string-fmts:
+  α: true
+  β: true
+  γ: true
+symbol:
+  α: true
+  β: true
+  γ: true
+a: 1
+b: 1.5
+fmt-interpolations:
+  α: true
+  β: true
+  γ: true
+x: 33
+y: 44
+fn-interpolations:
+  α: true
+interpolations-with-anaphora:
+  a: true
+  b: true
+RESULT: PASS

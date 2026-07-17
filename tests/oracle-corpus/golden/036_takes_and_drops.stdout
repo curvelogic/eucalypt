@@ -1,0 +1,21 @@
+---
+tests:
+  α: true
+  β: true
+  γ: true
+  δ: true
+  ε: true
+  ζ: true
+  η: true
+  θ: true
+  ι: true
+  κ: true
+  λ: true
+  μ: true
+  ν: true
+  ξ: true
+  ο: true
+  π: true
+  ρ: true
+  σ: true
+RESULT: PASS

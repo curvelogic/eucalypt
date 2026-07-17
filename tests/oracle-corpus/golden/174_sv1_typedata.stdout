@@ -1,0 +1,29 @@
+---
+valid-prim: number
+valid-fn: number → string
+valid-record: "{name: string}"
+valid-list: "[string]"
+valid-partial: number?
+valid-tuple: "(number, string)"
+valid-union: number | string
+valid-forall: "forall a. [a] → a"
+canonical-fn: number → string
+td-prim: true
+td-fn: true
+td-list: true
+td-partial: true
+td-con: true
+td-var: true
+td-union: true
+td-tuple: true
+td-forall: true
+rt-number: true
+rt-fn: true
+rt-fn-val: true
+rt-list: true
+rt-record: true
+rt-partial: true
+rt-forall: true
+passthru-num: true
+passthru-str: true
+RESULT: PASS

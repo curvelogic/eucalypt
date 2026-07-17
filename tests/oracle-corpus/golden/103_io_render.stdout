@@ -1,0 +1,27 @@
+---
+tests:
+  yaml-render:
+    result: "---\nx: 1\n"
+    pass: true
+  render-as-yaml:
+    result: "---\na: 1\n"
+    pass: true
+  render-as-json:
+    result: "{\n  \"x\": 42\n}\n"
+    pass: true
+  render-list:
+    result: "---\n- 1\n- 2\n- 3\n"
+    pass: true
+  render-number:
+    result: "99\n"
+    pass: true
+  render-nested:
+    result: "---\na:\n  b: 2\n"
+    pass: true
+  render-as-nested-json:
+    result: "{\n  \"a\": {\n    \"b\": 2\n  }\n}\n"
+    pass: true
+  render-as-pipeline:
+    result: "{\n  \"x\": 1\n}\n"
+    pass: true
+RESULT: PASS

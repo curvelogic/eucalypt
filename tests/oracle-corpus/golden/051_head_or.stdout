@@ -1,0 +1,7 @@
+---
+head-or-tests:
+  α: true
+  β: true
+  ɣ: true
+  δ: true
+RESULT: PASS

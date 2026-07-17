@@ -1,0 +1,15 @@
+---
+test-type-predicates:
+  n: true
+  s: true
+  y: true
+  b: true
+  nn: true
+  ns: true
+  nb: true
+  ny: true
+  bl: true
+  lb: true
+  bn: true
+  bs: true
+  RESULT: PASS

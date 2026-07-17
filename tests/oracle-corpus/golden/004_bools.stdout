@@ -1,0 +1,15 @@
+---
+t: true
+f: false
+trues:
+  a: true
+  b: true
+  c: true
+  d: true
+  all: true
+falses:
+  a: false
+  b: false
+  c: false
+  none: true
+RESULT: PASS

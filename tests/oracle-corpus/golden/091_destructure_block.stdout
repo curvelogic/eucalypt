@@ -1,0 +1,18 @@
+---
+tests:
+  basic:
+    a: true
+    b: true
+  rename:
+    a: true
+    b: true
+  mixed:
+    a: true
+    b: true
+  comma:
+    a: true
+    b: true
+  comma-rename:
+    a: true
+    b: true
+RESULT: PASS

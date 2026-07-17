@@ -1,0 +1,6 @@
+---
+checks:
+  records-ok: true
+  sum-ok: true
+  pass: true
+RESULT: PASS

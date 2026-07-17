@@ -1,0 +1,11 @@
+---
+test:
+  two-level-ok: true
+  three-level-ok: true
+  nested-head-ok: true
+  simple-block-ok: true
+  block-list-ok: true
+  block-block-ok: true
+  list-block-ok: true
+  triple-nested-ok: true
+  RESULT: PASS

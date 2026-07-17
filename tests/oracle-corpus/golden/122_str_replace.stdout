@@ -1,0 +1,37 @@
+---
+tests:
+  replace-basic:
+    result: hell0 w0rld
+    pass: true
+  replace-regex:
+    result: fooNbar
+    pass: true
+  replace-no-match:
+    result: hello
+    pass: true
+  contains-yes:
+    pass: true
+  contains-no:
+    pass: true
+  contains-regex:
+    pass: true
+  trim-spaces:
+    result: hello
+    pass: true
+  starts-yes:
+    pass: true
+  starts-no:
+    pass: true
+  ends-yes:
+    pass: true
+  ends-no:
+    pass: true
+  shell-simple:
+    result: "'hello'"
+    n: 7
+    pass: true
+  dq-dollar:
+    result: "a\\$b"
+    n: 4
+    pass: true
+RESULT: PASS

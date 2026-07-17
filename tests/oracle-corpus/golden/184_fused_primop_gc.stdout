@@ -1,0 +1,21 @@
+---
+string-cmp:
+  a: true
+  b: true
+  c: true
+  d: true
+  e: true
+  f: true
+  g: true
+arith:
+  a: true
+  b: true
+  c: true
+  d: true
+  e: true
+earlier: "2020-01-01 00:00:00 +00:00"
+later: "2025-06-15 12:30:00 +00:00"
+zdt-cmp:
+  a: true
+  b: true
+RESULT: PASS

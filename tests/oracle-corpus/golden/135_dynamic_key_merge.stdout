@@ -1,0 +1,13 @@
+---
+dyn-block:
+  b: 42
+multi-dyn:
+  a: 1
+  b: 2
+test:
+  merge-static-dyn: true
+  deep-rhs: true
+  deep-lhs: true
+  deep-nested: true
+  multi-merge: true
+  mixed-override: true

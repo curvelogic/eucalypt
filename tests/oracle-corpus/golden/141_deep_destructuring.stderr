@@ -1,0 +1,5 @@
+[0m[1m[38;5;11mwarning[0m[1m: type mismatch calling 'list-block'[0m
+   [0m[34m┌─[0m tests/harness/141_deep_destructuring.eu:31:29
+   [0m[34m│[0m
+[0m[34m31[0m [0m[34m│[0m   list-block-ok: list-block([0m[33m[{x: 10, y: 20}, 30][0m) //= [10, 20, 30]
+   [0m[34m│[0m                             [0m[33m^^^^^^^^^^^^^^^^^^^^[0m [0m[33mexpected {.._r24, ..}, found ({x: number, y: number, ..}, number)[0m

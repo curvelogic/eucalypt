@@ -1,0 +1,78 @@
+---
+static-basic:
+  ns:
+    used: 42
+    unused: 99
+  result: 42
+  RESULT: 42
+static-multiple:
+  ns:
+    a: 1
+    b: 2
+    c: 3
+  result: 4
+  RESULT: 4
+static-nested-lookup:
+  outer:
+    inner:
+      x: 10
+      y: 20
+  result: 10
+  RESULT: 10
+dynamic-lookup:
+  ns:
+    a: 1
+    b: 2
+  key: a
+  result: 1
+  RESULT: 1
+dynamic-lookup-or:
+  ns:
+    a: 1
+    b: 2
+  result: 2
+  RESULT: 2
+escape-elements:
+  ns:
+    x: 1
+    y: 2
+  result: 2
+  RESULT: 2
+escape-as-value:
+  ns:
+    a: 1
+    b: 2
+  wrapper:
+    inner:
+      a: 1
+      b: 2
+  result: 2
+  RESULT: 2
+escape-to-function:
+  ns:
+    x: 10
+    y: 20
+    z: 30
+  result: 60
+  RESULT: 60
+mixed-access:
+  ns:
+    a: 1
+    b: 2
+    c: 3
+  static-val: 1
+  key: b
+  dynamic-val: 2
+  result: 3
+  RESULT: 3
+multi-block:
+  ns1:
+    used: 10
+    dead: 99
+  ns2:
+    alive: 20
+    also-dead: 88
+  result: 30
+  RESULT: 30
+pass: true
+RESULT: PASS

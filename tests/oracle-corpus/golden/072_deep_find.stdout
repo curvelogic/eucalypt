@@ -1,0 +1,46 @@
+---
+type-pred-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+deep-find-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+    - true
+deep-find-first-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+deep-find-paths-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+fixture-checks:
+  trues:
+    - true
+    - true
+    - true
+    - true
+    - true
+pass: true
+RESULT: PASS

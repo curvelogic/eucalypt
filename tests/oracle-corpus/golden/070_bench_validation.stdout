@@ -1,0 +1,6 @@
+---
+bench-report-only:
+  x: 15
+  result: 15
+bench-with-result:
+  RESULT: PASS

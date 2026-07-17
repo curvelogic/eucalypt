@@ -1,0 +1,16 @@
+---
+pipeline-map:
+  - 3
+  - 6
+  - 9
+direct-map:
+  - 15
+  - 16
+  - 17
+nested:
+  - 6
+  - 8
+apply-result: 5
+add-result: 30
+all-good: true
+RESULT: PASS

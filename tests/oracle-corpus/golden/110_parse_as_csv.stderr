@@ -1,0 +1,17 @@
+[0m[1m[38;5;11mwarning[0m[1m: type mismatch calling 'head'[0m
+   [0m[34m┌─[0m tests/harness/110_parse_as_csv.eu:12:13
+   [0m[34m│[0m
+[0m[34m12[0m [0m[34m│[0m   name-ok: ([0m[33mparsed[0m head).name //= "alice"
+   [0m[34m│[0m             [0m[33m^^^^^^[0m [0m[33mexpected [a], found any?[0m
+
+[0m[1m[38;5;11mwarning[0m[1m: type mismatch calling 'head'[0m
+   [0m[34m┌─[0m tests/harness/110_parse_as_csv.eu:13:12
+   [0m[34m│[0m
+[0m[34m13[0m [0m[34m│[0m   age-ok: ([0m[33mparsed[0m head).age //= "30"
+   [0m[34m│[0m            [0m[33m^^^^^^[0m [0m[33mexpected [a], found any?[0m
+
+[0m[1m[38;5;11mwarning[0m[1m: type mismatch calling 'count'[0m
+   [0m[34m┌─[0m tests/harness/110_parse_as_csv.eu:14:15
+   [0m[34m│[0m
+[0m[34m14[0m [0m[34m│[0m   row-count: ([0m[33mparsed[0m count) //= 2
+   [0m[34m│[0m               [0m[33m^^^^^^[0m [0m[33mexpected [a], found any?[0m

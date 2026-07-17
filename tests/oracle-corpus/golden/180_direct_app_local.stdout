@@ -1,0 +1,11 @@
+---
+sum-test: 7
+pipeline-test:
+  - 2
+  - 4
+  - 6
+factorial-test: 720
+mutual-test: true
+ho-test: 15
+triple-test: 60
+RESULT: PASS

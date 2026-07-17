@@ -1,0 +1,11 @@
+[0m[1m[38;5;11mwarning[0m[1m: argument type does not match function parameter[0m
+   [0m[34m┌─[0m tests/harness/119_monad_utility.eu:33:24
+   [0m[34m│[0m
+[0m[34m33[0m [0m[34m│[0m   if(id-monad.map(inc, [0m[33m41[0m) = 42,
+   [0m[34m│[0m                        [0m[33m^^[0m [0m[33mexpected a number, found number[0m
+
+[0m[1m[38;5;11mwarning[0m[1m: argument type does not match function parameter[0m
+   [0m[34m┌─[0m tests/harness/119_monad_utility.eu:53:20
+   [0m[34m│[0m
+[0m[34m53[0m [0m[34m│[0m   if(id-monad.join([0m[33m42[0m) = 42,
+   [0m[34m│[0m                    [0m[33m^^[0m [0m[33mexpected a a b, found number[0m
