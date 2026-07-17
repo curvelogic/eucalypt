@@ -13,20 +13,53 @@
 # as informational but only fails the build on entries NOT in this list, so
 # it does not enforce pruning; do it anyway to keep the list honest.
 
-## Gradual-typing syntax (0.10-0.12) has no grammar coverage at all — the
-## largest divergence category. Audit report §2.2.
-tests/harness/typecheck/010_for_number_binding.eu
-tests/harness/typecheck/011_for_string_binding.eu
-tests/harness/typecheck/012_for_correct_binding.eu
-tests/harness/typecheck/013_io_number_binding.eu
-tests/harness/typecheck/014_let_any_binding.eu
+## Gradual-typing syntax (0.10-0.12) — audit report §2.2. Mostly fixed in
+## eu-2sa6.17 item 4: `:for`/`:let`/`:io` binding-scope keywords needed NO
+## new grammar rule at all — they are ordinary block metadata symbols
+## (`{ :for x: 42 }` already parsed as a block with a symbol-valued
+## block_metadata `:for` followed by a normal declaration `x: 42`). The
+## actual gap was `unit_metadata` not permitting trailing soup content
+## after a leading top-level block (needed for block-dot access, e.g.
+## `{ :for x: 42 }.(x)`) — fixed with a scoped `block, then optional
+## trailing soup, gated by _declaration_end` rule (kept narrow: a fully
+## general "unit_metadata = any soup" rule was tried and reverted — it
+## created a genuine ambiguity with `repeat($.declaration)` that silently
+## misparsed ~14 ordinary files, e.g. `f(x): x` got swallowed as a 2-element
+## soup instead of a declaration). 034/035/037's real cause turned out to
+## be unrelated to binding-scope keywords: a literal-string type-DSL idiom
+## that catenates strings via a bare `\` used AS AN OPERATOR (e.g.
+## `"\"a\" \ \"b\""`), and grammar.js's OPER_CHARS was simply missing `\`
+## — fixed by adding it.
+##
+## Two files remain, for different reasons:
 tests/harness/typecheck/023_for_map_no_warning.eu
 tests/harness/typecheck/024_for_bind_no_warning.eu
-tests/harness/typecheck/034_literal_string_synthesis.eu
-tests/harness/typecheck/035_literal_string_dsl.eu
-tests/harness/typecheck/037_union_absorbs_literal_string.eu
+## ^ 023/024 are miscategorised by the audit — they don't use any
+## gradual-typing syntax at all; they're a BARE top-level expression with
+## ZERO declarations (`for.map(negate, [1,2,3])` as the entire file). This
+## is a general `source_file` gap (no top-level-bare-soup support), not a
+## typing-syntax one. Deliberately NOT fixed here: the same general
+## "unit_metadata = any soup" approach that would cover this is exactly
+## the one reverted above for causing regressions — a safe fix needs the
+## soup-vs-declaration ambiguity to be resolved without swallowing
+## ordinary leading declarations, which needs real grammar-internals work
+## (likely explicit GLR conflict + dynamic precedence tuning), not
+## attempted here. Follow-up: eu-ctoj scope, or a new bead.
 tests/harness/typecheck/038_literal_string_annotation_widens.eu
-tests/harness/typecheck/054_io_elem_type_correct.eu
+## ^ NOT a tree-sitter gap: the Rowan parser rejects this file's syntax
+## too (`eu dump ast` on it: "error: malformed declaration head" at the
+## `x: "hello" : "string"` line — inline type ascription `expr : "type"`
+## does not exist as implemented Rowan syntax, at least not in this form;
+## grep confirms it's used nowhere else in lib/ or tests/harness/). The
+## harness test for this file (tests/harness_test.rs) currently passes
+## only because `eu check --strict` exits 0 even after printing this
+## parse error to stderr — filed as eu-3621 (P2) since a `--strict` mode
+## silently swallowing a parse error is a real correctness bug independent
+## of tree-sitter. Per the audit's own methodology (§1: files Rowan itself
+## rejects are excluded, matching tests/harness/errors/), this file
+## shouldn't really be in the "genuine divergence" corpus at all — kept
+## listed here (rather than removed) only because the corpus-parse script
+## does directory-based inclusion and doesn't know this nuance.
 
 ## Bracket-expr declaration heads unsupported (custom bracket/monad
 ## literals: ⟦ x ⟧: x, ⟦{}⟧: { :monad ... }, ⌊xs⌋: ...). Audit report §2.3.
@@ -38,21 +71,25 @@ tests/harness/172_idiot_bracket_juxtaposed_call.eu
 tests/harness/testdata/155_cross_import_bracket_lib.eu
 
 ## lib/prelude.eu (the shipped stdlib) does not parse at all: hits the
-## operator-prefix-collision bug (`<` then `<=` in the same scope) plus the
-## bracket-expr gap above (⌈[x]⌉/⌊[x]⌋) plus nested-brace s-strings below.
-## Audit report §2.4.
+## bracket-expr gap above (⌈[x]⌉/⌊[x]⌋, §2.3) plus nested-brace s"..."
+## type-literal strings (§2.7, e.g. s"string → IO({..})"). The
+## operator-prefix-collision bug formerly listed here (`<` then `<=` in the
+## same scope) was fixed in eu-2sa6.17 item 3, root-caused as TWO bugs in
+## the external scanner's declaration-boundary lookahead
+## (src/scanner.c's at_declaration_start()), neither actually about
+## "prefixes": (1) a missing immediate-adjacency check let a bare
+## identifier that's the VALUE of one declaration be misparsed as the
+## HEAD of the next declaration when that next declaration starts with
+## `(`; (2) is_operator_char() was a third, independently-drifted copy of
+## the operator-character set (grammar.js's OPER_CHARS and the Rust
+## lexer's dynamic categories being the other two — see eu-fbyk), missing
+## 14 characters (¬ ¡ £ € ± × ÷ ✓ ▶ △ ▽ ⨈ ? $), which made the scanner fail
+## to recognise `(op ...):` declaration heads using them.
 lib/prelude.eu
 
 ## lib/lens.eu: nested braces inside s"..." type-literal strings
 ## (s"symbol → Lens({..r}, a)"). Audit report §2.7.
 lib/lens.eu
-
-## lib/markup.eu: `tag = head` / `attrs = second` use `=` instead of `:` —
-## Rowan lenient-parses this as block metadata (silently dropping the
-## declaration; tag/attrs are undefined at runtime, a separate latent bug
-## filed for quill), tree-sitter correctly rejects it as a parse error.
-## Audit report §3.
-lib/markup.eu
 
 ## List-destructuring pattern gaps: multi-head cons patterns
 ## `[a, b : rest]`, and nested-list patterns `[a, [b, c]]`. Audit report §2.6.
@@ -60,16 +97,6 @@ tests/harness/092_destructure_list.eu
 tests/harness/095_destructuring_integration.eu
 tests/harness/141_deep_destructuring.eu
 tests/harness/102_destructure_list_in_block.eu
-
-## Operator-prefix-collision declaration bug: declaring an operator whose
-## characters are a strict prefix of a previously-declared operator's
-## characters in the same scope (e.g. `<` then `<=`) corrupts the parse.
-## Audit report §2.4.
-tests/harness/020_op_precedence.eu
-
-## Prefix-operator usage followed by a (different) prefix-operator
-## declaration in the same block. Audit report §2.5. (020_op_precedence.eu
-## above also triggers this; 020 is listed once.)
 
 ## Nested braces inside s"..." type-literal strings. Audit report §2.7.
 tests/harness/175_sv2_to_spec.eu

@@ -394,6 +394,25 @@ pub fn collect(roots: &mut dyn GcScannable, heap: &mut Heap, clock: &mut Clock, 
         return collect_with_evacuation(roots, heap, clock, &candidates, dump_heap);
     }
 
+    collect_mark_in_place(roots, heap, clock, dump_heap);
+}
+
+/// The non-evacuating mark-and-sweep half of [`collect`]: mark reachable
+/// objects, then defer sweep to allocation time.
+///
+/// Factored out so [`collect`] (which first consults
+/// `analyze_collection_strategy` — including its `EU_GC_STRESS` override,
+/// see that method's doc comment) and the `#[cfg(test)]`-only
+/// `collect_mark_in_place_for_test` (which deliberately bypasses strategy
+/// analysis, so test scaffolding that needs a deterministic non-evacuating
+/// pass isn't subject to the ambient stress flag — eu-swbz) share one
+/// implementation rather than drifting apart.
+fn collect_mark_in_place(
+    roots: &mut dyn GcScannable,
+    heap: &mut Heap,
+    clock: &mut Clock,
+    dump_heap: bool,
+) {
     if dump_heap {
         eprintln!("GC!");
     }
@@ -448,6 +467,36 @@ pub fn collect(roots: &mut dyn GcScannable, heap: &mut Heap, clock: &mut Clock, 
 
     // After collection, flip mark state ready for next collection
     heap_view.heap.flip_mark_state();
+}
+
+/// Test-only entry point for a deterministic, non-evacuating mark-and-sweep
+/// pass that never consults `analyze_collection_strategy` (and so is never
+/// subject to `EU_GC_STRESS`'s force-evacuate-everything override).
+///
+/// Some tests use a "settling" collection purely as scaffolding — to pack
+/// live objects into `rest` blocks before the test's *own* deliberate,
+/// explicitly-candidated evacuation begins — and are not testing the
+/// strategy heuristic itself (that's what
+/// `heap::tests::test_collection_strategy_*` and
+/// `collect::tests::test_no_evacuation_when_not_fragmented` are for). Routing
+/// that scaffolding through plain `collect()` made such a test's setup
+/// non-deterministic under `EU_GC_STRESS=1` (eu-swbz,
+/// `test_evacuation_target_block_has_marked_lines_after_collection`): the
+/// settling pass would itself force-evacuate, changing how many pre-existing
+/// `rest` blocks the test's own explicit evacuation then had to distinguish
+/// from genuine targets — including, in the presence of the exact
+/// evacuation-target-recycling bug this test exists to catch, corrupting the
+/// test's own setup before its assertion ever ran (silently passing instead
+/// of failing). Use this whenever a test needs "pack objects into `rest`,
+/// deterministically, regardless of the ambient stress flag" rather than
+/// "collect with whatever strategy is currently in effect".
+#[cfg(test)]
+pub fn collect_mark_in_place_for_test(
+    roots: &mut dyn GcScannable,
+    heap: &mut Heap,
+    clock: &mut Clock,
+) {
+    collect_mark_in_place(roots, heap, clock, false)
 }
 
 /// Perform a collecting GC cycle with selective evacuation of fragmented blocks.
@@ -1056,14 +1105,33 @@ pub mod tests {
         collect(&mut ptrs.clone(), &mut heap, &mut clock, false);
 
         let strategy = heap.analyze_collection_strategy();
-        // When all blocks are dense, strategy should be MarkInPlace
-        // (or at worst, the candidate list should be empty)
         let candidates = strategy.candidates();
-        assert!(
-            candidates.is_empty(),
-            "densely packed heap should not have evacuation candidates, got {:?}",
-            candidates
-        );
+
+        // eu-swbz: EU_GC_STRESS=1 makes `analyze_collection_strategy` skip
+        // its fragmentation analysis entirely and unconditionally select
+        // every unpinned block for evacuation, so that evacuation
+        // pointer-update bugs surface on every platform (see that method's
+        // stress-mode branch). "A dense heap has no evacuation candidates"
+        // is a real property of the non-stressed heuristic this test is
+        // meant to exercise, not of stress mode's deliberate override —
+        // branch on the flag so the test still exercises something real
+        // (the override firing correctly) under stress, instead of failing
+        // on an assumption stress mode is designed to violate.
+        if heap.gc_stress() {
+            assert!(
+                !candidates.is_empty(),
+                "EU_GC_STRESS=1 must select every unpinned block for evacuation \
+                 even when the heap is densely packed, got an empty candidate list"
+            );
+        } else {
+            // When all blocks are dense, strategy should be MarkInPlace
+            // (or at worst, the candidate list should be empty)
+            assert!(
+                candidates.is_empty(),
+                "densely packed heap should not have evacuation candidates, got {:?}",
+                candidates
+            );
+        }
     }
 
     /// Test that evacuation correctly updates internal pointers.
@@ -1423,6 +1491,31 @@ pub mod tests {
     /// target is in `unswept`.  The test captures `unswept` base addresses
     /// before and after the evacuation GC pass to find the new block.
     ///
+    /// `finalise_evacuation()` only *adds* target block(s) to `rest` (see its
+    /// doc comment) — it never removes the pre-existing candidate blocks that
+    /// were already in `rest` going into the evacuation pass. If the
+    /// "settling" collection below ever left more than one pre-existing
+    /// `rest` block for this test's own (always-evacuate-every-rest-block)
+    /// candidate list to evacuate simultaneously, a fully-drained *source*
+    /// block would legitimately end up with zero marked lines too (nothing
+    /// should mark a block whose entire live content was copied elsewhere)
+    /// and ride into `unswept` alongside the genuine target(s) — making "new
+    /// in `unswept`" alone insufficient to identify a target, and (eu-swbz,
+    /// confirmed via Wicket's fault injection during review) *indistinguishable
+    /// from the exact bug this test exists to catch*: with the bug present,
+    /// the settling pass's own evacuation target is itself silently
+    /// unmarked, so it looks exactly like a legitimately-drained source by
+    /// the time this test's explicit phase runs — an address-based exclusion
+    /// added to handle the legitimate case ends up hiding the buggy one too,
+    /// letting the bug pass silently under `EU_GC_STRESS=1` instead of
+    /// failing. Rather than trying to make that distinction more precise,
+    /// the settling collection below is deliberately routed through
+    /// `collect_mark_in_place_for_test` — which never evacuates, regardless
+    /// of the ambient stress flag — so this test's own setup is always
+    /// exactly one pre-existing `rest` block in both configurations, and the
+    /// original single-candidate assertion logic is correct without any
+    /// address-exclusion mechanism at all.
+    ///
     /// ## Pass/fail criterion
     ///
     /// - **With the fix**: `mark_region_in_block` searched `evacuation_target`
@@ -1462,8 +1555,14 @@ pub mod tests {
         };
 
         // Mark-in-place collection to settle live objects into rest blocks.
+        // Deliberately NOT `collect()`: this is test scaffolding, not the
+        // strategy heuristic under test, and must stay deterministic
+        // (exactly one resulting rest block) regardless of EU_GC_STRESS —
+        // see the doc comment above for why routing it through `collect()`
+        // made this test's own setup non-deterministic, and in the presence
+        // of the very bug it guards against, silently un-testing it.
         let mut roots = vec![root_ptr];
-        collect(&mut roots, &mut heap, &mut clock, false);
+        collect_mark_in_place_for_test(&mut roots, &mut heap, &mut clock);
         heap.flush_unswept();
 
         let rest_count = heap.rest_block_count();
