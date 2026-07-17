@@ -1056,14 +1056,33 @@ pub mod tests {
         collect(&mut ptrs.clone(), &mut heap, &mut clock, false);
 
         let strategy = heap.analyze_collection_strategy();
-        // When all blocks are dense, strategy should be MarkInPlace
-        // (or at worst, the candidate list should be empty)
         let candidates = strategy.candidates();
-        assert!(
-            candidates.is_empty(),
-            "densely packed heap should not have evacuation candidates, got {:?}",
-            candidates
-        );
+
+        // eu-swbz: EU_GC_STRESS=1 makes `analyze_collection_strategy` skip
+        // its fragmentation analysis entirely and unconditionally select
+        // every unpinned block for evacuation, so that evacuation
+        // pointer-update bugs surface on every platform (see that method's
+        // stress-mode branch). "A dense heap has no evacuation candidates"
+        // is a real property of the non-stressed heuristic this test is
+        // meant to exercise, not of stress mode's deliberate override —
+        // branch on the flag so the test still exercises something real
+        // (the override firing correctly) under stress, instead of failing
+        // on an assumption stress mode is designed to violate.
+        if heap.gc_stress() {
+            assert!(
+                !candidates.is_empty(),
+                "EU_GC_STRESS=1 must select every unpinned block for evacuation \
+                 even when the heap is densely packed, got an empty candidate list"
+            );
+        } else {
+            // When all blocks are dense, strategy should be MarkInPlace
+            // (or at worst, the candidate list should be empty)
+            assert!(
+                candidates.is_empty(),
+                "densely packed heap should not have evacuation candidates, got {:?}",
+                candidates
+            );
+        }
     }
 
     /// Test that evacuation correctly updates internal pointers.
@@ -1423,6 +1442,35 @@ pub mod tests {
     /// target is in `unswept`.  The test captures `unswept` base addresses
     /// before and after the evacuation GC pass to find the new block.
     ///
+    /// `finalise_evacuation()` only *adds* target block(s) to `rest` (see its
+    /// doc comment) — it never removes the pre-existing candidate blocks that
+    /// were already in `rest` going into the evacuation pass. When more than
+    /// one pre-existing `rest` block is evacuated *from* simultaneously
+    /// (which happens whenever this test's own candidate list —
+    /// `2..2+rest_count`, intentionally "every rest block" — covers more than
+    /// one block), a fully-drained source block legitimately ends up with
+    /// zero marked lines and rides along into `unswept` in the very same
+    /// `defer_sweep()` call as the genuine target(s). That is correct GC
+    /// behaviour, not a bug: nothing should mark a block whose entire live
+    /// content was copied elsewhere. So "new in `unswept`" alone is not
+    /// sufficient to identify "is an evacuation target" — the test also
+    /// excludes any address that was already present in `rest` immediately
+    /// before the evacuation call (eu-swbz).
+    ///
+    /// Under `EU_GC_STRESS=1` this distinction is exercised on every run: the
+    /// "mark-in-place settling" `collect()` two lines below internally calls
+    /// `analyze_collection_strategy()` (see `collect`'s own body), which
+    /// under stress unconditionally evacuates every unpinned block instead of
+    /// only fragmented ones — so the settling pass itself typically leaves
+    /// *multiple* rest blocks where the non-stressed heuristic leaves at most
+    /// one, and this test's own (always-evacuate-every-rest-block) candidate
+    /// list then evacuates multiple blocks in the same pass every time.
+    /// Confirmed empirically (not just reasoned): under `EU_GC_STRESS=1` the
+    /// block this test previously flagged as "zero marked lines" is exactly
+    /// one of the addresses returned by `rest_block_base_addresses()`
+    /// *before* `collect_with_evacuation` runs — i.e. a source block, not a
+    /// target.
+    ///
     /// ## Pass/fail criterion
     ///
     /// - **With the fix**: `mark_region_in_block` searched `evacuation_target`
@@ -1462,6 +1510,9 @@ pub mod tests {
         };
 
         // Mark-in-place collection to settle live objects into rest blocks.
+        // Under EU_GC_STRESS=1 this internally forces evacuation too (see the
+        // doc comment above) — that's fine, it just means `rest_count` below
+        // may legitimately be larger than under a non-stressed run.
         let mut roots = vec![root_ptr];
         collect(&mut roots, &mut heap, &mut clock, false);
         heap.flush_unswept();
@@ -1479,8 +1530,13 @@ pub mod tests {
         // Force evacuation of all rest blocks (indices 2..2+rest_count is a
         // conventional way to include every block in the evacuation candidate
         // set — the exact indices do not matter as long as all rest blocks
-        // are selected).
+        // are selected). Capture which addresses are the pre-existing SOURCE
+        // blocks going into this pass, so they can be excluded from the
+        // "evacuation target" set below — evacuating from them legitimately
+        // leaves them at zero marked lines, which is not what this test's
+        // invariant is about (see the doc comment above).
         let candidates: Vec<usize> = (2..2 + rest_count).collect();
+        let pre_evacuation_rest: HashSet<usize> = heap.rest_block_base_addresses();
         collect_with_evacuation(&mut roots, &mut heap, &mut clock, &candidates, false);
 
         // After collect_with_evacuation:
@@ -1488,17 +1544,24 @@ pub mod tests {
         //   defer_sweep()         → rest (including target) to unswept
         // So rest is empty and the former target is in unswept.
         let unswept_after: HashSet<usize> = heap.unswept_block_base_addresses();
-        let new_blocks: Vec<usize> = unswept_after.difference(&unswept_before).copied().collect();
+        let new_blocks: Vec<usize> = unswept_after
+            .difference(&unswept_before)
+            .copied()
+            .filter(|addr| !pre_evacuation_rest.contains(addr))
+            .collect();
 
-        // If no new block appeared in unswept, the evacuation target was never
-        // allocated (nothing was actually evacuated).  Skip rather than fail.
+        // If no new (genuinely-target) block appeared in unswept, either
+        // nothing was evacuated, or every "new" block was actually one of the
+        // pre-existing source blocks drained down to nothing.  Either way
+        // there is no target to check here — skip rather than fail.
         if new_blocks.is_empty() {
             return;
         }
 
-        // Each new block that appeared in unswept after the evacuation pass is
-        // either the active evacuation target or one of the
-        // `filled_evacuation_blocks`.  ALL of them must have at least one
+        // Each remaining new block — i.e. a block that appeared in `unswept`
+        // after the evacuation pass AND was not already a pre-existing `rest`
+        // block going in — is either the active evacuation target or one of
+        // the `filled_evacuation_blocks`.  ALL of them must have at least one
         // marked line; a zero-marked block would be fully recycled by
         // `lazy_sweep_next()`, overwriting live evacuated data.
         for &target_base in &new_blocks {

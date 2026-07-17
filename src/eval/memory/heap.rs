@@ -2779,6 +2779,21 @@ impl Heap {
         heap_state.rest.len()
     }
 
+    /// Whether this heap was constructed with `EU_GC_STRESS=1` (eu-swbz).
+    ///
+    /// Tests that assert on `analyze_collection_strategy()`'s output — or on
+    /// anything downstream of it — must account for stress mode: it forces
+    /// `SelectiveEvacuation` over every unpinned block on every collection,
+    /// unconditionally, regardless of fragmentation (see
+    /// `analyze_collection_strategy`'s stress-mode branch). Reading this
+    /// cached field (rather than re-reading the env var independently) keeps
+    /// a test's branch in sync with what the heap under test actually
+    /// observed at construction time.
+    #[cfg(test)]
+    pub fn gc_stress(&self) -> bool {
+        self.gc_stress
+    }
+
     /// Return the number of unswept blocks (for test diagnostics)
     #[cfg(test)]
     pub fn unswept_block_count(&self) -> usize {
@@ -2999,7 +3014,34 @@ pub mod tests {
         }
 
         let strategy = heap.analyze_collection_strategy();
-        assert_eq!(strategy, CollectionStrategy::MarkInPlace);
+
+        // eu-swbz: under EU_GC_STRESS=1, `analyze_collection_strategy` skips
+        // the fragmentation-based analysis this test otherwise exercises and
+        // unconditionally forces `SelectiveEvacuation` over every unpinned
+        // block, precisely so evacuation pointer-update bugs surface on every
+        // platform (see the stress-mode branch's doc comment). A dense heap
+        // choosing `MarkInPlace` is a real property of the non-stressed
+        // fragmentation heuristic; assert that heuristic only when stress
+        // mode isn't overriding it, and assert the override's own documented
+        // behaviour when it is — so this test still exercises something real
+        // in both configurations rather than being skipped under stress.
+        if heap.gc_stress() {
+            match strategy {
+                CollectionStrategy::SelectiveEvacuation(blocks) => {
+                    assert!(
+                        !blocks.is_empty(),
+                        "EU_GC_STRESS=1 must select every unpinned block for evacuation, \
+                         got an empty candidate list"
+                    );
+                }
+                other => panic!(
+                    "EU_GC_STRESS=1 must force SelectiveEvacuation regardless of density, \
+                     got {other:?}"
+                ),
+            }
+        } else {
+            assert_eq!(strategy, CollectionStrategy::MarkInPlace);
+        }
     }
 
     #[test]
