@@ -28,13 +28,33 @@ static bool is_identifier_cont(int32_t c) {
     return iswdigit(c);
 }
 
-// Check if character is an operator character
+// Check if character is an operator character.
+//
+// This must stay in sync with OPER_CHARS in grammar.js — it is a THIRD
+// independent, hand-maintained copy of "what counts as an operator
+// character" (alongside grammar.js's OPER_CHARS and the Rust lexer's
+// dynamic Unicode-category-based is_operator_char() in
+// src/syntax/rowan/lex.rs). Missing a character here does not just affect
+// tokenising the operator itself (that's grammar.js's job); it makes this
+// scanner's declaration-boundary lookahead (at_declaration_start, below)
+// fail to recognise `(op ...)：`-style declaration heads that use it,
+// which silently corrupts the parse of any PRECEDING declaration's value
+// (its soup swallows the mis-detected "non-declaration" as more content).
+// See eu-fbyk for the proper long-term fix (a real Unicode-category-based
+// external scanner mirroring the Rust lexer, covering identifiers too).
 static bool is_operator_char(int32_t c) {
     // Common ASCII operators
     if (c == '.' || c == '!' || c == '@' || c == '%' || c == '^' ||
         c == '&' || c == '*' || c == '|' || c == '>' || c == '<' ||
         c == '/' || c == '+' || c == '=' || c == '-' || c == '~' ||
-        c == ';') {
+        c == ';' || c == '?' || c == '$') {
+        return true;
+    }
+    // Latin-1 Supplement operator/symbol characters used by the prelude:
+    // ¡ (U+00A1), £ (U+00A3), ¬ (U+00AC, negation), ± (U+00B1),
+    // × (U+00D7), ÷ (U+00F7, precise division).
+    if (c == 0x00A1 || c == 0x00A3 || c == 0x00AC || c == 0x00B1 ||
+        c == 0x00D7 || c == 0x00F7) {
         return true;
     }
     // Common Unicode operators
@@ -43,6 +63,10 @@ static bool is_operator_char(int32_t c) {
     if (c >= 0x27F0 && c <= 0x27FF) return true;  // Supplemental arrows
     if (c == 0x2227 || c == 0x2228 || c == 0x2218) return true;  // ∧ ∨ ∘
     if (c == 0x2016) return true;  // ‖ DOUBLE VERTICAL LINE (cons operator)
+    if (c == 0x20AC) return true;  // € EURO SIGN
+    if (c == 0x2713) return true;  // ✓ CHECK MARK (postfix non-nil check)
+    if (c == 0x25B3 || c == 0x25B6 || c == 0x25BD) return true;  // △ ▶ ▽
+    if (c == 0x2A08) return true;  // ⨈ N-ARY LOGICAL AND WITH DOT (∏-adjacent)
     return false;
 }
 
@@ -89,11 +113,19 @@ static bool at_declaration_start(TSLexer *lexer) {
     // Check for identifier
     if (is_identifier_start(lexer->lookahead)) {
         skip_identifier(lexer);
-        skip_whitespace(lexer);
+        // A parameter list must be immediately adjacent to the identifier
+        // (mirrors OPEN_PAREN_APPLY vs OPEN_PAREN in src/syntax/rowan/lex.rs
+        // and the token.immediate('(') on parameter_list in grammar.js): if
+        // whitespace/a newline separates the identifier from '(', this is
+        // NOT a `f(...):` declaration lookahead — most importantly, it must
+        // not be mistaken for one when the identifier is actually the value
+        // of the PREVIOUS declaration and the '(' begins the NEXT
+        // declaration's own operator/paren head.
+        bool had_space = skip_whitespace(lexer);
 
         // identifier: or identifier(...):
         if (lexer->lookahead == ':') return true;
-        if (lexer->lookahead == '(') {
+        if (!had_space && lexer->lookahead == '(') {
             // Could be function declaration f(x):
             // Skip to matching paren
             int depth = 1;
@@ -117,9 +149,10 @@ static bool at_declaration_start(TSLexer *lexer) {
         }
         if (lexer->lookahead == '\'') {
             lexer->advance(lexer, true);
-            skip_whitespace(lexer);
+            // See immediate-adjacency note above.
+            bool had_space = skip_whitespace(lexer);
             if (lexer->lookahead == ':') return true;
-            if (lexer->lookahead == '(') {
+            if (!had_space && lexer->lookahead == '(') {
                 // quoted function decl
                 int depth = 1;
                 lexer->advance(lexer, true);
