@@ -61,6 +61,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Run tests
         run: cargo test
+      - name: Run lib unit tests under GC stress (eu-swbz)
+        # The other EU_GC_STRESS jobs in this workflow (test-gc-verified,
+        # test-aarch64-sequential, asan) all run `eu test tests/harness` —
+        # none of them exercise `cargo test --lib`, so GC-internal unit tests
+        # (eval::memory::{collect,heap}::tests::*) were never gated under this
+        # flag. `cargo test --lib` alone is cheap (~3s locally), so this is a
+        # small additional step rather than a new job.
+        run: cargo test --lib
+        env:
+          EU_GC_STRESS: "1"
       - name: Test doc examples
         if: runner.os == 'Linux'
         run: |
