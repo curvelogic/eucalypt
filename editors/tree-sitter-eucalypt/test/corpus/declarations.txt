@@ -848,3 +848,174 @@ result: ⌈f⌉[1, 2]
           (soup
             (literal
               (number))))))))
+
+================================================================================
+Sequential operator declarations, second operator a prefix-extension of the
+first (eu-2sa6.17 regression — the audit's original minimal repro)
+================================================================================
+
+(l < r): l
+(l <= r): l
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (operator_declaration
+        (identifier)
+        (operator)
+        (identifier)))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (operator_declaration
+        (identifier)
+        (operator)
+        (identifier)))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Sequential operator declarations sharing no character prefix (eu-2sa6.17
+regression — confirms the bug was never really about prefix-sharing)
+================================================================================
+
+(a && r): a
+(a ∧ b): a
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (operator_declaration
+        (identifier)
+        (operator)
+        (identifier)))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (operator_declaration
+        (identifier)
+        (operator)
+        (identifier)))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Plain declaration value followed by an operator declaration (eu-2sa6.17
+regression — root cause was a missing immediate-adjacency check on
+parameter lists, not anything operator-specific)
+================================================================================
+
+f: x
+(l < r): l
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (operator_declaration
+        (identifier)
+        (operator)
+        (identifier)))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Quoted identifier value followed by an operator declaration (eu-2sa6.17
+regression)
+================================================================================
+
+'f': x
+(l < r): l
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (quoted_identifier))
+    (soup
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (operator_declaration
+        (identifier)
+        (operator)
+        (identifier)))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Prefix-operator usage then a different prefix-operator declaration
+(eu-2sa6.17 regression — audit report §2.5; also exercises a declaration
+operator character, ▶, that was missing from the external scanner's own
+operator-character table)
+================================================================================
+
+f: ¬true
+(▶x): x
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (operator)
+      (name
+        (identifier))))
+  (declaration
+    (declaration_head
+      (operator_declaration
+        (operator)
+        (identifier)))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Non-identifier-ending soup (operator + number literal) followed by an
+operator declaration (eu-2sa6.17 regression)
+================================================================================
+
+g: - 1
+(x+): x
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (operator)
+      (literal
+        (number))))
+  (declaration
+    (declaration_head
+      (operator_declaration
+        (identifier)
+        (operator)))
+    (soup
+      (name
+        (identifier)))))

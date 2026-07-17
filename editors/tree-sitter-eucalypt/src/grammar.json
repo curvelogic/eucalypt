@@ -486,8 +486,11 @@
       "type": "SEQ",
       "members": [
         {
-          "type": "STRING",
-          "value": "("
+          "type": "IMMEDIATE_TOKEN",
+          "content": {
+            "type": "STRING",
+            "value": "("
+          }
         },
         {
           "type": "CHOICE",
@@ -1667,10 +1670,6 @@
     [
       "declaration_head",
       "name"
-    ],
-    [
-      "declaration_head",
-      "block_param"
     ],
     [
       "operator_declaration",

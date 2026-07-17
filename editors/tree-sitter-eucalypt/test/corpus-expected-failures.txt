@@ -38,21 +38,25 @@ tests/harness/172_idiot_bracket_juxtaposed_call.eu
 tests/harness/testdata/155_cross_import_bracket_lib.eu
 
 ## lib/prelude.eu (the shipped stdlib) does not parse at all: hits the
-## operator-prefix-collision bug (`<` then `<=` in the same scope) plus the
-## bracket-expr gap above (⌈[x]⌉/⌊[x]⌋) plus nested-brace s-strings below.
-## Audit report §2.4.
+## bracket-expr gap above (⌈[x]⌉/⌊[x]⌋, §2.3) plus nested-brace s"..."
+## type-literal strings (§2.7, e.g. s"string → IO({..})"). The
+## operator-prefix-collision bug formerly listed here (`<` then `<=` in the
+## same scope) was fixed in eu-2sa6.17 item 3, root-caused as TWO bugs in
+## the external scanner's declaration-boundary lookahead
+## (src/scanner.c's at_declaration_start()), neither actually about
+## "prefixes": (1) a missing immediate-adjacency check let a bare
+## identifier that's the VALUE of one declaration be misparsed as the
+## HEAD of the next declaration when that next declaration starts with
+## `(`; (2) is_operator_char() was a third, independently-drifted copy of
+## the operator-character set (grammar.js's OPER_CHARS and the Rust
+## lexer's dynamic categories being the other two — see eu-fbyk), missing
+## 14 characters (¬ ¡ £ € ± × ÷ ✓ ▶ △ ▽ ⨈ ? $), which made the scanner fail
+## to recognise `(op ...):` declaration heads using them.
 lib/prelude.eu
 
 ## lib/lens.eu: nested braces inside s"..." type-literal strings
 ## (s"symbol → Lens({..r}, a)"). Audit report §2.7.
 lib/lens.eu
-
-## lib/markup.eu: `tag = head` / `attrs = second` use `=` instead of `:` —
-## Rowan lenient-parses this as block metadata (silently dropping the
-## declaration; tag/attrs are undefined at runtime, a separate latent bug
-## filed for quill), tree-sitter correctly rejects it as a parse error.
-## Audit report §3.
-lib/markup.eu
 
 ## List-destructuring pattern gaps: multi-head cons patterns
 ## `[a, b : rest]`, and nested-list patterns `[a, [b, c]]`. Audit report §2.6.
@@ -60,16 +64,6 @@ tests/harness/092_destructure_list.eu
 tests/harness/095_destructuring_integration.eu
 tests/harness/141_deep_destructuring.eu
 tests/harness/102_destructure_list_in_block.eu
-
-## Operator-prefix-collision declaration bug: declaring an operator whose
-## characters are a strict prefix of a previously-declared operator's
-## characters in the same scope (e.g. `<` then `<=`) corrupts the parse.
-## Audit report §2.4.
-tests/harness/020_op_precedence.eu
-
-## Prefix-operator usage followed by a (different) prefix-operator
-## declaration in the same block. Audit report §2.5. (020_op_precedence.eu
-## above also triggers this; 020 is listed once.)
 
 ## Nested braces inside s"..." type-literal strings. Audit report §2.7.
 tests/harness/175_sv2_to_spec.eu

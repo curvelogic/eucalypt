@@ -48,7 +48,6 @@ module.exports = grammar({
 
   conflicts: $ => [
     [$.declaration_head, $.name],
-    [$.declaration_head, $.block_param],
     [$.operator_declaration, $.name],
     [$.operator_declaration, $.soup],
     [$.soup],
@@ -173,8 +172,15 @@ module.exports = grammar({
       $.cons_pattern,
     ),
 
+    // Uses token.immediate: `f(x)` is a function declaration head, but
+    // `f (x)` (with a space) is NOT — the Rowan parser only recognises a
+    // parameter list immediately adjacent to the name (mirrors
+    // OPEN_PAREN_APPLY vs OPEN_PAREN in src/syntax/rowan/lex.rs). Without
+    // this, a bare identifier that is the *value* of one declaration can be
+    // misparsed as the head of the next declaration when that next
+    // declaration starts with '(' on its own line, corrupting the parse.
     parameter_list: $ => seq(
-      '(',
+      token.immediate('('),
       optional(seq(
         $._param,
         repeat(seq(',', $._param)),
