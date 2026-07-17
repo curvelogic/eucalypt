@@ -1019,3 +1019,83 @@ g: - 1
     (soup
       (name
         (identifier)))))
+
+================================================================================
+Gradual-typing binding-scope keyword block, with block-dot access
+(eu-2sa6.17 item 4 — `:for`/`:let`/`:io` need no new grammar rule at all,
+since they are ordinary block metadata symbols; the gap was unit_metadata
+not permitting trailing soup content after a leading block)
+================================================================================
+
+{ :for x: 42 }.(x)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (unit_metadata
+    (block
+      (block_metadata
+        (symbol
+          (identifier)))
+      (declaration
+        (declaration_head
+          (identifier))
+        (soup
+          (literal
+            (number)))))
+    (operator)
+    (paren_expr
+      (soup
+        (name
+          (identifier))))))
+
+================================================================================
+Block metadata followed by a separate top-level declaration (eu-2sa6.17
+item 4 regression guard — a naive "block optionally followed by soup" rule
+can greedily swallow a SEPARATE following declaration into the same
+unit_metadata; this must stay split into two nodes)
+================================================================================
+
+{ a: 1 }
+main: 2
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (unit_metadata
+    (block
+      (declaration
+        (declaration_head
+          (identifier))
+        (soup
+          (literal
+            (number))))))
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (number)))))
+
+================================================================================
+Backslash as an operator character (eu-2sa6.17 item 4 — grammar.js's
+OPER_CHARS was missing a bare `\`, used by the literal-string type-DSL
+catenation idiom exercised in tests/harness/typecheck/034-037)
+================================================================================
+
+x: "a" \ "b"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (string
+          (string_content)))
+      (operator)
+      (literal
+        (string
+          (string_content))))))

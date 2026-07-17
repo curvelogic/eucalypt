@@ -18,7 +18,7 @@
 // ⊝ (U+229D CIRCLED MINUS — bitwise NOT).
 // Note: bracket characters (⟦⟧⟨⟩⟪⟫⌈⌉⌊⌋‹›) are intentionally excluded here;
 // they are handled by the bracket_expr rule instead.
-const OPER_CHARS = /[.!@£%^&*|><\/+\=\-~;?$∸∧∨∘‖✓▶⊝→←⊕⊗⊙⊡⊞⊟¬∀∃∈∉⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪⊂⊃⊄⊅⊆⊇⊈⊉⊊⊋¡££€⨈∅∏]+/;
+const OPER_CHARS = /[.!@£%^&*|><\/\\+\=\-~;?$∸∧∨∘‖✓▶⊝→←⊕⊗⊙⊡⊞⊟¬∀∃∈∉⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪⊂⊃⊄⊅⊆⊇⊈⊉⊊⊋¡££€⨈∅∏]+/;
 
 // Unicode idiot bracket open characters (must match brackets.rs BUILTIN_BRACKET_PAIRS).
 //
@@ -61,12 +61,34 @@ module.exports = grammar({
       repeat($.declaration),
     ),
 
-    // Some files start with a bare block for metadata (test files)
+    // Some files have no top-level declarations at all — just a bare
+    // expression (soup), of which a single string literal (aliased to
+    // docstring, for highlighting — see queries/highlights.scm) and a bare
+    // block (test metadata) are the common cases, but ANY soup is valid
+    // here: the Rowan parser treats a unit with no leading `name:` as a
+    // whole as bare BLOCK_META wrapping an arbitrary soup (confirmed via
+    // `eu dump ast`), not just block/string. This also covers block-dot
+    // access at the top level, e.g. `{ :for x: 42 }.(x)`, where the block
+    // is only the FIRST soup element, followed by `.` and a paren_expr.
     unit_metadata: $ => choice(
-      $.block,
       alias($.string, $.docstring),    // Documentation string
       alias($.c_string, $.docstring),  // Documentation c-string
       alias($.r_string, $.docstring),  // Documentation r-string
+      // A bare block, optionally followed by more soup content (e.g.
+      // block-dot access at the top level: `{ :for x: 42 }.(x)`, where the
+      // block is only the FIRST element of the unit's soup, followed by
+      // the `.` operator and a paren_expr). Scoped to require the unit to
+      // START with `{` specifically, rather than allowing an arbitrary
+      // soup here — a fully general top-level soup collides with
+      // `repeat($.declaration)` (e.g. `f(x): x` gets misparsed as a
+      // 2-element soup, application "f(x)" then symbol literal ": x")
+      // since that ambiguity isn't flagged as a real GLR conflict by the
+      // generator and silently resolves the wrong way.
+      prec.right(seq(
+        $.block,
+        repeat(choice($._element, $.operator)),
+        optional($._declaration_end),
+      )),
     ),
 
     // Comments start with # and go to end of line
