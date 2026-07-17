@@ -31,7 +31,7 @@
 ## `"\"a\" \ \"b\""`), and grammar.js's OPER_CHARS was simply missing `\`
 ## — fixed by adding it.
 ##
-## Two files remain, for different reasons:
+## One file remains:
 tests/harness/typecheck/023_for_map_no_warning.eu
 tests/harness/typecheck/024_for_bind_no_warning.eu
 ## ^ 023/024 are miscategorised by the audit — they don't use any
@@ -45,21 +45,24 @@ tests/harness/typecheck/024_for_bind_no_warning.eu
 ## ordinary leading declarations, which needs real grammar-internals work
 ## (likely explicit GLR conflict + dynamic precedence tuning), not
 ## attempted here. Follow-up: eu-ctoj scope, or a new bead.
-tests/harness/typecheck/038_literal_string_annotation_widens.eu
-## ^ NOT a tree-sitter gap: the Rowan parser rejects this file's syntax
-## too (`eu dump ast` on it: "error: malformed declaration head" at the
-## `x: "hello" : "string"` line — inline type ascription `expr : "type"`
-## does not exist as implemented Rowan syntax, at least not in this form;
-## grep confirms it's used nowhere else in lib/ or tests/harness/). The
-## harness test for this file (tests/harness_test.rs) currently passes
-## only because `eu check --strict` exits 0 even after printing this
-## parse error to stderr — filed as eu-3621 (P2) since a `--strict` mode
-## silently swallowing a parse error is a real correctness bug independent
-## of tree-sitter. Per the audit's own methodology (§1: files Rowan itself
-## rejects are excluded, matching tests/harness/errors/), this file
-## shouldn't really be in the "genuine divergence" corpus at all — kept
-## listed here (rather than removed) only because the corpus-parse script
-## does directory-based inclusion and doesn't know this nuance.
+
+## eu-3621: `eu check --strict` was silently exiting 0 despite a genuine
+## Rowan parse error (fixed in eu-3621). The fixture that surfaced the bug,
+## tests/harness/typecheck/038_literal_string_annotation_widens.eu, used to
+## be listed here for exactly the same reason as this entry — Rowan itself
+## rejected its syntax too, "malformed declaration head" — and was pruned
+## once eu-3621 rewrote it to use valid syntax. This regression fixture
+## replaces it as the deliberately-invalid case: it exists specifically to
+## assert `eu check --strict` now reports a hard, non-zero exit code for a
+## genuine parse error (tests/harness_test.rs's
+## test_typecheck_112_check_strict_parse_error_exits_nonzero). Rowan
+## rejects it by design, so per the audit's own methodology (§1: files
+## Rowan itself rejects are excluded, matching tests/harness/errors/), this
+## isn't a genuine tree-sitter divergence either — kept listed here (rather
+## than moved) only because the corpus-parse script's inclusion is purely
+## directory-based (tests/harness/, minus tests/harness/errors/) and
+## doesn't know this nuance.
+tests/harness/typecheck/112_check_strict_parse_error_exits_nonzero.eu
 
 ## Bracket-expr declaration heads unsupported (custom bracket/monad
 ## literals: ⟦ x ⟧: x, ⟦{}⟧: { :monad ... }, ⌊xs⌋: ...). Audit report §2.3.
