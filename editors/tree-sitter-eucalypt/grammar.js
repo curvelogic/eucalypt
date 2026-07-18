@@ -48,6 +48,7 @@ module.exports = grammar({
 
   conflicts: $ => [
     [$.declaration_head, $.name],
+    [$.declaration_head, $._element],
     [$.operator_declaration, $.name],
     [$.operator_declaration, $.soup],
     [$.soup],
@@ -133,6 +134,13 @@ module.exports = grammar({
       seq(choice($.identifier, $.quoted_identifier), $.list_param),
       // Operator declarations in parentheses
       $.operator_declaration,
+      // Bracket-pair ("idiot bracket") declarations: ⟦ x ⟧: x declares the
+      // ⟦⟧ bracket pair as a function of x. The bracket's content is an
+      // ordinary soup (often a list_pattern-shaped `[x]`, or a block for
+      // inline monad definitions like ⟦{}⟧: { :monad ... }) — bracket_expr
+      // already parses all of that; it just wasn't reachable as a
+      // declaration head. Audit report §2.3.
+      $.bracket_expr,
     ),
 
     // Block destructuring parameter in juxtaposed position: f{x y} or f{x, y}
@@ -213,33 +221,54 @@ module.exports = grammar({
 
     // Block destructuring pattern in parameter position: {x y} or {x: a  y: b}
     // A block_pattern has the same surface syntax as a block but only appears
-    // as a function parameter.  Fields may be shorthand (`x` binds field x) or
-    // renamed (`x: a` binds field x as local variable a).
+    // as a function parameter.  Fields may be shorthand (`x` binds field x),
+    // renamed (`x: a` binds field x as local variable a), or nested (`x: [a,
+    // b]` / `x: {y}` binds field x by destructuring it further — audit
+    // report §2.6, e.g. lib/prelude.eu's `{data: [a, b]}`-shaped params and
+    // tests/harness/141_deep_destructuring.eu's `{outer: {inner}}`).
     block_pattern: $ => seq(
       '{',
       repeat(seq(
-        choice($.declaration, $.identifier),  // bare identifier = shorthand binding
+        choice($.block_pattern_field, $.identifier),  // bare identifier = shorthand binding
         optional(','),
       )),
       '}',
     ),
 
-    // Fixed-length list destructuring pattern: [a, b, c]
+    // A renamed/nested block_pattern field: `name: param`, where `param` is
+    // recursively any pattern (identifier, nested block/list/cons pattern),
+    // not the generic declaration-value soup grammar — `{outer: {inner}}`'s
+    // `{inner}` is only valid as a block_pattern (bare-identifier shorthand
+    // binding), not as a general block expression.
+    block_pattern_field: $ => seq(
+      choice($.identifier, $.quoted_identifier),
+      ':',
+      $._param,
+    ),
+
+    // Fixed-length list destructuring pattern: [a, b, c], with each element
+    // recursively any pattern — nested lists/cons/blocks (audit report
+    // §2.6, e.g. `[a, [b, c]]`, `[a, [b: c]]`, `[{x y}, z]`).
     list_pattern: $ => seq(
       '[',
       seq(
-        $.identifier,
-        repeat(seq(',', $.identifier)),
+        $._param,
+        repeat(seq(',', $._param)),
         optional(','),
       ),
       ']',
     ),
 
-    // Head/tail cons destructuring pattern: [h : t]
+    // Head/tail cons destructuring pattern: [h : t] or, with multiple
+    // heads, [h1, h2 : t] (audit report §2.6's "multi-head cons pattern",
+    // e.g. `[a, b : rest]`). Each head is recursively any pattern (e.g.
+    // `[[a, b] : rest]`'s nested-list head); the tail is always a plain
+    // binding name.
     // Uses ':' as the separator (not ',') to distinguish from list_pattern.
     cons_pattern: $ => seq(
       '[',
-      $.identifier,
+      $._param,
+      repeat(seq(',', $._param)),
       ':',
       $.identifier,
       ']',
@@ -424,19 +453,54 @@ module.exports = grammar({
     // - simple references: {foo}, {0}, {_}
     // - dotted paths: {foo.bar.baz}
     // - positional args: {0}, {1}, {2}
+    // - arbitrary expressions, including nested braces: row-polymorphic
+    //   type-DSL syntax like s"symbol → Lens({..r}, a)" or doubly-nested
+    //   block/list content like s"{ users: [{ name: string }] }" (audit
+    //   report §2.7). These aren't simple references at all — `..r` isn't
+    //   an identifier or dotted path, and the nested `{...}` needs the
+    //   full `block`/`list` grammar, not a restricted interpolation-target
+    //   mini-language. A general `$.soup` covers all of the above (a bare
+    //   identifier or `foo.bar.baz` dotted path is just a soup of
+    //   catenated names and `.` operators) as well as anything else that's
+    //   a valid expression, so it replaces the narrower
+    //   identifier/dotted_reference/number alternatives entirely.
+    // Comma-separated, matching the row-polymorphic type-DSL idiom
+    // `{..r, ..s}` (multiple row variables in one type expression, e.g.
+    // s"{..r} → {..s} → {..r, ..s}" in lib/prelude.eu's merge() doc). A
+    // bare `,` isn't part of `$.soup`'s own grammar (it's always used in
+    // an explicit comma-separated-list context elsewhere, e.g.
+    // argument_list), so it has to be threaded through here explicitly.
     interpolation_content: $ => choice(
-      $.anaphor,
-      $.dotted_reference,
-      $.identifier,
-      /[0-9]+/,  // positional argument
+      prec(1, $.anaphor),
+      seq($.soup, repeat(seq(',', $.soup))),
     ),
 
-    dotted_reference: $ => seq(
-      $.identifier,
-      repeat1(seq('.', $.identifier)),
+    // A format spec is ':' followed by everything up to the interpolation's
+    // closing '}' — normally a simple format string like ':.2f', but the
+    // type-DSL idiom (s"{ users: [{ name: string }] }") abuses this same
+    // "everything after the colon" slot to carry a whole nested
+    // block/list type expression. A flat /:[^}]+/ regex can't tell an
+    // OUTER closing '}' from an INNER one, so it stops at the first '}' it
+    // sees — wrong as soon as the spec contains a nested `{...}` pair
+    // (audit report §2.7). Made brace-aware via recursion instead: any
+    // '{'...'}' pair nested inside the spec is matched structurally
+    // (correctly balanced, arbitrarily deep) rather than by the regex.
+    format_spec: $ => seq(
+      ':',
+      repeat(choice(
+        /[^{}]+/,
+        $._balanced_braces,
+      )),
     ),
 
-    format_spec: $ => /:[^}]+/,
+    _balanced_braces: $ => seq(
+      '{',
+      repeat(choice(
+        /[^{}]+/,
+        $._balanced_braces,
+      )),
+      '}',
+    ),
 
     // Brace escapes for plain and raw strings ({{ and }})
     brace_escape: $ => choice(
@@ -471,10 +535,15 @@ module.exports = grammar({
       $.quoted_identifier,
     ),
 
-    // Identifiers support Unicode letters including Latin Extended, Greek, Cyrillic.
-    // The Latin Extended range U+00C0-U+02AF is split to exclude × (U+00D7) and
-    // ÷ (U+00F7) which are operator characters.
-    identifier: $ => /[•$?_a-zA-Z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02AF\u0370-\u03FF\u0400-\u04FF\u1F00-\u1FFF][•$?_!*\-a-zA-Z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02AF\u0370-\u03FF\u0400-\u04FF\u1F00-\u1FFF]*/,
+    // Identifiers support Unicode letters including Latin Extended, Greek,
+    // Cyrillic, and Letterlike Symbols (ℕ, ℝ, ℤ etc. — used as identifiers
+    // in lib/prelude.eu itself, e.g. `ℕ: iota(0)`, and in examples/aoc25/;
+    // audit report §2.9, a companion gap to eu-fbyk). The Latin Extended
+    // range U+00C0-U+02AF is split to exclude × (U+00D7) and ÷ (U+00F7)
+    // which are operator characters; Letterlike Symbols U+2100-U+214F
+    // doesn't overlap OPER_CHARS (nearest operator range starts at
+    // U+2190), so no such split is needed there.
+    identifier: $ => /[•$?_a-zA-Z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02AF\u0370-\u03FF\u0400-\u04FF\u1F00-\u1FFF\u2100-\u214F][•$?_!*\-a-zA-Z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02AF\u0370-\u03FF\u0400-\u04FF\u1F00-\u1FFF\u2100-\u214F]*/,
 
     quoted_identifier: $ => seq(
       "'",
