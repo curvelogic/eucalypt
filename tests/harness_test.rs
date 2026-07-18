@@ -2980,6 +2980,18 @@ pub fn test_typecheck_111_prefix_list_out_of_prefix_partial() {
     run_typecheck_test("111_prefix_list_out_of_prefix_partial.eu");
 }
 
+/// Regression for eu-3621: `eu check --strict` must exit non-zero on a
+/// genuine rowan parse error, not just print it and exit 0. This fixture is
+/// deliberately unparseable — see its header comment — so
+/// `run_typecheck_test`'s exit-code assertion is itself the regression
+/// gate: previously `check_annotation_syntax` printed the parse error but
+/// never counted it, so `total_issues` stayed 0 and `eu check --strict`
+/// wrongly reported success.
+#[test]
+pub fn test_typecheck_112_check_strict_parse_error_exits_nonzero() {
+    run_typecheck_test("112_check_strict_parse_error_exits_nonzero.eu");
+}
+
 // ── eu doc tests ──────────────────────────────────────────────────────────────
 
 /// `eu doc` on a documented fixture produces Markdown with the expected content.

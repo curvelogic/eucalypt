@@ -1,0 +1,6 @@
+# eu-3621: a genuine rowan parse error must fail `eu check --strict` with a
+# non-zero exit code, not just print the error and exit 0. This fixture is
+# NOT valid Eucalypt syntax — that is the point. A second top-level colon
+# after a property's value is a malformed declaration head; it is not, and
+# never was, an inline type-ascription form.
+x: "hello" : "string"

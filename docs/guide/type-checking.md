@@ -18,6 +18,11 @@ evaluation when `--strict` is passed. `--type-check` is a deprecated
 no-op flag kept for backwards compatibility — type checking already
 runs whether or not it is passed.
 
+A genuine parse error is a different matter: `eu check` always exits
+non-zero on one, with or without `--strict` — a file that never
+produced a syntax tree cannot be meaningfully type-checked, so this is
+not gated the way an ordinary type warning is.
+
 ---
 
 ## What type checking catches

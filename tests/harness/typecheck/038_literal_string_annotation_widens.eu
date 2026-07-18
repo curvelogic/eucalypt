@@ -1,8 +1,24 @@
-# An explicit `string` annotation on a string-literal binding widens it.
-# The widened value passes a string-typed function without warning.
+# An explicit `string` annotation on a string-literal binding widens it:
+# checking the annotation against the literal body must not warn, since
+# LiteralString <: String (eu-19do / A4). The widened value then passes a
+# string-typed function without warning...
+` { type: "string" }
+x: "hello"
+
 ` { type: "string → number" }
-length: str.length
+length: str.len
 
-x: "hello" : "string"
+ok: length(x)
 
-result: length(x)
+# ...but widening to `string` does not make the value usable as a number —
+# passing it to a number-typed function still warns. This is the
+# observable half of the test: without it, an exit-0 check alone could not
+# distinguish "the checker verified widening" from "the checker silently
+# skipped the annotation" (eu-3621 — this fixture originally used
+# unsupported inline ascription syntax `expr : "type"`, which never parsed,
+# so `eu check --strict` exited 0 for the wrong reason: a parse error it
+# failed to propagate, not a passing check).
+` { type: "number → number" }
+double: (_ * 2)
+
+bad: double(x)

@@ -49,6 +49,7 @@ Type checking runs **unconditionally** on every `eu` invocation (evaluate, dump,
 - `eu file.eu --strict` / `eu run --strict file.eu` - evaluate, but abort before evaluation with exit 1 if there are type warnings
 - `eu file.eu --suppress-type-warnings` - evaluate normally, silencing warning output (the checker still runs)
 - `--type-check` is a **deprecated no-op** kept for backwards compatibility — type checking used to be opt-in via this flag; it always runs now
+- A genuine parse error always exits non-zero under `eu check`, with or without `--strict` — unlike an ordinary type warning, it is never gated behind `--strict`
 
 ### Testing
 - `cargo test` - Run all tests including the comprehensive harness test suite
