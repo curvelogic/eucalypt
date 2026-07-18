@@ -86,11 +86,15 @@
 (parameter_list
   (identifier) @parameter)
 
-; Destructuring parameters — block pattern field names
-(block_pattern
-  (declaration
-    (declaration_head
-      (identifier) @parameter)))
+; Destructuring parameters — block pattern field names (renamed/nested
+; fields, e.g. `{x: a}` or `{outer: {inner}}`). The field name is always
+; the FIRST child; the value may be a plain identifier (rename) or a
+; nested block/list/cons pattern, so it isn't matched positionally here —
+; the list_pattern/cons_pattern/block_pattern_field rules below cover any
+; identifiers nested inside it.
+(block_pattern_field
+  .
+  (identifier) @parameter)
 
 ; Destructuring parameters — list pattern element names
 (list_pattern

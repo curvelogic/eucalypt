@@ -211,7 +211,9 @@ greeting: "Hello {name}!"
           (string_content)
           (interpolation
             (interpolation_content
-              (identifier)))
+              (soup
+                (name
+                  (identifier)))))
           (string_content))))))
 
 ================================================================================
@@ -232,7 +234,9 @@ greeting: c"Hello {name}!\n"
           (c_string_content)
           (interpolation
             (interpolation_content
-              (identifier)))
+              (soup
+                (name
+                  (identifier)))))
           (c_string_content)
           (c_escape_sequence))))))
 
@@ -1099,3 +1103,217 @@ x: "a" \ "b"
       (literal
         (string
           (string_content))))))
+
+================================================================================
+Idiot bracket declaration head (eu-2sa6.17 prelude-parsing pass — audit
+report §2.3: bracket_expr was never reachable as a declaration_head)
+================================================================================
+
+⟦ x ⟧: x
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (soup
+          (name
+            (identifier)))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+List-pattern-shaped bracket declaration head (eu-2sa6.17 prelude-parsing
+pass — the ⌈[x]⌉/⌊[x]⌋ ceiling/floor notation declared in lib/prelude.eu)
+================================================================================
+
+⌈[x]⌉: x
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (bracket_expr
+        (soup
+          (list
+            (soup
+              (name
+                (identifier)))))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Row-polymorphic type-DSL string interpolation content (eu-2sa6.17
+prelude-parsing pass — audit report §2.7: `..r` isn't an identifier or
+dotted path, so interpolation_content had to be broadened from a narrow
+identifier/dotted-reference/number choice to a general soup)
+================================================================================
+
+x: s"string → IO({..})"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (literal
+        (string
+          (string_content)
+          (interpolation
+            content: (interpolation_content
+              (soup
+                (operator))))
+          (string_content))))))
+
+================================================================================
+Comma-separated interpolation content (eu-2sa6.17 prelude-parsing pass —
+the row-polymorphic type-DSL idiom `{..r, ..s}` in lib/prelude.eu's
+merge() doc; a bare `,` isn't part of `$.soup`'s own grammar)
+================================================================================
+
+x: "{a, b}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (string
+          (interpolation
+            content: (interpolation_content
+              (soup
+                (name
+                  (identifier)))
+              (soup
+                (name
+                  (identifier))))))))))
+
+================================================================================
+Doubly-nested braces inside string interpolation (eu-2sa6.17 prelude-parsing
+pass — audit report §2.7: format_spec's flat /:[^}]+/ regex stopped at the
+first '}' it saw, which is wrong as soon as the spec contains its own
+nested `{...}` pair; made brace-aware via recursion instead)
+================================================================================
+
+x: s"{ users: [{ name: string }] }"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (literal
+        (string
+          (interpolation
+            content: (interpolation_content
+              (soup
+                (name
+                  (identifier))))
+            (format_spec)))))))
+
+================================================================================
+Multi-head cons destructuring pattern (eu-2sa6.17 prelude-parsing pass —
+audit report §2.6: `[a, b : rest]`, two heads before the cons-tail binding)
+================================================================================
+
+f([a, b : rest]): a + b
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (parameter_list
+        (cons_pattern
+          (identifier)
+          (identifier)
+          (identifier))))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Nested list destructuring pattern (eu-2sa6.17 prelude-parsing pass — audit
+report §2.6: `[a, [b, c]]`, a list_pattern element that is itself a
+list_pattern)
+================================================================================
+
+two-level([a, [b, c]]): a
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (parameter_list
+        (list_pattern
+          (identifier)
+          (list_pattern
+            (identifier)
+            (identifier)))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Nested block destructuring pattern (eu-2sa6.17 prelude-parsing pass —
+`{outer: {inner}}`, a renamed block_pattern field whose value is itself a
+block_pattern — only valid as a nested pattern, not a general block
+expression, since bare `{inner}` isn't a valid block literal)
+================================================================================
+
+block-block({outer: {inner}}): inner
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (parameter_list
+        (block_pattern
+          (block_pattern_field
+            (identifier)
+            (block_pattern
+              (identifier))))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Letterlike Symbols identifier (eu-2sa6.17 prelude-parsing pass — audit
+report §2.9: ℕ (U+2115) is used as an identifier in lib/prelude.eu itself,
+`ℕ: iota(0)`, not just in examples/aoc25/; a companion gap to eu-fbyk)
+================================================================================
+
+x: ℕ
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier)))))

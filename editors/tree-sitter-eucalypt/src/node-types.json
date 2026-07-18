@@ -170,11 +170,42 @@
       "required": false,
       "types": [
         {
-          "type": "declaration",
+          "type": "block_pattern_field",
           "named": true
         },
         {
           "type": "identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "block_pattern_field",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "block_pattern",
+          "named": true
+        },
+        {
+          "type": "cons_pattern",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "list_pattern",
+          "named": true
+        },
+        {
+          "type": "quoted_identifier",
           "named": true
         }
       ]
@@ -241,7 +272,19 @@
       "required": true,
       "types": [
         {
+          "type": "block_pattern",
+          "named": true
+        },
+        {
+          "type": "cons_pattern",
+          "named": true
+        },
+        {
           "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "list_pattern",
           "named": true
         }
       ]
@@ -280,6 +323,10 @@
       "types": [
         {
           "type": "block_param",
+          "named": true
+        },
+        {
+          "type": "bracket_expr",
           "named": true
         },
         {
@@ -341,19 +388,9 @@
     }
   },
   {
-    "type": "dotted_reference",
+    "type": "format_spec",
     "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
-        {
-          "type": "identifier",
-          "named": true
-        }
-      ]
-    }
+    "fields": {}
   },
   {
     "type": "interpolation",
@@ -386,19 +423,15 @@
     "named": true,
     "fields": {},
     "children": {
-      "multiple": false,
-      "required": false,
+      "multiple": true,
+      "required": true,
       "types": [
         {
           "type": "anaphor",
           "named": true
         },
         {
-          "type": "dotted_reference",
-          "named": true
-        },
-        {
-          "type": "identifier",
+          "type": "soup",
           "named": true
         }
       ]
@@ -485,7 +518,19 @@
       "required": true,
       "types": [
         {
+          "type": "block_pattern",
+          "named": true
+        },
+        {
+          "type": "cons_pattern",
+          "named": true
+        },
+        {
           "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "list_pattern",
           "named": true
         }
       ]
@@ -870,10 +915,6 @@
     "named": false
   },
   {
-    "type": ".",
-    "named": false
-  },
-  {
     "type": ":",
     "named": false
   },
@@ -899,10 +940,6 @@
   },
   {
     "type": "comment",
-    "named": true
-  },
-  {
-    "type": "format_spec",
     "named": true
   },
   {
