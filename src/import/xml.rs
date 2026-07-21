@@ -60,20 +60,33 @@ struct XmlImporter<'src> {
 impl<'src> XmlImporter<'src> {
     pub fn new(file_id: usize, text: &'src str) -> Self {
         let mut reader = Reader::from_str(text);
-        reader.config_mut().trim_text(true);
+        // Deliberately NOT `trim_text(true)`. quick-xml 0.41 emits entity /
+        // character references in text content as separate `Event::GeneralRef`
+        // events, interspersed with `Event::Text` fragments for the literal
+        // text either side. `trim_text(true)` trims each of those fragments
+        // *individually*, which discards the interior whitespace between a
+        // text fragment and a neighbouring reference (`"a "` + `"&amp;"` +
+        // `" b"` would trim to `"a"` + `"&"` + `"b"`, losing both spaces).
+        // Instead we accumulate raw text + resolved references into
+        // `text_buf` across a whole run and trim only the coalesced whole in
+        // `flush_text`, matching pre-0.12.0 behaviour exactly.
+        reader.config_mut().trim_text(false);
         XmlImporter { file_id, reader }
     }
 
     pub fn parse(&mut self) -> Result<RcExpr, SourceError> {
         let mut buf = Vec::new();
         let mut stack: VecDeque<ProtoElement> = VecDeque::new();
+        let mut text_buf = String::new();
 
         loop {
             match self.reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref event)) => {
+                    self.flush_text(&mut text_buf, &mut stack)?;
                     stack.push_back(self.to_proto_element(event)?);
                 }
                 Ok(Event::End(_)) => {
+                    self.flush_text(&mut text_buf, &mut stack)?;
                     if let Some(top) = stack.pop_back() {
                         let n = top.complete();
                         if let Some(top) = stack.back_mut() {
@@ -84,6 +97,7 @@ impl<'src> XmlImporter<'src> {
                     }
                 }
                 Ok(Event::Empty(ref event)) => {
+                    self.flush_text(&mut text_buf, &mut stack)?;
                     let n = self.to_proto_element(event)?.complete();
                     if let Some(top) = stack.back_mut() {
                         top.add(n);
@@ -92,25 +106,72 @@ impl<'src> XmlImporter<'src> {
                     }
                 }
                 Ok(Event::Text(event)) => {
-                    // quick-xml 0.41: `BytesText::unescape` was removed; decode
-                    // (character encoding) then unescape XML entities.
+                    // quick-xml 0.41: `BytesText::unescape` was removed. Text
+                    // fragments no longer contain entity syntax at all (those
+                    // arrive as separate `Event::GeneralRef` events below), so
+                    // simply decode the character encoding and accumulate.
                     let decoded = event.decode().map_err(|e| self.to_source_error(e))?;
-                    let text = quick_xml::escape::unescape(&decoded)
-                        .map_err(|e| self.to_source_error(e))?;
-                    if let Some(top) = stack.back_mut() {
-                        top.add(acore::str(&text));
+                    text_buf.push_str(&decoded);
+                }
+                Ok(Event::GeneralRef(bytes_ref)) => {
+                    // Character reference (`&#NN;` / `&#xNN;`) or predefined
+                    // entity reference (`&amp;`, `&lt;`, `&gt;`, `&quot;`,
+                    // `&apos;`) in text content. Resolve and append to the
+                    // same accumulating buffer as literal text so the whole
+                    // run is coalesced into a single text node.
+                    if let Some(ch) = bytes_ref
+                        .resolve_char_ref()
+                        .map_err(|e| self.to_source_error(e))?
+                    {
+                        text_buf.push(ch);
                     } else {
-                        return Err(SourceError::InvalidXml(
-                            "No top-level element".to_string(),
-                            self.file_id,
-                            self.span(),
-                        ));
+                        let name = bytes_ref.decode().map_err(|e| self.to_source_error(e))?;
+                        match quick_xml::escape::resolve_predefined_entity(&name) {
+                            Some(resolved) => text_buf.push_str(resolved),
+                            None => {
+                                return Err(SourceError::InvalidXml(
+                                    format!("Unknown entity reference: &{name};"),
+                                    self.file_id,
+                                    self.span(),
+                                ))
+                            }
+                        }
                     }
                 }
                 Err(e) => return Err(self.to_source_error(e)),
                 _ => (),
             }
         }
+    }
+
+    /// Flush the accumulated text run (literal text plus resolved
+    /// entity/character references) as a single text node, trimming the
+    /// *whole* coalesced run rather than each contributing fragment. A
+    /// whitespace-only run is dropped entirely, matching the previous
+    /// `trim_text(true)` behaviour of eliding insignificant whitespace
+    /// between elements.
+    fn flush_text(
+        &self,
+        text_buf: &mut String,
+        stack: &mut VecDeque<ProtoElement>,
+    ) -> Result<(), SourceError> {
+        if text_buf.is_empty() {
+            return Ok(());
+        }
+        let trimmed = text_buf.trim();
+        if !trimmed.is_empty() {
+            if let Some(top) = stack.back_mut() {
+                top.add(acore::str(trimmed));
+            } else {
+                return Err(SourceError::InvalidXml(
+                    "No top-level element".to_string(),
+                    self.file_id,
+                    self.span(),
+                ));
+            }
+        }
+        text_buf.clear();
+        Ok(())
     }
 
     /// A span indicating current reader position
