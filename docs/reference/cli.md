@@ -37,6 +37,8 @@ eu [GLOBAL_OPTIONS] [SUBCOMMAND] [SUBCOMMAND_OPTIONS] [FILES...]
 - `check` - Type-check eucalypt source files
 - `doc` - Extract documentation from eucalypt source files
 - `dump` - Dump intermediate representations
+- `error <CODE>` - Print the catalogue entry for a stable error code (e.g.
+  `eu error EU-EVAL-TYPE`); see the [error-code catalogue](error-codes.md)
 - `version` - Show version information
 - `explain` - Explain what would be executed
 - `list-targets` - List targets defined in the source
