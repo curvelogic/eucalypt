@@ -2,7 +2,7 @@ name: eucalypt build
 
 on:
   push:
-    branches: [master, integration/**]
+    branches: [master, integration/**, release/**]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -296,7 +296,7 @@ jobs:
     needs: [lint, test, audit, wasm]
     name: Release Linux x86_64
     runs-on: ubuntu-22.04
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release/')
     steps:
       - uses: actions/checkout@v4
         with:
@@ -374,7 +374,7 @@ jobs:
     needs: [lint, test, audit, wasm]
     name: Release MacOS
     runs-on: macos-latest
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release/')
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -418,7 +418,7 @@ jobs:
     needs: [lint, test, audit, wasm]
     name: Release Linux aarch64
     runs-on: ubuntu-22.04-arm
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release/')
     steps:
       - uses: actions/checkout@v4
         with:
@@ -464,7 +464,7 @@ jobs:
     needs: [lint, test, audit]
     name: Release Windows
     runs-on: windows-latest
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release/')
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -506,7 +506,7 @@ jobs:
 
   prepare-release:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release/')
     needs:
       - release-candidate-linux
       - release-candidate-linux-arm
