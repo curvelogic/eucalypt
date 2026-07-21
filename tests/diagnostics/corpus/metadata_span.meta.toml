@@ -3,5 +3,7 @@ description = "runtime type error in a declaration carrying doc metadata"
 region_start_line = 2
 region_end_line = 3
 expected_class = "number"
-xfail = true
-xfail_reason = "eu-1tkk.7.7: label span begins at the backtick metadata line (line 1)"
+# No xfail: the invariant gate (eu-1tkk.7.3) now sees primary.line == 2, inside
+# the region — the JSON path's location logic was made faithful to the human
+# path (Task 3), which appears to have resolved the eu-1tkk.7.7 span issue for
+# this fixture. Locked in by this gate.
