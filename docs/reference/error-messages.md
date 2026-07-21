@@ -12,9 +12,11 @@ real terminal the severity word and the underlines are colourised.
 ## Anatomy of a diagnostic
 
 Eucalypt renders diagnostics in the `codespan` style — the same style
-used by `rustc`. There are no numeric error codes to memorise; a
-diagnostic is identified by its **message**, and the location is shown by
-pointing at the offending source span.
+used by `rustc`. Some diagnostics carry a stable code (e.g.
+`error[EU-EVAL-TYPE]`); see [Error Codes](error-codes.md) for the
+catalogue. A diagnostic without a code is still identified by its
+**message**, and the location is shown by pointing at the offending
+source span.
 
 A typical diagnostic has four parts:
 

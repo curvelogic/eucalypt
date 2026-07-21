@@ -867,10 +867,12 @@ impl<'a> Executor<'a> {
             .map(|t| self.json_trace(t))
             .unwrap_or_default();
 
-        // `code` is intentionally left unassigned (Task 4 assigns codes).
+        // `code` comes straight from the diagnostic's `code` field (Task 4:
+        // `ExecutionError::code()` sets it via `with_code` in `to_diagnostic`),
+        // so the JSON path and the human header are always in sync.
         let diag = JsonDiagnostic {
             level: JsonLevel::Error,
-            code: None,
+            code: diagnostic.code.clone(),
             message: diagnostic.message.clone(),
             primary,
             labels,

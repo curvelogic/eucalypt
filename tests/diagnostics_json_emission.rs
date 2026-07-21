@@ -32,3 +32,13 @@ fn json_error_carries_user_location_for_direct_type_error() {
     );
     assert_eq!(primary["line"], serde_json::json!(2));
 }
+
+#[test]
+fn type_error_carries_a_stable_code() {
+    let v = run_json("a: \"3\"\nresult: a + 1\n");
+    assert_eq!(
+        v["code"],
+        serde_json::json!("EU-EVAL-TYPE"),
+        "type mismatch must carry the stable EU-EVAL-TYPE code, got {v}"
+    );
+}

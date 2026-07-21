@@ -838,6 +838,9 @@ impl ExecutionError {
             return e.to_diagnostic(source_map);
         }
         let mut diag = source_map.diagnostic(self);
+        if let Some(code) = self.code() {
+            diag = diag.with_code(code);
+        }
         // Unwrap Traced to get at the inner error for note generation
         let (inner, env_trace, stack_trace) = match self {
             ExecutionError::Traced(e, trace) => {
@@ -1227,6 +1230,21 @@ impl ExecutionError {
             Some(&trace.1)
         } else {
             None
+        }
+    }
+
+    /// The stable error code for this error, if one has been assigned.
+    ///
+    /// Codes are namespaced `EU-<AREA>-<SLUG>` (see `docs/reference/error-codes.md`).
+    /// Phase 0 assigns a code only to the type-mismatch family exercised by the
+    /// diagnostics JSON schema; other variants return `None` until deliberately
+    /// catalogued — this is a pattern to extend, not a mandate to cover every
+    /// variant immediately.
+    pub fn code(&self) -> Option<&'static str> {
+        match self {
+            ExecutionError::Traced(inner, _) => inner.code(),
+            ExecutionError::TypeMismatch(..) => Some("EU-EVAL-TYPE"),
+            _ => None,
         }
     }
 }
