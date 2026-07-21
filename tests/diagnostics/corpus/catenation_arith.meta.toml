@@ -1,0 +1,7 @@
+mutation = "catenation-trap"
+description = "catenation precedence trap: '+ 1' binds to foldl's partial application, not to the pipeline result"
+region_start_line = 2
+region_end_line = 2
+expected_class = "function"
+xfail = true
+xfail_reason = "eu-1tkk.7.9: partial applications are displayed as 'block' (wrong noun) instead of their own kind, so the message reports 'found block' for a partially-applied function"

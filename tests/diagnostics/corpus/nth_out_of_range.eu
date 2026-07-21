@@ -1,0 +1,2 @@
+xs: [1, 2, 3]
+result: xs nth(10)

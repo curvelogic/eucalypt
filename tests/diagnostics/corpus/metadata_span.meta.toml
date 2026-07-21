@@ -1,0 +1,7 @@
+mutation = "metadata-span"
+description = "runtime type error in a declaration carrying doc metadata"
+region_start_line = 2
+region_end_line = 3
+expected_class = "number"
+xfail = true
+xfail_reason = "eu-1tkk.7.7: label span begins at the backtick metadata line (line 1)"

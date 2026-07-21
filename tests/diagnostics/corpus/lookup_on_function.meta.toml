@@ -1,0 +1,7 @@
+mutation = "non-fn-call"
+description = "static lookup .x on a function value instead of a block"
+region_start_line = 2
+region_end_line = 2
+expected_class = "lookup"
+xfail = true
+xfail_reason = "eu-m93j: NotCallable hardcodes actual_type='function', producing self-contradictory 'tried to call a function as a function' instead of a lookup-target error"

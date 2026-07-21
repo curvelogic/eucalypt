@@ -1,0 +1,6 @@
+mutation = "wrong-literal-type"
+description = "arithmetic on a string literal instead of a number"
+region_start_line = 2
+region_end_line = 2
+expected_class = "type mismatch"
+# No xfail: this case is already correct today (specimen 17). It is a live guard.
