@@ -1,0 +1,19 @@
+{ doc: "eu-odkp: XML import must preserve entity and character references
+        in text content and coalesce the surrounding text into a single
+        text node. This is a regression since the quick-xml 0.25 to 0.41
+        bump silently dropped GeneralRef events and split text into
+        separate trimmed fragments. Exact round-trip fidelity to
+        pre-0.12.0 behaviour is required: the fixture must import as one
+        text node with entities resolved and interior spaces intact, not
+        as several stripped fragments with the entities dropped."
+  import: "root=xml@testdata/190_odkp_xml_entity_refs.xml" }
+
+# Fixture text: a &#38; b &lt;c&gt; &quot;d&quot; inside a single <r> element.
+expected: [:r, {}, c"a & b <c> \"d\""]
+
+# The whole point of the fix: text and resolved entity/character references
+# either side of a reference must coalesce into ONE text node with interior
+# spaces intact, not several trimmed fragments with the references dropped.
+t1: root //= expected
+
+RESULT: [t1] all-true? then(:PASS, :FAIL)
