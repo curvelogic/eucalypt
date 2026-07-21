@@ -2,6 +2,12 @@
 
 All notable changes to eucalypt are documented here.
 
+## [0.13.2] - 2026-07-21
+
+### Fixed
+
+- **XML import silently dropped entity and character references in text content** (regression since 0.12.0's quick-xml upgrade) — `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;` and numeric character references (`&#NN;`, `&#xNN;`) in element text were discarded and the surrounding text split into separate nodes; e.g. `<r>a &amp; b</r>` imported as `["r",{},"a","b"]` instead of `["r",{},"a & b"]`. Entity/character references in text now resolve correctly and the text run is preserved intact. Attribute handling was unaffected. (eu-odkp)
+
 ## [0.13.1] - 2026-07-20
 
 ### Changed
