@@ -301,7 +301,7 @@ compile from. Post-1.0 candidate (§10 records the analysis).
 
 ## 6. The shape of the plan
 
-### 6.1 The eight pillars
+### 6.1 The nine pillars
 
 | Pillar | Theme | The shared thing |
 |---|---|---|
@@ -313,6 +313,7 @@ compile from. Post-1.0 candidate (§10 records the analysis).
 | **PP — Process parallelism** | Isolated forked workers, data-only boundary | Purity + IO-isolation make a scatter/gather `par-map`/`par-fold` safe; an mmap arena is the transport and coordination layer |
 | **EF — Effects & IO** | Composing monads; native filesystem/IO capabilities | One effect story so state+random+IO compose, and native `walk`/`read`/`stat` so filesystem trees are practical (Principle 5) |
 | **EC — Ecosystem & surface** | Modules, interactive surface, reproducibility, conformance | The cross-unit interface, the cache, and the proof corpus that let the surface be completed and frozen |
+| **DX — Diagnostics & developer experience** | Correct locations, curated traces, measured quality | Errors point at user code not the prelude; traces are curated, budgeted and user-anchored; an objective invariant gate makes diagnostic quality a CI ratchet |
 
 ### 6.2 The dependency spine (`→` = "must precede")
 
@@ -345,6 +346,7 @@ compile from. Post-1.0 candidate (§10 records the analysis).
 - **EC**: **W18** (modules) builds on the shipped Unit Interface + git imports;
   **W19** (watch/REPL) builds on the cache + BV5 startup; **W5** (conformance) is the
   proof that BV changes nothing observable.
+- **DX** (diagnostics) is largely **independent of the spine** and runs in parallel: the Phase 0 harness + objective invariant gate is a standing CI ratchet, and the location/trace fixes touch the error machinery (`sourcemap`, `to_diagnostic`, desugar `Smid`s), not the hot path. It touches **BV2**'s annotation side-tables only incidentally.
 
 ### 6.3 Release mapping
 
@@ -358,7 +360,7 @@ reordered as the cadence dictates.
 | **0.12** *(shipped scope)* | The bytecode core + the startup win | **BV1** (default engine, code out of the heap; Phase-4 collapse deferred) + **BV5 embedded prelude** (dual-form blob, deterministic; startup win on release binaries). *Unit cache spec'd + held (eu-lb0r)* |
 | **0.12.1** | Close the engine gap | **BV4** superinstructions / decode-cost fusion (eu-9mvh) + `ExecutionError` boxing (eu-adnu); bytecode block index (eu-4zhi). *Gap-close only — the Phase-4 collapse it unlocks lands in 0.13.* |
 | **0.13** | Frames, annotations, type-gated codegen, prefix-lists | **Phase-4 collapse** — retire HeapSyn once at parity (eu-oufc); **BV5-cache** whole-program unit cache (eu-lb0r); **BV2** side tables; **BV3** register frames + CG selective lifting; **CG** type-gated (unboxing); **prefix-list type** |
-| **0.14** | Polish, parallelism, effects, contracts | **PP** `par-map`/`par-fold`; **EF2** native filesystem IO + **EF1** effect-composition combinators; **W16** contracts; presence inference |
+| **0.14** | Polish, parallelism, effects, contracts, **diagnostics** | **PP** `par-map`/`par-fold`; **EF2** native filesystem IO + **EF1** effect-composition combinators; **W16** contracts; presence inference; **DX** diagnostics overhaul — location correctness, curated traces, evaluation harness with an objective invariant gate (design 2026-07-21; epic eu-1tkk.7) |
 | **0.15+** | Value model, ecosystem, surface | **DS** persistent blocks + `vec`; **EF1** unified effect context; **W18** modules + **CU1** separate-unit compilation; **W19** watch/REPL + **CU2** per-unit incremental cache; **W17** hermetic; **W22** schema interop |
 | **1.0** *(milestone)* | Decide, prove, freeze | *No features.* Surface complete + **W5** conformance green → ratify and freeze the stable-surface tiers, turn on the version contract (§4.6) |
 | **post-1.0** | Curated bets | EF1.3 algebraic effect-rows; WASM-as-distribution; parallel Model B (maybe-never); a true separate-nursery GC *iff* a workload demands it |
@@ -962,6 +964,58 @@ Recorded so they are not forgotten, able to swap in if priorities shift:
 - **Algebraic effect-rows** — typed effects beyond the IO monad; now the long-arc
   end-state of **Pillar EF** (EF1.3), not a free-standing candidate.
 
+### Pillar DX — Diagnostics & developer experience
+
+Eucalypt's error diagnostics mislocate and its traces are prelude-dominated and
+context-free — and there has been no way to *measure* whether a change helps. This
+pillar makes diagnostics correct, curated, and — crucially — measurable, so quality
+becomes a CI ratchet rather than a periodic push. Design:
+`docs/superpowers/specs/2026-07-21-diagnostics-overhaul-design.md` (owner-approved
+2026-07-21); epic **eu-1tkk.7**. It is largely independent of the bytecode spine and
+runs in parallel.
+
+The diagnosis (39-specimen provocation sweep + full architecture map): errors inside
+prelude combinators report `[prelude]:NNNN` with zero user frames; partial applications
+are mislabelled `block` with a misdirecting hint; declaration `Smid`s span their leading
+backtick metadata, so doc comments render *as* source locations; and the "stack trace"
+is the lazy continuation spine, which structurally is not the causal chain. Two "got
+worse" suspects — the engine migration and the blob — were falsified in-session; the
+regression, if real, is unpinned.
+
+1. **DX0 — substrate + evaluation harness (the ratchet).** A single structured
+   diagnostic representation (level/code/spans/labels/notes/help/suggestion+applicability/
+   trace-model), serialisable to JSON, unifying the runtime, `eu check` and LSP renderers.
+   Error codes + `eu explain` (eu-67v5). A provocation corpus (mutation-seeded from
+   `tests/harness/errors/`; doubles as a panic-hunter) feeding an **objective invariant
+   CI gate** — primary location in a user file, no panic, location in the mutated region,
+   ≥1 user frame, bounded trace length — plus golden snapshots (`--bless`, prelude source
+   suppressed). An AI-as-fixer behavioural signal (fix-rate, tracked not gated) and a
+   firewalled AI-as-critic authoring aid. The literature is explicit that no validated
+   automatic quality *metric* exists and LLM-as-judge fails (Santos & Becker 2024); the
+   hard gate is the objective invariants only.
+2. **DX1 — location correctness.** Declaration labels stop rendering doc metadata;
+   `to_diagnostic` prefers the nearest user call-site and never makes a prelude/metadata
+   `Smid` primary when a user frame exists; partial applications/anaphora get a distinct
+   display kind; the "function as a function" nonsense (eu-m93j) becomes a real message;
+   `Smid::get()` is guarded against reporting-time panics.
+3. **DX2 — blame annotations + curated trace.** Prelude combinators declare blame
+   semantics (Heeren-style): *transparent* frames are skipped and blame passes to the
+   caller; *boundary* frames (`nth`/`head`/`lookup`) are named and phrase the error in
+   their own terms (`index out of range`, not `tail of empty` fifteen frames down). The
+   trace is classified, recursion-collapsed, budgeted and user-anchored; the raw dump
+   moves behind `--debug-trace`.
+4. **DX3 — laziness-surviving cause-trace (spike-gated).** A demand/cause chain that
+   survives thunk suspension (Well-Typed's surviving-annotation approach), reconstructing
+   "forced because `report` needed `servers`…" across deferral. A feasibility spike
+   decides whether the full build fits 0.14 or drops to 0.15; Phase 2's curated trace
+   ships regardless.
+
+Deferred to 0.15 as spikes (out of this pillar's 0.14 scope): output-document-path
+context (`$.report.servers[2].port`), dynamic witnesses (Seidel et al.), error slicing.
+Loader/type-checker completeness gaps surfaced by the same sweep (dropped imports,
+swallowed imported-file parse errors, inert type aliases, `eu check`↔`eu` disagreement)
+are tracked separately — real bugs, different effort.
+
 ---
 
 ## 8. The critical path
@@ -979,7 +1033,7 @@ non-performance criteria in the ratified transition review's §6 are met —
 otherwise HeapSyn stays behind `EU_HEAPSYN=1` another release → SV
 contracts + DS + modules (0.14–0.15) → W5 conformance green → the 1.0 milestone:
 ratify and freeze the surface (§4.6).** DS, PP and the post-1.0 candidates slot
-alongside or follow. The 1.0 freeze is gated on the surface and conformance, not on
+alongside or follow. **DX** (diagnostics) runs parallel to the spine and off it — its harness and invariant gate are a standing CI ratchet from 0.14. The 1.0 freeze is gated on the surface and conformance, not on
 the bytecode programme being finished — and no feature is scheduled *for* 1.0; they all
 land in point releases first. *(Revised 2026-07-12 per the ratified
 bytecode-transition review —
@@ -1013,6 +1067,10 @@ sequencing.)*
 | **PP** | Process parallelism (`par-map`/`par-fold`, mmap arena) | 0.14+ |
 | **EF1** | Effect composition (combinators → unified context → effect-rows) | 0.14 → post-1.0 |
 | **EF2** | Native filesystem/IO capabilities (`walk`/`read`/`stat`, streamable) | 0.14 |
+| **DX0** | Diagnostics substrate + evaluation harness (structured diagnostics, error codes, invariant CI gate, golden snapshots, AI fixer/critic) — eu-1tkk.7 | 0.14 |
+| **DX1** | Location correctness (metadata-in-span, user call-site attribution, wrong-noun, eu-m93j, panic-guard) | 0.14 |
+| **DX2** | Blame annotations + curated user-anchored trace | 0.14 |
+| **DX3** | Laziness-surviving cause-trace *(spike-gated; may slip to 0.15)* | 0.14 → 0.15 |
 | **W18** | Module & package system (git, content-addressed) | 0.15+ |
 | **CU1** | Separate unit compilation — defer merge (per-unit incremental prerequisite) | 0.15+ |
 | **CU2** | Per-unit incremental cache (`edit one file → fast recompile`) | 0.15+ |
