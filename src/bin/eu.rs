@@ -7,6 +7,7 @@ use std::io::IsTerminal;
 
 use eucalypt::driver::check;
 use eucalypt::driver::doc;
+use eucalypt::driver::error_codes;
 use eucalypt::driver::format;
 use eucalypt::driver::lsp;
 use eucalypt::driver::options::EucalyptOptions;
@@ -65,6 +66,17 @@ fn run() -> i32 {
     if opt.explain() {
         println!("{}", opt.explanation());
         return 0;
+    }
+
+    // `eu error <CODE>`: look up a stable error code in the catalogue and exit
+    if opt.error_code().is_some() {
+        match error_codes::run(&opt) {
+            Ok(exit) => return exit,
+            Err(e) => {
+                eprintln!("{e}");
+                return 2;
+            }
+        }
     }
 
     // Test mode is substantially different, delegate everything to

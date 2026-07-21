@@ -6,6 +6,8 @@ pub mod check;
 pub mod doc;
 pub mod error;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod error_codes;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod eval;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod format;

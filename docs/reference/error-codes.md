@@ -16,6 +16,11 @@ Codes are namespaced by area: `EU-<AREA>-<SLUG>`, e.g. `EU-EVAL-TYPE`
 for a runtime evaluation error, `EU-PARSE-*` for a parser error,
 `EU-NAME-*` for name resolution, `EU-TYPE-*` for a type-checker warning.
 
+Look up a code from the command line with `eu error <CODE>`, e.g.
+`eu error EU-EVAL-TYPE` prints the catalogue entry below. This is
+independent of `eu explain <FILES>`, which explains what a run would do
+given input files rather than looking up a code.
+
 ## Catalogue
 
 ### `EU-EVAL-TYPE`
@@ -54,5 +59,7 @@ To add a new code: append a `### EU-<AREA>-<SLUG>` section here with
 "What it means", "Example", and "How to fix it" — positive guidance only,
 no anti-pattern enumeration. Then map the variant to the code in the
 relevant `code()` method (`ExecutionError::code`, and analogous methods
-as they are added for `CoreError`, `ParserError`, `TypeWarning`).
+as they are added for `CoreError`, `ParserError`, `TypeWarning`), and add
+a matching entry to the `CATALOGUE` in `src/driver/error_codes.rs` so
+`eu error <CODE>` can look it up too.
 -->

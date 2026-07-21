@@ -42,3 +42,21 @@ fn type_error_carries_a_stable_code() {
         "type mismatch must carry the stable EU-EVAL-TYPE code, got {v}"
     );
 }
+
+#[test]
+fn error_command_prints_catalogue_entry() {
+    let out = Command::new(env!("CARGO_BIN_EXE_eu"))
+        .args(["error", "EU-EVAL-TYPE"])
+        .output()
+        .expect("run eu error");
+    assert!(
+        out.status.success(),
+        "eu error EU-EVAL-TYPE should exit 0, stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout).to_lowercase();
+    assert!(
+        stdout.contains("type"),
+        "catalogue entry should mention 'type', got: {stdout}"
+    );
+}
