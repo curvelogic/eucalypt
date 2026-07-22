@@ -36,6 +36,28 @@ fn text_range_to_span(range: TextRange) -> Span {
     Span::new(start, end)
 }
 
+/// Span of a declaration, excluding any leading backtick metadata.
+///
+/// A `Declaration` node's own `text_range` runs from the start of its
+/// leading `DECL_META` (if present) through the end of its body, so minting
+/// a Smid directly from `decl.syntax().text_range()` makes any diagnostic
+/// built from that Smid report the declaration's doc comment as its source
+/// location instead of the declaration itself. Starting the span at the
+/// declaration head (falling back to the full range when there is no head,
+/// which should not normally happen) keeps the end position — and hence
+/// anything measuring the declaration's extent — unchanged while excluding
+/// the metadata (eu-1tkk.7.7).
+fn declaration_span_excluding_metadata(decl: &rowan_ast::Declaration) -> Span {
+    let full = text_range_to_span(decl.syntax().text_range());
+    match decl.head() {
+        Some(head) => {
+            let start = ByteIndex(head.syntax().text_range().start().into());
+            Span::new(start, full.end())
+        }
+        None => full,
+    }
+}
+
 /// Return type of `desugar_declaration_body_with_patterns`:
 /// `(body_expr, lambda_param_names, lambda_param_vars)`
 type PatternBodyResult = (RcExpr, Vec<String>, Vec<String>);
@@ -1107,8 +1129,8 @@ fn desugar_monadic_block(
     let mut name_value_pairs: Vec<(String, RcExpr, Smid)> = Vec::with_capacity(decls.len());
     for (i, decl) in decls.iter().enumerate() {
         let decl_name = bind_names[i].clone();
-        let span = name_identifier_span(decl)
-            .unwrap_or_else(|| text_range_to_span(decl.syntax().text_range()));
+        let span =
+            name_identifier_span(decl).unwrap_or_else(|| declaration_span_excluding_metadata(decl));
         let value = if let Some(body) = decl.body() {
             if let Some(soup) = body.soup() {
                 let expr = soup.desugar(desugarer)?;
@@ -1232,8 +1254,8 @@ fn desugar_monadic_block_implicit(
     let mut name_value_pairs: Vec<(String, RcExpr, Smid)> = Vec::with_capacity(decls.len());
     for (i, decl) in decls.iter().enumerate() {
         let decl_name = bind_names[i].clone();
-        let span = name_identifier_span(decl)
-            .unwrap_or_else(|| text_range_to_span(decl.syntax().text_range()));
+        let span =
+            name_identifier_span(decl).unwrap_or_else(|| declaration_span_excluding_metadata(decl));
         let value = if let Some(body) = decl.body() {
             if let Some(soup) = body.soup() {
                 let expr = soup.desugar(desugarer)?;
@@ -1640,7 +1662,7 @@ fn extract_rowan_declaration_components(
     decl: &rowan_ast::Declaration,
     desugarer: &mut Desugarer,
 ) -> Result<RowanDeclarationComponents, CoreError> {
-    let span = text_range_to_span(decl.syntax().text_range());
+    let span = declaration_span_excluding_metadata(decl);
 
     // Extract metadata first
     let metadata = if let Some(meta) = decl.meta() {
