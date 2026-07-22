@@ -1181,9 +1181,12 @@ impl ExecutionError {
 
     /// Format a Smid with all available detail for trace dump diagnostics
     fn format_smid_detail(smid: Smid, source_map: &SourceMap) -> String {
-        if !smid.is_valid() {
+        // `smid.get()` returns `None` for an invalid Smid; render that case
+        // directly rather than indexing, so this debug helper can never panic
+        // on an invalid Smid (eu-1tkk.7.10).
+        let Some(index) = smid.get() else {
             return "invalid (no location)".to_string();
-        }
+        };
         match source_map.source_info_for_smid(smid) {
             Some(info) => {
                 let file_part = match info.file {
@@ -1198,9 +1201,9 @@ impl ExecutionError {
                     Some(ann) => format!("ann=\"{ann}\""),
                     None => "ann=none".to_string(),
                 };
-                format!("smid={} {file_part} {span_part} {ann_part}", smid.get())
+                format!("smid={index} {file_part} {span_part} {ann_part}")
             }
-            None => format!("smid={} (no source info)", smid.get()),
+            None => format!("smid={index} (no source info)"),
         }
     }
 

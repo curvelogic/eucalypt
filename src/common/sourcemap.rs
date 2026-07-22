@@ -60,8 +60,16 @@ impl Smid {
         self.0.is_some()
     }
 
-    pub fn get(self) -> usize {
-        (self.0.expect("Invalid SMID").get() - 1) as usize
+    /// Convert to a zero-based index into `SourceMap::source`, if valid.
+    ///
+    /// Returns `None` for an invalid (default/synthetic) Smid rather than
+    /// panicking. Both trace producers (the HeapSyn VM and the bytecode
+    /// machine) pre-filter invalid Smids before pushing them onto env/stack
+    /// traces, so every current caller sees `Some` in practice — but this
+    /// guard means a future unfiltered trace source cannot panic during
+    /// error reporting (eu-1tkk.7.10).
+    pub fn get(self) -> Option<usize> {
+        self.0.map(|n| (n.get() - 1) as usize)
     }
 
     pub fn sym_name(&self) -> String {
@@ -153,7 +161,7 @@ impl SourceMap {
     /// different annotation
     pub fn annotated(&mut self, smid: Smid, annotation: String) -> Smid {
         let new_smid = Smid::new(self.source.len());
-        let new_info = if let Some(info) = self.source.get(smid.get()) {
+        let new_info = if let Some(info) = smid.get().and_then(|idx| self.source.get(idx)) {
             SourceInfo {
                 annotation: Some(annotation),
                 ..*info
@@ -171,17 +179,13 @@ impl SourceMap {
 
     /// Retrieve the SourceInfo for something that has a SMID
     pub fn source_info(&self, expr: &dyn HasSmid) -> Option<&SourceInfo> {
-        if expr.smid().is_valid() {
-            self.source.get(expr.smid().get())
-        } else {
-            None
-        }
+        expr.smid().get().and_then(|idx| self.source.get(idx))
     }
 
     /// Retrieve the SourceInfo for a given Smid value
     pub fn source_info_for_smid(&self, smid: Smid) -> Option<&SourceInfo> {
-        if smid.is_valid() {
-            self.source.get(smid.get())
+        if let Some(idx) = smid.get() {
+            self.source.get(idx)
         } else {
             None
         }
@@ -308,7 +312,7 @@ impl SourceMap {
         let mut elements: Vec<_> = trace
             .iter()
             .filter_map(|smid| {
-                let info = self.source.get(smid.get())?;
+                let info = self.source.get(smid.get()?)?;
 
                 // Determine the display name: prefer intrinsic display name,
                 // then annotation (function name), then source snippet
@@ -430,6 +434,54 @@ fn compress_trace_cycles(elements: Vec<String>) -> Vec<String> {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `Smid::get()` must never panic on an invalid (default/synthetic) Smid.
+    ///
+    /// Both trace producers (the HeapSyn VM and the bytecode machine) today
+    /// pre-filter invalid Smids before pushing them onto env/stack traces, so
+    /// this cannot currently happen in practice. This is a defensive
+    /// regression test: a future trace source that fails to pre-filter must
+    /// not be able to crash error reporting (eu-1tkk.7.10).
+    #[test]
+    fn get_returns_none_for_invalid_smid() {
+        assert_eq!(Smid::default().get(), None);
+    }
+
+    #[test]
+    fn get_returns_index_for_valid_smid() {
+        let mut source_map = SourceMap::new();
+        let smid = source_map.add(0, Span::new(0u32, 0u32));
+        assert_eq!(smid.get(), Some(0));
+    }
+
+    /// `format_trace` must gracefully skip an invalid Smid rather than panic,
+    /// even though today's trace producers never hand it one.
+    #[test]
+    fn format_trace_skips_invalid_smid_without_panicking() {
+        let source_map = SourceMap::new();
+        let files: SimpleFiles<String, String> = SimpleFiles::new();
+        let trace = [Smid::default()];
+        let out = source_map.format_trace(&trace, &files);
+        assert_eq!(out, "");
+    }
+
+    /// A trace mixing a valid, resolvable Smid with an invalid one must
+    /// render only the valid entry, not panic on the invalid one.
+    #[test]
+    fn format_trace_skips_invalid_smid_amongst_valid_ones() {
+        let mut source_map = SourceMap::new();
+        let mut files: SimpleFiles<String, String> = SimpleFiles::new();
+        let file_id = files.add("x.eu".to_string(), "hello".to_string());
+        let smid = source_map.add(file_id, Span::new(0u32, 5u32));
+        let trace = [Smid::default(), smid, Smid::default()];
+        let out = source_map.format_trace(&trace, &files);
+        assert!(out.contains("x.eu:1:1"));
+    }
 }
 
 /// Map internal intrinsic names to user-facing display names.
