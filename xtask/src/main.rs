@@ -329,7 +329,10 @@ fn cmd_prelude_compile() -> Result<()> {
     let runtime = make_standard_runtime(&mut source_map);
 
     let stg_settings = eucalypt::eval::stg::StgSettings {
-        generate_annotations: false,
+        // SPIKE (eu-1tkk.7 Phase 2 scoping, throwaway): flipped to measure
+        // blob-size delta and confirm the Smid-collision hazard described in
+        // the checkpoint report. DO NOT MERGE THIS FLIP AS-IS.
+        generate_annotations: true,
         suppress_updates: false,
         suppress_inlining: true,
         suppress_optimiser: false,
