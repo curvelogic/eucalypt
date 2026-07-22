@@ -455,11 +455,17 @@ impl MachineState {
                             let cont_env = view.scoped(environment);
                             cont_env.update(&view, *i, black_hole)?;
 
+                            let annotation = if self.annotation.is_valid() {
+                                self.annotation
+                            } else {
+                                Self::target_annotation(&self.closure)
+                            };
                             self.push(
                                 view,
                                 Continuation::Update {
                                     environment,
                                     index: *i,
+                                    annotation,
                                 },
                             )?;
                         }
@@ -524,11 +530,17 @@ impl MachineState {
                         let black_hole = SynClosure::new(hole.as_ptr(), environment);
                         let cont_env = view.scoped(environment);
                         cont_env.update(&view, *i, black_hole)?;
+                        let annotation = if self.annotation.is_valid() {
+                            self.annotation
+                        } else {
+                            Self::target_annotation(&callee)
+                        };
                         self.push(
                             view,
                             Continuation::Update {
                                 environment,
                                 index: *i,
+                                annotation,
                             },
                         )?;
                         self.closure = callee;
@@ -581,11 +593,17 @@ impl MachineState {
                                 annotation: self.annotation,
                             },
                         )?;
+                        let annotation = if self.annotation.is_valid() {
+                            self.annotation
+                        } else {
+                            Self::target_annotation(&callee)
+                        };
                         self.push(
                             view,
                             Continuation::Update {
                                 environment,
                                 index: *i,
+                                annotation,
                             },
                         )?;
                         self.closure = callee;
@@ -769,11 +787,17 @@ impl MachineState {
                         let black_hole = SynClosure::new(hole.as_ptr(), environment);
                         let cont_env = view.scoped(environment);
                         cont_env.update(&view, *i, black_hole)?;
+                        let annotation = if self.annotation.is_valid() {
+                            self.annotation
+                        } else {
+                            Self::target_annotation(&obj_closure)
+                        };
                         self.push(
                             view,
                             Continuation::Update {
                                 environment,
                                 index: *i,
+                                annotation,
                             },
                         )?;
                     }
@@ -828,11 +852,17 @@ impl MachineState {
             let hole = view.alloc(HeapSyn::BlackHole)?;
             let black_hole = SynClosure::new(hole.as_ptr(), self.globals);
             view.scoped(self.globals).update(&view, i, black_hole)?;
+            let annotation = if self.annotation.is_valid() {
+                self.annotation
+            } else {
+                Self::target_annotation(&global)
+            };
             self.push(
                 view,
                 Continuation::Update {
                     environment: self.globals,
                     index: i,
+                    annotation,
                 },
             )?;
         }
@@ -866,7 +896,9 @@ impl MachineState {
                         )?,
                     );
                 }
-                Continuation::Update { environment, index } => {
+                Continuation::Update {
+                    environment, index, ..
+                } => {
                     self.update(view, environment, index)?;
                 }
                 other => {
@@ -915,7 +947,9 @@ impl MachineState {
                         ));
                     }
                 }
-                Continuation::Update { environment, index } => {
+                Continuation::Update {
+                    environment, index, ..
+                } => {
                     self.update(view, environment, index)?;
                 }
                 Continuation::ApplyTo { annotation, .. } => {
@@ -1129,7 +1163,9 @@ impl MachineState {
                         return Err(ExecutionError::NoBranchForDataTag(ann, tag, expected_tags));
                     }
                 }
-                Continuation::Update { environment, index } => {
+                Continuation::Update {
+                    environment, index, ..
+                } => {
                     self.update(view, environment, index)?;
                 }
                 Continuation::ApplyTo { args, annotation } => {
@@ -1300,7 +1336,9 @@ impl MachineState {
                         return Err(ExecutionError::CannotReturnFunToCase(ann, expected_tags));
                     }
                 }
-                Continuation::Update { environment, index } => {
+                Continuation::Update {
+                    environment, index, ..
+                } => {
                     self.update(view, environment, index)?;
                 }
                 Continuation::DeMeta {
@@ -1351,6 +1389,32 @@ impl MachineState {
         Ok(())
     }
 
+    /// The best available source annotation for a closure about to be
+    /// forced — used as the fallback stamped on its `Update` continuation
+    /// when the forcing site itself has no live annotation (`self.annotation`
+    /// invalid at push time; e.g. a value reached via native Rust code
+    /// rather than a compiled call/reference site). Mirrors
+    /// `bytecode::machine::target_annotation`.
+    ///
+    /// A `Thunk`/`Value` `LambdaForm` carries no smid of its own
+    /// (`closure.annotation()` returns `Smid::default()` for those kinds —
+    /// only a `Lambda` form's header carries one; see `LambdaForm::annotation`
+    /// in `stg/syntax.rs`) — the compiler instead wraps the thunk's body in a
+    /// leading `HeapSyn::Ann` node, so peek that directly (eu-1tkk.7.18).
+    fn target_annotation(closure: &SynClosure) -> Smid {
+        if closure.annotation().is_valid() {
+            return closure.annotation();
+        }
+        // SAFETY: closure.code() points at a HeapSyn node in the compiled,
+        // immutable STG graph, live for the program's duration — the same
+        // unsafe peek already used at the top of `dispatch`.
+        let code: &HeapSyn = unsafe { &*closure.code().as_ptr() };
+        match code {
+            HeapSyn::Ann { smid, .. } => *smid,
+            _ => Smid::default(),
+        }
+    }
+
     /// Find the nearest valid annotation on the remaining stack.
     ///
     /// Used as a fallback when the immediate continuation has no
@@ -1362,11 +1426,18 @@ impl MachineState {
                 | Continuation::ApplyTo { annotation, .. }
                 | Continuation::SeqBind { annotation, .. } => *annotation,
                 Continuation::LookupLitForce { smid, .. } => *smid,
-                Continuation::Update { environment, .. }
-                | Continuation::DeMeta { environment, .. } => {
-                    let cont_env = view.scoped(*environment);
-                    cont_env.annotation()
+                Continuation::Update {
+                    environment,
+                    annotation,
+                    ..
+                } => {
+                    if annotation.is_valid() {
+                        *annotation
+                    } else {
+                        view.scoped(*environment).annotation()
+                    }
                 }
+                Continuation::DeMeta { environment, .. } => view.scoped(*environment).annotation(),
                 Continuation::CaptureEnd => continue,
             };
             if smid.is_valid() {
@@ -1392,11 +1463,18 @@ impl MachineState {
                 | Continuation::ApplyTo { annotation, .. }
                 | Continuation::SeqBind { annotation, .. } => *annotation,
                 Continuation::LookupLitForce { smid, .. } => *smid,
-                Continuation::Update { environment, .. }
-                | Continuation::DeMeta { environment, .. } => {
-                    let cont_env = view.scoped(*environment);
-                    cont_env.annotation()
+                Continuation::Update {
+                    environment,
+                    annotation,
+                    ..
+                } => {
+                    if annotation.is_valid() {
+                        *annotation
+                    } else {
+                        view.scoped(*environment).annotation()
+                    }
                 }
+                Continuation::DeMeta { environment, .. } => view.scoped(*environment).annotation(),
                 Continuation::CaptureEnd => Smid::default(),
             };
 
@@ -2625,6 +2703,7 @@ pub mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
+    use crate::common::sourcemap::Smid;
     use crate::eval::machine::cont::Continuation;
     use crate::eval::machine::env::{EnvFrame, SynClosure};
     use crate::eval::machine::intrinsic::StgIntrinsic;
@@ -2936,6 +3015,7 @@ pub mod tests {
         m.state.stack.push(Continuation::Update {
             environment: root,
             index: 7,
+            annotation: Smid::default(),
         });
         let caller_closure = m
             .mutate(
@@ -2998,6 +3078,7 @@ pub mod tests {
         m.state.stack.push(Continuation::Update {
             environment: root,
             index: 11,
+            annotation: Smid::default(),
         });
         let caller_closure = m
             .mutate(

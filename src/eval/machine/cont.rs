@@ -51,6 +51,13 @@ pub enum Continuation {
     Update {
         environment: RefPtr<EnvFrame>,
         index: usize,
+        /// Source annotation at the point the thunk was forced (the call
+        /// site / force site), not the thunk's definition site. Read in
+        /// preference to the environment's stamped-at-creation annotation
+        /// by `MachineState::stack_trace_iter` so error traces anchor on
+        /// the user's call site rather than a definition site
+        /// (eu-1tkk.7.18).
+        annotation: Smid,
     },
     /// Once callable is evaluated, apply to args
     ApplyTo {
@@ -213,6 +220,7 @@ impl GcScannable for Continuation {
             Continuation::Update {
                 environment,
                 index: _,
+                annotation: _,
             } => {
                 if marker.mark(*environment) {
                     out.push(ScanPtr::from_non_null(scope, *environment));

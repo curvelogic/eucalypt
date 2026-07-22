@@ -67,6 +67,12 @@ pub enum BcContinuation {
     Update {
         environment: RefPtr<BcEnvFrame>,
         index: usize,
+        /// Source annotation at the point the thunk was forced (the call
+        /// site / force site), not the thunk's definition site. Read in
+        /// preference to the environment's stamped-at-creation annotation
+        /// by `BcMachineState::stack_trace` so error traces anchor on the
+        /// user's call site rather than a definition site (eu-1tkk.7.18).
+        annotation: Smid,
     },
     /// Once callable is evaluated, apply to args.
     ApplyTo {
@@ -375,6 +381,7 @@ mod tests {
         let cont = BcContinuation::Update {
             environment: env,
             index: 0,
+            annotation: Smid::default(),
         };
         assert_eq!(cont.match_tag(0), None);
     }
