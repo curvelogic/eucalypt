@@ -1,0 +1,6 @@
+mutation = "undefined-name"
+description = "reference to an undefined variable"
+region_start_line = 3
+region_end_line = 3
+expected_class = "unresolved variable"
+# No xfail: this case is already correct today (specimen 08). It is a live guard.

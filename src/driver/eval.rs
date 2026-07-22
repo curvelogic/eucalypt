@@ -3,7 +3,11 @@
 //! This might be by various strategies including delegating to
 //! another implementation or interpreting core directly
 use crate::{
-    common::{prettify, sourcemap::*},
+    common::{
+        diagnostic_json::{FrameKind, JsonDiagnostic, JsonFrame, JsonLabel, JsonLevel, JsonPos},
+        prettify,
+        sourcemap::*,
+    },
     core::{expr::*, typecheck::error::TypeWarning},
     driver::{
         error::EucalyptError,
@@ -51,7 +55,7 @@ pub fn maybe_load_prelude_blob(
     None
 }
 use codespan_reporting::{
-    diagnostic::Diagnostic,
+    diagnostic::{Diagnostic, LabelStyle},
     files::{Files, SimpleFiles},
     term::{
         self,
@@ -736,88 +740,147 @@ impl<'a> Executor<'a> {
         }
     }
 
-    /// Convert an execution error to a JSON value
-    fn error_to_json(&self, error: &ExecutionError) -> serde_json::Value {
-        let message = format!("{error}");
+    /// Resolve a `(file_id, byte_offset)` pair to a [`JsonPos`], setting
+    /// `in_user_file` via the same [`SourceMap::is_user_file`] the human path
+    /// uses (never re-derived).
+    fn json_pos_for(&self, file_id: usize, start: usize) -> JsonPos {
+        let file = self.files.name(file_id).ok().map(|n| n.to_string());
+        let (line, column) = match self.files.location(file_id, start) {
+            Ok(loc) => (Some(loc.line_number as u32), Some(loc.column_number as u32)),
+            Err(_) => (None, None),
+        };
+        JsonPos {
+            file,
+            line,
+            column,
+            in_user_file: self.source_map.is_user_file(file_id),
+        }
+    }
 
-        // Resolve source location if available
-        let location = self.source_map.source_info(error).and_then(|info| {
-            let file_id = info.file?;
-            let span = info.span?;
-            let name = self.files.name(file_id).ok()?;
-            let loc = self.files.location(file_id, span.start().to_usize()).ok()?;
-            let end_loc = self.files.location(file_id, span.end().to_usize()).ok()?;
-            Some(serde_json::json!({
-                "file": name,
-                "start": {
-                    "line": loc.line_number,
-                    "column": loc.column_number,
-                },
-                "end": {
-                    "line": end_loc.line_number,
-                    "column": end_loc.column_number,
-                }
-            }))
-        });
+    /// A locationless position (synthetic Smid / no source span).
+    fn synthetic_pos() -> JsonPos {
+        JsonPos {
+            file: None,
+            line: None,
+            column: None,
+            in_user_file: false,
+        }
+    }
 
-        // Build stack trace if present, filtering internal machinery
-        let stack_trace: Option<Vec<serde_json::Value>> = error.stack_trace().map(|trace| {
-            trace
-                .iter()
-                .filter_map(|smid| {
-                    let info = self.source_map.source_info_for_smid(*smid)?;
+    /// Build the curated, outermost-first frame trace from a stack trace,
+    /// mirroring the filtering in [`SourceMap::format_trace`]: a frame is kept
+    /// only when it has a user-visible name (intrinsic display name or
+    /// annotation) or a source snippet; internal machinery is dropped.
+    ///
+    /// Phase 0 frame classification is coarse: `User` when the frame resolves
+    /// to a user file, otherwise `Transparent` (refined in Phase 2).
+    fn json_trace(&self, trace: &[Smid]) -> Vec<JsonFrame> {
+        let mut frames: Vec<JsonFrame> = trace
+            .iter()
+            .filter_map(|smid| {
+                let info = self.source_map.source_info_for_smid(*smid)?;
 
-                    // Map intrinsic names to display names, filtering internal ones
-                    let display_name = info.annotation.as_deref().and_then(intrinsic_display_name);
+                // Prefer intrinsic display name, then annotation, then a
+                // source snippet — the same precedence format_trace uses.
+                let display_name = info
+                    .annotation
+                    .as_deref()
+                    .and_then(|a| intrinsic_display_name(a).or(Some(a)))
+                    .map(|s| s.to_string());
 
-                    let source_snippet = || {
-                        let id = info.file?;
-                        let source: &str = self.files.source(id).ok()?;
-                        let span = info.span?;
-                        source.get(std::ops::Range::from(span))
-                    };
+                let source_snippet = || -> Option<String> {
+                    let id = info.file?;
+                    let source: &str = self.files.source(id).ok()?;
+                    let span = info.span?;
+                    let raw = source.get(std::ops::Range::from(span))?;
+                    let first_line = raw.lines().next().unwrap_or(raw);
+                    Some(first_line.to_string())
+                };
 
-                    let label = display_name.or_else(source_snippet)?;
+                let name = display_name.or_else(source_snippet)?;
 
-                    let file_loc = info.file.and_then(|id| {
-                        let name = self.files.name(id).ok()?;
-                        let span = info.span?;
-                        let loc = self.files.location(id, span.start().to_usize()).ok()?;
-                        Some(serde_json::json!({
-                            "file": name,
-                            "line": loc.line_number,
-                            "column": loc.column_number,
-                        }))
-                    });
+                let pos = match (info.file, info.span) {
+                    (Some(file), Some(span)) => self.json_pos_for(file, span.start().to_usize()),
+                    _ => Self::synthetic_pos(),
+                };
 
-                    let mut entry = serde_json::Map::new();
-                    if let Some(loc) = file_loc {
-                        entry.insert("location".to_string(), loc);
-                    }
-                    entry.insert(
-                        "name".to_string(),
-                        serde_json::Value::String(label.to_string()),
-                    );
-                    Some(serde_json::Value::Object(entry))
+                let kind = if pos.in_user_file {
+                    FrameKind::User
+                } else {
+                    FrameKind::Transparent
+                };
+
+                Some(JsonFrame {
+                    name: Some(name),
+                    pos,
+                    kind,
                 })
-                .collect()
-        });
+            })
+            .collect();
 
-        let mut result = serde_json::json!({
-            "severity": "error",
-            "message": message,
-        });
+        // Read outermost-first (the VM yields innermost-first), matching
+        // format_trace's conventional ordering.
+        frames.reverse();
+        frames
+    }
 
-        if let Some(loc) = location {
-            result["location"] = loc;
-        }
-        if let Some(trace) = stack_trace {
-            if !trace.is_empty() {
-                result["stack_trace"] = serde_json::Value::Array(trace);
-            }
-        }
+    /// Convert an execution error to a structured JSON diagnostic.
+    ///
+    /// This shares the human renderer's location logic: it derives the primary
+    /// position and labels from [`ExecutionError::to_diagnostic`] — the same
+    /// selection (user-file own Smid, else first user Smid in the env trace,
+    /// then the stack trace) — rather than resolving `source_info(error)` alone.
+    /// The two paths converge so that a plausible-but-wrong location cannot
+    /// diverge between them.
+    fn error_to_json(&self, error: &ExecutionError) -> serde_json::Value {
+        // Reuse the human path's diagnostic wholesale so that message, primary
+        // label, and secondary labels come from exactly the same selection.
+        let diagnostic = error.to_diagnostic(&self.source_map);
 
-        result
+        // Map each codespan label to a JsonLabel, resolving in_user_file via
+        // the shared is_user_file predicate.
+        let labels: Vec<JsonLabel> = diagnostic
+            .labels
+            .iter()
+            .map(|label| {
+                let pos = self.json_pos_for(label.file_id, label.range.start);
+                JsonLabel {
+                    pos,
+                    message: label.message.clone(),
+                    primary: label.style == LabelStyle::Primary,
+                }
+            })
+            .collect();
+
+        // The primary position is the primary label's position, or a synthetic
+        // position when the human path cleared all labels (e.g. a suppressed
+        // non-user-file assertion primary).
+        let primary = labels
+            .iter()
+            .find(|l| l.primary)
+            .map(|l| l.pos.clone())
+            .unwrap_or_else(Self::synthetic_pos);
+
+        // Structured trace from the same stack trace the human note renders.
+        let trace = error
+            .stack_trace()
+            .map(|t| self.json_trace(t))
+            .unwrap_or_default();
+
+        // `code` comes straight from the diagnostic's `code` field (Task 4:
+        // `ExecutionError::code()` sets it via `with_code` in `to_diagnostic`),
+        // so the JSON path and the human header are always in sync.
+        let diag = JsonDiagnostic {
+            level: JsonLevel::Error,
+            code: diagnostic.code.clone(),
+            message: diagnostic.message.clone(),
+            primary,
+            labels,
+            notes: diagnostic.notes.clone(),
+            trace,
+        };
+
+        serde_json::to_value(&diag).expect("failed to serialise diagnostic as JSON")
     }
 
     /// Write JSON error to stderr

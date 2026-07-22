@@ -1,0 +1,4 @@
+` "documentation for scale — metadata, not code"
+scale(factor, xs): xs map(* factor)
+doubled(xs): scale("2", xs)
+main: [1, 2] doubled

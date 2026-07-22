@@ -1,0 +1,7 @@
+mutation = "swap-args"
+description = "nth(n, l) called with the list and index swapped: nth(xs, 0) instead of nth(0, xs)"
+region_start_line = 2
+region_end_line = 2
+expected_class = "number"
+xfail = true
+xfail_reason = "eu-1tkk.7.8/.11: primary lands in [prelude]:1329 (inside drop's recursion), not the user call-site"

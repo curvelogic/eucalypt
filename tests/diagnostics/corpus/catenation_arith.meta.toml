@@ -1,0 +1,10 @@
+mutation = "catenation-trap"
+description = "catenation precedence trap: '+ 1' binds to foldl's partial application, not to the pipeline result"
+region_start_line = 2
+region_end_line = 2
+expected_class = "function"
+# No xfail: the invariant gate (eu-1tkk.7.3) checks structural location/trace
+# properties only, and this fixture now satisfies all five. The underlying
+# message-content bug (eu-1tkk.7.9: partial applications reported as 'block'
+# instead of their own kind) is real but out of this gate's scope — tracked
+# separately by eu-1tkk.7.9.

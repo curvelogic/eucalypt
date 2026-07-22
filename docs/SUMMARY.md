@@ -53,6 +53,7 @@
 - [Import Formats](reference/import-formats.md)
 - [Export Formats](reference/export-formats.md)
 - [Error Messages Guide](reference/error-messages.md)
+- [Error Codes](reference/error-codes.md)
 - [Agent Reference](reference/agent-reference.md)
 
 # Understanding Eucalypt

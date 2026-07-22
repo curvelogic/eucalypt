@@ -1,0 +1,6 @@
+mutation = "broken-key"
+description = "lookup of a key not present in the block (typo of an existing key)"
+region_start_line = 2
+region_end_line = 2
+expected_class = "not found"
+# No xfail: this case is already correct today (specimen 21). It is a live guard.

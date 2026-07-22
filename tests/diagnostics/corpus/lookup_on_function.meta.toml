@@ -1,0 +1,10 @@
+mutation = "non-fn-call"
+description = "static lookup .x on a function value instead of a block"
+region_start_line = 2
+region_end_line = 2
+expected_class = "lookup"
+# No xfail: the invariant gate (eu-1tkk.7.3) checks structural location/trace
+# properties only, and this fixture now satisfies all five (primary is
+# in_user_file at the right line). The underlying message-content bug
+# (eu-m93j: self-contradictory 'tried to call a function as a function') is
+# real but out of this gate's scope — tracked separately by eu-m93j.

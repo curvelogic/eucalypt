@@ -1,0 +1,7 @@
+mutation = "empty-guard"
+description = "index past end of list"
+region_start_line = 2
+region_end_line = 2
+expected_class = "range"
+xfail = true
+xfail_reason = "eu-1tkk.7.11: reports 'tail of empty list' at [prelude]:1329, wrong op, 15 prelude frames"

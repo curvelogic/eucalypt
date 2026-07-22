@@ -139,6 +139,15 @@ pub enum Commands {
     Check(CheckArgs),
     /// Extract documentation from eucalypt source files
     Doc(DocCliArgs),
+    /// Look up a stable error code in the catalogue (see docs/reference/error-codes.md)
+    Error(ErrorArgs),
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct ErrorArgs {
+    /// Stable error code to look up, e.g. EU-EVAL-TYPE
+    #[arg(value_name = "CODE")]
+    pub code: String,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -457,6 +466,9 @@ pub struct EucalyptOptions {
 
     // IO monad permission flag
     pub allow_io: bool,
+
+    // `eu error <CODE>` — the code to look up in the catalogue
+    pub error_code: Option<String>,
 }
 
 /// Extract `CommonArgs` from whatever subcommand is active, falling
@@ -494,6 +506,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             Some(Commands::Version) | Some(Commands::Lsp) => &cli.files,
             Some(Commands::Check(args)) => &args.files,
             Some(Commands::Doc(args)) => &args.files,
+            Some(Commands::Error(_)) => &cli.files,
             None => &cli.files,
         };
 
@@ -719,6 +732,12 @@ impl From<EucalyptCli> for EucalyptOptions {
             _ => false,
         };
 
+        // Extract the error code from the Error command (`eu error <CODE>`)
+        let error_code = match &cli.command {
+            Some(Commands::Error(args)) => Some(args.code.clone()),
+            _ => None,
+        };
+
         EucalyptOptions {
             lib_path: common.lib_path,
             no_prelude: common.no_prelude,
@@ -780,6 +799,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             args,
             seed,
             allow_io,
+            error_code,
         }
     }
 }
@@ -806,6 +826,7 @@ impl EucalyptCli {
             "lsp",
             "check",
             "doc",
+            "error",
             "help",
         ];
 
@@ -870,6 +891,12 @@ impl EucalyptOptions {
 
     pub fn explain(&self) -> bool {
         self.explain
+    }
+
+    /// The code argument to `eu error <CODE>`, if this invocation is that
+    /// subcommand.
+    pub fn error_code(&self) -> Option<&str> {
+        self.error_code.as_deref()
     }
 
     pub fn parse_only(&self) -> bool {
