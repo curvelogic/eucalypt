@@ -1325,14 +1325,20 @@ impl MachineState {
                     self.closure = SynClosure::new(body, environment);
                     self.annotation = annotation;
                 }
-                Continuation::LookupLitForce { smid, .. } => {
-                    // A function is not a block — raise type error
+                Continuation::LookupLitForce { key, smid, .. } => {
+                    // A literal `.key` lookup forced its target and found a
+                    // function rather than a block. This is a lookup-target
+                    // type error, not a callability error — reporting it via
+                    // `NotCallable` with actual_type = "function" produced
+                    // the self-contradictory "tried to call a function as a
+                    // function" (eu-m93j).
                     let ann = if smid.is_valid() {
                         smid
                     } else {
                         self.nearest_stack_annotation(view)
                     };
-                    return Err(ExecutionError::NotCallable(ann, "function".to_string()));
+                    let key_name = self.symbol_pool.resolve(key).to_string();
+                    return Err(ExecutionError::LookupOnFunction(ann, Some(key_name)));
                 }
                 Continuation::CaptureEnd => {
                     self.capture_end_pending = true;

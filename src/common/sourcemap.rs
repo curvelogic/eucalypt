@@ -436,54 +436,6 @@ fn compress_trace_cycles(elements: Vec<String>) -> Vec<String> {
     result
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `Smid::get()` must never panic on an invalid (default/synthetic) Smid.
-    ///
-    /// Both trace producers (the HeapSyn VM and the bytecode machine) today
-    /// pre-filter invalid Smids before pushing them onto env/stack traces, so
-    /// this cannot currently happen in practice. This is a defensive
-    /// regression test: a future trace source that fails to pre-filter must
-    /// not be able to crash error reporting (eu-1tkk.7.10).
-    #[test]
-    fn get_returns_none_for_invalid_smid() {
-        assert_eq!(Smid::default().get(), None);
-    }
-
-    #[test]
-    fn get_returns_index_for_valid_smid() {
-        let mut source_map = SourceMap::new();
-        let smid = source_map.add(0, Span::new(0u32, 0u32));
-        assert_eq!(smid.get(), Some(0));
-    }
-
-    /// `format_trace` must gracefully skip an invalid Smid rather than panic,
-    /// even though today's trace producers never hand it one.
-    #[test]
-    fn format_trace_skips_invalid_smid_without_panicking() {
-        let source_map = SourceMap::new();
-        let files: SimpleFiles<String, String> = SimpleFiles::new();
-        let trace = [Smid::default()];
-        let out = source_map.format_trace(&trace, &files);
-        assert_eq!(out, "");
-    }
-
-    /// A trace mixing a valid, resolvable Smid with an invalid one must
-    /// render only the valid entry, not panic on the invalid one.
-    #[test]
-    fn format_trace_skips_invalid_smid_amongst_valid_ones() {
-        let mut source_map = SourceMap::new();
-        let mut files: SimpleFiles<String, String> = SimpleFiles::new();
-        let file_id = files.add("x.eu".to_string(), "hello".to_string());
-        let smid = source_map.add(file_id, Span::new(0u32, 5u32));
-        let trace = [Smid::default(), smid, Smid::default()];
-        let out = source_map.format_trace(&trace, &files);
-        assert!(out.contains("x.eu:1:1"));
-    }
-}
-
 /// Map internal intrinsic names to user-facing display names.
 ///
 /// Returns `None` for internal machinery that should be filtered out
@@ -609,5 +561,53 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
 
         // Unknown — not an intrinsic
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `Smid::get()` must never panic on an invalid (default/synthetic) Smid.
+    ///
+    /// Both trace producers (the HeapSyn VM and the bytecode machine) today
+    /// pre-filter invalid Smids before pushing them onto env/stack traces, so
+    /// this cannot currently happen in practice. This is a defensive
+    /// regression test: a future trace source that fails to pre-filter must
+    /// not be able to crash error reporting (eu-1tkk.7.10).
+    #[test]
+    fn get_returns_none_for_invalid_smid() {
+        assert_eq!(Smid::default().get(), None);
+    }
+
+    #[test]
+    fn get_returns_index_for_valid_smid() {
+        let mut source_map = SourceMap::new();
+        let smid = source_map.add(0, Span::new(0u32, 0u32));
+        assert_eq!(smid.get(), Some(0));
+    }
+
+    /// `format_trace` must gracefully skip an invalid Smid rather than panic,
+    /// even though today's trace producers never hand it one.
+    #[test]
+    fn format_trace_skips_invalid_smid_without_panicking() {
+        let source_map = SourceMap::new();
+        let files: SimpleFiles<String, String> = SimpleFiles::new();
+        let trace = [Smid::default()];
+        let out = source_map.format_trace(&trace, &files);
+        assert_eq!(out, "");
+    }
+
+    /// A trace mixing a valid, resolvable Smid with an invalid one must
+    /// render only the valid entry, not panic on the invalid one.
+    #[test]
+    fn format_trace_skips_invalid_smid_amongst_valid_ones() {
+        let mut source_map = SourceMap::new();
+        let mut files: SimpleFiles<String, String> = SimpleFiles::new();
+        let file_id = files.add("x.eu".to_string(), "hello".to_string());
+        let smid = source_map.add(file_id, Span::new(0u32, 5u32));
+        let trace = [Smid::default(), smid, Smid::default()];
+        let out = source_map.format_trace(&trace, &files);
+        assert!(out.contains("x.eu:1:1"));
     }
 }

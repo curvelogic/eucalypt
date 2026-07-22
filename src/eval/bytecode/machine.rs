@@ -1533,12 +1533,20 @@ pub fn return_fun(
             }
         }
         BcContinuation::LookupLitForce { smid, .. } => {
+            // A literal `.key` lookup forced its target and found a function
+            // rather than a block. This is a lookup-target type error, not a
+            // callability error — reporting it via `NotCallable` with
+            // actual_type = "function" produced the self-contradictory
+            // "tried to call a function as a function" (eu-m93j). The key
+            // name is not included here: this dispatch-loop free function
+            // has no access to the symbol pool (see `format_lookup_on_function`
+            // doc comment) — the HeapSyn engine's equivalent path resolves it.
             let ann = if smid.is_valid() {
                 smid
             } else {
                 state.annotation
             };
-            return Err(ExecutionError::NotCallable(ann, "function".to_string()));
+            return Err(ExecutionError::LookupOnFunction(ann, None));
         }
         BcContinuation::CaptureEnd => {
             state.capture_end_pending = true;

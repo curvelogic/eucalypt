@@ -455,6 +455,22 @@ fn not_callable_notes(actual_type: &str) -> Vec<String> {
     }
 }
 
+/// Generate contextual notes for `UnexpectedFunction` errors: a function
+/// value (an unsaturated lambda or a partial application) found where a
+/// non-function value was expected. Deliberately does not suggest
+/// `block.field` — the value is a function, never a block (eu-1tkk.7.9).
+fn unexpected_function_notes() -> Vec<String> {
+    vec![
+        "a function value cannot be used directly here; it must first be called with \
+         all of its remaining arguments"
+            .to_string(),
+        "this can happen when a function is under-applied (missing an argument), or when \
+         low-precedence catenation groups an expression differently than intended — \
+         add parentheses to disambiguate"
+            .to_string(),
+    ]
+}
+
 /// Format a "not callable" error message with the actual type of value found
 fn format_not_callable(actual_type: &str) -> String {
     if actual_type.is_empty() {
@@ -465,6 +481,28 @@ fn format_not_callable(actual_type: &str) -> String {
              help: only functions and blocks can be called with arguments\n  \
              help: this often means too many arguments were passed to a function"
         )
+    }
+}
+
+/// Format a "lookup on a function" error message: `.key` syntax was used on
+/// a value that evaluated to a function rather than a block.
+///
+/// `key` is `None` on the bytecode engine's fast path, which does not have
+/// the symbol pool available at this point in the dispatch loop (the
+/// HeapSyn engine always resolves it — see `Machine::return_fun`).
+fn format_lookup_on_function(key: Option<&str>) -> String {
+    match key {
+        Some(key) => format!(
+            "cannot look up key '{key}' on a function value\n  \
+             help: '.' looks up keys in blocks; the value before '.' must be a block, not a function\n  \
+             help: if the function returns a block when called, call it first, \
+             e.g. 'f(x).{key}' instead of 'f.{key}'"
+        ),
+        None => "cannot look up a key on a function value\n  \
+             help: '.' looks up keys in blocks; the value before '.' must be a block, not a function\n  \
+             help: if the function returns a block when called, call it first, \
+             e.g. 'f(x).key' instead of 'f.key'"
+            .to_string(),
     }
 }
 
@@ -619,6 +657,29 @@ pub enum ExecutionError {
     UnknownIntrinsic(Smid, String),
     #[error("{}", format_not_callable(.1))]
     NotCallable(Smid, String),
+    /// A literal `.key` lookup was performed on a value that evaluated to a
+    /// function rather than a block.
+    ///
+    /// Distinct from `NotCallable` (raised for `f(x)` call syntax on a
+    /// non-callable value): this is the opposite mistake — `.` syntax was
+    /// used, which performs a key lookup and requires a block, but the
+    /// receiver evaluated to a function/lambda instead. Reporting this via
+    /// `NotCallable` with `actual_type = "function"` previously produced the
+    /// self-contradictory "tried to call a function as a function"
+    /// (eu-m93j).
+    #[error("{}", format_lookup_on_function(.1.as_deref()))]
+    LookupOnFunction(Smid, Option<String> /* key name, if resolvable */),
+    /// A function value (an unsaturated lambda or a partial application)
+    /// was found where a non-function value (e.g. a number or string) was
+    /// expected.
+    ///
+    /// Function values have no data-constructor tag, so before this variant
+    /// existed the fallback path defaulted to reporting them as a `block`
+    /// (`NoBranchForDataTag` with a synthetic `Block` tag), which produced a
+    /// self-contradictory message and a misdirecting `did you mean
+    /// block.field?` hint for a value that was never a block (eu-1tkk.7.9).
+    #[error("type mismatch: expected {1}, found a function")]
+    UnexpectedFunction(Smid, &'static str /* expected kind, e.g. "number" */),
     #[error("{}", format_not_value(.1))]
     NotValue(Smid, String),
     #[error("bad regex: {}\n  help: the pattern '{}' is not a valid regular expression", .1.1, .1.0)]
@@ -780,6 +841,8 @@ impl HasSmid for ExecutionError {
             ExecutionError::TypeMismatch(s, _) => *s,
             ExecutionError::UnknownIntrinsic(s, _) => *s,
             ExecutionError::NotCallable(s, _) => *s,
+            ExecutionError::LookupOnFunction(s, _) => *s,
+            ExecutionError::UnexpectedFunction(s, _) => *s,
             ExecutionError::NotValue(s, _) => *s,
             ExecutionError::NotScalar(s) => *s,
             ExecutionError::NoBranchForDataTag(s, _, _) => *s,
@@ -1089,6 +1152,7 @@ impl ExecutionError {
                 ]
             }
             ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name),
+            ExecutionError::UnexpectedFunction(..) => unexpected_function_notes(),
             ExecutionError::LookupFailure(_, detail) => lookup_failure_notes(&detail.0, &detail.1),
             ExecutionError::CannotReturnFunToCase(_, expected_tags) => {
                 let expects_bool = expected_tags.contains(&DataConstructor::BoolTrue.tag())
