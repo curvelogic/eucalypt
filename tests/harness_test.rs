@@ -2727,6 +2727,33 @@ pub fn test_error_180() {
 }
 
 #[test]
+/// A static `.key` lookup on a value that evaluates to a function (not a
+/// block) used to report the self-contradictory "tried to call a function
+/// as a function" (NotCallable with actual_type = "function"). After the
+/// fix it raises `LookupOnFunction`, reporting the actual mistake — a key
+/// lookup on a non-block — instead of a fabricated call (eu-m93j). Checked
+/// on both engines (`cargo test` for bytecode, `EU_HEAPSYN=1 cargo test`
+/// for HeapSyn); the pattern accepts either engine's wording, since only
+/// the HeapSyn engine's `return_fun` has the symbol pool available to
+/// resolve the key name into the message.
+pub fn test_191_m93j_lookup_on_function() {
+    run_error_test(&error_opts("191_m93j_lookup_on_function.eu"));
+}
+
+#[test]
+/// `add(1) + 1`: a partial application (1 of 2 args supplied) used in
+/// arithmetic. Function values have no data-constructor tag, so `num_arg`
+/// used to default straight to `Block.tag()`, reporting "found block" and a
+/// misdirecting "did you mean block.field?" hint for a value that was never
+/// a block. After the fix, `num_arg` checks arity first and raises
+/// `ExecutionError::UnexpectedFunction`, reporting "found a function"
+/// instead (eu-1tkk.7.9). Also covers the `catenation_arith` diagnostics
+/// corpus fixture's underlying message-content bug.
+pub fn test_192_1tkk_7_9_function_not_block() {
+    run_error_test(&error_opts("192_1tkk_7_9_function_not_block.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:

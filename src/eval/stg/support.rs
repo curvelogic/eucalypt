@@ -105,8 +105,26 @@ pub fn num_arg(
             )),
         )),
         Err(_) => {
-            // resolve_native failed — likely a Cons (block/list). Inspect the
-            // tag so the error message includes useful context.
+            // resolve_native failed — the value is either a data constructor
+            // (block/list) or a function (an unsaturated lambda or a partial
+            // application; the two are indistinguishable at this layer, so
+            // both are reported uniformly). A function has no data tag, so
+            // check arity first: defaulting straight to `Block.tag()` here
+            // (as this used to) mislabelled every function value as a block
+            // and triggered the misdirecting 'did you mean block.field?'
+            // hint for a value that was never a block (eu-1tkk.7.9).
+            if machine
+                .resolve_closure(view, arg)
+                .map(|c| c.arity() > 0)
+                .unwrap_or(false)
+            {
+                return Err(ExecutionError::UnexpectedFunction(
+                    machine.annotation(),
+                    "number",
+                ));
+            }
+            // Otherwise it is a genuine Cons (block/list). Inspect the tag
+            // so the error message includes useful context.
             let tag = cons_tag_of(machine, view, arg).unwrap_or(DataConstructor::Block.tag());
             Err(ExecutionError::NoBranchForDataTag(
                 machine.annotation(),

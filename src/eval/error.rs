@@ -455,6 +455,22 @@ fn not_callable_notes(actual_type: &str) -> Vec<String> {
     }
 }
 
+/// Generate contextual notes for `UnexpectedFunction` errors: a function
+/// value (an unsaturated lambda or a partial application) found where a
+/// non-function value was expected. Deliberately does not suggest
+/// `block.field` — the value is a function, never a block (eu-1tkk.7.9).
+fn unexpected_function_notes() -> Vec<String> {
+    vec![
+        "a function value cannot be used directly here; it must first be called with \
+         all of its remaining arguments"
+            .to_string(),
+        "this can happen when a function is under-applied (missing an argument), or when \
+         low-precedence catenation groups an expression differently than intended — \
+         add parentheses to disambiguate"
+            .to_string(),
+    ]
+}
+
 /// Format a "not callable" error message with the actual type of value found
 fn format_not_callable(actual_type: &str) -> String {
     if actual_type.is_empty() {
@@ -465,6 +481,28 @@ fn format_not_callable(actual_type: &str) -> String {
              help: only functions and blocks can be called with arguments\n  \
              help: this often means too many arguments were passed to a function"
         )
+    }
+}
+
+/// Format a "lookup on a function" error message: `.key` syntax was used on
+/// a value that evaluated to a function rather than a block.
+///
+/// `key` is `None` on the bytecode engine's fast path, which does not have
+/// the symbol pool available at this point in the dispatch loop (the
+/// HeapSyn engine always resolves it — see `Machine::return_fun`).
+fn format_lookup_on_function(key: Option<&str>) -> String {
+    match key {
+        Some(key) => format!(
+            "cannot look up key '{key}' on a function value\n  \
+             help: '.' looks up keys in blocks; the value before '.' must be a block, not a function\n  \
+             help: if the function returns a block when called, call it first, \
+             e.g. 'f(x).{key}' instead of 'f.{key}'"
+        ),
+        None => "cannot look up a key on a function value\n  \
+             help: '.' looks up keys in blocks; the value before '.' must be a block, not a function\n  \
+             help: if the function returns a block when called, call it first, \
+             e.g. 'f(x).key' instead of 'f.key'"
+            .to_string(),
     }
 }
 
@@ -619,6 +657,29 @@ pub enum ExecutionError {
     UnknownIntrinsic(Smid, String),
     #[error("{}", format_not_callable(.1))]
     NotCallable(Smid, String),
+    /// A literal `.key` lookup was performed on a value that evaluated to a
+    /// function rather than a block.
+    ///
+    /// Distinct from `NotCallable` (raised for `f(x)` call syntax on a
+    /// non-callable value): this is the opposite mistake — `.` syntax was
+    /// used, which performs a key lookup and requires a block, but the
+    /// receiver evaluated to a function/lambda instead. Reporting this via
+    /// `NotCallable` with `actual_type = "function"` previously produced the
+    /// self-contradictory "tried to call a function as a function"
+    /// (eu-m93j).
+    #[error("{}", format_lookup_on_function(.1.as_deref()))]
+    LookupOnFunction(Smid, Option<String> /* key name, if resolvable */),
+    /// A function value (an unsaturated lambda or a partial application)
+    /// was found where a non-function value (e.g. a number or string) was
+    /// expected.
+    ///
+    /// Function values have no data-constructor tag, so before this variant
+    /// existed the fallback path defaulted to reporting them as a `block`
+    /// (`NoBranchForDataTag` with a synthetic `Block` tag), which produced a
+    /// self-contradictory message and a misdirecting `did you mean
+    /// block.field?` hint for a value that was never a block (eu-1tkk.7.9).
+    #[error("type mismatch: expected {1}, found a function")]
+    UnexpectedFunction(Smid, &'static str /* expected kind, e.g. "number" */),
     #[error("{}", format_not_value(.1))]
     NotValue(Smid, String),
     #[error("bad regex: {}\n  help: the pattern '{}' is not a valid regular expression", .1.1, .1.0)]
@@ -780,6 +841,8 @@ impl HasSmid for ExecutionError {
             ExecutionError::TypeMismatch(s, _) => *s,
             ExecutionError::UnknownIntrinsic(s, _) => *s,
             ExecutionError::NotCallable(s, _) => *s,
+            ExecutionError::LookupOnFunction(s, _) => *s,
+            ExecutionError::UnexpectedFunction(s, _) => *s,
             ExecutionError::NotValue(s, _) => *s,
             ExecutionError::NotScalar(s) => *s,
             ExecutionError::NoBranchForDataTag(s, _, _) => *s,
@@ -851,11 +914,23 @@ impl ExecutionError {
 
         // Determine the best primary source location:
         // - Prefer a user-file location (the call site in user code) over a
-        //   prelude/resource location (the site of the failure inside a library).
+        //   prelude/resource location (the site of the failure inside a library)
+        //   or a metadata-only (locationless/synthetic) Smid. This is a general
+        //   rule, not special-cased to any one error variant (eu-1tkk.7.8):
+        //   a prelude or synthetic Smid is never the primary when a user-file
+        //   Smid is available anywhere.
         // - If the error's own Smid already points to a user file, use that.
-        // - Otherwise, search the environment trace (innermost call annotations)
-        //   then the stack trace for the first user-file Smid.
-        // - As a last resort, fall back to any Smid with a file location.
+        // - Otherwise, search the *stack* trace (the actual pending call chain —
+        //   nearest call sites) before the *environment* trace (the lexical
+        //   scope chain of the erroring closure — definition sites) for the
+        //   first user-file Smid. A call site is normally more actionable for
+        //   blame than a definition site (eu-1tkk.7.8): re-examined from the
+        //   prior env-trace-first order, which promoted definition sites.
+        // - As a last resort — no user-file Smid anywhere — fall back to any
+        //   Smid with a file location (may be prelude), but only tentatively:
+        //   see the unconditional user-file filter below, which clears this
+        //   fallback back out to `None` rather than show a misleading
+        //   prelude/synthetic location as if it were precise.
         let error_info = source_map.source_info(inner);
         let error_has_user_file = error_info
             .and_then(|info| info.file)
@@ -865,10 +940,12 @@ impl ExecutionError {
         let primary_file_span: Option<(usize, codespan::Span)> = if error_has_user_file {
             error_info.and_then(|info| info.file.zip(info.span))
         } else {
-            // Try to find a user-file location in the traces
+            // Try to find a user-file location in the traces: nearest pending
+            // call site (stack trace) first, then lexical/definition scope
+            // (env trace) as a fallback.
             let user_smid = source_map
-                .first_user_source_smid(env_trace)
-                .or_else(|| source_map.first_user_source_smid(stack_trace));
+                .first_user_source_smid(stack_trace)
+                .or_else(|| source_map.first_user_source_smid(env_trace));
 
             if let Some(smid) = user_smid {
                 source_map
@@ -881,8 +958,8 @@ impl ExecutionError {
                     .and_then(|info| info.file.zip(info.span))
                     .or_else(|| {
                         let smid = source_map
-                            .first_source_smid(env_trace)
-                            .or_else(|| source_map.first_source_smid(stack_trace))?;
+                            .first_source_smid(stack_trace)
+                            .or_else(|| source_map.first_source_smid(env_trace))?;
                         source_map
                             .source_info_for_smid(smid)
                             .and_then(|info| info.file.zip(info.span))
@@ -890,19 +967,18 @@ impl ExecutionError {
             }
         };
 
-        // For assertion failures, suppress a non-user-file primary label.
+        // Suppress a non-user-file primary label, for every error variant.
         //
-        // When `//=` fails, the env and stack traces often contain only
-        // prelude frames (the `//=` wrapper body's internal evaluation).
-        // Showing the prelude's `//=` definition as the primary error site
-        // is confusing — users want to see their own code.  If we cannot
-        // find a user-file location, it is less misleading to show no
-        // primary label than to show prelude internals.
-        let primary_file_span = if matches!(inner, ExecutionError::AssertionFailed(..)) {
-            primary_file_span.filter(|(file, _)| source_map.is_user_file(*file))
-        } else {
-            primary_file_span
-        };
+        // The traces often contain only prelude frames (deep library
+        // recursion, or a `//=` wrapper body's internal evaluation). Showing
+        // a prelude location as the primary error site is confusing — it
+        // looks precise but is not user-actionable. If no user-file location
+        // can be found anywhere (error's own Smid, stack trace, env trace),
+        // it is less misleading to show no primary label than to show
+        // prelude/synthetic internals as if they were the culprit
+        // (eu-1tkk.7.8; previously special-cased to `AssertionFailed` only).
+        let primary_file_span =
+            primary_file_span.filter(|(file, _)| source_map.is_user_file(*file));
 
         // Apply the primary label.  We clear any label that source_map.diagnostic()
         // may have set (which could be a prelude location) and replace it with the
@@ -910,7 +986,7 @@ impl ExecutionError {
         if let Some((file, span)) = primary_file_span {
             diag.labels.clear();
             diag.labels.push(Label::primary(file, span));
-        } else if matches!(inner, ExecutionError::AssertionFailed(..)) {
+        } else {
             // No user-file location found: clear any prelude label that
             // source_map.diagnostic() may have placed, so the diagnostic
             // shows only the error message without a confusing prelude pointer.
@@ -923,11 +999,11 @@ impl ExecutionError {
         // from the primary label (to avoid redundant markers).  Limited to 3
         // secondary labels to keep output readable.
         //
-        // For assertion failures without a user-file primary label, skip
-        // secondary labels entirely: they would only show prelude internals
-        // (the `//=` wrapper body), which adds noise rather than insight.
-        let show_secondary =
-            !matches!(inner, ExecutionError::AssertionFailed(..)) || primary_file_span.is_some();
+        // Without a user-file primary label, skip secondary labels entirely:
+        // they would only show prelude internals, which adds noise rather
+        // than insight (eu-1tkk.7.8; previously special-cased to
+        // `AssertionFailed` only).
+        let show_secondary = primary_file_span.is_some();
 
         {
             let mut secondary_labels: Vec<Label<usize>> = vec![];
@@ -1089,6 +1165,7 @@ impl ExecutionError {
                 ]
             }
             ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name),
+            ExecutionError::UnexpectedFunction(..) => unexpected_function_notes(),
             ExecutionError::LookupFailure(_, detail) => lookup_failure_notes(&detail.0, &detail.1),
             ExecutionError::CannotReturnFunToCase(_, expected_tags) => {
                 let expects_bool = expected_tags.contains(&DataConstructor::BoolTrue.tag())
@@ -1181,9 +1258,12 @@ impl ExecutionError {
 
     /// Format a Smid with all available detail for trace dump diagnostics
     fn format_smid_detail(smid: Smid, source_map: &SourceMap) -> String {
-        if !smid.is_valid() {
+        // `smid.get()` returns `None` for an invalid Smid; render that case
+        // directly rather than indexing, so this debug helper can never panic
+        // on an invalid Smid (eu-1tkk.7.10).
+        let Some(index) = smid.get() else {
             return "invalid (no location)".to_string();
-        }
+        };
         match source_map.source_info_for_smid(smid) {
             Some(info) => {
                 let file_part = match info.file {
@@ -1198,9 +1278,9 @@ impl ExecutionError {
                     Some(ann) => format!("ann=\"{ann}\""),
                     None => "ann=none".to_string(),
                 };
-                format!("smid={} {file_part} {span_part} {ann_part}", smid.get())
+                format!("smid={index} {file_part} {span_part} {ann_part}")
             }
-            None => format!("smid={} (no source info)", smid.get()),
+            None => format!("smid={index} (no source info)"),
         }
     }
 
@@ -1246,5 +1326,131 @@ impl ExecutionError {
             ExecutionError::TypeMismatch(..) => Some("EU-EVAL-TYPE"),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod location_selection_tests {
+    //! Unit tests for `to_diagnostic`'s location-selection logic
+    //! (eu-1tkk.7.8), isolated from message/blame-vocabulary concerns by
+    //! constructing a `SourceMap` and `ExecutionError::Traced` directly
+    //! rather than running real eucalypt source through the pipeline.
+
+    use super::*;
+    use codespan::Span;
+    use codespan_reporting::diagnostic::LabelStyle;
+    use std::ops::Range;
+
+    /// Find the primary label in a diagnostic's label list. `to_diagnostic`
+    /// may also attach up to 3 secondary "called from here" labels from the
+    /// env trace, so tests must not assume the primary is the only label.
+    fn primary_label(
+        diag: &Diagnostic<usize>,
+    ) -> Option<&codespan_reporting::diagnostic::Label<usize>> {
+        diag.labels.iter().find(|l| l.style == LabelStyle::Primary)
+    }
+
+    /// A `SourceMap` with one resource (prelude) file and one user file,
+    /// plus the file ids to add Smids against.
+    fn mk_source_map() -> (SourceMap, usize, usize) {
+        let mut sm = SourceMap::new();
+        let user_file = 0usize;
+        let prelude_file = 1usize;
+        sm.mark_resource_file(prelude_file);
+        (sm, user_file, prelude_file)
+    }
+
+    /// When the error's own Smid and every Smid in both traces are
+    /// prelude-only (the `hof_bad_arg` / `nth_out_of_range` / `swap_args`
+    /// diagnostics-corpus pattern: a deep library-internal failure with no
+    /// reachable user frame), the primary label must be suppressed rather
+    /// than showing a prelude location as if it were the culprit.
+    #[test]
+    fn suppresses_prelude_primary_when_no_user_smid_anywhere() {
+        let (mut sm, _user_file, prelude_file) = mk_source_map();
+        let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
+        let inner = ExecutionError::NoBranchForDataTag(prelude_smid, 0, vec![1]);
+        let traced = ExecutionError::Traced(
+            Box::new(inner),
+            Box::new((vec![prelude_smid], vec![prelude_smid])),
+        );
+
+        let diag = traced.to_diagnostic(&sm);
+
+        assert!(
+            diag.labels.is_empty(),
+            "expected no primary label when no user Smid exists anywhere in \
+             the error's own Smid or either trace, got {:?}",
+            diag.labels
+        );
+    }
+
+    /// A user-file Smid reachable via a trace must become the primary, even
+    /// when the error's own Smid is prelude-only.
+    #[test]
+    fn prefers_user_smid_in_trace_over_prelude_own_smid() {
+        let (mut sm, user_file, prelude_file) = mk_source_map();
+        let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
+        let user_smid = sm.add(user_file, Span::new(3u32, 7u32));
+        let inner = ExecutionError::NoBranchForDataTag(prelude_smid, 0, vec![1]);
+        let traced = ExecutionError::Traced(Box::new(inner), Box::new((vec![], vec![user_smid])));
+
+        let diag = traced.to_diagnostic(&sm);
+
+        let primary = primary_label(&diag).expect("expected a primary label");
+        assert_eq!(primary.file_id, user_file);
+        assert_eq!(primary.range, Range::from(Span::new(3u32, 7u32)));
+    }
+
+    /// When a user-file Smid is available in both the stack trace (the
+    /// pending call chain — call sites) and the env trace (the lexical
+    /// scope chain — definition sites) at *different* locations, the stack
+    /// trace's call site must win. Re-examines the prior env-trace-first
+    /// order, which promoted the lexical definition site over the call
+    /// site (eu-1tkk.7.8).
+    #[test]
+    fn prefers_stack_trace_call_site_over_env_trace_definition_site() {
+        let (mut sm, user_file, prelude_file) = mk_source_map();
+        let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
+        let env_user_smid = sm.add(user_file, Span::new(0u32, 5u32));
+        let stack_user_smid = sm.add(user_file, Span::new(20u32, 25u32));
+        let inner = ExecutionError::NoBranchForDataTag(prelude_smid, 0, vec![1]);
+        let traced = ExecutionError::Traced(
+            Box::new(inner),
+            Box::new((vec![env_user_smid], vec![stack_user_smid])),
+        );
+
+        let diag = traced.to_diagnostic(&sm);
+
+        let primary = primary_label(&diag).expect("expected a primary label");
+        assert_eq!(
+            primary.range,
+            Range::from(Span::new(20u32, 25u32)),
+            "expected the stack-trace (call site) Smid to be preferred over \
+             the env-trace (definition site) Smid, got range {:?}",
+            primary.range
+        );
+    }
+
+    /// When the error's own Smid is already a user-file location, it is
+    /// used directly without consulting either trace.
+    #[test]
+    fn uses_error_own_smid_when_already_user_file() {
+        let (mut sm, user_file, prelude_file) = mk_source_map();
+        let own_smid = sm.add(user_file, Span::new(1u32, 2u32));
+        let other_user_smid = sm.add(user_file, Span::new(50u32, 55u32));
+        let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
+        let inner = ExecutionError::NoBranchForDataTag(own_smid, 0, vec![1]);
+        // Traces contain a *different* user Smid and a prelude Smid; the
+        // error's own (already user-file) Smid must still win.
+        let traced = ExecutionError::Traced(
+            Box::new(inner),
+            Box::new((vec![prelude_smid], vec![other_user_smid])),
+        );
+
+        let diag = traced.to_diagnostic(&sm);
+
+        let primary = primary_label(&diag).expect("expected a primary label");
+        assert_eq!(primary.range, Range::from(Span::new(1u32, 2u32)));
     }
 }

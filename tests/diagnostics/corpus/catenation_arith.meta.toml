@@ -4,7 +4,11 @@ region_start_line = 2
 region_end_line = 2
 expected_class = "function"
 # No xfail: the invariant gate (eu-1tkk.7.3) checks structural location/trace
-# properties only, and this fixture now satisfies all five. The underlying
-# message-content bug (eu-1tkk.7.9: partial applications reported as 'block'
-# instead of their own kind) is real but out of this gate's scope — tracked
-# separately by eu-1tkk.7.9.
+# properties only, and this fixture now satisfies all five. The message-content
+# bug this fixture also demonstrated (eu-1tkk.7.9: a function value reported
+# as 'block', with a misdirecting 'did you mean block.field?' hint) was out
+# of this structural gate's scope but has now been fixed separately: `num_arg`
+# (src/eval/stg/support.rs) checks arity before defaulting an untagged value
+# to `Block.tag()`, raising the new `ExecutionError::UnexpectedFunction`
+# instead. See tests/harness/errors/192_1tkk_7_9_function_not_block.eu for the
+# message-wording regression test.
