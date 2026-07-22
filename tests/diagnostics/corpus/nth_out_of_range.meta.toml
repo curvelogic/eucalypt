@@ -4,4 +4,4 @@ region_start_line = 2
 region_end_line = 2
 expected_class = "range"
 xfail = true
-xfail_reason = "eu-1tkk.7.11: reports 'tail of empty list' at [prelude]:1329, wrong op, 15 prelude frames"
+xfail_reason = "eu-1tkk.7.11: reports 'tail of empty list', wrong op, 15 prelude frames, and no user Smid reaches env/stack trace at all. eu-1tkk.7.8's location-selection fix now correctly suppresses the primary (null rather than the misleading [prelude]:1329 it used to show), but the underlying wrong-error/no-user-frame problem is Phase 2 blame/curation territory."

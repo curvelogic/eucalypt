@@ -4,4 +4,4 @@ region_start_line = 2
 region_end_line = 2
 expected_class = "function"
 xfail = true
-xfail_reason = "eu-1tkk.7.8/.11: primary lands in [prelude]:1463 with zero user frames"
+xfail_reason = "eu-1tkk.7.11: no user Smid reaches the trace at all (env/stack trace are entirely prelude frames — 'map's internal recursion), so eu-1tkk.7.8's location-selection fix (never show a prelude primary when a user Smid is available) correctly suppresses the primary to null rather than showing the misleading [prelude]:1463 it used to. Getting an actual user primary here needs eu-1tkk.7.11's blame/curation work to surface the user call site into the trace in the first place."
