@@ -54,6 +54,39 @@ fn extract_trace_spec(expr: &RcExpr) -> Option<TraceSpec> {
     })
 }
 
+/// Diagnostic blame classification for a declaration (eu-1tkk.7.11).
+///
+/// Set via backtick metadata: `` ` :transparent `` or `` ` :boundary ``.
+/// Consumed by the Phase 2 curated-trace classifier (not by codegen): a
+/// `Transparent` combinator's own frames are dropped from a curated trace
+/// (blame passes through to its caller); a `Boundary` combinator is kept as
+/// a named secondary while the primary location is reassigned to the
+/// nearest user call-site. See design spec §4.3.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlameSpec {
+    /// Internal plumbing (e.g. `map`, `foldl`'s own recursion): if its
+    /// function argument faults, blame passes through to the caller.
+    Transparent,
+    /// The combinator the user actually named (e.g. `nth`, `head`): an
+    /// error here is the combinator's own contract, named explicitly.
+    Boundary,
+}
+
+/// Extract a `BlameSpec` from a core expression.
+///
+/// Accepts the symbol variants `:transparent`, `:boundary`. Any other
+/// value (or absent metadata) extracts to `None` — never silently defaults
+/// to a classification, so an unrecognised value is caught rather than
+/// misclassified.
+fn extract_blame_spec(expr: &RcExpr) -> Option<BlameSpec> {
+    let s: Option<String> = (expr as &dyn Extract<String>).extract();
+    s.and_then(|s| match s.as_str() {
+        "transparent" => Some(BlameSpec::Transparent),
+        "boundary" => Some(BlameSpec::Boundary),
+        _ => None,
+    })
+}
+
 /// Extract a `DeprecationSpec` from a metadata block map.
 ///
 /// Recognises the following patterns:
@@ -133,6 +166,20 @@ pub fn normalise_metadata(expr: &RcExpr, decl_name: Option<&str>) -> RcExpr {
                         .iter()
                         .cloned(),
                 ),
+                // Blame annotation shorthand (eu-1tkk.7.11): `:transparent`
+                // / `:boundary` ≡ `{ blame: :transparent }` / `{ blame: :boundary }`.
+                "transparent" => core::block(
+                    *smid,
+                    [("blame".to_string(), core::sym(*smid, "transparent"))]
+                        .iter()
+                        .cloned(),
+                ),
+                "boundary" => core::block(
+                    *smid,
+                    [("blame".to_string(), core::sym(*smid, "boundary"))]
+                        .iter()
+                        .cloned(),
+                ),
                 // Lone-keyword shorthand: `:type-def` ≡ `{ type-def: true }`,
                 // `:result-def` ≡ `{ result-def: true }`.
                 "type-def" => core::block(
@@ -191,6 +238,7 @@ pub fn strip_desugar_phase_metadata(expr: &RcExpr) -> RcExpr {
                             | "requires"
                             | "deprecated"
                             | "replaced-by"
+                            | "blame"
                     )
                 })
                 .map(|(k, v)| (k.clone(), v.clone()))
@@ -232,6 +280,10 @@ pub struct DesugarPhaseDeclarationMetadata {
     pub trace: Option<TraceSpec>,
     /// Deprecation specification — marks this declaration as deprecated.
     pub deprecated: Option<DeprecationSpec>,
+    /// Diagnostic blame classification (eu-1tkk.7.11) — consumed at trace
+    /// classification time (Phase 2 curation), not by codegen. See
+    /// `BlameSpec`.
+    pub blame: Option<BlameSpec>,
 }
 
 /// Public wrapper for extract_function_name for use in other modules.
@@ -256,6 +308,7 @@ impl ReadMetadata<DesugarPhaseDeclarationMetadata> for RcExpr {
                 embedding: imap.get("embedding").and_then(|e| e.extract()),
                 trace: imap.get("trace").and_then(extract_trace_spec),
                 deprecated: extract_deprecation_spec(imap),
+                blame: imap.get("blame").and_then(extract_blame_spec),
             }),
             Expr::Let(_, _, _) => {
                 self.inner = self.clone().instantiate_lets().inner;
@@ -380,5 +433,115 @@ impl ReadMetadata<TestHeaderMetadata> for RcExpr {
             }
             _ => Err(CoreError::InvalidMetadataDesugarPhase(self.smid())),
         }
+    }
+}
+
+#[cfg(test)]
+mod blame_spec_tests {
+    //! eu-1tkk.7.11 spike: prove `BlameSpec` is declarable (via bare
+    //! backtick metadata symbols, through `normalise_metadata`) and
+    //! readable (via `extract_blame_spec`, feeding
+    //! `DesugarPhaseDeclarationMetadata.blame`) on the source-compiled
+    //! prelude path — mirrors the shape of `TraceSpec`/`extract_trace_spec`.
+
+    use super::*;
+    use crate::core::expr::acore;
+
+    #[test]
+    fn extracts_transparent() {
+        let expr = acore::sym("transparent");
+        assert_eq!(extract_blame_spec(&expr), Some(BlameSpec::Transparent));
+    }
+
+    #[test]
+    fn extracts_boundary() {
+        let expr = acore::sym("boundary");
+        assert_eq!(extract_blame_spec(&expr), Some(BlameSpec::Boundary));
+    }
+
+    #[test]
+    fn unrecognised_symbol_extracts_to_none() {
+        let expr = acore::sym("bogus");
+        assert_eq!(extract_blame_spec(&expr), None);
+    }
+
+    #[test]
+    fn non_symbol_extracts_to_none() {
+        let expr = acore::num(42);
+        assert_eq!(extract_blame_spec(&expr), None);
+    }
+
+    /// Fault-injection check for the extraction function itself (mirrors
+    /// the plan's Step 6 fallback): if `extract_blame_spec` regresses to
+    /// always returning `None`, this test must fail.
+    #[test]
+    fn fault_injection_extract_blame_spec_must_discriminate() {
+        let transparent = extract_blame_spec(&acore::sym("transparent"));
+        let boundary = extract_blame_spec(&acore::sym("boundary"));
+        assert_ne!(
+            transparent, boundary,
+            "extract_blame_spec must discriminate :transparent from :boundary"
+        );
+        assert!(transparent.is_some() && boundary.is_some());
+    }
+
+    #[test]
+    fn bare_symbol_transparent_normalises_to_blame_block() {
+        let smid = Smid::default();
+        let expr = core::sym(smid, "transparent");
+        let normalised = normalise_metadata(&expr, Some("map"));
+        match &*normalised.inner {
+            Expr::Block(_, imap) => {
+                let blame_expr = imap.get("blame").expect("blame key present");
+                assert_eq!(extract_blame_spec(blame_expr), Some(BlameSpec::Transparent));
+            }
+            other => panic!("expected a block, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bare_symbol_boundary_normalises_to_blame_block() {
+        let smid = Smid::default();
+        let expr = core::sym(smid, "boundary");
+        let normalised = normalise_metadata(&expr, Some("nth"));
+        match &*normalised.inner {
+            Expr::Block(_, imap) => {
+                let blame_expr = imap.get("blame").expect("blame key present");
+                assert_eq!(extract_blame_spec(blame_expr), Some(BlameSpec::Boundary));
+            }
+            other => panic!("expected a block, got {other:?}"),
+        }
+    }
+
+    /// End-to-end: declaration metadata read via `ReadMetadata` (the same
+    /// call sites `rowan_ast.rs` uses at desugar time) picks up `blame`
+    /// from a normalised bare-symbol block, for both vocabulary items.
+    #[test]
+    fn declaration_metadata_reads_blame_transparent() {
+        let smid = Smid::default();
+        let mut block = normalise_metadata(&core::sym(smid, "transparent"), Some("map"));
+        let metadata: DesugarPhaseDeclarationMetadata =
+            block.read_metadata().expect("read_metadata succeeds");
+        assert_eq!(metadata.blame, Some(BlameSpec::Transparent));
+    }
+
+    #[test]
+    fn declaration_metadata_reads_blame_boundary() {
+        let smid = Smid::default();
+        let mut block = normalise_metadata(&core::sym(smid, "boundary"), Some("nth"));
+        let metadata: DesugarPhaseDeclarationMetadata =
+            block.read_metadata().expect("read_metadata succeeds");
+        assert_eq!(metadata.blame, Some(BlameSpec::Boundary));
+    }
+
+    /// `strip_desugar_phase_metadata` must remove `blame` before metadata
+    /// reaches runtime (mirrors `trace`/`deprecated`) — otherwise it would
+    /// leak into e.g. type-check or doc metadata processing.
+    #[test]
+    fn strip_desugar_phase_metadata_removes_blame() {
+        let smid = Smid::default();
+        let normalised = normalise_metadata(&core::sym(smid, "boundary"), Some("nth"));
+        let stripped = strip_desugar_phase_metadata(&normalised);
+        assert!(matches!(&*stripped.inner, Expr::ErrEliminated));
     }
 }
