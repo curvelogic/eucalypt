@@ -1,0 +1,416 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Error Messages Guide - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/reference/error-messages.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="error-messages-guide"><a class="header" href="#error-messages-guide">Error Messages Guide</a></h1>
+<p>This page explains how to read the diagnostics eucalypt prints when
+something goes wrong — their layout, the main categories you will meet,
+the difference between warnings and errors, and how to interpret stack
+traces and source locations.</p>
+<p>All the transcripts below were produced by running small broken programs
+against the <code>eu</code> binary. They are shown without terminal colour; in a
+real terminal the severity word and the underlines are colourised.</p>
+<h2 id="anatomy-of-a-diagnostic"><a class="header" href="#anatomy-of-a-diagnostic">Anatomy of a diagnostic</a></h2>
+<p>Eucalypt renders diagnostics in the <code>codespan</code> style — the same style
+used by <code>rustc</code>. There are no numeric error codes to memorise; a
+diagnostic is identified by its <strong>message</strong>, and the location is shown by
+pointing at the offending source span.</p>
+<p>A typical diagnostic has four parts:</p>
+<pre><code class="language-text">error: unresolved variable 'subtotal'
+  ┌─ example.eu:1:8
+  │
+1 │ total: subtotal + tax
+  │        ^^^^^^^^
+  │
+  = check that the variable is defined and in scope
+</code></pre>
+<ol>
+<li><strong>Severity and message</strong> — the first line. <code>error:</code> (evaluation cannot
+proceed) or <code>warning:</code> (advisory; see below).</li>
+<li><strong>The source pointer</strong> — <code>┌─ file:line:column</code> names where the problem
+is.</li>
+<li><strong>The primary label</strong> — the <code>^^^^^^^^</code> underline marks the exact span
+the message is about. Some diagnostics add <em>secondary</em> labels (further
+underlines with their own text) to relate two spans, for example the
+annotation and the value it disagrees with.</li>
+<li><strong>Notes and help</strong> — the <code>=</code> lines carry advice: what the problem
+usually means and how to fix it. Some errors also print <code>help:</code> lines
+immediately under the message.</li>
+</ol>
+<p>When an error originates inside an intrinsic or a piece of code with no
+usable source span, the pointer may be omitted and replaced by an <code>in &lt;name&gt;</code> note instead.</p>
+<h2 id="warnings-versus-errors-and---strict"><a class="header" href="#warnings-versus-errors-and---strict">Warnings versus errors, and <code>--strict</code></a></h2>
+<p>Type checking runs on <strong>every</strong> <code>eu</code> invocation, but its findings are
+<strong>warnings</strong>: they print to stderr and do <strong>not</strong> stop evaluation or
+change the exit code. Everything else here — parse failures, unresolved
+variables, runtime faults — are <strong>errors</strong>: they stop evaluation and set a
+non-zero exit code.</p>
+<p>A type warning that does not correspond to a real runtime fault leaves the
+program running normally:</p>
+<pre><code class="language-text">$ eu example.eu
+warning: expression type does not match annotation
+  ┌─ example.eu:1:1
+  │
+1 │ ╭ ` { type: "number" }
+2 │ │ first-score: [10, 20, 30] nth(0)
+  │ ╰────────────────────────────────^ expected number, found number?
+
+---
+first-score: 10
+</code></pre>
+<p>The warning went to stderr; the result (<code>first-score: 10</code>) still went to
+stdout and the exit code was <code>0</code>.</p>
+<p>Pass <code>--strict</code> to promote type warnings to errors and abort:</p>
+<div class="table-wrapper"><table><thead><tr><th>Command</th><th>Behaviour</th><th>Exit</th></tr></thead><tbody>
+<tr><td><code>eu file.eu</code></td><td>evaluate; type issues are warnings only</td><td><code>0</code></td></tr>
+<tr><td><code>eu check file.eu</code></td><td>type-check only, report warnings, do not evaluate</td><td><code>0</code></td></tr>
+<tr><td><code>eu check file.eu --strict</code></td><td>type-check only; any warning is an error</td><td><code>1</code></td></tr>
+<tr><td><code>eu file.eu --strict</code></td><td>abort before evaluation if there are type warnings</td><td><code>1</code></td></tr>
+<tr><td><code>eu file.eu --suppress-type-warnings</code></td><td>evaluate, silencing warning output</td><td><code>0</code></td></tr>
+</tbody></table>
+</div>
+<p><code>--type-check</code> is a deprecated no-op kept for backwards compatibility —
+the checker already runs whether or not it is passed. See
+<a href="../guide/type-checking.html">Type Checking</a> for the full guide to the
+checker.</p>
+<h2 id="error-categories"><a class="header" href="#error-categories">Error categories</a></h2>
+<p>Errors surface at different stages of the pipeline (parse → desugar →
+cook → verify → type-check → evaluate). The stage rarely matters to a
+user, but the <em>category</em> of message does.</p>
+<h3 id="parse-errors"><a class="header" href="#parse-errors">Parse errors</a></h3>
+<p>Raised when the source text is not well-formed — an unclosed delimiter,
+a stray token, a malformed declaration head. The pointer shows where the
+parser gave up; for an unterminated bracket the span often spills onto the
+following line, because that is where the missing close-delimiter was
+expected:</p>
+<pre><code class="language-text">error: unterminated block (missing '}')
+  ┌─ example.eu:1:11
+  │
+1 │ ╭ greeting: { name: "Alice"
+  │ ╭───────────^
+2 │ │
+  │ ╰^
+</code></pre>
+<h3 id="binding-errors-unresolved-and-self-referential-names"><a class="header" href="#binding-errors-unresolved-and-self-referential-names">Binding errors (unresolved and self-referential names)</a></h3>
+<p>Once the syntax is valid, eucalypt resolves every name to a binding. A
+name with no binding in scope is the single most common error:</p>
+<pre><code class="language-text">error: unresolved variable 'subtotal'
+  ┌─ example.eu:1:8
+  │
+1 │ total: subtotal + tax
+  │        ^^^^^^^^
+  │
+  = check that the variable is defined and in scope
+</code></pre>
+<p>This is also what you get for an <strong>operator</strong> that is not defined:
+operators are ordinary names in eucalypt, so an unknown operator such as
+<code>&lt;?&gt;</code> reports as <code>unresolved variable '&lt;?&gt;'</code>.</p>
+<p>A binding whose right-hand side refers to itself (rather than to an outer
+value of the same name — a frequent surprise, since a block key shadows any
+outer binding of that name) is caught before it can diverge:</p>
+<pre><code class="language-text">error: binding 'loop' refers to itself — this will always diverge
+  ┌─ example.eu:1:7
+  │
+1 │ loop: loop
+  │       ^^^^
+  │
+  = the binding `loop: loop` (or `loop: loop(…)`) always loops
+  = if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`
+</code></pre>
+<p>Declarations use <code>:</code> , not <code>=</code>; the assignment form is caught with a
+targeted hint:</p>
+<pre><code class="language-text">error: assignment-style syntax: 'count = ...' is not a valid eucalypt declaration
+  ┌─ example.eu:1:7
+  │
+1 │ count = 3
+  │       ^
+  │
+  = eucalypt uses ':' for declarations, not '='; write 'count: &lt;value&gt;' instead of 'count = &lt;value&gt;'
+</code></pre>
+<h3 id="type-warnings"><a class="header" href="#type-warnings">Type warnings</a></h3>
+<p>The type checker reports mismatches as warnings. A mismatch at a call site
+names the function and points at the offending argument:</p>
+<pre><code class="language-eu notest">` { type: "number -&gt; string" }
+describe(n): "value: {n}"
+result: describe("hello")
+</code></pre>
+<pre><code class="language-text">$ eu example.eu
+warning: type mismatch calling 'describe'
+  ┌─ example.eu:3:18
+  │
+3 │ result: describe("hello")
+  │                  ^^^^^^^ expected number, found "hello"
+
+---
+result: "value: hello"
+</code></pre>
+<p>The warning is advisory: it went to stderr, the program still evaluated,
+and the exit code was <code>0</code>. Under <code>--strict</code> this same finding becomes an
+error and exits <code>1</code>. See <a href="../guide/type-checking.html">Type Checking</a> for
+what the checker does and does not catch.</p>
+<h3 id="execution-errors"><a class="header" href="#execution-errors">Execution errors</a></h3>
+<p>Raised while the program runs — applying a non-function, indexing past the
+end of a list, taking the <code>head</code> of an empty list, an explicit <code>panic</code>, a
+failed <code>requires:</code> constraint, and so on. These carry help text and,
+importantly, a <strong>stack trace</strong>:</p>
+<pre><code class="language-text">error: tried to call a number as a function
+  help: only functions and blocks can be called with arguments
+  help: this often means too many arguments were passed to a function
+  ┌─ example.eu:1:11
+  │
+1 │ result: 3(4)
+  │           ^
+  │
+  = a number value is not a function; check for a missing operator or extra argument
+  = note: catenation (juxtaposition) has low precedence — 'f(a) + 1' binds as 'f(a + 1)'; add parentheses to disambiguate
+</code></pre>
+<p>The last note is a recurring hint: because catenation binds very loosely,
+an unexpected "tried to call X as a function" often means an infix
+operator captured an argument you meant to apply separately. See
+<a href="../appendices/syntax-gotchas.html">Syntax Gotchas</a> for the precedence
+traps behind these messages.</p>
+<h2 id="reading-stack-traces-and-source-locations"><a class="header" href="#reading-stack-traces-and-source-locations">Reading stack traces and source locations</a></h2>
+<p>When an error is raised deep inside a chain of calls, the diagnostic's
+primary pointer shows <strong>where the fault occurred</strong>, and the <code>stack trace</code>
+note shows <strong>how execution got there</strong>. Consider:</p>
+<pre><code class="language-eu notest">first-elem(xs): xs head
+process(xs): first-elem(xs)
+main: process([])
+</code></pre>
+<p>Running it:</p>
+<pre><code class="language-text">error: head of empty list
+  ┌─ example.eu:1:20
+  │
+1 │ first-elem(xs): xs head
+  │                    ^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+  = stack trace:
+    - first-elem at example.eu:1:20
+</code></pre>
+<p>The pointer and the trace both land on <code>xs head</code> inside <code>first-elem</code> — the
+actual failure site — rather than on <code>main</code>, which merely started the
+chain. Each trace entry is <code>function at file:line:column</code>. Note that the
+trace reflects the <em>evaluated</em> call structure: because eucalypt is lazy
+and inlines aggressively, tail calls and fully-inlined helpers may not each
+appear as a separate frame, so a trace can be shorter than the source call
+chain suggests.</p>
+<h3 id="getting-more-location-detail"><a class="header" href="#getting-more-location-detail">Getting more location detail</a></h3>
+<p>Source spans are threaded through the pipeline as <em>source-map ids</em>
+(<code>Smid</code>s). Occasionally an error's own span is synthetic (it came from an
+intrinsic), and the renderer falls back to the nearest enclosing span with
+a real file location. If you are debugging a diagnostic that points at a
+surprising place, set <code>EU_ERROR_TRACE_DUMP=1</code> to dump the full environment
+and stack traces with their <code>Smid</code> details to stderr, which shows every
+source location available at the point of failure.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../reference/export-formats.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../reference/agent-reference.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../reference/export-formats.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../reference/agent-reference.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>
