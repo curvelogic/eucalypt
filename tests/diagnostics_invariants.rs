@@ -103,11 +103,24 @@ fn violations(v: &serde_json::Value, all_output: &str, code: Option<i32>, m: &Me
     } else {
         errs.push("(iii) primary has no line".into());
     }
+    // (iv) trace must be user-anchored: this is checked as a STRICT, independent
+    // invariant, not merely as a fallback when the primary happens to fail (i).
+    // A diagnostic is valid iff its trace contains at least one user frame, OR
+    // the trace is empty AND the primary itself is a user location. This must
+    // hold on its own terms — invariant (i) already forces primary.in_user_file
+    // for every live guard, so if (iv) were allowed to fall back to
+    // `primary_is_user` it could never independently fail, making it vacuous.
+    // The strict form also catches the case a loose reading missed: an empty
+    // trace paired with a non-user primary is a violation, not a pass.
     let trace = v["trace"].as_array().cloned().unwrap_or_default();
     let has_user = trace.iter().any(|f| f["kind"] == serde_json::json!("user"));
     let primary_is_user = primary["in_user_file"] == serde_json::json!(true);
-    if !trace.is_empty() && !has_user && !primary_is_user {
-        errs.push("(iv) trace present but no user frame".into());
+    let valid_iv = has_user || (trace.is_empty() && primary_is_user);
+    if !valid_iv {
+        errs.push(
+            "(iv) trace not user-anchored: non-empty with no user frame (or empty with non-user primary)"
+                .into(),
+        );
     }
     if trace.len() > TRACE_BUDGET {
         errs.push(format!(

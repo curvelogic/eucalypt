@@ -3,7 +3,5 @@ description = "runtime type error in a declaration carrying doc metadata"
 region_start_line = 2
 region_end_line = 3
 expected_class = "number"
-# No xfail: the invariant gate (eu-1tkk.7.3) now sees primary.line == 2, inside
-# the region — the JSON path's location logic was made faithful to the human
-# path (Task 3), which appears to have resolved the eu-1tkk.7.7 span issue for
-# this fixture. Locked in by this gate.
+xfail = true
+xfail_reason = "eu-1tkk.7.3/eu-cefl: invariant (iv) violated — primary is a user location (line 2) but the trace is non-empty and contains only a 'transparent' [prelude]:1463 map frame, no user frame. This is a Phase 2 trace-curation gap (the call chain through map's transparent wrapper never surfaces the user-file call site into the trace), not the (iii) span issue this fixture used to track."
