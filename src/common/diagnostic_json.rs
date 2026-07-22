@@ -23,8 +23,11 @@ pub struct JsonPos {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum FrameKind {
-    User,        // a frame in user source
-    Boundary,    // a named library combinator the user invoked (nth, head, lookup, +)
+    User, // a frame in user source
+    /// A named library combinator the user invoked (nth, head, lookup, +).
+    /// Not yet produced by `json_trace` in Phase 0 — Phase 2's curated trace
+    /// work is what starts classifying frames as `Boundary`.
+    Boundary,
     Transparent, // library plumbing (map/fold internals); normally curated out
 }
 

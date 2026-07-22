@@ -1,7 +1,37 @@
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Extract the last parseable JSON *object* from a stream, scanning bottom-up.
+///
+/// Why: `eu --error-format json` emits exactly one JSON diagnostic line, but
+/// some inputs also trigger non-fatal type-checker WARNINGS, which are
+/// rendered human-readable to stderr and printed BEFORE the JSON diagnostic
+/// line (bead eu-6q1f). Naively parsing the whole trimmed stream therefore
+/// fails for those cases. This mirrors `last_json_object` in
+/// `tests/diagnostics_invariants.rs`, which gates the same emitter.
+fn last_json_object(stream: &str) -> Option<serde_json::Value> {
+    for line in stream.lines().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            if v.is_object() {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+/// Per-call counter so concurrent `run_json` calls (cargo runs tests in this
+/// file as threads within one process, so `std::process::id()` alone is
+/// shared) each get their own temp directory.
+static CASE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn run_json(src: &str) -> serde_json::Value {
-    let dir = std::env::temp_dir().join(format!("eu-diag-{}", std::process::id()));
+    let n = CASE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("eu-diag-{}-{n}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("case.eu");
     std::fs::write(&path, src).unwrap();
@@ -10,14 +40,14 @@ fn run_json(src: &str) -> serde_json::Value {
         .arg(&path)
         .output()
         .expect("run eu");
-    // JSON may be on stdout or stderr depending on the current wiring — read the one that parses.
+    // JSON diagnostic may land on stdout or stderr depending on wiring; check
+    // both, taking the LAST parseable JSON object from each (see
+    // `last_json_object` doc above).
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    serde_json::from_str(stdout.trim())
-        .or_else(|_| serde_json::from_str(stderr.trim()))
-        .unwrap_or_else(|e| {
-            panic!("no JSON diagnostic parsed: {e}\nstdout={stdout}\nstderr={stderr}")
-        })
+    last_json_object(&stderr)
+        .or_else(|| last_json_object(&stdout))
+        .unwrap_or_else(|| panic!("no JSON diagnostic parsed\nstdout={stdout}\nstderr={stderr}"))
 }
 
 #[test]
