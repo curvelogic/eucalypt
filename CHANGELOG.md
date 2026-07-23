@@ -4,6 +4,10 @@ All notable changes to eucalypt are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Prelude blame-table plumbing reaches the shipped (blob-based) release binary (eu-1tkk.7.11 Phase 2)** — `` ` :transparent ``/`` ` :boundary `` blame declarations (merged in #1051) now flow through to the pre-compiled `lib/prelude.blob`: `map`/`filter`/`foldl`/`foldr`/`drop`/`mapcat` are declared `:transparent`, `nth`/`head`/`tail`/`lookup`/`lookup-or` are declared `:boundary`; `cargo xtask prelude-compile` reconciles the desugar-time `BlameSpec` vocabulary into a new `PreludeBlob.blame: HashMap<String, FrameKind>` table. A new `Smid::global_slot`/`Smid::as_global_slot` pair reserves a disjoint sub-range of the `Smid` `u32` space for "which prelude global slot", stamped onto each blob global's reconstructed lambda form at the two blob-mode reconstruction chokepoints (`StandardRuntime::globals()`, xtask's bytecode pre-encode loop) instead of the historical `Smid::default()` — restoring enough identity for a blob-mode error trace to name the prelude combinator responsible, without resurrecting a raw xtask-sourced Smid that would index into the wrong `SourceMap`. `PreludeBlob::classify`/`slot_name`/`blame_for` give the Phase 2 frame classifier (eu-1tkk.7.12, not yet implemented) the trace-Smid → declared-blame-class lookup it needs. Verified live: the design spec's own flagship specimen (`xs nth(10)` on a 3-element list) now carries a global-slot Smid in its blob-mode trace that resolves to `nth`, declared `Boundary` — exactly the case `[prelude]:NNNN`-with-zero-user-frames was meant to fix. Load-time/build-time only; the VM tick/allocation hot path is unaffected. Bumps `BYTECODE_WIRE_FORMAT_VERSION` to v5 (stale-blob fallback to source-compile still applies to old blobs)
+
 ## [0.13.1] - 2026-07-20
 
 ### Changed

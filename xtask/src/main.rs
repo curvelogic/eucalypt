@@ -52,8 +52,9 @@ mod engine_ab;
 /// MUST match `BYTECODE_WIRE_FORMAT_VERSION` in the crate root `build.rs`.
 /// See that constant's doc comment for the version history (v2: eu-2sa6.11
 /// Let/LetRec binding count widened `u16` → `u32`; v4: eu-2sa6.20
-/// `PreludeBlob::type_summary` field removed).
-const BYTECODE_WIRE_FORMAT_VERSION: u32 = 4;
+/// `PreludeBlob::type_summary` field removed; v5: eu-1tkk.7.11
+/// `PreludeBlob::blame` field + blob-mode global-slot Smid identity).
+const BYTECODE_WIRE_FORMAT_VERSION: u32 = 5;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -196,6 +197,22 @@ fn cmd_prelude_compile() -> Result<()> {
     if !tc_warnings.is_empty() {
         eprintln!("  {} type-check warning(s) (non-fatal)", tc_warnings.len());
     }
+
+    // Blame classifications declared on prelude combinators (eu-1tkk.7.11).
+    //
+    // `desugar_phase_blame` is read from the desugared unit's side channel
+    // (`TranslationUnit::blame`, populated by `Desugarer::record_blame` —
+    // metadata's `blame` key is desugar-phase-only and does not survive as
+    // runtime `Expr::Meta`, so it cannot be re-extracted from `core_expr`
+    // here). Independent of `generate_annotations`/Smid generation
+    // entirely: this is plain desugar-time metadata, captured before the
+    // STG-compile step below (which runs with `generate_annotations:
+    // false`) even begins.
+    let desugar_phase_blame = loader.core().blame.clone();
+    println!(
+        "  blame classifications declared: {}",
+        desugar_phase_blame.len()
+    );
 
     // ── 4. Peel the merged Let expression into individual binding bodies ──────
     // After merge_units + cook, the prelude is a nested Let where all
@@ -397,11 +414,19 @@ fn cmd_prelude_compile() -> Result<()> {
             nodes: nodes.clone(),
             forms: forms_pool.clone(),
         };
+        // Stamp the same global-slot identity (eu-1tkk.7.11) that
+        // `StandardRuntime::globals()` stamps at load time, so the baked
+        // bytecode path and the HeapSyn arena-reconstruction path agree on
+        // which prelude global each reconstructed form identifies.
         let prelude_forms: Vec<LambdaForm> = binding_entries
             .iter()
-            .map(|&e| {
+            .enumerate()
+            .map(|(i, &e)| {
                 arena
-                    .reconstruct_form(e)
+                    .reconstruct_form_annotated(
+                        e,
+                        eucalypt::common::sourcemap::Smid::global_slot(i as u32),
+                    )
                     .expect("reconstruct prelude form for bytecode encode")
             })
             .collect();
@@ -429,6 +454,30 @@ fn cmd_prelude_compile() -> Result<()> {
         desugared_unit_cores.len(),
     );
 
+    // ── 9b. Reconcile BlameSpec (source vocabulary) → FrameKind (blob/classifier
+    // vocabulary) for the blob's blame table (eu-1tkk.7.11) ───────────────────
+    //
+    // Tolerant by construction: only names that both declared a blame
+    // contract AND survived peeling into an actual global slot are kept —
+    // a combinator without blame metadata simply isn't in the table (the
+    // classifier treats absence as "no declared contract", not an error).
+    let blame: HashMap<String, eucalypt::common::diagnostic_json::FrameKind> = desugar_phase_blame
+        .into_iter()
+        .filter(|(name, _)| name_to_slot.contains_key(name.as_str()))
+        .map(|(name, spec)| {
+            let kind = match spec {
+                eucalypt::core::metadata::BlameSpec::Transparent => {
+                    eucalypt::common::diagnostic_json::FrameKind::Transparent
+                }
+                eucalypt::core::metadata::BlameSpec::Boundary => {
+                    eucalypt::common::diagnostic_json::FrameKind::Boundary
+                }
+            };
+            (name, kind)
+        })
+        .collect();
+    println!("  blame classifications retained in blob: {}", blame.len());
+
     // ── 10. Serialise and write ───────────────────────────────────────────────
     let blob = PreludeBlob {
         source_hash,
@@ -436,6 +485,7 @@ fn cmd_prelude_compile() -> Result<()> {
         forms_pool,
         binding_entries,
         name_to_slot,
+        blame,
         operators,
         monad_specs,
         monad_type_hints,

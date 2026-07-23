@@ -2614,6 +2614,14 @@ fn rowan_declaration_to_binding(
         desugarer.record_deprecation(&components.name, spec);
     }
 
+    // Handle blame classification (eu-1tkk.7.11) — recorded via the
+    // desugarer's side channel, not wired into codegen. See
+    // `Desugarer::record_blame`'s doc comment for why: `blame` is
+    // consumed at Phase 2 trace-classification time, not compile time.
+    if let Some(spec) = metadata.blame {
+        desugarer.record_blame(&components.name, spec);
+    }
+
     // Handle target metadata
     if let Some(target) = &metadata.target {
         desugarer.record_target(

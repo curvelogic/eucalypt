@@ -6,8 +6,13 @@ use crate::{
         sourcemap::{Smid, SourceMap},
     },
     core::{
-        binding::Var, doc::DeclarationDocumentation, error::CoreError, expr::*,
-        metadata::DeprecationSpec, target::*, unit::TranslationUnit,
+        binding::Var,
+        doc::DeclarationDocumentation,
+        error::CoreError,
+        expr::*,
+        metadata::{BlameSpec, DeprecationSpec},
+        target::*,
+        unit::TranslationUnit,
     },
     syntax::input::*,
 };
@@ -50,6 +55,13 @@ pub struct Desugarer<'smap> {
     ///
     /// Maps fully-qualified declaration name to its deprecation spec.
     deprecations: HashMap<String, DeprecationSpec>,
+    /// Blame classifications discovered during desugaring (eu-1tkk.7.11).
+    ///
+    /// Maps declaration name to its declared `BlameSpec`. See
+    /// `TranslationUnit::blame`'s doc comment for why this side channel
+    /// exists (metadata's `blame` key is stripped before it could survive
+    /// as runtime `Expr::Meta`).
+    blame: HashMap<String, BlameSpec>,
     /// Stack of names
     stack: Vec<String>,
     /// All parsed content for translation
@@ -123,6 +135,7 @@ impl<'smap> Desugarer<'smap> {
             imported_targets: HashSet::new(),
             docs: Vec::new(),
             deprecations: HashMap::new(),
+            blame: HashMap::new(),
             stack: vec![],
             contents,
             source_map,
@@ -235,6 +248,7 @@ impl<'smap> Desugarer<'smap> {
                 own_targets,
                 docs: self.docs.clone(),
                 deprecations: self.deprecations.clone(),
+                blame: self.blame.clone(),
             };
             self.file.pop();
             Ok(unit)
@@ -501,5 +515,17 @@ impl<'smap> Desugarer<'smap> {
     /// tracks nesting context but is not included in the deprecation key.
     pub fn record_deprecation(&mut self, name: &str, spec: DeprecationSpec) {
         self.deprecations.insert(name.to_string(), spec);
+    }
+
+    /// Record a declaration's blame classification (eu-1tkk.7.11).
+    ///
+    /// Called from `rowan_declaration_to_binding` when `metadata.blame` is
+    /// present, mirroring `record_deprecation` above. This is the *only*
+    /// place the classification survives past desugar — it is not wired
+    /// into codegen, and `strip_desugar_phase_metadata` removes `blame`
+    /// from any metadata block that would otherwise persist as runtime
+    /// `Expr::Meta`.
+    pub fn record_blame(&mut self, name: &str, spec: BlameSpec) {
+        self.blame.insert(name.to_string(), spec);
     }
 }

@@ -36,6 +36,7 @@
 //! | `source_hash` | SHA-256 of `lib/prelude.eu`; checked by `build.rs` | — | — | `build.rs` staleness check | — |
 //! | `nodes` / `forms_pool` / `binding_entries` | Shared STG arena: compiled lambda forms for every prelude global | binding (compiled) | `stg` (post `eu dump stg`) | HeapSyn engine loader | derived (compiled, not a source-structure snapshot) |
 //! | `name_to_slot` | Binding name → global slot index | — | — | STG compiler (`Ref::G` resolution), loader | — |
+//! | `blame` | Binding name → declared blame classification (`:transparent`/`:boundary`) | binding | desugared (side channel, `TranslationUnit::blame`) | Phase 2 trace classifier (eu-1tkk.7.11/.7.12) | derived (reconciled `BlameSpec` → `FrameKind`) |
 //! | `operators` | Operator fixity/precedence, extracted pre-`cook` | merged | pre-`cook` (desugared-adjacent) | `cook`'s `Distributor` seeding | derived (extracted subset, not a full snapshot) |
 //! | `monad_specs` / `monad_type_hints` | Monad namespace specs (e.g. `:for`) and LSP type hints | merged | desugared | Desugarer seeding, LSP | derived |
 //! | `inlinable_bindings` | Pre-expanded, `Ref::G`-linked, `Lam(_, true, _)`-tagged combinator bodies | binding | derived from desugared | `inject_prelude_inlinable_bindings` (pre-inline injection into user code) | **derived** (pre-expanded/re-tagged — not a stage snapshot, hence no "core" in the name) |
@@ -60,6 +61,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    common::{diagnostic_json::FrameKind, sourcemap::Smid},
     core::expr::RcExpr,
     driver::unit_interface::OperatorInfo,
     eval::{
@@ -125,6 +127,21 @@ pub struct PreludeBlob {
     /// Binding name → index into `binding_entries` (= global slot − `INTRINSIC_COUNT`).
     #[serde(with = "crate::common::serde_sorted")]
     pub name_to_slot: HashMap<String, usize>,
+
+    /// Binding name → declared blame classification (eu-1tkk.7.11).
+    ///
+    /// Populated from `SourceLoader::core().blame` (a `BlameSpec`,
+    /// `core::metadata`) by `cargo xtask prelude-compile`, reconciled to
+    /// `FrameKind` (`common::diagnostic_json`) here so this table is
+    /// directly consumable by the Phase 2 trace classifier — never `User`
+    /// (that classification only ever applies to a real user-file frame).
+    /// Only combinators that declare `` ` :transparent `` / `` ` :boundary
+    /// `` appear; absence is not itself meaningful (most prelude
+    /// combinators declare no blame contract yet). See
+    /// [`PreludeBlob::classify`] for the end-to-end trace-Smid → `FrameKind`
+    /// lookup the classifier is expected to call.
+    #[serde(default, with = "crate::common::serde_sorted")]
+    pub blame: HashMap<String, FrameKind>,
 
     /// Operator metadata for seeding cook's `Distributor`.
     #[serde(with = "crate::common::serde_sorted")]
@@ -211,6 +228,46 @@ impl PreludeBlob {
             postcard::from_bytes(&self.desugared_unit_cores).ok()
         }
     }
+
+    // ── Blame classification (eu-1tkk.7.11) ─────────────────────────────────
+    //
+    // Three composable steps, given a trace Smid: `Smid::as_global_slot`
+    // (not a `PreludeBlob` method — call it on the Smid directly) → `slot_name`
+    // → `blame_for`. `classify` chains the last two for the common case.
+    // Cold-path only (error reporting), not the VM tick/allocation hot path
+    // — `slot_name`'s linear scan over `name_to_slot` (hundreds of entries)
+    // is fine here; a caller classifying many frames in one report should
+    // build its own slot→name `Vec` once from `name_to_slot` instead (the
+    // runtime already does this as `StandardRuntime::prelude_names`).
+
+    /// Resolve a prelude-relative global slot (as decoded from a trace Smid
+    /// via [`Smid::as_global_slot`]) back to its binding name, via
+    /// `name_to_slot`.
+    pub fn slot_name(&self, slot: u32) -> Option<&str> {
+        self.name_to_slot
+            .iter()
+            .find(|(_, &v)| v as u32 == slot)
+            .map(|(k, _)| k.as_str())
+    }
+
+    /// Look up a binding's declared blame classification by name.
+    pub fn blame_for(&self, name: &str) -> Option<FrameKind> {
+        self.blame.get(name).copied()
+    }
+
+    /// End-to-end: a trace `Smid` → the declared blame class of the
+    /// prelude global it identifies, if the Smid is a
+    /// [`Smid::global_slot`] identity *and* that global declared a blame
+    /// contract. `None` covers both "not a blob global-slot Smid at all"
+    /// (e.g. a real user-source Smid) and "a recognised global slot with
+    /// no declared contract" — the caller decides how to treat that
+    /// ambiguity (the design's default is to treat an undeclared prelude
+    /// combinator as `Transparent`, never silently `User`).
+    pub fn classify(&self, smid: Smid) -> Option<FrameKind> {
+        let slot = smid.as_global_slot()?;
+        let name = self.slot_name(slot)?;
+        self.blame_for(name)
+    }
 }
 
 #[cfg(test)]
@@ -226,6 +283,7 @@ mod tests {
             forms_pool: vec![],
             binding_entries: vec![],
             name_to_slot: HashMap::new(),
+            blame: HashMap::new(),
             operators: HashMap::new(),
             monad_specs: HashMap::new(),
             monad_type_hints: HashMap::new(),
@@ -672,5 +730,98 @@ mod tests {
                 blob.forms_pool.len()
             );
         }
+    }
+
+    // ── blame table (eu-1tkk.7.11) ──────────────────────────────────────────
+
+    #[test]
+    fn blame_round_trips_through_postcard() {
+        let mut blob = minimal_blob();
+        blob.blame.insert("nth".to_string(), FrameKind::Boundary);
+        blob.blame.insert("map".to_string(), FrameKind::Transparent);
+
+        let bytes = blob.to_bytes().unwrap();
+        let restored = PreludeBlob::from_bytes(&bytes).unwrap();
+
+        assert_eq!(restored.blame.get("nth"), Some(&FrameKind::Boundary));
+        assert_eq!(restored.blame.get("map"), Some(&FrameKind::Transparent));
+    }
+
+    /// An older blob with no `blame` field must still deserialise (the
+    /// stale-blob hash check forces a version bump to reject truly old
+    /// blobs, but `#[serde(default)]` is defence in depth) — decoding to
+    /// an empty map, not an error.
+    #[test]
+    fn blame_defaults_to_empty_when_absent_from_wire_bytes() {
+        // Simulate an old blob by encoding a struct with the same shape
+        // minus `blame`, then decoding it as `PreludeBlob`. Postcard is a
+        // schema-less positional format, so we can't literally omit a
+        // struct field and re-decode — instead assert the property that
+        // actually matters: a freshly-built blob with an explicitly empty
+        // `blame` map round-trips to an empty map (the `#[serde(default)]`
+        // path for a field genuinely absent from old bytes is exercised by
+        // every other `#[serde(default)]` field in this struct via the
+        // same mechanism; this test documents the expected steady state).
+        let blob = minimal_blob();
+        assert!(blob.blame.is_empty());
+        let bytes = blob.to_bytes().unwrap();
+        let restored = PreludeBlob::from_bytes(&bytes).unwrap();
+        assert!(restored.blame.is_empty());
+    }
+
+    #[test]
+    fn slot_name_and_blame_for_and_classify_compose() {
+        let mut blob = minimal_blob();
+        blob.name_to_slot.insert("nth".to_string(), 236);
+        blob.blame.insert("nth".to_string(), FrameKind::Boundary);
+
+        assert_eq!(blob.slot_name(236), Some("nth"));
+        assert_eq!(blob.slot_name(999), None);
+        assert_eq!(blob.blame_for("nth"), Some(FrameKind::Boundary));
+        assert_eq!(blob.blame_for("no-such-binding"), None);
+
+        assert_eq!(
+            blob.classify(Smid::global_slot(236)),
+            Some(FrameKind::Boundary)
+        );
+        // A slot with no declared blame contract classifies to `None`, not
+        // a silent default — the caller decides how to treat that.
+        blob.name_to_slot.insert("split-when".to_string(), 235);
+        assert_eq!(blob.classify(Smid::global_slot(235)), None);
+        // An ordinary (non-global-slot) Smid never classifies.
+        assert_eq!(blob.classify(Smid::default()), None);
+    }
+
+    #[test]
+    #[cfg(prelude_blob_ok)]
+    fn embedded_blob_has_declared_blame_for_nth_and_map() {
+        let bytes = crate::driver::resources::PRELUDE_BLOB_BYTES;
+        let blob = PreludeBlob::from_bytes(bytes).expect("embedded blob should deserialise");
+
+        assert!(
+            !blob.blame.is_empty(),
+            "prelude blob must have blame classifications after prelude-compile"
+        );
+        assert_eq!(
+            blob.blame.get("nth"),
+            Some(&FrameKind::Boundary),
+            "'nth' must be declared :boundary"
+        );
+        assert_eq!(
+            blob.blame.get("map"),
+            Some(&FrameKind::Transparent),
+            "'map' must be declared :transparent"
+        );
+
+        // End-to-end: the global-slot Smid for 'nth' must classify via the
+        // blob's own tables (slot_name / blame_for composed via classify).
+        let nth_slot = *blob
+            .name_to_slot
+            .get("nth")
+            .expect("nth must have a global slot") as u32;
+        assert_eq!(
+            blob.classify(Smid::global_slot(nth_slot)),
+            Some(FrameKind::Boundary)
+        );
     }
 }

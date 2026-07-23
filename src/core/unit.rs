@@ -2,7 +2,7 @@
 use crate::core::doc::DeclarationDocumentation;
 use crate::core::error::CoreError;
 use crate::core::expr::RcExpr;
-use crate::core::metadata::DeprecationSpec;
+use crate::core::metadata::{BlameSpec, DeprecationSpec};
 use crate::core::target::Target;
 use crate::syntax::export::embed::Embed;
 use crate::syntax::export::pretty;
@@ -34,6 +34,16 @@ pub struct TranslationUnit {
     /// binding verification to emit warnings when a deprecated
     /// declaration is referenced.
     pub deprecations: HashMap<String, DeprecationSpec>,
+    /// Blame classifications discovered during desugaring (eu-1tkk.7.11).
+    ///
+    /// Maps declaration name to its declared `BlameSpec` (`:transparent` /
+    /// `:boundary`). `strip_desugar_phase_metadata` removes `blame` from
+    /// any metadata block that survives desugaring as a runtime `Expr::
+    /// Meta` — this side channel (mirroring `deprecations` above) is the
+    /// only place the classification survives past desugar. Consumed by
+    /// `cargo xtask prelude-compile` (via `loader.core().blame`) to build
+    /// `PreludeBlob::blame`; never read at codegen time.
+    pub blame: HashMap<String, BlameSpec>,
 }
 
 impl TranslationUnit {
@@ -52,6 +62,8 @@ impl TranslationUnit {
     pub fn merge_with(self, other: Self) -> Result<TranslationUnit, CoreError> {
         let mut deprecations = self.deprecations;
         deprecations.extend(other.deprecations);
+        let mut blame = self.blame;
+        blame.extend(other.blame);
         Ok(TranslationUnit {
             expr: self.expr.merge_in(other.expr)?,
             targets: self.targets.union(&other.targets).cloned().collect(),
@@ -62,6 +74,7 @@ impl TranslationUnit {
                 .collect(),
             docs: other.docs, // don't include docs from prior inputs
             deprecations,
+            blame,
         })
     }
 
@@ -90,6 +103,7 @@ impl TranslationUnit {
         let mut own_targets = HashSet::new();
         let mut docs = vec![];
         let mut deprecations = HashMap::new();
+        let mut blame = HashMap::new();
         let mut entries = vec![];
 
         for (k, u) in keys.iter().zip(units) {
@@ -98,6 +112,7 @@ impl TranslationUnit {
             own_targets.extend(u.own_targets.iter().map(|t| t.under(key)));
             docs.extend(u.docs.iter().map(|d| d.under(key)));
             deprecations.extend(u.deprecations.clone());
+            blame.extend(u.blame.clone());
             entries.push((key.to_string(), u.expr.clone()));
         }
 
@@ -107,6 +122,7 @@ impl TranslationUnit {
             own_targets,
             docs,
             deprecations,
+            blame,
         })
     }
 
@@ -148,6 +164,7 @@ impl TranslationUnit {
             own_targets: self.own_targets.clone(),
             docs: self.docs.clone(),
             deprecations: self.deprecations.clone(),
+            blame: self.blame.clone(),
         })
     }
 }

@@ -297,7 +297,8 @@ snoc(x, l): l ++ [x]
 (x ‖ xs): __CONS(x, xs)
 
 ` { doc: "`head(xs)` - return the head item of list `xs`, panic if empty."
-    type: s"[a] → a" }
+    type: s"[a] → a"
+    blame: :boundary }
 head: __HEAD
 
 ` { doc: "`↑xs` - return first element of list `xs`. Tight-binding prefix operator."
@@ -329,7 +330,8 @@ coalesce(xs): (xs nil?) then(null, (xs head)✓ then(xs head, xs tail coalesce))
 head-or(d, xs): xs nil? then(d, xs head)
 
 ` { doc: "`tail(xs)` - return list `xs` without the head item. [] causes error."
-    type: s"[a] → [a]" }
+    type: s"[a] → [a]"
+    blame: :boundary }
 tail: __TAIL
 
 ` { doc: "`tail-or(xs, d)` - return list `xs` without the head item or `d` for empty list."
@@ -421,7 +423,8 @@ block: __BLOCK
 has(s, b): b map-values(const(true)) lookup-or(s, false)
 
 ` { doc: "`lookup(s, b)` - look up symbol `s` in block `b`, error if not found."
-    type: s"symbol → Dict(a) → a?" }
+    type: s"symbol → Dict(a) → a?"
+    blame: :boundary }
 lookup(s, b): __LOOKUP(s, b)
 
 ` { doc: "`lookup-in(b, s)` - look up symbol `s` in block `b`, error if not found."
@@ -429,7 +432,8 @@ lookup(s, b): __LOOKUP(s, b)
 lookup-in(b, s): __LOOKUP(s, b)
 
 ` { doc: "`lookup-or(s, d, b)` - look up symbol `s` in block `b`, default `d` if not found."
-    type: s"symbol → a → {..} → any | a" }
+    type: s"symbol → a → {..} → any | a"
+    blame: :boundary }
 lookup-or(s, d, b): __LOOKUPOR(s, d, b)
 
 ` { doc: "`lookup-or-in(b, s, d)` - look up symbol `s` in block `b`, default `d` if not found."
@@ -1325,7 +1329,8 @@ __dbg-after(f, x): ▶(f(x))
 take(n, l): __IF((n zero?) ∨ (l nil?), [], cons(l head, take(n dec, l tail)))
  
 ` { doc: "`drop(n, l)` - return result of dropping integer `n` elements from list `l`."
-    type: s"number → [a] → [a]" }
+    type: s"number → [a] → [a]"
+    blame: :transparent }
 drop(n, l): __IF((n zero?), l, drop(n dec, l tail))
 
 ` { doc: "`rotate(n, l)` - rotate list `l` left by `n` positions."
@@ -1376,7 +1381,8 @@ split-after(p?, l): {
 split-when(p?, l): split-after(p? complement, l)
 
 ` { doc: "`nth(n, l)` - return `n`th item of list if it exists, otherwise error."
-    type: s"number → [a] → a?" }
+    type: s"number → [a] → a?"
+    blame: :boundary }
 nth(n, l): l drop(n) head
 
 ` "`update-nth(n, f, l)` - apply `f` to element at index `n` in list `l`.
@@ -1399,7 +1405,8 @@ update-first(p?, f, l): {
 repeat(i): __CONS(i, repeat(i))
 
 ` { doc: "`foldl(op, i, l)` - left fold operator `op` over list `l` starting from value `i`."
-    type: s"(b → a → b) → b → [a] → b" }
+    type: s"(b → a → b) → b → [a] → b"
+    blame: :transparent }
 foldl(op, i, l): if(l nil?, i, foldl(op, op(i, l head), l tail))
 
 ` { doc: "`reduce(op, l)` - left fold with no initial value; uses first element as seed. Panics on empty list."
@@ -1407,7 +1414,8 @@ foldl(op, i, l): if(l nil?, i, foldl(op, op(i, l head), l tail))
 reduce(op, l): foldl(op, l head, l tail)
 
 ` { doc: "`foldr(op, i, l)` - right fold operator `op` over list `l` ending with value `i`."
-    type: s"(a → b → b) → b → [a] → b" }
+    type: s"(a → b → b) → b → [a] → b"
+    blame: :transparent }
 foldr(op, i, l): if(l nil?, i, op(l head, foldr(op, i, l tail)))
 
 ` { doc: "`scanl(op, i, l)` - left scan operator `op` over list `l` starting from value `i`."
@@ -1459,7 +1467,8 @@ butlast(l): l reverse tail reverse
 cycle(l): if(l nil?, [], l ++ cycle(l))
 
 ` { doc: "`map(f, l)` - map function `f` over list `l`."
-    type: s"(a → b) → [a] → [b]" }
+    type: s"(a → b) → [a] → [b]"
+    blame: :transparent }
 map(f, l): if(l nil?, l, cons(l head f, l tail map(f)))
 
 ` { doc: "`f <$> l` - map function `f` over list `l`"
@@ -1494,7 +1503,8 @@ interleave(a, b): if(a nil?, b, cons(a head, interleave(b, a tail)))
 cross(f, xs, ys): xs mapcat({x: •}.(ys map(f(x))))
 
 ` { doc: "`filter(p?, l)` - return list of elements of list `l` that satisfy predicate `p?`."
-    type: s"(a → bool) → [a] → [a]" }
+    type: s"(a → bool) → [a] → [a]"
+    blame: :transparent }
 filter(p?, l): foldr({x: • xs: • }.(if(x p?, cons(x, xs), xs)), [], l)
 
 ` { doc: "`remove(p?, l)` - return list of elements of list `l` that do not satisfy predicate `p?`."
@@ -1521,7 +1531,8 @@ prepend: flip(append)
 concat(ls): foldr(append, [], ls)
 
 ` { doc: "`mapcat(f, l)` - map items in l with `f` and concatenate the resulting lists."
-    type: s"(a → [b]) → [a] → [b]" }
+    type: s"(a → [b]) → [a] → [b]"
+    blame: :transparent }
 mapcat(f): concat ∘ map(f)
 
 ` { doc: "`zip-apply(fs, vs)` - apply fns in list `fs` to corresponding values in list `vs`, until shorter is exhausted."

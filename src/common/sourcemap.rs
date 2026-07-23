@@ -11,10 +11,26 @@ use std::{fmt, ops::Range};
 /// A handle that points to a source location in a source map.
 ///
 /// Serialises as a `u32` (0 = synthetic/invalid, 1.. = source positions).
-/// Pre-compiled blobs use `Smid::default()` (0) for all prelude locations.
+/// Pre-compiled blobs use `Smid::default()` (0) for the vast majority of
+/// prelude locations (inner nodes within a combinator's compiled body) —
+/// a raw Smid baked at `xtask` build time would index into a `SourceMap`
+/// the loading process never populated, so it is elided at reconstruction.
+/// The one exception is a blob global's own entry-point identity: see
+/// [`Smid::global_slot`], which reserves a disjoint sub-range of this
+/// same `u32` space for "which prelude global slot" rather than "which
+/// source position" (eu-1tkk.7.11).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Smid(Option<NonZeroU32>);
+
+/// Tag bit distinguishing a [`Smid::global_slot`] identity from a real
+/// `SourceMap` index.
+///
+/// Real Smids are minted sequentially from 1 by `SourceMap::add*` and never
+/// approach this range for any realistic source file (billions of AST
+/// nodes), so a tagged value can never collide with a genuine source
+/// position — but it must never be used to index into a `SourceMap`.
+const GLOBAL_SLOT_TAG: u32 = 0x8000_0000;
 
 impl Default for Smid {
     /// The default SMID is invalid.
@@ -77,6 +93,41 @@ impl Smid {
             Some(n) => format!("__{n}"),
             None => "__<nosmid>".to_string(),
         }
+    }
+
+    /// Construct a Smid identifying a prelude-blob global slot, not a
+    /// `SourceMap` index (eu-1tkk.7.11).
+    ///
+    /// Used by blob-mode STG-arena reconstruction (`StgArena::
+    /// reconstruct_form_annotated`) to stamp a reconstructed lambda form's
+    /// annotation with "which prelude global slot this came from" instead
+    /// of the usual `Smid::default()` — restoring enough identity for
+    /// Phase 2's blame classifier to name the combinator, without
+    /// resurrecting a raw xtask-sourced Smid that would index into a
+    /// `SourceMap` the loading process never populated (see the struct doc
+    /// comment above).
+    ///
+    /// `slot` is the *prelude-relative* slot index (matching
+    /// `PreludeBlob::name_to_slot` / `StandardRuntime`'s `prelude_names`),
+    /// not the full `Ref::G` global index. Only the low 31 bits are
+    /// retained (masked with `!GLOBAL_SLOT_TAG`) — the prelude has on the
+    /// order of hundreds of bindings, nowhere near this limit.
+    pub fn global_slot(slot: u32) -> Smid {
+        Smid(NonZeroU32::new(GLOBAL_SLOT_TAG | (slot & !GLOBAL_SLOT_TAG)))
+    }
+
+    /// If this Smid was constructed by [`Smid::global_slot`], return the
+    /// slot it identifies. Returns `None` for an ordinary source-map Smid,
+    /// a synthetic Smid, or the invalid/default Smid.
+    pub fn as_global_slot(&self) -> Option<u32> {
+        self.0.and_then(|n| {
+            let v = n.get();
+            if v & GLOBAL_SLOT_TAG != 0 {
+                Some(v & !GLOBAL_SLOT_TAG)
+            } else {
+                None
+            }
+        })
     }
 }
 
@@ -184,6 +235,18 @@ impl SourceMap {
 
     /// Retrieve the SourceInfo for a given Smid value
     pub fn source_info_for_smid(&self, smid: Smid) -> Option<&SourceInfo> {
+        // A `Smid::global_slot` identity must never resolve to a `SourceInfo`
+        // — it indexes a disjoint "which prelude global slot" space, not
+        // this `SourceMap`. Without this explicit guard, rejection is only
+        // incidental: `smid.get()` for a global-slot value is ~2.1 billion,
+        // which happens to fall outside `self.source`'s bounds today purely
+        // because no real source file is anywhere near that size. That
+        // safety margin is not a contract — an explicit guard makes the
+        // rejection structural, independent of `self.source`'s length
+        // (eu-1tkk.7.11).
+        if smid.as_global_slot().is_some() {
+            return None;
+        }
         if let Some(idx) = smid.get() {
             self.source.get(idx)
         } else {
@@ -609,5 +672,94 @@ mod tests {
         let trace = [Smid::default(), smid, Smid::default()];
         let out = source_map.format_trace(&trace, &files);
         assert!(out.contains("x.eu:1:1"));
+    }
+
+    // ── Smid::global_slot / as_global_slot (eu-1tkk.7.11) ───────────────────
+
+    #[test]
+    fn global_slot_round_trips() {
+        for slot in [0u32, 1, 42, 295, 65535] {
+            let smid = Smid::global_slot(slot);
+            assert_eq!(smid.as_global_slot(), Some(slot));
+        }
+    }
+
+    #[test]
+    fn global_slot_is_valid_and_not_a_source_index() {
+        let smid = Smid::global_slot(7);
+        assert!(smid.is_valid());
+        // A global-slot Smid must never be mistaken for a real SourceMap
+        // index by code that only checks `get()`/`is_valid()`.
+        assert_ne!(smid.get(), None);
+    }
+
+    #[test]
+    fn as_global_slot_is_none_for_default_smid() {
+        assert_eq!(Smid::default().as_global_slot(), None);
+    }
+
+    #[test]
+    fn as_global_slot_is_none_for_ordinary_source_smid() {
+        let mut source_map = SourceMap::new();
+        let smid = source_map.add(0, Span::new(0u32, 0u32));
+        assert_eq!(smid.as_global_slot(), None);
+    }
+
+    /// `source_info_for_smid` must reject a global-slot identity explicitly
+    /// (structurally, via `as_global_slot`), not merely by chance because
+    /// its huge index falls out of `self.source`'s bounds today. Add a real
+    /// entry to `source_map` first as a sanity check for the ordinary path.
+    ///
+    /// Note on fault-injection: deleting the guard clause outright is not
+    /// observable by this (or any practically-sized) test, precisely
+    /// because the guard is *defence in depth* — the fallback bounds check
+    /// already rejects a ~2.1-billion index against any realistically
+    /// small `self.source`. What this test does catch (verified live) is a
+    /// broken/inverted guard condition: flipping `is_some()` to `is_none()`
+    /// makes the ordinary-Smid sanity assertion above fail immediately,
+    /// proving the guard is genuinely wired in and checked on every call,
+    /// not dead code.
+    #[test]
+    fn source_info_for_smid_rejects_global_slot_identity() {
+        let mut source_map = SourceMap::new();
+        let real_smid = source_map.add(0, Span::new(0u32, 5u32));
+        assert!(
+            source_map.source_info_for_smid(real_smid).is_some(),
+            "sanity: an ordinary Smid must still resolve"
+        );
+
+        for slot in [0u32, 1, 236, !GLOBAL_SLOT_TAG] {
+            let smid = Smid::global_slot(slot);
+            assert!(
+                source_map.source_info_for_smid(smid).is_none(),
+                "global_slot({slot}) must never resolve to a SourceInfo"
+            );
+        }
+    }
+
+    /// A real `SourceMap` Smid must never collide with a `global_slot`
+    /// identity — the whole point of the tag bit. Adds a batch of ordinary
+    /// Smids (as a real large source file would) and confirms none of them
+    /// decode as a global slot.
+    #[test]
+    fn ordinary_smids_never_collide_with_global_slot_tag() {
+        let mut source_map = SourceMap::new();
+        for i in 0..10_000u32 {
+            let smid = source_map.add(0, Span::new(i, i));
+            assert_eq!(
+                smid.as_global_slot(),
+                None,
+                "ordinary Smid #{i} misidentified as a global slot"
+            );
+        }
+    }
+
+    #[test]
+    fn global_slot_masks_out_of_range_input_rather_than_colliding_with_tag() {
+        // A slot value that already has the tag bit set (pathological input,
+        // never produced by real callers) must still decode back to the
+        // masked value, not silently misbehave.
+        let smid = Smid::global_slot(GLOBAL_SLOT_TAG | 3);
+        assert_eq!(smid.as_global_slot(), Some(3));
     }
 }

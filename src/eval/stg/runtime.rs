@@ -315,7 +315,11 @@ impl Runtime for StandardRuntime {
                         }
                     }
                 }
-                match arena.reconstruct_form(entry_idx) {
+                // Stamp the global-slot identity (eu-1tkk.7.11) so blame
+                // classification has something to key on for this prelude
+                // combinator, without resurrecting a raw xtask-sourced Smid
+                // (see `reconstruct_form_annotated`'s doc comment).
+                match arena.reconstruct_form_annotated(entry_idx, Smid::global_slot(i as u32)) {
                     Ok(form) => gs.push(form),
                     Err(e) => {
                         eprintln!(
