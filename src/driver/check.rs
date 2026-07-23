@@ -632,6 +632,7 @@ pub fn run_type_checker_from_blob_core(
             own_targets: Default::default(),
             docs: Vec::new(),
             deprecations: Default::default(),
+            blame: Default::default(),
         };
         loader.inject_prelude_units(vec![(input.clone(), unit)]);
         injected.insert(input);

@@ -25,9 +25,17 @@ use std::path::Path;
 /// - v4: `PreludeBlob::type_summary` (`PreludeSummary`) field removed — it
 ///   was write-only (sole writer `xtask`, zero readers; its only consumer
 ///   was deleted in PR #1012) (eu-2sa6.20).
+/// - v5: `PreludeBlob::blame` field added (binding name → declared
+///   `:transparent`/`:boundary` classification), and blob-mode global
+///   reconstruction (`StandardRuntime::globals()`, xtask's bytecode
+///   pre-encode loop) now stamps each prelude global's `LambdaForm::
+///   Lambda.annotation` with a `Smid::global_slot(..)` identity instead of
+///   always `Smid::default()` — not a serialised-shape change on its own,
+///   but bundled into the same version bump as the `blame` field it feeds
+///   (eu-1tkk.7.11).
 ///
 /// MUST match `BYTECODE_WIRE_FORMAT_VERSION` in `xtask/src/main.rs`.
-const BYTECODE_WIRE_FORMAT_VERSION: u32 = 4;
+const BYTECODE_WIRE_FORMAT_VERSION: u32 = 5;
 
 /// Compute the blob source hash: `SHA-256(prelude source ‖ wire-format version)`.
 fn blob_source_hash(source_bytes: &[u8]) -> [u8; 32] {

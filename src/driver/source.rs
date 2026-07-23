@@ -560,6 +560,7 @@ impl SourceLoader {
                 own_targets: std::collections::HashSet::new(),
                 docs: Vec::new(),
                 deprecations: std::collections::HashMap::new(),
+                blame: std::collections::HashMap::new(),
             };
             self.translation_units.insert(input.clone(), unit);
             return Ok(&self.translation_units[input]);

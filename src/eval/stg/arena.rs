@@ -390,10 +390,48 @@ impl StgArena {
     ///
     /// Panics if any index is out of range (indicates a malformed blob).
     pub fn reconstruct(&self, root: NodeIdx) -> Result<Rc<StgSyn>, BlobReconstructError> {
-        self.reconstruct_node(root)
+        self.reconstruct_node(root, None)
     }
 
-    fn reconstruct_node(&self, idx: NodeIdx) -> Result<Rc<StgSyn>, BlobReconstructError> {
+    /// Reconstruct a lambda form, elided-Ann/`Smid::default()` behaviour
+    /// unchanged from the historical `reconstruct_form`.
+    pub fn reconstruct_form(&self, idx: FormIdx) -> Result<LambdaForm, BlobReconstructError> {
+        self.reconstruct_form_impl(idx, None)
+    }
+
+    /// Reconstruct a lambda form, stamping every nested `Lambda` form's
+    /// `annotation` with `global_annotation` instead of the usual
+    /// `Smid::default()` (eu-1tkk.7.11).
+    ///
+    /// `global_annotation` is expected to be a [`Smid::global_slot`] value
+    /// identifying which prelude global this form tree belongs to — not a
+    /// real `SourceMap` index — so restoring it does not risk resolving
+    /// against the wrong `SourceMap` (see [`Smid`]'s struct doc comment on
+    /// why raw xtask-sourced Smids are normally elided). The same
+    /// identity is stamped uniformly across every `Lambda` reachable from
+    /// `idx` (including inner `Let`/`LetRec` bindings), mirroring how
+    /// `Desugarer::new_smid` tags every Smid minted while desugaring
+    /// inside a declaration with that declaration's name on the
+    /// source-compiled-prelude path.
+    ///
+    /// Used only at the two blob-mode global-reconstruction chokepoints
+    /// (`StandardRuntime::globals()` and the xtask bytecode pre-encode
+    /// loop) — every other caller of `reconstruct`/`reconstruct_form`
+    /// (the pretty-printer, `__args`/`__io` runtime overrides) is
+    /// unaffected and keeps the historical `Smid::default()` behaviour.
+    pub fn reconstruct_form_annotated(
+        &self,
+        idx: FormIdx,
+        global_annotation: Smid,
+    ) -> Result<LambdaForm, BlobReconstructError> {
+        self.reconstruct_form_impl(idx, Some(global_annotation))
+    }
+
+    fn reconstruct_node(
+        &self,
+        idx: NodeIdx,
+        global_annotation: Option<Smid>,
+    ) -> Result<Rc<StgSyn>, BlobReconstructError> {
         let node = self
             .nodes
             .get(idx as usize)
@@ -405,12 +443,18 @@ impl StgArena {
         // are meaningless at runtime.  Elide them so they do not overwrite
         // the user's call-site annotation in vm.annotation.
         if let ArenaStgSyn::Ann { body, .. } = node {
-            return self.reconstruct_node(*body);
+            return self.reconstruct_node(*body, global_annotation);
         }
-        Ok(Rc::new(self.reconstruct_arena_syn(node)?))
+        Ok(Rc::new(
+            self.reconstruct_arena_syn(node, global_annotation)?,
+        ))
     }
 
-    fn reconstruct_arena_syn(&self, node: &ArenaStgSyn) -> Result<StgSyn, BlobReconstructError> {
+    fn reconstruct_arena_syn(
+        &self,
+        node: &ArenaStgSyn,
+        global_annotation: Option<Smid>,
+    ) -> Result<StgSyn, BlobReconstructError> {
         Ok(match node {
             ArenaStgSyn::Atom { evaluand } => StgSyn::Atom {
                 evaluand: evaluand.clone(),
@@ -420,12 +464,14 @@ impl StgArena {
                 branches,
                 fallback,
             } => StgSyn::Case {
-                scrutinee: self.reconstruct_node(*scrutinee)?,
+                scrutinee: self.reconstruct_node(*scrutinee, global_annotation)?,
                 branches: branches
                     .iter()
-                    .map(|(tag, idx)| Ok((*tag, self.reconstruct_node(*idx)?)))
+                    .map(|(tag, idx)| Ok((*tag, self.reconstruct_node(*idx, global_annotation)?)))
                     .collect::<Result<_, BlobReconstructError>>()?,
-                fallback: fallback.map(|idx| self.reconstruct_node(idx)).transpose()?,
+                fallback: fallback
+                    .map(|idx| self.reconstruct_node(idx, global_annotation))
+                    .transpose()?,
             },
             ArenaStgSyn::Cons { tag, args } => StgSyn::Cons {
                 tag: *tag,
@@ -458,16 +504,16 @@ impl StgArena {
             ArenaStgSyn::Let { bindings, body } => StgSyn::Let {
                 bindings: bindings
                     .iter()
-                    .map(|&idx| self.reconstruct_form(idx))
+                    .map(|&idx| self.reconstruct_form_impl(idx, global_annotation))
                     .collect::<Result<_, BlobReconstructError>>()?,
-                body: self.reconstruct_node(*body)?,
+                body: self.reconstruct_node(*body, global_annotation)?,
             },
             ArenaStgSyn::LetRec { bindings, body } => StgSyn::LetRec {
                 bindings: bindings
                     .iter()
-                    .map(|&idx| self.reconstruct_form(idx))
+                    .map(|&idx| self.reconstruct_form_impl(idx, global_annotation))
                     .collect::<Result<_, BlobReconstructError>>()?,
-                body: self.reconstruct_node(*body)?,
+                body: self.reconstruct_node(*body, global_annotation)?,
             },
             // Ann nodes are elided in reconstruct_node() above.
             ArenaStgSyn::Ann { .. } => unreachable!("Ann handled in reconstruct_node"),
@@ -480,13 +526,13 @@ impl StgArena {
                 handler,
                 or_else,
             } => StgSyn::DeMeta {
-                scrutinee: self.reconstruct_node(*scrutinee)?,
-                handler: self.reconstruct_node(*handler)?,
-                or_else: self.reconstruct_node(*or_else)?,
+                scrutinee: self.reconstruct_node(*scrutinee, global_annotation)?,
+                handler: self.reconstruct_node(*handler, global_annotation)?,
+                or_else: self.reconstruct_node(*or_else, global_annotation)?,
             },
             ArenaStgSyn::Seq { scrutinee, body } => StgSyn::Seq {
-                scrutinee: self.reconstruct_node(*scrutinee)?,
-                body: self.reconstruct_node(*body)?,
+                scrutinee: self.reconstruct_node(*scrutinee, global_annotation)?,
+                body: self.reconstruct_node(*body, global_annotation)?,
             },
             ArenaStgSyn::LookupLit {
                 smid,
@@ -508,13 +554,17 @@ impl StgArena {
                 primop_id: *primop_id,
                 left: left.clone(),
                 right: right.clone(),
-                inner: self.reconstruct_node(*inner)?,
+                inner: self.reconstruct_node(*inner, global_annotation)?,
             },
             ArenaStgSyn::BlackHole => StgSyn::BlackHole,
         })
     }
 
-    pub fn reconstruct_form(&self, idx: FormIdx) -> Result<LambdaForm, BlobReconstructError> {
+    fn reconstruct_form_impl(
+        &self,
+        idx: FormIdx,
+        global_annotation: Option<Smid>,
+    ) -> Result<LambdaForm, BlobReconstructError> {
         let form = self
             .forms
             .get(idx as usize)
@@ -525,16 +575,20 @@ impl StgArena {
         Ok(match form {
             ArenaLambdaForm::Lambda { bound, body, .. } => LambdaForm::Lambda {
                 bound: *bound,
-                body: self.reconstruct_node(*body)?,
-                // Clear xtask-sourced annotations — they are meaningless
-                // at runtime and would pollute user error locations.
-                annotation: Smid::default(),
+                body: self.reconstruct_node(*body, global_annotation)?,
+                // Clear xtask-sourced (real `SourceMap`) annotations —
+                // they are meaningless at runtime and would pollute user
+                // error locations. `global_annotation`, when supplied via
+                // `reconstruct_form_annotated`, is a `Smid::global_slot`
+                // value instead — a distinct, disjoint identity space, not
+                // a raw source Smid — so restoring it is safe.
+                annotation: global_annotation.unwrap_or_default(),
             },
             ArenaLambdaForm::Thunk { body } => LambdaForm::Thunk {
-                body: self.reconstruct_node(*body)?,
+                body: self.reconstruct_node(*body, global_annotation)?,
             },
             ArenaLambdaForm::Value { body } => LambdaForm::Value {
-                body: self.reconstruct_node(*body)?,
+                body: self.reconstruct_node(*body, global_annotation)?,
             },
         })
     }
