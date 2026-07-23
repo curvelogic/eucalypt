@@ -90,7 +90,7 @@ Eucalypt is a functional language for generating, templating, and rendering stru
 - **Metadata**: `` ` "description" `` before declarations
 - **Comments**: `# line comment`
 
-## License
+## Licence
 
 Licensed under either of
 
