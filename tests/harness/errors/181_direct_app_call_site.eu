@@ -1,0 +1,15 @@
+# A user-defined function called at exactly its arity compiles to a
+# `DirectApp` (exact-arity known-callee dispatch, CG1). That fast path
+# saturates the callee without pushing a continuation, and the compiler used
+# to suppress the call site's `Ann` wrapper on the grounds that the smid was
+# already inlined in the `DirectApp` node. The inlined smid only sets the
+# machine's live annotation as the node is stepped, so it was overwritten the
+# instant the callee body was entered.
+#
+# The error here is raised deep inside the prelude (`tail` on a number, via
+# `nth`/`drop`), so with the `Ann` suppressed no user source location reached
+# the diagnostic at all — it rendered with no span and no stack trace.
+# Restoring the wrapper anchors it on the `second(3)` call site (eu-1tkk.7).
+second(xs): nth(1, xs)
+
+result: second(3)

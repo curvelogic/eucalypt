@@ -2727,6 +2727,15 @@ pub fn test_error_180() {
 }
 
 #[test]
+/// An exact-arity call to a user-defined function takes the `DirectApp` fast
+/// path, which used to suppress the call site's `Ann` wrapper; an error raised
+/// inside the prelude then reached the diagnostic with no user location at all.
+/// After the fix the call site anchors the span and the trace (eu-1tkk.7).
+pub fn test_error_181() {
+    run_error_test(&error_opts("181_direct_app_call_site.eu"));
+}
+
+#[test]
 /// A static `.key` lookup on a value that evaluates to a function (not a
 /// block) used to report the self-contradictory "tried to call a function
 /// as a function" (NotCallable with actual_type = "function"). After the

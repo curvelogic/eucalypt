@@ -144,9 +144,15 @@ fn debug_trace_restores_the_uncurated_trace() {
         );
     }
 
-    // `nth`'s internal recursion is a transparent frame in the raw dump and
-    // is gone from the curated trace: proves `--debug-trace` bypasses
-    // curation rather than being an inert flag.
+    // A transparent library frame is present in the raw `--debug-trace` dump
+    // and is gone from the curated trace: proves `--debug-trace` bypasses
+    // curation rather than being an inert flag. Since the DirectApp call-site
+    // fix (eu-1tkk.7) swap_args anchors on the user call site with the named
+    // boundary combinator kept as context — the same shape as
+    // nth_out_of_range below — where it previously curated to nothing because
+    // no user frame reached the trace at all. The test's intent is unchanged:
+    // curation drops every *transparent* frame while keeping the user anchor
+    // and the boundary combinator.
     let path = dir.join("swap_args.eu");
     let raw = frames(&run_debug_trace(&path));
     assert!(
@@ -155,10 +161,19 @@ fn debug_trace_restores_the_uncurated_trace() {
          frame, got {raw:?}"
     );
     let (curated_json, _, _) = run(&path);
+    let curated = frames(&curated_json);
     assert!(
-        frames(&curated_json).is_empty(),
-        "swap_args.eu: expected curation to drop every transparent frame, got {:?}",
-        frames(&curated_json)
+        !curated.iter().any(|(kind, _)| kind == "transparent"),
+        "swap_args.eu: curation must drop every transparent frame the raw dump \
+         carried, got {curated:?}"
+    );
+    assert!(
+        curated.contains(&("boundary".to_string(), "nth".to_string())),
+        "swap_args.eu: curated trace must name the boundary combinator, got {curated:?}"
+    );
+    assert!(
+        curated.iter().any(|(kind, _)| kind == "user"),
+        "swap_args.eu: curated trace must keep the user anchor, got {curated:?}"
     );
 
     // `nth` raises at its own edge, so its boundary frame is in the env
