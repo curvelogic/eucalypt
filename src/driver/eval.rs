@@ -17,7 +17,7 @@ use crate::{
         source::SourceLoader,
     },
     eval::{
-        error::ExecutionError,
+        error::{curate_trace_with_env, ExecutionError, TRACE_BUDGET},
         machine::standard_machine,
         stg::{self, make_standard_runtime, runtime::Runtime, RenderType, StgSettings},
     },
@@ -164,7 +164,15 @@ pub fn run(opt: &EucalyptOptions, mut loader: SourceLoader) -> Result<RunResult,
     // a second deserialisation.
     #[cfg(not(target_arch = "wasm32"))]
     let blob = loader.take_prelude_blob();
+    // Capture the source-compiled-prelude path's declared blame table
+    // (eu-1tkk.7.12) before `Executor::from(loader)` consumes the loader via
+    // `complete()`, which otherwise drops `TranslationUnit::blame` on the
+    // floor. On the blob path this is typically empty (the prelude wasn't
+    // desugared from source at all); `set_prelude_blob` below merges in the
+    // blob's own `blame` table for that path instead.
+    let blame_table = loader.blame_table();
     let mut executor = Executor::from(loader);
+    executor.source_map.extend_blame_table(blame_table);
     #[cfg(not(target_arch = "wasm32"))]
     executor.set_prelude_blob(blob);
     let exit_code = executor
@@ -267,8 +275,22 @@ impl<'a> Executor<'a> {
     /// Called by `run()` after extracting the blob from the `SourceLoader`
     /// (which has already used it to seed the cook `Distributor`).
     /// Must be called before `execute()`.
+    ///
+    /// Also merges the blob's own `blame` table and `name_to_slot` (as
+    /// `slot_to_name`) into `source_map`, so [`SourceMap::classify_frame`]
+    /// can classify blob-mode global-slot Smids (eu-1tkk.7.12) the same way
+    /// it classifies source-compiled-prelude Smids.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn set_prelude_blob(&mut self, blob: Option<crate::eval::stg::blob::PreludeBlob>) {
+        if let Some(ref blob) = blob {
+            self.source_map.extend_blame_table(blob.blame.clone());
+            let slot_to_name: std::collections::HashMap<u32, String> = blob
+                .name_to_slot
+                .iter()
+                .map(|(name, &slot)| (slot as u32, name.clone()))
+                .collect();
+            self.source_map.set_slot_names(slot_to_name);
+        }
         self.prelude_blob = blob;
     }
 
@@ -306,7 +328,7 @@ impl<'a> Executor<'a> {
         format: String,
     ) -> Result<Option<u8>, ExecutionError> {
         let result = self.try_execute(opt, stats, format);
-        self.diagnose(result, opt.error_format())
+        self.diagnose(result, opt.error_format(), opt.debug_trace())
     }
 
     /// Execute using the STG machine
@@ -663,10 +685,16 @@ impl<'a> Executor<'a> {
     }
 
     /// Print any errors as diagnoses to stderr
+    ///
+    /// `debug_trace` selects between the default curated trace (design
+    /// spec §4.3: classify → drop transparent → collapse recursion → keep
+    /// user+boundary → budget, eu-1tkk.7.12) and the raw, uncurated
+    /// continuation-stack dump behind `--debug-trace`.
     fn diagnose(
         &mut self,
         result: Result<Option<u8>, ExecutionError>,
         error_format: &ErrorFormat,
+        debug_trace: bool,
     ) -> Result<Option<u8>, ExecutionError> {
         match result {
             Err(ref e) if e.is_interrupted() => {
@@ -681,7 +709,18 @@ impl<'a> Executor<'a> {
                         let mut notes = vec![];
 
                         if let Some(trace) = e.stack_trace() {
-                            let stack_trace = self.source_map.format_trace(trace, &self.files);
+                            let stack_trace = if debug_trace {
+                                self.source_map.format_trace(trace, &self.files)
+                            } else {
+                                let curated = curate_trace_with_env(
+                                    trace,
+                                    e.env_trace().unwrap_or_default(),
+                                    &self.source_map,
+                                    TRACE_BUDGET,
+                                );
+                                self.source_map
+                                    .format_curated_trace(&curated.frames, &self.files)
+                            };
                             if !stack_trace.is_empty() {
                                 notes.push(format!("stack trace:\n{stack_trace}"));
                             }
@@ -692,7 +731,7 @@ impl<'a> Executor<'a> {
                         self.diagnose_to_stderr(&diagnostic);
                     }
                     ErrorFormat::Json => {
-                        let json = self.error_to_json(&e);
+                        let json = self.error_to_json(&e, debug_trace);
                         self.write_json_to_stderr(&json);
                     }
                 }
@@ -772,13 +811,27 @@ impl<'a> Executor<'a> {
     /// only when it has a user-visible name (intrinsic display name or
     /// annotation) or a source snippet; internal machinery is dropped.
     ///
-    /// Phase 0 frame classification is coarse: `User` when the frame resolves
-    /// to a user file, otherwise `Transparent` (refined in Phase 2).
-    fn json_trace(&self, trace: &[Smid]) -> Vec<JsonFrame> {
-        let mut frames: Vec<JsonFrame> = trace
+    /// Frame classification comes from [`SourceMap::classify_frame`] — the
+    /// same declared-blame lookup the human path uses — and, unless
+    /// `debug_trace` is set, the sequence is curated by
+    /// [`curate_trace_with_env`] first (transparent plumbing dropped,
+    /// recursion collapsed, boundary recovered, budget applied), so the JSON
+    /// `trace` and the human `stack trace:` note describe the same frames
+    /// (eu-1tkk.7.12).
+    fn json_trace(&self, trace: &[Smid], env: &[Smid], debug_trace: bool) -> Vec<JsonFrame> {
+        let classified: Vec<(Smid, FrameKind)> = if debug_trace {
+            trace
+                .iter()
+                .map(|&smid| (smid, self.source_map.classify_frame(smid)))
+                .collect()
+        } else {
+            curate_trace_with_env(trace, env, &self.source_map, TRACE_BUDGET).frames
+        };
+
+        let mut frames: Vec<JsonFrame> = classified
             .iter()
-            .filter_map(|smid| {
-                let info = self.source_map.source_info_for_smid(*smid)?;
+            .filter_map(|&(smid, kind)| {
+                let info = self.source_map.source_info_for_smid(smid)?;
 
                 // Prefer intrinsic display name, then annotation, then a
                 // source snippet — the same precedence format_trace uses.
@@ -804,12 +857,6 @@ impl<'a> Executor<'a> {
                     _ => Self::synthetic_pos(),
                 };
 
-                let kind = if pos.in_user_file {
-                    FrameKind::User
-                } else {
-                    FrameKind::Transparent
-                };
-
                 Some(JsonFrame {
                     name: Some(name),
                     pos,
@@ -832,7 +879,7 @@ impl<'a> Executor<'a> {
     /// then the stack trace) — rather than resolving `source_info(error)` alone.
     /// The two paths converge so that a plausible-but-wrong location cannot
     /// diverge between them.
-    fn error_to_json(&self, error: &ExecutionError) -> serde_json::Value {
+    fn error_to_json(&self, error: &ExecutionError, debug_trace: bool) -> serde_json::Value {
         // Reuse the human path's diagnostic wholesale so that message, primary
         // label, and secondary labels come from exactly the same selection.
         let diagnostic = error.to_diagnostic(&self.source_map);
@@ -864,7 +911,7 @@ impl<'a> Executor<'a> {
         // Structured trace from the same stack trace the human note renders.
         let trace = error
             .stack_trace()
-            .map(|t| self.json_trace(t))
+            .map(|t| self.json_trace(t, error.env_trace().unwrap_or_default(), debug_trace))
             .unwrap_or_default();
 
         // `code` comes straight from the diagnostic's `code` field (Task 4:

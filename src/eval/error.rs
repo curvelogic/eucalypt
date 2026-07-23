@@ -1,5 +1,6 @@
 //! Execution errors
-use crate::common::sourcemap::{HasSmid, Smid, SourceMap};
+use crate::common::diagnostic_json::FrameKind;
+use crate::common::sourcemap::{compress_cycles, HasSmid, Smid, SourceMap};
 use crate::eval::stg::tags::DataConstructor;
 use crate::eval::types::IntrinsicType;
 use codespan_reporting::diagnostic::Diagnostic;
@@ -9,6 +10,126 @@ use std::io;
 use thiserror::Error;
 
 use super::{memory::bump, stg::compiler::CompileError};
+
+/// Trace length budget shared by the curated human/JSON trace and the
+/// objective invariant gate (design spec §5.2 invariant (v),
+/// `tests/diagnostics_invariants.rs::TRACE_BUDGET`) — centralised here so
+/// the two cannot drift apart (eu-1tkk.7.12).
+pub const TRACE_BUDGET: usize = 12;
+
+/// The curated trace: the raw (innermost-first) stack/env trace after
+/// classify → drop transparent → collapse recursion → keep user+boundary →
+/// budget (design spec §4.3, eu-1tkk.7.12). The raw, uncurated trace remains
+/// available behind `--debug-trace`.
+#[derive(Debug, Clone, Default)]
+pub struct CuratedTrace {
+    /// Curated frames, innermost-first (matching the raw trace's order):
+    /// `User` and `Boundary` only, `Transparent` frames dropped,
+    /// consecutive repeats (recursion) collapsed to one representative
+    /// occurrence, truncated to `budget`.
+    pub frames: Vec<(Smid, FrameKind)>,
+    /// The nearest user call-site Smid in the curated trace (the first
+    /// `User` frame, i.e. nearest to the point of failure) — the
+    /// boundary-rephrasing primary-reassignment target.
+    pub primary: Option<Smid>,
+    /// How many raw frames were dropped as `Transparent` (debug/diagnostic
+    /// use only; not rendered by default).
+    pub dropped_transparent: usize,
+}
+
+/// Curate a raw (innermost-first) trace: classify every Smid via
+/// [`SourceMap::classify_frame`], drop `Transparent` frames entirely,
+/// collapse consecutive repeats (recursion) via the generalised
+/// [`compress_cycles`], keep `User` and `Boundary` frames, and truncate to
+/// `budget` (design spec §4.3, eu-1tkk.7.12).
+///
+/// Dropping `Transparent` frames can never remove a `User` frame, so
+/// `curate_trace(...).primary` always agrees with searching the raw trace
+/// directly for the first user-file Smid — curation changes *presentation*
+/// (what a reader sees), not *primary-location selection* (which was
+/// already correct, eu-1tkk.7.8).
+pub fn curate_trace(raw: &[Smid], source_map: &SourceMap, budget: usize) -> CuratedTrace {
+    let mut dropped_transparent = 0usize;
+    let classified: Vec<(Smid, FrameKind)> = raw
+        .iter()
+        .filter_map(|&smid| {
+            let kind = source_map.classify_frame(smid);
+            if kind == FrameKind::Transparent {
+                dropped_transparent += 1;
+                None
+            } else {
+                Some((smid, kind))
+            }
+        })
+        .collect();
+
+    let collapsed: Vec<(Smid, FrameKind)> = compress_cycles(&classified)
+        .into_iter()
+        .flat_map(|run| run.pattern)
+        .collect();
+
+    let primary = collapsed
+        .iter()
+        .find(|(_, kind)| *kind == FrameKind::User)
+        .map(|(smid, _)| *smid);
+
+    let frames = collapsed.into_iter().take(budget).collect();
+
+    CuratedTrace {
+        frames,
+        primary,
+        dropped_transparent,
+    }
+}
+
+/// Curate the stack (pending-call) trace, then recover the named boundary
+/// combinator from the env (lexical-scope) trace when the stack trace alone
+/// does not carry one (design spec §4.3: the boundary is "kept as a named
+/// secondary" while the primary is the user call site, eu-1tkk.7.12).
+///
+/// A combinator that raises its own error at its edge — `nth` panicking with
+/// `index N out of range for list of length M` rather than letting its
+/// internal recursion leak `tail of empty list` — pushes no *pending call*
+/// frame of its own: by the time it raises, the call has been entered, so
+/// the boundary appears in the env trace (the lexical scope enclosing the
+/// failure), not the stack trace. Without this recovery the user would see
+/// their own call site but lose the "in 'nth'" naming.
+///
+/// The recovery is deliberately conditional on the curated stack trace
+/// already containing a `User` frame: the boundary is context *for* a user
+/// anchor, so with no anchor to attach it to there is nothing to name, and
+/// emitting a lone prelude frame would replace an honest empty trace with a
+/// misleading one.
+pub fn curate_trace_with_env(
+    stack: &[Smid],
+    env: &[Smid],
+    source_map: &SourceMap,
+    budget: usize,
+) -> CuratedTrace {
+    let mut curated = curate_trace(stack, source_map, budget);
+
+    let has_user = curated.frames.iter().any(|(_, k)| *k == FrameKind::User);
+    let has_boundary = curated
+        .frames
+        .iter()
+        .any(|(_, k)| *k == FrameKind::Boundary);
+    if !has_user || has_boundary {
+        return curated;
+    }
+
+    if let Some(&(smid, kind)) = curate_trace(env, source_map, budget)
+        .frames
+        .iter()
+        .find(|(_, k)| *k == FrameKind::Boundary)
+    {
+        // Insert innermost-first, matching the raw trace convention, so the
+        // formatter's reversal renders it as the outermost-read context line.
+        curated.frames.insert(0, (smid, kind));
+        curated.frames.truncate(budget);
+    }
+
+    curated
+}
 
 /// Format a type mismatch error message, including the actual value when available.
 fn format_type_mismatch(
@@ -942,10 +1063,16 @@ impl ExecutionError {
         } else {
             // Try to find a user-file location in the traces: nearest pending
             // call site (stack trace) first, then lexical/definition scope
-            // (env trace) as a fallback.
-            let user_smid = source_map
-                .first_user_source_smid(stack_trace)
-                .or_else(|| source_map.first_user_source_smid(env_trace));
+            // (env trace) as a fallback. Routed through `curate_trace` (the
+            // Phase 2 classifier, eu-1tkk.7.12) rather than
+            // `first_user_source_smid` directly: dropping `Transparent`
+            // frames can never remove a `User` frame, so the two agree on
+            // every input — but this keeps a single classification path for
+            // "nearest user call-site", rather than two independent
+            // implementations that could silently drift apart.
+            let user_smid = curate_trace(stack_trace, source_map, TRACE_BUDGET)
+                .primary
+                .or_else(|| curate_trace(env_trace, source_map, TRACE_BUDGET).primary);
 
             if let Some(smid) = user_smid {
                 source_map
@@ -1013,6 +1140,20 @@ impl ExecutionError {
             for &smid in env_trace.iter() {
                 if !show_secondary || secondary_labels.len() >= 3 {
                     break;
+                }
+                // Curate the secondary-label channel too (design spec §4.3,
+                // eu-1tkk.7.12): a secondary label renders a source excerpt
+                // with a "called from here" marker, which is only useful
+                // when the reader can act on the line it points at. Pointing
+                // it into the prelude — `map` recursing on its own tail, or
+                // the inner recursion of a combinator that raises at its own
+                // edge — excerpts library internals the user did not write
+                // and cannot change. The named boundary combinator is not
+                // lost: `curate_trace_with_env` carries it into the
+                // `stack trace:` note as `in 'nth'`, which is where §4.3's
+                // worked example puts it.
+                if source_map.classify_frame(smid) != FrameKind::User {
+                    continue;
                 }
                 let info = match source_map.source_info_for_smid(smid) {
                     Some(i) => i,

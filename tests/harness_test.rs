@@ -2754,6 +2754,26 @@ pub fn test_192_1tkk_7_9_function_not_block() {
 }
 
 #[test]
+/// `xs nth(10)` on a three-element list: the Phase 2 curated trace
+/// (eu-1tkk.7.12). Gates all three properties design spec §4.3 asks of a
+/// boundary combinator at once, in order, via one `(?s)` stderr regex:
+/// the message reports the real index and the real length rather than
+/// leaking `drop`'s mechanical "tail of empty list"; the primary location
+/// is the user's own `xs nth(10)` call site, not a `[prelude]` line; and
+/// the curated `stack trace:` note keeps the user frame *and* names the
+/// boundary combinator (`in 'nth'`) that the raw continuation dump alone
+/// no longer carries — `nth` raises at its own edge, so its frame lives
+/// in the env (lexical scope) trace and is recovered by
+/// `curate_trace_with_env`.
+///
+/// Engine-agnostic: this is presentation-layer curation over Smids both
+/// engines record identically, and it is verified under `cargo test`
+/// (bytecode) and `EU_HEAPSYN=1 cargo test` (HeapSyn).
+pub fn test_193_1tkk_7_12_curated_trace() {
+    run_error_test(&error_opts("193_1tkk_7_12_curated_trace.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:

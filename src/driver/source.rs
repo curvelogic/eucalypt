@@ -872,6 +872,36 @@ impl SourceLoader {
         &self.core
     }
 
+    /// Reconcile the merged unit's declared blame classifications
+    /// (`TranslationUnit::blame`, a `BlameSpec` per declaration name — the
+    /// desugar-phase side channel) into the trace classifier's `FrameKind`
+    /// vocabulary (eu-1tkk.7.12).
+    ///
+    /// Mirrors the reconciliation `cargo xtask prelude-compile` performs
+    /// when building `PreludeBlob::blame` (`xtask/src/main.rs`) — this is
+    /// the same conversion, but for the source-compiled-prelude path
+    /// (`cargo test`'s default, and any dev build without a generated
+    /// blob). Callable any time after loading, since it only borrows
+    /// `self`; call it before [`SourceLoader::complete`] consumes the
+    /// loader.
+    pub fn blame_table(
+        &self,
+    ) -> std::collections::HashMap<String, crate::common::diagnostic_json::FrameKind> {
+        use crate::common::diagnostic_json::FrameKind;
+        use crate::core::metadata::BlameSpec;
+        self.core
+            .blame
+            .iter()
+            .map(|(name, spec)| {
+                let kind = match spec {
+                    BlameSpec::Transparent => FrameKind::Transparent,
+                    BlameSpec::Boundary => FrameKind::Boundary,
+                };
+                (name.clone(), kind)
+            })
+            .collect()
+    }
+
     /// Replace the core expression (e.g. after post-check alias resolution).
     pub fn set_core_expr(&mut self, expr: RcExpr) {
         self.core.expr = expr;

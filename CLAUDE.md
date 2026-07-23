@@ -139,6 +139,8 @@ The crash signal handler (SIGSEGV/SIGBUS diagnostics) is always active and has n
 
 `--suppress-demand-analysis` (an `eu run` flag) disables the demand analysis pass for debugging, leaving all demands at `Unknown`.
 
+`--debug-trace` (an `eu run` flag) shows the raw, uncurated continuation-stack trace on execution errors. The default trace is curated — transparent library frames dropped, recursion collapsed, length budgeted, anchored on the nearest user call site with the named boundary combinator kept as context. See `docs/reference/cli.md` ("Error Traces").
+
 ### Dump Commands for Debugging
 
 Use `eu dump <phase>` to inspect intermediate representations at each pipeline stage. These are the **primary tool** for investigating compiler and core expression issues — do NOT add temporary debug prints.

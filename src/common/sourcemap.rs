@@ -1,9 +1,11 @@
+use crate::common::diagnostic_json::FrameKind;
 use codespan::Span;
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
     files::{Files, SimpleFiles},
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::num::NonZeroU32;
 use std::{fmt, ops::Range};
@@ -167,6 +169,23 @@ pub struct SourceMap {
     /// code can prefer user locations over resource locations when building
     /// error labels.
     resource_file_ids: std::collections::HashSet<usize>,
+    /// Declared blame classification by combinator name (eu-1tkk.7.12).
+    ///
+    /// Populated once at startup from whichever prelude path is active:
+    /// the source-compiled path reconciles `TranslationUnit::blame`
+    /// (`SourceLoader::blame_table`) into this map; the blob path merges in
+    /// `PreludeBlob::blame` (already `HashMap<String, FrameKind>`). Both
+    /// paths converge on the same shape so [`SourceMap::classify_frame`] is
+    /// a single, uniform lookup regardless of which prelude is loaded.
+    blame_by_name: HashMap<String, FrameKind>,
+    /// Prelude-relative global slot → binding name (blob path only,
+    /// eu-1tkk.7.12).
+    ///
+    /// Mirrors `PreludeBlob::name_to_slot` inverted, so a trace Smid that
+    /// decodes as a [`Smid::as_global_slot`] identity can be resolved to a
+    /// name without `classify_frame` needing a `PreludeBlob` reference of
+    /// its own.
+    slot_to_name: HashMap<u32, String>,
 }
 
 impl SourceMap {
@@ -329,6 +348,66 @@ impl SourceMap {
         !self.resource_file_ids.contains(&file_id)
     }
 
+    /// Merge declared blame classifications into the name-keyed table
+    /// [`SourceMap::classify_frame`] consults (eu-1tkk.7.12).
+    ///
+    /// Callable more than once — the source-compiled path and the blob path
+    /// populate disjoint name spaces in practice (a user file's own
+    /// declarations vs. the prelude's), so a plain merge (later entries win
+    /// on a name collision) is sufficient; there is no ordering requirement
+    /// between calls.
+    pub fn extend_blame_table(&mut self, table: HashMap<String, FrameKind>) {
+        self.blame_by_name.extend(table);
+    }
+
+    /// Record the blob's slot → name table so a blob-mode global-slot Smid
+    /// (see [`Smid::as_global_slot`]) can be resolved to a binding name
+    /// without `classify_frame` needing a `PreludeBlob` reference of its own
+    /// (eu-1tkk.7.12).
+    pub fn set_slot_names(&mut self, names: HashMap<u32, String>) {
+        self.slot_to_name = names;
+    }
+
+    /// Classify a trace frame's Smid as `User`, `Boundary`, or `Transparent`
+    /// (design spec §4.3, eu-1tkk.7.12).
+    ///
+    /// The single lookup both the source-compiled-prelude path and the
+    /// blob (shipped-binary) path share:
+    /// - A Smid resolving to a user-authored file is always `User`.
+    /// - A Smid resolving to a prelude/resource `SourceMap` entry is
+    ///   classified by its `annotation` (the declaring combinator's name,
+    ///   set by `Desugarer::new_smid`) against `blame_by_name`.
+    /// - A Smid carrying a [`Smid::as_global_slot`] identity (blob mode,
+    ///   where prelude frames have no `SourceMap` entry at all) is resolved
+    ///   via `slot_to_name` then `blame_by_name`.
+    /// - Absent from both — an undeclared prelude combinator, an intrinsic,
+    ///   or an unresolvable Smid — defaults to `Transparent`, never
+    ///   silently `User` (a real user-file Smid is the only route to
+    ///   `User`).
+    pub fn classify_frame(&self, smid: Smid) -> FrameKind {
+        if let Some(info) = self.source_info_for_smid(smid) {
+            if let Some(fid) = info.file {
+                if self.is_user_file(fid) {
+                    return FrameKind::User;
+                }
+            }
+            if let Some(ann) = &info.annotation {
+                if let Some(kind) = self.blame_by_name.get(ann) {
+                    return *kind;
+                }
+            }
+            return FrameKind::Transparent;
+        }
+        if let Some(slot) = smid.as_global_slot() {
+            if let Some(name) = self.slot_to_name.get(&slot) {
+                if let Some(kind) = self.blame_by_name.get(name) {
+                    return *kind;
+                }
+            }
+        }
+        FrameKind::Transparent
+    }
+
     /// Find the first Smid in a trace slice that has a concrete file/span location.
     ///
     /// Used as a fallback when an error's own Smid is synthetic (e.g. an
@@ -363,6 +442,66 @@ impl SourceMap {
         })
     }
 
+    /// Resolve a single trace Smid to `(display_name, location)`, shared by
+    /// [`SourceMap::format_trace`] (raw) and
+    /// [`SourceMap::format_curated_trace`] (Phase 2 curated, eu-1tkk.7.12)
+    /// so the two formatters cannot silently diverge on name/location
+    /// resolution. Returns `None` for an entry with neither a user-visible
+    /// name nor a source location (internal machinery, silently dropped).
+    fn resolve_trace_entry(
+        &self,
+        smid: Smid,
+        files: &SimpleFiles<String, String>,
+    ) -> Option<(String, Option<String>)> {
+        let info = self.source.get(smid.get()?)?;
+
+        // Determine the display name: prefer intrinsic display name,
+        // then annotation (function name), then source snippet
+        let display_name = info
+            .annotation
+            .as_deref()
+            .and_then(|a| intrinsic_display_name(a).or(Some(a)));
+
+        let source_snippet = || -> Option<String> {
+            let id = info.file?;
+            let source: &str = files.source(id).ok()?;
+            let span = info.span?;
+            let raw = source.get(Range::from(span))?;
+            // Truncate to first line as a safety net
+            let first_line = raw.lines().next().unwrap_or(raw);
+            if first_line.len() < raw.len() {
+                Some(format!("{first_line}…"))
+            } else {
+                Some(first_line.to_string())
+            }
+        };
+
+        // Build file:line:col location string if we have a source location
+        let location = info.file.and_then(|id| {
+            let name = files.name(id).ok()?;
+            let span = info.span?;
+            let loc = files.location(id, span.start().to_usize()).ok()?;
+            // Strip directory prefix for readability
+            let short_name = std::path::Path::new(&name)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&name);
+            Some(format!(
+                "{short_name}:{line}:{col}",
+                line = loc.line_number,
+                col = loc.column_number
+            ))
+        });
+
+        // Only include entries that have a user-visible name or source location.
+        // Entries with neither are internal machinery and are silently dropped.
+        let name = display_name
+            .map(|s| s.to_string())
+            .or_else(source_snippet)?;
+
+        Some((name, location))
+    }
+
     /// Format a stack / environment trace
     ///
     /// Produces source-level references where file locations are
@@ -374,59 +513,13 @@ impl SourceMap {
         // then reverse so the output reads outermost-first (conventional order).
         let mut elements: Vec<_> = trace
             .iter()
-            .filter_map(|smid| {
-                let info = self.source.get(smid.get()?)?;
-
-                // Determine the display name: prefer intrinsic display name,
-                // then annotation (function name), then source snippet
-                let display_name = info
-                    .annotation
-                    .as_deref()
-                    .and_then(|a| intrinsic_display_name(a).or(Some(a)));
-
-                let source_snippet = || -> Option<String> {
-                    let id = info.file?;
-                    let source: &str = files.source(id).ok()?;
-                    let span = info.span?;
-                    let raw = source.get(Range::from(span))?;
-                    // Truncate to first line as a safety net
-                    let first_line = raw.lines().next().unwrap_or(raw);
-                    if first_line.len() < raw.len() {
-                        Some(format!("{first_line}…"))
-                    } else {
-                        Some(first_line.to_string())
-                    }
-                };
-
-                // Build file:line:col location string if we have a source location
-                let location = info.file.and_then(|id| {
-                    let name = files.name(id).ok()?;
-                    let span = info.span?;
-                    let loc = files.location(id, span.start().to_usize()).ok()?;
-                    // Strip directory prefix for readability
-                    let short_name = std::path::Path::new(&name)
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or(&name);
-                    Some(format!(
-                        "{short_name}:{line}:{col}",
-                        line = loc.line_number,
-                        col = loc.column_number
-                    ))
-                });
-
-                // Only include entries that have a user-visible name or source location.
-                // Entries with neither are internal machinery and are silently dropped.
-                let name = display_name
-                    .map(|s| s.to_string())
-                    .or_else(source_snippet)?;
-
+            .filter_map(|&smid| {
+                let (name, location) = self.resolve_trace_entry(smid, files)?;
                 // Format: "name at file:line:col" or just "name" if no location
                 let entry = match location {
                     Some(loc) => format!("- {name} at {loc}"),
                     None => format!("- {name}"),
                 };
-
                 Some(entry)
             })
             .collect();
@@ -439,23 +532,70 @@ impl SourceMap {
 
         elements.as_slice().join("\n")
     }
+
+    /// Format a curated trace (design spec §4.3, eu-1tkk.7.12): like
+    /// [`SourceMap::format_trace`], but over frames already classified and
+    /// cycle-collapsed by `eval::error::curate_trace` — a `Boundary` frame
+    /// is labelled `in 'name'` rather than shown as a bare location, since
+    /// it is the named combinator the user actually invoked, kept as
+    /// context around the (already reassigned) primary location.
+    pub fn format_curated_trace(
+        &self,
+        frames: &[(Smid, FrameKind)],
+        files: &SimpleFiles<String, String>,
+    ) -> String {
+        let mut elements: Vec<_> = frames
+            .iter()
+            .filter_map(|&(smid, kind)| {
+                let (name, location) = self.resolve_trace_entry(smid, files)?;
+                let label = if kind == FrameKind::Boundary {
+                    format!("in '{name}'")
+                } else {
+                    name
+                };
+                let entry = match location {
+                    Some(loc) => format!("- {label} at {loc}"),
+                    None => format!("- {label}"),
+                };
+                Some(entry)
+            })
+            .collect();
+
+        // `curate_trace` yields innermost-first (matching the raw trace's
+        // convention); reverse to the conventional outermost-first reading
+        // order, same as `format_trace`. Cycle collapsing already happened
+        // inside `curate_trace`, so no further compression here.
+        elements.reverse();
+
+        elements.join("\n")
+    }
 }
 
-/// Detect and compress repeating cycles in a formatted stack trace.
-///
-/// Scans the elements list for the smallest repeating prefix and, when the
-/// same pattern of frames appears two or more times consecutively, emits the
-/// pattern once followed by a `  ... N frames elided (M× repetition)` line.
-/// The remaining non-repeating tail is appended unchanged.
-///
-/// Only patterns of length ≤ 8 are considered to keep the algorithm efficient.
-fn compress_trace_cycles(elements: Vec<String>) -> Vec<String> {
-    let n = elements.len();
-    if n < 2 {
-        return elements;
-    }
+/// One run detected by [`compress_cycles`]: a pattern of elements, and how
+/// many consecutive times it repeated (`1` for a passthrough, non-repeating
+/// element).
+pub(crate) struct CycleRun<T> {
+    pub pattern: Vec<T>,
+    pub count: usize,
+}
 
-    let mut result = Vec::with_capacity(n);
+/// Detect and compress repeating cycles in an element sequence.
+///
+/// Scans for the smallest repeating prefix and, when the same pattern of
+/// elements appears two or more times consecutively, collapses it into one
+/// [`CycleRun`] recording the pattern and its repetition count. Generalised
+/// (eu-1tkk.7.12) from the original `String`-only cycle detector so the
+/// Phase 2 curated-trace pipeline can collapse recursion on typed
+/// `(Smid, FrameKind)` pairs *before* formatting, not just on
+/// already-formatted strings — [`compress_trace_cycles`] below is now a
+/// thin `String`-specialised wrapper over this for `format_trace`'s
+/// existing callers.
+///
+/// Only patterns of length ≤ 8 are considered to keep the algorithm
+/// efficient.
+pub(crate) fn compress_cycles<T: Clone + PartialEq>(elements: &[T]) -> Vec<CycleRun<T>> {
+    let n = elements.len();
+    let mut result = Vec::new();
     let mut i = 0;
 
     while i < n {
@@ -475,15 +615,10 @@ fn compress_trace_cycles(elements: Vec<String>) -> Vec<String> {
             }
 
             if count >= 2 {
-                // Emit the pattern once
-                result.extend_from_slice(pattern);
-                let elided = (count - 1) * pat_len;
-                result.push(format!(
-                    "  ... {} frame{} elided ({}× repetition)",
-                    elided,
-                    if elided == 1 { "" } else { "s" },
-                    count
-                ));
+                result.push(CycleRun {
+                    pattern: pattern.to_vec(),
+                    count,
+                });
                 i = j;
                 compressed = true;
                 break;
@@ -491,11 +626,44 @@ fn compress_trace_cycles(elements: Vec<String>) -> Vec<String> {
         }
 
         if !compressed {
-            result.push(elements[i].clone());
+            result.push(CycleRun {
+                pattern: vec![elements[i].clone()],
+                count: 1,
+            });
             i += 1;
         }
     }
 
+    result
+}
+
+/// Detect and compress repeating cycles in a formatted stack trace.
+///
+/// Scans the elements list for the smallest repeating prefix and, when the
+/// same pattern of frames appears two or more times consecutively, emits the
+/// pattern once followed by a `  ... N frames elided (M× repetition)` line.
+/// The remaining non-repeating tail is appended unchanged.
+///
+/// Only patterns of length ≤ 8 are considered to keep the algorithm efficient.
+fn compress_trace_cycles(elements: Vec<String>) -> Vec<String> {
+    if elements.len() < 2 {
+        return elements;
+    }
+
+    let mut result = Vec::with_capacity(elements.len());
+    for run in compress_cycles(&elements) {
+        let pat_len = run.pattern.len();
+        result.extend(run.pattern);
+        if run.count >= 2 {
+            let elided = (run.count - 1) * pat_len;
+            result.push(format!(
+                "  ... {} frame{} elided ({}× repetition)",
+                elided,
+                if elided == 1 { "" } else { "s" },
+                run.count
+            ));
+        }
+    }
     result
 }
 
@@ -761,5 +929,160 @@ mod tests {
         // masked value, not silently misbehave.
         let smid = Smid::global_slot(GLOBAL_SLOT_TAG | 3);
         assert_eq!(smid.as_global_slot(), Some(3));
+    }
+
+    // ── classify_frame (eu-1tkk.7.12) ────────────────────────────────────────
+
+    /// Build a `SourceMap` with one user-file Smid, one prelude Smid
+    /// annotated `"map"`, and one prelude Smid annotated `"nth"` — mirroring
+    /// Task 2's plan (source-compiled-prelude path: annotation-keyed
+    /// classification).
+    fn classifier_fixture() -> (SourceMap, Smid, Smid, Smid) {
+        let mut source_map = SourceMap::new();
+        source_map.mark_resource_file(1); // prelude file id
+        let user_smid = source_map.add(0, Span::new(0u32, 5u32));
+        let map_smid = source_map.add_annotated(1, Span::new(10u32, 15u32), "map");
+        let nth_smid = source_map.add_annotated(1, Span::new(20u32, 25u32), "nth");
+        source_map.extend_blame_table(HashMap::from([
+            ("map".to_string(), FrameKind::Transparent),
+            ("nth".to_string(), FrameKind::Boundary),
+        ]));
+        (source_map, user_smid, map_smid, nth_smid)
+    }
+
+    #[test]
+    fn classify_frame_user_file_is_always_user() {
+        let (source_map, user_smid, _, _) = classifier_fixture();
+        assert_eq!(source_map.classify_frame(user_smid), FrameKind::User);
+    }
+
+    #[test]
+    fn classify_frame_declared_transparent_combinator() {
+        let (source_map, _, map_smid, _) = classifier_fixture();
+        assert_eq!(source_map.classify_frame(map_smid), FrameKind::Transparent);
+    }
+
+    #[test]
+    fn classify_frame_declared_boundary_combinator() {
+        let (source_map, _, _, nth_smid) = classifier_fixture();
+        assert_eq!(source_map.classify_frame(nth_smid), FrameKind::Boundary);
+    }
+
+    /// A prelude Smid whose annotation has no declared blame contract must
+    /// default to `Transparent`, never silently `User` (design spec §4.3:
+    /// "Default to Transparent, never silently User").
+    #[test]
+    fn classify_frame_undeclared_prelude_combinator_defaults_transparent() {
+        let mut source_map = SourceMap::new();
+        source_map.mark_resource_file(1);
+        let undeclared = source_map.add_annotated(1, Span::new(0u32, 5u32), "undeclared-fn");
+        assert_eq!(
+            source_map.classify_frame(undeclared),
+            FrameKind::Transparent
+        );
+    }
+
+    /// A blob-mode global-slot Smid (no `SourceMap` entry at all) resolves
+    /// via `slot_to_name` then `blame_by_name` — the blob-path half of the
+    /// uniform classifier.
+    #[test]
+    fn classify_frame_blob_mode_global_slot_resolves_via_slot_names() {
+        let mut source_map = SourceMap::new();
+        source_map.extend_blame_table(HashMap::from([("nth".to_string(), FrameKind::Boundary)]));
+        source_map.set_slot_names(HashMap::from([(42u32, "nth".to_string())]));
+        let smid = Smid::global_slot(42);
+        assert_eq!(source_map.classify_frame(smid), FrameKind::Boundary);
+    }
+
+    /// A global-slot Smid resolving to a slot with no declared blame
+    /// contract defaults to `Transparent`, mirroring the source-path
+    /// default.
+    #[test]
+    fn classify_frame_blob_mode_undeclared_slot_defaults_transparent() {
+        let mut source_map = SourceMap::new();
+        source_map.set_slot_names(HashMap::from([(7u32, "undeclared-fn".to_string())]));
+        let smid = Smid::global_slot(7);
+        assert_eq!(source_map.classify_frame(smid), FrameKind::Transparent);
+    }
+
+    /// A default/invalid Smid (no source info, no global-slot identity)
+    /// must classify as `Transparent`, not panic and not `User`.
+    #[test]
+    fn classify_frame_invalid_smid_defaults_transparent() {
+        let source_map = SourceMap::new();
+        assert_eq!(
+            source_map.classify_frame(Smid::default()),
+            FrameKind::Transparent
+        );
+    }
+
+    /// Fault injection: if `classify_frame` always returned `Transparent`
+    /// (the pre-Task-2 status quo), the `User`/`Boundary` cases above must
+    /// fail — proving the discrimination is genuinely exercised, not vacuous.
+    #[test]
+    fn fault_injection_classify_frame_must_discriminate() {
+        let (source_map, user_smid, map_smid, nth_smid) = classifier_fixture();
+        let user = source_map.classify_frame(user_smid);
+        let transparent = source_map.classify_frame(map_smid);
+        let boundary = source_map.classify_frame(nth_smid);
+        assert!(
+            user != transparent || transparent != boundary || user != boundary,
+            "classify_frame must discriminate User/Transparent/Boundary, got \
+             user={user:?} transparent={transparent:?} boundary={boundary:?}"
+        );
+        assert_eq!(user, FrameKind::User);
+        assert_eq!(transparent, FrameKind::Transparent);
+        assert_eq!(boundary, FrameKind::Boundary);
+    }
+
+    // ── compress_cycles generalisation (eu-1tkk.7.12) ────────────────────────
+
+    /// The generalised, typed cycle compressor must agree with the original
+    /// `String`-only behaviour: a single-element pattern repeating
+    /// consecutively collapses to one run with the right count.
+    #[test]
+    fn compress_cycles_collapses_single_element_repeats() {
+        let elements = vec!["a", "b", "b", "b", "c"];
+        let runs = compress_cycles(&elements);
+        let summary: Vec<(Vec<&str>, usize)> =
+            runs.into_iter().map(|r| (r.pattern, r.count)).collect();
+        assert_eq!(
+            summary,
+            vec![(vec!["a"], 1), (vec!["b"], 3), (vec!["c"], 1),]
+        );
+    }
+
+    /// A multi-element repeating pattern (e.g. mutual recursion between two
+    /// combinators) collapses to one run of the whole pattern, matching the
+    /// pre-generalisation behaviour that `format_trace`'s doc comment
+    /// describes ("mutual recursion between foldl and +").
+    #[test]
+    fn compress_cycles_collapses_multi_element_patterns() {
+        let elements = vec!["foldl", "+", "foldl", "+", "foldl", "+"];
+        let runs = compress_cycles(&elements);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].pattern, vec!["foldl", "+"]);
+        assert_eq!(runs[0].count, 3);
+    }
+
+    /// No regression: `compress_trace_cycles` (the `String`-specialised
+    /// wrapper `format_trace` still calls) must produce byte-identical
+    /// output to before the generalisation.
+    #[test]
+    fn compress_trace_cycles_wrapper_matches_generalised_result() {
+        let elements: Vec<String> = ["a", "b", "b", "b", "c"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let out = compress_trace_cycles(elements);
+        assert_eq!(
+            out,
+            vec![
+                "a".to_string(),
+                "b".to_string(),
+                "  ... 2 frames elided (3× repetition)".to_string(),
+                "c".to_string(),
+            ]
+        );
     }
 }
