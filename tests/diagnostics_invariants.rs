@@ -77,6 +77,111 @@ fn run(path: &std::path::Path) -> (serde_json::Value, String, Option<i32>) {
     (v, format!("{stdout}{stderr}"), out.status.code())
 }
 
+/// Run a fixture with `run --debug-trace`, returning its JSON diagnostic.
+fn run_debug_trace(path: &std::path::Path) -> serde_json::Value {
+    let out = Command::new(env!("CARGO_BIN_EXE_eu"))
+        .args([
+            "run",
+            "--debug-trace",
+            "--error-format",
+            "json",
+            "--heap-limit-mib",
+            "2048",
+        ])
+        .arg(path)
+        .output()
+        .expect("run eu --debug-trace");
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    last_json_object(&[&stderr, &stdout]).unwrap_or(serde_json::Value::Null)
+}
+
+/// Frame `(kind, name)` pairs from a JSON diagnostic's trace.
+fn frames(v: &serde_json::Value) -> Vec<(String, String)> {
+    v["trace"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .map(|f| {
+            (
+                f["kind"].as_str().unwrap_or_default().to_string(),
+                f["name"].as_str().unwrap_or_default().to_string(),
+            )
+        })
+        .collect()
+}
+
+/// The default trace is curated and `--debug-trace` restores the raw,
+/// uncurated continuation dump (design spec §4.3, eu-1tkk.7.12).
+///
+/// Every assertion here holds on both engines. The two engines annotate
+/// differently enough that *which* fixtures carry a transparent frame in
+/// the raw dump varies (see the `hof_bad_arg` note on the unexpected-pass
+/// assertion below), so the fixture-specific assertions use `swap_args`
+/// and `nth_out_of_range`, measured to behave identically under the
+/// default engine and under `EU_HEAPSYN=1`.
+#[test]
+fn debug_trace_restores_the_uncurated_trace() {
+    let dir = std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/diagnostics/corpus"
+    ));
+
+    // Universal: curation never leaves a transparent frame behind, on any
+    // fixture. Deleting the transparent-drop step fails this outright.
+    for entry in std::fs::read_dir(dir).expect("corpus dir") {
+        let p = entry.unwrap().path();
+        if p.extension().and_then(|e| e.to_str()) != Some("eu") {
+            continue;
+        }
+        let (v, _, _) = run(&p);
+        let curated = frames(&v);
+        assert!(
+            !curated.iter().any(|(kind, _)| kind == "transparent"),
+            "{}: curated trace must contain no transparent frames, got {curated:?}",
+            p.file_name().unwrap().to_string_lossy()
+        );
+    }
+
+    // `nth`'s internal recursion is a transparent frame in the raw dump and
+    // is gone from the curated trace: proves `--debug-trace` bypasses
+    // curation rather than being an inert flag.
+    let path = dir.join("swap_args.eu");
+    let raw = frames(&run_debug_trace(&path));
+    assert!(
+        raw.iter().any(|(kind, _)| kind == "transparent"),
+        "swap_args.eu: expected the raw --debug-trace dump to retain a transparent \
+         frame, got {raw:?}"
+    );
+    let (curated_json, _, _) = run(&path);
+    assert!(
+        frames(&curated_json).is_empty(),
+        "swap_args.eu: expected curation to drop every transparent frame, got {:?}",
+        frames(&curated_json)
+    );
+
+    // `nth` raises at its own edge, so its boundary frame is in the env
+    // trace, not the stack trace: the raw dump does not have it and the
+    // curated trace recovers it as named context alongside the user anchor.
+    let path = dir.join("nth_out_of_range.eu");
+    let raw = frames(&run_debug_trace(&path));
+    let (curated_json, _, _) = run(&path);
+    let curated = frames(&curated_json);
+    assert!(
+        !raw.iter().any(|(kind, _)| kind == "boundary"),
+        "nth_out_of_range.eu: raw dump unexpectedly carries a boundary frame: {raw:?}"
+    );
+    assert!(
+        curated.contains(&("boundary".to_string(), "nth".to_string())),
+        "nth_out_of_range.eu: curated trace must name the boundary combinator, got {curated:?}"
+    );
+    assert!(
+        curated.iter().any(|(kind, _)| kind == "user"),
+        "nth_out_of_range.eu: curated trace must keep the user anchor, got {curated:?}"
+    );
+}
+
 fn violations(v: &serde_json::Value, all_output: &str, code: Option<i32>, m: &Meta) -> Vec<String> {
     let mut errs = vec![];
     // (ii) no panic — checked first; a panic makes the rest meaningless.
@@ -157,8 +262,24 @@ fn corpus_satisfies_invariants() {
         "invariant violations:\n{}",
         hard_failures.join("\n")
     );
+    // The `xfail` markers describe the DEFAULT (bytecode) engine, so the
+    // "you fixed it, lock it in" arm is only asserted there (eu-1tkk.7.12).
+    //
+    // Measured divergence, not a guess: on `hof_bad_arg.eu` the legacy
+    // HeapSyn engine's error Smid is the user's own `result` binding
+    // (`error_has_user_file: true`), while the bytecode engine's is a
+    // `[prelude]` `map` Smid with no user Smid anywhere in either trace.
+    // HeapSyn therefore satisfies all five invariants on a fixture the
+    // default engine still violates. That is a backend annotation-propagation
+    // gap, not a diagnostics-presentation one, and clearing an xfail on the
+    // strength of the engine being deleted (eu-1hcw) would be locking in a
+    // gain the shipping engine does not have.
+    //
+    // The `hard_failures` arm above is NOT relaxed: a live guard that
+    // regresses fails on either engine.
+    let heapsyn = std::env::var("EU_HEAPSYN").as_deref() == Ok("1");
     assert!(
-        unexpected_pass.is_empty(),
+        heapsyn || unexpected_pass.is_empty(),
         "these fixtures now PASS — remove their `xfail` marker to lock the gain:\n{}",
         unexpected_pass.join("\n")
     );
