@@ -241,6 +241,12 @@ pub struct RunArgs {
     #[arg(long = "error-format", default_value = "human")]
     pub error_format: ErrorFormat,
 
+    /// Show the raw, uncurated continuation-stack trace on execution errors
+    /// (the default trace is curated: library plumbing dropped, recursion
+    /// collapsed, length budgeted)
+    #[arg(long = "debug-trace")]
+    pub debug_trace: bool,
+
     /// Allow IO monad operations (shell execution)
     #[arg(short = 'I', long = "allow-io")]
     pub allow_io: bool,
@@ -449,6 +455,9 @@ pub struct EucalyptOptions {
 
     // Error format
     pub error_format: ErrorFormat,
+
+    // Show the raw, uncurated continuation-stack trace on execution errors
+    pub debug_trace: bool,
 
     // STG settings (flattened)
     pub stg_settings: StgSettings,
@@ -713,6 +722,12 @@ impl From<EucalyptCli> for EucalyptOptions {
             _ => ErrorFormat::default(),
         };
 
+        // Extract the raw-trace debug flag from Run command
+        let debug_trace = match &cli.command {
+            Some(Commands::Run(args)) => args.debug_trace,
+            _ => false,
+        };
+
         // Extract trailing args from Run command
         let args = match &cli.command {
             Some(Commands::Run(run_args)) => run_args.args.clone(),
@@ -788,6 +803,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             no_dce,
             source_prelude: cli.source_prelude,
             error_format,
+            debug_trace,
             stg_settings: StgSettings {
                 heap_limit_mib,
                 suppress_demand_analysis,
@@ -1154,6 +1170,13 @@ impl EucalyptOptions {
     /// Get the error output format
     pub fn error_format(&self) -> &ErrorFormat {
         &self.error_format
+    }
+
+    /// Whether to dump the raw, uncurated continuation-stack trace on
+    /// execution errors instead of the default curated trace
+    /// (design spec §4.3, eu-1tkk.7.12)
+    pub fn debug_trace(&self) -> bool {
+        self.debug_trace
     }
 
     /// Parse command line arguments using the new clap v4 structure

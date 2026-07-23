@@ -17,7 +17,7 @@ use crate::{
         source::SourceLoader,
     },
     eval::{
-        error::ExecutionError,
+        error::{curate_trace, ExecutionError, TRACE_BUDGET},
         machine::standard_machine,
         stg::{self, make_standard_runtime, runtime::Runtime, RenderType, StgSettings},
     },
@@ -164,7 +164,15 @@ pub fn run(opt: &EucalyptOptions, mut loader: SourceLoader) -> Result<RunResult,
     // a second deserialisation.
     #[cfg(not(target_arch = "wasm32"))]
     let blob = loader.take_prelude_blob();
+    // Capture the source-compiled-prelude path's declared blame table
+    // (eu-1tkk.7.12) before `Executor::from(loader)` consumes the loader via
+    // `complete()`, which otherwise drops `TranslationUnit::blame` on the
+    // floor. On the blob path this is typically empty (the prelude wasn't
+    // desugared from source at all); `set_prelude_blob` below merges in the
+    // blob's own `blame` table for that path instead.
+    let blame_table = loader.blame_table();
     let mut executor = Executor::from(loader);
+    executor.source_map.extend_blame_table(blame_table);
     #[cfg(not(target_arch = "wasm32"))]
     executor.set_prelude_blob(blob);
     let exit_code = executor
@@ -267,8 +275,22 @@ impl<'a> Executor<'a> {
     /// Called by `run()` after extracting the blob from the `SourceLoader`
     /// (which has already used it to seed the cook `Distributor`).
     /// Must be called before `execute()`.
+    ///
+    /// Also merges the blob's own `blame` table and `name_to_slot` (as
+    /// `slot_to_name`) into `source_map`, so [`SourceMap::classify_frame`]
+    /// can classify blob-mode global-slot Smids (eu-1tkk.7.12) the same way
+    /// it classifies source-compiled-prelude Smids.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn set_prelude_blob(&mut self, blob: Option<crate::eval::stg::blob::PreludeBlob>) {
+        if let Some(ref blob) = blob {
+            self.source_map.extend_blame_table(blob.blame.clone());
+            let slot_to_name: std::collections::HashMap<u32, String> = blob
+                .name_to_slot
+                .iter()
+                .map(|(name, &slot)| (slot as u32, name.clone()))
+                .collect();
+            self.source_map.set_slot_names(slot_to_name);
+        }
         self.prelude_blob = blob;
     }
 
@@ -306,7 +328,7 @@ impl<'a> Executor<'a> {
         format: String,
     ) -> Result<Option<u8>, ExecutionError> {
         let result = self.try_execute(opt, stats, format);
-        self.diagnose(result, opt.error_format())
+        self.diagnose(result, opt.error_format(), opt.debug_trace())
     }
 
     /// Execute using the STG machine
@@ -663,10 +685,16 @@ impl<'a> Executor<'a> {
     }
 
     /// Print any errors as diagnoses to stderr
+    ///
+    /// `debug_trace` selects between the default curated trace (design
+    /// spec §4.3: classify → drop transparent → collapse recursion → keep
+    /// user+boundary → budget, eu-1tkk.7.12) and the raw, uncurated
+    /// continuation-stack dump behind `--debug-trace`.
     fn diagnose(
         &mut self,
         result: Result<Option<u8>, ExecutionError>,
         error_format: &ErrorFormat,
+        debug_trace: bool,
     ) -> Result<Option<u8>, ExecutionError> {
         match result {
             Err(ref e) if e.is_interrupted() => {
@@ -681,7 +709,13 @@ impl<'a> Executor<'a> {
                         let mut notes = vec![];
 
                         if let Some(trace) = e.stack_trace() {
-                            let stack_trace = self.source_map.format_trace(trace, &self.files);
+                            let stack_trace = if debug_trace {
+                                self.source_map.format_trace(trace, &self.files)
+                            } else {
+                                let curated = curate_trace(trace, &self.source_map, TRACE_BUDGET);
+                                self.source_map
+                                    .format_curated_trace(&curated.frames, &self.files)
+                            };
                             if !stack_trace.is_empty() {
                                 notes.push(format!("stack trace:\n{stack_trace}"));
                             }

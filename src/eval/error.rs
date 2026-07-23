@@ -1,5 +1,6 @@
 //! Execution errors
-use crate::common::sourcemap::{HasSmid, Smid, SourceMap};
+use crate::common::diagnostic_json::FrameKind;
+use crate::common::sourcemap::{compress_cycles, HasSmid, Smid, SourceMap};
 use crate::eval::stg::tags::DataConstructor;
 use crate::eval::types::IntrinsicType;
 use codespan_reporting::diagnostic::Diagnostic;
@@ -9,6 +10,77 @@ use std::io;
 use thiserror::Error;
 
 use super::{memory::bump, stg::compiler::CompileError};
+
+/// Trace length budget shared by the curated human/JSON trace and the
+/// objective invariant gate (design spec §5.2 invariant (v),
+/// `tests/diagnostics_invariants.rs::TRACE_BUDGET`) — centralised here so
+/// the two cannot drift apart (eu-1tkk.7.12).
+pub const TRACE_BUDGET: usize = 12;
+
+/// The curated trace: the raw (innermost-first) stack/env trace after
+/// classify → drop transparent → collapse recursion → keep user+boundary →
+/// budget (design spec §4.3, eu-1tkk.7.12). The raw, uncurated trace remains
+/// available behind `--debug-trace`.
+#[derive(Debug, Clone, Default)]
+pub struct CuratedTrace {
+    /// Curated frames, innermost-first (matching the raw trace's order):
+    /// `User` and `Boundary` only, `Transparent` frames dropped,
+    /// consecutive repeats (recursion) collapsed to one representative
+    /// occurrence, truncated to `budget`.
+    pub frames: Vec<(Smid, FrameKind)>,
+    /// The nearest user call-site Smid in the curated trace (the first
+    /// `User` frame, i.e. nearest to the point of failure) — the
+    /// boundary-rephrasing primary-reassignment target.
+    pub primary: Option<Smid>,
+    /// How many raw frames were dropped as `Transparent` (debug/diagnostic
+    /// use only; not rendered by default).
+    pub dropped_transparent: usize,
+}
+
+/// Curate a raw (innermost-first) trace: classify every Smid via
+/// [`SourceMap::classify_frame`], drop `Transparent` frames entirely,
+/// collapse consecutive repeats (recursion) via the generalised
+/// [`compress_cycles`], keep `User` and `Boundary` frames, and truncate to
+/// `budget` (design spec §4.3, eu-1tkk.7.12).
+///
+/// Dropping `Transparent` frames can never remove a `User` frame, so
+/// `curate_trace(...).primary` always agrees with searching the raw trace
+/// directly for the first user-file Smid — curation changes *presentation*
+/// (what a reader sees), not *primary-location selection* (which was
+/// already correct, eu-1tkk.7.8).
+pub fn curate_trace(raw: &[Smid], source_map: &SourceMap, budget: usize) -> CuratedTrace {
+    let mut dropped_transparent = 0usize;
+    let classified: Vec<(Smid, FrameKind)> = raw
+        .iter()
+        .filter_map(|&smid| {
+            let kind = source_map.classify_frame(smid);
+            if kind == FrameKind::Transparent {
+                dropped_transparent += 1;
+                None
+            } else {
+                Some((smid, kind))
+            }
+        })
+        .collect();
+
+    let collapsed: Vec<(Smid, FrameKind)> = compress_cycles(&classified)
+        .into_iter()
+        .flat_map(|run| run.pattern)
+        .collect();
+
+    let primary = collapsed
+        .iter()
+        .find(|(_, kind)| *kind == FrameKind::User)
+        .map(|(smid, _)| *smid);
+
+    let frames = collapsed.into_iter().take(budget).collect();
+
+    CuratedTrace {
+        frames,
+        primary,
+        dropped_transparent,
+    }
+}
 
 /// Format a type mismatch error message, including the actual value when available.
 fn format_type_mismatch(
@@ -942,10 +1014,16 @@ impl ExecutionError {
         } else {
             // Try to find a user-file location in the traces: nearest pending
             // call site (stack trace) first, then lexical/definition scope
-            // (env trace) as a fallback.
-            let user_smid = source_map
-                .first_user_source_smid(stack_trace)
-                .or_else(|| source_map.first_user_source_smid(env_trace));
+            // (env trace) as a fallback. Routed through `curate_trace` (the
+            // Phase 2 classifier, eu-1tkk.7.12) rather than
+            // `first_user_source_smid` directly: dropping `Transparent`
+            // frames can never remove a `User` frame, so the two agree on
+            // every input — but this keeps a single classification path for
+            // "nearest user call-site", rather than two independent
+            // implementations that could silently drift apart.
+            let user_smid = curate_trace(stack_trace, source_map, TRACE_BUDGET)
+                .primary
+                .or_else(|| curate_trace(env_trace, source_map, TRACE_BUDGET).primary);
 
             if let Some(smid) = user_smid {
                 source_map
