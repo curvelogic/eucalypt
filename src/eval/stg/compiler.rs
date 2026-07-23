@@ -1183,7 +1183,6 @@ impl ProtoSyntax for ProtoAppGroup {
 
         // If it's an intrinsic, check whether we should inline the
         // wrapper
-        let mut used_direct_app = false;
         match intrinsic_index.and_then(|index| compiler.intrinsics.get(index)) {
             Some(bif)
                 if !compiler.suppress_inlining
@@ -1231,7 +1230,6 @@ impl ProtoSyntax for ProtoAppGroup {
                     false
                 };
                 if direct && self.smid.is_valid() {
-                    used_direct_app = true;
                     local_binder.set_body(ProtoDirectApp::boxed(
                         f_index,
                         arg_indexes,
@@ -1258,9 +1256,27 @@ impl ProtoSyntax for ProtoAppGroup {
         // Applied whenever source tracking is enabled and the call site has a
         // valid Smid. The IO spec block navigator (block_list_inner) handles
         // Ann nodes transparently, so this is safe for all call sites.
-        // When DirectApp was emitted, the smid is inlined in the node itself,
-        // so we must NOT add an outer Ann wrapper.
-        let stg = if compiler.generate_annotations() && self.smid.is_valid() && !used_direct_app {
+        //
+        // This applies to `DirectApp` call sites too, even though a `DirectApp`
+        // already carries the same smid inline (eu-1tkk.7). The inline smid only
+        // sets the machine's *live* annotation as the node is stepped, and an
+        // exact-arity saturated `DirectApp` pushes no continuation, so that
+        // annotation is overwritten the instant the callee's body is entered and
+        // the user's call site is lost — which is exactly why an error raised
+        // inside the callee (`nth(xs, 0)` with the arguments swapped) used to
+        // surface with a prelude-only trace and no user primary. The `Ann` node
+        // is what survives: it is the leading node of the enclosing thunk's body,
+        // so `target_annotation` finds it when the thunk is forced and stamps the
+        // `Update` continuation with it (eu-1tkk.7.18), and that continuation
+        // stays on the stack for the whole of the callee's evaluation.
+        //
+        // Cost: none on the default engine. Pre-decoded bytecode dispatch folds
+        // `Op::Ann` out at decode time (BV2 design §3, `Decoder::ordinal_for`),
+        // recording its smid in the `smids` side table that the dispatch prologue
+        // already reads unconditionally, so no dispatch step is added. The blob
+        // and source prelude are both compiled with `generate_annotations: false`,
+        // so no prelude call site is affected at all.
+        let stg = if compiler.generate_annotations() && self.smid.is_valid() {
             dsl::ann(self.smid, stg)
         } else {
             stg
