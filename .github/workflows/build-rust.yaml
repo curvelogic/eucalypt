@@ -514,6 +514,14 @@ jobs:
       - release-candidate-windows
     steps:
 
+      # Checked out into a subdirectory purely to source the licence texts
+      # that ship inside each release tarball; keeping it out of the workspace
+      # root avoids any collision with the downloaded artefacts below (notably
+      # the generated CHANGELOG.md).
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+
       - uses: actions/download-artifact@v4
         with:
           name: eu_darwin
@@ -538,14 +546,17 @@ jobs:
         run: |
           mkdir eucalypt-x86_64-linux
           cp eu_amd64 eucalypt-x86_64-linux/eu
+          cp repo/LICENSE repo/LICENSE-MIT repo/LICENSE-APACHE eucalypt-x86_64-linux/
           tar -cvzf eucalypt-x86_64-linux.tgz eucalypt-x86_64-linux
 
           mkdir eucalypt-aarch64-linux
           cp eu_aarch64 eucalypt-aarch64-linux/eu
+          cp repo/LICENSE repo/LICENSE-MIT repo/LICENSE-APACHE eucalypt-aarch64-linux/
           tar -cvzf eucalypt-aarch64-linux.tgz eucalypt-aarch64-linux
 
           mkdir eucalypt-aarch64-osx
           cp eu_darwin eucalypt-aarch64-osx/eu
+          cp repo/LICENSE repo/LICENSE-MIT repo/LICENSE-APACHE eucalypt-aarch64-osx/
           tar -cvzf eucalypt-aarch64-osx.tgz eucalypt-aarch64-osx
 
       - name: Generate SHA256SUMS

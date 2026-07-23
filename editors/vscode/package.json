@@ -4,7 +4,7 @@
   "description": "Language support for Eucalypt (.eu files)",
   "version": "0.1.0",
   "publisher": "curvelogic",
-  "license": "MIT",
+  "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/curvelogic/eucalypt"

@@ -378,3 +378,17 @@ common: sa set.intersect(sb) set.to-list //=> [3, 4]
 combined: sa set.union(sb) set.to-list sort-nums //=> [1, 2, 3, 4, 5, 6]
 diff: sa set.diff(sb) set.to-list sort-nums //=> [1, 2]
 ```
+
+## Project
+
+### What licence is eucalypt released under?
+
+Eucalypt is dual-licensed under the Apache License, Version 2.0 and the
+MIT License, at your option — the customary dual licence of the Rust
+ecosystem. The full texts are in
+[LICENSE-APACHE](https://github.com/curvelogic/eucalypt/blob/master/LICENSE-APACHE)
+and
+[LICENSE-MIT](https://github.com/curvelogic/eucalypt/blob/master/LICENSE-MIT).
+
+Unless you state otherwise, any contribution you submit for inclusion in
+the project is dual-licensed on the same terms.
