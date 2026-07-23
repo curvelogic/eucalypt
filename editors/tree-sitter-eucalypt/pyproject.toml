@@ -10,12 +10,13 @@ keywords = ["incremental", "parsing", "tree-sitter", "eucalypt"]
 classifiers = [
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: Apache Software License",
   "Topic :: Software Development :: Compilers",
   "Topic :: Text Processing :: Linguistic",
   "Typing :: Typed"
 ]
 requires-python = ">=3.8"
-license.text = "MIT"
+license.text = "MIT OR Apache-2.0"
 readme = "README.md"
 
 [project.urls]

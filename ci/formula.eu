@@ -7,6 +7,7 @@ class Eucalypt < Formula
   homepage {dq}https://curvelogic.github.io/eucalypt/{dq}
   url {dq}https://github.com/curvelogic/eucalypt/releases/download/{version}/eucalypt-aarch64-osx.tgz{dq}
   sha256 {dq}{sha256}{dq}
+  license any_of: [{dq}MIT{dq}, {dq}Apache-2.0{dq}]
   bottle :unneeded
 
   def install
