@@ -20,6 +20,22 @@
 //! default (bytecode, blob) engine — not just that the blob's static tables
 //! are populated (see `src/eval/stg/blob.rs`'s
 //! `embedded_blob_has_declared_blame_for_nth_and_map` for that).
+//!
+//! The whole file is gated on `#[cfg(prelude_blob_ok)]`: every assertion
+//! here is specific to a build that actually has `lib/prelude.blob`
+//! embedded (i.e. `cargo xtask prelude-compile` ran before `cargo
+//! build`/`cargo test`). CI's plain "Test Suite" job deliberately runs
+//! `cargo test` without that step, to keep the source-prelude fallback path
+//! exercised — under that build `eu` falls back to compiling the prelude
+//! from source at runtime, every prelude Smid is a real (non-tagged) source
+//! position, and these assertions would not apply. Gating the whole file
+//! (rather than just the `#[test]` fns) means the helper functions below
+//! aren't flagged as dead code by `cargo clippy -D warnings` in a
+//! blob-less build (e.g. the "Lint" CI job, which also never generates a
+//! blob). The dedicated "Bytecode + blob harness" / "GC-verified harness"
+//! CI jobs do generate the blob first and so do exercise this file.
+#![cfg(prelude_blob_ok)]
+
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -91,7 +107,6 @@ fn blob_mode_trace_carries_a_global_slot_smid_for_nth_out_of_range() {
 /// the declared `Boundary` combinator the design spec's before/after
 /// example names explicitly (`nth`) — not merely to *some* prelude global.
 #[test]
-#[cfg(prelude_blob_ok)]
 fn blob_mode_trace_global_slot_resolves_to_declared_boundary_combinator() {
     use eucalypt::common::diagnostic_json::FrameKind;
     use eucalypt::eval::stg::blob::PreludeBlob;

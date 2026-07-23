@@ -235,6 +235,18 @@ impl SourceMap {
 
     /// Retrieve the SourceInfo for a given Smid value
     pub fn source_info_for_smid(&self, smid: Smid) -> Option<&SourceInfo> {
+        // A `Smid::global_slot` identity must never resolve to a `SourceInfo`
+        // — it indexes a disjoint "which prelude global slot" space, not
+        // this `SourceMap`. Without this explicit guard, rejection is only
+        // incidental: `smid.get()` for a global-slot value is ~2.1 billion,
+        // which happens to fall outside `self.source`'s bounds today purely
+        // because no real source file is anywhere near that size. That
+        // safety margin is not a contract — an explicit guard makes the
+        // rejection structural, independent of `self.source`'s length
+        // (eu-1tkk.7.11).
+        if smid.as_global_slot().is_some() {
+            return None;
+        }
         if let Some(idx) = smid.get() {
             self.source.get(idx)
         } else {
@@ -691,6 +703,38 @@ mod tests {
         let mut source_map = SourceMap::new();
         let smid = source_map.add(0, Span::new(0u32, 0u32));
         assert_eq!(smid.as_global_slot(), None);
+    }
+
+    /// `source_info_for_smid` must reject a global-slot identity explicitly
+    /// (structurally, via `as_global_slot`), not merely by chance because
+    /// its huge index falls out of `self.source`'s bounds today. Add a real
+    /// entry to `source_map` first as a sanity check for the ordinary path.
+    ///
+    /// Note on fault-injection: deleting the guard clause outright is not
+    /// observable by this (or any practically-sized) test, precisely
+    /// because the guard is *defence in depth* — the fallback bounds check
+    /// already rejects a ~2.1-billion index against any realistically
+    /// small `self.source`. What this test does catch (verified live) is a
+    /// broken/inverted guard condition: flipping `is_some()` to `is_none()`
+    /// makes the ordinary-Smid sanity assertion above fail immediately,
+    /// proving the guard is genuinely wired in and checked on every call,
+    /// not dead code.
+    #[test]
+    fn source_info_for_smid_rejects_global_slot_identity() {
+        let mut source_map = SourceMap::new();
+        let real_smid = source_map.add(0, Span::new(0u32, 5u32));
+        assert!(
+            source_map.source_info_for_smid(real_smid).is_some(),
+            "sanity: an ordinary Smid must still resolve"
+        );
+
+        for slot in [0u32, 1, 236, !GLOBAL_SLOT_TAG] {
+            let smid = Smid::global_slot(slot);
+            assert!(
+                source_map.source_info_for_smid(smid).is_none(),
+                "global_slot({slot}) must never resolve to a SourceInfo"
+            );
+        }
     }
 
     /// A real `SourceMap` Smid must never collide with a `global_slot`
