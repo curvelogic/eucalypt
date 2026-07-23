@@ -182,6 +182,42 @@ fn debug_trace_restores_the_uncurated_trace() {
     );
 }
 
+/// Secondary "called from here" labels must not excerpt library internals
+/// (design spec §4.3, eu-1tkk.7.12).
+///
+/// A secondary label renders a source excerpt with a marker under it, which
+/// only helps when the reader can act on the line it points at. Pointing it
+/// into the prelude shows code the user did not write and cannot change.
+/// The named boundary combinator is not lost — it moves to the curated
+/// `stack trace:` note, which is the one place `[prelude]` may still appear.
+///
+/// The gate is a count: exactly one `[prelude]` mention in the human
+/// rendering of `nth_out_of_range`, namely the trace note's `in 'nth' at
+/// [prelude]:NNNN`. Restoring the uncurated secondary labels re-excerpts
+/// `nth`'s own body and pushes the count above one.
+#[test]
+fn secondary_labels_do_not_excerpt_library_internals() {
+    let dir = std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/diagnostics/corpus"
+    ));
+
+    for (fixture, expected) in [("nth_out_of_range.eu", 1usize), ("metadata_span.eu", 0)] {
+        let out = Command::new(env!("CARGO_BIN_EXE_eu"))
+            .args(["--heap-limit-mib", "2048"])
+            .arg(dir.join(fixture))
+            .output()
+            .expect("run eu");
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        let mentions = stderr.matches("[prelude]").count();
+        assert_eq!(
+            mentions, expected,
+            "{fixture}: expected exactly {expected} '[prelude]' mention(s) (the curated \
+             trace note only), found {mentions} in:\n{stderr}"
+        );
+    }
+}
+
 fn violations(v: &serde_json::Value, all_output: &str, code: Option<i32>, m: &Meta) -> Vec<String> {
     let mut errs = vec![];
     // (ii) no panic — checked first; a panic makes the rest meaningless.
@@ -273,7 +309,7 @@ fn corpus_satisfies_invariants() {
     // default engine still violates. That is a backend annotation-propagation
     // gap, not a diagnostics-presentation one, and clearing an xfail on the
     // strength of the engine being deleted (eu-1hcw) would be locking in a
-    // gain the shipping engine does not have.
+    // gain the shipping engine does not have. Tracked by eu-gvci.
     //
     // The `hard_failures` arm above is NOT relaxed: a live guard that
     // regresses fails on either engine.

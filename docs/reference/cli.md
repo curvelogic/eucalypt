@@ -491,6 +491,24 @@ eu --error-format json file.eu      # structured JSON errors
 eu --error-format human file.eu     # default human-readable (explicit)
 ```
 
+### Error Traces
+
+The `stack trace:` an execution error carries is **curated** by default:
+library plumbing (a combinator recursing on its own tail) is dropped,
+recursion is collapsed, and the trace is anchored on your own call sites,
+with the named library combinator you invoked kept as context — for
+example `in 'nth'`. The same curation applies to the `trace` array of
+`--error-format json`.
+
+To see the raw, uncurated continuation stack instead:
+
+```sh
+eu run --debug-trace file.eu
+```
+
+This is a debugging aid for working on the diagnostics machinery itself,
+or for cases where the curated trace has hidden the frame you need.
+
 ### Type Checking
 
 The type checker runs unconditionally on every `eu` invocation. Type
