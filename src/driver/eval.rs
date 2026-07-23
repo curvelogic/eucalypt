@@ -814,9 +814,10 @@ impl<'a> Executor<'a> {
     /// Frame classification comes from [`SourceMap::classify_frame`] — the
     /// same declared-blame lookup the human path uses — and, unless
     /// `debug_trace` is set, the sequence is curated by
-    /// [`curate_trace`] first (transparent plumbing dropped, recursion
-    /// collapsed, budget applied), so the JSON `trace` and the human
-    /// `stack trace:` note describe the same frames (eu-1tkk.7.12).
+    /// [`curate_trace_with_env`] first (transparent plumbing dropped,
+    /// recursion collapsed, boundary recovered, budget applied), so the JSON
+    /// `trace` and the human `stack trace:` note describe the same frames
+    /// (eu-1tkk.7.12).
     fn json_trace(&self, trace: &[Smid], env: &[Smid], debug_trace: bool) -> Vec<JsonFrame> {
         let classified: Vec<(Smid, FrameKind)> = if debug_trace {
             trace
