@@ -358,8 +358,13 @@ impl BcMachineState {
     /// first, de-duplicating adjacent repeats), for error diagnostics.
     /// Mirrors `MachineState::stack_trace` / `stack_trace_iter` (vm.rs) over
     /// the `BcContinuation` variants: the case/apply/seq/lookup continuations
-    /// carry a source annotation directly; update/de-meta continuations
-    /// borrow their captured environment's annotation.
+    /// carry a source annotation directly; `Update` now also carries the
+    /// annotation live at the point the thunk was forced (the user's call
+    /// site), preferred over its captured environment's stamped-at-creation
+    /// (definition-site) annotation — the latter is used only as a fallback
+    /// when the force-site annotation is invalid (eu-1tkk.7.18). `DeMeta`
+    /// still has no force-site annotation of its own, so it keeps borrowing
+    /// its environment's.
     pub fn stack_trace(&self, view: MutatorHeapView<'_>) -> Vec<Smid> {
         let capacity = self.stack.len().min(64);
         let mut trace = Vec::with_capacity(capacity);
@@ -373,8 +378,18 @@ impl BcMachineState {
                 | BcContinuation::FusedPrimopLeft { annotation, .. }
                 | BcContinuation::FusedPrimopRight { annotation, .. } => *annotation,
                 BcContinuation::LookupLitForce { smid, .. } => *smid,
-                BcContinuation::Update { environment, .. }
-                | BcContinuation::DeMeta { environment, .. } => {
+                BcContinuation::Update {
+                    environment,
+                    annotation,
+                    ..
+                } => {
+                    if annotation.is_valid() {
+                        *annotation
+                    } else {
+                        view.scoped(*environment).annotation()
+                    }
+                }
+                BcContinuation::DeMeta { environment, .. } => {
                     view.scoped(*environment).annotation()
                 }
                 BcContinuation::CaptureEnd => Smid::default(),
@@ -1028,7 +1043,9 @@ pub fn return_data(
                 return Err(ExecutionError::NoBranchForDataTag(ann, tag, expected));
             }
         }
-        BcContinuation::Update { environment, index } => {
+        BcContinuation::Update {
+            environment, index, ..
+        } => {
             let cur = state.current.clone();
             view.scoped(environment).update(&view, index, cur)?;
         }
@@ -1058,6 +1075,8 @@ pub fn return_data(
                 enter_callable(
                     state,
                     view,
+                    prog,
+                    decoded,
                     state.root_env,
                     DecodedRef::Global(merge_idx as u32),
                 )?;
@@ -1327,7 +1346,9 @@ pub fn return_native(
                 ));
             }
         }
-        BcContinuation::Update { environment, index } => {
+        BcContinuation::Update {
+            environment, index, ..
+        } => {
             // Memoise the value into the thunk's slot; leave `current` as the
             // native so it is re-processed against the next continuation.
             view.scoped(environment)
@@ -1503,7 +1524,9 @@ pub fn return_fun(
                 return Err(ExecutionError::CannotReturnFunToCase(ann, expected));
             }
         }
-        BcContinuation::Update { environment, index } => {
+        BcContinuation::Update {
+            environment, index, ..
+        } => {
             view.scoped(environment)
                 .update(&view, index, BcValue::Closure(fun))?;
         }
@@ -1622,7 +1645,9 @@ fn return_meta(
             )?;
             state.current = BcValue::Closure(BcClosure::new(handler, frame));
         }
-        BcContinuation::Update { environment, index } => {
+        BcContinuation::Update {
+            environment, index, ..
+        } => {
             // Memoise the metadata-annotated value itself (the current Meta
             // closure); it is re-processed against the next continuation on
             // the following step (mirrors the HeapSyn `update` path).
@@ -1731,6 +1756,8 @@ fn bc_info(h: &FormHeader) -> InfoTagged<CodeRef> {
 fn enter_local(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
+    prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
     env: RefPtr<BcEnvFrame>,
     i: usize,
 ) -> Result<(), ExecutionError> {
@@ -1740,11 +1767,17 @@ fn enter_local(
         .ok_or(ExecutionError::BadEnvironmentIndex(i))?;
     if let BcValue::Closure(c) = v {
         if c.update() {
+            let annotation = if state.annotation.is_valid() {
+                state.annotation
+            } else {
+                target_annotation(prog, decoded, &c)
+            };
             let hole = BcValue::Closure(BcClosure::new(state.blackhole, env));
             view.scoped(env).update(&view, i, hole)?;
             state.stack.push(BcContinuation::Update {
                 environment: env,
                 index: i,
+                annotation,
             });
         }
     }
@@ -1762,6 +1795,8 @@ fn enter_local(
 fn enter_global(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
+    prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
     i: usize,
 ) -> Result<(), ExecutionError> {
     let v = view
@@ -1770,11 +1805,17 @@ fn enter_global(
         .ok_or(ExecutionError::BadGlobalIndex(i))?;
     if let BcValue::Closure(c) = v {
         if c.update() {
+            let annotation = if state.annotation.is_valid() {
+                state.annotation
+            } else {
+                target_annotation(prog, decoded, &c)
+            };
             let hole = BcValue::Closure(BcClosure::new(state.blackhole, state.globals));
             view.scoped(state.globals).update(&view, i, hole)?;
             state.stack.push(BcContinuation::Update {
                 environment: state.globals,
                 index: i,
+                annotation,
             });
         }
     }
@@ -1787,12 +1828,14 @@ fn enter_global(
 fn enter_callable(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
+    prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
     env: RefPtr<BcEnvFrame>,
     callable: DecodedRef,
 ) -> Result<(), ExecutionError> {
     match callable {
-        DecodedRef::Local(i) => enter_local(state, view, env, i as usize),
-        DecodedRef::Global(i) => enter_global(state, view, i as usize),
+        DecodedRef::Local(i) => enter_local(state, view, prog, decoded, env, i as usize),
+        DecodedRef::Global(i) => enter_global(state, view, prog, decoded, i as usize),
         DecodedRef::Value(_) => Err(ExecutionError::NotCallable(
             state.annotation,
             "native value".to_string(),
@@ -1833,10 +1876,10 @@ pub fn handle_op(
             let dref = read_ref(code, &mut pc)?;
             match dref {
                 DecodedRef::Local(i) => {
-                    enter_local(state, view, env, i as usize)?;
+                    enter_local(state, view, prog, decoded, env, i as usize)?;
                 }
                 DecodedRef::Global(i) => {
-                    enter_global(state, view, i as usize)?;
+                    enter_global(state, view, prog, decoded, i as usize)?;
                 }
                 DecodedRef::Value(k) => {
                     let native = match state.constants.get(k as usize) {
@@ -1934,7 +1977,7 @@ pub fn handle_op(
                 args,
                 annotation: state.annotation,
             });
-            enter_callable(state, view, env, callable)?;
+            enter_callable(state, view, prog, decoded, env, callable)?;
         }
         Op::Let => {
             // Non-recursive: bindings close over the enclosing env. Decode the
@@ -2051,9 +2094,15 @@ pub fn handle_op(
                 if let DecodedRef::Local(i) | DecodedRef::Global(i) = callable {
                     let hole = BcValue::Closure(BcClosure::new(state.blackhole, callee_env));
                     view.scoped(callee_env).update(&view, i as usize, hole)?;
+                    let annotation = if state.annotation.is_valid() {
+                        state.annotation
+                    } else {
+                        target_annotation(prog, decoded, &c)
+                    };
                     state.stack.push(BcContinuation::Update {
                         environment: callee_env,
                         index: i as usize,
+                        annotation,
                     });
                 }
                 state.current = callee;
@@ -2177,9 +2226,15 @@ pub fn handle_op(
                 if let (Some(i), true) = (obj_slot, obj_closure.update()) {
                     let hole = BcValue::Closure(BcClosure::new(state.blackhole, env));
                     view.scoped(env).update(&view, i, hole)?;
+                    let annotation = if state.annotation.is_valid() {
+                        state.annotation
+                    } else {
+                        target_annotation(prog, decoded, &obj_closure)
+                    };
                     state.stack.push(BcContinuation::Update {
                         environment: env,
                         index: i,
+                        annotation,
                     });
                 }
                 state.current = BcValue::Closure(obj_closure);
@@ -2333,10 +2388,10 @@ pub fn handle_op_predecoded(
     match instr.op {
         Op::Atom => match instr.atom_ref() {
             DecodedRef::Local(i) => {
-                enter_local(state, view, env, i as usize)?;
+                enter_local(state, view, prog, decoded, env, i as usize)?;
             }
             DecodedRef::Global(i) => {
-                enter_global(state, view, i as usize)?;
+                enter_global(state, view, prog, decoded, i as usize)?;
             }
             DecodedRef::Value(k) => {
                 let native = match state.constants.get(k as usize) {
@@ -2422,7 +2477,7 @@ pub fn handle_op_predecoded(
                 args,
                 annotation: state.annotation,
             });
-            enter_callable(state, view, env, callable)?;
+            enter_callable(state, view, prog, decoded, env, callable)?;
         }
         Op::Let => {
             let (start, len) = instr.header_pool();
@@ -2505,9 +2560,15 @@ pub fn handle_op_predecoded(
                 if let DecodedRef::Local(i) | DecodedRef::Global(i) = callable {
                     let hole = BcValue::Closure(BcClosure::new(state.blackhole, callee_env));
                     view.scoped(callee_env).update(&view, i as usize, hole)?;
+                    let annotation = if state.annotation.is_valid() {
+                        state.annotation
+                    } else {
+                        target_annotation(prog, decoded, &c)
+                    };
                     state.stack.push(BcContinuation::Update {
                         environment: callee_env,
                         index: i as usize,
+                        annotation,
                     });
                 }
                 state.current = callee;
@@ -2599,9 +2660,15 @@ pub fn handle_op_predecoded(
                 if let (Some(i), true) = (obj_slot, obj_closure.update()) {
                     let hole = BcValue::Closure(BcClosure::new(state.blackhole, env));
                     view.scoped(env).update(&view, i, hole)?;
+                    let annotation = if state.annotation.is_valid() {
+                        state.annotation
+                    } else {
+                        target_annotation(prog, decoded, &obj_closure)
+                    };
                     state.stack.push(BcContinuation::Update {
                         environment: env,
                         index: i,
+                        annotation,
                     });
                 }
                 state.current = BcValue::Closure(obj_closure);
@@ -2637,6 +2704,47 @@ fn peek_code_ref(decoded: &DecodedProgram, byte_off: CodeRef) -> CodeRef {
         byte_off
     } else {
         decoded.ordinal(byte_off)
+    }
+}
+
+/// The best available source annotation for a closure about to be forced —
+/// used as the fallback stamped on its `Update` continuation when the
+/// forcing site itself has no live annotation (`state.annotation` invalid at
+/// push time; e.g. a value reached via native Rust code, such as the
+/// document-render walk, rather than a compiled call/reference site).
+///
+/// A `Thunk`/`Value`/`Closing` `LambdaForm` header carries no smid of its own
+/// (`BcClosure::annotation()` returns `Smid::default()` for those kinds —
+/// only `Lambda` headers carry one) — the compiler instead wraps the thunk's
+/// body in a leading `Ann` node. Byte dispatch keeps that `Op::Ann` in the
+/// stream, so peek it directly at the closure's byte offset; pre-decode folds
+/// `Op::Ann` out of dispatch at decode time (BV2 design §3), recording its
+/// smid in the `smids` side table at the *body's own* ordinal instead — and
+/// `closure.code()` under pre-decode already *is* that ordinal (an `Ann`
+/// offset is aliased straight to its body's ordinal and never gets one of its
+/// own), so no byte-peek is needed on that path (eu-1tkk.7.18).
+fn target_annotation(
+    prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
+    closure: &BcClosure,
+) -> Smid {
+    if closure.annotation().is_valid() {
+        return closure.annotation();
+    }
+    if decoded.off_of.is_empty() {
+        let code = prog.code.as_slice();
+        let off = closure.code() as usize;
+        if off < code.len() && Op::from_u8(code[off]) == Some(Op::Ann) {
+            let mut pc = off + 1;
+            return Smid::from(read_u32(code, &mut pc));
+        }
+        Smid::default()
+    } else {
+        decoded
+            .smids
+            .get(closure.code() as usize)
+            .copied()
+            .unwrap_or_default()
     }
 }
 
@@ -5260,6 +5368,7 @@ mod tests {
         state.stack.push(BcContinuation::Update {
             environment: root,
             index: 7,
+            annotation: Smid::default(),
         });
         state.terminated = true; // the caller's saved flag
 
@@ -5272,6 +5381,7 @@ mod tests {
         state.stack.push(BcContinuation::Update {
             environment: root,
             index: 99,
+            annotation: Smid::default(),
         });
         state.current = BcValue::Native(num(42));
 

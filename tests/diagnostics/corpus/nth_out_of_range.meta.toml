@@ -3,5 +3,10 @@ description = "index past end of list"
 region_start_line = 2
 region_end_line = 2
 expected_class = "range"
-xfail = true
-xfail_reason = "eu-1tkk.7.11: reports 'tail of empty list', wrong op, 15 prelude frames, and no user Smid reaches env/stack trace at all. eu-1tkk.7.8's location-selection fix now correctly suppresses the primary (null rather than the misleading [prelude]:1329 it used to show), but the underlying wrong-error/no-user-frame problem is Phase 2 blame/curation territory."
+# eu-1tkk.7.18 fixed this: Continuation::Update (both engines) now carries the
+# force-site annotation (falling back to a peek of the target thunk's own
+# wrapping Ann when the force site itself has none live), so the user's
+# `result: xs nth(10)` call site now reaches the stack trace and becomes the
+# primary location. The message itself ("tail of empty list", naming the
+# wrong internal op) is still wrong-noun/Phase 2 blame-annotation territory
+# (eu-1tkk.7.11) — only the *location* is fixed here.
