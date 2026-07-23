@@ -82,6 +82,55 @@ pub fn curate_trace(raw: &[Smid], source_map: &SourceMap, budget: usize) -> Cura
     }
 }
 
+/// Curate the stack (pending-call) trace, then recover the named boundary
+/// combinator from the env (lexical-scope) trace when the stack trace alone
+/// does not carry one (design spec §4.3: the boundary is "kept as a named
+/// secondary" while the primary is the user call site, eu-1tkk.7.12).
+///
+/// A combinator that raises its own error at its edge — `nth` panicking with
+/// `index N out of range for list of length M` rather than letting its
+/// internal recursion leak `tail of empty list` — pushes no *pending call*
+/// frame of its own: by the time it raises, the call has been entered, so
+/// the boundary appears in the env trace (the lexical scope enclosing the
+/// failure), not the stack trace. Without this recovery the user would see
+/// their own call site but lose the "in 'nth'" naming.
+///
+/// The recovery is deliberately conditional on the curated stack trace
+/// already containing a `User` frame: the boundary is context *for* a user
+/// anchor, so with no anchor to attach it to there is nothing to name, and
+/// emitting a lone prelude frame would replace an honest empty trace with a
+/// misleading one.
+pub fn curate_trace_with_env(
+    stack: &[Smid],
+    env: &[Smid],
+    source_map: &SourceMap,
+    budget: usize,
+) -> CuratedTrace {
+    let mut curated = curate_trace(stack, source_map, budget);
+
+    let has_user = curated.frames.iter().any(|(_, k)| *k == FrameKind::User);
+    let has_boundary = curated
+        .frames
+        .iter()
+        .any(|(_, k)| *k == FrameKind::Boundary);
+    if !has_user || has_boundary {
+        return curated;
+    }
+
+    if let Some(&(smid, kind)) = curate_trace(env, source_map, budget)
+        .frames
+        .iter()
+        .find(|(_, k)| *k == FrameKind::Boundary)
+    {
+        // Insert innermost-first, matching the raw trace convention, so the
+        // formatter's reversal renders it as the outermost-read context line.
+        curated.frames.insert(0, (smid, kind));
+        curated.frames.truncate(budget);
+    }
+
+    curated
+}
+
 /// Format a type mismatch error message, including the actual value when available.
 fn format_type_mismatch(
     expected: &IntrinsicType,
@@ -1091,6 +1140,20 @@ impl ExecutionError {
             for &smid in env_trace.iter() {
                 if !show_secondary || secondary_labels.len() >= 3 {
                     break;
+                }
+                // Curate the secondary-label channel too (design spec §4.3,
+                // eu-1tkk.7.12): a secondary label renders a source excerpt
+                // with a "called from here" marker, which is only useful
+                // when the reader can act on the line it points at. Pointing
+                // it into the prelude — `map` recursing on its own tail, or
+                // the inner recursion of a combinator that raises at its own
+                // edge — excerpts library internals the user did not write
+                // and cannot change. The named boundary combinator is not
+                // lost: `curate_trace_with_env` carries it into the
+                // `stack trace:` note as `in 'nth'`, which is where §4.3's
+                // worked example puts it.
+                if source_map.classify_frame(smid) != FrameKind::User {
+                    continue;
                 }
                 let info = match source_map.source_info_for_smid(smid) {
                     Some(i) => i,

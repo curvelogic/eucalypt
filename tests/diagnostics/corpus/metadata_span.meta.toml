@@ -3,5 +3,11 @@ description = "runtime type error in a declaration carrying doc metadata"
 region_start_line = 2
 region_end_line = 3
 expected_class = "number"
-xfail = true
-xfail_reason = "eu-1tkk.7.3/eu-cefl: invariant (iv) violated — primary is a user location (line 2) but the trace is non-empty and contains only a 'transparent' [prelude]:1463 map frame, no user frame. This is a Phase 2 trace-curation gap (the call chain through map's transparent wrapper never surfaces the user-file call site into the trace), not the (iii) span issue this fixture used to track."
+# No xfail: eu-1tkk.7.12 fixed this. The invariant (iv) violation was a
+# non-empty trace containing only a 'transparent' [prelude] map frame and no
+# user frame. `map` declares `blame: :transparent`, and the Phase 2 curation
+# pipeline (`eval::error::curate_trace`) now drops transparent frames
+# outright, so the trace is empty while the primary remains the user location
+# on line 2 — the "empty trace with a user primary" arm of invariant (iv).
+# Live guard from here on: reintroducing an uncurated prelude frame, or losing
+# the user primary, fails the gate.

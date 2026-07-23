@@ -1,2 +1,2 @@
 exit: 1
-stderr: "empty list"
+stderr: "index 10 out of range for list of length 3"

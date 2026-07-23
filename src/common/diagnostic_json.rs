@@ -24,9 +24,9 @@ pub struct JsonPos {
 #[serde(rename_all = "kebab-case")]
 pub enum FrameKind {
     User, // a frame in user source
-    /// A named library combinator the user invoked (nth, head, lookup, +).
-    /// Not yet produced by `json_trace` in Phase 0 — Phase 2's curated trace
-    /// work is what starts classifying frames as `Boundary`.
+    /// A named library combinator the user invoked (nth, head, lookup, +),
+    /// declared `blame: :boundary` in the prelude and classified by
+    /// `SourceMap::classify_frame` (eu-1tkk.7.12).
     Boundary,
     Transparent, // library plumbing (map/fold internals); normally curated out
 }

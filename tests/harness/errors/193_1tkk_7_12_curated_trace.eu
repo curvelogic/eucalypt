@@ -1,0 +1,5 @@
+# eu-1tkk.7.12: an out-of-range index must name the user's own call site as
+# the primary location, report the index and the list length, and carry the
+# boundary combinator as trace context.
+xs: [1, 2, 3]
+result: xs nth(10)
