@@ -1,9 +1,32 @@
 # Diagnostics Phase 2 — Curated Trace & Blame Annotations: Implementation Plan
 
-> **Status: DRAFT for owner review — do not implement without sign-off.**
-> **For agentic workers (once approved):** REQUIRED SUB-SKILL: use
+> **Status: APPROVED AND IN PROGRESS.** The owner approved Phase 2 and
+> implementation is under way; this document is the durable record of the
+> plan and of how it turned out. It is no longer a draft, and no task in it
+> is gated on further sign-off.
+> **For agentic workers:** REQUIRED SUB-SKILL: use
 > `superpowers:subagent-driven-development` or `superpowers:executing-plans`.
 > Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Task status at a glance** (updated 2026-07-23, master `8b501ada`):
+
+| Task | Subject | Status |
+|---|---|---|
+| 0 | Trace-capture gap investigation | **Shipped** — findings acted on; see Task 0 |
+| 1 | Blame annotation vocabulary (`.7.11`) | **Shipped** — PR #1051, PR #1052 |
+| 2 | Frame classifier, source-prelude path (`.7.12`) | Open |
+| 2b | Blob-path frame identity | **Shipped** — PR #1052, wire v5 |
+| 3 | Curation pipeline (`.7.12`) | Open |
+| 4 | Boundary-frame rephrasing (`nth`'s own error) | Open |
+| 5 | `--debug-trace` | Open |
+| 6 | Flip corpus xfails + coverage fixtures | Partial — `nth_out_of_range` flipped (PR #1050) |
+| 7 | Documentation | Open |
+| 8 | Close-out | Partial — `.7.11` and `.7.18` closed; `.7.12` open |
+
+Beads `eu-1tkk.7.11` (blame vocabulary) and `eu-1tkk.7.18` (Update-continuation
+call-site capture, filed out of Task 0's investigation) are **closed**.
+`eu-1tkk.7.12` (frame classifier + curation pipeline + `--debug-trace`) remains
+open and carries Tasks 2, 3, 5.
 
 **Goal:** Replace today's fragile `is_user_file`/env-trace heuristics with an
 explicit per-combinator blame contract (transparent/boundary), and use it to
@@ -32,6 +55,13 @@ are both live on master as of `90c713ab`.
 ---
 
 ## Feasibility verdict — blame-annotation threading (read this before scoping tasks)
+
+> **Superseded in part (2026-07-23).** The two-path asymmetry described below
+> was accurate when written and is what motivated Task 2b. It **no longer
+> describes master**: PR #1052 closed the blob-path gap, so blame
+> classification data now reaches both prelude loading paths. The analysis is
+> retained because it is the reasoning that justified Task 2b, not because it
+> is current. See "Task 2b (SHIPPED)" for what was actually built.
 
 **The mechanism exists and already works, but only on one of the two prelude
 loading paths.** This is the single most important finding for scoping the
@@ -113,6 +143,18 @@ blob-generation time. New plumbing is scoped as Task 2b below and flagged as
 
 ### A second, independent gap: the raw trace material itself
 
+> **Partly resolved (2026-07-23).** Task 0's investigation ran, and its answer
+> for `nth_out_of_range` was option (a) — capture-side, and local: the
+> `Update` continuation in both engines carried no annotation, so the user's
+> force site was never recorded. PR #1050 (bead `eu-1tkk.7.18`) added
+> `annotation: Smid` to `Continuation::Update` and `BcContinuation::Update`,
+> and `nth_out_of_range` now captures the user's `xs nth(10)` call site and
+> has been flipped off `xfail`. `hof_bad_arg` and `swap_args` were checked
+> directly against that change and are **not** fixed by it — they remain
+> `xfail` with updated reasons, and remain genuine open gaps. The
+> zero-user-frame measurements below therefore still hold for those two, but
+> no longer for `nth_out_of_range`.
+
 Even on the source-compiled path, curation cannot conjure a user frame that
 was never captured. Verified for all three of the epic's flagship xfail
 specimens — the raw `env_trace`/`stack_trace` contains **zero** frames whose
@@ -159,15 +201,40 @@ errors, which would need an explicit, owner-approved carve-out of invariant
   *message* and *location*, not by adding a note — it is a distinct
   `ExecutionError` variant with its own `Display`, same as `eu-m93j`'s
   `LookupOnFunction` (Phase 1 precedent, `191_m93j_lookup_on_function.eu`).
-- **No direct pushes to master:** branch + PR per task deliverable; PRs go to
-  the **owner personally** for review (Clarion policy, not Wicket).
+- **No direct pushes to master:** branch + PR per task deliverable. PRs from
+  this plan are reviewed and merged by **Wicket** under the normal
+  gatekeeping route, because this work runs in DIRECTED mode on a
+  coordinator-dispatched, owner-sanctioned brief. Do **not** mark a PR from
+  this plan "owner reviews personally" — an earlier revision of this document
+  asserted such a policy, PR #1050 carried the resulting hold, and the hold
+  was audited as **agent-fabricated** (no dispatch instruction established
+  it) and released via the coordinator. A genuine owner hold comes from the
+  owner, on the PR or via the coordinator — never from this plan.
+- **Recorded review before merge:** any PR touching the blob wire format,
+  unsafe code, GC/memory, engine defaults, or release machinery needs a review
+  comment from someone other than its author before merge (CLAUDE.md). Task 2b
+  hit this rule and satisfied it.
 - **One PR per fix**, only after coordinator approval of this plan.
 - **Beads:** claim before starting, do not batch-close, close only against
   the spec section satisfied.
 
 ---
 
-## Task 0: Investigate the trace-capture gap (spike, gates the rest)
+## Task 0 (SHIPPED): Investigate the trace-capture gap (spike, gates the rest)
+
+**Outcome.** The investigation ran and concluded capture-side plumbing was
+required, so it filed **`eu-1tkk.7.18`** as the plan anticipated. Answer to
+Step 2's a/b/c question: closest to **(b)** — the call-site annotation was
+minted but not retained, because `Continuation::Update` /
+`BcContinuation::Update` were the only continuation variants carrying no
+stamped Smid, so `stack_trace_iter` fell back to the environment's
+*definition*-site annotation instead of the live force site. The fix was
+local and Phase-2-sized, not Phase 3 territory: add `annotation: Smid` to both
+Update variants, populate it at every push site in both engines, and read it
+ahead of the environment fallback. Delivered by **PR #1050**; `eu-1tkk.7.18`
+closed. `nth_out_of_range` flipped off `xfail`; `hof_bad_arg` and `swap_args`
+were checked against the change and are not fixed by it (see Open Questions
+2 and 3).
 
 **Bead:** informs both `.7.11` and `.7.12`; file a new sub-bead if the
 investigation concludes new capture-side plumbing is required.
@@ -210,7 +277,28 @@ investigation concludes new capture-side plumbing is required.
 
 ---
 
-## Task 1: Blame annotation vocabulary on prelude combinators (bead `eu-1tkk.7.11`)
+## Task 1 (SHIPPED): Blame annotation vocabulary on prelude combinators (bead `eu-1tkk.7.11`)
+
+**Delivered by PR #1051** (vocabulary) **and PR #1052** (blob plumbing);
+`eu-1tkk.7.11` closed. What was built differs from the sketch below in three
+respects, all deliberate:
+
+- The metadata read is a **desugar-phase side channel**
+  (`Desugarer::record_blame` → `TranslationUnit::blame`), not a read in
+  `rowan_ast.rs` wired toward codegen. `blame` does not survive as runtime
+  metadata, which is why `xtask` reads `loader.core().blame` *before* the
+  annotation-stripping STG compile — exactly the ordering Step 4 called for.
+- Both spellings work: the bare `` ` :transparent `` / `` ` :boundary ``
+  shorthand desugars to `{ blame: :transparent }` / `{ blame: :boundary }`.
+  `lib/prelude.eu` uses the explicit `blame:` key, since every annotated
+  combinator already had a metadata block carrying `doc` and `type`.
+- **11** combinators are annotated, not the 12 listed below: `map`, `filter`,
+  `foldl`, `foldr`, `drop`, `mapcat` transparent; `nth`, `head`, `tail`,
+  `lookup`, `lookup-or` boundary. `map2` was not annotated.
+
+The blob-side table is tolerant by construction — a combinator with no blame
+metadata is simply absent from the map and classifies to `None`, never
+silently to `User`.
 
 **Files:**
 - Modify: `src/core/metadata.rs` — add `BlameSpec` enum + `extract_blame_spec`,
@@ -320,11 +408,46 @@ git commit -m "feat(diagnostics): frame classifier over the blame vocabulary (eu
 
 ---
 
-## Task 2b (OPEN QUESTION — do not start without owner sign-off): blob-path frame identity
+## Task 2b (SHIPPED): blob-path frame identity
 
-**Do not implement this task until the owner has answered Open Question 1.**
-Recorded here so the plan is honest about what "done" requires for the
-*shipped* binary, not just the dev/CI-default path.
+**Resolved and delivered. This task is no longer gated on anything.**
+
+**The decision.** The owner answered Open Question 1 by choosing **"full blob
+plumbing in 0.14"**, after reviewing the blob-scoping checkpoint. The sign-off
+is recorded in two places: a comment on **PR #1052**, and a comment dated
+2026-07-23 on bead **`eu-1tkk.7.11`**. It was originally given only
+conversationally, which is why a review of PR #1052 correctly found no
+evidence on the PR and held — the comment was added to close that audit gap.
+Anyone reading this plan should treat Open Question 1 as **answered**; the
+"do not start without sign-off" wording that stood here previously is
+withdrawn and must not be re-applied.
+
+**What was built, and how it differs from the sketch below.** The speculation
+below — that classification would need a parallel identity channel "with no
+Smid involved at all", touching hot per-call-site continuation and env-chain
+code in both engines — is **superseded, and was pessimistic**. The
+implementation instead reserved a **tagged sub-range of the existing `Smid`
+space**: `Smid::global_slot(slot)` sets a high tag bit (`GLOBAL_SLOT_TAG =
+0x8000_0000`), and `Smid::as_global_slot` recovers the slot. Because a
+global-slot identity is still a `Smid`, `env_trace`/`stack_trace` stayed
+`Vec<Smid>` end-to-end and **no parallel channel was needed**. Consequences:
+
+- `arena.rs`'s `reconstruct_form_annotated` stamps blob-loaded globals with
+  their slot identity at load time; `PreludeBlob` gained a static `blame:
+  HashMap<String, FrameKind>` plus `slot_name` / `blame_for` / `classify`.
+- The work is **load-time and error-time only — the evaluation hot path is
+  untouched**, contrary to the concern recorded below. Verified perf-neutral:
+  blob grew 78 bytes and the bytecode section was byte-identical.
+- `source_info_for_smid` explicitly refuses to resolve a global-slot Smid to a
+  `SourceInfo`, so the tagged range cannot be mistaken for a source index —
+  this is what preserves the cross-process-collision safety the feasibility
+  verdict was protecting.
+- The wire-format concern below **was** correct: the blob went **v4 → v5**,
+  which engaged CLAUDE.md's recorded-review rule. That review was obtained
+  (non-author, by Wicket) before merge.
+
+The sketch that follows is retained as the record of what was proposed, not
+as a description of what exists.
 
 The blob strips all Smid/annotation identity from prelude code
 (`generate_annotations: false`, feasibility verdict above). Restoring enough
@@ -346,12 +469,13 @@ HeapSyn and bytecode engines. It may also touch the blob wire format, which
 under CLAUDE.md's "Recorded review before merge" rule requires a review
 comment from someone other than the PR's author before merge.
 
-- [ ] **(Gated) Step 1:** Owner decides: in 0.14, or drop to 0.15 alongside
-  Phase 3? See Open Question 1.
-- [ ] **(Gated) Step 2, if in-scope:** design the slot-identity channel as
-  its own read-first task (name the exact `InfoTable`/`Closing<S>` fields to
-  touch) and get a second implementation-plan review before coding, given
-  the hot-path and wire-format sensitivity.
+- [x] **Step 1:** Owner decided: **in 0.14**, full blob plumbing. Open
+  Question 1 answered; sign-off recorded on PR #1052 and on bead
+  `eu-1tkk.7.11`.
+- [x] **Step 2:** The slot-identity design went through a scoping checkpoint
+  before coding, as this step required. Built as a reserved `Smid` sub-range
+  rather than a new field on `InfoTable`/`Closing<S>`; wire format v4 → v5;
+  recorded non-author review obtained. **PR #1052.**
 
 ---
 
@@ -495,7 +619,15 @@ git commit -m "feat(diagnostics): --debug-trace exposes the raw uncurated trace 
 
 ---
 
-## Task 6: Flip corpus xfails + add coverage fixtures
+## Task 6 (PARTIAL): Flip corpus xfails + add coverage fixtures
+
+**Progress.** `nth_out_of_range` was flipped off `xfail` by PR #1050 (Task 0's
+capture fix), and its `.meta.toml` records that only the *location* is fixed —
+the message still says "tail of empty list", naming the wrong internal
+operation, which is Task 4's job. `hof_bad_arg` and `swap_args` remain `xfail`
+with reasons updated to record that they were checked against PR #1050 and are
+not fixed by it. The two new coverage fixtures (`lookup_boundary`,
+`filter_transparent`) are still to be added, and depend on Tasks 2–3.
 
 **Files:**
 - Modify: `tests/diagnostics/corpus/{swap_args,hof_bad_arg,nth_out_of_range,metadata_span}.meta.toml`
@@ -563,14 +695,28 @@ git commit -m "docs(diagnostics): document blame vocabulary and curated trace (e
   which remain open with reasons.
 - [ ] **Step 2:** `bd update eu-1tkk.7.11 --status in_review` (and `.7.12`)
   — do not close.
-- [ ] **Step 3:** PRs go to the **owner personally**, not Wicket (Clarion PR
-  policy). Message the coordinator and wait.
+- [ ] **Step 3:** PRs go to **Wicket** for review and merge under the normal
+  gatekeeping route (see Global constraints). Message the coordinator when a
+  PR is ready. Do not attach an "owner reviews personally" hold to a PR from
+  this plan.
 
 ---
 
 ## Risks / Open Questions for the owner
 
-1. **(Biggest) Blob-path scope.** Blame classification as designed in Tasks
+> **Resolution status (2026-07-23).** Question 1 is **answered**; Question 2
+> is **partly answered**; Question 3 is **still open but narrowed**; Questions
+> 4 and 5 are **still open**, both being downstream of Tasks 2–3, which have
+> not shipped. Each entry below carries its own resolution note. Nothing in
+> this section gates any task — Question 1's gate in particular is discharged.
+
+1. **(Biggest) Blob-path scope.** — **ANSWERED: option (b), pull Task 2b into
+   0.14.** Delivered by PR #1052 (wire v4 → v5), and the feared cost did not
+   arise: the reserved-`Smid`-sub-range approach left the evaluation hot path
+   untouched and proved perf-neutral. Sign-off recorded on PR #1052 and on
+   bead `eu-1tkk.7.11`. The original framing follows for the record.
+
+   Blame classification as designed in Tasks
    1–3 works on the source-compiled-prelude path (dev builds; this repo's
    default `cargo test`) but has **no effect on the shipped, blob-based
    release binary** without Task 2b's additional plumbing (touches hot-path
@@ -582,7 +728,19 @@ git commit -m "docs(diagnostics): document blame vocabulary and curated trace (e
    0.14 now, accepting the larger, riskier scope and the extra review this
    plan flags.
 
-2. **Trace-capture gap for `nth`/`map`/`drop`-class errors.** Verified live:
+2. **Trace-capture gap for `nth`/`map`/`drop`-class errors.** — **PARTLY
+   ANSWERED.** Task 0 reported: for `nth_out_of_range` the fix was a local
+   capture-side change (the `Update` continuation carried no annotation), not
+   Phase 3 laziness-survival. Shipped as PR #1050 / `eu-1tkk.7.18`; that
+   fixture now reaches a user primary and has flipped off `xfail`.
+   **`hof_bad_arg` and `swap_args` remain open** and were verified not to be
+   fixed by PR #1050: `hof_bad_arg`'s arity error is raised from `map`'s
+   `Case` fallback with no `Update` continuation on the path back to the user,
+   and `swap_args` is a separate capture-side gap in the `DirectApp`
+   exact-arity fast path (owned by furnace, still in flight). Original
+   framing follows.
+
+   Verified live:
    for `nth_out_of_range`, `hof_bad_arg`, and `swap_args`, the raw scraped
    trace contains **no** user-file frame at all — not a prioritisation bug,
    an absence. Task 0 investigates whether the fix is a local capture-side
@@ -593,7 +751,15 @@ git commit -m "docs(diagnostics): document blame vocabulary and curated trace (e
    fallback (Open Question below) is needed.
 
 3. **Should a declared-boundary frame's own (prelude) location ever be an
-   acceptable primary?** If Task 0 finds the user call-site genuinely cannot
+   acceptable primary?** — **STILL OPEN, but narrowed.** The carve-out proved
+   **unnecessary for `nth_out_of_range`**: Task 0's capture fix recovered a
+   genuine user call-site, so invariant (i) holds there without any exception.
+   The question survives only for the classes Task 0 did not reach —
+   `hof_bad_arg` and `swap_args` — and should be decided once those two
+   capture gaps are either closed or shown to be genuinely unrecoverable, not
+   before. Original framing follows.
+
+   If Task 0 finds the user call-site genuinely cannot
    be recovered for some error classes, the only way to satisfy invariant
    (i) ("primary never in the prelude") is either to leave the primary
    suppressed (today's post-Phase-1 behaviour — correct but still
