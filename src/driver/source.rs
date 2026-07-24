@@ -697,15 +697,38 @@ impl SourceLoader {
     pub fn set_prelude_blob(&mut self, blob: crate::eval::stg::blob::PreludeBlob) {
         // Seed monad specs from the blob so that :for/:random blocks are
         // recognised during desugaring even when the prelude source is skipped.
+        self.seed_monad_registries(&blob.monad_specs, &blob.monad_type_hints);
+        self.prelude_blob = Some(blob);
+    }
+
+    /// Seed `unit_interface`'s monad registries directly, without taking
+    /// ownership of a `PreludeBlob` or activating blob-mode cook/hoist.
+    ///
+    /// `set_prelude_blob` (above) calls this as part of full blob
+    /// activation. It also stands alone for
+    /// [`crate::driver::check::run_type_checker_from_blob_core`] (eu-rqwh):
+    /// that function's `SourceLoader` injects the blob's baked prelude-side
+    /// units directly via `inject_prelude_units`, which skips `translate()`
+    /// for them — the very step that normally populates these registries
+    /// (see the "Build order" table on [`UnitInterface`]). Without this
+    /// seeding, `:for`/`:io` monadic-binding metadata in the user's own file
+    /// is never recognised during its `translate()` call, so the type
+    /// checker's monadic-bind pre-pass never sees the hint it looks for and
+    /// the mismatch warning silently fails to fire — reproducing exactly on
+    /// the blob path, never on the source-compiled-prelude path (where
+    /// `run_type_checker`'s `SourceLoader` translates the real prelude and
+    /// populates the registries the ordinary way).
+    pub fn seed_monad_registries(
+        &mut self,
+        monad_specs: &HashMap<String, crate::core::desugar::desugarer::MonadSpec>,
+        monad_type_hints: &HashMap<String, String>,
+    ) {
         self.unit_interface
             .monad_specs
-            .extend(blob.monad_specs.iter().map(|(k, v)| (k.clone(), v.clone())));
-        self.unit_interface.monad_type_hints.extend(
-            blob.monad_type_hints
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone())),
-        );
-        self.prelude_blob = Some(blob);
+            .extend(monad_specs.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.unit_interface
+            .monad_type_hints
+            .extend(monad_type_hints.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
 
     /// Check whether a prelude blob is stored (i.e. the blob path is active).

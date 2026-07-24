@@ -585,6 +585,17 @@ fn tag_for_prelude_side_input(input: &Input) -> Option<&'static str> {
 /// (e.g. a partial or stale blob still produces a correct, if slower,
 /// result).
 ///
+/// `monad_specs`/`monad_type_hints` are the blob's own registries (eu-rqwh).
+/// Injecting `prelude_units` skips `translate()` for the prelude-side
+/// inputs, which is the step that normally populates a fresh
+/// `SourceLoader`'s monad registries (see the "Build order" table on
+/// [`crate::driver::unit_interface::UnitInterface`]). Without seeding them
+/// here directly, `:for`/`:io` monadic-binding metadata in the user's own
+/// file would never be recognised when *it* is translated, so the type
+/// checker's monadic-bind pre-pass would never see the hint it looks for —
+/// the warning would silently fail to fire only on this (blob) path. See
+/// `SourceLoader::seed_monad_registries` for the shared seeding logic.
+///
 /// ## `Smid` cross-process scoping (eu-rb5n / Wicket review)
 ///
 /// The injected `prelude_units` cores carry `Smid` values minted by the
@@ -612,8 +623,14 @@ fn tag_for_prelude_side_input(input: &Input) -> Option<&'static str> {
 pub fn run_type_checker_from_blob_core(
     opt: &EucalyptOptions,
     prelude_units: &[(String, RcExpr)],
+    monad_specs: &HashMap<String, crate::core::desugar::desugarer::MonadSpec>,
+    monad_type_hints: &HashMap<String, String>,
 ) -> Result<PipelineCheckResult, EucalyptError> {
     let mut loader = SourceLoader::new(opt.lib_path().to_vec());
+    // eu-rqwh: seed the monad registries the injected prelude_units' skipped
+    // translate() would otherwise have populated, so :for/:io metadata in
+    // the user's own file (translated below) is recognised as monadic.
+    loader.seed_monad_registries(monad_specs, monad_type_hints);
     let inputs = opt.inputs();
 
     // Inject the prelude-side units the blob supplied a baked core for, and
@@ -1056,8 +1073,9 @@ x: "hello" : "string"
         // `bin/eu.rs` uses, just with a hand-built prelude standing in for
         // the real one.
         let prelude_units = vec![("prelude".to_string(), synthetic_prelude)];
-        let result = run_type_checker_from_blob_core(&opt, &prelude_units)
-            .expect("run_type_checker_from_blob_core");
+        let result =
+            run_type_checker_from_blob_core(&opt, &prelude_units, &HashMap::new(), &HashMap::new())
+                .expect("run_type_checker_from_blob_core");
 
         assert!(
             !result.warnings.is_empty(),
