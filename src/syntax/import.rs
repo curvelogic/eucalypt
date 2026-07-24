@@ -227,6 +227,32 @@ fn read_rowan_soup_imports(
                         }
                     }
 
+                    // Check declaration body for imports (recursive) — but
+                    // skip `import:` declarations themselves. Those are
+                    // already fully handled by the dedicated scrape above
+                    // (`scrape_rowan_imports`), which understands plain
+                    // paths, lists of paths, and git-import descriptor
+                    // blocks. Recursing into an `import:` declaration's own
+                    // body here would misinterpret a git-import block's
+                    // `git`/`commit`/`import` fields as further, unrelated
+                    // import declarations — the in-repository file path
+                    // field is coincidentally also named `import`, and
+                    // would otherwise be scraped a second time as a bogus
+                    // plain filesystem import.
+                    let is_import_decl = decl
+                        .head()
+                        .map(|head| {
+                            matches!(
+                                head.classify_declaration(),
+                                crate::syntax::rowan::ast::DeclarationKind::Property(prop)
+                                    if prop.text() == "import"
+                            )
+                        })
+                        .unwrap_or(false);
+                    if is_import_decl {
+                        continue;
+                    }
+
                     // Check declaration body for imports (recursive)
                     if let Some(body) = decl.body() {
                         if let Some(body_soup) = body.soup() {
@@ -354,7 +380,19 @@ fn parse_git_import_block(
     let commit = commit.ok_or(ImportError::GitImportMissingCommit)?;
     let path = path.ok_or_else(|| ImportError::GitImportMissingField("import path".to_string()))?;
 
-    Ok(Some(Input::from(Locator::Git { url, commit, path })))
+    // A git import can be namespaced the same way a plain filesystem import
+    // can, by prefixing the repository-relative path with `name=`:
+    //   { git: "...", commit: "...", import: "x=lib/xml.eu" }
+    // binds the imported file's declarations under `x.` rather than
+    // splicing them directly into scope.
+    let (name, path) = crate::syntax::input::split_name_prefix(&path);
+    let path = path.to_string();
+
+    let input = Input::from(Locator::Git { url, commit, path });
+    Ok(Some(match name {
+        Some(n) => input.with_name(&n),
+        None => input,
+    }))
 }
 
 /// Extract the text value of the first string literal found in a soup.

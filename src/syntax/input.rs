@@ -253,6 +253,21 @@ impl From<Locator> for Input {
     }
 }
 
+/// Split a `name=rest` import specifier into its optional name prefix and
+/// the remainder, on the first `=`. Used both for ordinary string import
+/// specifiers (via [`Input::from_str`]) and for the repository-relative
+/// path field of a git-import descriptor block (`{ git: ..., commit: ...,
+/// import: "name=path" }`), so that a git import can be namespaced the same
+/// way a plain filesystem import can.
+pub fn split_name_prefix(s: &str) -> (Option<String>, &str) {
+    if let Some(i) = s.find('=') {
+        let (n, rem) = s.split_at(i);
+        (Some(String::from(n.trim())), rem[1..].trim())
+    } else {
+        (None, s.trim())
+    }
+}
+
 impl FromStr for Input {
     type Err = SyntaxError;
 
@@ -457,6 +472,23 @@ pub mod tests {
                 name: None,
                 format: String::from("eu")
             })
+        );
+    }
+
+    /// eu-9vkqn: the `name=` splitter shared by `Input::from_str` and the
+    /// git-import descriptor path field (both `parse_git_import_block` in
+    /// `syntax::import` and `Extract<Input>` in `core::expr`), so that a
+    /// git import can be namespaced the same way a plain import can.
+    #[test]
+    pub fn test_split_name_prefix() {
+        assert_eq!(
+            split_name_prefix("x=lib/xml.eu"),
+            (Some(String::from("x")), "lib/xml.eu")
+        );
+        assert_eq!(split_name_prefix("lib/xml.eu"), (None, "lib/xml.eu"));
+        assert_eq!(
+            split_name_prefix(" x = lib/xml.eu "),
+            (Some(String::from("x")), "lib/xml.eu")
         );
     }
 }

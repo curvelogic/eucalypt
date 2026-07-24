@@ -26,6 +26,34 @@ pub enum ParsedAst {
     Soup(Soup),
 }
 
+/// Records the git repository/commit a cached file was fetched from, keyed
+/// by the file's absolute cache path.
+///
+/// A file fetched via a git import (`{ git: ..., commit: ..., import: ... }`)
+/// may itself declare ordinary relative imports (`{ import: "helpers.eu" }`).
+/// Those transitive imports live in the *same* repository at the *same*
+/// commit, so they must be fetched the same way rather than resolved as
+/// plain filesystem paths (which would only succeed by the accident of a
+/// same-named file already existing somewhere on the local lib path — the
+/// cache only ever contains the individual files explicitly requested, not
+/// a full working copy of the repository).
+///
+/// `load_tree` looks up the currently-loading file's cache path in
+/// `SourceLoader::git_context` and, if found, sets it as
+/// `SourceLoader::current_git_context` for the duration of loading that
+/// file's transitive imports; `SourceLoader::load` consults
+/// `current_git_context` to redirect plain relative `Locator::Fs` imports to
+/// the git cache instead of the local filesystem.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone)]
+struct GitContext {
+    url: String,
+    commit: String,
+    /// Directory (relative to the repository root) containing the file
+    /// this context was recorded for.
+    repo_dir: PathBuf,
+}
+
 impl Desugarable for ParsedAst {
     fn desugar(
         &self,
@@ -121,6 +149,16 @@ pub struct SourceLoader {
     /// resolution (the `eu` binary, the tester) retrieve these via
     /// `type_aliases()` after `prepare()` completes.
     early_type_aliases: HashMap<String, crate::core::typecheck::types::Type>,
+    /// Git repository/commit context for cached files, keyed by their
+    /// absolute cache path — see [`GitContext`].
+    #[cfg(not(target_arch = "wasm32"))]
+    git_context: HashMap<PathBuf, GitContext>,
+    /// The git context active while loading the transitive imports of the
+    /// file currently being processed by `load_tree`, if any. Saved and
+    /// restored around that file's import loop, exactly like `lib_path`'s
+    /// push/pop of the importing file's directory — see [`GitContext`].
+    #[cfg(not(target_arch = "wasm32"))]
+    current_git_context: Option<GitContext>,
 }
 
 impl Default for SourceLoader {
@@ -145,6 +183,10 @@ impl Default for SourceLoader {
             #[cfg(not(target_arch = "wasm32"))]
             prelude_blob: None,
             early_type_aliases: HashMap::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            git_context: HashMap::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            current_git_context: None,
         }
     }
 }
@@ -172,6 +214,10 @@ impl SourceLoader {
             prelude_blob: None,
             pending_parse_errors: Vec::new(),
             early_type_aliases: HashMap::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            git_context: HashMap::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            current_git_context: None,
         }
     }
 
@@ -213,17 +259,45 @@ impl SourceLoader {
 
     /// Load an input (and transitive imports)
     pub fn load(&mut self, input: &Input) -> Result<usize, EucalyptError> {
-        // Resolve git imports to a local cached path before any other dispatch.
+        // Resolve an explicit git import (`{ git: ..., commit: ..., import: ...
+        // }`) to a local cached path before any other dispatch.
         #[cfg(not(target_arch = "wasm32"))]
         if let Locator::Git { url, commit, path } = input.locator() {
-            let cached_path = crate::import::git::resolve_git_import(url, commit, path)
-                .map_err(|e| EucalyptError::Source(Box::new(e)))?;
-            let resolved = Input::new(
-                Locator::Fs(cached_path),
-                input.name().clone(),
-                input.format(),
-            );
-            return self.load(&resolved);
+            let (url, commit, path) = (url.clone(), commit.clone(), path.clone());
+            let name = input.name().clone();
+            let format = input.format().to_string();
+            let alias_locator = input.locator().clone();
+            return self.load_from_git(&url, &commit, &path, name, &format, alias_locator);
+        }
+
+        // A plain relative filesystem import encountered while loading the
+        // transitive imports of a git-fetched file (`current_git_context` is
+        // set by `load_tree` for the duration) must itself be fetched from
+        // the same repository/commit — the cache only ever contains the
+        // individual files explicitly requested, not a full working copy of
+        // the repository, so ordinary filesystem resolution would either
+        // fail outright or (worse) silently pick up an unrelated same-named
+        // file from the local lib path.
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Locator::Fs(path) = input.locator() {
+            if path.is_relative() {
+                if let Some(ctx) = self.current_git_context.clone() {
+                    let repo_path = ctx.repo_dir.join(path);
+                    // Git paths always use forward slashes regardless of host OS.
+                    let repo_path = repo_path.to_string_lossy().replace('\\', "/");
+                    let name = input.name().clone();
+                    let format = input.format().to_string();
+                    let alias_locator = input.locator().clone();
+                    return self.load_from_git(
+                        &ctx.url,
+                        &ctx.commit,
+                        &repo_path,
+                        name,
+                        &format,
+                        alias_locator,
+                    );
+                }
+            }
         }
 
         let fmt = input.format();
@@ -235,6 +309,67 @@ impl SourceLoader {
         } else {
             self.load_simple(input)
         }
+    }
+
+    /// Fetch `path` from `url`@`commit` via the git cache, record its
+    /// [`GitContext`] for transitive imports, load its content, and alias
+    /// `alias_locator` — the caller's original locator, either an explicit
+    /// `Locator::Git` or a plain relative `Locator::Fs` encountered inside a
+    /// git-fetched file — to the resulting file id.
+    ///
+    /// The alias matters twice over:
+    ///
+    /// - Desugar-phase import metadata (see `Extract<Input>` for `RcExpr` in
+    ///   `core::expr`) is derived independently from the source text and
+    ///   knows nothing of git-context redirection: a git-fetched file's own
+    ///   `{ import: "helpers.eu" }` re-extracts as a plain
+    ///   `Locator::Fs("helpers.eu")`, so [`Self::translate`]'s content
+    ///   lookup must be able to find the already-loaded content under that
+    ///   original locator too, not only under the resolved cache path.
+    /// - For `.eu` content, the *import graph node* itself is registered
+    ///   under `alias_locator` (via [`Self::load_tree_as`]) rather than the
+    ///   resolved cache path, so that a transitive import discovered inside
+    ///   this file becomes an edge from the *same* node the importer's own
+    ///   analysis already points at — keeping the whole git-fetched tree in
+    ///   one connected component reachable by `ImportGraph::unit_inputs`'s
+    ///   BFS from the top-level input.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn load_from_git(
+        &mut self,
+        url: &str,
+        commit: &str,
+        path: &str,
+        name: Option<String>,
+        format: &str,
+        alias_locator: Locator,
+    ) -> Result<usize, EucalyptError> {
+        let cached_path = crate::import::git::resolve_git_import(url, commit, path)
+            .map_err(|e| EucalyptError::Source(Box::new(e)))?;
+
+        let repo_dir = Path::new(path)
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_default();
+        self.git_context.insert(
+            cached_path.clone(),
+            GitContext {
+                url: url.to_string(),
+                commit: commit.to_string(),
+                repo_dir,
+            },
+        );
+
+        let file_id = if format == "eu" {
+            let alias_input = Input::new(alias_locator.clone(), name, format);
+            self.load_tree_as(&Locator::Fs(cached_path), &alias_input)?
+        } else {
+            let resolved = Input::new(Locator::Fs(cached_path), name, format);
+            self.load(&resolved)?
+        };
+
+        self.locators.entry(alias_locator).or_insert(file_id);
+
+        Ok(file_id)
     }
 
     /// Loads from a data format that does not support imports
@@ -304,13 +439,52 @@ impl SourceLoader {
     /// Load and parse import-graph of eucalypt files starting with the one
     /// specified by locator
     fn load_tree(&mut self, input: &Input) -> Result<usize, EucalyptError> {
-        let locator = input.locator();
-        let file_id = self.load_eucalypt(locator)?;
+        self.load_tree_as(input.locator(), input)
+    }
+
+    /// Load and parse the import-graph of an `.eu` file whose content lives
+    /// at `content_locator`, but whose *import graph identity* — the
+    /// `Input` used both to register this file's own node in the
+    /// `ImportGraph` and as the key other files' import metadata will look
+    /// it up by — is `graph_input`.
+    ///
+    /// For an ordinary file these coincide (`load_tree` calls this with
+    /// `input.locator()` and `input` both derived from the same value). They
+    /// diverge for a git-fetched file: its content lives at a path in the
+    /// local git cache, but it must be registered in the graph under its
+    /// *original* locator (the explicit `Locator::Git`, or the plain
+    /// relative `Locator::Fs` it was declared under inside its importer) so
+    /// that other files' independently-derived import metadata — which
+    /// knows nothing about cache paths — can still find it. See
+    /// [`Self::load_from_git`].
+    fn load_tree_as(
+        &mut self,
+        content_locator: &Locator,
+        graph_input: &Input,
+    ) -> Result<usize, EucalyptError> {
+        let file_id = self.load_eucalypt(content_locator)?;
 
         // Implement import analysis for Rowan AST
         let ast = self.asts.get(&file_id).expect("AST was just loaded");
-        let inputs = self.imports.analyse_rowan_ast(input.clone(), ast)?;
+        let inputs = self.imports.analyse_rowan_ast(graph_input.clone(), ast)?;
         self.imports.check_for_cycles()?;
+
+        // If this file was itself fetched from a git repository, set up its
+        // `GitContext` for the duration of loading its transitive imports —
+        // `load()` consults `current_git_context` to redirect plain
+        // relative `Locator::Fs` imports to the git cache instead of the
+        // local filesystem. Saved and restored exactly like the `lib_path`
+        // push/pop below. (`driver::source` is excluded entirely from
+        // wasm32 builds — see `driver::mod` — so no wasm32 fallback is
+        // needed here.)
+        let git_ctx = match content_locator {
+            Locator::Fs(path) => self.git_context.get(path).cloned(),
+            _ => None,
+        };
+        let saved_git_context = self.current_git_context.clone();
+        if git_ctx.is_some() {
+            self.current_git_context = git_ctx;
+        }
 
         // Resolve imports relative to the importing file's directory.
         //
@@ -319,7 +493,7 @@ impl SourceLoader {
         // to the global lib_path. We achieve this by temporarily extending
         // the lib_path with the importing file's directory whilst loading
         // its transitive imports.
-        let import_dir = self.find_source_dir(locator);
+        let import_dir = self.find_source_dir(content_locator);
         if let Some(dir) = import_dir {
             self.lib_path.push(dir);
             for import_input in inputs {
@@ -331,6 +505,8 @@ impl SourceLoader {
                 self.load(&import_input)?;
             }
         }
+
+        self.current_git_context = saved_git_context;
 
         Ok(file_id)
     }

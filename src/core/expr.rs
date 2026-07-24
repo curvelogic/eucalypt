@@ -1299,8 +1299,42 @@ impl Extract<Fixity> for RcExpr {
 
 impl Extract<Input> for RcExpr {
     fn extract(&self) -> Option<Input> {
+        // Plain import specifiers are simple string/symbol literals, e.g.
+        // `"helpers.eu"` or `"cfg=config.yaml"`.
         let repr: Option<String> = self.extract();
-        repr.and_then(|s| Input::from_str(s.as_ref()).ok())
+        if let Some(s) = repr {
+            return Input::from_str(s.as_ref()).ok();
+        }
+
+        // A git import is written as a block literal:
+        //   { git: "url", commit: "sha", import: "path" }
+        // Block literals with simple (non-recursive) bindings desugar to a
+        // `Let` wrapping the field bindings around an `Expr::Block` of bound
+        // variable references, rather than a `Block` of literals directly —
+        // `instantiate_lets` inlines that `Let` back into a plain `Block` of
+        // literals so the field lookups below see literal values.
+        let inlined = self.clone().instantiate_lets();
+        if let Expr::Block(_, entries) = &*inlined.inner {
+            let url: Option<String> = entries.get("git").and_then(|e| e.extract());
+            let commit: Option<String> = entries.get("commit").and_then(|e| e.extract());
+            let path: Option<String> = entries.get("import").and_then(|e| e.extract());
+            if let (Some(url), Some(commit), Some(path)) = (url, commit, path) {
+                // A git import can be namespaced the same way a plain
+                // filesystem import can, by prefixing the repository-relative
+                // path with `name=` (see `parse_git_import_block` in
+                // `syntax::import`, which this mirrors so both extraction
+                // sites agree on the resulting `Locator::Git`/name split).
+                let (name, path) = crate::syntax::input::split_name_prefix(&path);
+                let path = path.to_string();
+                let input = Input::from(Locator::Git { url, commit, path });
+                return Some(match name {
+                    Some(n) => input.with_name(&n),
+                    None => input,
+                });
+            }
+        }
+
+        None
     }
 }
 
