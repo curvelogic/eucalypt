@@ -1,18 +1,24 @@
 "Higher-order / env-walk benchmark (workload class C). Freezes the
-ad-hoc env-walk fold `range(0,10000) foldl((_+_),0)` that ROADMAP
-section 7 and the A/B reports used as the O(n^2) env-walk case, so it
-stops being an uncommitted spike. Both engines share the O(n^2)
-cactus-environment-walk ceiling here (review A D5; BV3 register-frame
-territory), so this is informational for the bc/hs comparison rather
-than a win for either engine. sum 0..9999 == 49995000. Runs >1s on the
-faster engine."
+ad-hoc env-walk fold `range(0,N) foldl((_+_),0)` that ROADMAP section 7
+and the A/B reports used as the env-walk case, so it stops being an
+uncommitted spike. sum 0..399999 == 79999800000. Runs >1s on both
+engines.
+
+SIZE HISTORY: originally N=10000, chosen when both engines shared an
+O(n^2) cactus-environment-walk ceiling here. The eu-rb5n/eu-npp9
+HOF-combinator demand-analysis fusion fix (PR #1016) collapsed that walk
+to linear and dropped hs_ticks 52.2M -> 2.18M, leaving the bench at
+~65ms wall -- startup-dominated noise, below the engine-ab protocol's
+200ms floor (eu-9vm0). N is now 400000 (=> ~1.1s on both engines),
+restoring it to the canonical suite's >1s band. It exercises a linear
+HOF fold / env walk; it is no longer the O(n^2) case it was cut for."
 
 # (_ + _) is a two-argument add; the range is the fold's list (catenated last).
-grand: range(0, 10000) foldl((_ + _), 0)
+grand: range(0, 400000) foldl((_ + _), 0)
 
 ` { target: :bench-hof-fold
     verify: ["default-expectation"] }
 bench-hof-fold: {
   total: grand
-  RESULT: if(grand = 49995000, :PASS, :FAIL)
+  RESULT: if(grand = 79999800000, :PASS, :FAIL)
 }
