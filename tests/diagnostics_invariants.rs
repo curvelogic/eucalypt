@@ -316,15 +316,23 @@ fn corpus_satisfies_invariants() {
     // The `xfail` markers describe the DEFAULT (bytecode) engine, so the
     // "you fixed it, lock it in" arm is only asserted there (eu-1tkk.7.12).
     //
-    // Measured divergence, not a guess: on `hof_bad_arg.eu` the legacy
-    // HeapSyn engine's error Smid is the user's own `result` binding
-    // (`error_has_user_file: true`), while the bytecode engine's is a
-    // `[prelude]` `map` Smid with no user Smid anywhere in either trace.
-    // HeapSyn therefore satisfies all five invariants on a fixture the
-    // default engine still violates. That is a backend annotation-propagation
-    // gap, not a diagnostics-presentation one, and clearing an xfail on the
-    // strength of the engine being deleted (eu-1hcw) would be locking in a
-    // gain the shipping engine does not have. Tracked by eu-gvci.
+    // Historical divergence, now closed: `hof_bad_arg.eu` used to violate
+    // invariants (i)/(iii)/(iv) on the default (bytecode) engine only — its
+    // error Smid was a `[prelude]` `map` Smid with no user Smid anywhere in
+    // either trace, while HeapSyn's error Smid was already the user's own
+    // `result` binding (`error_has_user_file: true`). Root cause: `step`/
+    // `step_predecoded` routed an arity>0 (partial-application) WHNF value
+    // straight to `return_fun` without ever refreshing `state.annotation`
+    // from the value's own closure annotation first — unlike `vm.rs`
+    // `handle_instruction`, which does that refresh unconditionally, before
+    // its `remaining_arity > 0` check. A stale prelude-internal annotation
+    // therefore leaked into any error raised against that value by its
+    // caller (e.g. `export`'s `native_from_value`). Fixed by eu-gvci; all
+    // fixtures currently in the corpus pass all five invariants on both
+    // engines, so `unexpected_pass` is expected to stay empty either way.
+    // The `heapsyn ||` relaxation is left in place as a safety valve should
+    // a future fixture-specific divergence reappear — it does not currently
+    // relax anything.
     //
     // The `hard_failures` arm above is NOT relaxed: a live guard that
     // regresses fails on either engine.
