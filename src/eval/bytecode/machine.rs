@@ -2257,17 +2257,36 @@ pub fn step(
 ) -> Result<(), ExecutionError> {
     enum Dispatch {
         Native(Native),
-        Fun,
+        Fun(Smid),
         Op,
     }
     let dispatch = match &state.current {
         BcValue::Native(n) => Dispatch::Native(n.clone()),
-        BcValue::Closure(c) if c.arity() > 0 => Dispatch::Fun,
+        BcValue::Closure(c) if c.arity() > 0 => Dispatch::Fun(c.annotation()),
         BcValue::Closure(_) => Dispatch::Op,
     };
     match dispatch {
         Dispatch::Native(n) => return_native(state, view, n),
-        Dispatch::Fun => return_fun(state, view, prog, decoded),
+        Dispatch::Fun(annotation) => {
+            // Refresh `state.annotation` from the closure's own annotation
+            // before dispatching, exactly as `handle_op`/`handle_op_predecoded`
+            // do for an arity-0 closure. Without this, a remaining-arity
+            // value (e.g. a partial application returned as the final WHNF of
+            // a force) never passes through that refresh at all — `step`
+            // routes it straight to `return_fun`, which can terminate the run
+            // immediately (empty continuation stack) without ever touching
+            // `state.annotation`. The stale annotation left over from
+            // whatever internal node was last stepped then leaks into any
+            // error raised against this value by its caller (e.g. `export`'s
+            // `native_from_value`), rather than the value's own call-site
+            // smid. Mirrors `vm.rs` `handle_instruction`, which refreshes
+            // `self.annotation` from `closure_ann` unconditionally, before
+            // its `remaining_arity > 0` check (eu-gvci).
+            if annotation.is_valid() {
+                state.annotation = annotation;
+            }
+            return_fun(state, view, prog, decoded)
+        }
         Dispatch::Op => handle_op(state, view, prog, decoded),
     }
 }
@@ -2758,17 +2777,25 @@ pub fn step_predecoded(
 ) -> Result<(), ExecutionError> {
     enum Dispatch {
         Native(Native),
-        Fun,
+        Fun(Smid),
         Op,
     }
     let dispatch = match &state.current {
         BcValue::Native(n) => Dispatch::Native(n.clone()),
-        BcValue::Closure(c) if c.arity() > 0 => Dispatch::Fun,
+        BcValue::Closure(c) if c.arity() > 0 => Dispatch::Fun(c.annotation()),
         BcValue::Closure(_) => Dispatch::Op,
     };
     match dispatch {
         Dispatch::Native(n) => return_native(state, view, n),
-        Dispatch::Fun => return_fun(state, view, prog, decoded),
+        Dispatch::Fun(annotation) => {
+            // See the identical fix in `step` (eu-gvci) — refresh before
+            // dispatch, mirroring `vm.rs` `handle_instruction`'s
+            // unconditional-before-arity-check ordering.
+            if annotation.is_valid() {
+                state.annotation = annotation;
+            }
+            return_fun(state, view, prog, decoded)
+        }
         Dispatch::Op => handle_op_predecoded(state, view, prog, decoded),
     }
 }
