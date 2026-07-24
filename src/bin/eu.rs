@@ -181,16 +181,33 @@ fn run() -> i32 {
     // prelude, alternative prelude) always use `run_type_checker`.
     // See eu-rb5n.
     if !opt.suppress_type_warnings() {
+        // eu-rqwh: carry the blob's own monad registries alongside the
+        // decoded prelude_units, so `run_type_checker_from_blob_core` can
+        // seed them into its fresh `SourceLoader` — that loader injects the
+        // prelude-side units directly (skipping `translate()`, the step
+        // that would otherwise populate these registries), so without this
+        // the user's own `:for`/`:io` monadic-binding metadata is never
+        // recognised on this (blob) path.
         #[cfg(not(target_arch = "wasm32"))]
-        let blob_prelude_units = loader
-            .prelude_blob()
-            .and_then(|b| b.decode_desugared_unit_cores());
+        let blob_check_seed = loader.prelude_blob().and_then(|b| {
+            b.decode_desugared_unit_cores()
+                .map(|units| (units, b.monad_specs.clone(), b.monad_type_hints.clone()))
+        });
         #[cfg(target_arch = "wasm32")]
-        let blob_prelude_units: Option<Vec<(String, eucalypt::core::expr::RcExpr)>> = None;
+        let blob_check_seed: Option<(
+            Vec<(String, eucalypt::core::expr::RcExpr)>,
+            std::collections::HashMap<String, eucalypt::core::desugar::desugarer::MonadSpec>,
+            std::collections::HashMap<String, String>,
+        )> = None;
 
-        let check_result = match &blob_prelude_units {
-            Some(prelude_units) => {
-                eucalypt::driver::check::run_type_checker_from_blob_core(&opt, prelude_units)
+        let check_result = match &blob_check_seed {
+            Some((prelude_units, monad_specs, monad_type_hints)) => {
+                eucalypt::driver::check::run_type_checker_from_blob_core(
+                    &opt,
+                    prelude_units,
+                    monad_specs,
+                    monad_type_hints,
+                )
             }
             None => eucalypt::driver::check::run_type_checker(&opt),
         };
