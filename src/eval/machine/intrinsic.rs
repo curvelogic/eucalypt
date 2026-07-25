@@ -411,6 +411,29 @@ pub trait IntrinsicMachine {
     // frame over that template; the HeapSyn defaults build the App/Bif node
     // directly.
 
+    /// Build a lazy unary application `f(a)` as a stored (updatable) value
+    /// handle. Used by the process-parallelism driver to build the per-element
+    /// `f(xs[i])` thunk it then forces (engine-neutrally) in each worker or on
+    /// the sequential-fallback path.
+    fn apply1_thunk(
+        &self,
+        view: MutatorHeapView<'_>,
+        f: AbiClosure,
+        a: AbiClosure,
+    ) -> Result<AbiClosure, ExecutionError> {
+        // HeapSyn: `App(L0, [L1])` over a fresh `[f, a]` frame.
+        let frame = view.from_closures(
+            [f.expect_heap(), a.expect_heap()].into_iter(),
+            2,
+            self.root_env(),
+            Smid::default(),
+        )?;
+        let code = view
+            .app(Ref::L(0), Array::from_slice(&view, &[Ref::L(1)]))?
+            .as_ptr();
+        Ok(AbiClosure::Heap(SynClosure::new(code, frame)))
+    }
+
     /// Build a lazy binary application `f(a0, a1)` as a stored (updatable)
     /// value handle. Used by `MERGEWITH` to combine colliding block values.
     fn apply2_thunk(

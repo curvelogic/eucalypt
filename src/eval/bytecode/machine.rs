@@ -4734,6 +4734,28 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
 
     // ── Fixed-shape thunk construction (spec §5.5, arena analysis) ──────
 
+    fn apply1_thunk(
+        &self,
+        view: MutatorHeapView<'_>,
+        f: AbiClosure,
+        a: AbiClosure,
+    ) -> Result<AbiClosure, ExecutionError> {
+        let (AbiClosure::Byte(fv), AbiClosure::Byte(av)) = (f, a) else {
+            panic!("bytecode BifContext: apply1_thunk with a HeapSyn field")
+        };
+        // A GC-heap env frame `[f, a]` over the fixed `App(L0,[L1])` template.
+        let env = view.from_values(
+            [fv, av].into_iter(),
+            2,
+            self.state.root_env,
+            self.state.annotation,
+        )?;
+        Ok(AbiClosure::Byte(BcValue::Closure(BcClosure::new(
+            self.program.apply1_template,
+            env,
+        ))))
+    }
+
     fn apply2_thunk(
         &self,
         view: MutatorHeapView<'_>,
