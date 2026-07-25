@@ -1,0 +1,16 @@
+"EF1 spike control B: plain :io monadic block with churn, no do-monad"
+
+` :suppress
+sum-range(n): range(1, n) foldl(+, 0)
+
+` :suppress
+churn-a: repeat(100) take(300) map(sum-range) foldl(+, 0)
+
+` :suppress
+churn-b: repeat(101) take(300) map(sum-range) foldl(+, 0)
+
+` :main
+main: { :io
+  a: io.shell("echo alpha-{churn-a}")
+  b: io.shell("echo beta-{churn-b}")
+}.([a.stdout, b.stdout])

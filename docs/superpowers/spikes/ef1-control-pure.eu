@@ -1,0 +1,12 @@
+"EF1 spike control A: pure churn, no IO, no do-monad"
+
+` :suppress
+sum-range(n): range(1, n) foldl(+, 0)
+
+` :suppress
+churn-a: repeat(100) take(300) map(sum-range) foldl(+, 0)
+
+` :suppress
+churn-b: repeat(101) take(300) map(sum-range) foldl(+, 0)
+
+result: [churn-a, churn-b]

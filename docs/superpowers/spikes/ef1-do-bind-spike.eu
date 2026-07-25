@@ -1,0 +1,130 @@
+{ import: "resource:state"
+  doc: "EF1 do-monad feasibility spike (eu-1tkk.2): do-bind/do-return composed over io.bind under the driver world-token path. THROWAWAY PROTOTYPE - not production code." }
+
+## Observable-effect log file (truncated at start of main).
+` :suppress
+log: io.env lookup-or(:EF1_LOG, "/tmp/ef1-do-spike.log")
+
+## Allocation churn, forced mid-io-loop via string interpolation in the
+## first shell command's spec block - exercises GC while the do context
+## is captured in a suspended continuation closure.
+` :suppress
+sum-range(n): range(1, n) foldl(+, 0)
+
+## Two independent churn phases: phase A is forced while evaluating the
+## alpha shell command's spec block, phase B while evaluating beta's.
+## Once A's binding is updated to a number, its fold chain is garbage,
+## so a small heap limit forces real collections between the IO steps
+## while the do context is captured in the suspended continuation.
+` :suppress
+churn-a: repeat(100) take(50) map(sum-range) foldl(+, 0)
+
+` :suppress
+churn-b: repeat(101) take(50) map(sum-range) foldl(+, 0)
+
+## ─── do monad primitives (the only genuinely new code per spec §3) ───
+
+` :suppress
+do-ret(v, c): io.return({ value: v, ctx: c })
+
+` :suppress
+resume(f, r): f(r.value)(r.ctx)
+
+` :suppress
+do-bind(m, f, c): io.bind(m(c), resume(f))
+
+## ─── lifts (spec §4) ───
+
+` :suppress
+pair-ctx(c, v): { value: v, ctx: c }
+
+` :suppress
+do-lift-io(action, c): io.map(pair-ctx(c), action)
+
+` :suppress
+thread-state(c, s): { value: s.value, ctx: { state: s.state, seed: c.seed } }
+
+` :suppress
+do-lift-state(sa, c): io.return(thread-state(c, sa(c.state)))
+
+` :suppress
+thread-seed(c, r): { value: r.value, ctx: { state: c.state, seed: r.rest } }
+
+` :suppress
+do-lift-random(ra, c): io.return(thread-seed(c, ra(c.seed)))
+
+## ─── namespace: enables { :do ... } block metadata ───
+
+` { monad: s"ctx → IO({value: a, ctx: ctx})" }
+do: monad{bind: do-bind, return: do-ret} {
+  ` "do.shell(c) - lifted io.shell"
+  shell(cm): do-lift-io(io.shell(cm))
+
+  ` "do.st - terse lift for any state action"
+  st: do-lift-state
+
+  ` "do.rnd - lift for any random action"
+  rnd: do-lift-random
+
+  ` "do.pure(v) - pure value in the do monad"
+  pure: do-ret
+
+  ` "do.run(a, c0) - run: yields IO of value/ctx block"
+  run(a, c0): a(c0)
+}
+
+## ─── explicit bind chain (core proof - no block sugar involved) ───
+
+` :suppress
+k1(r1): do-bind(do-lift-state(state.put(:alpha, r1.'exit-code')), k2)
+
+` :suppress
+k2(ig): do-bind(do.shell("echo beta-{churn-b} >> {log}"), k2b)
+
+` :suppress
+k2b(ig): do-bind(do-lift-state(state.modify(:alpha, + 100)), k2c)
+
+` :suppress
+k2c(ig): do-bind(do-lift-random(random.float), k3)
+
+` :suppress
+k3(rv): do-bind(do.shell("cat {log}"), k4(rv))
+
+` :suppress
+k4(rv, catr): do-ret({ cat-out: catr.stdout, rand: rv })
+
+` :suppress
+explicit-pipeline: do-bind(do.shell("echo alpha-{churn-a} >> {log}"), k1)
+
+## ─── block-metadata form { :do ... } (sugar proof) ───
+
+` :suppress
+block-pipeline: { :do
+  a: do.shell("echo alpha-{churn-a} >> {log}")
+  ig: do.st(state.put(:alpha, a.'exit-code'))
+  b: do.shell("echo beta-{churn-b} >> {log}")
+  ig2: do.st(state.modify(:alpha, + 100))
+  rv: do.rnd(random.float)
+  catr: do.shell("cat {log}")
+}.({ cat-out: catr.stdout, rand: rv })
+
+## ─── driver ───
+
+` :suppress
+ctx0: { state: { count: 0 }, seed: random.stream(42) }
+
+## Render value + final state; seed is an opaque stream so project it away.
+` :suppress
+project(r): { value: r.value, state: r.ctx.state }
+
+` :suppress
+main3(p1, r2): io.return({ explicit: p1, block: project(r2) })
+
+` :suppress
+main2(r1): io.bind(do.run(block-pipeline, ctx0), main3(project(r1)))
+
+` :suppress
+start(ig): io.bind(do.run(explicit-pipeline, ctx0), main2)
+
+` :main
+main: io.bind(io.shell(": > {log}"), start)
