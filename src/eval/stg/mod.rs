@@ -348,3 +348,33 @@ pub fn compile(
     .with_user_demand_sigs(settings.user_demand_sigs.clone());
     compiler.compile(expr)
 }
+
+/// Like `compile`, but with a self-recursion context for the compiled
+/// expression (eu-e3c3i).
+///
+/// Used by `xtask prelude-compile` when compiling each peeled prelude
+/// binding independently: the binding's recursive self-reference is
+/// `Var::Free(<own name>)` after peeling, so demand analysis cannot mark
+/// it `recursive`. Passing the binding's own name here lets the compiler
+/// detect self-recursive call sites and set `eager_args` on them, which
+/// prevents the per-iteration `Atom{Ref::L}` indirection-chain build-up
+/// on lazily-threaded parameters (the O(N²) behind eu-e3c3i). See
+/// `Compiler::compile_with_self_recurse`.
+pub fn compile_named(
+    settings: &StgSettings,
+    expr: RcExpr,
+    runtime: &dyn Runtime,
+    self_recurse: Option<&str>,
+) -> Result<Rc<StgSyn>, CompileError> {
+    let compiler = compiler::Compiler::new(
+        settings.generate_annotations,
+        settings.render_type,
+        settings.suppress_updates,
+        settings.suppress_inlining,
+        settings.suppress_optimiser,
+        runtime.intrinsics(),
+        settings.prelude_globals.clone(),
+    )
+    .with_user_demand_sigs(settings.user_demand_sigs.clone());
+    compiler.compile_with_self_recurse(expr, self_recurse)
+}
