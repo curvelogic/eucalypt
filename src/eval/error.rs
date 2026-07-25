@@ -861,6 +861,12 @@ pub enum ExecutionError {
     /// closing the pipe is normal, so the driver exits 0 silently on this.
     #[error("output stream closed by the reader")]
     OutputStreamClosed,
+    /// A value could not cross the process-parallelism boundary: it is not
+    /// serialisable data (a function, IO action, or an opaque value), or a
+    /// live impure streaming import is in flight at the `par-*` call site.
+    /// The boxed tuple is `(combinator_name, value_kind)`.
+    #[error("{}: cannot serialise a {} across the parallel boundary", .1.0, .1.1)]
+    NotSerialisable(Smid, Box<(String, String)>),
     #[error("{}", format_unknown_format(.0))]
     UnknownFormat(String),
     #[error("cannot combine numbers ({1}, {2}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
@@ -1056,6 +1062,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::DivisionByZero(s, _) => *s,
             ExecutionError::BadDateTimeComponents(s, _) => *s,
             ExecutionError::BitwiseIntegerRequired(s, _) => *s,
+            ExecutionError::NotSerialisable(s, _) => *s,
             _ => Smid::default(),
         }
     }
