@@ -200,7 +200,7 @@ measurement standard and cite a dated report or a ledger row:
 
 ## Code Quality, Style, and Security
 
-- **Never allow clippy warnings**: fix every one (don't suppress with `#[allow(...)]`) unless the user explicitly permits it. Use `cargo clippy --all-targets -- -D warnings` — `--all-targets` matters, since `--lib` alone misses tests and benches that CI validates.
+- **Never allow clippy warnings**: fix every one (don't suppress with `#[allow(...)]`) unless the user explicitly permits it. Use `cargo clippy --workspace --all-targets -- -D warnings` — `--all-targets` matters, since `--lib` alone misses tests and benches that CI validates, and `--workspace` matters, since without it the `xtask` crate is silently unlinted.
 - **Use UK English spelling** throughout code, comments, and documentation: optimisation, utilisation, colour, etc.
 - **Fix dependabot/security alerts immediately**, with the same urgency as a build failure or clippy warning — treat them as blocking a PR. Prefer replacing deprecated dependencies over suppressing warnings (e.g. `atty` → `std::io::IsTerminal`).
 
@@ -210,7 +210,7 @@ measurement standard and cite a dated report or a ledger row:
 **ALWAYS run these commands before committing, in order, to avoid CI failures:**
 1. `rustup update stable` - CI uses `dtolnay/rust-toolchain@stable` (latest stable), so a stale local toolchain causes clippy discrepancies ("local passes, CI fails"); run this weekly
 2. `cargo fmt --all`
-3. `cargo clippy --all-targets -- -D warnings`
+3. `cargo clippy --workspace --all-targets -- -D warnings`
 4. `cargo test` - run the full suite (not just `--lib`) when the change might affect harness tests
 5. `git commit` and `git push`
 
