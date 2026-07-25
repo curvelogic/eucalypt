@@ -28,6 +28,7 @@ pub mod meta;
 pub mod null;
 pub mod optimiser;
 pub mod panic;
+pub mod parallel;
 pub mod parse_string;
 pub mod platform;
 pub mod pretty;
