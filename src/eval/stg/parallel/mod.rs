@@ -18,3 +18,4 @@
 
 #[cfg(unix)]
 pub mod arena;
+pub mod serialise;
