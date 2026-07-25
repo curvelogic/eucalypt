@@ -18,6 +18,9 @@
 
 #[cfg(unix)]
 pub mod arena;
+mod driver;
 #[cfg(unix)]
 pub mod fork;
 pub mod serialise;
+
+pub use driver::par_map;
