@@ -13,16 +13,21 @@
 //!     (desugar-phase import metadata understanding a git-import
 //!     descriptor block — `Extract<Input>` in `src/core/expr.rs`).
 //!
-//! Each test runs the compiled `eu` binary as a subprocess with `HOME`
-//! overridden to an isolated temporary directory, so the git cache
-//! (`~/.eu/cache/git/...`) never touches the real `~/.eu/cache` and each
-//! test gets a fresh cache. The repro `.eu` file lives in a directory
-//! entirely separate from the git repository checkout, so a passing
-//! result can only come from the git-cache path — not from an ordinary
-//! relative filesystem import coincidentally finding the checked-out
-//! working tree file of the same name (see eu-9vkqn's investigation notes:
-//! this exact coincidence masked the underlying bug during manual
-//! reproduction).
+//! Each test runs the compiled `eu` binary as a subprocess with
+//! `EU_CACHE_HOME` (see `git_cache_base` in `src/import/git.rs`) overridden
+//! to an isolated temporary directory, so the git cache
+//! (`<home>/.eu/cache/git/...`) never touches the real cache location and
+//! each test gets a fresh cache. `HOME` is set too, but `EU_CACHE_HOME` is
+//! what actually isolates the cache portably: `dirs::home_dir()` (the
+//! fallback without the override) resolves via the OS profile API on
+//! Windows, not the `HOME` environment variable, so `HOME` alone would
+//! silently leave the cache pointed at the real user profile there. The
+//! repro `.eu` file lives in a directory entirely separate from the git
+//! repository checkout, so a passing result can only come from the
+//! git-cache path — not from an ordinary relative filesystem import
+//! coincidentally finding the checked-out working tree file of the same
+//! name (see eu-9vkqn's investigation notes: this exact coincidence masked
+//! the underlying bug during manual reproduction).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -92,18 +97,28 @@ fn make_git_fixture() -> (tempfile::TempDir, String) {
     (repo_dir, commit)
 }
 
-/// Run `eu <path>` with `HOME` overridden to `home_dir` (isolating the git
-/// cache) and no other lib-path additions, returning the completed
-/// `Output`. The subject file's own directory is still searched (that's
-/// ordinary, unrelated-to-git relative import resolution), but nothing
-/// else is on the lib path, so a relative import can only succeed via the
-/// git cache or a file that is genuinely alongside the subject file.
+/// Run `eu <path>` with the git cache location overridden to `home_dir`
+/// (via `EU_CACHE_HOME` — see `git_cache_base` in `src/import/git.rs`) and
+/// no other lib-path additions, returning the completed `Output`.
+///
+/// `HOME` is set too, for good measure on platforms/tools that consult it
+/// directly, but `EU_CACHE_HOME` is what actually isolates the cache:
+/// `dirs::home_dir()` (what `git_cache_base` falls back to without the
+/// override) resolves via the OS profile API on Windows, not the `HOME`
+/// environment variable, so `HOME` alone would not isolate the cache
+/// there.
+///
+/// The subject file's own directory is still searched (that's ordinary,
+/// unrelated-to-git relative import resolution), but nothing else is on
+/// the lib path, so a relative import can only succeed via the git cache
+/// or a file that is genuinely alongside the subject file.
 fn run_eu_with_isolated_home(subject: &Path, home_dir: &Path) -> std::process::Output {
     Command::new(eu_binary())
         .arg("--heap-limit-mib")
         .arg("512")
         .arg(subject)
         .env("HOME", home_dir)
+        .env("EU_CACHE_HOME", home_dir)
         .output()
         .expect("failed to run eu binary")
 }

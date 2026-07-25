@@ -28,8 +28,26 @@ fn url_hash(url: &str) -> String {
     format!("{hash:016x}")
 }
 
-/// Return the base cache directory: `~/.eu/cache/git/`.
+/// Return the base cache directory: `<home>/.eu/cache/git/`.
+///
+/// `<home>` is `dirs::home_dir()` by default. If the `EU_CACHE_HOME`
+/// environment variable is set, it is used instead — this exists so tests
+/// (and anyone else who needs an isolated cache) can redirect the cache
+/// location portably.
+///
+/// A plain `HOME` override is not portable for this purpose: on Windows,
+/// `dirs::home_dir()` resolves via the OS profile API rather than the
+/// `HOME` environment variable, so setting `HOME` alone has no effect
+/// there and the cache would silently fall back to the real user profile
+/// directory.
 fn git_cache_base() -> Result<PathBuf, SourceError> {
+    if let Some(override_home) = std::env::var_os("EU_CACHE_HOME") {
+        return Ok(PathBuf::from(override_home)
+            .join(".eu")
+            .join("cache")
+            .join("git"));
+    }
+
     let home = dirs::home_dir().ok_or_else(|| {
         SourceError::InvalidSource(
             "cannot determine home directory for git cache".to_string(),

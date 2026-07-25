@@ -105,6 +105,13 @@ import is repeatable and cacheable.
 
 `import` identifies the file within the repository to import.
 
+Fetched files are cached under `<home>/.eu/cache/git/`, keyed by
+repository URL and commit, so repeat imports of the same file at the
+same commit are served from the cache without any git or network
+operations. `<home>` is the user's home directory, unless the
+`EU_CACHE_HOME` environment variable is set, in which case it is used
+instead — useful for isolating the cache (e.g. in tests).
+
 Just as with simple imports, several git imports may be listed:
 
 ```eu
