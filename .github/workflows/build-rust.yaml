@@ -155,6 +155,39 @@ jobs:
       - name: Run tick-parity tripwire
         run: cargo test --test tick_parity_test
 
+  diagnostics-blob-mode:
+    name: Diagnostics blob-mode integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Some integration tests only have teeth with an embedded prelude blob:
+      # tests/diagnostics_blame_plumbing_test.rs is gated wholesale on
+      # `#[cfg(prelude_blob_ok)]` (its assertions are about blob-mode Smid
+      # reconstruction, meaningless under the source-prelude fallback), and
+      # tests/diagnostics_invariants.rs's `corpus_satisfies_invariants` gate
+      # is blob-sensitive in practice even though it isn't cfg-gated. Neither
+      # the plain "Test Suite" job (deliberately blob-less, to keep the
+      # source-prelude fallback exercised) nor the blob-mode harness jobs
+      # ("Bytecode + blob harness", tick-parity, etc., which only run
+      # `eu test tests/harness` or a single non-diagnostics test) run these
+      # under a blob — so today they run in NO CI job at all (eu-1tkk.7.19).
+      - name: Generate prelude blob
+        run: cargo run --package xtask -- prelude-compile
+      # Scoped deliberately: only tests confirmed to PASS under a blob today.
+      # `cargo test --test diagnostics_invariants` as a whole currently fails
+      # two other tests in that file under blob mode
+      # (secondary_labels_do_not_excerpt_library_internals,
+      # debug_trace_restores_the_uncurated_trace — filed as eu-7x0r) and the
+      # harness-level typecheck tests 010/011/013/063/085 are actively red
+      # under blob mode too (eu-rqwh, in progress). Both are pre-existing,
+      # unrelated bugs this job must not force onto master by going red on
+      # merge. Widen the `cargo test` invocations below as each lands.
+      - name: Run blob-mode diagnostics integration tests
+        run: |
+          cargo test --test diagnostics_blame_plumbing_test
+          cargo test --test diagnostics_invariants corpus_satisfies_invariants -- --exact
+
   blob-determinism:
     name: Prelude blob determinism
     runs-on: ubuntu-latest

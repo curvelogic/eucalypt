@@ -81,7 +81,7 @@ Built a small synthetic (`n: <N>` + four `:target`s: `bench-count`,
 {1000,2000,4000,8000,16000}, run under the same `EU_HEAPSYN=1 -S
 --heap-limit-mib 12288` harness, blob vs `EU_SOURCE_PRELUDE=1`:
 
-```eu
+```eu,notest
 n: <N>
 ` :target
 bench-count: range(0, n) count
