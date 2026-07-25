@@ -71,7 +71,7 @@ with `-I`/`--allow-io`; `str.split-on(re, s)` is regex-based and native).
 so each `-t` invocation forces only up to that stage (laziness means later
 stages are never touched unless rendered):
 
-```eu
+```eu,notest
 dir: io.args head
 
 ` :target
