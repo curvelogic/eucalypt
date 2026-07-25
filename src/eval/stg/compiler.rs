@@ -1626,10 +1626,29 @@ impl<'rt> Compiler<'rt> {
 
     /// Compile a core expression into STG syntax
     pub fn compile(&self, expr: RcExpr) -> Result<Rc<StgSyn>, CompileError> {
+        self.compile_with_self_recurse(expr, None)
+    }
+
+    /// Compile a standalone expression while treating `self_recurse` as
+    /// the name of the enclosing recursive binding (eu-e3c3i).
+    ///
+    /// Self-recursive call sites referencing that name — `Var::Free` in a
+    /// peeled prelude binding compiled by `xtask prelude-compile` — are
+    /// then detected by `is_self_recursive` and get `eager_args` argument
+    /// resolution (`create_arg_array_eager`), preventing the O(N²)
+    /// per-iteration indirection-chain build-up on lazily-threaded
+    /// parameters. This supplies structurally what whole-unit compilation
+    /// derives from `demand.recursive`. Headless render type only (the
+    /// render paths never compile peeled bindings).
+    pub fn compile_with_self_recurse(
+        &self,
+        expr: RcExpr,
+        self_recurse: Option<&str>,
+    ) -> Result<Rc<StgSyn>, CompileError> {
         let mut binder = LetBinder::root();
         match self.render_type {
             RenderType::Headless => {
-                let body = self.compile_body(&mut binder, expr, None)?;
+                let body = self.compile_body(&mut binder, expr, self_recurse)?;
                 binder.set_body(body)?;
             }
             RenderType::RenderDoc => {
@@ -1715,7 +1734,20 @@ impl<'rt> Compiler<'rt> {
             }
             Expr::Meta(s, body, meta) => {
                 let m = self.compile_binding(binder, meta.clone(), *s, Demand::default(), None)?;
-                let b = self.compile_binding(binder, body.clone(), *s, Demand::default(), None)?;
+                // `self_recurse` must thread through to `body` (eu-e3c3i),
+                // mirroring the identical fix in `compile_binding`'s Meta
+                // arm: a documented binding is `Meta({doc, type}, Lam(...))`
+                // at compile time, so dropping the context here would lose
+                // self-recursive call-site detection (and hence
+                // `eager_args`) for every documented recursive binding —
+                // which is all of the prelude's recursive combinators.
+                let b = self.compile_binding(
+                    binder,
+                    body.clone(),
+                    *s,
+                    Demand::default(),
+                    self_recurse,
+                )?;
                 Ok(Box::new(Holder::new(dsl::with_meta(m, b))))
             }
             Expr::Operator(_, _, _, body) => self.compile_body(binder, body.clone(), self_recurse),

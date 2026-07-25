@@ -358,8 +358,27 @@ fn cmd_prelude_compile() -> Result<()> {
 
     let mut forms: Vec<LambdaForm> = Vec::with_capacity(binding_bodies.len());
     for (name, body) in &binding_bodies {
-        let stg = eucalypt::eval::stg::compile(&stg_settings, body.clone(), runtime.as_ref())
-            .with_context(|| format!("STG compile binding '{name}'"))?;
+        // Compile with the binding's own name as the self-recursion context
+        // (eu-e3c3i). After peeling, a binding's recursive self-reference is
+        // `Var::Free(<own name>)` — invisible to demand analysis, which can
+        // only mark `demand.recursive` on bindings inside a Let/LetRec scope.
+        // Passing the name here lets the STG compiler detect self-recursive
+        // call sites and set `eager_args` on them, so the VM resolves their
+        // `Ref::L` arguments via `create_arg_array_eager` instead of building
+        // a fresh `Atom{Ref::L}` indirection per iteration. Without this,
+        // every lazily-threaded parameter of a self-recursive prelude
+        // combinator (e.g. `foldl`'s `op`) accumulates an unmemoised
+        // indirection chain that is re-walked on every recursive step —
+        // the O(N²) behind eu-e3c3i (`count`/`sum`/`filter`/`str.len`).
+        // This supplies exactly the `demand.recursive`-derived context that
+        // source-mode whole-unit compilation gives these same bindings.
+        let stg = eucalypt::eval::stg::compile_named(
+            &stg_settings,
+            body.clone(),
+            runtime.as_ref(),
+            Some(name.as_str()),
+        )
+        .with_context(|| format!("STG compile binding '{name}'"))?;
         // Wrap the compiled STG body as a 0-arity updatable thunk.
         //
         // Simple bindings (e.g. `x = 1 + 2`) compile to a `Let { bindings:
