@@ -511,10 +511,18 @@ impl<'smap> Desugarer<'smap> {
 
     /// Record a deprecated declaration discovered during desugaring.
     ///
-    /// Deprecation warnings match on the leaf declaration name; the stack
-    /// tracks nesting context but is not included in the deprecation key.
+    /// Top-level declarations are keyed by their bare name, matched against
+    /// bare variable references (`old-fn`).  Declarations nested inside a
+    /// namespace block (e.g. `exec` inside `state`) are additionally keyed by
+    /// their dotted path (`state.exec`), matched against namespace-member
+    /// lookups (`state.exec`) by the deprecation reference checker.  The stack
+    /// holds the full path including the leaf, since `push(name)` runs before
+    /// this call.
     pub fn record_deprecation(&mut self, name: &str, spec: DeprecationSpec) {
-        self.deprecations.insert(name.to_string(), spec);
+        self.deprecations.insert(name.to_string(), spec.clone());
+        if self.stack.len() > 1 {
+            self.deprecations.insert(self.stack.join("."), spec);
+        }
     }
 
     /// Record a declaration's blame classification (eu-1tkk.7.11).

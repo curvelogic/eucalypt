@@ -1,0 +1,8 @@
+{ import: "resource:state" }
+
+# Precision guard for namespace-member deprecation: io.exec and state.run
+# are NOT deprecated, so referencing them must produce no deprecation
+# warning (exit 0 under `eu check --strict`).  Guards against the checker
+# matching the bare member name 'exec'/'run' across unrelated namespaces.
+action: io.exec(["true"])
+final: state.run(state.get, { count: 0 }).state

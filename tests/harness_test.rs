@@ -2950,9 +2950,25 @@ pub fn test_190_odkp_xml_entity_refs() {
     run_test(&opts("190_odkp_xml_entity_refs.eu"));
 }
 
+// EF1 combined effect monad (do): uses io.shell, so runs with --allow-io.
+#[test]
+pub fn test_191_ef1_do_monad() {
+    run_test(&io_opts("191_ef1_do_monad.eu"));
+}
+
 #[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
+}
+
+#[test]
+pub fn test_typecheck_093_deprecated_namespace_member() {
+    run_typecheck_test("093_deprecated_namespace_member.eu");
+}
+
+#[test]
+pub fn test_typecheck_094_deprecated_member_precision() {
+    run_typecheck_test("094_deprecated_member_precision.eu");
 }
 
 #[test]

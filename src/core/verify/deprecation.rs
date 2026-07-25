@@ -85,7 +85,19 @@ fn check_expr(
             check_expr(e, deprecations, warnings);
             check_expr(m, deprecations, warnings);
         }
-        Expr::Lookup(_, e, _, fb) => {
+        Expr::Lookup(smid, e, key, fb) => {
+            // Namespace-member deprecation: `state.exec` where the `exec`
+            // member of the `state` namespace carries deprecation metadata,
+            // recorded under the dotted key `state.exec`.  Only a lookup whose
+            // base is a directly-named variable qualifies, so an unrelated
+            // block's `.exec` member (or the non-deprecated `io.exec`) never
+            // false-fires.
+            if let Some(ns) = base_var_name(e) {
+                let qualified = format!("{ns}.{key}");
+                if let Some(spec) = deprecations.get(qualified.as_str()) {
+                    warnings.push(make_warning(&qualified, spec, *smid));
+                }
+            }
             check_expr(e, deprecations, warnings);
             if let Some(fallback) = fb {
                 check_expr(fallback, deprecations, warnings);
@@ -101,6 +113,16 @@ fn check_expr(
         }
         // Literals, intrinsics, names, unit, error markers — no sub-expressions
         _ => {}
+    }
+}
+
+/// The source-level name of a variable expression, if it is one — used to
+/// qualify a namespace-member lookup (`state.exec`) for deprecation matching.
+fn base_var_name(expr: &RcExpr) -> Option<&str> {
+    match &*expr.inner {
+        Expr::Var(_, Var::Bound(bv)) => bv.name.as_deref(),
+        Expr::Var(_, Var::Free(name)) => Some(name.as_str()),
+        _ => None,
     }
 }
 
@@ -176,6 +198,36 @@ mod tests {
         let expr = acore::var("new-fn".to_string());
         let mut deprecations = HashMap::new();
         deprecations.insert("old-fn".to_string(), DeprecationSpec::default());
+        let warnings = check_deprecated_references(&expr, &deprecations);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn warns_on_deprecated_namespace_member_lookup() {
+        // `state.exec` — a lookup whose base is a directly-named variable
+        // and whose dotted path is a deprecated key.
+        let expr = acore::lookup(acore::var("state".to_string()), "exec", None);
+        let mut deprecations = HashMap::new();
+        deprecations.insert(
+            "state.exec".to_string(),
+            DeprecationSpec {
+                message: Some("use state.run(a, i).state".to_string()),
+                replacement: Some("run".to_string()),
+            },
+        );
+        let warnings = check_deprecated_references(&expr, &deprecations);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].message.contains("state.exec"));
+        assert_eq!(warnings[0].notes, vec!["use 'run' instead"]);
+    }
+
+    #[test]
+    fn no_warning_for_undeprecated_member_of_same_leaf_name() {
+        // `io.exec` must not warn when only `state.exec` is deprecated —
+        // the qualified path, not the bare leaf, is what matches.
+        let expr = acore::lookup(acore::var("io".to_string()), "exec", None);
+        let mut deprecations = HashMap::new();
+        deprecations.insert("state.exec".to_string(), DeprecationSpec::default());
         let warnings = check_deprecated_references(&expr, &deprecations);
         assert!(warnings.is_empty());
     }
