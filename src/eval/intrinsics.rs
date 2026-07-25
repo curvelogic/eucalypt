@@ -1042,6 +1042,13 @@ lazy_static! {
             ty: function(vec![str_(), list(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
+    Intrinsic { // 196
+            // par-map: (a -> b) -> [a] -> [b]. xs (arg 1) is strict so the
+            // wrapper forces its spine head before the parallel driver runs.
+            name: "PARMAP",
+            ty: function(vec![any(), list(), list()]).unwrap(),
+            strict: vec![1],
+    },
     ];
 }
 

@@ -183,9 +183,13 @@ pub struct SegmentReader<'a> {
     remaining: u64,
 }
 
-impl<'a> SegmentReader<'a> {
-    /// The next record's bytes, or `None` once the segment is exhausted.
-    pub fn next(&mut self) -> Option<&'a [u8]> {
+impl<'a> Iterator for SegmentReader<'a> {
+    type Item = &'a [u8];
+
+    /// The next record's bytes, or `None` once the segment is exhausted. The
+    /// returned slice borrows the arena (lifetime `'a`), not the reader, so
+    /// this is an ordinary iterator, not a lending one.
+    fn next(&mut self) -> Option<&'a [u8]> {
         if self.remaining == 0 {
             return None;
         }

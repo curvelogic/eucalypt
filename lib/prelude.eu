@@ -957,6 +957,33 @@ min-map(f, l): l map(f) min-of
 min-of-or(d, l): l nil? then(d, min-of(l))
 
 ##
+## Process parallelism (advisory)
+##
+## Each combinator is semantically identical to its sequential form - a pure
+## performance advisory. par-map evaluates a pure f over independent elements
+## in parallel worker processes (Unix copy-on-write fork) and reassembles the
+## results in index order, falling back transparently to a sequential map
+## below a size threshold, on a single core, or on a non-Unix platform. f must
+## be pure and return serialisable data (numbers, strings, symbols, booleans,
+## null, lists, blocks); a non-serialisable result is a boundary error.
+
+` { doc: "`par-map(f, xs)` - parallel map; identical to `xs map(f)`, order-preserving."
+    type: s"(a → b) → [a] → [b]" }
+par-map(f, xs): __PARMAP(f, xs)
+
+` "`par-sum(f, xs)` - parallel sum of `f(x)` over `xs`; identical to `xs map(f) sum`."
+par-sum(f, xs): xs par-map(f) sum
+
+` "`par-max(f, xs)` - parallel max of `f(x)` over `xs`; identical to `xs map(f) max-of`."
+par-max(f, xs): xs par-map(f) max-of
+
+` "`par-min(f, xs)` - parallel min of `f(x)` over `xs`; identical to `xs map(f) min-of`."
+par-min(f, xs): xs par-map(f) min-of
+
+` "`par-concat(f, xs)` - parallel map-then-concat; identical to `xs map(f) concat`."
+par-concat(f, xs): xs par-map(f) concat
+
+##
 ## Text and regexes
 ##
 ` { doc:"We don't support the usual string escapes so these make it

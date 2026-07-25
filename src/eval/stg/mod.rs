@@ -265,6 +265,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(set::SetSample));
     rt.add(Box::new(typedata::TypeToData));
     rt.add(Box::new(typedata::TypeFromString));
+    rt.add(Box::new(parallel::intrinsic::ParMap));
     rt.prepare(source_map);
     Box::new(rt)
 }

@@ -77,7 +77,10 @@ pub fn par_map(
     if any_live_impure_producer() {
         return Err(ExecutionError::NotSerialisable(
             smid,
-            Box::new((combinator.to_string(), "value with a live streaming import".to_string())),
+            Box::new((
+                combinator.to_string(),
+                "value with a live streaming import".to_string(),
+            )),
         ));
     }
 
@@ -115,13 +118,13 @@ fn collect_spine(
         {
             Some(DataConstructor::ListNil) => break,
             Some(DataConstructor::ListCons) => {
-                let head = machine
-                    .data_field(view, &cur, 0)
-                    .ok_or_else(|| ExecutionError::Panic(smid, format!("{combinator}: bad list")))?;
+                let head = machine.data_field(view, &cur, 0).ok_or_else(|| {
+                    ExecutionError::Panic(smid, format!("{combinator}: bad list"))
+                })?;
                 out.push(head);
-                cur = machine
-                    .data_field(view, &cur, 1)
-                    .ok_or_else(|| ExecutionError::Panic(smid, format!("{combinator}: bad list")))?;
+                cur = machine.data_field(view, &cur, 1).ok_or_else(|| {
+                    ExecutionError::Panic(smid, format!("{combinator}: bad list"))
+                })?;
             }
             _ => {
                 return Err(ExecutionError::Panic(
@@ -234,8 +237,7 @@ fn try_parallel(
     // Parent reassembles in worker-index (= global index) order.
     let mut results = Vec::with_capacity(n);
     for wi in 0..w {
-        let mut reader = arena.reader(wi);
-        while let Some(rec) = reader.next() {
+        for rec in arena.reader(wi) {
             let mut cur = rec;
             match serialise::deserialise_value(machine, view, &mut cur) {
                 Ok(v) => results.push(v),

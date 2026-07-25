@@ -78,10 +78,7 @@ where
         if pid == 0 {
             // ── CHILD ──────────────────────────────────────────────────
             reset_sigint_to_default();
-            let ok = matches!(
-                catch_unwind(AssertUnwindSafe(|| worker(w))),
-                Ok(Ok(()))
-            );
+            let ok = matches!(catch_unwind(AssertUnwindSafe(|| worker(w))), Ok(Ok(())));
             // SAFETY: terminate without running parent Drops/atexit or
             // flushing inherited stdio buffers.
             unsafe { libc::_exit(if ok { 0 } else { 42 }) };

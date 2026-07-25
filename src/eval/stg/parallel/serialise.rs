@@ -176,8 +176,15 @@ pub fn serialise_value(
                 | DataConstructor::BoxedSymbol
                 | DataConstructor::BoxedZdt,
             ) => {
+                // A box's payload (field 0) may still be an unevaluated thunk
+                // even once the box constructor is at WHNF — force it before
+                // reading the scalar native.
+                let field = machine
+                    .data_field(view, whnf, 0)
+                    .ok_or_else(|| corrupt(smid, "boxed scalar payload"))?;
+                let field = machine.force(field)?;
                 let native = machine
-                    .value_native(view, whnf)
+                    .value_native(view, &field)
                     .ok_or_else(|| not_serialisable(smid, combinator, "opaque boxed value"))?;
                 encode_scalar(machine, view, &native, combinator, out)
             }
@@ -264,7 +271,10 @@ fn serialise_list(
     let mut count: u32 = 0;
     let mut cur = whnf.clone();
     loop {
-        match machine.data_tag(view, &cur).and_then(|t| DataConstructor::try_from(t).ok()) {
+        match machine
+            .data_tag(view, &cur)
+            .and_then(|t| DataConstructor::try_from(t).ok())
+        {
             Some(DataConstructor::ListNil) => break,
             Some(DataConstructor::ListCons) => {
                 let head = machine
@@ -304,7 +314,10 @@ fn serialise_block(
         .ok_or_else(|| corrupt(smid, "block kv list"))?;
     let mut cur = machine.force(kvlist)?;
     loop {
-        match machine.data_tag(view, &cur).and_then(|t| DataConstructor::try_from(t).ok()) {
+        match machine
+            .data_tag(view, &cur)
+            .and_then(|t| DataConstructor::try_from(t).ok())
+        {
             Some(DataConstructor::ListNil) => break,
             Some(DataConstructor::ListCons) => {
                 let pair = machine
