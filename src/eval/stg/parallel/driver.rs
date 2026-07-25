@@ -168,7 +168,8 @@ fn sequential_map(
     for elem in elements {
         results.push(map_element(machine, view, f, elem, combinator)?);
     }
-    machine.return_closure_list(view, results)
+    let list = serialise::build_list(machine, view, results)?;
+    machine.set_result(list)
 }
 
 /// Contiguous even partition of `0..n` into `w` chunks; chunk `i` is
@@ -248,7 +249,8 @@ fn try_parallel(
     if results.len() != n {
         return Ok(false); // a worker wrote the wrong count → sequential re-run
     }
-    machine.return_closure_list(view, results)?;
+    let list = serialise::build_list(machine, view, results)?;
+    machine.set_result(list)?;
     Ok(true)
 }
 

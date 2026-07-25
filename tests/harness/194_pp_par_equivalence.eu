@@ -1,0 +1,54 @@
+#!/usr/bin/env eu
+# eu-u9xj.6 (PP) — process-parallelism combinators are semantically identical
+# to their sequential forms. This fixture exercises the SEQUENTIAL code path
+# in-process (the harness test process is multi-threaded, so it must not force
+# the COW-fork path — forking a multi-threaded process is unsafe). The
+# sequential path still round-trips every result through the same
+# serialise/deserialise codec the fork path uses, so this genuinely gates the
+# codec and the combinator wiring. The real COW-fork path is validated out of
+# process by test_pp_fork_path_equivalence_both_engines in harness_test.rs.
+#
+# RESULT is computed from every check, so a divergence fails `cargo test`.
+
+sq(x): x * x
+inc(x): x + 1
+dbl(x): [x, x]
+
+# a spread of input sizes
+empty: []
+one: [7]
+xs: [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5]
+
+# par-map ≡ map, order-preserving
+t-map-empty:  (empty par-map(sq)) = (empty map(sq))
+t-map-one:    (one par-map(sq)) = (one map(sq))
+t-map-xs:     (xs par-map(sq)) = (xs map(sq))
+t-map-order:  (xs par-map(inc)) = [4, 2, 5, 2, 6, 10, 3, 7, 6, 4, 6]
+
+# par-map over string and block results (exercises the serialiser subset)
+strs: ["alpha", "beta", "gamma"]
+t-map-str:    (strs par-map(str.to-upper)) = (strs map(str.to-upper))
+mkrec(x): { n: x sq: x * x }
+t-map-block:  (xs par-map(mkrec)) = (xs map(mkrec))
+
+# par-sum ≡ map sum (including empty and singleton)
+t-sum-empty:  (empty par-sum(sq)) = (empty map(sq) sum)
+t-sum-one:    (one par-sum(sq)) = (one map(sq) sum)
+t-sum-xs:     (xs par-sum(sq)) = (xs map(sq) sum)
+
+# par-max / par-min ≡ map max-of / min-of (non-empty — max-of/min-of of an
+# empty list panics in BOTH forms, so equality there is untestable by design)
+t-max-one:    (one par-max(inc)) = (one map(inc) max-of)
+t-max-xs:     (xs par-max(inc)) = (xs map(inc) max-of)
+t-min-xs:     (xs par-min(inc)) = (xs map(inc) min-of)
+
+# par-concat ≡ map concat (including empty)
+t-concat-empty: (empty par-concat(dbl)) = (empty map(dbl) concat)
+t-concat-xs:    (xs par-concat(dbl)) = (xs map(dbl) concat)
+
+checks: [t-map-empty, t-map-one, t-map-xs, t-map-order, t-map-str, t-map-block,
+         t-sum-empty, t-sum-one, t-sum-xs,
+         t-max-one, t-max-xs, t-min-xs,
+         t-concat-empty, t-concat-xs]
+
+RESULT: if(checks all-true?, :PASS, :FAIL)

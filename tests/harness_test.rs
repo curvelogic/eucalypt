@@ -3028,6 +3028,15 @@ pub fn test_209_mqlkv_block_import_bad_embedding() {
 }
 
 #[test]
+/// eu-u9xj.6 (PP) — a par-map whose f returns a non-serialisable value (a
+/// function) raises the parallel-boundary error naming the value kind and the
+/// combinator, on the sequential path too (exit 1). Validated against the
+/// `.expect` sidecar.
+pub fn test_error_194_pp_non_serialisable() {
+    run_error_test(&error_opts("194_pp_non_serialisable.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
@@ -3296,6 +3305,67 @@ pub fn test_213_edn_large_integer() {
 #[test]
 pub fn test_221_wpswc_settled_slot_passthrough() {
     run_test(&opts("221_wpswc_settled_slot_passthrough.eu"));
+}
+
+/// eu-u9xj.6 (PP) — the process-parallelism combinators are semantically
+/// identical to their sequential forms. This in-process test exercises the
+/// SEQUENTIAL path only (the libtest harness process is multi-threaded, so it
+/// must not force the COW-fork path — forking a multi-threaded process is
+/// unsafe, spike R1); the sequential path still round-trips every result
+/// through the same serialise/deserialise codec the fork path uses. The real
+/// fork path is validated out-of-process below.
+#[test]
+pub fn test_194_pp_par_equivalence() {
+    run_test(&opts("194_pp_par_equivalence.eu"));
+}
+
+/// eu-u9xj.6 (PP) — the actual COW-fork path, validated out of process (a
+/// fresh single-threaded-at-fork `eu` binary, safe to fork) on BOTH engines
+/// (default bytecode and `EU_HEAPSYN=1`), each under `EU_GC_VERIFY=2`. Their
+/// stdout must be byte-identical to the sequential (oracle) run — the core
+/// "never semantically observable" guarantee (spec §8), plus GC integrity in
+/// parent and workers and engine equivalence (spike R5).
+#[test]
+pub fn test_pp_fork_path_equivalence_both_engines() {
+    let fixture = "tests/harness/testdata/pp_fork_fixture.eu";
+
+    let run = |env: &[(&str, &str)]| -> String {
+        let mut cmd = std::process::Command::new(eu_binary());
+        cmd.arg(fixture).arg("--heap-limit-mib").arg("12288");
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        let out = run_with_deadline(cmd, std::time::Duration::from_secs(120))
+            .expect("eu did not complete within the deadline");
+        assert!(
+            out.status.success(),
+            "eu exited non-zero for env {env:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).expect("eu stdout was not utf-8")
+    };
+
+    let oracle = run(&[]);
+    let fork_bytecode = run(&[
+        ("EU_PP_THRESHOLD", "1"),
+        ("EU_PP_WORKERS", "4"),
+        ("EU_GC_VERIFY", "2"),
+    ]);
+    let fork_heapsyn = run(&[
+        ("EU_HEAPSYN", "1"),
+        ("EU_PP_THRESHOLD", "1"),
+        ("EU_PP_WORKERS", "4"),
+        ("EU_GC_VERIFY", "2"),
+    ]);
+
+    assert_eq!(
+        fork_bytecode, oracle,
+        "bytecode fork path diverged from the sequential result"
+    );
+    assert_eq!(
+        fork_heapsyn, oracle,
+        "HeapSyn fork path diverged from the sequential result"
+    );
 }
 
 #[test]

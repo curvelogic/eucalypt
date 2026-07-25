@@ -1,0 +1,15 @@
+# eu-u9xj.6 (PP) fixture for the out-of-process fork-path equivalence test
+# (test_pp_fork_path_equivalence_both_engines in harness_test.rs). Rendered
+# under three configurations — fork/default, fork/HeapSyn, sequential — whose
+# stdout must be byte-identical. Mixes scalar, string, and block results so
+# the value serialiser's subset is exercised across the fork boundary.
+
+sq(x): x * x
+mkrec(x): { n: x sq: x * x label: "row-{x}" }
+
+ns: range(1, 41)
+
+nums:   ns par-map(sq)
+recs:   ns par-map(mkrec)
+total:  ns par-sum(sq)
+maxsq:  ns par-max(sq)
