@@ -195,6 +195,21 @@ result: lib-function(42)
 The `commit` field is mandatory and should be a full SHA. This ensures
 the import is repeatable and cacheable.
 
+A relative import declared *inside* the fetched file (e.g. `{ import:
+"other.eu" }`) is itself fetched from the same repository and commit,
+so a multi-file library works exactly as it would via a simple import.
+
+Like a simple import, a git import can be namespaced by prefixing the
+repository-relative path with `name=`:
+
+```eu,notest
+{ import: { git: "https://github.com/user/eu-lib"
+            commit: "abc123def456"
+            import: "lib=lib/helpers.eu" } }
+
+result: lib.lib-function(42)
+```
+
 Multiple git imports can be listed alongside simple imports:
 
 ```eu,notest

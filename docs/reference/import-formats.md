@@ -105,6 +105,13 @@ import is repeatable and cacheable.
 
 `import` identifies the file within the repository to import.
 
+Fetched files are cached under `<home>/.eu/cache/git/`, keyed by
+repository URL and commit, so repeat imports of the same file at the
+same commit are served from the cache without any git or network
+operations. `<home>` is the user's home directory, unless the
+`EU_CACHE_HOME` environment variable is set, in which case it is used
+instead — useful for isolating the cache (e.g. in tests).
+
 Just as with simple imports, several git imports may be listed:
 
 ```eu
@@ -112,6 +119,28 @@ Just as with simple imports, several git imports may be listed:
 ```
 
 ...and simple imports and git imports may be freely mixed.
+
+If the imported file itself declares further relative imports (e.g.
+`{ import: "helpers.eu" }`), those are fetched from the same repository
+at the same commit — not resolved against the local filesystem — so a
+multi-file library works exactly as it would via a simple import.
+
+#### Namespacing a git import
+
+A git import can be namespaced under a name, exactly like a simple
+import, by prefixing the repository-relative path in `import` with
+`name=`:
+
+```eu,notest
+{ import: { git: "https://github.com/gmorpheme/eu.aws"
+            commit: "0140232cf882a922bdd67b520ed56f0cddbd0637"
+            import: "aws=aws/cloudformation.eu" } }
+
+stack: aws.template(...)
+```
+
+Without the `name=` prefix the imported file's declarations are
+spliced directly into scope, the same as an unnamed simple import.
 
 ## YAML import features
 

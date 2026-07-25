@@ -507,10 +507,17 @@ host: cfg.host
 ` { import: "math.eu" }
 calculations: { result: advanced-calc(10) }
 
-# Git import
+# Git import (transitive relative imports inside the fetched file
+# are also resolved from the same repo/commit, not the local filesystem)
 { import: { git: "https://github.com/user/lib"
             commit: "abc123def456"
             import: "helpers.eu" } }
+
+# Namespaced git import — prefix the repo-relative path with "name="
+{ import: { git: "https://github.com/user/lib"
+            commit: "abc123def456"
+            import: "x=helpers.eu" } }
+x.some-function()
 
 # Streaming imports (lazy, for large files)
 { import: "events=jsonl-stream@events.jsonl" }
