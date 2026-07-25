@@ -311,6 +311,26 @@ jobs:
         env:
           EU_HEAPSYN: "1"
 
+  test-pp-parallelism:
+    name: Process-parallelism (Linux, both engines)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # The fork-safety spike (docs/superpowers/reports/2026-07-25-pp-fork-
+      # safety-spike.md, risk R7) validated the COW-fork mechanism only on
+      # macOS/aarch64. `test_pp_fork_path_equivalence_both_engines` spawns a
+      # fresh (single-threaded-at-fork) `eu` binary and forks W workers on the
+      # default bytecode engine AND `EU_HEAPSYN=1`, each under EU_GC_VERIFY=2,
+      # asserting stdout is byte-identical to the sequential oracle. Running it
+      # here proves the mechanism off macOS (R7) and covers engine equivalence
+      # (R5). `test_194_pp_par_equivalence` and `test_error_194_pp_*` cover the
+      # sequential codec path and the boundary error.
+      - name: Run PP tests (drives fork on both engines under GC verification)
+        run: cargo test --test harness_test pp
+        env:
+          EU_GC_VERIFY: "2"
+
   test-byte-dispatch-baseline:
     name: Byte-dispatch harness (soak baseline)
     runs-on: ubuntu-latest
