@@ -7,7 +7,12 @@
 sq(x): x * x
 mkrec(x): { n: x sq: x * x label: "row-{x}" }
 
-ns: range(1, 41)
+# 16 elements: with EU_PP_WORKERS=4 this forks 4 workers of 4 elements each,
+# genuinely exercising the COW-fork path. Kept modest because the prelude's
+# `max-of` is (pre-existing, orthogonal to PP) exponential in list length, so a
+# larger N would make the debug `cargo test` binary that spawns this fixture
+# intractably slow via `par-max` below.
+ns: range(1, 17)
 
 nums:   ns par-map(sq)
 recs:   ns par-map(mkrec)

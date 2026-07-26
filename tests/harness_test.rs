@@ -3321,10 +3321,16 @@ pub fn test_194_pp_par_equivalence() {
 
 /// eu-u9xj.6 (PP) — the actual COW-fork path, validated out of process (a
 /// fresh single-threaded-at-fork `eu` binary, safe to fork) on BOTH engines
-/// (default bytecode and `EU_HEAPSYN=1`), each under `EU_GC_VERIFY=2`. Their
-/// stdout must be byte-identical to the sequential (oracle) run — the core
-/// "never semantically observable" guarantee (spec §8), plus GC integrity in
-/// parent and workers and engine equivalence (spike R5).
+/// (default bytecode and `EU_HEAPSYN=1`). Their stdout must be byte-identical
+/// to the sequential (oracle) run — the core "never semantically observable"
+/// guarantee (spec §8) plus engine equivalence (spike R5).
+///
+/// GC verification of the fork path is not forced here (a blob-less debug
+/// binary compiling the prelude from source under `EU_GC_VERIFY=2`, spawned
+/// three times, is far too slow for the shared blob-less `test` job). Instead
+/// the dedicated `test-pp-parallelism` CI job runs this test with a prelude
+/// blob generated first and `EU_GC_VERIFY=2` in the job environment, which the
+/// spawned binary inherits — forking under verification, quickly.
 #[test]
 pub fn test_pp_fork_path_equivalence_both_engines() {
     let fixture = "tests/harness/testdata/pp_fork_fixture.eu";
@@ -3335,7 +3341,10 @@ pub fn test_pp_fork_path_equivalence_both_engines() {
         for (k, v) in env {
             cmd.env(k, v);
         }
-        let out = run_with_deadline(cmd, std::time::Duration::from_secs(120))
+        // Generous deadline: a blob-less debug binary compiles the whole
+        // prelude from source on every spawn (the shared `test` job runs
+        // blob-less by design).
+        let out = run_with_deadline(cmd, std::time::Duration::from_secs(300))
             .expect("eu did not complete within the deadline");
         assert!(
             out.status.success(),
@@ -3346,16 +3355,11 @@ pub fn test_pp_fork_path_equivalence_both_engines() {
     };
 
     let oracle = run(&[]);
-    let fork_bytecode = run(&[
-        ("EU_PP_THRESHOLD", "1"),
-        ("EU_PP_WORKERS", "4"),
-        ("EU_GC_VERIFY", "2"),
-    ]);
+    let fork_bytecode = run(&[("EU_PP_THRESHOLD", "1"), ("EU_PP_WORKERS", "4")]);
     let fork_heapsyn = run(&[
         ("EU_HEAPSYN", "1"),
         ("EU_PP_THRESHOLD", "1"),
         ("EU_PP_WORKERS", "4"),
-        ("EU_GC_VERIFY", "2"),
     ]);
 
     assert_eq!(
