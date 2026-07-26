@@ -2794,12 +2794,31 @@ pub fn test_194_mqlkv_import_bad_embedding() {
 }
 
 #[test]
-/// eu-mqlkv, second path — the fix is not specific to invalid embeddings:
-/// *any* `CoreError` raised while translating an import took the same
-/// panicking route. This exercises `CoreError::VersionRequirementFailed`
-/// from an imported unit's unsatisfiable `requires:`.
+/// eu-mqlkv — the fix is not specific to invalid embeddings: *any*
+/// `CoreError` raised while translating an import took the same panicking
+/// route. This exercises `CoreError::VersionRequirementFailed` from an
+/// imported unit's unsatisfiable `requires:`.
 pub fn test_195_mqlkv_import_bad_requires() {
     run_error_test(&error_opts("195_mqlkv_import_bad_requires.eu"));
+}
+
+#[test]
+/// eu-mqlkv, **site 2 of 3** — `rowan_declaration_to_binding`'s
+/// scoped-import loop, reached by a declaration-scoped
+/// `` ` { import: … } `` rather than unit metadata. Each of the three
+/// `.expect` sites panicked independently, so each needs its own gate:
+/// without this test two thirds of the fix could be reverted with the
+/// suite green while users still hit exit 101.
+pub fn test_198_mqlkv_scoped_import_bad_embedding() {
+    run_error_test(&error_opts("198_mqlkv_scoped_import_bad_embedding.eu"));
+}
+
+#[test]
+/// eu-mqlkv, **site 3 of 3** — the `Block` impl's block-metadata import
+/// loop, reached by leading metadata on a nested block rather than on the
+/// unit or on a declaration.
+pub fn test_199_mqlkv_block_import_bad_embedding() {
+    run_error_test(&error_opts("199_mqlkv_block_import_bad_embedding.eu"));
 }
 
 #[test]

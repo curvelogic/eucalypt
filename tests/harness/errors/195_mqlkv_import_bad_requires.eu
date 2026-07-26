@@ -1,7 +1,8 @@
-{ import: "195_mqlkv_impossible_requires.eu" }
+{ import: "testdata/195_mqlkv_impossible_requires.eu" }
 
-# eu-mqlkv, second path: `CoreError::VersionRequirementFailed` raised while
-# desugaring an imported unit took the same panicking route as an invalid
-# embedding. Any CoreError from translating an import must now surface as a
-# diagnostic, not a process abort.
+# eu-mqlkv, a different CoreError variant through the same site:
+# `CoreError::VersionRequirementFailed` raised while desugaring an imported
+# unit took the same panicking route as an invalid embedding. Any CoreError
+# from translating an import must surface as a diagnostic, not a process
+# abort — the fix is general, and this test says so.
 r: g(1)
