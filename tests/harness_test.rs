@@ -2958,6 +2958,14 @@ pub fn test_191_sv3_projection_closedness() {
     run_test(&opts("191_sv3_projection_closedness.eu"));
 }
 
+/// SV3 (eu-u9xj.1) — `reflect.type-str` is the canonical `t-*` renderer,
+/// hoisted out of `from-data`'s block so a runtime consumer can name the
+/// type it expected. See the .eu file for full context.
+#[test]
+pub fn test_192_sv3_type_str() {
+    run_test(&opts("192_sv3_type_str.eu"));
+}
+
 #[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");

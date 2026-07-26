@@ -1037,6 +1037,23 @@ h: [:t-list, [:t-prim, :string]] from-data
 `to-data` passes non-type-data values through unchanged, so it is safe to
 apply speculatively.
 
+### `type-str`: naming a type from its tags
+
+`type-str(td)` renders a `t-*` tagged list back to its canonical type-DSL
+string, without wrapping the result as a type-data value. Reach for it when
+you are already walking the tagged list and want to *name* the type you are
+looking at — for instance to tell a user what a value was expected to be:
+
+```eu,notest
+{ import: "reflect.eu" }
+s: s"{ name: string, .. }" to-data type-str
+# s => "{name: string, ..}"
+```
+
+`type-str` is total: a tag it does not recognise renders as `"any"` rather
+than raising. `from-data` is exactly `type-str` followed by the type-data
+wrap.
+
 ### `as-spec`: types as runtime validators
 
 `as-spec(t)` converts a type-data value into a **`match?`-compatible
