@@ -576,7 +576,7 @@ impl SourceLoader {
 
             // Parse the file's source and look for a `prelude:` key.
             let source = match input.locator() {
-                Locator::Fs(path) => self.read_fs_input(path).ok(),
+                Locator::Fs(path) => self.read_fs_input(path).ok().map(|(text, _)| text),
                 _ => None,
             };
             let Some(source) = source else {
@@ -674,9 +674,14 @@ impl SourceLoader {
         match self.locators.get(locator) {
             Some(id) => Ok(*id),
             None => {
-                // read text
+                // read text, tracking whether it came from a baked-in resource
+                let mut from_resource = false;
                 let source = match locator {
-                    Locator::Fs(path) => self.read_fs_input(path)?,
+                    Locator::Fs(path) => {
+                        let (text, fallback) = self.read_fs_input(path)?;
+                        from_resource = fallback;
+                        text
+                    }
                     Locator::Cli(text) => text.to_string(),
                     Locator::Literal(text) => text.to_string(),
                     Locator::Buffer { text, .. } => text.to_string(),
@@ -700,8 +705,18 @@ impl SourceLoader {
                 self.locators.insert(locator.clone(), id);
                 // Resources (prelude, stdlib) are not user files; mark them so
                 // that diagnostics can prefer user-code locations as the primary
-                // error site rather than showing prelude internals.
-                if matches!(locator, Locator::Resource(_)) {
+                // error site rather than showing library internals.
+                //
+                // `from_resource` covers the case an explicit `Locator::Resource`
+                // misses (eu-8a49h): a shipped library imported by filename
+                // (`{ import: "lens.eu" }`) has a `Locator::Fs` and is served
+                // from the baked-in text by `read_fs_input`'s fallback, so
+                // without this it would be classified as user code and could
+                // win `to_diagnostic`'s "prefer a user file" test — blaming a
+                // library's internals for the user's mistake. A library the
+                // user has genuinely shadowed on disk is *not* marked, which is
+                // right: at that point they are editing it.
+                if matches!(locator, Locator::Resource(_)) || from_resource {
                     self.source_map.mark_resource_file(id);
                 }
                 Ok(id)
@@ -1199,18 +1214,26 @@ impl SourceLoader {
     /// used as the resource name, so `lens.eu` falls back to the `lens`
     /// resource if one exists. Filesystem resolution always takes priority,
     /// allowing users to override baked-in resources with their own files.
-    fn read_fs_input(&mut self, path: &Path) -> Result<String, EucalyptError> {
+    ///
+    /// The returned flag says whether the text came from a **baked-in
+    /// resource** rather than the filesystem. Callers use it to mark the file
+    /// as a resource in the `SourceMap`, so diagnostics do not blame a shipped
+    /// library as though the user had written it (eu-8a49h): `mark_resource_file`
+    /// otherwise fires only for `Locator::Resource`, which needs an explicit
+    /// `resource:` prefix, while `{ import: "lens.eu" }` yields `Locator::Fs`
+    /// and reaches the library through this fallback with the locator unchanged.
+    fn read_fs_input(&mut self, path: &Path) -> Result<(String, bool), EucalyptError> {
         for libdir in &self.lib_path {
             let mut filename = libdir.to_path_buf();
             filename.push(path);
             if let Ok(text) = fs::read_to_string(&filename) {
-                return Ok(text);
+                return Ok((text, false));
             }
         }
 
         // Try as absolute/relative from working directory
         if let Ok(text) = fs::read_to_string(path) {
-            return Ok(text);
+            return Ok((text, false));
         }
 
         // Fall back to baked-in resources using the filename stem.
@@ -1218,7 +1241,7 @@ impl SourceLoader {
         // `test.eu`) to be imported by filename without being present on disk.
         if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
             if let Some(resource_text) = self.resources.get(stem) {
-                return Ok(resource_text.clone());
+                return Ok((resource_text.clone(), true));
             }
         }
 
@@ -1444,5 +1467,58 @@ pub mod tests {
             result.is_err(),
             "should error when file and resource are both missing"
         );
+    }
+
+    /// eu-8a49h: `read_fs_input` reports *where the text came from*, because
+    /// that is what decides whether the file counts as user code for blame.
+    ///
+    /// A library served from the baked-in fallback is not the user's code and
+    /// must be marked as a resource, so a frame inside it cannot become a
+    /// diagnostic's primary label.
+    #[test]
+    fn test_read_fs_input_flags_the_baked_in_resource_fallback() {
+        let mut loader = SourceLoader::new(vec![]);
+        let (text, from_resource) = loader
+            .read_fs_input(Path::new("reflect.eu"))
+            .expect("reflect.eu resolves via the baked-in resource fallback");
+        assert!(
+            from_resource,
+            "a library reached through the resource fallback must be flagged"
+        );
+        assert!(
+            text.contains("to-data"),
+            "should have loaded the real reflect.eu text"
+        );
+    }
+
+    /// eu-8a49h, the deliberate other half: a library the user has **shadowed
+    /// on disk** is *not* flagged, and so is *not* marked as a resource.
+    ///
+    /// This is the subtle half of the fix and it is intentional: once a file
+    /// is present on the lib path, the user is editing it, and blaming a
+    /// location inside it is exactly what they want. Only the shipped copy is
+    /// off-limits for blame.
+    #[test]
+    fn test_read_fs_input_does_not_flag_a_library_shadowed_on_disk() {
+        let dir = std::env::temp_dir().join("eu_8a49h_shadow_test");
+        fs::create_dir_all(&dir).expect("temp dir");
+        let shadow = dir.join("reflect.eu");
+        fs::write(&shadow, "shadowed-marker: 1\n").expect("write shadow library");
+
+        let mut loader = SourceLoader::new(vec![dir.clone()]);
+        let (text, from_resource) = loader
+            .read_fs_input(Path::new("reflect.eu"))
+            .expect("the on-disk copy resolves");
+
+        assert!(
+            !from_resource,
+            "a library found on the lib path is the user's file, not a resource"
+        );
+        assert!(
+            text.contains("shadowed-marker"),
+            "the on-disk copy must take priority over the baked-in resource"
+        );
+
+        let _ = fs::remove_file(&shadow);
     }
 }
