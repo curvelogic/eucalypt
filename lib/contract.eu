@@ -4,13 +4,16 @@
 
 validate(spec, data) walks the spec and the value together and returns a list
 of violations, each carrying a path to the offending position. An empty list
-means the data conforms. It never raises for any data, however malformed.
-
-ensure(spec, data) returns the data unchanged when it conforms, and raises a
-contract violation listing every non-conforming position otherwise.
+means the data conforms. No shape of data makes it raise - a non-conformant
+value produces violations, not an error, however malformed it is.
 
 Only the paths the spec names are forced, so a spec is safe to apply to a
-value with expensive or diverging subtrees it does not mention." }
+value with expensive or diverging subtrees it does not mention. The flip side
+is that forcing a value the spec DOES name can raise, and validate propagates
+that: it is total with respect to shape, not with respect to evaluation.
+
+ensure(spec, data) returns the data unchanged when it conforms, and raises a
+contract violation listing every non-conforming position otherwise." }
 
 _ : eu.requires(">=0.14")
 
@@ -89,9 +92,11 @@ spec-shaped?(td): (td list?) ∧ (td non-nil?) ∧ ((td first) symbol?)
 
 ` { doc: "`validate(spec, data)` - check `data` against type spec `spec` and
          return a list of violations, each a block with path, kind, expected and
-         found keys. An empty list means `data` conforms. Never raises for any
-         data; raises only when `spec` is not a type spec. Forces only the paths
-         the spec names."
+         found keys. An empty list means `data` conforms. No shape of data makes
+         it raise - a non-conformant value gives violations, not an error. It
+         does raise when `spec` is not a type spec, and it propagates a raise
+         from forcing a value the spec names. Forces only the paths the spec
+         names."
     type: s"any → any → [{path: string, kind: symbol, expected: any, found: any}]" }
 validate(spec, data):
   { td: type-data?(spec) then(__TYPE_TO_DATA(spec), spec)

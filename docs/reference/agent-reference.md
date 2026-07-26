@@ -909,7 +909,8 @@ boundary, `lib/contract.eu` gives a **located report** instead.
 
 schema: s"{ name: string, port: number, tags?: [string] }"
 
-# A report — a list of blocks. [] means conformant. Never raises for data.
+# A report — a list of blocks. [] means conformant. No SHAPE of data makes
+# it raise (see the caveat below).
 report: { name: "web", port: "8080" } validate(schema)
 # => [{ path: "port", kind: :type-mismatch, expected: "number", found: "string" }]
 
@@ -926,8 +927,10 @@ Both take the receiver **last**, so `data validate(spec)` reads correctly.
 | `:unexpected` | the record | `:closed` | list of surplus keys |
 | `:length` | the list | required length | actual length |
 
-Paths are strings: `servers[2].port`, `""` at the root, `'my key'` for a
-non-identifier key.
+Paths are strings for reading, not eucalypt source: `servers[2].port`, `""`
+at the root, `'my key'` for a non-identifier key. An indexed path does not
+evaluate as written (`[2]` is a list literal, so `servers[2]` is
+catenation) — navigate with `(xs nth(2)).port` or a lens.
 
 - A **closed** spec (`{a: number}`) reports surplus keys; an **open** one
   (`{a: number, ..}` or `{a: number, ..r}`) ignores them — the spec literal
@@ -937,9 +940,14 @@ non-identifier key.
   closedness detection) never forces a value; `any`, `top` and type
   variables force nothing at all. A spec is safe to apply to a value with
   diverging subtrees it does not name.
+- **The raise caveat**: no *shape* of data makes `validate` raise, but it
+  propagates a raise from forcing a value the spec **names** — total with
+  respect to shape, not to evaluation.
 - A malformed **spec** raises `panic("validate: not a type spec")` — a
   different error from a contract violation, so a schema typo cannot
   masquerade as bad data.
+- Literal types (`"prod"`, `:ok`) are checked by equality here but **not**
+  by `as-spec`, which matches anything for them (eu-pub3r).
 
 See [Structural Contracts](../guide/contracts.md).
 

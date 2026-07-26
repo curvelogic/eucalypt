@@ -94,15 +94,39 @@ impl StgIntrinsic for ContractFail {
         // by interpolation inside `lib/contract.eu` and `lib/reflect.eu`, so
         // by the time `execute` runs the machine's transient annotation
         // points at a string literal in a library — a location the user
-        // cannot act on. Library `.eu` resources are not marked as resource
-        // files in the `SourceMap` (only the prelude is), so that annotation
-        // would win `to_diagnostic`'s "prefer a user file" test and become
-        // the primary label.
+        // cannot act on.
         //
-        // Leaving the Smid empty hands the choice to `to_diagnostic`'s
-        // trace search, which finds the nearest user-file frame — the
-        // `ensure` call site, which is what SV3 §9.1 asks the error to
-        // blame.
+        // The `SourceMap`'s resource-file mechanism, which exists precisely
+        // to keep such a location from becoming the primary label, is
+        // **bypassed** rather than absent (eu-8a49h): `mark_resource_file`
+        // fires only for `Locator::Resource`, and `{ import: "contract.eu" }`
+        // yields `Locator::Fs` — only an explicit `resource:` prefix produces
+        // `Locator::Resource` (`src/syntax/input.rs`). `read_fs_input` then
+        // falls back to the baked-in resource *text* while the locator stays
+        // `Fs`, so the file is never marked and `is_user_file` reports true
+        // for it. Until eu-8a49h is fixed, the machine annotation would
+        // therefore win `to_diagnostic`'s "prefer a user file" test and put
+        // a library string literal in the primary label.
+        //
+        // Leaving the Smid empty hands the choice to `to_diagnostic`'s trace
+        // search, which looks for the nearest user-file frame — the `ensure`
+        // call site, which is what SV3 §9.1 asks this error to blame.
+        //
+        // **This is necessary but not yet sufficient, and §9.1 is therefore
+        // not met in blob mode.** Emptying this Smid removes the *error's own*
+        // location from contention, but the trace search still ranks a library
+        // frame as a user frame for the same eu-8a49h reason, so whichever
+        // library frame happens to sit at the head of the stack trace can win.
+        // In source-prelude mode that frame is a properly-marked *prelude*
+        // frame and blame lands correctly; in blob mode it is a
+        // `lib/contract.eu` frame and blame moves into the library. eu-8a49h
+        // is the fix; a primary-label assertion is deliberately absent from
+        // `196_sv3_contract_violation.eu.expect` until it lands, because such
+        // an assertion would fail today rather than gate anything.
+        //
+        // When eu-8a49h lands: add that assertion, confirm it passes in *both*
+        // prelude modes, and only then consider whether `machine.annotation()`
+        // can be restored here.
         Err(ExecutionError::ContractViolation(
             Smid::default(),
             Box::new((headline, violations)),

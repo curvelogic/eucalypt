@@ -27,12 +27,24 @@ and nothing is forced unless the spec names it.
 
 | Function | Returns | Raises |
 |---|---|---|
-| `validate(spec, data)` | a list of violations; `[]` means conformant | never, for any data |
+| `validate(spec, data)` | a list of violations; `[]` means conformant | not for any *shape* of data — see below |
 | `ensure(spec, data)` | `data`, unchanged | when the data does not conform |
 
 `validate` is for when you want to *look* at the problems — count them,
 group them, render them into a report, decide for yourself what to do.
 `ensure` is for when there is nothing sensible to do but stop.
+
+**What "does not raise" means precisely.** No *shape* of data makes
+`validate` raise: however malformed, unexpected or partial a value is, you
+get violations rather than an error. Two things do still raise, and neither
+is about the data's shape:
+
+- a **spec** that is not a type spec at all (covered below — it is a
+  program bug, deliberately not reportable as a data violation);
+- forcing a value the spec **names**, if evaluating that value raises. This
+  is the unavoidable flip side of spec-directed forcing: `validate` is
+  total with respect to shape, not with respect to evaluation. A spec that
+  does not name a subtree never touches it, so it cannot be caught by one.
 
 Both take the receiver last, so both read naturally in a pipeline:
 `data validate(spec)`, `data ensure(spec)`.
@@ -119,9 +131,24 @@ always available, and meaningful for every input format:
 | a field whose key is not identifier-shaped | `.'my key'` |
 | a list or tuple index | `[3]`, appended with no separator — `servers[2].port` |
 
-A rendered path is a valid eucalypt lookup expression relative to the
-validated value, so it can be pasted into a `.`-chain or a lens path to
-inspect the offending value.
+The format is chosen to be **readable at a glance** and to match how you
+would describe the position in prose or a bug report. It is not eucalypt
+source: a path containing an index does not evaluate as written, because
+`[2]` is a list literal and `servers[2]` reads as catenation rather than
+indexing. To navigate to the offending value, translate the path — a field
+step is `.name` or `lookup(:name)`, and an index step is `nth(2)`:
+
+```eu,notest
+{ import: "lens.eu" }
+
+# For the path "servers[2].port" — note the parentheses, since `.` binds
+# tighter than catenation.
+v: (data.servers nth(2)).port
+l: data view(‹:servers 2 :port›)
+```
+
+An index-free path *is* a usable `.`-chain (`server.port`), which is why
+the format elides the leading `.` at the root.
 
 ## `ensure` and the error it raises
 
@@ -142,10 +169,20 @@ error[EU-EVAL-CONTRACT]: contract violation: 2 violations against {name: string,
   = (root): unexpected keys: debug
 ```
 
-Two locators, doing two different jobs. The **source location** is the
-`ensure` call site: it answers "which contract failed". The **paths in the
-notes** answer "which field to fix". Pointing at a line in the data file
-itself is a separate matter, discussed under *What is not covered* below.
+Two locators, doing two different jobs. The **source location** is meant to
+be the `ensure` call site — it answers "which contract failed" — while the
+**paths in the notes** answer "which field to fix". Pointing at a line in
+the data file itself is a separate matter, discussed under *What is not
+covered* below.
+
+> **Known limitation.** The source location is currently the `ensure` call
+> site only when the prelude is compiled from source. With the pre-compiled
+> prelude — the default for a release binary — it can instead point inside
+> `lib/contract.eu`. The cause is not specific to contracts: a shipped
+> library imported by filename is misclassified as user code, so a frame
+> inside it can win the "blame user code" ranking (**eu-8a49h**). The
+> violation **paths** in the notes are unaffected, and they are the locator
+> that tells you what to fix.
 
 `ensure` on conforming data costs exactly one `validate` — the failure
 branch is lazy, so nothing is rendered when there is nothing to report.
@@ -246,8 +283,16 @@ specs and deliberately differs on closed ones.
 ## What is not covered
 
 - **`Dict(T)`, `NonEmpty([T])` and recursive types are accepted without
-  checking**, matching `as-spec`, so the two never disagree about what
-  conforms. Extending them is future work, and will extend both together.
+  checking**, matching `as-spec`, so the two agree about what conforms for
+  these. Extending them is future work, and will extend both together.
+- **Literal types are the one place `validate` and `as-spec` disagree.**
+  `validate` checks a literal (`"prod"`, `:ok`) by equality, as you would
+  expect. `as-spec` has no arm for literal types, so it falls through to
+  "matches anything" — `s"\"prod\"" as-spec` accepts any value at all. That
+  is a defect on the `as-spec` side, tracked as **eu-pub3r**; `validate`
+  does the right thing rather than replicating it. Until the bead lands, do
+  not expect `data match?(spec as-spec)` and `(data validate(spec)) nil?`
+  to agree on a spec containing a literal type.
 - **Data-file blame** — reporting `config.yaml:12` rather than the `ensure`
   call site — needs every importer to carry per-value source provenance.
   Today only the YAML reader (which also serves JSON) does; offering it for
