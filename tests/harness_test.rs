@@ -2950,6 +2950,14 @@ pub fn test_190_odkp_xml_entity_refs() {
     run_test(&opts("190_odkp_xml_entity_refs.eu"));
 }
 
+/// SV3 (eu-u9xj.1) — the `t-record` projection carries record closedness as
+/// an additive trailing element, and `from-data` renders it, closing the
+/// open-record round-trip loss. See the .eu file for full context.
+#[test]
+pub fn test_191_sv3_projection_closedness() {
+    run_test(&opts("191_sv3_projection_closedness.eu"));
+}
+
 #[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");

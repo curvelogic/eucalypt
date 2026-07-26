@@ -39,7 +39,13 @@ from-data(td):
         q: is-opt then("?", "")
       }."{k}{q}: {ty}"
 
-    record-str(rec): rec elements map(field-str) str.join-on(", ") "{{ {} }}"
+    open-flag(rest): ((rest count) > 1) then(rest second, false)
+
+    record-str(rec, open?):
+      { body: rec elements map(field-str) str.join-on(", ")
+        tail: open? then(", ..", "")
+        empty-open: (rec elements nil?) ∧ open?
+      }.(empty-open then("{{ .. }}", "{{ {body}{tail} }}"))
 
     app-str(f, x):
       { x-str: to-str(x)
@@ -72,9 +78,10 @@ from-data(td):
         , tag = :t-partial => "{s0}?"
         , tag = :t-tuple   => tuple-str(rest)
         , tag = :t-prefix-list => prefix-list-str(r0, r1)
-        , tag = :t-record  => record-str(r0)
+        , tag = :t-record  => record-str(r0, open-flag(rest))
         , tag = :t-var     => "{r0}"
         , tag = :t-lit-sym => ":{r0}"
+        , tag = :t-lit-str => c"\"{r0}\""
         , tag = :t-mu      => "{r0}"
         , tag = :t-forall  => "forall {r0}. {s1}"
         , tag = :t-lam     => "λ{r0}. {s1}"

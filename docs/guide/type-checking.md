@@ -1008,8 +1008,18 @@ a: s"[number]" to-data
 # a => [:t-list, [:t-prim, :number]]
 
 b: s"{ name: string }" to-data
-# b => [:t-record, { name: [:t-field, :required, [:t-prim, :string]] }]
+# b => [:t-record, { name: [:t-field, :required, [:t-prim, :string]] }, false]
 ```
+
+The third element of a `:t-record` node is the record's **closedness**:
+`false` for a closed record (`{k: T}`), `true` for an open one
+(`{k: T, ..}`). A named row variable (`{k: T, ..r}`) collapses to the same
+boolean — extra fields are permitted either way, and a runtime consumer
+cannot interpret a type variable, so none ever appears in projected data.
+
+The element is additive growth of the versioned `t-*` surface: a
+hand-written two-element `[:t-record, {…}]` remains valid and is read as
+**closed**, so existing hand-built type data keeps working.
 
 `from-data(td)` is the inverse — it rebuilds a type-data value from such
 a tagged list, so the two round-trip:
