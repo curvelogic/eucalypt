@@ -2966,6 +2966,22 @@ pub fn test_192_sv3_type_str() {
     run_test(&opts("192_sv3_type_str.eu"));
 }
 
+/// SV3 (eu-u9xj.1) — `validate` is the reporting dual of `as-spec`: it walks
+/// spec and value together carrying a path, and emits an entry for every
+/// mismatch instead of collapsing to a bit. See the .eu file for full context.
+#[test]
+pub fn test_193_sv3_validate() {
+    run_test(&opts("193_sv3_validate.eu"));
+}
+
+/// SV3 (eu-u9xj.1) — the executable statement of "cost paid only where
+/// written": every check would raise or diverge if `validate` forced a
+/// subtree its spec does not name. See the .eu file for full context.
+#[test]
+pub fn test_194_sv3_forcing_discipline() {
+    run_test(&opts("194_sv3_forcing_discipline.eu"));
+}
+
 #[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
