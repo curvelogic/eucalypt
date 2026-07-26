@@ -511,18 +511,24 @@ impl<'smap> Desugarer<'smap> {
 
     /// Record a deprecated declaration discovered during desugaring.
     ///
-    /// Top-level declarations are keyed by their bare name, matched against
-    /// bare variable references (`old-fn`).  Declarations nested inside a
-    /// namespace block (e.g. `exec` inside `state`) are additionally keyed by
-    /// their dotted path (`state.exec`), matched against namespace-member
-    /// lookups (`state.exec`) by the deprecation reference checker.  The stack
-    /// holds the full path including the leaf, since `push(name)` runs before
-    /// this call.
+    /// A declaration is keyed by the path a caller must write to reach it, and
+    /// by that path alone.  A top-level declaration is keyed by its bare name
+    /// (`old-fn`), matched against bare variable references.  A declaration
+    /// nested inside a namespace block (e.g. `exec` inside `state`) is keyed by
+    /// its dotted path (`state.exec`), matched against namespace-member lookups
+    /// by the deprecation reference checker.
+    ///
+    /// A nested declaration must *not* also be keyed by its bare leaf name:
+    /// doing so deprecates that name globally, so deprecating `random.exec`
+    /// would warn on any user's own binding called `exec`.  The stack holds the
+    /// full path including the leaf, since `push(name)` runs before this call.
     pub fn record_deprecation(&mut self, name: &str, spec: DeprecationSpec) {
-        self.deprecations.insert(name.to_string(), spec.clone());
-        if self.stack.len() > 1 {
-            self.deprecations.insert(self.stack.join("."), spec);
-        }
+        let key = if self.stack.len() > 1 {
+            self.stack.join(".")
+        } else {
+            name.to_string()
+        };
+        self.deprecations.insert(key, spec);
     }
 
     /// Record a declaration's blame classification (eu-1tkk.7.11).

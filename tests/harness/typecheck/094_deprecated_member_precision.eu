@@ -6,3 +6,11 @@
 # matching the bare member name 'exec'/'run' across unrelated namespaces.
 action: io.exec(["true"])
 final: state.run(state.get, { count: 0 }).state
+
+# A user's own bindings that happen to share the bare leaf name of a
+# deprecated namespace member (state.exec, random.exec) must not warn:
+# a nested deprecation is keyed by its dotted path alone.  Without that,
+# deprecating random.exec would deprecate the name 'exec' globally and
+# break every program with its own 'exec'.
+exec(cmd): cmd
+bare-user-exec: exec("hello")

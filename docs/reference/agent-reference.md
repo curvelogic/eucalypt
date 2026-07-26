@@ -285,6 +285,12 @@ Referencing a deprecated declaration emits a warning on stderr.
 Under `eu check --strict`, deprecation warnings become errors.
 Deprecated declarations still work — deprecation is advisory.
 
+A top-level declaration is matched by its bare name; a declaration nested in a
+namespace block is matched by the dotted path a caller writes (`state.exec`),
+so both `io.exec` and an unrelated top-level `exec` stay silent. Matching is on
+the path as written rather than the resolved binding, so a block of your own
+that shadows a namespace with a deprecated member will still match.
+
 **Type annotations** (optional, advisory): add `type:` alongside `doc:`
 to annotate declarations for the type checker (`eu check`):
 

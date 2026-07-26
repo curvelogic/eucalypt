@@ -89,11 +89,11 @@ fn check_expr(
             // Namespace-member deprecation: `state.exec` where the `exec`
             // member of the `state` namespace carries deprecation metadata,
             // recorded under the dotted key `state.exec`.  Only a lookup whose
-            // base is a directly-named variable qualifies, so an unrelated
-            // block's `.exec` member (or the non-deprecated `io.exec`) never
-            // false-fires.
-            if let Some(ns) = base_var_name(e) {
-                let qualified = format!("{ns}.{key}");
+            // base is a chain of directly-named variables qualifies, so an
+            // unrelated block's `.exec` member (or the non-deprecated
+            // `io.exec`) never false-fires.
+            if let Some(base) = dotted_path(e) {
+                let qualified = format!("{base}.{key}");
                 if let Some(spec) = deprecations.get(qualified.as_str()) {
                     warnings.push(make_warning(&qualified, spec, *smid));
                 }
@@ -116,12 +116,21 @@ fn check_expr(
     }
 }
 
-/// The source-level name of a variable expression, if it is one — used to
-/// qualify a namespace-member lookup (`state.exec`) for deprecation matching.
-fn base_var_name(expr: &RcExpr) -> Option<&str> {
+/// The dotted source path of a lookup base, if it is a variable or a chain of
+/// lookups over one — used to qualify a namespace-member lookup (`state.exec`,
+/// or `a.b.c` for a declaration nested two blocks deep) for matching.
+///
+/// Matching is **name-based, not resolution-based**: this is the path written
+/// at the source site, not the binding it resolves to.  A user block that
+/// shadows a deprecated namespace — their own `state` with an `exec` member —
+/// therefore matches the library's key and warns with its message.  Doing
+/// better needs the resolved binder identity of the base, which Core does not
+/// carry through to this pass.
+fn dotted_path(expr: &RcExpr) -> Option<String> {
     match &*expr.inner {
-        Expr::Var(_, Var::Bound(bv)) => bv.name.as_deref(),
-        Expr::Var(_, Var::Free(name)) => Some(name.as_str()),
+        Expr::Var(_, Var::Bound(bv)) => bv.name.clone(),
+        Expr::Var(_, Var::Free(name)) => Some(name.clone()),
+        Expr::Lookup(_, base, key, _) => dotted_path(base).map(|path| format!("{path}.{key}")),
         _ => None,
     }
 }
@@ -219,6 +228,34 @@ mod tests {
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].message.contains("state.exec"));
         assert_eq!(warnings[0].notes, vec!["use 'run' instead"]);
+    }
+
+    #[test]
+    fn no_warning_for_bare_leaf_of_deprecated_namespace_member() {
+        // A user's own top-level `exec` must not warn when only the nested
+        // `state.exec` is deprecated: a nested declaration is keyed by its
+        // dotted path alone, never by its bare leaf name.
+        let expr = acore::var("exec".to_string());
+        let mut deprecations = HashMap::new();
+        deprecations.insert("state.exec".to_string(), DeprecationSpec::default());
+        let warnings = check_deprecated_references(&expr, &deprecations);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn warns_on_deeply_nested_deprecated_member_lookup() {
+        // `a.b.c` — the base is itself a lookup, so the dotted path is built
+        // through the whole chain, matching the key the desugarer records.
+        let expr = acore::lookup(
+            acore::lookup(acore::var("a".to_string()), "b", None),
+            "c",
+            None,
+        );
+        let mut deprecations = HashMap::new();
+        deprecations.insert("a.b.c".to_string(), DeprecationSpec::default());
+        let warnings = check_deprecated_references(&expr, &deprecations);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].message.contains("a.b.c"));
     }
 
     #[test]

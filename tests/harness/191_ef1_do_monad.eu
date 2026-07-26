@@ -11,18 +11,24 @@ seed0: random.stream(42)
 ` :suppress
 ctx0: { state: { count: 0 }, seed: seed0 }
 
+# Shell command strings are platform-specific, and the trailing line ending
+# differs too, so trim the captured stdout before comparing.
+` :suppress
+echo-cmd: if(eu.os = "windows", "Write-Output hi", "echo hi")
+
 # One pipeline exercising io (shell), state (put / modify / %! lens operator),
 # random (float), and a pure step — all as native do.* actions.
 ` :suppress
 pipeline: { :do
-  greeting: do.shell("echo hi")
-  _:        do.put(:echoed, greeting.stdout)
+  greeting: do.shell(echo-cmd)
+  msg:      do.pure(greeting.stdout str.trim)
+  _:        do.put(:echoed, msg)
   _:        do.modify(:count, (+ 1))
   _:        do.st(:count %! (+ 9))
   r:        do.float
   n:        do.query(_.count)
   _:        do.pure(:ignored)
-}.([greeting.stdout, r, n])
+}.([msg, r, n])
 
 # The same state effect run through the state monad directly (parity).
 ` :suppress
@@ -34,9 +40,9 @@ state-chain: { :state
 # Build the PASS/FAIL verdict from the do-run result.
 ` :suppress
 verdict(res): {
-  stdout-value:    (res.value head) = c"hi\n"
+  stdout-value:    (res.value head) = "hi"
   count-threaded:  res.ctx.state.count = 10
-  echoed-threaded: res.ctx.state.echoed = c"hi\n"
+  echoed-threaded: res.ctx.state.echoed = "hi"
   query-matches:   (res.value nth(2)) = 10
   rand-parity:     (res.value nth(1)) = random.eval(random.float, seed0)
   state-parity:    (state.run(state-chain, { count: 0 }).state.count) = 10

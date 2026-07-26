@@ -216,6 +216,12 @@ old-fn(x): x
 Deprecation warnings appear on stderr during evaluation and in LSP diagnostics.
 Under `eu check --strict`, deprecation warnings become errors.
 
+A declaration nested inside a namespace block is matched by the dotted path a
+caller writes, not by its bare name — deprecating `exec` inside `state` warns on
+`state.exec` and leaves both `io.exec` and any unrelated top-level `exec` alone.
+Matching is on the path as written, so a block of your own that shadows a
+namespace carrying a deprecated member will match the library's deprecation.
+
 ## Function Application
 
 ```eu,notest
