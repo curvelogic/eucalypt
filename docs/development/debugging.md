@@ -121,6 +121,43 @@ IO TRACE: exec "ls" ["-la"]
 IO TRACE: -> exit 0
 ```
 
+### Process Parallelism (`par-map` and friends)
+
+The parallel path is unobservable by design — same value, same errors, same
+order — so a build that never forks looks exactly like a working one. These
+exist to tell them apart, and to force the fork path in tests.
+
+#### `EU_PP_TRACE=1`
+
+Report to stderr which path each `par-*` call took, and why:
+
+```
+par-map: 20000 elements — forked 13 workers
+par-sum: 12 elements — sequential (below threshold)
+par-max: 4096 elements — sequential (process is not a declared fork-safe host)
+par-map: 4096 elements — sequential (fork path declined)
+```
+
+"not a declared fork-safe host" is the normal answer outside the `eu` CLI:
+forking is unsafe unless the process owner can vouch that its other threads are
+parked, so only `src/bin/eu.rs` opts in (past the LSP branch). The LSP server,
+the WASM API, embedders and the test harness never fork; `par-*` is sequential
+there, which is the identical result.
+
+#### `EU_PP_THRESHOLD=<n>`
+
+Minimum element count before forking is considered (default 1024). Set to 1 to
+force the fork path on a small input.
+
+#### `EU_PP_WORKERS=<n>`
+
+Worker count (default: available parallelism minus one).
+
+#### `EU_PP_ASSUME_SINGLE_THREADED=1`
+
+Bypass the fork-safety check. For diagnostics only — it does not make an unsafe
+fork safe.
+
 ### Crash Diagnostics
 
 The crash signal handler installs unconditionally in `main()` (no
