@@ -1240,6 +1240,16 @@ impl SourceLoader {
         &self.source_map
     }
 
+    /// The file id a locator's text was loaded under, if it has been loaded.
+    ///
+    /// Used by `cargo xtask prelude-compile` to tell prelude-source spans
+    /// apart from spans in the other units it loads alongside the prelude
+    /// (`build-meta.yaml`, the `io`/`args` pseudoblocks) when baking
+    /// `PreludeBlob::binding_spans` (eu-7x0r).
+    pub fn file_id_for(&self, locator: &Locator) -> Option<usize> {
+        self.locators.get(locator).copied()
+    }
+
     /// Drain and return any parse errors accumulated during `load_eucalypt`.
     ///
     /// Parse errors no longer abort loading — the partial tree is always
