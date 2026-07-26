@@ -3345,16 +3345,27 @@ pub fn test_196_pp_stream_import_boundary() {
 /// so that a super-linear implementation is KILLED and reported, rather than
 /// wedging `cargo test` indefinitely.
 ///
+/// `--source-prelude` is deliberate, and is what makes this a gate at all.
+/// The blow-up guarded against is inlining work duplication: `max(l, r):
+/// if(l > r, l, r)` uses `r` twice, so beta-reducing `max(l head, max-of(l
+/// tail))` at the call site leaves two copies of the recursive call and gives
+/// T(n) = 2·T(n−1). That reduction happens only on the SOURCE-prelude path —
+/// in blob mode `max-of` is an opaque baked global that is never inlined, so
+/// the superseded definition measures LINEAR there (`range(1, 20000) max-of`
+/// in 153 ms) while on the source path it needs 2.6 s for **22** elements and
+/// does not finish 24 within 60 s. Without the flag this test would pass in
+/// every blob-mode job with the old definition restored.
+///
 /// The bound is deliberately loose — the fixture reduces 20 000 elements in
-/// ~1s release / ~10s in a blob-less debug build, while the exponential shape
-/// this replaced needed ~5s for **22** elements and did not finish 24 in 60s.
-/// Anything between those is a regression; no plausible CI slowness closes a
-/// gap that wide.
+/// ~1.1s release, and the shape it replaced does not finish it within the
+/// deadline at all. Anything between those is a regression; no plausible CI
+/// slowness closes a gap that wide.
 #[test]
 pub fn test_195_pazes_max_of_linear() {
     let deadline = std::time::Duration::from_secs(180);
     let mut cmd = std::process::Command::new(eu_binary());
     cmd.arg("test")
+        .arg("--source-prelude")
         .arg("tests/harness/195_pazes_max_of_linear.eu")
         .arg("--heap-limit-mib")
         .arg("8192");

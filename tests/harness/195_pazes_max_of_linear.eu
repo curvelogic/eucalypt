@@ -2,16 +2,21 @@
 # eu-pazes — `max-of`/`min-of` must be LINEAR in list length.
 #
 # They were written as a non-tail recursion whose recursive result is used
-# twice (`max(l head, max-of(l tail))` with `max(l, r): if(l > r, l, r)`), and
-# the second use re-evaluated rather than shared, making them 2^N: a 22-element
-# ascending list took ~5s and a 24-element one did not finish in 60s. They are
-# now a strict left fold over the same `max`/`min`, so this fixture reduces
-# 20 000 elements in both directions in well under a second.
+# twice (`max(l head, max-of(l tail))` with `max(l, r): if(l > r, l, r)`).
+# Inlining `max` copies that recursive call once per use, so the copies share
+# nothing and the cost is 2^N — a 22-element ascending list took 2.6s and a
+# 24-element one did not finish in 60s. They are now a strict left fold over
+# the same `max`/`min`, which passes the accumulator as a plain variable and so
+# cannot be duplicated; this fixture reduces 20 000 elements in both directions
+# in about a second. The inliner defect itself is eu-gua64, still open.
 #
 # The COMPLEXITY gate is `test_195_pazes_max_of_linear` in harness_test.rs,
-# which runs this file under a wall-clock deadline no exponential (or
-# quadratic) implementation could meet. THIS file gates the SEMANTICS: every
-# check feeds RESULT, so a behavioural regression fails `cargo test` too.
+# which runs this file out of process, under `--source-prelude`, under a
+# wall-clock deadline no exponential (or quadratic) implementation could meet.
+# The flag is load-bearing: in blob mode `max-of` is an opaque baked global
+# that is never inlined, so even the superseded definition measures linear
+# there. THIS file gates the SEMANTICS: every check feeds RESULT, so a
+# behavioural regression fails `cargo test` too.
 
 n: 20000
 
