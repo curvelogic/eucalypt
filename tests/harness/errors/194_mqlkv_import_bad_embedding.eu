@@ -1,0 +1,7 @@
+{ import: "194_mqlkv_bad_annotation.eu" }
+
+# eu-mqlkv: an invalid embedding in an IMPORTED unit used to abort the
+# process with exit 101 via `.expect("failure translating import")`, while
+# the same file evaluated directly produced a clean diagnostic. It must now
+# produce the diagnostic either way.
+r: f(1)

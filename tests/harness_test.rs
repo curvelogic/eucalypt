@@ -2783,6 +2783,26 @@ pub fn test_193_1tkk_7_12_curated_trace() {
 }
 
 #[test]
+/// eu-mqlkv — an invalid embedding (here a `{{`-escaped record type inside
+/// an s-string, where single braces are correct) in an *imported* unit used
+/// to abort the process with exit 101 via
+/// `.expect("failure translating import")`, while the same file evaluated
+/// directly produced a clean codespan diagnostic. Gates that the import
+/// path now diagnoses too: exit 1, "invalid embedding" on stderr.
+pub fn test_194_mqlkv_import_bad_embedding() {
+    run_error_test(&error_opts("194_mqlkv_import_bad_embedding.eu"));
+}
+
+#[test]
+/// eu-mqlkv, second path — the fix is not specific to invalid embeddings:
+/// *any* `CoreError` raised while translating an import took the same
+/// panicking route. This exercises `CoreError::VersionRequirementFailed`
+/// from an imported unit's unsatisfiable `requires:`.
+pub fn test_195_mqlkv_import_bad_requires() {
+    run_error_test(&error_opts("195_mqlkv_import_bad_requires.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
