@@ -3414,7 +3414,12 @@ pub fn test_pp_fork_path_equivalence_both_engines() {
             out.status.success(),
             "eu exited non-zero for env {env:?}: {stderr}"
         );
-        if must_fork {
+        // Only unix has a fork path at all; on Windows every `par-*` is
+        // sequential by construction, so requiring a fork there would fail a
+        // correct build. The equivalence assertions below still run — they
+        // just compare two sequential runs, which is a cheap smoke test of the
+        // combinators and the codec on that platform.
+        if must_fork && cfg!(unix) {
             assert!(
                 stderr.contains("forked"),
                 "expected the COW-fork path for env {env:?}, but the trace says:\n{stderr}"
