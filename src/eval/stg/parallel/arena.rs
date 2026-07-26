@@ -54,7 +54,15 @@ impl Arena {
     pub fn new(size: usize, n_workers: usize) -> io::Result<Arena> {
         assert!(n_workers >= 1, "arena needs at least one worker segment");
         let segment_size = size.div_ceil(n_workers).max(HEADER_LEN + LEN_PREFIX);
-        let size = segment_size * n_workers;
+        // The caller derives `size` from an element count, so cap rather than
+        // wrap: an overflowing request is a failed mapping, which the driver
+        // treats as "no fork" and answers sequentially.
+        let size = segment_size.checked_mul(n_workers).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "parallel arena size overflows the address space",
+            )
+        })?;
         // SAFETY: standard anonymous mmap; we check MAP_FAILED below.
         let base = unsafe {
             libc::mmap(
@@ -96,14 +104,27 @@ impl Arena {
     }
 
     /// A reader over worker `w`'s segment (call from the parent after join).
+    ///
+    /// Everything the reader consumes — the record count and every record
+    /// length — was written by a **different process** into shared memory, so
+    /// it is untrusted input: the reader bounds every field against the segment
+    /// before dereferencing and stops at the first inconsistency. A short read
+    /// leaves the parent with fewer results than elements, which the driver
+    /// already handles by re-running sequentially.
     pub fn reader(&self, w: usize) -> SegmentReader<'_> {
         assert!(w < self.n_workers, "worker index out of range");
         let base = self.segment_base(w);
+        let end = base + self.segment_size;
         let count = self.read_u64(base);
+        // A record costs at least its length prefix, so no honest segment can
+        // hold more than this many. Clamping keeps a corrupt count from driving
+        // a long loop before the per-record bound check stops it.
+        let max_records = ((end - base - HEADER_LEN) / LEN_PREFIX) as u64;
         SegmentReader {
             arena: self,
             cursor: base + HEADER_LEN,
-            remaining: count,
+            end,
+            remaining: count.min(max_records),
         }
     }
 
@@ -180,22 +201,42 @@ impl SegmentWriter<'_> {
 pub struct SegmentReader<'a> {
     arena: &'a Arena,
     cursor: usize,
+    /// One past the last byte of this worker's segment.
+    end: usize,
     remaining: u64,
 }
 
 impl<'a> Iterator for SegmentReader<'a> {
     type Item = &'a [u8];
 
-    /// The next record's bytes, or `None` once the segment is exhausted. The
-    /// returned slice borrows the arena (lifetime `'a`), not the reader, so
+    /// The next record's bytes, or `None` once the segment is exhausted **or
+    /// its contents stop making sense**.
+    ///
+    /// The length prefix comes from another process's writes into `MAP_SHARED`
+    /// memory, so it is validated against the segment end before it is used to
+    /// form a slice — a check that must hold in release builds, where the
+    /// `debug_assert!`s inside the raw accessors are gone.
+    ///
+    /// The returned slice borrows the arena (lifetime `'a`), not the reader, so
     /// this is an ordinary iterator, not a lending one.
     fn next(&mut self) -> Option<&'a [u8]> {
         if self.remaining == 0 {
             return None;
         }
+        // Room for the length prefix itself?
+        if self.cursor.checked_add(LEN_PREFIX)? > self.end {
+            self.remaining = 0;
+            return None;
+        }
         let len = self.arena.read_u64(self.cursor) as usize;
-        let slice = self.arena.read_slice(self.cursor + LEN_PREFIX, len);
-        self.cursor += LEN_PREFIX + len;
+        // Room for the payload the prefix claims?
+        let payload = self.cursor + LEN_PREFIX;
+        if len > self.end - payload {
+            self.remaining = 0;
+            return None;
+        }
+        let slice = self.arena.read_slice(payload, len);
+        self.cursor = payload + len;
         self.remaining -= 1;
         Some(slice)
     }
@@ -222,6 +263,70 @@ mod tests {
         assert_eq!(r.next(), None);
         // segment 1 is empty (count 0)
         assert_eq!(arena.reader(1).next(), None);
+    }
+
+    /// A worker is a separate process: the parent must survive whatever it
+    /// finds in the shared segment. A length prefix claiming more than the
+    /// segment holds must end the read, not produce an out-of-bounds slice.
+    #[test]
+    fn a_corrupt_record_length_ends_the_read() {
+        let arena = Arena::new(4096, 2).unwrap();
+        {
+            let mut w = arena.writer(0);
+            w.push(b"good").unwrap();
+            w.push(b"also good").unwrap();
+            w.finish();
+        }
+        // Scribble an absurd length over the second record's prefix.
+        let second = arena.segment_base(0) + HEADER_LEN + LEN_PREFIX + 4;
+        arena.write_u64(second, u64::MAX);
+
+        let records: Vec<&[u8]> = arena.reader(0).collect();
+        assert_eq!(
+            records,
+            vec![&b"good"[..]],
+            "the read must stop at the corrupt record, not read past the segment"
+        );
+    }
+
+    /// A record whose length fits in `usize` but runs past the segment end is
+    /// equally untrusted.
+    #[test]
+    fn a_record_overrunning_the_segment_ends_the_read() {
+        let arena = Arena::new(256, 2).unwrap();
+        {
+            let mut w = arena.writer(0);
+            w.push(b"good").unwrap();
+            w.finish();
+        }
+        arena.write_u64(arena.segment_base(0), 2); // claim a second record
+        let second = arena.segment_base(0) + HEADER_LEN + LEN_PREFIX + 4;
+        arena.write_u64(second, arena.segment_size as u64); // just past the end
+
+        let records: Vec<&[u8]> = arena.reader(0).collect();
+        assert_eq!(records, vec![&b"good"[..]]);
+    }
+
+    /// A record count larger than the segment could possibly hold is clamped,
+    /// so a corrupt header cannot drive an unbounded read. (The trailing
+    /// zeroed bytes read back as empty records — harmless: they fail to
+    /// deserialise, and the driver's count check re-runs sequentially.)
+    #[test]
+    fn a_corrupt_record_count_is_clamped() {
+        let arena = Arena::new(256, 2).unwrap();
+        {
+            let mut w = arena.writer(0);
+            w.push(b"only").unwrap();
+            w.finish();
+        }
+        arena.write_u64(arena.segment_base(0), u64::MAX);
+        let records: Vec<&[u8]> = arena.reader(0).collect();
+        assert_eq!(records[0], &b"only"[..]);
+        let ceiling = (arena.segment_size - HEADER_LEN) / LEN_PREFIX;
+        assert!(
+            records.len() <= ceiling,
+            "a corrupt count must not read beyond what the segment could hold"
+        );
     }
 
     #[test]

@@ -1,0 +1,2 @@
+exit: 1
+stderr: "par-concat: cannot serialise a function across the parallel boundary"

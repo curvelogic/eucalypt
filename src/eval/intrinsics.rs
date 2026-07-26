@@ -1043,11 +1043,15 @@ lazy_static! {
             strict: vec![0, 1],
     },
     Intrinsic { // 196
-            // par-map: (a -> b) -> [a] -> [b]. xs (arg 1) is strict so the
-            // wrapper forces its spine head before the parallel driver runs.
+            // par-map: sym -> (a -> b) -> [a] -> [b]. The leading symbol names
+            // the surface combinator (`:par-map`, `:par-sum`, ...) so a boundary
+            // error reports the one the user actually wrote — the reductions are
+            // prelude wrappers over this same primitive. Args 0 (the name) and 2
+            // (xs) are strict, so the wrapper forces the name and the spine head
+            // before the parallel driver runs.
             name: "PARMAP",
-            ty: function(vec![any(), list(), list()]).unwrap(),
-            strict: vec![1],
+            ty: function(vec![sym(), any(), list(), list()]).unwrap(),
+            strict: vec![0, 2],
     },
     ];
 }

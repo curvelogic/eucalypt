@@ -59,6 +59,13 @@ impl LazyProducer for JsonlProducer {
             }
         }
     }
+
+    /// Impure: owns an open file descriptor whose offset is shared with
+    /// any forked child, so the JSONL stream must never be advanced inside a
+    /// process-parallelism worker.
+    fn is_pure(&self) -> bool {
+        false
+    }
 }
 
 /// Streams CSV files, yielding one block per row with column-name keys.
@@ -104,6 +111,13 @@ impl LazyProducer for CsvProducer {
         }
         Some(Ok(json_to_stg(&serde_json::Value::Object(map))))
     }
+
+    /// Impure: owns an open file descriptor whose offset is shared with
+    /// any forked child, so the CSV stream must never be advanced inside a
+    /// process-parallelism worker.
+    fn is_pure(&self) -> bool {
+        false
+    }
 }
 
 /// Streams text files line by line, yielding one string per line.
@@ -139,5 +153,12 @@ impl LazyProducer for TextProducer {
             }
             Err(e) => Some(Err(ExecutionError::Io(e))),
         }
+    }
+
+    /// Impure: owns an open file descriptor whose offset is shared with
+    /// any forked child, so the text stream must never be advanced inside a
+    /// process-parallelism worker.
+    fn is_pure(&self) -> bool {
+        false
     }
 }

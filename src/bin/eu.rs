@@ -62,6 +62,16 @@ fn run() -> i32 {
         }
     }
 
+    // Past the LSP branch, this process is the plain CLI: evaluation runs on
+    // this thread, and the only others are the original thread parked in
+    // `join` and the Ctrl-C watcher parked in a signal wait — neither holds a
+    // lock a forked child could deadlock on. Vouch for it, so process
+    // parallelism (`par-map` and friends) may fork workers here. Nothing else
+    // — the LSP server, the WASM API, embedders, the test harness — does, and
+    // there `par-*` is simply sequential.
+    #[cfg(unix)]
+    eucalypt::eval::stg::parallel::fork::declare_fork_safe_host();
+
     // For a dry run, just explain the options
     if opt.explain() {
         println!("{}", opt.explanation());

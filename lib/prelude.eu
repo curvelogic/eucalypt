@@ -911,9 +911,7 @@ product(l): foldl(*, 1, l)
 max(l, r): if(l > r, l, r)
 
 ` "`max-of(l) - return max element in list of numbers `l` - error if empty`"
-max-of(l): cond([l nil? => panic("max of empty list")
-               , l tail nil? => l head
-               , max(l head, max-of(l tail))])
+max-of(l): if(l nil?, panic("max of empty list"), foldl(max, l head, l tail))
 
 ` "`max-of-by(f, l)` - return the element of `l` that maximises `f`. Error if empty."
 max-of-by(f, l): {
@@ -936,9 +934,7 @@ max-of-or(d, l): l nil? then(d, max-of(l))
 min(l, r): if(l < r, l, r)
 
 ` "`min-of(l) - return min element in list of numbers `l` - error if empty`"
-min-of(l): cond([l nil? => panic("min of empty list")
-               , l tail nil? => l head
-               , min(l head, min-of(l tail))])
+min-of(l): if(l nil?, panic("min of empty list"), foldl(min, l head, l tail))
 
 ` "`min-of-by(f, l)` - return the element of `l` that minimises `f`. Error if empty."
 min-of-by(f, l): {
@@ -967,21 +963,33 @@ min-of-or(d, l): l nil? then(d, min-of(l))
 ## be pure and return serialisable data (numbers, strings, symbols, booleans,
 ## null, lists, blocks); a non-serialisable result is a boundary error.
 
+## The par-* combinators are strict in the SPINE of xs. Forcing that spine
+## here, in ordinary evaluation, rather than inside the intrinsic matters for
+## single-pass sources: a thunk is memoised by the machine writing the result
+## back into the environment slot that names it, and an intrinsic holding a
+## resolved closure has no such slot. So a spine forced only inside __PARMAP
+## would be re-forced by the next reader - which, for a streaming import,
+## means re-advancing an already-consumed producer. force-spine walks it once
+## through `count`, memoising every cell, and __PARMAP then finds it in WHNF.
+` { doc: "`force-spine(xs)` - return `xs` with its list spine forced."
+    export: :suppress }
+force-spine(xs): if((xs count) >= 0, xs, xs)
+
 ` { doc: "`par-map(f, xs)` - parallel map; identical to `xs map(f)`, order-preserving."
     type: s"(a → b) → [a] → [b]" }
-par-map(f, xs): __PARMAP(f, xs)
+par-map(f, xs): __PARMAP(:par-map, f, xs force-spine)
 
 ` "`par-sum(f, xs)` - parallel sum of `f(x)` over `xs`; identical to `xs map(f) sum`."
-par-sum(f, xs): xs par-map(f) sum
+par-sum(f, xs): __PARMAP(:par-sum, f, xs force-spine) sum
 
 ` "`par-max(f, xs)` - parallel max of `f(x)` over `xs`; identical to `xs map(f) max-of`."
-par-max(f, xs): xs par-map(f) max-of
+par-max(f, xs): __PARMAP(:par-max, f, xs force-spine) max-of
 
 ` "`par-min(f, xs)` - parallel min of `f(x)` over `xs`; identical to `xs map(f) min-of`."
-par-min(f, xs): xs par-map(f) min-of
+par-min(f, xs): __PARMAP(:par-min, f, xs force-spine) min-of
 
 ` "`par-concat(f, xs)` - parallel map-then-concat; identical to `xs map(f) concat`."
-par-concat(f, xs): xs par-map(f) concat
+par-concat(f, xs): __PARMAP(:par-concat, f, xs force-spine) concat
 
 ##
 ## Text and regexes

@@ -19,13 +19,14 @@ use crate::eval::{
     error::ExecutionError,
     machine::intrinsic::{AbiClosure, IntrinsicMachine},
     memory::{mutator::MutatorHeapView, syntax::Ref},
-    stg::{parallel::serialise, stream::any_live_impure_producer, tags::DataConstructor},
+    stg::{parallel::serialise, tags::DataConstructor},
 };
 
 /// Default minimum element count before forking is even considered. Below
 /// this, `par-map` runs sequentially (fork + arena overhead does not pay).
 /// Overridable via `EU_PP_THRESHOLD` (chiefly so tests can force the fork
 /// path on small inputs, and so the default can be tuned).
+#[cfg(unix)]
 const DEFAULT_THRESHOLD: usize = 1024;
 
 /// Per-element arena byte budget used to size the (virtual, demand-zero)
@@ -38,6 +39,7 @@ const PER_ELEM_CAP: usize = 4096;
 #[cfg(unix)]
 const ARENA_MAX: usize = 256 << 20;
 
+#[cfg(unix)]
 fn env_usize(name: &str, default: usize) -> usize {
     std::env::var(name)
         .ok()
@@ -45,7 +47,26 @@ fn env_usize(name: &str, default: usize) -> usize {
         .unwrap_or(default)
 }
 
+/// Whether `EU_PP_TRACE=1` asked us to report which path each `par-*` took.
+///
+/// The parallel path is invisible by construction — same value, same errors —
+/// so without this there is no way for a user (or a test) to tell a fork from
+/// the sequential fallback, and a silently-never-forking build looks exactly
+/// like a working one.
+#[cfg(unix)]
+fn trace_enabled() -> bool {
+    std::env::var("EU_PP_TRACE").as_deref() == Ok("1")
+}
+
+#[cfg(unix)]
+fn trace(combinator: &str, n: usize, what: std::fmt::Arguments<'_>) {
+    if trace_enabled() {
+        eprintln!("{combinator}: {n} elements — {what}");
+    }
+}
+
 /// Decide the worker count. Returns 1 to mean "run sequentially".
+#[cfg(unix)]
 fn decide_workers(n: usize) -> usize {
     let threshold = env_usize("EU_PP_THRESHOLD", DEFAULT_THRESHOLD);
     if n < threshold || n < 2 {
@@ -70,37 +91,52 @@ pub fn par_map(
     xs: &Ref,
     combinator: &str,
 ) -> Result<(), ExecutionError> {
-    let smid = machine.annotation();
-
-    // Boundary check (spike R2 / spec §6): a live impure streaming producer
-    // shares an fd offset across forked workers — refuse rather than fork.
-    if any_live_impure_producer() {
-        return Err(ExecutionError::NotSerialisable(
-            smid,
-            Box::new((
-                combinator.to_string(),
-                "value with a live streaming import".to_string(),
-            )),
-        ));
-    }
-
     let f_closure = machine.resolve_callable_closure(view, f)?;
     let elements = collect_spine(machine, view, xs, combinator)?;
-    let n = elements.len();
 
     #[cfg(unix)]
     {
+        // Forking is only safe where a host has vouched for the process (spec
+        // §2/§4): a child inherits every lock in whatever state the threads
+        // that no longer exist left it in. The `eu` CLI opts in for
+        // evaluation; the LSP server, the WASM API and the libtest harness do
+        // not, and simply do not fork — the sequential path gives the
+        // identical answer.
+        let n = elements.len();
         let w = decide_workers(n);
-        if w > 1 && try_parallel(machine, view, &f_closure, &elements, w, combinator)? {
+        if w < 2 {
+            trace(combinator, n, format_args!("sequential (below threshold)"));
+        } else if !super::fork::process_is_fork_safe() {
+            trace(
+                combinator,
+                n,
+                format_args!("sequential (process is not a declared fork-safe host)"),
+            );
+        } else if try_parallel(machine, view, &f_closure, &elements, w, combinator)? {
+            trace(combinator, n, format_args!("forked {w} workers"));
             return Ok(());
+        } else {
+            trace(
+                combinator,
+                n,
+                format_args!("sequential (fork path declined)"),
+            );
         }
     }
 
     sequential_map(machine, view, &f_closure, &elements, combinator)
 }
 
-/// Walk the (WHNF-headed) list `xs`, forcing each tail, into a vector of its
-/// element closures (each left unforced — `f` is applied lazily then forced).
+/// Walk the (WHNF-headed) list `xs` into a vector of its element closures
+/// (each left unforced — `f` is applied lazily then forced).
+///
+/// Tails are forced defensively, but the prelude wrapper has already walked the
+/// spine via `force-spine`, and that matters: the machine memoises a thunk by
+/// writing the result back into the environment slot naming it, and an
+/// intrinsic holding a resolved closure has no slot to write to. Forcing a
+/// spine *only* here would therefore leave every cell unmemoised — harmless for
+/// a pure list, but for a streaming import it would mean the next reader
+/// re-advances an already-consumed producer and sees a truncated list.
 fn collect_spine(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
@@ -174,6 +210,7 @@ fn sequential_map(
 
 /// Contiguous even partition of `0..n` into `w` chunks; chunk `i` is
 /// `[start, end)`. The first `n % w` chunks are one longer.
+#[cfg(unix)]
 fn chunk_bounds(n: usize, w: usize, i: usize) -> (usize, usize) {
     let base = n / w;
     let rem = n % w;
@@ -208,6 +245,12 @@ fn try_parallel(
     // Workers run in their own COW address space; mutating the machine there is
     // private to each child (spec §4). We serialise into disjoint segments.
     let worker = |wi: usize| -> Result<(), ExecutionError> {
+        // Mark this child a PP worker so that any attempt to advance an impure
+        // streaming producer fails here rather than stealing the parent's
+        // shared fd offset (spike R2). Failing the worker costs only a
+        // sequential re-run in the parent, which consumes the producer
+        // correctly — so `par-*` stays a transparent advisory.
+        crate::eval::stg::stream::enter_parallel_worker();
         let (start, end) = chunk_bounds(n, w, wi);
         let mut writer = arena.writer(wi);
         let mut buf = Vec::new();
@@ -264,7 +307,7 @@ fn arena_overflow_error(machine: &dyn IntrinsicMachine, combinator: &str) -> Exe
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

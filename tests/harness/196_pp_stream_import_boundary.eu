@@ -1,0 +1,53 @@
+#!/usr/bin/env eu
+# eu-u9xj.6 (PP) — a streaming import must not disable the `par-*`
+# combinators.
+#
+# The first cut of the impure-producer boundary check (spike R2) keyed on
+# REGISTRATION: producers are registered at import time, during desugaring,
+# whether or not the stream is ever touched, so merely naming a stream import
+# turned every `par-*` in the unit — and, because the table was
+# process-lifetime state, in every LATER unit evaluated by the same process —
+# into an error. A two-element `par-map`, which cannot fork at all, failed.
+#
+# The check now lives where the hazard does: inside a forked worker, which
+# refuses to advance an impure producer (its fd offset is shared with the
+# parent) and defers to the parent's sequential re-run. So an import that is
+# merely present, or even partly consumed, is no obstacle at all.
+#
+# RESULT is computed from every check, so a regression fails `cargo test`.
+
+{ import: ["jl=jsonl-stream@testdata/aux_import.jsonl",
+           "txt=text-stream@testdata/aux_import.txt"] }
+
+dbl(x): x * 2
+pair(x): [x, x]
+
+# 1. A registered-but-untouched stream import does not block `par-*`.
+#    (These lists are far below the fork threshold — no fork is even
+#    possible — which is precisely why an error here was wrong.)
+t-map:    ([1, 2] par-map(dbl)) = [2, 4]
+t-sum:    ([1, 2, 3] par-sum(dbl)) = 12
+t-max:    ([1, 5, 3] par-max(dbl)) = 10
+t-min:    ([4, 5, 3] par-min(dbl)) = 6
+t-concat: ([1, 2] par-concat(pair)) = [1, 1, 2, 2]
+
+# 2. A PARTLY-consumed stream — the normal state of a lazy stream, and the
+#    state that used to poison everything downstream — still does not block.
+first-name: (jl head).name
+t-partly-consumed-stream: first-name = "Alice"
+t-map-after-partial: ([3, 4] par-map(dbl)) = [6, 8]
+
+# 3. A fully-consumed stream likewise.
+txt-lines: txt count
+t-drained-stream: txt-lines = 3
+t-map-after-drain: ([5, 6] par-map(dbl)) = [10, 12]
+
+# 4. `par-map` over the stream's own contents equals the sequential map.
+t-map-over-stream: (jl par-map(_.name)) = (jl map(_.name))
+
+checks: [t-map, t-sum, t-max, t-min, t-concat,
+         t-partly-consumed-stream, t-map-after-partial,
+         t-drained-stream, t-map-after-drain,
+         t-map-over-stream]
+
+RESULT: if(checks all-true?, :PASS, :FAIL)

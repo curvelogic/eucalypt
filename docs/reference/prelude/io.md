@@ -47,6 +47,11 @@
 | `bit.popcount(n)` | Count set bits in integer `n` |
 | `bit.ctz(n)` | Count trailing zeros in integer `n` (position of lowest set bit). Returns 64 if n is 0 |
 | `bit.clz(n)` | Count leading zeros in integer `n` |
+| `par-map(f, xs)` | Parallel map; identical to `xs map(f)`, order-preserving |
+| `par-sum(f, xs)` | Parallel sum of `f(x)` over `xs`; identical to `xs map(f) sum` |
+| `par-max(f, xs)` | Parallel max of `f(x)` over `xs`; identical to `xs map(f) max-of` |
+| `par-min(f, xs)` | Parallel min of `f(x)` over `xs`; identical to `xs map(f) min-of` |
+| `par-concat(f, xs)` | Parallel map-then-concat; identical to `xs map(f) concat` |
 | `render(value)` | Serialise value to a YAML string |
 | `render-as(fmt, value)` | Serialise value to a string in the named format. Pipeline-friendly: data render-as(:json). Supported formats: :yaml, :json, :toml, :text, :edn, :html, :eu |
 | `parse-as(fmt, str)` | Parse a string of structured data in the named format and return eucalypt data. The inverse of render-as. Supported formats: :json, :yaml, :toml, :csv, :xml, :edn, :jsonl. Content is parsed as inert data; embedded eucalypt expressions (e.g. YAML !eu tags) are never evaluated |

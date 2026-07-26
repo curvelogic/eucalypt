@@ -4,9 +4,14 @@
 //! - A child leaves **only** via `libc::_exit` — never unwinding past the fork
 //!   frame (so no parent `Drop`s/atexit run twice, no inherited stdio buffers
 //!   are flushed by a child) and never touching stdout.
-//! - A child resets `SIGINT` to `SIG_DFL` immediately after fork, so a
-//!   foreground Ctrl-C terminates workers by default and the parent's handler
-//!   drives cleanup.
+//! - A child resets `SIGINT` — and the inherited `SIGSEGV`/`SIGBUS` crash
+//!   diagnostics handler — to `SIG_DFL` immediately after fork, so a foreground
+//!   Ctrl-C terminates workers by default, a faulting worker dies rather than
+//!   running a non-async-signal-safe reporter in a forked child, and in both
+//!   cases the parent drives cleanup.
+//! - The driver forks only where a host has explicitly vouched for the
+//!   process ([`declare_fork_safe_host`] / [`process_is_fork_safe`]);
+//!   elsewhere `par-map` stays sequential.
 //! - On the first worker failure the parent `SIGKILL`s and reaps the
 //!   survivors, then reports the failure. The caller (the PP driver) treats any
 //!   failure as a signal to fall back to a **sequential** re-evaluation in the
@@ -14,6 +19,7 @@
 //!   user-facing error with a proper source location.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::eval::error::ExecutionError;
 
@@ -42,11 +48,111 @@ impl std::fmt::Display for ForkError {
     }
 }
 
-/// Reset SIGINT disposition to default in the just-forked child.
-fn reset_sigint_to_default() {
-    // SAFETY: async-signal-safe; called immediately after fork in the child.
+/// Reset inherited signal dispositions in the just-forked child.
+///
+/// - `SIGINT`: so a foreground Ctrl-C terminates workers by default and the
+///   parent's handler drives cleanup.
+/// - `SIGSEGV`/`SIGBUS`: the crash-diagnostics handler installs unconditionally
+///   in `main()` (see `eval::machine::crash`) and is inherited by children. It
+///   walks machine state and formats a report — work that is not
+///   async-signal-safe and, run in a forked child, could hang or garble the
+///   parent's terminal. A faulting worker should simply die; the parent sees a
+///   non-zero wait status and re-runs sequentially, where a genuine fault is
+///   reported once, properly, with the handler intact.
+fn reset_signals_to_default() {
+    // SAFETY: `signal` is async-signal-safe; called immediately after fork in
+    // the child, before any other work.
     unsafe {
         libc::signal(libc::SIGINT, libc::SIG_DFL);
+        libc::signal(libc::SIGSEGV, libc::SIG_DFL);
+        libc::signal(libc::SIGBUS, libc::SIG_DFL);
+    }
+}
+
+/// Number of threads in this process, where we can establish it cheaply.
+/// `None` means "unknown".
+#[cfg(target_os = "linux")]
+fn thread_count() -> Option<usize> {
+    // Each live thread has a directory under /proc/self/task.
+    std::fs::read_dir("/proc/self/task")
+        .ok()
+        .map(|entries| entries.filter(|e| e.is_ok()).count())
+        .filter(|n| *n > 0)
+}
+
+#[cfg(target_vendor = "apple")]
+fn thread_count() -> Option<usize> {
+    let mut info: libc::proc_taskinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_taskinfo>() as libc::c_int;
+    // SAFETY: `info` is a correctly sized, zeroed `proc_taskinfo`; we only
+    // read it when the call reports it filled the whole struct.
+    let filled = unsafe {
+        libc::proc_pidinfo(
+            std::process::id() as libc::c_int,
+            libc::PROC_PIDTASKINFO,
+            0,
+            &mut info as *mut _ as *mut libc::c_void,
+            size,
+        )
+    };
+    if filled == size && info.pti_threadnum > 0 {
+        Some(info.pti_threadnum as usize)
+    } else {
+        None
+    }
+}
+
+#[cfg(all(unix, not(target_os = "linux"), not(target_vendor = "apple")))]
+fn thread_count() -> Option<usize> {
+    None
+}
+
+/// Sentinel meaning "no host has vouched for this process".
+const NOT_DECLARED: usize = usize::MAX;
+
+/// Thread count at the moment a host declared itself fork-safe, or
+/// [`NOT_DECLARED`].
+static FORK_HOST_BASELINE: AtomicUsize = AtomicUsize::new(NOT_DECLARED);
+
+/// Declare this process a safe host for the PP `fork()` — **opt in, and only
+/// from a process that knows its own threading**.
+///
+/// Forking hands the child a copy of every lock in whatever state it happened
+/// to be in, with only the forking thread alive to unlock it. Being literally
+/// single-threaded is not the practical test (the `eu` CLI runs evaluation on a
+/// large-stack worker while the original thread parks in `join` and the
+/// Ctrl-C watcher parks in a signal wait — three threads, none holding a lock);
+/// the test is whether every *other* thread is quiescent, and only the process
+/// owner can answer that.
+///
+/// So the default is **do not fork**, and a host opts in. The `eu` CLI does,
+/// for evaluation; the LSP server (`src/driver/lsp/`), the WASM API, embedders
+/// and the libtest harness do not, and `par-map` is simply sequential there —
+/// the identical result.
+///
+/// The thread count is recorded so [`process_is_fork_safe`] can withdraw the
+/// declaration if threads appear afterwards.
+pub fn declare_fork_safe_host() {
+    FORK_HOST_BASELINE.store(thread_count().unwrap_or(0), Ordering::SeqCst);
+}
+
+/// Whether it is safe to `fork()` here (spec §2/§4): a host vouched for this
+/// process *and* no thread has appeared since.
+///
+/// `EU_PP_ASSUME_SINGLE_THREADED=1` forces it on — for diagnostics; it does not
+/// make an unsafe fork safe.
+pub fn process_is_fork_safe() -> bool {
+    if std::env::var("EU_PP_ASSUME_SINGLE_THREADED").as_deref() == Ok("1") {
+        return true;
+    }
+    match FORK_HOST_BASELINE.load(Ordering::SeqCst) {
+        NOT_DECLARED => false,
+        baseline => match thread_count() {
+            // No thread has appeared since the host vouched for the process.
+            Some(now) => now <= baseline,
+            // This platform gives us no count; the declaration is all we have.
+            None => true,
+        },
     }
 }
 
@@ -77,7 +183,7 @@ where
         }
         if pid == 0 {
             // ── CHILD ──────────────────────────────────────────────────
-            reset_sigint_to_default();
+            reset_signals_to_default();
             let ok = matches!(catch_unwind(AssertUnwindSafe(|| worker(w))), Ok(Ok(())));
             // SAFETY: terminate without running parent Drops/atexit or
             // flushing inherited stdio buffers.

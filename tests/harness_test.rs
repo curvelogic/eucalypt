@@ -3037,6 +3037,15 @@ pub fn test_error_194_pp_non_serialisable() {
 }
 
 #[test]
+/// eu-u9xj.6 (PP) — the boundary error names the combinator the user actually
+/// wrote. The reductions are prelude wrappers over the one `__PARMAP`
+/// primitive, so without the combinator symbol threaded through they all
+/// reported themselves as `par-map`.
+pub fn test_error_196_pp_concat_non_serialisable() {
+    run_error_test(&error_opts("196_pp_concat_non_serialisable.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
@@ -3319,6 +3328,54 @@ pub fn test_194_pp_par_equivalence() {
     run_test(&opts("194_pp_par_equivalence.eu"));
 }
 
+/// eu-u9xj.6 (PP) — a streaming import must not disable `par-*`, and `par-*`
+/// must not consume a stream destructively. Regression test for the first
+/// boundary check, which keyed on producer REGISTRATION (import time) held in
+/// process-lifetime state, so any unit naming a stream import lost `par-*` —
+/// as did every later unit evaluated by the same process.
+#[test]
+pub fn test_196_pp_stream_import_boundary() {
+    run_test(&opts("196_pp_stream_import_boundary.eu"));
+}
+
+/// eu-pazes — `max-of`/`min-of` must be linear in list length.
+///
+/// The fixture's own `RESULT` gates the semantics; this wrapper gates the
+/// COMPLEXITY. It runs the fixture out of process under a wall-clock deadline
+/// so that a super-linear implementation is KILLED and reported, rather than
+/// wedging `cargo test` indefinitely.
+///
+/// The bound is deliberately loose — the fixture reduces 20 000 elements in
+/// ~1s release / ~10s in a blob-less debug build, while the exponential shape
+/// this replaced needed ~5s for **22** elements and did not finish 24 in 60s.
+/// Anything between those is a regression; no plausible CI slowness closes a
+/// gap that wide.
+#[test]
+pub fn test_195_pazes_max_of_linear() {
+    let deadline = std::time::Duration::from_secs(180);
+    let mut cmd = std::process::Command::new(eu_binary());
+    cmd.arg("test")
+        .arg("tests/harness/195_pazes_max_of_linear.eu")
+        .arg("--heap-limit-mib")
+        .arg("8192");
+
+    let started = std::time::Instant::now();
+    let out = run_with_deadline(cmd, deadline).unwrap_or_else(|| {
+        panic!(
+            "max-of/min-of did not reduce a 20000-element list within {}s — \
+             they are no longer linear in list length (eu-pazes)",
+            deadline.as_secs()
+        )
+    });
+    assert!(
+        out.status.success(),
+        "195_pazes_max_of_linear failed after {:?}: {}{}",
+        started.elapsed(),
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 /// eu-u9xj.6 (PP) — the actual COW-fork path, validated out of process (a
 /// fresh single-threaded-at-fork `eu` binary, safe to fork) on BOTH engines
 /// (default bytecode and `EU_HEAPSYN=1`). Their stdout must be byte-identical
@@ -3331,11 +3388,17 @@ pub fn test_194_pp_par_equivalence() {
 /// the dedicated `test-pp-parallelism` CI job runs this test with a prelude
 /// blob generated first and `EU_GC_VERIFY=2` in the job environment, which the
 /// spawned binary inherits — forking under verification, quickly.
+///
+/// The parallel runs assert on `EU_PP_TRACE` that they DID fork. Without that
+/// the test is a tautology: the whole point of the design is that the fork is
+/// unobservable in the output, so a build that silently never forks — because
+/// the process is not a declared fork-safe host, say — would pass by matching
+/// the oracle it never left.
 #[test]
 pub fn test_pp_fork_path_equivalence_both_engines() {
     let fixture = "tests/harness/testdata/pp_fork_fixture.eu";
 
-    let run = |env: &[(&str, &str)]| -> String {
+    let run = |env: &[(&str, &str)], must_fork: bool| -> String {
         let mut cmd = std::process::Command::new(eu_binary());
         cmd.arg(fixture).arg("--heap-limit-mib").arg("12288");
         for (k, v) in env {
@@ -3346,21 +3409,38 @@ pub fn test_pp_fork_path_equivalence_both_engines() {
         // blob-less by design).
         let out = run_with_deadline(cmd, std::time::Duration::from_secs(300))
             .expect("eu did not complete within the deadline");
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
         assert!(
             out.status.success(),
-            "eu exited non-zero for env {env:?}: {}",
-            String::from_utf8_lossy(&out.stderr)
+            "eu exited non-zero for env {env:?}: {stderr}"
         );
+        if must_fork {
+            assert!(
+                stderr.contains("forked"),
+                "expected the COW-fork path for env {env:?}, but the trace says:\n{stderr}"
+            );
+        }
         String::from_utf8(out.stdout).expect("eu stdout was not utf-8")
     };
 
-    let oracle = run(&[]);
-    let fork_bytecode = run(&[("EU_PP_THRESHOLD", "1"), ("EU_PP_WORKERS", "4")]);
-    let fork_heapsyn = run(&[
-        ("EU_HEAPSYN", "1"),
-        ("EU_PP_THRESHOLD", "1"),
-        ("EU_PP_WORKERS", "4"),
-    ]);
+    let oracle = run(&[], false);
+    let fork_bytecode = run(
+        &[
+            ("EU_PP_THRESHOLD", "1"),
+            ("EU_PP_WORKERS", "4"),
+            ("EU_PP_TRACE", "1"),
+        ],
+        true,
+    );
+    let fork_heapsyn = run(
+        &[
+            ("EU_HEAPSYN", "1"),
+            ("EU_PP_THRESHOLD", "1"),
+            ("EU_PP_WORKERS", "4"),
+            ("EU_PP_TRACE", "1"),
+        ],
+        true,
+    );
 
     assert_eq!(
         fork_bytecode, oracle,

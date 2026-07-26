@@ -1,0 +1,63 @@
+#!/usr/bin/env eu
+# eu-pazes — `max-of`/`min-of` must be LINEAR in list length.
+#
+# They were written as a non-tail recursion whose recursive result is used
+# twice (`max(l head, max-of(l tail))` with `max(l, r): if(l > r, l, r)`), and
+# the second use re-evaluated rather than shared, making them 2^N: a 22-element
+# ascending list took ~5s and a 24-element one did not finish in 60s. They are
+# now a strict left fold over the same `max`/`min`, so this fixture reduces
+# 20 000 elements in both directions in well under a second.
+#
+# The COMPLEXITY gate is `test_195_pazes_max_of_linear` in harness_test.rs,
+# which runs this file under a wall-clock deadline no exponential (or
+# quadratic) implementation could meet. THIS file gates the SEMANTICS: every
+# check feeds RESULT, so a behavioural regression fails `cargo test` too.
+
+n: 20000
+
+# `:suppress` keeps the two 20 000-element lists out of the rendered
+# report — the test is about reducing them, not printing them.
+` :suppress
+asc: range(0, n)
+` :suppress
+desc: asc reverse
+
+# The scale checks. Direction matters: the old shape's cost depended on which
+# branch `if` returned, so both orders are exercised.
+t-max-asc:  (asc max-of) = n - 1
+t-max-desc: (desc max-of) = n - 1
+t-min-asc:  (asc min-of) = 0
+t-min-desc: (desc min-of) = 0
+
+# Semantics preserved at the small end.
+t-max-one:  ([7] max-of) = 7
+t-min-one:  ([7] min-of) = 7
+t-max-two:  ([3, 9] max-of) = 9
+t-min-two:  ([3, 9] min-of) = 3
+t-max-dups: ([3, 9, 9, 1] max-of) = 9
+t-min-dups: ([3, 1, 1, 9] min-of) = 1
+
+# Negatives, and the polymorphic `>`/`<` (max/min are not number-only).
+negs: [5, 2, 9] map(negate)
+t-max-neg: (negs max-of) = negate(2)
+t-min-neg: (negs min-of) = negate(9)
+t-max-str: (["alpha", "gamma", "beta"] max-of) = "gamma"
+t-min-str: (["alpha", "gamma", "beta"] min-of) = "alpha"
+
+# Derived combinators still agree. (Small lists deliberately: folding a
+# lazily-mapped list is separately slow — `range(0, 20000) map(f) sum` costs
+# ~10s too — so scaling `max-map` here would measure `map`, not `max-of`.)
+sq(x): x * x
+t-max-map: ([3, 9, 1] max-map(sq)) = 81
+t-min-map: ([3, 9, 1] min-map(sq)) = 1
+t-max-of-or-empty: ([] max-of-or(:none)) = :none
+t-min-of-or-empty: ([] min-of-or(:none)) = :none
+t-max-of-or-full:  ([3, 9] max-of-or(:none)) = 9
+
+checks: [t-max-asc, t-max-desc, t-min-asc, t-min-desc,
+         t-max-one, t-min-one, t-max-two, t-min-two, t-max-dups, t-min-dups,
+         t-max-neg, t-min-neg, t-max-str, t-min-str,
+         t-max-map, t-min-map,
+         t-max-of-or-empty, t-min-of-or-empty, t-max-of-or-full]
+
+RESULT: if(checks all-true?, :PASS, :FAIL)
