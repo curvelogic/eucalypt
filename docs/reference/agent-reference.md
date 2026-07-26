@@ -899,6 +899,50 @@ schema: s"{ name: string, age: number }" as-spec
 | `forall …` | Erase quantifier, spec the body |
 | Type variables | `any?` (unconstrained at runtime) |
 
+### 3.5b Structural Contracts — `validate` and `ensure`
+
+`as-spec`/`match?` answer one bit. For external data at an ingress
+boundary, `lib/contract.eu` gives a **located report** instead.
+
+```eu,notest
+{ import: "contract.eu" }
+
+schema: s"{ name: string, port: number, tags?: [string] }"
+
+# A report — a list of blocks. [] means conformant. Never raises for data.
+report: { name: "web", port: "8080" } validate(schema)
+# => [{ path: "port", kind: :type-mismatch, expected: "number", found: "string" }]
+
+# Data returned unchanged on success; raises EU-EVAL-CONTRACT otherwise.
+config: { name: "web", port: 8080 } ensure(schema)
+```
+
+Both take the receiver **last**, so `data validate(spec)` reads correctly.
+
+| `kind` | `path` points at | `expected` | `found` |
+|---|---|---|---|
+| `:type-mismatch` | the value | rendered type | runtime type name |
+| `:missing` | the containing record | the missing key | `:absent` |
+| `:unexpected` | the record | `:closed` | list of surplus keys |
+| `:length` | the list | required length | actual length |
+
+Paths are strings: `servers[2].port`, `""` at the root, `'my key'` for a
+non-identifier key.
+
+- A **closed** spec (`{a: number}`) reports surplus keys; an **open** one
+  (`{a: number, ..}` or `{a: number, ..r}`) ignores them — the spec literal
+  means the same thing statically and at runtime.
+- `k?: T` — absent is conformant, present must match.
+- **Only the paths the spec names are forced.** Key enumeration (and so
+  closedness detection) never forces a value; `any`, `top` and type
+  variables force nothing at all. A spec is safe to apply to a value with
+  diverging subtrees it does not name.
+- A malformed **spec** raises `panic("validate: not a type spec")` — a
+  different error from a contract violation, so a schema typo cannot
+  masquerade as bad data.
+
+See [Structural Contracts](../guide/contracts.md).
+
 ### 3.6 Command-line Argument Parsing
 
 #### `parse-args(defaults, args)` — structured CLI argument parsing

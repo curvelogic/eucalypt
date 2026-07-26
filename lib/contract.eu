@@ -189,3 +189,55 @@ validate(spec, data):
 
   }.(spec-shaped?(td) then(walk(td, "", data),
                            panic("validate: not a type spec")))
+
+##
+## Rendering
+##
+
+` { doc: "`render-keys(ks)` - render a list of block keys for a report line."
+    type: s"[symbol] → string"
+    export: :suppress }
+render-keys(ks): ks map(str.of) str.join-on(", ")
+
+` { doc: "`render-violation(v)` - render one violation entry as a report line.
+         The root path renders as (root), since the empty string would leave a
+         line starting with a bare colon." }
+render-violation(v):
+  { p: (v.path = "") then("(root)", v.path)
+    k: v.kind
+    e: v.expected
+    f: v.found
+    keys-str: render-keys(v.found)
+  }.(cond[
+       k = :type-mismatch => "{p}: expected {e}, found {f}"
+     , k = :missing       => "{p}: missing required field '{e}'"
+     , k = :unexpected    => "{p}: unexpected keys: {keys-str}"
+     , k = :length        => "{p}: expected {e} elements, found {f}"
+     , "{p}: does not conform"
+     ])
+
+` { doc: "`headline(td, vs)` - the one-line summary heading a contract failure."
+    export: :suppress }
+headline(td, vs):
+  { n: vs count
+    noun: (n = 1) then("violation", "violations")
+    ty: td type-str
+  }."{n} {noun} against {ty}"
+
+##
+## ensure
+##
+
+` { doc: "`ensure(spec, data)` - return `data` unchanged if it conforms to type
+         spec `spec`, and raise a contract violation listing every
+         non-conforming position otherwise. Because it returns the data
+         untouched it drops into a pipeline without restructuring the code
+         around it. Forces exactly what validate forces."
+    type: s"any → a → a" }
+ensure(spec, data):
+  { td: type-data?(spec) then(__TYPE_TO_DATA(spec), spec)
+    violations: data validate(spec)
+  }.((violations nil?)
+       then(data,
+            __CONTRACT_FAIL(headline(td, violations),
+                            violations map(render-violation))))

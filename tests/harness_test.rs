@@ -2783,6 +2783,25 @@ pub fn test_193_1tkk_7_12_curated_trace() {
 }
 
 #[test]
+/// SV3 (eu-u9xj.1) — `ensure` on non-conforming data raises
+/// `EU-EVAL-CONTRACT`. One `(?s)` regex gates the whole shape at once: the
+/// code, the headline's violation count and rendered spec type, and both
+/// violation lines as notes — a `:type-mismatch` with a path and a
+/// closed-record `:unexpected`.
+pub fn test_196_sv3_contract_violation() {
+    run_error_test(&error_opts("196_sv3_contract_violation.eu"));
+}
+
+#[test]
+/// SV3 (eu-u9xj.1) — a malformed *spec* raises through `panic`, a different
+/// `ExecutionError` variant from the `ContractViolation` a non-conforming
+/// *value* produces. This is what makes design decision 6 testable: a schema
+/// typo must not masquerade as bad input data.
+pub fn test_197_sv3_contract_bad_spec() {
+    run_error_test(&error_opts("197_sv3_contract_bad_spec.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
@@ -2980,6 +2999,14 @@ pub fn test_193_sv3_validate() {
 #[test]
 pub fn test_194_sv3_forcing_discipline() {
     run_test(&opts("194_sv3_forcing_discipline.eu"));
+}
+
+/// SV3 (eu-u9xj.1) — `ensure` returns conforming data unchanged, so it drops
+/// into a pipeline; plus the report-line renderers the raised diagnostic
+/// shows as notes. See the .eu file for full context.
+#[test]
+pub fn test_195_sv3_ensure() {
+    run_test(&opts("195_sv3_ensure.eu"));
 }
 
 #[test]

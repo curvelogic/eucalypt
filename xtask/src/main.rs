@@ -53,8 +53,10 @@ mod engine_ab;
 /// See that constant's doc comment for the version history (v2: eu-2sa6.11
 /// Let/LetRec binding count widened `u16` → `u32`; v4: eu-2sa6.20
 /// `PreludeBlob::type_summary` field removed; v5: eu-1tkk.7.11
-/// `PreludeBlob::blame` field + blob-mode global-slot Smid identity).
-const BYTECODE_WIRE_FORMAT_VERSION: u32 = 5;
+/// `PreludeBlob::blame` field + blob-mode global-slot Smid identity;
+/// v6: eu-u9xj.1 intrinsic table grew, shifting the `INTRINSIC_COUNT +
+/// prelude slot` global numbering the blob bakes in).
+const BYTECODE_WIRE_FORMAT_VERSION: u32 = 6;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);

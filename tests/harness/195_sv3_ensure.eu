@@ -1,0 +1,58 @@
+{ import: "contract.eu"
+  doc: "SV3 eu-u9xj.1 - ensure returns conforming data unchanged.
+
+Returning the data untouched is what lets ensure drop into a pipeline
+without restructuring the code around it. The failure path is covered by
+the error tests, which assert the raised diagnostic." }
+
+schema: s"{ name: string, port: number, tags?: [string] }"
+
+` :suppress
+good: { name: "web", port: 8080 }
+
+t1: (good ensure(schema)) = good
+t2: (good ensure(schema)).port = 8080
+
+# An absent optional field is conformant.
+t3: ({ name: "web", port: 1 } ensure(schema)).name = "web"
+
+# A present, correct optional field is conformant.
+t4: ({ name: "web", port: 1, tags: ["a"] } ensure(schema)).tags = ["a"]
+
+# ensure inherits validate's forcing discipline: an unnamed subtree of an
+# open spec is never forced, so this returns rather than raising.
+` :suppress
+bomb-blk: block([[:name, "web"],
+                 [:extra, panic("SV3: ensure forced an unnamed subtree")]])
+
+t5: (bomb-blk ensure(s"{name: string, ..}")).name = "web"
+
+# ensure composes: it is the identity on conforming data, so a pipeline
+# reads the same with or without it.
+t6: ([{ a: 1 }, { a: 2 }] map(ensure(s"{a: number}")) map(a-of)) = [1, 2]
+
+a-of(b): b.a
+
+##
+## The rendered report lines - what the diagnostic shows as notes
+##
+
+t7: (render-violation({ path: "a.b", kind: :type-mismatch,
+                        expected: "number", found: "string" }))
+      = "a.b: expected number, found string"
+
+t8: (render-violation({ path: "servers[3]", kind: :missing,
+                        expected: "host", found: :absent }))
+      = "servers[3]: missing required field 'host'"
+
+# The root path renders as (root): an empty string would leave a line
+# starting with a bare colon.
+t9: (render-violation({ path: "", kind: :unexpected,
+                        expected: :closed, found: [:x, :y] }))
+      = "(root): unexpected keys: x, y"
+
+t10: (render-violation({ path: "xs", kind: :length,
+                         expected: 2, found: 1 }))
+       = "xs: expected 2 elements, found 1"
+
+RESULT: if([t1, t2, t3, t4, t5, t6, t7, t8, t9, t10] all-true?, :PASS, :FAIL)

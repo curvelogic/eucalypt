@@ -33,9 +33,18 @@ use std::path::Path;
 ///   always `Smid::default()` — not a serialised-shape change on its own,
 ///   but bundled into the same version bump as the `blame` field it feeds
 ///   (eu-1tkk.7.11).
+/// - v6: the intrinsic table grew (`CONTRACT_FAIL`, eu-u9xj.1). Not a
+///   byte-layout change, but `INTRINSIC_COUNT` shifts, and the blob bakes
+///   global slots in as `INTRINSIC_COUNT + prelude slot` (see
+///   `src/eval/stg/blob.rs`, "Global slot numbering"). The source hash
+///   covers only `lib/prelude.eu` — which that change did *not* touch — so
+///   without a version bump a pre-existing blob would pass the freshness
+///   check carrying an off-by-one slot map. Bump this whenever the
+///   intrinsic table gains or loses an entry, not only when the encoding
+///   changes.
 ///
 /// MUST match `BYTECODE_WIRE_FORMAT_VERSION` in `xtask/src/main.rs`.
-const BYTECODE_WIRE_FORMAT_VERSION: u32 = 5;
+const BYTECODE_WIRE_FORMAT_VERSION: u32 = 6;
 
 /// Compute the blob source hash: `SHA-256(prelude source ‖ wire-format version)`.
 fn blob_source_hash(source_bytes: &[u8]) -> [u8; 32] {

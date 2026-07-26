@@ -31,6 +31,7 @@
 - [Monads and the monad() Utility](guide/monads.md)
 - [The State Monad](guide/state-monad.md)
 - [Type Checking](guide/type-checking.md)
+- [Structural Contracts](guide/contracts.md)
 - [Advanced Topics](guide/advanced-topics.md)
 
 # Reference
