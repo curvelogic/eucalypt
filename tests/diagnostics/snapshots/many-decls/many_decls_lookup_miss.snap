@@ -12,8 +12,8 @@ primary: user tests/diagnostics/snapshot-corpus/many_decls_lookup_miss.eu:604:9
 help-lines: 1
 note-lines: 0
 secondary-labels: 0
-trace-frames: 2
-trace-user-frames: 2
+trace-frames: 1
+trace-user-frames: 1
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
@@ -26,5 +26,4 @@ error: key 'gama' not found in block
     │         ^
     │
     = stack trace:
-      - pad0000 at many_decls_lookup_miss.eu:4:12
       - result at many_decls_lookup_miss.eu:604:9

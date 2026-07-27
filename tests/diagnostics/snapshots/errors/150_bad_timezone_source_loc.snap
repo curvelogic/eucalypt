@@ -12,8 +12,8 @@ primary: user tests/harness/errors/150_bad_timezone_source_loc.eu:2:9
 help-lines: 1
 note-lines: 1
 secondary-labels: 0
-trace-frames: 1
-trace-user-frames: 1
+trace-frames: 0
+trace-user-frames: 0
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
@@ -26,5 +26,3 @@ error: unrecognised time zone 'NotATimezone'
   │         ^^^
   │
   = timezone must be a UTC offset string like '+0100', '-0530', or 'UTC'
-  = stack trace:
-    - result at 150_bad_timezone_source_loc.eu:2:9

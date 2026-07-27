@@ -12,8 +12,8 @@ primary: user tests/harness/errors/080_array_oob.eu:2:4
 help-lines: 0
 note-lines: 0
 secondary-labels: 1
-trace-frames: 1
-trace-user-frames: 1
+trace-frames: 0
+trace-user-frames: 0
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
@@ -23,6 +23,3 @@ error: array index out of bounds: coordinates [5, 0] are outside the array bound
   │
 2 │ a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([5, 0])
   │    ^^^                                 --- called from here
-  │
-  = stack trace:
-    - a at 080_array_oob.eu:2:4

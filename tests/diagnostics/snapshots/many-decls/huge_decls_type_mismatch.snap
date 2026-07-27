@@ -27,4 +27,4 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found string "a"
      = to convert a string to a number, use 'num', e.g. 's num'
      = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
      = stack trace:
-       - pad0000 at huge_decls_type_mismatch.eu:5:12
+       - result at huge_decls_type_mismatch.eu:2005:13

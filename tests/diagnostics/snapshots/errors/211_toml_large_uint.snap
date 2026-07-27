@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/171_yaml_large_uint
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/171_yaml_large_uint.eu
+fixture: errors/211_toml_large_uint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/211_toml_large_uint.eu
 prelude-modes: identical
 
 === both prelude modes ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: EU-RENDER-UNREPRESENTABLE
-primary: user tests/harness/errors/171_yaml_large_uint.eu:4:7
+primary: user tests/harness/errors/211_toml_large_uint.eu:4:7
 help-lines: 0
 note-lines: 2
 secondary-labels: 0
@@ -18,8 +18,8 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error[EU-RENDER-UNREPRESENTABLE]: cannot represent this value in YAML output: the integer 9999999999999999999 is above 9223372036854775807, the largest integer a YAML integer scalar can carry
-  ┌─ tests/harness/errors/171_yaml_large_uint.eu:4:7
+error[EU-RENDER-UNREPRESENTABLE]: cannot represent this value in TOML output: the integer 9999999999999999999 is above 9223372036854775807, the largest integer a TOML integer can carry
+  ┌─ tests/harness/errors/211_toml_large_uint.eu:4:7
   │
 4 │ main: data.n
   │       ^^^^
@@ -27,4 +27,4 @@ error[EU-RENDER-UNREPRESENTABLE]: cannot represent this value in YAML output: th
   = render to a format that can carry the value — 'json', 'edn', 'text' and 'eu' output all keep integers of this magnitude
   = to keep the exact digits in this format, convert the value to a string first with 'str', e.g. 'n str'
   = stack trace:
-    - main at 171_yaml_large_uint.eu:4:7
+    - main at 211_toml_large_uint.eu:4:7

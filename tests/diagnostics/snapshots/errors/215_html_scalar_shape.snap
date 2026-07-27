@@ -1,0 +1,24 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/215_html_scalar_shape
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/215_html_scalar_shape.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-RENDER-SHAPE
+primary: none
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-RENDER-SHAPE]: cannot render this document as html: the value to render is a single scalar, but markup output needs a hiccup element — a list whose first item is the tag
+ = html output renders hiccup markup: a list of tag, attribute block and contents, e.g. '[:div, { id: "top" }, "hello"]'
+ = select the markup value with a target or '-e', e.g. 'eu -x html -e page.eu'; rendering a whole unit gives html the unit's block, which is not markup
+ = to render arbitrary data instead, choose a format that accepts any shape, such as 'yaml', 'json' or 'text'

@@ -12,8 +12,8 @@ primary: user tests/harness/errors/090_bad_format_string.eu:2:4
 help-lines: 1
 note-lines: 0
 secondary-labels: 0
-trace-frames: 1
-trace-user-frames: 1
+trace-frames: 0
+trace-user-frames: 0
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
@@ -24,6 +24,3 @@ error: bad format string: 'Value is %d' is not a printf specifier (must start wi
   │
 2 │ x: str.fmt(42, "Value is %d")
   │    ^^^
-  │
-  = stack trace:
-    - x at 090_bad_format_string.eu:2:4

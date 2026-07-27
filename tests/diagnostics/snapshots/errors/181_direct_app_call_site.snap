@@ -1,34 +1,9 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/181_direct_app_call_site
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/181_direct_app_call_site.eu
-prelude-modes: divergent
+prelude-modes: identical
 
-=== blob prelude ===
-exit: 1
-errors: 1
-warnings: 0
-code: -
-primary: user tests/harness/errors/181_direct_app_call_site.eu:15:9
-help-lines: 0
-note-lines: 1
-secondary-labels: 0
-trace-frames: 1
-trace-user-frames: 1
-trace-prelude-frames: 0
-prelude-excerpt-lines: 0
-rust-panic: no
---- stderr ---
-error: tail requires a list, found 3
-   ┌─ tests/harness/errors/181_direct_app_call_site.eu:15:9
-   │
-15 │ result: second(3)
-   │         ^^^^^^
-   │
-   = head and tail require a list (e.g. [1, 2, 3]) as their argument
-   = stack trace:
-     - result at 181_direct_app_call_site.eu:15:9
-
-=== --source-prelude ===
+=== both prelude modes ===
 exit: 1
 errors: 1
 warnings: 0

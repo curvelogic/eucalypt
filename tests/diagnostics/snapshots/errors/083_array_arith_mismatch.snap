@@ -25,4 +25,4 @@ error: array shape mismatch: arrays have incompatible shapes [2] and [3] for ele
   │    ^^^
   │
   = stack trace:
-    - a at 083_array_arith_mismatch.eu:2:4
+    - c at 083_array_arith_mismatch.eu:4:4

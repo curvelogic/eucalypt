@@ -12,8 +12,8 @@ primary: user tests/harness/errors/141_calzdt_year_overflow.eu:3:9
 help-lines: 1
 note-lines: 1
 secondary-labels: 0
-trace-frames: 1
-trace-user-frames: 1
+trace-frames: 0
+trace-user-frames: 0
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
@@ -27,5 +27,3 @@ error: invalid date/time components: the combination (3000000000, 1, 1) does not
   │         ^^^
   │
   = valid ranges: year (any integer), month (1–12), day (1–28/29/30/31 depending on month), hour (0–23), minute (0–59), second (0–59)
-  = stack trace:
-    - result at 141_calzdt_year_overflow.eu:3:9

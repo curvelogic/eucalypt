@@ -12,8 +12,8 @@ primary: user tests/harness/errors/105_base64_decode_invalid.eu:2:31
 help-lines: 0
 note-lines: 0
 secondary-labels: 0
-trace-frames: 1
-trace-user-frames: 1
+trace-frames: 0
+trace-user-frames: 0
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
@@ -23,6 +23,3 @@ error: str.base64-decode: invalid byte 0x20 at position 3; base64 uses only A-Z,
   │
 2 │ result: "not valid base64!!!" str.base64-decode
   │                               ^^^
-  │
-  = stack trace:
-    - result at 105_base64_decode_invalid.eu:2:31

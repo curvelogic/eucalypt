@@ -141,6 +141,19 @@ const REGISTRY: &[Gate] = &[
                     is a tautology. The rest of the file is ungated \
                     (eu-r4647)",
     },
+    Gate {
+        path: "tests/diagnostics_snapshots.rs",
+        cfg: "prelude_blob_ok",
+        supplier: Supplier::PreludeBlobJob("diagnostics-blob-mode"),
+        rationale: "blob_prelude_snapshots_match renders every fixture through \
+                    the pre-compiled prelude — the rendering a released binary \
+                    produces — and divergence_inventory_is_current compares it \
+                    with the source-prelude rendering; neither exists without a \
+                    blob to render through. The job additionally asserts both \
+                    test names appear in `--list`, because this file has \
+                    ungated tests too and a target-level zero-test guard would \
+                    stay green with only those running (eu-1tkk.7.4)",
+    },
 ];
 
 /// Substrings that mark a file as conditionally compiled for the purposes of

@@ -1,33 +1,9 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/193_1tkk_7_12_curated_trace
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/193_1tkk_7_12_curated_trace.eu
-prelude-modes: divergent
+prelude-modes: identical
 
-=== blob prelude ===
-exit: 1
-errors: 1
-warnings: 0
-code: -
-primary: user tests/harness/errors/193_1tkk_7_12_curated_trace.eu:5:12
-help-lines: 0
-note-lines: 0
-secondary-labels: 0
-trace-frames: 1
-trace-user-frames: 1
-trace-prelude-frames: 0
-prelude-excerpt-lines: 0
-rust-panic: no
---- stderr ---
-error: panic: index 10 out of range for list of length 3
-  ┌─ tests/harness/errors/193_1tkk_7_12_curated_trace.eu:5:12
-  │
-5 │ result: xs nth(10)
-  │            ^^^
-  │
-  = stack trace:
-    - result at 193_1tkk_7_12_curated_trace.eu:5:12
-
-=== --source-prelude ===
+=== both prelude modes ===
 exit: 1
 errors: 1
 warnings: 0

@@ -12,8 +12,8 @@ primary: user tests/harness/errors/021_bad_num_parse.eu:1:6
 help-lines: 0
 note-lines: 2
 secondary-labels: 0
-trace-frames: 1
-trace-user-frames: 1
+trace-frames: 0
+trace-user-frames: 0
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
@@ -26,5 +26,3 @@ error: bad number format: blah
   │
   = valid number formats are: integers (e.g. 42), decimals (e.g. 3.14), and scientific notation (e.g. 1.5e10)
   = use 'str' to convert numbers to strings; to convert strings to numbers use 'num'
-  = stack trace:
-    - bad at 021_bad_num_parse.eu:1:6

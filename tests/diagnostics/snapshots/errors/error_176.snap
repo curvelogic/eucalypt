@@ -36,25 +36,19 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/error_176.eu:16:22
+primary: user tests/harness/errors/error_176.eu:19:32
 help-lines: 0
 note-lines: 0
-secondary-labels: 1
-trace-frames: 1
-trace-user-frames: 1
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
 trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 EXPECT FAILED: expected "goodbye world", got "hello world"
 error: assertion failed: expected "goodbye world", got "hello world"
-   ┌─ tests/harness/errors/error_176.eu:16:22
+   ┌─ tests/harness/errors/error_176.eu:19:32
    │
-16 │ make-greeting(name): "hello {name}"
-   │                      ^^^^^^^^^^^^^^
-   ·
 19 │ result: make-greeting("world") //= "goodbye world"
-   │                                --- called from here
-   │
-   = stack trace:
-     - result at error_176.eu:19:32
+   │                                ^^^
