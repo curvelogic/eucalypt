@@ -1,5 +1,5 @@
-# eu-u9xj.6 (PP) fixture for test_pp_gc_collects_during_par_map in
-# harness_test.rs — the GC-safety gate for the parallel driver.
+# eu-u9xj.6 (PP) fixture for the FORK half of
+# test_pp_gc_collects_during_par_map in harness_test.rs.
 #
 # The driver has to hold heap handles across `force()` calls: mapping N
 # elements means accumulating N results while forcing each one. A handle on
@@ -14,6 +14,13 @@
 # under `EU_GC_STRESS=1` so every collection evacuates rather than merely
 # marking, and comparing the answer with the `map` oracle beside this file.
 #
+# Four times the work of pp_gc_stress_fixture.eu, because the fork path
+# splits it W ways: each worker must allocate enough *within its own chunk* to
+# reach the limit, or no collection happens in the worker and the gate does
+# not gate. Verified by fault injection at W=4 with --heap-limit-mib 8 —
+# removing the root set from the worker loop is detected there and is NOT
+# detected on the smaller shape.
+#
 # The shape is tuned so a collection lands mid-map: the heap limit the test
 # passes is crossed partway through (this heap collects only once its limit is
 # reached), and each element allocates a 60-element intermediate list. Raise
@@ -24,7 +31,7 @@
 # fixture is ever retuned, re-verify by fault injection that it still fails
 # when the root set is removed.
 
-f(x): range(0, 60) map((_0 + x)) sum
-xs: range(1, 30)
+f(x): range(0, 100) map((_0 + x)) sum
+xs: range(1, 60)
 r: xs par-map(f)
 n: r sum

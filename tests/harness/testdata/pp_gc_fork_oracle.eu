@@ -1,11 +1,11 @@
-# eu-u9xj.6 (PP) — the `map` oracle for the GC-safety gate
+# eu-u9xj.6 (PP) — the `map` oracle for the fork half of the GC-safety gate
 # (test_pp_gc_collects_during_par_map in harness_test.rs). Identical to
-# pp_gc_stress_fixture.eu except that it uses `map` instead of `par-map`, so
+# pp_gc_fork_fixture.eu except that it uses `map` instead of `par-map`, so
 # the parallel driver's answer is compared against ordinary evaluation rather
 # than against another run of itself. Run without a heap limit and without GC
 # stress, so it is fast and is not itself under test.
 
-f(x): range(0, 60) map((_0 + x)) sum
-xs: range(1, 30)
+f(x): range(0, 100) map((_0 + x)) sum
+xs: range(1, 60)
 r: xs map(f)
 n: r sum

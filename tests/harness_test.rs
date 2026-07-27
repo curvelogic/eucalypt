@@ -3520,12 +3520,24 @@ pub fn test_pp_fork_path_equivalence_both_engines() {
 /// additional code coverage.
 #[test]
 pub fn test_pp_gc_collects_during_par_map() {
-    let fixture = "tests/harness/testdata/pp_gc_stress_fixture.eu";
-    let oracle_fixture = "tests/harness/testdata/pp_gc_stress_oracle.eu";
+    let seq_fixture = "tests/harness/testdata/pp_gc_stress_fixture.eu";
+    let seq_oracle_fixture = "tests/harness/testdata/pp_gc_stress_oracle.eu";
+    let fork_fixture = "tests/harness/testdata/pp_gc_fork_fixture.eu";
+    let fork_oracle_fixture = "tests/harness/testdata/pp_gc_fork_oracle.eu";
 
     let run = |file: &str, env: &[(&str, &str)], heap_mib: &str| -> String {
         let mut cmd = std::process::Command::new(eu_binary());
         cmd.arg(file).arg("--heap-limit-mib").arg(heap_mib);
+        // `EU_GC_VERIFY` is removed deliberately, not overlooked. The
+        // `test-pp-parallelism` CI job sets it to 2 for the whole job, and it
+        // is the wrong tool here twice over: it verifies reachability *from
+        // roots*, so it is structurally incapable of seeing the bug this test
+        // exists for, and it re-traverses the heap after every mark — which on
+        // a fixture chosen to collect as often as possible multiplied the job
+        // from under two minutes to sixteen. The fork path still runs under
+        // `EU_GC_VERIFY=2` in that job via
+        // `test_pp_fork_path_equivalence_both_engines`, so no coverage is lost.
+        cmd.env_remove("EU_GC_VERIFY");
         for (k, v) in env {
             cmd.env(k, v);
         }
@@ -3545,17 +3557,18 @@ pub fn test_pp_gc_collects_during_par_map() {
         String::from_utf8(out.stdout).expect("eu stdout was not utf-8")
     };
 
-    // The oracle is ordinary `map`, run without a limit and without stress:
-    // fast, and not itself under test.
-    let oracle = run(oracle_fixture, &[], "0");
+    // The oracles are ordinary `map`, run without a limit and without stress:
+    // fast, and not themselves under test.
+    let seq_oracle = run(seq_oracle_fixture, &[], "0");
+    let fork_oracle = run(fork_oracle_fixture, &[], "0");
 
     let sequential = run(
-        fixture,
+        seq_fixture,
         &[("EU_GC_STRESS", "1"), ("EU_PP_THRESHOLD", "100000")],
-        "24",
+        "8",
     );
     assert_eq!(
-        sequential, oracle,
+        sequential, seq_oracle,
         "par-map (sequential path) diverged from map under GC stress"
     );
 
@@ -3581,13 +3594,14 @@ pub fn test_pp_gc_collects_during_par_map() {
         if let Some(e) = engine {
             env.push(e);
         }
-        // A tighter limit than the sequential configuration above: the fork
-        // path splits the work four ways, so each worker must be pushed
-        // harder to collect within its own chunk. Verified by fault injection
-        // at exactly this setting.
-        let forked = run(fixture, &env, "8");
+        // A larger fixture than the sequential configuration above: the fork
+        // path splits the work four ways, so each worker needs enough
+        // allocation *within its own chunk* to reach the heap limit. On the
+        // smaller shape no worker collects and removing the worker-loop root
+        // set goes undetected — verified, which is why there are two fixtures.
+        let forked = run(fork_fixture, &env, "8");
         assert_eq!(
-            forked, oracle,
+            forked, fork_oracle,
             "par-map (fork path, engine {engine:?}) diverged from map under GC stress"
         );
     }
