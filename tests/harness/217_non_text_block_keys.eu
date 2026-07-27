@@ -1,7 +1,7 @@
-{ doc: "193 non-text block keys in the formats that support them
+{ doc: "217 non-text block keys in the formats that support them
         (eu-1z503). `kv-block` and `block` accept any key, and yaml and edn
         both have a representation for one that is not text. json, toml and
-        eu do not, and reject it — see errors/198-200.
+        eu do not, and reject it — see errors/218-220.
 
         This fixture is the other half of that pair: it pins the formats
         that must keep working, so that hardening the three that cannot

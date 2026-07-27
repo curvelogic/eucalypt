@@ -2736,21 +2736,21 @@ pub fn test_error_215() {
 /// eu-1z503 — a non-text block key aborted the process inside
 /// `AsKey::as_key`. Reachable from ordinary source via `kv-block(1, "a")`,
 /// though not from any importer: they all normalise or reject such keys.
-pub fn test_error_198() {
-    run_error_test(&error_opts("198_json_block_key.eu"));
+pub fn test_error_218() {
+    run_error_test(&error_opts("218_json_block_key.eu"));
 }
 
 #[test]
-/// eu-1z503, TOML's `as_str().unwrap()`. Companion to `test_error_198`.
-pub fn test_error_199() {
-    run_error_test(&error_opts("199_toml_block_key.eu"));
+/// eu-1z503, TOML's `as_str().unwrap()`. Companion to `test_error_218`.
+pub fn test_error_219() {
+    run_error_test(&error_opts("219_toml_block_key.eu"));
 }
 
 #[test]
 /// eu-1z503, the eu exporter's `panic!` on a non-string/symbol key.
-/// Companion to `test_error_198`.
-pub fn test_error_200() {
-    run_error_test(&error_opts("200_eu_block_key.eu"));
+/// Companion to `test_error_218`.
+pub fn test_error_220() {
+    run_error_test(&error_opts("220_eu_block_key.eu"));
 }
 
 #[test]
@@ -3223,8 +3223,8 @@ pub fn test_212_html_export() {
 /// such a key and must keep doing so; json, toml and eu cannot and reject
 /// it (errors/198-200). This fixture pins the working half.
 #[test]
-pub fn test_193_non_text_block_keys() {
-    run_test(&opts("193_non_text_block_keys.eu"));
+pub fn test_217_non_text_block_keys() {
+    run_test(&opts("217_non_text_block_keys.eu"));
 }
 
 /// eu-1tkk.7.23 — EDN export of an integer above i64::MAX rounded it
