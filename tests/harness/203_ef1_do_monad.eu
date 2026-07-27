@@ -1,5 +1,5 @@
 { import: "resource:do"
-  doc: "191 EF1 combined effect monad (do): one colon-do block threading a
+  doc: "203 EF1 combined effect monad (do): one colon-do block threading a
         state-and-seed context over IO across all three effects, with parity
         against the underlying state and random monads run directly, and the
         threaded final state and final seed both asserted." }

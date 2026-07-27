@@ -55,13 +55,25 @@ use sha2::{Digest, Sha256};
 ///   global's slot identity instead of copying them verbatim — the baked
 ///   values are indices into `xtask`'s own `SourceMap` and aliased unrelated
 ///   user source positions at runtime (eu-7x0r).
-/// - v7: reserved for the SV3 structural-contract field (eu-u9xj.1). Note
-///   that eu-3skeg changed the freshness *recipe* itself (domain-separated,
-///   length-prefixed absorption of three labelled inputs, one of them the
-///   intrinsic catalogue), so every blob predating this commit is invalidated
-///   regardless of the version number — the bump is for the benefit of
-///   readers, not the mechanism.
-pub const BYTECODE_WIRE_FORMAT_VERSION: u32 = 7;
+/// - v7: no serialised-shape change. eu-3skeg changed the freshness *recipe*
+///   itself (domain-separated, length-prefixed absorption of three labelled
+///   inputs, one of them the intrinsic catalogue), so every blob predating
+///   that commit is invalidated regardless of the version number — the bump
+///   is for the benefit of readers, not the mechanism. (This entry originally
+///   read "reserved for the SV3 structural-contract field"; SV3 (eu-u9xj.1)
+///   in fact adds an *intrinsic*, `CONTRACT_FAIL`, and no blob field, so no
+///   shape reservation was ever needed.)
+/// - v8: `PreludeBlob::deprecations` field added (deprecation path →
+///   `DeprecationSpec`, so a `deprecated` declaration in the prelude is not
+///   inert on the blob-backed evaluate path) (eu-1tkk.2). The field is
+///   inserted mid-struct, and postcard is positional and non-self-describing:
+///   `#[serde(default)]` does **not** make that backward compatible, so a v7
+///   blob decodes as a shifted field sequence and fails. `src/driver/eval.rs`
+///   catches the decode error and falls back to the source prelude with a
+///   warning, so the failure mode is a slow start rather than a wrong answer —
+///   but the bump is what makes it a *detected* staleness rather than a
+///   decode accident.
+pub const BYTECODE_WIRE_FORMAT_VERSION: u32 = 8;
 
 /// Path, relative to the workspace root, of the prelude source baked into the
 /// blob.
