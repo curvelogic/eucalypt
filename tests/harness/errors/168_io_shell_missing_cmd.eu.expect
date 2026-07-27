@@ -1,2 +1,4 @@
+# See 094_io_no_flag.eu.expect: the primary-label location is asserted in
+# tests/diagnostics_blame_plumbing_test.rs, which is blob-gated.
 exit: 1
-stderr: "(?s)io\.shell: 'cmd' field is required.*┌─[^\n]*168_io_shell_missing_cmd\.eu:3:7"
+stderr: "io.shell: 'cmd' field is required"
