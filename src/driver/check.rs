@@ -606,8 +606,8 @@ fn tag_for_prelude_side_input(input: &Input) -> Option<&'static str> {
 ///
 /// Left alone, that aliases. A warning sited inside an injected prelude
 /// core carries a foreign index; once this call's own `SourceMap` grows
-/// past it — which takes only a few hundred user declarations, well
-/// inside the size of a real project file — the index resolves against
+/// past it — which takes a few thousand user declarations, well inside
+/// the size of a real project file — the index resolves against
 /// whichever *unrelated user declaration* happens to occupy that slot, and
 /// the diagnostic renders a primary label pointing at innocent user code.
 /// (The eu-rb5n review reasoned this was safe because a small check
@@ -1025,7 +1025,6 @@ x: "hello" : "string"
     /// against the real artefact rather than an arbitrary number. It is
     /// not a contract — the tests stay meaningful if the prelude grows,
     /// they just stop being a tight fit — so nothing asserts it.
-    #[cfg(test)]
     const BAKED_SMID_HIGH_WATER: u32 = 7357;
 
     /// Build a synthetic "prelude" unit carrying a genuine internal type
@@ -1039,7 +1038,6 @@ x: "hello" : "string"
     /// argument, not the function call site". A tag on the `App` node is
     /// simply never read, which is one of the two reasons the test this
     /// pair replaces could not observe the defect it claimed to rule out.
-    #[cfg(test)]
     fn synthetic_prelude_with_internal_mismatch_at(
         foreign: crate::common::sourcemap::Smid,
     ) -> RcExpr {
@@ -1077,7 +1075,6 @@ x: "hello" : "string"
     /// (`lib/prelude.eu` is untouched). Only `"prelude"` is injected —
     /// `build`/`io`/`args` load normally — so this exercises the same
     /// injection/fallback machinery `bin/eu.rs` uses.
-    #[cfg(test)]
     fn check_synthetic_prelude_against_filler_file(
         synthetic_prelude: RcExpr,
         filler_decls: usize,
@@ -1115,7 +1112,6 @@ x: "hello" : "string"
     /// Everything below the lowest belongs to the reserved foreign range
     /// (`SourceMap::reserve_foreign_range`), so the span between them is
     /// exactly what the loader registered for its own inputs.
-    #[cfg(test)]
     fn locally_minted_count(
         source_map: &crate::common::sourcemap::SourceMap,
         probe_to: u32,
