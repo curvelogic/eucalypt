@@ -1,4 +1,4 @@
-{ doc: "192 EDN export of an integer above i64::MAX (eu-1tkk.7.23).
+{ doc: "213 EDN export of an integer above i64::MAX (eu-1tkk.7.23).
         The EDN exporter fell back to `as_f64`, so 9999999999999999999
         was silently exported as 10000000000000000000 — a wrong number in
         the output with no panic and no error to notice it by. EDN
