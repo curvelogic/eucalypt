@@ -596,30 +596,37 @@ fn tag_for_prelude_side_input(input: &Input) -> Option<&'static str> {
 /// the warning would silently fail to fire only on this (blob) path. See
 /// `SourceLoader::seed_monad_registries` for the shared seeding logic.
 ///
-/// ## `Smid` cross-process scoping (eu-rb5n / Wicket review)
+/// ## `Smid` cross-process scoping (eu-rb5n / eu-r4647)
 ///
 /// The injected `prelude_units` cores carry `Smid` values minted by the
 /// offline `cargo xtask prelude-compile` process's own `SourceMap`. `Smid`
 /// (`src/common/sourcemap.rs`) is a bare index into a process-local `Vec`,
 /// so these indices are foreign to this call's fresh `SourceLoader`/
-/// `SourceMap`. In practice this is harmless: every diagnostic in the
-/// eu-rb5n corpus sweep (515 files) cites the *user's* call site, never a
-/// location inside the injected prelude core, because `prune::prune`
-/// (`eliminate()`, called before `type_check` in this pipeline) only keeps
-/// prelude bindings reachable from the user's own code, and `lib/prelude.eu`
-/// carries no internal type mismatch today. If a future prelude change
-/// introduced a genuine internal mismatch in a reachable binding, the
-/// resulting warning's foreign `Smid` would either resolve to `None` (out
-/// of range — the far more likely outcome, since the offline compile mints
-/// thousands of indices a small check invocation's own `SourceMap` never
-/// approaches) and render without a location label, or, for a coincidentally
-/// in-range index, could alias to an unrelated real entry and show a
-/// misleading location — see
-/// `tests::in_prelude_smid_degrades_gracefully_not_misleadingly` below,
-/// which constructs exactly this scenario with a synthetic prelude and
-/// confirms the out-of-range (graceful) case. Fully closing this gap means
-/// re-basing baked `Smid`s into the runtime `SourceMap` at injection time —
-/// tracked as follow-on work, out of scope for this PR.
+/// `SourceMap`.
+///
+/// Left alone, that aliases. A warning sited inside an injected prelude
+/// core carries a foreign index; once this call's own `SourceMap` grows
+/// past it — which takes a few thousand user declarations, well inside
+/// the size of a real project file — the index resolves against
+/// whichever *unrelated user declaration* happens to occupy that slot, and
+/// the diagnostic renders a primary label pointing at innocent user code.
+/// (The eu-rb5n review reasoned this was safe because a small check
+/// invocation's `SourceMap` never approaches the thousands of indices the
+/// offline compile mints. That reasoning is unsound: it holds only for
+/// small inputs. The same reasoning, on the eval path, is what let
+/// `xs nth(99)` blame three arbitrary lines of a 2000-declaration file —
+/// eu-7x0r defect 2.)
+///
+/// So before loading anything of our own, this function reserves the whole
+/// foreign index range in the loader's `SourceMap`
+/// ([`crate::common::sourcemap::SourceMap::reserve_foreign_range`], sized
+/// by [`RcExpr::max_smid`] over the injected units). Foreign indices then
+/// resolve to `None` — a diagnostic keeps its message and simply has no
+/// location label, which is the only truthful answer since the
+/// pre-compiled prelude's source is not registered in this map at all —
+/// and every `Smid` this call goes on to mint lands above the reserved
+/// range, so no user location can ever be aliased. Gated by
+/// `tests::in_prelude_smid_cannot_alias_user_code_in_a_large_source_map`.
 ///
 /// `deprecations` is the blob's baked `PreludeBlob::deprecations` — the union
 /// of what the prelude-side units declared. It has to be supplied the same way
@@ -642,6 +649,19 @@ pub fn run_type_checker_from_blob_core(
     // the user's own file (translated below) is recognised as monadic.
     loader.seed_monad_registries(monad_specs, monad_type_hints);
     let inputs = opt.inputs();
+
+    // eu-r4647: reserve the index range the baked cores' foreign `Smid`s
+    // occupy, before the loader mints a single `Smid` of its own. See the
+    // "`Smid` cross-process scoping" section above. Done over *all* the
+    // supplied units, not just the ones the injection loop below ends up
+    // using, so the reservation cannot depend on which inputs happen to
+    // match — under-reserving is what reintroduces the aliasing.
+    let highest_foreign = prelude_units
+        .iter()
+        .map(|(_, expr)| expr.max_smid())
+        .max()
+        .unwrap_or_default();
+    loader.reserve_foreign_smid_range(highest_foreign);
 
     // Inject the prelude-side units the blob supplied a baked core for, and
     // record which inputs that covers so the load loop below can skip them.
@@ -1014,32 +1034,33 @@ x: "hello" : "string"
         assert_eq!(byte_offset_to_line_col(src, 6), "2:1");
     }
 
-    /// eu-rb5n / Wicket review: the baked `desugared_unit_cores` carry
-    /// `Smid` values minted by the offline `cargo xtask prelude-compile` process's
-    /// own `SourceMap`. `Smid` (`src/common/sourcemap.rs`) is a bare index
-    /// into a process-local `Vec`, so those indices are foreign once
-    /// injected into a fresh runtime `SourceMap` — if a diagnostic's
-    /// location ever cites an expression *inside* an injected prelude
-    /// definition (rather than the user's call site, which is what every
-    /// diagnostic in the full corpus sweep cites today), the runtime
-    /// `SourceMap` never registered that index.
+    /// The highest `Smid` `cargo xtask prelude-compile` bakes into
+    /// `PreludeBlob::desugared_unit_cores`, measured on the checked-in
+    /// `lib/prelude.eu` (2026-07-27: `build` 35, `io` 0, `args` 0,
+    /// `prelude` 7357).
     ///
-    /// This test proves the failure mode is graceful, not misleading: it
-    /// builds a synthetic "prelude" unit (injected in place of the real one
-    /// via `run_type_checker_from_blob_core` — `lib/prelude.eu` is untouched)
-    /// containing a genuine internal type mismatch (`probe: number ->
-    /// number` called with a string) at an `App` node tagged with a `Smid`
-    /// far outside any range this test's tiny `SourceMap` will ever
-    /// register — mirroring how a large offline prelude compile mints
-    /// thousands of indices that a small runtime check invocation never
-    /// sees. The resulting diagnostic must still carry its message, just
-    /// with no primary location label — never a crash, and never an
-    /// aliased, wrong location.
-    #[test]
-    fn in_prelude_smid_degrades_gracefully_not_misleadingly() {
+    /// The two tests below use it so their fixtures are calibrated
+    /// against the real artefact rather than an arbitrary number. It is
+    /// not a contract — the tests stay meaningful if the prelude grows,
+    /// they just stop being a tight fit — so nothing asserts it.
+    const BAKED_SMID_HIGH_WATER: u32 = 7357;
+
+    /// Build a synthetic "prelude" unit carrying a genuine internal type
+    /// mismatch — `probe: number -> number` applied to a string — whose
+    /// *argument* is tagged with `foreign`, standing in for a `Smid`
+    /// minted by the offline `cargo xtask prelude-compile` process.
+    ///
+    /// The argument, not the enclosing `App`, is where the tag has to go:
+    /// `TypeChecker::synthesise_app` deliberately sites an argument
+    /// mismatch at `arg.smid()` "so warnings point at the offending
+    /// argument, not the function call site". A tag on the `App` node is
+    /// simply never read, which is one of the two reasons the test this
+    /// pair replaces could not observe the defect it claimed to rule out.
+    fn synthetic_prelude_with_internal_mismatch_at(
+        foreign: crate::common::sourcemap::Smid,
+    ) -> RcExpr {
         use crate::common::sourcemap::Smid;
         use crate::core::expr::core;
-        use clap::Parser as _;
 
         let type_val = core::str(Smid::default(), "number -> number");
         let meta_block = core::block(Smid::default(), [("type".to_string(), type_val)]);
@@ -1050,31 +1071,42 @@ x: "hello" : "string"
         );
         let probe = core::meta(Smid::default(), probe_lambda, meta_block);
 
-        // Far beyond anything this test's tiny SourceMap will ever register
-        // (a handful of entries for build-meta.yaml, __io/__args, and one
-        // small user file) — simulating a foreign index from a much larger
-        // offline prelude.eu compile (thousands of entries; see the
-        // `smidprobe` scratch measurement in the PR: 7550 valid Smids in the
-        // baked "prelude" unit alone).
-        let in_prelude_smid = Smid::fake(999_999);
         let bad_call = core::app(
-            in_prelude_smid,
+            foreign,
             core::var(Smid::default(), "probe".to_string()),
-            vec![core::str(Smid::default(), "boom")],
+            vec![core::str(foreign, "boom")],
         );
 
-        let synthetic_prelude = core::let_(
+        core::let_(
             Smid::default(),
             vec![
                 ("probe".to_string(), probe),
                 ("entry".to_string(), bad_call),
             ],
             core::var(Smid::default(), "entry".to_string()),
-        );
+        )
+    }
+
+    /// Run `run_type_checker_from_blob_core` over a user file of
+    /// `filler_decls` trivial declarations plus one `result:`, with
+    /// `synthetic_prelude` injected in place of the real one
+    /// (`lib/prelude.eu` is untouched). Only `"prelude"` is injected —
+    /// `build`/`io`/`args` load normally — so this exercises the same
+    /// injection/fallback machinery `bin/eu.rs` uses.
+    fn check_synthetic_prelude_against_filler_file(
+        synthetic_prelude: RcExpr,
+        filler_decls: usize,
+    ) -> PipelineCheckResult {
+        use clap::Parser as _;
 
         let dir = tempfile::tempdir().expect("tempdir");
         let file_path = dir.path().join("probe.eu");
-        std::fs::write(&file_path, "result: entry\n").expect("write temp file");
+        let mut src = String::new();
+        for i in 0..filler_decls {
+            src.push_str(&format!("filler{i}: {i}\n"));
+        }
+        src.push_str("result: entry\n");
+        std::fs::write(&file_path, &src).expect("write temp file");
 
         let cli = crate::driver::options::EucalyptCli::try_parse_from([
             "eu",
@@ -1086,33 +1118,137 @@ x: "hello" : "string"
         let mut opt = EucalyptOptions::from(cli);
         opt.process_defaults().expect("process_defaults");
 
-        // Only "prelude" is injected — "build"/"io"/"args" load normally, so
-        // this exercises the exact same injection/fallback machinery
-        // `bin/eu.rs` uses, just with a hand-built prelude standing in for
-        // the real one.
         let prelude_units = vec![("prelude".to_string(), synthetic_prelude)];
-        let result = run_type_checker_from_blob_core(
+        run_type_checker_from_blob_core(
             &opt,
             &prelude_units,
             &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
         )
-        .expect("run_type_checker_from_blob_core");
+        .expect("run_type_checker_from_blob_core")
+    }
+
+    /// How many `Smid`s this `SourceMap` minted itself, derived from the
+    /// public lookup API alone: the lowest and highest absolute indices
+    /// that resolve.
+    ///
+    /// Everything below the lowest belongs to the reserved foreign range
+    /// (`SourceMap::reserve_foreign_range`), so the span between them is
+    /// exactly what the loader registered for its own inputs.
+    fn locally_minted_count(
+        source_map: &crate::common::sourcemap::SourceMap,
+        probe_to: u32,
+    ) -> u32 {
+        use crate::common::sourcemap::Smid;
+        let mut lowest = None;
+        let mut highest = 0;
+        for i in 0..probe_to {
+            if source_map.source_info_for_smid(Smid::from(i + 1)).is_some() {
+                lowest.get_or_insert(i);
+                highest = i;
+            }
+        }
+        match lowest {
+            Some(lo) => highest - lo + 1,
+            None => 0,
+        }
+    }
+
+    /// eu-r4647 — the regression gate.
+    ///
+    /// `PreludeBlob::desugared_unit_cores` carries `RcExpr` cores whose
+    /// `Smid`s were minted by the offline `cargo xtask prelude-compile`
+    /// process's own `SourceMap`; `run_type_checker_from_blob_core`
+    /// injects them into a *fresh* runtime `SourceMap`. `Smid`
+    /// (`src/common/sourcemap.rs`) is a bare index into a process-local
+    /// `Vec`, so those indices mean nothing here — and once the runtime
+    /// map grows past them, they resolve against whichever unrelated user
+    /// declaration occupies the slot.
+    ///
+    /// This test constructs exactly that: a prelude-internal mismatch
+    /// tagged with a `Smid` at the real blob's high-water mark, checked
+    /// against a user file big enough that the loader mints past it.
+    /// Before the fix this rendered a primary label on `filler`-something
+    /// — a line of user code with no connection to the fault. It must
+    /// render no label at all.
+    ///
+    /// The `locally_minted_count` assertion is not decoration: it fails
+    /// the test if the fixture ever stops being adversarial. A version of
+    /// this test with a small user file passes whether or not the bug is
+    /// present, which is precisely how the defect survived review the
+    /// first time.
+    #[test]
+    fn in_prelude_smid_cannot_alias_user_code_in_a_large_source_map() {
+        use crate::common::sourcemap::Smid;
+
+        let foreign = Smid::fake(BAKED_SMID_HIGH_WATER as usize);
+        // Enough declarations that the loader's own Smids run past
+        // `foreign` — see the assertion below, which enforces it.
+        let result = check_synthetic_prelude_against_filler_file(
+            synthetic_prelude_with_internal_mismatch_at(foreign),
+            9000,
+        );
+
+        let minted = locally_minted_count(&result.source_map, 4 * BAKED_SMID_HIGH_WATER);
+        assert!(
+            minted > BAKED_SMID_HIGH_WATER,
+            "fixture is not adversarial: the loader minted only {minted} Smids of its own, \
+             so a foreign Smid at index {BAKED_SMID_HIGH_WATER} could not alias user code \
+             even with the reservation removed — enlarge the filler file"
+        );
 
         assert!(
             !result.warnings.is_empty(),
             "expected a type mismatch warning from the synthetic prelude's internal probe(\"boom\") call"
         );
-
         let diag = result.warnings[0].to_diagnostic(&result.source_map);
         assert!(
             diag.labels.is_empty(),
-            "an out-of-range in-prelude Smid must degrade to 'no location label', \
-             not alias to an unrelated (wrong) location: {diag:?}"
+            "a Smid baked by xtask must never resolve against this process's SourceMap: \
+             expected no location label, got {:?}",
+            diag.labels
         );
-        // The message itself must still be present and informative — only
-        // the *location* degrades, never the diagnostic itself.
+        assert!(
+            !diag.message.is_empty(),
+            "diagnostic message should survive even without a location"
+        );
+    }
+
+    /// eu-r4647 — the complementary small-input case.
+    ///
+    /// Kept deliberately, and deliberately *not* trusted as the gate.
+    /// The test this replaces asserted graceful degradation using "a
+    /// `Smid` far outside any range this test's tiny `SourceMap` will
+    /// ever register", reasoning that the offline compile mints thousands
+    /// of indices a small check invocation never approaches. That
+    /// reasoning is unsound — it holds only while the input is small, and
+    /// the moment it is not, the same `Smid` aliases real user code (see
+    /// `in_prelude_smid_cannot_alias_user_code_in_a_large_source_map`
+    /// above, and eu-7x0r defect 2 for the same class on the eval path).
+    ///
+    /// What this case still earns its place proving is that an index
+    /// beyond even the reserved range degrades rather than panicking or
+    /// indexing out of bounds.
+    #[test]
+    fn in_prelude_smid_beyond_the_reserved_range_still_degrades_gracefully() {
+        use crate::common::sourcemap::Smid;
+
+        let foreign = Smid::fake(999_999);
+        let result = check_synthetic_prelude_against_filler_file(
+            synthetic_prelude_with_internal_mismatch_at(foreign),
+            0,
+        );
+
+        assert!(
+            !result.warnings.is_empty(),
+            "expected a type mismatch warning from the synthetic prelude's internal probe(\"boom\") call"
+        );
+        let diag = result.warnings[0].to_diagnostic(&result.source_map);
+        assert!(
+            diag.labels.is_empty(),
+            "an out-of-range in-prelude Smid must degrade to 'no location label': {diag:?}"
+        );
         assert!(
             !diag.message.is_empty(),
             "diagnostic message should survive even without a location"

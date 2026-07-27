@@ -290,6 +290,19 @@ impl<'a> Executor<'a> {
                 .map(|(name, &slot)| (slot as u32, name.clone()))
                 .collect();
             self.source_map.set_slot_names(slot_to_name);
+            // Declaration spans for those same slots (eu-7x0r), so a
+            // blob-mode trace frame can cite `[prelude]:line:col`. The
+            // prelude *text* is registered lazily, only if a diagnostic is
+            // actually rendered — see `ensure_prelude_source_registered`.
+            let slot_spans: std::collections::HashMap<u32, codespan::Span> = blob
+                .binding_spans
+                .iter()
+                .enumerate()
+                .filter_map(|(slot, span)| {
+                    span.map(|(start, end)| (slot as u32, codespan::Span::new(start, end)))
+                })
+                .collect();
+            self.source_map.set_slot_spans(slot_spans);
         }
         self.prelude_blob = blob;
     }
@@ -702,6 +715,7 @@ impl<'a> Executor<'a> {
                 Ok(Some(130))
             }
             Err(e) => {
+                self.ensure_prelude_source_registered();
                 match error_format {
                     ErrorFormat::Human => {
                         let mut diagnostic = e.to_diagnostic(&self.source_map);
@@ -739,6 +753,36 @@ impl<'a> Executor<'a> {
                 Err(e)
             }
             Ok(code) => Ok(code),
+        }
+    }
+
+    /// Register the prelude source text so blob-mode trace frames can cite a
+    /// `[prelude]:line:col` location (eu-7x0r).
+    ///
+    /// On the blob path the prelude is never loaded, so its text is absent
+    /// from `files` and `PreludeBlob::binding_spans` has no file to be a span
+    /// *in*. The text is embedded in the binary either way, so registering it
+    /// costs only a string clone plus codespan's line index — paid once, and
+    /// only when a diagnostic is actually being rendered, so the happy path
+    /// is untouched. Marked as a resource file (via
+    /// `SourceMap::set_prelude_file`), so it can never be mistaken for user
+    /// code when a primary error location is chosen.
+    ///
+    /// A no-op on the source-compiled path (no blob) and after the first
+    /// call.
+    fn ensure_prelude_source_registered(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if self.prelude_blob.is_none() || self.source_map.has_prelude_file() {
+                return;
+            }
+            let resources = crate::driver::resources::Resources::default();
+            let Some(text) = resources.get("prelude") else {
+                return;
+            };
+            let name = crate::syntax::input::Locator::Resource("prelude".to_string()).to_string();
+            let file_id = self.files.add(name, text.clone());
+            self.source_map.set_prelude_file(file_id);
         }
     }
 
@@ -831,7 +875,16 @@ impl<'a> Executor<'a> {
         let mut frames: Vec<JsonFrame> = classified
             .iter()
             .filter_map(|&(smid, kind)| {
-                let info = self.source_map.source_info_for_smid(smid)?;
+                // A blob-mode global-slot Smid has no `SourceMap` entry by
+                // construction and resolves through `global_slot_info`
+                // instead — the same two-step the human renderer's
+                // `resolve_trace_entry` performs, so the JSON and human
+                // traces keep describing the same frames (eu-7x0r).
+                let slot_info = self.source_map.global_slot_info(smid);
+                let info = match slot_info {
+                    Some(ref info) => info,
+                    None => self.source_map.source_info_for_smid(smid)?,
+                };
 
                 // Prefer intrinsic display name, then annotation, then a
                 // source snippet — the same precedence format_trace uses.
