@@ -23,7 +23,7 @@
 # control.
 #
 # The complexity gate lives in the Rust test
-# (`test_195_gua64_inline_arg_sharing` in `tests/harness_test.rs`),
+# (`test_210_gua64_inline_arg_sharing` in `tests/harness_test.rs`),
 # which runs this file under a wall-clock deadline. `size` below is
 # chosen so a correct compiler finishes in a fraction of a second
 # (linear: 29 list elements) while a duplicating one needs 2^29 steps

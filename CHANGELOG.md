@@ -34,7 +34,7 @@ All notable changes to eucalypt are documented here.
   | 22 | 93,326,469 | 4,493 | 15,729,008 | 543 |
   | 24 | 373,296,553 | 4,905 | 62,914,954 | 585 |
 
-  The canonical `bench/{015..022}` suite is neutral-or-better on ticks, never worse: `hof_fold` −8.5% ticks and −17.2% allocations, `lookup_curve` −12.4% ticks, `string_scale` −6.6% allocations, the other five unchanged — sharing removes duplicated thunk allocation rather than adding cost. Regression-tested by `tests/harness/195_gua64_inline_arg_sharing.eu` (ten checks feeding `RESULT`, run under a wall-clock deadline that the duplicating compiler cannot meet) plus three `core::inline::reduce` unit tests pinning the reduced core shape, the no-over-sharing boundary, and the call-site `Smid`; fault-injection verified at four sites independently
+  The canonical `bench/{015..022}` suite is neutral-or-better on ticks, never worse: `hof_fold` −8.5% ticks and −17.2% allocations, `lookup_curve` −12.4% ticks, `string_scale` −6.6% allocations, the other five unchanged — sharing removes duplicated thunk allocation rather than adding cost. Regression-tested by `tests/harness/210_gua64_inline_arg_sharing.eu` (ten checks feeding `RESULT`, run under a wall-clock deadline that the duplicating compiler cannot meet) plus three `core::inline::reduce` unit tests pinning the reduced core shape, the no-over-sharing boundary, and the call-site `Smid`; fault-injection verified at four sites independently
 
 ## [0.13.1] - 2026-07-20
 
