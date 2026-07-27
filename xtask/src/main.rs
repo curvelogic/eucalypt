@@ -438,6 +438,34 @@ fn cmd_prelude_compile() -> Result<()> {
         .map(|(i, n)| (n.clone(), i))
         .collect();
 
+    // ── 7b. Reconcile BlameSpec (source vocabulary) → FrameKind (blob/classifier
+    // vocabulary) for the blob's blame table (eu-1tkk.7.11) ───────────────────
+    //
+    // Tolerant by construction: only names that both declared a blame
+    // contract AND survived peeling into an actual global slot are kept —
+    // a combinator without blame metadata simply isn't in the table (the
+    // classifier treats absence as "no declared contract", not an error).
+    //
+    // Computed before the bytecode pre-encode (step 8b) because the encode
+    // must stamp exactly the slots this table names, matching
+    // `StandardRuntime::should_stamp_slot` (eu-1tkk.7.21).
+    let blame: HashMap<String, eucalypt::common::diagnostic_json::FrameKind> = desugar_phase_blame
+        .into_iter()
+        .filter(|(name, _)| name_to_slot.contains_key(name.as_str()))
+        .map(|(name, spec)| {
+            let kind = match spec {
+                eucalypt::core::metadata::BlameSpec::Transparent => {
+                    eucalypt::common::diagnostic_json::FrameKind::Transparent
+                }
+                eucalypt::core::metadata::BlameSpec::Boundary => {
+                    eucalypt::common::diagnostic_json::FrameKind::Boundary
+                }
+            };
+            (name, kind)
+        })
+        .collect();
+    println!("  blame classifications retained in blob: {}", blame.len());
+
     // ── 8. Flatten lambda forms into a shared arena ───────────────────────────
     let (nodes, forms_pool, binding_entries) = flatten_forms_to_arena(&forms);
 
@@ -470,16 +498,24 @@ fn cmd_prelude_compile() -> Result<()> {
         // `StandardRuntime::globals()` stamps at load time, so the baked
         // bytecode path and the HeapSyn arena-reconstruction path agree on
         // which prelude global each reconstructed form identifies.
+        //
+        // Gated on the blame table by exactly the predicate
+        // `StandardRuntime::should_stamp_slot` applies (eu-1tkk.7.21); the
+        // two must agree or `embedded_bytecode_matches_fresh_encode` fails.
         let prelude_forms: Vec<LambdaForm> = binding_entries
             .iter()
             .enumerate()
             .map(|(i, &e)| {
-                arena
-                    .reconstruct_form_annotated(
+                let stamp = names.get(i).is_some_and(|n| blame.contains_key(n));
+                if stamp {
+                    arena.reconstruct_form_annotated(
                         e,
                         eucalypt::common::sourcemap::Smid::global_slot(i as u32),
                     )
-                    .expect("reconstruct prelude form for bytecode encode")
+                } else {
+                    arena.reconstruct_form(e)
+                }
+                .expect("reconstruct prelude form for bytecode encode")
             })
             .collect();
         let mut all_globals = runtime.globals();
@@ -505,30 +541,6 @@ fn cmd_prelude_compile() -> Result<()> {
         desugared_unit_cores_bytes.len(),
         desugared_unit_cores.len(),
     );
-
-    // ── 9b. Reconcile BlameSpec (source vocabulary) → FrameKind (blob/classifier
-    // vocabulary) for the blob's blame table (eu-1tkk.7.11) ───────────────────
-    //
-    // Tolerant by construction: only names that both declared a blame
-    // contract AND survived peeling into an actual global slot are kept —
-    // a combinator without blame metadata simply isn't in the table (the
-    // classifier treats absence as "no declared contract", not an error).
-    let blame: HashMap<String, eucalypt::common::diagnostic_json::FrameKind> = desugar_phase_blame
-        .into_iter()
-        .filter(|(name, _)| name_to_slot.contains_key(name.as_str()))
-        .map(|(name, spec)| {
-            let kind = match spec {
-                eucalypt::core::metadata::BlameSpec::Transparent => {
-                    eucalypt::common::diagnostic_json::FrameKind::Transparent
-                }
-                eucalypt::core::metadata::BlameSpec::Boundary => {
-                    eucalypt::common::diagnostic_json::FrameKind::Boundary
-                }
-            };
-            (name, kind)
-        })
-        .collect();
-    println!("  blame classifications retained in blob: {}", blame.len());
 
     // ── 10. Serialise and write ───────────────────────────────────────────────
     let blob = PreludeBlob {

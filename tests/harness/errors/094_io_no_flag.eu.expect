@@ -1,2 +1,8 @@
+# The primary-label location is asserted separately, in
+# tests/diagnostics_blame_plumbing_test.rs — it only holds in blob-prelude
+# mode. In source-prelude mode the annotation is a real prelude source
+# position, which `to_diagnostic` correctly suppresses, so no `┌─` label is
+# emitted and a location assertion here would fail CI's deliberately
+# blob-less "Test Suite" job (eu-1tkk.7.21).
 exit: 1
 stderr: "IO operations are not permitted; use the --allow-io"
