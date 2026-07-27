@@ -1,0 +1,2 @@
+exit: 1
+stderr: "panic: validate: not a type spec"

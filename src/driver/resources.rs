@@ -44,6 +44,11 @@ impl Default for Resources {
                 .expect("reflect.eu is valid UTF-8"),
         );
         content.insert(
+            "contract".to_string(),
+            String::from_utf8(include_bytes!("../../lib/contract.eu").to_vec())
+                .expect("contract.eu is valid UTF-8"),
+        );
+        content.insert(
             "markup".to_string(),
             String::from_utf8(include_bytes!("../../lib/markup.eu").to_vec())
                 .expect("markup.eu is valid UTF-8"),

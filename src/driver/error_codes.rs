@@ -8,9 +8,10 @@ use crate::driver::options::EucalyptOptions;
 
 /// `(code, catalogue entry)`. The entry is plain text, ready to print to a
 /// terminal as-is (no markdown rendering).
-const CATALOGUE: &[(&str, &str)] = &[(
-    "EU-EVAL-TYPE",
-    "EU-EVAL-TYPE: type mismatch\n\
+const CATALOGUE: &[(&str, &str)] = &[
+    (
+        "EU-EVAL-TYPE",
+        "EU-EVAL-TYPE: type mismatch\n\
      \n\
      A value of one type was used where a different type was required — for\n\
      example, a string was passed to an arithmetic operator that expects a\n\
@@ -30,7 +31,34 @@ const CATALOGUE: &[(&str, &str)] = &[(
      number first. See docs/reference/error-codes.md for more detail and\n\
      the prelude reference for the conversion functions available for each\n\
      type (num, str, str.of, and so on).",
-)];
+    ),
+    (
+        "EU-EVAL-CONTRACT",
+        "EU-EVAL-CONTRACT: contract violation\n\
+     \n\
+     Data failed a structural contract applied with `ensure`. The contract\n\
+     is an ordinary type spec written as an s-string literal, and the\n\
+     diagnostic's notes list every position that did not conform, each with\n\
+     a path into the data.\n\
+     \n\
+     Example:\n\
+     \n\
+     \x20   { import: \"contract.eu\" }\n\
+     \x20   schema: s\"{ name: string, port: number }\"\n\
+     \x20   config: { name: \"web\", port: \"8080\" } ensure(schema)\n\
+     \n\
+     \x20   error[EU-EVAL-CONTRACT]: contract violation: 1 violation against \
+     {name: string, port: number}\n\
+     \x20     = port: expected number, found string\n\
+     \n\
+     How to fix it: correct the data at each path the notes name, or widen\n\
+     the spec if the shape you are receiving is the shape you intended. A\n\
+     closed record spec reports surplus keys; add `..` to permit them. To\n\
+     inspect the violations as data rather than aborting, call\n\
+     `validate(spec, data)` — it returns the same information as a list of\n\
+     blocks and never raises.",
+    ),
+];
 
 /// Look up a code's catalogue entry.
 fn catalogue_entry(code: &str) -> Option<&'static str> {
