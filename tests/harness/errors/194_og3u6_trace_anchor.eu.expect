@@ -1,0 +1,2 @@
+exit: 1
+stderr: "(?s)index 10 out of range for list of length 3.*194_og3u6_trace_anchor\.eu:15:12.*stack trace:.*- result at 194_og3u6_trace_anchor\.eu:15:12.*- in 'nth' at"

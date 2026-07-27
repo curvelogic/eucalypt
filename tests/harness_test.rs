@@ -2797,6 +2797,21 @@ pub fn test_194_8a49h_library_blame() {
 }
 
 #[test]
+/// The same `xs nth(10)` failure as 193, but with ten unrelated bindings
+/// declared *between* the list and the call (eu-og3u6). 193 cannot see this
+/// bug: with only two declarations, the stale annotation the bytecode engine
+/// leaked out of the first rendered binding happened to be `result`'s own.
+/// Once anything renders before it, the leak made the primary label and the
+/// trace anchor name `pad0` — a binding the user never called — for a
+/// failure raised inside `nth`. The regex pins the primary label's own
+/// `file:line:col` (line 15, the `result` declaration) *before* the
+/// `stack trace:` marker, so a regression that only fixes the note cannot
+/// satisfy it.
+pub fn test_194_og3u6_trace_anchor() {
+    run_error_test(&error_opts("194_og3u6_trace_anchor.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
