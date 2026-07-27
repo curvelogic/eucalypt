@@ -1218,7 +1218,10 @@ impl ExecutionError {
         // available source locations as notes so we can study what information
         // is available at error time.
         if std::env::var("EU_ERROR_TRACE_DUMP").is_ok() {
-            let mut dump = vec!["--- ERROR TRACE DUMP ---".to_string()];
+            let mut dump = vec![
+                "--- ERROR TRACE DUMP ---".to_string(),
+                format!("sourcemap entries: {}", source_map.len()),
+            ];
 
             // Error's own Smid
             let error_smid = inner.smid();

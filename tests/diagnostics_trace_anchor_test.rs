@@ -18,7 +18,7 @@
 //! appears once some other binding renders first, and the *distance* between
 //! the innocent declaration and the guilty one is what makes a regression
 //! unmistakable — hence 900 padding declarations here, matching the bead's
-//! repro. `tests/harness/errors/194_og3u6_trace_anchor.eu` covers the same
+//! repro. `tests/harness/errors/195_og3u6_trace_anchor.eu` covers the same
 //! property with a readable ten-binding fixture.
 //!
 //! Deliberately **not** gated on `prelude_blob_ok`: the defect reproduced

@@ -2783,6 +2783,20 @@ pub fn test_193_1tkk_7_12_curated_trace() {
 }
 
 #[test]
+/// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
+/// from baked-in resource text) was classified as *user* code, so a frame
+/// inside it could win `to_diagnostic`'s "prefer a user file" test and become
+/// the **primary label**, excerpting library internals the user did not write.
+///
+/// The regex deliberately anchors on the `┌─` primary-label line rather than
+/// merely finding the fixture's name somewhere in the output: before the fix
+/// the user's file still appeared in the `stack trace:` note, so a looser
+/// pattern passes either way and gates nothing.
+pub fn test_194_8a49h_library_blame() {
+    run_error_test(&error_opts("194_8a49h_library_blame.eu"));
+}
+
+#[test]
 /// The same `xs nth(10)` failure as 193, but with ten unrelated bindings
 /// declared *between* the list and the call (eu-og3u6). 193 cannot see this
 /// bug: with only two declarations, the stale annotation the bytecode engine
@@ -2793,8 +2807,8 @@ pub fn test_193_1tkk_7_12_curated_trace() {
 /// `file:line:col` (line 15, the `result` declaration) *before* the
 /// `stack trace:` marker, so a regression that only fixes the note cannot
 /// satisfy it.
-pub fn test_194_og3u6_trace_anchor() {
-    run_error_test(&error_opts("194_og3u6_trace_anchor.eu"));
+pub fn test_195_og3u6_trace_anchor() {
+    run_error_test(&error_opts("195_og3u6_trace_anchor.eu"));
 }
 
 #[test]
