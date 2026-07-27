@@ -2712,7 +2712,7 @@ pub fn test_error_171() {
 /// The same value exported to TOML: TOML integers are signed 64-bit too, so
 /// this reached an `unreachable!` in the TOML exporter and aborted the
 /// process. Companion to `test_error_171` (eu-1tkk.7.20).
-pub fn test_error_194() {
+pub fn test_error_211() {
     run_error_test(&error_opts("211_toml_large_uint.eu"));
 }
 

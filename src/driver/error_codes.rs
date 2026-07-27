@@ -81,7 +81,8 @@ const CATALOGUE: &[(&str, &str)] = &[
      and eu output all keep integers of this magnitude), or convert it to a\n\
      string first with `str` so the exact digits are preserved as text.\n\
      eucalypt reports this rather than quietly rounding the value or\n\
-     changing its type, so that what you export matches what you evaluated.",    ),
+     changing its type, so that what you export matches what you evaluated.",
+    ),
 ];
 
 /// Look up a code's catalogue entry.
