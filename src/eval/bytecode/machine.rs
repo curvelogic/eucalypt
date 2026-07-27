@@ -1707,8 +1707,54 @@ fn arg_ref(code: &[u8], atom_off: CodeRef) -> Result<DecodedRef, ExecutionError>
     read_ref(code, &mut pc)
 }
 
+/// Whether an environment slot's closure can never change, and so may be
+/// passed to a callee by value instead of behind a lazy `OP_ATOM` alias
+/// closure over the caller's frame.
+///
+/// The byte-dispatch twin of `machine::env_builder::is_settled` (eu-wpswc);
+/// the three argument-array builders must not drift. See that module's doc
+/// comment for the full argument. Settled = not an update thunk, and either a
+/// lambda/PAP (`arity > 0`) or an `OP_ATOM` node (a pure indirection). A
+/// `BcValue::Native` is deliberately *not* settled: leaving it aliased keeps
+/// its representation bit-identical to before for the structural walkers.
+#[inline]
+fn bc_is_settled(code: &[u8], value: &BcValue) -> bool {
+    let BcValue::Closure(c) = value else {
+        return false;
+    };
+    if c.update() {
+        return false;
+    }
+    if c.arity() > 0 {
+        return true;
+    }
+    code.get(c.code() as usize).copied() == Some(Op::Atom as u8)
+}
+
+/// The pre-decoded twin of [`bc_is_settled`]: identical predicate, reading the
+/// opcode from the decoded instruction pool rather than the byte stream.
+#[inline]
+fn bc_is_settled_pd(decoded: &DecodedProgram, value: &BcValue) -> bool {
+    let BcValue::Closure(c) = value else {
+        return false;
+    };
+    if c.update() {
+        return false;
+    }
+    if c.arity() > 0 {
+        return true;
+    }
+    decoded
+        .instrs
+        .get(c.code() as usize)
+        .is_some_and(|i| i.op == Op::Atom)
+}
+
 /// Build an application's argument array. A lazy arg is a closure over its
-/// pre-encoded `OP_ATOM`; an eager (`FLAG_EAGER`) `Local` arg is resolved
+/// pre-encoded `OP_ATOM`, *unless* it is a `Local` naming a settled slot, in
+/// which case that value is passed straight through (eu-wpswc — this is what
+/// stops per-iteration alias chains forming on lazily-threaded function
+/// parameters); an eager (`FLAG_EAGER`) `Local` arg is always resolved
 /// directly from the env (CG3 — avoids O(n) indirection chains).
 fn make_arg_array(
     view: MutatorHeapView<'_>,
@@ -1719,16 +1765,17 @@ fn make_arg_array(
 ) -> Result<Array<BcValue>, ExecutionError> {
     let mut array = Array::with_capacity(&view, arg_offs.len());
     for off in arg_offs {
-        let v = if eager {
-            match arg_ref(code, *off)? {
-                DecodedRef::Local(i) => view
-                    .scoped(env)
-                    .get(&view, i as usize)
-                    .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?,
-                _ => BcValue::Closure(BcClosure::new(*off, env)),
+        let v = match arg_ref(code, *off)? {
+            DecodedRef::Local(i) => {
+                let slot = view.scoped(env).get(&view, i as usize);
+                match slot {
+                    Some(v) if eager || bc_is_settled(code, &v) => v,
+                    Some(_) => BcValue::Closure(BcClosure::new(*off, env)),
+                    None if eager => return Err(ExecutionError::BadEnvironmentIndex(i as usize)),
+                    None => BcValue::Closure(BcClosure::new(*off, env)),
+                }
             }
-        } else {
-            BcValue::Closure(BcClosure::new(*off, env))
+            _ => BcValue::Closure(BcClosure::new(*off, env)),
         };
         array.push(&view, v);
     }
@@ -2306,8 +2353,10 @@ pub fn step(
 
 /// Build an application's argument array from the `offsets` pool (App/
 /// DirectApp). Each entry is the *ordinal* of a pre-decoded `OP_ATOM` node: a
-/// lazy arg is a closure over that ordinal; an eager (`FLAG_EAGER`) `Local`
-/// arg is resolved directly from the env. The typed twin of `make_arg_array`.
+/// lazy arg is a closure over that ordinal, *unless* it is a `Local` naming a
+/// settled slot, in which case that value is passed straight through
+/// (eu-wpswc); an eager (`FLAG_EAGER`) `Local` arg is always resolved directly
+/// from the env. The typed twin of `make_arg_array`.
 fn make_arg_array_pd(
     view: MutatorHeapView<'_>,
     decoded: &DecodedProgram,
@@ -2317,16 +2366,17 @@ fn make_arg_array_pd(
 ) -> Result<Array<BcValue>, ExecutionError> {
     let mut array = Array::with_capacity(&view, arg_ords.len());
     for ord in arg_ords {
-        let v = if eager {
-            match decoded.instrs[*ord as usize].atom_ref() {
-                DecodedRef::Local(i) => view
-                    .scoped(env)
-                    .get(&view, i as usize)
-                    .ok_or(ExecutionError::BadEnvironmentIndex(i as usize))?,
-                _ => BcValue::Closure(BcClosure::new(*ord, env)),
+        let v = match decoded.instrs[*ord as usize].atom_ref() {
+            DecodedRef::Local(i) => {
+                let slot = view.scoped(env).get(&view, i as usize);
+                match slot {
+                    Some(v) if eager || bc_is_settled_pd(decoded, &v) => v,
+                    Some(_) => BcValue::Closure(BcClosure::new(*ord, env)),
+                    None if eager => return Err(ExecutionError::BadEnvironmentIndex(i as usize)),
+                    None => BcValue::Closure(BcClosure::new(*ord, env)),
+                }
             }
-        } else {
-            BcValue::Closure(BcClosure::new(*ord, env))
+            _ => BcValue::Closure(BcClosure::new(*ord, env)),
         };
         array.push(&view, v);
     }

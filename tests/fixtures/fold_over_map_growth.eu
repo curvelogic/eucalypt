@@ -1,0 +1,41 @@
+# Fixture for the fold-over-map complexity-class gate (eu-wpswc).
+#
+# `xs map(f) fold` was O(N^2): `map`'s self-recursive call is written in
+# catenation form (`l tail map(f)`), so it compiles to a partial application
+# plus an apply rather than a saturated self-call. Every level wrapped the
+# function parameter in a fresh non-updateable `Atom{Ref::L}` alias over the
+# caller's frame, nothing collapsed the chain, and forcing element k walked
+# O(k) alias hops.
+#
+# Two targets over the same pipeline at a 4x size ratio. The gate compares
+# their deterministic VM tick counts: linear growth gives a ratio of ~4,
+# the defect gave ~13.4. See `tests/fold_over_map_growth_test.rs`.
+#
+# `growth-thunk-*` uses a function parameter that is a *thunk* evaluating to a
+# function rather than a literal lambda. That reaches the callee as an alias
+# closure, which is the second half of the fix (an alias is passed on rather
+# than re-aliased); without it that arm stays quadratic while the lambda arm
+# goes linear.
+
+sq(x): x * x
+
+# A thunk whose value is a function, not a syntactic lambda.
+thunk-fn: compose(sq, identity)
+
+# Sizes are deliberately small: the gate spawns the *debug* `eu` binary, and
+# the discriminator is a growth ratio, which does not need large N. At this
+# 4x ratio linear growth measures 4.00 and the defect measured 11.0.
+small-n: 400
+large-n: 1600
+
+` { target: :growth-small }
+growth-small: range(1, small-n) map(sq) sum
+
+` { target: :growth-large }
+growth-large: range(1, large-n) map(sq) sum
+
+` { target: :growth-thunk-small }
+growth-thunk-small: range(1, small-n) map(thunk-fn) sum
+
+` { target: :growth-thunk-large }
+growth-thunk-large: range(1, large-n) map(thunk-fn) sum
