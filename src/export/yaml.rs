@@ -1,12 +1,13 @@
 //! YAML export
 use yaml_rust::yaml::Tag;
 
-use crate::eval::emit::{Emitter, Event, RenderMetadata};
+use crate::eval::emit::{Emitter, Event, Rejection, RenderMetadata};
 use crate::eval::primitive::Primitive;
 
 use std::io::Write;
 
 use super::table::{AsKey, FromPairs, FromPrimitive, FromVec, TableAccumulator};
+use super::INTEGER_RANGE_NOTES;
 
 /// Describe why `n` cannot be carried as a YAML integer, or `None` if it can.
 ///
@@ -15,13 +16,16 @@ use super::table::{AsKey, FromPairs, FromPrimitive, FromVec, TableAccumulator};
 /// behind both `YamlEmitter::unrepresentable` (which rejects such a value at
 /// the emit intrinsic, with a source location) and the fallback in
 /// `from_primitive` below, so the two can never disagree.
-fn yaml_integer_overflow(n: &serde_json::Number) -> Option<String> {
+fn yaml_integer_overflow(n: &serde_json::Number) -> Option<Rejection> {
     match n.as_u64() {
-        Some(u) if !n.is_i64() => Some(format!(
-            "the integer {u} is above {}, the largest integer a YAML integer \
-             scalar can carry",
-            i64::MAX
-        )),
+        Some(u) if !n.is_i64() => Some(
+            Rejection::new(format!(
+                "the integer {u} is above {}, the largest integer a YAML \
+                 integer scalar can carry",
+                i64::MAX
+            ))
+            .with_notes(INTEGER_RANGE_NOTES),
+        ),
         _ => None,
     }
 }
@@ -110,7 +114,7 @@ impl Emitter for YamlEmitter<'_> {
         "YAML"
     }
 
-    fn unrepresentable(&self, primitive: &Primitive) -> Option<String> {
+    fn unrepresentable(&self, primitive: &Primitive) -> Option<Rejection> {
         match primitive {
             Primitive::Num(n) => yaml_integer_overflow(n),
             _ => None,

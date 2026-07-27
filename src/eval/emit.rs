@@ -47,6 +47,39 @@ pub enum Event {
     OutputAlias,
 }
 
+/// An emitter's refusal to render something, with remediation.
+///
+/// The emitter is the only thing that knows both why its format cannot take
+/// the value or shape and what the caller should do instead, so it supplies
+/// the diagnostic notes rather than leaving `error.rs` to infer them from
+/// the wording of `reason` (eu-1tkk.7.28).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rejection {
+    /// What the format cannot take, as a sentence fragment completing
+    /// "cannot represent this value in YAML output: ...".
+    pub reason: String,
+    /// How to proceed, rendered as diagnostic notes.
+    pub notes: Vec<String>,
+}
+
+impl Rejection {
+    pub fn new(reason: impl Into<String>) -> Self {
+        Rejection {
+            reason: reason.into(),
+            notes: Vec::new(),
+        }
+    }
+
+    pub fn with_notes<I, S>(mut self, notes: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.notes = notes.into_iter().map(Into::into).collect();
+        self
+    }
+}
+
 /// Trait via which machines emit events
 pub trait Emitter {
     /// Emit an `Event`
@@ -72,7 +105,21 @@ pub trait Emitter {
     /// `ExecutionError` carrying the source location of the offending value,
     /// instead of the serialiser failing part-way through a document with no
     /// context (eu-1tkk.7.20).
-    fn unrepresentable(&self, _primitive: &Primitive) -> Option<String> {
+    fn unrepresentable(&self, _primitive: &Primitive) -> Option<Rejection> {
+        None
+    }
+
+    /// Describe why `event` cannot be accepted here, given what this emitter
+    /// has already received, or `None` if it can.
+    ///
+    /// Where `unrepresentable` is about a single value being out of range,
+    /// this is about document *shape*: a format may demand a particular
+    /// structure — html renders hiccup markup and nothing else — and only
+    /// the emitter knows whether the events so far are building one. Asking
+    /// before the event is consumed lets the emit intrinsics raise an
+    /// `ExecutionError` with a source location rather than the emitter
+    /// failing on an internal invariant (eu-1tkk.7.24).
+    fn unacceptable(&self, _event: &Event) -> Option<Rejection> {
         None
     }
 
