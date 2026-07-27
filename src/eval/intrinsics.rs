@@ -1037,6 +1037,11 @@ lazy_static! {
             ty: function(vec![any(), bool_()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 195
+            name: "CONTRACT_FAIL",
+            ty: function(vec![str_(), list(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
     ];
 }
 

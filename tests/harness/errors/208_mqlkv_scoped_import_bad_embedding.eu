@@ -1,0 +1,7 @@
+# eu-mqlkv, site 2 of 3 — `rowan_declaration_to_binding`'s scoped-import
+# loop, reached by a declaration-scoped `{ import: ... }` metadata block
+# rather than unit metadata. This is the form the imports guide documents
+# most prominently, and it panicked independently of the unit-metadata
+# route, so it needs its own gate.
+` { import: "testdata/206_mqlkv_bad_annotation.eu" }
+calculations: { result: f(1) }

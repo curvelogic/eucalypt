@@ -1,4 +1,4 @@
-{ doc: "191 html export — the first end-to-end coverage of the html
+{ doc: "212 html export — the first end-to-end coverage of the html
         exporter's success path. Before eu-1tkk.7.24 nothing exercised
         '-x html' or 'render-as(:html)' at all, which is why the markup
         emitter could abort the process on any non-hiccup document

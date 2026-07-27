@@ -188,25 +188,39 @@ fn run() -> i32 {
         // that would otherwise populate these registries), so without this
         // the user's own `:for`/`:io` monadic-binding metadata is never
         // recognised on this (blob) path.
+        //
+        // eu-1tkk.2: the blob's deprecation table rides along for the same
+        // reason — `deprecated` metadata is desugar-phase only, so skipping
+        // translate() also skips the step that would have collected it, and
+        // a `deprecated` declaration in `lib/prelude.eu` would be inert on
+        // this (shipped default) path while working under `eu check`.
         #[cfg(not(target_arch = "wasm32"))]
         let blob_check_seed = loader.prelude_blob().and_then(|b| {
-            b.decode_desugared_unit_cores()
-                .map(|units| (units, b.monad_specs.clone(), b.monad_type_hints.clone()))
+            b.decode_desugared_unit_cores().map(|units| {
+                (
+                    units,
+                    b.monad_specs.clone(),
+                    b.monad_type_hints.clone(),
+                    b.deprecations.clone(),
+                )
+            })
         });
         #[cfg(target_arch = "wasm32")]
         let blob_check_seed: Option<(
             Vec<(String, eucalypt::core::expr::RcExpr)>,
             std::collections::HashMap<String, eucalypt::core::desugar::desugarer::MonadSpec>,
             std::collections::HashMap<String, String>,
+            std::collections::HashMap<String, eucalypt::core::metadata::DeprecationSpec>,
         )> = None;
 
         let check_result = match &blob_check_seed {
-            Some((prelude_units, monad_specs, monad_type_hints)) => {
+            Some((prelude_units, monad_specs, monad_type_hints, deprecations)) => {
                 eucalypt::driver::check::run_type_checker_from_blob_core(
                     &opt,
                     prelude_units,
                     monad_specs,
                     monad_type_hints,
+                    deprecations,
                 )
             }
             None => eucalypt::driver::check::run_type_checker(&opt),

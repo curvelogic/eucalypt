@@ -10,7 +10,11 @@ use crate::syntax::input::*;
 ///
 /// Collected during desugaring and used during binding verification to
 /// emit warnings when a deprecated declaration is referenced.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+///
+/// Serialisable because the prelude blob bakes the prelude's own deprecation
+/// table (`PreludeBlob::deprecations`): this is desugar-phase metadata that
+/// the blob's baked cores cannot carry.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeprecationSpec {
     /// Optional human-readable deprecation message.
     pub message: Option<String>,

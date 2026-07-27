@@ -2715,7 +2715,6 @@ dependencies = [
  "eucalypt",
  "postcard",
  "serde_json",
- "sha2",
 ]
 
 [[package]]

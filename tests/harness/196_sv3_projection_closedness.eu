@@ -1,0 +1,59 @@
+{ import: "reflect.eu"
+  doc: "SV3 eu-u9xj.1 - the t-record projection carries record closedness.
+
+Before this change a closed record type and an open one projected to
+identical t-star data, so a runtime consumer had no way to know whether
+extra fields were permitted, and from-data of to-data silently lost the
+open marker." }
+
+` :suppress
+closed: s"{a: number}" to-data
+
+` :suppress
+open: s"{a: number, ..}" to-data
+
+` :suppress
+rowvar: s"{a: number, ..r}" to-data
+
+# ── the trailing element ────────────────────────────────────────────────
+
+t1: (closed count) = 3
+t2: (closed !! 2) = false
+
+t3: (open count) = 3
+t4: (open !! 2) = true
+
+# A named row variable collapses into the same boolean, so no type variable
+# ever leaks into runtime data.
+t5: (rowvar !! 2) = true
+
+# ── nested records carry their own flag ─────────────────────────────────
+
+` :suppress
+nested: s"{a: {b: number}}" to-data
+
+` :suppress
+inner: ((nested second).a) !! 2
+
+t6: (inner first) = :t-record
+t7: (inner !! 2) = false
+
+# ── round-trip: the `..` now survives to-data → from-data ───────────────
+
+t8: (s"{a: number, ..}" to-data from-data) = s"{a: number, ..}"
+t9: (s"{a: number}" to-data from-data) = s"{a: number}"
+t10: (s"{a: number, ..r}" to-data from-data) = s"{a: number, ..}"
+t11: (s"{ .. }" to-data from-data) = s"{ .. }"
+
+# ── arity tolerance: a hand-written two-element node reads as closed ─────
+
+t12: ([:t-record, { a: [:t-field, :required, [:t-prim, :number]] }] from-data)
+       = s"{a: number}"
+
+# ── literal string types round-trip too (they rendered as `any` before) ──
+
+t13: (c"\"prod\"" __TYPE_FROM_STRING to-data from-data)
+       = (c"\"prod\"" __TYPE_FROM_STRING)
+
+RESULT: if([t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13] all-true?,
+           :PASS, :FAIL)
