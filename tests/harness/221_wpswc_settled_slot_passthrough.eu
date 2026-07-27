@@ -1,0 +1,93 @@
+#!/usr/bin/env eu
+# eu-wpswc: folding a lazily-mapped list was O(n^2). The fix passes an
+# argument naming a *settled* environment slot -- a lambda/PAP, or an `Atom`
+# node -- through to the callee by value instead of wrapping it in a fresh
+# alias closure over the caller's frame, which is what let per-iteration alias
+# chains build up on lazily-threaded function parameters.
+#
+# The complexity class itself is gated on deterministic VM ticks by
+# tests/fold_over_map_growth_test.rs (a wall-clock deadline would flake on a
+# loaded runner). THIS test gates the semantics that pass-by-value must not
+# disturb: results, laziness over self-referential structures, and sharing of
+# a reused partial application.
+#
+# Every check feeds RESULT, so each one gates the build.
+#
+# Note the parenthesisation: catenation binds more loosely than any infix
+# operator, so `xs map(sq) sum = 385` is not a comparison at all.
+
+sq(x): x * x
+
+# A function parameter that is a *thunk* evaluating to a function rather than
+# a syntactic lambda. It reaches a callee as an alias closure, so it exercises
+# the second arm of the predicate (pass an alias on rather than re-alias it).
+thunk-fn: compose(sq, identity)
+
+# A partial application reused from two separate call sites. Passing a PAP by
+# value must not change how often it is applied nor what it yields.
+add-ten: (+ 10)
+
+xs: range(1, 11)
+
+# ── Results are unchanged ────────────────────────────────────────────────────
+
+# 1^2 + ... + 10^2 = 385
+t1: (xs map(sq) sum) = 385
+
+# Same via a thunk-valued function argument.
+t2: (xs map(thunk-fn) sum) = 385
+
+# Folds that do not force the elements stay correct too.
+t3: (xs map(sq) count) = 10
+
+# max-map / min-map are `l map(f) max-of` and were the prelude's own victims.
+t4: (xs max-map(sq)) = 100
+t5: (xs min-map(sq)) = 1
+
+# Order-sensitive fold over a mapped, reversed list.
+t6: (xs reverse map(sq) max-of) = 100
+
+# ── Laziness over self-referential structures ────────────────────────────────
+#
+# A slot holding a thunk under evaluation transiently holds a black hole. Only
+# shapes that can never change are passed by value, so these must still work:
+# `nats` maps over itself, so the mapped spine is built from a slot that is
+# black-holed while its own head is being produced.
+
+` :suppress
+ones: cons(1, ones)
+
+` :suppress
+nats: cons(0, nats map(inc))
+
+t7: (ones take(4)) = [1, 1, 1, 1]
+t8: (nats take(6)) = [0, 1, 2, 3, 4, 5]
+t9: (nats map(sq) take(5)) = [0, 1, 4, 9, 16]
+
+# Folding a prefix of a self-referential mapped list.
+t10: (nats take(5) map(sq) sum) = 30
+
+# ── A reused partial application ─────────────────────────────────────────────
+#
+# `add-ten` is applied from two independent map call sites; both must see the
+# same function and the same results.
+
+a1: xs map(add-ten) sum
+a2: xs map(add-ten) sum
+t11: a1 = a2
+t12: a1 = 155
+
+# Applying the same PAP directly as well as through a map.
+t13: add-ten(5) = 15
+t14: [add-ten(1), add-ten(2)] = [11, 12]
+
+# ── Nested maps: the mapped function is itself a mapping closure ─────────────
+
+grid: [[1, 2], [3, 4]]
+t15: (grid map(map(sq))) = [[1, 4], [9, 16]]
+t16: (grid map(sum) sum) = 10
+
+checks: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10,
+         t11, t12, t13, t14, t15, t16]
+
+RESULT: if(checks all-true?, :PASS, :FAIL)
