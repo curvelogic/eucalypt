@@ -2962,16 +2962,6 @@ pub fn test_typecheck_092_self_assign_arg_pos_ok() {
 }
 
 #[test]
-pub fn test_typecheck_093_deprecated_namespace_member() {
-    run_typecheck_test("093_deprecated_namespace_member.eu");
-}
-
-#[test]
-pub fn test_typecheck_094_deprecated_member_precision() {
-    run_typecheck_test("094_deprecated_member_precision.eu");
-}
-
-#[test]
 pub fn test_typecheck_093_type_def_bare_symbol_shorthand() {
     run_typecheck_test("093_type_def_bare_symbol_shorthand.eu");
 }
@@ -3071,6 +3061,16 @@ pub fn test_typecheck_111_prefix_list_out_of_prefix_partial() {
 #[test]
 pub fn test_typecheck_112_check_strict_parse_error_exits_nonzero() {
     run_typecheck_test("112_check_strict_parse_error_exits_nonzero.eu");
+}
+
+#[test]
+pub fn test_typecheck_113_deprecated_namespace_member() {
+    run_typecheck_test("113_deprecated_namespace_member.eu");
+}
+
+#[test]
+pub fn test_typecheck_114_deprecated_member_precision() {
+    run_typecheck_test("114_deprecated_member_precision.eu");
 }
 
 // ── eu doc tests ──────────────────────────────────────────────────────────────
