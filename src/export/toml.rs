@@ -9,6 +9,24 @@ use toml::{value::Datetime, Value};
 
 use super::table::{AsKey, FromPairs, FromPrimitive, FromVec, TableAccumulator};
 
+/// Describe why `n` cannot be carried as a TOML integer, or `None` if it can.
+///
+/// TOML integers are signed 64-bit by specification, so a JSON-sourced `u64`
+/// above `i64::MAX` has no TOML integer representation. This is the single
+/// predicate behind both `TomlEmitter::unrepresentable` (which rejects such a
+/// value at the emit intrinsic, with a source location) and the fallback in
+/// `from_primitive` below, so the two can never disagree.
+fn toml_integer_overflow(n: &serde_json::Number) -> Option<String> {
+    match n.as_u64() {
+        Some(u) if !n.is_i64() => Some(format!(
+            "the integer {u} is above {}, the largest integer a TOML integer \
+             can carry",
+            i64::MAX
+        )),
+        _ => None,
+    }
+}
+
 impl AsKey<String> for Value {
     fn as_key(&self) -> String {
         self.as_str().unwrap().to_string()
@@ -23,13 +41,19 @@ impl FromPrimitive for Value {
             Primitive::Sym(s) => Value::String(s.clone()),
             Primitive::Str(s) => Value::String(s.clone()),
             Primitive::Num(n) => {
-                if n.is_i64() {
-                    Value::Integer(n.as_i64().unwrap())
-                } else if n.is_f64() {
-                    Value::Float(n.as_f64().unwrap())
+                if toml_integer_overflow(n).is_some() {
+                    // Unreachable through the emit intrinsics, which reject
+                    // this value via `unrepresentable` before it gets here.
+                    // Should another route reach it, keep the exact digits
+                    // rather than rounding to a float or aborting the whole
+                    // process (eu-1tkk.7.20).
+                    Value::String(n.to_string())
+                } else if let Some(i) = n.as_i64() {
+                    Value::Integer(i)
+                } else if let Some(f) = n.as_f64() {
+                    Value::Float(f)
                 } else {
-                    // serde_json::Number is always PosInt/NegInt/Float, so this is unreachable
-                    unreachable!("serde_json::Number {n} is neither i64 nor f64")
+                    Value::String(n.to_string())
                 }
             }
             Primitive::ZonedDateTime(dt) => {
@@ -67,6 +91,17 @@ impl<'a> TomlEmitter<'a> {
 }
 
 impl Emitter for TomlEmitter<'_> {
+    fn format_name(&self) -> &'static str {
+        "TOML"
+    }
+
+    fn unrepresentable(&self, primitive: &Primitive) -> Option<String> {
+        match primitive {
+            Primitive::Num(n) => toml_integer_overflow(n),
+            _ => None,
+        }
+    }
+
     fn emit(&mut self, event: Event) {
         self.accum.consume(event);
         if let Some(result) = self.accum.result() {
