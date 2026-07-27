@@ -54,6 +54,42 @@ before using it — for example, `a num + 1` converts the string to a
 number first. See the [prelude reference](prelude/) for the conversion
 functions available for each type (`num`, `str`, `str.of`, and so on).
 
+### `EU-EVAL-CONTRACT`
+
+**What it means:** data failed a structural contract applied with `ensure`.
+The contract is an ordinary type spec written as an `s"…"` literal, and the
+diagnostic's notes list every position that did not conform, each with a
+path into the data. The source location is the `ensure` call site — the
+contract that failed — while the paths in the notes say where in the data
+to look.
+
+**Example:**
+
+```eucalypt
+{ import: "contract.eu" }
+schema: s"{ name: string, port: number }"
+config: { name: "web", port: "8080", debug: true } ensure(schema)
+```
+
+```text
+error[EU-EVAL-CONTRACT]: contract violation: 2 violations against {name: string, port: number}
+  ┌─ example.eu:3:51
+  │
+3 │ config: { name: "web", port: "8080", debug: true } ensure(schema)
+  │                                                   ^^^^^^^^^^^^^^
+  │
+  = port: expected number, found string
+  = (root): unexpected keys: debug
+```
+
+**How to fix it:** correct the data at each path the notes name, or widen
+the spec if the shape you are receiving is the shape you intended — a
+closed record spec such as `{name: string}` reports surplus keys, and
+adding `..` (`{name: string, ..}`) permits them. To inspect the violations
+as data rather than aborting, call `validate(spec, data)` instead: it
+returns the same information as a list of blocks and never raises. See the
+[Contracts guide](../guide/contracts.md).
+
 <!--
 To add a new code: append a `### EU-<AREA>-<SLUG>` section here with
 "What it means", "Example", and "How to fix it" — positive guidance only,

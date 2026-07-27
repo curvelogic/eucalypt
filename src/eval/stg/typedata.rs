@@ -84,11 +84,19 @@ fn type_to_rcexpr(ty: &Type) -> RcExpr {
             )
         }
 
-        Type::Record {
-            fields,
-            open: _,
-            rows: _,
-        } => {
+        // `[:t-record <fields block> <open?>]`.
+        //
+        // The trailing boolean is the record's **closedness** (SV3 design
+        // §4, eu-u9xj.1).  A named row variable and a bare `..` mean the
+        // same thing to a runtime consumer — "extra fields are permitted" —
+        // and projecting rows faithfully would leak *type variables* into
+        // runtime data that no runtime consumer can interpret, so they
+        // collapse into the single boolean `open || !rows.is_empty()`.
+        //
+        // The element is additive growth of the versioned `t-*` surface
+        // (ROADMAP §717-724): consumers must tolerate its absence, reading a
+        // two-element `[:t-record {…}]` as closed.
+        Type::Record { fields, open, rows } => {
             let field_exprs: Vec<(String, RcExpr)> = fields
                 .iter()
                 .map(|(k, fp)| {
@@ -104,7 +112,11 @@ fn type_to_rcexpr(ty: &Type) -> RcExpr {
                 })
                 .collect();
             let block_expr = expr::core::block(s, field_exprs);
-            expr::core::list(s, vec![sym("t-record"), block_expr])
+            let open_flag = *open || !rows.is_empty();
+            expr::core::list(
+                s,
+                vec![sym("t-record"), block_expr, expr::core::bool_(s, open_flag)],
+            )
         }
 
         Type::Function(a, b) => {

@@ -11,6 +11,7 @@ pub mod block;
 pub mod boolean;
 pub mod compiler;
 pub mod constant;
+pub mod contract;
 pub mod debug;
 pub mod embed;
 pub mod emit;
@@ -97,6 +98,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(boolean::Cond));
     rt.add(Box::new(boolean::Clause));
     rt.add(Box::new(panic::Panic));
+    rt.add(Box::new(contract::ContractFail));
     rt.add(Box::new(assert::AssertFail));
     rt.add(Box::new(block::Block));
     rt.add(Box::new(block::Kv));

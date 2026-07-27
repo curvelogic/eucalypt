@@ -2812,6 +2812,25 @@ pub fn test_195_og3u6_trace_anchor() {
 }
 
 #[test]
+/// SV3 (eu-u9xj.1) — `ensure` on non-conforming data raises
+/// `EU-EVAL-CONTRACT`. One `(?s)` regex gates the whole shape at once: the
+/// code, the headline's violation count and rendered spec type, and both
+/// violation lines as notes — a `:type-mismatch` with a path and a
+/// closed-record `:unexpected`.
+pub fn test_201_sv3_contract_violation() {
+    run_error_test(&error_opts("201_sv3_contract_violation.eu"));
+}
+
+#[test]
+/// SV3 (eu-u9xj.1) — a malformed *spec* raises through `panic`, a different
+/// `ExecutionError` variant from the `ContractViolation` a non-conforming
+/// *value* produces. This is what makes design decision 6 testable: a schema
+/// typo must not masquerade as bad input data.
+pub fn test_202_sv3_contract_bad_spec() {
+    run_error_test(&error_opts("202_sv3_contract_bad_spec.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
@@ -2977,6 +2996,46 @@ pub fn test_189_r9oy_union_as_spec() {
 #[test]
 pub fn test_190_odkp_xml_entity_refs() {
     run_test(&opts("190_odkp_xml_entity_refs.eu"));
+}
+
+/// SV3 (eu-u9xj.1) — the `t-record` projection carries record closedness as
+/// an additive trailing element, and `from-data` renders it, closing the
+/// open-record round-trip loss. See the .eu file for full context.
+#[test]
+pub fn test_196_sv3_projection_closedness() {
+    run_test(&opts("196_sv3_projection_closedness.eu"));
+}
+
+/// SV3 (eu-u9xj.1) — `reflect.type-str` is the canonical `t-*` renderer,
+/// hoisted out of `from-data`'s block so a runtime consumer can name the
+/// type it expected. See the .eu file for full context.
+#[test]
+pub fn test_197_sv3_type_str() {
+    run_test(&opts("197_sv3_type_str.eu"));
+}
+
+/// SV3 (eu-u9xj.1) — `validate` is the reporting dual of `as-spec`: it walks
+/// spec and value together carrying a path, and emits an entry for every
+/// mismatch instead of collapsing to a bit. See the .eu file for full context.
+#[test]
+pub fn test_198_sv3_validate() {
+    run_test(&opts("198_sv3_validate.eu"));
+}
+
+/// SV3 (eu-u9xj.1) — the executable statement of "cost paid only where
+/// written": every check would raise or diverge if `validate` forced a
+/// subtree its spec does not name. See the .eu file for full context.
+#[test]
+pub fn test_199_sv3_forcing_discipline() {
+    run_test(&opts("199_sv3_forcing_discipline.eu"));
+}
+
+/// SV3 (eu-u9xj.1) — `ensure` returns conforming data unchanged, so it drops
+/// into a pipeline; plus the report-line renderers the raised diagnostic
+/// shows as notes. See the .eu file for full context.
+#[test]
+pub fn test_200_sv3_ensure() {
+    run_test(&opts("200_sv3_ensure.eu"));
 }
 
 // EF1 combined effect monad (do): uses io.shell, so runs with --allow-io.

@@ -862,6 +862,18 @@ pub enum ExecutionError {
     /// call to `panic()` reflected in the error message.
     #[error("panic: {1}")]
     UserPanic(Smid, String),
+    /// A structural contract applied with `ensure` rejected its data.
+    ///
+    /// Carries the `ensure` call site, a headline (the violation count and
+    /// the type the data failed) and one rendered line per violation. The
+    /// lines become diagnostic notes; the *structured* report they were
+    /// rendered from is what `validate` returns.
+    ///
+    /// Deliberately an `ExecutionError` and not a `TypeWarning`: it happens
+    /// during evaluation, it is not advisory, it is not suppressible by
+    /// `--suppress-type-warnings`, and it aborts the program.
+    #[error("contract violation: {}", .1.0)]
+    ContractViolation(Smid, Box<(String, Vec<String>)>),
     #[error("parse-as({}): {}", .1.0, .1.1)]
     ParseError(Smid, Box<(String, String)>),
     #[error("version requirement not satisfied: eucalypt {} does not satisfy '{}'", .1.0, .1.1)]
@@ -974,6 +986,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::BlackHole(s) => *s,
             ExecutionError::Panic(s, _) => *s,
             ExecutionError::UserPanic(s, _) => *s,
+            ExecutionError::ContractViolation(s, _) => *s,
             ExecutionError::ParseError(s, _) => *s,
             ExecutionError::VersionRequirementFailed(s, _) => *s,
             ExecutionError::InvalidBase64(s, _) => *s,
@@ -1269,6 +1282,9 @@ impl ExecutionError {
 
         let notes = match inner {
             ExecutionError::TypeMismatch(_, detail) => type_mismatch_notes(&detail.0, &detail.1),
+            // One note per violation. The lines were rendered in eucalypt by
+            // `lib/contract.eu`, so the presentation is changeable there.
+            ExecutionError::ContractViolation(_, detail) => detail.1.clone(),
             ExecutionError::NoBranchForDataTag(_, actual, expected) => {
                 data_tag_mismatch_notes(*actual, expected)
             }
@@ -1506,6 +1522,7 @@ impl ExecutionError {
         match self {
             ExecutionError::Traced(inner, _) => inner.code(),
             ExecutionError::TypeMismatch(..) => Some("EU-EVAL-TYPE"),
+            ExecutionError::ContractViolation(..) => Some("EU-EVAL-CONTRACT"),
             _ => None,
         }
     }
