@@ -94,9 +94,10 @@ returns the same information as a list of blocks and never raises. See the
 
 **What it means:** a value survived evaluation intact, but the output
 format you asked for has no way to carry it. The commonest case is an
-integer above `9223372036854775807` (the signed 64-bit maximum): JSON
-and eucalypt itself carry it happily, but a YAML integer scalar and a
-TOML integer are both signed 64-bit.
+integer above `9223372036854775807` (the signed 64-bit maximum): JSON,
+EDN and eucalypt itself carry it happily, but a YAML integer scalar and
+a TOML integer are both signed 64-bit. TOML also has no null, so a null
+value cannot be rendered as TOML either.
 
 **Example:** given `big.json` holding `{"n": 9999999999999999999}`,
 
@@ -112,16 +113,49 @@ error[EU-RENDER-UNREPRESENTABLE]: cannot represent this value in YAML output: th
 2 │ main: data.n
   │       ^^^^^^
   │
-  = render to a format that can carry the value — 'json', 'text' and 'eu' output all keep integers of this magnitude
+  = render to a format that can carry the value — 'json', 'edn', 'text' and 'eu' output all keep integers of this magnitude
   = to keep the exact digits in this format, convert the value to a string first with 'str', e.g. 'n str'
 ```
 
 **How to fix it:** render to a format that can carry the value — `-x
-json`, `-x text` and `-x eu` all keep integers of this magnitude — or
-convert it to a string first with `str`, so the exact digits are
-preserved as text. eucalypt reports this rather than quietly rounding
-the value or changing its type, so that what you export matches what
-you evaluated.
+json`, `-x edn`, `-x text` and `-x eu` all keep integers of this
+magnitude — or convert it to a string first with `str`, so the exact
+digits are preserved as text. For a null being rendered as TOML, give
+the key a value or drop it from the block before rendering. eucalypt
+reports this rather than quietly rounding the value or changing its
+type, so that what you export matches what you evaluated.
+
+### `EU-RENDER-SHAPE`
+
+**What it means:** the output format needs the document to have a
+particular structure, and the value being rendered does not have it.
+`html` output renders *hiccup* markup — a list whose first item is the
+tag, optionally followed by an attribute block and then contents — so
+rendering a block, or a bare scalar, has no meaning as html.
+
+**Example:**
+
+```eucalypt
+` { target: :main format: :html }
+main: { a: 1 b: 2 }
+```
+
+```text
+error[EU-RENDER-SHAPE]: cannot render this document as html: the value to render is a block, but markup output needs a hiccup element — a list whose first item is the tag
+  = html output renders hiccup markup: a list of tag, attribute block and contents, e.g. '[:div, { id: "top" }, "hello"]'
+  = select the markup value with a target or '-e', e.g. 'eu -x html -e page.eu'; rendering a whole unit gives html the unit's block, which is not markup
+  = to render arbitrary data instead, choose a format that accepts any shape, such as 'yaml', 'json' or 'text'
+```
+
+**How to fix it:** build the value as hiccup markup, e.g. `[:div, { id:
+"top" }, "hello"]`, and select it with a target or `-e` so that html is
+given the markup itself rather than the enclosing unit's block. To
+render arbitrary data instead, choose a format that accepts any shape,
+such as `yaml`, `json` or `text`.
+
+This diagnostic often has no source location: the document's root events
+are emitted by the render pipeline rather than by a user expression, so
+there is frequently no span to point at.
 
 <!--
 To add a new code: append a `### EU-<AREA>-<SLUG>` section here with

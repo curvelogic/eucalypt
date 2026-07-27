@@ -1,0 +1,38 @@
+{ doc: "213 EDN export of an integer above i64::MAX (eu-1tkk.7.23).
+        The EDN exporter fell back to `as_f64`, so 9999999999999999999
+        was silently exported as 10000000000000000000 — a wrong number in
+        the output with no panic and no error to notice it by. EDN
+        integers are arbitrary precision, so this must round-trip exactly
+        rather than becoming an error.
+
+        The literal is kept out of the result block's keys deliberately:
+        rendering it to YAML is now a deliberate error (eu-1tkk.7.20), so
+        exposing it as a binding would fail the target for an unrelated
+        reason." }
+
+` { target: :test }
+test: {
+  # EDN carries the exact digits, with the arbitrary-precision `N` suffix.
+  edn-out: 9999999999999999999 render-as(:edn)
+  t-edn-exact: edn-out = c"9999999999999999999N\n"
+
+  # The rounded value the as_f64 fallback used to produce. Checked as a
+  # substring rather than by inequality: the fallback emitted
+  # "10000000000000000000" with no `N` suffix, so comparing against the
+  # suffixed form would have been satisfied by the bug itself.
+  t-edn-not-rounded: not(edn-out str.contains?("10000000000000000000"))
+
+  # The formats that already carried it must keep doing so.
+  t-json: (9999999999999999999 render-as(:json)) = c"9999999999999999999\n"
+  t-text: (9999999999999999999 render-as(:text)) = c"9999999999999999999\n"
+
+  # An integer that does fit i64 keeps the plain EDN integer form, with
+  # no `N` suffix — the BigInt path must not swallow ordinary integers.
+  t-small: (123 render-as(:edn)) = c"123\n"
+
+  # i64::MAX itself is the boundary: still a plain integer.
+  t-boundary: (9223372036854775807 render-as(:edn)) = c"9223372036854775807\n"
+
+  RESULT: [t-edn-exact, t-edn-not-rounded, t-json, t-text, t-small, t-boundary]
+    all-true? then(:PASS, :FAIL)
+}
