@@ -219,8 +219,10 @@ Under `eu check --strict`, deprecation warnings become errors.
 A declaration nested inside a namespace block is matched by the dotted path a
 caller writes, not by its bare name — deprecating `exec` inside `state` warns on
 `state.exec` and leaves both `io.exec` and any unrelated top-level `exec` alone.
-Matching is on the path as written, so a block of your own that shadows a
-namespace carrying a deprecated member will match the library's deprecation.
+A reference only counts if it resolves to the declaration: a lambda parameter or
+a local block that merely shares the namespace's name never inherits its
+deprecation. The one case that does still match by name is a top-level block of
+your own sharing a deprecated library namespace's name.
 
 ## Function Application
 

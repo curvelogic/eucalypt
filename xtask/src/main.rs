@@ -214,6 +214,19 @@ fn cmd_prelude_compile() -> Result<()> {
         desugar_phase_blame.len()
     );
 
+    // Deprecations declared on prelude-side declarations (eu-1tkk.2).
+    //
+    // Same desugar-phase side channel as `blame` above, and captured for the
+    // same reason: `deprecated` metadata is consumed by
+    // `Desugarer::record_deprecation` and does not survive as runtime
+    // `Expr::Meta`, so the baked `desugared_unit_cores` cannot supply it.
+    // Baking it lets `run_type_checker_from_blob_core` report a prelude
+    // deprecation on the evaluate path, which is what users actually run;
+    // without it the table is empty there and the declaration is inert.
+    // This is the merged union across all four prelude-side units.
+    let deprecations = loader.core().deprecations.clone();
+    println!("  deprecations declared: {}", deprecations.len());
+
     // ── 4. Peel the merged Let expression into individual binding bodies ──────
     // After merge_units + cook, the prelude is a nested Let where all
     // intra-prelude references are Var::Bound.  The STG compiler would emit
@@ -505,6 +518,7 @@ fn cmd_prelude_compile() -> Result<()> {
         binding_entries,
         name_to_slot,
         blame,
+        deprecations,
         operators,
         monad_specs,
         monad_type_hints,

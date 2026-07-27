@@ -620,11 +620,21 @@ fn tag_for_prelude_side_input(input: &Input) -> Option<&'static str> {
 /// confirms the out-of-range (graceful) case. Fully closing this gap means
 /// re-basing baked `Smid`s into the runtime `SourceMap` at injection time —
 /// tracked as follow-on work, out of scope for this PR.
+///
+/// `deprecations` is the blob's baked `PreludeBlob::deprecations` — the union
+/// of what the prelude-side units declared. It has to be supplied the same way
+/// the cores are: `deprecated` metadata is consumed by the desugarer and does
+/// not survive as runtime `Expr::Meta`, so skipping translate() also skips the
+/// only step that would have populated it. Leaving it empty here is what made
+/// `lib/prelude.eu`'s deprecations inert on this path while `eu check` (source
+/// prelude) reported them — the eval-path/blob-path coverage hole eu-vbctt
+/// tracks in general (eu-1tkk.2).
 pub fn run_type_checker_from_blob_core(
     opt: &EucalyptOptions,
     prelude_units: &[(String, RcExpr)],
     monad_specs: &HashMap<String, crate::core::desugar::desugarer::MonadSpec>,
     monad_type_hints: &HashMap<String, String>,
+    deprecations: &HashMap<String, crate::core::metadata::DeprecationSpec>,
 ) -> Result<PipelineCheckResult, EucalyptError> {
     let mut loader = SourceLoader::new(opt.lib_path().to_vec());
     // eu-rqwh: seed the monad registries the injected prelude_units' skipped
@@ -643,12 +653,20 @@ pub fn run_type_checker_from_blob_core(
         let Some((_, expr)) = prelude_units.iter().find(|(t, _)| t == tag) else {
             continue;
         };
+        // The blob carries one merged deprecation table for all four
+        // prelude-side units, so hang it on the prelude unit itself rather
+        // than repeating it on each; `TranslationUnit` merge unions these.
+        let unit_deprecations = if tag == "prelude" {
+            deprecations.clone()
+        } else {
+            Default::default()
+        };
         let unit = TranslationUnit {
             expr: expr.clone(),
             targets: Default::default(),
             own_targets: Default::default(),
             docs: Vec::new(),
-            deprecations: Default::default(),
+            deprecations: unit_deprecations,
             blame: Default::default(),
         };
         loader.inject_prelude_units(vec![(input.clone(), unit)]);
@@ -1073,9 +1091,14 @@ x: "hello" : "string"
         // `bin/eu.rs` uses, just with a hand-built prelude standing in for
         // the real one.
         let prelude_units = vec![("prelude".to_string(), synthetic_prelude)];
-        let result =
-            run_type_checker_from_blob_core(&opt, &prelude_units, &HashMap::new(), &HashMap::new())
-                .expect("run_type_checker_from_blob_core");
+        let result = run_type_checker_from_blob_core(
+            &opt,
+            &prelude_units,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("run_type_checker_from_blob_core");
 
         assert!(
             !result.warnings.is_empty(),

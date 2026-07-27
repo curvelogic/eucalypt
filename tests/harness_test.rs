@@ -3073,6 +3073,15 @@ pub fn test_typecheck_114_deprecated_member_precision() {
     run_typecheck_test("114_deprecated_member_precision.eu");
 }
 
+// Prelude-declared deprecation. The `stderr:` pattern in the sidecar makes
+// `run_typecheck_test` drive the evaluate path as well as `eu check`, which
+// is where blob mode differs — see `tests/blob_deprecation_test.rs` and
+// eu-vbctt.
+#[test]
+pub fn test_typecheck_115_deprecated_prelude_member() {
+    run_typecheck_test("115_deprecated_prelude_member.eu");
+}
+
 // ── eu doc tests ──────────────────────────────────────────────────────────────
 
 /// `eu doc` on a documented fixture produces Markdown with the expected content.

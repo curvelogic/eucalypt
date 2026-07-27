@@ -287,9 +287,12 @@ Deprecated declarations still work — deprecation is advisory.
 
 A top-level declaration is matched by its bare name; a declaration nested in a
 namespace block is matched by the dotted path a caller writes (`state.exec`),
-so both `io.exec` and an unrelated top-level `exec` stay silent. Matching is on
-the path as written rather than the resolved binding, so a block of your own
-that shadows a namespace with a deprecated member will still match.
+so both `io.exec` and an unrelated top-level `exec` stay silent. A reference
+counts only when it resolves to the declaration, so a lambda parameter called
+`state` and a local `{ state: … }.( … )` block are both silent, as is a nested
+declaration referenced by its bare name from inside its own block. The residual
+case that still matches by name alone is a top-level block of your own sharing a
+deprecated library namespace's name.
 
 **Type annotations** (optional, advisory): add `type:` alongside `doc:`
 to annotate declarations for the type checker (`eu check`):
