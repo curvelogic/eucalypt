@@ -1,0 +1,48 @@
+{ import: "resource:state" }
+
+# Precision guard for namespace-member deprecation.  Every declaration here
+# must produce NO deprecation warning, so the whole file exits 0 under
+# `eu check --strict`.  state.exec and random.exec ARE deprecated; nothing
+# below is a reference to either of them.
+
+# Different namespace, same member name: io.exec and state.run are not
+# deprecated.  Guards against matching the bare member name across
+# unrelated namespaces.
+action: io.exec(["true"])
+final: state.run(state.get, { count: 0 }).state
+
+# A user's own binding sharing the bare leaf name of a deprecated namespace
+# member.  A nested deprecation is keyed by its dotted path alone; keying it
+# by the leaf too would deprecate the name 'exec' globally and break every
+# program with its own 'exec'.
+exec(cmd): cmd
+bare-user-exec: exec("hello")
+
+# A lambda parameter that happens to be called 'random'.  Matching resolves
+# the lookup base to its binder, so a parameter never inherits a library
+# namespace's deprecation.
+handlers: [{ exec(x): x + 1 }, { exec(x): x + 2 }]
+apply-all(random): random.exec(10)
+via-parameter: handlers map(apply-all)
+
+# A local namespace introduced by a block-with-lookup: also not the library's
+# 'random', so also silent.
+via-local-block: { random: { exec(n): n * 3 } }.(random.exec(7))
+
+# A lambda parameter shadowing a deprecated TOP-LEVEL declaration is likewise
+# not a reference to it.  (A genuine reference to 'faded' would warn; there
+# is none here.)
+` { deprecated: "use fresh instead" }
+faded(x): x
+shadowing(faded): faded + 1
+via-shadowed-parameter: shadowing(1)
+
+# A declaration nested in a block, referenced by its bare name from INSIDE
+# that same block, is not a reference to the path a caller writes
+# ('inner-ns.stale'), so it does not warn.  See record_deprecation.
+inner-ns: {
+  ` { deprecated: "use current" }
+  stale: 2
+  used-internally: stale
+}
+via-internal-bare: inner-ns.used-internally

@@ -1,37 +1,210 @@
 //! Objective invariant gate for eucalypt diagnostics (spec 2026-07-21 §5.2).
 //! Runs every corpus fixture through `eu --error-format json` and asserts the five
-//! invariants. Fixtures marked `xfail = true` in their sidecar are expected to VIOLATE
-//! (documenting a known bug); when a bead lands and flips one to passing, remove the
-//! marker so the gate guards it forever.
+//! invariants.
+//!
+//! # Expected failures are per engine
+//!
+//! A fixture's sidecar may list the engines on which it is expected to
+//! VIOLATE the invariants — `xfail_engines = ["bytecode"]` — documenting a
+//! known bug. On an engine not in that list the fixture is a live guard. When
+//! a bead lands and flips one to passing, the gate fails and tells you to
+//! drop the engine from the list, so the gain is locked in forever.
+//!
+//! It used to be a single engine-blind `xfail = true`, relaxed under
+//! `EU_HEAPSYN=1` by an `assert!(heapsyn || …)`. That is unsound in both
+//! directions: a fixture violating on one engine only is either marked and
+//! silently un-ratcheted on the other, or unmarked and hard-failing on the
+//! one where the bug lives. The blanket relaxation additionally meant the
+//! ratchet asserted nothing at all under HeapSyn (eu-1tkk.7.17).
+//!
+//! Two further hazards this file defends against, both instances of a gate
+//! that cannot fail (eu-oxtcq):
+//!
+//! * **A silently inert marker.** [`parse_meta`] rejects an unrecognised
+//!   sidecar key rather than skipping it, so a typo (`xfail_engine`,
+//!   `xfails`, or the retired `xfail = true`) is a loud parse error, not a
+//!   marker that quietly does nothing.
+//! * **A vacuous ratchet arm.** No fixture is `xfail` today, so the
+//!   "you fixed it, lock it in" branch is never taken by the corpus sweep.
+//!   The verdict is therefore a pure function, [`verdict`], with a unit test
+//!   for each of its four cases — the arm is provably reachable whatever the
+//!   corpus happens to contain.
 use std::process::Command;
 
-const TRACE_BUDGET: usize = 12;
+/// Invariant (v)'s budget, taken from the crate rather than restated here.
+///
+/// `src/eval/error.rs` documents this constant as "shared by the curated
+/// human/JSON trace and the objective invariant gate … centralised here so
+/// the two cannot drift apart". A local `const TRACE_BUDGET: usize = 12`
+/// in this file made that documentation false: the values agreed, but
+/// nothing forced them to, and raising the crate's budget would have left
+/// the gate silently enforcing the old one (eu-0cc1). Importing is what
+/// makes the stated single source of truth actually single.
+use eucalypt::eval::error::TRACE_BUDGET;
+
+/// The evaluation engine the fixture sweep is running under.
+///
+/// Selected the same way the binary selects it, so the gate and the `eu`
+/// child process it spawns always agree: the child inherits `EU_HEAPSYN`
+/// from this process.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Engine {
+    Bytecode,
+    HeapSyn,
+}
+
+impl Engine {
+    fn current() -> Engine {
+        if std::env::var("EU_HEAPSYN").as_deref() == Ok("1") {
+            Engine::HeapSyn
+        } else {
+            Engine::Bytecode
+        }
+    }
+
+    /// The name used in a sidecar's `xfail_engines` list.
+    fn key(self) -> &'static str {
+        match self {
+            Engine::Bytecode => "bytecode",
+            Engine::HeapSyn => "heapsyn",
+        }
+    }
+
+    fn all() -> [Engine; 2] {
+        [Engine::Bytecode, Engine::HeapSyn]
+    }
+}
 
 struct Meta {
     region: (u32, u32),
-    xfail: bool,
+    /// Engines on which this fixture is expected to violate the invariants.
+    xfail_engines: Vec<Engine>,
 }
 
-fn parse_meta(toml_src: &str) -> Meta {
-    // Minimal hand-parse to avoid a toml dev-dep; the sidecar format is fixed and simple.
-    let mut start = 0u32;
-    let mut end = 0u32;
-    let mut xfail = false;
-    for line in toml_src.lines() {
+impl Meta {
+    fn is_xfail_on(&self, engine: Engine) -> bool {
+        self.xfail_engines.contains(&engine)
+    }
+}
+
+/// Keys a sidecar may carry. Anything else is a typo and must be loud.
+///
+/// `mutation`, `description` and `expected_class` are documentation the gate
+/// does not read; they are listed so that recognising a key and *acting* on
+/// it stay separate concerns.
+const KNOWN_KEYS: [&str; 6] = [
+    "mutation",
+    "description",
+    "expected_class",
+    "region_start_line",
+    "region_end_line",
+    "xfail_engines",
+];
+
+/// Minimal hand-parse of a fixture sidecar, avoiding a `toml` dev-dependency.
+///
+/// Strict by design. The previous parser skipped any line it did not
+/// recognise, which made a mistyped marker indistinguishable from no marker —
+/// the fixture silently became a live guard (or silently stopped being one)
+/// with nothing to say so.
+fn parse_meta(name: &str, toml_src: &str) -> Meta {
+    let mut start: Option<u32> = None;
+    let mut end: Option<u32> = None;
+    let mut xfail_engines = Vec::new();
+
+    for (n, line) in toml_src.lines().enumerate() {
         let l = line.trim();
-        if let Some(v) = l.strip_prefix("region_start_line") {
-            start = v.trim_start_matches([' ', '=']).trim().parse().unwrap();
-        } else if let Some(v) = l.strip_prefix("region_end_line") {
-            end = v.trim_start_matches([' ', '=']).trim().parse().unwrap();
-        } else if let Some(v) = l.strip_prefix("xfail ") {
-            xfail = v.contains("true");
-        } else if l == "xfail = true" {
-            xfail = true;
+        if l.is_empty() || l.starts_with('#') {
+            continue;
+        }
+        let (key, value) = l
+            .split_once('=')
+            .unwrap_or_else(|| panic!("{name}:{}: not a `key = value` line: {l:?}", n + 1));
+        let key = key.trim();
+        let value = value.trim();
+        assert!(
+            KNOWN_KEYS.contains(&key),
+            "{name}:{}: unrecognised sidecar key {key:?} (known: {KNOWN_KEYS:?}). \
+             A key the gate does not recognise is a marker that silently does \
+             nothing — note that the engine-blind `xfail` was replaced by \
+             `xfail_engines` (eu-1tkk.7.17).",
+            n + 1
+        );
+        match key {
+            "region_start_line" => {
+                start = Some(
+                    value
+                        .parse()
+                        .unwrap_or_else(|_| panic!("{name}:{}: bad line number", n + 1)),
+                )
+            }
+            "region_end_line" => {
+                end = Some(
+                    value
+                        .parse()
+                        .unwrap_or_else(|_| panic!("{name}:{}: bad line number", n + 1)),
+                )
+            }
+            "xfail_engines" => xfail_engines = parse_engine_list(name, n + 1, value),
+            _ => {}
         }
     }
+
+    let region = (
+        start.unwrap_or_else(|| panic!("{name}: missing region_start_line")),
+        end.unwrap_or_else(|| panic!("{name}: missing region_end_line")),
+    );
+    assert!(
+        region.0 <= region.1 && region.0 >= 1,
+        "{name}: nonsensical region {region:?}"
+    );
     Meta {
-        region: (start, end),
-        xfail,
+        region,
+        xfail_engines,
+    }
+}
+
+/// Parse `["bytecode", "heapsyn"]`, rejecting an unknown engine name.
+fn parse_engine_list(name: &str, line_no: usize, value: &str) -> Vec<Engine> {
+    let inner = value
+        .strip_prefix('[')
+        .and_then(|v| v.strip_suffix(']'))
+        .unwrap_or_else(|| panic!("{name}:{line_no}: xfail_engines must be a list: {value:?}"));
+    inner
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let s = s.trim_matches('"');
+            Engine::all()
+                .into_iter()
+                .find(|e| e.key() == s)
+                .unwrap_or_else(|| panic!("{name}:{line_no}: unknown engine {s:?}"))
+        })
+        .collect()
+}
+
+/// What the gate should do about one fixture on one engine.
+///
+/// Extracted as a pure function so that every arm — including the
+/// "you fixed it, lock it in" arm the corpus does not currently exercise —
+/// is reachable from a unit test rather than only from whatever fixtures
+/// happen to be checked in (eu-oxtcq mechanism 9).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Verdict {
+    /// Behaved as the sidecar says it should.
+    AsExpected,
+    /// A live guard that regressed.
+    HardFailure,
+    /// Marked expected-to-fail on this engine, but it passes: drop the marker.
+    UnexpectedPass,
+}
+
+fn verdict(is_xfail_on_this_engine: bool, violates: bool) -> Verdict {
+    match (is_xfail_on_this_engine, violates) {
+        (false, true) => Verdict::HardFailure,
+        (true, false) => Verdict::UnexpectedPass,
+        (false, false) | (true, true) => Verdict::AsExpected,
     }
 }
 
@@ -79,6 +252,12 @@ fn run(path: &std::path::Path) -> (serde_json::Value, String, Option<i32>) {
 
 /// Run a fixture with `run --debug-trace`, returning its JSON diagnostic.
 fn run_debug_trace(path: &std::path::Path) -> serde_json::Value {
+    run_debug_trace_with(path, &[])
+}
+
+/// Run a fixture with `run --debug-trace` plus `extra` flags, returning its
+/// JSON diagnostic.
+fn run_debug_trace_with(path: &std::path::Path, extra: &[&str]) -> serde_json::Value {
     let out = Command::new(env!("CARGO_BIN_EXE_eu"))
         .args([
             "run",
@@ -88,6 +267,7 @@ fn run_debug_trace(path: &std::path::Path) -> serde_json::Value {
             "--heap-limit-mib",
             "2048",
         ])
+        .args(extra)
         .arg(path)
         .output()
         .expect("run eu --debug-trace");
@@ -176,17 +356,32 @@ fn debug_trace_restores_the_uncurated_trace() {
         "swap_args.eu: curated trace must keep the user anchor, got {curated:?}"
     );
 
-    // `nth` raises at its own edge, so its boundary frame is in the env
-    // trace, not the stack trace: the raw dump does not have it and the
-    // curated trace recovers it as named context alongside the user anchor.
+    // `nth` raises at its own edge, so with the prelude compiled from source
+    // its boundary frame is in the env trace, not the stack trace: the raw
+    // dump does not have it and `curate_trace_with_env` recovers it as named
+    // context alongside the user anchor.
+    //
+    // That "not in the raw stack dump" shape is specific to the
+    // source-compiled prelude, where the inliner folds `nth`'s recursion into
+    // its caller and the surviving continuations are annotated with `nth`'s
+    // inner `aux` helper. Under the shipped prelude blob, `nth` is a real
+    // global call and its own frames legitimately reach the raw stack dump
+    // (blob mode carries per-binding identity, so those frames are labelled
+    // `nth`) — so the env-recovery precondition is asserted against
+    // `--source-prelude`, which pins the configuration that exercises that
+    // code path rather than leaving it to whether a blob happens to be
+    // present (eu-7x0r). The *outcome* below — the curated trace names the
+    // boundary and keeps the user anchor — is required of whichever prelude
+    // is actually in use, and is asserted unconditionally.
     let path = dir.join("nth_out_of_range.eu");
-    let raw = frames(&run_debug_trace(&path));
+    let raw_from_source = frames(&run_debug_trace_with(&path, &["--source-prelude"]));
+    assert!(
+        !raw_from_source.iter().any(|(kind, _)| kind == "boundary"),
+        "nth_out_of_range.eu (--source-prelude): raw dump unexpectedly carries a \
+         boundary frame: {raw_from_source:?}"
+    );
     let (curated_json, _, _) = run(&path);
     let curated = frames(&curated_json);
-    assert!(
-        !raw.iter().any(|(kind, _)| kind == "boundary"),
-        "nth_out_of_range.eu: raw dump unexpectedly carries a boundary frame: {raw:?}"
-    );
     assert!(
         curated.contains(&("boundary".to_string(), "nth".to_string())),
         "nth_out_of_range.eu: curated trace must name the boundary combinator, got {curated:?}"
@@ -287,59 +482,170 @@ fn violations(v: &serde_json::Value, all_output: &str, code: Option<i32>, m: &Me
     errs
 }
 
+/// Sweep the corpus on whichever engine this process was launched under.
+///
+/// Both arms bind on both engines. `hard_failures` always did; `unexpected_pass`
+/// now does too, because the marker it ratchets is itself per-engine — a
+/// fixture listed for `bytecode` only is a live guard under HeapSyn, and one
+/// listed for both is ratcheted on whichever engine fixes it first
+/// (eu-1tkk.7.17).
+///
+/// Historical note, for why the old relaxation existed: `hof_bad_arg.eu` used
+/// to violate invariants (i)/(iii)/(iv) on the default (bytecode) engine only
+/// — its error Smid was a `[prelude]` `map` Smid with no user Smid anywhere in
+/// either trace, while HeapSyn's error Smid was already the user's own
+/// `result` binding. Root cause: `step`/`step_predecoded` routed an arity>0
+/// (partial-application) WHNF value straight to `return_fun` without first
+/// refreshing `state.annotation` from the value's own closure annotation —
+/// unlike `vm.rs` `handle_instruction`, which does that refresh
+/// unconditionally, before its `remaining_arity > 0` check. A stale
+/// prelude-internal annotation therefore leaked into any error raised against
+/// that value by its caller. Fixed by eu-gvci. That is exactly the shape
+/// `xfail_engines = ["bytecode"]` now expresses precisely, instead of
+/// switching the whole ratchet off under HeapSyn.
 #[test]
 fn corpus_satisfies_invariants() {
+    let engine = Engine::current();
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/diagnostics/corpus");
     let mut hard_failures = vec![];
     let mut unexpected_pass = vec![];
+    let mut swept = 0usize;
     for entry in std::fs::read_dir(dir).expect("corpus dir") {
         let p = entry.unwrap().path();
         if p.extension().and_then(|e| e.to_str()) != Some("eu") {
             continue;
         }
+        swept += 1;
+        let name = p.file_name().unwrap().to_string_lossy().to_string();
         let meta_path = p.with_extension("meta.toml");
-        let m = parse_meta(&std::fs::read_to_string(&meta_path).expect("meta"));
+        let m = parse_meta(
+            &name,
+            &std::fs::read_to_string(&meta_path)
+                .unwrap_or_else(|_| panic!("{name}: missing {}", meta_path.display())),
+        );
         let (v, out, code) = run(&p);
         let errs = violations(&v, &out, code, &m);
-        let name = p.file_name().unwrap().to_string_lossy().to_string();
-        match (m.xfail, errs.is_empty()) {
-            (false, false) => hard_failures.push(format!("{name}: {errs:?}")),
-            (true, true) => unexpected_pass.push(name), // fixed! remove the xfail marker.
-            _ => {}
+        match verdict(m.is_xfail_on(engine), !errs.is_empty()) {
+            Verdict::AsExpected => {}
+            Verdict::HardFailure => hard_failures.push(format!("{name}: {errs:?}")),
+            Verdict::UnexpectedPass => unexpected_pass.push(name),
         }
     }
+    // A corpus directory that has gone missing or been renamed would otherwise
+    // sweep zero fixtures and report a clean pass (eu-oxtcq mechanism 1).
+    assert!(swept > 0, "swept no corpus fixtures from {dir}");
     assert!(
         hard_failures.is_empty(),
-        "invariant violations:\n{}",
+        "invariant violations on the {} engine:\n{}",
+        engine.key(),
         hard_failures.join("\n")
     );
-    // The `xfail` markers describe the DEFAULT (bytecode) engine, so the
-    // "you fixed it, lock it in" arm is only asserted there (eu-1tkk.7.12).
-    //
-    // Historical divergence, now closed: `hof_bad_arg.eu` used to violate
-    // invariants (i)/(iii)/(iv) on the default (bytecode) engine only — its
-    // error Smid was a `[prelude]` `map` Smid with no user Smid anywhere in
-    // either trace, while HeapSyn's error Smid was already the user's own
-    // `result` binding (`error_has_user_file: true`). Root cause: `step`/
-    // `step_predecoded` routed an arity>0 (partial-application) WHNF value
-    // straight to `return_fun` without ever refreshing `state.annotation`
-    // from the value's own closure annotation first — unlike `vm.rs`
-    // `handle_instruction`, which does that refresh unconditionally, before
-    // its `remaining_arity > 0` check. A stale prelude-internal annotation
-    // therefore leaked into any error raised against that value by its
-    // caller (e.g. `export`'s `native_from_value`). Fixed by eu-gvci; all
-    // fixtures currently in the corpus pass all five invariants on both
-    // engines, so `unexpected_pass` is expected to stay empty either way.
-    // The `heapsyn ||` relaxation is left in place as a safety valve should
-    // a future fixture-specific divergence reappear — it does not currently
-    // relax anything.
-    //
-    // The `hard_failures` arm above is NOT relaxed: a live guard that
-    // regresses fails on either engine.
-    let heapsyn = std::env::var("EU_HEAPSYN").as_deref() == Ok("1");
     assert!(
-        heapsyn || unexpected_pass.is_empty(),
-        "these fixtures now PASS — remove their `xfail` marker to lock the gain:\n{}",
+        unexpected_pass.is_empty(),
+        "these fixtures now PASS on the {} engine — remove {:?} from their \
+         `xfail_engines` to lock the gain:\n{}",
+        engine.key(),
+        engine.key(),
         unexpected_pass.join("\n")
     );
+}
+
+#[cfg(test)]
+mod meta_tests {
+    use super::*;
+
+    /// Every arm of the ratchet, including the one the checked-in corpus does
+    /// not currently reach. Without this, "no fixture is xfail" would make the
+    /// `UnexpectedPass` branch unreachable and the ratchet decorative.
+    #[test]
+    fn verdict_covers_all_four_cases() {
+        assert_eq!(verdict(false, false), Verdict::AsExpected);
+        assert_eq!(verdict(false, true), Verdict::HardFailure);
+        assert_eq!(verdict(true, true), Verdict::AsExpected);
+        assert_eq!(verdict(true, false), Verdict::UnexpectedPass);
+    }
+
+    /// An `xfail_engines` list binds only the engines it names.
+    #[test]
+    fn xfail_is_scoped_to_the_engines_it_names() {
+        let m = parse_meta(
+            "t",
+            "region_start_line = 1\nregion_end_line = 2\nxfail_engines = [\"bytecode\"]\n",
+        );
+        assert!(m.is_xfail_on(Engine::Bytecode));
+        assert!(
+            !m.is_xfail_on(Engine::HeapSyn),
+            "a bytecode-only xfail must leave the fixture a live guard under HeapSyn"
+        );
+        assert_eq!(
+            verdict(m.is_xfail_on(Engine::HeapSyn), true),
+            Verdict::HardFailure
+        );
+    }
+
+    #[test]
+    fn absent_marker_means_live_guard_on_every_engine() {
+        let m = parse_meta("t", "region_start_line = 2\nregion_end_line = 2\n");
+        for e in Engine::all() {
+            assert!(!m.is_xfail_on(e));
+        }
+    }
+
+    #[test]
+    fn comments_and_documentation_keys_are_accepted() {
+        let m = parse_meta(
+            "t",
+            "# a comment\nmutation = \"x\"\ndescription = \"y\"\nexpected_class = \"number\"\n\
+             region_start_line = 2\nregion_end_line = 3\n",
+        );
+        assert_eq!(m.region, (2, 3));
+    }
+
+    /// The retired engine-blind key must be a loud error, not a silent no-op.
+    #[test]
+    #[should_panic(expected = "unrecognised sidecar key")]
+    fn the_retired_xfail_key_is_rejected() {
+        parse_meta(
+            "t",
+            "region_start_line = 1\nregion_end_line = 1\nxfail = true\n",
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "unrecognised sidecar key")]
+    fn a_mistyped_marker_is_rejected() {
+        parse_meta(
+            "t",
+            "region_start_line = 1\nregion_end_line = 1\nxfail_engine = [\"bytecode\"]\n",
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown engine")]
+    fn an_unknown_engine_name_is_rejected() {
+        parse_meta(
+            "t",
+            "region_start_line = 1\nregion_end_line = 1\nxfail_engines = [\"predecode\"]\n",
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "missing region_start_line")]
+    fn a_sidecar_without_a_region_is_rejected() {
+        parse_meta("t", "description = \"no region\"\n");
+    }
+
+    #[test]
+    fn engine_selection_matches_the_binarys() {
+        // Documents the contract the child process relies on: the gate reads
+        // the same variable `eu` does, and the child inherits it.
+        assert_eq!(
+            Engine::current(),
+            if std::env::var("EU_HEAPSYN").as_deref() == Ok("1") {
+                Engine::HeapSyn
+            } else {
+                Engine::Bytecode
+            }
+        );
+    }
 }

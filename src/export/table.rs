@@ -80,6 +80,15 @@ where
 {
     stack: Vec<Expectation<K, V>>,
     result: Option<V>,
+    /// Whether a document has been opened and not yet closed.
+    ///
+    /// The driver ends the output stream even when execution failed part
+    /// way through rendering, so `OutputStreamEnd` can arrive with a
+    /// half-built document on the stack. Flushing that would write a
+    /// truncated (typically empty) document to the output alongside the
+    /// error. Track completion so only a document that saw its matching
+    /// `OutputDocumentEnd` becomes a result (eu-1tkk.7.20).
+    document_open: bool,
 }
 
 impl<K, V> Default for TableAccumulator<K, V>
@@ -95,6 +104,7 @@ where
         Self {
             stack: vec![],
             result: None,
+            document_open: false,
         }
     }
 }
@@ -143,14 +153,21 @@ where
                 }
             }
             Event::OutputDocumentStart => {
+                self.document_open = true;
                 self.stack.push(Expectation::Value(V::from_pairs(
                     RenderMetadata::empty(),
                     vec![],
                 )));
             }
-            Event::OutputDocumentEnd => {} // leave for now
+            Event::OutputDocumentEnd => self.document_open = false,
             Event::OutputStreamStart => {}
             Event::OutputStreamEnd => {
+                // A document still open here was abandoned mid-render
+                // (rendering failed); discard it rather than writing a
+                // truncated document out.
+                if self.document_open {
+                    return;
+                }
                 if let Some(Expectation::Value(val)) = self.stack.pop() {
                     self.result = Some(val)
                 }
@@ -162,5 +179,18 @@ where
     /// Return result (if complete)
     pub fn result(&self) -> Option<&V> {
         self.result.as_ref()
+    }
+
+    /// Whether the next scalar consumed will become a block key.
+    ///
+    /// Formats whose keys are restricted — JSON and TOML have string keys
+    /// only, and eucalypt's own syntax needs a name — use this to reject a
+    /// key their output cannot carry, rather than discovering it inside
+    /// `AsKey::as_key` where there is no error channel (eu-1z503).
+    pub fn expecting_key(&self) -> bool {
+        matches!(
+            self.stack.last(),
+            Some(Expectation::EvenBlockAccumulation(_, _))
+        )
     }
 }

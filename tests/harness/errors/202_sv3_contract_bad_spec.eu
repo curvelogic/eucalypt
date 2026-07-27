@@ -1,0 +1,7 @@
+{ import: "contract.eu" }
+
+# SV3 eu-u9xj.1: a malformed SPEC is a program bug, not a data problem, so
+# it raises through panic - a different ExecutionError variant from the
+# ContractViolation a non-conforming value produces. A schema typo must not
+# masquerade as bad input data.
+result: { a: 1 } validate({ not: "a spec" })

@@ -686,6 +686,7 @@ dependencies = [
  "lsp-types",
  "matches",
  "ndarray",
+ "num-bigint",
  "ordered-float",
  "petgraph",
  "postcard",
@@ -2714,7 +2715,6 @@ dependencies = [
  "eucalypt",
  "postcard",
  "serde_json",
- "sha2",
 ]
 
 [[package]]

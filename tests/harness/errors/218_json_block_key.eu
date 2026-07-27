@@ -1,0 +1,9 @@
+# A block key that is not text used to abort the process: `AsKey::as_key` did `self.as_str().unwrap()` on a `serde_json::Value`.
+# Reachable from ordinary source — `kv-block` and `block` both take an
+# arbitrary key — though not from any importer, which all normalise or
+# reject non-text keys (eu-1z503).
+#
+# yaml and edn render this block correctly and are deliberately unchanged;
+# only the formats whose keys must be text reject it.
+` { target: :main format: :json }
+main: kv-block(1, "a")

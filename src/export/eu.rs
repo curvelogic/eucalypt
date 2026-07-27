@@ -5,11 +5,12 @@
 //! rather than `"name"`.  Output is pretty-printed with the `pretty`
 //! crate.
 
-use crate::eval::emit::{Emitter, Event, RenderMetadata};
+use crate::eval::emit::{Emitter, Event, Rejection, RenderMetadata};
 use crate::eval::primitive::Primitive;
 use pretty::RcDoc;
 use std::io::Write;
 
+use super::error::RenderError;
 use super::table::{AsKey, FromPairs, FromPrimitive, FromVec, TableAccumulator};
 
 /// A eucalypt value tree, built up by `TableAccumulator` during export
@@ -29,7 +30,10 @@ impl AsKey<String> for EuValue {
     fn as_key(&self) -> String {
         match self {
             EuValue::Sym(s) | EuValue::Str(s) => s.clone(),
-            _ => panic!("non-string/symbol used as block key in eu export"),
+            // Rejected by `unacceptable` before reaching here; fall back to
+            // the value's own rendering rather than aborting should another
+            // route arrive (eu-1z503).
+            other => render_eu_value(other).unwrap_or_else(|_| "?".to_string()),
         }
     }
 }
@@ -114,11 +118,13 @@ fn eu_to_doc(val: &EuValue) -> RcDoc<'static> {
 }
 
 /// Render an `EuValue` as a eucalypt-syntax string.
-fn render_eu_value(val: &EuValue) -> String {
+fn render_eu_value(val: &EuValue) -> Result<String, RenderError> {
     let doc = eu_to_doc(val);
     let mut buf = Vec::new();
-    doc.render(80, &mut buf).expect("failed to render eu value");
-    String::from_utf8(buf).expect("eu output is not valid UTF-8")
+    doc.render(80, &mut buf)
+        .map_err(|e| RenderError::Serialisation(format!("failed to render eu value: {e}")))?;
+    String::from_utf8(buf)
+        .map_err(|e| RenderError::Serialisation(format!("eu output is not valid UTF-8: {e}")))
 }
 
 /// Emitter for eucalypt-syntax output (`-x eu`)
@@ -137,10 +143,21 @@ impl<'a> EuEmitter<'a> {
 }
 
 impl Emitter for EuEmitter<'_> {
-    fn emit(&mut self, event: Event) {
+    fn format_name(&self) -> &'static str {
+        "eu"
+    }
+
+    fn unacceptable(&self, event: &Event) -> Option<Rejection> {
+        // eucalypt block keys are names, so anything that is not a symbol or
+        // a string cannot be written back as eucalypt source that re-parses.
+        super::unrepresentable_key("eucalypt block", self.accum.expecting_key(), event)
+    }
+
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         self.accum.consume(event);
         if let Some(result) = self.accum.result() {
-            writeln!(self.out, "{}", render_eu_value(result)).expect("failed to write eu output");
+            writeln!(self.out, "{}", render_eu_value(result)?)?;
         }
+        Ok(())
     }
 }

@@ -1,12 +1,35 @@
 //! YAML export
 use yaml_rust::yaml::Tag;
 
-use crate::eval::emit::{Emitter, Event, RenderMetadata};
+use crate::eval::emit::{Emitter, Event, Rejection, RenderMetadata};
 use crate::eval::primitive::Primitive;
 
-use std::{convert::TryInto, io::Write};
+use std::io::Write;
 
+use super::error::RenderError;
 use super::table::{AsKey, FromPairs, FromPrimitive, FromVec, TableAccumulator};
+use super::INTEGER_RANGE_NOTES;
+
+/// Describe why `n` cannot be carried as a YAML integer, or `None` if it can.
+///
+/// `yaml_rust::Yaml::Integer` is `i64`-typed, so a JSON-sourced `u64` above
+/// `i64::MAX` has no YAML integer representation. This is the single predicate
+/// behind both `YamlEmitter::unrepresentable` (which rejects such a value at
+/// the emit intrinsic, with a source location) and the fallback in
+/// `from_primitive` below, so the two can never disagree.
+fn yaml_integer_overflow(n: &serde_json::Number) -> Option<Rejection> {
+    match n.as_u64() {
+        Some(u) if !n.is_i64() => Some(
+            Rejection::new(format!(
+                "the integer {u} is above {}, the largest integer a YAML \
+                 integer scalar can carry",
+                i64::MAX
+            ))
+            .with_notes(INTEGER_RANGE_NOTES),
+        ),
+        _ => None,
+    }
+}
 
 impl From<RenderMetadata> for Option<Tag> {
     fn from(metadata: RenderMetadata) -> Self {
@@ -34,23 +57,20 @@ impl FromPrimitive for yaml_rust::Yaml {
             Primitive::Sym(s) => yaml_rust::Yaml::String(metadata.into(), s.clone()),
             Primitive::Str(s) => yaml_rust::Yaml::String(metadata.into(), s.clone()),
             Primitive::Num(n) => {
-                if n.is_f64() {
-                    yaml_rust::Yaml::Real(metadata.into(), format!("{}", n.as_f64().unwrap()))
-                } else if n.is_i64() {
-                    yaml_rust::Yaml::Integer(metadata.into(), n.as_i64().unwrap())
-                } else if n.is_u64() {
-                    let u = n.as_u64().unwrap();
-                    yaml_rust::Yaml::Integer(
-                        metadata.into(),
-                        u.try_into().unwrap_or_else(|_| {
-                            panic!(
-                                "number {u} is too large to represent as a YAML integer (max i64)"
-                            )
-                        }),
-                    )
+                if yaml_integer_overflow(n).is_some() {
+                    // Unreachable through the emit intrinsics, which reject
+                    // this value via `unrepresentable` before it gets here.
+                    // Should another route ever reach it, write the digits
+                    // out verbatim as a plain scalar rather than aborting the
+                    // whole process: `Yaml::Real` is emitted unquoted and
+                    // unaltered, so no data is lost (eu-1tkk.7.20).
+                    yaml_rust::Yaml::Real(metadata.into(), n.to_string())
+                } else if let Some(i) = n.as_i64() {
+                    yaml_rust::Yaml::Integer(metadata.into(), i)
+                } else if let Some(f) = n.as_f64() {
+                    yaml_rust::Yaml::Real(metadata.into(), format!("{f}"))
                 } else {
-                    // serde_json::Number is always PosInt/NegInt/Float, so this is unreachable
-                    unreachable!("serde_json::Number {n} is neither f64, i64, nor u64")
+                    yaml_rust::Yaml::Real(metadata.into(), n.to_string())
                 }
             }
             Primitive::ZonedDateTime(dt) => {
@@ -91,14 +111,26 @@ impl<'a> YamlEmitter<'a> {
 }
 
 impl Emitter for YamlEmitter<'_> {
-    fn emit(&mut self, event: Event) {
+    fn format_name(&self) -> &'static str {
+        "YAML"
+    }
+
+    fn unrepresentable(&self, primitive: &Primitive) -> Option<Rejection> {
+        match primitive {
+            Primitive::Num(n) => yaml_integer_overflow(n),
+            _ => None,
+        }
+    }
+
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         self.accum.consume(event);
         if let Some(result) = self.accum.result() {
             let mut output = String::new();
             yaml_rust::YamlEmitter::new(&mut output)
                 .dump(result)
-                .expect("failed to emit YAML");
-            writeln!(self.out, "{output}").expect("failed to write YAML output");
+                .map_err(|e| RenderError::Serialisation(format!("failed to emit YAML: {e}")))?;
+            writeln!(self.out, "{output}")?;
         }
+        Ok(())
     }
 }

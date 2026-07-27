@@ -174,30 +174,61 @@ jobs:
       # under a blob — so today they run in NO CI job at all (eu-1tkk.7.19).
       - name: Generate prelude blob
         run: cargo run --package xtask -- prelude-compile
-      # Scoped deliberately: only tests confirmed to PASS under a blob today.
-      # `cargo test --test diagnostics_invariants` as a whole currently fails
-      # two other tests in that file under blob mode
-      # (secondary_labels_do_not_excerpt_library_internals,
-      # debug_trace_restores_the_uncurated_trace — filed as eu-7x0r) and the
-      # harness-level typecheck tests 010/011/013/063/085 are actively red
-      # under blob mode too (eu-rqwh, in progress). Both are pre-existing,
-      # unrelated bugs this job must not force onto master by going red on
-      # merge. Widen the `cargo test` invocations below as each lands.
+      # Whole targets, with a RATCHETED exclusion list — not an allowlist.
+      #
+      # This used to name the one test it wanted
+      # (`cargo test --test diagnostics_invariants corpus_satisfies_invariants
+      # -- --exact`) beside a comment reading "widen the cargo test invocations
+      # below as each lands", with nothing enforcing the widening. Two tests
+      # were excluded by omission, a new test in either target would have been
+      # excluded the same way, and a `--exact` filter that matches nothing
+      # exits 0 — so a rename would have removed a gate silently (eu-oxtcq
+      # mechanism 3).
+      #
+      # `scripts/diagnostics-gate.sh` runs each target whole, skipping only the
+      # named entries, and then requires every named entry to STILL FAIL. A
+      # known failure that gets fixed therefore turns this job RED until its
+      # line is deleted here. That is the mechanism working: delete the line,
+      # do not loosen the check.
+      #
+      # The exclusion list is currently EMPTY, and that is the ratchet having
+      # already fired once. This branch was written while eu-7x0r was open and
+      # excluded `secondary_labels_do_not_excerpt_library_internals` and
+      # `debug_trace_restores_the_uncurated_trace`. eu-7x0r landed as #1079,
+      # both now pass under a blob, and their lines are deleted rather than
+      # carried — leaving them would have turned this job red by design.
+      #
+      # (An earlier revision of this comment also claimed the harness-level
+      # typecheck fixtures 010/011/013/063/085 were red under blob mode per
+      # eu-rqwh. eu-rqwh closed on 2026-07-24 and all five now pass under a
+      # blob. Bringing harness_test itself into this job is eu-5yn9v.)
+      #
+      # `tests/blob_deprecation_test.rs` (eu-1tkk.2) is here for the same
+      # reason the others are: gated on `cfg(prelude_blob_ok)`, asserting
+      # behaviour that exists only on the eval path in blob mode, and reached
+      # by no other job — the blob-mode harness jobs run `eu test
+      # tests/harness`, which never reaches a `cargo test` integration test.
       - name: Run blob-mode diagnostics integration tests
         run: |
-          cargo test --test diagnostics_blame_plumbing_test
-          cargo test --test diagnostics_invariants corpus_satisfies_invariants -- --exact
+          scripts/diagnostics-gate.sh diagnostics_blame_plumbing_test
+          scripts/diagnostics-gate.sh diagnostics_invariants
+          scripts/diagnostics-gate.sh blob_deprecation_test
       # The blob half of the golden diagnostic snapshots (eu-1tkk.7.4). A
       # released binary uses the prelude blob, so the blob rendering is the one
       # users see — but only a binary embedding a verified blob can reproduce
       # it, so these two tests are `#[cfg(prelude_blob_ok)]` and exist in no
       # other job.
       #
-      # The `--list` check is not ceremony. `build.rs` re-runs on
-      # `lib/prelude.blob` changing by *mtime*: restoring a blob with an older
-      # timestamp leaves `prelude_blob_ok` unset, compiles both tests out, and
-      # lets `cargo test` exit 0 having run nothing. Asserting the test names
-      # are present turns that silent pass into a failure.
+      # The `--list` check is deliberately kept alongside
+      # `scripts/diagnostics-gate.sh` rather than replaced by it. The script's
+      # zero-test guard asks whether the target ran *anything*; this file has
+      # ungated tests too, so it would stay green with only those running while
+      # both blob-gated tests silently vanished. Naming the two tests is the
+      # stronger assertion, and it is the one this file needs.
+      #
+      # `build.rs` re-runs on `lib/prelude.blob` changing by *mtime*: restoring
+      # a blob with an older timestamp leaves `prelude_blob_ok` unset, compiles
+      # both tests out, and lets `cargo test` exit 0 having run nothing.
       - name: Assert the blob-gated snapshot tests were actually compiled in
         run: |
           cargo test --test diagnostics_snapshots -- --list > /tmp/snap-tests.txt
@@ -210,7 +241,7 @@ jobs:
             }
           done
       - name: Run the blob-mode golden diagnostic snapshots
-        run: cargo test --test diagnostics_snapshots
+        run: scripts/diagnostics-gate.sh diagnostics_snapshots
 
   blob-determinism:
     name: Prelude blob determinism
@@ -268,6 +299,15 @@ jobs:
       # EU_HEAPSYN=1) to keep the baseline from silently rotting.
       - name: Run harness on HeapSyn baseline engine
         run: ./target/release/eu test --allow-io tests/harness
+        env:
+          EU_HEAPSYN: "1"
+      # The diagnostics invariant gate is a `cargo test` target, so
+      # `eu test tests/harness` above never reaches it: until now it ran under
+      # NO engine but the default. Its expected-failure markers are per engine
+      # (`xfail_engines` in each fixture's sidecar), which only means anything
+      # if the gate is actually run on each engine it can name (eu-1tkk.7.17).
+      - name: Run the diagnostics invariant gate on HeapSyn
+        run: cargo test --test diagnostics_invariants
         env:
           EU_HEAPSYN: "1"
 

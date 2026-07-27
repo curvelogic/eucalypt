@@ -24,6 +24,42 @@ For richer metadata, use a block:
 (a + b): __ADD(a, b)
 ```
 
+### Reading Metadata Back
+
+A value can carry several stacked metadata layers — declaration
+metadata over a `//` layer, or one `//` over another. `meta` combines
+them all; `raw-meta` reports only the outermost layer.
+
+```eu
+` { doc: "documented" }
+counter: 7 // { unit: :seconds }
+
+combined: counter meta          # { unit: :seconds, doc: "documented" }
+outermost: counter raw-meta     # { doc: "documented" }
+
+RESULT: (combined.unit = :seconds) ∧ (outermost.doc = "documented")
+```
+
+Two block layers merge, with the outer (later applied) layer winning on
+key conflicts. A layer that is **not** a block is *opaque*: it cannot be
+merged, so the outermost layer stands as the answer on its own. This is
+what the leading-symbol block shorthand produces — the tag is attached
+as a bare symbol, not a block:
+
+```eu
+spec: { :only k: 1 }
+
+tag: spec meta          # :only — the symbol itself, not a block
+raw-tag: spec raw-meta  # :only
+
+RESULT: (tag = :only) ∧ (raw-tag = :only)
+```
+
+Note that the built-in monadic tags (`:io`, `:for`, `:let`, `:random`,
+`:state`) never reach the runtime this way — the desugarer consumes
+them and rewrites the block into a bind chain, so the resulting value
+has no metadata at all.
+
 ### Common Metadata Keys
 
 | Key | Purpose |
