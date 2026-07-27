@@ -104,6 +104,29 @@ pub enum Continuation {
 
 impl StgObject for Continuation {}
 
+impl Continuation {
+    /// The source annotation of the site that pushed this continuation —
+    /// the caller's position, to be restored when control returns here
+    /// (eu-1tkk.7.32). Mirrors `BcContinuation::site_annotation`; the two
+    /// engines must agree or blame diverges between them.
+    ///
+    /// `None` for the variants that record no site: `DeMeta` and
+    /// `CaptureEnd` carry no annotation field, and `LookupLitForce`'s
+    /// `smid` is the *lookup* site it is about to report against rather
+    /// than a position to resume at.
+    pub fn site_annotation(&self) -> Option<Smid> {
+        match self {
+            Continuation::Branch { annotation, .. }
+            | Continuation::Update { annotation, .. }
+            | Continuation::ApplyTo { annotation, .. }
+            | Continuation::SeqBind { annotation, .. } => Some(*annotation),
+            Continuation::DeMeta { .. }
+            | Continuation::LookupLitForce { .. }
+            | Continuation::CaptureEnd => None,
+        }
+    }
+}
+
 /// O(1) tag dispatch: look up the branch for `tag` by direct indexing
 pub fn match_tag(
     tag: Tag,

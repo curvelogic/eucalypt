@@ -387,6 +387,22 @@ impl BcMachineState {
         }
     }
 
+    /// Restore the live annotation to a position that was already current
+    /// earlier — the site that pushed the continuation now being returned
+    /// into (eu-1tkk.7.32).
+    ///
+    /// Deliberately **not** `set_annotation`: returning to a caller does
+    /// not *reach* a new location, so it must not move
+    /// [`BcMachineState::last_annotation`], whose contract is "the most
+    /// recent real location, monotone in execution time" (eu-og3u6). A
+    /// restore runs the other way; letting it write that register would
+    /// let a shallow call site displace the deeper real location the
+    /// fallback exists to remember.
+    #[inline]
+    pub fn restore_annotation(&mut self, smid: Smid) {
+        self.annotation = smid;
+    }
+
     /// Collect the annotation trace of the environment chain currently in
     /// scope, for error diagnostics. Mirrors `MachineState::env_trace`
     /// (vm.rs), which walks the environment of the closure being evaluated.
@@ -1028,6 +1044,13 @@ pub fn return_data(
         }
         return Ok(());
     };
+    // Returning into the caller restores the caller's source position
+    // (eu-1tkk.7.32). Without this the annotation kept whatever the callee
+    // last set, so blame for anything raised after the call landed in the
+    // callee's body.
+    if let Some(site) = cont.site_annotation() {
+        state.restore_annotation(site);
+    }
     match cont {
         BcContinuation::Branch {
             min_tag,
@@ -1366,6 +1389,13 @@ pub fn return_native(
         state.terminated = true;
         return Ok(());
     };
+    // Returning into the caller restores the caller's source position
+    // (eu-1tkk.7.32). Without this the annotation kept whatever the callee
+    // last set, so blame for anything raised after the call landed in the
+    // callee's body.
+    if let Some(site) = cont.site_annotation() {
+        state.restore_annotation(site);
+    }
     match cont {
         BcContinuation::Branch {
             fallback,
@@ -1503,6 +1533,13 @@ pub fn return_fun(
         state.terminated = true;
         return Ok(());
     };
+    // Returning into the caller restores the caller's source position
+    // (eu-1tkk.7.32). Without this the annotation kept whatever the callee
+    // last set, so blame for anything raised after the call landed in the
+    // callee's body.
+    if let Some(site) = cont.site_annotation() {
+        state.restore_annotation(site);
+    }
     let fun = *state.current.as_closure().ok_or_else(|| {
         ExecutionError::Panic(state.annotation, "return_fun on a native value".to_string())
     })?;
@@ -1683,6 +1720,13 @@ fn return_meta(
         state.current = resolve_ref(view, &state.constants, env, state.globals, body_ref)?;
         return Ok(());
     };
+    // Returning into the caller restores the caller's source position
+    // (eu-1tkk.7.32). Without this the annotation kept whatever the callee
+    // last set, so blame for anything raised after the call landed in the
+    // callee's body.
+    if let Some(site) = cont.site_annotation() {
+        state.restore_annotation(site);
+    }
     match cont {
         BcContinuation::DeMeta {
             handler,

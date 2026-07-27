@@ -137,6 +137,42 @@ pub enum BcContinuation {
 impl StgObject for BcContinuation {}
 
 impl BcContinuation {
+    /// The source annotation of the site that pushed this continuation —
+    /// the caller's position, to be restored when control returns here
+    /// (eu-1tkk.7.32).
+    ///
+    /// `None` for the variants that record no site: `DeMeta` and
+    /// `CaptureEnd` carry no annotation field, and `LookupLitForce`'s
+    /// `smid` is the *lookup* site it is about to report against rather
+    /// than a position to resume at.
+    ///
+    /// # Why this exists
+    ///
+    /// `state.annotation` is "the source position currently in effect".
+    /// Every continuation already *saves* the position live where it was
+    /// pushed; nothing restored it on the way back, so after a call the
+    /// annotation was whatever the callee happened to leave behind. Blame
+    /// for anything raised after the return then landed wherever the
+    /// callee's last annotated node was — the callee's *definition* site,
+    /// typically. Whether that was right was luck: `error_176` and
+    /// `error_177` are the same `//=` assertion shape and differ only in
+    /// whether the asserted value came from a function call, and they
+    /// landed on opposite sides of it.
+    pub fn site_annotation(&self) -> Option<Smid> {
+        match self {
+            BcContinuation::Branch { annotation, .. }
+            | BcContinuation::BranchPredecoded { annotation, .. }
+            | BcContinuation::Update { annotation, .. }
+            | BcContinuation::ApplyTo { annotation, .. }
+            | BcContinuation::SeqBind { annotation, .. }
+            | BcContinuation::FusedPrimopLeft { annotation, .. }
+            | BcContinuation::FusedPrimopRight { annotation, .. } => Some(*annotation),
+            BcContinuation::DeMeta { .. }
+            | BcContinuation::LookupLitForce { .. }
+            | BcContinuation::CaptureEnd => None,
+        }
+    }
+
     /// O(1) tag dispatch for a `Branch` continuation: look up the branch
     /// code offset for `tag` by direct indexing (mirrors
     /// `cont::match_tag`). Returns `None` for any non-`Branch` variant.

@@ -421,6 +421,20 @@ impl MachineState {
         }
     }
 
+    /// Restore the live annotation to a position that was already current
+    /// earlier — the site that pushed the continuation now being returned
+    /// into (eu-1tkk.7.32). Mirrors
+    /// `BcMachineState::restore_annotation`.
+    ///
+    /// Deliberately **not** `set_annotation`: returning to a caller does
+    /// not *reach* a new location, so it must not move `last_annotation`,
+    /// whose contract is "the most recent real location, monotone in
+    /// execution time" (eu-og3u6).
+    #[inline]
+    pub fn restore_annotation(&mut self, smid: Smid) {
+        self.annotation = smid;
+    }
+
     /// The most recent valid annotation, for error reporting.
     #[inline]
     pub fn last_annotation(&self) -> Smid {
@@ -911,6 +925,11 @@ impl MachineState {
         body: &Ref,
     ) -> Result<(), ExecutionError> {
         if let Some(continuation) = self.stack.pop() {
+            // Returning into the caller restores the caller's source
+            // position (eu-1tkk.7.32); see `restore_annotation`.
+            if let Some(site) = continuation.site_annotation() {
+                self.restore_annotation(site);
+            }
             match continuation {
                 Continuation::DeMeta {
                     handler,
@@ -958,6 +977,11 @@ impl MachineState {
         value: &Native,
     ) -> Result<(), ExecutionError> {
         if let Some(continuation) = self.stack.pop() {
+            // Returning into the caller restores the caller's source
+            // position (eu-1tkk.7.32); see `restore_annotation`.
+            if let Some(site) = continuation.site_annotation() {
+                self.restore_annotation(site);
+            }
             match continuation {
                 Continuation::Branch {
                     fallback,
@@ -1159,6 +1183,11 @@ impl MachineState {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         if let Some(continuation) = self.stack.pop() {
+            // Returning into the caller restores the caller's source
+            // position (eu-1tkk.7.32); see `restore_annotation`.
+            if let Some(site) = continuation.site_annotation() {
+                self.restore_annotation(site);
+            }
             match continuation {
                 Continuation::Branch {
                     min_tag,
@@ -1309,6 +1338,11 @@ impl MachineState {
     /// Return function to either apply to args or default case branch
     fn return_fun(&mut self, view: MutatorHeapView) -> Result<(), ExecutionError> {
         if let Some(continuation) = self.stack.pop() {
+            // Returning into the caller restores the caller's source
+            // position (eu-1tkk.7.32); see `restore_annotation`.
+            if let Some(site) = continuation.site_annotation() {
+                self.restore_annotation(site);
+            }
             match continuation {
                 Continuation::ApplyTo { args, annotation } => {
                     let excess = args.len() as isize - self.closure.arity() as isize;

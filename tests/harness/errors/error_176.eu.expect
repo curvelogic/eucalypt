@@ -1,2 +1,9 @@
+# eu-1tkk.7.32: the primary label must be the assertion site (line 19), not
+# the body of the function whose value was asserted (line 16). Before the
+# annotation save/restore the label depended on whatever the callee left
+# behind, so the same file blamed 16:22 under `-t result` and 19:32 under
+# the default target. Pinned on the `┌─` line specifically: a `stack trace:`
+# note renders `- name at file:line:col` with no `┌─`, so this cannot pass
+# on the note alone. Holds in both prelude modes and on both engines.
 exit: 1
-stderr: "got \"hello world\""
+stderr: "(?s)got \"hello world\".*┌─[^\n]*error_176\.eu:19:32"

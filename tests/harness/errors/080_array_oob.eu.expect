@@ -1,2 +1,8 @@
+# eu-1tkk.7.32: blame the operation that failed (`arr.get`, col 40), not the
+# array construction it was applied to (`arr.from-flat`, col 4). Before the
+# annotation save/restore the primary named `arr.from-flat` and relegated
+# `arr.get` to a "called from here" secondary — pointing at the wrong
+# operation entirely. Pinned on the `┌─` line; holds in both prelude modes
+# and on both engines.
 exit: 1
-stderr: "array index out of bounds: coordinates .* are outside the array bounds"
+stderr: "(?s)array index out of bounds: coordinates .* are outside the array bounds.*┌─[^\n]*080_array_oob\.eu:2:40"
