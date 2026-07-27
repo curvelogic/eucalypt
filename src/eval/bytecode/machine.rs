@@ -285,11 +285,11 @@ pub struct BcMachineState {
     /// legitimately `Smid::default()` (e.g. an intrinsic's deferred argument
     /// check, reached after the enclosing `force` has completed — the eu-0lvf
     /// case). The error then carries no location of its own and the
-    /// continuation stack has no user frame either. `attach_trace` appends
-    /// this register as the outermost stack-trace frame so `to_diagnostic`
-    /// can still anchor the diagnostic on the last place the user's program
-    /// actually was. Being appended (outermost), it never displaces a genuine
-    /// inner frame.
+    /// continuation stack has no user frame either. `attach_trace` carries
+    /// this register on `ExecutionError::Traced` alongside the two traces —
+    /// as a separate element, *not* as a trace frame, since it is not a
+    /// pending call — and `to_diagnostic` consults it only once the error's
+    /// own Smid and both traces have failed to yield a user-file location.
     pub last_annotation: Smid,
     /// Deferred BIF intrinsic index (set by the `Bif` arm, run in `step`).
     pub pending_bif: Option<u8>,
