@@ -513,7 +513,11 @@ fn cmd_prelude_compile() -> Result<()> {
                         eucalypt::common::sourcemap::Smid::global_slot(i as u32),
                     )
                 } else {
-                    arena.reconstruct_form(e)
+                    // Must match `StandardRuntime::globals`: unstamped blob
+                    // globals are still *neutralised*, never reconstructed
+                    // verbatim, or the pre-encoded bytecode would embed the
+                    // aliasing xtask Smids the runtime path strips.
+                    arena.reconstruct_form_neutralised(e)
                 }
                 .expect("reconstruct prelude form for bytecode encode")
             })

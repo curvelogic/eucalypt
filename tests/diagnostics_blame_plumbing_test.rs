@@ -160,7 +160,6 @@ fn blob_mode_trace_global_slot_resolves_to_declared_boundary_combinator() {
     );
 }
 
-<<<<<<< HEAD
 // ── eu-7x0r: blob-mode prelude frames must render, and Smids baked by ────────
 // ── xtask must not alias user source positions ───────────────────────────────
 
