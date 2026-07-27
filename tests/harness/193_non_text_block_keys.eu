@@ -25,6 +25,14 @@ test: {
   t-json-plain: (plain render-as(:json)) = c"\u007b\n  \"a\": 1\n\u007d\n"
   t-eu-plain: (plain render-as(:eu)) = c"\u007b a: 1 \u007d\n"
 
-  RESULT: [t-yaml-number, t-edn-number, t-yaml-bool, t-json-plain, t-eu-plain]
-    all-true? then(:PASS, :FAIL)
+  # A *string* key is text too, and `kv-block` can produce one, so it must
+  # be accepted as readily as a symbol. Covers the other accepting arm of
+  # the key check — without this, narrowing the check to symbols only would
+  # go unnoticed.
+  string-key: kv-block("a", 1)
+  t-json-string-key: (string-key render-as(:json)) = c"\u007b\n  \"a\": 1\n\u007d\n"
+  t-toml-string-key: (string-key render-as(:toml)) = c"a = 1\n\n"
+
+  RESULT: [t-yaml-number, t-edn-number, t-yaml-bool, t-json-plain, t-eu-plain,
+           t-json-string-key, t-toml-string-key] all-true? then(:PASS, :FAIL)
 }
