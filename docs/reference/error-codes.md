@@ -54,6 +54,75 @@ before using it — for example, `a num + 1` converts the string to a
 number first. See the [prelude reference](prelude/) for the conversion
 functions available for each type (`num`, `str`, `str.of`, and so on).
 
+### `EU-EVAL-CONTRACT`
+
+**What it means:** data failed a structural contract applied with `ensure`.
+The contract is an ordinary type spec written as an `s"…"` literal, and the
+diagnostic's notes list every position that did not conform, each with a
+path into the data. The source location is the `ensure` call site — the
+contract that failed — while the paths in the notes say where in the data
+to look.
+
+**Example:**
+
+```eucalypt
+{ import: "contract.eu" }
+schema: s"{ name: string, port: number }"
+config: { name: "web", port: "8080", debug: true } ensure(schema)
+```
+
+```text
+error[EU-EVAL-CONTRACT]: contract violation: 2 violations against {name: string, port: number}
+  ┌─ example.eu:3:51
+  │
+3 │ config: { name: "web", port: "8080", debug: true } ensure(schema)
+  │                                                   ^^^^^^^^^^^^^^
+  │
+  = port: expected number, found string
+  = (root): unexpected keys: debug
+```
+
+**How to fix it:** correct the data at each path the notes name, or widen
+the spec if the shape you are receiving is the shape you intended — a
+closed record spec such as `{name: string}` reports surplus keys, and
+adding `..` (`{name: string, ..}`) permits them. To inspect the violations
+as data rather than aborting, call `validate(spec, data)` instead: it
+returns the same information as a list of blocks and never raises. See the
+[Contracts guide](../guide/contracts.md).
+
+### `EU-RENDER-UNREPRESENTABLE`
+
+**What it means:** a value survived evaluation intact, but the output
+format you asked for has no way to carry it. The commonest case is an
+integer above `9223372036854775807` (the signed 64-bit maximum): JSON
+and eucalypt itself carry it happily, but a YAML integer scalar and a
+TOML integer are both signed 64-bit.
+
+**Example:** given `big.json` holding `{"n": 9999999999999999999}`,
+
+```eucalypt
+` { target: :main output: :yaml import: "data=big.json" }
+main: data.n
+```
+
+```text
+error[EU-RENDER-UNREPRESENTABLE]: cannot represent this value in YAML output: the integer 9999999999999999999 is above 9223372036854775807, the largest integer a YAML integer scalar can carry
+  ┌─ example.eu:2:7
+  │
+2 │ main: data.n
+  │       ^^^^^^
+  │
+  = render to a format that can carry the value — 'json', 'text' and 'eu' output all keep integers of this magnitude
+  = to keep the exact digits in this format, convert the value to a string first with 'str', e.g. 'n str'
+```
+
+**How to fix it:** render to a format that can carry the value — `-x
+json`, `-x text` and `-x eu` all keep integers of this magnitude — or
+convert it to a string first with `str`, so the exact digits are
+preserved as text. eucalypt reports this rather than quietly rounding
+the value or changing its type, so that what you export matches what
+you evaluated.
+
 <!--
 To add a new code: append a `### EU-<AREA>-<SLUG>` section here with
 "What it means", "Example", and "How to fix it" — positive guidance only,

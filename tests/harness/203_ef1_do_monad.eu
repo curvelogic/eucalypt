@@ -1,0 +1,86 @@
+{ import: "resource:do"
+  doc: "203 EF1 combined effect monad (do): one colon-do block threading a
+        state-and-seed context over IO across all three effects, with parity
+        against the underlying state and random monads run directly, and the
+        threaded final state and final seed both asserted." }
+
+# Fixed seed stream so the random draws are deterministic and can be checked
+# for parity against the random monad run directly.
+` :suppress
+seed0: random.stream(42)
+
+# Two successive draws through the random monad directly.  Two, not one: a
+# single draw cannot tell a threaded seed from a stuck one, because the first
+# draw off an unadvanced seed is the same number either way.
+` :suppress
+rand-chain: { :random
+  a: random.float
+  b: random.float
+}.([a, b])
+
+` :suppress
+ctx0: { state: { count: 0 }, seed: seed0 }
+
+# Shell command strings are platform-specific, and the trailing line ending
+# differs too, so trim the captured stdout before comparing.
+` :suppress
+echo-cmd: if(eu.os = "windows", "Write-Output hi", "echo hi")
+
+# One pipeline exercising io (shell), state (put / modify / %! lens operator),
+# random (two draws), and pure steps — all as native do.* actions.
+` :suppress
+pipeline: { :do
+  greeting: do.shell(echo-cmd)
+  msg:      do.pure(greeting.stdout str.trim)
+  _:        do.put(:echoed, msg)
+  _:        do.modify(:count, (+ 1))
+  _:        do.st(:count %! (+ 9))
+  r1:       do.float
+  r2:       do.float
+  n:        do.query(_.count)
+  _:        do.pure(:ignored)
+}.([msg, r1, r2, n])
+
+# The same state effect run through the state monad directly (parity).
+` :suppress
+state-chain: { :state
+  _: state.modify(:count, (+ 1))
+  _: :count %! (+ 9)
+}.(:done)
+
+# The seed the direct random chain leaves behind, and the next draw off it.
+` :suppress
+seed-after-chain: random.run(rand-chain, seed0).rest
+
+` :suppress
+next-draw-after-chain: random.eval(random.float, seed-after-chain)
+
+# Build the PASS/FAIL verdict from the do-run result.
+` :suppress
+verdict(res): {
+  stdout-value:    (res.value head) = "hi"
+  count-threaded:  res.ctx.state.count = 10
+  echoed-threaded: res.ctx.state.echoed = "hi"
+  query-matches:   (res.value nth(3)) = 10
+  state-parity:    (state.run(state-chain, { count: 0 }).state.count) = 10
+
+  # Both draws, in order, must match two draws through the random monad run
+  # directly.  A do context that never advances its seed yields the same
+  # number twice and fails here.
+  rand-parity:     [(res.value nth(1)), (res.value nth(2))]
+                     = random.eval(rand-chain, seed0)
+
+  # The final seed left in the context must be the one the direct chain
+  # leaves behind: a further draw off res.ctx.seed matches the chain's
+  # continuation.  This is the assertion on the threaded seed itself
+  # (spec section 7), as distinct from the values drawn along the way.
+  seed-threaded:   random.eval(random.float, res.ctx.seed)
+                     = next-draw-after-chain
+
+  RESULT: [stdout-value, count-threaded, echoed-threaded, query-matches,
+           state-parity, rand-parity, seed-threaded]
+    all-true? then(:PASS, :FAIL)
+}
+
+` { target: :test }
+test: do.run(pipeline, ctx0) io.map(verdict)

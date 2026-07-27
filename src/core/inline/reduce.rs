@@ -1,8 +1,10 @@
 //! Distribute and beta reduce inline functions
+use crate::common::sourcemap::{HasSmid, Smid};
 use crate::core::binding::{Scope, Var};
 use crate::core::error::CoreError;
 use crate::core::expr::*;
 use crate::core::transform::succ;
+use std::collections::{HashMap, HashSet};
 
 /// Depth-aware substitution for beta reduction.
 ///
@@ -216,6 +218,61 @@ fn distribute(expr: &RcExpr) -> Result<RcExpr, CoreError> {
     }
 }
 
+/// True iff copying `expr` to every occurrence of a binder duplicates no
+/// work.
+///
+/// A variable already names a single shared thunk, and a literal or an
+/// intrinsic reference costs nothing to re-evaluate, so any number of
+/// copies is free.  Everything else — an application in particular — is a
+/// fresh thunk per copy, sharing nothing with its siblings, and so must be
+/// let-bound instead (see `beta_reduce`).
+fn duplicable(expr: &RcExpr) -> bool {
+    matches!(
+        &*expr.inner,
+        Expr::Var(_, _) | Expr::Literal(_, _) | Expr::Intrinsic(_, _)
+    )
+}
+
+/// Count how many times each free variable occurs in `expr`.
+fn free_var_occurrences(expr: &RcExpr) -> HashMap<String, usize> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    visit_free_vars(expr, &mut |name| {
+        *counts.entry(name.to_string()).or_insert(0) += 1;
+    });
+    counts
+}
+
+/// Derive a binding name from `base` that collides with nothing in `avoid`.
+///
+/// The chosen name is added to `avoid`, so repeated calls stay distinct
+/// from each other as well as from the names already in play.
+fn fresh_name(base: &str, avoid: &mut HashSet<String>) -> String {
+    let mut candidate = format!("__shared_{base}");
+    let mut n = 0;
+    while avoid.contains(&candidate) {
+        n += 1;
+        candidate = format!("__shared{n}_{base}");
+    }
+    avoid.insert(candidate.clone());
+    candidate
+}
+
+/// Re-tag a beta-reduced application with the call site's Smid.
+///
+/// After beta reduction the outermost expression carries the *callee's*
+/// Smid (typically a prelude location) rather than the user's call site,
+/// which is what a diagnostic should blame.  Re-tag so that later passes
+/// (the STG compiler in particular) annotate the code with the user's
+/// location.
+fn retag_call_site(reduced: RcExpr, call_smid: Smid) -> RcExpr {
+    if call_smid.is_valid() {
+        if let Expr::App(_, rf, rargs) = &*reduced.inner {
+            return RcExpr::from(Expr::App(call_smid, rf.clone(), rargs.clone()));
+        }
+    }
+    reduced
+}
+
 /// Apply lambdas which have been distribute to function positions
 fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
     match &*expr.inner {
@@ -238,29 +295,61 @@ fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                             .map(beta_reduce)
                             .collect::<Result<Vec<RcExpr>, CoreError>>()?;
 
-                        let mappings: Vec<(String, RcExpr)> =
-                            binders.into_iter().zip(args).collect();
+                        // Substituting an argument at every occurrence of
+                        // its binder copies the argument *expression*, and
+                        // separate copies become separate thunks that share
+                        // nothing.  For a callee that mentions a parameter
+                        // more than once that turns one evaluation into
+                        // several, and when the argument is the caller's own
+                        // recursive call it turns linear work into 2^n
+                        // (eu-gua64).  So an argument is substituted directly
+                        // only when that is free — when it is duplicable, or
+                        // when its binder is used at most once — and is
+                        // otherwise bound once in a Let wrapped round the
+                        // reduced body, leaving the occurrences to share that
+                        // single thunk.
+                        let occurrences = free_var_occurrences(&body);
+                        // The occurrence map's keys are exactly the body's
+                        // free names (same traversal), so reuse them rather
+                        // than walking the body a second time.
+                        let mut avoid: HashSet<String> = occurrences.keys().cloned().collect();
+                        for arg in &args {
+                            avoid.extend(free_vars(arg));
+                        }
 
-                        let reduced = substs_depth(&body, &mappings, 0)?;
+                        let mut mappings: Vec<(String, RcExpr)> = Vec::with_capacity(binders.len());
+                        let mut shared: Vec<(String, RcExpr)> = Vec::new();
 
-                        // Preserve the call-site source location on the reduced
-                        // expression. After beta reduction, the top-level
-                        // expression carries the callee's (prelude) Smid rather
-                        // than the user's call site. If the outer App had a
-                        // valid Smid, re-tag the result so that subsequent
-                        // compiler passes (e.g. STG compiler) can annotate the
-                        // code with the correct source location.
-                        if call_smid.is_valid() {
-                            if let Expr::App(_, rf, rargs) = &*reduced.inner {
-                                return Ok(RcExpr::from(Expr::App(
-                                    *call_smid,
-                                    rf.clone(),
-                                    rargs.clone(),
-                                )));
+                        for (binder, arg) in binders.into_iter().zip(args) {
+                            let uses = occurrences.get(&binder).copied().unwrap_or(0);
+                            if uses > 1 && !duplicable(&arg) {
+                                let name = fresh_name(&binder, &mut avoid);
+                                let reference =
+                                    RcExpr::from(Expr::Var(arg.smid(), Var::Free(name.clone())));
+                                mappings.push((binder, reference));
+                                shared.push((name, arg));
+                            } else {
+                                mappings.push((binder, arg));
                             }
                         }
 
-                        Ok(reduced)
+                        let reduced =
+                            retag_call_site(substs_depth(&body, &mappings, 0)?, *call_smid);
+
+                        if shared.is_empty() {
+                            Ok(reduced)
+                        } else {
+                            // `close_let_scope` binds the fresh names in the
+                            // body and increments the de Bruijn scope indices
+                            // of both the body and the bound argument
+                            // expressions to account for the scope boundary
+                            // they have just moved inside.
+                            Ok(RcExpr::from(Expr::Let(
+                                *call_smid,
+                                close_let_scope(shared, reduced),
+                                LetType::OtherLet,
+                            )))
+                        }
                     }
                 }
                 // Use optimized try_walk_safe
@@ -586,5 +675,232 @@ pub mod tests {
         let result = inline_pass(&inner).expect("inline_pass should not panic");
         binding::verify(&result).expect("result should have valid bindings");
         let _ = (p0, a, b, f, x);
+    }
+
+    /// Count `App` nodes anywhere in `expr`.
+    fn app_count(expr: &RcExpr) -> usize {
+        let mut n = 0;
+        count_apps(expr, &mut n);
+        n
+    }
+
+    fn count_apps(expr: &RcExpr, n: &mut usize) {
+        if matches!(&*expr.inner, Expr::App(_, _, _)) {
+            *n += 1;
+        }
+        match &*expr.inner {
+            Expr::Let(_, scope, _) => {
+                for b in &scope.pattern {
+                    count_apps(&b.expr, n);
+                }
+                count_apps(&scope.body, n);
+            }
+            Expr::Lam(_, _, scope) => count_apps(&scope.body, n),
+            Expr::App(_, f, xs) => {
+                count_apps(f, n);
+                for x in xs {
+                    count_apps(x, n);
+                }
+            }
+            Expr::List(_, xs) | Expr::ArgTuple(_, xs) => {
+                for x in xs {
+                    count_apps(x, n);
+                }
+            }
+            Expr::Meta(_, e, m) => {
+                count_apps(e, n);
+                count_apps(m, n);
+            }
+            _ => {}
+        }
+    }
+
+    /// Regression test for eu-gua64: an argument that is not trivially
+    /// duplicable must be bound once, not copied to every occurrence of
+    /// its binder.
+    ///
+    /// `pick = λ(a, b). GT(a, b)` uses both binders twice over; calling it
+    /// with two applications used to substitute each application twice,
+    /// so a recursive caller passing its own recursive call cost 2^n.
+    /// After the fix the reduced body holds exactly one copy of each
+    /// argument, in a `Let` that the two uses share.
+    #[test]
+    pub fn test_beta_reduce_shares_duplicated_non_atomic_argument() {
+        let pick = free("pick");
+        let a = free("a");
+        let b = free("b");
+        let xs = free("xs");
+
+        // λ(a, b). ADD(GT(a, b), GT(b, a)) — each binder used twice.
+        let body = app(
+            bif("ADD"),
+            vec![
+                app(bif("GT"), vec![var(a.clone()), var(b.clone())]),
+                app(bif("GT"), vec![var(b.clone()), var(a.clone())]),
+            ],
+        );
+        let pick_def = inline(vec![a.clone(), b.clone()], body);
+
+        // pick(HEAD(xs), TAIL(xs)) — two non-atomic arguments.
+        let call = app(
+            var(pick.clone()),
+            vec![
+                app(bif("HEAD"), vec![var(xs.clone())]),
+                app(bif("TAIL"), vec![var(xs.clone())]),
+            ],
+        );
+
+        let original = let_(
+            vec![(pick.clone(), pick_def), (xs.clone(), list(vec![num(1)]))],
+            call,
+        );
+
+        let result = inline_pass(&original).expect("inline_pass should not panic");
+        binding::verify(&result).expect("result should have valid bindings");
+
+        // Locate the reduced call site: the body of the outer Let.
+        let (_, reduced) = open_let_scope_full(match &*result.inner {
+            Expr::Let(_, scope, _) => scope,
+            other => panic!("expected a Let, got {other:?}"),
+        });
+
+        // It must be a Let sharing the arguments, not a bare App.
+        let (bindings, inner_body) = match &*reduced.inner {
+            Expr::Let(_, scope, _) => open_let_scope_full(scope),
+            other => panic!(
+                "expected the reduced call site to be wrapped in a sharing Let, got {other:?}"
+            ),
+        };
+        assert_eq!(
+            bindings.len(),
+            2,
+            "both duplicated arguments should be bound once each"
+        );
+
+        // The shared bindings hold the two argument applications (HEAD,
+        // TAIL); the body holds ADD plus the two GTs. Five `App` nodes in
+        // total — seven would mean both arguments were copied.
+        assert_eq!(
+            app_count(&reduced),
+            5,
+            "arguments were copied rather than shared: {reduced:?}"
+        );
+        assert_eq!(app_count(&inner_body), 3);
+    }
+
+    /// eu-gua64 boundary: an argument that *is* trivially duplicable, or
+    /// whose binder is used at most once, must still be substituted
+    /// directly — the sharing `Let` is a cost, not a default.
+    #[test]
+    pub fn test_beta_reduce_does_not_share_duplicable_or_single_use_arguments() {
+        let f = free("f");
+        let g = free("g");
+        let a = free("a");
+        let b = free("b");
+        let xs = free("xs");
+
+        // λ(a). ADD(a, a) applied to a *variable* — duplicable, no Let.
+        let dup_atomic = let_(
+            vec![
+                (
+                    f.clone(),
+                    inline(
+                        vec![a.clone()],
+                        app(bif("ADD"), vec![var(a.clone()), var(a.clone())]),
+                    ),
+                ),
+                (xs.clone(), num(3)),
+            ],
+            app(var(f.clone()), vec![var(xs.clone())]),
+        );
+        let reduced = inline_pass(&dup_atomic).expect("inline_pass should not panic");
+        binding::verify(&reduced).expect("result should have valid bindings");
+        let (_, site) = open_let_scope_full(match &*reduced.inner {
+            Expr::Let(_, scope, _) => scope,
+            other => panic!("expected a Let, got {other:?}"),
+        });
+        assert!(
+            matches!(&*site.inner, Expr::App(_, _, _)),
+            "a duplicable (variable) argument must not be let-bound: {site:?}"
+        );
+
+        // λ(b). NOT(b) applied to an application — used once, no Let.
+        let single_use = let_(
+            vec![
+                (
+                    g.clone(),
+                    inline(vec![b.clone()], app(bif("NOT"), vec![var(b.clone())])),
+                ),
+                (xs.clone(), list(vec![num(1)])),
+            ],
+            app(
+                var(g.clone()),
+                vec![app(bif("HEAD"), vec![var(xs.clone())])],
+            ),
+        );
+        let reduced = inline_pass(&single_use).expect("inline_pass should not panic");
+        binding::verify(&reduced).expect("result should have valid bindings");
+        let (_, site) = open_let_scope_full(match &*reduced.inner {
+            Expr::Let(_, scope, _) => scope,
+            other => panic!("expected a Let, got {other:?}"),
+        });
+        assert!(
+            matches!(&*site.inner, Expr::App(_, _, _)),
+            "a single-use argument must not be let-bound: {site:?}"
+        );
+    }
+
+    /// eu-gua64: the sharing `Let` must preserve the call-site Smid on the
+    /// reduced application, so a diagnostic still blames the user's call
+    /// site rather than the callee's body (eu-1tkk.7 / eu-og3u6).
+    #[test]
+    pub fn test_beta_reduce_sharing_let_keeps_call_site_smid() {
+        let h = free("h");
+        let a = free("a");
+        let xs = free("xs");
+
+        let call_smid = Smid::fake(4242);
+
+        let h_def = inline(
+            vec![a.clone()],
+            app(bif("ADD"), vec![var(a.clone()), var(a.clone())]),
+        );
+
+        let call = RcExpr::from(Expr::App(
+            call_smid,
+            var(h.clone()),
+            vec![app(bif("HEAD"), vec![var(xs.clone())])],
+        ));
+
+        let original = let_(
+            vec![(h.clone(), h_def), (xs.clone(), list(vec![num(1)]))],
+            call,
+        );
+
+        let result = inline_pass(&original).expect("inline_pass should not panic");
+        binding::verify(&result).expect("result should have valid bindings");
+
+        let (_, site) = open_let_scope_full(match &*result.inner {
+            Expr::Let(_, scope, _) => scope,
+            other => panic!("expected a Let, got {other:?}"),
+        });
+
+        // The sharing Let carries the call site...
+        let (_, inner_body) = match &*site.inner {
+            Expr::Let(s, scope, _) => {
+                assert_eq!(*s, call_smid, "sharing Let lost the call-site Smid");
+                open_let_scope_full(scope)
+            }
+            other => panic!("expected a sharing Let, got {other:?}"),
+        };
+
+        // ...and so does the application it wraps, which is what the STG
+        // compiler turns into the `Ann` a diagnostic reads.
+        match &*inner_body.inner {
+            Expr::App(s, _, _) => {
+                assert_eq!(*s, call_smid, "reduced application lost the call-site Smid")
+            }
+            other => panic!("expected an App under the sharing Let, got {other:?}"),
+        }
     }
 }

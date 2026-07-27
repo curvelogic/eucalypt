@@ -188,22 +188,31 @@ jobs:
       # `scripts/diagnostics-gate.sh` runs each target whole, skipping only the
       # named entries, and then requires every named entry to STILL FAIL. A
       # known failure that gets fixed therefore turns this job RED until its
-      # line is deleted here. That is the mechanism working: when eu-7x0r
-      # lands, delete the two lines — do not loosen the check.
+      # line is deleted here. That is the mechanism working: delete the line,
+      # do not loosen the check.
+      #
+      # The exclusion list is currently EMPTY, and that is the ratchet having
+      # already fired once. This branch was written while eu-7x0r was open and
+      # excluded `secondary_labels_do_not_excerpt_library_internals` and
+      # `debug_trace_restores_the_uncurated_trace`. eu-7x0r landed as #1079,
+      # both now pass under a blob, and their lines are deleted rather than
+      # carried — leaving them would have turned this job red by design.
       #
       # (An earlier revision of this comment also claimed the harness-level
       # typecheck fixtures 010/011/013/063/085 were red under blob mode per
       # eu-rqwh. eu-rqwh closed on 2026-07-24 and all five now pass under a
-      # blob — verified by a full `cargo test --test harness_test` run with a
-      # blob present, in which the only failure was
-      # test_193_1tkk_7_12_curated_trace, itself eu-7x0r. The claim is gone.
-      # Bringing harness_test itself into this job is eu-5yn9v.)
+      # blob. Bringing harness_test itself into this job is eu-5yn9v.)
+      #
+      # `tests/blob_deprecation_test.rs` (eu-1tkk.2) is here for the same
+      # reason the others are: gated on `cfg(prelude_blob_ok)`, asserting
+      # behaviour that exists only on the eval path in blob mode, and reached
+      # by no other job — the blob-mode harness jobs run `eu test
+      # tests/harness`, which never reaches a `cargo test` integration test.
       - name: Run blob-mode diagnostics integration tests
         run: |
           scripts/diagnostics-gate.sh diagnostics_blame_plumbing_test
-          scripts/diagnostics-gate.sh diagnostics_invariants \
-            secondary_labels_do_not_excerpt_library_internals:eu-7x0r \
-            debug_trace_restores_the_uncurated_trace:eu-7x0r
+          scripts/diagnostics-gate.sh diagnostics_invariants
+          scripts/diagnostics-gate.sh blob_deprecation_test
 
   blob-determinism:
     name: Prelude blob determinism
