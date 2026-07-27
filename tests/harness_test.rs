@@ -2782,6 +2782,54 @@ pub fn test_193_1tkk_7_12_curated_trace() {
     run_error_test(&error_opts("193_1tkk_7_12_curated_trace.eu"));
 }
 
+/// Wall-clock budget for the eu-gua64 complexity gate below.
+///
+/// A correct compiler runs `195_gua64_inline_arg_sharing.eu` in ~0.15s
+/// (debug build, measured); one that duplicates inlined arguments needs
+/// 2^29 evaluation steps — over ten minutes in a *release* build and far
+/// longer in a debug one. Three orders of magnitude of headroom either
+/// side, so a heavily loaded build machine cannot flip the verdict.
+const GUA64_DEADLINE: std::time::Duration = std::time::Duration::from_secs(180);
+
+#[test]
+/// eu-gua64: the inliner must share, not copy, a non-atomic argument
+/// whose binder the callee uses more than once.
+///
+/// This is a *complexity* regression, so the verdict alone cannot gate
+/// it — the duplicating compiler computes exactly the same answers, just
+/// exponentially more slowly. The deadline below is the gate, and it runs
+/// first: with the defect present the subprocess is killed and the test
+/// fails, rather than the suite hanging. `run_test` afterwards applies
+/// the ordinary harness verdict (`RESULT` computed from all ten checks in
+/// the file) so the correctness half is gated the usual way.
+pub fn test_195_gua64_inline_arg_sharing() {
+    let mut cmd = std::process::Command::new(eu_binary());
+    cmd.args([
+        "--heap-limit-mib",
+        "2048",
+        "-t",
+        "main",
+        "tests/harness/195_gua64_inline_arg_sharing.eu",
+    ]);
+    let output = run_with_deadline(cmd, GUA64_DEADLINE).unwrap_or_else(|| {
+        panic!(
+            "195_gua64_inline_arg_sharing.eu did not complete within {}s — \
+             the inliner is duplicating a non-atomic argument across the \
+             repeated uses of its binder, making the recursive caller 2^n \
+             (eu-gua64, `beta_reduce` in src/core/inline/reduce.rs)",
+            GUA64_DEADLINE.as_secs()
+        )
+    });
+    assert!(
+        output.status.success(),
+        "eu exited {:?} on 195_gua64_inline_arg_sharing.eu\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    run_test(&opts("195_gua64_inline_arg_sharing.eu"));
+}
+
 #[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
