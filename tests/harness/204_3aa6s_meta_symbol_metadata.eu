@@ -1,0 +1,92 @@
+#!/usr/bin/env eu
+# eu-3aa6s: `meta()` raised "type mismatch: expected block, found symbol"
+# on every `{ :sym … }` shorthand block.
+#
+# META destructures one metadata layer, recurses into the body and then
+# MERGEs the two results.  Merge is a block operation, so the bare
+# symbol that the `{ :sym … }` shorthand attaches blew up.  RAWMETA
+# never merges and so was unaffected — `meta` and `raw-meta` disagreed
+# on whether the very same value had readable metadata.
+#
+# META now combines layers by a single rule: two block layers merge
+# (the outer layer winning on key conflicts, as before); any non-block
+# layer is opaque — it cannot be merged, so the outer layer stands as
+# the answer on its own.
+#
+# Note on the `{ :io … }` form: it never carries symbol metadata at
+# runtime.  `:io` is a registered monadic namespace, so the desugarer
+# consumes the tag and rewrites the block into an `io.bind` chain; the
+# resulting action has no metadata at all.  The check below therefore
+# records that `meta` succeeds and reports empty metadata for it — it
+# documents the form rather than gating the fix, which the symbol
+# checks do.
+#
+# The subjects are bound to names before `meta` is applied.  Applying
+# `meta`/`raw-meta` directly to an inline metadata-annotated block
+# literal (`{ :sym k: 1 } meta`) trips a separate, pre-existing
+# "infinite loop detected" bug that affects `raw-meta` identically and
+# is out of scope here (eu-frf2o).
+
+# ---------------------------------------------------------------- subjects
+
+# `{ :sym … }` shorthand — metadata is a bare symbol
+sym-block: { :only k: 1 }
+
+# no metadata at all
+plain-block: { k: 1 }
+
+# a single block-shaped layer
+one-layer: 5 // { a: 1, c: 0 }
+
+# two block-shaped layers — the outer one wins on `c`
+stacked: 5 // { a: 1, c: 0 } // { b: 2, c: 9 }
+
+# declaration metadata stacked over a `//` layer
+` { doc: "d" }
+documented: 7 // { b: 2 }
+
+# opaque symbol layer over a block layer
+sym-over-block: 5 // { p: 1 } // :tag
+
+# block layer over an opaque symbol layer
+block-over-sym: 5 // :tag // { p: 1 }
+
+# ---------------------------------------------------------------- checks
+
+# 1. the shorthand's symbol metadata is returned as-is instead of raising
+t1: (sym-block meta) = :only
+
+# 2. and `meta` now agrees with `raw-meta` on it
+t2: (sym-block meta) = (sym-block raw-meta)
+
+# 3. a single block layer is still reported in full
+t3: (one-layer meta).a = 1 && (one-layer meta).c = 0
+
+# 4. stacked block layers still MERGE — the outer layer wins on `c`
+t4: (stacked meta).a = 1 && (stacked meta).b = 2 && (stacked meta).c = 9
+
+# 5. and the merge is a merge, not a replacement: all three keys survive
+t5: ((stacked meta) keys count) = 3
+
+# 6. raw-meta still reports only the outermost layer, so 4 and 5 are
+#    genuinely exercising the recursion rather than a single layer
+t6: ((stacked raw-meta) keys count) = 2
+
+# 7. backtick metadata over a `//` layer merges the same way
+t7: (documented meta).doc = "d" && (documented meta).b = 2
+
+# 8. an opaque outer layer stands alone — the block beneath it is not
+#    merged in, and no error is raised
+t8: (sym-over-block meta) = :tag
+
+# 9. an outer block layer over an opaque layer likewise stands alone
+t9: (block-over-sym meta).p = 1 && (((block-over-sym meta) keys count) = 1)
+
+# 10. a value with no metadata still reports the empty block
+t10: (plain-block meta) keys nil?
+
+# 11. the documented `{ :io … }` form: `meta` succeeds, reporting empty
+#     metadata (the tag is consumed by the desugarer, see the note above)
+t11: ({ :io r: io.return(42) } meta) keys nil?
+
+RESULT: if([t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11] all-true?, :PASS, :FAIL)

@@ -427,6 +427,44 @@ impl StgArena {
         self.reconstruct_form_impl(idx, Some(global_annotation))
     }
 
+    /// Replace a Smid baked into the blob by `xtask` with the reconstructing
+    /// global's own [`Smid::global_slot`] identity (eu-7x0r).
+    ///
+    /// `Ann` nodes are elided and `Lambda` annotations replaced outright
+    /// (see [`StgArena::reconstruct_form_annotated`]), but `DirectApp` and
+    /// `LookupLit` carry a Smid in a *data* field that the machine uses as a
+    /// live annotation (`DirectApp` → the call-site annotation an `ApplyTo`
+    /// continuation records; `LookupLit` → the location a failed lookup
+    /// reports). Copied verbatim, those xtask-era indices are meaningless in
+    /// the loading process's `SourceMap`: harmless-looking when the map is
+    /// short (they simply fail to resolve and the frame is dropped), but in
+    /// any program whose own `SourceMap` grows past them they silently
+    /// *alias an unrelated user source position*, so a prelude-internal
+    /// frame renders as — and can become the primary label of — a line the
+    /// user never called.
+    ///
+    /// Rebasing onto the enclosing global's slot identity keeps the
+    /// annotation valid (so the machine's `is_valid` guards behave as
+    /// before) while making it mean the one thing that is true at runtime:
+    /// which prelude global this code belongs to.
+    ///
+    /// `None` (the plain `reconstruct_form` path — the pretty-printer and
+    /// the freshly-compiled `__args`/`__io` overrides) leaves the Smid
+    /// untouched: those forms were flattened in *this* process, so their
+    /// Smids are genuine entries in this process's `SourceMap`.
+    fn rebase_baked_smid(&self, smid: Smid, global_annotation: Option<Smid>) -> Smid {
+        match global_annotation {
+            Some(global) => {
+                if smid.is_valid() {
+                    global
+                } else {
+                    smid
+                }
+            }
+            None => smid,
+        }
+    }
+
     fn reconstruct_node(
         &self,
         idx: NodeIdx,
@@ -492,7 +530,7 @@ impl StgArena {
                 args,
                 eager_args,
             } => StgSyn::DirectApp {
-                smid: *smid,
+                smid: self.rebase_baked_smid(*smid, global_annotation),
                 callable: callable.clone(),
                 args: args.clone(),
                 eager_args: *eager_args,
@@ -540,7 +578,7 @@ impl StgArena {
                 obj,
                 default,
             } => StgSyn::LookupLit {
-                smid: *smid,
+                smid: self.rebase_baked_smid(*smid, global_annotation),
                 key: key.clone(),
                 obj: obj.clone(),
                 default: default.clone(),
@@ -728,5 +766,91 @@ mod tests {
         let restored: StgArena = postcard::from_bytes(&bytes).expect("deserialise");
         let reconstructed = restored.reconstruct(0).unwrap();
         assert_eq!(expected, reconstructed);
+    }
+
+    // ── baked-Smid rebasing (eu-7x0r) ───────────────────────────────────────
+
+    /// A form carrying a `DirectApp` and a `LookupLit`, each with a Smid that
+    /// would be a real `SourceMap` index in the process that flattened it.
+    fn form_with_baked_smids(baked: Smid) -> LambdaForm {
+        LambdaForm::Lambda {
+            bound: 1,
+            body: Rc::new(StgSyn::Seq {
+                scrutinee: Rc::new(StgSyn::DirectApp {
+                    smid: baked,
+                    callable: Reference::G(3),
+                    args: vec![Reference::L(0)],
+                    eager_args: false,
+                }),
+                body: Rc::new(StgSyn::LookupLit {
+                    smid: baked,
+                    key: sym("k"),
+                    obj: Reference::L(0),
+                    default: Reference::L(0),
+                }),
+            }),
+            annotation: baked,
+        }
+    }
+
+    /// Collect `(DirectApp, LookupLit, Lambda.annotation)` Smids from a form
+    /// shaped by [`form_with_baked_smids`].
+    fn smids_of(form: &LambdaForm) -> (Smid, Smid, Smid) {
+        let LambdaForm::Lambda {
+            body, annotation, ..
+        } = form
+        else {
+            panic!("expected a Lambda form");
+        };
+        let StgSyn::Seq { scrutinee, body } = &**body else {
+            panic!("expected a Seq body");
+        };
+        let StgSyn::DirectApp { smid: app, .. } = &**scrutinee else {
+            panic!("expected a DirectApp scrutinee");
+        };
+        let StgSyn::LookupLit { smid: lookup, .. } = &**body else {
+            panic!("expected a LookupLit body");
+        };
+        (*app, *lookup, *annotation)
+    }
+
+    /// Blob-mode reconstruction must rebase every Smid baked by `xtask` onto
+    /// the enclosing global's slot identity. `Ann` nodes are elided and
+    /// `Lambda` annotations replaced, but `DirectApp` and `LookupLit` carry a
+    /// Smid in a *data* field that the machine uses as a live annotation:
+    /// copied verbatim, those xtask-era indices alias unrelated entries in
+    /// the loading process's `SourceMap`.
+    #[test]
+    fn reconstruct_form_annotated_rebases_directapp_and_lookuplit_smids() {
+        let baked = Smid::fake(1859);
+        let mut arena = StgArena::default();
+        let entry = arena.flatten_form(&form_with_baked_smids(baked));
+
+        let slot = Smid::global_slot(42);
+        let form = arena.reconstruct_form_annotated(entry, slot).unwrap();
+
+        assert_eq!(
+            smids_of(&form),
+            (slot, slot, slot),
+            "every Smid in a blob-reconstructed prelude form must be the global-slot identity"
+        );
+    }
+
+    /// The plain `reconstruct_form` path (the pretty-printer, and the
+    /// freshly-compiled `__args` / `__io` runtime overrides) must leave these
+    /// Smids alone: those forms were flattened in *this* process, so their
+    /// Smids are genuine entries in this process's `SourceMap`.
+    #[test]
+    fn reconstruct_form_preserves_locally_flattened_smids() {
+        let local = Smid::fake(1859);
+        let mut arena = StgArena::default();
+        let entry = arena.flatten_form(&form_with_baked_smids(local));
+
+        let form = arena.reconstruct_form(entry).unwrap();
+        let (app, lookup, annotation) = smids_of(&form);
+
+        assert_eq!((app, lookup), (local, local));
+        // `Lambda.annotation` is cleared on this path, as it always has been.
+        assert_eq!(annotation, Smid::default());
     }
 }

@@ -33,9 +33,10 @@
 //!
 //! | Field | Purpose | Granularity | Pipeline stage | Consumer | Snapshot / derived |
 //! |---|---|---|---|---|---|
-//! | `source_hash` | SHA-256 of `lib/prelude.eu`; checked by `build.rs` | — | — | `build.rs` staleness check | — |
+//! | `source_hash` | SHA-256 of `lib/prelude.eu`, `src/eval/intrinsics.rs` and the wire-format version (see `stg::wire_format`); checked by `build.rs` | — | — | `build.rs` staleness check | — |
 //! | `nodes` / `forms_pool` / `binding_entries` | Shared STG arena: compiled lambda forms for every prelude global | binding (compiled) | `stg` (post `eu dump stg`) | HeapSyn engine loader | derived (compiled, not a source-structure snapshot) |
 //! | `name_to_slot` | Binding name → global slot index | — | — | STG compiler (`Ref::G` resolution), loader | — |
+//! | `binding_spans` | Byte span of each binding's declaration in `lib/prelude.eu`, in slot order | binding | desugared (`SourceMap` lookup of the peeled body's Smid) | blob-mode trace renderers, via `SourceMap::global_slot_info` (eu-7x0r) | derived (span extract) |
 //! | `blame` | Binding name → declared blame classification (`:transparent`/`:boundary`) | binding | desugared (side channel, `TranslationUnit::blame`) | Phase 2 trace classifier (eu-1tkk.7.11/.7.12) | derived (reconciled `BlameSpec` → `FrameKind`) |
 //! | `operators` | Operator fixity/precedence, extracted pre-`cook` | merged | pre-`cook` (desugared-adjacent) | `cook`'s `Distributor` seeding | derived (extracted subset, not a full snapshot) |
 //! | `monad_specs` / `monad_type_hints` | Monad namespace specs (e.g. `:for`) and LSP type hints | merged | desugared | Desugarer seeding, LSP | derived |
@@ -97,9 +98,13 @@ pub struct PreludeBytecodeImage {
 /// via `include_bytes!("../../../lib/prelude.blob")` (see `resources.rs`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreludeBlob {
-    /// SHA-256 of `lib/prelude.eu` at generation time.
+    /// Freshness hash of everything this blob was generated against — the
+    /// prelude source, the intrinsic catalogue (whose length fixes the global
+    /// slot numbering baked in below) and the bytecode wire-format version.
     ///
-    /// Compared against the hash computed by `build.rs`; a mismatch causes
+    /// Stamped by `cargo xtask prelude-compile` and recomputed by `build.rs`
+    /// using the shared recipe in
+    /// [`crate::eval::stg::wire_format::blob_source_hash`]; a mismatch causes
     /// a build warning and triggers the source-prelude fallback path.
     pub source_hash: [u8; 32],
 
@@ -128,6 +133,23 @@ pub struct PreludeBlob {
     #[serde(with = "crate::common::serde_sorted")]
     pub name_to_slot: HashMap<String, usize>,
 
+    /// Byte span of each prelude binding's declaration in `lib/prelude.eu`,
+    /// in slot order (parallel to `binding_entries`) — eu-7x0r.
+    ///
+    /// `None` for a binding that has no prelude-source declaration site
+    /// (the `__build` / `__io` / `__args` pseudoblocks, whose bodies come
+    /// from `build-meta.yaml` or are synthesised).
+    ///
+    /// Blob mode never loads prelude source, so before this table a trace
+    /// frame naming a prelude combinator had nowhere to point: the human
+    /// renderer dropped it entirely. Paired with the prelude text (embedded
+    /// in the binary regardless) this is enough for a blob-mode trace to
+    /// cite `[prelude]:line:col` exactly as the source-compiled path does.
+    /// Empty on blobs generated before this field, which then render
+    /// prelude frames by name only.
+    #[serde(default)]
+    pub binding_spans: Vec<Option<(u32, u32)>>,
+
     /// Binding name → declared blame classification (eu-1tkk.7.11).
     ///
     /// Populated from `SourceLoader::core().blame` (a `BlameSpec`,
@@ -142,6 +164,25 @@ pub struct PreludeBlob {
     /// lookup the classifier is expected to call.
     #[serde(default, with = "crate::common::serde_sorted")]
     pub blame: HashMap<String, FrameKind>,
+
+    /// Deprecation path → declared deprecation spec, for the prelude-side
+    /// units the blob bakes cores for (eu-1tkk.2).
+    ///
+    /// The same kind of desugar-phase side channel as [`Self::blame`]: a
+    /// `deprecated` key in metadata is consumed by the desugarer
+    /// (`Desugarer::record_deprecation`) and does not survive as runtime
+    /// `Expr::Meta`, so it cannot be recovered from the baked cores in
+    /// `desugared_unit_cores`. Without carrying it here, a `deprecated`
+    /// declaration in `lib/prelude.eu` is silently inert on the evaluate path
+    /// in blob mode — the shipped default — while working under `eu check`,
+    /// which loads the prelude from source.
+    ///
+    /// Populated from `SourceLoader::core().deprecations` by `cargo xtask
+    /// prelude-compile` after `merge_units`, so it is the union across all
+    /// four prelude-side units. Keys are paths as a caller writes them
+    /// (`random.exec`), matching `record_deprecation`'s convention.
+    #[serde(default, with = "crate::common::serde_sorted")]
+    pub deprecations: HashMap<String, crate::core::metadata::DeprecationSpec>,
 
     /// Operator metadata for seeding cook's `Distributor`.
     #[serde(with = "crate::common::serde_sorted")]
@@ -282,8 +323,10 @@ mod tests {
             nodes: vec![],
             forms_pool: vec![],
             binding_entries: vec![],
+            binding_spans: vec![],
             name_to_slot: HashMap::new(),
             blame: HashMap::new(),
+            deprecations: HashMap::new(),
             operators: HashMap::new(),
             monad_specs: HashMap::new(),
             monad_type_hints: HashMap::new(),

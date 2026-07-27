@@ -1,0 +1,67 @@
+{ import: "contract.eu"
+  doc: "SV3 eu-u9xj.1 - validate forces only the paths the spec names.
+
+Cost paid only where written, taken literally. Each check below would raise
+or diverge if the interpreter forced a subtree the spec does not name, so a
+regression in the forcing discipline turns this file from PASS into a hard
+error - which the harness reports as a failure.
+
+The bomb blocks are built with block(...) rather than a block literal: demand
+analysis makes a literal block's field values effectively strict, so a literal
+would detonate at construction time and gate nothing." }
+
+` :suppress
+bomb-blk: block([[:a, 1], [:b, panic("SV3: an unmentioned subtree was forced")]])
+
+# A record spec with no fields enumerates the spine and forces no value.
+t1: (bomb-blk validate(s"{ .. }")) nil?
+
+# An open spec naming only `a` forces exactly `a`.
+t2: (bomb-blk validate(s"{a: number, ..}")) nil?
+
+# A CLOSED spec still only enumerates keys - closedness is a key-set
+# comparison, never a value forcing. `b` is surplus, so one :unexpected entry
+# is reported and its `found` is the key symbol, not the value.
+` :suppress
+closed-r: bomb-blk validate(s"{a: number}")
+
+t3: (closed-r count) = 1
+t4: (closed-r first).kind = :unexpected
+t5: (closed-r first).found = [:b]
+
+# `any` and `top` accept without forcing at all.
+t6: (bomb-blk validate(s"{a: any, b: any}")) nil?
+t7: (bomb-blk validate(s"{a: top, b: top}")) nil?
+
+# A type variable is unconstrained at runtime and forces nothing.
+t8: (bomb-blk validate(s"{a: number, b: r}")) nil?
+
+# An unrecognised tag inside a well-formed spec accepts without forcing -
+# parity with as-spec's any? fallthrough.
+t9: (bomb-blk validate([:t-record,
+                        { a: [:t-field, :required, [:t-prim, :number]]
+                          b: [:t-field, :required, [:t-mu, :X, [:t-prim, :number]]] },
+                        false])) nil?
+
+# An infinite list under an unnamed key: its WHNF is cheap, its spine is not.
+# A spec that does not name it must not walk the spine.
+` :suppress
+inf-blk: block([[:a, 1], [:b, ints-from(1)]])
+
+t10: (inf-blk validate(s"{a: number, ..}")) nil?
+t11: (inf-blk validate(s"{ .. }")) nil?
+
+# Nested: the bomb is two levels down and still unnamed.
+` :suppress
+nested-bomb: block([[:outer, block([[:x, 1], [:y, panic("SV3: nested subtree was forced")]])]])
+
+t12: (nested-bomb validate(s"{outer: {x: number, ..}, ..}")) nil?
+
+# ensure inherits the same discipline and returns the (still partly unforced)
+# value.
+t13: (bomb-blk ensure-name) = "a"
+
+ensure-name(b): ((b validate(s"{a: number, ..}")) nil?) then("a", "forced")
+
+RESULT: if([t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13] all-true?,
+           :PASS, :FAIL)

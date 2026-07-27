@@ -1,0 +1,2 @@
+exit: 1
+stderr: "(?s)EU-EVAL-CONTRACT.*2 violations against \{name: string, port: number\}.*┌─[^\n]*201_sv3_contract_violation\.eu:8:52.*port: expected number, found string.*unexpected keys: debug"

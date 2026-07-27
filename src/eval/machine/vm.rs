@@ -289,8 +289,19 @@ pub struct MachineState {
     /// flag to distinguish a normal termination from an IO yield and
     /// inspects `closure` to read the IO constructor tag and fields.
     yielded_io: bool,
-    /// Annotation to paint on any environments we create
+    /// Annotation to paint on any environments we create.
+    ///
+    /// Scope-accurate: it follows the code currently being evaluated and is
+    /// restored — defaults included — when a continuation is popped, so a
+    /// location established inside one evaluation cannot be stamped onto
+    /// continuations created for an unrelated one.
     annotation: Smid,
+    /// The most recent **valid** value `annotation` has held. Unlike
+    /// `annotation` it is monotone in execution time: never restored to an
+    /// older value, never cleared. Used solely as the last-resort location
+    /// for an error raised from unannotated synthetic code — see
+    /// `ExecutionError::last_annotation`.
+    last_annotation: Smid,
     /// Cache compiled regexes
     rcache: LruCache<String, Regex>,
     /// Interned symbol pool for fast symbol comparison
@@ -351,6 +362,7 @@ impl Default for MachineState {
             terminated: Default::default(),
             yielded_io: Default::default(),
             annotation: Default::default(),
+            last_annotation: Default::default(),
             rcache: LruCache::new(
                 NonZeroUsize::new(100).expect("regex cache size must be non-zero"),
             ),
@@ -394,6 +406,27 @@ impl MachineState {
         std::mem::take(&mut self.diagnostics)
     }
 
+    /// Move the live annotation to `smid`, remembering it in
+    /// `last_annotation` when it is a real location.
+    ///
+    /// Every write to `annotation` goes through here so the two registers
+    /// cannot drift: `annotation` follows the evaluation scope exactly
+    /// (defaults included), `last_annotation` keeps the most recent real
+    /// location for use as an error-reporting fallback.
+    #[inline]
+    pub fn set_annotation(&mut self, smid: Smid) {
+        self.annotation = smid;
+        if smid.is_valid() {
+            self.last_annotation = smid;
+        }
+    }
+
+    /// The most recent valid annotation, for error reporting.
+    #[inline]
+    pub fn last_annotation(&self) -> Smid {
+        self.last_annotation
+    }
+
     /// Push a new continuation onto the stack
     fn push(&mut self, _view: MutatorHeapView, cont: Continuation) -> Result<(), ExecutionError> {
         self.stack.push(cont);
@@ -432,7 +465,7 @@ impl MachineState {
         // enclosing Ann node.
         let closure_ann = self.closure.annotation();
         if closure_ann.is_valid() {
-            self.annotation = closure_ann;
+            self.set_annotation(closure_ann);
         }
 
         if remaining_arity > 0 {
@@ -564,7 +597,7 @@ impl MachineState {
                 eager_args,
             } => {
                 // Set the source annotation from the inline Smid (replaces Ann dispatch).
-                self.annotation = *smid;
+                self.set_annotation(*smid);
                 // Create the argument array from refs.
                 let array = if *eager_args {
                     view.create_arg_array_eager(args.as_slice(), environment)?
@@ -667,7 +700,7 @@ impl MachineState {
                 self.closure = SynClosure::new(*body, new_env);
             }
             HeapSyn::Ann { smid, body } => {
-                self.annotation = *smid;
+                self.set_annotation(*smid);
                 self.closure = SynClosure::new(*body, environment);
             }
             HeapSyn::Meta { meta, body } => {
@@ -705,7 +738,7 @@ impl MachineState {
                 obj,
                 default,
             } => {
-                self.annotation = *smid;
+                self.set_annotation(*smid);
 
                 // Resolve the key to a SymbolId (always Ref::V(Native::Sym(id)))
                 let sym_id = match key {
@@ -979,7 +1012,7 @@ impl MachineState {
                     // The forced thunk's Update continuation has already
                     // memoised the WHNF value in the let frame.
                     self.closure = SynClosure::new(body, environment);
-                    self.annotation = annotation;
+                    self.set_annotation(annotation);
                 }
                 Continuation::LookupLitForce { smid, .. } => {
                     // A native value is not a block — raise type error
@@ -1183,7 +1216,7 @@ impl MachineState {
                         // (e.g. NoBranchForDataTag when a non-block is merged)
                         // carry the user's source location rather than a
                         // synthetic intrinsic label.
-                        self.annotation = annotation;
+                        self.set_annotation(annotation);
                         self.closure = SynClosure::new(
                             view.atom(Ref::G(
                                 intrinsics::index("MERGE")
@@ -1219,7 +1252,7 @@ impl MachineState {
                     // The forced thunk's Update continuation has already
                     // memoised the WHNF value in the let frame.
                     self.closure = SynClosure::new(body, environment);
-                    self.annotation = annotation;
+                    self.set_annotation(annotation);
                 }
                 Continuation::LookupLitForce {
                     key: sym_id,
@@ -1361,7 +1394,7 @@ impl MachineState {
                     // The forced thunk's Update continuation has already
                     // memoised the WHNF value in the let frame.
                     self.closure = SynClosure::new(body, environment);
-                    self.annotation = annotation;
+                    self.set_annotation(annotation);
                 }
                 Continuation::LookupLitForce { key, smid, .. } => {
                     // A literal `.key` lookup forced its target and found a
@@ -1751,7 +1784,11 @@ fn evaluate_to_whnf_impl(
             .map_err(|e| {
                 ExecutionError::Traced(
                     Box::new(e),
-                    Box::new((state.nav(view).env_trace(), state.stack_trace(&view))),
+                    Box::new((
+                        state.nav(view).env_trace(),
+                        state.stack_trace(&view),
+                        state.last_annotation(),
+                    )),
                 )
             });
         if let Err(e) = step_result {
@@ -2116,7 +2153,11 @@ impl<'a> Machine<'a> {
             .map_err(|e| {
                 ExecutionError::Traced(
                     Box::new(e),
-                    Box::new((state.nav(view).env_trace(), state.stack_trace(&view))),
+                    Box::new((
+                        state.nav(view).env_trace(),
+                        state.stack_trace(&view),
+                        state.last_annotation(),
+                    )),
                 )
             })?;
 
@@ -2158,7 +2199,7 @@ impl<'a> Machine<'a> {
                 if let Ok(global_closure) = ctx.state.nav(ann_view).global(intrinsic_idx as usize) {
                     let ann = global_closure.annotation();
                     if ann.is_valid() {
-                        ctx.state.annotation = ann;
+                        ctx.state.set_annotation(ann);
                     }
                 }
             }
@@ -2172,6 +2213,7 @@ impl<'a> Machine<'a> {
                             .env_trace(),
                         self.state
                             .stack_trace(&MutatorHeapView::new(&self.core.heap)),
+                        self.state.last_annotation(),
                     )),
                 )
             })?;

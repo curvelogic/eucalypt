@@ -1,0 +1,11 @@
+# random.exec is deprecated in lib/prelude.eu itself — the prelude, not an
+# imported resource.  It must warn on BOTH paths this fixture drives:
+# `eu check --strict`, which loads the prelude from source, and the plain
+# evaluate path, which in the shipped default configuration type-checks
+# against the prelude blob's baked cores.  The blob has to carry the
+# prelude's deprecation table for the latter to see anything; without it
+# this declaration is inert exactly where users actually run it.
+#
+# The general shape of that gap — eval-path/blob-core behaviour that no
+# `eu check` test can reach — is tracked as eu-vbctt.
+result: random.eval(random.float, random.exec(random.float, random.stream(1)))

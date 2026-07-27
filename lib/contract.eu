@@ -1,0 +1,248 @@
+{ requires: ">=0.14"
+  import: "reflect.eu"
+  doc: "Structural contracts: validate and ensure data against s-string type specs.
+
+validate(spec, data) walks the spec and the value together and returns a list
+of violations, each carrying a path to the offending position. An empty list
+means the data conforms. No shape of data makes it raise - a non-conformant
+value produces violations, not an error, however malformed it is.
+
+Only the paths the spec names are forced, so a spec is safe to apply to a
+value with expensive or diverging subtrees it does not mention. The flip side
+is that forcing a value the spec DOES name can raise, and validate propagates
+that: it is total with respect to shape, not with respect to evaluation.
+
+ensure(spec, data) returns the data unchanged when it conforms, and raises a
+contract violation listing every non-conforming position otherwise." }
+
+_ : eu.requires(">=0.14")
+
+##
+## Runtime type names
+##
+
+` { doc: "`type-name(v)` - the runtime type name of `v`, in the vocabulary a
+         violation report uses for its `found` field."
+    type: s"any → string" }
+type-name(v):
+  if(__SATURATED(v) not, "function",
+  if(v null?,      "null",
+  if(v number?,    "number",
+  if(v string?,    "string",
+  if(v symbol?,    "symbol",
+  if(v bool?,      "bool",
+  if(v datetime?,  "datetime",
+  if(v list?,      "list",
+  if(v block?,     "block",
+  if(v type-data?, "type-data",
+                   "unknown"))))))))))
+
+##
+## Paths
+##
+
+` { doc: "`path-step(k)` - render block key `k` as a path step, quoting it
+         when it would not lex as a bare identifier."
+    type: s"symbol → string"
+    export: :suppress }
+path-step(k):
+  { s: str.of(k)
+    bare: s str.matches?("^[a-zA-Z][a-zA-Z0-9_*!?-]*$")
+  }.(bare then(s, "'{s}'"))
+
+` { doc: "`path-key(path, k)` - extend violation path `path` with block key `k`."
+    type: s"string → symbol → string"
+    export: :suppress }
+path-key(path, k):
+  { step: path-step(k)
+  }.((path = "") then(step, "{path}.{step}"))
+
+` { doc: "`path-index(path, i)` - extend violation path `path` with list index `i`."
+    type: s"string → number → string"
+    export: :suppress }
+path-index(path, i): "{path}[{i}]"
+
+##
+## The reporting interpreter
+##
+
+` { doc: "`violation(p, k, e, f)` - build a violation entry with path `p`, kind
+         `k`, expectation `e` and finding `f`."
+    export: :suppress }
+violation(p, k, e, f): { path: p, kind: k, expected: e, found: f }
+
+` { export: :suppress }
+prim-preds: {
+  number:   number?
+  string:   string?
+  symbol:   symbol?
+  bool:     bool?
+  null:     null?
+  datetime: datetime?
+}
+
+# Primitive names with no runtime predicate: they accept without forcing.
+` { export: :suppress }
+accepting-prims: set.from-list[:any, :top, :error, :set, :vec, :array]
+
+` { doc: "`spec-shaped?(td)` - true if `td` looks like a t-* tagged list."
+    type: s"any → bool"
+    export: :suppress }
+spec-shaped?(td): (td list?) ∧ (td non-nil?) ∧ ((td first) symbol?)
+
+` { doc: "`validate(spec, data)` - check `data` against type spec `spec` and
+         return a list of violations, each a block with path, kind, expected and
+         found keys. An empty list means `data` conforms. No shape of data makes
+         it raise - a non-conformant value gives violations, not an error. It
+         does raise when `spec` is not a type spec, and it propagates a raise
+         from forcing a value the spec names. Forces only the paths the spec
+         names."
+    type: s"any → any → [{path: string, kind: symbol, expected: any, found: any}]" }
+validate(spec, data):
+  { td: type-data?(spec) then(__TYPE_TO_DATA(spec), spec)
+
+    open-flag(rest): ((rest count) > 1) then(rest second, false)
+
+    mismatch(node, path, v):
+      [violation(path, :type-mismatch, node type-str, type-name(v))]
+
+    prim-check(node, name, path, v):
+      if(name ∈ accepting-prims, [],
+      if(name = :never, [violation(path, :type-mismatch, "never", type-name(v))],
+         { ok: (prim-preds lookup-or(name, any?))(v)
+         }.(ok then([], mismatch(node, path, v)))))
+
+    list-check(node, inner, path, v):
+      if(v list? not, mismatch(node, path, v),
+         { idx: range(0, v count)
+           elem(i, e): walk(inner, path-index(path, i), e)
+         }.(zip-with(elem, idx, v) concat))
+
+    tuple-check(node, ts, path, v):
+      if(v list? not, mismatch(node, path, v),
+         { n: ts count
+           m: v count
+           idx: range(0, n)
+           elem(i, e): walk(nth(i, ts), path-index(path, i), e)
+         }.(if(n = m,
+               zip-with(elem, idx, v) concat,
+               [violation(path, :length, n, m)])))
+
+    prefix-check(node, prefix, tail, path, v):
+      if(v list? not, mismatch(node, path, v),
+         { n: prefix count
+           m: v count
+           head-idx: range(0, n)
+           head-elem(i, e): walk(nth(i, prefix), path-index(path, i), e)
+           tail-idx: range(n, m)
+           tail-elem(i, e): walk(tail, path-index(path, i), e)
+           heads: zip-with(head-elem, head-idx, v take(n)) concat
+           tails: zip-with(tail-elem, tail-idx, v drop(n)) concat
+         }.(if(m < n,
+               [violation(path, :length, n, m)],
+               heads ++ tails)))
+
+    field-check(v, path, [k, fp]):
+      { is-tf: (fp first) = :t-field
+        is-opt: is-tf ∧ ((fp second) = :optional)
+        inner: is-tf then(fp !! 2, fp)
+      }.(if(v has(k),
+            walk(inner, path-key(path, k), v lookup(k)),
+            if(is-opt, [], [violation(path, :missing, str.of(k), :absent)])))
+
+    record-check(node, fields, open?, path, v):
+      if(v block? not, mismatch(node, path, v),
+         { spec-keys: fields keys set.from-list
+           surplus?(k): (k ∈ spec-keys) not
+           extra: v keys filter(surplus?)
+           field-vs: fields elements mapcat(field-check(v, path))
+           extras: (open? ∨ (extra nil?))
+                     then([], [violation(path, :unexpected, :closed, extra)])
+         }.(field-vs ++ extras))
+
+    union-check(node, ts, path, v):
+      { branch-ok?(b): walk(b, path, v) nil?
+      }.(ts any(branch-ok?) then([], mismatch(node, path, v)))
+
+    partial-check(inner, path, v): v null? then([], walk(inner, path, v))
+
+    fn-check(node, path, v):
+      (__SATURATED(v) not) then([], mismatch(node, path, v))
+
+    lit-check(node, lit, path, v):
+      (v = lit) then([], mismatch(node, path, v))
+
+    walk(node, path, v):
+      { tag: node first
+        rest: node tail
+        r0: rest first
+        r1: rest second
+      }.(cond[
+           tag = :t-prim        => prim-check(node, r0, path, v)
+         , tag = :t-list        => list-check(node, r0, path, v)
+         , tag = :t-tuple       => tuple-check(node, rest, path, v)
+         , tag = :t-prefix-list => prefix-check(node, r0, r1, path, v)
+         , tag = :t-record      => record-check(node, r0, open-flag(rest), path, v)
+         , tag = :t-union       => union-check(node, rest, path, v)
+         , tag = :t-partial     => partial-check(r0, path, v)
+         , tag = :t-fn          => fn-check(node, path, v)
+         , tag = :t-lit-str     => lit-check(node, r0, path, v)
+         , tag = :t-lit-sym     => lit-check(node, r0, path, v)
+         , tag = :t-forall      => walk(r1, path, v)
+         , []
+         ])
+
+  }.(spec-shaped?(td) then(walk(td, "", data),
+                           panic("validate: not a type spec")))
+
+##
+## Rendering
+##
+
+` { doc: "`render-keys(ks)` - render a list of block keys for a report line."
+    type: s"[symbol] → string"
+    export: :suppress }
+render-keys(ks): ks map(str.of) str.join-on(", ")
+
+` { doc: "`render-violation(v)` - render one violation entry as a report line.
+         The root path renders as (root), since the empty string would leave a
+         line starting with a bare colon." }
+render-violation(v):
+  { p: (v.path = "") then("(root)", v.path)
+    k: v.kind
+    e: v.expected
+    f: v.found
+    keys-str: render-keys(v.found)
+  }.(cond[
+       k = :type-mismatch => "{p}: expected {e}, found {f}"
+     , k = :missing       => "{p}: missing required field '{e}'"
+     , k = :unexpected    => "{p}: unexpected keys: {keys-str}"
+     , k = :length        => "{p}: expected {e} elements, found {f}"
+     , "{p}: does not conform"
+     ])
+
+` { doc: "`headline(td, vs)` - the one-line summary heading a contract failure."
+    export: :suppress }
+headline(td, vs):
+  { n: vs count
+    noun: (n = 1) then("violation", "violations")
+    ty: td type-str
+  }."{n} {noun} against {ty}"
+
+##
+## ensure
+##
+
+` { doc: "`ensure(spec, data)` - return `data` unchanged if it conforms to type
+         spec `spec`, and raise a contract violation listing every
+         non-conforming position otherwise. Because it returns the data
+         untouched it drops into a pipeline without restructuring the code
+         around it. Forces exactly what validate forces."
+    type: s"any → a → a" }
+ensure(spec, data):
+  { td: type-data?(spec) then(__TYPE_TO_DATA(spec), spec)
+    violations: data validate(spec)
+  }.((violations nil?)
+       then(data,
+            __CONTRACT_FAIL(headline(td, violations),
+                            violations map(render-violation))))
