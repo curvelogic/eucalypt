@@ -1,0 +1,6 @@
+# Imported by 207_mqlkv_import_bad_requires.eu. No eucalypt release will
+# ever satisfy this constraint, so desugaring this unit always raises
+# CoreError::VersionRequirementFailed.
+{ requires: ">=999.0" }
+
+g(v): v
