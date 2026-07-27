@@ -44,6 +44,12 @@ pub fn run(args: &mut impl Iterator<Item = String>) -> Result<()> {
     let mut label: Option<String> = None;
     let mut out: Option<PathBuf> = None;
     let mut mode = Mode::Source;
+    // LOCAL MEASUREMENT-ONLY FLAG (integration verification, not for merge):
+    // opt in to capturing the blob half with an externally-supplied binary.
+    // `cmd_capture` refuses to do this by default because it cannot know
+    // whether an arbitrary binary embeds a verified blob; the caller here has
+    // just built it and run `prelude-compile`, so it can.
+    let mut with_blob = false;
 
     while i < argv.len() {
         match argv[i].as_str() {
@@ -53,6 +59,7 @@ pub fn run(args: &mut impl Iterator<Item = String>) -> Result<()> {
                 compare.push(next(&argv, &mut i, "--compare <before>")?);
                 compare.push(next(&argv, &mut i, "--compare <before> <after>")?);
             }
+            "--with-blob" => with_blob = true,
             "--from-ref" => from_ref = Some(next_str(&argv, &mut i, "--from-ref <git ref>")?),
             "--binary" => binary = Some(next(&argv, &mut i, "--binary <path>")?),
             "--label" => label = Some(next_str(&argv, &mut i, "--label <name>")?),
@@ -80,7 +87,7 @@ pub fn run(args: &mut impl Iterator<Item = String>) -> Result<()> {
         return cmd_bless(&root);
     }
     if capture || from_ref.is_some() || binary.is_some() {
-        return cmd_capture(&root, from_ref, binary, label, out);
+        return cmd_capture(&root, from_ref, binary, label, out, with_blob);
     }
     usage();
     bail!("nothing to do — pass --bless, --capture or --compare");
@@ -159,6 +166,7 @@ fn cmd_capture(
     binary: Option<PathBuf>,
     label: Option<String>,
     out: Option<PathBuf>,
+    with_blob: bool,
 ) -> Result<()> {
     let out = out.context("--capture requires --out <file>")?;
 
@@ -194,7 +202,7 @@ fn cmd_capture(
     // embeds a blob is not knowable from here, and recording a second
     // source-mode run as if it were the blob mode would be a lie in the
     // historical record.
-    let snapshots = engine::capture(&binary, root, &fixtures, false, |i, n, id| {
+    let snapshots = engine::capture(&binary, root, &fixtures, with_blob, |i, n, id| {
         if i == 1 || i == n || i % 25 == 0 {
             eprintln!("  [{i}/{n}] {id}");
         }
