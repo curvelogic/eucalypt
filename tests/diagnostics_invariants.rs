@@ -79,6 +79,12 @@ fn run(path: &std::path::Path) -> (serde_json::Value, String, Option<i32>) {
 
 /// Run a fixture with `run --debug-trace`, returning its JSON diagnostic.
 fn run_debug_trace(path: &std::path::Path) -> serde_json::Value {
+    run_debug_trace_with(path, &[])
+}
+
+/// Run a fixture with `run --debug-trace` plus `extra` flags, returning its
+/// JSON diagnostic.
+fn run_debug_trace_with(path: &std::path::Path, extra: &[&str]) -> serde_json::Value {
     let out = Command::new(env!("CARGO_BIN_EXE_eu"))
         .args([
             "run",
@@ -88,6 +94,7 @@ fn run_debug_trace(path: &std::path::Path) -> serde_json::Value {
             "--heap-limit-mib",
             "2048",
         ])
+        .args(extra)
         .arg(path)
         .output()
         .expect("run eu --debug-trace");
@@ -176,17 +183,32 @@ fn debug_trace_restores_the_uncurated_trace() {
         "swap_args.eu: curated trace must keep the user anchor, got {curated:?}"
     );
 
-    // `nth` raises at its own edge, so its boundary frame is in the env
-    // trace, not the stack trace: the raw dump does not have it and the
-    // curated trace recovers it as named context alongside the user anchor.
+    // `nth` raises at its own edge, so with the prelude compiled from source
+    // its boundary frame is in the env trace, not the stack trace: the raw
+    // dump does not have it and `curate_trace_with_env` recovers it as named
+    // context alongside the user anchor.
+    //
+    // That "not in the raw stack dump" shape is specific to the
+    // source-compiled prelude, where the inliner folds `nth`'s recursion into
+    // its caller and the surviving continuations are annotated with `nth`'s
+    // inner `aux` helper. Under the shipped prelude blob, `nth` is a real
+    // global call and its own frames legitimately reach the raw stack dump
+    // (blob mode carries per-binding identity, so those frames are labelled
+    // `nth`) — so the env-recovery precondition is asserted against
+    // `--source-prelude`, which pins the configuration that exercises that
+    // code path rather than leaving it to whether a blob happens to be
+    // present (eu-7x0r). The *outcome* below — the curated trace names the
+    // boundary and keeps the user anchor — is required of whichever prelude
+    // is actually in use, and is asserted unconditionally.
     let path = dir.join("nth_out_of_range.eu");
-    let raw = frames(&run_debug_trace(&path));
+    let raw_from_source = frames(&run_debug_trace_with(&path, &["--source-prelude"]));
+    assert!(
+        !raw_from_source.iter().any(|(kind, _)| kind == "boundary"),
+        "nth_out_of_range.eu (--source-prelude): raw dump unexpectedly carries a \
+         boundary frame: {raw_from_source:?}"
+    );
     let (curated_json, _, _) = run(&path);
     let curated = frames(&curated_json);
-    assert!(
-        !raw.iter().any(|(kind, _)| kind == "boundary"),
-        "nth_out_of_range.eu: raw dump unexpectedly carries a boundary frame: {raw:?}"
-    );
     assert!(
         curated.contains(&("boundary".to_string(), "nth".to_string())),
         "nth_out_of_range.eu: curated trace must name the boundary combinator, got {curated:?}"

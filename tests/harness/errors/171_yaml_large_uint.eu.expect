@@ -1,2 +1,9 @@
-exit: 101
-stderr: "too large to represent as a YAML integer"
+# Exporting a JSON u64 above i64::MAX to YAML must produce an ordinary
+# diagnostic — stable code, message naming the limit, and a primary label
+# pointing at the offending value — not a Rust panic (eu-1tkk.7.20).
+#
+# The location assertion deliberately anchors on the primary-label line
+# ('┌─ …:4:7'), not on the 'stack trace:' note, so that losing the label
+# fails the test even while a trace entry still mentions the same line.
+exit: 1
+stderr: "(?s)error\[EU-RENDER-UNREPRESENTABLE\].*cannot represent this value in YAML output: the integer 9999999999999999999 is above 9223372036854775807, the largest integer a YAML integer scalar can carry.*┌─[^\n]*171_yaml_large_uint\.eu:4:7"

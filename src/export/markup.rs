@@ -7,11 +7,24 @@
 use std::cell::RefCell;
 
 use crate::{
-    eval::emit::{Emitter, Event},
+    eval::emit::{Emitter, Event, Rejection},
     eval::primitive::Primitive,
 };
 
 use super::error::RenderError;
+
+/// Build a markup rejection with the remediation common to all of them.
+fn markup_rejection(reason: &str) -> Rejection {
+    Rejection::new(reason).with_notes([
+        "html output renders hiccup markup: a list of tag, attribute block \
+         and contents, e.g. '[:div, { id: \"top\" }, \"hello\"]'",
+        "select the markup value with a target or '-e', e.g. \
+         'eu -x html -e page.eu'; rendering a whole unit gives html the \
+         unit's block, which is not markup",
+        "to render arbitrary data instead, choose a format that accepts any \
+         shape, such as 'yaml', 'json' or 'text'",
+    ])
+}
 
 /// A markup element together with its content
 #[derive(PartialEq, Eq, Debug)]
@@ -129,7 +142,60 @@ where
         &self.markup_serialiser
     }
 
-    fn emit(&mut self, event: Event) {
+    /// Describe why `event` cannot be accepted in the current state, or
+    /// `None` if it can.
+    ///
+    /// A markup document is a hiccup element — a sequence of tag, attribute
+    /// block and contents — so at the document root only a sequence start
+    /// makes sense. Anything else means the value being rendered is not
+    /// markup at all, which used to abort the process partway through
+    /// (a block root) or emit nothing at all (a scalar root); both now
+    /// become a diagnostic naming the shape that was found (eu-1tkk.7.24).
+    fn unacceptable(&self, event: &Event) -> Option<Rejection> {
+        // At the document root nothing has been opened yet and no element
+        // has been completed.
+        let at_root = self.stack.is_empty() && self.result.is_none();
+        match event {
+            Event::OutputBlockStart(_) if at_root => Some(markup_rejection(
+                "the value to render is a block, but markup output needs a \
+                 hiccup element — a list whose first item is the tag",
+            )),
+            Event::OutputScalar(_, _) if at_root => Some(markup_rejection(
+                "the value to render is a single scalar, but markup output \
+                 needs a hiccup element — a list whose first item is the tag",
+            )),
+            // Guards for the two shapes that previously reached a panic!
+            // inside `emit`. Both mean an attribute block was left open
+            // where an element was expected.
+            Event::OutputSequenceEnd
+                if matches!(
+                    self.stack.last(),
+                    Some(Expectation::EvenAttrAccumulation(_))
+                        | Some(Expectation::OddAttrAccumulation(_, _))
+                ) =>
+            {
+                Some(markup_rejection(
+                    "an attribute block is still open where markup output \
+                     expected an element to close",
+                ))
+            }
+            Event::OutputBlockEnd
+                if self
+                    .stack
+                    .last()
+                    .is_some_and(|e| !matches!(e, Expectation::EvenAttrAccumulation(_))) =>
+            {
+                Some(markup_rejection(
+                    "a block was closed where markup output expected an \
+                     attribute block; the value being rendered is not hiccup \
+                     markup",
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         match event {
             Event::OutputScalar(_, prim) => {
                 if let Some(mut top) = self.stack.pop() {
@@ -145,10 +211,11 @@ where
                     let element = match top {
                         Expectation::TaggedElement(tag) => Element::new(tag, vec![], vec![]),
                         Expectation::OpenElement(e) => Element::new(e.tag, e.attrs, e.content),
-                        Expectation::EmptyElement => return, // discard
-                        _ => {
-                            panic!("partial block closed as sequence")
-                        }
+                        Expectation::EmptyElement => return Ok(()), // discard
+                        // Rejected by `unacceptable` before reaching here;
+                        // drop the partial element rather than aborting the
+                        // process should another route arrive (eu-1tkk.7.24).
+                        _ => return Ok(()),
                     };
 
                     if let Some(mut top) = self.stack.pop() {
@@ -167,7 +234,10 @@ where
                 if let Some(top) = self.stack.pop() {
                     let attrs = match top {
                         Expectation::EvenAttrAccumulation(attrs) => attrs,
-                        e => panic!("unexpected block end event in state {e:?}"),
+                        // Rejected by `unacceptable` before reaching here;
+                        // drop the event rather than aborting the process
+                        // should another route arrive (eu-1tkk.7.24).
+                        _ => return Ok(()),
                     };
 
                     if let Some(mut top) = self.stack.pop() {
@@ -183,13 +253,12 @@ where
             Event::OutputStreamStart => {}
             Event::OutputStreamEnd => {
                 if let Some(root) = self.result.take() {
-                    self.markup_serialiser
-                        .serialise(root)
-                        .expect("failed to serialise markup");
+                    self.markup_serialiser.serialise(root)?;
                 }
             }
             _ => {}
         }
+        Ok(())
     }
 }
 
@@ -215,8 +284,16 @@ impl<S> Emitter for MarkupEmitter<S>
 where
     S: MarkupSerialiser,
 {
-    fn emit(&mut self, event: Event) {
+    fn format_name(&self) -> &'static str {
+        "html"
+    }
+
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         self.internal.borrow_mut().emit(event)
+    }
+
+    fn unacceptable(&self, event: &Event) -> Option<Rejection> {
+        self.internal.borrow().unacceptable(event)
     }
 }
 
@@ -275,7 +352,7 @@ pub mod tests {
         let mut emitter = MarkupEmitterInternal::new(serialiser);
 
         for e in events {
-            emitter.emit(e);
+            emitter.emit(e).expect("test sink cannot fail");
         }
 
         assert_eq!(
@@ -307,7 +384,7 @@ pub mod tests {
         let mut emitter = MarkupEmitterInternal::new(serialiser);
 
         for e in events {
-            emitter.emit(e);
+            emitter.emit(e).expect("test sink cannot fail");
         }
 
         assert_eq!(
@@ -344,7 +421,7 @@ pub mod tests {
         let mut emitter = MarkupEmitterInternal::new(serialiser);
 
         for e in events {
-            emitter.emit(e);
+            emitter.emit(e).expect("test sink cannot fail");
         }
 
         assert_eq!(

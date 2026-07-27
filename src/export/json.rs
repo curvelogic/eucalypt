@@ -4,6 +4,7 @@ use crate::eval::emit::{Emitter, Event, RenderMetadata};
 use crate::eval::primitive::Primitive;
 use std::io::Write;
 
+use super::error::RenderError;
 use super::table::{AsKey, FromPairs, FromPrimitive, FromVec, TableAccumulator};
 
 impl AsKey<String> for serde_json::Value {
@@ -53,15 +54,14 @@ impl<'a> JsonEmitter<'a> {
 }
 
 impl Emitter for JsonEmitter<'_> {
-    fn emit(&mut self, event: Event) {
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         self.accum.consume(event);
         if let Some(result) = self.accum.result() {
-            writeln!(
-                self.out,
-                "{}",
-                serde_json::to_string_pretty(&result).expect("failed to serialise JSON")
-            )
-            .expect("failed to write JSON output");
+            let rendered = serde_json::to_string_pretty(&result).map_err(|e| {
+                RenderError::Serialisation(format!("failed to serialise JSON: {e}"))
+            })?;
+            writeln!(self.out, "{rendered}")?;
         }
+        Ok(())
     }
 }

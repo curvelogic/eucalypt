@@ -1,0 +1,12 @@
+# exit: 1 is load-bearing — the pre-fix behaviour was a Rust panic, which
+# exits 101, so the exit assertion alone rules the panic out.
+#
+# NO LOCATION ASSERTION, deliberately, unlike 171/194. This diagnostic has
+# no primary label to anchor on: the render pipeline emits the document's
+# root events outside any annotated user expression, so machine.annotation()
+# is invalid and both traces are empty (confirmed with EU_ERROR_TRACE_DUMP=1).
+# Adding a location needs annotation-resolution work that is out of scope
+# here — see eu-1tkk.7.24. Do not copy this sidecar as the eu-ziq8o pattern;
+# copy 171_yaml_large_uint.eu.expect instead.
+exit: 1
+stderr: "(?s)error\[EU-RENDER-SHAPE\].*cannot render this document as html: the value to render is a block, but markup output needs a hiccup element.*html output renders hiccup markup"

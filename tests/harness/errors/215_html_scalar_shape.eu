@@ -1,0 +1,6 @@
+# Rendering a bare scalar as html silently produced an empty output and
+# exit 0 — the user asked for html and got zero bytes with no explanation.
+# The same shape check that replaced the block-root panic makes this an
+# ordinary diagnostic too (eu-1tkk.7.24).
+` { target: :main format: :html }
+main: 42

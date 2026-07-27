@@ -11,7 +11,7 @@
 use crate::{
     common::sourcemap::Smid,
     eval::{
-        emit::{Emitter, Event},
+        emit::{Emitter, Event, Rejection},
         error::ExecutionError,
         intrinsics,
         machine::intrinsic::{CallGlobal2, IntrinsicMachine, StgIntrinsic},
@@ -19,8 +19,10 @@ use crate::{
             mutator::MutatorHeapView,
             syntax::{HeapSyn, Ref},
         },
+        primitive::Primitive,
     },
     export,
+    export::error::RenderError,
 };
 
 use super::{support::sym_arg, tags::DataConstructor};
@@ -92,9 +94,53 @@ impl OwnedCaptureEmitter {
     }
 }
 
+impl OwnedCaptureEmitter {
+    /// Start the captured stream.
+    ///
+    /// Infallible, and deliberately shadowing [`Emitter::stream_start`]: a
+    /// capture emitter writes into an in-memory `Vec<u8>`, whose `Write`
+    /// impl cannot fail, so there is no error for a caller to handle. Having
+    /// these as inherent methods keeps the capture-lifecycle call sites in
+    /// both engines free of error plumbing that could never fire
+    /// (eu-1tkk.7.25).
+    pub fn stream_start(&mut self) {
+        let result = Emitter::stream_start(self);
+        debug_assert!(result.is_ok(), "capture buffer writes cannot fail");
+        drop(result);
+    }
+
+    /// End the captured stream. Infallible, for the reason above.
+    pub fn stream_end(&mut self) {
+        let result = Emitter::stream_end(self);
+        debug_assert!(result.is_ok(), "capture buffer writes cannot fail");
+        drop(result);
+    }
+}
+
 impl Emitter for OwnedCaptureEmitter {
-    fn emit(&mut self, event: Event) {
-        self.emitter.as_mut().unwrap().emit(event);
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
+        self.emitter.as_mut().unwrap().emit(event)
+    }
+
+    /// Delegate to the wrapped format emitter so that `render-as` reports
+    /// the format actually being produced.
+    fn format_name(&self) -> &'static str {
+        self.emitter.as_ref().map_or("output", |e| e.format_name())
+    }
+
+    /// Delegate to the wrapped format emitter so a value the target format
+    /// cannot carry is caught inside `render-as` too, not just at top-level
+    /// output (eu-1tkk.7.20).
+    fn unrepresentable(&self, primitive: &Primitive) -> Option<Rejection> {
+        self.emitter
+            .as_ref()
+            .and_then(|e| e.unrepresentable(primitive))
+    }
+
+    /// Delegate to the wrapped format emitter so a document shape the target
+    /// format cannot render is caught inside `render-as` too (eu-1tkk.7.24).
+    fn unacceptable(&self, event: &Event) -> Option<Rejection> {
+        self.emitter.as_ref().and_then(|e| e.unacceptable(event))
     }
 }
 

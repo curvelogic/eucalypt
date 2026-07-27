@@ -1,9 +1,11 @@
 //! EDN export
 
+use super::error::RenderError;
 use super::table::{AsKey, FromPairs, FromPrimitive, FromVec, TableAccumulator};
 use crate::eval::emit::{Emitter, Event, RenderMetadata};
 use crate::eval::primitive::Primitive;
 use edn_format::{emit_str, Keyword, Value};
+use num_bigint::BigInt;
 use ordered_float::OrderedFloat;
 use std::io::Write;
 
@@ -23,11 +25,20 @@ impl FromPrimitive for Value {
             Primitive::Num(n) => {
                 if let Some(i) = n.as_i64() {
                     Value::Integer(i)
+                } else if let Some(u) = n.as_u64() {
+                    // An unsigned integer above i64::MAX. `as_f64` would
+                    // accept it and quietly round — 9999999999999999999
+                    // exported as 10000000000000000000 — so use EDN's
+                    // arbitrary-precision integer, which emits the exact
+                    // digits with an `N` suffix (eu-1tkk.7.23).
+                    Value::BigInt(BigInt::from(u))
                 } else if let Some(f) = n.as_f64() {
                     Value::Float(OrderedFloat(f))
                 } else {
-                    // serde_json::Number is always PosInt/NegInt/Float, so this is unreachable
-                    unreachable!("serde_json::Number {n} is neither i64 nor f64")
+                    // serde_json::Number is always PosInt/NegInt/Float, and
+                    // all three are covered above; keep the digits rather
+                    // than aborting should that ever change.
+                    Value::String(n.to_string())
                 }
             }
             Primitive::ZonedDateTime(dt) => Value::Inst(*dt),
@@ -63,10 +74,11 @@ impl<'a> EdnEmitter<'a> {
 }
 
 impl Emitter for EdnEmitter<'_> {
-    fn emit(&mut self, event: Event) {
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         self.accum.consume(event);
         if let Some(result) = self.accum.result() {
-            writeln!(self.out, "{}", emit_str(result)).expect("failed to write EDN output");
+            writeln!(self.out, "{}", emit_str(result))?;
         }
+        Ok(())
     }
 }

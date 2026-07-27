@@ -283,6 +283,36 @@ a + b * c     →  (+ a (* b c))      // with standard precedence
 - **Pruning** - Dead code elimination
 - **Inlining** - Inline marked expressions
 
+##### Argument sharing in beta reduction
+
+`beta_reduce` substitutes a call's arguments into the callee body. Doing
+that unconditionally would copy the argument *expression* once per
+occurrence of its binder, and separate copies become separate thunks that
+share nothing — so a callee that uses a parameter twice would evaluate
+that argument twice, and a caller passing its own recursive call would go
+from linear to exponential (eu-gua64).
+
+An argument is therefore substituted directly only when doing so
+duplicates no work:
+
+- the argument is *duplicable* — a variable (which already names a single
+  shared thunk), a literal, or an intrinsic reference; or
+- its binder occurs at most once in the callee body.
+
+Otherwise the argument is bound once in a `Let` wrapped round the reduced
+body, under a fresh name, and every occurrence becomes a reference to that
+binding. `close_let_scope` performs the de Bruijn shift for both the body
+and the bound argument expressions as they move inside the new scope.
+
+These sharing bindings are never mutually recursive: each holds a
+call-site expression, and the fresh names are chosen disjoint from every
+free name in the body and in all the arguments, so no binding can
+reference a sibling. Only the body refers to them.
+
+The reduced application keeps the *call site's* `Smid` rather than the
+callee's, so a diagnostic blames the user's call rather than the library
+body it was inlined from; the sharing `Let` carries the same `Smid`.
+
 #### Verification
 
 *Implementation*: `src/core/verify/`
@@ -670,11 +700,27 @@ with **postcard** (a compact binary format) and is the runtime's default
 source for the prelude; the build falls back to compiling from source only
 when the blob is absent or stale.
 
-Staleness is detected by a hash: the blob records
-`SHA-256(lib/prelude.eu ‖ bytecode-wire-format-version)`, and `build.rs`
-recomputes it. Folding the **bytecode wire-format version** (currently 3)
-into the hash means a change to the serialised code layout invalidates a
-stale-format blob even when the prelude source itself is unchanged.
+Staleness is detected by a hash covering every input that can invalidate a
+blob. `cargo xtask prelude-compile` stamps it into the blob's `source_hash`
+field and `build.rs` recomputes it; the recipe, the version constant and the
+staleness verdict all live in one file, `src/eval/stg/wire_format.rs`, which
+`build.rs` `include!`s (a build script cannot depend on its own crate). The
+three hashed inputs are:
+
+- **`lib/prelude.eu`** — the prelude bindings themselves.
+- **`src/eval/intrinsics.rs`** — the intrinsic catalogue. Its length fixes the
+  global slot numbering the blob bakes in as `Ref::G(INTRINSIC_COUNT + prelude
+  slot)`, so adding or removing an intrinsic shifts *every* prelude global's
+  slot. Hashing the catalogue makes that invalidation automatic (eu-3skeg);
+  before it did, a stale blob was silently accepted with an off-by-N slot map
+  and the binary returned wrong answers with no warning.
+- **`BYTECODE_WIRE_FORMAT_VERSION`** — the serialised code-stream layout, which
+  nothing on disk reveals. This constant is hand-bumped, and only when the
+  encoder's byte layout changes; intrinsic-table changes need no bump.
+
+A blob that fails the check is not used: `build.rs` emits a `cargo:warning`
+naming `cargo xtask prelude-compile` and sets `cfg(prelude_blob_stale)`, and
+the driver compiles the prelude from source instead.
 
 The blob is not a single artefact but a set of sections, each a snapshot or
 derived artefact of a specific compiler stage. `blob.rs`'s module

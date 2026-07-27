@@ -10,6 +10,7 @@ use crate::eval::primitive::Primitive;
 use pretty::RcDoc;
 use std::io::Write;
 
+use super::error::RenderError;
 use super::table::{AsKey, FromPairs, FromPrimitive, FromVec, TableAccumulator};
 
 /// A eucalypt value tree, built up by `TableAccumulator` during export
@@ -114,11 +115,13 @@ fn eu_to_doc(val: &EuValue) -> RcDoc<'static> {
 }
 
 /// Render an `EuValue` as a eucalypt-syntax string.
-fn render_eu_value(val: &EuValue) -> String {
+fn render_eu_value(val: &EuValue) -> Result<String, RenderError> {
     let doc = eu_to_doc(val);
     let mut buf = Vec::new();
-    doc.render(80, &mut buf).expect("failed to render eu value");
-    String::from_utf8(buf).expect("eu output is not valid UTF-8")
+    doc.render(80, &mut buf)
+        .map_err(|e| RenderError::Serialisation(format!("failed to render eu value: {e}")))?;
+    String::from_utf8(buf)
+        .map_err(|e| RenderError::Serialisation(format!("eu output is not valid UTF-8: {e}")))
 }
 
 /// Emitter for eucalypt-syntax output (`-x eu`)
@@ -137,10 +140,11 @@ impl<'a> EuEmitter<'a> {
 }
 
 impl Emitter for EuEmitter<'_> {
-    fn emit(&mut self, event: Event) {
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         self.accum.consume(event);
         if let Some(result) = self.accum.result() {
-            writeln!(self.out, "{}", render_eu_value(result)).expect("failed to write eu output");
+            writeln!(self.out, "{}", render_eu_value(result)?)?;
         }
+        Ok(())
     }
 }

@@ -1,0 +1,77 @@
+#!/usr/bin/env eu
+# eu-frf2o: a metadata-annotated inline block literal used as a call or
+# catenation operand compiled its `Meta` node into a plain STG `Let` whose
+# sibling references escaped into the enclosing frame.
+#
+# The STG compiler builds three bindings for `{ :foo k: 1 }` in operand
+# position — the metadata, the block body, and the `Meta` node naming both —
+# but `compile_binding`'s `Expr::Meta` arm never called `ensure_recursive()`.
+# Under a non-recursive `Let` every binding is closed over the *enclosing*
+# frame, so the `Meta` node's two operands indexed the outer scope instead of
+# its siblings. At the top level outer slot 0 was the thunk being forced (a
+# blackhole); inside a function it was a live parameter, so the expression
+# quietly evaluated to the caller's first argument with no diagnostic at all.
+#
+# The block-metadata spellings never broke because compiling a metadata
+# *block* calls `ensure_recursive()` as a side effect. They are asserted here
+# too: the fix must not push a working path onto the broken one.
+#
+# Every check asserts a value, not merely the absence of an error — a
+# fixture that only demanded "no blackhole" would have passed against the
+# build that silently returned the caller's first argument.
+
+# --- the broken shapes: bare-symbol metadata on an inline block literal ---
+
+# The annotation itself, read straight off the inline literal.
+t1: ({ :foo k: 1 } raw-meta) = :foo
+
+# Multiple declarations in the annotated body.
+t2: ({ :foo x: 1 y: 2 } raw-meta) = :foo
+
+# The body survives too — the annotation must not displace the block.
+t3: ({ :foo k: 1 } keys) = [:k]
+t4: ({ :foo k: 1 } values) = [1]
+t5: ({ :foo k: 1 } lookup(:k)) = 1
+t6: ({ :foo k: 1 } elements) = [[:k, 1]]
+
+# In function scope the escaping reference landed on a live parameter, so
+# this returned :AAA — the caller's first argument — with no error raised.
+annotation-of-literal(x, y): { :foo k: 1 } raw-meta
+t7: annotation-of-literal(:AAA, :BBB) = :foo
+
+# The same for the body of an inline annotated literal in function scope.
+key-of-literal(x, y): { :foo k: 1 } lookup(:k)
+t8: key-of-literal(:AAA, :BBB) = 1
+
+# Deeper in the argument list, so the escape would land on parameter 1.
+second-arg-probe(x, y): [x, { :foo k: 1 } raw-meta]
+t9: second-arg-probe(:AAA, :BBB) = [:AAA, :foo]
+
+# --- controls that already worked and must keep working ---
+
+# Annotation is a metadata block.
+t10: ({ {doc: "d"} k: 1 } raw-meta) = {doc: "d"}
+
+# Documentation-string shorthand normalises to a block at desugar.
+t11: ({ "doc" k: 1 } raw-meta) = {doc: "doc"}
+
+# `:suppress` normalises to `{export: :suppress}` at desugar.
+t12: ({ :suppress k: 1 } raw-meta) = {export: :suppress}
+
+# The `//` route attaches metadata without a literal annotation.
+t13: (({ k: 1 } // {doc: "z"}) raw-meta) = {doc: "z"}
+
+# An empty annotated body needs no allocation group of its own.
+t14: ({ :foo } raw-meta) = :foo
+
+# Bound to a name first, the three bindings land in the top-level letrec,
+# where sibling references were always legal.
+named: { :foo k: 1 }
+t15: (named raw-meta) = :foo
+t16: (named lookup(:k)) = 1
+
+# `meta` reaches the same annotation through the demeta wrapper.
+t17: ({ {doc: "d"} k: 1 } meta) = {doc: "d"}
+
+RESULT: [t1, t2, t3, t4, t5, t6, t7, t8, t9,
+         t10, t11, t12, t13, t14, t15, t16, t17] all-true? then(:PASS, :FAIL)
