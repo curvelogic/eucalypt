@@ -40,7 +40,7 @@ eu --seed 42 example.eu
 | `random.sample(n, lst, stream)` | State-monad action returning n elements sampled without replacement |
 | `random.run(action, stream)` | Run a random action on a stream; returns a value/rest block |
 | `random.eval(action, stream)` | Run a random action and return only the value |
-| `random.exec(action, stream)` | Run a random action and return only the remaining stream |
+| `random.exec(action, stream)` | DEPRECATED: use random.run(action, stream).rest. Run a random action and return only the remaining stream |
 
 ## Usage Pattern
 

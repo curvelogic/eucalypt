@@ -511,10 +511,30 @@ impl<'smap> Desugarer<'smap> {
 
     /// Record a deprecated declaration discovered during desugaring.
     ///
-    /// Deprecation warnings match on the leaf declaration name; the stack
-    /// tracks nesting context but is not included in the deprecation key.
+    /// A declaration is keyed by the path a caller must write to reach it, and
+    /// by that path alone.  A top-level declaration is keyed by its bare name
+    /// (`old-fn`), matched against bare variable references.  A declaration
+    /// nested inside a namespace block (e.g. `exec` inside `state`) is keyed by
+    /// its dotted path (`state.exec`), matched against namespace-member lookups
+    /// by the deprecation reference checker.
+    ///
+    /// A nested declaration must *not* also be keyed by its bare leaf name:
+    /// doing so deprecates that name globally, so deprecating `random.exec`
+    /// would warn on any user's own binding called `exec`.  The stack holds the
+    /// full path including the leaf, since `push(name)` runs before this call.
+    ///
+    /// One consequence is deliberate and worth stating: a nested declaration
+    /// referenced by its bare name from *inside* its own block is not a
+    /// reference to the path a caller writes, so it no longer warns.  Only
+    /// call sites that reach the declaration the way the deprecation names it
+    /// are reported.  Covered by typecheck fixture 114.
     pub fn record_deprecation(&mut self, name: &str, spec: DeprecationSpec) {
-        self.deprecations.insert(name.to_string(), spec);
+        let key = if self.stack.len() > 1 {
+            self.stack.join(".")
+        } else {
+            name.to_string()
+        };
+        self.deprecations.insert(key, spec);
     }
 
     /// Record a declaration's blame classification (eu-1tkk.7.11).
