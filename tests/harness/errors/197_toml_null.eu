@@ -6,5 +6,10 @@
 # The null arrives from imported JSON rather than as a literal, both
 # because that is how nullable data actually reaches an export and because
 # the lookup carries a source location for the diagnostic to point at.
+#
+# Kept at the document root rather than inside a block literal: under
+# HeapSyn a value nested in a block literal loses its primary label
+# entirely, so the block form would assert a location the bytecode engine
+# produces and HeapSyn does not (eu-1tkk.7.26). Same reason as fixture 194.
 ` { target: :main format: :toml import: "data=testdata/nullable.json" }
-main: { absent: data.absent }
+main: data.absent

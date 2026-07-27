@@ -1,8 +1,8 @@
-# exit: 1 is load-bearing — the pre-fix behaviour was exit 0 with `absent =
-# ""` written out, so the exit assertion is what turns "silently conflated
-# null with the empty string" into a failure.
+# exit: 1 is load-bearing — with the null check disabled this exits 0 having
+# written `""`, indistinguishable from a genuine empty string, so the exit
+# assertion is what turns "silently conflated null with \"\"" into a failure.
 #
-# Anchored on the primary-label line ('┌─ …:10:17'), not the 'stack trace:'
+# Anchored on the primary-label line ('┌─ …:15:7'), not the 'stack trace:'
 # note: '[^\n]*' cannot cross a newline, so a diagnostic whose location
 # survives only in the note does not match (eu-ziq8o pattern).
 #
@@ -13,4 +13,4 @@
 # present", not "the error carries the right Smid". Same result as 171 —
 # recorded on eu-ziq8o.
 exit: 1
-stderr: "(?s)error\[EU-RENDER-UNREPRESENTABLE\].*cannot represent this value in TOML output: TOML has no null; every key must have a value.*┌─[^\n]*197_toml_null\.eu:10:17"
+stderr: "(?s)error\[EU-RENDER-UNREPRESENTABLE\].*cannot represent this value in TOML output: TOML has no null; every key must have a value.*┌─[^\n]*197_toml_null\.eu:15:7"
