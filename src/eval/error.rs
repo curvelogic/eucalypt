@@ -830,6 +830,12 @@ pub enum ExecutionError {
     FormatError(Smid, Box<(String, Number)>),
     #[error("expected scalar value")]
     NotScalar(Smid),
+    /// A value cannot be carried by the requested output format.
+    ///
+    /// `.1` names the format ("YAML", "TOML"), `.2` describes the limit that
+    /// the value exceeds.
+    #[error("cannot represent this value in {1} output: {2}")]
+    UnrepresentableValue(Smid, String, String),
     #[error("{}", format_unknown_format(.0))]
     UnknownFormat(String),
     #[error("cannot combine numbers ({1}, {2}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
@@ -966,6 +972,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::UnexpectedFunction(s, _) => *s,
             ExecutionError::NotValue(s, _) => *s,
             ExecutionError::NotScalar(s) => *s,
+            ExecutionError::UnrepresentableValue(s, _, _) => *s,
             ExecutionError::NoBranchForDataTag(s, _, _) => *s,
             ExecutionError::NoBranchForNative(s, _) => *s,
             ExecutionError::CannotReturnFunToCase(s, _) => *s,
@@ -1388,6 +1395,16 @@ impl ExecutionError {
                         .to_string(),
                 ]
             }
+            ExecutionError::UnrepresentableValue(_, _, _) => {
+                vec![
+                    "render to a format that can carry the value — 'json', 'text' \
+                     and 'eu' output all keep integers of this magnitude"
+                        .to_string(),
+                    "to keep the exact digits in this format, convert the value to \
+                     a string first with 'str', e.g. 'n str'"
+                        .to_string(),
+                ]
+            }
             _ => vec![],
         };
         if notes.is_empty() {
@@ -1465,6 +1482,7 @@ impl ExecutionError {
         match self {
             ExecutionError::Traced(inner, _) => inner.code(),
             ExecutionError::TypeMismatch(..) => Some("EU-EVAL-TYPE"),
+            ExecutionError::UnrepresentableValue(..) => Some("EU-RENDER-UNREPRESENTABLE"),
             _ => None,
         }
     }

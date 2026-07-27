@@ -2698,10 +2698,22 @@ pub fn test_error_178() {
 }
 
 #[test]
-/// Exporting a JSON u64 value exceeding i64::MAX to YAML should produce an
-/// informative panic message including the value, not a bare "unrenderable number".
+/// Exporting a JSON u64 value exceeding i64::MAX to YAML must produce an
+/// ordinary diagnostic — `EU-RENDER-UNREPRESENTABLE`, with a primary label
+/// on the offending value — rather than aborting the process with a Rust
+/// panic. The sidecar asserts the label's `file:line:col`, not just the
+/// wording, and anchors on the `┌─` line so that a location regression
+/// cannot be masked by the `stack trace:` note (eu-1tkk.7.20).
 pub fn test_error_171() {
     run_error_test(&error_opts("171_yaml_large_uint.eu"));
+}
+
+#[test]
+/// The same value exported to TOML: TOML integers are signed 64-bit too, so
+/// this reached an `unreachable!` in the TOML exporter and aborted the
+/// process. Companion to `test_error_171` (eu-1tkk.7.20).
+pub fn test_error_194() {
+    run_error_test(&error_opts("194_toml_large_uint.eu"));
 }
 
 #[test]

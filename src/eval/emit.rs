@@ -57,6 +57,25 @@ pub trait Emitter {
         &[]
     }
 
+    /// The name of the output format produced, as it should appear in
+    /// diagnostics (e.g. "YAML").
+    fn format_name(&self) -> &'static str {
+        "output"
+    }
+
+    /// Describe why `primitive` cannot be faithfully represented in this
+    /// emitter's output format, or `None` if it can.
+    ///
+    /// Not every eucalypt value fits every output format — a TOML table has
+    /// no null, a YAML integer is bounded by `i64`. Emitters whose format
+    /// has such a limit override this so the emit intrinsics can raise an
+    /// `ExecutionError` carrying the source location of the offending value,
+    /// instead of the serialiser failing part-way through a document with no
+    /// context (eu-1tkk.7.20).
+    fn unrepresentable(&self, _primitive: &Primitive) -> Option<String> {
+        None
+    }
+
     /// Output a stream start event
     fn stream_start(&mut self) {
         self.emit(Event::OutputStreamStart);

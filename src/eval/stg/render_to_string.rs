@@ -19,6 +19,7 @@ use crate::{
             mutator::MutatorHeapView,
             syntax::{HeapSyn, Ref},
         },
+        primitive::Primitive,
     },
     export,
 };
@@ -95,6 +96,21 @@ impl OwnedCaptureEmitter {
 impl Emitter for OwnedCaptureEmitter {
     fn emit(&mut self, event: Event) {
         self.emitter.as_mut().unwrap().emit(event);
+    }
+
+    /// Delegate to the wrapped format emitter so that `render-as` reports
+    /// the format actually being produced.
+    fn format_name(&self) -> &'static str {
+        self.emitter.as_ref().map_or("output", |e| e.format_name())
+    }
+
+    /// Delegate to the wrapped format emitter so a value the target format
+    /// cannot carry is caught inside `render-as` too, not just at top-level
+    /// output (eu-1tkk.7.20).
+    fn unrepresentable(&self, primitive: &Primitive) -> Option<String> {
+        self.emitter
+            .as_ref()
+            .and_then(|e| e.unrepresentable(primitive))
     }
 }
 

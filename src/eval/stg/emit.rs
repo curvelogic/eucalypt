@@ -18,6 +18,31 @@ use crate::eval::{
 
 use super::support::machine_return_unit;
 
+/// Emit a scalar, first checking the active emitter can represent it.
+///
+/// Output formats differ in what they can carry — a YAML or TOML integer is
+/// bounded by `i64`, while JSON is not — so a value that arrived intact can
+/// still be unrenderable in the requested format. Asking the emitter here,
+/// rather than discovering it inside the serialiser, means the failure
+/// carries the source location of the value being rendered and can be
+/// reported as an ordinary diagnostic (eu-1tkk.7.20).
+fn emit_scalar(
+    machine: &dyn IntrinsicMachine,
+    emitter: &mut dyn Emitter,
+    metadata: &RenderMetadata,
+    primitive: &Primitive,
+) -> Result<(), ExecutionError> {
+    if let Some(reason) = emitter.unrepresentable(primitive) {
+        return Err(ExecutionError::UnrepresentableValue(
+            machine.annotation(),
+            emitter.format_name().to_string(),
+            reason,
+        ));
+    }
+    emitter.scalar(metadata, primitive);
+    Ok(())
+}
+
 /// Convert a set primitive to a rendering primitive
 fn set_primitive_to_render_primitive(
     prim: &SetPrimitive,
@@ -41,14 +66,15 @@ fn emit_set(
     emitter: &mut dyn Emitter,
     set_ref: RefPtr<HeapSet>,
     metadata: &RenderMetadata,
-) {
+) -> Result<(), ExecutionError> {
     let set: crate::eval::memory::alloc::ScopedPtr<'_, HeapSet> = view.scoped(set_ref);
     emitter.sequence_start(metadata);
     for elem in set.sorted_elements() {
         let prim = set_primitive_to_render_primitive(elem, machine);
-        emitter.scalar(&RenderMetadata::empty(), &prim);
+        emit_scalar(machine, emitter, &RenderMetadata::empty(), &prim)?;
     }
     emitter.sequence_end();
+    Ok(())
 }
 
 /// Emit an n-dimensional array as nested sequences.
@@ -57,13 +83,18 @@ fn emit_set(
 /// A 2D array is emitted as a sequence of 1D row sequences.
 /// In general, an N-D array is emitted as a sequence of (N-1)-D sub-arrays,
 /// recursing down to scalar elements at rank 0.
-fn emit_ndarray_data(emitter: &mut dyn Emitter, arr: &HeapNdArray, metadata: &RenderMetadata) {
+fn emit_ndarray_data(
+    machine: &dyn IntrinsicMachine,
+    emitter: &mut dyn Emitter,
+    arr: &HeapNdArray,
+    metadata: &RenderMetadata,
+) -> Result<(), ExecutionError> {
     let rank = arr.rank();
     if rank == 0 {
         // A scalar array: emit the single element value
         let val = arr.get(&[]).unwrap_or(0.0);
         let num = serde_json::Number::from_f64(val).unwrap_or_else(|| serde_json::Number::from(0));
-        emitter.scalar(metadata, &Primitive::Num(num));
+        emit_scalar(machine, emitter, metadata, &Primitive::Num(num))?;
     } else if rank == 1 {
         emitter.sequence_start(metadata);
         let len = arr.shape()[0];
@@ -71,7 +102,12 @@ fn emit_ndarray_data(emitter: &mut dyn Emitter, arr: &HeapNdArray, metadata: &Re
             let val = arr.get(&[i]).unwrap_or(0.0);
             let num =
                 serde_json::Number::from_f64(val).unwrap_or_else(|| serde_json::Number::from(0));
-            emitter.scalar(&RenderMetadata::empty(), &Primitive::Num(num));
+            emit_scalar(
+                machine,
+                emitter,
+                &RenderMetadata::empty(),
+                &Primitive::Num(num),
+            )?;
         }
         emitter.sequence_end();
     } else {
@@ -79,22 +115,24 @@ fn emit_ndarray_data(emitter: &mut dyn Emitter, arr: &HeapNdArray, metadata: &Re
         let rows = arr.shape()[0];
         for i in 0..rows {
             if let Some(sub) = arr.slice_along(0, i) {
-                emit_ndarray_data(emitter, &sub, &RenderMetadata::empty());
+                emit_ndarray_data(machine, emitter, &sub, &RenderMetadata::empty())?;
             }
         }
         emitter.sequence_end();
     }
+    Ok(())
 }
 
 /// Emit an NdArray from a heap pointer as nested sequences.
 fn emit_ndarray(
+    machine: &dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
     emitter: &mut dyn Emitter,
     arr_ref: RefPtr<HeapNdArray>,
     metadata: &RenderMetadata,
-) {
+) -> Result<(), ExecutionError> {
     let arr: crate::eval::memory::alloc::ScopedPtr<'_, HeapNdArray> = view.scoped(arr_ref);
-    emit_ndarray_data(emitter, &arr, metadata);
+    emit_ndarray_data(machine, emitter, &arr, metadata)
 }
 
 /// Emit a vec as a sequence of scalars in element order.
@@ -104,14 +142,15 @@ fn emit_vec(
     emitter: &mut dyn Emitter,
     vec_ref: RefPtr<HeapVec>,
     metadata: &RenderMetadata,
-) {
+) -> Result<(), ExecutionError> {
     let vec: crate::eval::memory::alloc::ScopedPtr<'_, HeapVec> = view.scoped(vec_ref);
     emitter.sequence_start(metadata);
     for elem in vec.elements() {
         let prim = set_primitive_to_render_primitive(elem, machine);
-        emitter.scalar(&RenderMetadata::empty(), &prim);
+        emit_scalar(machine, emitter, &RenderMetadata::empty(), &prim)?;
     }
     emitter.sequence_end();
+    Ok(())
 }
 
 /// Interpret arg as tag if it exists otherwise None
@@ -222,27 +261,37 @@ impl StgIntrinsic for EmitNative {
         let native = machine.resolve_native(view, &args[0])?;
         match native {
             memory::syntax::Native::Set(ptr) => {
-                emit_set(machine, view, emitter, ptr, &RenderMetadata::empty());
+                emit_set(machine, view, emitter, ptr, &RenderMetadata::empty())?;
             }
             memory::syntax::Native::NdArray(ptr) => {
-                emit_ndarray(view, emitter, ptr, &RenderMetadata::empty());
+                emit_ndarray(machine, view, emitter, ptr, &RenderMetadata::empty())?;
             }
             memory::syntax::Native::Vec(ptr) => {
-                emit_vec(machine, view, emitter, ptr, &RenderMetadata::empty());
+                emit_vec(machine, view, emitter, ptr, &RenderMetadata::empty())?;
             }
             memory::syntax::Native::Sym(id) => {
                 let primitive = Primitive::Sym(machine.symbol_pool().resolve(id).to_string());
-                emitter.scalar(&RenderMetadata::empty(), &primitive);
+                emit_scalar(machine, emitter, &RenderMetadata::empty(), &primitive)?;
             }
             memory::syntax::Native::Str(s) => {
                 let primitive = Primitive::Str(view.scoped(s).as_str().to_string());
-                emitter.scalar(&RenderMetadata::empty(), &primitive);
+                emit_scalar(machine, emitter, &RenderMetadata::empty(), &primitive)?;
             }
             memory::syntax::Native::Num(n) => {
-                emitter.scalar(&RenderMetadata::empty(), &Primitive::Num(n));
+                emit_scalar(
+                    machine,
+                    emitter,
+                    &RenderMetadata::empty(),
+                    &Primitive::Num(n),
+                )?;
             }
             memory::syntax::Native::Zdt(dt) => {
-                emitter.scalar(&RenderMetadata::empty(), &Primitive::ZonedDateTime(dt));
+                emit_scalar(
+                    machine,
+                    emitter,
+                    &RenderMetadata::empty(),
+                    &Primitive::ZonedDateTime(dt),
+                )?;
             }
             memory::syntax::Native::Index(_)
             | memory::syntax::Native::Prng(_)
@@ -277,27 +326,37 @@ impl StgIntrinsic for EmitTagNative {
         let native = machine.resolve_native(view, &args[1])?;
         match native {
             memory::syntax::Native::Set(ptr) => {
-                emit_set(machine, view, emitter, ptr, &RenderMetadata::new(tag));
+                emit_set(machine, view, emitter, ptr, &RenderMetadata::new(tag))?;
             }
             memory::syntax::Native::NdArray(ptr) => {
-                emit_ndarray(view, emitter, ptr, &RenderMetadata::new(tag));
+                emit_ndarray(machine, view, emitter, ptr, &RenderMetadata::new(tag))?;
             }
             memory::syntax::Native::Vec(ptr) => {
-                emit_vec(machine, view, emitter, ptr, &RenderMetadata::new(tag));
+                emit_vec(machine, view, emitter, ptr, &RenderMetadata::new(tag))?;
             }
             memory::syntax::Native::Sym(id) => {
                 let primitive = Primitive::Sym(machine.symbol_pool().resolve(id).to_string());
-                emitter.scalar(&RenderMetadata::new(tag), &primitive);
+                emit_scalar(machine, emitter, &RenderMetadata::new(tag), &primitive)?;
             }
             memory::syntax::Native::Str(s) => {
                 let primitive = Primitive::Str(view.scoped(s).as_str().to_string());
-                emitter.scalar(&RenderMetadata::new(tag), &primitive);
+                emit_scalar(machine, emitter, &RenderMetadata::new(tag), &primitive)?;
             }
             memory::syntax::Native::Num(n) => {
-                emitter.scalar(&RenderMetadata::new(tag), &Primitive::Num(n));
+                emit_scalar(
+                    machine,
+                    emitter,
+                    &RenderMetadata::new(tag),
+                    &Primitive::Num(n),
+                )?;
             }
             memory::syntax::Native::Zdt(dt) => {
-                emitter.scalar(&RenderMetadata::new(tag), &Primitive::ZonedDateTime(dt));
+                emit_scalar(
+                    machine,
+                    emitter,
+                    &RenderMetadata::new(tag),
+                    &Primitive::ZonedDateTime(dt),
+                )?;
             }
             memory::syntax::Native::Index(_)
             | memory::syntax::Native::Prng(_)
