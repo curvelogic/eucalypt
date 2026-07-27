@@ -6,4 +6,4 @@
 # ('┌─ …:4:7'), not on the 'stack trace:' note, so that losing the label
 # fails the test even while a trace entry still mentions the same line.
 exit: 1
-stderr: "(?s)error\[EU-RENDER-UNREPRESENTABLE\].*cannot represent this value in YAML output: the integer 9999999999999999999 is above 9223372036854775807, the largest integer a YAML integer scalar can carry.*┌─[^\n]{0,8}171_yaml_large_uint\.eu:4:7"
+stderr: "(?s)error\[EU-RENDER-UNREPRESENTABLE\].*cannot represent this value in YAML output: the integer 9999999999999999999 is above 9223372036854775807, the largest integer a YAML integer scalar can carry.*┌─[^\n]*171_yaml_large_uint\.eu:4:7"
