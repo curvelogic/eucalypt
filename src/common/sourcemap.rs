@@ -1229,6 +1229,49 @@ mod tests {
         source_map.reserve_foreign_range(Smid::from(100));
     }
 
+    /// The invariant every downstream blame decision rests on:
+    /// reserving a foreign range can only ever *remove* a route to
+    /// `FrameKind::User`, never create one.
+    ///
+    /// `classify_frame` returns `User` through exactly one path — a
+    /// resolved `SourceInfo` whose `file` is a user file. A foreign index
+    /// inside a reserved range no longer resolves at all, so it skips
+    /// that path and falls through to `Transparent`. Before the
+    /// reservation it resolved to a real user-file entry and classified
+    /// as `User`, which is the aliasing eu-r4647 fixes.
+    ///
+    /// This matters beyond the primary label: `curate_trace` and the
+    /// `last_annotation` fallback in `ExecutionError::to_diagnostic`
+    /// (eu-og3u6) both gate on `classify_frame(..) == FrameKind::User`
+    /// before letting a Smid become a blame target, so a foreign Smid
+    /// that classified `User` would leak straight through them.
+    #[test]
+    fn a_foreign_smid_classifies_transparent_never_user() {
+        let mut source_map = SourceMap::new();
+        source_map.reserve_foreign_range(Smid::from(500));
+        // File 0 is the user's own file, registered *above* the reserved
+        // range — exactly the arrangement that made foreign index 250
+        // resolve to a user declaration before the fix.
+        let user_smid = source_map.add(0, Span::new(0u32, 5u32));
+        assert!(
+            source_map.is_user_file(0),
+            "precondition: file 0 is a user file"
+        );
+        assert_eq!(
+            source_map.classify_frame(user_smid),
+            FrameKind::User,
+            "a genuinely local user Smid must still classify as User"
+        );
+
+        for foreign in [1u32, 250, 500] {
+            assert_eq!(
+                source_map.classify_frame(Smid::from(foreign)),
+                FrameKind::Transparent,
+                "foreign Smid {foreign} must never classify as User"
+            );
+        }
+    }
+
     /// A reserved range must not perturb trace rendering for the
     /// locally minted Smids either — `resolve_trace_entry` indexes the
     /// same storage.
