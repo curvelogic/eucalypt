@@ -1,0 +1,12 @@
+{ import: "reflect.eu" }
+
+# eu-8a49h: a shipped library imported by filename was classified as USER
+# code, so a frame inside it could win to_diagnostic's "prefer a user file"
+# test and become the primary label — excerpting library internals the user
+# did not write and cannot change.
+#
+# The `:t-record` payload here is a number where a block is required, so the
+# failure arises while reflect.eu is rendering it. The primary label must be
+# the `from-data` call BELOW, in this file, not the line inside reflect.eu
+# where `elements` was called.
+bad: [:t-record, 42] from-data

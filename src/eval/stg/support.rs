@@ -833,6 +833,10 @@ pub mod call {
             call_bif("JOIN", &[list, sep])
         }
 
+        pub fn contract_fail(headline: Ref, violations: Ref) -> Rc<StgSyn> {
+            call_bif("CONTRACT_FAIL", &[headline, violations])
+        }
+
         pub fn str(x: Ref) -> Rc<StgSyn> {
             call_bif("STR", &[x])
         }
