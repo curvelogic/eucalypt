@@ -372,6 +372,10 @@ impl<'a> Executor<'a> {
                 b.binding_entries.clone(),
                 names,
             );
+            // Same key set the `SourceMap` gets via `extend_blame_table`:
+            // it decides which slots carry a `Smid::global_slot` identity
+            // (eu-1tkk.7.21).
+            rt.set_prelude_blame_names(b.blame.keys().cloned().collect());
 
             // Override the stale __args and __io globals baked into the blob
             // at compile time with freshly-constructed runtime values.

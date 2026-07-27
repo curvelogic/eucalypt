@@ -637,6 +637,7 @@ mod tests {
             blob.binding_entries.clone(),
             names,
         );
+        rt.set_prelude_blame_names(blob.blame.keys().cloned().collect());
         let globals = rt.globals();
         let (fresh, _root, fresh_forms) = encode(&dsl::atom(dsl::num(0)), &globals);
 

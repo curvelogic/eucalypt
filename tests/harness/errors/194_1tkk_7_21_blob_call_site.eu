@@ -1,0 +1,18 @@
+# eu-1tkk.7.21: an error raised by a prelude combinator that fails
+# immediately — no continuation stack, no annotated environment — must
+# still blame the user's own call site, in blob-prelude mode as well as
+# source-prelude mode.
+#
+# The call site is the only user-file Smid in existence for this error, so
+# it survives only if entering the prelude global leaves the caller's
+# annotation intact. Stamping a `Smid::global_slot` identity onto every
+# blob-reconstructed prelude global overwrote it, and the diagnostic lost
+# its primary label entirely.
+#
+# The call is made from inside a user-defined helper, so a passing run
+# proves the label tracks the real call site (line 18) rather than the
+# top-level target (line 16).
+` { target: :main requires-io: true }
+main: run-it("ignored")
+
+run-it(s): io.shell({ stdin: s })

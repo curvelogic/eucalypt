@@ -1,2 +1,2 @@
 exit: 1
-stderr: "io.shell: 'cmd' field is required"
+stderr: "(?s)io\.shell: 'cmd' field is required.*┌─[^\n]*168_io_shell_missing_cmd\.eu:3:7"

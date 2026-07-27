@@ -1,0 +1,2 @@
+exit: 1
+stderr: "(?s)io\.shell: 'cmd' field is required.*┌─[^\n]*194_1tkk_7_21_blob_call_site\.eu:18:12"
