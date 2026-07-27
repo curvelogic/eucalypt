@@ -3053,6 +3053,17 @@ pub fn test_203_ef1_do_monad() {
     run_test(&io_opts("203_ef1_do_monad.eu"));
 }
 
+/// eu-frf2o — regression test for a metadata-annotated inline block literal
+/// used as a call/catenation operand. The STG compiler emitted the `Meta`
+/// binder group as a non-recursive `Let`, so the node's sibling references
+/// escaped into the enclosing frame: a blackhole at the top level and a
+/// silently wrong value (the caller's first argument) inside a function.
+/// See the .eu file for full context.
+#[test]
+pub fn test_205_frf2o_inline_annotated_block() {
+    run_test(&opts("205_frf2o_inline_annotated_block.eu"));
+}
+
 #[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
