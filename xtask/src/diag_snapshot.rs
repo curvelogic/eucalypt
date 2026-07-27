@@ -208,11 +208,29 @@ fn cmd_capture(
     Ok(())
 }
 
-/// Build `eu` at `git_ref` in a throwaway worktree under `target/`, returning
-/// the worktree path.
+/// Build `eu` at `git_ref` in a worktree under `target/`, returning its path.
+///
+/// A separate worktree, never a checkout or a stash, of the current one:
+/// `refs/stash` lives in the common git directory and is shared by every
+/// worktree of the repository, so stashing to move between refs can restore
+/// another worktree's work into the tree a baseline is captured from. A
+/// contaminated baseline is worse than no baseline — it would make the
+/// before/after comparison quietly wrong.
+///
+/// The worktree is kept between runs (it lives under `target/`, where build
+/// caches belong) so a repeat capture does not pay for a full release build.
+/// Remove it with `git worktree remove target/diag-baseline/<ref>` when done.
 fn build_ref(root: &Path, git_ref: &str) -> Result<PathBuf> {
     let wt = root.join("target/diag-baseline").join(git_ref);
     if !wt.exists() {
+        // `cargo clean` deletes anything under `target/`, including a worktree
+        // created by an earlier run, while leaving its registration behind.
+        // `git worktree add` then fails with "already exists". Prune first so
+        // that a clean build tree is not a confusing hard error.
+        let _ = Command::new("git")
+            .current_dir(root)
+            .args(["worktree", "prune"])
+            .status();
         let status = Command::new("git")
             .current_dir(root)
             .args(["worktree", "add", "--detach"])
