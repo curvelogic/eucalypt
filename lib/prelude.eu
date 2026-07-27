@@ -1218,11 +1218,11 @@ with-meta: __WITHMETA
     precedence: :meta }
 (e // m): e with-meta(m)
 
-` { doc: "`meta(e)` - retrieve expression metadata for `e`."
+` { doc: "`meta(e)` - retrieve expression metadata for `e`, combining every stacked metadata layer. Block layers merge, outer winning; a non-block layer is opaque and stands alone."
     type: s"a → {..}" }
 meta: __META
 
-` "`raw-meta(e)` - retrieve immediate metadata of e without recursing into inner layers."
+` "`raw-meta(e)` - retrieve the outermost metadata layer of e alone, without recursing into inner layers and so without merging."
 raw-meta: __RAWMETA
 
 ` { doc: "`merge-meta(m, e)` - merge block `m` into `e`'s metadata."
