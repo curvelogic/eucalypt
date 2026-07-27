@@ -1767,57 +1767,63 @@ pub fn mask_internal_free_vars(internal_names: &[String], expr: &RcExpr) -> RcEx
 /// Collect all free variable names in an expression.
 pub fn free_vars(expr: &RcExpr) -> std::collections::HashSet<String> {
     let mut result = std::collections::HashSet::new();
-    collect_free_vars(expr, &mut result);
+    visit_free_vars(expr, &mut |name| {
+        result.insert(name.to_string());
+    });
     result
 }
 
-fn collect_free_vars(expr: &RcExpr, result: &mut std::collections::HashSet<String>) {
+/// Visit every `Var::Free` occurrence in `expr`, in traversal order.
+///
+/// `f` is called once per *occurrence*, not once per distinct name, so
+/// callers that need occurrence counts (e.g. the inliner's
+/// work-duplication guard) can tally them directly.  Bound variables are
+/// never visited.
+pub fn visit_free_vars<F: FnMut(&str)>(expr: &RcExpr, f: &mut F) {
     match &*expr.inner {
-        Expr::Var(_, Var::Free(name)) => {
-            result.insert(name.clone());
-        }
+        Expr::Var(_, Var::Free(name)) => f(name),
         Expr::Var(_, Var::Bound(_)) => {}
         Expr::Let(_, scope, _) => {
             for b in &scope.pattern {
-                collect_free_vars(&b.expr, result);
+                visit_free_vars(&b.expr, f);
             }
-            collect_free_vars(&scope.body, result);
+            visit_free_vars(&scope.body, f);
         }
         Expr::Lam(_, _, scope) => {
-            collect_free_vars(&scope.body, result);
+            visit_free_vars(&scope.body, f);
         }
         Expr::Lookup(_, e, _, fb) => {
-            collect_free_vars(e, result);
-            if let Some(f) = fb {
-                collect_free_vars(f, result);
+            visit_free_vars(e, f);
+            if let Some(fallback) = fb {
+                visit_free_vars(fallback, f);
             }
         }
         Expr::List(_, xs) | Expr::ArgTuple(_, xs) => {
             for x in xs {
-                collect_free_vars(x, result);
+                visit_free_vars(x, f);
             }
         }
         Expr::Block(_, bm) => {
             for (_, v) in bm.iter() {
-                collect_free_vars(v, result);
+                visit_free_vars(v, f);
             }
         }
         Expr::Meta(_, e, m) => {
-            collect_free_vars(e, result);
-            collect_free_vars(m, result);
+            visit_free_vars(e, f);
+            visit_free_vars(m, f);
         }
-        Expr::App(_, f, xs) => {
-            collect_free_vars(f, result);
+        Expr::App(_, g, xs) => {
+            visit_free_vars(g, f);
             for x in xs {
-                collect_free_vars(x, result);
+                visit_free_vars(x, f);
             }
         }
         Expr::Soup(_, xs, _) => {
             for x in xs {
-                collect_free_vars(x, result);
+                visit_free_vars(x, f);
             }
         }
-        Expr::Operator(_, _, _, e) => collect_free_vars(e, result),
+        Expr::Operator(_, _, _, e) => visit_free_vars(e, f),
         _ => {}
     }
 }

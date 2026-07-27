@@ -1,0 +1,102 @@
+#!/usr/bin/env eu
+# eu-gua64: beta reduction must not duplicate a non-atomic argument.
+#
+# The inliner substitutes a call's arguments into the callee body. When
+# the callee mentions a parameter more than once, an unguarded
+# substitution copies the argument EXPRESSION once per occurrence, and
+# separate copies become separate thunks that share nothing. If the
+# argument is the caller's own recursive call, the caller's cost goes
+# from T(n) = T(n-1) to T(n) = 2*T(n-1) — exponential.
+#
+# `beta_reduce` now binds such an argument once in a Let wrapped round
+# the reduced body, so the occurrences share a single thunk.
+#
+# Everything here is plain user code: this is not a prelude problem,
+# it is hit by anyone who writes a helper that uses a parameter twice.
+#
+# NOTE ON INPUT ORDER: the blow-up needs the duplicated arm to be
+# TAKEN. `biggest` over an ASCENDING list returns the recursive result
+# (the duplicated occurrence) at every step and is 2^n when the
+# argument is copied; over a descending list it returns the head and
+# only forces the recursion once, so it stays linear either way.
+# `ascending` is therefore the binding that gates; `descending` is the
+# control.
+#
+# The complexity gate lives in the Rust test
+# (`test_210_gua64_inline_arg_sharing` in `tests/harness_test.rs`),
+# which runs this file under a wall-clock deadline. `size` below is
+# chosen so a correct compiler finishes in a fraction of a second
+# (linear: 29 list elements) while a duplicating one needs 2^29 steps
+# — over ten minutes in a release build and far longer in a debug one.
+# The margin either side of the deadline is three orders of magnitude,
+# so a loaded build machine cannot turn the gate into a coin toss.
+
+size: 30
+
+# ---------------------------------------------------------------- #
+# The canonical shape: both parameters used twice.
+# ---------------------------------------------------------------- #
+
+pick(a, b): if(a > b, a, b)
+
+biggest(l): if(l tail nil?, l head, pick(l head, biggest(l tail)))
+
+ascending: range(1, size)
+descending: ascending reverse
+
+# 2^n without argument sharing; linear with it.
+t1: biggest(ascending) = size - 1
+
+# Control: same helper, order that never takes the duplicated arm.
+t2: biggest(descending) = size - 1
+
+# ---------------------------------------------------------------- #
+# Sharing must not change results.
+# ---------------------------------------------------------------- #
+
+# A parameter used three times.
+thrice(x): (x + x) * x
+t3: thrice(2 + 3) = 50
+
+# An atomic argument is still substituted directly (no Let needed);
+# the answer must be the same either way.
+five: 5
+t4: thrice(five) = 50
+
+# A parameter used once is still substituted directly.
+once(y): y + 1
+t5: once(4 * 5) = 21
+
+# A parameter used zero times must still be dropped, not forced — the
+# panic below fires if the argument is ever evaluated.
+ignore(p, q): q
+t6: ignore(panic("argument of an unused parameter was forced"), 7) = 7
+
+# ---------------------------------------------------------------- #
+# Scope correctness: the shared binding is introduced at the call
+# site but its uses may sit inside nested scopes in the callee body,
+# so the de Bruijn indices of both the bound argument and the body
+# have to be shifted for the new scope boundary.
+# ---------------------------------------------------------------- #
+
+# Two uses inside a block (a Let in core).
+summarise(v): { lowest: v head, highest: v last }
+
+t7: summarise([3, 1, 4]).lowest = 3
+t8: summarise([3, 1, 4]).highest = 4
+
+# Two uses inside a lambda body, where the argument itself closes over
+# an enclosing binding.
+scale: 3
+pairwise(m, ns): (ns map(m * _)) ++ (ns map(m + _))
+t9: pairwise(scale, [1, 2]) = [3, 6, 4, 5]
+
+# Two uses where the argument is a non-atomic expression that closes
+# over the enclosing scope.
+t10: pick(scale * 2, scale + 10) = 13
+
+` { target: :main
+    doc: "eu-gua64 regression: inlined arguments must be shared, not copied" }
+main: {
+  RESULT: if([t1, t2, t3, t4, t5, t6, t7, t8, t9, t10] all-true?, :PASS, :FAIL)
+}
