@@ -112,7 +112,7 @@ fn cmd_prelude_compile() -> Result<()> {
         "core",
     );
     let locator = Locator::Fs(prelude_src.clone());
-    let prelude_input = Input::new(locator, None, "eu");
+    let prelude_input = Input::new(locator.clone(), None, "eu");
 
     // Load order: __build, __io, __args, prelude.
     let all_inputs = vec![
@@ -391,6 +391,32 @@ fn cmd_prelude_compile() -> Result<()> {
 
     println!("  STG lambda forms compiled: {}", forms.len());
 
+    // ── 6b. Capture each binding's prelude declaration span (eu-7x0r) ────────
+    // Blob mode never loads prelude source, so a runtime trace frame naming a
+    // prelude combinator has nowhere to point unless the declaration site
+    // travels in the blob. Take it from the peeled body's own Smid, keeping
+    // only spans that really are in `lib/prelude.eu` — the `__build` binding's
+    // body lives in `build-meta.yaml` and the `__io` / `__args` pseudoblocks
+    // have no source at all, so those record `None`.
+    let prelude_file_id = loader.file_id_for(&locator);
+    let binding_spans: Vec<Option<(u32, u32)>> = binding_bodies
+        .iter()
+        .map(|(_, body)| {
+            let smid = eucalypt::common::sourcemap::HasSmid::smid(body);
+            let info = loader.source_map().source_info_for_smid(smid)?;
+            let span = info.span?;
+            if info.file != prelude_file_id {
+                return None;
+            }
+            Some((span.start().to_usize() as u32, span.end().to_usize() as u32))
+        })
+        .collect();
+    println!(
+        "  binding declaration spans captured: {}/{}",
+        binding_spans.iter().filter(|s| s.is_some()).count(),
+        binding_spans.len()
+    );
+
     // ── 7. Extract binding names for the PreludeBlob (slot order) ────────────
     let names: Vec<String> = binding_bodies.into_iter().map(|(n, _)| n).collect();
     let name_to_slot: HashMap<String, usize> = names
@@ -497,6 +523,7 @@ fn cmd_prelude_compile() -> Result<()> {
         nodes,
         forms_pool,
         binding_entries,
+        binding_spans,
         name_to_slot,
         blame,
         operators,

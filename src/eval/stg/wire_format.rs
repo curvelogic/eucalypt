@@ -48,7 +48,20 @@ use sha2::{Digest, Sha256};
 ///   always `Smid::default()` — not a serialised-shape change on its own,
 ///   but bundled into the same version bump as the `blame` field it feeds
 ///   (eu-1tkk.7.11).
-pub const BYTECODE_WIRE_FORMAT_VERSION: u32 = 5;
+/// - v6: `PreludeBlob::binding_spans` field added (per-binding declaration
+///   span in `lib/prelude.eu`, so blob-mode trace frames can cite a real
+///   `[prelude]:line:col`), and blob-mode reconstruction now rebases the
+///   `DirectApp` / `LookupLit` Smids baked by `xtask` onto the enclosing
+///   global's slot identity instead of copying them verbatim — the baked
+///   values are indices into `xtask`'s own `SourceMap` and aliased unrelated
+///   user source positions at runtime (eu-7x0r).
+/// - v7: reserved for the SV3 structural-contract field (eu-u9xj.1). Note
+///   that eu-3skeg changed the freshness *recipe* itself (domain-separated,
+///   length-prefixed absorption of three labelled inputs, one of them the
+///   intrinsic catalogue), so every blob predating this commit is invalidated
+///   regardless of the version number — the bump is for the benefit of
+///   readers, not the mechanism.
+pub const BYTECODE_WIRE_FORMAT_VERSION: u32 = 7;
 
 /// Path, relative to the workspace root, of the prelude source baked into the
 /// blob.
