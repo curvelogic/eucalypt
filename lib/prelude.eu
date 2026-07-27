@@ -1219,7 +1219,7 @@ with-meta: __WITHMETA
 (e // m): e with-meta(m)
 
 ` { doc: "`meta(e)` - retrieve expression metadata for `e`, combining every stacked metadata layer. Block layers merge, outer winning; a non-block layer is opaque and stands alone."
-    type: s"a → {..}" }
+    type: s"a → any" }
 meta: __META
 
 ` "`raw-meta(e)` - retrieve the outermost metadata layer of e alone, without recursing into inner layers and so without merging."
