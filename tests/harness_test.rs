@@ -2798,6 +2798,35 @@ pub fn test_194_og3u6_trace_anchor() {
 }
 
 #[test]
+#[cfg(not(target_os = "windows"))]
+/// eu-1tkk.7.21: a prelude combinator that fails immediately — no
+/// continuation stack, no annotated environment — must still blame the
+/// user's own call site.
+///
+/// The call site is the only user-file Smid this error ever has, and it
+/// survives only if entering the prelude global leaves the caller's
+/// annotation intact. Blob mode stamped a `Smid::global_slot` identity
+/// onto every reconstructed prelude global; the machines treat any valid
+/// closure annotation as "the location now in effect", so that stamp
+/// overwrote the call site with a value `SourceMap` deliberately refuses
+/// to resolve, and the diagnostic lost its primary label entirely.
+///
+/// The `.expect` sidecar asserts wording only: it must also hold under
+/// the source-prelude fallback (CI's "Test Suite" job is deliberately
+/// blob-less), where the annotation is a real prelude source position that
+/// `to_diagnostic` correctly suppresses, so no `┌─` label is emitted at
+/// all. The `file:line:col` assertion for this fixture's shape lives in
+/// `tests/diagnostics_blame_plumbing_test.rs`
+/// (`blob_mode_immediate_prelude_failure_blames_the_user_call_site`),
+/// which is gated on `#[cfg(prelude_blob_ok)]` and reads the `┌─`
+/// primary-label line specifically — a `stack trace:` note renders
+/// locations as `- name at file:line:col` with no `┌─`, so it cannot pass
+/// on the note alone.
+pub fn test_194_1tkk_7_21_blob_call_site() {
+    run_error_test(&io_error_opts("194_1tkk_7_21_blob_call_site.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:

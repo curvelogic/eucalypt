@@ -17,6 +17,7 @@ use crate::{
 };
 
 use pretty::{DocAllocator, DocBuilder};
+use std::collections::HashSet;
 
 use super::syntax::{
     dsl::{self},
@@ -71,6 +72,13 @@ pub struct StandardRuntime {
     /// Empty string for any slot whose name is not recorded.  Used by
     /// `dump runtime` to label prelude global slots.
     prelude_names: Vec<String>,
+    /// Names of the prelude bindings that declared a blame classification
+    /// (the key set of `PreludeBlob::blame`).
+    ///
+    /// Gates the `Smid::global_slot` stamping in [`Self::globals`] — see
+    /// `should_stamp_slot` for why (eu-1tkk.7.21).  Empty on the
+    /// source-prelude path, where no stamping happens at all.
+    prelude_blame_names: HashSet<String>,
 
     /// Per-slot overrides for pre-compiled prelude globals, stored in arena form.
     ///
@@ -106,6 +114,7 @@ impl Default for StandardRuntime {
             prelude_forms_pool: Vec::new(),
             prelude_binding_entries: Vec::new(),
             prelude_names: Vec::new(),
+            prelude_blame_names: HashSet::new(),
             prelude_slot_overrides: Vec::new(),
         }
     }
@@ -133,6 +142,58 @@ impl StandardRuntime {
         self.prelude_forms_pool = forms_pool;
         self.prelude_binding_entries = binding_entries;
         self.prelude_names = names;
+    }
+
+    /// Record which prelude bindings declared a blame classification
+    /// (the key set of `PreludeBlob::blame`).
+    ///
+    /// Must be called alongside [`Self::set_prelude_bindings`] on the blob
+    /// path, and must be given the *same* set the `SourceMap` receives via
+    /// `extend_blame_table`, or the two will disagree about which slots
+    /// carry a `Smid::global_slot` identity.
+    pub fn set_prelude_blame_names(&mut self, names: HashSet<String>) {
+        self.prelude_blame_names = names;
+    }
+
+    /// Whether prelude slot `slot` should have its blob-reconstructed
+    /// lambda forms stamped with a [`Smid::global_slot`] identity.
+    ///
+    /// # Why this is gated (eu-1tkk.7.21)
+    ///
+    /// Both machines treat a closure's annotation as "the source location
+    /// now in effect", overwriting the caller's on entry:
+    ///
+    /// ```text
+    /// if closure.annotation().is_valid() { state.annotation = closure.annotation(); }
+    /// ```
+    ///
+    /// A `Smid::global_slot` value is *valid* but denotes an identity, not
+    /// a position — `SourceMap::source_info_for_smid` deliberately refuses
+    /// to resolve it. So stamping a prelude global made every call from
+    /// user code into that combinator replace the caller's genuine
+    /// call-site Smid with a location-free one. For a combinator that
+    /// fails immediately, with no continuation stack and no annotated
+    /// environment to fall back on (`io.shell`, `render-as`, `io.fail`),
+    /// that call site was the *only* user-file Smid in existence, so
+    /// `ExecutionError::to_diagnostic` had nothing to blame and emitted no
+    /// primary label at all — the eu-1tkk.7.21 regression.
+    ///
+    /// The stamp only ever pays for itself when the slot's name is in the
+    /// blame table: `SourceMap::classify_frame` resolves a global-slot
+    /// Smid through `slot_to_name` → `blame_by_name`, and returns
+    /// `FrameKind::Transparent` when either lookup misses — which is
+    /// exactly what an *unstamped* (`Smid::default()`) prelude frame
+    /// classifies as anyway. For the ~537 prelude globals that declare no
+    /// blame contract the stamp therefore changes no classification while
+    /// destroying every call site into them.
+    ///
+    /// Restricting the stamp to declared slots keeps eu-1tkk.7.11's frame
+    /// naming intact for the combinators that use it, and restores the
+    /// pre-eu-1tkk.7.11 call-site behaviour everywhere else.
+    fn should_stamp_slot(&self, slot: usize) -> bool {
+        self.prelude_names
+            .get(slot)
+            .is_some_and(|name| self.prelude_blame_names.contains(name))
     }
 }
 
@@ -319,7 +380,17 @@ impl Runtime for StandardRuntime {
                 // classification has something to key on for this prelude
                 // combinator, without resurrecting a raw xtask-sourced Smid
                 // (see `reconstruct_form_annotated`'s doc comment).
-                match arena.reconstruct_form_annotated(entry_idx, Smid::global_slot(i as u32)) {
+                //
+                // Only for slots the blame table names: elsewhere the stamp
+                // changes no classification but destroys the caller's
+                // call-site annotation (see `should_stamp_slot`,
+                // eu-1tkk.7.21).
+                let reconstructed = if self.should_stamp_slot(i) {
+                    arena.reconstruct_form_annotated(entry_idx, Smid::global_slot(i as u32))
+                } else {
+                    arena.reconstruct_form(entry_idx)
+                };
+                match reconstructed {
                     Ok(form) => gs.push(form),
                     Err(e) => {
                         eprintln!(
@@ -371,5 +442,67 @@ impl StgIntrinsic for Unimplemented {
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
         panic!("executing unimplemented intrinsic {}", self.name())
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A runtime with three prelude slots, of which only `nth` declares a
+    /// blame classification.
+    fn rt_with_slots() -> StandardRuntime {
+        let mut rt = StandardRuntime::default();
+        rt.set_prelude_bindings(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec!["shell".to_string(), "nth".to_string(), "".to_string()],
+        );
+        rt.set_prelude_blame_names(HashSet::from(["nth".to_string()]));
+        rt
+    }
+
+    /// A slot whose binding declares a blame classification is stamped:
+    /// `SourceMap::classify_frame` can resolve its `Smid::global_slot`
+    /// identity through `slot_to_name` → `blame_by_name`, so the identity
+    /// earns its keep (eu-1tkk.7.11).
+    #[test]
+    fn declared_blame_slot_is_stamped() {
+        assert!(rt_with_slots().should_stamp_slot(1));
+    }
+
+    /// A slot with no declared blame contract is *not* stamped: the stamp
+    /// would classify identically to an unstamped frame
+    /// (`FrameKind::Transparent` either way) while overwriting the
+    /// caller's call-site annotation on entry — the eu-1tkk.7.21
+    /// regression.
+    #[test]
+    fn undeclared_slot_is_not_stamped() {
+        assert!(!rt_with_slots().should_stamp_slot(0));
+    }
+
+    /// A slot whose name was not recorded cannot be in the blame table, so
+    /// it is not stamped.
+    #[test]
+    fn unnamed_slot_is_not_stamped() {
+        assert!(!rt_with_slots().should_stamp_slot(2));
+    }
+
+    /// An out-of-range slot index is not stamped rather than panicking.
+    #[test]
+    fn out_of_range_slot_is_not_stamped() {
+        assert!(!rt_with_slots().should_stamp_slot(99));
+    }
+
+    /// The source-prelude path sets no blame names at all, so nothing is
+    /// stamped — matching the fact that it does no blob reconstruction.
+    #[test]
+    fn nothing_is_stamped_without_a_blame_table() {
+        let mut rt = StandardRuntime::default();
+        rt.set_prelude_bindings(Vec::new(), Vec::new(), Vec::new(), vec!["nth".to_string()]);
+        assert!(!rt.should_stamp_slot(0));
     }
 }
