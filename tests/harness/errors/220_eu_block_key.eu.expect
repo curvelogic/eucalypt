@@ -1,0 +1,9 @@
+# exit: 1 is load-bearing — the pre-fix behaviour was a Rust panic, which
+# exits 101, so the exit assertion alone rules the panic out.
+#
+# No location assertion: as with 195/196 this diagnostic has no primary
+# label. The key here is a literal, which records no annotation, so there is
+# no span to point at. Do not copy this sidecar as the eu-ziq8o pattern;
+# copy 171_yaml_large_uint.eu.expect instead.
+exit: 1
+stderr: "(?s)error\[EU-RENDER-SHAPE\].*a block key is the number 1, but eucalypt block keys must be text"
