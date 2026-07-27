@@ -5,5 +5,12 @@
 # Anchored on the primary-label line ('┌─ …:10:17'), not the 'stack trace:'
 # note: '[^\n]*' cannot cross a newline, so a diagnostic whose location
 # survives only in the note does not match (eu-ziq8o pattern).
+#
+# Known limit of that assertion, verified by fault injection: replacing
+# machine.annotation() with Smid::default() at the error construction site
+# leaves this test PASSING, because to_diagnostic falls back to the traces
+# and recovers the same location. It gates "a correct primary label is
+# present", not "the error carries the right Smid". Same result as 171 —
+# recorded on eu-ziq8o.
 exit: 1
 stderr: "(?s)error\[EU-RENDER-UNREPRESENTABLE\].*cannot represent this value in TOML output: TOML has no null; every key must have a value.*┌─[^\n]*197_toml_null\.eu:10:17"

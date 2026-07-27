@@ -16,8 +16,11 @@ test: {
   edn-out: 9999999999999999999 render-as(:edn)
   t-edn-exact: edn-out = c"9999999999999999999N\n"
 
-  # The rounded value the as_f64 fallback used to produce.
-  t-edn-not-rounded: edn-out != c"10000000000000000000N\n"
+  # The rounded value the as_f64 fallback used to produce. Checked as a
+  # substring rather than by inequality: the fallback emitted
+  # "10000000000000000000" with no `N` suffix, so comparing against the
+  # suffixed form would have been satisfied by the bug itself.
+  t-edn-not-rounded: not(edn-out str.contains?("10000000000000000000"))
 
   # The formats that already carried it must keep doing so.
   t-json: (9999999999999999999 render-as(:json)) = c"9999999999999999999\n"
