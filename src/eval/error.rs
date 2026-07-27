@@ -845,6 +845,20 @@ pub enum ExecutionError {
     /// does not have.
     #[error("cannot render this document as {1}: {}", .2.reason)]
     UnrenderableShape(Smid, String, Box<Rejection>),
+    /// Writing rendered output failed.
+    ///
+    /// Genuine failures only — a full disk, a read-only target, a serialiser
+    /// that could not encode the document. A closed pipe is
+    /// `OutputStreamClosed` instead, because that is not a failure
+    /// (eu-1tkk.7.25).
+    #[error("failed writing output: {1}")]
+    OutputWriteFailed(Smid, String),
+    /// The consumer of our output stopped reading (EPIPE).
+    ///
+    /// Carries no `Smid` and is never rendered as a diagnostic: `eu … | head`
+    /// closing the pipe is normal, so the driver exits 0 silently on this.
+    #[error("output stream closed by the reader")]
+    OutputStreamClosed,
     #[error("{}", format_unknown_format(.0))]
     UnknownFormat(String),
     #[error("cannot combine numbers ({1}, {2}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
@@ -983,6 +997,8 @@ impl HasSmid for ExecutionError {
             ExecutionError::NotScalar(s) => *s,
             ExecutionError::UnrepresentableValue(s, _, _) => *s,
             ExecutionError::UnrenderableShape(s, _, _) => *s,
+            ExecutionError::OutputWriteFailed(s, _) => *s,
+            ExecutionError::OutputStreamClosed => Smid::default(),
             ExecutionError::NoBranchForDataTag(s, _, _) => *s,
             ExecutionError::NoBranchForNative(s, _) => *s,
             ExecutionError::CannotReturnFunToCase(s, _) => *s,
@@ -1453,6 +1469,20 @@ impl ExecutionError {
         match self {
             ExecutionError::Interrupted => true,
             ExecutionError::Traced(inner, _) => inner.is_interrupted(),
+            _ => false,
+        }
+    }
+
+    /// Check whether this error is the output reader having stopped
+    /// listening (EPIPE).
+    ///
+    /// Matches both the bare variant and `Traced(OutputStreamClosed, ...)`.
+    /// The driver exits 0 silently on this: a broken pipe means the consumer
+    /// has what it wanted, not that anything went wrong (eu-1tkk.7.25).
+    pub fn is_output_stream_closed(&self) -> bool {
+        match self {
+            ExecutionError::OutputStreamClosed => true,
+            ExecutionError::Traced(inner, _) => inner.is_output_stream_closed(),
             _ => false,
         }
     }

@@ -6,6 +6,7 @@ use crate::eval::primitive::Primitive;
 
 use std::io::Write;
 
+use super::error::RenderError;
 use super::table::{AsKey, FromPairs, FromPrimitive, FromVec, TableAccumulator};
 use super::INTEGER_RANGE_NOTES;
 
@@ -121,14 +122,15 @@ impl Emitter for YamlEmitter<'_> {
         }
     }
 
-    fn emit(&mut self, event: Event) {
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         self.accum.consume(event);
         if let Some(result) = self.accum.result() {
             let mut output = String::new();
             yaml_rust::YamlEmitter::new(&mut output)
                 .dump(result)
-                .expect("failed to emit YAML");
-            writeln!(self.out, "{output}").expect("failed to write YAML output");
+                .map_err(|e| RenderError::Serialisation(format!("failed to emit YAML: {e}")))?;
+            writeln!(self.out, "{output}")?;
         }
+        Ok(())
     }
 }
