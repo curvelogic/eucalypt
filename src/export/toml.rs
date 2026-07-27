@@ -7,6 +7,7 @@ use std::io::Write;
 use std::str::FromStr;
 use toml::{value::Datetime, Value};
 
+use super::error::RenderError;
 use super::table::{AsKey, FromPairs, FromPrimitive, FromVec, TableAccumulator};
 use super::INTEGER_RANGE_NOTES;
 
@@ -137,10 +138,11 @@ impl Emitter for TomlEmitter<'_> {
         toml_unrepresentable(primitive)
     }
 
-    fn emit(&mut self, event: Event) {
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         self.accum.consume(event);
         if let Some(result) = self.accum.result() {
-            writeln!(self.out, "{result}").expect("failed to write TOML output");
+            writeln!(self.out, "{result}")?;
         }
+        Ok(())
     }
 }

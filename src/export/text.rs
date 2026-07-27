@@ -3,6 +3,8 @@ use crate::eval::emit::{Emitter, Event};
 use crate::eval::primitive::Primitive;
 use std::io::Write;
 
+use super::error::RenderError;
+
 /// A crude emitter that spits out all scalars as plain text
 ///
 /// This is only really useful for evaluands that select single values.
@@ -18,10 +20,11 @@ impl<'a> TextEmitter<'a> {
 
 impl Emitter for TextEmitter<'_> {
     /// Emit text scalars
-    fn emit(&mut self, event: Event) {
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         if let Event::OutputScalar(_, prim) = event {
-            writeln!(self.out, "{}", as_text(&prim)).expect("failed to write text output");
+            writeln!(self.out, "{}", as_text(&prim))?;
         }
+        Ok(())
     }
 }
 

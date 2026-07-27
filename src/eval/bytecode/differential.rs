@@ -147,11 +147,11 @@ fn assert_engines_render_agree(syntax: Rc<StgSyn>) -> String {
     {
         let mut emitter =
             crate::export::create_emitter("yaml", &mut heap_buf).expect("yaml emitter");
-        emitter.stream_start();
+        emitter.stream_start().expect("buffer stream start");
         let mut m = standard_machine(&settings, syntax.clone(), emitter, rt.as_ref())
             .expect("build HeapSyn machine");
         m.run(None).expect("HeapSyn run");
-        m.take_emitter().stream_end();
+        m.take_emitter().stream_end().expect("buffer stream end");
     }
     let heap_out = String::from_utf8(heap_buf).expect("HeapSyn output utf-8");
 
@@ -164,7 +164,7 @@ fn assert_engines_render_agree(syntax: Rc<StgSyn>) -> String {
         {
             let mut emitter =
                 crate::export::create_emitter("yaml", &mut buf).expect("yaml emitter");
-            emitter.stream_start();
+            emitter.stream_start().expect("buffer stream start");
             with_predecode_override(false, || {
                 let mut m = BytecodeMachine::new(
                     prog.clone(),
@@ -177,7 +177,7 @@ fn assert_engines_render_agree(syntax: Rc<StgSyn>) -> String {
                 )
                 .expect("build bytecode machine (byte path)");
                 m.run(None).expect("bytecode run (byte path)");
-                m.take_emitter().stream_end();
+                m.take_emitter().stream_end().expect("buffer stream end");
             });
         }
         String::from_utf8(buf).expect("bytecode byte-path output utf-8")
@@ -190,13 +190,13 @@ fn assert_engines_render_agree(syntax: Rc<StgSyn>) -> String {
         {
             let mut emitter =
                 crate::export::create_emitter("yaml", &mut buf).expect("yaml emitter");
-            emitter.stream_start();
+            emitter.stream_start().expect("buffer stream start");
             with_predecode_override(true, || {
                 let mut m =
                     BytecodeMachine::new(prog, root, &gforms, rt.intrinsics(), emitter, 0, false)
                         .expect("build bytecode machine (pre-decoded)");
                 m.run(None).expect("bytecode run (pre-decoded)");
-                m.take_emitter().stream_end();
+                m.take_emitter().stream_end().expect("buffer stream end");
             });
         }
         String::from_utf8(buf).expect("bytecode pre-decoded output utf-8")
@@ -924,11 +924,11 @@ mod tests {
         {
             let mut emitter =
                 crate::export::create_emitter("yaml", &mut heap_buf).expect("yaml emitter");
-            emitter.stream_start();
+            emitter.stream_start().expect("buffer stream start");
             let mut m = standard_machine(&settings, build(heap_handle), emitter, rt.as_ref())
                 .expect("build HeapSyn machine");
             m.run(None).expect("HeapSyn run");
-            m.take_emitter().stream_end();
+            m.take_emitter().stream_end().expect("buffer stream end");
         }
         let heap_out = String::from_utf8(heap_buf).expect("HeapSyn output utf-8");
 
@@ -939,7 +939,7 @@ mod tests {
             {
                 let mut emitter =
                     crate::export::create_emitter("yaml", &mut buf).expect("yaml emitter");
-                emitter.stream_start();
+                emitter.stream_start().expect("buffer stream start");
                 let (prog, root, gforms) = encode(&build(byte_handle), &rt.globals());
                 with_predecode_override(false, || {
                     let mut m = BytecodeMachine::new(
@@ -953,7 +953,7 @@ mod tests {
                     )
                     .expect("build bytecode machine (byte path)");
                     m.run(None).expect("bytecode run (byte path)");
-                    m.take_emitter().stream_end();
+                    m.take_emitter().stream_end().expect("buffer stream end");
                 });
             }
             String::from_utf8(buf).expect("bytecode byte-path output utf-8")
@@ -966,7 +966,7 @@ mod tests {
             {
                 let mut emitter =
                     crate::export::create_emitter("yaml", &mut buf).expect("yaml emitter");
-                emitter.stream_start();
+                emitter.stream_start().expect("buffer stream start");
                 let (prog, root, gforms) = encode(&build(predecode_handle), &rt.globals());
                 with_predecode_override(true, || {
                     let mut m = BytecodeMachine::new(
@@ -980,7 +980,7 @@ mod tests {
                     )
                     .expect("build bytecode machine (pre-decoded)");
                     m.run(None).expect("bytecode run (pre-decoded)");
-                    m.take_emitter().stream_end();
+                    m.take_emitter().stream_end().expect("buffer stream end");
                 });
             }
             String::from_utf8(buf).expect("bytecode pre-decoded output utf-8")

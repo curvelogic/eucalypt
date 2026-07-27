@@ -195,7 +195,7 @@ where
         }
     }
 
-    fn emit(&mut self, event: Event) {
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         match event {
             Event::OutputScalar(_, prim) => {
                 if let Some(mut top) = self.stack.pop() {
@@ -211,11 +211,11 @@ where
                     let element = match top {
                         Expectation::TaggedElement(tag) => Element::new(tag, vec![], vec![]),
                         Expectation::OpenElement(e) => Element::new(e.tag, e.attrs, e.content),
-                        Expectation::EmptyElement => return, // discard
+                        Expectation::EmptyElement => return Ok(()), // discard
                         // Rejected by `unacceptable` before reaching here;
                         // drop the partial element rather than aborting the
                         // process should another route arrive (eu-1tkk.7.24).
-                        _ => return,
+                        _ => return Ok(()),
                     };
 
                     if let Some(mut top) = self.stack.pop() {
@@ -237,7 +237,7 @@ where
                         // Rejected by `unacceptable` before reaching here;
                         // drop the event rather than aborting the process
                         // should another route arrive (eu-1tkk.7.24).
-                        _ => return,
+                        _ => return Ok(()),
                     };
 
                     if let Some(mut top) = self.stack.pop() {
@@ -253,13 +253,12 @@ where
             Event::OutputStreamStart => {}
             Event::OutputStreamEnd => {
                 if let Some(root) = self.result.take() {
-                    self.markup_serialiser
-                        .serialise(root)
-                        .expect("failed to serialise markup");
+                    self.markup_serialiser.serialise(root)?;
                 }
             }
             _ => {}
         }
+        Ok(())
     }
 }
 
@@ -289,7 +288,7 @@ where
         "html"
     }
 
-    fn emit(&mut self, event: Event) {
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         self.internal.borrow_mut().emit(event)
     }
 
@@ -353,7 +352,7 @@ pub mod tests {
         let mut emitter = MarkupEmitterInternal::new(serialiser);
 
         for e in events {
-            emitter.emit(e);
+            emitter.emit(e).expect("test sink cannot fail");
         }
 
         assert_eq!(
@@ -385,7 +384,7 @@ pub mod tests {
         let mut emitter = MarkupEmitterInternal::new(serialiser);
 
         for e in events {
-            emitter.emit(e);
+            emitter.emit(e).expect("test sink cannot fail");
         }
 
         assert_eq!(
@@ -422,7 +421,7 @@ pub mod tests {
         let mut emitter = MarkupEmitterInternal::new(serialiser);
 
         for e in events {
-            emitter.emit(e);
+            emitter.emit(e).expect("test sink cannot fail");
         }
 
         assert_eq!(

@@ -1,6 +1,7 @@
 //! Emitting execution events
 
 use crate::eval::primitive::Primitive;
+use crate::export::error::RenderError;
 
 /// Metadata controlling or contributing to output
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,8 +83,13 @@ impl Rejection {
 
 /// Trait via which machines emit events
 pub trait Emitter {
-    /// Emit an `Event`
-    fn emit(&mut self, event: Event);
+    /// Emit an `Event`.
+    ///
+    /// Fallible because the output stream can fail underneath us: the reader
+    /// of a pipe can stop listening, a disk can fill. Returning the error
+    /// rather than panicking lets the driver exit quietly on a broken pipe
+    /// and report everything else as a diagnostic (eu-1tkk.7.25).
+    fn emit(&mut self, event: Event) -> Result<(), RenderError>;
 
     /// Some implementations may keep a buffer or capture of events
     fn captures(&self) -> &[Event] {
@@ -124,47 +130,51 @@ pub trait Emitter {
     }
 
     /// Output a stream start event
-    fn stream_start(&mut self) {
-        self.emit(Event::OutputStreamStart);
+    fn stream_start(&mut self) -> Result<(), RenderError> {
+        self.emit(Event::OutputStreamStart)
     }
 
     /// Output a stream end event
-    fn stream_end(&mut self) {
-        self.emit(Event::OutputStreamEnd);
+    fn stream_end(&mut self) -> Result<(), RenderError> {
+        self.emit(Event::OutputStreamEnd)
     }
 
     /// Output doc start event
-    fn doc_start(&mut self) {
-        self.emit(Event::OutputDocumentStart);
+    fn doc_start(&mut self) -> Result<(), RenderError> {
+        self.emit(Event::OutputDocumentStart)
     }
 
     /// Output doc end event
-    fn doc_end(&mut self) {
+    fn doc_end(&mut self) -> Result<(), RenderError> {
         self.emit(Event::OutputDocumentEnd)
     }
 
     /// Output a scalar value
-    fn scalar(&mut self, metadata: &RenderMetadata, primitive: &Primitive) {
+    fn scalar(
+        &mut self,
+        metadata: &RenderMetadata,
+        primitive: &Primitive,
+    ) -> Result<(), RenderError> {
         self.emit(Event::OutputScalar(metadata.clone(), primitive.clone()))
     }
 
     /// Output a sequence start
-    fn sequence_start(&mut self, metadata: &RenderMetadata) {
+    fn sequence_start(&mut self, metadata: &RenderMetadata) -> Result<(), RenderError> {
         self.emit(Event::OutputSequenceStart(metadata.clone()))
     }
 
     /// Output a sequence end
-    fn sequence_end(&mut self) {
+    fn sequence_end(&mut self) -> Result<(), RenderError> {
         self.emit(Event::OutputSequenceEnd)
     }
 
     /// Output a block start
-    fn block_start(&mut self, metadata: &RenderMetadata) {
+    fn block_start(&mut self, metadata: &RenderMetadata) -> Result<(), RenderError> {
         self.emit(Event::OutputBlockStart(metadata.clone()))
     }
 
     /// Output a block end
-    fn block_end(&mut self) {
+    fn block_end(&mut self) -> Result<(), RenderError> {
         self.emit(Event::OutputBlockEnd)
     }
 }
@@ -174,7 +184,9 @@ pub trait Emitter {
 pub struct NullEmitter;
 
 impl Emitter for NullEmitter {
-    fn emit(&mut self, _event: Event) {}
+    fn emit(&mut self, _event: Event) -> Result<(), RenderError> {
+        Ok(())
+    }
 }
 
 /// A trivial emitter which simply printlns events to stdout
@@ -182,8 +194,9 @@ impl Emitter for NullEmitter {
 pub struct DebugEmitter();
 
 impl Emitter for DebugEmitter {
-    fn emit(&mut self, event: Event) {
-        println!("{event:?}")
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
+        println!("{event:?}");
+        Ok(())
     }
 }
 
@@ -194,8 +207,9 @@ pub struct CapturingEmitter {
 }
 
 impl Emitter for CapturingEmitter {
-    fn emit(&mut self, event: Event) {
+    fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         self.events.push(event);
+        Ok(())
     }
 
     fn captures(&self) -> &[Event] {
