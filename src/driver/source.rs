@@ -1240,6 +1240,19 @@ impl SourceLoader {
         &self.source_map
     }
 
+    /// Reserve this loader's `Smid` index range up to and including
+    /// `highest`, so nothing it goes on to load can be minted into a
+    /// foreign `Smid` space that has already been injected (eu-r4647).
+    ///
+    /// Must be called before any `load`/`translate`, i.e. while the
+    /// source map is still empty — see
+    /// [`SourceMap::reserve_foreign_range`] for why, and
+    /// [`crate::driver::check::run_type_checker_from_blob_core`] for the
+    /// one caller.
+    pub fn reserve_foreign_smid_range(&mut self, highest: Smid) {
+        self.source_map.reserve_foreign_range(highest);
+    }
+
     /// Drain and return any parse errors accumulated during `load_eucalypt`.
     ///
     /// Parse errors no longer abort loading — the partial tree is always

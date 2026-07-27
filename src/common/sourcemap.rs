@@ -186,6 +186,14 @@ pub struct SourceMap {
     /// name without `classify_frame` needing a `PreludeBlob` reference of
     /// its own.
     slot_to_name: HashMap<u32, String>,
+    /// Count of leading `Smid` indices reserved for a *foreign* `Smid`
+    /// space — see [`SourceMap::reserve_foreign_range`] (eu-r4647).
+    ///
+    /// `source[i]` describes absolute index `foreign_floor + i`. Every
+    /// absolute index below the floor belongs to some other process's
+    /// `SourceMap` and resolves to `None` here; every index this map
+    /// mints is at or above it.
+    foreign_floor: usize,
 }
 
 impl SourceMap {
@@ -194,9 +202,81 @@ impl SourceMap {
         SourceMap::default()
     }
 
+    /// The `Smid` the next `add*` will hand out.
+    fn next_smid(&self) -> Smid {
+        Smid::new(self.foreign_floor + self.source.len())
+    }
+
+    /// Resolve an absolute `Smid` index against this map, rejecting
+    /// anything inside the reserved foreign range.
+    fn info_at(&self, absolute: usize) -> Option<&SourceInfo> {
+        absolute
+            .checked_sub(self.foreign_floor)
+            .and_then(|i| self.source.get(i))
+    }
+
+    /// Reserve the index range occupied by a *foreign* `Smid` space, so
+    /// that nothing this `SourceMap` mints can collide with one, and
+    /// nothing already in that space can resolve here (eu-r4647).
+    ///
+    /// `Smid` is a bare index into `self.source`, minted sequentially from
+    /// 1. That makes it meaningful only within the process that minted it.
+    /// Pre-compiled artefacts break that assumption: `cargo xtask
+    /// prelude-compile` bakes `Smid`s minted by *its own* `SourceMap` into
+    /// the blob, and `PreludeBlob::desugared_unit_cores` carries them
+    /// verbatim into the runtime type check
+    /// ([`crate::driver::check::run_type_checker_from_blob_core`]). Those
+    /// indices are not merely useless here — once this map grows past
+    /// them they resolve against whichever *unrelated user declaration*
+    /// happens to occupy the same slot, so a diagnostic sited inside the
+    /// baked prelude renders a primary label pointing at innocent user
+    /// code. (The same class, on the eval path, made `xs nth(99)` blame
+    /// three arbitrary lines of a 2000-declaration file — eu-7x0r.)
+    ///
+    /// Call this with the highest `Smid` present in the foreign material,
+    /// while this map is still empty. Foreign indices then resolve to
+    /// `None` — "no location", the only truthful answer, since the
+    /// pre-compiled prelude's source is not registered here at all —
+    /// while everything subsequently minted lands above the reserved
+    /// range and so can never be aliased.
+    ///
+    /// Reserving rather than rewriting the baked `Smid`s is deliberate:
+    /// some of them are load-bearing. An [`crate::core::expr::Anaphor`]'s
+    /// `Smid` is an occurrence *discriminator* that `cook`'s anaphora
+    /// resolution sorts on, so collapsing those to `Smid::default()`
+    /// would silently merge distinct `_` occurrences. Reserving
+    /// neutralises every foreign index uniformly — including ones no
+    /// rewrite would have reached — without touching the data, and costs
+    /// one `usize` rather than memory proportional to a number the blob
+    /// supplies.
+    ///
+    /// Only ever raises the floor. An invalid `Smid`, a
+    /// [`Smid::global_slot`] identity (a tagged value in a disjoint
+    /// space, not an index), or a value already inside the reserved range
+    /// is a no-op.
+    ///
+    /// # Panics
+    ///
+    /// If this map has already minted a `Smid`. Raising the floor after
+    /// the fact would silently change what every existing `Smid` means.
+    pub fn reserve_foreign_range(&mut self, highest: Smid) {
+        if highest.as_global_slot().is_some() {
+            return;
+        }
+        let needed = u32::from(highest) as usize;
+        if needed <= self.foreign_floor {
+            return;
+        }
+        assert!(
+            self.source.is_empty(),
+            "SourceMap::reserve_foreign_range must be called before any Smid is minted"
+        );
+        self.foreign_floor = needed;
+    }
+
     /// Add a new source info and get a SMID referencing it
     pub fn add(&mut self, file: usize, span: Span) -> Smid {
-        let smid = Smid::new(self.source.len());
+        let smid = self.next_smid();
         self.source.push(SourceInfo {
             file: Some(file),
             span: Some(span),
@@ -207,7 +287,7 @@ impl SourceMap {
 
     /// Add a new source info and get a SMID referencing it
     pub fn add_annotated<T: AsRef<str>>(&mut self, file: usize, span: Span, annotation: T) -> Smid {
-        let smid = Smid::new(self.source.len());
+        let smid = self.next_smid();
         self.source.push(SourceInfo {
             file: Some(file),
             span: Some(span),
@@ -218,7 +298,7 @@ impl SourceMap {
 
     /// Add a notional location which has no concrete file co-ordinate
     pub fn add_synthetic<T: AsRef<str>>(&mut self, annotation: T) -> Smid {
-        let smid = Smid::new(self.source.len());
+        let smid = self.next_smid();
         self.source.push(SourceInfo {
             file: None,
             span: None,
@@ -230,8 +310,8 @@ impl SourceMap {
     /// Create a new source location, identical save for a new or
     /// different annotation
     pub fn annotated(&mut self, smid: Smid, annotation: String) -> Smid {
-        let new_smid = Smid::new(self.source.len());
-        let new_info = if let Some(info) = smid.get().and_then(|idx| self.source.get(idx)) {
+        let new_smid = self.next_smid();
+        let new_info = if let Some(info) = self.source_info_for_smid(smid) {
             SourceInfo {
                 annotation: Some(annotation),
                 ..*info
@@ -248,8 +328,12 @@ impl SourceMap {
     }
 
     /// Retrieve the SourceInfo for something that has a SMID
+    ///
+    /// Delegates to [`SourceMap::source_info_for_smid`] so that the
+    /// global-slot guard documented there applies uniformly, whichever
+    /// entry point a caller reaches for.
     pub fn source_info(&self, expr: &dyn HasSmid) -> Option<&SourceInfo> {
-        expr.smid().get().and_then(|idx| self.source.get(idx))
+        self.source_info_for_smid(expr.smid())
     }
 
     /// Retrieve the SourceInfo for a given Smid value
@@ -266,11 +350,9 @@ impl SourceMap {
         if smid.as_global_slot().is_some() {
             return None;
         }
-        if let Some(idx) = smid.get() {
-            self.source.get(idx)
-        } else {
-            None
-        }
+        // `info_at` additionally rejects anything inside a reserved
+        // foreign range (eu-r4647).
+        smid.get().and_then(|idx| self.info_at(idx))
     }
 
     /// Create a warning diagnostic for a value with a SMID.
@@ -453,7 +535,7 @@ impl SourceMap {
         smid: Smid,
         files: &SimpleFiles<String, String>,
     ) -> Option<(String, Option<String>)> {
-        let info = self.source.get(smid.get()?)?;
+        let info = self.info_at(smid.get()?)?;
 
         // Determine the display name: prefer intrinsic display name,
         // then annotation (function name), then source snippet
@@ -1083,6 +1165,90 @@ mod tests {
                 "  ... 2 frames elided (3× repetition)".to_string(),
                 "c".to_string(),
             ]
+        );
+    }
+
+    // ── reserve_foreign_range (eu-r4647) ────────────────────────────────────
+
+    /// The core invariant: after reserving a foreign range, every index
+    /// inside it resolves to `None`, and everything this map goes on to
+    /// mint lands above it.
+    ///
+    /// Without the reservation the second assertion is what fails — the
+    /// locally added entry takes index 0 and so answers to `Smid` 1,
+    /// which is a foreign index, and a diagnostic sited on foreign
+    /// `Smid` 1 renders a label pointing at `mine.eu`.
+    #[test]
+    fn reserved_foreign_indices_never_resolve_and_never_collide() {
+        let mut source_map = SourceMap::new();
+        source_map.reserve_foreign_range(Smid::from(500));
+
+        for foreign in [1u32, 2, 250, 499, 500] {
+            assert_eq!(
+                source_map
+                    .source_info_for_smid(Smid::from(foreign))
+                    .map(|_| ()),
+                None,
+                "foreign Smid {foreign} must not resolve against a reserved range"
+            );
+        }
+
+        let mine = source_map.add(0, Span::new(3u32, 7u32));
+        assert_eq!(
+            u32::from(mine),
+            501,
+            "first locally minted Smid must clear the reserved range"
+        );
+        let info = source_map
+            .source_info_for_smid(mine)
+            .expect("a locally minted Smid must resolve");
+        assert_eq!(info.file, Some(0));
+        assert_eq!(info.span, Some(Span::new(3u32, 7u32)));
+    }
+
+    /// Reserving is monotonic and idempotent, and ignores values that are
+    /// not `SourceMap` indices at all.
+    #[test]
+    fn reserve_foreign_range_only_ever_raises_the_floor() {
+        let mut source_map = SourceMap::new();
+        source_map.reserve_foreign_range(Smid::from(100));
+        source_map.reserve_foreign_range(Smid::from(40));
+        source_map.reserve_foreign_range(Smid::default());
+        source_map.reserve_foreign_range(Smid::global_slot(3));
+        assert_eq!(u32::from(source_map.add(0, Span::new(0u32, 1u32))), 101);
+    }
+
+    /// Raising the floor after a `Smid` has been minted would silently
+    /// change what that `Smid` refers to, so it is refused outright
+    /// rather than quietly corrupting every diagnostic in the run.
+    #[test]
+    #[should_panic(expected = "before any Smid is minted")]
+    fn reserve_foreign_range_refuses_to_run_after_minting() {
+        let mut source_map = SourceMap::new();
+        source_map.add(0, Span::new(0u32, 1u32));
+        source_map.reserve_foreign_range(Smid::from(100));
+    }
+
+    /// A reserved range must not perturb trace rendering for the
+    /// locally minted Smids either — `resolve_trace_entry` indexes the
+    /// same storage.
+    #[test]
+    fn format_trace_resolves_local_smids_above_a_reserved_range() {
+        let mut source_map = SourceMap::new();
+        source_map.reserve_foreign_range(Smid::from(7357));
+        let mut files: SimpleFiles<String, String> = SimpleFiles::new();
+        let file_id = files.add("x.eu".to_string(), "hello".to_string());
+        let smid = source_map.add(file_id, Span::new(0u32, 5u32));
+        let trace = [Smid::from(42), smid];
+        let out = source_map.format_trace(&trace, &files);
+        assert!(
+            out.contains("x.eu:1:1"),
+            "local entry should still render: {out}"
+        );
+        assert_eq!(
+            out.matches("x.eu").count(),
+            1,
+            "the foreign Smid must contribute nothing: {out}"
         );
     }
 }

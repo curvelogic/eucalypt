@@ -3316,3 +3316,90 @@ pub fn test_config_matrix_blob_vs_source_prelude_byte_equal() {
         );
     }
 }
+
+/// Blob-core vs source-prelude equivalence on the *eval* path, for a file
+/// big enough to reach the `Smid` range the blob's baked cores occupy
+/// (eu-r4647).
+///
+/// Two things distinguish this from the matrix above.
+///
+/// First, it drives the eval path (`eu --strict <file>`, as
+/// `test_eval_path_warns_on_record_key_typo` does), not `eu check`.
+/// `run_type_checker_from_blob_core` — the function that injects the
+/// blob's baked cores — is reached only from `bin/eu.rs`; `eu check` goes
+/// through `run_type_checker`, which always loads prelude source, so
+/// `EU_SOURCE_PRELUDE` makes no difference to it either way.
+///
+/// Second, it is large. `cargo xtask prelude-compile` bakes `Smid`s
+/// minted by its own `SourceMap` into `PreludeBlob::desugared_unit_cores`
+/// (high-water mark 7357 on the checked-in prelude), and
+/// `run_type_checker_from_blob_core` injects them into a fresh runtime
+/// `SourceMap`. Only once the user's own file mints past that mark do the
+/// two spaces overlap — at which point, before the fix, a foreign index
+/// resolved against a real user declaration. A short fixture cannot see
+/// that, whatever else it checks.
+///
+/// `SourceMap::reserve_foreign_range` closes the aliasing by shifting
+/// everything this process mints above the foreign range. This test is
+/// the guard on the other side of that shift: with the real blob and a
+/// genuinely large file, the rendered diagnostic must stay byte-identical
+/// to the source-prelude path, which it will not be if the offsetting is
+/// wrong.
+///
+/// Gated on `prelude_blob_ok` because it is only meaningful with a blob
+/// present — without one both invocations take the source path and the
+/// comparison is a tautology. Note that restoring a `lib/prelude.blob`
+/// with an older mtime will not retrigger `build.rs`, leaving this
+/// compiled out while looking green; `touch build.rs` forces it.
+#[cfg(prelude_blob_ok)]
+#[test]
+pub fn test_blob_core_vs_source_prelude_byte_equal_on_a_large_file() {
+    use std::io::Write as _;
+
+    // Comfortably past the 7357 `Smid`s the checked-in prelude bakes, so
+    // the user file's own indices span the whole foreign range.
+    const FILLER_DECLS: usize = 9000;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("large.eu");
+    let mut f = std::fs::File::create(&path).expect("create fixture");
+    for i in 0..FILLER_DECLS {
+        writeln!(f, "filler{i}: {i}").expect("write fixture");
+    }
+    // A genuine, user-sited mismatch at the very end of the file, so its
+    // label sits at a byte offset only a large file can produce.
+    writeln!(f, "` {{ type: \"number -> number\" }}").expect("write fixture");
+    writeln!(f, "double(x): x * 2").expect("write fixture");
+    writeln!(f, "result: double(\"hello\")").expect("write fixture");
+    drop(f);
+    let path = path.to_str().expect("utf8 path");
+
+    let blob = std::process::Command::new(eu_binary())
+        .args(["--strict", path])
+        .output()
+        .expect("failed to run eu (blob-core)");
+    let source = std::process::Command::new(eu_binary())
+        .env("EU_SOURCE_PRELUDE", "1")
+        .args(["--strict", path])
+        .output()
+        .expect("failed to run eu (source prelude)");
+
+    let blob_err = String::from_utf8_lossy(&blob.stderr);
+    let source_err = String::from_utf8_lossy(&source.stderr);
+
+    // Precondition: the fixture must actually produce a located
+    // diagnostic, otherwise byte-equality proves nothing.
+    assert!(
+        blob_err.contains("type mismatch") && blob_err.contains("large.eu"),
+        "fixture should produce a located type mismatch under the blob:\n{blob_err}"
+    );
+    assert_eq!(
+        blob.status.code(),
+        source.status.code(),
+        "exit code differs between blob-core and source-prelude eval-path checks"
+    );
+    assert_eq!(
+        blob_err, source_err,
+        "stderr differs between blob-core and source-prelude eval-path checks on a large file"
+    );
+}
