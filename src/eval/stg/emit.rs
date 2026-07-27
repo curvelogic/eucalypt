@@ -15,6 +15,7 @@ use crate::eval::{
     },
     primitive::Primitive,
 };
+use crate::export::error::RenderError;
 
 use super::support::machine_return_unit;
 
@@ -65,8 +66,22 @@ fn emit_event(
             Box::new(reason),
         ));
     }
-    emitter.emit(event);
-    Ok(())
+    emitter.emit(event).map_err(|e| write_failure(machine, e))
+}
+
+/// Classify a write failure from an emitter.
+///
+/// A broken pipe becomes `OutputStreamClosed`, which the driver turns into a
+/// silent exit 0 — the reader stopped listening, which is not an error.
+/// Everything else (a full disk, a read-only target, a serialiser refusing
+/// the document) becomes a reportable failure, deliberately kept distinct so
+/// that handling the pipe case cannot swallow a real one (eu-1tkk.7.25).
+fn write_failure(machine: &dyn IntrinsicMachine, error: RenderError) -> ExecutionError {
+    if error.is_broken_pipe() {
+        ExecutionError::OutputStreamClosed
+    } else {
+        ExecutionError::OutputWriteFailed(machine.annotation(), error.to_string())
+    }
 }
 
 /// Convert a set primitive to a rendering primitive

@@ -67,6 +67,38 @@ use std::{io::Write, time::Instant};
 
 use super::statistics::Statistics;
 
+/// Classify a write failure surfacing from the emitter at the driver
+/// boundary.
+///
+/// The document-producing emitters buffer the whole document and write it
+/// once at `stream_end`, so this — not an intrinsic — is where a broken pipe
+/// or a full disk usually surfaces. A closed pipe becomes
+/// `OutputStreamClosed` (a silent exit 0 later); anything else is a real
+/// failure and is reported (eu-1tkk.7.25).
+fn stream_write_error(error: crate::export::error::RenderError) -> ExecutionError {
+    if error.is_broken_pipe() {
+        ExecutionError::OutputStreamClosed
+    } else {
+        ExecutionError::OutputWriteFailed(Smid::default(), error.to_string())
+    }
+}
+
+/// Finish the output stream, folding any write failure into `result`.
+///
+/// A write failure at `stream_end` must not be lost just because evaluation
+/// itself succeeded — that is how a truncated file gets reported as success.
+/// An error already in `result` wins, being the earlier and more specific
+/// failure.
+fn finish_stream(
+    emitter: &mut dyn crate::eval::emit::Emitter,
+    result: Result<Option<u8>, ExecutionError>,
+) -> Result<Option<u8>, ExecutionError> {
+    match (emitter.stream_end(), result) {
+        (Err(e), Ok(_)) => Err(stream_write_error(e)),
+        (_, other) => other,
+    }
+}
+
 /// Convert an `IoRunError` to an `ExecutionError`, using structured variants
 /// for user-facing errors and `Panic` for internal machine errors.
 fn io_run_error_to_execution(e: IoRunError) -> ExecutionError {
@@ -549,7 +581,7 @@ impl<'a> Executor<'a> {
                 // truncated offsets that decode as an invalid opcode
                 // (eu-2sa6.11).
                 crate::eval::bytecode::ensure_code_fits(&prog)?;
-                emitter.stream_start();
+                emitter.stream_start().map_err(stream_write_error)?;
                 let heap_mib = stg_settings.heap_limit_mib.unwrap_or(0);
                 let mut m = crate::eval::bytecode::BytecodeMachine::new(
                     prog,
@@ -604,7 +636,7 @@ impl<'a> Executor<'a> {
                 } else {
                     ret.map(|_| None)
                 };
-                m.take_emitter().stream_end();
+                let result = finish_stream(m.take_emitter().as_mut(), result);
 
                 // Collect machine/GC statistics from all execution phases so
                 // that -S reports bytecode Machine/Heap/GC stats comparable to
@@ -617,7 +649,7 @@ impl<'a> Executor<'a> {
 
                 result
             } else {
-                emitter.stream_start();
+                emitter.stream_start().map_err(stream_write_error)?;
                 let mut machine = standard_machine(&stg_settings, syn, emitter, rt.as_ref())?;
 
                 let t_exec = Instant::now();
@@ -643,8 +675,7 @@ impl<'a> Executor<'a> {
                         let io_result = io_run_and_render(&mut machine, opt.allow_io)
                             .map_err(io_run_error_to_execution);
                         stats.timings_mut().record("io-run", t_io.elapsed());
-                        machine.take_emitter().stream_end();
-                        io_result
+                        finish_stream(machine.take_emitter().as_mut(), io_result)
                     } else {
                         // Machine terminated without yielding.  Try world
                         // injection to handle IO functions (case 2).
@@ -658,8 +689,7 @@ impl<'a> Executor<'a> {
                                 let io_result = io_run_and_render(&mut machine, opt.allow_io)
                                     .map_err(io_run_error_to_execution);
                                 stats.timings_mut().record("io-run", t_io.elapsed());
-                                machine.take_emitter().stream_end();
-                                io_result
+                                finish_stream(machine.take_emitter().as_mut(), io_result)
                             }
                             Ok(false) => {
                                 // Still no IO yield after world injection;
@@ -670,18 +700,13 @@ impl<'a> Executor<'a> {
                                 let render_result = render_headless_result(&mut machine)
                                     .map_err(io_run_error_to_execution);
                                 stats.timings_mut().record("stg-render", t_render.elapsed());
-                                machine.take_emitter().stream_end();
-                                render_result
+                                finish_stream(machine.take_emitter().as_mut(), render_result)
                             }
-                            Err(e) => {
-                                machine.take_emitter().stream_end();
-                                Err(e)
-                            }
+                            Err(e) => finish_stream(machine.take_emitter().as_mut(), Err(e)),
                         }
                     }
                 } else {
-                    machine.take_emitter().stream_end();
-                    ret.map(|_| None)
+                    finish_stream(machine.take_emitter().as_mut(), ret.map(|_| None))
                 };
 
                 // Collect machine/GC statistics from all execution phases,
@@ -714,6 +739,19 @@ impl<'a> Executor<'a> {
                 eprintln!("\nInterrupted (Ctrl-C) — partial statistics follow");
                 Ok(Some(130))
             }
+            // The reader of our output stopped listening — `eu … | head`,
+            // `| less` then quitting. That is not a failure: exit 0 with
+            // nothing on stderr. Exit 0 rather than 141 because we caught
+            // the condition rather than dying of the signal, and 141 would
+            // fail any pipeline running under `set -o pipefail` for what is
+            // a normal event (eu-1tkk.7.25).
+            //
+            // Only `OutputStreamClosed` takes this path. Every other write
+            // failure — a full disk, a read-only target — is a real error
+            // and falls through to be reported below; silently succeeding
+            // on those would be worse than the panic this replaced, because
+            // the user would believe a truncated file was complete.
+            Err(ref e) if e.is_output_stream_closed() => Ok(Some(0)),
             Err(e) => {
                 self.ensure_prelude_source_registered();
                 match error_format {

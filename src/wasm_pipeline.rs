@@ -293,18 +293,30 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
         ]),
     })?;
 
-    emitter.stream_start();
+    // The wasm sink is an in-memory Vec, so these writes cannot fail; keep
+    // the errors visible as pipeline errors rather than ignoring them, so a
+    // future sink that can fail is not silently truncated (eu-1tkk.7.25).
+    emitter.stream_start().map_err(|e| PipelineError {
+        message: format!("Failed writing output: {e}"),
+        location: None,
+        notes: None,
+    })?;
     let mut machine = standard_machine(&stg_settings, syn, emitter, rt.as_ref())
         .map_err(|e| execution_error_to_pipeline_error(e, &files, &source_map))?;
 
     let ret = machine.run(Some(MAX_STEPS));
-    machine.take_emitter().stream_end();
+    let stream_end = machine.take_emitter().stream_end();
 
     // Drop machine and writer so output_buf becomes the sole Rc owner.
     drop(machine);
     drop(writer);
 
     ret.map_err(|e| execution_error_to_pipeline_error(e, &files, &source_map))?;
+    stream_end.map_err(|e| PipelineError {
+        message: format!("Failed writing output: {e}"),
+        location: None,
+        notes: None,
+    })?;
 
     let output = Rc::try_unwrap(output_buf)
         .expect("output_buf should have no remaining owners")
