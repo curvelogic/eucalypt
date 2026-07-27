@@ -1,0 +1,39 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/136_tail_empty_list
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/136_tail_empty_list.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/136_tail_empty_list.eu:1:9
+help-lines: 0
+note-lines: 4
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: tail of empty list
+  ┌─ tests/harness/errors/136_tail_empty_list.eu:1:9
+  │
+1 │ result: tail([])
+  │         ^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs tail)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+
+error: tail of empty list
+  ┌─ tests/harness/errors/136_tail_empty_list.eu:1:9
+  │
+1 │ result: tail([])
+  │         ^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+  = stack trace:
+    - result at 136_tail_empty_list.eu:1:9

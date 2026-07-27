@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/069_parse_num_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/069_parse_num_hint.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/069_parse_num_hint.eu:3:11
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'parse-num'
+  ┌─ tests/harness/errors/069_parse_num_hint.eu:3:11
+  │
+3 │ result: s parse-num
+  │           ^^^^^^^^^
+  │
+  = check that the variable is defined and in scope
+  = to convert a string to a number in eucalypt, use 'num', e.g. 's num'

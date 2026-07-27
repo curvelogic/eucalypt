@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/082_array_reshape_mismatch
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/082_array_reshape_mismatch.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/082_array_reshape_mismatch.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: array shape mismatch: cannot reshape 4 elements into shape [5] (5 elements required)
+  ┌─ tests/harness/errors/082_array_reshape_mismatch.eu:2:4
+  │
+2 │ a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.reshape([5])
+  │    ^^^                                 --- called from here
+  │
+  = stack trace:
+    - a at 082_array_reshape_mismatch.eu:2:40

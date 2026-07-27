@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/159_self_assign_function_pos
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/159_self_assign_function_pos.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/159_self_assign_function_pos.eu:2:11
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: binding 'f' refers to itself — this will always diverge
+  ┌─ tests/harness/errors/159_self_assign_function_pos.eu:2:11
+  │
+2 │ out: { f: f(1) }
+  │           ^
+  │
+  = the binding `f: f` (or `f: f(…)`) always loops
+  = if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`

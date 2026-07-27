@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/059_else_keyword
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/059_else_keyword.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/059_else_keyword.eu:3:29
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'else'
+  ┌─ tests/harness/errors/059_else_keyword.eu:3:29
+  │
+3 │ result: if x > 5 then "big" else "small"
+  │                             ^^^^
+  │
+  = check that the variable is defined and in scope
+  = note: eucalypt does not use 'if…then…else' syntax; use the 'if' function: 'if(condition, then-value, else-value)'

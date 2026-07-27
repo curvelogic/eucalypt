@@ -1,0 +1,27 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/126_stray_colon_in_call_args
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/126_stray_colon_in_call_args.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/126_stray_colon_in_call_args.eu:3:13
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: expected CLOSE_PAREN, found COLON
+  ┌─ tests/harness/errors/126_stray_colon_in_call_args.eu:3:13
+  │
+3 │ test: f(2, 2:)
+  │             ^
+  │             │
+  │             unexpected content after expression

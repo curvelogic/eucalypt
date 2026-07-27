@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: provocations/lookup_on_function
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/lookup_on_function.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/corpus/lookup_on_function.eu:2:9
+help-lines: 2
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: cannot look up a key on a function value
+  help: '.' looks up keys in blocks; the value before '.' must be a block, not a function
+  help: if the function returns a block when called, call it first, e.g. 'f(x).key' instead of 'f.key'
+  ┌─ tests/diagnostics/corpus/lookup_on_function.eu:2:9
+  │
+2 │ result: add.x
+  │         ^^^
+  │
+  = stack trace:
+    - result at lookup_on_function.eu:2:9

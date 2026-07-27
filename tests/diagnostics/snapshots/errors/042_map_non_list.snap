@@ -1,0 +1,38 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/042_map_non_list
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/042_map_non_list.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/042_map_non_list.eu:3:16
+help-lines: 0
+note-lines: 2
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: argument type does not match function parameter
+  ┌─ tests/harness/errors/042_map_non_list.eu:3:9
+  │
+3 │ result: x map((+ 1))
+  │         ^ expected [a], found number
+
+error: head requires a list, found 42
+  ┌─ tests/harness/errors/042_map_non_list.eu:3:16
+  │
+3 │ result: x map((+ 1))
+  │           ---  ^
+  │           │
+  │           called from here
+  │
+  = head and tail require a list (e.g. [1, 2, 3]) as their argument
+  = to create a list from a number, wrap it: '[n]'
+  = stack trace:
+    - result at 042_map_non_list.eu:3:16

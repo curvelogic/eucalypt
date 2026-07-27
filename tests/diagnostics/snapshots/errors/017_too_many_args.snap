@@ -1,0 +1,32 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/017_too_many_args
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/017_too_many_args.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/017_too_many_args.eu:2:4
+help-lines: 2
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: tried to call a number as a function
+  help: only functions and blocks can be called with arguments
+  help: this often means too many arguments were passed to a function
+  ┌─ tests/harness/errors/017_too_many_args.eu:2:4
+  │
+2 │ y: f(1, 2)
+  │    ^
+  │
+  = a number value is not a function; check for a missing operator or extra argument
+  = note: catenation (juxtaposition) has low precedence — 'f(a) + 1' binds as 'f(a + 1)'; add parentheses to disambiguate
+  = stack trace:
+    - y at 017_too_many_args.eu:2:4

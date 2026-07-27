@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/004_circular
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/004_circular.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/004_circular.eu:3:4
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: binding 'f' refers to itself — this will always diverge
+  ┌─ tests/harness/errors/004_circular.eu:3:4
+  │
+3 │ f: f(f)
+  │    ^
+  │
+  = the binding `f: f` (or `f: f(…)`) always loops
+  = if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`

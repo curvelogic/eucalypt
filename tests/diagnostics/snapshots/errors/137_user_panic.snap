@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/137_user_panic
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/137_user_panic.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/137_user_panic.eu:1:9
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: deliberate failure
+  ┌─ tests/harness/errors/137_user_panic.eu:1:9
+  │
+1 │ result: panic("deliberate failure")
+  │         ^^^^^
+  │
+  = stack trace:
+    - result at 137_user_panic.eu:1:9

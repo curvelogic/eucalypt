@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/155_block_content_in_soup_bracket
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/155_block_content_in_soup_bracket.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/155_block_content_in_soup_bracket.eu:6:9
+help-lines: 0
+note-lines: 4
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: block-style content inside non-monad bracket pair '⟦⟧' — this bracket accepts expressions, not declarations
+  ┌─ tests/harness/errors/155_block_content_in_soup_bracket.eu:6:9
+  │
+6 │ result: ⟦ a: 1 ⟧
+  │         ^^^^^^^^
+  │
+  = '⟦⟧' is an expression bracket — it accepts soup expressions, not 'name: value' declarations
+  = the ':' inside the brackets triggered block-mode parsing
+  = to pass a block literal as content, wrap it: '⟦ {key: value} ⟧'
+  = to declare a monad bracket: '⟦{}⟧': { :monad bind(m, f): f(m)  return(a): a }

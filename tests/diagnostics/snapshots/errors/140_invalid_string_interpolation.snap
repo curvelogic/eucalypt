@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/140_invalid_string_interpolation
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/140_invalid_string_interpolation.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/140_invalid_string_interpolation.eu:1:24
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid string interpolation
+  ┌─ tests/harness/errors/140_invalid_string_interpolation.eu:1:24
+  │
+1 │ ` { type: "[number] -> {..}"}
+  │                        ^^^^
+  │
+  = the content between { and } was not a valid variable name or dotted path
+  = if you want a literal brace in a string, escape it by doubling: {{ and }}

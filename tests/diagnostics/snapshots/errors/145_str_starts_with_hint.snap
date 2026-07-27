@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/145_str_starts_with_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/145_str_starts_with_hint.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/145_str_starts_with_hint.eu:3:14
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'startsWith' not found in block
+  help: similar keys: 'starts-with?'
+  ┌─ tests/harness/errors/145_str_starts_with_hint.eu:3:14
+  │
+3 │ result: text str.startsWith("hello")
+  │              ^^^
+  │
+  = stack trace:
+    - result at 145_str_starts_with_hint.eu:3:14

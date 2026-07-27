@@ -1,0 +1,27 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/025_malformed_zdt_literal
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/025_malformed_zdt_literal.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/025_malformed_zdt_literal.eu:2:4
+help-lines: 2
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid date/time literal
+  help: the t-string syntax requires ISO 8601 format, e.g. 2023-01-15 or 2023-01-15T10:30:00Z
+  help: supported formats: YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS, YYYY-MM-DDTHH:MM:SSZ, YYYY-MM-DDTHH:MM:SS+HH:MM
+  ┌─ tests/harness/errors/025_malformed_zdt_literal.eu:2:4
+  │
+2 │ x: t"not-a-date"
+  │    ^^^^^^^^^^^^^

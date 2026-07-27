@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/163_malformed_decl_head
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/163_malformed_decl_head.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/163_malformed_decl_head.eu:3:11
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: empty expression where a value was expected
+  ┌─ tests/harness/errors/163_malformed_decl_head.eu:3:11
+  │
+3 │ x: { a: 1 ` }
+  │           ^
+  │           │
+  │           empty expression where a value was expected
+  │           missing ':' after declaration head
+  │           malformed declaration head

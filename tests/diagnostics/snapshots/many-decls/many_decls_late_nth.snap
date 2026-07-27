@@ -1,0 +1,55 @@
+# eucalypt diagnostic snapshot v1
+fixture: many-decls/many_decls_late_nth
+argv: run -L tests/diagnostics/snapshot-corpus --heap-limit-mib 2048 tests/diagnostics/snapshot-corpus/many_decls_late_nth.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/snapshot-corpus/many_decls_late_nth.eu:477:16
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 3
+trace-user-frames: 3
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: index 10 out of range for list of length 3
+    ┌─ tests/diagnostics/snapshot-corpus/many_decls_late_nth.eu:477:16
+    │
+477 │ pad0470: 470 + 0
+    │                ^
+    │
+    = stack trace:
+      - pad0000 at many_decls_late_nth.eu:7:12
+      - pad0455 at many_decls_late_nth.eu:462:10
+      - pad0470 at many_decls_late_nth.eu:477:16
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/snapshot-corpus/many_decls_late_nth.eu:7:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: index 10 out of range for list of length 3
+  ┌─ tests/diagnostics/snapshot-corpus/many_decls_late_nth.eu:7:12
+  │
+7 │ pad0000: 0 + 0
+  │            ^
+  │
+  = stack trace:
+    - pad0000 at many_decls_late_nth.eu:7:12
+    - in 'nth' at [prelude]

@@ -1,0 +1,31 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/077_double_anaphora
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/077_double_anaphora.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/077_double_anaphora.eu:4:12
+help-lines: 1
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: received a function where true or false was expected
+  help: this often happens due to operator precedence; try adding parentheses, e.g. `(xs f) + 1` instead of `xs f + 1`
+  ┌─ tests/harness/errors/077_double_anaphora.eu:4:12
+  │
+4 │ result: xs filter(_ > _ - 1)
+  │            ^^^^^^
+  │
+  = if using '_' anaphora in a predicate, note that each '_' creates a separate parameter — '(_ > _ - 1)' is a two-argument function, not a one-argument predicate
+  = to reuse the same value, use '_0' (or '_1', '_2' for multiple parameters): '(_0 > _0 - 1)' correctly compares the argument to itself
+  = stack trace:
+    - result at 077_double_anaphora.eu:4:12

@@ -1,0 +1,27 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/171_yaml_large_uint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/171_yaml_large_uint.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 101
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: yes
+--- stderr ---
+
+thread '<unnamed>' panicked at src/export/yaml.rs:LINE:COL:
+number 9999999999999999999 is too large to represent as a YAML integer (max i64)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'main' panicked at src/bin/eu.rs:LINE:COL:
+main thread panicked: Any { .. }

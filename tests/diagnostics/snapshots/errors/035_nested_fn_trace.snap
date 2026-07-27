@@ -1,0 +1,54 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/035_nested_fn_trace
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/035_nested_fn_trace.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/035_nested_fn_trace.eu:2:12
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected string, found number
+  ┌─ tests/harness/errors/035_nested_fn_trace.eu:2:12
+  │
+2 │ middle(x): inner(x)
+  │            ^^^^^
+  │
+  = to convert a number to a string, use 'str' or string interpolation
+  = stack trace:
+    - outer at 035_nested_fn_trace.eu:3:8
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/035_nested_fn_trace.eu:1:11
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected string, found number
+  ┌─ tests/harness/errors/035_nested_fn_trace.eu:1:11
+  │
+1 │ inner(x): str.letters(x)
+  │           ^^^
+  │
+  = to convert a number to a string, use 'str' or string interpolation
+  = stack trace:
+    - outer at 035_nested_fn_trace.eu:3:8

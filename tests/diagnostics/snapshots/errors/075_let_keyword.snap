@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/075_let_keyword
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/075_let_keyword.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/075_let_keyword.eu:2:18
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'in'
+  ┌─ tests/harness/errors/075_let_keyword.eu:2:18
+  │
+2 │ result: let x: 1 in x + 2
+  │                  ^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt has no 'in' keyword for list comprehensions; use 'map' and 'filter' instead: 'xs filter(_ > 0) map(_ * 2)'

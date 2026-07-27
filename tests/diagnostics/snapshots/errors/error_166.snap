@@ -1,0 +1,26 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/error_166
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/error_166.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/error_166.eu:12:1
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: malformed declaration head
+   ┌─ tests/harness/errors/error_166.eu:12:1
+   │
+12 │ ╭ : bad_value
+13 │ │ y: 20
+   │ ╰─^

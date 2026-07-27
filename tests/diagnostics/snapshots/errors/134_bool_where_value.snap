@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/134_bool_where_value
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/134_bool_where_value.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/134_bool_where_value.eu:2:14
+help-lines: 2
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: expected a primitive number, string, or symbol but found a boolean
+  help: use 'if(condition, then_value, else_value)' to convert a boolean to a value
+  help: eucalypt booleans cannot be used in arithmetic or as strings directly
+  ┌─ tests/harness/errors/134_bool_where_value.eu:2:14
+  │
+2 │ result: true > 5
+  │              ^
+  │
+  = stack trace:
+    - result at 134_bool_where_value.eu:2:14

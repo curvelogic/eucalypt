@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/156_soup_content_in_monad_bracket
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/156_soup_content_in_monad_bracket.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/156_soup_content_in_monad_bracket.eu:6:9
+help-lines: 0
+note-lines: 4
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: expression content inside monad bracket '⟦⟧' — this bracket requires declarations ('name: value' bindings)
+  ┌─ tests/harness/errors/156_soup_content_in_monad_bracket.eu:6:9
+  │
+6 │ result: ⟦ 1 2 3 ⟧
+  │         ^^^^^^^^^
+  │
+  = '⟦⟧' is a monad bracket — its content must contain at least one 'name: value' binding
+  = no ':' colon was found inside the brackets, so the content was parsed as expressions
+  = example: '⟦ x: expr ⟧'.x, or '⟦ x: e1  y: x + 1 ⟧'.y
+  = to use expression content, declare without '{}': '⟦ x ⟧': x

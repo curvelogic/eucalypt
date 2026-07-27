@@ -1,0 +1,26 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/024_invalid_zdt_literal
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/024_invalid_zdt_literal.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/024_invalid_zdt_literal.eu:2:4
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: date/time literal contains an invalid date
+  help: check that the day exists in the given month and year (e.g. February has at most 29 days, and only in a leap year)
+  ┌─ tests/harness/errors/024_invalid_zdt_literal.eu:2:4
+  │
+2 │ x: t"2023-02-30"
+  │    ^^^^^^^^^^^^^

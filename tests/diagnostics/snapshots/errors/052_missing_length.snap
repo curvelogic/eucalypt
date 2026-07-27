@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/052_missing_length
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/052_missing_length.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/052_missing_length.eu:3:7
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'length'
+  ┌─ tests/harness/errors/052_missing_length.eu:3:7
+  │
+3 │ n: xs length
+  │       ^^^^^^
+  │
+  = check that the variable is defined and in scope
+  = to count the elements of a list, use 'count', e.g. 'xs count'

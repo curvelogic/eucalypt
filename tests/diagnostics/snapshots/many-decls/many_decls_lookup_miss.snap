@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: many-decls/many_decls_lookup_miss
+argv: run -L tests/diagnostics/snapshot-corpus --heap-limit-mib 2048 tests/diagnostics/snapshot-corpus/many_decls_lookup_miss.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/snapshot-corpus/many_decls_lookup_miss.eu:604:9
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 2
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'gama' not found in block
+  help: similar keys: 'gamma'
+    ┌─ tests/diagnostics/snapshot-corpus/many_decls_lookup_miss.eu:604:9
+    │
+604 │ result: b.gama
+    │         ^
+    │
+    = stack trace:
+      - pad0000 at many_decls_lookup_miss.eu:4:12
+      - result at many_decls_lookup_miss.eu:604:9

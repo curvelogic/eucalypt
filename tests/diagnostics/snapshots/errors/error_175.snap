@@ -1,0 +1,34 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/error_175
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/error_175.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/error_175.eu:10:22
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: type mismatch calling 'sort-nums'
+   ┌─ tests/harness/errors/error_175.eu:10:9
+   │
+10 │ result: "not_a_list" sort-nums
+   │         ^^^^^^^^^^^^ expected [number], found "not_a_list"
+
+error: type mismatch: expected empty list or list, found string
+   ┌─ tests/harness/errors/error_175.eu:10:22
+   │
+10 │ result: "not_a_list" sort-nums
+   │                      ^^^^^^^^^
+   │
+   = stack trace:
+     - result at error_175.eu:10:22
