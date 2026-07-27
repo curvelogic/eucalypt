@@ -183,10 +183,19 @@ jobs:
       # under blob mode too (eu-rqwh, in progress). Both are pre-existing,
       # unrelated bugs this job must not force onto master by going red on
       # merge. Widen the `cargo test` invocations below as each lands.
+      #
+      # `tests/blob_deprecation_test.rs` (eu-1tkk.2) has the same shape: gated
+      # on `cfg(prelude_blob_ok)`, asserting behaviour —
+      # `run_type_checker_from_blob_core` reporting the prelude's own
+      # deprecations — that exists only on the eval path in blob mode. The
+      # blob-mode harness jobs run `eu test tests/harness`, which never
+      # reaches a `cargo test` integration test, so without the line below
+      # that gate would run in no CI job at all.
       - name: Run blob-mode diagnostics integration tests
         run: |
           cargo test --test diagnostics_blame_plumbing_test
           cargo test --test diagnostics_invariants corpus_satisfies_invariants -- --exact
+          cargo test --test blob_deprecation_test
 
   blob-determinism:
     name: Prelude blob determinism

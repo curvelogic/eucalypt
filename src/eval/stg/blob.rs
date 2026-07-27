@@ -165,6 +165,25 @@ pub struct PreludeBlob {
     #[serde(default, with = "crate::common::serde_sorted")]
     pub blame: HashMap<String, FrameKind>,
 
+    /// Deprecation path → declared deprecation spec, for the prelude-side
+    /// units the blob bakes cores for (eu-1tkk.2).
+    ///
+    /// The same kind of desugar-phase side channel as [`Self::blame`]: a
+    /// `deprecated` key in metadata is consumed by the desugarer
+    /// (`Desugarer::record_deprecation`) and does not survive as runtime
+    /// `Expr::Meta`, so it cannot be recovered from the baked cores in
+    /// `desugared_unit_cores`. Without carrying it here, a `deprecated`
+    /// declaration in `lib/prelude.eu` is silently inert on the evaluate path
+    /// in blob mode — the shipped default — while working under `eu check`,
+    /// which loads the prelude from source.
+    ///
+    /// Populated from `SourceLoader::core().deprecations` by `cargo xtask
+    /// prelude-compile` after `merge_units`, so it is the union across all
+    /// four prelude-side units. Keys are paths as a caller writes them
+    /// (`random.exec`), matching `record_deprecation`'s convention.
+    #[serde(default, with = "crate::common::serde_sorted")]
+    pub deprecations: HashMap<String, crate::core::metadata::DeprecationSpec>,
+
     /// Operator metadata for seeding cook's `Distributor`.
     #[serde(with = "crate::common::serde_sorted")]
     pub operators: HashMap<String, OperatorInfo>,
@@ -307,6 +326,7 @@ mod tests {
             binding_spans: vec![],
             name_to_slot: HashMap::new(),
             blame: HashMap::new(),
+            deprecations: HashMap::new(),
             operators: HashMap::new(),
             monad_specs: HashMap::new(),
             monad_type_hints: HashMap::new(),

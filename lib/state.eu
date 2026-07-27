@@ -1,6 +1,6 @@
 { import: "resource:lens"
   requires: ">=0.8"
-  doc: "State monad for Eucalypt. Each state action is a function from state to a value/state block. Use state.run(action, initial) to execute a computation and state.exec / state.eval to extract just the final state or final value." }
+  doc: "State monad for Eucalypt. Each state action is a function from state to a value/state block. Use state.run(action, initial) to execute a computation, then project .state or .value from the result for just the final state or final value." }
 
 # ─── Primitive bind / return ────────────────────────────────────────────────
 
@@ -75,6 +75,8 @@ state: monad{bind: state-bind, return: state-ret} {
   ` "state.eval(action, initial) - run a state action and return only the final value."
   eval(action, initial): action(initial).value
 
-  ` "state.exec(action, initial) - run a state action and return only the final state."
+  ` { doc: "state.exec(action, initial) - DEPRECATED: use state.run(action, initial).state. Run a state action and return only the final state."
+      deprecated: "use state.run(a, i).state"
+      replaced-by: "run" }
   exec(action, initial): action(initial).state
 }

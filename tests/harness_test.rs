@@ -3047,6 +3047,12 @@ pub fn test_204_3aa6s_meta_symbol_metadata() {
     run_test(&opts("204_3aa6s_meta_symbol_metadata.eu"));
 }
 
+// EF1 combined effect monad (do): uses io.shell, so runs with --allow-io.
+#[test]
+pub fn test_203_ef1_do_monad() {
+    run_test(&io_opts("203_ef1_do_monad.eu"));
+}
+
 /// eu-frf2o — regression test for a metadata-annotated inline block literal
 /// used as a call/catenation operand. The STG compiler emitted the `Meta`
 /// binder group as a non-recursive `Let`, so the node's sibling references
@@ -3163,6 +3169,25 @@ pub fn test_typecheck_111_prefix_list_out_of_prefix_partial() {
 #[test]
 pub fn test_typecheck_112_check_strict_parse_error_exits_nonzero() {
     run_typecheck_test("112_check_strict_parse_error_exits_nonzero.eu");
+}
+
+#[test]
+pub fn test_typecheck_113_deprecated_namespace_member() {
+    run_typecheck_test("113_deprecated_namespace_member.eu");
+}
+
+#[test]
+pub fn test_typecheck_114_deprecated_member_precision() {
+    run_typecheck_test("114_deprecated_member_precision.eu");
+}
+
+// Prelude-declared deprecation. The `stderr:` pattern in the sidecar makes
+// `run_typecheck_test` drive the evaluate path as well as `eu check`, which
+// is where blob mode differs — see `tests/blob_deprecation_test.rs` and
+// eu-vbctt.
+#[test]
+pub fn test_typecheck_115_deprecated_prelude_member() {
+    run_typecheck_test("115_deprecated_prelude_member.eu");
 }
 
 // ── eu doc tests ──────────────────────────────────────────────────────────────
