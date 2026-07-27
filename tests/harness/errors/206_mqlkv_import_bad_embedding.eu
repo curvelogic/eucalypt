@@ -1,4 +1,4 @@
-{ import: "testdata/194_mqlkv_bad_annotation.eu" }
+{ import: "testdata/206_mqlkv_bad_annotation.eu" }
 
 # eu-mqlkv, site 1 of 3 — the `Unit` impl's unit-metadata import loop
 # (rowan_ast.rs, `impl Desugarable for rowan_ast::Unit`).

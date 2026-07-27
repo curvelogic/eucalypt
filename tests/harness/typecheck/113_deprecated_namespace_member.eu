@@ -1,0 +1,6 @@
+{ import: "resource:state" }
+
+# state.exec is a deprecated namespace member (use state.run(a, i).state).
+# Referencing it via a namespace-member lookup must warn, keyed on the
+# dotted path 'state.exec'.
+result: state.exec(state.put(:x, 1), { count: 0 }).x

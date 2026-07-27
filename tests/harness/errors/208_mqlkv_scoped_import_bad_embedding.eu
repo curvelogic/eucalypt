@@ -3,5 +3,5 @@
 # rather than unit metadata. This is the form the imports guide documents
 # most prominently, and it panicked independently of the unit-metadata
 # route, so it needs its own gate.
-` { import: "testdata/194_mqlkv_bad_annotation.eu" }
+` { import: "testdata/206_mqlkv_bad_annotation.eu" }
 calculations: { result: f(1) }

@@ -1,4 +1,4 @@
-# Imported by 194_mqlkv_import_bad_embedding.eu. The `{{` brace escaping is
+# Imported by 206_mqlkv_import_bad_embedding.eu. The `{{` brace escaping is
 # correct inside a plain `type:` string but wrong inside an s-string, where
 # the content is a type expression already — so this is an invalid embedding.
 ` { type: s"any → [{{x: number}}]" }

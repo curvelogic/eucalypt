@@ -4,6 +4,6 @@
 # declaration. It panicked independently of the other two routes, so it
 # needs its own gate.
 outer: {
-  { import: "testdata/194_mqlkv_bad_annotation.eu" }
+  { import: "testdata/206_mqlkv_bad_annotation.eu" }
   inner: f(1)
 }

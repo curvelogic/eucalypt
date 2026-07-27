@@ -1,4 +1,4 @@
-{ import: "testdata/195_mqlkv_impossible_requires.eu" }
+{ import: "testdata/207_mqlkv_impossible_requires.eu" }
 
 # eu-mqlkv, a different CoreError variant through the same site:
 # `CoreError::VersionRequirementFailed` raised while desugaring an imported
