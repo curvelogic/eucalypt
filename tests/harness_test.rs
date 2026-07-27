@@ -2733,6 +2733,27 @@ pub fn test_error_196() {
 }
 
 #[test]
+/// eu-1z503 — a non-text block key aborted the process inside
+/// `AsKey::as_key`. Reachable from ordinary source via `kv-block(1, "a")`,
+/// though not from any importer: they all normalise or reject such keys.
+pub fn test_error_198() {
+    run_error_test(&error_opts("198_json_block_key.eu"));
+}
+
+#[test]
+/// eu-1z503, TOML's `as_str().unwrap()`. Companion to `test_error_198`.
+pub fn test_error_199() {
+    run_error_test(&error_opts("199_toml_block_key.eu"));
+}
+
+#[test]
+/// eu-1z503, the eu exporter's `panic!` on a non-string/symbol key.
+/// Companion to `test_error_198`.
+pub fn test_error_200() {
+    run_error_test(&error_opts("200_eu_block_key.eu"));
+}
+
+#[test]
 /// TOML has no null, and the exporter rendered one as an empty string —
 /// so a null and a genuine "" became indistinguishable in the output and
 /// on re-import. Now reported, with the offending lookup labelled
@@ -2994,6 +3015,15 @@ pub fn test_190_odkp_xml_entity_refs() {
 #[test]
 pub fn test_191_html_export() {
     run_test(&opts("191_html_export.eu"));
+}
+
+/// eu-1z503 — `kv-block` and `block` accept any key, so a block key that
+/// is not text is reachable from ordinary source. yaml and edn represent
+/// such a key and must keep doing so; json, toml and eu cannot and reject
+/// it (errors/198-200). This fixture pins the working half.
+#[test]
+pub fn test_193_non_text_block_keys() {
+    run_test(&opts("193_non_text_block_keys.eu"));
 }
 
 /// eu-1tkk.7.23 — EDN export of an integer above i64::MAX rounded it

@@ -5,7 +5,7 @@
 //! rather than `"name"`.  Output is pretty-printed with the `pretty`
 //! crate.
 
-use crate::eval::emit::{Emitter, Event, RenderMetadata};
+use crate::eval::emit::{Emitter, Event, Rejection, RenderMetadata};
 use crate::eval::primitive::Primitive;
 use pretty::RcDoc;
 use std::io::Write;
@@ -30,7 +30,10 @@ impl AsKey<String> for EuValue {
     fn as_key(&self) -> String {
         match self {
             EuValue::Sym(s) | EuValue::Str(s) => s.clone(),
-            _ => panic!("non-string/symbol used as block key in eu export"),
+            // Rejected by `unacceptable` before reaching here; fall back to
+            // the value's own rendering rather than aborting should another
+            // route arrive (eu-1z503).
+            other => render_eu_value(other).unwrap_or_else(|_| "?".to_string()),
         }
     }
 }
@@ -140,6 +143,16 @@ impl<'a> EuEmitter<'a> {
 }
 
 impl Emitter for EuEmitter<'_> {
+    fn format_name(&self) -> &'static str {
+        "eu"
+    }
+
+    fn unacceptable(&self, event: &Event) -> Option<Rejection> {
+        // eucalypt block keys are names, so anything that is not a symbol or
+        // a string cannot be written back as eucalypt source that re-parses.
+        super::unrepresentable_key("eucalypt block", self.accum.expecting_key(), event)
+    }
+
     fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         self.accum.consume(event);
         if let Some(result) = self.accum.result() {

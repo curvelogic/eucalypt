@@ -58,7 +58,12 @@ fn toml_unrepresentable(primitive: &Primitive) -> Option<Rejection> {
 
 impl AsKey<String> for Value {
     fn as_key(&self) -> String {
-        self.as_str().unwrap().to_string()
+        // Rejected by `unacceptable` before reaching here; fall back to the
+        // value's own rendering rather than aborting should another route
+        // arrive (eu-1z503).
+        self.as_str()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| self.to_string())
     }
 }
 
@@ -132,6 +137,10 @@ impl<'a> TomlEmitter<'a> {
 impl Emitter for TomlEmitter<'_> {
     fn format_name(&self) -> &'static str {
         "TOML"
+    }
+
+    fn unacceptable(&self, event: &Event) -> Option<Rejection> {
+        super::unrepresentable_key("TOML", self.accum.expecting_key(), event)
     }
 
     fn unrepresentable(&self, primitive: &Primitive) -> Option<Rejection> {
