@@ -93,10 +93,15 @@ fn primary_label_location(stderr: &str) -> String {
         .lines()
         .find(|l| l.contains('┌'))
         .unwrap_or_else(|| panic!("no primary label line in diagnostic:\n{stderr}"));
+    // Take everything after the `┌─ ` marker rather than the last
+    // whitespace-delimited token: a temporary directory containing a space
+    // would otherwise truncate the path and fail this test with a message
+    // that reads like a diagnostics regression rather than a test bug.
     let located = line
-        .split_whitespace()
-        .next_back()
+        .split_once("┌─ ")
+        .map(|(_, rest)| rest.trim())
         .expect("primary label carries a location");
+    // Native separators — `Locator::Fs` renders via `path.to_string_lossy()`.
     located
         .rsplit(std::path::MAIN_SEPARATOR)
         .next()
