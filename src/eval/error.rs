@@ -1564,6 +1564,81 @@ mod location_selection_tests {
         );
     }
 
+    /// With no user Smid in either trace, the machine's last-known source
+    /// location rescues the diagnostic (eu-0lvf's `str.fmt` / `str.of` shape:
+    /// an intrinsic's deferred argument check raises from unannotated
+    /// synthetic code, so the error has no Smid and nothing is pending on the
+    /// stack). Before eu-og3u6 this worked only because the bytecode engine's
+    /// live annotation register was leaking — the same leak that blamed the
+    /// wrong declaration everywhere else.
+    #[test]
+    fn falls_back_to_last_annotation_when_no_trace_names_a_user_file() {
+        let (mut sm, user_file, prelude_file) = mk_source_map();
+        let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
+        let last = sm.add(user_file, Span::new(3u32, 7u32));
+        let inner = ExecutionError::NoBranchForDataTag(Smid::default(), 0, vec![1]);
+        let traced = ExecutionError::Traced(
+            Box::new(inner),
+            Box::new((vec![prelude_smid], vec![prelude_smid], last)),
+        );
+
+        let diag = traced.to_diagnostic(&sm);
+
+        let primary = primary_label(&diag).expect("expected a primary label");
+        assert_eq!(primary.file_id, user_file);
+        assert_eq!(primary.range, Range::from(Span::new(3u32, 7u32)));
+    }
+
+    /// The last-known location is a *last* resort and must never displace a
+    /// real frame — the property that keeps the eu-0lvf rescue from
+    /// reintroducing eu-og3u6 by another route. A user frame on the stack
+    /// wins even though `last_annotation` also names a (different) user
+    /// location.
+    #[test]
+    fn last_annotation_never_displaces_a_user_frame_from_a_trace() {
+        let (mut sm, user_file, prelude_file) = mk_source_map();
+        let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
+        let stack_user_smid = sm.add(user_file, Span::new(3u32, 7u32));
+        let last = sm.add(user_file, Span::new(40u32, 44u32));
+        let inner = ExecutionError::NoBranchForDataTag(Smid::default(), 0, vec![1]);
+        let traced = ExecutionError::Traced(
+            Box::new(inner),
+            Box::new((vec![prelude_smid], vec![stack_user_smid], last)),
+        );
+
+        let diag = traced.to_diagnostic(&sm);
+
+        let primary = primary_label(&diag).expect("expected a primary label");
+        assert_eq!(
+            primary.range,
+            Range::from(Span::new(3u32, 7u32)),
+            "the stack trace's user frame must win over the last-known location"
+        );
+    }
+
+    /// A prelude last-known location must not resurrect a prelude primary
+    /// label: it goes through the same `FrameKind::User` filter as any other
+    /// candidate, so an all-library failure still shows no primary.
+    #[test]
+    fn prelude_last_annotation_does_not_resurrect_a_prelude_primary() {
+        let (mut sm, _user_file, prelude_file) = mk_source_map();
+        let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
+        let last = sm.add(prelude_file, Span::new(20u32, 24u32));
+        let inner = ExecutionError::NoBranchForDataTag(Smid::default(), 0, vec![1]);
+        let traced = ExecutionError::Traced(
+            Box::new(inner),
+            Box::new((vec![prelude_smid], vec![prelude_smid], last)),
+        );
+
+        let diag = traced.to_diagnostic(&sm);
+
+        assert!(
+            diag.labels.is_empty(),
+            "a prelude last-known location must not become a primary label, got {:?}",
+            diag.labels
+        );
+    }
+
     /// A user-file Smid reachable via a trace must become the primary, even
     /// when the error's own Smid is prelude-only.
     #[test]
