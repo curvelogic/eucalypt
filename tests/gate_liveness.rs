@@ -101,6 +101,16 @@ const REGISTRY: &[Gate] = &[
                     to spawn under wasm32",
     },
     Gate {
+        path: "tests/fold_over_map_growth_test.rs",
+        cfg: "not(target_arch = \"wasm32\")",
+        supplier: Supplier::NativeTargetsOnly,
+        rationale: "spawns the eu binary and compares tick counts across a 4x \
+                    size increase to gate the complexity class of `xs map(f) \
+                    fold` (eu-wpswc); there is no binary to spawn under \
+                    wasm32, and it also needs tempfile, a non-wasm32 \
+                    dev-dependency",
+    },
+    Gate {
         path: "tests/property_test.rs",
         cfg: "not(target_arch = \"wasm32\")",
         supplier: Supplier::NativeTargetsOnly,

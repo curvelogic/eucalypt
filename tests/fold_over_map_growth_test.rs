@@ -127,6 +127,19 @@ fn assert_linear_growth(kind: &str, small_target: &str, large_target: &str) {
 
 /// The headline shape: the mapped function is a literal lambda, so it reaches
 /// the callee as an `arity > 0` closure.
+///
+/// This arm gates the pass-through as a whole, **not the `arity > 0` clause in
+/// isolation**. Measured at merge on all three dispatch paths: disabling only
+/// the `arity > 0` clause leaves both arms passing, because the `Atom` clause
+/// subsumes it for the complexity class — a lambda that is re-aliased once
+/// becomes an `Atom` node, which the next level then passes through, so the
+/// chain still cannot grow beyond depth 1. Disabling only the `Atom` clause
+/// fails the thunk arm below (ratio 10.88); disabling the whole predicate
+/// fails this arm too (ratio 11.02). The `arity > 0` clause is therefore a
+/// constant-factor saving (measured −1,599 ticks on `growth-large` and −3,198
+/// on `growth-thunk-large`, on both the byte and HeapSyn paths), not a second
+/// half of the complexity fix, and nothing gates it. Do not read a passing
+/// suite as evidence that it is still present.
 #[test]
 fn fold_over_map_is_linear_for_a_lambda_argument() {
     assert_linear_growth("lambda argument", "growth-small", "growth-large");
