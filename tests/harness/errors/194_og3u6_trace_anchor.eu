@@ -1,0 +1,15 @@
+# eu-og3u6: in a unit with many bindings, the primary label and the trace
+# anchor must name the declaration that made the failing call — `result` on
+# the last line — and not whichever declaration happened to render first.
+xs: [1, 2, 3]
+pad0: 0 + 0
+pad1: 1 + 1
+pad2: 2 + 2
+pad3: 3 + 3
+pad4: 4 + 4
+pad5: 5 + 5
+pad6: 6 + 6
+pad7: 7 + 7
+pad8: 8 + 8
+pad9: 9 + 9
+result: xs nth(10)
