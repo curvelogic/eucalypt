@@ -650,6 +650,91 @@ impl RcExpr {
         }
     }
 
+    /// The highest `Smid` occurring anywhere in this expression, or
+    /// `Smid::default()` if it carries no valid `Smid` at all.
+    ///
+    /// Every `Smid` in the tree is considered, not just the ones
+    /// [`HasSmid`] exposes: that impl deliberately reports
+    /// `Smid::default()` for `BlockAnaphor`/`ExprAnaphor` (their node
+    /// position is not a useful diagnostic location), but the
+    /// discriminator `Smid` *inside* the [`Anaphor`] is still a value
+    /// minted by some `SourceMap`, so it counts here.
+    ///
+    /// [`Smid::global_slot`] identities are ignored — they are tagged
+    /// values in a disjoint "which prelude global slot" space, not
+    /// `SourceMap` indices, so including them would report a bound
+    /// around 2^31 that means nothing.
+    ///
+    /// The match below is deliberately exhaustive (no wildcard arm) so
+    /// that adding an `Expr` variant is a compile error here rather
+    /// than a silent under-estimate. Callers rely on this being an
+    /// upper bound — see
+    /// [`crate::common::sourcemap::SourceMap::reserve_foreign_range`].
+    pub fn max_smid(&self) -> Smid {
+        let mut best: u32 = 0;
+        let mut consider = |smid: Smid| {
+            if smid.as_global_slot().is_none() {
+                best = best.max(u32::from(smid));
+            }
+        };
+        let mut stack: Vec<RcExpr> = vec![self.clone()];
+        while let Some(e) = stack.pop() {
+            match &*e.inner {
+                Expr::Var(s, _)
+                | Expr::Intrinsic(s, _)
+                | Expr::Literal(s, _)
+                | Expr::Name(s, _)
+                | Expr::ErrUnresolved(s, _)
+                | Expr::ErrRedeclaration(s, _) => consider(*s),
+                Expr::BlockAnaphor(s, a) | Expr::ExprAnaphor(s, a) => {
+                    consider(*s);
+                    consider(a.smid());
+                }
+                Expr::Let(s, scope, _) => {
+                    consider(*s);
+                    stack.extend(scope.pattern.iter().map(|b| b.expr.clone()));
+                    stack.push(scope.body.clone());
+                }
+                Expr::Lookup(s, e, _, fb) => {
+                    consider(*s);
+                    stack.push(e.clone());
+                    stack.extend(fb.iter().cloned());
+                }
+                Expr::List(s, xs) | Expr::ArgTuple(s, xs) | Expr::Soup(s, xs, _) => {
+                    consider(*s);
+                    stack.extend(xs.iter().cloned());
+                }
+                Expr::Block(s, block_map) => {
+                    consider(*s);
+                    stack.extend(block_map.values().cloned());
+                }
+                Expr::Meta(s, e, m) => {
+                    consider(*s);
+                    stack.push(e.clone());
+                    stack.push(m.clone());
+                }
+                Expr::Lam(s, _, scope) => {
+                    consider(*s);
+                    stack.push(scope.body.clone());
+                }
+                Expr::App(s, g, xs) => {
+                    consider(*s);
+                    stack.push(g.clone());
+                    stack.extend(xs.iter().cloned());
+                }
+                Expr::Operator(s, _, _, e) => {
+                    consider(*s);
+                    stack.push(e.clone());
+                }
+                Expr::ErrEliminated
+                | Expr::ErrPseudoDot
+                | Expr::ErrPseudoCall
+                | Expr::ErrPseudoCat => {}
+            }
+        }
+        Smid::from(best)
+    }
+
     /// Helper for methods that recurse down through expressions. Not
     /// necessarily cheap as rebuilds all composite expressions
     /// regardless of whether changes are required.
@@ -2669,6 +2754,76 @@ pub mod tests {
         assert_eq!(
             RcExpr::merge(vec![unit_a, unit_b, unit_c]).unwrap(),
             expected
+        );
+    }
+
+    // ── max_smid (eu-r4647) ─────────────────────────────────────────────────
+
+    /// `max_smid` must reach every `Smid` in the tree, including ones
+    /// nested inside binding values, lambda bodies, block values,
+    /// metadata and fallbacks. Its callers use it to size a reservation,
+    /// so an under-estimate silently reintroduces `Smid` aliasing.
+    #[test]
+    fn max_smid_finds_the_highest_smid_at_any_depth() {
+        let deep = core::block(
+            Smid::fake(3),
+            [(
+                "k".to_string(),
+                core::lam(
+                    Smid::fake(11),
+                    vec!["x".to_string()],
+                    core::app(
+                        Smid::fake(7),
+                        core::var(Smid::fake(2), "x".to_string()),
+                        vec![core::str(Smid::fake(97), "deep")],
+                    ),
+                ),
+            )],
+        );
+        let expr = core::let_(
+            Smid::fake(1),
+            vec![("b".to_string(), deep)],
+            core::var(Smid::fake(4), "b".to_string()),
+        );
+        assert_eq!(expr.max_smid(), Smid::fake(97));
+    }
+
+    /// The discriminator `Smid` inside an anaphor is invisible to
+    /// `HasSmid` (which reports `Smid::default()` for anaphor nodes) but
+    /// is still a value some `SourceMap` minted, so `max_smid` must count
+    /// it.
+    #[test]
+    fn max_smid_counts_anaphor_discriminators() {
+        let anaphor = RcExpr::from(Expr::ExprAnaphor(
+            Smid::fake(2),
+            Anaphor::ExplicitAnonymous(Smid::fake(55)),
+        ));
+        assert_eq!(
+            anaphor.smid(),
+            Smid::default(),
+            "precondition: HasSmid hides it"
+        );
+        assert_eq!(anaphor.max_smid(), Smid::fake(55));
+    }
+
+    /// A [`Smid::global_slot`] identity is a tagged value in a disjoint
+    /// space, not a `SourceMap` index, so it must not drag the reported
+    /// maximum up to ~2^31.
+    #[test]
+    fn max_smid_ignores_global_slot_identities() {
+        let expr = core::app(
+            Smid::global_slot(4),
+            core::var(Smid::fake(6), "f".to_string()),
+            vec![core::num(Smid::global_slot(9), 1)],
+        );
+        assert_eq!(expr.max_smid(), Smid::fake(6));
+    }
+
+    #[test]
+    fn max_smid_of_a_smidless_expression_is_the_default() {
+        assert_eq!(
+            core::var(Smid::default(), "x".to_string()).max_smid(),
+            Smid::default()
         );
     }
 }

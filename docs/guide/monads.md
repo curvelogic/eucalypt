@@ -351,7 +351,7 @@ partial application pattern used throughout eucalypt.
 | `random.return(v)` | State monad return |
 | `random.run(action, stream)` | Run action on stream; returns value/rest block |
 | `random.eval(action, stream)` | Run action, return only the value |
-| `random.exec(action, stream)` | Run action, return only the remaining stream |
+| `random.exec(action, stream)` | **Deprecated** — use `random.run(action, stream).rest`. Run action, return only the remaining stream |
 | `random.float` | Action: random float in [0,1) |
 | `random.int(n)` | Action: random integer in [0,n) |
 | `random.choice(list)` | Action: random element from list |
@@ -361,6 +361,104 @@ partial application pattern used throughout eucalypt.
 Derived combinators (`map`, `then`, `join`, `sequence`, `map-m`,
 `filter-m`) are also available — see
 [Random Numbers reference](../reference/prelude/random.md).
+
+---
+
+## The combined effect monad (`do`)
+
+The `io`, `state` and `random` monads each solve one problem in
+isolation, but a realistic pipeline often needs all three at once — a
+stateful, seeded computation that also runs shell commands. Threading a
+`(state, seed)` context by hand through every IO step is exactly the
+verbose plumbing the monads were meant to remove.
+
+The `do` monad (from `lib/do.eu`) combines them. It threads a
+`{ state, seed }` context alongside IO, so one `{ :do ... }` block can
+use every capability as a native `do.*` action. Import it with:
+
+```eu,notest
+{ import: "do.eu" }
+```
+
+### A `do` action
+
+A `do` action is a function from a context to an IO action producing a
+`{ value, ctx }` pair, where `ctx` is `{ state: <block>, seed: <stream> }`.
+IO carries the context on its value channel, so `io.bind` handles the
+delicate effect sequencing and `do` only threads the context on top. It
+is a small, fixed state-and-seed layer over IO — not a general
+transformer stack.
+
+The only new code is `bind`/`return` plus three lift functions; every
+effect stays in `io`/`state`/`random`, and all derived combinators
+(`map`, `then`, `and-then`, `join`, `sequence`, `map-m`, `filter-m`)
+come from `monad(do)`.
+
+### Worked example
+
+```eu,notest
+{ import: "do.eu" }
+
+gather: { :do
+  files: do.shell("ls")             # io capability
+  pick:  do.choice(files.stdout lines)  # random capability
+  _:     do.modify(:seen, (+ 1))    # state capability
+}.(pick)
+
+` :main
+main: do.eval(gather, { state: { seen: 0 }, seed: random.stream(42) })
+```
+
+One block, one monad, all three capabilities threaded automatically —
+no hand-rolled `(state, seed)` plumbing and no mixed block metadata.
+
+### Running a `do` pipeline
+
+A `do` block evaluates to an action; run it with a runner and an initial
+context:
+
+| Runner | Result |
+|--------|--------|
+| `do.run(action, ctx0)` | `IO({value, ctx})` — value **and** final context |
+| `do.eval(action, ctx0)` | `IO(value)` — value only (the usual entry point) |
+
+The niche "final context only" result is `do.run` projected with `.ctx`.
+
+### Capability surface
+
+Each member lifts an existing `io`/`state`/`random` action into the
+`do` monad:
+
+| Member | Delegates to |
+|--------|--------------|
+| `do.shell(cmd)` / `do.shell-with(opts, cmd)` | `io.shell` / `io.shell-with` |
+| `do.exec(args)` / `do.exec-with(opts, args)` | `io.exec` / `io.exec-with` |
+| `do.get` / `do.put(k, v)` / `do.modify(k, f)` / `do.query(f)` | `state.*` |
+| `do.float` / `do.int(n)` / `do.choice(xs)` | `random.*` |
+| `do.pure(v)` | `do.return` — a pure value, no effect |
+| `do.st(action)` | lift **any** state action (terse) |
+| `do.rnd(action)` | lift **any** random action (terse) |
+| `do.lift-io(action)` | lift **any** IO action |
+
+### State lens operators inside `do`
+
+The state monad's lens operators `=!` (set) and `%!` (modify) produce
+state actions, so they work inside a `do` block through the terse lift —
+no new operators:
+
+```eu,notest
+{ :do
+  _: do.st(:count =! 0)
+  _: do.st(:total %! (+ 1))
+}
+```
+
+### `:let` and `:for` compose by nesting
+
+A `do` block never carries foreign block metadata. For a pure
+intermediate value use `n: do.pure(expr)`; for pure comprehension embed
+an ordinary `{ :for ... }` block as a sub-expression; for effectful
+traversal use the derived `do.map-m(f, xs)` / `do.sequence(actions)`.
 
 ---
 
@@ -523,3 +621,6 @@ for examples and a full explanation.
   list comprehensions with filtering via `[x] filter(pred?)`
 - The `let` namespace is the identity monad — `{ :let ... }` blocks
   give sequential bindings without block self-reference
+- The `do` namespace (from `lib/do.eu`) is the combined effect monad —
+  `{ :do ... }` blocks thread a `{ state, seed }` context over IO so
+  `io`, `state` and `random` capabilities compose in one block

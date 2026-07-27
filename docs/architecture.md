@@ -700,11 +700,27 @@ with **postcard** (a compact binary format) and is the runtime's default
 source for the prelude; the build falls back to compiling from source only
 when the blob is absent or stale.
 
-Staleness is detected by a hash: the blob records
-`SHA-256(lib/prelude.eu ‖ bytecode-wire-format-version)`, and `build.rs`
-recomputes it. Folding the **bytecode wire-format version** (currently 3)
-into the hash means a change to the serialised code layout invalidates a
-stale-format blob even when the prelude source itself is unchanged.
+Staleness is detected by a hash covering every input that can invalidate a
+blob. `cargo xtask prelude-compile` stamps it into the blob's `source_hash`
+field and `build.rs` recomputes it; the recipe, the version constant and the
+staleness verdict all live in one file, `src/eval/stg/wire_format.rs`, which
+`build.rs` `include!`s (a build script cannot depend on its own crate). The
+three hashed inputs are:
+
+- **`lib/prelude.eu`** — the prelude bindings themselves.
+- **`src/eval/intrinsics.rs`** — the intrinsic catalogue. Its length fixes the
+  global slot numbering the blob bakes in as `Ref::G(INTRINSIC_COUNT + prelude
+  slot)`, so adding or removing an intrinsic shifts *every* prelude global's
+  slot. Hashing the catalogue makes that invalidation automatic (eu-3skeg);
+  before it did, a stale blob was silently accepted with an off-by-N slot map
+  and the binary returned wrong answers with no warning.
+- **`BYTECODE_WIRE_FORMAT_VERSION`** — the serialised code-stream layout, which
+  nothing on disk reveals. This constant is hand-bumped, and only when the
+  encoder's byte layout changes; intrinsic-table changes need no bump.
+
+A blob that fails the check is not used: `build.rs` emits a `cargo:warning`
+naming `cargo xtask prelude-compile` and sets `cfg(prelude_blob_stale)`, and
+the driver compiles the prelude from source instead.
 
 The blob is not a single artefact but a set of sections, each a snapshot or
 derived artefact of a specific compiler stage. `blob.rs`'s module
