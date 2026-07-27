@@ -1,0 +1,31 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/147_str_contains_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/147_str_contains_hint.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/147_str_contains_hint.eu:3:14
+help-lines: 1
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'includes' not found in block
+  help: available keys: 'of', 'split', 'split-on', 'join', 'join-on', 'match', 'match-with', 'extract' (and 25 more)
+  ┌─ tests/harness/errors/147_str_contains_hint.eu:3:14
+  │
+3 │ result: text str.includes("hello")
+  │              ^^^
+  │
+  = use 'str.contains?(pattern, s)' to test if a string contains a pattern, e.g. 'text str.contains?("word")'
+  = note: 'str.contains?' uses a regular expression, so special characters like '.', '+', '*' must be escaped with '\'
+  = stack trace:
+    - result at 147_str_contains_hint.eu:3:14

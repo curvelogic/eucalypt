@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/131_map_user_location
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/131_map_user_location.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/131_map_user_location.eu:4:18
+help-lines: 0
+note-lines: 2
+secondary-labels: 1
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "hello"
+  ┌─ tests/harness/errors/131_map_user_location.eu:4:18
+  │
+4 │ result: data map(+ "hello")
+  │              --- ^
+  │              │
+  │              called from here
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'

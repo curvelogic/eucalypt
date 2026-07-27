@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/127_type_mismatch_value_str
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/127_type_mismatch_value_str.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/127_type_mismatch_value_str.eu:6:12
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "hello"
+  ┌─ tests/harness/errors/127_type_mismatch_value_str.eu:6:12
+  │
+6 │ x: "hello" + 1
+  │            ^
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = stack trace:
+    - x at 127_type_mismatch_value_str.eu:6:12

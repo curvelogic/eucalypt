@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/031_type_mismatch_block_as_num
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/031_type_mismatch_block_as_num.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/031_type_mismatch_block_as_num.eu:2:11
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected number, found block
+  ┌─ tests/harness/errors/031_type_mismatch_block_as_num.eu:2:11
+  │
+2 │ x: {a: 1} + 1
+  │           ^
+  │
+  = blocks (structured values) cannot be used in arithmetic
+  = did you mean to access a specific field? use 'block.field' to extract a value before applying arithmetic
+  = stack trace:
+    - x at 031_type_mismatch_block_as_num.eu:2:11

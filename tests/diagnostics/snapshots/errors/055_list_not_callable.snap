@@ -1,0 +1,32 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/055_list_not_callable
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/055_list_not_callable.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/055_list_not_callable.eu:5:9
+help-lines: 2
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: tried to call a list as a function
+  help: only functions and blocks can be called with arguments
+  help: this often means too many arguments were passed to a function
+  ┌─ tests/harness/errors/055_list_not_callable.eu:5:9
+  │
+5 │ result: items(2)
+  │         ^^^^^
+  │
+  = lists are not callable; to access elements by index use 'nth(index, list)' or pipeline form 'list nth(index)'
+  = for the first element use 'list head'; for the rest use 'list tail'
+  = stack trace:
+    - result at 055_list_not_callable.eu:5:9

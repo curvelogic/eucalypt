@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/046_import_keyword
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/046_import_keyword.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/046_import_keyword.eu:3:4
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'import'
+  ┌─ tests/harness/errors/046_import_keyword.eu:3:4
+  │
+3 │ x: import
+  │    ^^^^^^
+  │
+  = check that the variable is defined and in scope
+  = note: eucalypt does not have an import statement; use import metadata to bring a file into scope in a block
+  = example: ` { import: path/to/file.eu }  my-block: { ... }

@@ -1,0 +1,27 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/005_free_var
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/005_free_var.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/005_free_var.eu:4:4
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'nonesuch'
+  ┌─ tests/harness/errors/005_free_var.eu:4:4
+  │
+4 │ x: nonesuch
+  │    ^^^^^^^^
+  │
+  = check that the variable is defined and in scope

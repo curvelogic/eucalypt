@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/010_assert
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/010_assert.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/010_assert.eu:1:9
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+EXPECT FAILED: expected false, got true
+error: assertion failed: expected false, got true
+  ┌─ tests/harness/errors/010_assert.eu:1:9
+  │
+1 │ x: true //=> false
+  │         ^^^^
+  │
+  = stack trace:
+    - x at 010_assert.eu:1:9

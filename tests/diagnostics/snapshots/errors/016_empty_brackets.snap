@@ -1,0 +1,25 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/016_empty_brackets
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/016_empty_brackets.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/016_empty_brackets.eu:1:5
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: empty expression where a value was expected
+  ┌─ tests/harness/errors/016_empty_brackets.eu:1:5
+  │
+1 │ a: ()
+  │     ^

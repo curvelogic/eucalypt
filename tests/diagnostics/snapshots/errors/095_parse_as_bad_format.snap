@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/095_parse_as_bad_format
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/095_parse_as_bad_format.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/095_parse_as_bad_format.eu:2:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: parse-as(badformat): unknown source format badformat
+  ┌─ tests/harness/errors/095_parse_as_bad_format.eu:2:12
+  │
+2 │ x: "hello" parse-as(:badformat)
+  │            ^^^^^^^^
+  │
+  = stack trace:
+    - x at 095_parse_as_bad_format.eu:2:12

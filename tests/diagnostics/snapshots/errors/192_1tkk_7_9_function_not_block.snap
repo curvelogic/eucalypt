@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/192_1tkk_7_9_function_not_block
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/192_1tkk_7_9_function_not_block.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/192_1tkk_7_9_function_not_block.eu:2:9
+help-lines: 0
+note-lines: 2
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected number, found a function
+  ┌─ tests/harness/errors/192_1tkk_7_9_function_not_block.eu:2:9
+  │
+2 │ result: add(1) + 1
+  │         ^^^    - called from here
+  │
+  = a function value cannot be used directly here; it must first be called with all of its remaining arguments
+  = this can happen when a function is under-applied (missing an argument), or when low-precedence catenation groups an expression differently than intended — add parentheses to disambiguate
+  = stack trace:
+    - result at 192_1tkk_7_9_function_not_block.eu:2:16

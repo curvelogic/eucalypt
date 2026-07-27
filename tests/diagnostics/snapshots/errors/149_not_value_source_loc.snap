@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/149_not_value_source_loc
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/149_not_value_source_loc.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/149_not_value_source_loc.eu:4:9
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 2
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: expected a primitive value but found a let binding
+  help: this can occur when a function or structured value appears where a primitive (number, string, etc.) was expected
+  ┌─ tests/harness/errors/149_not_value_source_loc.eu:4:9
+  │
+4 │ result: str.of(f)
+  │         ^^^
+  │
+  = stack trace:
+    - result at 149_not_value_source_loc.eu:4:9
+    - # Error: passing a function where a primitive value is expected — source location… at 149_not_value_source_loc.eu:1:1

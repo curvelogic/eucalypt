@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/110_unknown_short_arg
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/110_unknown_short_arg.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/110_unknown_short_arg.eu:2:14
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: unknown option: -x
+  ┌─ tests/harness/errors/110_unknown_short_arg.eu:2:14
+  │
+2 │ main: ["-x"] parse-args({})
+  │              ^^^^^^^^^^
+  │
+  = stack trace:
+    - main at 110_unknown_short_arg.eu:2:14

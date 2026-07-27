@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/044_double_colon_type_annot
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/044_double_colon_type_annot.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/044_double_colon_type_annot.eu:2:3
+help-lines: 2
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: '::' is not valid syntax in eucalypt
+  help: use ':' for declarations (e.g. `name: value`)
+  help: '::' is used in Haskell/Rust for type annotations, but eucalypt does not have type annotations
+  ┌─ tests/harness/errors/044_double_colon_type_annot.eu:2:3
+  │
+2 │ x :: Int
+  │   ^^
+  │   │
+  │   unexpected content after expression

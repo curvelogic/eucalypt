@@ -1,0 +1,35 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/100_fn_call_source_loc
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/100_fn_call_source_loc.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/100_fn_call_source_loc.eu:2:9
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: argument type does not match function parameter
+  ┌─ tests/harness/errors/100_fn_call_source_loc.eu:2:21
+  │
+2 │ result: str.letters(42)
+  │                     ^^ expected string, found number
+
+error: type mismatch: expected string, found number
+  ┌─ tests/harness/errors/100_fn_call_source_loc.eu:2:9
+  │
+2 │ result: str.letters(42)
+  │         ^^^
+  │
+  = to convert a number to a string, use 'str' or string interpolation
+  = stack trace:
+    - result at 100_fn_call_source_loc.eu:2:9

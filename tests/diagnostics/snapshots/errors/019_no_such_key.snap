@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/019_no_such_key
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/019_no_such_key.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/019_no_such_key.eu:5:1
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: infinite loop detected: binding refers to itself
+  ┌─ tests/harness/errors/019_no_such_key.eu:5:1
+  │
+5 │ ns.y
+  │ ^^
+  │
+  = a binding that references itself directly or indirectly creates an infinite loop
+  = use a function parameter instead of self-reference, or break the cycle
+  = stack trace:
+    - ns at 019_no_such_key.eu:5:1

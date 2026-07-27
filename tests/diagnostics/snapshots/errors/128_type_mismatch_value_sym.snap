@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/128_type_mismatch_value_sym
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/128_type_mismatch_value_sym.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/128_type_mismatch_value_sym.eu:6:9
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found symbol :foo
+  ┌─ tests/harness/errors/128_type_mismatch_value_sym.eu:6:9
+  │
+6 │ x: :foo + 1
+  │         ^
+  │
+  = stack trace:
+    - x at 128_type_mismatch_value_sym.eu:6:9

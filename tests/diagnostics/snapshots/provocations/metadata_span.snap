@@ -1,0 +1,35 @@
+# eucalypt diagnostic snapshot v1
+fixture: provocations/metadata_span
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/metadata_span.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/diagnostics/corpus/metadata_span.eu:3:1
+help-lines: 0
+note-lines: 2
+secondary-labels: 2
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "2"
+  ┌─ tests/diagnostics/corpus/metadata_span.eu:3:1
+  │
+2 │ scale(factor, xs): xs map(* factor)
+  │ -----------------------------------
+  │ │                     │
+  │ │                     called from here
+  │ called from here
+3 │ doubled(xs): scale("2", xs)
+  │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = stack trace:
+    - doubled at metadata_span.eu:3:1

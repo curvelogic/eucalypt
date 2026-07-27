@@ -1,0 +1,21 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/121_dbg_labelled
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/121_dbg_labelled.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 0
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+▶ answer: 42

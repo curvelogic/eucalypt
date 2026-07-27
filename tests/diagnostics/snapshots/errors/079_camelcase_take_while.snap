@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/079_camelcase_take_while
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/079_camelcase_take_while.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/079_camelcase_take_while.eu:3:9
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'takeWhile'
+  ┌─ tests/harness/errors/079_camelcase_take_while.eu:3:9
+  │
+3 │ result: takeWhile((_ < 4), xs)
+  │         ^^^^^^^^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt uses kebab-case: 'take-while', e.g. 'xs take-while(_ < 4)'

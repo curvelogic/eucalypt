@@ -1,0 +1,32 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/087_bad_regex
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/087_bad_regex.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 2
+warnings: 0
+code: -
+primary: user tests/harness/errors/087_bad_regex.eu:2:12
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: bad regex: regex parse error:
+    [invalid
+    ^
+error: unclosed character class
+  help: the pattern '[invalid' is not a valid regular expression
+  ┌─ tests/harness/errors/087_bad_regex.eu:2:12
+  │
+2 │ x: "hello" str.matches?("[invalid")
+  │            ^^^
+  │
+  = stack trace:
+    - x at 087_bad_regex.eu:2:12

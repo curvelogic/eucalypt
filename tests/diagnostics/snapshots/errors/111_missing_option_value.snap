@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/111_missing_option_value
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/111_missing_option_value.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/111_missing_option_value.eu:2:20
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: option --output requires a value
+  ┌─ tests/harness/errors/111_missing_option_value.eu:2:20
+  │
+2 │ main: ["--output"] parse-args({ output: "default" })
+  │                    ^^^^^^^^^^
+  │
+  = stack trace:
+    - main at 111_missing_option_value.eu:2:20

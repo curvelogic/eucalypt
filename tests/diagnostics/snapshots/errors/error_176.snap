@@ -1,0 +1,60 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/error_176
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/error_176.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/error_176.eu:19:32
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+EXPECT FAILED: expected "goodbye world", got "hello world"
+error: assertion failed: expected "goodbye world", got "hello world"
+   ┌─ tests/harness/errors/error_176.eu:19:32
+   │
+16 │ make-greeting(name): "hello {name}"
+   │                      -------------- called from here
+   ·
+19 │ result: make-greeting("world") //= "goodbye world"
+   │                                ^^^
+   │
+   = stack trace:
+     - result at error_176.eu:19:32
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/error_176.eu:16:22
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+EXPECT FAILED: expected "goodbye world", got "hello world"
+error: assertion failed: expected "goodbye world", got "hello world"
+   ┌─ tests/harness/errors/error_176.eu:16:22
+   │
+16 │ make-greeting(name): "hello {name}"
+   │                      ^^^^^^^^^^^^^^
+   ·
+19 │ result: make-greeting("world") //= "goodbye world"
+   │                                --- called from here
+   │
+   = stack trace:
+     - result at error_176.eu:19:32

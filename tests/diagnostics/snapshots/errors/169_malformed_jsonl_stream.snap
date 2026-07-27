@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/169_malformed_jsonl_stream
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/169_malformed_jsonl_stream.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/169_malformed_jsonl_stream.eu:3:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: malformed JSON in stream: key must be a string at line 1 column 2
+  ┌─ tests/harness/errors/169_malformed_jsonl_stream.eu:3:12
+  │
+3 │ main: data count
+  │            ^^^^^
+  │
+  = stack trace:
+    - main at 169_malformed_jsonl_stream.eu:3:12

@@ -1,0 +1,27 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/154_internal_import_error
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/154_internal_import_error.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/154_internal_import_error.eu:3:9
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'priv-helper'
+  ┌─ tests/harness/errors/154_internal_import_error.eu:3:9
+  │
+3 │ result: priv-helper(1)
+  │         ^^^^^^^^^^^
+  │
+  = note: 'priv-helper' is marked `export: :internal` in its unit and cannot be accessed by importers
