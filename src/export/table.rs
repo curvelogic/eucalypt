@@ -180,4 +180,17 @@ where
     pub fn result(&self) -> Option<&V> {
         self.result.as_ref()
     }
+
+    /// Whether the next scalar consumed will become a block key.
+    ///
+    /// Formats whose keys are restricted — JSON and TOML have string keys
+    /// only, and eucalypt's own syntax needs a name — use this to reject a
+    /// key their output cannot carry, rather than discovering it inside
+    /// `AsKey::as_key` where there is no error channel (eu-1z503).
+    pub fn expecting_key(&self) -> bool {
+        matches!(
+            self.stack.last(),
+            Some(Expectation::EvenBlockAccumulation(_, _))
+        )
+    }
 }

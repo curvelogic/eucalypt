@@ -1,0 +1,38 @@
+{ doc: "217 non-text block keys in the formats that support them
+        (eu-1z503). `kv-block` and `block` accept any key, and yaml and edn
+        both have a representation for one that is not text. json, toml and
+        eu do not, and reject it — see errors/218-220.
+
+        This fixture is the other half of that pair: it pins the formats
+        that must keep working, so that hardening the three that cannot
+        represent such a key does not quietly take these with it.
+
+        Braces in the expected strings are written as \\u007b / \\u007d
+        rather than doubled: inside a c-string, `{{` does not produce a
+        literal brace — it makes the whole declaration disappear (eu-1tkk.7.31)." }
+
+` { target: :test }
+test: {
+  numeric-key: kv-block(1, "a")
+  t-yaml-number: (numeric-key render-as(:yaml)) = c"---\n1: a\n"
+  t-edn-number: (numeric-key render-as(:edn)) = c"\u007b1 \"a\"\u007d\n"
+
+  bool-key: kv-block(true, "a")
+  t-yaml-bool: (bool-key render-as(:yaml)) = c"---\ntrue: a\n"
+
+  # An ordinary symbol-keyed block must be unaffected in every format.
+  plain: { a: 1 }
+  t-json-plain: (plain render-as(:json)) = c"\u007b\n  \"a\": 1\n\u007d\n"
+  t-eu-plain: (plain render-as(:eu)) = c"\u007b a: 1 \u007d\n"
+
+  # A *string* key is text too, and `kv-block` can produce one, so it must
+  # be accepted as readily as a symbol. Covers the other accepting arm of
+  # the key check — without this, narrowing the check to symbols only would
+  # go unnoticed.
+  string-key: kv-block("a", 1)
+  t-json-string-key: (string-key render-as(:json)) = c"\u007b\n  \"a\": 1\n\u007d\n"
+  t-toml-string-key: (string-key render-as(:toml)) = c"a = 1\n\n"
+
+  RESULT: [t-yaml-number, t-edn-number, t-yaml-bool, t-json-plain, t-eu-plain,
+           t-json-string-key, t-toml-string-key] all-true? then(:PASS, :FAIL)
+}

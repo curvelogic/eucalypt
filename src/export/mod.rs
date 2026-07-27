@@ -33,6 +33,58 @@ pub(crate) const INTEGER_RANGE_NOTES: [&str; 2] = [
      first with 'str', e.g. 'n str'",
 ];
 
+/// Reject a block key the target format cannot carry.
+///
+/// JSON object keys and TOML keys are strings; eucalypt's own syntax needs a
+/// name. A block built with `kv-block(1, "a")` or `block([[1, "a"]])` has a
+/// key that is none of those, and used to abort the process inside
+/// `AsKey::as_key` (eu-1z503).
+///
+/// Reported rather than coerced to `"1"`, for the same reason as a TOML null
+/// (eu-1tkk.7.28): a string key is not the key that was evaluated, and the
+/// difference survives into anything that re-reads the output. The type
+/// checker already warns on such a key, so this is confirming a mistake it
+/// has flagged rather than refusing something idiomatic.
+pub(crate) fn unrepresentable_key(
+    format: &str,
+    expecting_key: bool,
+    event: &crate::eval::emit::Event,
+) -> Option<crate::eval::emit::Rejection> {
+    use crate::eval::emit::{Event, Rejection};
+    use crate::eval::primitive::Primitive;
+
+    if !expecting_key {
+        return None;
+    }
+    let found = match event {
+        Event::OutputScalar(_, Primitive::Str(_)) | Event::OutputScalar(_, Primitive::Sym(_)) => {
+            return None
+        }
+        Event::OutputScalar(_, Primitive::Null) => "null".to_string(),
+        Event::OutputScalar(_, Primitive::Bool(b)) => format!("the boolean {b}"),
+        Event::OutputScalar(_, Primitive::Num(n)) => format!("the number {n}"),
+        Event::OutputScalar(_, Primitive::ZonedDateTime(dt)) => format!("the timestamp {dt}"),
+        // A list or block used as a key: rendered as a YAML complex key, but
+        // json/toml/eu have no such thing.
+        Event::OutputSequenceStart(_) => "a list".to_string(),
+        Event::OutputBlockStart(_) => "a block".to_string(),
+        _ => return None,
+    };
+    Some(
+        Rejection::new(format!(
+            "a block key is {found}, but {format} keys must be text"
+        ))
+        .with_notes([
+            "give the block symbol keys, e.g. 'kv-block(:one, \"a\")', or \
+             convert the key to text with 'str' before rendering"
+                .to_string(),
+            "'yaml' and 'edn' output both support keys that are not text, \
+             and render this block unchanged"
+                .to_string(),
+        ]),
+    )
+}
+
 /// Create an emitter for the format specified
 ///
 /// Return None if the format is not recognised.

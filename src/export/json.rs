@@ -1,6 +1,6 @@
 //! JSON export
 
-use crate::eval::emit::{Emitter, Event, RenderMetadata};
+use crate::eval::emit::{Emitter, Event, Rejection, RenderMetadata};
 use crate::eval::primitive::Primitive;
 use std::io::Write;
 
@@ -9,7 +9,12 @@ use super::table::{AsKey, FromPairs, FromPrimitive, FromVec, TableAccumulator};
 
 impl AsKey<String> for serde_json::Value {
     fn as_key(&self) -> String {
-        self.as_str().unwrap().to_string()
+        // Rejected by `unacceptable` before reaching here; fall back to the
+        // value's own rendering rather than aborting should another route
+        // arrive (eu-1z503).
+        self.as_str()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| self.to_string())
     }
 }
 
@@ -54,6 +59,14 @@ impl<'a> JsonEmitter<'a> {
 }
 
 impl Emitter for JsonEmitter<'_> {
+    fn format_name(&self) -> &'static str {
+        "JSON"
+    }
+
+    fn unacceptable(&self, event: &Event) -> Option<Rejection> {
+        super::unrepresentable_key("JSON object", self.accum.expecting_key(), event)
+    }
+
     fn emit(&mut self, event: Event) -> Result<(), RenderError> {
         self.accum.consume(event);
         if let Some(result) = self.accum.result() {
