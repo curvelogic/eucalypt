@@ -52,6 +52,13 @@ fn run_trace_dump(src: &str) -> String {
 
     let out = Command::new(env!("CARGO_BIN_EXE_eu"))
         .env("EU_ERROR_TRACE_DUMP", "1")
+        // `#[cfg(prelude_blob_ok)]` gates this file on the blob being
+        // *embedded*, which is a build-time fact; `EU_SOURCE_PRELUDE` is a
+        // runtime override that would make the child ignore it and fall
+        // back to compiling the prelude from source, where none of these
+        // assertions hold. Clear it so a developer's environment cannot
+        // turn these into spurious failures (eu-1tkk.7.21).
+        .env_remove("EU_SOURCE_PRELUDE")
         .args(["--heap-limit-mib", "2048"])
         .arg(&path)
         .output()
@@ -149,6 +156,8 @@ fn run_diagnostic(src: &str, extra: &[&str]) -> String {
 
     let out = Command::new(env!("CARGO_BIN_EXE_eu"))
         .arg("run")
+        // See `run_trace_dump`: this file asserts blob-mode behaviour.
+        .env_remove("EU_SOURCE_PRELUDE")
         .args(["--heap-limit-mib", "2048"])
         .args(extra)
         .arg(&path)
