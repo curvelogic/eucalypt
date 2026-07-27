@@ -112,6 +112,35 @@ const REGISTRY: &[Gate] = &[
         supplier: Supplier::NativeTargetsOnly,
         rationale: "replays fuzzer corpus files through the native pipeline",
     },
+    Gate {
+        path: "tests/blob_deprecation_test.rs",
+        cfg: "prelude_blob_ok",
+        supplier: Supplier::PreludeBlobJob("diagnostics-blob-mode"),
+        rationale: "asserts that the blob carries the prelude's own \
+                    deprecation table and that the evaluate path reports it; \
+                    without a blob the eval path falls back to \
+                    run_type_checker and there is no blob behaviour to \
+                    assert (eu-1tkk.2)",
+    },
+    Gate {
+        path: "tests/wire_format_enforcement_test.rs",
+        cfg: "prelude_blob_ok",
+        supplier: Supplier::PreludeBlobJob("diagnostics-blob-mode"),
+        rationale: "one gated test re-derives the blob source hash from the \
+                    files on disk and compares it with the embedded blob's; \
+                    with no blob embedded there is nothing to compare \
+                    against. The rest of the file is ungated (eu-3skeg)",
+    },
+    Gate {
+        path: "tests/harness_test.rs",
+        cfg: "prelude_blob_ok",
+        supplier: Supplier::PreludeBlobJob("diagnostics-blob-mode"),
+        rationale: "one gated test compares blob-core and source-prelude \
+                    diagnostics byte for byte on a large file; without a blob \
+                    both invocations take the source path and the comparison \
+                    is a tautology. The rest of the file is ungated \
+                    (eu-r4647)",
+    },
 ];
 
 /// Substrings that mark a file as conditionally compiled for the purposes of
