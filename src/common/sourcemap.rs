@@ -219,9 +219,9 @@ impl SourceMap {
     /// that nothing this `SourceMap` mints can collide with one, and
     /// nothing already in that space can resolve here (eu-r4647).
     ///
-    /// `Smid` is a bare index into `self.source`, minted sequentially from
-    /// 1. That makes it meaningful only within the process that minted it.
-    /// Pre-compiled artefacts break that assumption: `cargo xtask
+    /// `Smid` is a bare index into `self.source`, minted sequentially
+    /// from one, which makes it meaningful only within the process that
+    /// minted it. Pre-compiled artefacts break that assumption: `cargo xtask
     /// prelude-compile` bakes `Smid`s minted by *its own* `SourceMap` into
     /// the blob, and `PreludeBlob::desugared_unit_cores` carries them
     /// verbatim into the runtime type check
