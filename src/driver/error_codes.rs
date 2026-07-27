@@ -33,6 +33,32 @@ const CATALOGUE: &[(&str, &str)] = &[
      type (num, str, str.of, and so on).",
     ),
     (
+        "EU-EVAL-CONTRACT",
+        "EU-EVAL-CONTRACT: contract violation\n\
+     \n\
+     Data failed a structural contract applied with `ensure`. The contract\n\
+     is an ordinary type spec written as an s-string literal, and the\n\
+     diagnostic's notes list every position that did not conform, each with\n\
+     a path into the data.\n\
+     \n\
+     Example:\n\
+     \n\
+     \x20   { import: \"contract.eu\" }\n\
+     \x20   schema: s\"{ name: string, port: number }\"\n\
+     \x20   config: { name: \"web\", port: \"8080\" } ensure(schema)\n\
+     \n\
+     \x20   error[EU-EVAL-CONTRACT]: contract violation: 1 violation against \
+     {name: string, port: number}\n\
+     \x20     = port: expected number, found string\n\
+     \n\
+     How to fix it: correct the data at each path the notes name, or widen\n\
+     the spec if the shape you are receiving is the shape you intended. A\n\
+     closed record spec reports surplus keys; add `..` to permit them. To\n\
+     inspect the violations as data rather than aborting, call\n\
+     `validate(spec, data)` — it returns the same information as a list of\n\
+     blocks and never raises.",
+    ),
+    (
         "EU-RENDER-UNREPRESENTABLE",
         "EU-RENDER-UNREPRESENTABLE: value cannot be represented in the output format\n\
      \n\
@@ -55,8 +81,7 @@ const CATALOGUE: &[(&str, &str)] = &[
      and eu output all keep integers of this magnitude), or convert it to a\n\
      string first with `str` so the exact digits are preserved as text.\n\
      eucalypt reports this rather than quietly rounding the value or\n\
-     changing its type, so that what you export matches what you evaluated.",
-    ),
+     changing its type, so that what you export matches what you evaluated.",    ),
 ];
 
 /// Look up a code's catalogue entry.

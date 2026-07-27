@@ -2713,7 +2713,7 @@ pub fn test_error_171() {
 /// this reached an `unreachable!` in the TOML exporter and aborted the
 /// process. Companion to `test_error_171` (eu-1tkk.7.20).
 pub fn test_error_194() {
-    run_error_test(&error_opts("194_toml_large_uint.eu"));
+    run_error_test(&error_opts("211_toml_large_uint.eu"));
 }
 
 #[test]
@@ -2792,6 +2792,93 @@ pub fn test_192_1tkk_7_9_function_not_block() {
 /// (bytecode) and `EU_HEAPSYN=1 cargo test` (HeapSyn).
 pub fn test_193_1tkk_7_12_curated_trace() {
     run_error_test(&error_opts("193_1tkk_7_12_curated_trace.eu"));
+}
+
+#[test]
+/// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
+/// from baked-in resource text) was classified as *user* code, so a frame
+/// inside it could win `to_diagnostic`'s "prefer a user file" test and become
+/// the **primary label**, excerpting library internals the user did not write.
+///
+/// The regex deliberately anchors on the `┌─` primary-label line rather than
+/// merely finding the fixture's name somewhere in the output: before the fix
+/// the user's file still appeared in the `stack trace:` note, so a looser
+/// pattern passes either way and gates nothing.
+pub fn test_194_8a49h_library_blame() {
+    run_error_test(&error_opts("194_8a49h_library_blame.eu"));
+}
+
+#[test]
+/// The same `xs nth(10)` failure as 193, but with ten unrelated bindings
+/// declared *between* the list and the call (eu-og3u6). 193 cannot see this
+/// bug: with only two declarations, the stale annotation the bytecode engine
+/// leaked out of the first rendered binding happened to be `result`'s own.
+/// Once anything renders before it, the leak made the primary label and the
+/// trace anchor name `pad0` — a binding the user never called — for a
+/// failure raised inside `nth`. The regex pins the primary label's own
+/// `file:line:col` (line 15, the `result` declaration) *before* the
+/// `stack trace:` marker, so a regression that only fixes the note cannot
+/// satisfy it.
+pub fn test_195_og3u6_trace_anchor() {
+    run_error_test(&error_opts("195_og3u6_trace_anchor.eu"));
+}
+
+#[test]
+/// SV3 (eu-u9xj.1) — `ensure` on non-conforming data raises
+/// `EU-EVAL-CONTRACT`. One `(?s)` regex gates the whole shape at once: the
+/// code, the headline's violation count and rendered spec type, and both
+/// violation lines as notes — a `:type-mismatch` with a path and a
+/// closed-record `:unexpected`.
+pub fn test_201_sv3_contract_violation() {
+    run_error_test(&error_opts("201_sv3_contract_violation.eu"));
+}
+
+#[test]
+/// SV3 (eu-u9xj.1) — a malformed *spec* raises through `panic`, a different
+/// `ExecutionError` variant from the `ContractViolation` a non-conforming
+/// *value* produces. This is what makes design decision 6 testable: a schema
+/// typo must not masquerade as bad input data.
+pub fn test_202_sv3_contract_bad_spec() {
+    run_error_test(&error_opts("202_sv3_contract_bad_spec.eu"));
+}
+
+#[test]
+/// eu-mqlkv — an invalid embedding (here a `{{`-escaped record type inside
+/// an s-string, where single braces are correct) in an *imported* unit used
+/// to abort the process with exit 101 via
+/// `.expect("failure translating import")`, while the same file evaluated
+/// directly produced a clean codespan diagnostic. Gates that the import
+/// path now diagnoses too: exit 1, "invalid embedding" on stderr.
+pub fn test_206_mqlkv_import_bad_embedding() {
+    run_error_test(&error_opts("206_mqlkv_import_bad_embedding.eu"));
+}
+
+#[test]
+/// eu-mqlkv — the fix is not specific to invalid embeddings: *any*
+/// `CoreError` raised while translating an import took the same panicking
+/// route. This exercises `CoreError::VersionRequirementFailed` from an
+/// imported unit's unsatisfiable `requires:`.
+pub fn test_207_mqlkv_import_bad_requires() {
+    run_error_test(&error_opts("207_mqlkv_import_bad_requires.eu"));
+}
+
+#[test]
+/// eu-mqlkv, **site 2 of 3** — `rowan_declaration_to_binding`'s
+/// scoped-import loop, reached by a declaration-scoped
+/// `` ` { import: … } `` rather than unit metadata. Each of the three
+/// `.expect` sites panicked independently, so each needs its own gate:
+/// without this test two thirds of the fix could be reverted with the
+/// suite green while users still hit exit 101.
+pub fn test_208_mqlkv_scoped_import_bad_embedding() {
+    run_error_test(&error_opts("208_mqlkv_scoped_import_bad_embedding.eu"));
+}
+
+#[test]
+/// eu-mqlkv, **site 3 of 3** — the `Block` impl's block-metadata import
+/// loop, reached by leading metadata on a nested block rather than on the
+/// unit or on a declaration.
+pub fn test_209_mqlkv_block_import_bad_embedding() {
+    run_error_test(&error_opts("209_mqlkv_block_import_bad_embedding.eu"));
 }
 
 #[test]
@@ -2962,6 +3049,72 @@ pub fn test_190_odkp_xml_entity_refs() {
     run_test(&opts("190_odkp_xml_entity_refs.eu"));
 }
 
+/// SV3 (eu-u9xj.1) — the `t-record` projection carries record closedness as
+/// an additive trailing element, and `from-data` renders it, closing the
+/// open-record round-trip loss. See the .eu file for full context.
+#[test]
+pub fn test_196_sv3_projection_closedness() {
+    run_test(&opts("196_sv3_projection_closedness.eu"));
+}
+
+/// SV3 (eu-u9xj.1) — `reflect.type-str` is the canonical `t-*` renderer,
+/// hoisted out of `from-data`'s block so a runtime consumer can name the
+/// type it expected. See the .eu file for full context.
+#[test]
+pub fn test_197_sv3_type_str() {
+    run_test(&opts("197_sv3_type_str.eu"));
+}
+
+/// SV3 (eu-u9xj.1) — `validate` is the reporting dual of `as-spec`: it walks
+/// spec and value together carrying a path, and emits an entry for every
+/// mismatch instead of collapsing to a bit. See the .eu file for full context.
+#[test]
+pub fn test_198_sv3_validate() {
+    run_test(&opts("198_sv3_validate.eu"));
+}
+
+/// SV3 (eu-u9xj.1) — the executable statement of "cost paid only where
+/// written": every check would raise or diverge if `validate` forced a
+/// subtree its spec does not name. See the .eu file for full context.
+#[test]
+pub fn test_199_sv3_forcing_discipline() {
+    run_test(&opts("199_sv3_forcing_discipline.eu"));
+}
+
+/// SV3 (eu-u9xj.1) — `ensure` returns conforming data unchanged, so it drops
+/// into a pipeline; plus the report-line renderers the raised diagnostic
+/// shows as notes. See the .eu file for full context.
+#[test]
+pub fn test_200_sv3_ensure() {
+    run_test(&opts("200_sv3_ensure.eu"));
+}
+
+/// eu-3aa6s — regression test for `meta()` raising "expected block, found
+/// symbol" on every `{ :sym … }` shorthand block: META merged each metadata
+/// layer with the recursive result for the body, and Merge is a block
+/// operation. See the .eu file for full context.
+#[test]
+pub fn test_204_3aa6s_meta_symbol_metadata() {
+    run_test(&opts("204_3aa6s_meta_symbol_metadata.eu"));
+}
+
+// EF1 combined effect monad (do): uses io.shell, so runs with --allow-io.
+#[test]
+pub fn test_203_ef1_do_monad() {
+    run_test(&io_opts("203_ef1_do_monad.eu"));
+}
+
+/// eu-frf2o — regression test for a metadata-annotated inline block literal
+/// used as a call/catenation operand. The STG compiler emitted the `Meta`
+/// binder group as a non-recursive `Let`, so the node's sibling references
+/// escaped into the enclosing frame: a blackhole at the top level and a
+/// silently wrong value (the caller's first argument) inside a function.
+/// See the .eu file for full context.
+#[test]
+pub fn test_205_frf2o_inline_annotated_block() {
+    run_test(&opts("205_frf2o_inline_annotated_block.eu"));
+}
+
 #[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
@@ -3067,6 +3220,25 @@ pub fn test_typecheck_111_prefix_list_out_of_prefix_partial() {
 #[test]
 pub fn test_typecheck_112_check_strict_parse_error_exits_nonzero() {
     run_typecheck_test("112_check_strict_parse_error_exits_nonzero.eu");
+}
+
+#[test]
+pub fn test_typecheck_113_deprecated_namespace_member() {
+    run_typecheck_test("113_deprecated_namespace_member.eu");
+}
+
+#[test]
+pub fn test_typecheck_114_deprecated_member_precision() {
+    run_typecheck_test("114_deprecated_member_precision.eu");
+}
+
+// Prelude-declared deprecation. The `stderr:` pattern in the sidecar makes
+// `run_typecheck_test` drive the evaluate path as well as `eu check`, which
+// is where blob mode differs — see `tests/blob_deprecation_test.rs` and
+// eu-vbctt.
+#[test]
+pub fn test_typecheck_115_deprecated_prelude_member() {
+    run_typecheck_test("115_deprecated_prelude_member.eu");
 }
 
 // ── eu doc tests ──────────────────────────────────────────────────────────────
@@ -3327,4 +3499,91 @@ pub fn test_config_matrix_blob_vs_source_prelude_byte_equal() {
             "stderr differs between blob-core and source-prelude checks for {file}"
         );
     }
+}
+
+/// Blob-core vs source-prelude equivalence on the *eval* path, for a file
+/// big enough to reach the `Smid` range the blob's baked cores occupy
+/// (eu-r4647).
+///
+/// Two things distinguish this from the matrix above.
+///
+/// First, it drives the eval path (`eu --strict <file>`, as
+/// `test_eval_path_warns_on_record_key_typo` does), not `eu check`.
+/// `run_type_checker_from_blob_core` — the function that injects the
+/// blob's baked cores — is reached only from `bin/eu.rs`; `eu check` goes
+/// through `run_type_checker`, which always loads prelude source, so
+/// `EU_SOURCE_PRELUDE` makes no difference to it either way.
+///
+/// Second, it is large. `cargo xtask prelude-compile` bakes `Smid`s
+/// minted by its own `SourceMap` into `PreludeBlob::desugared_unit_cores`
+/// (high-water mark 7357 on the checked-in prelude), and
+/// `run_type_checker_from_blob_core` injects them into a fresh runtime
+/// `SourceMap`. Only once the user's own file mints past that mark do the
+/// two spaces overlap — at which point, before the fix, a foreign index
+/// resolved against a real user declaration. A short fixture cannot see
+/// that, whatever else it checks.
+///
+/// `SourceMap::reserve_foreign_range` closes the aliasing by shifting
+/// everything this process mints above the foreign range. This test is
+/// the guard on the other side of that shift: with the real blob and a
+/// genuinely large file, the rendered diagnostic must stay byte-identical
+/// to the source-prelude path, which it will not be if the offsetting is
+/// wrong.
+///
+/// Gated on `prelude_blob_ok` because it is only meaningful with a blob
+/// present — without one both invocations take the source path and the
+/// comparison is a tautology. Note that restoring a `lib/prelude.blob`
+/// with an older mtime will not retrigger `build.rs`, leaving this
+/// compiled out while looking green; `touch build.rs` forces it.
+#[cfg(prelude_blob_ok)]
+#[test]
+pub fn test_blob_core_vs_source_prelude_byte_equal_on_a_large_file() {
+    use std::io::Write as _;
+
+    // Comfortably past the 7357 `Smid`s the checked-in prelude bakes, so
+    // the user file's own indices span the whole foreign range.
+    const FILLER_DECLS: usize = 9000;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("large.eu");
+    let mut f = std::fs::File::create(&path).expect("create fixture");
+    for i in 0..FILLER_DECLS {
+        writeln!(f, "filler{i}: {i}").expect("write fixture");
+    }
+    // A genuine, user-sited mismatch at the very end of the file, so its
+    // label sits at a byte offset only a large file can produce.
+    writeln!(f, "` {{ type: \"number -> number\" }}").expect("write fixture");
+    writeln!(f, "double(x): x * 2").expect("write fixture");
+    writeln!(f, "result: double(\"hello\")").expect("write fixture");
+    drop(f);
+    let path = path.to_str().expect("utf8 path");
+
+    let blob = std::process::Command::new(eu_binary())
+        .args(["--strict", path])
+        .output()
+        .expect("failed to run eu (blob-core)");
+    let source = std::process::Command::new(eu_binary())
+        .env("EU_SOURCE_PRELUDE", "1")
+        .args(["--strict", path])
+        .output()
+        .expect("failed to run eu (source prelude)");
+
+    let blob_err = String::from_utf8_lossy(&blob.stderr);
+    let source_err = String::from_utf8_lossy(&source.stderr);
+
+    // Precondition: the fixture must actually produce a located
+    // diagnostic, otherwise byte-equality proves nothing.
+    assert!(
+        blob_err.contains("type mismatch") && blob_err.contains("large.eu"),
+        "fixture should produce a located type mismatch under the blob:\n{blob_err}"
+    );
+    assert_eq!(
+        blob.status.code(),
+        source.status.code(),
+        "exit code differs between blob-core and source-prelude eval-path checks"
+    );
+    assert_eq!(
+        blob_err, source_err,
+        "stderr differs between blob-core and source-prelude eval-path checks on a large file"
+    );
 }

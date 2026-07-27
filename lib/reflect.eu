@@ -14,9 +14,11 @@ type-data from tagged lists." }
     type: s"any → any" }
 to-data(v): type-data?(v) then(__TYPE_TO_DATA(v), v)
 
-` { doc: "`from-data(td)` - construct a type-data value from a t-* tagged list."
-    type: s"any → any" }
-from-data(td):
+` { doc: "`type-str(td)` - render a t-* tagged list as its canonical type-DSL string.
+         The rendering vocabulary is the one used in type annotations, so it is
+         also what a runtime consumer should show a user as an expected type."
+    type: s"any → string" }
+type-str(td):
   { prim-names: {
         error: "ExecutionError"
       }
@@ -39,7 +41,19 @@ from-data(td):
         q: is-opt then("?", "")
       }."{k}{q}: {ty}"
 
-    record-str(rec): rec elements map(field-str) str.join-on(", ") "{{ {} }}"
+    open-flag(rest): ((rest count) > 1) then(rest second, false)
+
+    # A literal `}}` immediately following an interpolation is dropped by the
+    # string lexer, so the closing brace is interpolated from a binding rather
+    # than written inline.
+    lbrace: "{{"
+    rbrace: "}}"
+
+    record-str(rec, open?):
+      { body: rec elements map(field-str) str.join-on(", ")
+        tail: open? then(", ..", "")
+        inner: (rec elements nil?) ∧ open? then("..", "{body}{tail}")
+      }."{lbrace}{inner}{rbrace}"
 
     app-str(f, x):
       { x-str: to-str(x)
@@ -72,12 +86,17 @@ from-data(td):
         , tag = :t-partial => "{s0}?"
         , tag = :t-tuple   => tuple-str(rest)
         , tag = :t-prefix-list => prefix-list-str(r0, r1)
-        , tag = :t-record  => record-str(r0)
+        , tag = :t-record  => record-str(r0, open-flag(rest))
         , tag = :t-var     => "{r0}"
         , tag = :t-lit-sym => ":{r0}"
+        , tag = :t-lit-str => c"\"{r0}\""
         , tag = :t-mu      => "{r0}"
         , tag = :t-forall  => "forall {r0}. {s1}"
         , tag = :t-lam     => "λ{r0}. {s1}"
         , "any"
         ])
-  }.(to-str(td) __TYPE_FROM_STRING)
+  }.(to-str(td))
+
+` { doc: "`from-data(td)` - construct a type-data value from a t-* tagged list."
+    type: s"any → any" }
+from-data(td): td type-str __TYPE_FROM_STRING

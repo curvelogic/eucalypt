@@ -11,6 +11,7 @@ pub mod block;
 pub mod boolean;
 pub mod compiler;
 pub mod constant;
+pub mod contract;
 pub mod debug;
 pub mod embed;
 pub mod emit;
@@ -49,6 +50,15 @@ pub mod time;
 pub mod typedata;
 pub mod vec;
 pub mod version;
+/// Single source of truth for the pre-compiled prelude blob's freshness
+/// hash — the wire-format version constant, the paths that feed the hash,
+/// and the staleness verdict.
+///
+/// This module's source file is also `include!`d verbatim by the crate-root
+/// `build.rs`, so that `build.rs`, `cargo xtask prelude-compile` and the
+/// enforcement tests share one definition rather than three that must be
+/// hand-kept in step (eu-3skeg).
+pub mod wire_format;
 pub mod wrap;
 
 use std::{collections::HashMap, fmt, rc::Rc, str::FromStr};
@@ -88,6 +98,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(boolean::Cond));
     rt.add(Box::new(boolean::Clause));
     rt.add(Box::new(panic::Panic));
+    rt.add(Box::new(contract::ContractFail));
     rt.add(Box::new(assert::AssertFail));
     rt.add(Box::new(block::Block));
     rt.add(Box::new(block::Kv));

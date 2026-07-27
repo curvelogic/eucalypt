@@ -63,7 +63,7 @@ action: { :state
   _: state.put(:name, "step-2")
 }
 
-result: state.exec(action, {count: 0, name: "init"})
+result: state.run(action, {count: 0, name: "init"}).state
 ```
 
 ```yaml
@@ -80,8 +80,9 @@ Each step sees the state left by the previous step:
 - The implicit return synthesises `{n: n}` from the non-underscore
   bindings (or use `.(expr)` for an explicit return)
 
-Run the action by passing an initial state to `state.run`,
-`state.eval` (value only), or `state.exec` (final state only).
+Run the action by passing an initial state to `state.run` (returns a
+`value`/`state` block) or `state.eval` (value only); the final state
+alone is `state.run(action, s).state`.
 
 ## Primitives
 
@@ -99,7 +100,7 @@ Run the action by passing an initial state to `state.run`,
 |----------|-------------|
 | `state.run(action, s)` | Run action from state `s`, return block with `value` and `state` fields |
 | `state.eval(action, s)` | Run action, return only the value |
-| `state.exec(action, s)` | Run action, return only the final state |
+| `state.exec(action, s)` | **Deprecated** — use `state.run(action, s).state`. Run action, return only the final state |
 
 ## Using Existing Pipeline Functions
 
@@ -141,7 +142,7 @@ action: { :state
   _: :count %! (+ 1)
 }
 
-result: state.exec(action, {count: 99}).count
+result: state.run(action, {count: 99}).state.count
 ```
 
 ```yaml

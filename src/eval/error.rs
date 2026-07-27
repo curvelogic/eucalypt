@@ -747,11 +747,13 @@ fn display_expected_tags(tags: &[u8]) -> String {
 
 #[derive(Debug, Error)]
 pub enum ExecutionError {
-    /// wrapped, env trace and stack trace (traces boxed together to keep
-    /// this variant — constructed on every VM error-propagation step —
-    /// pointer-sized rather than carrying two inline `Vec`s)
+    /// wrapped, env trace, stack trace and last-known source location
+    /// (boxed together to keep this variant — constructed on every VM
+    /// error-propagation step — pointer-sized rather than carrying two
+    /// inline `Vec`s). See [`ExecutionError::last_annotation`] for what the
+    /// third element is for.
     #[error("{0}")]
-    Traced(Box<ExecutionError>, Box<(Vec<Smid>, Vec<Smid>)>),
+    Traced(Box<ExecutionError>, Box<(Vec<Smid>, Vec<Smid>, Smid)>),
     #[error("allocation error")]
     AllocationError,
     #[error("expected {1} received {2}")]
@@ -866,6 +868,18 @@ pub enum ExecutionError {
     /// call to `panic()` reflected in the error message.
     #[error("panic: {1}")]
     UserPanic(Smid, String),
+    /// A structural contract applied with `ensure` rejected its data.
+    ///
+    /// Carries the `ensure` call site, a headline (the violation count and
+    /// the type the data failed) and one rendered line per violation. The
+    /// lines become diagnostic notes; the *structured* report they were
+    /// rendered from is what `validate` returns.
+    ///
+    /// Deliberately an `ExecutionError` and not a `TypeWarning`: it happens
+    /// during evaluation, it is not advisory, it is not suppressible by
+    /// `--suppress-type-warnings`, and it aborts the program.
+    #[error("contract violation: {}", .1.0)]
+    ContractViolation(Smid, Box<(String, Vec<String>)>),
     #[error("parse-as({}): {}", .1.0, .1.1)]
     ParseError(Smid, Box<(String, String)>),
     #[error("version requirement not satisfied: eucalypt {} does not satisfy '{}'", .1.0, .1.1)]
@@ -979,6 +993,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::BlackHole(s) => *s,
             ExecutionError::Panic(s, _) => *s,
             ExecutionError::UserPanic(s, _) => *s,
+            ExecutionError::ContractViolation(s, _) => *s,
             ExecutionError::ParseError(s, _) => *s,
             ExecutionError::VersionRequirementFailed(s, _) => *s,
             ExecutionError::InvalidBase64(s, _) => *s,
@@ -1033,11 +1048,11 @@ impl ExecutionError {
             diag = diag.with_code(code);
         }
         // Unwrap Traced to get at the inner error for note generation
-        let (inner, env_trace, stack_trace) = match self {
+        let (inner, env_trace, stack_trace, last_annotation) = match self {
             ExecutionError::Traced(e, trace) => {
-                (e.as_ref(), trace.0.as_slice(), trace.1.as_slice())
+                (e.as_ref(), trace.0.as_slice(), trace.1.as_slice(), trace.2)
             }
-            other => (other, [].as_slice(), [].as_slice()),
+            other => (other, [].as_slice(), [].as_slice(), Smid::default()),
         };
 
         // Determine the best primary source location:
@@ -1079,7 +1094,22 @@ impl ExecutionError {
             // implementations that could silently drift apart.
             let user_smid = curate_trace(stack_trace, source_map, TRACE_BUDGET)
                 .primary
-                .or_else(|| curate_trace(env_trace, source_map, TRACE_BUDGET).primary);
+                .or_else(|| curate_trace(env_trace, source_map, TRACE_BUDGET).primary)
+                // Last resort before giving up on a user-file primary: the
+                // machine's last-known source location (see
+                // `ExecutionError::last_annotation`). Errors raised from
+                // unannotated synthetic code — an intrinsic's deferred
+                // argument check — have no Smid of their own and no user
+                // frame pending on the stack, but the user's program was
+                // demonstrably *somewhere* moments earlier. Consulted only
+                // here, after both traces, so it can never displace a real
+                // frame; and it is filtered to user files by the classifier
+                // just like any other candidate.
+                .or_else(|| {
+                    (last_annotation.is_valid()
+                        && source_map.classify_frame(last_annotation) == FrameKind::User)
+                        .then_some(last_annotation)
+                });
 
             if let Some(smid) = user_smid {
                 source_map
@@ -1208,7 +1238,10 @@ impl ExecutionError {
         // available source locations as notes so we can study what information
         // is available at error time.
         if std::env::var("EU_ERROR_TRACE_DUMP").is_ok() {
-            let mut dump = vec!["--- ERROR TRACE DUMP ---".to_string()];
+            let mut dump = vec![
+                "--- ERROR TRACE DUMP ---".to_string(),
+                format!("sourcemap entries: {}", source_map.len()),
+            ];
 
             // Error's own Smid
             let error_smid = inner.smid();
@@ -1256,6 +1289,9 @@ impl ExecutionError {
 
         let notes = match inner {
             ExecutionError::TypeMismatch(_, detail) => type_mismatch_notes(&detail.0, &detail.1),
+            // One note per violation. The lines were rendered in eucalypt by
+            // `lib/contract.eu`, so the presentation is changeable there.
+            ExecutionError::ContractViolation(_, detail) => detail.1.clone(),
             ExecutionError::NoBranchForDataTag(_, actual, expected) => {
                 data_tag_mismatch_notes(*actual, expected)
             }
@@ -1471,6 +1507,27 @@ impl ExecutionError {
         }
     }
 
+    /// The last source location the machine was at before the raise, if the
+    /// error was traced.
+    ///
+    /// An error can be raised from code that carries no annotation of its own
+    /// — an intrinsic's deferred argument check, reached after the enclosing
+    /// `force` has completed and restored a synthetic (library) annotation.
+    /// The error's own Smid is then `Smid::default()` and the continuation
+    /// stack may hold no user frame either, leaving the diagnostic with
+    /// nothing to point at (eu-0lvf). This register records the most recent
+    /// *valid* annotation the machine held, and is consulted **only** after
+    /// the error's own Smid, the stack trace and the env trace have all
+    /// failed to yield a user-file location — never in preference to a real
+    /// frame, and never as a trace frame in its own right (it is not one).
+    pub fn last_annotation(&self) -> Option<Smid> {
+        if let ExecutionError::Traced(_, trace) = self {
+            Some(trace.2)
+        } else {
+            None
+        }
+    }
+
     /// The stable error code for this error, if one has been assigned.
     ///
     /// Codes are namespaced `EU-<AREA>-<SLUG>` (see `docs/reference/error-codes.md`).
@@ -1482,6 +1539,7 @@ impl ExecutionError {
         match self {
             ExecutionError::Traced(inner, _) => inner.code(),
             ExecutionError::TypeMismatch(..) => Some("EU-EVAL-TYPE"),
+            ExecutionError::ContractViolation(..) => Some("EU-EVAL-CONTRACT"),
             ExecutionError::UnrepresentableValue(..) => Some("EU-RENDER-UNREPRESENTABLE"),
             _ => None,
         }
@@ -1531,7 +1589,7 @@ mod location_selection_tests {
         let inner = ExecutionError::NoBranchForDataTag(prelude_smid, 0, vec![1]);
         let traced = ExecutionError::Traced(
             Box::new(inner),
-            Box::new((vec![prelude_smid], vec![prelude_smid])),
+            Box::new((vec![prelude_smid], vec![prelude_smid], Smid::default())),
         );
 
         let diag = traced.to_diagnostic(&sm);
@@ -1544,6 +1602,81 @@ mod location_selection_tests {
         );
     }
 
+    /// With no user Smid in either trace, the machine's last-known source
+    /// location rescues the diagnostic (eu-0lvf's `str.fmt` / `str.of` shape:
+    /// an intrinsic's deferred argument check raises from unannotated
+    /// synthetic code, so the error has no Smid and nothing is pending on the
+    /// stack). Before eu-og3u6 this worked only because the bytecode engine's
+    /// live annotation register was leaking — the same leak that blamed the
+    /// wrong declaration everywhere else.
+    #[test]
+    fn falls_back_to_last_annotation_when_no_trace_names_a_user_file() {
+        let (mut sm, user_file, prelude_file) = mk_source_map();
+        let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
+        let last = sm.add(user_file, Span::new(3u32, 7u32));
+        let inner = ExecutionError::NoBranchForDataTag(Smid::default(), 0, vec![1]);
+        let traced = ExecutionError::Traced(
+            Box::new(inner),
+            Box::new((vec![prelude_smid], vec![prelude_smid], last)),
+        );
+
+        let diag = traced.to_diagnostic(&sm);
+
+        let primary = primary_label(&diag).expect("expected a primary label");
+        assert_eq!(primary.file_id, user_file);
+        assert_eq!(primary.range, Range::from(Span::new(3u32, 7u32)));
+    }
+
+    /// The last-known location is a *last* resort and must never displace a
+    /// real frame — the property that keeps the eu-0lvf rescue from
+    /// reintroducing eu-og3u6 by another route. A user frame on the stack
+    /// wins even though `last_annotation` also names a (different) user
+    /// location.
+    #[test]
+    fn last_annotation_never_displaces_a_user_frame_from_a_trace() {
+        let (mut sm, user_file, prelude_file) = mk_source_map();
+        let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
+        let stack_user_smid = sm.add(user_file, Span::new(3u32, 7u32));
+        let last = sm.add(user_file, Span::new(40u32, 44u32));
+        let inner = ExecutionError::NoBranchForDataTag(Smid::default(), 0, vec![1]);
+        let traced = ExecutionError::Traced(
+            Box::new(inner),
+            Box::new((vec![prelude_smid], vec![stack_user_smid], last)),
+        );
+
+        let diag = traced.to_diagnostic(&sm);
+
+        let primary = primary_label(&diag).expect("expected a primary label");
+        assert_eq!(
+            primary.range,
+            Range::from(Span::new(3u32, 7u32)),
+            "the stack trace's user frame must win over the last-known location"
+        );
+    }
+
+    /// A prelude last-known location must not resurrect a prelude primary
+    /// label: it goes through the same `FrameKind::User` filter as any other
+    /// candidate, so an all-library failure still shows no primary.
+    #[test]
+    fn prelude_last_annotation_does_not_resurrect_a_prelude_primary() {
+        let (mut sm, _user_file, prelude_file) = mk_source_map();
+        let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
+        let last = sm.add(prelude_file, Span::new(20u32, 24u32));
+        let inner = ExecutionError::NoBranchForDataTag(Smid::default(), 0, vec![1]);
+        let traced = ExecutionError::Traced(
+            Box::new(inner),
+            Box::new((vec![prelude_smid], vec![prelude_smid], last)),
+        );
+
+        let diag = traced.to_diagnostic(&sm);
+
+        assert!(
+            diag.labels.is_empty(),
+            "a prelude last-known location must not become a primary label, got {:?}",
+            diag.labels
+        );
+    }
+
     /// A user-file Smid reachable via a trace must become the primary, even
     /// when the error's own Smid is prelude-only.
     #[test]
@@ -1552,7 +1685,10 @@ mod location_selection_tests {
         let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
         let user_smid = sm.add(user_file, Span::new(3u32, 7u32));
         let inner = ExecutionError::NoBranchForDataTag(prelude_smid, 0, vec![1]);
-        let traced = ExecutionError::Traced(Box::new(inner), Box::new((vec![], vec![user_smid])));
+        let traced = ExecutionError::Traced(
+            Box::new(inner),
+            Box::new((vec![], vec![user_smid], Smid::default())),
+        );
 
         let diag = traced.to_diagnostic(&sm);
 
@@ -1576,7 +1712,7 @@ mod location_selection_tests {
         let inner = ExecutionError::NoBranchForDataTag(prelude_smid, 0, vec![1]);
         let traced = ExecutionError::Traced(
             Box::new(inner),
-            Box::new((vec![env_user_smid], vec![stack_user_smid])),
+            Box::new((vec![env_user_smid], vec![stack_user_smid], Smid::default())),
         );
 
         let diag = traced.to_diagnostic(&sm);
@@ -1604,7 +1740,7 @@ mod location_selection_tests {
         // error's own (already user-file) Smid must still win.
         let traced = ExecutionError::Traced(
             Box::new(inner),
-            Box::new((vec![prelude_smid], vec![other_user_smid])),
+            Box::new((vec![prelude_smid], vec![other_user_smid], Smid::default())),
         );
 
         let diag = traced.to_diagnostic(&sm);

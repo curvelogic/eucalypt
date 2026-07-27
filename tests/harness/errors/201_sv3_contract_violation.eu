@@ -1,0 +1,8 @@
+{ import: "contract.eu" }
+
+# SV3 eu-u9xj.1: ensure raises EU-EVAL-CONTRACT when the data does not
+# conform, listing every non-conforming position as a diagnostic note and
+# blaming the ensure call site in this file.
+schema: s"{ name: string, port: number }"
+
+config: { name: "web", port: "8080", debug: true } ensure(schema)
