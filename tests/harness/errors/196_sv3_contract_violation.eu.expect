@@ -1,2 +1,0 @@
-exit: 1
-stderr: "(?s)EU-EVAL-CONTRACT.*2 violations against.*port: expected number, found string.*unexpected keys: debug"

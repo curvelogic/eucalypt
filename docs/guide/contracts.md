@@ -175,14 +175,14 @@ be the `ensure` call site — it answers "which contract failed" — while the
 the data file itself is a separate matter, discussed under *What is not
 covered* below.
 
-> **Known limitation.** The source location is currently the `ensure` call
-> site only when the prelude is compiled from source. With the pre-compiled
-> prelude — the default for a release binary — it can instead point inside
-> `lib/contract.eu`. The cause is not specific to contracts: a shipped
-> library imported by filename is misclassified as user code, so a frame
-> inside it can win the "blame user code" ranking (**eu-8a49h**). The
-> violation **paths** in the notes are unaffected, and they are the locator
-> that tells you what to fix.
+The source location is the `ensure` call site under both prelude modes.
+It briefly was not: a shipped library imported by filename was
+misclassified as user code, so a frame inside `lib/contract.eu` could win
+the "blame user code" ranking and become the primary label under the
+pre-compiled prelude. That was **eu-8a49h**, not specific to contracts,
+and it is fixed. `tests/harness/errors/201_sv3_contract_violation.eu`
+anchors the primary label on the `ensure` call site so a regression fails
+the build.
 
 `ensure` on conforming data costs exactly one `validate` — the failure
 branch is lazy, so nothing is rendered when there is nothing to report.
