@@ -12,7 +12,7 @@
 //! broken pipe against a genuine write failure is unit-tested separately in
 //! `src/export/mod.rs::write_failure_tests`.
 
-use std::io::{BufRead, BufReader};
+use std::io::Read;
 use std::process::{Command, Stdio};
 
 /// Every format whose emitter writes a document to the output stream.
@@ -23,7 +23,21 @@ const FORMATS: [&str; 6] = ["yaml", "json", "toml", "edn", "text", "eu"];
 
 /// A program producing far more output than the reader will consume, so the
 /// write is guaranteed still to be in progress when the pipe closes.
+///
+/// Every format renders this to at least 200 KB, comfortably beyond a pipe
+/// buffer, so the child cannot finish writing into the buffer and exit
+/// before we close our end.
 const BIG_DOCUMENT: &str = "main: range(1, 40000)\n";
+
+/// How much of the output to consume before closing the pipe.
+///
+/// Deliberately a byte count and not a line: EDN renders any document as a
+/// *single* line, and TOML renders this one as two, so a `read_line` would
+/// swallow the whole document and the child would finish successfully —
+/// leaving those formats untested. Verified by injection: with a line-based
+/// read, restoring the pre-fix `.expect` in `toml.rs` or `edn.rs` left this
+/// test passing (eu-1tkk.7.25).
+const BYTES_TO_CONSUME: usize = 64;
 
 fn write_fixture(dir: &std::path::Path) -> std::path::PathBuf {
     let path = dir.join("big.eu");
@@ -31,8 +45,8 @@ fn write_fixture(dir: &std::path::Path) -> std::path::PathBuf {
     path
 }
 
-/// Run `eu -x <format> big.eu`, read a single line, then drop the read end —
-/// the equivalent of `| head -1` — and report `(exit code, stderr)`.
+/// Run `eu -x <format> big.eu`, consume a short prefix, then drop the read
+/// end — the equivalent of `| head -c 64` — and report `(exit code, stderr)`.
 fn run_with_early_reader_exit(format: &str) -> (Option<i32>, String) {
     let dir = tempfile::tempdir().expect("temp dir");
     let fixture = write_fixture(dir.path());
@@ -52,12 +66,11 @@ fn run_with_early_reader_exit(format: &str) -> (Option<i32>, String) {
         .expect("spawn eu");
 
     {
-        let stdout = child.stdout.take().expect("stdout piped");
-        let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
-        // One line is enough; dropping the reader closes our end of the
-        // pipe, so eu's next write gets EPIPE.
-        let _ = reader.read_line(&mut line);
+        let mut stdout = child.stdout.take().expect("stdout piped");
+        let mut buf = [0u8; BYTES_TO_CONSUME];
+        // A short prefix is enough; dropping the handle closes our end of
+        // the pipe, so eu's next write gets EPIPE.
+        let _ = stdout.read(&mut buf);
     }
 
     let output = child.wait_with_output().expect("wait for eu");
@@ -98,7 +111,11 @@ fn piping_into_a_short_reader_never_panics() {
 fn piping_into_a_short_reader_exits_quietly() {
     for format in FORMATS {
         let (code, stderr) = run_with_early_reader_exit(format);
-        assert_eq!(code, Some(0), "{format}: expected exit 0, stderr:\n{stderr}");
+        assert_eq!(
+            code,
+            Some(0),
+            "{format}: expected exit 0, stderr:\n{stderr}"
+        );
         assert!(
             stderr.is_empty(),
             "{format}: expected empty stderr on a closed pipe, got:\n{stderr}"
