@@ -2637,10 +2637,9 @@ fn rowan_declaration_to_binding(
     if let Some(inputs) = metadata.imports {
         for input in inputs {
             let import_smid = desugarer.new_smid(components.span);
-            if let Some(import_expr) = desugarer
-                .translate_import(import_smid, input)
-                .expect("failure translating import")
-            {
+            // Propagate rather than panic (eu-mqlkv): see the note on the
+            // `Unit` import loop below.
+            if let Some(import_expr) = desugarer.translate_import(import_smid, input)? {
                 imports.push(import_expr);
             }
         }
@@ -2824,10 +2823,9 @@ impl Desugarable for rowan_ast::Block {
         if let Some(inputs) = block_meta.imports {
             let meta_smid = metadata.as_ref().unwrap().smid();
             for input in inputs {
-                if let Some(import_expr) = desugarer
-                    .translate_import(meta_smid, input)
-                    .expect("failure translating import")
-                {
+                // Propagate rather than panic (eu-mqlkv): see the note on
+                // the `Unit` import loop below.
+                if let Some(import_expr) = desugarer.translate_import(meta_smid, input)? {
                     imports.push(import_expr);
                 }
             }
@@ -2988,10 +2986,15 @@ impl Desugarable for rowan_ast::Unit {
         if let Some(inputs) = unit_meta.imports {
             let meta_smid = metadata.as_ref().unwrap().smid();
             for input in inputs {
-                if let Some(import_expr) = desugarer
-                    .translate_import(meta_smid, input)
-                    .expect("failure translating import")
-                {
+                // Propagate rather than panic: any `CoreError` raised
+                // while translating an import — an invalid embedding in the
+                // imported unit, an unresolvable locator, a failed version
+                // requirement — is a user-facing problem that the caller
+                // already renders as a codespan diagnostic. `.expect` here
+                // aborted the process with exit 101 instead, so the *same*
+                // malformed file diagnosed cleanly when evaluated directly
+                // but panicked when imported (eu-mqlkv).
+                if let Some(import_expr) = desugarer.translate_import(meta_smid, input)? {
                     imports.push(import_expr);
                 }
             }

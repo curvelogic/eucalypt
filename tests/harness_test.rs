@@ -2831,6 +2831,45 @@ pub fn test_202_sv3_contract_bad_spec() {
 }
 
 #[test]
+/// eu-mqlkv — an invalid embedding (here a `{{`-escaped record type inside
+/// an s-string, where single braces are correct) in an *imported* unit used
+/// to abort the process with exit 101 via
+/// `.expect("failure translating import")`, while the same file evaluated
+/// directly produced a clean codespan diagnostic. Gates that the import
+/// path now diagnoses too: exit 1, "invalid embedding" on stderr.
+pub fn test_206_mqlkv_import_bad_embedding() {
+    run_error_test(&error_opts("206_mqlkv_import_bad_embedding.eu"));
+}
+
+#[test]
+/// eu-mqlkv — the fix is not specific to invalid embeddings: *any*
+/// `CoreError` raised while translating an import took the same panicking
+/// route. This exercises `CoreError::VersionRequirementFailed` from an
+/// imported unit's unsatisfiable `requires:`.
+pub fn test_207_mqlkv_import_bad_requires() {
+    run_error_test(&error_opts("207_mqlkv_import_bad_requires.eu"));
+}
+
+#[test]
+/// eu-mqlkv, **site 2 of 3** — `rowan_declaration_to_binding`'s
+/// scoped-import loop, reached by a declaration-scoped
+/// `` ` { import: … } `` rather than unit metadata. Each of the three
+/// `.expect` sites panicked independently, so each needs its own gate:
+/// without this test two thirds of the fix could be reverted with the
+/// suite green while users still hit exit 101.
+pub fn test_208_mqlkv_scoped_import_bad_embedding() {
+    run_error_test(&error_opts("208_mqlkv_scoped_import_bad_embedding.eu"));
+}
+
+#[test]
+/// eu-mqlkv, **site 3 of 3** — the `Block` impl's block-metadata import
+/// loop, reached by leading metadata on a nested block rather than on the
+/// unit or on a declaration.
+pub fn test_209_mqlkv_block_import_bad_embedding() {
+    run_error_test(&error_opts("209_mqlkv_block_import_bad_embedding.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
