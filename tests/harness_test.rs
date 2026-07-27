@@ -2796,10 +2796,17 @@ pub fn test_193_1tkk_7_12_curated_trace() {
 /// overwrote the call site with a value `SourceMap` deliberately refuses
 /// to resolve, and the diagnostic lost its primary label entirely.
 ///
-/// The `.expect` pins `file:line:col` on the `┌─` primary-label line
-/// specifically — a `stack trace:` note renders locations as
-/// `- name at file:line:col` with no `┌─`, so this cannot pass on the
-/// note alone.
+/// The `.expect` sidecar asserts wording only: it must also hold under
+/// the source-prelude fallback (CI's "Test Suite" job is deliberately
+/// blob-less), where the annotation is a real prelude source position that
+/// `to_diagnostic` correctly suppresses, so no `┌─` label is emitted at
+/// all. The `file:line:col` assertion for this fixture's shape lives in
+/// `tests/diagnostics_blame_plumbing_test.rs`
+/// (`blob_mode_immediate_prelude_failure_blames_the_user_call_site`),
+/// which is gated on `#[cfg(prelude_blob_ok)]` and reads the `┌─`
+/// primary-label line specifically — a `stack trace:` note renders
+/// locations as `- name at file:line:col` with no `┌─`, so it cannot pass
+/// on the note alone.
 pub fn test_194_1tkk_7_21_blob_call_site() {
     run_error_test(&io_error_opts("194_1tkk_7_21_blob_call_site.eu"));
 }
