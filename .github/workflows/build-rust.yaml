@@ -333,7 +333,15 @@ jobs:
       # this proves the mechanism off macOS (R7), under GC verification in
       # parent and workers, and covers engine equivalence (R5).
       # `test_194_pp_par_equivalence` and `test_error_194_pp_*` cover the
-      # sequential codec path and the boundary error.
+      # sequential codec path and the boundary error, including metadata
+      # crossing the boundary (compared as rendered text against `map`, since
+      # `=` ignores metadata).
+      # `test_pp_gc_collects_during_par_map` is the GC-safety gate: it runs a
+      # map with collection happening during it, under EU_GC_STRESS=1 so every
+      # collection evacuates, on both the sequential and the fork path. That
+      # is coverage EU_GC_VERIFY cannot provide — verification checks
+      # reachability from roots, and the bug class it guards against is
+      # handles that were never roots.
       - name: Run PP tests (drives fork on both engines under GC verification)
         run: cargo test --test harness_test pp
         env:

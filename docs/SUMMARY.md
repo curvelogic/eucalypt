@@ -28,6 +28,7 @@
 - [Testing with Eucalypt](guide/testing.md)
 - [Date, Time, and Random Numbers](guide/date-time-random.md)
 - [IO and Shell Commands](guide/io.md)
+- [Parallel Evaluation](guide/parallelism.md)
 - [Monads and the monad() Utility](guide/monads.md)
 - [The State Monad](guide/state-monad.md)
 - [Type Checking](guide/type-checking.md)

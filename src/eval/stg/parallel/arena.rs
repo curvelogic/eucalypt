@@ -10,6 +10,17 @@
 //! Anonymous pages are demand-zero, so a generous virtual size costs address
 //! space, not physical RAM: only the bytes actually written are faulted in.
 //!
+//! **Visibility ordering.** The parent's reads are ordinary non-atomic loads
+//! of memory another *process* wrote, with no atomic or fence pairing them.
+//! What orders them is `waitpid`: the parent reads a segment only after the
+//! worker owning it has exited, and process termination followed by a
+//! successful wait is a kernel-mediated synchronisation point on every real
+//! Unix. That is an assumption about the platform rather than a guarantee of
+//! the Rust memory model, and it is recorded here rather than left implicit.
+//! It holds because the segments are disjoint and single-writer: no worker
+//! ever observes another's bytes, and the parent never observes any worker's
+//! bytes before that worker is reaped.
+//!
 //! The arena is split into W equal **per-worker segments**. Worker `w` owns
 //! segment `w` and writes its results length-prefixed, in index order. Because
 //! each worker writes only its own disjoint segment there are no cross-process
@@ -224,7 +235,11 @@ impl<'a> Iterator for SegmentReader<'a> {
             return None;
         }
         // Room for the length prefix itself?
-        if self.cursor.checked_add(LEN_PREFIX)? > self.end {
+        let Some(prefix_end) = self.cursor.checked_add(LEN_PREFIX) else {
+            self.remaining = 0;
+            return None;
+        };
+        if prefix_end > self.end {
             self.remaining = 0;
             return None;
         }

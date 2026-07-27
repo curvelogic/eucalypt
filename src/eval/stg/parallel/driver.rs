@@ -14,12 +14,25 @@
 //! sequentially — and, crucially, the sequential path shares the same
 //! serialise/deserialise codec, so both paths produce the identical value and
 //! the identical boundary error.
+//!
+//! Because both paths share the codec, the sequential path is a *fallback*
+//! and not an oracle: comparing the two cannot detect a codec defect. The
+//! oracle is `map`, which is what the tests compare against.
+//!
+//! The driver holds heap handles across `force()` calls — mapping N elements
+//! means accumulating N results while forcing each one — and `force()` runs
+//! the machine, which collects. Handles left on the Rust stack are invisible
+//! to the collector, so they live in the machine's root set instead (see
+//! [`super::roots`]) and are read back from there after every force.
 
 use crate::eval::{
     error::ExecutionError,
     machine::intrinsic::{AbiClosure, IntrinsicMachine},
     memory::{mutator::MutatorHeapView, syntax::Ref},
-    stg::{parallel::serialise, tags::DataConstructor},
+    stg::{
+        parallel::{roots::with_roots, serialise},
+        tags::DataConstructor,
+    },
 };
 
 /// Default minimum element count before forking is even considered. Below
@@ -32,6 +45,16 @@ const DEFAULT_THRESHOLD: usize = 1024;
 /// Per-element arena byte budget used to size the (virtual, demand-zero)
 /// mapping; a worker whose serialised result set overflows its segment simply
 /// fails and the driver falls back to sequential.
+///
+/// The budget is per *input* element, which is the right measure for
+/// `par-map`/`par-sum`/`par-max`/`par-min`, whose results are one value each.
+/// It is only a heuristic for `par-concat`, whose results are lists of
+/// unrelated size: a `par-concat` that expands each element into more than
+/// ~4 KiB of serialised data overflows its segment and degrades to a silent
+/// sequential run — correct, but never parallel. Raising the cap (or sizing it
+/// from a sampled first result) is the fix if that becomes a real workload
+/// rather than a hypothetical one; `EU_PP_TRACE=1` reports the fallback, so it
+/// is at least visible.
 #[cfg(unix)]
 const PER_ELEM_CAP: usize = 4096;
 
@@ -56,6 +79,43 @@ fn env_usize(name: &str, default: usize) -> usize {
 #[cfg(unix)]
 fn trace_enabled() -> bool {
     std::env::var("EU_PP_TRACE").as_deref() == Ok("1")
+}
+
+/// Whether `EU_PP_STRICT=1` asked us to treat a fork-path fault as an error
+/// rather than falling back to sequential evaluation.
+#[cfg(unix)]
+fn strict_mode() -> bool {
+    std::env::var("EU_PP_STRICT").as_deref() == Ok("1")
+}
+
+/// A fork-path fault: normally "quietly fall back to sequential"
+/// (`Ok(false)`), but a hard error under `EU_PP_STRICT=1`.
+///
+/// The fallback is what makes `par-*` a transparent advisory, and it is also
+/// what makes worker code untestable by comparing output: a worker that dies
+/// produces the *right* answer, because the parent re-runs the whole map
+/// sequentially. Any defect confined to the worker loop — a stale heap handle,
+/// a serialiser fault, a bad chunk bound — is therefore invisible to every
+/// equivalence test by construction, which is exactly the shape of gate that
+/// cannot fail. `EU_PP_STRICT=1` removes the safety net so a test can see it.
+/// It is a diagnostic switch: production code wants the fallback.
+#[cfg(unix)]
+fn fork_fault(
+    machine: &dyn IntrinsicMachine,
+    combinator: &str,
+    what: &str,
+) -> Result<bool, ExecutionError> {
+    if strict_mode() {
+        Err(ExecutionError::Panic(
+            machine.annotation(),
+            format!(
+                "{combinator}: the parallel path failed ({what}) and EU_PP_STRICT=1 \
+                 forbids the sequential fallback"
+            ),
+        ))
+    } else {
+        Ok(false)
+    }
 }
 
 #[cfg(unix)]
@@ -84,6 +144,11 @@ fn decide_workers(n: usize) -> usize {
 ///
 /// Sets the machine result to the mapped list in index order — identical to
 /// `xs map(f)` for the finite, fully-consumed lists these workloads use.
+///
+/// Every heap handle the driver accumulates lives in the machine's root set
+/// (see [`super::roots`]), because mapping N elements means holding N results
+/// across N `force()` calls and a force can collect. Handles are always read
+/// back from the root set after a force, never reused from the Rust stack.
 pub fn par_map(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
@@ -91,44 +156,48 @@ pub fn par_map(
     xs: &Ref,
     combinator: &str,
 ) -> Result<(), ExecutionError> {
-    let f_closure = machine.resolve_callable_closure(view, f)?;
-    let elements = collect_spine(machine, view, xs, combinator)?;
+    with_roots(machine, |machine| {
+        let f_closure = machine.resolve_callable_closure(view, f)?;
+        let f_slot = machine.gc_root_push(f_closure);
+        let (elem_base, n) = collect_spine(machine, view, xs, combinator)?;
 
-    #[cfg(unix)]
-    {
-        // Forking is only safe where a host has vouched for the process (spec
-        // §2/§4): a child inherits every lock in whatever state the threads
-        // that no longer exist left it in. The `eu` CLI opts in for
-        // evaluation; the LSP server, the WASM API and the libtest harness do
-        // not, and simply do not fork — the sequential path gives the
-        // identical answer.
-        let n = elements.len();
-        let w = decide_workers(n);
-        if w < 2 {
-            trace(combinator, n, format_args!("sequential (below threshold)"));
-        } else if !super::fork::process_is_fork_safe() {
-            trace(
-                combinator,
-                n,
-                format_args!("sequential (process is not a declared fork-safe host)"),
-            );
-        } else if try_parallel(machine, view, &f_closure, &elements, w, combinator)? {
-            trace(combinator, n, format_args!("forked {w} workers"));
-            return Ok(());
-        } else {
-            trace(
-                combinator,
-                n,
-                format_args!("sequential (fork path declined)"),
-            );
+        #[cfg(unix)]
+        {
+            // Forking is only safe where a host has vouched for the process
+            // (spec §2/§4): a child inherits every lock in whatever state the
+            // threads that no longer exist left it in. The `eu` CLI opts in
+            // for evaluation; the LSP server, the WASM API and the libtest
+            // harness do not, and simply do not fork — the sequential path
+            // gives the identical answer.
+            let w = decide_workers(n);
+            if w < 2 {
+                trace(combinator, n, format_args!("sequential (below threshold)"));
+            } else if !super::fork::process_is_fork_safe() {
+                trace(
+                    combinator,
+                    n,
+                    format_args!("sequential (process is not a declared fork-safe host)"),
+                );
+            } else if try_parallel(machine, view, f_slot, elem_base, n, w, combinator)? {
+                trace(combinator, n, format_args!("forked {w} workers"));
+                return Ok(());
+            } else {
+                trace(
+                    combinator,
+                    n,
+                    format_args!("sequential (fork path declined)"),
+                );
+            }
         }
-    }
 
-    sequential_map(machine, view, &f_closure, &elements, combinator)
+        sequential_map(machine, view, f_slot, elem_base, n, combinator)
+    })
 }
 
-/// Walk the (WHNF-headed) list `xs` into a vector of its element closures
-/// (each left unforced — `f` is applied lazily then forced).
+/// Walk the (WHNF-headed) list `xs`, pushing each element closure into the
+/// machine's root set (each left unforced — `f` is applied lazily then
+/// forced). Returns `(base, count)`: the elements occupy root slots
+/// `base .. base + count`.
 ///
 /// Tails are forced defensively, but the prelude wrapper has already walked the
 /// spine via `force-spine`, and that matters: the machine memoises a thunk by
@@ -142,12 +211,19 @@ fn collect_spine(
     view: MutatorHeapView<'_>,
     xs: &Ref,
     combinator: &str,
-) -> Result<Vec<AbiClosure>, ExecutionError> {
+) -> Result<(usize, usize), ExecutionError> {
     let smid = machine.annotation();
-    let mut out = Vec::new();
-    let mut cur = machine.resolve_closure(view, xs)?;
+    // The cursor gets its own slot; element heads accumulate contiguously
+    // above it, so the caller can index them by offset.
+    let start = machine.resolve_closure(view, xs)?;
+    let cur_slot = machine.gc_root_push(start);
+    let base = cur_slot + 1;
+    let mut count = 0usize;
     loop {
-        cur = machine.force(cur)?;
+        let cur = machine.gc_root_get(cur_slot);
+        let cur = machine.force(cur)?;
+        machine.gc_root_set(cur_slot, cur);
+        let cur = machine.gc_root_get(cur_slot);
         match machine
             .data_tag(view, &cur)
             .and_then(|t| DataConstructor::try_from(t).ok())
@@ -157,10 +233,15 @@ fn collect_spine(
                 let head = machine.data_field(view, &cur, 0).ok_or_else(|| {
                     ExecutionError::Panic(smid, format!("{combinator}: bad list"))
                 })?;
-                out.push(head);
-                cur = machine.data_field(view, &cur, 1).ok_or_else(|| {
+                let tail = machine.data_field(view, &cur, 1).ok_or_else(|| {
                     ExecutionError::Panic(smid, format!("{combinator}: bad list"))
                 })?;
+                // The tail replaces the cursor *before* the head is rooted, so
+                // the two never both sit unrooted across the next force.
+                machine.gc_root_set(cur_slot, tail);
+                let slot = machine.gc_root_push(head);
+                debug_assert_eq!(slot, base + count, "element roots must be contiguous");
+                count += 1;
             }
             _ => {
                 return Err(ExecutionError::Panic(
@@ -170,7 +251,7 @@ fn collect_spine(
             }
         }
     }
-    Ok(out)
+    Ok((base, count))
 }
 
 /// Map one element: apply `f`, deep-force, then round-trip through the
@@ -179,31 +260,44 @@ fn collect_spine(
 fn map_element(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
-    f: &AbiClosure,
-    elem: &AbiClosure,
+    f: AbiClosure,
+    elem: AbiClosure,
     combinator: &str,
 ) -> Result<AbiClosure, ExecutionError> {
-    let thunk = machine.apply1_thunk(view, f.clone(), elem.clone())?;
-    let forced = machine.force(thunk)?;
-    let mut buf = Vec::new();
-    serialise::serialise_value(machine, view, &forced, combinator, &mut buf)?;
-    let mut cur = &buf[..];
-    serialise::deserialise_value(machine, view, &mut cur)
+    with_roots(machine, |machine| {
+        // `apply1_thunk` only allocates, so nothing is live across a force
+        // here; `force_and_serialise` roots what it needs internally.
+        let thunk = machine.apply1_thunk(view, f, elem)?;
+        let mut buf = Vec::new();
+        serialise::force_and_serialise(machine, view, thunk, combinator, &mut buf)?;
+        let mut cur = &buf[..];
+        serialise::deserialise_value(machine, view, &mut cur)
+    })
 }
 
-/// Sequential fallback (also the parallel path's oracle): map every element
+/// Sequential fallback (also the parallel path's fallback): map every element
 /// through [`map_element`] and set the result list.
 fn sequential_map(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
-    f: &AbiClosure,
-    elements: &[AbiClosure],
+    f_slot: usize,
+    elem_base: usize,
+    n: usize,
     combinator: &str,
 ) -> Result<(), ExecutionError> {
-    let mut results = Vec::with_capacity(elements.len());
-    for elem in elements {
-        results.push(map_element(machine, view, f, elem, combinator)?);
+    let mut result_slots = Vec::with_capacity(n);
+    for i in 0..n {
+        let f = machine.gc_root_get(f_slot);
+        let elem = machine.gc_root_get(elem_base + i);
+        let mapped = map_element(machine, view, f, elem, combinator)?;
+        result_slots.push(machine.gc_root_push(mapped));
     }
+    // `build_list` and `set_result` only allocate, so reading the handles out
+    // of the root set here is the last thing that happens to them.
+    let results: Vec<AbiClosure> = result_slots
+        .iter()
+        .map(|&slot| machine.gc_root_get(slot))
+        .collect();
     let list = serialise::build_list(machine, view, results)?;
     machine.set_result(list)
 }
@@ -224,22 +318,26 @@ fn chunk_bounds(n: usize, w: usize, i: usize) -> (usize, usize) {
 /// sequential path (fork/serialisation issue). A genuine user error surfaces on
 /// the sequential re-run, so this never returns `Err` for a worker fault.
 #[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
 fn try_parallel(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
-    f: &AbiClosure,
-    elements: &[AbiClosure],
+    f_slot: usize,
+    elem_base: usize,
+    n: usize,
     w: usize,
     combinator: &str,
 ) -> Result<bool, ExecutionError> {
     use super::arena::Arena;
     use super::fork::run_workers;
 
-    let n = elements.len();
-    let size = (n.saturating_mul(PER_ELEM_CAP)).clamp(w * (16 + 64), ARENA_MAX);
+    // An explicit floor/ceiling rather than `clamp`, which panics when the
+    // computed minimum exceeds the maximum (absurd `EU_PP_WORKERS`).
+    let floor = (w.saturating_mul(16 + 64)).min(ARENA_MAX);
+    let size = n.saturating_mul(PER_ELEM_CAP).max(floor).min(ARENA_MAX);
     let arena = match Arena::new(size, w) {
         Ok(a) => a,
-        Err(_) => return Ok(false), // couldn't map — fall back
+        Err(_) => return fork_fault(machine, combinator, "could not map the shared arena"),
     };
 
     // Workers run in their own COW address space; mutating the machine there is
@@ -254,11 +352,12 @@ fn try_parallel(
         let (start, end) = chunk_bounds(n, w, wi);
         let mut writer = arena.writer(wi);
         let mut buf = Vec::new();
-        for elem in &elements[start..end] {
-            let thunk = machine.apply1_thunk(view, f.clone(), elem.clone())?;
-            let forced = machine.force(thunk)?;
+        for i in start..end {
+            let f = machine.gc_root_get(f_slot);
+            let elem = machine.gc_root_get(elem_base + i);
+            let thunk = machine.apply1_thunk(view, f, elem)?;
             buf.clear();
-            serialise::serialise_value(machine, view, &forced, combinator, &mut buf)?;
+            serialise::force_and_serialise(machine, view, thunk, combinator, &mut buf)?;
             writer
                 .push(&buf)
                 .map_err(|_| arena_overflow_error(machine, combinator))?;
@@ -274,24 +373,53 @@ fn try_parallel(
     // the parent can reuse `machine` for reassembly below.
     let join = run_workers(w, worker);
 
-    if join.is_err() {
-        return Ok(false); // any worker fault → sequential re-run (surfaces the real error)
+    if let Err(e) = join {
+        // Any worker fault → sequential re-run, which surfaces the real error
+        // with a proper source location if there is one.
+        return fork_fault(machine, combinator, &e.to_string());
     }
 
     // Parent reassembles in worker-index (= global index) order.
-    let mut results = Vec::with_capacity(n);
+    //
+    // Each segment is checked against the chunk length the parent assigned it,
+    // not merely the total: a short read in one segment compensated by a long
+    // read in another would pass a total-only check and silently reassemble
+    // the results in the wrong order — the one thing the design promises
+    // cannot happen. A corrupt count header can produce exactly that shape
+    // (see the arena's own `reader_rejects_corrupt_count` test).
+    let mut result_slots = Vec::with_capacity(n);
     for wi in 0..w {
+        let (start, end) = chunk_bounds(n, w, wi);
+        let expected = end - start;
+        let mut got = 0usize;
         for rec in arena.reader(wi) {
             let mut cur = rec;
             match serialise::deserialise_value(machine, view, &mut cur) {
-                Ok(v) => results.push(v),
-                Err(_) => return Ok(false), // corrupt read → sequential re-run
+                Ok(v) => {
+                    result_slots.push(machine.gc_root_push(v));
+                    got += 1;
+                }
+                Err(_) => return fork_fault(machine, combinator, "corrupt record in the arena"),
             }
         }
+        if got != expected {
+            trace(
+                combinator,
+                n,
+                format_args!("worker {wi} produced {got} records, expected {expected}"),
+            );
+            return fork_fault(
+                machine,
+                combinator,
+                &format!("worker {wi} produced {got} records, expected {expected}"),
+            );
+        }
     }
-    if results.len() != n {
-        return Ok(false); // a worker wrote the wrong count → sequential re-run
-    }
+    debug_assert_eq!(result_slots.len(), n);
+    let results: Vec<AbiClosure> = result_slots
+        .iter()
+        .map(|&slot| machine.gc_root_get(slot))
+        .collect();
     let list = serialise::build_list(machine, view, results)?;
     machine.set_result(list)?;
     Ok(true)

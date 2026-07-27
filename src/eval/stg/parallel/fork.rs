@@ -13,7 +13,12 @@
 //!   process ([`declare_fork_safe_host`] / [`process_is_fork_safe`]);
 //!   elsewhere `par-map` stays sequential.
 //! - On the first worker failure the parent `SIGKILL`s and reaps the
-//!   survivors, then reports the failure. The caller (the PP driver) treats any
+//!   survivors, then reports the failure. The converse is not covered: if the
+//!   *parent* is killed by something other than a process-group signal — a
+//!   bare `kill -TERM` rather than a foreground Ctrl-C — the workers run to
+//!   completion unattended before exiting. They are bounded by their own
+//!   chunks and write only into the shared mapping, so they cannot corrupt
+//!   anything, but they do keep burning cores until they finish. The caller (the PP driver) treats any
 //!   failure as a signal to fall back to a **sequential** re-evaluation in the
 //!   parent — which reproduces the exact result or raises the exact
 //!   user-facing error with a proper source location.
@@ -67,6 +72,20 @@ fn reset_signals_to_default() {
         libc::signal(libc::SIGSEGV, libc::SIG_DFL);
         libc::signal(libc::SIGBUS, libc::SIG_DFL);
     }
+}
+
+/// Silence the panic reporter in a just-forked worker.
+///
+/// `catch_unwind` contains a worker panic, but the *default hook has already
+/// run* by the time it returns, writing `thread '<unnamed>' panicked at …` to
+/// the stderr the child inherited from the parent. A worker fault is not a
+/// user-facing event — the parent falls back to a sequential re-run which
+/// either succeeds or raises the real error with a proper source location — so
+/// a run that ultimately succeeds must not spray Rust panic text at the user.
+/// The payload is still lost only in the sense that it was never wanted: the
+/// non-zero exit is what the parent acts on.
+fn silence_panic_output() {
+    std::panic::set_hook(Box::new(|_| {}));
 }
 
 /// Number of threads in this process, where we can establish it cheaply.
@@ -143,6 +162,18 @@ pub fn declare_fork_safe_host() {
 /// make an unsafe fork safe.
 pub fn process_is_fork_safe() -> bool {
     if std::env::var("EU_PP_ASSUME_SINGLE_THREADED").as_deref() == Ok("1") {
+        // The override bypasses the gate in *any* host, including ones that
+        // deliberately never declared themselves (the LSP server, the WASM
+        // API, an embedder). It exists to make the fork path reachable while
+        // investigating, so it warns once rather than silently changing what
+        // an unvouched-for process does.
+        static WARNED: std::sync::Once = std::sync::Once::new();
+        WARNED.call_once(|| {
+            eprintln!(
+                "warning: EU_PP_ASSUME_SINGLE_THREADED=1 bypasses the par-* fork-safety gate; \
+                 this is a diagnostic override and does not make an unsafe fork safe"
+            );
+        });
         return true;
     }
     match FORK_HOST_BASELINE.load(Ordering::SeqCst) {
@@ -184,6 +215,7 @@ where
         if pid == 0 {
             // ── CHILD ──────────────────────────────────────────────────
             reset_signals_to_default();
+            silence_panic_output();
             let ok = matches!(catch_unwind(AssertUnwindSafe(|| worker(w))), Ok(Ok(())));
             // SAFETY: terminate without running parent Drops/atexit or
             // flushing inherited stdio buffers.
@@ -194,6 +226,24 @@ where
     join_all(&pids)
 }
 
+/// `waitpid` a single child, retrying on `EINTR`.
+///
+/// The `eu` CLI installs a Ctrl-C watcher, so a signal arriving during a long
+/// `par-map` is expected rather than exotic. Treating the resulting `EINTR` as
+/// a wait failure would abandon a live worker: it is neither killed nor
+/// reaped, so it keeps burning a core to the end of its chunk and then becomes
+/// a zombie, while the parent redundantly re-runs the whole map sequentially.
+fn waitpid_eintr_safe(pid: libc::pid_t, status: &mut libc::c_int) -> libc::pid_t {
+    loop {
+        // SAFETY: reaping our own child.
+        let r = unsafe { libc::waitpid(pid, status, 0) };
+        if r < 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
+            continue;
+        }
+        return r;
+    }
+}
+
 /// Join all workers; on the first failure, kill and reap the rest.
 fn join_all(pids: &[libc::pid_t]) -> Result<(), ForkError> {
     let mut first_err: Option<ForkError> = None;
@@ -202,13 +252,14 @@ fn join_all(pids: &[libc::pid_t]) -> Result<(), ForkError> {
         let pid = pids[idx];
         idx += 1;
         let mut status: libc::c_int = 0;
-        // SAFETY: reaping our own child.
-        let r = unsafe { libc::waitpid(pid, &mut status, 0) };
+        let r = waitpid_eintr_safe(pid, &mut status);
         let worker = idx - 1;
         if r != pid {
             if first_err.is_none() {
                 first_err = Some(ForkError::WaitFailed { worker });
-                kill_and_reap(&pids[idx..]);
+                // The kill set includes `pid` itself: the wait failed, so this
+                // worker's fate is unknown and it may still be running.
+                kill_and_reap(&pids[worker..]);
             }
         } else if !exited_cleanly(status) && first_err.is_none() {
             first_err = Some(ForkError::Worker { worker });
@@ -224,12 +275,12 @@ fn join_all(pids: &[libc::pid_t]) -> Result<(), ForkError> {
 /// SIGKILL and reap a set of still-running workers (best effort).
 fn kill_and_reap(pids: &[libc::pid_t]) {
     for &pid in pids {
-        // SAFETY: signalling/reaping our own children.
+        // SAFETY: signalling our own child.
         unsafe {
             libc::kill(pid, libc::SIGKILL);
-            let mut status: libc::c_int = 0;
-            libc::waitpid(pid, &mut status, 0);
         }
+        let mut status: libc::c_int = 0;
+        waitpid_eintr_safe(pid, &mut status);
     }
 }
 

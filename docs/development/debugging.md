@@ -153,10 +153,32 @@ force the fork path on a small input.
 
 Worker count (default: available parallelism minus one).
 
+#### `EU_PP_STRICT=1`
+
+Treat a fork-path fault as an error instead of falling back to sequential
+evaluation.
+
+Normally any fault in the parallel path — a worker exiting non-zero, an arena
+that will not map, a corrupt or short-counted segment — is swallowed: the
+parent re-runs the whole map sequentially and produces the correct answer.
+That is what makes `par-*` a transparent advisory, and it is also what makes
+worker-side code untestable by comparing output, because a worker that crashes
+still yields the right result and exit code. `EU_PP_STRICT=1` removes the
+safety net so a test (or a person) can see the fault:
+
+```
+par-map: the parallel path failed (parallel worker 0 failed) and EU_PP_STRICT=1
+forbids the sequential fallback
+```
+
+Diagnostics only. Production wants the fallback.
+
 #### `EU_PP_ASSUME_SINGLE_THREADED=1`
 
 Bypass the fork-safety check. For diagnostics only — it does not make an unsafe
-fork safe.
+fork safe. It applies in *any* host, including ones that deliberately never
+declared themselves fork-safe (the language server, the WASM API, an
+embedder), so it prints a warning to stderr the first time it takes effect.
 
 ### Crash Diagnostics
 

@@ -1,0 +1,2 @@
+exit: 1
+stderr: "par-map: cannot serialise a function across the parallel boundary"

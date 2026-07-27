@@ -46,9 +46,28 @@ t-min-xs:     (xs par-min(inc)) = (xs map(inc) min-of)
 t-concat-empty: (empty par-concat(dbl)) = (empty map(dbl) concat)
 t-concat-xs:    (xs par-concat(dbl)) = (xs map(dbl) concat)
 
+# ── equality is not enough ───────────────────────────────────────────────
+# Every check above uses `=`, and `=` IGNORES METADATA: two values can compare
+# equal and render differently. A codec that dropped metadata across the
+# boundary would therefore pass all of them while re-exposing keys the author
+# marked `:suppress` — a data-fidelity defect the tests could not see. These
+# checks compare RENDERED OUTPUT instead, which is what metadata affects.
+mk-hidden(x): { ` :suppress hidden: x
+                v: x * 2 }
+t-meta-render:  (xs par-map(mk-hidden) render-as(:json))
+                  = (xs map(mk-hidden) render-as(:json))
+# The same comparison for the metadata-free block case, so the rendered-output
+# route is exercised whether or not metadata is involved.
+t-block-render: (xs par-map(mkrec) render-as(:json)) = (xs map(mkrec) render-as(:json))
+# And a positive statement of the property itself: the suppressed key must be
+# absent from what par-map renders.
+t-meta-hidden:  (xs par-map(mk-hidden) render-as(:json)
+                   str.matches?("(?s).*hidden.*")) not
+
 checks: [t-map-empty, t-map-one, t-map-xs, t-map-order, t-map-str, t-map-block,
          t-sum-empty, t-sum-one, t-sum-xs,
          t-max-one, t-max-xs, t-min-xs,
-         t-concat-empty, t-concat-xs]
+         t-concat-empty, t-concat-xs,
+         t-meta-render, t-block-render, t-meta-hidden]
 
 RESULT: if(checks all-true?, :PASS, :FAIL)
