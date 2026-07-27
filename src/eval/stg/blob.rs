@@ -36,6 +36,7 @@
 //! | `source_hash` | SHA-256 of `lib/prelude.eu`; checked by `build.rs` | — | — | `build.rs` staleness check | — |
 //! | `nodes` / `forms_pool` / `binding_entries` | Shared STG arena: compiled lambda forms for every prelude global | binding (compiled) | `stg` (post `eu dump stg`) | HeapSyn engine loader | derived (compiled, not a source-structure snapshot) |
 //! | `name_to_slot` | Binding name → global slot index | — | — | STG compiler (`Ref::G` resolution), loader | — |
+//! | `binding_spans` | Byte span of each binding's declaration in `lib/prelude.eu`, in slot order | binding | desugared (`SourceMap` lookup of the peeled body's Smid) | blob-mode trace renderers, via `SourceMap::global_slot_info` (eu-7x0r) | derived (span extract) |
 //! | `blame` | Binding name → declared blame classification (`:transparent`/`:boundary`) | binding | desugared (side channel, `TranslationUnit::blame`) | Phase 2 trace classifier (eu-1tkk.7.11/.7.12) | derived (reconciled `BlameSpec` → `FrameKind`) |
 //! | `operators` | Operator fixity/precedence, extracted pre-`cook` | merged | pre-`cook` (desugared-adjacent) | `cook`'s `Distributor` seeding | derived (extracted subset, not a full snapshot) |
 //! | `monad_specs` / `monad_type_hints` | Monad namespace specs (e.g. `:for`) and LSP type hints | merged | desugared | Desugarer seeding, LSP | derived |
@@ -127,6 +128,23 @@ pub struct PreludeBlob {
     /// Binding name → index into `binding_entries` (= global slot − `INTRINSIC_COUNT`).
     #[serde(with = "crate::common::serde_sorted")]
     pub name_to_slot: HashMap<String, usize>,
+
+    /// Byte span of each prelude binding's declaration in `lib/prelude.eu`,
+    /// in slot order (parallel to `binding_entries`) — eu-7x0r.
+    ///
+    /// `None` for a binding that has no prelude-source declaration site
+    /// (the `__build` / `__io` / `__args` pseudoblocks, whose bodies come
+    /// from `build-meta.yaml` or are synthesised).
+    ///
+    /// Blob mode never loads prelude source, so before this table a trace
+    /// frame naming a prelude combinator had nowhere to point: the human
+    /// renderer dropped it entirely. Paired with the prelude text (embedded
+    /// in the binary regardless) this is enough for a blob-mode trace to
+    /// cite `[prelude]:line:col` exactly as the source-compiled path does.
+    /// Empty on blobs generated before this field, which then render
+    /// prelude frames by name only.
+    #[serde(default)]
+    pub binding_spans: Vec<Option<(u32, u32)>>,
 
     /// Binding name → declared blame classification (eu-1tkk.7.11).
     ///
@@ -282,6 +300,7 @@ mod tests {
             nodes: vec![],
             forms_pool: vec![],
             binding_entries: vec![],
+            binding_spans: vec![],
             name_to_slot: HashMap::new(),
             blame: HashMap::new(),
             operators: HashMap::new(),

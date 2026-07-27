@@ -194,6 +194,20 @@ pub struct SourceMap {
     /// `SourceMap` and resolves to `None` here; every index this map
     /// mints is at or above it.
     foreign_floor: usize,
+    /// Prelude-relative global slot → span of that binding's declaration in
+    /// the prelude source (blob path only, eu-7x0r).
+    ///
+    /// Mirrors `PreludeBlob::binding_spans`. Together with
+    /// [`SourceMap::prelude_file`] this is what lets a blob-mode trace frame
+    /// render a real `[prelude]:line:col` location rather than a bare name.
+    slot_spans: HashMap<u32, Span>,
+    /// File id of the prelude source in `files`, registered on demand on the
+    /// blob path (eu-7x0r).
+    ///
+    /// `None` on the source-compiled path (there, prelude Smids resolve
+    /// through `source` like any other) and until the first diagnostic on
+    /// the blob path, where the prelude source is not otherwise loaded.
+    prelude_file: Option<usize>,
 }
 
 impl SourceMap {
@@ -283,6 +297,23 @@ impl SourceMap {
             annotation: None,
         });
         smid
+    }
+
+    /// Number of source entries minted so far.
+    ///
+    /// Reported by the `EU_ERROR_TRACE_DUMP` dump, where it is the difference
+    /// between "this Smid is meaningless" and "this Smid is meaningful but
+    /// belongs to something else": a trace Smid at or beyond this length
+    /// cannot be a real entry, whereas one below it resolves — and a Smid
+    /// baked at build time silently aliases whatever entry happens to sit at
+    /// that index. Distinguishing the two was what pinned eu-7x0r.
+    pub fn len(&self) -> usize {
+        self.source.len()
+    }
+
+    /// Whether any source entries have been minted.
+    pub fn is_empty(&self) -> bool {
+        self.source.is_empty()
     }
 
     /// Add a new source info and get a SMID referencing it
@@ -450,6 +481,55 @@ impl SourceMap {
         self.slot_to_name = names;
     }
 
+    /// Record the blob's slot → prelude-source-span table so a blob-mode
+    /// global-slot Smid can be rendered with a real prelude location
+    /// (eu-7x0r). Paired with [`SourceMap::set_prelude_file`].
+    pub fn set_slot_spans(&mut self, spans: HashMap<u32, Span>) {
+        self.slot_spans = spans;
+    }
+
+    /// Record the file id the prelude source was registered under, so
+    /// [`SourceMap::global_slot_info`] can pair a slot span with a file
+    /// (eu-7x0r). Also marks it as a resource file, so it can never be
+    /// mistaken for user code.
+    pub fn set_prelude_file(&mut self, file_id: usize) {
+        self.prelude_file = Some(file_id);
+        self.mark_resource_file(file_id);
+    }
+
+    /// Whether the prelude source has already been registered for blob-mode
+    /// diagnostics (see [`SourceMap::set_prelude_file`]).
+    pub fn has_prelude_file(&self) -> bool {
+        self.prelude_file.is_some()
+    }
+
+    /// Resolve a blob-mode [`Smid::global_slot`] identity to the same shape
+    /// an ordinary `SourceMap` entry would have: the binding's name as the
+    /// annotation, plus its prelude declaration site when known (eu-7x0r).
+    ///
+    /// Deliberately *not* folded into
+    /// [`SourceMap::source_info_for_smid`]: that method's contract is
+    /// "resolve an index into `self.source`", and it explicitly rejects
+    /// global-slot identities. Everything that picks a *primary* error
+    /// location (`first_source_smid`, `first_user_source_smid`,
+    /// `source_info`) goes through that method, and must keep rejecting
+    /// these — a prelude declaration site is never a valid primary label
+    /// (invariant (i): the primary must be in the user's own file). Only
+    /// the trace *renderers* call this, which is exactly where naming the
+    /// prelude combinator is wanted.
+    pub fn global_slot_info(&self, smid: Smid) -> Option<SourceInfo> {
+        let slot = smid.as_global_slot()?;
+        let name = self.slot_to_name.get(&slot)?;
+        let span = self.slot_spans.get(&slot).copied();
+        Some(SourceInfo {
+            // A span without a file is unusable, and vice versa: pair them
+            // or report neither, so a frame never claims a bogus location.
+            file: span.and(self.prelude_file),
+            span: self.prelude_file.and(span),
+            annotation: Some(name.clone()),
+        })
+    }
+
     /// Classify a trace frame's Smid as `User`, `Boundary`, or `Transparent`
     /// (design spec §4.3, eu-1tkk.7.12).
     ///
@@ -530,12 +610,27 @@ impl SourceMap {
     /// so the two formatters cannot silently diverge on name/location
     /// resolution. Returns `None` for an entry with neither a user-visible
     /// name nor a source location (internal machinery, silently dropped).
+    ///
+    /// A blob-mode [`Smid::global_slot`] identity has no `self.source` entry
+    /// by construction, so it resolves via [`SourceMap::global_slot_info`]
+    /// instead — without that, every prelude frame in a shipped-binary trace
+    /// was silently dropped here (eu-7x0r).
     fn resolve_trace_entry(
         &self,
         smid: Smid,
         files: &SimpleFiles<String, String>,
     ) -> Option<(String, Option<String>)> {
-        let info = self.info_at(smid.get()?)?;
+        // Both fixes are load-bearing here and neither subsumes the other
+        // (eu-7x0r + eu-r4647). A `Smid::global_slot` identity has no `source`
+        // entry by construction, so it must resolve through the blob's slot
+        // tables first; everything else resolves through `info_at`, which
+        // rejects indices inside the reserved foreign range instead of
+        // aliasing them onto unrelated user declarations.
+        let slot_info = self.global_slot_info(smid);
+        let info = match slot_info {
+            Some(ref info) => info,
+            None => self.info_at(smid.get()?)?,
+        };
 
         // Determine the display name: prefer intrinsic display name,
         // then annotation (function name), then source snippet
@@ -1293,5 +1388,86 @@ mod tests {
             1,
             "the foreign Smid must contribute nothing: {out}"
         );
+    }
+
+    // ── global-slot trace rendering (eu-7x0r) ────────────────────────────────
+
+    /// A `SourceMap` in the blob-path shape: no prelude entries in `source`
+    /// at all, just the slot → name / slot → span / prelude-file tables the
+    /// loader seeds from `PreludeBlob`.
+    fn blob_path_fixture() -> (SourceMap, SimpleFiles<String, String>, Smid) {
+        let mut files = SimpleFiles::new();
+        let user = files.add("user.eu".to_string(), "result: xs nth(10)\n".to_string());
+        let prelude = files.add(
+            "[prelude]".to_string(),
+            "head: __HEAD\nnth(n, l): {\n  aux: 1\n}\n".to_string(),
+        );
+        assert_eq!(user, 0);
+
+        let mut source_map = SourceMap::new();
+        source_map.extend_blame_table(HashMap::from([("nth".to_string(), FrameKind::Boundary)]));
+        source_map.set_slot_names(HashMap::from([(42u32, "nth".to_string())]));
+        // Byte 13 is the start of line 2 (`nth(n, l): {`).
+        source_map.set_slot_spans(HashMap::from([(42u32, Span::new(13u32, 16u32))]));
+        source_map.set_prelude_file(prelude);
+        (source_map, files, Smid::global_slot(42))
+    }
+
+    /// The rendering half of the blob-path classifier: a global-slot Smid has
+    /// no `source` entry by construction, so before eu-7x0r the formatters
+    /// dropped it and no prelude frame ever appeared in a shipped-binary
+    /// trace, however well it classified.
+    #[test]
+    fn curated_trace_renders_a_blob_mode_global_slot_frame() {
+        let (source_map, files, smid) = blob_path_fixture();
+        let rendered = source_map.format_curated_trace(&[(smid, FrameKind::Boundary)], &files);
+        assert_eq!(rendered, "- in 'nth' at [prelude]:2:1");
+    }
+
+    /// The raw formatter shares `resolve_trace_entry`, so it must resolve the
+    /// same frame (as a plain name, not `in '...'`).
+    #[test]
+    fn raw_trace_renders_a_blob_mode_global_slot_frame() {
+        let (source_map, files, smid) = blob_path_fixture();
+        assert_eq!(
+            source_map.format_trace(&[smid], &files),
+            "- nth at [prelude]:2:1"
+        );
+    }
+
+    /// Without a span the frame is still named — just locationless — rather
+    /// than dropped or given a fabricated location. This is the pre-v6-blob
+    /// fallback (`binding_spans` absent ⇒ empty).
+    #[test]
+    fn global_slot_frame_without_a_span_renders_by_name_only() {
+        let mut source_map = SourceMap::new();
+        source_map.set_slot_names(HashMap::from([(42u32, "nth".to_string())]));
+        let files: SimpleFiles<String, String> = SimpleFiles::new();
+        let rendered = source_map
+            .format_curated_trace(&[(Smid::global_slot(42), FrameKind::Boundary)], &files);
+        assert_eq!(rendered, "- in 'nth'");
+    }
+
+    /// A slot the blob knows nothing about must not be invented into a frame.
+    #[test]
+    fn unknown_global_slot_resolves_to_nothing() {
+        let (source_map, _, _) = blob_path_fixture();
+        assert!(source_map
+            .global_slot_info(Smid::global_slot(999))
+            .is_none());
+    }
+
+    /// `global_slot_info` must stay *out* of the primary-location machinery:
+    /// a prelude declaration site is never a valid primary label (invariant
+    /// (i) — the primary must be in the user's own file), and every primary
+    /// selector routes through `source_info_for_smid`, which rejects
+    /// global-slot identities.
+    #[test]
+    fn global_slot_info_does_not_leak_into_primary_location_selection() {
+        let (source_map, _, smid) = blob_path_fixture();
+        assert!(source_map.global_slot_info(smid).is_some());
+        assert!(source_map.source_info_for_smid(smid).is_none());
+        assert_eq!(source_map.first_source_smid(&[smid]), None);
+        assert_eq!(source_map.first_user_source_smid(&[smid]), None);
     }
 }

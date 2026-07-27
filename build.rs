@@ -33,9 +33,16 @@ use std::path::Path;
 ///   always `Smid::default()` — not a serialised-shape change on its own,
 ///   but bundled into the same version bump as the `blame` field it feeds
 ///   (eu-1tkk.7.11).
+/// - v6: `PreludeBlob::binding_spans` field added (per-binding declaration
+///   span in `lib/prelude.eu`, so blob-mode trace frames can cite a real
+///   `[prelude]:line:col`), and blob-mode reconstruction now rebases the
+///   `DirectApp` / `LookupLit` Smids baked by `xtask` onto the enclosing
+///   global's slot identity instead of copying them verbatim — the baked
+///   values are indices into `xtask`'s own `SourceMap` and aliased unrelated
+///   user source positions at runtime (eu-7x0r).
 ///
 /// MUST match `BYTECODE_WIRE_FORMAT_VERSION` in `xtask/src/main.rs`.
-const BYTECODE_WIRE_FORMAT_VERSION: u32 = 5;
+const BYTECODE_WIRE_FORMAT_VERSION: u32 = 6;
 
 /// Compute the blob source hash: `SHA-256(prelude source ‖ wire-format version)`.
 fn blob_source_hash(source_bytes: &[u8]) -> [u8; 32] {
