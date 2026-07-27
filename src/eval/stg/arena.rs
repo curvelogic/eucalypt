@@ -174,6 +174,48 @@ pub enum ArenaStgSyn {
     BlackHole,
 }
 
+// ── Smid rewriting policy ────────────────────────────────────────────────────
+
+/// How reconstruction rewrites the Smids in a form tree.
+///
+/// Reconstruction performs two *independent* Smid rewrites, and this type
+/// exists so callers choose them independently:
+///
+/// 1. the `Lambda` **identity stamp**, which lets `SourceMap::classify_frame`
+///    name a library boundary; and
+/// 2. **neutralising `xtask`-baked `DirectApp`/`LookupLit` Smids**, which stops
+///    a prelude-internal frame aliasing an unrelated user declaration.
+///
+/// They were previously both driven by one `Option<Smid>` parameter, so there
+/// was no way to ask for (2) without (1). Narrowing (1) to the slots that
+/// benefit from it therefore silently switched off (2) as well and re-admitted
+/// the aliasing bug — the failure this type exists to make unrepresentable.
+/// See [`StgArena::reconstruct_form_neutralised`] for the full account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalSmidPolicy {
+    /// The form was flattened in *this* process (the pretty-printer, the
+    /// freshly-compiled `__args`/`__io` overrides), so its Smids are genuine
+    /// entries in this process's `SourceMap`. Leave them alone.
+    Verbatim,
+    /// A blob-reconstructed global whose name the blame table does not carry:
+    /// neutralise baked Smids, stamp no identity.
+    Neutralise,
+    /// A blob-reconstructed global the blame table names: neutralise baked
+    /// Smids by rebasing them onto this `Smid::global_slot` identity, and
+    /// stamp the same identity on every reachable `Lambda`.
+    Identity(Smid),
+}
+
+impl GlobalSmidPolicy {
+    /// The annotation to stamp on a reconstructed `Lambda`.
+    fn lambda_annotation(self) -> Smid {
+        match self {
+            GlobalSmidPolicy::Identity(smid) => smid,
+            GlobalSmidPolicy::Verbatim | GlobalSmidPolicy::Neutralise => Smid::default(),
+        }
+    }
+}
+
 // ── StgArena ─────────────────────────────────────────────────────────────────
 
 /// A serialisable arena containing a single flattened `StgSyn` tree.
@@ -390,13 +432,13 @@ impl StgArena {
     ///
     /// Panics if any index is out of range (indicates a malformed blob).
     pub fn reconstruct(&self, root: NodeIdx) -> Result<Rc<StgSyn>, BlobReconstructError> {
-        self.reconstruct_node(root, None)
+        self.reconstruct_node(root, GlobalSmidPolicy::Verbatim)
     }
 
     /// Reconstruct a lambda form, elided-Ann/`Smid::default()` behaviour
     /// unchanged from the historical `reconstruct_form`.
     pub fn reconstruct_form(&self, idx: FormIdx) -> Result<LambdaForm, BlobReconstructError> {
-        self.reconstruct_form_impl(idx, None)
+        self.reconstruct_form_impl(idx, GlobalSmidPolicy::Verbatim)
     }
 
     /// Reconstruct a lambda form, stamping every nested `Lambda` form's
@@ -424,7 +466,44 @@ impl StgArena {
         idx: FormIdx,
         global_annotation: Smid,
     ) -> Result<LambdaForm, BlobReconstructError> {
-        self.reconstruct_form_impl(idx, Some(global_annotation))
+        self.reconstruct_form_impl(idx, GlobalSmidPolicy::Identity(global_annotation))
+    }
+
+    /// Reconstruct a blob global that declares **no** blame classification.
+    ///
+    /// Same neutralisation of `xtask`-baked Smids as
+    /// [`StgArena::reconstruct_form_annotated`] — the aliasing hazard it
+    /// describes is a property of the *blob*, not of the blame table, so it
+    /// applies to every reconstructed global — but without stamping a
+    /// `Smid::global_slot` identity onto the lambda.
+    ///
+    /// The distinction matters because the two rewrites serve different ends
+    /// and want different scopes (eu-1tkk.7.21 / eu-og3u6):
+    ///
+    /// * The **identity stamp** exists so `SourceMap::classify_frame` can name
+    ///   a library boundary. It is worth having only for slots the blame table
+    ///   names, because both machines treat any *valid* closure annotation as
+    ///   "the location now in effect" — so stamping a global the blame table
+    ///   does not name buys no classification while overwriting the caller's
+    ///   genuine call site.
+    /// * **Neutralising baked Smids** exists so a prelude-internal `DirectApp`
+    ///   or `LookupLit` cannot alias an unrelated user declaration. That hazard
+    ///   is unconditional: those raw indices are meaningless in the loading
+    ///   process's `SourceMap` whether or not the enclosing global declares a
+    ///   blame contract.
+    ///
+    /// Routing unstamped globals through the plain `reconstruct_form` path
+    /// conflated the two and re-admitted the aliasing this neutralisation
+    /// exists to prevent: the primary label of a failure inside `nth` named a
+    /// `padNNNN` declaration the user never called. Neutralising to
+    /// `Smid::default()` keeps the caller's call site (an invalid annotation
+    /// does not satisfy the machines' `is_valid` guards, so nothing is
+    /// overwritten) *and* removes the alias.
+    pub fn reconstruct_form_neutralised(
+        &self,
+        idx: FormIdx,
+    ) -> Result<LambdaForm, BlobReconstructError> {
+        self.reconstruct_form_impl(idx, GlobalSmidPolicy::Neutralise)
     }
 
     /// Replace a Smid baked into the blob by `xtask` with the reconstructing
@@ -452,23 +531,27 @@ impl StgArena {
     /// the freshly-compiled `__args`/`__io` overrides) leaves the Smid
     /// untouched: those forms were flattened in *this* process, so their
     /// Smids are genuine entries in this process's `SourceMap`.
-    fn rebase_baked_smid(&self, smid: Smid, global_annotation: Option<Smid>) -> Smid {
-        match global_annotation {
-            Some(global) => {
+    fn rebase_baked_smid(&self, smid: Smid, policy: GlobalSmidPolicy) -> Smid {
+        match policy {
+            // Not from a blob: these Smids index *this* process's SourceMap.
+            GlobalSmidPolicy::Verbatim => smid,
+            // From a blob, no blame contract: strip the alias, add no identity.
+            GlobalSmidPolicy::Neutralise => Smid::default(),
+            // From a blob, blame contract: rebase onto the global's identity.
+            GlobalSmidPolicy::Identity(global) => {
                 if smid.is_valid() {
                     global
                 } else {
                     smid
                 }
             }
-            None => smid,
         }
     }
 
     fn reconstruct_node(
         &self,
         idx: NodeIdx,
-        global_annotation: Option<Smid>,
+        policy: GlobalSmidPolicy,
     ) -> Result<Rc<StgSyn>, BlobReconstructError> {
         let node = self
             .nodes
@@ -481,17 +564,15 @@ impl StgArena {
         // are meaningless at runtime.  Elide them so they do not overwrite
         // the user's call-site annotation in vm.annotation.
         if let ArenaStgSyn::Ann { body, .. } = node {
-            return self.reconstruct_node(*body, global_annotation);
+            return self.reconstruct_node(*body, policy);
         }
-        Ok(Rc::new(
-            self.reconstruct_arena_syn(node, global_annotation)?,
-        ))
+        Ok(Rc::new(self.reconstruct_arena_syn(node, policy)?))
     }
 
     fn reconstruct_arena_syn(
         &self,
         node: &ArenaStgSyn,
-        global_annotation: Option<Smid>,
+        policy: GlobalSmidPolicy,
     ) -> Result<StgSyn, BlobReconstructError> {
         Ok(match node {
             ArenaStgSyn::Atom { evaluand } => StgSyn::Atom {
@@ -502,13 +583,13 @@ impl StgArena {
                 branches,
                 fallback,
             } => StgSyn::Case {
-                scrutinee: self.reconstruct_node(*scrutinee, global_annotation)?,
+                scrutinee: self.reconstruct_node(*scrutinee, policy)?,
                 branches: branches
                     .iter()
-                    .map(|(tag, idx)| Ok((*tag, self.reconstruct_node(*idx, global_annotation)?)))
+                    .map(|(tag, idx)| Ok((*tag, self.reconstruct_node(*idx, policy)?)))
                     .collect::<Result<_, BlobReconstructError>>()?,
                 fallback: fallback
-                    .map(|idx| self.reconstruct_node(idx, global_annotation))
+                    .map(|idx| self.reconstruct_node(idx, policy))
                     .transpose()?,
             },
             ArenaStgSyn::Cons { tag, args } => StgSyn::Cons {
@@ -530,7 +611,7 @@ impl StgArena {
                 args,
                 eager_args,
             } => StgSyn::DirectApp {
-                smid: self.rebase_baked_smid(*smid, global_annotation),
+                smid: self.rebase_baked_smid(*smid, policy),
                 callable: callable.clone(),
                 args: args.clone(),
                 eager_args: *eager_args,
@@ -542,16 +623,16 @@ impl StgArena {
             ArenaStgSyn::Let { bindings, body } => StgSyn::Let {
                 bindings: bindings
                     .iter()
-                    .map(|&idx| self.reconstruct_form_impl(idx, global_annotation))
+                    .map(|&idx| self.reconstruct_form_impl(idx, policy))
                     .collect::<Result<_, BlobReconstructError>>()?,
-                body: self.reconstruct_node(*body, global_annotation)?,
+                body: self.reconstruct_node(*body, policy)?,
             },
             ArenaStgSyn::LetRec { bindings, body } => StgSyn::LetRec {
                 bindings: bindings
                     .iter()
-                    .map(|&idx| self.reconstruct_form_impl(idx, global_annotation))
+                    .map(|&idx| self.reconstruct_form_impl(idx, policy))
                     .collect::<Result<_, BlobReconstructError>>()?,
-                body: self.reconstruct_node(*body, global_annotation)?,
+                body: self.reconstruct_node(*body, policy)?,
             },
             // Ann nodes are elided in reconstruct_node() above.
             ArenaStgSyn::Ann { .. } => unreachable!("Ann handled in reconstruct_node"),
@@ -564,13 +645,13 @@ impl StgArena {
                 handler,
                 or_else,
             } => StgSyn::DeMeta {
-                scrutinee: self.reconstruct_node(*scrutinee, global_annotation)?,
-                handler: self.reconstruct_node(*handler, global_annotation)?,
-                or_else: self.reconstruct_node(*or_else, global_annotation)?,
+                scrutinee: self.reconstruct_node(*scrutinee, policy)?,
+                handler: self.reconstruct_node(*handler, policy)?,
+                or_else: self.reconstruct_node(*or_else, policy)?,
             },
             ArenaStgSyn::Seq { scrutinee, body } => StgSyn::Seq {
-                scrutinee: self.reconstruct_node(*scrutinee, global_annotation)?,
-                body: self.reconstruct_node(*body, global_annotation)?,
+                scrutinee: self.reconstruct_node(*scrutinee, policy)?,
+                body: self.reconstruct_node(*body, policy)?,
             },
             ArenaStgSyn::LookupLit {
                 smid,
@@ -578,7 +659,7 @@ impl StgArena {
                 obj,
                 default,
             } => StgSyn::LookupLit {
-                smid: self.rebase_baked_smid(*smid, global_annotation),
+                smid: self.rebase_baked_smid(*smid, policy),
                 key: key.clone(),
                 obj: obj.clone(),
                 default: default.clone(),
@@ -592,7 +673,7 @@ impl StgArena {
                 primop_id: *primop_id,
                 left: left.clone(),
                 right: right.clone(),
-                inner: self.reconstruct_node(*inner, global_annotation)?,
+                inner: self.reconstruct_node(*inner, policy)?,
             },
             ArenaStgSyn::BlackHole => StgSyn::BlackHole,
         })
@@ -601,7 +682,7 @@ impl StgArena {
     fn reconstruct_form_impl(
         &self,
         idx: FormIdx,
-        global_annotation: Option<Smid>,
+        policy: GlobalSmidPolicy,
     ) -> Result<LambdaForm, BlobReconstructError> {
         let form = self
             .forms
@@ -613,20 +694,20 @@ impl StgArena {
         Ok(match form {
             ArenaLambdaForm::Lambda { bound, body, .. } => LambdaForm::Lambda {
                 bound: *bound,
-                body: self.reconstruct_node(*body, global_annotation)?,
+                body: self.reconstruct_node(*body, policy)?,
                 // Clear xtask-sourced (real `SourceMap`) annotations —
                 // they are meaningless at runtime and would pollute user
                 // error locations. `global_annotation`, when supplied via
                 // `reconstruct_form_annotated`, is a `Smid::global_slot`
                 // value instead — a distinct, disjoint identity space, not
                 // a raw source Smid — so restoring it is safe.
-                annotation: global_annotation.unwrap_or_default(),
+                annotation: policy.lambda_annotation(),
             },
             ArenaLambdaForm::Thunk { body } => LambdaForm::Thunk {
-                body: self.reconstruct_node(*body, global_annotation)?,
+                body: self.reconstruct_node(*body, policy)?,
             },
             ArenaLambdaForm::Value { body } => LambdaForm::Value {
-                body: self.reconstruct_node(*body, global_annotation)?,
+                body: self.reconstruct_node(*body, policy)?,
             },
         })
     }
@@ -852,5 +933,58 @@ mod tests {
         assert_eq!((app, lookup), (local, local));
         // `Lambda.annotation` is cleared on this path, as it always has been.
         assert_eq!(annotation, Smid::default());
+    }
+
+    /// A blob global the blame table does **not** name must still have its
+    /// `xtask`-baked `DirectApp`/`LookupLit` Smids neutralised, while its
+    /// `Lambda` annotation stays `Smid::default()`.
+    ///
+    /// These are the two halves of the reconstruction rewrite, and they have
+    /// different scopes on purpose (eu-1tkk.7.21 / eu-og3u6):
+    ///
+    /// * leaving the `Lambda` unannotated is what preserves the caller's call
+    ///   site, because both machines overwrite the live annotation with any
+    ///   *valid* closure annotation on entry; and
+    /// * neutralising the data Smids is what stops a prelude-internal frame
+    ///   aliasing an unrelated user declaration, which is a hazard of the blob
+    ///   regardless of blame contract.
+    ///
+    /// The regression this gates is real and shipped-adjacent: routing
+    /// unstamped globals through `reconstruct_form` (which does *neither*
+    /// rewrite, being meant for locally-flattened forms) got the first half
+    /// right and silently dropped the second, and the primary label of a
+    /// failure inside `nth` went back to naming a `padNNNN` declaration the
+    /// user never called.
+    ///
+    /// `Smid::default()` rather than the slot identity is deliberate: a
+    /// `DirectApp`'s Smid is installed as the live annotation *unguarded*
+    /// (`state.set_annotation(smid)` in both engines), so any valid value
+    /// here would destroy the call site exactly as the `Lambda` stamp did.
+    #[test]
+    fn reconstruct_form_neutralised_clears_baked_smids_without_stamping_an_identity() {
+        let baked = Smid::fake(1859);
+        let mut arena = StgArena::default();
+        let entry = arena.flatten_form(&form_with_baked_smids(baked));
+
+        let form = arena.reconstruct_form_neutralised(entry).unwrap();
+        let (app, lookup, annotation) = smids_of(&form);
+
+        assert_eq!(
+            (app, lookup),
+            (Smid::default(), Smid::default()),
+            "baked DirectApp/LookupLit Smids must be neutralised for every blob \
+             global, blame contract or not — otherwise they alias user declarations"
+        );
+        assert!(
+            !app.is_valid() && !lookup.is_valid(),
+            "the neutralised Smid must be *invalid*, so the machines' is_valid \
+             guards leave the caller's call-site annotation in place"
+        );
+        assert_eq!(
+            annotation,
+            Smid::default(),
+            "an unstamped global must carry no lambda identity, or entering it \
+             overwrites the caller's call site"
+        );
     }
 }

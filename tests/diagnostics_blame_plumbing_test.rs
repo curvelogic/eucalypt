@@ -336,6 +336,9 @@ fn blob_mode_trace_frames_cannot_alias_unrelated_user_declarations() {
         user_frames, 1,
         "exactly one user-file trace frame is expected (the anchor); more means \
          prelude-internal frames are aliasing unrelated user declarations\noutput:\n{out}"
+    );
+}
+
 // ── eu-1tkk.7.21: the stamp must not destroy the user's call site ────────────
 
 /// Run `eu run` on `src` with `extra` extra CLI args and return its stderr

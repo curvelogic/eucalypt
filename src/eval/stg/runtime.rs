@@ -385,10 +385,20 @@ impl Runtime for StandardRuntime {
                 // changes no classification but destroys the caller's
                 // call-site annotation (see `should_stamp_slot`,
                 // eu-1tkk.7.21).
+                //
+                // Unstamped slots still go through a *blob* reconstruction
+                // path (`reconstruct_form_neutralised`), never the verbatim
+                // `reconstruct_form` one. Neutralising the xtask-baked
+                // `DirectApp`/`LookupLit` Smids is required of every blob
+                // global regardless of blame contract — those raw indices
+                // alias unrelated user declarations in this process's
+                // `SourceMap` (eu-7x0r/eu-og3u6). Using `reconstruct_form`
+                // here conflated "no identity stamp" with "no neutralisation"
+                // and re-admitted that aliasing.
                 let reconstructed = if self.should_stamp_slot(i) {
                     arena.reconstruct_form_annotated(entry_idx, Smid::global_slot(i as u32))
                 } else {
-                    arena.reconstruct_form(entry_idx)
+                    arena.reconstruct_form_neutralised(entry_idx)
                 };
                 match reconstructed {
                     Ok(form) => gs.push(form),

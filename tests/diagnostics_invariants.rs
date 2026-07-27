@@ -77,11 +77,6 @@ fn run(path: &std::path::Path) -> (serde_json::Value, String, Option<i32>) {
     (v, format!("{stdout}{stderr}"), out.status.code())
 }
 
-/// Run a fixture with `run --debug-trace`, returning its JSON diagnostic.
-fn run_debug_trace(path: &std::path::Path) -> serde_json::Value {
-    run_debug_trace_with(path, &[])
-}
-
 /// Run a fixture with `run --debug-trace` plus `extra` flags, returning its
 /// JSON diagnostic.
 fn run_debug_trace_with(path: &std::path::Path, extra: &[&str]) -> serde_json::Value {
@@ -160,12 +155,31 @@ fn debug_trace_restores_the_uncurated_trace() {
     // no user frame reached the trace at all. The test's intent is unchanged:
     // curation drops every *transparent* frame while keeping the user anchor
     // and the boundary combinator.
+    //
+    // The *precondition* — that a transparent frame exists in the raw dump at
+    // all — is pinned to `--source-prelude`, for the same reason the
+    // `nth_out_of_range` precondition below is: it is a property of the
+    // prelude's compilation mode, not of curation. Under the shipped blob a
+    // prelude global the blame table does not name carries no annotation
+    // whatsoever (`GlobalSmidPolicy::Neutralise`), so it contributes no frame
+    // for curation to drop. That is deliberate and is the eu-1tkk.7.21 fix:
+    // the frame such a global used to contribute existed only because the
+    // `Smid::global_slot` stamp was applied over-broadly, and that same stamp
+    // was overwriting the user's call site. With the prelude compiled from
+    // source the frames carry real prelude source positions, `aux` among them,
+    // so the raw-vs-curated distinction this assertion exists to prove is
+    // observable there.
+    //
+    // The *outcomes* below are asserted unconditionally, against whichever
+    // prelude is actually in use.
     let path = dir.join("swap_args.eu");
-    let raw = frames(&run_debug_trace(&path));
+    let raw_from_source = frames(&run_debug_trace_with(&path, &["--source-prelude"]));
     assert!(
-        raw.iter().any(|(kind, _)| kind == "transparent"),
-        "swap_args.eu: expected the raw --debug-trace dump to retain a transparent \
-         frame, got {raw:?}"
+        raw_from_source
+            .iter()
+            .any(|(kind, _)| kind == "transparent"),
+        "swap_args.eu (--source-prelude): expected the raw --debug-trace dump to \
+         retain a transparent frame, got {raw_from_source:?}"
     );
     let (curated_json, _, _) = run(&path);
     let curated = frames(&curated_json);
