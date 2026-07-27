@@ -5,4 +5,4 @@
 # Anchored on the primary-label line ('┌─ …:4:7') rather than the
 # 'stack trace:' note, so losing the label fails the test.
 exit: 1
-stderr: "(?s)error\[EU-RENDER-UNREPRESENTABLE\].*cannot represent this value in TOML output: the integer 9999999999999999999 is above 9223372036854775807, the largest integer a TOML integer can carry.*┌─[^\n]*194_toml_large_uint\.eu:4:7"
+stderr: "(?s)error\[EU-RENDER-UNREPRESENTABLE\].*cannot represent this value in TOML output: the integer 9999999999999999999 is above 9223372036854775807, the largest integer a TOML integer can carry.*┌─[^\n]*211_toml_large_uint\.eu:4:7"

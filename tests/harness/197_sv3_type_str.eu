@@ -1,0 +1,32 @@
+{ import: "reflect.eu"
+  doc: "SV3 eu-u9xj.1 - type-str renders a t-star tagged list to type-DSL.
+
+The canonical renderer used to be a local binding inside from-data's block,
+so no other consumer could reach it. A runtime validator needs it to say
+what it expected, in the user's own type vocabulary." }
+
+t1: (s"number" to-data type-str) = "number"
+t2: (s"string" to-data type-str) = "string"
+t3: (s"[number]" to-data type-str) = "[number]"
+t4: (s"{a: number}" to-data type-str) = "{{a: number}}"
+t5: (s"{a: number, ..}" to-data type-str) = "{{a: number, ..}}"
+t6: (s"{a?: number}" to-data type-str) = "{{a?: number}}"
+t7: (s"number | string" to-data type-str) = "number | string"
+t8: (s"(number, string)" to-data type-str) = "(number, string)"
+t9: (s"number?" to-data type-str) = "number?"
+t10: (s"number → string" to-data type-str) = "number → string"
+t11: (s"a" to-data type-str) = "a"
+t12: (s"Dict(number)" to-data type-str) = "Dict(number)"
+t13: (s"{a: {b: number}, ..}" to-data type-str) = "{{a: {{b: number}}, ..}}"
+
+# type-str is total over the tag vocabulary: an unrecognised tag renders
+# as `any` rather than raising.
+t14: ([:t-nonesuch, :x] type-str) = "any"
+
+# from-data is exactly type-str plus the type-data wrap, so it is unchanged
+# in behaviour.
+t15: (s"{a: number, ..}" to-data from-data) = s"{a: number, ..}"
+t16: (s"[number]" to-data from-data) = s"[number]"
+
+RESULT: if([t1, t2, t3, t4, t5, t6, t7, t8, t9, t10,
+            t11, t12, t13, t14, t15, t16] all-true?, :PASS, :FAIL)

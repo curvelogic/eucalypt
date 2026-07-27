@@ -261,7 +261,36 @@ pub struct BcMachineState {
     /// Termination flag.
     pub terminated: bool,
     /// Annotation to stamp on allocations / attach to errors.
+    ///
+    /// This is a **scope-accurate** register: it tracks the source location of
+    /// the code currently being evaluated. `Op::Ann` and closure entry set it;
+    /// popping a `SeqBind`/`ApplyTo` continuation restores the annotation that
+    /// was live where that continuation was pushed — *including* when that is
+    /// `Smid::default()`, which is what a synthetic (library-generated) frame
+    /// such as the render loop's per-item `force` carries. Restoring the
+    /// default is essential: without it a valid annotation established while
+    /// rendering one top-level binding survives into the next one and every
+    /// later continuation is stamped with it (eu-og3u6).
+    ///
+    /// It is therefore frequently invalid, and is *not* a good last-resort
+    /// location for an error raised in synthetic code — see
+    /// [`BcMachineState::last_annotation`] for that.
     pub annotation: Smid,
+    /// The most recent **valid** value [`BcMachineState::annotation`] has held:
+    /// "where in the source were we last, before ending up in unannotated
+    /// code?". Unlike `annotation` it is monotone in execution time — it is
+    /// never restored to an older value and never cleared.
+    ///
+    /// A BIF can raise from a synthetic context where `annotation` is
+    /// legitimately `Smid::default()` (e.g. an intrinsic's deferred argument
+    /// check, reached after the enclosing `force` has completed — the eu-0lvf
+    /// case). The error then carries no location of its own and the
+    /// continuation stack has no user frame either. `attach_trace` carries
+    /// this register on `ExecutionError::Traced` alongside the two traces —
+    /// as a separate element, *not* as a trace frame, since it is not a
+    /// pending call — and `to_diagnostic` consults it only once the error's
+    /// own Smid and both traces have failed to yield a user-file location.
+    pub last_annotation: Smid,
     /// Deferred BIF intrinsic index (set by the `Bif` arm, run in `step`).
     pub pending_bif: Option<u8>,
     /// The deferred BIF's decoded argument refs (spec §6.3): captured by the
@@ -327,6 +356,7 @@ impl BcMachineState {
             constants,
             terminated: false,
             annotation: Smid::default(),
+            last_annotation: Smid::default(),
             pending_bif: None,
             pending_bif_args: SmallVec::new(),
             capture_end_pending: false,
@@ -339,6 +369,21 @@ impl BcMachineState {
             bif_arg_pool: Vec::new(),
             allocs: 0,
             diagnostics: Vec::new(),
+        }
+    }
+
+    /// Move the live annotation to `smid`, remembering it in
+    /// [`BcMachineState::last_annotation`] when it is a real location.
+    ///
+    /// Every write to `annotation` goes through here so the two registers
+    /// cannot drift: `annotation` follows the evaluation scope exactly
+    /// (defaults included), `last_annotation` keeps the most recent real
+    /// location for use as an error-reporting fallback.
+    #[inline]
+    pub fn set_annotation(&mut self, smid: Smid) {
+        self.annotation = smid;
+        if smid.is_valid() {
+            self.last_annotation = smid;
         }
     }
 
@@ -412,6 +457,12 @@ impl BcMachineState {
 /// or points into the prelude. As on the HeapSyn side, the wrap is
 /// unconditional (a nested sub-evaluation error may be wrapped twice; the
 /// outer traces then win in `to_diagnostic`, matching HeapSyn).
+///
+/// [`BcMachineState::last_annotation`] rides along as a third element. It is
+/// deliberately *not* a trace frame — it is not a pending call and has no
+/// place in the frame ordering — but it is the only location available when
+/// an error is raised from unannotated synthetic code (see
+/// `ExecutionError::last_annotation`).
 fn attach_trace(
     state: &BcMachineState,
     view: MutatorHeapView<'_>,
@@ -419,7 +470,10 @@ fn attach_trace(
 ) -> ExecutionError {
     let env_trace = state.env_trace(view);
     let stack_trace = state.stack_trace(view);
-    ExecutionError::Traced(Box::new(e), Box::new((env_trace, stack_trace)))
+    ExecutionError::Traced(
+        Box::new(e),
+        Box::new((env_trace, stack_trace, state.last_annotation)),
+    )
 }
 
 /// Mark the heap pointers embedded in a prepared constant (`Ref::V(native)`).
@@ -1069,7 +1123,7 @@ pub fn return_data(
                 });
                 // Restore the application-site annotation so any type-mismatch
                 // raised inside the MERGE wrapper carries the user's location.
-                state.annotation = annotation;
+                state.set_annotation(annotation);
                 let merge_idx = crate::eval::intrinsics::index("MERGE")
                     .expect("MERGE intrinsic must be registered");
                 enter_callable(
@@ -1102,16 +1156,16 @@ pub fn return_data(
             annotation,
         } => {
             state.current = BcValue::Closure(BcClosure::new(body, environment));
-            // Only restore a meaningful annotation. A `force`/`Seq` in an outer
-            // context (e.g. the render loop) captures `Smid::default()` and must
-            // not wipe the live call-site annotation established by an inner
-            // `Ann` before a deferred arg-check BIF runs — mirrors the same
-            // invalid-annotation guard `handle_op` applies on closure entry.
-            // (HeapSyn avoids this by evaluation ordering, raising before the
-            // outer SeqBind is restored.)
-            if annotation.is_valid() {
-                state.annotation = annotation;
-            }
+            // Restore the annotation live where this `Seq` was pushed, even
+            // when that is `Smid::default()`. A synthetic `force` — the render
+            // loop's per-item one, say — legitimately carries no location, and
+            // leaving the inner binding's annotation in place would stamp it
+            // onto every continuation created for the *next* binding, blaming
+            // the first annotated declaration in the unit for a failure
+            // anywhere after it (eu-og3u6). Errors raised in the unannotated
+            // window fall back to `state.last_annotation` (see `attach_trace`),
+            // which is what preserves the locations eu-0lvf recovered.
+            state.set_annotation(annotation);
         }
         BcContinuation::LookupLitForce {
             key,
@@ -1375,16 +1429,16 @@ pub fn return_native(
         } => {
             // Force-and-discard: enter the body without binding the result.
             state.current = BcValue::Closure(BcClosure::new(body, environment));
-            // Only restore a meaningful annotation. A `force`/`Seq` in an outer
-            // context (e.g. the render loop) captures `Smid::default()` and must
-            // not wipe the live call-site annotation established by an inner
-            // `Ann` before a deferred arg-check BIF runs — mirrors the same
-            // invalid-annotation guard `handle_op` applies on closure entry.
-            // (HeapSyn avoids this by evaluation ordering, raising before the
-            // outer SeqBind is restored.)
-            if annotation.is_valid() {
-                state.annotation = annotation;
-            }
+            // Restore the annotation live where this `Seq` was pushed, even
+            // when that is `Smid::default()`. A synthetic `force` — the render
+            // loop's per-item one, say — legitimately carries no location, and
+            // leaving the inner binding's annotation in place would stamp it
+            // onto every continuation created for the *next* binding, blaming
+            // the first annotated declaration in the unit for a failure
+            // anywhere after it (eu-og3u6). Errors raised in the unannotated
+            // window fall back to `state.last_annotation` (see `attach_trace`),
+            // which is what preserves the locations eu-0lvf recovered.
+            state.set_annotation(annotation);
         }
         BcContinuation::LookupLitForce { smid, .. } => {
             // A native is not a block — type error.
@@ -1544,16 +1598,16 @@ pub fn return_fun(
             annotation,
         } => {
             state.current = BcValue::Closure(BcClosure::new(body, environment));
-            // Only restore a meaningful annotation. A `force`/`Seq` in an outer
-            // context (e.g. the render loop) captures `Smid::default()` and must
-            // not wipe the live call-site annotation established by an inner
-            // `Ann` before a deferred arg-check BIF runs — mirrors the same
-            // invalid-annotation guard `handle_op` applies on closure entry.
-            // (HeapSyn avoids this by evaluation ordering, raising before the
-            // outer SeqBind is restored.)
-            if annotation.is_valid() {
-                state.annotation = annotation;
-            }
+            // Restore the annotation live where this `Seq` was pushed, even
+            // when that is `Smid::default()`. A synthetic `force` — the render
+            // loop's per-item one, say — legitimately carries no location, and
+            // leaving the inner binding's annotation in place would stamp it
+            // onto every continuation created for the *next* binding, blaming
+            // the first annotated declaration in the unit for a failure
+            // anywhere after it (eu-og3u6). Errors raised in the unannotated
+            // window fall back to `state.last_annotation` (see `attach_trace`),
+            // which is what preserves the locations eu-0lvf recovered.
+            state.set_annotation(annotation);
         }
         BcContinuation::LookupLitForce { smid, .. } => {
             // A literal `.key` lookup forced its target and found a function
@@ -1863,7 +1917,7 @@ pub fn handle_op(
     })?;
     let env = closure.env();
     if closure.annotation().is_valid() {
-        state.annotation = closure.annotation();
+        state.set_annotation(closure.annotation());
     }
 
     let mut pc = closure.code() as usize;
@@ -1946,7 +2000,7 @@ pub fn handle_op(
         Op::Ann => {
             let smid = Smid::from(read_u32(code, &mut pc));
             let body_off = read_u32(code, &mut pc);
-            state.annotation = smid;
+            state.set_annotation(smid);
             state.current = BcValue::Closure(BcClosure::new(body_off, env));
         }
         Op::FusedPrimop => {
@@ -2039,7 +2093,7 @@ pub fn handle_op(
             let callable = read_ref(code, &mut pc)?;
             let arg_offs = read_arg_offsets(code, &mut pc);
             // Inline smid replaces a wrapping Ann.
-            state.annotation = smid;
+            state.set_annotation(smid);
             let args = make_arg_array(view, code, env, &arg_offs, eager)?;
 
             let (callee_env, callee) = match callable {
@@ -2155,7 +2209,7 @@ pub fn handle_op(
             let key = read_ref(code, &mut pc)?;
             let obj = read_ref(code, &mut pc)?;
             let default_off = read_u32(code, &mut pc);
-            state.annotation = smid;
+            state.set_annotation(smid);
 
             // The key is always a `V`-const symbol.
             let sym_id = match key {
@@ -2283,7 +2337,7 @@ pub fn step(
             // `self.annotation` from `closure_ann` unconditionally, before
             // its `remaining_arity > 0` check (eu-gvci).
             if annotation.is_valid() {
-                state.annotation = annotation;
+                state.set_annotation(annotation);
             }
             return_fun(state, view, prog, decoded)
         }
@@ -2384,7 +2438,7 @@ pub fn handle_op_predecoded(
     })?;
     let env = closure.env();
     if closure.annotation().is_valid() {
-        state.annotation = closure.annotation();
+        state.set_annotation(closure.annotation());
     }
 
     let ord = closure.code() as usize;
@@ -2399,7 +2453,7 @@ pub fn handle_op_predecoded(
     // for the ops that carried one.
     let smid = decoded.smids[ord];
     if smid.is_valid() {
-        state.annotation = smid;
+        state.set_annotation(smid);
     }
 
     let instr = decoded.instrs[ord];
@@ -2792,7 +2846,7 @@ pub fn step_predecoded(
             // dispatch, mirroring `vm.rs` `handle_instruction`'s
             // unconditional-before-arity-check ordering.
             if annotation.is_valid() {
-                state.annotation = annotation;
+                state.set_annotation(annotation);
             }
             return_fun(state, view, prog, decoded)
         }

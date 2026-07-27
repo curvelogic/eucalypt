@@ -41,20 +41,12 @@ use eucalypt::{
         blob::{PreludeBlob, PreludeBytecodeImage},
         make_standard_runtime,
         syntax::LambdaForm,
+        wire_format::{blob_source_hash, BLOB_PATH, INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH},
     },
     syntax::input::{Input, Locator},
 };
-use sha2::{Digest, Sha256};
 
 mod engine_ab;
-
-/// BV1 bytecode wire-format version, folded into the prelude-blob source hash.
-/// MUST match `BYTECODE_WIRE_FORMAT_VERSION` in the crate root `build.rs`.
-/// See that constant's doc comment for the version history (v2: eu-2sa6.11
-/// Let/LetRec binding count widened `u16` → `u32`; v4: eu-2sa6.20
-/// `PreludeBlob::type_summary` field removed; v5: eu-1tkk.7.11
-/// `PreludeBlob::blame` field + blob-mode global-slot Smid identity).
-const BYTECODE_WIRE_FORMAT_VERSION: u32 = 5;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -77,22 +69,24 @@ fn main() -> Result<()> {
 
 fn cmd_prelude_compile() -> Result<()> {
     let workspace_root = workspace_root()?;
-    let prelude_src = workspace_root.join("lib/prelude.eu");
-    let blob_out = workspace_root.join("lib/prelude.blob");
+    let prelude_src = workspace_root.join(PRELUDE_SOURCE_PATH);
+    let intrinsic_table = workspace_root.join(INTRINSIC_TABLE_PATH);
+    let blob_out = workspace_root.join(BLOB_PATH);
 
     println!("Compiling prelude: {}", prelude_src.display());
     let t_start = Instant::now();
 
-    // ── 1. Hash the prelude source ────────────────────────────────────────────
+    // ── 1. Hash the blob's inputs ─────────────────────────────────────────────
+    // `blob_source_hash` is shared verbatim with `build.rs` (which `include!`s
+    // the module), so the stamp written here and the expectation checked there
+    // cannot drift. It covers the prelude source, the intrinsic catalogue —
+    // whose length fixes the global slot numbering baked in below — and the
+    // BV1 wire-format version.
     let source_bytes = std::fs::read(&prelude_src)
         .with_context(|| format!("reading {}", prelude_src.display()))?;
-    // Fold the bytecode wire-format version into the hash so a format change
-    // (not just a source change) invalidates a stale blob at build time
-    // (must match `build.rs`).
-    let mut hasher = Sha256::new();
-    hasher.update(&source_bytes);
-    hasher.update(BYTECODE_WIRE_FORMAT_VERSION.to_le_bytes());
-    let source_hash: [u8; 32] = hasher.finalize().into();
+    let intrinsic_table_bytes = std::fs::read(&intrinsic_table)
+        .with_context(|| format!("reading {}", intrinsic_table.display()))?;
+    let source_hash = blob_source_hash(&source_bytes, &intrinsic_table_bytes);
 
     // ── 2. Run the front-end pipeline ────────────────────────────────────────
     // The prelude references `__build` (from build-meta.yaml) and intrinsics
@@ -118,7 +112,7 @@ fn cmd_prelude_compile() -> Result<()> {
         "core",
     );
     let locator = Locator::Fs(prelude_src.clone());
-    let prelude_input = Input::new(locator, None, "eu");
+    let prelude_input = Input::new(locator.clone(), None, "eu");
 
     // Load order: __build, __io, __args, prelude.
     let all_inputs = vec![
@@ -213,6 +207,19 @@ fn cmd_prelude_compile() -> Result<()> {
         "  blame classifications declared: {}",
         desugar_phase_blame.len()
     );
+
+    // Deprecations declared on prelude-side declarations (eu-1tkk.2).
+    //
+    // Same desugar-phase side channel as `blame` above, and captured for the
+    // same reason: `deprecated` metadata is consumed by
+    // `Desugarer::record_deprecation` and does not survive as runtime
+    // `Expr::Meta`, so the baked `desugared_unit_cores` cannot supply it.
+    // Baking it lets `run_type_checker_from_blob_core` report a prelude
+    // deprecation on the evaluate path, which is what users actually run;
+    // without it the table is empty there and the declaration is inert.
+    // This is the merged union across all four prelude-side units.
+    let deprecations = loader.core().deprecations.clone();
+    println!("  deprecations declared: {}", deprecations.len());
 
     // ── 4. Peel the merged Let expression into individual binding bodies ──────
     // After merge_units + cook, the prelude is a nested Let where all
@@ -397,6 +404,32 @@ fn cmd_prelude_compile() -> Result<()> {
 
     println!("  STG lambda forms compiled: {}", forms.len());
 
+    // ── 6b. Capture each binding's prelude declaration span (eu-7x0r) ────────
+    // Blob mode never loads prelude source, so a runtime trace frame naming a
+    // prelude combinator has nowhere to point unless the declaration site
+    // travels in the blob. Take it from the peeled body's own Smid, keeping
+    // only spans that really are in `lib/prelude.eu` — the `__build` binding's
+    // body lives in `build-meta.yaml` and the `__io` / `__args` pseudoblocks
+    // have no source at all, so those record `None`.
+    let prelude_file_id = loader.file_id_for(&locator);
+    let binding_spans: Vec<Option<(u32, u32)>> = binding_bodies
+        .iter()
+        .map(|(_, body)| {
+            let smid = eucalypt::common::sourcemap::HasSmid::smid(body);
+            let info = loader.source_map().source_info_for_smid(smid)?;
+            let span = info.span?;
+            if info.file != prelude_file_id {
+                return None;
+            }
+            Some((span.start().to_usize() as u32, span.end().to_usize() as u32))
+        })
+        .collect();
+    println!(
+        "  binding declaration spans captured: {}/{}",
+        binding_spans.iter().filter(|s| s.is_some()).count(),
+        binding_spans.len()
+    );
+
     // ── 7. Extract binding names for the PreludeBlob (slot order) ────────────
     let names: Vec<String> = binding_bodies.into_iter().map(|(n, _)| n).collect();
     let name_to_slot: HashMap<String, usize> = names
@@ -503,8 +536,10 @@ fn cmd_prelude_compile() -> Result<()> {
         nodes,
         forms_pool,
         binding_entries,
+        binding_spans,
         name_to_slot,
         blame,
+        deprecations,
         operators,
         monad_specs,
         monad_type_hints,

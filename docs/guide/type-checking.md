@@ -1008,8 +1008,18 @@ a: s"[number]" to-data
 # a => [:t-list, [:t-prim, :number]]
 
 b: s"{ name: string }" to-data
-# b => [:t-record, { name: [:t-field, :required, [:t-prim, :string]] }]
+# b => [:t-record, { name: [:t-field, :required, [:t-prim, :string]] }, false]
 ```
+
+The third element of a `:t-record` node is the record's **closedness**:
+`false` for a closed record (`{k: T}`), `true` for an open one
+(`{k: T, ..}`). A named row variable (`{k: T, ..r}`) collapses to the same
+boolean — extra fields are permitted either way, and a runtime consumer
+cannot interpret a type variable, so none ever appears in projected data.
+
+The element is additive growth of the versioned `t-*` surface: a
+hand-written two-element `[:t-record, {…}]` remains valid and is read as
+**closed**, so existing hand-built type data keeps working.
 
 `from-data(td)` is the inverse — it rebuilds a type-data value from such
 a tagged list, so the two round-trip:
@@ -1026,6 +1036,23 @@ h: [:t-list, [:t-prim, :string]] from-data
 
 `to-data` passes non-type-data values through unchanged, so it is safe to
 apply speculatively.
+
+### `type-str`: naming a type from its tags
+
+`type-str(td)` renders a `t-*` tagged list back to its canonical type-DSL
+string, without wrapping the result as a type-data value. Reach for it when
+you are already walking the tagged list and want to *name* the type you are
+looking at — for instance to tell a user what a value was expected to be:
+
+```eu,notest
+{ import: "reflect.eu" }
+s: s"{ name: string, .. }" to-data type-str
+# s => "{name: string, ..}"
+```
+
+`type-str` is total: a tag it does not recognise renders as `"any"` rather
+than raising. `from-data` is exactly `type-str` followed by the type-data
+wrap.
 
 ### `as-spec`: types as runtime validators
 

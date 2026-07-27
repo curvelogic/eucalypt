@@ -1,0 +1,9 @@
+# eu-mqlkv, site 3 of 3 — the `Block` impl's block-metadata import loop
+# (rowan_ast.rs, `impl Desugarable for rowan_ast::Block`), reached by
+# leading metadata on a NESTED block rather than on the unit or on a
+# declaration. It panicked independently of the other two routes, so it
+# needs its own gate.
+outer: {
+  { import: "testdata/206_mqlkv_bad_annotation.eu" }
+  inner: f(1)
+}

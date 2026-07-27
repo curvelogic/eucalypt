@@ -39,9 +39,19 @@ impl Default for Resources {
                 .expect("state.eu is valid UTF-8"),
         );
         content.insert(
+            "do".to_string(),
+            String::from_utf8(include_bytes!("../../lib/do.eu").to_vec())
+                .expect("do.eu is valid UTF-8"),
+        );
+        content.insert(
             "reflect".to_string(),
             String::from_utf8(include_bytes!("../../lib/reflect.eu").to_vec())
                 .expect("reflect.eu is valid UTF-8"),
+        );
+        content.insert(
+            "contract".to_string(),
+            String::from_utf8(include_bytes!("../../lib/contract.eu").to_vec())
+                .expect("contract.eu is valid UTF-8"),
         );
         content.insert(
             "markup".to_string(),

@@ -821,7 +821,24 @@ impl<'a> LetBinder<'a> {
 
     /// Add a binding to syntax which is already determined
     /// (regardless of unknown context)
+    ///
+    /// Any `Ref::L` embedded in already-determined syntax is necessarily a
+    /// reference to a sibling of this very binder: the compiler only ever
+    /// obtains a concrete `Ref::L` from this binder's own `add`,
+    /// `add_deferred` or `running_ref`, while references to enclosing scopes
+    /// arrive as deferred `ProtoVar`s resolved against the binding context.
+    /// Such a group must therefore be realised as a LETREC — under a plain
+    /// LET each binding is closed over the *enclosing* frame and the sibling
+    /// refs silently index the outer scope instead (eu-frf2o). The assertion
+    /// keeps that invariant honest for future call sites; it is deliberately
+    /// conservative and only inspects the flat node shapes this method is
+    /// ever passed.
     pub fn add(&mut self, syntax: Rc<StgSyn>) -> Result<Ref, CompileError> {
+        debug_assert!(
+            self.recursive || !has_flat_local_ref(&syntax),
+            "let binder with sibling references must be recursive: \
+             call ensure_recursive() before adding {syntax:?}"
+        );
         self.add_deferred(Box::new(Holder::new(syntax)))
     }
 
@@ -842,6 +859,36 @@ impl<'a> LetBinder<'a> {
     pub fn set_body(&mut self, body: Box<dyn ProtoSyntax>) -> Result<(), CompileError> {
         self.body = Some(body);
         Ok(())
+    }
+}
+
+/// Whether flat, scope-free syntax embeds a reference into the frame it will
+/// be allocated in.
+///
+/// Only the node shapes `LetBinder::add` is ever handed are modelled — the
+/// saturated constructions built directly from refs the compiler has just
+/// obtained. Anything that introduces its own binding scope (a nested let, a
+/// case branch, a lambda form) shifts de Bruijn indices and is reported as
+/// "no local ref": the caller uses this to raise a debug assertion, so
+/// under-reporting merely weakens the check whereas over-reporting would
+/// raise false alarms.
+fn has_flat_local_ref(syntax: &StgSyn) -> bool {
+    let is_local = |r: &Ref| matches!(r, Ref::L(_));
+    match syntax {
+        StgSyn::Atom { evaluand } => is_local(evaluand),
+        StgSyn::Cons { args, .. } | StgSyn::Bif { args, .. } => args.iter().any(is_local),
+        StgSyn::App { callable, args, .. } | StgSyn::DirectApp { callable, args, .. } => {
+            is_local(callable) || args.iter().any(is_local)
+        }
+        StgSyn::Meta { meta, body } => is_local(meta) || is_local(body),
+        StgSyn::LookupLit {
+            key, obj, default, ..
+        } => is_local(key) || is_local(obj) || is_local(default),
+        StgSyn::Ann { body, .. } => has_flat_local_ref(body),
+        StgSyn::Seq { scrutinee, body } => {
+            has_flat_local_ref(scrutinee) || has_flat_local_ref(body)
+        }
+        _ => false,
     }
 }
 
@@ -1833,6 +1880,19 @@ impl<'rt> Compiler<'rt> {
                 // sub-problem 2 — the actual mechanism, not pre-expansion).
                 // The metadata block itself is never a recursion target, so
                 // it still compiles with `None`.
+                //
+                // The `with_meta` binding added below refers to the two
+                // bindings compiled either side of it, so this binder must
+                // emit a LETREC — under a plain LET each binding is closed
+                // over the *enclosing* frame, and the sibling refs silently
+                // index the outer scope instead (eu-frf2o: a blackhole when
+                // outer slot 0 is the enclosing thunk, and a plausible wrong
+                // value when it is a live parameter). `compile_block`,
+                // `compile_list_*` and `compile_lookup` all do the same; the
+                // block-shaped-metadata case only worked because compiling
+                // the metadata block happened to call `ensure_recursive` as
+                // a side effect.
+                binder.ensure_recursive();
                 let m = self.compile_binding(binder, meta.clone(), *s, Demand::default(), None)?;
                 let b = self.compile_binding(
                     binder,
@@ -2201,6 +2261,119 @@ pub mod tests {
         );
 
         assert_eq!(compile(core).unwrap(), syntax);
+    }
+
+    /// Find the binding group holding a `Meta` node and report whether it is
+    /// recursive.  Returns `None` when no such group exists.
+    fn meta_group_is_recursive(syn: &StgSyn) -> Option<bool> {
+        fn holds_meta(bindings: &[LambdaForm]) -> bool {
+            bindings
+                .iter()
+                .any(|b| matches!(&**b.body(), StgSyn::Meta { .. }))
+        }
+
+        fn search(syn: &StgSyn) -> Option<bool> {
+            match syn {
+                StgSyn::Let { bindings, body } => {
+                    if holds_meta(bindings) {
+                        return Some(false);
+                    }
+                    bindings
+                        .iter()
+                        .find_map(|b| search(b.body()))
+                        .or_else(|| search(body))
+                }
+                StgSyn::LetRec { bindings, body } => {
+                    if holds_meta(bindings) {
+                        return Some(true);
+                    }
+                    bindings
+                        .iter()
+                        .find_map(|b| search(b.body()))
+                        .or_else(|| search(body))
+                }
+                StgSyn::Ann { body, .. } => search(body),
+                StgSyn::Seq { scrutinee, body } => search(scrutinee).or_else(|| search(body)),
+                StgSyn::Case {
+                    scrutinee,
+                    branches,
+                    fallback,
+                } => search(scrutinee)
+                    .or_else(|| branches.iter().find_map(|(_, b)| search(b)))
+                    .or_else(|| fallback.as_ref().and_then(|f| search(f))),
+                StgSyn::DeMeta {
+                    scrutinee,
+                    handler,
+                    or_else,
+                } => search(scrutinee)
+                    .or_else(|| search(handler))
+                    .or_else(|| search(or_else)),
+                StgSyn::FusedPrimop { inner, .. } => search(inner),
+                _ => None,
+            }
+        }
+
+        search(syn)
+    }
+
+    /// A metadata-annotated value in argument position must land in a LETREC
+    /// (eu-frf2o).
+    ///
+    /// The `Meta` node references the two bindings compiled either side of
+    /// it, so the synthetic group that holds all three has genuine internal
+    /// references.  Emitted as a plain LET, those references resolve in the
+    /// enclosing frame instead — a blackhole when the outer slot happens to
+    /// be the thunk being forced, and a silently wrong value when it happens
+    /// to be a live parameter.
+    #[test]
+    pub fn test_meta_argument_compiles_to_letrec() {
+        let f = free("f");
+        let x = free("x");
+        let k = free("k");
+
+        // let f = λx.x in f(`(let k = 1 in {k: k}) :foo)
+        //
+        // The annotated body must be a Core `Let` — the shape a block
+        // literal with declarations desugars to. A bare `Block` body would
+        // mask the defect, because compiling it calls `ensure_recursive()`
+        // as a side effect and so fixes the group by accident.
+        let core = acore::let_(
+            vec![(f.clone(), acore::lam(vec![x.clone()], acore::var(x)))],
+            acore::app(
+                acore::var(f),
+                vec![acore::meta(
+                    acore::let_(
+                        vec![(k.clone(), acore::num(1))],
+                        acore::block(vec![("k".to_string(), acore::var(k))]),
+                    ),
+                    acore::sym("foo"),
+                )],
+            ),
+        );
+
+        let compiled = compile(core).unwrap();
+        assert_eq!(
+            meta_group_is_recursive(&compiled),
+            Some(true),
+            "Meta binding group must be a LetRec: {compiled:?}"
+        );
+    }
+
+    /// The binder guards its own invariant: syntax that already names a
+    /// sibling may only be added to a recursive group (eu-frf2o).
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "must be recursive")]
+    pub fn test_non_recursive_binder_rejects_sibling_reference() {
+        let context = Context {
+            scope: None,
+            var_refs: vec![],
+            size: 0,
+            next: None,
+        };
+        let mut binder = LetBinder::synthetic_let(&context);
+        let first = binder.add(dsl::box_num(1)).unwrap();
+        let _ = binder.add(dsl::with_meta(first.clone(), first));
     }
 
     /// A let-body application is compiled as `Value`, not `Thunk` (W9 §3.4).

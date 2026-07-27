@@ -1,0 +1,133 @@
+{ import: "resource:state"
+  requires: ">=0.14"
+  doc: "Combined effect monad (do) for Eucalypt.  A single monad that threads a
+        state-and-seed context alongside IO, so io, state and random
+        capabilities can be used together in one colon-do block without
+        hand-threading state and seed through every step.
+
+        A do action is a function from ctx to an IO action producing a
+        value-and-ctx pair, where ctx pairs a state block with a random seed
+        stream.  IO carries the context on its value channel, so io.bind handles
+        the world-token sequencing and do only threads ctx on top.
+
+        New code is only bind and return plus three lift functions; all effects
+        and all derived combinators (map, then, and-then, join, sequence, map-m,
+        filter-m) are reused from io, state, random and the monad utility.  Run
+        a pipeline with do.run(action, ctx0) for value plus context, or
+        do.eval(action, ctx0) for the value only." }
+
+# ─── do monad primitives (the only genuinely new code, spec EF1 section 3) ───
+
+` { export: :internal
+    doc: "do-ret(v, c) - wrap value v in the do monad: an IO action returning a value-and-ctx pair with ctx unchanged." }
+do-ret(v, c): io.return({ value: v, ctx: c })
+
+` { export: :internal
+    doc: "resume(f, r) - continuation adaptor: apply the bound continuation f to the IO-produced value-and-ctx pair." }
+resume(f, r): f(r.value)(r.ctx)
+
+` { export: :internal
+    doc: "do-bind(m, f, c) - sequence do actions: run m in context c, thread its value-and-ctx into f via io.bind." }
+do-bind(m, f, c): io.bind(m(c), resume(f))
+
+# ─── lifts: adapt existing io/state/random actions into do actions (sec 4) ───
+
+` { export: :internal
+    doc: "pair-ctx(c, v) - pair an IO-produced value v with the unchanged context c." }
+pair-ctx(c, v): { value: v, ctx: c }
+
+` { export: :internal
+    doc: "do-lift-io(action, c) - lift an IO action into the do monad; the context is unchanged." }
+do-lift-io(action, c): io.map(pair-ctx(c), action)
+
+` { export: :internal
+    doc: "thread-state(c, s) - fold a state action value-and-state result back into the do context." }
+thread-state(c, s): { value: s.value, ctx: { state: s.state, seed: c.seed } }
+
+` { export: :internal
+    doc: "do-lift-state(saction, c) - lift a state action into the do monad; runs it against the context state." }
+do-lift-state(saction, c): io.return(thread-state(c, saction(c.state)))
+
+` { export: :internal
+    doc: "thread-seed(c, r) - fold a random action value-and-rest result back into the do context." }
+thread-seed(c, r): { value: r.value, ctx: { state: c.state, seed: r.rest } }
+
+` { export: :internal
+    doc: "do-lift-random(raction, c) - lift a random action into the do monad; runs it against the context seed." }
+do-lift-random(raction, c): io.return(thread-seed(c, raction(c.seed)))
+
+# ─── namespace (enables colon-do block metadata) ─────────────────────────────
+
+` { doc: "Combined effect monad namespace.  Each declaration in a colon-do block
+          is one monadic bind step.  Members delegate to the underlying io,
+          state and random monads; combinators (map, then, and-then, join,
+          sequence, map-m, filter-m) are derived by the monad utility."
+    monad: s"ctx → IO(a)" }
+do: monad{bind: do-bind, return: do-ret} {
+
+  # io capabilities
+  ` "do.shell(cmd) - run a shell command via sh -c; context unchanged."
+  shell(cm): do-lift-io(io.shell(cm))
+
+  ` "do.shell-with(opts, cmd) - run a shell command with extra options (stdin, timeout); context unchanged."
+  shell-with(opts, cm): do-lift-io(io.shell-with(opts, cm))
+
+  ` "do.exec(args) - run a command directly (no shell); context unchanged."
+  exec(args): do-lift-io(io.exec(args))
+
+  ` "do.exec-with(opts, args) - run a command directly with extra options; context unchanged."
+  exec-with(opts, args): do-lift-io(io.exec-with(opts, args))
+
+  # state capabilities
+  ` "do.get - action returning the whole context state as the value."
+  get: do-lift-state(state.get)
+
+  ` "do.put(k, v) - action setting key k to v in the context state."
+  put(k, v): do-lift-state(state.put(k, v))
+
+  ` "do.modify(k, f) - action updating key k in the context state by applying f."
+  modify(k, f): do-lift-state(state.modify(k, f))
+
+  ` "do.query(f) - action reading from the context state via f; state unchanged."
+  query(f): do-lift-state(state.query(f))
+
+  ` "do.lift(f) - action applying pure function f to transform the context state."
+  lift(f): do-lift-state(state.lift(f))
+
+  ` "do.st(action) - terse lift for any state action, including the =! and %! lens operators."
+  st: do-lift-state
+
+  ` "do.lift-state(action) - lift any state action into the do monad (alias of do.st)."
+  lift-state: do-lift-state
+
+  # random capabilities
+  ` "do.float - action returning a random float in the half-open unit interval, advancing the context seed."
+  float: do-lift-random(random.float)
+
+  ` "do.int(n) - action returning a random integer in the half-open range zero to n, advancing the context seed."
+  int(n): do-lift-random(random.int(n))
+
+  ` "do.choice(xs) - action returning a random element of xs, advancing the context seed."
+  choice(xs): do-lift-random(random.choice(xs))
+
+  ` "do.rnd(action) - terse lift for any random action, advancing the context seed."
+  rnd: do-lift-random
+
+  ` "do.lift-random(action) - lift any random action into the do monad (alias of do.rnd)."
+  lift-random: do-lift-random
+
+  # io lift
+  ` "do.lift-io(action) - lift any IO action into the do monad; context unchanged."
+  lift-io: do-lift-io
+
+  # pure
+  ` "do.pure(v) - a pure value in the do monad; no effect, context unchanged."
+  pure: do-ret
+
+  # runners
+  ` "do.run(action, ctx0) - run a do action from initial context ctx0; yields an IO action producing a value-and-ctx pair."
+  run(a, c0): a(c0)
+
+  ` "do.eval(action, ctx0) - run a do action from ctx0 and keep only the value; yields an IO action producing the value."
+  eval(a, c0): io.map((.value), a(c0))
+}
