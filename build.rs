@@ -4,66 +4,37 @@
 //! 1. Declare `rerun-if-changed` for embedded resource files so that cargo
 //!    re-embeds them when they change.
 //! 2. Verify the pre-compiled prelude blob (`lib/prelude.blob`) against the
-//!    current `lib/prelude.eu` source:
-//!    - If the blob is missing, emit a build warning and set
+//!    inputs it was generated from — `lib/prelude.eu`, the intrinsic
+//!    catalogue `src/eval/intrinsics.rs`, and the BV1 wire-format version:
+//!    - If the blob is missing, unparseable, or was generated against
+//!      different inputs, emit a build warning and set
 //!      `cfg(prelude_blob_stale)` so the driver falls back to source-prelude.
-//!    - If the blob's `source_hash` field does not match SHA-256(`lib/prelude.eu`),
-//!      emit a build warning and set `cfg(prelude_blob_stale)`.
-//!    - If the blob is present and the hash matches, set `cfg(prelude_blob_ok)`.
+//!    - Otherwise set `cfg(prelude_blob_ok)`.
+//!
+//! The version constant, the hash recipe and the staleness verdict all live
+//! in `src/eval/stg/wire_format.rs`, `include!`d below, so that this script
+//! and `cargo xtask prelude-compile` cannot drift apart (eu-3skeg).
 
-use sha2::{Digest, Sha256};
-use std::path::Path;
-
-/// BV1 bytecode wire-format version, folded into the prelude-blob source hash
-/// so that a change to the serialised code-stream layout invalidates a blob
-/// that still carries the old encoding — even though `lib/prelude.eu` is
-/// unchanged. Bump this whenever the encoder's byte layout changes.
-///
-/// - v1: original BV1 stream.
-/// - v2: Let/LetRec binding count widened `u16` → `u32` (eu-2sa6.11).
-/// - v3: `desugared_unit_cores` field added (eu-rb5n Z).
-/// - v4: `PreludeBlob::type_summary` (`PreludeSummary`) field removed — it
-///   was write-only (sole writer `xtask`, zero readers; its only consumer
-///   was deleted in PR #1012) (eu-2sa6.20).
-/// - v5: `PreludeBlob::blame` field added (binding name → declared
-///   `:transparent`/`:boundary` classification), and blob-mode global
-///   reconstruction (`StandardRuntime::globals()`, xtask's bytecode
-///   pre-encode loop) now stamps each prelude global's `LambdaForm::
-///   Lambda.annotation` with a `Smid::global_slot(..)` identity instead of
-///   always `Smid::default()` — not a serialised-shape change on its own,
-///   but bundled into the same version bump as the `blame` field it feeds
-///   (eu-1tkk.7.11).
-/// - v6: `PreludeBlob::binding_spans` field added (per-binding declaration
-///   span in `lib/prelude.eu`, so blob-mode trace frames can cite a real
-///   `[prelude]:line:col`), and blob-mode reconstruction now rebases the
-///   `DirectApp` / `LookupLit` Smids baked by `xtask` onto the enclosing
-///   global's slot identity instead of copying them verbatim — the baked
-///   values are indices into `xtask`'s own `SourceMap` and aliased unrelated
-///   user source positions at runtime (eu-7x0r).
-///
-/// MUST match `BYTECODE_WIRE_FORMAT_VERSION` in `xtask/src/main.rs`.
-const BYTECODE_WIRE_FORMAT_VERSION: u32 = 6;
-
-/// Compute the blob source hash: `SHA-256(prelude source ‖ wire-format version)`.
-fn blob_source_hash(source_bytes: &[u8]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(source_bytes);
-    hasher.update(BYTECODE_WIRE_FORMAT_VERSION.to_le_bytes());
-    hasher.finalize().into()
+/// The prelude-blob freshness machinery, shared verbatim with the library
+/// module `eucalypt::eval::stg::wire_format` (a build script cannot depend on
+/// its own crate, so the source is included rather than imported).
+mod wire_format {
+    include!("src/eval/stg/wire_format.rs");
 }
+
+use std::path::Path;
+use wire_format::{
+    blob_source_hash, classify_blob, BlobFreshness, BLOB_PATH, BUILD_RERUN_PATHS,
+    INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH,
+};
 
 fn main() {
     // ── Rerun triggers ────────────────────────────────────────────────────────
-    // Ensure cargo recompiles when baked-in resource files change.
-    // These are embedded via include_bytes! in src/driver/resources.rs
-    // but cargo's incremental compilation does not automatically track
-    // non-Rust files referenced by include_bytes!.
-    println!("cargo:rerun-if-changed=lib/prelude.eu");
-    println!("cargo:rerun-if-changed=lib/prelude.blob");
-    println!("cargo:rerun-if-changed=lib/test.eu");
-    println!("cargo:rerun-if-changed=lib/lens.eu");
-    println!("cargo:rerun-if-changed=lib/state.eu");
-    println!("cargo:rerun-if-changed=build-meta.yaml");
+    // The authoritative list lives beside the hash recipe it protects; see
+    // `BUILD_RERUN_PATHS`.
+    for path in BUILD_RERUN_PATHS {
+        println!("cargo:rerun-if-changed={path}");
+    }
 
     // ── Declare custom cfg keys ───────────────────────────────────────────────
     // Suppress the `unexpected_cfgs` lint for the two cfg flags we emit.
@@ -75,74 +46,28 @@ fn main() {
 }
 
 /// Check that `lib/prelude.blob` exists and its embedded source hash matches
-/// `SHA-256(lib/prelude.eu ‖ BYTECODE_WIRE_FORMAT_VERSION)` — so a bytecode
-/// wire-format change invalidates a stale-format blob as well as a source
-/// change.  Emits `cfg(prelude_blob_ok)` or `cfg(prelude_blob_stale)`
-/// accordingly.
+/// the hash of the inputs it must have been generated from.  Emits
+/// `cfg(prelude_blob_ok)` or `cfg(prelude_blob_stale)` accordingly.
 fn verify_prelude_blob() {
-    let prelude_src = Path::new("lib/prelude.eu");
-    let blob_path = Path::new("lib/prelude.blob");
-
-    // Compute SHA-256 of the current prelude source.
-    let source_bytes = match std::fs::read(prelude_src) {
-        Ok(b) => b,
-        Err(_) => {
-            // No prelude source — nothing to check.
-            println!("cargo:rustc-cfg=prelude_blob_stale");
-            return;
-        }
+    // A missing or unreadable input is treated as "cannot verify" — fall back
+    // to the source prelude rather than trusting the blob.
+    let (Ok(prelude_source), Ok(intrinsic_table)) = (
+        std::fs::read(Path::new(PRELUDE_SOURCE_PATH)),
+        std::fs::read(Path::new(INTRINSIC_TABLE_PATH)),
+    ) else {
+        println!("cargo:rustc-cfg=prelude_blob_stale");
+        return;
     };
-    let source_hash: [u8; 32] = blob_source_hash(&source_bytes);
 
-    // Check the blob.
-    match std::fs::read(blob_path) {
-        Err(_) => {
-            println!(
-                "cargo:warning=precompiled prelude not found — compiling from source each run. \
-                 Run `cargo xtask prelude-compile` to generate."
-            );
-            println!("cargo:rustc-cfg=prelude_blob_stale");
-        }
-        Ok(blob_bytes) => {
-            // The first 32 bytes of the postcard blob are the `source_hash` field
-            // (postcard serialises `[u8; N]` as N raw bytes with no length prefix).
-            // We use the `postcard` crate's own deserialiser to avoid parsing
-            // the full blob just for the hash.
-            match read_blob_source_hash(&blob_bytes) {
-                Some(blob_hash) if blob_hash == source_hash => {
-                    println!("cargo:rustc-cfg=prelude_blob_ok");
-                }
-                Some(_) => {
-                    println!(
-                        "cargo:warning=prelude blob is stale — run `cargo xtask prelude-compile` \
-                         to regenerate."
-                    );
-                    println!("cargo:rustc-cfg=prelude_blob_stale");
-                }
-                None => {
-                    println!(
-                        "cargo:warning=prelude blob could not be parsed — \
-                         run `cargo xtask prelude-compile` to regenerate."
-                    );
-                    println!("cargo:rustc-cfg=prelude_blob_stale");
-                }
-            }
-        }
-    }
-}
+    let expected = blob_source_hash(&prelude_source, &intrinsic_table);
+    let blob = std::fs::read(Path::new(BLOB_PATH)).ok();
 
-/// Read only the `source_hash` field from the beginning of a postcard blob.
-///
-/// `PreludeBlob` is serialised with `postcard`.  The first field is
-/// `source_hash: [u8; 32]`, which postcard encodes as exactly 32 raw bytes
-/// (postcard encodes fixed-size byte arrays without a length prefix).
-///
-/// Returns `None` if the blob is too short to contain the hash.
-fn read_blob_source_hash(blob: &[u8]) -> Option<[u8; 32]> {
-    if blob.len() < 32 {
-        return None;
+    let freshness = classify_blob(blob.as_deref(), &expected);
+    if let Some(warning) = freshness.warning() {
+        println!("cargo:warning={warning}");
     }
-    let mut hash = [0u8; 32];
-    hash.copy_from_slice(&blob[..32]);
-    Some(hash)
+    match freshness {
+        BlobFreshness::Fresh => println!("cargo:rustc-cfg=prelude_blob_ok"),
+        _ => println!("cargo:rustc-cfg=prelude_blob_stale"),
+    }
 }
