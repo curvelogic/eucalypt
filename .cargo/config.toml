@@ -10,3 +10,8 @@
 # `eu`'s own STACK_SIZE constant rather than inventing a new figure.
 [env]
 RUST_MIN_STACK = "67108864"
+
+# `cargo xtask <command>` — the form used throughout CLAUDE.md and the CI
+# workflows (`cargo run --package xtask -- <command>` is the same thing).
+[alias]
+xtask = "run --quiet --package xtask --"

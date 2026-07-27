@@ -1,0 +1,24 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/001_dot_in_metadata_key
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/001_dot_in_metadata_key.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid block key: dotted names are not allowed as block keys
+ = block keys must be simple names (e.g. `x`), not dotted paths (e.g. `x.y`)
+ = example of valid metadata: `` ` { x: val } `` — use 'x', not 'x.y' as the key
+ = if you need nested metadata, use nested blocks: `` ` { x: { y: val } } ``

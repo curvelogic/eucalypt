@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/194_8a49h_library_blame
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/194_8a49h_library_blame.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/194_8a49h_library_blame.eu:12:22
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: elements called on non-block
+   ┌─ tests/harness/errors/194_8a49h_library_blame.eu:12:22
+   │
+12 │ bad: [:t-record, 42] from-data
+   │                      ^^^^^^^^^
+   │
+   = stack trace:
+     - bad at 194_8a49h_library_blame.eu:12:22

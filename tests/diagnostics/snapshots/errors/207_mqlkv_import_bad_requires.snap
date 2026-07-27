@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/207_mqlkv_import_bad_requires
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/207_mqlkv_import_bad_requires.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user testdata/207_mqlkv_impossible_requires.eu:4:1
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: eucalypt version 0.14.0 does not satisfy requires: ">=999.0"
+  ┌─ testdata/207_mqlkv_impossible_requires.eu:4:1
+  │
+4 │ { requires: ">=999.0" }
+  │ ^^^^^^^^^^^^^^^^^^^^^^^
+  │
+  = this file requires eucalypt >=999.0 but the current version is 0.14.0
+  = update the eucalypt binary, or relax the requires: constraint

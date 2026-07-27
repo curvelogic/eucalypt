@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: provocations/nth_out_of_range
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/nth_out_of_range.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/corpus/nth_out_of_range.eu:2:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: index 10 out of range for list of length 3
+  ┌─ tests/diagnostics/corpus/nth_out_of_range.eu:2:12
+  │
+2 │ result: xs nth(10)
+  │            ^^^
+  │
+  = stack trace:
+    - result at nth_out_of_range.eu:2:12
+    - in 'nth' at [prelude]

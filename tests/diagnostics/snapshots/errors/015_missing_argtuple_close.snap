@@ -1,0 +1,27 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/015_missing_argtuple_close
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/015_missing_argtuple_close.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/015_missing_argtuple_close.eu:1:5
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid parenthesised expression
+  ┌─ tests/harness/errors/015_missing_argtuple_close.eu:1:5
+  │
+1 │   x: f(2
+  │ ╭─────^
+2 │ │
+  │ ╰^

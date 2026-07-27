@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/102_dot_on_list_source_loc
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/102_dot_on_list_source_loc.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/102_dot_on_list_source_loc.eu:3:9
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected block, found list
+  ┌─ tests/harness/errors/102_dot_on_list_source_loc.eu:3:9
+  │
+3 │ result: xs.first
+  │         ^^
+  │
+  = the '.' operator performs key lookup on blocks, not lists
+  = for lists, use pipeline functions: 'xs count' (length), 'xs head' (first element), 'xs tail' (rest), 'xs !! 0' (nth element, 0-indexed)
+  = stack trace:
+    - result at 102_dot_on_list_source_loc.eu:3:9

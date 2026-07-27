@@ -46,6 +46,7 @@ use eucalypt::{
     syntax::input::{Input, Locator},
 };
 
+mod diag_snapshot;
 mod engine_ab;
 
 fn main() -> Result<()> {
@@ -53,6 +54,7 @@ fn main() -> Result<()> {
     match args.next().as_deref() {
         Some("prelude-compile") => cmd_prelude_compile(),
         Some("engine-ab") => engine_ab::run(&mut args),
+        Some("diag-snapshot") => diag_snapshot::run(&mut args),
         Some(cmd) => bail!("unknown xtask command: {cmd}"),
         None => {
             eprintln!("Usage: cargo xtask <command>");
@@ -60,6 +62,9 @@ fn main() -> Result<()> {
             eprintln!("  prelude-compile   Compile lib/prelude.eu → lib/prelude.blob");
             eprintln!("  engine-ab         Run the engine A/B suite; append results.jsonl");
             eprintln!("  engine-ab --check Flag regressions vs the previous ledger run");
+            eprintln!(
+                "  diag-snapshot     Golden diagnostic snapshots (--bless/--capture/--compare)"
+            );
             std::process::exit(1);
         }
     }

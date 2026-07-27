@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: provocations/missing_key
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/missing_key.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/corpus/missing_key.eu:2:9
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'hostname' not found in block
+  help: similar keys: 'host'
+  ┌─ tests/diagnostics/corpus/missing_key.eu:2:9
+  │
+2 │ result: config.hostname
+  │         ^^^^^^
+  │
+  = stack trace:
+    - result at missing_key.eu:2:9

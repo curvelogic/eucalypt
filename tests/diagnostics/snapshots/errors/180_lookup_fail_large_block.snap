@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/180_lookup_fail_large_block
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/180_lookup_fail_large_block.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/180_lookup_fail_large_block.eu:46:7
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'k99' not found in block
+  help: similar keys: 'k09', 'k19', 'k29'
+   ┌─ tests/harness/errors/180_lookup_fail_large_block.eu:46:7
+   │
+46 │ miss: b.k99
+   │       ^
+   │
+   = stack trace:
+     - miss at 180_lookup_fail_large_block.eu:46:7

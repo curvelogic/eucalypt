@@ -1,0 +1,32 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/078_anon_anaphor_scope
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/078_anon_anaphor_scope.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/078_anon_anaphor_scope.eu:5:23
+help-lines: 0
+note-lines: 2
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected number, found a function
+  ┌─ tests/harness/errors/078_anon_anaphor_scope.eu:5:23
+  │
+5 │ result: [1, 2, 3] map(double(_))
+  │                   --- ^^^^^^
+  │                   │
+  │                   called from here
+  │
+  = a function value cannot be used directly here; it must first be called with all of its remaining arguments
+  = this can happen when a function is under-applied (missing an argument), or when low-precedence catenation groups an expression differently than intended — add parentheses to disambiguate
+  = stack trace:
+    - # Mistake: using '_' inside a nested function call when a function arg is expected.… at 078_anon_anaphor_scope.eu:1:1

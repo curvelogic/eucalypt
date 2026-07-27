@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/103_comparison_type_mismatch
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/103_comparison_type_mismatch.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/103_comparison_type_mismatch.eu:2:11
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: cannot compare incompatible types with '>': operands must both be numbers, strings, symbols, or datetimes
+  ┌─ tests/harness/errors/103_comparison_type_mismatch.eu:2:11
+  │
+2 │ result: 5 > "hello"
+  │           ^
+  │
+  = stack trace:
+    - result at 103_comparison_type_mismatch.eu:2:11

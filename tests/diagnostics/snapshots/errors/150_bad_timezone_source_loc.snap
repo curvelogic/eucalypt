@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/150_bad_timezone_source_loc
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/150_bad_timezone_source_loc.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/150_bad_timezone_source_loc.eu:2:9
+help-lines: 1
+note-lines: 1
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unrecognised time zone 'NotATimezone'
+  help: use an IANA timezone name (e.g. 'Europe/London', 'America/New_York') or a UTC offset string (e.g. '+0100', '-0530', 'UTC')
+  ┌─ tests/harness/errors/150_bad_timezone_source_loc.eu:2:9
+  │
+2 │ result: cal.zdt(2024, 1, 15, 10, 30, 0, "NotATimezone")
+  │         ^^^
+  │
+  = timezone must be a UTC offset string like '+0100', '-0530', or 'UTC'

@@ -213,6 +213,35 @@ jobs:
           scripts/diagnostics-gate.sh diagnostics_blame_plumbing_test
           scripts/diagnostics-gate.sh diagnostics_invariants
           scripts/diagnostics-gate.sh blob_deprecation_test
+      # The blob half of the golden diagnostic snapshots (eu-1tkk.7.4). A
+      # released binary uses the prelude blob, so the blob rendering is the one
+      # users see — but only a binary embedding a verified blob can reproduce
+      # it, so these two tests are `#[cfg(prelude_blob_ok)]` and exist in no
+      # other job.
+      #
+      # The `--list` check is deliberately kept alongside
+      # `scripts/diagnostics-gate.sh` rather than replaced by it. The script's
+      # zero-test guard asks whether the target ran *anything*; this file has
+      # ungated tests too, so it would stay green with only those running while
+      # both blob-gated tests silently vanished. Naming the two tests is the
+      # stronger assertion, and it is the one this file needs.
+      #
+      # `build.rs` re-runs on `lib/prelude.blob` changing by *mtime*: restoring
+      # a blob with an older timestamp leaves `prelude_blob_ok` unset, compiles
+      # both tests out, and lets `cargo test` exit 0 having run nothing.
+      - name: Assert the blob-gated snapshot tests were actually compiled in
+        run: |
+          cargo test --test diagnostics_snapshots -- --list > /tmp/snap-tests.txt
+          cat /tmp/snap-tests.txt
+          for t in blob_prelude_snapshots_match divergence_inventory_is_current; do
+            grep -q "$t" /tmp/snap-tests.txt || {
+              echo "::error::$t is absent from the test list — cfg(prelude_blob_ok) is unset."
+              echo "The prelude blob did not reach the build (stale mtime?). Try: touch build.rs"
+              exit 1
+            }
+          done
+      - name: Run the blob-mode golden diagnostic snapshots
+        run: scripts/diagnostics-gate.sh diagnostics_snapshots
 
   blob-determinism:
     name: Prelude blob determinism

@@ -1,0 +1,27 @@
+# eucalypt diagnostic snapshot v1
+fixture: provocations/hof_bad_arg
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/hof_bad_arg.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/corpus/hof_bad_arg.eu:2:12
+help-lines: 2
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: expected a primitive value but found an unevaluated function application
+  help: this often means a function received fewer arguments than it needs, producing a partial application instead of a result
+  help: check that all functions in the pipeline receive the correct number of arguments — e.g. 'add(x, y)' needs two args but 'xs map(add)' applies 'add' to each element with only one arg
+  ┌─ tests/diagnostics/corpus/hof_bad_arg.eu:2:12
+  │
+2 │ result: xs map(_ + _)
+  │            ^^^

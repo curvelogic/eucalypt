@@ -1,0 +1,30 @@
+# Per-fixture extra arguments for the golden diagnostic snapshot harness.
+#
+# Format: `<fixture id> = <extra args>`; blank lines and `#` comments ignored.
+# The baseline invocation is already
+#   eu run [--source-prelude] -L <corpus dir> --heap-limit-mib 2048 <fixture>
+# so only fixtures whose diagnostic is unreachable without a further argument
+# need an entry here.
+#
+# Deliberately absent: `--allow-io`. Four fixtures (072, 106, 124, 125, 168)
+# execute a shell command when IO is permitted, and the resulting OS error text
+# differs between Linux and macOS, which would make the golden platform-
+# dependent. Captured without the flag they still lock a real diagnostic — the
+# "IO operations are not permitted" refusal — and `tests/harness_test.rs` keeps
+# gating the IO behaviour itself via the `.expect` sidecars.
+
+# `-x xml`: the UnknownFormat diagnostic is only reachable by asking for an
+# export format that does not exist. tests/harness_test.rs::test_error_091
+# notes the standard harness "cannot express" this and asserts the Display impl
+# of the error type instead; a snapshot can drive the real pipeline.
+errors/091_unknown_format = -x xml
+
+# `-t nonexistent`: likewise for TargetNotFound (test_error_092 asserts the
+# Display impl for the same reason).
+errors/092_target_not_found = -t nonexistent
+
+# `-t result`: the evaluand has to be the IO action itself for the
+# permission diagnostic to be raised.
+errors/094_io_no_flag = -t result -L tests/harness
+errors/124_dbg_io_map = -t result
+errors/125_dbg_io_function_wrap = -t result

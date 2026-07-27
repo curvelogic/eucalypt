@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/065_even_predicate_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/065_even_predicate_hint.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/065_even_predicate_hint.eu:3:18
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'even?'
+  ┌─ tests/harness/errors/065_even_predicate_hint.eu:3:18
+  │
+3 │ evens: xs filter(even?)
+  │                  ^^^^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt has no built-in 'even?' predicate; test with the modulo operator: '(_ % 2 = 0)'
+  = example: 'xs filter(_ % 2 = 0)' to keep even numbers

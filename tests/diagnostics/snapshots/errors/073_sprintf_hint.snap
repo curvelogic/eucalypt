@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/073_sprintf_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/073_sprintf_hint.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/073_sprintf_hint.eu:3:11
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'sprintf'
+  ┌─ tests/harness/errors/073_sprintf_hint.eu:3:11
+  │
+3 │ greeting: sprintf("Hello, %s!", name)
+  │           ^^^^^^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt has no sprintf/format function; for printf-style numeric formatting use 'str.fmt', e.g. 'x str.fmt("%.2f")' for two decimal places
+  = for string interpolation of named values, use "Hello, {name}!" where 'name' is a binding in scope

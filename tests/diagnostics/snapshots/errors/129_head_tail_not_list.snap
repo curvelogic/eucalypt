@@ -1,0 +1,36 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/129_head_tail_not_list
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/129_head_tail_not_list.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/129_head_tail_not_list.eu:1:7
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: type mismatch calling 'head'
+  ┌─ tests/harness/errors/129_head_tail_not_list.eu:1:4
+  │
+1 │ x: 42 head
+  │    ^^ expected [a], found number
+
+error: head requires a list, found 42
+  ┌─ tests/harness/errors/129_head_tail_not_list.eu:1:7
+  │
+1 │ x: 42 head
+  │       ^^^^
+  │
+  = head and tail require a list (e.g. [1, 2, 3]) as their argument
+  = to create a list from a number, wrap it: '[n]'
+  = stack trace:
+    - x at 129_head_tail_not_list.eu:1:7

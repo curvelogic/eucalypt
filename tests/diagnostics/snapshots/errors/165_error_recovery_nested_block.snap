@@ -1,0 +1,26 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/165_error_recovery_nested_block
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/165_error_recovery_nested_block.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/165_error_recovery_nested_block.eu:5:3
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: malformed declaration head
+  ┌─ tests/harness/errors/165_error_recovery_nested_block.eu:5:3
+  │
+5 │ ╭   : malformed
+6 │ │   a: 1
+  │ ╰───^

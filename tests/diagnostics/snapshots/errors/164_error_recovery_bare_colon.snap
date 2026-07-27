@@ -1,0 +1,26 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/164_error_recovery_bare_colon
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/164_error_recovery_bare_colon.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/164_error_recovery_bare_colon.eu:4:1
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: malformed declaration head
+  ┌─ tests/harness/errors/164_error_recovery_bare_colon.eu:4:1
+  │
+4 │ ╭ : bad
+5 │ │ good: 1
+  │ ╰────^

@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/158_self_assign_direct
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/158_self_assign_direct.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/158_self_assign_direct.eu:2:11
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: binding 'x' refers to itself — this will always diverge
+  ┌─ tests/harness/errors/158_self_assign_direct.eu:2:11
+  │
+2 │ out: { x: x }
+  │           ^
+  │
+  = the binding `x: x` (or `x: x(…)`) always loops
+  = if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`

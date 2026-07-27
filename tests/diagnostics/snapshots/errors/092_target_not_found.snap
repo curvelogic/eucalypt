@@ -1,0 +1,22 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/092_target_not_found
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/092_target_not_found.eu -t nonexistent
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: target 'nonexistent' not found
+  help: use 'eu list-targets' to see available targets

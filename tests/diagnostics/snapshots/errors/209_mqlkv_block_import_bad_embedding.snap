@@ -1,0 +1,25 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/209_mqlkv_block_import_bad_embedding
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/209_mqlkv_block_import_bad_embedding.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user testdata/206_mqlkv_bad_annotation.eu:4:11
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid embedding - invalid type annotation: type annotation parse error at position 10: expected a field name or '..' in record type
+  ┌─ testdata/206_mqlkv_bad_annotation.eu:4:11
+  │
+4 │ ` { type: s"any → [{{x: number}}]" }
+  │           ^^^^^^^^^^^^^^^^^^^^^^^^

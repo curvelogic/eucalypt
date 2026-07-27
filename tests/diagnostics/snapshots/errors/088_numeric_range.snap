@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/088_numeric_range
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/088_numeric_range.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/088_numeric_range.eu:2:24
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: numeric overflow: result of operating on 9223372036854775807 and 1 is out of range
+  help: the result exceeds the representable range for this numeric type
+  ┌─ tests/harness/errors/088_numeric_range.eu:2:24
+  │
+2 │ x: 9223372036854775807 + 1
+  │                        ^
+  │
+  = stack trace:
+    - x at 088_numeric_range.eu:2:24

@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/109_unknown_arg
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/109_unknown_arg.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/109_unknown_arg.eu:2:26
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: unknown option: --unknown-flag
+  ┌─ tests/harness/errors/109_unknown_arg.eu:2:26
+  │
+2 │ main: ["--unknown-flag"] parse-args({})
+  │                          ^^^^^^^^^^
+  │
+  = stack trace:
+    - main at 109_unknown_arg.eu:2:26

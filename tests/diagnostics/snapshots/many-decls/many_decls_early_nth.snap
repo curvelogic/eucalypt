@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: many-decls/many_decls_early_nth
+argv: run -L tests/diagnostics/snapshot-corpus --heap-limit-mib 2048 tests/diagnostics/snapshot-corpus/many_decls_early_nth.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/snapshot-corpus/many_decls_early_nth.eu:5:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: index 10 out of range for list of length 3
+  ┌─ tests/diagnostics/snapshot-corpus/many_decls_early_nth.eu:5:12
+  │
+5 │ result: xs nth(10)
+  │            ^^^
+  │
+  = stack trace:
+    - result at many_decls_early_nth.eu:5:12
+    - in 'nth' at [prelude]

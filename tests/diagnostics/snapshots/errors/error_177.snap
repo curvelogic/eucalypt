@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/error_177
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/error_177.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/error_177.eu:17:17
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+EXPECT FAILED: expected "goodbye", got "hello"
+error: assertion failed: expected "goodbye", got "hello"
+   ┌─ tests/harness/errors/error_177.eu:17:17
+   │
+17 │ result: "hello" //= "goodbye"
+   │                 ^^^
+   │
+   = stack trace:
+     - result at error_177.eu:17:17

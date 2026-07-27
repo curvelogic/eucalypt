@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/068_str_lower_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/068_str_lower_hint.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/068_str_lower_hint.eu:3:14
+help-lines: 1
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'lower' not found in block
+  help: available keys: 'of', 'split', 'split-on', 'join', 'join-on', 'match', 'match-with', 'extract' (and 25 more)
+  ┌─ tests/harness/errors/068_str_lower_hint.eu:3:14
+  │
+3 │ result: text str.lower
+  │              ^^^
+  │
+  = to convert a string to lower case, use 'str.to-lower', e.g. 'text str.to-lower'
+  = stack trace:
+    - result at 068_str_lower_hint.eu:3:14

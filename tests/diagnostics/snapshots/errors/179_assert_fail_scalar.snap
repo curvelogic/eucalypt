@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/179_assert_fail_scalar
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/179_assert_fail_scalar.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/179_assert_fail_scalar.eu:4:6
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+EXPECT FAILED: expected 2, got 1
+error: assertion failed: expected 2, got 1
+  ┌─ tests/harness/errors/179_assert_fail_scalar.eu:4:6
+  │
+4 │ x: 1 //=> 2
+  │      ^^^^
+  │
+  = stack trace:
+    - x at 179_assert_fail_scalar.eu:4:6

@@ -1,0 +1,42 @@
+# eucalypt diagnostic snapshot v1
+fixture: provocations/swap_args
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/swap_args.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 2
+code: -
+primary: user tests/diagnostics/corpus/swap_args.eu:2:9
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: type mismatch calling 'nth'
+  ┌─ tests/diagnostics/corpus/swap_args.eu:2:13
+  │
+2 │ result: nth(xs, 0)
+  │             ^^ expected number, found (number, number, number)
+
+warning: type mismatch calling 'nth'
+  ┌─ tests/diagnostics/corpus/swap_args.eu:2:17
+  │
+2 │ result: nth(xs, 0)
+  │                 ^ expected [a], found number
+
+error: tail requires a list, found 0
+  ┌─ tests/diagnostics/corpus/swap_args.eu:2:9
+  │
+2 │ result: nth(xs, 0)
+  │         ^^^
+  │
+  = head and tail require a list (e.g. [1, 2, 3]) as their argument
+  = stack trace:
+    - result at swap_args.eu:2:9
+    - in 'nth' at [prelude]

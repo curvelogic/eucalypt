@@ -1,0 +1,25 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/093_monad_missing_marker
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/093_monad_missing_marker.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/093_monad_missing_marker.eu:4:1
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: bracket block definition body must be marked with ':monad' — use '{ :monad bind: id-bind return: id-return }'
+  ┌─ tests/harness/errors/093_monad_missing_marker.eu:4:1
+  │
+4 │ ⟦{}⟧: { bind: id-bind  return: id-return }
+  │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

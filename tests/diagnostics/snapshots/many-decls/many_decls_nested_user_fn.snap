@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: many-decls/many_decls_nested_user_fn
+argv: run -L tests/diagnostics/snapshot-corpus --heap-limit-mib 2048 tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: index 10 out of range for list of length 3
+    ┌─ tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12
+    │
+606 │ result: xs take-tenth
+    │            ^^^^^^^^^^
+    │
+    = stack trace:
+      - result at many_decls_nested_user_fn.eu:606:12
+      - in 'nth' at [prelude]

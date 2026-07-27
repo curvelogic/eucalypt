@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/076_fn_keyword
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/076_fn_keyword.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/076_fn_keyword.eu:3:9
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'fn'
+  ┌─ tests/harness/errors/076_fn_keyword.eu:3:9
+  │
+3 │ result: fn(42)
+  │         ^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt does not use a 'def' or 'fn' keyword for functions; define a function with 'name(args): body', e.g. 'square(x): x * x'

@@ -1,0 +1,30 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/201_sv3_contract_violation
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/201_sv3_contract_violation.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-CONTRACT
+primary: user tests/harness/errors/201_sv3_contract_violation.eu:8:52
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-CONTRACT]: contract violation: 2 violations against {name: string, port: number}
+  ┌─ tests/harness/errors/201_sv3_contract_violation.eu:8:52
+  │
+8 │ config: { name: "web", port: "8080", debug: true } ensure(schema)
+  │                                                    ^^^^^^
+  │
+  = port: expected number, found string
+  = (root): unexpected keys: debug
+  = stack trace:
+    - config at 201_sv3_contract_violation.eu:8:52
