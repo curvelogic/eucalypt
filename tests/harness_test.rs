@@ -2981,8 +2981,8 @@ pub fn test_190_odkp_xml_entity_refs() {
 
 // EF1 combined effect monad (do): uses io.shell, so runs with --allow-io.
 #[test]
-pub fn test_191_ef1_do_monad() {
-    run_test(&io_opts("191_ef1_do_monad.eu"));
+pub fn test_203_ef1_do_monad() {
+    run_test(&io_opts("203_ef1_do_monad.eu"));
 }
 
 #[test]
