@@ -2783,6 +2783,20 @@ pub fn test_193_1tkk_7_12_curated_trace() {
 }
 
 #[test]
+/// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
+/// from baked-in resource text) was classified as *user* code, so a frame
+/// inside it could win `to_diagnostic`'s "prefer a user file" test and become
+/// the **primary label**, excerpting library internals the user did not write.
+///
+/// The regex deliberately anchors on the `┌─` primary-label line rather than
+/// merely finding the fixture's name somewhere in the output: before the fix
+/// the user's file still appeared in the `stack trace:` note, so a looser
+/// pattern passes either way and gates nothing.
+pub fn test_194_8a49h_library_blame() {
+    run_error_test(&error_opts("194_8a49h_library_blame.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
