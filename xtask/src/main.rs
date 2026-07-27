@@ -41,20 +41,12 @@ use eucalypt::{
         blob::{PreludeBlob, PreludeBytecodeImage},
         make_standard_runtime,
         syntax::LambdaForm,
+        wire_format::{blob_source_hash, BLOB_PATH, INTRINSIC_TABLE_PATH, PRELUDE_SOURCE_PATH},
     },
     syntax::input::{Input, Locator},
 };
-use sha2::{Digest, Sha256};
 
 mod engine_ab;
-
-/// BV1 bytecode wire-format version, folded into the prelude-blob source hash.
-/// MUST match `BYTECODE_WIRE_FORMAT_VERSION` in the crate root `build.rs`.
-/// See that constant's doc comment for the version history (v2: eu-2sa6.11
-/// Let/LetRec binding count widened `u16` → `u32`; v4: eu-2sa6.20
-/// `PreludeBlob::type_summary` field removed; v5: eu-1tkk.7.11
-/// `PreludeBlob::blame` field + blob-mode global-slot Smid identity).
-const BYTECODE_WIRE_FORMAT_VERSION: u32 = 5;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -77,22 +69,24 @@ fn main() -> Result<()> {
 
 fn cmd_prelude_compile() -> Result<()> {
     let workspace_root = workspace_root()?;
-    let prelude_src = workspace_root.join("lib/prelude.eu");
-    let blob_out = workspace_root.join("lib/prelude.blob");
+    let prelude_src = workspace_root.join(PRELUDE_SOURCE_PATH);
+    let intrinsic_table = workspace_root.join(INTRINSIC_TABLE_PATH);
+    let blob_out = workspace_root.join(BLOB_PATH);
 
     println!("Compiling prelude: {}", prelude_src.display());
     let t_start = Instant::now();
 
-    // ── 1. Hash the prelude source ────────────────────────────────────────────
+    // ── 1. Hash the blob's inputs ─────────────────────────────────────────────
+    // `blob_source_hash` is shared verbatim with `build.rs` (which `include!`s
+    // the module), so the stamp written here and the expectation checked there
+    // cannot drift. It covers the prelude source, the intrinsic catalogue —
+    // whose length fixes the global slot numbering baked in below — and the
+    // BV1 wire-format version.
     let source_bytes = std::fs::read(&prelude_src)
         .with_context(|| format!("reading {}", prelude_src.display()))?;
-    // Fold the bytecode wire-format version into the hash so a format change
-    // (not just a source change) invalidates a stale blob at build time
-    // (must match `build.rs`).
-    let mut hasher = Sha256::new();
-    hasher.update(&source_bytes);
-    hasher.update(BYTECODE_WIRE_FORMAT_VERSION.to_le_bytes());
-    let source_hash: [u8; 32] = hasher.finalize().into();
+    let intrinsic_table_bytes = std::fs::read(&intrinsic_table)
+        .with_context(|| format!("reading {}", intrinsic_table.display()))?;
+    let source_hash = blob_source_hash(&source_bytes, &intrinsic_table_bytes);
 
     // ── 2. Run the front-end pipeline ────────────────────────────────────────
     // The prelude references `__build` (from build-meta.yaml) and intrinsics

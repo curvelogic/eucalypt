@@ -33,7 +33,7 @@
 //!
 //! | Field | Purpose | Granularity | Pipeline stage | Consumer | Snapshot / derived |
 //! |---|---|---|---|---|---|
-//! | `source_hash` | SHA-256 of `lib/prelude.eu`; checked by `build.rs` | — | — | `build.rs` staleness check | — |
+//! | `source_hash` | SHA-256 of `lib/prelude.eu`, `src/eval/intrinsics.rs` and the wire-format version (see `stg::wire_format`); checked by `build.rs` | — | — | `build.rs` staleness check | — |
 //! | `nodes` / `forms_pool` / `binding_entries` | Shared STG arena: compiled lambda forms for every prelude global | binding (compiled) | `stg` (post `eu dump stg`) | HeapSyn engine loader | derived (compiled, not a source-structure snapshot) |
 //! | `name_to_slot` | Binding name → global slot index | — | — | STG compiler (`Ref::G` resolution), loader | — |
 //! | `blame` | Binding name → declared blame classification (`:transparent`/`:boundary`) | binding | desugared (side channel, `TranslationUnit::blame`) | Phase 2 trace classifier (eu-1tkk.7.11/.7.12) | derived (reconciled `BlameSpec` → `FrameKind`) |
@@ -97,9 +97,13 @@ pub struct PreludeBytecodeImage {
 /// via `include_bytes!("../../../lib/prelude.blob")` (see `resources.rs`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreludeBlob {
-    /// SHA-256 of `lib/prelude.eu` at generation time.
+    /// Freshness hash of everything this blob was generated against — the
+    /// prelude source, the intrinsic catalogue (whose length fixes the global
+    /// slot numbering baked in below) and the bytecode wire-format version.
     ///
-    /// Compared against the hash computed by `build.rs`; a mismatch causes
+    /// Stamped by `cargo xtask prelude-compile` and recomputed by `build.rs`
+    /// using the shared recipe in
+    /// [`crate::eval::stg::wire_format::blob_source_hash`]; a mismatch causes
     /// a build warning and triggers the source-prelude fallback path.
     pub source_hash: [u8; 32],
 
