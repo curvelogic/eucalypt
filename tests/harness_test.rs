@@ -3236,6 +3236,16 @@ pub fn test_213_edn_large_integer() {
     run_test(&opts("213_edn_large_integer.eu"));
 }
 
+/// eu-wpswc — the semantics half of the settled-slot argument pass-through
+/// that made `xs map(f) fold` linear: results, laziness over self-referential
+/// mapped structures, and sharing of a reused partial application. The
+/// complexity class itself is gated on VM ticks by
+/// `tests/fold_over_map_growth_test.rs`.
+#[test]
+pub fn test_221_wpswc_settled_slot_passthrough() {
+    run_test(&opts("221_wpswc_settled_slot_passthrough.eu"));
+}
+
 #[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");

@@ -1,11 +1,73 @@
 //! Helpers for constructing environments on the heap
+//!
+//! # Settled-slot pass-through (eu-wpswc)
+//!
+//! When an application's argument is a `Ref::L(i)`, the default is to wrap it
+//! in a freshly allocated `Atom{Ref::L(i)}` alias closure over the caller's
+//! frame.  The alias exists for exactly one reason: **memoisation**.  If slot
+//! `i` holds an update thunk, the callee must force it *through the caller's
+//! slot* so that the resulting WHNF is written back there and every other
+//! reader of that slot shares the work.
+//!
+//! A slot whose closure can never change needs no such indirection, and
+//! aliasing it is actively harmful.  Each recursive call re-wraps the
+//! previous level's wrapper, and because alias closures are built with
+//! `SynClosure::new` (`update() == false`) the `Atom{Ref::L}` handler in
+//! `vm.rs` pushes no `Update` continuation for them — nothing ever collapses
+//! the chain.  A function parameter threaded through `N` levels of recursion
+//! therefore sits behind `O(N)` alias hops, and forcing every element of the
+//! result costs `O(N²)`.  That is the `xs map(f) sum` quadratic.
+//!
+//! So: pass the closure through directly when the slot is **settled**, and
+//! keep the alias when it is not.  A closure is settled when it is not an
+//! update thunk *and* is one of exactly two immutable shapes:
+//!
+//! * **arity > 0** — a lambda or a PAP.  It is never forced, never updated
+//!   and never a black hole (a black hole has arity 0), so a callee holding
+//!   it by value applies it exactly as it would through an alias.  Applying
+//!   the same PAP from two sites builds two independent saturated frames
+//!   either way — the PAP closure itself is immutable and is not the sharing
+//!   point for its supplied arguments; those live in the PAP's own env frame,
+//!   which both applications continue to share by pointer.
+//! * **an `Atom` node** — a pure indirection or an inline value, which is
+//!   what an alias closure itself is.  Re-aliasing an alias is precisely how
+//!   the chain grows, and passing it on instead keeps the chain at length
+//!   one.  Nothing is duplicated: an alias onto a thunk elsewhere still
+//!   navigates to *that* owning frame and updates *that* slot when forced,
+//!   exactly as it does today.
+//!
+//! Everything else keeps its alias, so its representation is bit-identical
+//! to before.  That deliberately includes evaluated data and `Value`-form
+//! closures: they are immutable too, and passing them through is sound for
+//! *evaluation*, but the IO-run driver's static spec-block navigator
+//! (`driver::io_run::peel_meta` / `block_list_inner`, and the bytecode twin
+//! `BytecodeMachine::block_field_values`) walks argument structure on the
+//! assumption that it can chase an `Atom` indirection and record the
+//! container frame it came from.  Handing it a bare `Cons` instead breaks
+//! that walk — measured: every `io.*` harness test fails.  Widening the
+//! predicate to all non-updateable closures is therefore blocked on making
+//! that navigator independent of argument aliasing; see eu-wpswc's
+//! follow-up.
+//!
+//! Black holes need no explicit exclusion under this predicate: a black hole
+//! is `HeapSyn::BlackHole` with arity 0, so it matches neither shape.
+//!
+//! This subsumes what `create_arg_array_eager` does at self-recursive call
+//! sites (eu-e3c3i, commit 6a902030) for the settled case, and is safe where
+//! that unconditional eager resolution is not: `create_arg_array_eager`
+//! copies update thunks too, which loses the caller's slot as the shared
+//! memoisation point.  The `eager_args` path is left exactly as it was.
+//!
+//! The bytecode engine's two argument-array builders
+//! (`bytecode::machine::make_arg_array` and `make_arg_array_pd`) implement
+//! the identical predicate; the three must not drift.
 
 use crate::{
     common::sourcemap::Smid,
     eval::{
         error::ExecutionError,
         memory::{
-            alloc::ScopedAllocator,
+            alloc::{ScopedAllocator, ScopedPtr},
             array::Array,
             infotable::InfoTable,
             mutator::MutatorHeapView,
@@ -15,6 +77,25 @@ use crate::{
 };
 
 use super::env::{EnvFrame, SynClosure};
+
+/// Whether an environment slot's closure can never change, and so may be
+/// passed to a callee by value instead of behind an `Atom{Ref::L}` alias.
+///
+/// See the module doc comment for the full argument.  Must stay in lockstep
+/// with `bytecode::machine::bc_is_settled`.
+#[inline]
+fn is_settled(view: MutatorHeapView<'_>, closure: &SynClosure) -> bool {
+    if closure.update() {
+        return false;
+    }
+    // A lambda or PAP: immutable, and never a black hole, so skip the load.
+    if closure.arity() > 0 {
+        return true;
+    }
+    // An alias/inline-value `Atom` node: a pure indirection.
+    let code = ScopedPtr::from_non_null(&view, closure.code());
+    matches!(&*code, HeapSyn::Atom { .. })
+}
 
 /// For building environments in the heap
 /// All operations now return Result to handle allocation failures gracefully.
@@ -268,8 +349,24 @@ impl EnvBuilder for MutatorHeapView<'_> {
         args: &[Ref],
         environment: RefPtr<EnvFrame>,
     ) -> Result<Array<SynClosure>, ExecutionError> {
+        // SAFETY: environment is a valid heap pointer kept alive by the
+        // current mutator scope.  We only read through it.
+        let env = unsafe { environment.as_ref() };
         let mut array = Array::with_capacity(self, args.len());
         for syn in args.iter() {
+            // Settled-slot pass-through (eu-wpswc).  See the module doc
+            // comment: a `Ref::L(i)` naming a slot whose closure can never
+            // change is passed straight through instead of being wrapped in
+            // a fresh alias, which is what stops per-iteration alias chains
+            // forming on lazily-threaded function parameters.
+            if let Ref::L(i) = syn {
+                if let Some(c) = env.get(self, *i) {
+                    if is_settled(*self, &c) {
+                        array.push(self, c);
+                        continue;
+                    }
+                }
+            }
             array.push(
                 self,
                 SynClosure::new(self.atom(syn.clone())?.as_ptr(), environment),
