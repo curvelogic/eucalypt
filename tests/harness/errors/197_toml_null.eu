@@ -1,0 +1,10 @@
+# TOML has no null. The exporter used to render one as an empty string, so
+# a null and a genuine "" came out as two identical values that no reader
+# could tell apart, and neither survived a round trip. It must report
+# instead of conflating them (eu-1tkk.7.28).
+#
+# The null arrives from imported JSON rather than as a literal, both
+# because that is how nullable data actually reaches an export and because
+# the lookup carries a source location for the diagnostic to point at.
+` { target: :main format: :toml import: "data=testdata/nullable.json" }
+main: { absent: data.absent }

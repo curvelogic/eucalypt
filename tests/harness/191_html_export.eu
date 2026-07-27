@@ -1,0 +1,29 @@
+{ doc: "191 html export — the first end-to-end coverage of the html
+        exporter's success path. Before eu-1tkk.7.24 nothing exercised
+        '-x html' or 'render-as(:html)' at all, which is why the markup
+        emitter could abort the process on any non-hiccup document
+        without a single test noticing." }
+
+` { target: :test }
+test: {
+  # A hiccup element: tag, attribute block, then contents.
+  element: [:div, { id: "top" }, "hello"]
+  html-of-element: element render-as(:html)
+  t-element: html-of-element = c"<!DOCTYPE html><div id=\"top\">hello</div>\n"
+
+  # A bare tag with no attributes and no contents.
+  html-of-empty: [:span] render-as(:html)
+  t-empty: html-of-empty = c"<!DOCTYPE html><span></span>\n"
+
+  # Nested elements, and attribute values rendered into the open tag.
+  nested: [:ul, {}, [:li, { class: "a" }, "one"], [:li, {}, "two"]]
+  html-of-nested: nested render-as(:html)
+  t-nested: html-of-nested
+    = c"<!DOCTYPE html><ul><li class=\"a\">one</li><li>two</li></ul>\n"
+
+  # Text content is escaped rather than passed through as markup.
+  html-of-text: [:p, {}, "a < b & c"] render-as(:html)
+  t-escaping: html-of-text = c"<!DOCTYPE html><p>a &lt; b &amp; c</p>\n"
+
+  RESULT: [t-element, t-empty, t-nested, t-escaping] all-true? then(:PASS, :FAIL)
+}

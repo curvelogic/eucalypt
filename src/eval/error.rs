@@ -1,6 +1,7 @@
 //! Execution errors
 use crate::common::diagnostic_json::FrameKind;
 use crate::common::sourcemap::{compress_cycles, HasSmid, Smid, SourceMap};
+use crate::eval::emit::Rejection;
 use crate::eval::stg::tags::DataConstructor;
 use crate::eval::types::IntrinsicType;
 use codespan_reporting::diagnostic::Diagnostic;
@@ -832,10 +833,18 @@ pub enum ExecutionError {
     NotScalar(Smid),
     /// A value cannot be carried by the requested output format.
     ///
-    /// `.1` names the format ("YAML", "TOML"), `.2` describes the limit that
-    /// the value exceeds.
-    #[error("cannot represent this value in {1} output: {2}")]
-    UnrepresentableValue(Smid, String, String),
+    /// `.1` names the format ("YAML", "TOML"); `.2` is the emitter's
+    /// rejection, carrying both the reason and its remediation notes.
+    #[error("cannot represent this value in {1} output: {}", .2.reason)]
+    UnrepresentableValue(Smid, String, Box<Rejection>),
+    /// The document's shape is not one the requested output format accepts.
+    ///
+    /// Distinct from `UnrepresentableValue`: there every individual value is
+    /// fine and one of them is out of range, whereas here the format demands
+    /// a particular structure (html needs hiccup markup) that the document
+    /// does not have.
+    #[error("cannot render this document as {1}: {}", .2.reason)]
+    UnrenderableShape(Smid, String, Box<Rejection>),
     #[error("{}", format_unknown_format(.0))]
     UnknownFormat(String),
     #[error("cannot combine numbers ({1}, {2}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
@@ -973,6 +982,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NotValue(s, _) => *s,
             ExecutionError::NotScalar(s) => *s,
             ExecutionError::UnrepresentableValue(s, _, _) => *s,
+            ExecutionError::UnrenderableShape(s, _, _) => *s,
             ExecutionError::NoBranchForDataTag(s, _, _) => *s,
             ExecutionError::NoBranchForNative(s, _) => *s,
             ExecutionError::CannotReturnFunToCase(s, _) => *s,
@@ -1395,16 +1405,10 @@ impl ExecutionError {
                         .to_string(),
                 ]
             }
-            ExecutionError::UnrepresentableValue(_, _, _) => {
-                vec![
-                    "render to a format that can carry the value — 'json', 'text' \
-                     and 'eu' output all keep integers of this magnitude"
-                        .to_string(),
-                    "to keep the exact digits in this format, convert the value to \
-                     a string first with 'str', e.g. 'n str'"
-                        .to_string(),
-                ]
-            }
+            // The emitter that refused supplies its own remediation, so
+            // these two need no format knowledge here (eu-1tkk.7.28).
+            ExecutionError::UnrepresentableValue(_, _, rejection)
+            | ExecutionError::UnrenderableShape(_, _, rejection) => rejection.notes.clone(),
             _ => vec![],
         };
         if notes.is_empty() {
@@ -1483,6 +1487,7 @@ impl ExecutionError {
             ExecutionError::Traced(inner, _) => inner.code(),
             ExecutionError::TypeMismatch(..) => Some("EU-EVAL-TYPE"),
             ExecutionError::UnrepresentableValue(..) => Some("EU-RENDER-UNREPRESENTABLE"),
+            ExecutionError::UnrenderableShape(..) => Some("EU-RENDER-SHAPE"),
             _ => None,
         }
     }

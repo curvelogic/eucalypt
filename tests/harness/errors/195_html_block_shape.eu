@@ -1,0 +1,8 @@
+# Rendering an ordinary block as html used to abort the process with a
+# Rust panic in the markup emitter's state machine. It must produce a
+# diagnostic naming the shape html needs instead (eu-1tkk.7.24).
+#
+# This is the same document root the panic came from: `eu -x html f.eu`
+# with no target renders the whole unit, whose root is a block.
+` { target: :main format: :html }
+main: { a: 1 b: 2 }

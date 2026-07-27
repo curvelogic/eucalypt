@@ -2,7 +2,7 @@
 //! tracing
 
 use crate::eval::{
-    emit::{Emitter, RenderMetadata},
+    emit::{Emitter, Event, RenderMetadata},
     error::ExecutionError,
     machine::intrinsic::{CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
     memory::{
@@ -36,10 +36,36 @@ fn emit_scalar(
         return Err(ExecutionError::UnrepresentableValue(
             machine.annotation(),
             emitter.format_name().to_string(),
-            reason,
+            Box::new(reason),
         ));
     }
-    emitter.scalar(metadata, primitive);
+    emit_event(
+        machine,
+        emitter,
+        Event::OutputScalar(metadata.clone(), primitive.clone()),
+    )
+}
+
+/// Emit an event, first checking the active emitter accepts it here.
+///
+/// A format may demand a particular document shape rather than merely
+/// limiting individual values — html renders hiccup markup and nothing
+/// else. Asking the emitter before the event is consumed turns a shape
+/// mismatch into an `ExecutionError` with the source location of the value
+/// being rendered (eu-1tkk.7.24).
+fn emit_event(
+    machine: &dyn IntrinsicMachine,
+    emitter: &mut dyn Emitter,
+    event: Event,
+) -> Result<(), ExecutionError> {
+    if let Some(reason) = emitter.unacceptable(&event) {
+        return Err(ExecutionError::UnrenderableShape(
+            machine.annotation(),
+            emitter.format_name().to_string(),
+            Box::new(reason),
+        ));
+    }
+    emitter.emit(event);
     Ok(())
 }
 
@@ -68,13 +94,16 @@ fn emit_set(
     metadata: &RenderMetadata,
 ) -> Result<(), ExecutionError> {
     let set: crate::eval::memory::alloc::ScopedPtr<'_, HeapSet> = view.scoped(set_ref);
-    emitter.sequence_start(metadata);
+    emit_event(
+        machine,
+        emitter,
+        Event::OutputSequenceStart(metadata.clone()),
+    )?;
     for elem in set.sorted_elements() {
         let prim = set_primitive_to_render_primitive(elem, machine);
         emit_scalar(machine, emitter, &RenderMetadata::empty(), &prim)?;
     }
-    emitter.sequence_end();
-    Ok(())
+    emit_event(machine, emitter, Event::OutputSequenceEnd)
 }
 
 /// Emit an n-dimensional array as nested sequences.
@@ -96,7 +125,11 @@ fn emit_ndarray_data(
         let num = serde_json::Number::from_f64(val).unwrap_or_else(|| serde_json::Number::from(0));
         emit_scalar(machine, emitter, metadata, &Primitive::Num(num))?;
     } else if rank == 1 {
-        emitter.sequence_start(metadata);
+        emit_event(
+            machine,
+            emitter,
+            Event::OutputSequenceStart(metadata.clone()),
+        )?;
         let len = arr.shape()[0];
         for i in 0..len {
             let val = arr.get(&[i]).unwrap_or(0.0);
@@ -109,16 +142,20 @@ fn emit_ndarray_data(
                 &Primitive::Num(num),
             )?;
         }
-        emitter.sequence_end();
+        emit_event(machine, emitter, Event::OutputSequenceEnd)?;
     } else {
-        emitter.sequence_start(metadata);
+        emit_event(
+            machine,
+            emitter,
+            Event::OutputSequenceStart(metadata.clone()),
+        )?;
         let rows = arr.shape()[0];
         for i in 0..rows {
             if let Some(sub) = arr.slice_along(0, i) {
                 emit_ndarray_data(machine, emitter, &sub, &RenderMetadata::empty())?;
             }
         }
-        emitter.sequence_end();
+        emit_event(machine, emitter, Event::OutputSequenceEnd)?;
     }
     Ok(())
 }
@@ -144,13 +181,16 @@ fn emit_vec(
     metadata: &RenderMetadata,
 ) -> Result<(), ExecutionError> {
     let vec: crate::eval::memory::alloc::ScopedPtr<'_, HeapVec> = view.scoped(vec_ref);
-    emitter.sequence_start(metadata);
+    emit_event(
+        machine,
+        emitter,
+        Event::OutputSequenceStart(metadata.clone()),
+    )?;
     for elem in vec.elements() {
         let prim = set_primitive_to_render_primitive(elem, machine);
         emit_scalar(machine, emitter, &RenderMetadata::empty(), &prim)?;
     }
-    emitter.sequence_end();
-    Ok(())
+    emit_event(machine, emitter, Event::OutputSequenceEnd)
 }
 
 /// Interpret arg as tag if it exists otherwise None
@@ -186,7 +226,7 @@ impl StgIntrinsic for Emit0 {
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        emitter.scalar(&RenderMetadata::empty(), &Primitive::Null);
+        emit_scalar(machine, emitter, &RenderMetadata::empty(), &Primitive::Null)?;
         machine_return_unit(machine, view)
     }
 }
@@ -210,7 +250,12 @@ impl StgIntrinsic for EmitT {
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        emitter.scalar(&RenderMetadata::empty(), &Primitive::Bool(true));
+        emit_scalar(
+            machine,
+            emitter,
+            &RenderMetadata::empty(),
+            &Primitive::Bool(true),
+        )?;
         machine_return_unit(machine, view)
     }
 }
@@ -234,7 +279,12 @@ impl StgIntrinsic for EmitF {
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        emitter.scalar(&RenderMetadata::empty(), &Primitive::Bool(false));
+        emit_scalar(
+            machine,
+            emitter,
+            &RenderMetadata::empty(),
+            &Primitive::Bool(false),
+        )?;
         machine_return_unit(machine, view)
     }
 }
@@ -387,7 +437,11 @@ impl StgIntrinsic for EmitSeqStart {
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        emitter.sequence_start(&RenderMetadata::empty());
+        emit_event(
+            machine,
+            emitter,
+            Event::OutputSequenceStart(RenderMetadata::empty()),
+        )?;
         machine_return_unit(machine, view)
     }
 }
@@ -412,7 +466,11 @@ impl StgIntrinsic for EmitTagSeqStart {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let tag = tag_from_arg(&args[0], machine, view);
-        emitter.sequence_start(&RenderMetadata::new(tag));
+        emit_event(
+            machine,
+            emitter,
+            Event::OutputSequenceStart(RenderMetadata::new(tag)),
+        )?;
         machine_return_unit(machine, view)
     }
 }
@@ -436,7 +494,7 @@ impl StgIntrinsic for EmitSeqEnd {
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        emitter.sequence_end();
+        emit_event(machine, emitter, Event::OutputSequenceEnd)?;
         machine_return_unit(machine, view)
     }
 }
@@ -460,7 +518,11 @@ impl StgIntrinsic for EmitBlockStart {
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        emitter.block_start(&RenderMetadata::empty());
+        emit_event(
+            machine,
+            emitter,
+            Event::OutputBlockStart(RenderMetadata::empty()),
+        )?;
         machine_return_unit(machine, view)
     }
 }
@@ -485,7 +547,11 @@ impl StgIntrinsic for EmitTagBlockStart {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let tag = tag_from_arg(&args[0], machine, view);
-        emitter.block_start(&RenderMetadata::new(tag));
+        emit_event(
+            machine,
+            emitter,
+            Event::OutputBlockStart(RenderMetadata::new(tag)),
+        )?;
         machine_return_unit(machine, view)
     }
 }
@@ -509,7 +575,7 @@ impl StgIntrinsic for EmitBlockEnd {
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        emitter.block_end();
+        emit_event(machine, emitter, Event::OutputBlockEnd)?;
         machine_return_unit(machine, view)
     }
 }
@@ -533,7 +599,7 @@ impl StgIntrinsic for EmitDocStart {
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        emitter.doc_start();
+        emit_event(machine, emitter, Event::OutputDocumentStart)?;
         machine_return_unit(machine, view)
     }
 }
@@ -557,7 +623,7 @@ impl StgIntrinsic for EmitDocEnd {
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        emitter.doc_end();
+        emit_event(machine, emitter, Event::OutputDocumentEnd)?;
         machine_return_unit(machine, view)
     }
 }

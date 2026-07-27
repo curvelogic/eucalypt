@@ -21,6 +21,18 @@ use std::io::Write;
 use text::TextEmitter;
 use yaml::YamlEmitter;
 
+/// Remediation shared by the formats whose integers are bounded by `i64`.
+///
+/// YAML and TOML both reject an integer above `i64::MAX`; the advice for
+/// each is identical, so it lives here rather than being duplicated and
+/// allowed to drift (eu-1tkk.7.20, eu-1tkk.7.23).
+pub(crate) const INTEGER_RANGE_NOTES: [&str; 2] = [
+    "render to a format that can carry the value — 'json', 'edn', 'text' and \
+     'eu' output all keep integers of this magnitude",
+    "to keep the exact digits in this format, convert the value to a string \
+     first with 'str', e.g. 'n str'",
+];
+
 /// Create an emitter for the format specified
 ///
 /// Return None if the format is not recognised.

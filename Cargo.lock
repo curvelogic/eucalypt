@@ -686,6 +686,7 @@ dependencies = [
  "lsp-types",
  "matches",
  "ndarray",
+ "num-bigint",
  "ordered-float",
  "petgraph",
  "postcard",
