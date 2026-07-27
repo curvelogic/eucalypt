@@ -11,7 +11,7 @@
 use crate::{
     common::sourcemap::Smid,
     eval::{
-        emit::{Emitter, Event},
+        emit::{Emitter, Event, Rejection},
         error::ExecutionError,
         intrinsics,
         machine::intrinsic::{CallGlobal2, IntrinsicMachine, StgIntrinsic},
@@ -107,10 +107,16 @@ impl Emitter for OwnedCaptureEmitter {
     /// Delegate to the wrapped format emitter so a value the target format
     /// cannot carry is caught inside `render-as` too, not just at top-level
     /// output (eu-1tkk.7.20).
-    fn unrepresentable(&self, primitive: &Primitive) -> Option<String> {
+    fn unrepresentable(&self, primitive: &Primitive) -> Option<Rejection> {
         self.emitter
             .as_ref()
             .and_then(|e| e.unrepresentable(primitive))
+    }
+
+    /// Delegate to the wrapped format emitter so a document shape the target
+    /// format cannot render is caught inside `render-as` too (eu-1tkk.7.24).
+    fn unacceptable(&self, event: &Event) -> Option<Rejection> {
+        self.emitter.as_ref().and_then(|e| e.unacceptable(event))
     }
 }
 

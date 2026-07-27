@@ -1,0 +1,12 @@
+# Rendering an ordinary block as html used to abort the process with a
+# Rust panic in the markup emitter's state machine (eu-1tkk.7.24).
+#
+# The block is nested deliberately. A single flat block never reached the
+# panic — it fell out of the state machine as empty output and exit 0. The
+# panic needed a block inside a block, which is exactly what
+# `eu -x html file.eu` with no target produces: the unit's own block
+# wrapping each of its declarations.
+` { target: :main format: :html }
+main: {
+  page: { a: 1 b: 2 }
+}

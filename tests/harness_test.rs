@@ -2717,6 +2717,31 @@ pub fn test_error_211() {
 }
 
 #[test]
+/// Rendering an ordinary block as html aborted the process with a Rust
+/// panic in the markup emitter's state machine — the shape every
+/// `eu -x html file.eu` without a target produces. Now a diagnostic
+/// (eu-1tkk.7.24).
+pub fn test_error_214() {
+    run_error_test(&error_opts("214_html_block_shape.eu"));
+}
+
+#[test]
+/// Rendering a bare scalar as html silently produced no output at all and
+/// exited 0. Now the same shape check reports it (eu-1tkk.7.24).
+pub fn test_error_215() {
+    run_error_test(&error_opts("215_html_scalar_shape.eu"));
+}
+
+#[test]
+/// TOML has no null, and the exporter rendered one as an empty string —
+/// so a null and a genuine "" became indistinguishable in the output and
+/// on re-import. Now reported, with the offending lookup labelled
+/// (eu-1tkk.7.28).
+pub fn test_error_216() {
+    run_error_test(&error_opts("216_toml_null.eu"));
+}
+
+#[test]
 /// YAML mappings with complex (non-scalar) keys should produce a clear error,
 /// not a panic. Covers the bad-key-type path in the YAML parser.
 pub fn test_error_172() {
@@ -3161,6 +3186,24 @@ pub fn test_203_ef1_do_monad() {
 #[test]
 pub fn test_205_frf2o_inline_annotated_block() {
     run_test(&opts("205_frf2o_inline_annotated_block.eu"));
+}
+
+/// eu-1tkk.7.24 — the html exporter's success path, which had no
+/// end-to-end coverage of any kind before this. Asserts the exact
+/// serialised html for four hiccup shapes, via `render-as(:html)` so the
+/// assertion can be an ordinary string equality inside the harness.
+#[test]
+pub fn test_212_html_export() {
+    run_test(&opts("212_html_export.eu"));
+}
+
+/// eu-1tkk.7.23 — EDN export of an integer above i64::MAX rounded it
+/// through f64, so 9999999999999999999 came out as 10000000000000000000:
+/// a wrong number, with no panic and no error to notice it by. EDN
+/// integers are arbitrary precision, so this must stay exact.
+#[test]
+pub fn test_213_edn_large_integer() {
+    run_test(&opts("213_edn_large_integer.eu"));
 }
 
 #[test]
