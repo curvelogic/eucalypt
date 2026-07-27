@@ -3038,6 +3038,15 @@ pub fn test_200_sv3_ensure() {
     run_test(&opts("200_sv3_ensure.eu"));
 }
 
+/// eu-3aa6s — regression test for `meta()` raising "expected block, found
+/// symbol" on every `{ :sym … }` shorthand block: META merged each metadata
+/// layer with the recursive result for the body, and Merge is a block
+/// operation. See the .eu file for full context.
+#[test]
+pub fn test_204_3aa6s_meta_symbol_metadata() {
+    run_test(&opts("204_3aa6s_meta_symbol_metadata.eu"));
+}
+
 #[test]
 pub fn test_typecheck_092_self_assign_arg_pos_ok() {
     run_typecheck_test("092_self_assign_arg_pos_ok.eu");
