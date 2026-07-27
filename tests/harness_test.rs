@@ -2807,8 +2807,8 @@ pub fn test_193_1tkk_7_12_curated_trace() {
 /// primary-label line specifically — a `stack trace:` note renders
 /// locations as `- name at file:line:col` with no `┌─`, so it cannot pass
 /// on the note alone.
-pub fn test_194_1tkk_7_21_blob_call_site() {
-    run_error_test(&io_error_opts("194_1tkk_7_21_blob_call_site.eu"));
+pub fn test_195_1tkk_7_21_blob_call_site() {
+    run_error_test(&io_error_opts("195_1tkk_7_21_blob_call_site.eu"));
 }
 
 #[test]
