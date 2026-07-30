@@ -239,6 +239,46 @@ not close this final link within this task's scope — it is confirmed to be
 not identify which allocation site re-creates the frame.** Named candidate,
 not a proven mechanism.
 
+## ADDENDUM 5: allocation-delta test confirms fresh re-materialisation, not re-forcing
+
+Team-lead's reframe: eu-wpswc was ticks-quadratic with allocations FLAT
+(re-evaluation, no re-allocation); here allocations grow proportionally with
+K, which points at fresh allocation per entry, not merely a cheap re-force of
+an already-memoised thunk. Tested directly. N=300, metadata-on-x0, allocs at
+K=1/2/5/20/80: 5,040 / 7,474 / 14,775 / 51,281 / 197,306. Per-K delta is a
+constant **2,433.7 allocs/K** at every consecutive pair (K2−K1, K5−K2/3,
+K20−K5/15, K80−K20/60 all agree to 1 decimal place). Standalone `slow(300)`
+alone allocates **2,427**. The two numbers match to within 7 allocs (a small
+constant, plausibly one extra `Atom`/`Sym` node per read) — **each additional
+K unit allocates almost exactly one full fresh `slow(N)` computation graph**,
+not a cheap re-force of a shared one. This settles the "why" question the
+missing link was chasing: there is no already-memoised thunk being redundantly
+re-entered — a fresh, never-forced copy of the whole computation is minted
+per entry, and each copy dutifully self-memoises once into a slot that's then
+discarded.
+
+Named the strongest structural candidate for the allocation site:
+`create_arg_array` in `env_builder.rs:347-377`. For a `Ref::L(i)` argument
+where `is_settled` returns false (x0's case — arity 0, code
+`HeapSyn::Meta{..}`, not `HeapSyn::Atom{..}`), it does:
+```rust
+array.push(self, SynClosure::new(self.atom(syn.clone())?.as_ptr(), environment));
+```
+(`env_builder.rs:370-373`) — `self.atom(...)` allocates a fresh
+`HeapSyn::Atom{evaluand: Ref::L(i)}` node on every call. This is the
+documented eu-wpswc alias-wrapping default path, firing here because x0 fails
+`is_settled`. **Not proven**: I could not trace why entering this alias
+repeatedly across the K reads fails to bottom out at `body`'s *same* physical
+update-thunk slot after the first force — by the code read alone, the alias's
+captured `environment` pointer and `body`'s `Ref::L` look like fixed
+references to one frame, which should still memoise after entry 1. Either
+`create_arg_array` (or the closure-capture step that builds `_e_a`'s own
+free-variable environment, not directly inspected) runs once per K
+application rather than once per closure creation as the core-level "one Lam
+literal" evidence suggested, or something else re-severs the reference —
+which one is unresolved. Stopping here per scope; handing to furnace with the
+allocation evidence, the named candidate line, and this open question.
+
 ## ADDENDUM 4: eu-frf2o checked and ruled out
 
 Team-lead suggested eu-frf2o (P0, CLOSED, PRs #1081/#1087, commits 6484bcc3/
