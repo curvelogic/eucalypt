@@ -123,6 +123,11 @@ IO TRACE: -> exit 0
 
 ### Process Parallelism (`par-map` and friends)
 
+HIGHLY EXPERIMENTAL, macOS/Linux only (see
+[Parallel Evaluation](../guide/parallelism.md)). All `EU_PP_*` variables below
+are unix-only: on Windows the fork path does not exist, so they have no
+effect and `par-*` is always the sequential fallback.
+
 The parallel path is unobservable by design — same value, same errors, same
 order — so a build that never forks looks exactly like a working one. These
 exist to tell them apart, and to force the fork path in tests.

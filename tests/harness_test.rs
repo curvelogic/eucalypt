@@ -3032,8 +3032,8 @@ pub fn test_209_mqlkv_block_import_bad_embedding() {
 /// function) raises the parallel-boundary error naming the value kind and the
 /// combinator, on the sequential path too (exit 1). Validated against the
 /// `.expect` sidecar.
-pub fn test_error_194_pp_non_serialisable() {
-    run_error_test(&error_opts("194_pp_non_serialisable.eu"));
+pub fn test_error_225_pp_non_serialisable() {
+    run_error_test(&error_opts("225_pp_non_serialisable.eu"));
 }
 
 #[test]
@@ -3041,13 +3041,13 @@ pub fn test_error_194_pp_non_serialisable() {
 /// wrote. The reductions are prelude wrappers over the one `__PARMAP`
 /// primitive, so without the combinator symbol threaded through they all
 /// reported themselves as `par-map`.
-pub fn test_error_196_pp_concat_non_serialisable() {
-    run_error_test(&error_opts("196_pp_concat_non_serialisable.eu"));
+pub fn test_error_226_pp_concat_non_serialisable() {
+    run_error_test(&error_opts("226_pp_concat_non_serialisable.eu"));
 }
 
 #[test]
-pub fn test_error_197_pp_non_serialisable_metadata() {
-    run_error_test(&error_opts("197_pp_non_serialisable_metadata.eu"));
+pub fn test_error_227_pp_non_serialisable_metadata() {
+    run_error_test(&error_opts("227_pp_non_serialisable_metadata.eu"));
 }
 
 #[test]
@@ -3329,8 +3329,8 @@ pub fn test_221_wpswc_settled_slot_passthrough() {
 /// through the same serialise/deserialise codec the fork path uses. The real
 /// fork path is validated out-of-process below.
 #[test]
-pub fn test_194_pp_par_equivalence() {
-    run_test(&opts("194_pp_par_equivalence.eu"));
+pub fn test_222_pp_par_equivalence() {
+    run_test(&opts("222_pp_par_equivalence.eu"));
 }
 
 /// eu-u9xj.6 (PP) — a streaming import must not disable `par-*`, and `par-*`
@@ -3339,8 +3339,8 @@ pub fn test_194_pp_par_equivalence() {
 /// process-lifetime state, so any unit naming a stream import lost `par-*` —
 /// as did every later unit evaluated by the same process.
 #[test]
-pub fn test_196_pp_stream_import_boundary() {
-    run_test(&opts("196_pp_stream_import_boundary.eu"));
+pub fn test_224_pp_stream_import_boundary() {
+    run_test(&opts("224_pp_stream_import_boundary.eu"));
 }
 
 /// eu-pazes — `max-of`/`min-of` must be linear in list length.
@@ -3366,12 +3366,12 @@ pub fn test_196_pp_stream_import_boundary() {
 /// deadline at all. Anything between those is a regression; no plausible CI
 /// slowness closes a gap that wide.
 #[test]
-pub fn test_195_pazes_max_of_linear() {
+pub fn test_223_pazes_max_of_linear() {
     let deadline = std::time::Duration::from_secs(180);
     let mut cmd = std::process::Command::new(eu_binary());
     cmd.arg("test")
         .arg("--source-prelude")
-        .arg("tests/harness/195_pazes_max_of_linear.eu")
+        .arg("tests/harness/223_pazes_max_of_linear.eu")
         .arg("--heap-limit-mib")
         .arg("8192");
 
@@ -3385,7 +3385,7 @@ pub fn test_195_pazes_max_of_linear() {
     });
     assert!(
         out.status.success(),
-        "195_pazes_max_of_linear failed after {:?}: {}{}",
+        "223_pazes_max_of_linear failed after {:?}: {}{}",
         started.elapsed(),
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)

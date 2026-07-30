@@ -1,5 +1,16 @@
 # Parallel Evaluation
 
+> **HIGHLY EXPERIMENTAL.** This feature is new, and its semantics may change
+> without notice in a future release.
+>
+> **macOS/Linux only.** The mechanism is a POSIX `fork()`, so it is not
+> available on Windows. `par-*` still works there — every call falls back to
+> the ordinary sequential form, exactly as it does below the size threshold on
+> a supported platform — it just never forks, so there is no parallelism
+> speed-up, and `EU_PP_TRACE` has no effect on Windows. See [What is different
+> from `map`](#what-is-different-from-map) below: the value is identical
+> either way.
+
 Eucalypt can evaluate a map over independent elements in parallel worker
 processes. The vocabulary is small and deliberately boring: each combinator
 computes the **same value** as its sequential form, so adding one is a

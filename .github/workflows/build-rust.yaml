@@ -332,7 +332,7 @@ jobs:
       # environment (inherited by the spawned binary and its forked workers),
       # this proves the mechanism off macOS (R7), under GC verification in
       # parent and workers, and covers engine equivalence (R5).
-      # `test_194_pp_par_equivalence` and `test_error_194_pp_*` cover the
+      # `test_222_pp_par_equivalence` and `test_error_225_pp_*` cover the
       # sequential codec path and the boundary error, including metadata
       # crossing the boundary (compared as rendered text against `map`, since
       # `=` ignores metadata).

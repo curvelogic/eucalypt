@@ -10,7 +10,7 @@
 # cannot be duplicated; this fixture reduces 20 000 elements in both directions
 # in about a second. The inliner defect itself is eu-gua64, still open.
 #
-# The COMPLEXITY gate is `test_195_pazes_max_of_linear` in harness_test.rs,
+# The COMPLEXITY gate is `test_223_pazes_max_of_linear` in harness_test.rs,
 # which runs this file out of process, under `--source-prelude`, under a
 # wall-clock deadline no exponential (or quadratic) implementation could meet.
 # The flag is load-bearing: in blob mode `max-of` is an opaque baked global

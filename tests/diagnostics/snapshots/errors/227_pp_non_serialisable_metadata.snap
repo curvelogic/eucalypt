@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/227_pp_non_serialisable_metadata
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/227_pp_non_serialisable_metadata.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/227_pp_non_serialisable_metadata.eu:14:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: par-map: cannot serialise a function across the parallel boundary
+   ┌─ tests/harness/errors/227_pp_non_serialisable_metadata.eu:14:12
+   │
+14 │ mk(x): { ` { checker: (_0 + 1) } odd: x
+   │            ^^^^^^^^^^^^^^^^^^^^^
+   │
+   = stack trace:
+     - result at 227_pp_non_serialisable_metadata.eu:16:16
