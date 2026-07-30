@@ -1,10 +1,4 @@
-# Beads / Project Management
-
-Run `bd prime` for instructions on using `bd` to manage beads
-
 # CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Overview
 
@@ -12,23 +6,15 @@ Eucalypt is a Rust-based tool and language for generating, templating, rendering
 
 ## Writing Eucalypt Code
 
-**MANDATORY: Read the documentation BEFORE writing any eucalypt (`.eu`) code.** Agents that skip this produce incorrect code and waste cycles — catenation's pipeline semantics, lambda syntax, and prelude contents in eucalypt are all unlike mainstream languages.
+**MANDATORY: Read the documentation BEFORE writing any eucalypt (`.eu`) code.** Agents that skip this produce incorrect code and waste cycles — catenation's pipeline semantics, lambda syntax, and prelude contents in eucalypt are all unlike mainstream languages. `agent-reference.md` §5 ("Common Pitfalls") and `syntax-gotchas.md` cover the traps (catenation precedence, dot-vs-catenation, anaphora scoping, functions that don't exist) in more depth than any summary here could — read them rather than relying on one.
 
-### Required Reading
-
-When writing or modifying `.eu` files, you MUST read these files first:
+Read these before writing or modifying `.eu` files:
 - `docs/reference/agent-reference.md` — dense syntax reference, prelude functions, pipeline patterns, and common pitfalls (READ THIS FIRST)
 - `docs/appendices/syntax-gotchas.md` — critical precedence and syntax traps
 - `docs/appendices/cheat-sheet.md` — quick syntax and operator reference
 - `docs/eucalypt-style.md` — idiomatic style: pipeline/catenation over nested calls, juxtaposed `f[...]` / `g{...}` calls, `then` over `if`, `.result` over `.(...)`, point-free composition
 
-For specific topics, also consult:
-- `docs/guide/expressions-and-pipelines.md` — pipeline style and catenation
-- `docs/guide/anaphora.md` — `_`, `•`, and string anaphora usage
-- `docs/guide/functions-and-combinators.md` — function definition and partial application
-- `docs/reference/prelude/` — full prelude reference by category
-
-`agent-reference.md` §5 ("Common Pitfalls") and `syntax-gotchas.md` already cover the specific traps (catenation precedence, dot-vs-catenation, anaphora scoping, functions that don't exist, etc.) in more depth and nuance than a condensed list here could — read them rather than relying on a summary.
+For specific topics: `docs/guide/expressions-and-pipelines.md` (pipeline style and catenation), `docs/guide/anaphora.md` (`_`, `•`, string anaphora), `docs/guide/functions-and-combinators.md` (definition and partial application), `docs/reference/prelude/` (full prelude reference by category).
 
 ## Build and Development Commands
 
@@ -39,6 +25,7 @@ For specific topics, also consult:
 - `cargo install --path .` - Install local `eu` binary
 - `cargo xtask prelude-compile` - Regenerate `lib/prelude.blob` (the pre-compiled prelude) after changing prelude source; the build falls back to compiling from source when the blob is absent or stale
 - `eu doc <file>` - Extract documentation from eucalypt source (used to regenerate `docs/reference/prelude/`)
+- Build metadata is generated via `eu build.eu -t build-meta` and embedded in the binary via `build-meta.yaml`
 
 ### Type Checking
 
@@ -52,14 +39,9 @@ Type checking runs **unconditionally** on every `eu` invocation (evaluate, dump,
 - A genuine parse error always exits non-zero under `eu check`, with or without `--strict` — unlike an ordinary type warning, it is never gated behind `--strict`
 
 ### Testing
-- `cargo test` - Run all tests including the comprehensive harness test suite
 - `cargo test test_harness_001` - Run a specific harness test (e.g., test 001)
 - `cargo test --test harness_test` - Run only the harness tests
 - `cargo bench` - Run benchmarks (located in `benches/`)
-
-### Build System
-- Parsing uses a hand-written, lossless Rowan-based parser (`src/syntax/rowan/`); there is no separate grammar file or parser generator
-- Build metadata is generated via `eu build.eu -t build-meta` and embedded in the binary via `build-meta.yaml`
 
 ## Architecture
 
@@ -98,14 +80,7 @@ Type checking runs **unconditionally** on every `eu` invocation (evaluate, dump,
 
 ### Test Architecture
 
-**Harness Tests (`tests/harness/`)**:
-- Large test suite covering language features, edge cases, and error conditions
-- Test files use `.eu` extension for eucalypt source, plus YAML, TOML, CSV, XML, and EDN fixtures
-- Error tests in `tests/harness/errors/` directory
-- Benchmark tests in `tests/harness/bench/` directory
-
-**Test Execution**:
-- Tests are run via `tests/harness_test.rs`, one test per file in `tests/harness/`, using the `tester` module
+Harness tests cover language features, edge cases, and error conditions. `.eu` sources plus YAML, TOML, CSV, XML and EDN fixtures; error tests in `tests/harness/errors/`, benchmarks in `tests/harness/bench/`. They run via `tests/harness_test.rs`, one test per file in `tests/harness/`, using the `tester` module.
 
 #### Writing harness tests that gate
 
@@ -115,11 +90,7 @@ Every regression test must be **fault-injection verified**: break the code under
 
 ### Memory Management
 
-The project includes a sophisticated garbage collector:
-- Generational GC with multiple generations
-- Bump allocation for young generation
-- Mark-and-sweep for older generations
-- Custom memory layout for eucalypt values
+Generational GC with multiple generations: bump allocation for the young generation, mark-and-sweep for older ones, over a custom memory layout for eucalypt values.
 
 ### Debug Environment Variables
 
@@ -133,7 +104,7 @@ The project includes a sophisticated garbage collector:
 | `EU_IO_TRACE=1` | Trace all `io.shell` and `io.exec` commands to stderr before execution. Shows the command string and whether stdin is piped. |
 | `EU_HEAPSYN=1` | Select the legacy HeapSyn tree-walk engine instead of the default bytecode engine (BV1). Retained as the performance baseline and differential-testing engine; Phase 4 collapse is deferred pending an A/B perf study. Takes precedence over `EU_PREDECODE` entirely (the pre-decoded dispatch flag is a no-op under HeapSyn). |
 | `EU_BYTECODE=1` | Now redundant — the bytecode engine is the default. Still accepted as an explicit opt-in; `EU_HEAPSYN=1` takes precedence over it. |
-| `EU_PREDECODE=0` | Opt out of pre-decoded dispatch within the bytecode engine, selecting the byte-dispatch path instead (lever a, eu-2sa6.13). As of Phase 2 (eu-vcr8) pre-decoded dispatch is the **default** — unset or `EU_PREDECODE=1` selects it, mirroring how `EU_HEAPSYN` itself flipped from opt-in to opt-out. The byte-dispatch path is retained through a soak period (CI job `test-byte-dispatch-baseline`) before Phase 3 deletes it. No effect when `EU_HEAPSYN=1`. |
+| `EU_PREDECODE=0` | Opt out of pre-decoded dispatch within the bytecode engine, selecting the byte-dispatch path instead (lever a, eu-2sa6.13). Pre-decoded dispatch is the **default** since Phase 2 (eu-vcr8) — unset or `EU_PREDECODE=1` selects it. The byte-dispatch path is retained through a soak period (CI job `test-byte-dispatch-baseline`) before Phase 3 deletes it. No effect when `EU_HEAPSYN=1`. |
 
 The crash signal handler (SIGSEGV/SIGBUS diagnostics) is always active and has no environment variable — it installs unconditionally in `main()`.
 
@@ -170,7 +141,7 @@ Add `--debug-format` for the Rust Debug representation (shows full structure inc
 ## Panics Are Critical
 
 - **Panics must NEVER be deferred.** If you encounter a panic (thread panicked, assertion failure, etc.), stop what you are doing, reproduce a minimal case, and investigate the root cause immediately.
-- **Use `eu dump` commands** (see above) to inspect the pipeline stage where the panic occurs — do NOT add temporary `eprintln!` debug statements.
+- **Use `eu dump` commands** (see above) to inspect the pipeline stage where the panic occurs.
 - **File a P1 bug** and fix it before moving on to other work.
 - **Convert panics to proper errors** as a first step if the root cause fix is complex — a `panic!` or `expect()` in user-reachable code should become an `ExecutionError` or `CoreError` diagnostic.
 - **Every panic fix must include a regression test.**
@@ -213,6 +184,10 @@ measurement standard and cite a dated report or a ledger row:
 3. `cargo clippy --workspace --all-targets -- -D warnings`
 4. `cargo test` - run the full suite (not just `--lib`) when the change might affect harness tests
 5. `git commit` and `git push`
+
+### PR bodies and reports
+
+Keep a PR body under 50 lines and an agent report to the coordinator under 40. State what changed, why, how it was verified, and what is still open. Analysis, measurements, design rationale and investigation narrative belong in `docs/superpowers/reports/` or `docs/superpowers/plans/` — link to them from the PR body rather than restating them. The owner reads every PR body personally; length is what stops that happening.
 
 ### Recorded review before merge
 

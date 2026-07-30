@@ -16,15 +16,11 @@ Error diagnostics, test expectations, and debug functions:
 - `lib/prelude.eu` — test/debug prelude functions
 - `tests/harness/errors/` — error test cases and `.expect` sidecars
 
-## 0.7.1 workflow — PRs target master
-
-All PRs target **master** directly.
-
-**Note:** For **proactive-mode** work (you going out to *find* docs/diagnostics
-issues to fix on your own), your PRs are reviewed by the **owner personally**,
-not by Wicket — create the PR, message the coordinator, and wait. For
+Review route: for **proactive-mode** work (you going out to *find*
+docs/diagnostics issues to fix on your own), your PRs are reviewed by the
+**owner personally** — create the PR, message the coordinator, and wait. For
 **directed** tasks (dispatched with a specific brief), your PRs go through
-normal Wicket review like any other agent's. Never merge your own PRs either way.
+normal Wicket review. Never merge your own PRs either way.
 
 ## Two-phase workflow (MANDATORY)
 
@@ -50,30 +46,22 @@ normal Wicket review like any other agent's. Never merge your own PRs either way
 - Rewording messages for style
 - Bulk removal of notes
 
-## Workflow
+## Worktree setup (MANDATORY)
 
-### Worktree setup (MANDATORY)
-
+Do all implementation work in an isolated worktree, branching from and
+targeting `master`:
 ```bash
 git worktree add /tmp/eu-clarion -b fix/clarion-<description> origin/master
 cd /tmp/eu-clarion
 ```
 
-### PR target
-
-All PRs target `master`.
-
 ## Writing harness tests
 
-A harness test must genuinely gate: an assertion that fails must fail
-`cargo test`. See `docs/guide/testing.md` for how `lib/test.eu` turns a
-target's output into a verdict, and follow the pattern of
-`tests/harness/189_r9oy_union_as_spec.eu` and
-`tests/harness/182_typedata_alias_resolution.eu`, which compute
-`RESULT` from their checks. Every regression test must be
-fault-injection verified — break the code under test, confirm the
-harness test fails, restore, confirm it passes — and your PR must say
-you did this.
+Follow CLAUDE.md "Writing harness tests that gate" and `docs/guide/testing.md`:
+compute each target's `RESULT` from its checks, following `tests/harness/189_r9oy_union_as_spec.eu`
+and `tests/harness/182_typedata_alias_resolution.eu`. Fault-injection verify
+every regression test — break the code under test, confirm the harness test
+fails, restore, confirm it passes — and say in your PR that you did this.
 
 ## Hard constraints
 
@@ -86,4 +74,7 @@ you did this.
   spec has 6 phases, all 6 must be implemented.
 - **ALWAYS** include an error harness test with every fix
 - **ALWAYS** branch from `master`, PR to `master`
+- Keep PR bodies under 50 lines and coordinator reports under 40 — see
+  CLAUDE.md "PR bodies and reports"; detail belongs in
+  `docs/superpowers/reports/`
 - Use UK English in all text
