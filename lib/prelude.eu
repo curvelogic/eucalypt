@@ -911,7 +911,7 @@ product(l): foldl(*, 1, l)
 max(l, r): if(l > r, l, r)
 
 ` "`max-of(l) - return max element in list of numbers `l` - error if empty`"
-max-of(l): if(l nil?, panic("max of empty list"), foldl(max, l head, l tail))
+max-of(l): l nil? then(panic("max of empty list"), foldl(max, l head, l tail))
 
 ` "`max-of-by(f, l)` - return the element of `l` that maximises `f`. Error if empty."
 max-of-by(f, l): {
@@ -934,7 +934,7 @@ max-of-or(d, l): l nil? then(d, max-of(l))
 min(l, r): if(l < r, l, r)
 
 ` "`min-of(l) - return min element in list of numbers `l` - error if empty`"
-min-of(l): if(l nil?, panic("min of empty list"), foldl(min, l head, l tail))
+min-of(l): l nil? then(panic("min of empty list"), foldl(min, l head, l tail))
 
 ` "`min-of-by(f, l)` - return the element of `l` that minimises `f`. Error if empty."
 min-of-by(f, l): {

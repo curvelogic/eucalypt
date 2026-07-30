@@ -8,15 +8,22 @@
 # 24-element one did not finish in 60s. They are now a strict left fold over
 # the same `max`/`min`, which passes the accumulator as a plain variable and so
 # cannot be duplicated; this fixture reduces 20 000 elements in both directions
-# in about a second. The inliner defect itself is eu-gua64, still open.
+# in about a second. The inliner defect itself is eu-gua64 — fixed by #1086
+# (tests/harness/210_gua64_inline_arg_sharing.eu), which gates the compiler
+# fix generically over plain user code. This fixture is not a duplicate of
+# that one: it gates the prelude's OWN `max-of`/`min-of` definitions being a
+# left fold rather than a duplicating recursion, and it does so under
+# `--source-prelude`, which 210 does not use and does not need. That flag is
+# load-bearing here: in blob mode `max-of` is an opaque baked global that is
+# never inlined, so even the superseded (exponential-on-source) definition
+# measures linear in blob mode, and 210 alone would leave that regression
+# undetected on the source-prelude path.
 #
 # The COMPLEXITY gate is `test_223_pazes_max_of_linear` in harness_test.rs,
 # which runs this file out of process, under `--source-prelude`, under a
 # wall-clock deadline no exponential (or quadratic) implementation could meet.
-# The flag is load-bearing: in blob mode `max-of` is an opaque baked global
-# that is never inlined, so even the superseded definition measures linear
-# there. THIS file gates the SEMANTICS: every check feeds RESULT, so a
-# behavioural regression fails `cargo test` too.
+# THIS file gates the SEMANTICS too: every check feeds RESULT, so a
+# behavioural regression fails `cargo test` as well.
 
 n: 20000
 
