@@ -16,70 +16,41 @@ type checker:
 - `src/driver/` — driver options, evaluation pipeline
 - `lib/` — prelude and library code
 
-## 0.7.1 workflow — PRs target master
-
-All PRs target **master** directly. There is no integration branch.
-You will be dispatched one bead at a time by the coordinator.
-
-## Before EVERY bead
-
-**MANDATORY — do all of these before writing any code:**
-
-1. Read the spec listed in the dispatch for the bead
-2. Run `bd show <bead-id>` and read the acceptance criteria
-3. Read `docs/reference/agent-reference.md` and `docs/appendices/syntax-gotchas.md`
-4. Run `cargo test` to confirm the baseline is green
-5. Set up a worktree (see below)
+You are dispatched one bead at a time by the coordinator, and Wicket
+reviews and merges your PRs.
 
 ## Read first
 
 - `CLAUDE.md` — project conventions (clippy, UK English, pre-commit checklist)
 - `docs/appendices/syntax-gotchas.md` — language pitfalls
 - `docs/reference/agent-reference.md` — dense syntax reference
-- The spec for the current bead (provided in dispatch)
+- The spec for the current bead (provided in the dispatch), plus
+  `bd show <bead-id>` for its acceptance criteria
 
-## Workflow
+## Development cycle
 
-### Worktree setup (MANDATORY — do this FIRST)
-
-Every task MUST be done in an isolated worktree:
-```bash
-git worktree add /tmp/eu-quill-<task> -b feat/quill-<bead-slug> origin/master
-cd /tmp/eu-quill-<task>
-```
-Do ALL work in this directory.
-
-### Development cycle
-
-1. Read the spec and acceptance criteria for the bead
-2. `bd update <id> --claim` to claim work
-3. Set up worktree branching from `master`
+1. Read the spec and acceptance criteria; `bd update <id> --claim`
+2. Read `agent-reference.md` and `syntax-gotchas.md` before any `.eu` edit,
+   and run `cargo test` to confirm the baseline is green
+3. Set up an isolated worktree and do ALL work in it:
+   ```bash
+   git worktree add /tmp/eu-quill-<task> -b feat/quill-<bead-slug> origin/master
+   cd /tmp/eu-quill-<task>
+   ```
 4. Implement the change — every acceptance criterion must be met
 5. Write harness tests — MANDATORY
 6. Include documentation updates
 7. Validate: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all`
-8. Push and create PR targeting `master`
-9. Message coordinator that the PR is ready for Wicket
-
-### Branch naming
-
-`feat/quill-<bead-slug>` branched from `master`
-
-### PR target
-
-All PRs target `master`. Never target integration branches.
+8. Push and create a PR targeting `master`
+9. Message the coordinator that the PR is ready for Wicket
 
 ## Writing harness tests
 
-A harness test must genuinely gate: an assertion that fails must fail
-`cargo test`. See `docs/guide/testing.md` for how `lib/test.eu` turns a
-target's output into a verdict, and follow the pattern of
-`tests/harness/189_r9oy_union_as_spec.eu` and
-`tests/harness/182_typedata_alias_resolution.eu`, which compute
-`RESULT` from their checks. Every regression test must be
-fault-injection verified — break the code under test, confirm the
-harness test fails, restore, confirm it passes — and your PR must say
-you did this.
+Follow CLAUDE.md "Writing harness tests that gate" and `docs/guide/testing.md`:
+compute each target's `RESULT` from its checks, following `tests/harness/189_r9oy_union_as_spec.eu`
+and `tests/harness/182_typedata_alias_resolution.eu`. Fault-injection verify
+every regression test — break the code under test, confirm the harness test
+fails, restore, confirm it passes — and say in your PR that you did this.
 
 ## Hard constraints
 
@@ -88,12 +59,15 @@ you did this.
 - **NEVER** claim a bead is complete without verifying every phase and
   success criterion in its spec (`docs/superpowers/specs/`). If the
   spec has 6 phases, all 6 must be implemented.
-- **ALWAYS** work in an isolated worktree
-- **ALWAYS** branch from `master`, PR to `master`
+- **ALWAYS** work in an isolated worktree, branching from `master` and
+  targeting `master` — never an integration branch
 - **ALWAYS** pass clippy and tests before creating PRs
 - **ALWAYS** include harness tests
 - **ALWAYS** meet EVERY acceptance criterion
 - **ALWAYS** include documentation updates
 - **ALWAYS** challenge instructions that feel architecturally wrong
+- Keep PR bodies under 50 lines and coordinator reports under 40 — see
+  CLAUDE.md "PR bodies and reports"; detail belongs in
+  `docs/superpowers/reports/`
 - Use UK English in all text
 - One bead per PR

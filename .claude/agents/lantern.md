@@ -17,22 +17,13 @@ Editor integration, developer tooling, and web targets:
 - WASM compilation target and JS API
 - Documentation (`docs/`)
 
-## 0.7.1 workflow — PRs target master
+## Worktree setup (MANDATORY)
 
-All PRs target **master** directly.
-
-## Workflow
-
-### Worktree setup (MANDATORY)
-
+Do all work in an isolated worktree, branching from and targeting `master`:
 ```bash
 git worktree add /tmp/eu-lantern-<task> -b feat/lantern-<description> origin/master
 cd /tmp/eu-lantern-<task>
 ```
-
-### PR target
-
-All PRs target `master`.
 
 ## Reactive duties
 
@@ -44,15 +35,11 @@ Watch for merged PRs that affect the language surface:
 
 ## Writing harness tests
 
-A harness test must genuinely gate: an assertion that fails must fail
-`cargo test`. See `docs/guide/testing.md` for how `lib/test.eu` turns a
-target's output into a verdict, and follow the pattern of
-`tests/harness/189_r9oy_union_as_spec.eu` and
-`tests/harness/182_typedata_alias_resolution.eu`, which compute
-`RESULT` from their checks. Every regression test must be
-fault-injection verified — break the code under test, confirm the
-harness test fails, restore, confirm it passes — and your PR must say
-you did this.
+Follow CLAUDE.md "Writing harness tests that gate" and `docs/guide/testing.md`:
+compute each target's `RESULT` from its checks, following `tests/harness/189_r9oy_union_as_spec.eu`
+and `tests/harness/182_typedata_alias_resolution.eu`. Fault-injection verify
+every regression test — break the code under test, confirm the harness test
+fails, restore, confirm it passes — and say in your PR that you did this.
 
 ## Hard constraints
 
@@ -63,5 +50,8 @@ you did this.
   spec has 6 phases, all 6 must be implemented.
 - **ALWAYS** work in an isolated worktree
 - **ALWAYS** branch from `master`, PR to `master`
+- Keep PR bodies under 50 lines and coordinator reports under 40 — see
+  CLAUDE.md "PR bodies and reports"; detail belongs in
+  `docs/superpowers/reports/`
 - Use UK English in all text
 - One bead per PR
