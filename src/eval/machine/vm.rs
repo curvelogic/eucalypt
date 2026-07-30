@@ -910,11 +910,17 @@ impl MachineState {
         meta: &Ref,
         body: &Ref,
     ) -> Result<(), ExecutionError> {
+        // Capture the environment `meta`/`body` are relative to before
+        // `self.closure` is reassigned below (they're refs into *this*
+        // Meta node's own closure's env, i.e. the closure current on
+        // entry to this function).
+        let environment = self.closure.env();
+
         if let Some(continuation) = self.stack.pop() {
             match continuation {
                 Continuation::DeMeta {
                     handler,
-                    environment,
+                    environment: demeta_environment,
                     ..
                 } => {
                     self.closure = SynClosure::new(
@@ -924,26 +930,117 @@ impl MachineState {
                                 .iter()
                                 .cloned(),
                             2,
-                            environment,
+                            demeta_environment,
                             self.annotation,
                         )?,
                     );
                 }
                 Continuation::Update {
-                    environment, index, ..
+                    environment: update_environment,
+                    index,
+                    ..
                 } => {
-                    self.update(view, environment, index)?;
+                    self.update(view, update_environment, index)?;
                 }
                 other => {
-                    self.closure = self.nav(view).resolve(body)?;
+                    // Order matters here (eu-bc34x follow-up): `other` must
+                    // go back on the stack BEFORE `enter_meta_body` runs, not
+                    // after. If `body` names an updateable thunk,
+                    // `enter_meta_body` pushes its own `Update` continuation
+                    // for that thunk's slot -- and that `Update` must end up
+                    // *above* `other` (fire first, memoising the thunk),
+                    // exactly as it would if this thunk had been entered
+                    // directly via `Atom{Ref::L}` with `other` already
+                    // sitting on the stack underneath. Pushing `other`
+                    // afterwards put it on top instead: the thunk's
+                    // completion value then went to `other` first (e.g.
+                    // applying pending args to it), and only the *result of
+                    // that* landed in the thunk's own slot -- silently
+                    // replacing what should have been memoised (e.g. a
+                    // function) with whatever `other` produced from it (e.g.
+                    // a list), a wrong value rather than a crash.
                     self.stack.push(other);
+                    self.enter_meta_body(view, environment, body)?;
                 }
             }
         } else {
-            self.closure = self.nav(view).resolve(body)?;
+            self.enter_meta_body(view, environment, body)?;
             // Don't terminate at metadata, carrying processing
         }
 
+        Ok(())
+    }
+
+    /// Resolve a `Meta` node's `body` ref as a genuine force to WHNF,
+    /// rather than a bare env lookup.
+    ///
+    /// A `Meta { meta, body }` node is entered non-updateably whenever it is
+    /// (correctly or not — see eu-bc34x) compiled as a Value form: nothing
+    /// ever pushes an `Update` continuation for the Meta node's *own* slot,
+    /// so every one of its readers re-enters this code from scratch. That's
+    /// fine — re-dispatching a trivial wrapper is cheap — *provided* `body`
+    /// itself is entered properly. Before this fix it wasn't: `body` was
+    /// resolved with a bare env lookup (`HeapNavigator::resolve`), which
+    /// hands back whatever closure is sitting in the slot without ever
+    /// checking whether it's an unevaluated, updateable thunk. If `body`
+    /// names one (e.g. a metadata-annotated binding whose RHS is a genuine
+    /// computation, not a literal), that thunk's own persistent slot was
+    /// never black-holed or `Update`-registered by this path, so it never
+    /// memoised: every one of the Meta node's *K* readers independently
+    /// re-ran the full computation and re-allocated its result, rather than
+    /// only the first paying the cost and the rest reading back a cached
+    /// value.
+    ///
+    /// This mirrors the `Atom { evaluand: Ref::L(i) }` handling in
+    /// `handle_instruction` (the standard "enter a local slot" ceremony:
+    /// black-hole it and push `Update` before running an updateable
+    /// closure's code) — `Ref::G` and `Ref::V` already have safe handling
+    /// elsewhere (`enter_global` memoises internally; a `Ref::V` literal is
+    /// trivially WHNF), so only the `Ref::L` arm needs it here.
+    fn enter_meta_body(
+        &mut self,
+        view: MutatorHeapView<'_>,
+        environment: RefPtr<EnvFrame>,
+        body: &Ref,
+    ) -> Result<(), ExecutionError> {
+        match body {
+            Ref::L(i) => {
+                let target = view
+                    .scoped(environment)
+                    .get(&view, *i)
+                    .ok_or(ExecutionError::BadEnvironmentIndex(*i))?;
+                let is_thunk = target.update();
+                self.closure = target.clone();
+                if is_thunk {
+                    // Same black-hole-then-Update dance as Atom{Ref::L} in
+                    // `handle_instruction` — see that arm's comment.
+                    let hole = view.alloc(HeapSyn::BlackHole)?;
+                    let black_hole = SynClosure::new(hole.as_ptr(), environment);
+                    let cont_env = view.scoped(environment);
+                    cont_env.update(&view, *i, black_hole)?;
+
+                    let annotation = if self.annotation.is_valid() {
+                        self.annotation
+                    } else {
+                        Self::target_annotation(&target)
+                    };
+                    self.push(
+                        view,
+                        Continuation::Update {
+                            environment,
+                            index: *i,
+                            annotation,
+                        },
+                    )?;
+                }
+            }
+            Ref::G(i) => {
+                self.closure = self.enter_global(view, *i)?;
+            }
+            Ref::V(_) => {
+                self.closure = self.nav(view).resolve(body)?;
+            }
+        }
         Ok(())
     }
 

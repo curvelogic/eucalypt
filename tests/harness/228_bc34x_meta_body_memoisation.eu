@@ -1,0 +1,73 @@
+#!/usr/bin/env eu
+# eu-bc34x: a binding carrying metadata (a plain doc string, `:suppress`,
+# or any other backtick annotation) lost thunk memoisation — its RHS was
+# recomputed from scratch on every force, rather than once and shared.
+#
+# `x0: slow(N) \` :suppress` compiles to `Meta{meta, body}`. The Meta
+# wrapper is (correctly) a non-updateable Value form — cheap to re-enter,
+# by design, since re-dispatching a trivial wrapper costs nothing. The bug
+# was in what happened next: `return_meta`'s fallback path (the common
+# case — any consumer that is not itself destructuring the metadata) used
+# to resolve `body` with a bare, passive environment-slot read instead of
+# entering it through the same black-hole-then-`Update` ceremony every
+# other reference to an updateable thunk goes through. So `body`'s own
+# persistent slot never got an `Update` continuation registered for it,
+# and it silently never memoised: every one of the K reads below
+# independently re-ran `slow(size)` in full, making the whole pipeline
+# O(size*reads) instead of O(size+reads).
+#
+# The complexity gate lives in the Rust test
+# (`test_228_bc34x_meta_body_memoisation` in `tests/harness_test.rs`),
+# which runs this file under a wall-clock deadline. `size`/`reads` are
+# chosen so correctly-shared code finishes in a fraction of a second while
+# the multiplicative bug takes minutes — see that test for the measured
+# margin (three orders of magnitude either side of the deadline).
+
+slow(n): if(n <= 0, 0, 1 + slow(n - 1))
+
+size: 30000
+reads: 200
+
+# The two metadata shapes the original report distinguished — a symbol
+# tag and a plain doc string — both lost memoisation identically.
+` :suppress
+x0: slow(size)
+
+` "a documented binding"
+x1: slow(size)
+
+# Unannotated control: the same computation, always additive, before and
+# after the fix. Demonstrates the contrast the way 210's ascending/
+# descending pair does — not itself a source of the gate, but confirms
+# the deadline is about the metadata, not about `slow` being slow.
+x-plain: slow(size)
+
+ys: range(0, reads)
+
+# Closed form for `sum(range(0,reads)) + reads*value`.
+expected: (reads * (reads - 1)) ÷ 2 + reads * size
+
+# ---------------------------------------------------------------- #
+# Results must be correct regardless of sharing — this only gates the
+# VALUE; the Rust wrapper test gates the deadline.
+# ---------------------------------------------------------------- #
+
+t1: (ys map(_ + x0) sum) = expected
+t2: (ys map(_ + x1) sum) = expected
+t3: (ys map(_ + x-plain) sum) = expected
+
+# ---------------------------------------------------------------- #
+# The fix must not strip metadata while making the underlying thunk
+# memoise: `x0`/`x1` are forced above (via t1/t2), so this also checks
+# that a binding's metadata is still readable after its value has been
+# forced and shared, not just before.
+# ---------------------------------------------------------------- #
+
+t4: (x0 meta).export = :suppress
+t5: (x1 meta).doc = "a documented binding"
+
+` { target: :main
+    doc: "eu-bc34x regression: a metadata-annotated binding's RHS must memoise once and be shared across every reader, and its metadata must still be readable afterwards" }
+main: {
+  RESULT: [t1, t2, t3, t4, t5] all-true? then(:PASS, :FAIL)
+}
