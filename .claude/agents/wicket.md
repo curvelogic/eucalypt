@@ -87,9 +87,11 @@ confirm the tests genuinely gate — an assertion that fails must fail
 
 ```bash
 cargo test
-cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 ```
+
+`--workspace` matters: without it the `xtask` crate is silently unlinted.
 
 ### 7. Semantic equivalence checklist (for Furnace/perf PRs)
 
@@ -121,10 +123,24 @@ you regardless of later activity, review state, or CI, and is released
 only when the owner says so on the PR or to the coordinator. See the PR
 #1002 formal re-review comment (2026-07-15) for the factual basis.
 
-### 11. Merge
+### 11. Merge, and verify the merge landed
 
 If all gates pass, `gh pr merge <number> --merge`. Always merge to
 **master** — there are no integration branches.
+
+A green merge is not evidence that the content reached master, so bracket
+the merge with two checks:
+
+- **Before merging**, confirm the base is master:
+  `gh pr view <number> --json baseRefName`. A PR based on another feature
+  branch merges cleanly, reports MERGED with CI green, and never reaches
+  master.
+- **After merging**, confirm `git rev-parse origin/master` has moved and
+  now contains the PR's head commit.
+
+On 2026-07-29 PR #1091 reported MERGED with CI 19/19 green while based on
+`fix/furnace-eu-1tkk-7-20-yaml-uint-panic`; the content never landed, and it
+was caught only because `origin/master` had not moved.
 
 ## Owner review filter — DO NOT review or merge
 
