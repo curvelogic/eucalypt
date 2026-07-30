@@ -238,3 +238,30 @@ not close this final link within this task's scope — it is confirmed to be
 `body`'s target slot count as "the same slot" across K entries, but I did
 not identify which allocation site re-creates the frame.** Named candidate,
 not a proven mechanism.
+
+## ADDENDUM 4: eu-frf2o checked and ruled out
+
+Team-lead suggested eu-frf2o (P0, CLOSED, PRs #1081/#1087, commits 6484bcc3/
+de47fa17: "STG compiler emitted a Let where a LetRec was needed for the Meta
+binder group") as a candidate for the same corner of the compiler. Built a
+worktree at 1bd8bf6f (parent of #1081's merge — the commit immediately
+before both PRs), source-prelude mode (blob not regenerated at that commit
+for this check). Ran the metadata-on-x0 trigger and its no-metadata control
+at N=300,K=20:
+
+pre-eu-frf2o (1bd8bf6f): metadata trigger 207,137 ticks; no-metadata control
+14,719 ticks.
+post-eu-frf2o (master 642b5e2d, source mode): metadata trigger 206,363
+ticks; no-metadata control 13,947 ticks.
+
+Statistically identical before and after both PRs (well within run-to-run
+noise). **eu-frf2o is RULED OUT** — it fixed a different defect (a
+freshly-synthesised 2-entry Let for an INLINE block-literal-as-call-operand's
+own meta/body pair) that doesn't touch the mechanism causing x0's outer
+binding to lose memoisation when captured by a repeatedly-invoked closure.
+Confirmed by reading `compile_binding`'s `Expr::Meta` arm
+(compiler.rs:1867-1905): it already calls `binder.ensure_recursive()` before
+compiling `m`/`b` and adds them as siblings in the SAME (already-LetRec)
+top-level binder frame as `x0`'s other siblings, not a separate synthetic
+Let group — so eu-frf2o's specific fix does not apply to this binding shape
+in either direction. The missing link in ADDENDUM 3 remains open.
