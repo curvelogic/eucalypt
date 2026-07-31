@@ -64,10 +64,52 @@ t-block-render: (xs par-map(mkrec) render-as(:json)) = (xs map(mkrec) render-as(
 t-meta-hidden:  (xs par-map(mk-hidden) render-as(:json)
                    str.matches?("(?s).*hidden.*")) not
 
+# ── boundary codec coverage: booleans, null, symbols, zoned-datetimes ─────
+# serialise.rs's module doc lists booleans, null, symbols and zoned-datetimes
+# as part of the serialisable subset, and the TAG_TRUE/TAG_FALSE/TAG_NULL/
+# TAG_SYM/TAG_ZDT encode/decode arms exist to carry them — but nothing
+# anywhere in the suite exercised any of the five. Each is checked standalone
+# AND nested inside a list/block, since tag dispatch is where an encoding
+# regression (a corrupted or swapped tag byte) tends to hide.
+is-even(x): x % 2 = 0
+t-bool:         (xs par-map(is-even)) = (xs map(is-even))
+
+always-null(x): null
+t-null:         (xs par-map(always-null)) = (xs map(always-null))
+
+sym-of(x): if(is-even(x), :even, :odd)
+t-sym:          (xs par-map(sym-of)) = (xs map(sym-of))
+
+# ZDT LITERAL (`t"…"`), not `cal.zdt(...)`: this unit merely NAMING a
+# `cal.zdt(...)` call site anywhere — even one never used by any check that
+# runs — makes an unrelated `par-map` returning `null` elsewhere in the same
+# unit misreport a real `null`/`BoxedZdt` value as a type-data value. That is
+# a genuine, separately-filed bug (eu-pkgoo; see the fixture's own
+# `cal.zdt`-vs-literal repro in the issue) that this fixture must not trip
+# over incidentally while testing something else. The literal form exercises
+# the same TAG_ZDT encode/decode arm without the trigger.
+zdt-of(x): t"2024-01-15T00:00:00Z"
+t-zdt:          (xs par-map(zdt-of)) = (xs map(zdt-of))
+
+# Nested: one of each per element inside a block that also nests a list —
+# the boundary codec's recursive block/list encoding is exercised together
+# with all five scalar tags in the same value, compared as rendered output
+# (an equality check alone would not catch a tag confused for another one
+# that happens to render the same via `=` — e.g. two distinct symbols could
+# still trip a mis-dispatch that `render-as(:json)` would show but `=` might
+# mask if the wrong-but-plausible reconstruction still satisfied `=`).
+mixed(x): { flag: is-even(x)
+            nothing: always-null(x)
+            tag: sym-of(x)
+            when: zdt-of(x)
+            items: [is-even(x), always-null(x), sym-of(x), zdt-of(x)] }
+t-mixed-render: (xs par-map(mixed) render-as(:json)) = (xs map(mixed) render-as(:json))
+
 checks: [t-map-empty, t-map-one, t-map-xs, t-map-order, t-map-str, t-map-block,
          t-sum-empty, t-sum-one, t-sum-xs,
          t-max-one, t-max-xs, t-min-xs,
          t-concat-empty, t-concat-xs,
-         t-meta-render, t-block-render, t-meta-hidden]
+         t-meta-render, t-block-render, t-meta-hidden,
+         t-bool, t-null, t-sym, t-zdt, t-mixed-render]
 
 RESULT: if(checks all-true?, :PASS, :FAIL)
