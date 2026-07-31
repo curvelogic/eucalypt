@@ -156,8 +156,28 @@ The owner personally reviews:
   specific task) is NOT in this filter — review and merge it like any
   other agent's PR.
 - **Any new intrinsic**
-- **Any GC or memory layout change**
-- **Any observable behaviour change**
+- **Any new language feature, or any deliberate change to what a
+  construct means** — a semantic change the PR set out to make.
+
+**Bug fixes proceed; intentional semantic changes stop.** That is the
+line. A bug fix restores intended behaviour, so review and merge it
+under the normal gates however deep it reaches — the VM, the GC, the
+allocator, the memory layout. Depth is not the test; intent is. A PR
+that fixes a defect in `return_meta` is yours. A PR that changes what
+`return_meta` is *for* is the owner's.
+
+The evidence a bug fix needs is correspondingly higher, not lower: for
+anything touching GC, memory or the VM, an unchanged `errors/` corpus
+across both prelude modes, independently reproduced rather than taken
+from the author, plus your own fault injection on its regression test.
+See gate 9 — such a PR also needs a recorded review from someone other
+than its author, which your review comment supplies.
+
+When you genuinely cannot tell whether a change is a fix or a
+deliberate semantic change, ask the coordinator. Do not escalate to the
+owner by default — a hold you apply for safety still costs a round trip,
+and applying this filter broadly is how routine fixes ended up queued
+behind owner review.
 
 ## Architectural smell check
 
