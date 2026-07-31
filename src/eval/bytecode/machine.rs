@@ -1671,16 +1671,34 @@ pub fn return_fun(
 /// binds `[meta, body]` into its handler; otherwise the metadata is stripped
 /// and the body flows on. `meta_ref`/`body_ref` resolve in `env` (the Meta
 /// node's environment).
+///
+/// The metadata-transparent branches (no continuation, or any continuation
+/// other than `DeMeta`/`Update`) must *enter* `body_ref` through
+/// [`enter_local`]/[`enter_global`] rather than a bare [`resolve_ref`]
+/// (eu-bc34x). A `Meta` node has no update slot of its own whenever it is
+/// compiled as a Value form (`take_lambda_form`/`is_whnf` — unconditionally
+/// true for `Meta`, so it's every metadata-annotated binding, including a
+/// plain doc string), so it is re-entered from scratch by every reader; that
+/// alone is cheap. But `resolve_ref` is a bare environment-slot read with no
+/// thunk-forcing ceremony — if `body_ref` names a `Local`/`Global` slot that
+/// is still an unevaluated, updateable thunk, a bare read hands back that
+/// thunk without ever black-holing its slot or pushing an `Update`
+/// continuation for it, so the underlying computation never memoises: every
+/// reader of the `Meta` node independently re-runs and re-allocates it in
+/// full, rather than only the first paying the cost. Mirrors the identical
+/// HeapSyn-engine fix in `vm.rs`'s `return_meta`/`enter_meta_body`.
 fn return_meta(
     state: &mut BcMachineState,
     view: MutatorHeapView<'_>,
+    prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
     env: RefPtr<BcEnvFrame>,
     meta_ref: DecodedRef,
     body_ref: DecodedRef,
 ) -> Result<(), ExecutionError> {
     let Some(cont) = state.stack.pop() else {
         // Nothing consumes the metadata: strip it and continue with the body.
-        state.current = resolve_ref(view, &state.constants, env, state.globals, body_ref)?;
+        enter_meta_body(state, view, prog, decoded, env, body_ref)?;
         return Ok(());
     };
     match cont {
@@ -1711,11 +1729,51 @@ fn return_meta(
         other => {
             // Any other continuation is metadata-transparent: strip and
             // re-offer the body, restoring the continuation.
-            state.current = resolve_ref(view, &state.constants, env, state.globals, body_ref)?;
+            //
+            // Order matters here (eu-bc34x follow-up): `other` must go back
+            // on the stack BEFORE `enter_meta_body` runs, not after. If
+            // `body_ref` names an updateable thunk, `enter_meta_body`
+            // pushes its own `Update` continuation for that thunk's slot —
+            // and that `Update` must end up *above* `other` (fire first,
+            // memoising the thunk) exactly as it would if this thunk had
+            // been entered directly via `Op::Atom` with `other` already
+            // sitting on the stack underneath. Pushing `other` afterwards
+            // put it on top instead: the thunk's completion value then went
+            // to `other` first (e.g. applying pending args to it), and only
+            // the *result of that* landed in the thunk's own slot — silently
+            // replacing what should have been memoised (e.g. a function)
+            // with whatever `other` produced from it (e.g. a list), a wrong
+            // value rather than a crash.
             state.stack.push(other);
+            enter_meta_body(state, view, prog, decoded, env, body_ref)?;
         }
     }
     Ok(())
+}
+
+/// Resolve a `Meta` node's `body_ref` as a genuine force to WHNF: a `Local`
+/// or `Global` ref naming an unevaluated, updateable thunk is entered
+/// through [`enter_local`]/[`enter_global`] (black-hole + `Update`-push),
+/// exactly as `Op::Atom` does, instead of the bare slot read `resolve_ref`
+/// performs. A `Value` ref is trivially WHNF already, so `resolve_ref`
+/// remains correct for it. See [`return_meta`]'s doc comment for why this
+/// matters (eu-bc34x).
+fn enter_meta_body(
+    state: &mut BcMachineState,
+    view: MutatorHeapView<'_>,
+    prog: &BytecodeProgram,
+    decoded: &DecodedProgram,
+    env: RefPtr<BcEnvFrame>,
+    body_ref: DecodedRef,
+) -> Result<(), ExecutionError> {
+    match body_ref {
+        DecodedRef::Local(i) => enter_local(state, view, prog, decoded, env, i as usize),
+        DecodedRef::Global(i) => enter_global(state, view, prog, decoded, i as usize),
+        DecodedRef::Value(_) => {
+            state.current = resolve_ref(view, &state.constants, env, state.globals, body_ref)?;
+            Ok(())
+        }
+    }
 }
 
 /// Build a partial-application (PAP) trampoline closure for a function
@@ -2238,7 +2296,7 @@ pub fn handle_op(
             let body_off = read_u32(code, &mut pc);
             let meta_ref = arg_ref(code, meta_off)?;
             let body_ref = arg_ref(code, body_off)?;
-            return_meta(state, view, env, meta_ref, body_ref)?;
+            return_meta(state, view, prog, decoded, env, meta_ref, body_ref)?;
         }
         Op::DeMeta => {
             let scr_off = read_u32(code, &mut pc);
@@ -2706,7 +2764,15 @@ pub fn handle_op_predecoded(
             }
         }
         Op::Meta => {
-            return_meta(state, view, env, instr.first_ref(), instr.second_ref())?;
+            return_meta(
+                state,
+                view,
+                prog,
+                decoded,
+                env,
+                instr.first_ref(),
+                instr.second_ref(),
+            )?;
         }
         Op::DeMeta => {
             state.stack.push(BcContinuation::DeMeta {

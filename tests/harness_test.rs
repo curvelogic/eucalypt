@@ -2888,6 +2888,58 @@ pub fn test_210_gua64_inline_arg_sharing() {
     run_test(&opts("210_gua64_inline_arg_sharing.eu"));
 }
 
+/// A correct compiler runs `228_bc34x_meta_body_memoisation.eu` in well
+/// under a second (measured ~0.09s, release build): three independently
+/// annotated bindings, each `slow(30000)`, each read 200 times via
+/// `map`+`sum`. A compiler that fails to memoise a metadata-annotated
+/// binding's body pays for `slow(30000)` again on every one of those 200
+/// reads instead of once — the pre-fix binary does not finish this file
+/// within 20s (measured; killed manually well before completion). Three
+/// orders of magnitude of headroom either side, so a heavily loaded build
+/// machine cannot flip the verdict.
+const BC34X_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+
+#[test]
+/// eu-bc34x: a metadata-annotated binding's RHS must memoise once and be
+/// shared across every reader, the same as an unannotated one.
+///
+/// This is a *complexity* regression (multiplicative instead of additive
+/// cost), so the verdict alone cannot gate it — the unfixed VM computes
+/// exactly the same answers, just far more slowly. The deadline below is
+/// the gate, and it runs first: with the defect present the subprocess is
+/// killed and the test fails, rather than the suite hanging. `run_test`
+/// afterwards applies the ordinary harness verdict (`RESULT` computed from
+/// all five checks in the file, including that metadata is still readable
+/// after the binding has been forced) so the correctness half is gated
+/// the usual way.
+pub fn test_228_bc34x_meta_body_memoisation() {
+    let mut cmd = std::process::Command::new(eu_binary());
+    cmd.args([
+        "--heap-limit-mib",
+        "2048",
+        "-t",
+        "main",
+        "tests/harness/228_bc34x_meta_body_memoisation.eu",
+    ]);
+    let output = run_with_deadline(cmd, BC34X_DEADLINE).unwrap_or_else(|| {
+        panic!(
+            "228_bc34x_meta_body_memoisation.eu did not complete within {}s — \
+             a metadata-annotated binding's body is being recomputed on every \
+             read instead of memoising once (eu-bc34x, `return_meta` in \
+             src/eval/machine/vm.rs and src/eval/bytecode/machine.rs)",
+            BC34X_DEADLINE.as_secs()
+        )
+    });
+    assert!(
+        output.status.success(),
+        "eu exited {:?} on 228_bc34x_meta_body_memoisation.eu\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    run_test(&opts("228_bc34x_meta_body_memoisation.eu"));
+}
+
 #[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame
