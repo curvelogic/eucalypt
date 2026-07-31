@@ -11,7 +11,7 @@ code: -
 primary: user tests/harness/errors/227_pp_non_serialisable_metadata.eu:14:12
 help-lines: 0
 note-lines: 0
-secondary-labels: 0
+secondary-labels: 1
 trace-frames: 1
 trace-user-frames: 1
 trace-prelude-frames: 0
@@ -23,6 +23,9 @@ error: par-map: cannot serialise a function across the parallel boundary
    │
 14 │ mk(x): { ` { checker: (_0 + 1) } odd: x
    │            ^^^^^^^^^^^^^^^^^^^^^
+15 │           v: x }
+16 │ result: [1, 2] par-map(mk)
+   │                ------- called from here
    │
    = stack trace:
      - result at 227_pp_non_serialisable_metadata.eu:16:16

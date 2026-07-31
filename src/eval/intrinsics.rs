@@ -1053,6 +1053,15 @@ lazy_static! {
             ty: function(vec![sym(), any(), list(), list()]).unwrap(),
             strict: vec![0, 2],
     },
+    Intrinsic { // 197
+            // Spine-only forcing sibling of seqList: walks a list to its end
+            // via the compile-time force DSL, without touching/unboxing
+            // element heads and without rebuilding. Used by PARMAP's own
+            // wrapper() to force xs's spine ahead of the parallel driver.
+            name: "seqSpine",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 

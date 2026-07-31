@@ -185,6 +185,60 @@ impl StgIntrinsic for SeqList {
 
 impl CallGlobal1 for SeqList {}
 
+/// SeqSpine — force the SPINE of a list to its end (every `ListCons` cell's
+/// tail, down to `ListNil`), WITHOUT forcing/unboxing head elements and
+/// WITHOUT rebuilding the list.
+///
+/// This exists so `par-map` can walk `xs`'s length via the compile-time
+/// `force` DSL, woven into a wrapper lambda, rather than by forcing each
+/// cell at runtime from inside an intrinsic (`IntrinsicMachine::force`).
+/// The two are not interchangeable: `force`/`case` compiles into the same
+/// Update-continuation machinery ordinary lazy variable forcing uses
+/// everywhere, so it memoises the ORIGINAL binding (a single-pass streaming
+/// import forced this way is truly consumed, once, for every later reader);
+/// `IntrinsicMachine::force` runs a throwaway sub-evaluation that does not
+/// wire an Update back to the caller's binding, so forcing a producer that
+/// way would leave it looking untouched to anyone else holding the same
+/// reference.
+///
+/// Unlike `SeqNumList`/`SeqStrList`/`SeqList`, this does not need to
+/// rebuild the list: the recursive call's own return value is never used
+/// by the caller (`force(SeqSpine.global(...), <continue with the ORIGINAL
+/// xs reference>)` — the wrapper discards what `SeqSpine` returns and
+/// carries on with the argument it already had). Forcing to WHNF is the
+/// entire point; each cell's tail is left updated in place, in the same
+/// heap object every other reference to `xs` shares. So the ListCons
+/// branch below just propagates the recursive result outward unchanged —
+/// there is nothing to reconstruct.
+pub struct SeqSpine;
+
+impl StgIntrinsic for SeqSpine {
+    fn name(&self) -> &str {
+        "seqSpine"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
+            1,
+            switch(
+                local(0),
+                vec![
+                    (DataConstructor::ListNil.tag(), local(0)),
+                    (
+                        DataConstructor::ListCons.tag(), // [h t]
+                        // Force the tail's spine (recursing), then just
+                        // propagate that already-WHNF result — nothing
+                        // further needs building.
+                        force(SeqSpine.global(lref(1)), local(0)),
+                    ),
+                ],
+            ),
+        )
+    }
+}
+
+impl CallGlobal1 for SeqSpine {}
+
 /// `__FORCE_WHNF` — force a thunk to weak head normal form from within an intrinsic.
 ///
 /// Unlike the STG-level `force` DSL combinator (which is woven into the

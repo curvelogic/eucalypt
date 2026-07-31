@@ -199,13 +199,17 @@ pub fn par_map(
 /// forced). Returns `(base, count)`: the elements occupy root slots
 /// `base .. base + count`.
 ///
-/// Tails are forced defensively, but the prelude wrapper has already walked the
-/// spine via `force-spine`, and that matters: the machine memoises a thunk by
-/// writing the result back into the environment slot naming it, and an
-/// intrinsic holding a resolved closure has no slot to write to. Forcing a
-/// spine *only* here would therefore leave every cell unmemoised — harmless for
-/// a pure list, but for a streaming import it would mean the next reader
-/// re-advances an already-consumed producer and sees a truncated list.
+/// Tails are forced defensively, but `PARMAP`'s own wrapper
+/// (`super::intrinsic::ParMap::wrapper`) has already walked the whole spine
+/// via `SeqSpine` (`super::super::force::SeqSpine`), and that matters: the
+/// compile-time `force`/`Case` DSL a wrapper is built from memoises a thunk
+/// by writing the result back into the environment slot naming it — the same
+/// mechanism ordinary lazy variable forcing relies on everywhere — whereas an
+/// intrinsic forcing a resolved closure at runtime (`IntrinsicMachine::force`)
+/// has no such slot to write to. Forcing a spine *only* here, that way, would
+/// therefore leave every cell unmemoised — harmless for a pure list, but for
+/// a streaming import it would mean the next reader re-advances an
+/// already-consumed producer and sees a truncated list.
 fn collect_spine(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,

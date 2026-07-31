@@ -11,7 +11,7 @@ code: -
 primary: user tests/harness/errors/225_pp_non_serialisable.eu:6:11
 help-lines: 0
 note-lines: 0
-secondary-labels: 0
+secondary-labels: 1
 trace-frames: 1
 trace-user-frames: 1
 trace-prelude-frames: 0
@@ -23,6 +23,8 @@ error: par-map: cannot serialise a function across the parallel boundary
   │
 6 │ mkfn(x): (+ x)
   │           ^
+7 │ result: [1, 2, 3] par-map(mkfn)
+  │                   ------- called from here
   │
   = stack trace:
     - result at 225_pp_non_serialisable.eu:7:19
