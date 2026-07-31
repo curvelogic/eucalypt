@@ -86,19 +86,31 @@ zdt-of(x): t"2024-01-15T00:00:00Z"
 t-zdt:          (xs par-map(zdt-of)) = (xs map(zdt-of))
 
 # `cal.zdt(...)`, deliberately ALSO present and deliberately paired with
-# `null` in the same value: this exact shape used to make an unrelated
-# `par-map` returning `null` misreport as "cannot serialise a type-data
-# value" (eu-pkgoo). Root cause was never zdt or type-data — `cal.zdt` is a
-# documented prelude binding, so it carries metadata and compiles to
-# Meta{meta, body}; forcing it from inside the PP serialiser hit a
-# return_meta code path (the eu-bc34x bug class — see #1098) that resolved
-# the body without properly forcing an updateable thunk through it. This
-# check is the regression guard: nothing else in the suite would notice if
-# that broke again. KEEP BOTH forms above and below — the literal for codec
+# `null` in the same value: a par-map returning `null` must not misreport
+# as "cannot serialise a type-data value" merely because an unrelated,
+# UNUSED `cal.zdt(...)` declaration exists elsewhere in the unit. This was
+# eu-pkgoo, fixed by round-tripping `TypeData` faithfully across the
+# boundary (serialise.rs) instead of rejecting it — the root cause was
+# `null`'s own prelude declaration carrying `type: s"null"` documentation
+# metadata, exposed only when the compiler happened NOT to inline `null`'s
+# reference (an unrelated declaration existing elsewhere in the unit can tip
+# that decision either way; whether it does must not be part of the
+# contract). KEEP BOTH forms above and below — the literal for TAG_ZDT codec
 # coverage, this one as the regression guard — do not "simplify" one away.
 zdt-cal-of(x): cal.zdt(2024, 1, x, 0, 0, 0, "+0000")
 null-and-zdt-cal(x): [always-null(x), zdt-cal-of(x)]
 t-zdt-cal-regression: (xs par-map(null-and-zdt-cal)) = (xs map(null-and-zdt-cal))
+
+# `=` above ignores metadata, so it cannot see whether metadata itself
+# survives the boundary. This checks that directly: a value carrying
+# user-visible `type:` metadata (a `TypeData` value, same kind eu-pkgoo was
+# about) round-trips identically, by comparing the METADATA each path
+# produces (via `meta()`), not just the values. Fault-injection verified:
+# rejecting `TypeData` in serialise.rs's encode arm (the pre-fix behaviour)
+# makes this fail with the same "cannot serialise a type-data value" error;
+# restoring it passes.
+mk-typed(x): x // { type: s"my-type" }
+t-typedata-meta: (xs par-map(mk-typed) map(meta)) = (xs map(mk-typed) map(meta))
 
 # Nested: one of each per element inside a block that also nests a list —
 # the boundary codec's recursive block/list encoding is exercised together
@@ -119,6 +131,7 @@ checks: [t-map-empty, t-map-one, t-map-xs, t-map-order, t-map-str, t-map-block,
          t-max-one, t-max-xs, t-min-xs,
          t-concat-empty, t-concat-xs,
          t-meta-render, t-block-render, t-meta-hidden,
-         t-bool, t-null, t-sym, t-zdt, t-zdt-cal-regression, t-mixed-render]
+         t-bool, t-null, t-sym, t-zdt, t-zdt-cal-regression, t-typedata-meta,
+         t-mixed-render]
 
 RESULT: if(checks all-true?, :PASS, :FAIL)

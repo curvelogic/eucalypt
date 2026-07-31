@@ -1,11 +1,11 @@
 //! Value serialiser for the process-parallelism boundary (spec §6).
 //!
 //! Only the **serialisable-data subset** crosses the arena: numbers, strings,
-//! symbols, booleans, null, lists of serialisable, and blocks of serialisable.
-//! A function, IO action, or any opaque value (set, vector, PRNG, producer
-//! handle, …) is a programmer error at the boundary — surfaced as
-//! [`ExecutionError::NotSerialisable`] naming the value's kind and the
-//! combinator, rather than silently mishandled.
+//! symbols, booleans, null, type-data, lists of serialisable, and blocks of
+//! serialisable. A function, IO action, or any opaque value (set, vector,
+//! PRNG, producer handle, …) is a programmer error at the boundary —
+//! surfaced as [`ExecutionError::NotSerialisable`] naming the value's kind
+//! and the combinator, rather than silently mishandled.
 //!
 //! [`force_and_serialise`] forces a value, deep-forces it (driving the machine
 //! to force nested thunks) and byte-encodes it; [`deserialise_value`] rebuilds
@@ -18,8 +18,18 @@
 //! change what the value renders as — `map` preserves it, and `par-map`
 //! promises to be identical to `map`. [`force_and_serialise`] recovers it
 //! through [`IntrinsicMachine::take_stripped_meta`] and encodes it ahead of
-//! the body; metadata that is not itself serialisable raises the boundary
-//! error rather than being dropped.
+//! the body, through the same path as any other value — including a
+//! `type: s"…"` field, which round-trips faithfully as `TAG_TYPEDATA` (see
+//! below) rather than raising. That matters because *whether* a Meta wrapper
+//! is even seen here is an implementation detail of the compiler's own
+//! choosing: a prelude global's own documentation (e.g. `null: `` ` {doc:
+//! ..., type: s"null"} `` __NULL`) is stripped and inlined away when the
+//! global's reference is inlined at its call site, but forced through this
+//! exact path when it is left as a genuine global — a decision that can flip
+//! merely because an unrelated, unused declaration elsewhere in the same
+//! unit changed the inliner's budget (eu-pkgoo). The boundary contract must
+//! not depend on that, so `type:` metadata is treated as ordinary
+//! serialisable data rather than a special case to reject.
 //!
 //! Every handle held across a `force()` lives in the machine's root set (see
 //! [`super::roots`]) and is read back from there afterwards — the collector
@@ -35,6 +45,7 @@
 //!   0x07 list     u32 count + `count` encoded values
 //!   0x08 block    u32 count + `count` × (encoded key scalar, encoded value)
 //!   0x09 meta     encoded metadata value + encoded body value
+//!   0x0A type-data u32 length + UTF-8 bytes (the type-DSL text, e.g. "null")
 //! ```
 
 use chrono::DateTime;
@@ -62,6 +73,7 @@ const TAG_ZDT: u8 = 0x06;
 const TAG_LIST: u8 = 0x07;
 const TAG_BLOCK: u8 = 0x08;
 const TAG_META: u8 = 0x09;
+const TAG_TYPEDATA: u8 = 0x0A;
 
 const NUM_U64: u8 = 0;
 const NUM_I64: u8 = 1;
@@ -189,7 +201,16 @@ fn force_slot_and_serialise(
     if let Some(meta) = machine.take_stripped_meta() {
         out.push(TAG_META);
         // The metadata is itself an unforced value, and may in principle carry
-        // metadata of its own, so it goes through the same path.
+        // metadata of its own, so it goes through the same path. A prelude
+        // global's OWN documentation (e.g. `null: `` ` {doc: ..., type:
+        // s"null"} `` __NULL`) is Meta-wrapped exactly like user
+        // `:suppress`/`:doc` metadata is, and its `type: s"..."` field is a
+        // `TypeData` value — round-tripped faithfully (see `TAG_TYPEDATA`
+        // below), which is what makes this path safe regardless of whether
+        // the compiler happened to inline the global's reference (inlining
+        // discards the Meta wrapper before this code ever runs) or left it
+        // as a genuine global forced here — an implementation detail the
+        // boundary contract must not be sensitive to (eu-pkgoo).
         with_roots(machine, |machine| {
             let meta_slot = machine.gc_root_push(meta);
             force_slot_and_serialise(machine, view, meta_slot, combinator, out)
@@ -256,7 +277,29 @@ fn serialise_forced(
             Ok(DataConstructor::ListCons) => serialise_list(machine, view, slot, combinator, out),
             Ok(DataConstructor::Block) => serialise_block(machine, view, slot, combinator, out),
             Ok(DataConstructor::BoxedTypeData) => {
-                Err(not_serialisable(smid, combinator, "type-data value"))
+                // A closed, statically-known shape (a single type-DSL string
+                // field: `s"…"` compiles to `BoxedTypeData(str)`), so it
+                // round-trips faithfully rather than raising — see the
+                // module doc (eu-pkgoo) for why treating it as an ordinary
+                // serialisable value, not a special-cased rejection, is what
+                // makes the boundary contract hold regardless of whether the
+                // compiler happened to inline the reference that produced it.
+                let field = machine
+                    .data_field(view, &whnf, 0)
+                    .ok_or_else(|| corrupt(smid, "boxed type-data payload"))?;
+                let field = machine.force(field)?;
+                let native = machine
+                    .value_native(view, &field)
+                    .ok_or_else(|| not_serialisable(smid, combinator, "opaque boxed value"))?;
+                match native {
+                    Native::Str(ptr) => {
+                        out.push(TAG_TYPEDATA);
+                        let scoped = view.scoped(ptr);
+                        write_len_bytes(out, (*scoped).as_str().as_bytes());
+                        Ok(())
+                    }
+                    _ => Err(not_serialisable(smid, combinator, "type-data value")),
+                }
             }
             Ok(
                 DataConstructor::IoReturn
@@ -473,6 +516,12 @@ pub fn deserialise_value(
             let dt = DateTime::parse_from_rfc3339(&s).map_err(|_| corrupt(smid, "bad rfc3339"))?;
             let field = machine.native_value(view, Native::Zdt(dt))?;
             machine.data_value(view, DataConstructor::BoxedZdt.tag(), &[field])
+        }
+        TAG_TYPEDATA => {
+            let s = read_str(cur, smid)?;
+            let ptr = view.str(s.as_str())?.as_ptr();
+            let field = machine.native_value(view, Native::Str(ptr))?;
+            machine.data_value(view, DataConstructor::BoxedTypeData.tag(), &[field])
         }
         TAG_LIST => {
             let count = read_u32(cur, smid)?;
