@@ -80,16 +80,25 @@ t-null:         (xs par-map(always-null)) = (xs map(always-null))
 sym-of(x): if(is-even(x), :even, :odd)
 t-sym:          (xs par-map(sym-of)) = (xs map(sym-of))
 
-# ZDT LITERAL (`t"…"`), not `cal.zdt(...)`: this unit merely NAMING a
-# `cal.zdt(...)` call site anywhere — even one never used by any check that
-# runs — makes an unrelated `par-map` returning `null` elsewhere in the same
-# unit misreport a real `null`/`BoxedZdt` value as a type-data value. That is
-# a genuine, separately-filed bug (eu-pkgoo; see the fixture's own
-# `cal.zdt`-vs-literal repro in the issue) that this fixture must not trip
-# over incidentally while testing something else. The literal form exercises
-# the same TAG_ZDT encode/decode arm without the trigger.
+# ZDT LITERAL (`t"…"`) exercises the TAG_ZDT encode/decode arm — the
+# boundary-codec coverage this section exists for.
 zdt-of(x): t"2024-01-15T00:00:00Z"
 t-zdt:          (xs par-map(zdt-of)) = (xs map(zdt-of))
+
+# `cal.zdt(...)`, deliberately ALSO present and deliberately paired with
+# `null` in the same value: this exact shape used to make an unrelated
+# `par-map` returning `null` misreport as "cannot serialise a type-data
+# value" (eu-pkgoo). Root cause was never zdt or type-data — `cal.zdt` is a
+# documented prelude binding, so it carries metadata and compiles to
+# Meta{meta, body}; forcing it from inside the PP serialiser hit a
+# return_meta code path (the eu-bc34x bug class — see #1098) that resolved
+# the body without properly forcing an updateable thunk through it. This
+# check is the regression guard: nothing else in the suite would notice if
+# that broke again. KEEP BOTH forms above and below — the literal for codec
+# coverage, this one as the regression guard — do not "simplify" one away.
+zdt-cal-of(x): cal.zdt(2024, 1, x, 0, 0, 0, "+0000")
+null-and-zdt-cal(x): [always-null(x), zdt-cal-of(x)]
+t-zdt-cal-regression: (xs par-map(null-and-zdt-cal)) = (xs map(null-and-zdt-cal))
 
 # Nested: one of each per element inside a block that also nests a list —
 # the boundary codec's recursive block/list encoding is exercised together
@@ -110,6 +119,6 @@ checks: [t-map-empty, t-map-one, t-map-xs, t-map-order, t-map-str, t-map-block,
          t-max-one, t-max-xs, t-min-xs,
          t-concat-empty, t-concat-xs,
          t-meta-render, t-block-render, t-meta-hidden,
-         t-bool, t-null, t-sym, t-zdt, t-mixed-render]
+         t-bool, t-null, t-sym, t-zdt, t-zdt-cal-regression, t-mixed-render]
 
 RESULT: if(checks all-true?, :PASS, :FAIL)
