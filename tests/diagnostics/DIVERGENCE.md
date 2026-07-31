@@ -18,3 +18,9 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/035_nested_fn_trace` | user tests/harness/errors/035_nested_fn_trace.eu:2:12 | user tests/harness/errors/035_nested_fn_trace.eu:1:11 | 1 (1 user) | 1 (1 user) |
 | `errors/143_bitwise_float` | none | user tests/harness/errors/143_bitwise_float.eu:3:13 | 0 (0 user) | 0 (0 user) |
 | `errors/error_176` | user tests/harness/errors/error_176.eu:19:32 | user tests/harness/errors/error_176.eu:19:32 | 1 (1 user) | 0 (0 user) |
+
+## Engine scope
+
+The table above is for the **default engine** (bytecode, pre-decoded dispatch) only — the shipped default, and the only dispatch path this gate exercises with a real blob. It says nothing about the two non-default paths.
+
+`EU_HEAPSYN=1` and `EU_PREDECODE=0` are not asserted against these goldens at all, and each diverges from them on its own set of fixtures — a separate, already-known issue, not part of the count above. As of eu-l51r7's most recent count: 6 fixtures diverge under `EU_HEAPSYN=1`, and the same 6 diverge under `EU_PREDECODE=0`. In every case the difference is one `stack trace:` note frame missing, duplicating the primary label's own file:line:col — never a wrong location or a missing primary. See eu-l51r7 for the full inventory; the owner ruled this does not block 0.14 (P2, characterised and pinned per-engine rather than fixed).

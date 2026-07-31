@@ -1553,17 +1553,33 @@ impl MachineState {
     /// only a `Lambda` form's header carries one; see `LambdaForm::annotation`
     /// in `stg/syntax.rs`) — the compiler instead wraps the thunk's body in a
     /// leading `HeapSyn::Ann` node, so peek that directly (eu-1tkk.7.18).
+    ///
+    /// A binding group can sit ahead of that `Ann` — e.g. the inliner's
+    /// argument-sharing `Let` (eu-gua64) wraps `Ann(App)` as `Let(...,
+    /// Ann(App))` when a callee's non-duplicable argument is used more than
+    /// once — which hides the leading `Ann` from a single-node peek and
+    /// silently drops the annotation (eu-7fjiq). Repeated inlining can stack
+    /// more than one such wrapper (each pass may wrap the previous result in
+    /// its own sharing `Let`), so look through every leading `Let`/`LetRec`
+    /// rather than just one.
     fn target_annotation(closure: &SynClosure) -> Smid {
         if closure.annotation().is_valid() {
             return closure.annotation();
         }
         // SAFETY: closure.code() points at a HeapSyn node in the compiled,
         // immutable STG graph, live for the program's duration — the same
-        // unsafe peek already used at the top of `dispatch`.
-        let code: &HeapSyn = unsafe { &*closure.code().as_ptr() };
-        match code {
-            HeapSyn::Ann { smid, .. } => *smid,
-            _ => Smid::default(),
+        // unsafe peek already used at the top of `dispatch`. Each `body`
+        // pointer walked below is likewise a pointer into that same
+        // immutable graph.
+        let mut code: &HeapSyn = unsafe { &*closure.code().as_ptr() };
+        loop {
+            match code {
+                HeapSyn::Ann { smid, .. } => return *smid,
+                HeapSyn::Let { body, .. } | HeapSyn::LetRec { body, .. } => {
+                    code = unsafe { &*body.as_ptr() };
+                }
+                _ => return Smid::default(),
+            }
         }
     }
 
@@ -2939,7 +2955,7 @@ pub mod tests {
     use crate::eval::stg::syntax::{ex::*, StgSyn};
     use crate::eval::{emit::DebugEmitter, stg::syntax::dsl::*};
 
-    use super::{evaluate_to_whnf_impl, Machine};
+    use super::{evaluate_to_whnf_impl, Machine, MachineState};
 
     lazy_static! {
         static ref EMPTY_INTRINSICS: Vec<Box<dyn StgIntrinsic>> = vec![];
@@ -3344,5 +3360,90 @@ pub mod tests {
             caller_closure.code(),
             "caller closure restored, not left as the sub-run's"
         );
+    }
+
+    /// eu-7fjiq: `target_annotation` must look *through* a leading
+    /// `Let`/`LetRec` to find the thunk's leading `Ann`, not just peek the
+    /// single leading node. A binding group ahead of the `Ann` — e.g. the
+    /// inliner's argument-sharing `Let` (eu-gua64) compiling `Ann(App)` as
+    /// `Let(..., Ann(App))` — must not hide the annotation.
+    ///
+    /// Fault injection: reverting `target_annotation` to a bare
+    /// `match code { HeapSyn::Ann { smid, .. } => *smid, _ => Smid::default() }`
+    /// (no `Let`/`LetRec` arm) makes both `let_through_single_let` and
+    /// `let_through_nested_let_letrec` return `Smid::default()` instead of the
+    /// expected smid, failing the assertions below.
+    #[test]
+    pub fn test_target_annotation_looks_through_let() {
+        let smid = Smid::from(42);
+        let syn = let_(vec![], ann(smid, atom(num(9))));
+
+        let m = Machine::new(Box::new(DebugEmitter::default()), true, None, false, false);
+        let blank = m.mutate(Init, ()).unwrap();
+        let closure = m
+            .mutate(
+                Load {
+                    syntax: syn,
+                    pool: RefCell::new(SymbolPool::new()),
+                },
+                blank,
+            )
+            .unwrap();
+
+        assert_eq!(
+            MachineState::target_annotation(&closure),
+            smid,
+            "a leading Let wrapping Ann(App) must not hide the call-site smid"
+        );
+    }
+
+    /// As above, but with the `Ann` behind *two* stacked binding groups
+    /// (`Let(LetRec(Ann(...)))`) — repeated inlining can stack more than one
+    /// sharing wrapper, so the look-through must recurse rather than peek
+    /// only one level deep.
+    #[test]
+    pub fn test_target_annotation_looks_through_nested_let_letrec() {
+        let smid = Smid::from(99);
+        let syn = let_(vec![], letrec_(vec![], ann(smid, atom(num(1)))));
+
+        let m = Machine::new(Box::new(DebugEmitter::default()), true, None, false, false);
+        let blank = m.mutate(Init, ()).unwrap();
+        let closure = m
+            .mutate(
+                Load {
+                    syntax: syn,
+                    pool: RefCell::new(SymbolPool::new()),
+                },
+                blank,
+            )
+            .unwrap();
+
+        assert_eq!(
+            MachineState::target_annotation(&closure),
+            smid,
+            "nested Let/LetRec wrappers must all be looked through to reach the Ann"
+        );
+    }
+
+    /// A `Let` whose body genuinely carries no annotation (no `Ann` anywhere
+    /// along the leading spine) must still fall back to `Smid::default()` —
+    /// the look-through must not invent a location that was never compiled.
+    #[test]
+    pub fn test_target_annotation_let_without_ann_is_default() {
+        let syn = let_(vec![], atom(num(9)));
+
+        let m = Machine::new(Box::new(DebugEmitter::default()), true, None, false, false);
+        let blank = m.mutate(Init, ()).unwrap();
+        let closure = m
+            .mutate(
+                Load {
+                    syntax: syn,
+                    pool: RefCell::new(SymbolPool::new()),
+                },
+                blank,
+            )
+            .unwrap();
+
+        assert_eq!(MachineState::target_annotation(&closure), Smid::default());
     }
 }

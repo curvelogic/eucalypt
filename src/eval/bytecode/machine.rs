@@ -2941,6 +2941,18 @@ fn peek_code_ref(decoded: &DecodedProgram, byte_off: CodeRef) -> CodeRef {
 /// `closure.code()` under pre-decode already *is* that ordinal (an `Ann`
 /// offset is aliased straight to its body's ordinal and never gets one of its
 /// own), so no byte-peek is needed on that path (eu-1tkk.7.18).
+///
+/// A binding group can sit ahead of that `Ann` — e.g. the inliner's
+/// argument-sharing `Let` (eu-gua64) wraps `Ann(App)` as `Let(...,
+/// Ann(App))` when a callee's non-duplicable argument is used more than
+/// once — which hides the leading `Ann` from a single-node peek and
+/// silently drops the annotation (eu-7fjiq, matching the identical fix in
+/// `machine::vm::Machine::target_annotation`). Unlike `Op::Ann`, `Op::Let`/
+/// `Op::LetRec` are NOT folded out of dispatch — they allocate bindings and
+/// must still run — so this walks *past* them to find the annotation without
+/// touching how `ordinal_for`/`step`/`step_predecoded` treat them. Repeated
+/// inlining can stack more than one such wrapper, so the walk loops rather
+/// than peeking just one level.
 fn target_annotation(
     prog: &BytecodeProgram,
     decoded: &DecodedProgram,
@@ -2951,18 +2963,48 @@ fn target_annotation(
     }
     if decoded.off_of.is_empty() {
         let code = prog.code.as_slice();
-        let off = closure.code() as usize;
-        if off < code.len() && Op::from_u8(code[off]) == Some(Op::Ann) {
-            let mut pc = off + 1;
-            return Smid::from(read_u32(code, &mut pc));
+        let mut off = closure.code() as usize;
+        loop {
+            if off >= code.len() {
+                return Smid::default();
+            }
+            match Op::from_u8(code[off]) {
+                Some(Op::Ann) => {
+                    let mut pc = off + 1;
+                    return Smid::from(read_u32(code, &mut pc));
+                }
+                Some(Op::Let) | Some(Op::LetRec) => {
+                    // `[op][u32 count][count * form header][u32 body_off]` —
+                    // skip past the bindings to the trailing body offset
+                    // (mirrors the `Op::Let`/`Op::LetRec` decode in `step`).
+                    let mut pc = off + 1;
+                    let count = read_u32(code, &mut pc) as usize;
+                    for _ in 0..count {
+                        read_form_header(code, &mut pc);
+                    }
+                    off = read_u32(code, &mut pc) as usize;
+                }
+                _ => return Smid::default(),
+            }
         }
-        Smid::default()
     } else {
-        decoded
-            .smids
-            .get(closure.code() as usize)
-            .copied()
-            .unwrap_or_default()
+        let mut ord = closure.code() as usize;
+        loop {
+            match decoded.smids.get(ord).copied() {
+                Some(smid) if smid.is_valid() => return smid,
+                Some(_) => {}
+                None => return Smid::default(),
+            }
+            match decoded.instrs.get(ord).map(|i| i.op) {
+                Some(Op::Let) | Some(Op::LetRec) => {
+                    // `Instr::a` holds the body ordinal for Let/LetRec
+                    // (`predecode.rs` `Decoder::decode_node`), so follow it
+                    // rather than re-parsing the byte stream.
+                    ord = decoded.instrs[ord].a as usize;
+                }
+                _ => return Smid::default(),
+            }
+        }
     }
 }
 
@@ -4973,6 +5015,118 @@ mod tests {
         assert_eq!(hdr.kind, crate::eval::bytecode::FORM_THUNK);
         assert_eq!(hdr.arity, 0);
         assert!((hdr.body as usize) < prog.code.len());
+    }
+
+    /// eu-7fjiq: `target_annotation` must look *through* a leading
+    /// `Let`/`LetRec` to find the thunk's leading `Ann`, on both dispatch
+    /// paths — the inliner's argument-sharing `Let` (eu-gua64) compiles
+    /// `Ann(App)` as `Let(..., Ann(App))`, hiding the annotation from a
+    /// single-node peek.
+    ///
+    /// Fault injection: reverting either arm of `target_annotation` to a bare
+    /// byte-offset / ordinal `Ann` check (no `Op::Let`/`Op::LetRec` handling)
+    /// makes the corresponding assertion below fail (`Smid::default()`
+    /// instead of the expected smid).
+    #[test]
+    fn target_annotation_looks_through_let_byte_dispatch() {
+        let smid = Smid::from(42);
+        let syn = dsl::let_(vec![], dsl::ann(smid, dsl::atom(dsl::num(9))));
+        let (prog, root, _) = encode(&syn, &[]);
+
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let env = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let closure = BcClosure::new(root, env);
+
+        // Byte-dispatch path: an empty `DecodedProgram` signals `off_of` is
+        // empty, so `target_annotation` peeks the raw byte stream.
+        assert_eq!(
+            target_annotation(&prog, &DecodedProgram::default(), &closure),
+            smid,
+            "byte-dispatch: a leading Let wrapping Ann(App) must not hide the smid"
+        );
+    }
+
+    #[test]
+    fn target_annotation_looks_through_let_predecoded() {
+        let smid = Smid::from(42);
+        let syn = dsl::let_(vec![], dsl::ann(smid, dsl::atom(dsl::num(9))));
+        let (prog, root, global_forms) = encode(&syn, &[]);
+        let decoded = decode_program(&prog, root, &global_forms).unwrap();
+
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let env = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let closure = BcClosure::new(decoded.ordinal(root), env);
+
+        assert_eq!(
+            target_annotation(&prog, &decoded, &closure),
+            smid,
+            "pre-decode: a leading Let wrapping Ann(App) must not hide the smid"
+        );
+    }
+
+    /// As above, but the `Ann` sits behind *two* stacked binding groups
+    /// (`Let(LetRec(Ann(...)))`) — repeated inlining can stack more than one
+    /// sharing wrapper, so the look-through must recurse rather than peek
+    /// only one level deep. Covers both dispatch paths.
+    #[test]
+    fn target_annotation_looks_through_nested_let_letrec() {
+        let smid = Smid::from(99);
+        let syn = dsl::let_(
+            vec![],
+            dsl::letrec_(vec![], dsl::ann(smid, dsl::atom(dsl::num(1)))),
+        );
+        let (prog, root, global_forms) = encode(&syn, &[]);
+
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let env = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+
+        assert_eq!(
+            target_annotation(
+                &prog,
+                &DecodedProgram::default(),
+                &BcClosure::new(root, env)
+            ),
+            smid,
+            "byte-dispatch: nested Let/LetRec wrappers must all be looked through"
+        );
+
+        let decoded = decode_program(&prog, root, &global_forms).unwrap();
+        assert_eq!(
+            target_annotation(&prog, &decoded, &BcClosure::new(decoded.ordinal(root), env)),
+            smid,
+            "pre-decode: nested Let/LetRec wrappers must all be looked through"
+        );
+    }
+
+    /// A `Let` whose body genuinely carries no annotation must still fall
+    /// back to `Smid::default()` on both dispatch paths — the look-through
+    /// must not invent a location that was never compiled.
+    #[test]
+    fn target_annotation_let_without_ann_is_default() {
+        let syn = dsl::let_(vec![], dsl::atom(dsl::num(9)));
+        let (prog, root, global_forms) = encode(&syn, &[]);
+
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let env = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+
+        assert_eq!(
+            target_annotation(
+                &prog,
+                &DecodedProgram::default(),
+                &BcClosure::new(root, env)
+            ),
+            Smid::default()
+        );
+
+        let decoded = decode_program(&prog, root, &global_forms).unwrap();
+        assert_eq!(
+            target_annotation(&prog, &decoded, &BcClosure::new(decoded.ordinal(root), env)),
+            Smid::default()
+        );
     }
 
     use crate::eval::memory::array::Array;
