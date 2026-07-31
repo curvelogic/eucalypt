@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/226_pp_concat_non_serialisable
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/226_pp_concat_non_serialisable.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/226_pp_concat_non_serialisable.eu:5:11
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: par-concat: cannot serialise a function across the parallel boundary
+  ┌─ tests/harness/errors/226_pp_concat_non_serialisable.eu:5:11
+  │
+5 │ mkfn(x): (+ x)
+  │           ^
+  │
+  = stack trace:
+    - result at 226_pp_concat_non_serialisable.eu:6:19

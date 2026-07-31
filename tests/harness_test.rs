@@ -3028,6 +3028,29 @@ pub fn test_209_mqlkv_block_import_bad_embedding() {
 }
 
 #[test]
+/// eu-u9xj.6 (PP) — a par-map whose f returns a non-serialisable value (a
+/// function) raises the parallel-boundary error naming the value kind and the
+/// combinator, on the sequential path too (exit 1). Validated against the
+/// `.expect` sidecar.
+pub fn test_error_225_pp_non_serialisable() {
+    run_error_test(&error_opts("225_pp_non_serialisable.eu"));
+}
+
+#[test]
+/// eu-u9xj.6 (PP) — the boundary error names the combinator the user actually
+/// wrote. The reductions are prelude wrappers over the one `__PARMAP`
+/// primitive, so without the combinator symbol threaded through they all
+/// reported themselves as `par-map`.
+pub fn test_error_226_pp_concat_non_serialisable() {
+    run_error_test(&error_opts("226_pp_concat_non_serialisable.eu"));
+}
+
+#[test]
+pub fn test_error_227_pp_non_serialisable_metadata() {
+    run_error_test(&error_opts("227_pp_non_serialisable_metadata.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
@@ -3296,6 +3319,292 @@ pub fn test_213_edn_large_integer() {
 #[test]
 pub fn test_221_wpswc_settled_slot_passthrough() {
     run_test(&opts("221_wpswc_settled_slot_passthrough.eu"));
+}
+
+/// eu-u9xj.6 (PP) — the process-parallelism combinators are semantically
+/// identical to their sequential forms. This in-process test exercises the
+/// SEQUENTIAL path only (the libtest harness process is multi-threaded, so it
+/// must not force the COW-fork path — forking a multi-threaded process is
+/// unsafe, spike R1); the sequential path still round-trips every result
+/// through the same serialise/deserialise codec the fork path uses. The real
+/// fork path is validated out-of-process below.
+#[test]
+pub fn test_222_pp_par_equivalence() {
+    run_test(&opts("222_pp_par_equivalence.eu"));
+}
+
+/// eu-u9xj.6 (PP) — a streaming import must not disable `par-*`, and `par-*`
+/// must not consume a stream destructively. Regression test for the first
+/// boundary check, which keyed on producer REGISTRATION (import time) held in
+/// process-lifetime state, so any unit naming a stream import lost `par-*` —
+/// as did every later unit evaluated by the same process.
+#[test]
+pub fn test_224_pp_stream_import_boundary() {
+    run_test(&opts("224_pp_stream_import_boundary.eu"));
+}
+
+/// eu-pazes — `max-of`/`min-of` must be linear in list length.
+///
+/// The fixture's own `RESULT` gates the semantics; this wrapper gates the
+/// COMPLEXITY. It runs the fixture out of process under a wall-clock deadline
+/// so that a super-linear implementation is KILLED and reported, rather than
+/// wedging `cargo test` indefinitely.
+///
+/// `--source-prelude` is deliberate, and is what makes this a gate at all.
+/// The blow-up guarded against is inlining work duplication: `max(l, r):
+/// if(l > r, l, r)` uses `r` twice, so beta-reducing `max(l head, max-of(l
+/// tail))` at the call site leaves two copies of the recursive call and gives
+/// T(n) = 2·T(n−1). That reduction happens only on the SOURCE-prelude path —
+/// in blob mode `max-of` is an opaque baked global that is never inlined, so
+/// the superseded definition measures LINEAR there (`range(1, 20000) max-of`
+/// in 153 ms) while on the source path it needs 2.6 s for **22** elements and
+/// does not finish 24 within 60 s. Without the flag this test would pass in
+/// every blob-mode job with the old definition restored.
+///
+/// The bound is deliberately loose — the fixture reduces 20 000 elements in
+/// ~1.1s release, and the shape it replaced does not finish it within the
+/// deadline at all. Anything between those is a regression; no plausible CI
+/// slowness closes a gap that wide.
+#[test]
+pub fn test_223_pazes_max_of_linear() {
+    let deadline = std::time::Duration::from_secs(180);
+    let mut cmd = std::process::Command::new(eu_binary());
+    cmd.arg("test")
+        .arg("--source-prelude")
+        .arg("tests/harness/223_pazes_max_of_linear.eu")
+        .arg("--heap-limit-mib")
+        .arg("8192");
+
+    let started = std::time::Instant::now();
+    let out = run_with_deadline(cmd, deadline).unwrap_or_else(|| {
+        panic!(
+            "max-of/min-of did not reduce a 20000-element list within {}s — \
+             they are no longer linear in list length (eu-pazes)",
+            deadline.as_secs()
+        )
+    });
+    assert!(
+        out.status.success(),
+        "223_pazes_max_of_linear failed after {:?}: {}{}",
+        started.elapsed(),
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// eu-u9xj.6 (PP) — the actual COW-fork path, validated out of process (a
+/// fresh single-threaded-at-fork `eu` binary, safe to fork) on BOTH engines
+/// (default bytecode and `EU_HEAPSYN=1`). Their stdout must be byte-identical
+/// to the sequential (oracle) run — the core "never semantically observable"
+/// guarantee (spec §8) plus engine equivalence (spike R5).
+///
+/// GC verification of the fork path is not forced here (a blob-less debug
+/// binary compiling the prelude from source under `EU_GC_VERIFY=2`, spawned
+/// three times, is far too slow for the shared blob-less `test` job). Instead
+/// the dedicated `test-pp-parallelism` CI job runs this test with a prelude
+/// blob generated first and `EU_GC_VERIFY=2` in the job environment, which the
+/// spawned binary inherits — forking under verification, quickly.
+///
+/// The parallel runs assert on `EU_PP_TRACE` that they DID fork. Without that
+/// the test is a tautology: the whole point of the design is that the fork is
+/// unobservable in the output, so a build that silently never forks — because
+/// the process is not a declared fork-safe host, say — would pass by matching
+/// the oracle it never left.
+#[test]
+pub fn test_pp_fork_path_equivalence_both_engines() {
+    let fixture = "tests/harness/testdata/pp_fork_fixture.eu";
+
+    let run = |env: &[(&str, &str)], must_fork: bool| -> String {
+        let mut cmd = std::process::Command::new(eu_binary());
+        cmd.arg(fixture).arg("--heap-limit-mib").arg("12288");
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        // Generous deadline: a blob-less debug binary compiles the whole
+        // prelude from source on every spawn (the shared `test` job runs
+        // blob-less by design).
+        let out = run_with_deadline(cmd, std::time::Duration::from_secs(300))
+            .expect("eu did not complete within the deadline");
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(
+            out.status.success(),
+            "eu exited non-zero for env {env:?}: {stderr}"
+        );
+        // Only unix has a fork path at all; on Windows every `par-*` is
+        // sequential by construction, so requiring a fork there would fail a
+        // correct build. The equivalence assertions below still run — they
+        // just compare two sequential runs, which is a cheap smoke test of the
+        // combinators and the codec on that platform.
+        if must_fork && cfg!(unix) {
+            assert!(
+                stderr.contains("forked"),
+                "expected the COW-fork path for env {env:?}, but the trace says:\n{stderr}"
+            );
+        }
+        let stdout = String::from_utf8(out.stdout).expect("eu stdout was not utf-8");
+        // The fixture's own oracle checks: `par-*` compared against `map`
+        // itself, as rendered text. Comparing the three configurations with
+        // each other cannot catch a codec defect — they all share the codec —
+        // so these are what gate it (metadata loss, eu-u9xj.6 review A2).
+        for key in ["map-ok", "meta-ok"] {
+            assert!(
+                stdout.contains(&format!("{key}: true")),
+                "{key} was not true for env {env:?} — par-map diverged from map:\n{stdout}"
+            );
+        }
+        stdout
+    };
+
+    let oracle = run(&[], false);
+    let fork_bytecode = run(
+        &[
+            ("EU_PP_THRESHOLD", "1"),
+            ("EU_PP_WORKERS", "4"),
+            ("EU_PP_TRACE", "1"),
+        ],
+        true,
+    );
+    let fork_heapsyn = run(
+        &[
+            ("EU_HEAPSYN", "1"),
+            ("EU_PP_THRESHOLD", "1"),
+            ("EU_PP_WORKERS", "4"),
+            ("EU_PP_TRACE", "1"),
+        ],
+        true,
+    );
+
+    assert_eq!(
+        fork_bytecode, oracle,
+        "bytecode fork path diverged from the sequential result"
+    );
+    assert_eq!(
+        fork_heapsyn, oracle,
+        "HeapSyn fork path diverged from the sequential result"
+    );
+}
+
+/// eu-u9xj.6 (PP) — the parallel driver must survive a collection that
+/// happens *during* the map.
+///
+/// The driver accumulates heap handles across `force()` calls (mapping N
+/// elements means holding N results while forcing each), and `force()` runs
+/// the machine, which collects. Handles left on the Rust stack are invisible
+/// to the collector, so evacuation relocates the objects behind them and the
+/// driver then dereferences stale pointers — a SIGSEGV, a bounds panic, or
+/// (worse) a silently wrong value. They belong in the machine's root set.
+///
+/// **Why the existing coverage could not catch this.** `EU_GC_VERIFY=2`
+/// verifies reachability *from roots*, and these handles were not roots, so
+/// verification was structurally incapable of seeing them; the
+/// `test-pp-parallelism` CI job gives no coverage here. And
+/// `pp_fork_fixture.eu` is 16 elements with a trivial `f`, so no collection
+/// occurs during its map and the window never opens.
+///
+/// This test opens the window deliberately: a heap limit low enough to be
+/// crossed partway through the map (the heap collects only once its limit is
+/// reached) plus `EU_GC_STRESS=1`, which forces every collection to evacuate
+/// rather than merely mark — so a stale handle is guaranteed to be stale, not
+/// merely at risk. The answer is compared with the `map` oracle, not with
+/// another run of the driver.
+///
+/// Fault-injection verified: holding the element and result handles on the
+/// Rust stack across the forces (the pre-fix shape) makes this SIGSEGV or
+/// panic 3/3 in both configurations; restoring the root set makes it pass.
+///
+/// The sequential configuration runs on the default engine only. The driver
+/// and serialiser are written entirely against the neutral `IntrinsicMachine`
+/// ABI, so there is one implementation for both engines, and HeapSyn is
+/// covered by the fork configuration below — running the sequential shape
+/// under HeapSyn as well costs about two minutes in a debug build for no
+/// additional code coverage.
+#[test]
+pub fn test_pp_gc_collects_during_par_map() {
+    let seq_fixture = "tests/harness/testdata/pp_gc_stress_fixture.eu";
+    let seq_oracle_fixture = "tests/harness/testdata/pp_gc_stress_oracle.eu";
+    let fork_fixture = "tests/harness/testdata/pp_gc_fork_fixture.eu";
+    let fork_oracle_fixture = "tests/harness/testdata/pp_gc_fork_oracle.eu";
+
+    let run = |file: &str, env: &[(&str, &str)], heap_mib: &str| -> String {
+        let mut cmd = std::process::Command::new(eu_binary());
+        cmd.arg(file).arg("--heap-limit-mib").arg(heap_mib);
+        // `EU_GC_VERIFY` is removed deliberately, not overlooked. The
+        // `test-pp-parallelism` CI job sets it to 2 for the whole job, and it
+        // is the wrong tool here twice over: it verifies reachability *from
+        // roots*, so it is structurally incapable of seeing the bug this test
+        // exists for, and it re-traverses the heap after every mark — which on
+        // a fixture chosen to collect as often as possible multiplied the job
+        // from under two minutes to sixteen. The fork path still runs under
+        // `EU_GC_VERIFY=2` in that job via
+        // `test_pp_fork_path_equivalence_both_engines`, so no coverage is lost.
+        cmd.env_remove("EU_GC_VERIFY");
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        // Generous: a blob-less debug binary compiles the whole prelude from
+        // source on every spawn, and the GC-stress runs collect on every poll
+        // once the limit is reached.
+        let out = run_with_deadline(cmd, std::time::Duration::from_secs(600))
+            .expect("eu did not complete within the deadline");
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(
+            out.status.success(),
+            "eu exited {:?} for {file} with env {env:?} — a stale heap handle in the \
+             parallel driver looks exactly like this (SIGSEGV, a bounds panic, or a \
+             corrupt-environment error):\n{stderr}",
+            out.status.code()
+        );
+        String::from_utf8(out.stdout).expect("eu stdout was not utf-8")
+    };
+
+    // The oracles are ordinary `map`, run without a limit and without stress:
+    // fast, and not themselves under test.
+    let seq_oracle = run(seq_oracle_fixture, &[], "0");
+    let fork_oracle = run(fork_oracle_fixture, &[], "0");
+
+    let sequential = run(
+        seq_fixture,
+        &[("EU_GC_STRESS", "1"), ("EU_PP_THRESHOLD", "100000")],
+        "8",
+    );
+    assert_eq!(
+        sequential, seq_oracle,
+        "par-map (sequential path) diverged from map under GC stress"
+    );
+
+    // The fork path exercises the same rooting code inside each worker.
+    //
+    // `EU_PP_STRICT=1` is load-bearing here, not decoration. Without it a
+    // worker that dies is *not* an observable event: the parent catches the
+    // non-zero exit and re-runs the whole map sequentially, so the program
+    // prints the correct answer and exits 0. A defect confined to worker code
+    // would be invisible to any output comparison — a gate that cannot fail.
+    // Verified: removing the root set from the worker loop leaves this test
+    // passing without the flag, and fails it with the flag.
+    //
+    // Only unix has a fork path; elsewhere this is a second sequential run and
+    // the flag has no effect.
+    for engine in [None, Some(("EU_HEAPSYN", "1"))] {
+        let mut env = vec![
+            ("EU_GC_STRESS", "1"),
+            ("EU_PP_THRESHOLD", "1"),
+            ("EU_PP_WORKERS", "4"),
+            ("EU_PP_STRICT", "1"),
+        ];
+        if let Some(e) = engine {
+            env.push(e);
+        }
+        // A larger fixture than the sequential configuration above: the fork
+        // path splits the work four ways, so each worker needs enough
+        // allocation *within its own chunk* to reach the heap limit. On the
+        // smaller shape no worker collects and removing the worker-loop root
+        // set goes undetected — verified, which is why there are two fixtures.
+        let forked = run(fork_fixture, &env, "8");
+        assert_eq!(
+            forked, fork_oracle,
+            "par-map (fork path, engine {engine:?}) diverged from map under GC stress"
+        );
+    }
 }
 
 #[test]

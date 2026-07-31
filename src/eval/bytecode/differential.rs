@@ -898,6 +898,10 @@ mod tests {
             fn next(&mut self) -> Option<Result<Rc<StgSyn>, ExecutionError>> {
                 self.0.next().map(Ok)
             }
+
+            fn is_pure(&self) -> bool {
+                true // in-memory items; no external state to share across a fork
+            }
         }
         let items = || vec![dsl::box_num(1), dsl::box_num(2), dsl::box_num(3)].into_iter();
 

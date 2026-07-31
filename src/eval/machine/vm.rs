@@ -52,7 +52,7 @@ use crate::{
 use super::{
     cont::{match_tag, Continuation},
     env::{EnvFrame, SynClosure},
-    intrinsic::{IntrinsicMachine, StgIntrinsic},
+    intrinsic::{AbiClosure, IntrinsicMachine, StgIntrinsic},
     metrics::{Metrics, ThreadOccupation},
 };
 use super::{env_builder::EnvBuilder, metrics::Clock};
@@ -340,6 +340,18 @@ pub struct MachineState {
     /// intrinsic so the test harness can observe assertion failures instead
     /// of them silently bypassing output capture (eu-ntwg.2).
     diagnostics: Vec<String>,
+    /// Metadata stripped by the most recent top-of-stack `Meta` return.
+    ///
+    /// `return_meta` discards metadata that nothing consumes — correct for
+    /// evaluation, but it means an intrinsic that forces a value cannot
+    /// otherwise see the metadata that value carried, and one that *copies*
+    /// values (the process-parallelism serialiser) would silently drop it.
+    /// Recording it here lets `IntrinsicMachine::take_stripped_meta` recover
+    /// it. Cleared at the start of every `evaluate_to_whnf` sub-run.
+    ///
+    /// It is a live heap handle, so it is scanned and pointer-updated with
+    /// the other roots below.
+    stripped_meta: Option<SynClosure>,
     /// Pending BIF intrinsic index, set by `handle_instruction` when it
     /// encounters a `HeapSyn::Bif` node.
     ///
@@ -374,6 +386,7 @@ impl Default for MachineState {
             pending_capture_start: None,
             test_mode: false,
             diagnostics: Vec::new(),
+            stripped_meta: None,
             pending_bif: None,
         }
     }
@@ -964,6 +977,15 @@ impl MachineState {
                 }
             }
         } else {
+            // Nothing consumes the metadata, so it is stripped and the body
+            // flows on. Record it first: an intrinsic that forced this value
+            // (the PP serialiser) needs to see the metadata it carried, and
+            // this is the one point at which it is discarded. No continuation
+            // is on the stack here, so there is no eu-bc34x push-ordering
+            // concern (nothing to push `body`'s own `Update` above or below)
+            // — `enter_meta_body` still forces `body` properly rather than a
+            // bare env lookup.
+            self.stripped_meta = Some(self.nav(view).resolve(meta)?);
             self.enter_meta_body(view, environment, body)?;
             // Don't terminate at metadata, carrying processing
         }
@@ -1694,6 +1716,31 @@ impl IntrinsicMachine for MachineState {
         })
     }
 
+    fn gc_root_len(&self) -> usize {
+        self.stash.len()
+    }
+
+    fn gc_root_push(&mut self, closure: AbiClosure) -> usize {
+        self.stash.push(closure.expect_heap());
+        self.stash.len() - 1
+    }
+
+    fn gc_root_get(&self, idx: usize) -> AbiClosure {
+        AbiClosure::Heap(self.stash[idx].clone())
+    }
+
+    fn gc_root_set(&mut self, idx: usize, closure: AbiClosure) {
+        self.stash[idx] = closure.expect_heap();
+    }
+
+    fn gc_root_truncate(&mut self, len: usize) {
+        self.stash.truncate(len);
+    }
+
+    fn take_stripped_meta(&mut self) -> Option<AbiClosure> {
+        self.stripped_meta.take().map(AbiClosure::Heap)
+    }
+
     fn test_mode(&self) -> bool {
         self.test_mode
     }
@@ -1739,6 +1786,12 @@ impl GcScannable for MachineState {
                 cont.scan(scope, marker, out);
             }
         }
+
+        // Metadata held for `take_stripped_meta` is a live handle until the
+        // intrinsic collects it.
+        if let Some(meta) = &self.stripped_meta {
+            out.push(ScanPtr::new(scope, meta));
+        }
     }
 
     fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
@@ -1762,6 +1815,9 @@ impl GcScannable for MachineState {
             for cont in suspended_stack {
                 cont.scan_and_update(heap);
             }
+        }
+        if let Some(meta) = &mut self.stripped_meta {
+            meta.scan_and_update(heap);
         }
     }
 }
@@ -1845,6 +1901,9 @@ fn evaluate_to_whnf_impl(
 
     state.terminated = false;
     state.yielded_io = false;
+    // Any metadata recorded by an earlier force belongs to an earlier value;
+    // `take_stripped_meta` reports on *this* sub-run only.
+    state.stripped_meta = None;
     state.closure = closure;
 
     // Run with NullEmitter — see function doc for rationale.
@@ -2029,6 +2088,31 @@ impl IntrinsicMachine for MachineBifContext<'_, '_> {
 
     fn record_diagnostic(&mut self, msg: String) {
         self.state.diagnostics.push(msg);
+    }
+
+    fn gc_root_len(&self) -> usize {
+        self.state.stash.len()
+    }
+
+    fn gc_root_push(&mut self, closure: AbiClosure) -> usize {
+        self.state.stash.push(closure.expect_heap());
+        self.state.stash.len() - 1
+    }
+
+    fn gc_root_get(&self, idx: usize) -> AbiClosure {
+        AbiClosure::Heap(self.state.stash[idx].clone())
+    }
+
+    fn gc_root_set(&mut self, idx: usize, closure: AbiClosure) {
+        self.state.stash[idx] = closure.expect_heap();
+    }
+
+    fn gc_root_truncate(&mut self, len: usize) {
+        self.state.stash.truncate(len);
+    }
+
+    fn take_stripped_meta(&mut self) -> Option<AbiClosure> {
+        self.state.stripped_meta.take().map(AbiClosure::Heap)
     }
 
     /// Force `closure` to WHNF.

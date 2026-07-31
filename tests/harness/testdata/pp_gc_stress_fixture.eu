@@ -1,0 +1,30 @@
+# eu-u9xj.6 (PP) fixture for test_pp_gc_collects_during_par_map in
+# harness_test.rs — the GC-safety gate for the parallel driver.
+#
+# The driver has to hold heap handles across `force()` calls: mapping N
+# elements means accumulating N results while forcing each one. A handle on
+# the Rust stack is invisible to the collector, so if the driver kept them
+# there, a collection during the map would move the objects out from under it
+# and leave it dereferencing freed or relocated memory. They live in the
+# machine's root set instead (`IntrinsicMachine::gc_root_push`).
+#
+# `EU_GC_VERIFY=2` cannot see that class of bug — it verifies reachability
+# *from roots*, and the whole point is that these handles were not roots. What
+# catches it is running the map with collection actually happening during it,
+# under `EU_GC_STRESS=1` so every collection evacuates rather than merely
+# marking, and comparing the answer with the `map` oracle beside this file.
+#
+# The shape is tuned so a collection lands mid-map: the heap limit the test
+# passes is crossed partway through (this heap collects only once its limit is
+# reached), and each element allocates a 60-element intermediate list. Raise
+# the limit enough and the run finishes without collecting at all and the gate
+# stops gating — at `--heap-limit-mib 64` this same shape completes in 0.1s and
+# detects nothing. It is deliberately small: once the limit is reached every
+# poll collects, so cost grows steeply with the work done afterwards. If this
+# fixture is ever retuned, re-verify by fault injection that it still fails
+# when the root set is removed.
+
+f(x): range(0, 60) map((_0 + x)) sum
+xs: range(1, 30)
+r: xs par-map(f)
+n: r sum

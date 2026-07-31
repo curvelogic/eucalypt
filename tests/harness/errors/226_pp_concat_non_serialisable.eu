@@ -1,0 +1,6 @@
+# eu-u9xj.6 (PP) — a boundary error must name the combinator the USER wrote.
+# The four reductions are prelude wrappers over the single `__PARMAP`
+# primitive, so before the combinator name was threaded through as a symbol
+# argument every one of them reported itself as `par-map`.
+mkfn(x): (+ x)
+result: [1, 2, 3] par-concat(mkfn)

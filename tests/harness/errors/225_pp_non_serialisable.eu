@@ -1,0 +1,7 @@
+# eu-u9xj.6 (PP) — a par-map whose f returns a non-serialisable value (a
+# function) is a programmer error at the parallel boundary (spec §6). The
+# boundary check fires on both the parallel and the sequential paths (both
+# round-trip results through the serialisation codec), naming the value kind
+# and the combinator.
+mkfn(x): (+ x)
+result: [1, 2, 3] par-map(mkfn)

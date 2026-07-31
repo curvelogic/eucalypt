@@ -1042,6 +1042,26 @@ lazy_static! {
             ty: function(vec![str_(), list(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
+    Intrinsic { // 196
+            // par-map: sym -> (a -> b) -> [a] -> [b]. The leading symbol names
+            // the surface combinator (`:par-map`, `:par-sum`, ...) so a boundary
+            // error reports the one the user actually wrote — the reductions are
+            // prelude wrappers over this same primitive. Args 0 (the name) and 2
+            // (xs) are strict, so the wrapper forces the name and the spine head
+            // before the parallel driver runs.
+            name: "PARMAP",
+            ty: function(vec![sym(), any(), list(), list()]).unwrap(),
+            strict: vec![0, 2],
+    },
+    Intrinsic { // 197
+            // Spine-only forcing sibling of seqList: walks a list to its end
+            // via the compile-time force DSL, without touching/unboxing
+            // element heads and without rebuilding. Used by PARMAP's own
+            // wrapper() to force xs's spine ahead of the parallel driver.
+            name: "seqSpine",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 

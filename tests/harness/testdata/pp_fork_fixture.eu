@@ -1,0 +1,36 @@
+# eu-u9xj.6 (PP) fixture for the out-of-process fork-path equivalence test
+# (test_pp_fork_path_equivalence_both_engines in harness_test.rs). Rendered
+# under three configurations — fork/default, fork/HeapSyn, sequential — whose
+# stdout must be byte-identical. Mixes scalar, string, and block results so
+# the value serialiser's subset is exercised across the fork boundary.
+#
+# Comparing the three configurations proves the fork path agrees with the
+# sequential path, but NOT that either agrees with ordinary evaluation: both
+# share the same serialise/deserialise codec, so no codec defect could ever
+# fail that comparison. The `-ok` bindings below therefore compare against
+# `map` itself, and the Rust test asserts they are true — so this fixture
+# gates the codec as well as the fork machinery.
+
+sq(x): x * x
+mkrec(x): { n: x sq: x * x label: "row-{x}" }
+
+# 16 elements: with EU_PP_WORKERS=4 this forks 4 workers of 4 elements each,
+# genuinely exercising the COW-fork path. Kept modest because it is spawned
+# repeatedly by a debug `cargo test` binary that compiles the prelude from
+# source on every run, not because of any complexity in the combinators.
+ns: range(1, 17)
+
+nums:   ns par-map(sq)
+recs:   ns par-map(mkrec)
+total:  ns par-sum(sq)
+maxsq:  ns par-max(sq)
+
+# ── oracle checks against `map` (not against another par-map run) ────────
+# Compared as RENDERED text rather than with `=`, because `=` ignores
+# metadata: a boundary that dropped a `:suppress` annotation would produce a
+# value that compares equal and renders differently.
+mk-hidden(x): { ` :suppress hidden: x
+                v: x * 2 }
+
+map-ok:  (ns par-map(mkrec) render-as(:json)) = (ns map(mkrec) render-as(:json))
+meta-ok: (ns par-map(mk-hidden) render-as(:json)) = (ns map(mk-hidden) render-as(:json))

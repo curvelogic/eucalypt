@@ -911,9 +911,7 @@ product(l): foldl(*, 1, l)
 max(l, r): if(l > r, l, r)
 
 ` "`max-of(l) - return max element in list of numbers `l` - error if empty`"
-max-of(l): cond([l nil? => panic("max of empty list")
-               , l tail nil? => l head
-               , max(l head, max-of(l tail))])
+max-of(l): l nil? then(panic("max of empty list"), foldl(max, l head, l tail))
 
 ` "`max-of-by(f, l)` - return the element of `l` that maximises `f`. Error if empty."
 max-of-by(f, l): {
@@ -936,9 +934,7 @@ max-of-or(d, l): l nil? then(d, max-of(l))
 min(l, r): if(l < r, l, r)
 
 ` "`min-of(l) - return min element in list of numbers `l` - error if empty`"
-min-of(l): cond([l nil? => panic("min of empty list")
-               , l tail nil? => l head
-               , min(l head, min-of(l tail))])
+min-of(l): l nil? then(panic("min of empty list"), foldl(min, l head, l tail))
 
 ` "`min-of-by(f, l)` - return the element of `l` that minimises `f`. Error if empty."
 min-of-by(f, l): {
@@ -955,6 +951,56 @@ min-map(f, l): l map(f) min-of
 
 ` "`min-of-or(d, l)` - return min element in list `l`, or default `d` if empty."
 min-of-or(d, l): l nil? then(d, min-of(l))
+
+##
+## Process parallelism (advisory) — HIGHLY EXPERIMENTAL
+##
+## Semantics may change without notice. macOS/Linux only: the mechanism is a
+## POSIX fork, so it is unavailable on Windows (there it degrades silently to
+## the same sequential fallback used below the size threshold - see
+## docs/guide/parallelism.md).
+##
+## Each combinator is semantically identical to its sequential form - a pure
+## performance advisory. par-map evaluates a pure f over independent elements
+## in parallel worker processes (Unix copy-on-write fork) and reassembles the
+## results in index order, falling back transparently to a sequential map
+## below a size threshold, on a single core, or on a non-Unix platform. f must
+## be pure and return serialisable data (numbers, strings, symbols, booleans,
+## null, lists, blocks); a non-serialisable result is a boundary error.
+
+## The par-* combinators are strict in the SPINE of xs. __PARMAP's own STG
+## wrapper (src/eval/stg/parallel/intrinic.rs) forces that spine, via the
+## compile-time `force`/`Case` DSL woven into the wrapper lambda (a `SeqSpine`
+## global, src/eval/stg/force.rs) rather than by forcing each cell at runtime
+## from inside the intrinsic. That distinction is load-bearing for single-pass
+## sources: `force`/`Case` compiles into the same Update-continuation
+## machinery ordinary lazy variable forcing uses everywhere, so it memoises
+## the ORIGINAL binding — a streaming import forced this way is genuinely
+## consumed, once, for every later reader. A runtime `IntrinsicMachine::force`
+## call from inside the intrinsic body does not: it runs a throwaway
+## sub-evaluation with no Update wired back to the caller's binding, so
+## forcing a producer that way would leave it looking untouched to anyone
+## else holding the same reference — re-advancing an already-consumed
+## producer on the next read. This used to be done here, in the prelude, via
+## a `force-spine(xs): if((xs count) >= 0, xs, xs)` helper exploiting `count`'s
+## strictness in ordinary (non-wrapper) compiled code; the mechanism is the
+## same, only where it is woven in moved into the wrapper itself.
+
+` { doc: "EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-map(f, xs)` - parallel map, order-preserving. Same value as `xs map(f)` but STRICT: it forces the spine of `xs` and every result, so it is unusable on an infinite or partially-consumed list and raises an error that `map` would have left unevaluated. `f` must be pure and return serialisable data."
+    type: s"(a → b) → [a] → [b]" }
+par-map(f, xs): __PARMAP(:par-map, f, xs)
+
+` "EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-sum(f, xs)` - parallel sum of `f(x)` over `xs`. Same value as `xs map(f) sum`; strict in the same way as par-map."
+par-sum(f, xs): __PARMAP(:par-sum, f, xs) sum
+
+` "EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-max(f, xs)` - parallel max of `f(x)` over `xs`. Same value as `xs map(f) max-of`; strict in the same way as par-map."
+par-max(f, xs): __PARMAP(:par-max, f, xs) max-of
+
+` "EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-min(f, xs)` - parallel min of `f(x)` over `xs`. Same value as `xs map(f) min-of`; strict in the same way as par-map."
+par-min(f, xs): __PARMAP(:par-min, f, xs) min-of
+
+` "EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-concat(f, xs)` - parallel map-then-concat. Same value as `xs map(f) concat`; strict in the same way as par-map."
+par-concat(f, xs): __PARMAP(:par-concat, f, xs) concat
 
 ##
 ## Text and regexes

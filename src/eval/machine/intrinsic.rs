@@ -64,6 +64,17 @@ impl AbiClosure {
         }
     }
 
+    /// Unwrap the bytecode value, panicking on a HeapSyn handle. Used by the
+    /// bytecode engine's ABI impls, which only ever see `Byte`.
+    pub fn expect_byte(self) -> BcValue {
+        match self {
+            AbiClosure::Byte(v) => v,
+            AbiClosure::Heap(_) => {
+                unreachable!("HeapSyn closure handed to the bytecode intrinsic engine")
+            }
+        }
+    }
+
     /// Borrow the HeapSyn closure, panicking on a bytecode handle.
     pub fn as_heap(&self) -> &SynClosure {
         match self {
@@ -411,6 +422,29 @@ pub trait IntrinsicMachine {
     // frame over that template; the HeapSyn defaults build the App/Bif node
     // directly.
 
+    /// Build a lazy unary application `f(a)` as a stored (updatable) value
+    /// handle. Used by the process-parallelism driver to build the per-element
+    /// `f(xs[i])` thunk it then forces (engine-neutrally) in each worker or on
+    /// the sequential-fallback path.
+    fn apply1_thunk(
+        &self,
+        view: MutatorHeapView<'_>,
+        f: AbiClosure,
+        a: AbiClosure,
+    ) -> Result<AbiClosure, ExecutionError> {
+        // HeapSyn: `App(L0, [L1])` over a fresh `[f, a]` frame.
+        let frame = view.from_closures(
+            [f.expect_heap(), a.expect_heap()].into_iter(),
+            2,
+            self.root_env(),
+            Smid::default(),
+        )?;
+        let code = view
+            .app(Ref::L(0), Array::from_slice(&view, &[Ref::L(1)]))?
+            .as_ptr();
+        Ok(AbiClosure::Heap(SynClosure::new(code, frame)))
+    }
+
     /// Build a lazy binary application `f(a0, a1)` as a stored (updatable)
     /// value handle. Used by `MERGEWITH` to combine colliding block values.
     fn apply2_thunk(
@@ -470,6 +504,60 @@ pub trait IntrinsicMachine {
     /// Take the latest capture result string (set by `Machine::step()`
     /// after a `CaptureEnd` continuation fires).
     fn take_capture_result(&mut self) -> Result<String, ExecutionError>;
+
+    // ── GC root set for intrinsic-held handles (eu-u9xj.6) ──────────
+    //
+    // `force()` runs the machine, and the machine collects mid-run. Any
+    // `AbiClosure` an intrinsic is holding on the Rust stack across that call
+    // is invisible to the collector: it is neither the current closure nor on
+    // the continuation stack, so evacuation moves or reclaims the object
+    // behind it and leaves the handle dangling. `src/eval/stg/list.rs` states
+    // the rule ("no handle is held across a force"); `src/driver/io_run.rs`
+    // and `src/driver/bytecode_io_run.rs` are the two places that cannot obey
+    // it and use the machine's stash as a root set instead.
+    //
+    // `stash_push` is inherent on each engine's machine type, so an intrinsic
+    // written against `&mut dyn IntrinsicMachine` could not reach it. These
+    // methods expose the same root set neutrally, over `AbiClosure`, so a
+    // driver that genuinely must accumulate handles across forces (the
+    // process-parallelism driver and value serialiser) can be GC-safe.
+    //
+    // Protocol: push a handle, then **read it back** with `gc_root_get` after
+    // every `force()` — the collector updates the entry in the root set, not
+    // the copy on your stack. Frames are stack-disciplined: record
+    // `gc_root_len()` on entry and `gc_root_truncate()` back to it on **every**
+    // exit path, including errors. Nesting is safe: a `force()` pushes and pops
+    // its own entries, so indices handed out before it remain valid.
+
+    /// Number of handles currently in the intrinsic root set.
+    fn gc_root_len(&self) -> usize;
+
+    /// Push a handle into the root set, returning the index to read it back by.
+    fn gc_root_push(&mut self, closure: AbiClosure) -> usize;
+
+    /// Read back the handle at `idx`, with any relocation the collector
+    /// performed since it was pushed already applied.
+    fn gc_root_get(&self, idx: usize) -> AbiClosure;
+
+    /// Replace the handle at `idx`.
+    fn gc_root_set(&mut self, idx: usize, closure: AbiClosure);
+
+    /// Drop every handle from `len` upwards, releasing the frame.
+    fn gc_root_truncate(&mut self, len: usize);
+
+    /// Metadata discarded by the most recent [`Self::force`], if any.
+    ///
+    /// A `Meta` value reaching the top of a sub-evaluation with nothing to
+    /// consume it is *stripped*: the machine continues with the body and the
+    /// metadata is gone (`return_meta` in both engines). That is right for
+    /// evaluation — metadata is transparent — but it means an intrinsic that
+    /// forces a value cannot see the metadata the value carried, and one that
+    /// copies values (the PP serialiser) would silently drop it.
+    ///
+    /// Both engines record the stripped metadata here and clear it at the
+    /// start of each `force`, so an intrinsic can recover it immediately
+    /// afterwards. Taking it clears it.
+    fn take_stripped_meta(&mut self) -> Option<AbiClosure>;
 
     /// Whether the machine is running in test mode.
     ///

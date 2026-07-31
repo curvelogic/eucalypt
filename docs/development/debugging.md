@@ -121,6 +121,70 @@ IO TRACE: exec "ls" ["-la"]
 IO TRACE: -> exit 0
 ```
 
+### Process Parallelism (`par-map` and friends)
+
+HIGHLY EXPERIMENTAL, macOS/Linux only (see
+[Parallel Evaluation](../guide/parallelism.md)). All `EU_PP_*` variables below
+are unix-only: on Windows the fork path does not exist, so they have no
+effect and `par-*` is always the sequential fallback.
+
+The parallel path is unobservable by design — same value, same errors, same
+order — so a build that never forks looks exactly like a working one. These
+exist to tell them apart, and to force the fork path in tests.
+
+#### `EU_PP_TRACE=1`
+
+Report to stderr which path each `par-*` call took, and why:
+
+```
+par-map: 20000 elements — forked 13 workers
+par-sum: 12 elements — sequential (below threshold)
+par-max: 4096 elements — sequential (process is not a declared fork-safe host)
+par-map: 4096 elements — sequential (fork path declined)
+```
+
+"not a declared fork-safe host" is the normal answer outside the `eu` CLI:
+forking is unsafe unless the process owner can vouch that its other threads are
+parked, so only `src/bin/eu.rs` opts in (past the LSP branch). The LSP server,
+the WASM API, embedders and the test harness never fork; `par-*` is sequential
+there, which is the identical result.
+
+#### `EU_PP_THRESHOLD=<n>`
+
+Minimum element count before forking is considered (default 1024). Set to 1 to
+force the fork path on a small input.
+
+#### `EU_PP_WORKERS=<n>`
+
+Worker count (default: available parallelism minus one).
+
+#### `EU_PP_STRICT=1`
+
+Treat a fork-path fault as an error instead of falling back to sequential
+evaluation.
+
+Normally any fault in the parallel path — a worker exiting non-zero, an arena
+that will not map, a corrupt or short-counted segment — is swallowed: the
+parent re-runs the whole map sequentially and produces the correct answer.
+That is what makes `par-*` a transparent advisory, and it is also what makes
+worker-side code untestable by comparing output, because a worker that crashes
+still yields the right result and exit code. `EU_PP_STRICT=1` removes the
+safety net so a test (or a person) can see the fault:
+
+```
+par-map: the parallel path failed (parallel worker 0 failed) and EU_PP_STRICT=1
+forbids the sequential fallback
+```
+
+Diagnostics only. Production wants the fallback.
+
+#### `EU_PP_ASSUME_SINGLE_THREADED=1`
+
+Bypass the fork-safety check. For diagnostics only — it does not make an unsafe
+fork safe. It applies in *any* host, including ones that deliberately never
+declared themselves fork-safe (the language server, the WASM API, an
+embedder), so it prints a warning to stderr the first time it takes effect.
+
 ### Crash Diagnostics
 
 The crash signal handler installs unconditionally in `main()` (no

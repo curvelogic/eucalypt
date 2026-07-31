@@ -337,6 +337,10 @@ pub struct BcMachineState {
     /// Diagnostic messages recorded during this run (e.g. `EXPECT FAILED`
     /// from `__EXPECT`) — mirrors `MachineState::diagnostics` in `vm.rs`.
     pub diagnostics: Vec<String>,
+    /// Metadata stripped by the most recent top-of-stack `Meta` return —
+    /// mirrors `MachineState::stripped_meta` in `vm.rs`. A live heap handle,
+    /// so it is scanned and pointer-updated with the other roots.
+    pub stripped_meta: Option<BcValue>,
 }
 
 impl BcMachineState {
@@ -369,6 +373,7 @@ impl BcMachineState {
             bif_arg_pool: Vec::new(),
             allocs: 0,
             diagnostics: Vec::new(),
+            stripped_meta: None,
         }
     }
 
@@ -600,6 +605,9 @@ fn enter_whnf_subrun(state: &mut BcMachineState, value: BcValue) -> bool {
     let saved_terminated = state.terminated;
     state.terminated = false;
     state.yielded_io = false;
+    // Any metadata recorded by an earlier force belongs to an earlier value;
+    // `take_stripped_meta` reports on *this* sub-run only.
+    state.stripped_meta = None;
     saved_terminated
 }
 
@@ -692,6 +700,10 @@ impl GcScannable for BcMachineState {
                 scan_const(r, scope, marker, out);
             }
         }
+        // Metadata held for `take_stripped_meta` is live until collected.
+        if let Some(meta) = &self.stripped_meta {
+            out.push(ScanPtr::new(scope, meta));
+        }
     }
 
     fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
@@ -715,6 +727,9 @@ impl GcScannable for BcMachineState {
             for cont in suspended {
                 cont.scan_and_update(heap);
             }
+        }
+        if let Some(meta) = &mut self.stripped_meta {
+            meta.scan_and_update(heap);
         }
         for frame in &mut self.bif_frames {
             if let Some(new) = heap.forwarded_to(frame.env) {
@@ -1697,7 +1712,21 @@ fn return_meta(
     body_ref: DecodedRef,
 ) -> Result<(), ExecutionError> {
     let Some(cont) = state.stack.pop() else {
-        // Nothing consumes the metadata: strip it and continue with the body.
+        // Nothing consumes the metadata: strip it and continue with the
+        // body. Record the metadata first — an intrinsic that forced this
+        // value (the PP serialiser) needs the metadata it carried, and this
+        // is the one point at which it is discarded (mirrors `vm.rs`
+        // `return_meta`). No continuation is on the stack here, so there is
+        // no eu-bc34x push-ordering concern — `enter_meta_body` still forces
+        // `body_ref` properly (black-hole + `Update`) rather than the bare
+        // `resolve_ref` this branch used before that fix.
+        state.stripped_meta = Some(resolve_ref(
+            view,
+            &state.constants,
+            env,
+            state.globals,
+            meta_ref,
+        )?);
         enter_meta_body(state, view, prog, decoded, env, body_ref)?;
         return Ok(());
     };
@@ -4580,13 +4609,44 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
 
     fn force(&mut self, closure: AbiClosure) -> Result<AbiClosure, ExecutionError> {
         match closure {
-            // A native is already WHNF.
-            AbiClosure::Byte(v @ BcValue::Native(_)) => Ok(AbiClosure::Byte(v)),
+            // A native is already WHNF — no sub-run, so clear here rather than
+            // leaving an earlier force's metadata visible to
+            // `take_stripped_meta` (`run_to_whnf` clears via
+            // `enter_whnf_subrun`).
+            AbiClosure::Byte(v @ BcValue::Native(_)) => {
+                self.state.stripped_meta = None;
+                Ok(AbiClosure::Byte(v))
+            }
             AbiClosure::Byte(v) => Ok(AbiClosure::Byte(self.run_to_whnf(v)?)),
             AbiClosure::Heap(_) => {
                 panic!("bytecode BifContext: force(Heap) — intrinsic uses the HeapSyn ABI")
             }
         }
+    }
+
+    fn gc_root_len(&self) -> usize {
+        self.state.stash.len()
+    }
+
+    fn gc_root_push(&mut self, closure: AbiClosure) -> usize {
+        self.state.stash.push(closure.expect_byte());
+        self.state.stash.len() - 1
+    }
+
+    fn gc_root_get(&self, idx: usize) -> AbiClosure {
+        AbiClosure::Byte(self.state.stash[idx].clone())
+    }
+
+    fn gc_root_set(&mut self, idx: usize, closure: AbiClosure) {
+        self.state.stash[idx] = closure.expect_byte();
+    }
+
+    fn gc_root_truncate(&mut self, len: usize) {
+        self.state.stash.truncate(len);
+    }
+
+    fn take_stripped_meta(&mut self) -> Option<AbiClosure> {
+        self.state.stripped_meta.take().map(AbiClosure::Byte)
     }
 
     // ── Data construction over templates (spec §5.5) ────────────────
@@ -4733,6 +4793,28 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
     }
 
     // ── Fixed-shape thunk construction (spec §5.5, arena analysis) ──────
+
+    fn apply1_thunk(
+        &self,
+        view: MutatorHeapView<'_>,
+        f: AbiClosure,
+        a: AbiClosure,
+    ) -> Result<AbiClosure, ExecutionError> {
+        let (AbiClosure::Byte(fv), AbiClosure::Byte(av)) = (f, a) else {
+            panic!("bytecode BifContext: apply1_thunk with a HeapSyn field")
+        };
+        // A GC-heap env frame `[f, a]` over the fixed `App(L0,[L1])` template.
+        let env = view.from_values(
+            [fv, av].into_iter(),
+            2,
+            self.state.root_env,
+            self.state.annotation,
+        )?;
+        Ok(AbiClosure::Byte(BcValue::Closure(BcClosure::new(
+            self.program.apply1_template,
+            env,
+        ))))
+    }
 
     fn apply2_thunk(
         &self,

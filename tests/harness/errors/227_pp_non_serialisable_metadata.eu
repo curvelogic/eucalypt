@@ -1,0 +1,16 @@
+# eu-u9xj.6 (PP) — metadata crosses the parallel boundary with its value, so
+# metadata that is not itself data is a boundary error, exactly as a
+# non-serialisable result is (spec §6).
+#
+# The alternative would be to drop it, and dropping it is the one option that
+# is not available: `par-map` promises to be identical to `map`, and `map`
+# keeps the annotation. A `:suppress` silently lost across the boundary would
+# re-expose a key its author marked internal, with no error and no visible
+# difference in the value — `=` ignores metadata.
+#
+# This is a divergence from `map`, which carries an unevaluated function in
+# metadata without complaint. It is the documented consequence of `par-*`
+# being strict and process-crossing, and it is loud rather than silent.
+mk(x): { ` { checker: (_0 + 1) } odd: x
+          v: x }
+result: [1, 2] par-map(mk)

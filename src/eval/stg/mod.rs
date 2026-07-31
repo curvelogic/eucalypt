@@ -28,6 +28,7 @@ pub mod meta;
 pub mod null;
 pub mod optimiser;
 pub mod panic;
+pub mod parallel;
 pub mod parse_string;
 pub mod platform;
 pub mod pretty;
@@ -264,6 +265,8 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(set::SetSample));
     rt.add(Box::new(typedata::TypeToData));
     rt.add(Box::new(typedata::TypeFromString));
+    rt.add(Box::new(parallel::intrinsic::ParMap));
+    rt.add(Box::new(force::SeqSpine));
     rt.prepare(source_map);
     Box::new(rt)
 }
