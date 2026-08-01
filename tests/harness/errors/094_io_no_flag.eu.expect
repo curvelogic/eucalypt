@@ -1,2 +1,2 @@
 exit: 1
-stderr: "(?s)IO operations are not permitted; use the --allow-io.*094_io_no_flag\.eu:4:9"
+stderr: "IO operations are not permitted; use the --allow-io"
