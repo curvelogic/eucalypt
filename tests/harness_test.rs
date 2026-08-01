@@ -3957,11 +3957,30 @@ pub fn test_eval_path_warns_on_record_key_typo() {
 }
 
 /// The blob-core merged check (default config) and the source-prelude merged
-/// check (`EU_SOURCE_PRELUDE=1`) must produce byte-identical `eu check
-/// --strict` output for the same file (eu-rb5n condition 2/4: the blob path
-/// is only a startup optimisation, never a different answer). Covers both
-/// config branches for a representative spread: a warning case, a clean
-/// case, and a case needing the deeper prefix-list inference.
+/// check (`EU_SOURCE_PRELUDE=1`) must produce byte-identical output for the
+/// same file (eu-rb5n condition 2/4: the blob path is only a startup
+/// optimisation, never a different answer). Covers a representative spread:
+/// a warning case, a suppressed case, and a case needing the deeper
+/// prefix-list inference.
+///
+/// # Two ways this used to be vacuous (eu-1tkk.7.43)
+///
+/// It compared `eu check --strict` invocations. `eu check` returns from
+/// `bin/eu.rs` at the `opt.check()` branch, *before* the
+/// `maybe_load_prelude_blob` call further down — it goes through
+/// `run_type_checker`, which always loads prelude source. So
+/// `EU_SOURCE_PRELUDE=1` made no difference to it, and the test compared the
+/// source prelude with itself no matter what CI did. The eval path
+/// (`eu --strict <file>`, as `test_eval_path_warns_on_record_key_typo` uses)
+/// is the one `run_type_checker_from_blob_core` is reached from, so that is
+/// what this drives now.
+///
+/// It was also ungated, and so ran in the blob-less "Test Suite" job where
+/// there is no blob to differ from — the same hazard the tick-parity tripwire
+/// records for itself. `cfg(prelude_blob_ok)` plus the blob-mode sweep in
+/// `scripts/blob-mode-tests.sh` puts it in a configuration where the two sides
+/// are genuinely different pipelines.
+#[cfg(prelude_blob_ok)]
 #[test]
 pub fn test_config_matrix_blob_vs_source_prelude_byte_equal() {
     let files = [
@@ -3971,22 +3990,29 @@ pub fn test_config_matrix_blob_vs_source_prelude_byte_equal() {
     ];
     for file in files {
         let blob = std::process::Command::new(eu_binary())
-            .args(["check", "--strict", file])
+            .args(["--strict", file])
             .output()
-            .expect("failed to run eu check (blob-core)");
+            .expect("failed to run eu (blob-core)");
         let source = std::process::Command::new(eu_binary())
             .env("EU_SOURCE_PRELUDE", "1")
-            .args(["check", "--strict", file])
+            .args(["--strict", file])
             .output()
-            .expect("failed to run eu check (source prelude)");
+            .expect("failed to run eu (source prelude)");
 
+        // Precondition: each fixture must actually produce a diagnostic,
+        // otherwise byte-equality of two empty streams proves nothing.
+        let blob_err = String::from_utf8_lossy(&blob.stderr);
+        assert!(
+            blob_err.contains(file),
+            "fixture {file} should produce a located diagnostic under the blob:\n{blob_err}"
+        );
         assert_eq!(
             blob.status.code(),
             source.status.code(),
             "exit code differs between blob-core and source-prelude checks for {file}"
         );
         assert_eq!(
-            String::from_utf8_lossy(&blob.stderr),
+            blob_err,
             String::from_utf8_lossy(&source.stderr),
             "stderr differs between blob-core and source-prelude checks for {file}"
         );
