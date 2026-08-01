@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: panic: option --output requires a value
+error: option --output requires a value
   ┌─ tests/harness/errors/111_missing_option_value.eu:2:20
   │
 2 │ main: ["--output"] parse-args({ output: "default" })

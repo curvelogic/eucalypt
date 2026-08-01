@@ -891,10 +891,14 @@ pub enum ExecutionError {
     /// function so that the "panic:" label appears in the diagnostic.
     #[error("{1}")]
     Panic(Smid, String),
-    /// Error raised by the user's `panic("msg")` call.
+    /// Error raised by a call to the `panic("msg")` intrinsic.
     ///
-    /// Displays with the "panic: " prefix so the user sees their explicit
-    /// call to `panic()` reflected in the error message.
+    /// Displays with the "panic: " prefix by default, so a user sees their
+    /// explicit call to `panic()` reflected in the error message. But the
+    /// prelude raises its own errors through this same intrinsic (e.g.
+    /// `nth`'s out-of-range check), so `to_diagnostic` suppresses the
+    /// prefix whenever the call site's Smid does not resolve to a user file
+    /// (eu-1tkk.7.33) — see the `UserPanic` handling there.
     #[error("panic: {1}")]
     UserPanic(Smid, String),
     /// A structural contract applied with `ensure` rejected its data.
@@ -1112,6 +1116,20 @@ impl ExecutionError {
             .and_then(|info| info.file)
             .map(|fid| source_map.is_user_file(fid))
             .unwrap_or(false);
+
+        // `UserPanic` is raised by the same `panic()` intrinsic whether the
+        // call originates in the user's own program or inside a prelude
+        // function (e.g. `nth`'s out-of-range check, `lib/prelude.eu`). The
+        // "panic: " prefix is only meaningful when the user wrote the
+        // `panic(...)` call themselves — showing it for a library-raised
+        // error makes an ordinary diagnostic (e.g. an out-of-range index)
+        // read as a crash. Drop the prefix whenever the call site is not in
+        // a user file (eu-1tkk.7.33).
+        if let ExecutionError::UserPanic(_, message) = inner {
+            if !error_has_user_file {
+                diag.message = message.clone();
+            }
+        }
 
         let primary_file_span: Option<(usize, codespan::Span)> = if error_has_user_file {
             error_info.and_then(|info| info.file.zip(info.span))
@@ -1411,9 +1429,7 @@ impl ExecutionError {
                 ]
             }
             ExecutionError::HeadOfNonList(_, found) => {
-                let mut notes = vec![
-                    "head and tail require a list (e.g. [1, 2, 3]) as their argument".to_string(),
-                ];
+                let mut notes = vec![];
                 if found.starts_with('"') {
                     notes.push(
                         "to concatenate strings, use string interpolation (e.g. \"{a}{b}\") \
@@ -1429,9 +1445,7 @@ impl ExecutionError {
                 notes
             }
             ExecutionError::TailOfNonList(_, found) => {
-                let mut notes = vec![
-                    "head and tail require a list (e.g. [1, 2, 3]) as their argument".to_string(),
-                ];
+                let mut notes = vec![];
                 if found.starts_with('"') {
                     notes.push(
                         "to concatenate strings, use string interpolation (e.g. \"{a}{b}\") \
@@ -1580,6 +1594,11 @@ impl ExecutionError {
         match self {
             ExecutionError::Traced(inner, _) => inner.code(),
             ExecutionError::TypeMismatch(..) => Some("EU-EVAL-TYPE"),
+            // Same message family as `TypeMismatch` ("type mismatch: expected
+            // X, found Y") — added by eu-1tkk.7.9 to stop function values
+            // being misreported as blocks, but the code allow-list was not
+            // updated to follow (eu-1tkk.7.37).
+            ExecutionError::UnexpectedFunction(..) => Some("EU-EVAL-TYPE"),
             ExecutionError::ContractViolation(..) => Some("EU-EVAL-CONTRACT"),
             ExecutionError::UnrepresentableValue(..) => Some("EU-RENDER-UNREPRESENTABLE"),
             ExecutionError::UnrenderableShape(..) => Some("EU-RENDER-SHAPE"),

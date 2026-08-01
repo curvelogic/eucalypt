@@ -10,7 +10,7 @@ warnings: 0
 code: -
 primary: none
 help-lines: 0
-note-lines: 3
+note-lines: 2
 secondary-labels: 0
 trace-frames: 0
 trace-user-frames: 0
@@ -19,6 +19,5 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: head requires a list, found "Hello, "
- = head and tail require a list (e.g. [1, 2, 3]) as their argument
  = to concatenate strings, use string interpolation (e.g. "{a}{b}") or 'str.join-on', not '++' (which is for list append)
  = to get individual characters of a string, use 'str.letters'
