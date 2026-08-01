@@ -29,6 +29,37 @@ pub enum FrameKind {
     /// `SourceMap::classify_frame` (eu-1tkk.7.12).
     Boundary,
     Transparent, // library plumbing (map/fold internals); normally curated out
+    /// A frame in user source that library machinery *entered*, rather than
+    /// one that called into the failing code — a demand site (eu-1tkk.7.34).
+    ///
+    /// Identified positionally on the raw pending-call stack: the innermost
+    /// user frame with one or more library frames *outside* it (further from
+    /// the failure) was not reached by the user calling anything — a
+    /// combinator such as `filter` or `map` invoked it as a callback while
+    /// forcing a lazily built value. Under laziness that demand can land in
+    /// an entirely different declaration from the one that built the value,
+    /// so the location has no causal relation to the failure and must never
+    /// become the primary label. It stays in the rendered trace, where
+    /// "this was forced here" is genuine context.
+    ///
+    /// Produced only by `eval::error::curate_stack_trace`;
+    /// `SourceMap::classify_frame` works from a `Smid` alone and so can
+    /// never return it.
+    Force,
+}
+
+impl FrameKind {
+    /// Does this frame sit in source the user wrote?
+    ///
+    /// True for [`FrameKind::User`] and [`FrameKind::Force`]: both name a
+    /// location in the user's own file, and they differ only in whether the
+    /// location is eligible to become the primary label. Invariants about
+    /// "the trace reaches user code" must use this rather than an equality
+    /// test against `User`, or they silently weaken when a trace's only user
+    /// anchor happens to be a force site.
+    pub fn is_user_source(&self) -> bool {
+        matches!(self, FrameKind::User | FrameKind::Force)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

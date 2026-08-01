@@ -73,12 +73,86 @@ fn frame_position(source_map: &SourceMap, smid: Smid) -> Option<FramePosition> {
 /// collapse: it keeps the innermost of the run, so the first `User` frame
 /// is the one that was already going to be chosen.
 pub fn curate_trace(raw: &[Smid], source_map: &SourceMap, budget: usize) -> CuratedTrace {
+    curate(raw, source_map, budget, false)
+}
+
+/// Curate a raw *pending-call stack* trace: [`curate_trace`], plus the
+/// demand-site rule that only makes sense on a call stack (eu-1tkk.7.34).
+///
+/// A stack trace's claim to outrank the env trace for primary blame
+/// (eu-1tkk.7.8) is that its innermost user frame is the *call site* nearest
+/// the failure. That claim holds only while the user frame actually called
+/// into the failing code. When one or more library frames sit *outside* it —
+/// further from the failure, i.e. later in this innermost-first sequence —
+/// the user frame was not reached by the user calling anything: a combinator
+/// such as `filter`, `map` or `foldl` invoked it as a callback while forcing
+/// a lazily built value.
+///
+/// Under laziness that demand can land in a completely different declaration
+/// from the one that built the value, so the location is causally unrelated
+/// to the failure. The frame is labelled [`FrameKind::Force`] and the trace
+/// reports no primary candidate at all: every remaining stack frame is
+/// further from the failure still and reached it through the same library
+/// machinery, so none of them is a call into the failing code either. Blame
+/// then falls to the env trace — the lexical scope of the code that actually
+/// failed.
+///
+/// The rule is deliberately not applied to the env trace, which is a lexical
+/// scope chain rather than a call chain: "outside" there means "enclosing
+/// scope", where an intervening library frame carries no such implication.
+pub fn curate_stack_trace(raw: &[Smid], source_map: &SourceMap, budget: usize) -> CuratedTrace {
+    curate(raw, source_map, budget, true)
+}
+
+fn curate(
+    raw: &[Smid],
+    source_map: &SourceMap,
+    budget: usize,
+    demand_site_rule: bool,
+) -> CuratedTrace {
+    // Classify the raw sequence before dropping anything: the demand-site
+    // rule below is positional, and the library frames it looks for are
+    // exactly the `Transparent` ones curation is about to discard.
+    let raw_classified: Vec<(Smid, FrameKind)> = raw
+        .iter()
+        .map(|&smid| (smid, source_map.classify_frame(smid)))
+        .collect();
+
+    // The innermost user frame, when library machinery entered it rather than
+    // the user calling into anything — held as an index into the *raw*
+    // sequence, not as a flag consumed by the first surviving frame.
+    //
+    // That is what makes this rule and the identical-position collapse below
+    // commute (eu-1tkk.7.34 x eu-1tkk.7.38): the collapse reads only Smids,
+    // the demotion writes only kinds, and both are keyed to the raw sequence,
+    // so neither can perturb the other and their order here is immaterial. A
+    // `demoted` accumulator would instead mark whichever `User` frame happened
+    // to survive rendering — a different question, and one that answers wrongly
+    // the moment a collapse drops the demand site while `demand_site` still
+    // suppresses the primary. `classify_frame` makes a user-file Smid always
+    // `User`, so every frame before this one is a `Boundary` in a resource file
+    // and so differs in `FramePosition`'s file component; the collapse cannot
+    // reach the demand site today. Keying to the index keeps this correct if
+    // that ever stops being true.
+    let demand_site: Option<usize> = demand_site_rule
+        .then(|| {
+            raw_classified
+                .iter()
+                .position(|(_, kind)| *kind == FrameKind::User)
+                .filter(|&i| {
+                    raw_classified[i + 1..]
+                        .iter()
+                        .any(|(_, kind)| *kind != FrameKind::User)
+                })
+        })
+        .flatten();
+
     let mut dropped_transparent = 0usize;
     let mut previous_position: Option<FramePosition> = None;
-    let classified: Vec<(Smid, FrameKind)> = raw
-        .iter()
-        .filter_map(|&smid| {
-            let kind = source_map.classify_frame(smid);
+    let classified: Vec<(Smid, FrameKind)> = raw_classified
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, (smid, kind))| {
             if kind == FrameKind::Transparent {
                 dropped_transparent += 1;
                 return None;
@@ -88,6 +162,13 @@ pub fn curate_trace(raw: &[Smid], source_map: &SourceMap, budget: usize) -> Cura
                 return None;
             }
             previous_position = position;
+            // Only the innermost user frame is the demand site itself; user
+            // frames outside it are ordinary (if more distant) call sites and
+            // keep their kind, so the rendered trace still reads as a call
+            // chain with one frame marked as the point of forcing.
+            if Some(i) == demand_site {
+                return Some((smid, FrameKind::Force));
+            }
             Some((smid, kind))
         })
         .collect();
@@ -97,10 +178,14 @@ pub fn curate_trace(raw: &[Smid], source_map: &SourceMap, budget: usize) -> Cura
         .flat_map(|run| run.pattern)
         .collect();
 
-    let primary = collapsed
-        .iter()
-        .find(|(_, kind)| *kind == FrameKind::User)
-        .map(|(smid, _)| *smid);
+    let primary = if demand_site.is_some() {
+        None
+    } else {
+        collapsed
+            .iter()
+            .find(|(_, kind)| *kind == FrameKind::User)
+            .map(|(smid, _)| *smid)
+    };
 
     let frames = collapsed.into_iter().take(budget).collect();
 
@@ -135,9 +220,9 @@ pub fn curate_trace_with_env(
     source_map: &SourceMap,
     budget: usize,
 ) -> CuratedTrace {
-    let mut curated = curate_trace(stack, source_map, budget);
+    let mut curated = curate_stack_trace(stack, source_map, budget);
 
-    let has_user = curated.frames.iter().any(|(_, k)| *k == FrameKind::User);
+    let has_user = curated.frames.iter().any(|(_, k)| k.is_user_source());
     let has_boundary = curated
         .frames
         .iter()
@@ -1171,7 +1256,7 @@ impl ExecutionError {
             // every input — but this keeps a single classification path for
             // "nearest user call-site", rather than two independent
             // implementations that could silently drift apart.
-            let user_smid = curate_trace(stack_trace, source_map, TRACE_BUDGET)
+            let user_smid = curate_stack_trace(stack_trace, source_map, TRACE_BUDGET)
                 .primary
                 .or_else(|| curate_trace(env_trace, source_map, TRACE_BUDGET).primary)
                 // Last resort before giving up on a user-file primary: the
@@ -1868,5 +1953,180 @@ mod location_selection_tests {
         let curated = curate_trace(&[inner, outer], &sm, TRACE_BUDGET);
 
         assert_eq!(curated.frames.len(), 2);
+    }
+
+    /// The demand-site rule (eu-1tkk.7.34).
+    ///
+    /// The stack trace's precedence over the env trace rests on its innermost
+    /// user frame being the call site nearest the failure. When library frames
+    /// sit *outside* that user frame — further from the failure — the user
+    /// frame was not reached by the user calling anything: a combinator
+    /// invoked it as a callback while forcing a lazily built value. The stack
+    /// then carries no call site at all and blame falls to the env trace.
+    ///
+    /// This is the shape of `step-two`'s `> 0` being handed a thunk that
+    /// `step-one` built: the `>` is correct code with no causal relation to
+    /// the failure.
+    #[test]
+    fn a_library_entered_user_frame_does_not_win_the_primary() {
+        let (mut sm, user_file, prelude_file) = mk_source_map();
+        let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
+        let env_user_smid = sm.add(user_file, Span::new(0u32, 5u32));
+        let demand_site_smid = sm.add(user_file, Span::new(20u32, 25u32));
+        let inner = ExecutionError::NoBranchForDataTag(prelude_smid, 0, vec![1]);
+        // Innermost-first: the user frame is nearest the failure, but a
+        // library frame lies outside it.
+        let traced = ExecutionError::Traced(
+            Box::new(inner),
+            Box::new((
+                vec![env_user_smid],
+                vec![demand_site_smid, prelude_smid],
+                Smid::default(),
+            )),
+        );
+
+        let diag = traced.to_diagnostic(&sm);
+
+        let primary = primary_label(&diag).expect("expected a primary label");
+        assert_eq!(
+            primary.range,
+            Range::from(Span::new(0u32, 5u32)),
+            "a user frame that library machinery entered is a demand site, not \
+             a call site: blame belongs to the env trace, got range {:?}",
+            primary.range
+        );
+    }
+
+    /// The mirror image, which is why the rule tests for library frames
+    /// *outside* the user frame rather than merely present.
+    ///
+    /// `result: [1, 2, 3] foldl(+, "zero")` puts the library frames *inside*
+    /// the user's `foldl` call — the ordinary shape of user code calling into
+    /// a combinator. That user frame is a genuine call site and must keep the
+    /// primary.
+    #[test]
+    fn a_user_frame_that_called_into_a_library_keeps_the_primary() {
+        let (mut sm, user_file, prelude_file) = mk_source_map();
+        let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
+        let env_user_smid = sm.add(user_file, Span::new(0u32, 5u32));
+        let call_site_smid = sm.add(user_file, Span::new(20u32, 25u32));
+        let inner = ExecutionError::NoBranchForDataTag(prelude_smid, 0, vec![1]);
+        // Innermost-first: library frames nearest the failure, user call site
+        // outside them.
+        let traced = ExecutionError::Traced(
+            Box::new(inner),
+            Box::new((
+                vec![env_user_smid],
+                vec![prelude_smid, call_site_smid],
+                Smid::default(),
+            )),
+        );
+
+        let diag = traced.to_diagnostic(&sm);
+
+        let primary = primary_label(&diag).expect("expected a primary label");
+        assert_eq!(
+            primary.range,
+            Range::from(Span::new(20u32, 25u32)),
+            "library frames inside the user frame are the normal call-into-a-\
+             combinator shape and must not demote it, got range {:?}",
+            primary.range
+        );
+    }
+
+    /// A demand site stays in the rendered trace; only its eligibility for
+    /// the primary label is withdrawn. Losing the frame entirely would drop
+    /// the one piece of information laziness makes genuinely useful — where
+    /// the value was forced.
+    #[test]
+    fn a_demand_site_is_kept_in_the_curated_trace_as_a_force_frame() {
+        let (mut sm, user_file, prelude_file) = mk_source_map();
+        let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
+        let demand_site_smid = sm.add(user_file, Span::new(20u32, 25u32));
+
+        let curated = curate_stack_trace(&[demand_site_smid, prelude_smid], &sm, TRACE_BUDGET);
+
+        assert_eq!(curated.primary, None, "a demand site is not a primary");
+        assert!(
+            curated
+                .frames
+                .iter()
+                .any(|&(smid, kind)| smid == demand_site_smid && kind == FrameKind::Force),
+            "the demand site must remain in the trace, labelled Force, got {:?}",
+            curated.frames
+        );
+    }
+
+    /// The rule belongs to the pending-call stack alone. The env trace is a
+    /// lexical scope chain, where "outside" means "enclosing scope" and an
+    /// intervening library frame implies nothing about who called whom — so
+    /// `curate_trace` must leave its primary intact on the same input.
+    #[test]
+    fn the_demand_site_rule_does_not_apply_to_the_env_trace() {
+        let (mut sm, user_file, prelude_file) = mk_source_map();
+        let prelude_smid = sm.add(prelude_file, Span::new(10u32, 12u32));
+        let user_smid = sm.add(user_file, Span::new(20u32, 25u32));
+
+        let curated = curate_trace(&[user_smid, prelude_smid], &sm, TRACE_BUDGET);
+
+        assert_eq!(
+            curated.primary,
+            Some(user_smid),
+            "the env trace keeps its innermost user frame as the primary"
+        );
+    }
+
+    /// Gates the composition of the demand-site rule (eu-1tkk.7.34) with the
+    /// identical-position collapse (eu-1tkk.7.38), which share one pass.
+    ///
+    /// `Force` must mark the frame the *detection* identified — the innermost
+    /// user frame of the **raw** sequence — and not "the first `User` frame
+    /// that survives the collapse". The two coincide on every fixture in the
+    /// corpus, so nothing else in the suite distinguishes them; this pins the
+    /// intended one directly.
+    ///
+    /// The trace here is the shape a lazy pipeline produces once a call node
+    /// and its callee node carry distinct Smids: an inner user frame, a second
+    /// frame rendering identically to it (collapsed away), a further user
+    /// frame, and a library frame outside them all.
+    #[test]
+    fn force_marks_the_raw_demand_site_across_the_identical_position_collapse() {
+        let (mut sm, user_file, prelude_file) = mk_source_map();
+        let demand_site = sm.add_annotated(user_file, Span::new(10u32, 13u32), "step-two");
+        let same_position = sm.add_annotated(user_file, Span::new(10u32, 20u32), "step-two");
+        let outer_call = sm.add_annotated(user_file, Span::new(40u32, 45u32), "result");
+        let library = sm.add(prelude_file, Span::new(0u32, 4u32));
+
+        let curated = curate_stack_trace(
+            &[demand_site, same_position, outer_call, library],
+            &sm,
+            TRACE_BUDGET,
+        );
+
+        assert_eq!(
+            curated.primary, None,
+            "a demand site suppresses the stack's primary candidate"
+        );
+        // The collapse drops `same_position`; `outer_call` and the library
+        // frame survive alongside the demand site.
+        assert_eq!(
+            curated
+                .frames
+                .iter()
+                .find(|(_, kind)| *kind == FrameKind::Force)
+                .map(|(smid, _)| *smid),
+            Some(demand_site),
+            "Force must mark the raw innermost user frame, got {:?}",
+            curated.frames
+        );
+        assert!(
+            curated
+                .frames
+                .iter()
+                .any(|&(smid, kind)| smid == outer_call && kind == FrameKind::User),
+            "a user frame outside the demand site stays an ordinary call site, \
+             got {:?}",
+            curated.frames
+        );
     }
 }

@@ -1302,6 +1302,37 @@ mod tests {
         assert_eq!(source_map.classify_frame(user_smid), FrameKind::User);
     }
 
+    /// The user-file rule beats the blame table, not merely the absence of
+    /// one: a Smid in the user's own file classifies `User` even when its
+    /// annotation names a combinator declared `:boundary`.
+    ///
+    /// Load-bearing beyond classification. `eval::error::curate` composes the
+    /// demand-site rule (eu-1tkk.7.34) with the identical-position collapse
+    /// (eu-1tkk.7.38) in one pass, and the collapse drops a frame whose
+    /// rendered position matches its predecessor's. Because every frame
+    /// preceding the innermost `User` frame is therefore a `Boundary` in a
+    /// *resource* file, the two can never share a `FramePosition` — whose
+    /// first component is the file — so the collapse can never drop the
+    /// demand site. That is what makes the order of the two rules in that
+    /// pass unobservable. Were a user-file Smid ever allowed to classify
+    /// `Boundary`, the demand site would become collapsible and the ordering
+    /// would start to matter; `curate` keys its demotion to the raw index
+    /// rather than to a surviving-frame accumulator so that it stays correct
+    /// if that day comes, but this test is the tripwire.
+    #[test]
+    fn classify_frame_user_file_beats_a_boundary_blame_declaration() {
+        let mut source_map = SourceMap::new();
+        source_map.mark_resource_file(1);
+        let user_smid = source_map.add_annotated(0, Span::new(0u32, 5u32), "nth");
+        source_map.extend_blame_table(HashMap::from([("nth".to_string(), FrameKind::Boundary)]));
+
+        assert_eq!(
+            source_map.classify_frame(user_smid),
+            FrameKind::User,
+            "a user-file Smid must classify User regardless of the blame table"
+        );
+    }
+
     #[test]
     fn classify_frame_declared_transparent_combinator() {
         let (source_map, _, map_smid, _) = classifier_fixture();

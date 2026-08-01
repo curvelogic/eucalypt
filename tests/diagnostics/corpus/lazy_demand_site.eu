@@ -1,0 +1,6 @@
+# 'map' is applied to a number rather than a list. The only user frame on the
+# pending-call stack is the '+' inside the section that 'map' was forcing —
+# library machinery entered it, so it is a demand site rather than a call into
+# the failing code, and the primary belongs on the 'map' call (eu-1tkk.7.34).
+count: 42
+result: count map((+ 1))
