@@ -24,6 +24,6 @@ error: panic: index 10 out of range for list of length 3
 2 │ result: xs nth(10)
   │            ^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - result at nth_out_of_range.eu:2:12
-    - in 'nth' at [prelude]
+    - in 'nth' (prelude)

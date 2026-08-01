@@ -697,7 +697,7 @@ pub fn facts(stderr: &str) -> Facts {
         if t.starts_with("help:") {
             f.help_lines += 1;
         }
-        if t.starts_with("= ") && t != "= stack trace:" {
+        if t.starts_with("= ") && t != "= while evaluating (outermost first):" {
             f.note_lines += 1;
         }
         if t.contains("called from here") {
@@ -721,11 +721,12 @@ pub fn facts(stderr: &str) -> Facts {
         }
     }
 
-    // Trace frames: the `- <name> at <loc>` lines under a `= stack trace:` note.
+    // Trace frames: the `- <name> at <loc>` / `- <name> (<resource>)` lines
+    // under a `= while evaluating (outermost first):` note.
     let mut in_trace = false;
     for line in &lines {
         let t = line.trim_start();
-        if t == "= stack trace:" {
+        if t == "= while evaluating (outermost first):" {
             in_trace = true;
             continue;
         }
@@ -734,7 +735,11 @@ pub fn facts(stderr: &str) -> Facts {
         }
         if let Some(frame) = t.strip_prefix("- ") {
             f.trace_frames += 1;
-            if frame.contains("[prelude]") {
+            // A resource (bundled-library) frame carries no `at file:line:col`
+            // any more (eu-1tkk.7.36) — it is named `(prelude)` etc. instead.
+            // `[prelude]` is retained too in case a codespan header (rather
+            // than a trace note) ever legitimately excerpts prelude source.
+            if frame.contains("[prelude]") || frame.contains("(prelude)") {
                 f.trace_prelude_frames += 1;
             } else {
                 f.trace_user_frames += 1;
@@ -1144,8 +1149,8 @@ fn engine_scope_note() -> String {
      fixtures — a separate, already-known issue, not part of the count \
      above. As of eu-l51r7's most recent count: 6 fixtures diverge under \
      `EU_HEAPSYN=1`, and the same 6 diverge under `EU_PREDECODE=0`. In every \
-     case the difference is one `stack trace:` note frame missing, \
-     duplicating the primary label's own file:line:col — never a wrong \
+     case the difference is one `while evaluating (outermost first):` note \
+     frame missing, duplicating the primary label's own file:line:col — never a wrong \
      location or a missing primary. See eu-l51r7 for the full inventory; the \
      owner ruled this does not block 0.14 (P2, characterised and pinned \
      per-engine rather than fixed).\n"

@@ -26,5 +26,5 @@ error: key 'upper' not found in block
   │              ^^^
   │
   = to convert a string to upper case, use 'str.to-upper', e.g. 'text str.to-upper'
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 067_str_upper_hint.eu:3:14

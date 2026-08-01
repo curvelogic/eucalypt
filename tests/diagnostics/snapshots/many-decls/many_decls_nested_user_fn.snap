@@ -24,6 +24,6 @@ error: panic: index 10 out of range for list of length 3
 606 │ result: xs take-tenth
     │            ^^^^^^^^^^
     │
-    = stack trace:
+    = while evaluating (outermost first):
       - result at many_decls_nested_user_fn.eu:606:12
-      - in 'nth' at [prelude]
+      - in 'nth' (prelude)

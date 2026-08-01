@@ -1220,8 +1220,8 @@ impl ExecutionError {
                 // edge — excerpts library internals the user did not write
                 // and cannot change. The named boundary combinator is not
                 // lost: `curate_trace_with_env` carries it into the
-                // `stack trace:` note as `in 'nth'`, which is where §4.3's
-                // worked example puts it.
+                // `while evaluating (outermost first):` note as `in 'nth'`,
+                // which is where §4.3's worked example puts it.
                 if source_map.classify_frame(smid) != FrameKind::User {
                     continue;
                 }

@@ -37,6 +37,6 @@ error: tail requires a list, found 0
   │         ^^^
   │
   = head and tail require a list (e.g. [1, 2, 3]) as their argument
-  = stack trace:
+  = while evaluating (outermost first):
     - result at swap_args.eu:2:9
-    - in 'nth' at [prelude]
+    - in 'nth' (prelude)

@@ -24,5 +24,5 @@ error: cannot compare incompatible types with '<=': operands must both be number
 2 │ result: :foo <= 42
   │              ^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 104_comparison_type_mismatch_lte.eu:2:14

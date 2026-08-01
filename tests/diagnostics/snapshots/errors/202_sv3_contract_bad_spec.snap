@@ -24,5 +24,5 @@ error: panic: validate: not a type spec
 7 │ result: { a: 1 } validate({ not: "a spec" })
   │                  ^^^^^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 202_sv3_contract_bad_spec.eu:7:18

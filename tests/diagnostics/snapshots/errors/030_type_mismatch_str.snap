@@ -26,5 +26,5 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found string "hello"
   │
   = to convert a string to a number, use 'num', e.g. 's num'
   = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
-  = stack trace:
+  = while evaluating (outermost first):
     - x at 030_type_mismatch_str.eu:2:6

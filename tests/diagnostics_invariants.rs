@@ -399,12 +399,17 @@ fn debug_trace_restores_the_uncurated_trace() {
 /// only helps when the reader can act on the line it points at. Pointing it
 /// into the prelude shows code the user did not write and cannot change.
 /// The named boundary combinator is not lost — it moves to the curated
-/// `stack trace:` note, which is the one place `[prelude]` may still appear.
+/// `while evaluating (outermost first):` note, which is the one place a
+/// bundled-library frame may still appear — named as `(prelude)`, with no
+/// coordinate the user could mistakenly think they are meant to act on
+/// (eu-1tkk.7.36).
 ///
-/// The gate is a count: exactly one `[prelude]` mention in the human
-/// rendering of `nth_out_of_range`, namely the trace note's `in 'nth' at
-/// [prelude]:NNNN`. Restoring the uncurated secondary labels re-excerpts
-/// `nth`'s own body and pushes the count above one.
+/// The gate is a count: exactly one `(prelude)` mention in the human
+/// rendering of `nth_out_of_range`, namely the trace note's `in 'nth'
+/// (prelude)`. Restoring the uncurated secondary labels re-excerpts `nth`'s
+/// own body and pushes the count above one. The bracketed `[prelude]` form
+/// (a real codespan-header excerpt of prelude source) must never appear at
+/// all — that would mean library internals leaked into a labelled block.
 #[test]
 fn secondary_labels_do_not_excerpt_library_internals() {
     let dir = std::path::Path::new(concat!(
@@ -419,10 +424,16 @@ fn secondary_labels_do_not_excerpt_library_internals() {
             .output()
             .expect("run eu");
         let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-        let mentions = stderr.matches("[prelude]").count();
+        let bracketed = stderr.matches("[prelude]").count();
+        assert_eq!(
+            bracketed, 0,
+            "{fixture}: the bracketed '[prelude]' excerpt form must never appear \
+             (only the trace note's bare '(prelude)' hint may), found {bracketed} in:\n{stderr}"
+        );
+        let mentions = stderr.matches("(prelude)").count();
         assert_eq!(
             mentions, expected,
-            "{fixture}: expected exactly {expected} '[prelude]' mention(s) (the curated \
+            "{fixture}: expected exactly {expected} '(prelude)' mention(s) (the curated \
              trace note only), found {mentions} in:\n{stderr}"
         );
     }

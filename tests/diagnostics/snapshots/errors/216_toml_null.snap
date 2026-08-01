@@ -26,5 +26,5 @@ error[EU-RENDER-UNREPRESENTABLE]: cannot represent this value in TOML output: TO
    │
    = give the key a value the format can carry, or drop it from the block before rendering
    = 'yaml' and 'json' output both have a null, and 'edn' renders it as 'nil'
-   = stack trace:
+   = while evaluating (outermost first):
      - main at 216_toml_null.eu:15:7

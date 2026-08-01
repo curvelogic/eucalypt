@@ -28,7 +28,7 @@ error: assertion failed: expected "goodbye world", got "hello world"
 19 │ result: make-greeting("world") //= "goodbye world"
    │                                ^^^
    │
-   = stack trace:
+   = while evaluating (outermost first):
      - result at error_176.eu:19:32
 
 === --source-prelude ===
