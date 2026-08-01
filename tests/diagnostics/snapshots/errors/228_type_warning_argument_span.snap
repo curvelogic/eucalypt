@@ -1,0 +1,36 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/228_type_warning_argument_span
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/228_type_warning_argument_span.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 1
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/228_type_warning_argument_span.eu:15:9
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: type mismatch calling 'double-it'
+   ┌─ tests/harness/errors/228_type_warning_argument_span.eu:15:19
+   │
+15 │ result: double-it(widths.w)
+   │                   ^^^^^^ expected number, found "8"
+
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "8"
+   ┌─ tests/harness/errors/228_type_warning_argument_span.eu:15:9
+   │
+15 │ result: double-it(widths.w)
+   │         ^^^^^^^^^ ------ expected number, found "8"
+   │
+   = to convert a string to a number, use 'num', e.g. 's num'
+   = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+   = stack trace:
+     - result at 228_type_warning_argument_span.eu:15:9

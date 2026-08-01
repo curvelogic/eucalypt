@@ -28,7 +28,7 @@ error: type mismatch: expected string, found number
   ┌─ tests/harness/errors/023_arg_types.eu:1:4
   │
 1 │ x: str.letters(99)
-  │    ^^^
+  │    ^^^         -- expected string, found number
   │
   = to convert a number to a string, use 'str' or string interpolation
   = stack trace:

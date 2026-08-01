@@ -3051,6 +3051,16 @@ pub fn test_error_227_pp_non_serialisable_metadata() {
 }
 
 #[test]
+/// eu-1tkk.7.40 — the type checker had already diagnosed this argument, and
+/// its finding now rides into the runtime error's labels. The sidecar demands
+/// the `expected number, found "8"` text twice: once from the warning, and
+/// again from the error below it. Sever the link and the second occurrence
+/// disappears, so the pattern fails.
+pub fn test_error_228_type_warning_argument_span() {
+    run_error_test(&error_opts("228_type_warning_argument_span.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:

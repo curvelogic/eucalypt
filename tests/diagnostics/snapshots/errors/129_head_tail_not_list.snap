@@ -28,7 +28,9 @@ error: head requires a list, found 42
   ┌─ tests/harness/errors/129_head_tail_not_list.eu:1:7
   │
 1 │ x: 42 head
-  │       ^^^^
+  │    -- ^^^^
+  │    │
+  │    expected [a], found number
   │
   = head and tail require a list (e.g. [1, 2, 3]) as their argument
   = to create a list from a number, wrap it: '[n]'
