@@ -22,7 +22,7 @@ error: panic: unknown option: -x
   ┌─ tests/harness/errors/110_unknown_short_arg.eu:2:14
   │
 2 │ main: ["-x"] parse-args({})
-  │              ^^^^^^^^^^
+  │              ^^^^^^^^^^^^^^
   │
   = stack trace:
     - main at 110_unknown_short_arg.eu:2:14

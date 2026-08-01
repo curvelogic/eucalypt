@@ -1,9 +1,33 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/151_set_add_non_set
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/151_set_add_non_set.eu
-prelude-modes: identical
+prelude-modes: divergent
 
-=== both prelude modes ===
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/151_set_add_non_set.eu:1:17
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected set, found string "hello"
+  ┌─ tests/harness/errors/151_set_add_non_set.eu:1:17
+  │
+1 │ result: "hello" set.add("world")
+  │                 ^^^^^^^^^^^^^^^^
+  │
+  = stack trace:
+    - result at 151_set_add_non_set.eu:1:17
+
+=== --source-prelude ===
 exit: 1
 errors: 1
 warnings: 0

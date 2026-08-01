@@ -22,7 +22,7 @@ error: panic: index 10 out of range for list of length 3
   ┌─ tests/diagnostics/corpus/nth_out_of_range.eu:2:12
   │
 2 │ result: xs nth(10)
-  │            ^^^
+  │            ^^^^^^^
   │
   = stack trace:
     - result at nth_out_of_range.eu:2:12

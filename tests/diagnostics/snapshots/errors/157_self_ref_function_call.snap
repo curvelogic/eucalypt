@@ -22,7 +22,7 @@ error: binding 'p' refers to itself — this will always diverge
   ┌─ tests/harness/errors/157_self_ref_function_call.eu:8:4
   │
 8 │ p: p(1)
-  │    ^
+  │    ^^^^
   │
   = the binding `p: p` (or `p: p(…)`) always loops
   = if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`

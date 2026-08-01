@@ -22,7 +22,7 @@ error: type mismatch: expected string, found number
   ┌─ tests/harness/errors/035_nested_fn_trace.eu:2:12
   │
 2 │ middle(x): inner(x)
-  │            ^^^^^
+  │            ^^^^^^^^
   │
   = to convert a number to a string, use 'str' or string interpolation
   = stack trace:

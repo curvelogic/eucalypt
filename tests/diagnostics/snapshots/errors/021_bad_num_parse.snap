@@ -22,7 +22,7 @@ error: bad number format: blah
   ┌─ tests/harness/errors/021_bad_num_parse.eu:1:6
   │
 1 │ bad: __NUMPARSE("blah")
-  │      ^^^^^^^^^^
+  │      ^^^^^^^^^^^^^^^^^^
   │
   = valid number formats are: integers (e.g. 42), decimals (e.g. 3.14), and scientific notation (e.g. 1.5e10)
   = use 'str' to convert numbers to strings; to convert strings to numbers use 'num'

@@ -22,7 +22,7 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found string "hello"
   ┌─ tests/harness/errors/131_map_user_location.eu:4:18
   │
 4 │ result: data map(+ "hello")
-  │              --- ^
+  │              ----^---------
   │              │
   │              called from here
   │

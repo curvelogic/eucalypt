@@ -38,8 +38,29 @@ pub struct CuratedTrace {
     pub dropped_transparent: usize,
 }
 
+/// How a trace frame will present itself to a reader: the name it is
+/// labelled with and the `file:line:col` it resolves to.
+///
+/// The VM's raw trace already suppresses a frame whose `Smid` equals its
+/// predecessor's, but distinct `Smid`s can still denote the same rendered
+/// frame — a call's callee node and the call node itself share a start
+/// position and an enclosing declaration name, and differ only in how far
+/// the span extends (eu-1tkk.7.38). Two such frames print as the same line
+/// twice, which reads as spurious recursion.
+type FramePosition = (Option<usize>, Option<u32>, Option<String>);
+
+fn frame_position(source_map: &SourceMap, smid: Smid) -> Option<FramePosition> {
+    let info = source_map.source_info_for_smid(smid)?;
+    Some((
+        info.file,
+        info.span.map(|s| s.start().into()),
+        info.annotation.clone(),
+    ))
+}
+
 /// Curate a raw (innermost-first) trace: classify every Smid via
 /// [`SourceMap::classify_frame`], drop `Transparent` frames entirely,
+/// drop a frame that would render identically to the one before it,
 /// collapse consecutive repeats (recursion) via the generalised
 /// [`compress_cycles`], keep `User` and `Boundary` frames, and truncate to
 /// `budget` (design spec §4.3, eu-1tkk.7.12).
@@ -48,19 +69,26 @@ pub struct CuratedTrace {
 /// `curate_trace(...).primary` always agrees with searching the raw trace
 /// directly for the first user-file Smid — curation changes *presentation*
 /// (what a reader sees), not *primary-location selection* (which was
-/// already correct, eu-1tkk.7.8).
+/// already correct, eu-1tkk.7.8). The same holds of the identical-position
+/// collapse: it keeps the innermost of the run, so the first `User` frame
+/// is the one that was already going to be chosen.
 pub fn curate_trace(raw: &[Smid], source_map: &SourceMap, budget: usize) -> CuratedTrace {
     let mut dropped_transparent = 0usize;
+    let mut previous_position: Option<FramePosition> = None;
     let classified: Vec<(Smid, FrameKind)> = raw
         .iter()
         .filter_map(|&smid| {
             let kind = source_map.classify_frame(smid);
             if kind == FrameKind::Transparent {
                 dropped_transparent += 1;
-                None
-            } else {
-                Some((smid, kind))
+                return None;
             }
+            let position = frame_position(source_map, smid);
+            if position.is_some() && position == previous_position {
+                return None;
+            }
+            previous_position = position;
+            Some((smid, kind))
         })
         .collect();
 
@@ -1789,5 +1817,37 @@ mod location_selection_tests {
 
         let primary = primary_label(&diag).expect("expected a primary label");
         assert_eq!(primary.range, Range::from(Span::new(1u32, 2u32)));
+    }
+
+    /// Two consecutive frames that would render as the same
+    /// `name at file:line:col` collapse to one, even though their `Smid`s
+    /// differ (eu-1tkk.7.38). A call's callee node and the call node share
+    /// a start position and a declaration name, differing only in extent,
+    /// so without this a single call prints its frame twice.
+    #[test]
+    fn curate_trace_collapses_frames_that_render_identically() {
+        let (mut sm, user_file, _prelude_file) = mk_source_map();
+        let callee = sm.add_annotated(user_file, Span::new(10u32, 13u32), "result");
+        let call = sm.add_annotated(user_file, Span::new(10u32, 20u32), "result");
+
+        let curated = curate_trace(&[callee, call], &sm, TRACE_BUDGET);
+
+        assert_eq!(curated.frames.len(), 1);
+        assert_eq!(curated.frames[0].0, callee);
+        assert_eq!(curated.primary, Some(callee));
+    }
+
+    /// The collapse is by *rendered position*, so two frames at genuinely
+    /// different positions — even within the same declaration — are both
+    /// kept.
+    #[test]
+    fn curate_trace_keeps_frames_at_different_positions() {
+        let (mut sm, user_file, _prelude_file) = mk_source_map();
+        let inner = sm.add_annotated(user_file, Span::new(10u32, 13u32), "result");
+        let outer = sm.add_annotated(user_file, Span::new(30u32, 40u32), "result");
+
+        let curated = curate_trace(&[inner, outer], &sm, TRACE_BUDGET);
+
+        assert_eq!(curated.frames.len(), 2);
     }
 }

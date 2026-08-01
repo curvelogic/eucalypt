@@ -1,9 +1,9 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/152_set_element_type_mismatch
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/152_set_element_type_mismatch.eu
-prelude-modes: identical
+prelude-modes: divergent
 
-=== both prelude modes ===
+=== blob prelude ===
 exit: 1
 errors: 1
 warnings: 0
@@ -22,7 +22,33 @@ error[EU-EVAL-TYPE]: type mismatch: expected set, found set
   ┌─ tests/harness/errors/152_set_element_type_mismatch.eu:1:11
   │
 1 │ result: ∅ set.add([1, 2, 3] set.from-list)
-  │           ^^^
+  │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  │
+  = stack trace:
+    - result at 152_set_element_type_mismatch.eu:1:11
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/152_set_element_type_mismatch.eu:1:11
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected set, found set
+  ┌─ tests/harness/errors/152_set_element_type_mismatch.eu:1:11
+  │
+1 │ result: ∅ set.add([1, 2, 3] set.from-list)
+  │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  │           │
+  │           called from here
   │
   = stack trace:
     - result at 152_set_element_type_mismatch.eu:1:11

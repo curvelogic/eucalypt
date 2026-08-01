@@ -22,7 +22,7 @@ error: panic: index 10 out of range for list of length 3
   ┌─ tests/harness/errors/139_list_index_oob.eu:2:19
   │
 2 │ result: [1, 2, 3] nth(10)
-  │                   ^^^
+  │                   ^^^^^^^
   │
   = stack trace:
     - result at 139_list_index_oob.eu:2:19

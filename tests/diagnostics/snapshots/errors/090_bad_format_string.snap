@@ -1,9 +1,31 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/090_bad_format_string
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/090_bad_format_string.eu
-prelude-modes: identical
+prelude-modes: divergent
 
-=== both prelude modes ===
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/090_bad_format_string.eu:2:4
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: bad format string: 'Value is %d' is not a printf specifier (must start with '%', e.g. '%d', '%s', '%.2f')
+  help: format strings use printf-style %-specifiers, e.g. %d (integer), %f (float), %s (string), %e (scientific)
+  ┌─ tests/harness/errors/090_bad_format_string.eu:2:4
+  │
+2 │ x: str.fmt(42, "Value is %d")
+  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+=== --source-prelude ===
 exit: 1
 errors: 1
 warnings: 0

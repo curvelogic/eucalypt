@@ -22,7 +22,7 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found string "hello"
   ┌─ tests/harness/errors/101_named_fn_source_loc.eu:4:9
   │
 4 │ result: double("hello")
-  │         ^^^^^^
+  │         ^^^^^^^^^^^^^^^
   │
   = to convert a string to a number, use 'num', e.g. 's num'
   = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'

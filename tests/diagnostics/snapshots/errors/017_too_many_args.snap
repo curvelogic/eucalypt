@@ -24,7 +24,7 @@ error: tried to call a number as a function
   ┌─ tests/harness/errors/017_too_many_args.eu:2:4
   │
 2 │ y: f(1, 2)
-  │    ^
+  │    ^^^^^^^
   │
   = a number value is not a function; check for a missing operator or extra argument
   = note: catenation (juxtaposition) has low precedence — 'f(a) + 1' binds as 'f(a + 1)'; add parentheses to disambiguate

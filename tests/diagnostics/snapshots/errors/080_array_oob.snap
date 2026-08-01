@@ -1,9 +1,30 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/080_array_oob
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/080_array_oob.eu
-prelude-modes: identical
+prelude-modes: divergent
 
-=== both prelude modes ===
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/080_array_oob.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: array index out of bounds: coordinates [5, 0] are outside the array bounds
+  ┌─ tests/harness/errors/080_array_oob.eu:2:4
+  │
+2 │ a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([5, 0])
+  │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ --------------- called from here
+
+=== --source-prelude ===
 exit: 1
 errors: 1
 warnings: 0

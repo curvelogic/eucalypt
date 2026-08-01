@@ -23,7 +23,7 @@ error: expected a primitive value but found a let binding
   ┌─ tests/harness/errors/149_not_value_source_loc.eu:4:9
   │
 4 │ result: str.of(f)
-  │         ^^^
+  │         ^^^^^^^^^
   │
   = stack trace:
     - # Error: passing a function where a primitive value is expected — source location… at 149_not_value_source_loc.eu:1:1

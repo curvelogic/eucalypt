@@ -1,9 +1,9 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/error_173
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/error_173.eu
-prelude-modes: identical
+prelude-modes: divergent
 
-=== both prelude modes ===
+=== blob prelude ===
 exit: 1
 errors: 1
 warnings: 0
@@ -23,7 +23,34 @@ error: expected a primitive value but found non-numeric value in number list
    ┌─ tests/harness/errors/error_173.eu:10:9
    │
 10 │ result: graph.topo-sort(3, [["a", 1], [1, 2]])
-   │         ^^^^^
+   │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   │
+   = stack trace:
+     - result at error_173.eu:10:9
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/error_173.eu:10:9
+help-lines: 1
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: expected a primitive value but found non-numeric value in number list
+  help: this can occur when a function or structured value appears where a primitive (number, string, etc.) was expected
+   ┌─ tests/harness/errors/error_173.eu:10:9
+   │
+10 │ result: graph.topo-sort(3, [["a", 1], [1, 2]])
+   │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   │         │
+   │         called from here
    │
    = stack trace:
      - result at error_173.eu:10:9

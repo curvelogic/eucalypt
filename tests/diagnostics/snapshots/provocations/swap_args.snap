@@ -34,7 +34,7 @@ error: tail requires a list, found 0
   ┌─ tests/diagnostics/corpus/swap_args.eu:2:9
   │
 2 │ result: nth(xs, 0)
-  │         ^^^
+  │         ^^^^^^^^^^
   │
   = head and tail require a list (e.g. [1, 2, 3]) as their argument
   = stack trace:

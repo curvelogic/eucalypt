@@ -22,7 +22,7 @@ error: panic: index 10 out of range for list of length 3
     ┌─ tests/diagnostics/snapshot-corpus/many_decls_late_nth.eu:907:12
     │
 907 │ result: xs nth(10)
-    │            ^^^
+    │            ^^^^^^^
     │
     = stack trace:
       - result at many_decls_late_nth.eu:907:12

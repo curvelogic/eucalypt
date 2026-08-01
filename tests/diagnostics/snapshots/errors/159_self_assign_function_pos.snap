@@ -22,7 +22,7 @@ error: binding 'f' refers to itself — this will always diverge
   ┌─ tests/harness/errors/159_self_assign_function_pos.eu:2:11
   │
 2 │ out: { f: f(1) }
-  │           ^
+  │           ^^^^
   │
   = the binding `f: f` (or `f: f(…)`) always loops
   = if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`

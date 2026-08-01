@@ -22,7 +22,7 @@ error[EU-EVAL-CONTRACT]: contract violation: 2 violations against {name: string,
   ┌─ tests/harness/errors/201_sv3_contract_violation.eu:8:52
   │
 8 │ config: { name: "web", port: "8080", debug: true } ensure(schema)
-  │                                                    ^^^^^^
+  │                                                    ^^^^^^^^^^^^^^
   │
   = port: expected number, found string
   = (root): unexpected keys: debug

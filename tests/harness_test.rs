@@ -3051,6 +3051,16 @@ pub fn test_error_227_pp_non_serialisable_metadata() {
 }
 
 #[test]
+/// eu-1tkk.7.38 — the primary caret for an under-applied call spans the
+/// whole call (`foldl(+, 0)`, eleven columns), not just the callee name
+/// (`foldl`, five). The sidecar pins the caret run to exactly eleven, so
+/// reverting the shunting yard to stamping the `App` with `f.smid()`
+/// fails this test.
+pub fn test_error_229_1tkk_7_38_underapplied_call_span() {
+    run_error_test(&error_opts("229_1tkk_7_38_underapplied_call_span.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:

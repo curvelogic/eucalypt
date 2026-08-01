@@ -22,7 +22,7 @@ error: panic: unknown option: --unknown-flag
   ┌─ tests/harness/errors/109_unknown_arg.eu:2:26
   │
 2 │ main: ["--unknown-flag"] parse-args({})
-  │                          ^^^^^^^^^^
+  │                          ^^^^^^^^^^^^^^
   │
   = stack trace:
     - main at 109_unknown_arg.eu:2:26

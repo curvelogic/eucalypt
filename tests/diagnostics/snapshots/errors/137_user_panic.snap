@@ -22,7 +22,7 @@ error: panic: deliberate failure
   ┌─ tests/harness/errors/137_user_panic.eu:1:9
   │
 1 │ result: panic("deliberate failure")
-  │         ^^^^^
+  │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
   = stack trace:
     - result at 137_user_panic.eu:1:9

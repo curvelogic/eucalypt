@@ -28,7 +28,7 @@ error: head requires a list, found 42
   ┌─ tests/harness/errors/042_map_non_list.eu:3:16
   │
 3 │ result: x map((+ 1))
-  │           ---  ^
+  │           -----^----
   │           │
   │           called from here
   │

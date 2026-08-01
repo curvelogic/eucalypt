@@ -22,7 +22,9 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found string "zero"
   ┌─ tests/harness/errors/133_stack_trace_cycle_dedup.eu:3:19
   │
 3 │ result: [1, 2, 3] foldl(+, "zero")
-  │                   ^^^^^ - called from here
+  │                   ^^^^^^^^^^^^^^^^
+  │                         │
+  │                         called from here
   │
   = to convert a string to a number, use 'num', e.g. 's num'
   = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'

@@ -24,7 +24,7 @@ error: tried to call a list as a function
   ┌─ tests/harness/errors/055_list_not_callable.eu:5:9
   │
 5 │ result: items(2)
-  │         ^^^^^
+  │         ^^^^^^^^
   │
   = lists are not callable; to access elements by index use 'nth(index, list)' or pipeline form 'list nth(index)'
   = for the first element use 'list head'; for the rest use 'list tail'

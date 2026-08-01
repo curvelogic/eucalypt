@@ -22,7 +22,7 @@ error: tail requires a list, found 3
    ┌─ tests/harness/errors/181_direct_app_call_site.eu:15:9
    │
 15 │ result: second(3)
-   │         ^^^^^^
+   │         ^^^^^^^^^
    │
    = head and tail require a list (e.g. [1, 2, 3]) as their argument
    = stack trace:

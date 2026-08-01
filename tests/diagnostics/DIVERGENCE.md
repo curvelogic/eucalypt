@@ -10,14 +10,30 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**4 of 213 fixtures diverge.**
+**20 of 214 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
 | `errors/011_assert_pred` | user tests/harness/errors/011_assert_pred.eu:1:14 | user tests/harness/errors/011_assert_pred.eu:1:14 | 1 (1 user) | 1 (1 user) |
+| `errors/023_arg_types` | user tests/harness/errors/023_arg_types.eu:1:4 | user tests/harness/errors/023_arg_types.eu:1:4 | 1 (1 user) | 1 (1 user) |
+| `errors/029_type_mismatch_num` | user tests/harness/errors/029_type_mismatch_num.eu:2:4 | user tests/harness/errors/029_type_mismatch_num.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/032_type_mismatch_num_as_str` | user tests/harness/errors/032_type_mismatch_num_as_str.eu:2:4 | user tests/harness/errors/032_type_mismatch_num_as_str.eu:2:4 | 1 (1 user) | 1 (1 user) |
 | `errors/035_nested_fn_trace` | user tests/harness/errors/035_nested_fn_trace.eu:2:12 | user tests/harness/errors/035_nested_fn_trace.eu:1:11 | 1 (1 user) | 1 (1 user) |
+| `errors/080_array_oob` | user tests/harness/errors/080_array_oob.eu:2:4 | user tests/harness/errors/080_array_oob.eu:2:4 | 0 (0 user) | 0 (0 user) |
+| `errors/081_array_shape_mismatch` | user tests/harness/errors/081_array_shape_mismatch.eu:2:4 | user tests/harness/errors/081_array_shape_mismatch.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/082_array_reshape_mismatch` | user tests/harness/errors/082_array_reshape_mismatch.eu:2:4 | user tests/harness/errors/082_array_reshape_mismatch.eu:2:4 | 1 (1 user) | 1 (1 user) |
+| `errors/083_array_arith_mismatch` | user tests/harness/errors/083_array_arith_mismatch.eu:4:4 | user tests/harness/errors/083_array_arith_mismatch.eu:4:4 | 1 (1 user) | 1 (1 user) |
+| `errors/087_bad_regex` | user tests/harness/errors/087_bad_regex.eu:2:12 | user tests/harness/errors/087_bad_regex.eu:2:12 | 1 (1 user) | 1 (1 user) |
+| `errors/090_bad_format_string` | user tests/harness/errors/090_bad_format_string.eu:2:4 | user tests/harness/errors/090_bad_format_string.eu:2:4 | 0 (0 user) | 0 (0 user) |
+| `errors/100_fn_call_source_loc` | user tests/harness/errors/100_fn_call_source_loc.eu:2:9 | user tests/harness/errors/100_fn_call_source_loc.eu:2:9 | 1 (1 user) | 1 (1 user) |
+| `errors/141_calzdt_year_overflow` | user tests/harness/errors/141_calzdt_year_overflow.eu:3:9 | user tests/harness/errors/141_calzdt_year_overflow.eu:3:9 | 0 (0 user) | 0 (0 user) |
 | `errors/143_bitwise_float` | none | user tests/harness/errors/143_bitwise_float.eu:3:13 | 0 (0 user) | 0 (0 user) |
+| `errors/150_bad_timezone_source_loc` | user tests/harness/errors/150_bad_timezone_source_loc.eu:2:9 | user tests/harness/errors/150_bad_timezone_source_loc.eu:2:9 | 0 (0 user) | 0 (0 user) |
+| `errors/151_set_add_non_set` | user tests/harness/errors/151_set_add_non_set.eu:1:17 | user tests/harness/errors/151_set_add_non_set.eu:1:17 | 1 (1 user) | 1 (1 user) |
+| `errors/152_set_element_type_mismatch` | user tests/harness/errors/152_set_element_type_mismatch.eu:1:11 | user tests/harness/errors/152_set_element_type_mismatch.eu:1:11 | 1 (1 user) | 1 (1 user) |
+| `errors/error_173` | user tests/harness/errors/error_173.eu:10:9 | user tests/harness/errors/error_173.eu:10:9 | 1 (1 user) | 1 (1 user) |
 | `errors/error_176` | user tests/harness/errors/error_176.eu:19:32 | user tests/harness/errors/error_176.eu:19:32 | 1 (1 user) | 0 (0 user) |
+| `many-decls/huge_decls_type_warning` | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | 1 (1 user) | 1 (1 user) |
 
 ## Engine scope
 
