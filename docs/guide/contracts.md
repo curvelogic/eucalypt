@@ -254,7 +254,7 @@ file. `validate` raises when its first argument is not a type spec at all:
 ```eu,notest
 { import: "contract.eu" }
 r: { a: 1 } validate({ not: "a spec" })
-# error: panic: validate: not a type spec
+# error: validate: not a type spec
 ```
 
 That is a different error from a contract violation, distinguishable both

@@ -18,7 +18,7 @@ trace-prelude-frames: 1
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: panic: index 10 out of range for list of length 3
+error: index 10 out of range for list of length 3
   ┌─ tests/diagnostics/snapshot-corpus/many_decls_early_nth.eu:5:12
   │
 5 │ result: xs nth(10)
