@@ -10,7 +10,7 @@ warnings: 1
 code: -
 primary: user tests/harness/errors/138_internal_no_panic_prefix.eu:1:17
 help-lines: 0
-note-lines: 3
+note-lines: 2
 secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
@@ -30,7 +30,6 @@ error: head requires a list, found "hello"
 1 │ result: "hello" head
   │                 ^^^^
   │
-  = head and tail require a list (e.g. [1, 2, 3]) as their argument
   = to concatenate strings, use string interpolation (e.g. "{a}{b}") or 'str.join-on', not '++' (which is for list append)
   = to get individual characters of a string, use 'str.letters'
   = while evaluating (outermost first):

@@ -10,7 +10,7 @@ warnings: 0
 code: -
 primary: user tests/harness/errors/181_direct_app_call_site.eu:15:9
 help-lines: 0
-note-lines: 1
+note-lines: 0
 secondary-labels: 0
 trace-frames: 2
 trace-user-frames: 1
@@ -24,7 +24,6 @@ error: tail requires a list, found 3
 15 │ result: second(3)
    │         ^^^^^^
    │
-   = head and tail require a list (e.g. [1, 2, 3]) as their argument
    = while evaluating (outermost first):
      - result at 181_direct_app_call_site.eu:15:9
      - in 'nth' (prelude)

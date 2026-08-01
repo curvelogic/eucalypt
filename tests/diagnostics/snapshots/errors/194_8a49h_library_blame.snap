@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: panic: elements called on non-block
+error: elements called on non-block
    ┌─ tests/harness/errors/194_8a49h_library_blame.eu:12:22
    │
 12 │ bad: [:t-record, 42] from-data

@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: panic: validate: not a type spec
+error: validate: not a type spec
   ┌─ tests/harness/errors/202_sv3_contract_bad_spec.eu:7:18
   │
 7 │ result: { a: 1 } validate({ not: "a spec" })

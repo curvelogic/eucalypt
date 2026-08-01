@@ -7,7 +7,7 @@ prelude-modes: identical
 exit: 1
 errors: 1
 warnings: 0
-code: -
+code: EU-EVAL-TYPE
 primary: user tests/diagnostics/corpus/catenation_arith.eu:2:7
 help-lines: 0
 note-lines: 2
@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: type mismatch: expected number, found a function
+error[EU-EVAL-TYPE]: type mismatch: expected number, found a function
   ┌─ tests/diagnostics/corpus/catenation_arith.eu:2:7
   │
 2 │ n: xs foldl(+, 0) + 1
