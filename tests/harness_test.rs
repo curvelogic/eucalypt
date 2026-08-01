@@ -2646,6 +2646,81 @@ pub fn test_error_168() {
     run_error_test(&io_error_opts("168_io_shell_missing_cmd.eu"));
 }
 
+/// Regression coverage for eu-1tkk.7.21: the "IO operations are not
+/// permitted" error (raised when a `requires-io` target is run *without*
+/// `--allow-io`) lost its source location between 0.13.2 and 0.14. Root
+/// cause: entering a blob-reconstructed prelude global (`io.shell` /
+/// `io.fail` / ...) stamps the machine's live annotation register with a
+/// `Smid::global_slot` identity — deliberately "valid" (so blame
+/// classification can key on it) but resolving to no source position — which
+/// clobbered the real user call site that had been recorded moments earlier.
+///
+/// `072_io_fail.eu`, `106_io_check_fail.eu` and `168_io_shell_missing_cmd.eu`
+/// each already have a `test_error_*` function above, but those run *with*
+/// `--allow-io` and assert on a completely different failure (the io.fail /
+/// io.check / io.shell body error) — so they never exercised the
+/// not-permitted path at all. These three run the same fixtures *without*
+/// `--allow-io` directly against the binary (bypassing the `.expect`
+/// sidecar, which is already claimed by the `--allow-io` test for each
+/// file) and assert the primary label names the fixture's own file and the
+/// call site's line:column, matching 0.13.2 exactly.
+#[test]
+pub fn test_error_072_not_allowed_has_location() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["tests/harness/errors/072_io_fail.eu"])
+        .output()
+        .expect("failed to run eu");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "stderr was:\n{stderr}");
+    assert!(
+        stderr.contains("IO operations are not permitted"),
+        "stderr was:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("072_io_fail.eu:3:7"),
+        "expected the not-permitted error to carry the io.fail call site \
+         (072_io_fail.eu:3:7), but stderr was:\n{stderr}"
+    );
+}
+
+#[test]
+pub fn test_error_106_not_allowed_has_location() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["tests/harness/errors/106_io_check_fail.eu"])
+        .output()
+        .expect("failed to run eu");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "stderr was:\n{stderr}");
+    assert!(
+        stderr.contains("IO operations are not permitted"),
+        "stderr was:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("106_io_check_fail.eu:2:23"),
+        "expected the not-permitted error to carry the io.shell call site \
+         (106_io_check_fail.eu:2:23), but stderr was:\n{stderr}"
+    );
+}
+
+#[test]
+pub fn test_error_168_not_allowed_has_location() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["tests/harness/errors/168_io_shell_missing_cmd.eu"])
+        .output()
+        .expect("failed to run eu");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "stderr was:\n{stderr}");
+    assert!(
+        stderr.contains("IO operations are not permitted"),
+        "stderr was:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("168_io_shell_missing_cmd.eu:3:7"),
+        "expected the not-permitted error to carry the io.shell call site \
+         (168_io_shell_missing_cmd.eu:3:7), but stderr was:\n{stderr}"
+    );
+}
+
 #[test]
 /// Importing a malformed JSONL stream should produce a clear error, not a panic.
 pub fn test_error_169() {

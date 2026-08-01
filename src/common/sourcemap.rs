@@ -78,6 +78,20 @@ impl Smid {
         self.0.is_some()
     }
 
+    /// Whether this Smid identifies an actual position in a source file —
+    /// i.e. it is valid *and* not a [`Smid::global_slot`] identity.
+    ///
+    /// A `global_slot` Smid is deliberately [`is_valid`](Self::is_valid) (so
+    /// blame classification has something to key on for an entered prelude
+    /// combinator), but it resolves to no source position at all. Registers
+    /// that track "the most recent real location" — such as the machine's
+    /// `last_annotation` — must gate on this, not `is_valid`, or entering an
+    /// unstamped prelude global clobbers the genuine user call site that
+    /// preceded it with a location-free marker (eu-1tkk.7.21).
+    pub fn is_source_location(&self) -> bool {
+        self.is_valid() && self.as_global_slot().is_none()
+    }
+
     /// Convert to a zero-based index into `SourceMap::source`, if valid.
     ///
     /// Returns `None` for an invalid (default/synthetic) Smid rather than
@@ -1036,6 +1050,34 @@ mod tests {
         // A global-slot Smid must never be mistaken for a real SourceMap
         // index by code that only checks `get()`/`is_valid()`.
         assert_ne!(smid.get(), None);
+    }
+
+    /// A `global_slot` identity is deliberately `is_valid()` (see
+    /// `global_slot_is_valid_and_not_a_source_index` above) but must not be
+    /// treated as a real source location: `is_source_location` is the gate
+    /// that registers such as the machine's `last_annotation` must use
+    /// instead of `is_valid`, or entering an unstamped prelude global
+    /// clobbers the genuine call site it followed (eu-1tkk.7.21).
+    #[test]
+    fn global_slot_is_valid_but_not_a_source_location() {
+        let smid = Smid::global_slot(7);
+        assert!(smid.is_valid());
+        assert!(!smid.is_source_location());
+    }
+
+    #[test]
+    fn default_smid_is_neither_valid_nor_a_source_location() {
+        let smid = Smid::default();
+        assert!(!smid.is_valid());
+        assert!(!smid.is_source_location());
+    }
+
+    #[test]
+    fn ordinary_smid_is_a_source_location() {
+        let mut source_map = SourceMap::new();
+        let smid = source_map.add(0, Span::new(0u32, 5u32));
+        assert!(smid.is_valid());
+        assert!(smid.is_source_location());
     }
 
     #[test]

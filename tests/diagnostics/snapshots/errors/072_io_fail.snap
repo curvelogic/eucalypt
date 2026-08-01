@@ -1,9 +1,30 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/072_io_fail
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/072_io_fail.eu
-prelude-modes: identical
+prelude-modes: divergent
 
-=== both prelude modes ===
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/072_io_fail.eu:3:7
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: IO operations are not permitted; use the --allow-io (-I) flag to enable
+  ┌─ tests/harness/errors/072_io_fail.eu:3:7
+  │
+3 │ main: io.fail("deliberate test failure")
+  │       ^^
+
+=== --source-prelude ===
 exit: 1
 errors: 1
 warnings: 0
