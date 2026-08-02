@@ -10,13 +10,22 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**4 of 213 fixtures diverge.**
+**13 of 213 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
 | `errors/011_assert_pred` | user tests/harness/errors/011_assert_pred.eu:1:14 | user tests/harness/errors/011_assert_pred.eu:1:14 | 1 (1 user) | 1 (1 user) |
 | `errors/035_nested_fn_trace` | user tests/harness/errors/035_nested_fn_trace.eu:2:12 | user tests/harness/errors/035_nested_fn_trace.eu:1:11 | 1 (1 user) | 1 (1 user) |
-| `errors/143_bitwise_float` | none | user tests/harness/errors/143_bitwise_float.eu:3:13 | 0 (0 user) | 0 (0 user) |
+| `errors/047_str_plus_plus` | user tests/harness/errors/047_str_plus_plus.eu:2:21 | none | 0 (0 user) | 0 (0 user) |
+| `errors/072_io_fail` | user tests/harness/errors/072_io_fail.eu:3:7 | none | 0 (0 user) | 0 (0 user) |
+| `errors/094_io_no_flag` | user tests/harness/errors/094_io_no_flag.eu:4:9 | none | 0 (0 user) | 0 (0 user) |
+| `errors/106_io_check_fail` | user tests/harness/errors/106_io_check_fail.eu:2:23 | none | 0 (0 user) | 0 (0 user) |
+| `errors/124_dbg_io_map` | user tests/harness/errors/124_dbg_io_map.eu:2:28 | none | 0 (0 user) | 0 (0 user) |
+| `errors/125_dbg_io_function_wrap` | user tests/harness/errors/125_dbg_io_function_wrap.eu:2:28 | none | 0 (0 user) | 0 (0 user) |
+| `errors/168_io_shell_missing_cmd` | user tests/harness/errors/168_io_shell_missing_cmd.eu:3:7 | none | 0 (0 user) | 0 (0 user) |
+| `errors/218_json_block_key` | user tests/harness/errors/218_json_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
+| `errors/219_toml_block_key` | user tests/harness/errors/219_toml_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
+| `errors/220_eu_block_key` | user tests/harness/errors/220_eu_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
 | `errors/error_176` | user tests/harness/errors/error_176.eu:19:32 | user tests/harness/errors/error_176.eu:19:32 | 1 (1 user) | 0 (0 user) |
 
 ## Engine scope

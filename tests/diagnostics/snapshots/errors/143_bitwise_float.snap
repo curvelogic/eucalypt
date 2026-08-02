@@ -1,26 +1,9 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/143_bitwise_float
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/143_bitwise_float.eu
-prelude-modes: divergent
+prelude-modes: identical
 
-=== blob prelude ===
-exit: 1
-errors: 1
-warnings: 0
-code: -
-primary: none
-help-lines: 0
-note-lines: 0
-secondary-labels: 0
-trace-frames: 0
-trace-user-frames: 0
-trace-prelude-frames: 0
-prelude-excerpt-lines: 0
-rust-panic: no
---- stderr ---
-error: bitwise operations require integer arguments (got 1.5, which is not a whole number)
-
-=== --source-prelude ===
+=== both prelude modes ===
 exit: 1
 errors: 1
 warnings: 0

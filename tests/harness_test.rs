@@ -2646,6 +2646,122 @@ pub fn test_error_168() {
     run_error_test(&io_error_opts("168_io_shell_missing_cmd.eu"));
 }
 
+/// Regression coverage for eu-1tkk.7.21: the "IO operations are not
+/// permitted" error (raised when a `requires-io` target is run *without*
+/// `--allow-io`) lost its source location between 0.13.2 and 0.14 **in blob
+/// (default) prelude mode**. Root cause: entering a blob-reconstructed
+/// prelude global (`io.shell` / `io.fail` / ...) stamps the machine's live
+/// annotation register with a `Smid::global_slot` identity — deliberately
+/// "valid" (so blame classification can key on it) but resolving to no
+/// source position — which clobbered the real user call site that had been
+/// recorded moments earlier.
+///
+/// **Blob-only, deliberately**: every test below is gated on
+/// `#[cfg(prelude_blob_ok)]` (set by `build.rs` only when a fresh
+/// `lib/prelude.blob` was embedded — see the pattern established in
+/// `src/eval/stg/blob.rs` and `tests/diagnostics_blame_plumbing_test.rs`,
+/// eu-1tkk.7.11). `Smid::global_slot` identities — the thing this fix
+/// corrects for — only exist on the blob path; CI's plain "Test Suite" job
+/// runs `cargo test` without generating a blob first, so `eu` falls back to
+/// compiling the prelude from source at runtime and every prelude Smid is a
+/// real (non-tagged) source position instead. Checked directly against the
+/// released 0.13.2 binary: in `--source-prelude` mode 0.13.2 shows a
+/// **prelude** location (`[prelude]:84:14`), not a user one — and
+/// eu-1tkk.7.8 deliberately suppresses a non-user-file primary label, so
+/// 0.14 showing no location in source-prelude mode is correct behaviour
+/// under that invariant, not a regression. Do not "fix" the source-prelude
+/// path by weakening the suppression rule to make these assertions pass
+/// unconditionally.
+///
+/// `072_io_fail.eu`, `094_io_no_flag.eu`, `106_io_check_fail.eu` and
+/// `168_io_shell_missing_cmd.eu` each already have a `test_error_*` function
+/// (`094`'s uses the `.expect` sidecar; the other three run *with*
+/// `--allow-io` and assert on a completely different failure — the io.fail /
+/// io.check / io.shell body error) — so none of them exercised the
+/// not-permitted path with a location assertion. These four run the
+/// relevant fixture *without* `--allow-io` directly against the binary and
+/// assert the primary label names the fixture's own file and the call
+/// site's line:column, matching blob-mode 0.13.2 exactly.
+#[test]
+#[cfg(prelude_blob_ok)]
+pub fn test_error_072_not_allowed_has_location() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["tests/harness/errors/072_io_fail.eu"])
+        .output()
+        .expect("failed to run eu");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "stderr was:\n{stderr}");
+    assert!(
+        stderr.contains("IO operations are not permitted"),
+        "stderr was:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("072_io_fail.eu:3:7"),
+        "expected the not-permitted error to carry the io.fail call site \
+         (072_io_fail.eu:3:7), but stderr was:\n{stderr}"
+    );
+}
+
+#[test]
+#[cfg(prelude_blob_ok)]
+pub fn test_error_094_not_allowed_has_location() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["tests/harness/errors/094_io_no_flag.eu", "-t", "result"])
+        .output()
+        .expect("failed to run eu");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "stderr was:\n{stderr}");
+    assert!(
+        stderr.contains("IO operations are not permitted"),
+        "stderr was:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("094_io_no_flag.eu:4:9"),
+        "expected the not-permitted error to carry the io.shell call site \
+         (094_io_no_flag.eu:4:9), but stderr was:\n{stderr}"
+    );
+}
+
+#[test]
+#[cfg(prelude_blob_ok)]
+pub fn test_error_106_not_allowed_has_location() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["tests/harness/errors/106_io_check_fail.eu"])
+        .output()
+        .expect("failed to run eu");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "stderr was:\n{stderr}");
+    assert!(
+        stderr.contains("IO operations are not permitted"),
+        "stderr was:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("106_io_check_fail.eu:2:23"),
+        "expected the not-permitted error to carry the io.shell call site \
+         (106_io_check_fail.eu:2:23), but stderr was:\n{stderr}"
+    );
+}
+
+#[test]
+#[cfg(prelude_blob_ok)]
+pub fn test_error_168_not_allowed_has_location() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["tests/harness/errors/168_io_shell_missing_cmd.eu"])
+        .output()
+        .expect("failed to run eu");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "stderr was:\n{stderr}");
+    assert!(
+        stderr.contains("IO operations are not permitted"),
+        "stderr was:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("168_io_shell_missing_cmd.eu:3:7"),
+        "expected the not-permitted error to carry the io.shell call site \
+         (168_io_shell_missing_cmd.eu:3:7), but stderr was:\n{stderr}"
+    );
+}
+
 #[test]
 /// Importing a malformed JSONL stream should produce a clear error, not a panic.
 pub fn test_error_169() {
