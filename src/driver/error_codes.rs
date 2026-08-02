@@ -90,12 +90,22 @@ const CATALOGUE: &[(&str, &str)] = &[
         "EU-RENDER-SHAPE: document shape not accepted by the output format\n\
      \n\
      The output format needs the document to have a particular structure,\n\
-     and the value being rendered does not have it. html output renders\n\
-     hiccup markup - a list whose first item is the tag, optionally\n\
-     followed by an attribute block and then contents - so rendering a\n\
-     block, or a bare scalar, has no meaning as html.\n\
+     and the value being rendered does not have it. Two cases raise it.\n\
      \n\
-     Example:\n\
+     Whole-document shape. html output renders hiccup markup - a list\n\
+     whose first item is the tag, optionally followed by an attribute\n\
+     block and then contents - so rendering a block, or a bare scalar,\n\
+     has no meaning as html.\n\
+     \n\
+     Block keys. json, toml and eu output all need block keys to be\n\
+     text: JSON object keys and TOML keys are strings, and eucalypt's\n\
+     own syntax needs a name. Block literals always have symbol keys,\n\
+     but kv-block and block accept any key at all, so kv-block(1, \"a\")\n\
+     - or a boolean, list or block key - produces a block those three\n\
+     formats cannot render. yaml and edn both represent such keys (1: a\n\
+     and {1 \"a\"} respectively) and render the block unchanged.\n\
+     \n\
+     Example (document shape):\n\
      \n\
      \x20   ` { target: :main format: :html }\n\
      \x20   main: { a: 1 b: 2 }\n\
@@ -104,15 +114,31 @@ const CATALOGUE: &[(&str, &str)] = &[
      \x20   the value to render is a block, but markup output needs a\n\
      \x20   hiccup element - a list whose first item is the tag\n\
      \n\
-     How to fix it: build the value as hiccup markup, e.g.\n\
-     [:div, { id: \"top\" }, \"hello\"], and select it with a target or -e so\n\
-     that html is given the markup itself rather than the enclosing unit's\n\
-     block. To render arbitrary data instead, choose a format that accepts\n\
-     any shape, such as yaml, json or text.\n\
+     Example (block key):\n\
+     \n\
+     \x20   ` { target: :main format: :json }\n\
+     \x20   main: kv-block(1, \"a\")\n\
+     \n\
+     \x20   error[EU-RENDER-SHAPE]: cannot render this document as JSON:\n\
+     \x20   a block key is the number 1, but JSON object keys must be text\n\
+     \n\
+     How to fix it: for a shape mismatch, build the value as hiccup\n\
+     markup, e.g. [:div, { id: \"top\" }, \"hello\"], and select it with a\n\
+     target or -e so that html is given the markup itself rather than\n\
+     the enclosing unit's block. For a block key, give the block symbol\n\
+     keys - e.g. kv-block(:one, \"a\") - or convert the key to text with\n\
+     str before rendering. In either case you can instead choose a\n\
+     format that accepts the document as it stands: yaml, json or text\n\
+     for arbitrary shapes, and yaml or edn for keys that are not text.\n\
+     \n\
+     eucalypt reports this rather than coercing the value - a key\n\
+     rendered as \"1\" is not the key that was evaluated, and the\n\
+     difference survives into anything that re-reads the output.\n\
      \n\
      This diagnostic often has no source location: the document's root\n\
      events are emitted by the render pipeline rather than by a user\n\
-     expression, so there is frequently no span to point at.",
+     expression, and a literal block key records no annotation, so\n\
+     there is frequently no span to point at.",
     ),
 ];
 
@@ -158,5 +184,51 @@ mod tests {
     #[test]
     fn unknown_code_has_no_entry() {
         assert!(catalogue_entry("EU-NOT-A-REAL-CODE").is_none());
+    }
+
+    /// This `CATALOGUE` and `docs/reference/error-codes.md` are maintained
+    /// by hand, in two separate files, with no compiler check tying them
+    /// together — that gap is exactly how `EU-RENDER-SHAPE` drifted (eu-1z503
+    /// extended the code to cover non-text block keys but only one of the two
+    /// catalogues was updated, eu-1tkk.7.46). This cannot catch stale prose —
+    /// the two files intentionally differ in form (docs is markdown with
+    /// links and codespan-quoted examples; this one is plain text meant to
+    /// print straight to a terminal) — but it does catch the structural half
+    /// of the problem: a code documented in one file and not the other. Every
+    /// `### \`EU-...\`` heading in the docs file must have a matching
+    /// `CATALOGUE` entry, and vice versa.
+    #[test]
+    fn catalogue_code_set_matches_docs() {
+        use std::collections::BTreeSet;
+
+        let docs_path = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/reference/error-codes.md");
+        let docs = std::fs::read_to_string(docs_path)
+            .unwrap_or_else(|e| panic!("failed to read {docs_path}: {e}"));
+
+        let doc_codes: BTreeSet<&str> = docs
+            .lines()
+            .filter_map(|line| {
+                line.trim()
+                    .strip_prefix("### `")
+                    .and_then(|rest| rest.strip_suffix('`'))
+            })
+            .collect();
+        assert!(
+            !doc_codes.is_empty(),
+            "found no '### `EU-...`' headings in {docs_path} — the heading \
+             format this test looks for may have changed"
+        );
+
+        let catalogue_codes: BTreeSet<&str> = CATALOGUE.iter().map(|(code, _)| *code).collect();
+
+        let docs_only: Vec<_> = doc_codes.difference(&catalogue_codes).collect();
+        let catalogue_only: Vec<_> = catalogue_codes.difference(&doc_codes).collect();
+        assert!(
+            docs_only.is_empty() && catalogue_only.is_empty(),
+            "docs/reference/error-codes.md and src/driver/error_codes.rs::CATALOGUE \
+             must document the same set of codes.\n\
+             In docs but missing from CATALOGUE: {docs_only:?}\n\
+             In CATALOGUE but missing from docs: {catalogue_only:?}"
+        );
     }
 }
