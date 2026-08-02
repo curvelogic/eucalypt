@@ -24,7 +24,7 @@ error[EU-EVAL-TYPE]: type mismatch: expected set, found set
 1 │ result: ∅ set.add([1, 2, 3] set.from-list)
   │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 152_set_element_type_mismatch.eu:1:11
 
 === --source-prelude ===
@@ -50,5 +50,5 @@ error[EU-EVAL-TYPE]: type mismatch: expected set, found set
   │           │
   │           called from here
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 152_set_element_type_mismatch.eu:1:11

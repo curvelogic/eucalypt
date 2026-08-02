@@ -28,7 +28,7 @@ error: unclosed character class
 2 │ x: "hello" str.matches?("[invalid")
   │            ^^^^^^^^^^^^^^^^^^^^^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - x at 087_bad_regex.eu:2:12
 
 === --source-prelude ===
@@ -58,5 +58,5 @@ error: unclosed character class
   │            │
   │            called from here
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - x at 087_bad_regex.eu:2:12

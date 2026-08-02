@@ -2,9 +2,10 @@
 # written `""`, indistinguishable from a genuine empty string, so the exit
 # assertion is what turns "silently conflated null with \"\"" into a failure.
 #
-# Anchored on the primary-label line ('┌─ …:15:7'), not the 'stack trace:'
-# note: '[^\n]*' cannot cross a newline, so a diagnostic whose location
-# survives only in the note does not match (eu-ziq8o pattern).
+# Anchored on the primary-label line ('┌─ …:15:7'), not the
+# 'while evaluating (outermost first):' note: '[^\n]*' cannot cross a
+# newline, so a diagnostic whose location survives only in the note does
+# not match (eu-ziq8o pattern).
 #
 # Known limit of that assertion, verified by fault injection: replacing
 # machine.annotation() with Smid::default() at the error construction site

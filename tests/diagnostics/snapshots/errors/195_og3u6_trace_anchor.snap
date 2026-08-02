@@ -18,12 +18,12 @@ trace-prelude-frames: 1
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: panic: index 10 out of range for list of length 3
+error: index 10 out of range for list of length 3
    ┌─ tests/harness/errors/195_og3u6_trace_anchor.eu:15:12
    │
 15 │ result: xs nth(10)
    │            ^^^^^^^
    │
-   = stack trace:
+   = while evaluating (outermost first):
      - result at 195_og3u6_trace_anchor.eu:15:12
-     - in 'nth' at [prelude]
+     - in 'nth' (prelude)

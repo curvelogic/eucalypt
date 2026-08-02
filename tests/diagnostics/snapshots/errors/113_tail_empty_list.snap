@@ -35,5 +35,5 @@ error: tail of empty list
   │
   = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
   = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 113_tail_empty_list.eu:1:12

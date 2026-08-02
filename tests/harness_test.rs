@@ -2646,6 +2646,122 @@ pub fn test_error_168() {
     run_error_test(&io_error_opts("168_io_shell_missing_cmd.eu"));
 }
 
+/// Regression coverage for eu-1tkk.7.21: the "IO operations are not
+/// permitted" error (raised when a `requires-io` target is run *without*
+/// `--allow-io`) lost its source location between 0.13.2 and 0.14 **in blob
+/// (default) prelude mode**. Root cause: entering a blob-reconstructed
+/// prelude global (`io.shell` / `io.fail` / ...) stamps the machine's live
+/// annotation register with a `Smid::global_slot` identity — deliberately
+/// "valid" (so blame classification can key on it) but resolving to no
+/// source position — which clobbered the real user call site that had been
+/// recorded moments earlier.
+///
+/// **Blob-only, deliberately**: every test below is gated on
+/// `#[cfg(prelude_blob_ok)]` (set by `build.rs` only when a fresh
+/// `lib/prelude.blob` was embedded — see the pattern established in
+/// `src/eval/stg/blob.rs` and `tests/diagnostics_blame_plumbing_test.rs`,
+/// eu-1tkk.7.11). `Smid::global_slot` identities — the thing this fix
+/// corrects for — only exist on the blob path; CI's plain "Test Suite" job
+/// runs `cargo test` without generating a blob first, so `eu` falls back to
+/// compiling the prelude from source at runtime and every prelude Smid is a
+/// real (non-tagged) source position instead. Checked directly against the
+/// released 0.13.2 binary: in `--source-prelude` mode 0.13.2 shows a
+/// **prelude** location (`[prelude]:84:14`), not a user one — and
+/// eu-1tkk.7.8 deliberately suppresses a non-user-file primary label, so
+/// 0.14 showing no location in source-prelude mode is correct behaviour
+/// under that invariant, not a regression. Do not "fix" the source-prelude
+/// path by weakening the suppression rule to make these assertions pass
+/// unconditionally.
+///
+/// `072_io_fail.eu`, `094_io_no_flag.eu`, `106_io_check_fail.eu` and
+/// `168_io_shell_missing_cmd.eu` each already have a `test_error_*` function
+/// (`094`'s uses the `.expect` sidecar; the other three run *with*
+/// `--allow-io` and assert on a completely different failure — the io.fail /
+/// io.check / io.shell body error) — so none of them exercised the
+/// not-permitted path with a location assertion. These four run the
+/// relevant fixture *without* `--allow-io` directly against the binary and
+/// assert the primary label names the fixture's own file and the call
+/// site's line:column, matching blob-mode 0.13.2 exactly.
+#[test]
+#[cfg(prelude_blob_ok)]
+pub fn test_error_072_not_allowed_has_location() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["tests/harness/errors/072_io_fail.eu"])
+        .output()
+        .expect("failed to run eu");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "stderr was:\n{stderr}");
+    assert!(
+        stderr.contains("IO operations are not permitted"),
+        "stderr was:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("072_io_fail.eu:3:7"),
+        "expected the not-permitted error to carry the io.fail call site \
+         (072_io_fail.eu:3:7), but stderr was:\n{stderr}"
+    );
+}
+
+#[test]
+#[cfg(prelude_blob_ok)]
+pub fn test_error_094_not_allowed_has_location() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["tests/harness/errors/094_io_no_flag.eu", "-t", "result"])
+        .output()
+        .expect("failed to run eu");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "stderr was:\n{stderr}");
+    assert!(
+        stderr.contains("IO operations are not permitted"),
+        "stderr was:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("094_io_no_flag.eu:4:9"),
+        "expected the not-permitted error to carry the io.shell call site \
+         (094_io_no_flag.eu:4:9), but stderr was:\n{stderr}"
+    );
+}
+
+#[test]
+#[cfg(prelude_blob_ok)]
+pub fn test_error_106_not_allowed_has_location() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["tests/harness/errors/106_io_check_fail.eu"])
+        .output()
+        .expect("failed to run eu");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "stderr was:\n{stderr}");
+    assert!(
+        stderr.contains("IO operations are not permitted"),
+        "stderr was:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("106_io_check_fail.eu:2:23"),
+        "expected the not-permitted error to carry the io.shell call site \
+         (106_io_check_fail.eu:2:23), but stderr was:\n{stderr}"
+    );
+}
+
+#[test]
+#[cfg(prelude_blob_ok)]
+pub fn test_error_168_not_allowed_has_location() {
+    let output = std::process::Command::new(eu_binary())
+        .args(["tests/harness/errors/168_io_shell_missing_cmd.eu"])
+        .output()
+        .expect("failed to run eu");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "stderr was:\n{stderr}");
+    assert!(
+        stderr.contains("IO operations are not permitted"),
+        "stderr was:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("168_io_shell_missing_cmd.eu:3:7"),
+        "expected the not-permitted error to carry the io.shell call site \
+         (168_io_shell_missing_cmd.eu:3:7), but stderr was:\n{stderr}"
+    );
+}
+
 #[test]
 /// Importing a malformed JSONL stream should produce a clear error, not a panic.
 pub fn test_error_169() {
@@ -2703,7 +2819,8 @@ pub fn test_error_178() {
 /// on the offending value — rather than aborting the process with a Rust
 /// panic. The sidecar asserts the label's `file:line:col`, not just the
 /// wording, and anchors on the `┌─` line so that a location regression
-/// cannot be masked by the `stack trace:` note (eu-1tkk.7.20).
+/// cannot be masked by the `while evaluating (outermost first):` note
+/// (eu-1tkk.7.20).
 pub fn test_error_171() {
     run_error_test(&error_opts("171_yaml_large_uint.eu"));
 }
@@ -2827,11 +2944,11 @@ pub fn test_192_1tkk_7_9_function_not_block() {
 /// the message reports the real index and the real length rather than
 /// leaking `drop`'s mechanical "tail of empty list"; the primary location
 /// is the user's own `xs nth(10)` call site, not a `[prelude]` line; and
-/// the curated `stack trace:` note keeps the user frame *and* names the
-/// boundary combinator (`in 'nth'`) that the raw continuation dump alone
-/// no longer carries — `nth` raises at its own edge, so its frame lives
-/// in the env (lexical scope) trace and is recovered by
-/// `curate_trace_with_env`.
+/// the curated `while evaluating (outermost first):` note keeps the user
+/// frame *and* names the boundary combinator (`in 'nth'`) that the raw
+/// continuation dump alone no longer carries — `nth` raises at its own
+/// edge, so its frame lives in the env (lexical scope) trace and is
+/// recovered by `curate_trace_with_env`.
 ///
 /// Engine-agnostic: this is presentation-layer curation over Smids both
 /// engines record identically, and it is verified under `cargo test`
@@ -2948,8 +3065,8 @@ pub fn test_228_bc34x_meta_body_memoisation() {
 ///
 /// The regex deliberately anchors on the `┌─` primary-label line rather than
 /// merely finding the fixture's name somewhere in the output: before the fix
-/// the user's file still appeared in the `stack trace:` note, so a looser
-/// pattern passes either way and gates nothing.
+/// the user's file still appeared in the `while evaluating (outermost
+/// first):` note, so a looser pattern passes either way and gates nothing.
 pub fn test_194_8a49h_library_blame() {
     run_error_test(&error_opts("194_8a49h_library_blame.eu"));
 }
@@ -2963,8 +3080,8 @@ pub fn test_194_8a49h_library_blame() {
 /// trace anchor name `pad0` — a binding the user never called — for a
 /// failure raised inside `nth`. The regex pins the primary label's own
 /// `file:line:col` (line 15, the `result` declaration) *before* the
-/// `stack trace:` marker, so a regression that only fixes the note cannot
-/// satisfy it.
+/// `while evaluating (outermost first):` marker, so a regression that only
+/// fixes the note cannot satisfy it.
 pub fn test_195_og3u6_trace_anchor() {
     run_error_test(&error_opts("195_og3u6_trace_anchor.eu"));
 }
@@ -3048,6 +3165,16 @@ pub fn test_error_226_pp_concat_non_serialisable() {
 #[test]
 pub fn test_error_227_pp_non_serialisable_metadata() {
     run_error_test(&error_opts("227_pp_non_serialisable_metadata.eu"));
+}
+
+#[test]
+/// eu-1tkk.7.40 — the type checker had already diagnosed this argument, and
+/// its finding now rides into the runtime error's labels. The sidecar demands
+/// the `expected number, found "8"` text twice: once from the warning, and
+/// again from the error below it. Sever the link and the second occurrence
+/// disappears, so the pattern fails.
+pub fn test_error_228_type_warning_argument_span() {
+    run_error_test(&error_opts("228_type_warning_argument_span.eu"));
 }
 
 #[test]
@@ -3967,11 +4094,30 @@ pub fn test_eval_path_warns_on_record_key_typo() {
 }
 
 /// The blob-core merged check (default config) and the source-prelude merged
-/// check (`EU_SOURCE_PRELUDE=1`) must produce byte-identical `eu check
-/// --strict` output for the same file (eu-rb5n condition 2/4: the blob path
-/// is only a startup optimisation, never a different answer). Covers both
-/// config branches for a representative spread: a warning case, a clean
-/// case, and a case needing the deeper prefix-list inference.
+/// check (`EU_SOURCE_PRELUDE=1`) must produce byte-identical output for the
+/// same file (eu-rb5n condition 2/4: the blob path is only a startup
+/// optimisation, never a different answer). Covers a representative spread:
+/// a warning case, a suppressed case, and a case needing the deeper
+/// prefix-list inference.
+///
+/// # Two ways this used to be vacuous (eu-1tkk.7.43)
+///
+/// It compared `eu check --strict` invocations. `eu check` returns from
+/// `bin/eu.rs` at the `opt.check()` branch, *before* the
+/// `maybe_load_prelude_blob` call further down — it goes through
+/// `run_type_checker`, which always loads prelude source. So
+/// `EU_SOURCE_PRELUDE=1` made no difference to it, and the test compared the
+/// source prelude with itself no matter what CI did. The eval path
+/// (`eu --strict <file>`, as `test_eval_path_warns_on_record_key_typo` uses)
+/// is the one `run_type_checker_from_blob_core` is reached from, so that is
+/// what this drives now.
+///
+/// It was also ungated, and so ran in the blob-less "Test Suite" job where
+/// there is no blob to differ from — the same hazard the tick-parity tripwire
+/// records for itself. `cfg(prelude_blob_ok)` plus the blob-mode sweep in
+/// `scripts/blob-mode-tests.sh` puts it in a configuration where the two sides
+/// are genuinely different pipelines.
+#[cfg(prelude_blob_ok)]
 #[test]
 pub fn test_config_matrix_blob_vs_source_prelude_byte_equal() {
     let files = [
@@ -3981,22 +4127,29 @@ pub fn test_config_matrix_blob_vs_source_prelude_byte_equal() {
     ];
     for file in files {
         let blob = std::process::Command::new(eu_binary())
-            .args(["check", "--strict", file])
+            .args(["--strict", file])
             .output()
-            .expect("failed to run eu check (blob-core)");
+            .expect("failed to run eu (blob-core)");
         let source = std::process::Command::new(eu_binary())
             .env("EU_SOURCE_PRELUDE", "1")
-            .args(["check", "--strict", file])
+            .args(["--strict", file])
             .output()
-            .expect("failed to run eu check (source prelude)");
+            .expect("failed to run eu (source prelude)");
 
+        // Precondition: each fixture must actually produce a diagnostic,
+        // otherwise byte-equality of two empty streams proves nothing.
+        let blob_err = String::from_utf8_lossy(&blob.stderr);
+        assert!(
+            blob_err.contains(file),
+            "fixture {file} should produce a located diagnostic under the blob:\n{blob_err}"
+        );
         assert_eq!(
             blob.status.code(),
             source.status.code(),
             "exit code differs between blob-core and source-prelude checks for {file}"
         );
         assert_eq!(
-            String::from_utf8_lossy(&blob.stderr),
+            blob_err,
             String::from_utf8_lossy(&source.stderr),
             "stderr differs between blob-core and source-prelude checks for {file}"
         );

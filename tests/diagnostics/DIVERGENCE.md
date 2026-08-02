@@ -10,7 +10,7 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**20 of 214 fixtures diverge.**
+**29 of 215 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
@@ -19,18 +19,27 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/029_type_mismatch_num` | user tests/harness/errors/029_type_mismatch_num.eu:2:4 | user tests/harness/errors/029_type_mismatch_num.eu:2:4 | 1 (1 user) | 1 (1 user) |
 | `errors/032_type_mismatch_num_as_str` | user tests/harness/errors/032_type_mismatch_num_as_str.eu:2:4 | user tests/harness/errors/032_type_mismatch_num_as_str.eu:2:4 | 1 (1 user) | 1 (1 user) |
 | `errors/035_nested_fn_trace` | user tests/harness/errors/035_nested_fn_trace.eu:2:12 | user tests/harness/errors/035_nested_fn_trace.eu:1:11 | 1 (1 user) | 1 (1 user) |
+| `errors/047_str_plus_plus` | user tests/harness/errors/047_str_plus_plus.eu:2:21 | none | 0 (0 user) | 0 (0 user) |
+| `errors/072_io_fail` | user tests/harness/errors/072_io_fail.eu:3:7 | none | 0 (0 user) | 0 (0 user) |
 | `errors/080_array_oob` | user tests/harness/errors/080_array_oob.eu:2:4 | user tests/harness/errors/080_array_oob.eu:2:4 | 0 (0 user) | 0 (0 user) |
 | `errors/081_array_shape_mismatch` | user tests/harness/errors/081_array_shape_mismatch.eu:2:4 | user tests/harness/errors/081_array_shape_mismatch.eu:2:4 | 1 (1 user) | 1 (1 user) |
 | `errors/082_array_reshape_mismatch` | user tests/harness/errors/082_array_reshape_mismatch.eu:2:4 | user tests/harness/errors/082_array_reshape_mismatch.eu:2:4 | 1 (1 user) | 1 (1 user) |
 | `errors/083_array_arith_mismatch` | user tests/harness/errors/083_array_arith_mismatch.eu:4:4 | user tests/harness/errors/083_array_arith_mismatch.eu:4:4 | 1 (1 user) | 1 (1 user) |
 | `errors/087_bad_regex` | user tests/harness/errors/087_bad_regex.eu:2:12 | user tests/harness/errors/087_bad_regex.eu:2:12 | 1 (1 user) | 1 (1 user) |
 | `errors/090_bad_format_string` | user tests/harness/errors/090_bad_format_string.eu:2:4 | user tests/harness/errors/090_bad_format_string.eu:2:4 | 0 (0 user) | 0 (0 user) |
+| `errors/094_io_no_flag` | user tests/harness/errors/094_io_no_flag.eu:4:9 | none | 0 (0 user) | 0 (0 user) |
 | `errors/100_fn_call_source_loc` | user tests/harness/errors/100_fn_call_source_loc.eu:2:9 | user tests/harness/errors/100_fn_call_source_loc.eu:2:9 | 1 (1 user) | 1 (1 user) |
+| `errors/106_io_check_fail` | user tests/harness/errors/106_io_check_fail.eu:2:23 | none | 0 (0 user) | 0 (0 user) |
+| `errors/124_dbg_io_map` | user tests/harness/errors/124_dbg_io_map.eu:2:28 | none | 0 (0 user) | 0 (0 user) |
+| `errors/125_dbg_io_function_wrap` | user tests/harness/errors/125_dbg_io_function_wrap.eu:2:28 | none | 0 (0 user) | 0 (0 user) |
 | `errors/141_calzdt_year_overflow` | user tests/harness/errors/141_calzdt_year_overflow.eu:3:9 | user tests/harness/errors/141_calzdt_year_overflow.eu:3:9 | 0 (0 user) | 0 (0 user) |
-| `errors/143_bitwise_float` | none | user tests/harness/errors/143_bitwise_float.eu:3:13 | 0 (0 user) | 0 (0 user) |
 | `errors/150_bad_timezone_source_loc` | user tests/harness/errors/150_bad_timezone_source_loc.eu:2:9 | user tests/harness/errors/150_bad_timezone_source_loc.eu:2:9 | 0 (0 user) | 0 (0 user) |
 | `errors/151_set_add_non_set` | user tests/harness/errors/151_set_add_non_set.eu:1:17 | user tests/harness/errors/151_set_add_non_set.eu:1:17 | 1 (1 user) | 1 (1 user) |
 | `errors/152_set_element_type_mismatch` | user tests/harness/errors/152_set_element_type_mismatch.eu:1:11 | user tests/harness/errors/152_set_element_type_mismatch.eu:1:11 | 1 (1 user) | 1 (1 user) |
+| `errors/168_io_shell_missing_cmd` | user tests/harness/errors/168_io_shell_missing_cmd.eu:3:7 | none | 0 (0 user) | 0 (0 user) |
+| `errors/218_json_block_key` | user tests/harness/errors/218_json_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
+| `errors/219_toml_block_key` | user tests/harness/errors/219_toml_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
+| `errors/220_eu_block_key` | user tests/harness/errors/220_eu_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
 | `errors/error_173` | user tests/harness/errors/error_173.eu:10:9 | user tests/harness/errors/error_173.eu:10:9 | 1 (1 user) | 1 (1 user) |
 | `errors/error_176` | user tests/harness/errors/error_176.eu:19:32 | user tests/harness/errors/error_176.eu:19:32 | 1 (1 user) | 0 (0 user) |
 | `many-decls/huge_decls_type_warning` | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | 1 (1 user) | 1 (1 user) |
@@ -39,4 +48,4 @@ The full text of both renderings is in the fixture's `.snap` file under
 
 The table above is for the **default engine** (bytecode, pre-decoded dispatch) only — the shipped default, and the only dispatch path this gate exercises with a real blob. It says nothing about the two non-default paths.
 
-`EU_HEAPSYN=1` and `EU_PREDECODE=0` are not asserted against these goldens at all, and each diverges from them on its own set of fixtures — a separate, already-known issue, not part of the count above. As of eu-l51r7's most recent count: 6 fixtures diverge under `EU_HEAPSYN=1`, and the same 6 diverge under `EU_PREDECODE=0`. In every case the difference is one `stack trace:` note frame missing, duplicating the primary label's own file:line:col — never a wrong location or a missing primary. See eu-l51r7 for the full inventory; the owner ruled this does not block 0.14 (P2, characterised and pinned per-engine rather than fixed).
+`EU_HEAPSYN=1` and `EU_PREDECODE=0` are not asserted against these goldens at all, and each diverges from them on its own set of fixtures — a separate, already-known issue, not part of the count above. As of eu-l51r7's most recent count: 6 fixtures diverge under `EU_HEAPSYN=1`, and the same 6 diverge under `EU_PREDECODE=0`. In every case the difference is one `while evaluating (outermost first):` note frame missing, duplicating the primary label's own file:line:col — never a wrong location or a missing primary. See eu-l51r7 for the full inventory; the owner ruled this does not block 0.14 (P2, characterised and pinned per-engine rather than fixed).

@@ -15,6 +15,7 @@ use crate::{
         io_run::{inject_world_and_run, io_run_and_render, render_headless_result},
         options::{ErrorFormat, EucalyptOptions},
         source::SourceLoader,
+        warning_link::TypeWarningLinks,
     },
     eval::{
         error::{curate_trace_with_env, ExecutionError, TRACE_BUDGET},
@@ -188,7 +189,22 @@ pub struct RunResult {
     pub exit_code: Option<u8>,
 }
 
-pub fn run(opt: &EucalyptOptions, mut loader: SourceLoader) -> Result<RunResult, EucalyptError> {
+pub fn run(opt: &EucalyptOptions, loader: SourceLoader) -> Result<RunResult, EucalyptError> {
+    run_with_type_findings(opt, loader, TypeWarningLinks::default())
+}
+
+/// Run the prepared core expression, carrying the type checker's
+/// argument-level findings so that a runtime error blamed on a call the
+/// checker already flagged can show which argument was wrong (eu-1tkk.7.40).
+///
+/// [`run`] is this with no findings — the right thing for every caller that
+/// does not run the type checker first (the test harness, the WASM entry
+/// point), which then get exactly the diagnostics they got before.
+pub fn run_with_type_findings(
+    opt: &EucalyptOptions,
+    mut loader: SourceLoader,
+    type_findings: TypeWarningLinks,
+) -> Result<RunResult, EucalyptError> {
     let format = determine_format(opt, &loader);
     let mut stats = Statistics::default();
     // Extract the blob before the loader is consumed by Executor::from().
@@ -205,6 +221,7 @@ pub fn run(opt: &EucalyptOptions, mut loader: SourceLoader) -> Result<RunResult,
     let blame_table = loader.blame_table();
     let mut executor = Executor::from(loader);
     executor.source_map.extend_blame_table(blame_table);
+    executor.type_findings = type_findings;
     #[cfg(not(target_arch = "wasm32"))]
     executor.set_prelude_blob(blob);
     let exit_code = executor
@@ -269,6 +286,11 @@ pub struct Executor<'a> {
     /// Used to override the stale `__io` global baked into the blob at
     /// compile time with fresh runtime environment data.
     seed: Option<i64>,
+
+    /// The type checker's argument-level findings, resolved to source
+    /// coordinates before the check pass's own `SourceMap` was dropped
+    /// (eu-1tkk.7.40).  Empty unless the caller ran the checker.
+    type_findings: TypeWarningLinks,
 }
 
 impl From<SourceLoader> for Executor<'_> {
@@ -299,6 +321,7 @@ impl<'a> Executor<'a> {
             prelude_blob: None,
             args: Vec::new(),
             seed: None,
+            type_findings: TypeWarningLinks::default(),
         }
     }
 
@@ -757,6 +780,7 @@ impl<'a> Executor<'a> {
                 match error_format {
                     ErrorFormat::Human => {
                         let mut diagnostic = e.to_diagnostic(&self.source_map);
+                        self.promote_type_findings(&e, &mut diagnostic);
 
                         let mut notes = vec![];
 
@@ -774,7 +798,9 @@ impl<'a> Executor<'a> {
                                     .format_curated_trace(&curated.frames, &self.files)
                             };
                             if !stack_trace.is_empty() {
-                                notes.push(format!("stack trace:\n{stack_trace}"));
+                                notes.push(format!(
+                                    "while evaluating (outermost first):\n{stack_trace}"
+                                ));
                             }
                         }
 
@@ -841,6 +867,87 @@ impl<'a> Executor<'a> {
         true
     }
 
+    /// Add the type checker's argument-level findings for the call this error
+    /// is blamed on, as secondary labels (eu-1tkk.7.40).
+    ///
+    /// The primary label stays exactly where the error placed it; what this
+    /// adds is a caret on each argument the checker had already flagged at
+    /// that same call, carrying the checker's own `expected …, found …` text.
+    /// The error otherwise describes the failure in terms of the callee's
+    /// internals and never points at the argument responsible.
+    ///
+    /// Two kinds of location count as "this call": the error's own primary
+    /// label, and each frame of the curated stack trace — the calls actually
+    /// pending when the error was raised, and the very frames printed below
+    /// the message, so nothing is cited that the reader cannot already see.
+    /// In both cases the span must be *byte-identical* to the call the warning
+    /// was raised against; see [`crate::driver::warning_link`] on why the match
+    /// is this narrow.
+    fn promote_type_findings(&self, error: &ExecutionError, diag: &mut Diagnostic<usize>) {
+        use codespan_reporting::diagnostic::{Label, LabelStyle};
+
+        if self.type_findings.is_empty() {
+            return;
+        }
+
+        // Candidate call sites, in the order they should be considered.
+        let mut sites: Vec<(usize, usize, usize)> = diag
+            .labels
+            .iter()
+            .filter(|l| l.style == LabelStyle::Primary)
+            .map(|l| (l.file_id, l.range.start, l.range.end))
+            .collect();
+
+        if let Some(stack) = error.stack_trace() {
+            let curated = curate_trace_with_env(
+                stack,
+                error.env_trace().unwrap_or_default(),
+                &self.source_map,
+                TRACE_BUDGET,
+            );
+            for (smid, _) in &curated.frames {
+                if let Some((file, span)) = self
+                    .source_map
+                    .source_info_for_smid(*smid)
+                    .and_then(|info| info.file.zip(info.span))
+                {
+                    sites.push((file, span.start().to_usize(), span.end().to_usize()));
+                }
+            }
+        }
+
+        // Never double up on a caret the diagnostic already has.
+        let existing: Vec<(usize, usize, usize)> = diag
+            .labels
+            .iter()
+            .map(|l| (l.file_id, l.range.start, l.range.end))
+            .collect();
+
+        let mut added: Vec<(usize, usize, usize, String)> = Vec::new();
+        for (file_id, start, end) in sites {
+            let Ok(file_name) = self.files.name(file_id) else {
+                continue;
+            };
+            for (span, message) in self
+                .type_findings
+                .findings_for_call(&file_name, (start, end))
+            {
+                if existing.contains(&(file_id, span.0, span.1)) {
+                    continue;
+                }
+                let entry = (file_id, span.0, span.1, message);
+                if !added.contains(&entry) {
+                    added.push(entry);
+                }
+            }
+        }
+
+        for (file_id, start, end, message) in added {
+            diag.labels
+                .push(Label::secondary(file_id, start..end).with_message(message));
+        }
+    }
+
     /// Print a diagnostic to stderr
     fn diagnose_to_stderr(&mut self, diag: &Diagnostic<usize>) {
         let config = codespan_reporting::term::Config::default();
@@ -898,8 +1005,8 @@ impl<'a> Executor<'a> {
     /// `debug_trace` is set, the sequence is curated by
     /// [`curate_trace_with_env`] first (transparent plumbing dropped,
     /// recursion collapsed, boundary recovered, budget applied), so the JSON
-    /// `trace` and the human `stack trace:` note describe the same frames
-    /// (eu-1tkk.7.12).
+    /// `trace` and the human `while evaluating (outermost first):` note
+    /// describe the same frames (eu-1tkk.7.12).
     fn json_trace(&self, trace: &[Smid], env: &[Smid], debug_trace: bool) -> Vec<JsonFrame> {
         let classified: Vec<(Smid, FrameKind)> = if debug_trace {
             trace
@@ -972,8 +1079,10 @@ impl<'a> Executor<'a> {
     /// diverge between them.
     fn error_to_json(&self, error: &ExecutionError, debug_trace: bool) -> serde_json::Value {
         // Reuse the human path's diagnostic wholesale so that message, primary
-        // label, and secondary labels come from exactly the same selection.
-        let diagnostic = error.to_diagnostic(&self.source_map);
+        // label, and secondary labels come from exactly the same selection —
+        // including the type checker's promoted argument findings (eu-1tkk.7.40).
+        let mut diagnostic = error.to_diagnostic(&self.source_map);
+        self.promote_type_findings(error, &mut diagnostic);
 
         // Map each codespan label to a JsonLabel, resolving in_user_file via
         // the shared is_user_file predicate.

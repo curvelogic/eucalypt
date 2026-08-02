@@ -5,6 +5,34 @@
 use crate::common::sourcemap::{HasSmid, Smid, SourceMap};
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 
+/// Identifies the call an argument-level type warning arose from.
+///
+/// `smid` on the warning itself points at the offending *argument*; this
+/// records the *call* that argument was passed to, which is what a later
+/// runtime error is normally blamed on. Two locations are kept because the
+/// two are equally valid identifications of one call and different parts of
+/// the diagnostic pipeline choose differently between them:
+///
+/// * `head` — the callee reference (`nth` in `nth(xs, 0)`)
+/// * `app`  — the application node (the whole `nth(xs, 0)`)
+///
+/// Used by eu-1tkk.7.40 to match a warning to a runtime error across the
+/// process's two independent `SourceMap`s.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CallSite {
+    /// Location of the callee reference in the application spine.
+    pub head: Smid,
+    /// Location of the application node itself.
+    pub app: Smid,
+}
+
+impl CallSite {
+    /// Construct a call site from its head and application locations.
+    pub fn new(head: Smid, app: Smid) -> Self {
+        CallSite { head, app }
+    }
+}
+
 /// A type-level warning emitted by the gradual type checker.
 ///
 /// Type issues are reported as warnings so that they never prevent evaluation.
@@ -21,6 +49,10 @@ pub struct TypeWarning {
     pub found: Option<String>,
     /// Additional notes shown below the primary diagnostic.
     pub notes: Vec<String>,
+    /// The call this warning's argument was passed to, when the warning is an
+    /// argument/parameter mismatch. `None` for every other warning kind, which
+    /// keeps non-call warnings out of the runtime-error match entirely.
+    pub call_site: Option<CallSite>,
 }
 
 impl HasSmid for TypeWarning {
@@ -44,12 +76,19 @@ impl TypeWarning {
             expected: None,
             found: None,
             notes: vec![],
+            call_site: None,
         }
     }
 
     /// Attach a source location (Smid) to this warning.
     pub fn at(mut self, smid: Smid) -> Self {
         self.smid = smid;
+        self
+    }
+
+    /// Record the call this warning's argument was passed to (eu-1tkk.7.40).
+    pub fn at_call(mut self, call_site: CallSite) -> Self {
+        self.call_site = Some(call_site);
         self
     }
 

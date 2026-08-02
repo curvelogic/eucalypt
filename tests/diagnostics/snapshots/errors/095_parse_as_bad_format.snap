@@ -24,5 +24,5 @@ error: parse-as(badformat): unknown source format badformat
 2 │ x: "hello" parse-as(:badformat)
   │            ^^^^^^^^^^^^^^^^^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - x at 095_parse_as_bad_format.eu:2:12

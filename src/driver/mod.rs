@@ -30,3 +30,4 @@ pub mod statistics;
 pub mod tester;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod unit_interface;
+pub mod warning_link;

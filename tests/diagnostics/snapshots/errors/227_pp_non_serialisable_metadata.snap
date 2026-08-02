@@ -27,5 +27,5 @@ error: par-map: cannot serialise a function across the parallel boundary
 16 │ result: [1, 2] par-map(mk)
    │                ----------- called from here
    │
-   = stack trace:
+   = while evaluating (outermost first):
      - result at 227_pp_non_serialisable_metadata.eu:16:16

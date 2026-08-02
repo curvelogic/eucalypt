@@ -190,6 +190,13 @@ fn run() -> i32 {
     // prelude-source compile for this invocation. Non-blob configs (source
     // prelude, alternative prelude) always use `run_type_checker`.
     // See eu-rb5n.
+    // eu-1tkk.7.40: the checker's argument-level findings, resolved to source
+    // coordinates while its own `SourceMap` is still alive, so the evaluator
+    // (which has a different one) can put the offending argument's span into
+    // the labels of a runtime error blamed on the same call. Stays empty under
+    // `--suppress-type-warnings`, where the checker does not run at all.
+    let mut type_findings = eucalypt::driver::warning_link::TypeWarningLinks::default();
+
     if !opt.suppress_type_warnings() {
         // eu-rqwh: carry the blob's own monad registries alongside the
         // decoded prelude_units, so `run_type_checker_from_blob_core` can
@@ -254,6 +261,11 @@ fn run() -> i32 {
                 if opt.check_strict() && !result.warnings.is_empty() {
                     return exit_code(&opt, 1, &statistics);
                 }
+                type_findings = eucalypt::driver::warning_link::TypeWarningLinks::build(
+                    &result.warnings,
+                    &result.source_map,
+                    &result.files,
+                );
             }
             Err(e) => {
                 eprintln!("eu: type-check pipeline warning: {e}");
@@ -276,7 +288,7 @@ fn run() -> i32 {
 
     if opt.run() || opt.dump_stg() || opt.dump_runtime() || opt.dump_reflatten() {
         // run manages error reporting
-        match eval::run(&opt, loader) {
+        match eval::run_with_type_findings(&opt, loader, type_findings) {
             Ok(result) => {
                 statistics.merge(result.stats);
                 let code = result.exit_code.map_or(0, |c| c as i32);

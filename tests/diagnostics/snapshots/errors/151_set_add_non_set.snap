@@ -24,7 +24,7 @@ error[EU-EVAL-TYPE]: type mismatch: expected set, found string "hello"
 1 │ result: "hello" set.add("world")
   │                 ^^^^^^^^^^^^^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 151_set_add_non_set.eu:1:17
 
 === --source-prelude ===
@@ -48,5 +48,5 @@ error[EU-EVAL-TYPE]: type mismatch: expected set, found string "hello"
 1 │ result: "hello" set.add("world")
   │                 ^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 151_set_add_non_set.eu:1:17

@@ -24,7 +24,7 @@ error: array shape mismatch: arrays have incompatible shapes [2] and [3] for ele
 4 │ c: arr.add(a, b)
   │    ^^^^^^^^^^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - c at 083_array_arith_mismatch.eu:4:4
 
 === --source-prelude ===
@@ -48,5 +48,5 @@ error: array shape mismatch: arrays have incompatible shapes [2] and [3] for ele
 4 │ c: arr.add(a, b)
   │    ^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - c at 083_array_arith_mismatch.eu:4:4

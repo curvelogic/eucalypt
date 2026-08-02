@@ -18,11 +18,11 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: panic: unknown option: -x
+error: unknown option: -x
   ┌─ tests/harness/errors/110_unknown_short_arg.eu:2:14
   │
 2 │ main: ["-x"] parse-args({})
   │              ^^^^^^^^^^^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - main at 110_unknown_short_arg.eu:2:14

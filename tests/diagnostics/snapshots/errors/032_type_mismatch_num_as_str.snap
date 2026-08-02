@@ -29,9 +29,11 @@ error: type mismatch: expected string, found number
   │
 2 │ x: str.split(42, ",")
   │    ^^^^^^^^^^^^^^^^^^
+  │              │
+  │              expected string, found number
   │
   = to convert a number to a string, use 'str' or string interpolation
-  = stack trace:
+  = while evaluating (outermost first):
     - x at 032_type_mismatch_num_as_str.eu:2:4
 
 === --source-prelude ===
@@ -60,9 +62,10 @@ error: type mismatch: expected string, found number
   │
 2 │ x: str.split(42, ",")
   │    ^^^---------------
-  │    │
+  │    │         │
+  │    │         expected string, found number
   │    called from here
   │
   = to convert a number to a string, use 'str' or string interpolation
-  = stack trace:
+  = while evaluating (outermost first):
     - x at 032_type_mismatch_num_as_str.eu:2:4

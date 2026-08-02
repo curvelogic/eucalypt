@@ -25,5 +25,5 @@ error: key 'k99' not found in block
 46 │ miss: b.k99
    │       ^
    │
-   = stack trace:
+   = while evaluating (outermost first):
      - miss at 180_lookup_fail_large_block.eu:46:7

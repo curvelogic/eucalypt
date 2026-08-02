@@ -28,8 +28,10 @@ error: type mismatch: expected string, found number
    ┌─ tests/harness/errors/error_174.eu:10:19
    │
 10 │ result: [1, 2, 3] str.join-on(",")
-   │                   ^^^^^^^^^^^^^^^^
+   │         --------- ^^^^^^^^^^^^^^^^
+   │         │
+   │         expected [string], found [number]
    │
    = to convert a number to a string, use 'str' or string interpolation
-   = stack trace:
+   = while evaluating (outermost first):
      - result at error_174.eu:10:19

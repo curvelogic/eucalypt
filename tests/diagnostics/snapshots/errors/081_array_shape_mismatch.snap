@@ -24,7 +24,7 @@ error: array shape mismatch: shape [2, 2] requires 4 elements but 3 were provide
 2 │ a: arr.from-flat([2, 2], [1, 2, 3])
   │    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - a at 081_array_shape_mismatch.eu:2:4
 
 === --source-prelude ===
@@ -48,5 +48,5 @@ error: array shape mismatch: shape [2, 2] requires 4 elements but 3 were provide
 2 │ a: arr.from-flat([2, 2], [1, 2, 3])
   │    ^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - a at 081_array_shape_mismatch.eu:2:4

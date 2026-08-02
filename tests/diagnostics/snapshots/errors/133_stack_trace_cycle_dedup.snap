@@ -28,5 +28,5 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found string "zero"
   │
   = to convert a string to a number, use 'num', e.g. 's num'
   = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 133_stack_trace_cycle_dedup.eu:3:19

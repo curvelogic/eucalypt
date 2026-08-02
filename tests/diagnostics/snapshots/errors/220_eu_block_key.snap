@@ -1,9 +1,41 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/220_eu_block_key
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/220_eu_block_key.eu
-prelude-modes: identical
+prelude-modes: divergent
 
-=== both prelude modes ===
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: EU-RENDER-SHAPE
+primary: user tests/harness/errors/220_eu_block_key.eu:9:7
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: type mismatch calling 'kv-block'
+  ┌─ tests/harness/errors/220_eu_block_key.eu:9:16
+  │
+9 │ main: kv-block(1, "a")
+  │                ^ expected symbol, found number
+
+error[EU-RENDER-SHAPE]: cannot render this document as eu: a block key is the number 1, but eucalypt block keys must be text
+  ┌─ tests/harness/errors/220_eu_block_key.eu:9:7
+  │
+9 │ main: kv-block(1, "a")
+  │       ^^^^^^^^^^^^^^^^
+  │                │
+  │                expected symbol, found number
+  │
+  = give the block symbol keys, e.g. 'kv-block(:one, "a")', or convert the key to text with 'str' before rendering
+  = 'yaml' and 'edn' output both support keys that are not text, and render this block unchanged
+
+=== --source-prelude ===
 exit: 1
 errors: 1
 warnings: 1

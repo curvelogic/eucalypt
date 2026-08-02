@@ -28,5 +28,5 @@ error: tried to call a number as a function
   │
   = a number value is not a function; check for a missing operator or extra argument
   = note: catenation (juxtaposition) has low precedence — 'f(a) + 1' binds as 'f(a + 1)'; add parentheses to disambiguate
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 148_not_callable_source_loc.eu:3:9

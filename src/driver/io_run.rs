@@ -984,7 +984,13 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
 
             Ok(DataConstructor::IoAction) => {
                 if !allow_io {
-                    return Err(IoRunError::IoNotAllowed(machine.annotation()));
+                    // The live annotation register has typically been reset
+                    // to invalid by unstamped prelude code between the user
+                    // call site and this yield point (io.shell/io.fail/etc.
+                    // are prelude wrappers). `last_annotation` retains the
+                    // most recent *valid* location, which is the user call
+                    // site — see eu-1tkk.7.21.
+                    return Err(IoRunError::IoNotAllowed(machine.last_annotation()));
                 }
                 let world = args[0].clone();
                 let spec_block = args[1].clone();

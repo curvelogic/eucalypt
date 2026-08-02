@@ -25,5 +25,5 @@ error: expected a primitive value but found a let binding
 4 │ result: str.of(f)
   │         ^^^^^^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - # Error: passing a function where a primitive value is expected — source location… at 149_not_value_source_loc.eu:1:1
