@@ -129,11 +129,25 @@ type, so that what you export matches what you evaluated.
 
 **What it means:** the output format needs the document to have a
 particular structure, and the value being rendered does not have it.
-`html` output renders *hiccup* markup — a list whose first item is the
-tag, optionally followed by an attribute block and then contents — so
-rendering a block, or a bare scalar, has no meaning as html.
+Two cases raise it.
 
-**Example:**
+**Whole-document shape.** `html` output renders *hiccup* markup — a list
+whose first item is the tag, optionally followed by an attribute block
+and then contents — so rendering a block, or a bare scalar, has no
+meaning as html.
+
+**Block keys.** `json`, `toml` and `eu` output all need block keys to be
+text: JSON object keys and TOML keys are strings, and eucalypt's own
+syntax needs a name. Block literals always have symbol keys, but
+`kv-block` and `block` accept any key at all, so `kv-block(1, "a")` — or
+a boolean, list or block key — produces a block those three formats
+cannot render. `yaml` and `edn` both represent such keys (`1: a` and
+`{1 "a"}` respectively) and render the block unchanged. The type checker
+warns on such a key too (`type mismatch calling 'kv-block'`), so this
+diagnostic confirms a mistake already flagged rather than refusing
+something idiomatic.
+
+**Example (document shape):**
 
 ```eucalypt
 ` { target: :main format: :html }
@@ -147,15 +161,36 @@ error[EU-RENDER-SHAPE]: cannot render this document as html: the value to render
   = to render arbitrary data instead, choose a format that accepts any shape, such as 'yaml', 'json' or 'text'
 ```
 
-**How to fix it:** build the value as hiccup markup, e.g. `[:div, { id:
-"top" }, "hello"]`, and select it with a target or `-e` so that html is
-given the markup itself rather than the enclosing unit's block. To
-render arbitrary data instead, choose a format that accepts any shape,
-such as `yaml`, `json` or `text`.
+**Example (block key):**
+
+```eucalypt
+` { target: :main format: :json }
+main: kv-block(1, "a")
+```
+
+```text
+error[EU-RENDER-SHAPE]: cannot render this document as JSON: a block key is the number 1, but JSON object keys must be text
+  = give the block symbol keys, e.g. 'kv-block(:one, "a")', or convert the key to text with 'str' before rendering
+  = 'yaml' and 'edn' output both support keys that are not text, and render this block unchanged
+```
+
+**How to fix it:** for a shape mismatch, build the value as hiccup
+markup, e.g. `[:div, { id: "top" }, "hello"]`, and select it with a
+target or `-e` so that html is given the markup itself rather than the
+enclosing unit's block. For a block key, give the block symbol keys —
+e.g. `kv-block(:one, "a")` — or convert the key to text with `str`
+before rendering. In either case you can instead choose a format that
+accepts the document as it stands: `yaml`, `json` or `text` for
+arbitrary shapes, and `yaml` or `edn` for keys that are not text.
+
+eucalypt reports this rather than coercing the value — a key rendered as
+`"1"` is not the key that was evaluated, and the difference survives into
+anything that re-reads the output.
 
 This diagnostic often has no source location: the document's root events
-are emitted by the render pipeline rather than by a user expression, so
-there is frequently no span to point at.
+are emitted by the render pipeline rather than by a user expression, and
+a literal block key records no annotation, so there is frequently no span
+to point at.
 
 <!--
 To add a new code: append a `### EU-<AREA>-<SLUG>` section here with
