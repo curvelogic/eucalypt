@@ -1,0 +1,8 @@
+# A lazily built value crosses a declaration boundary before anything forces
+# it. The primary must mark the operation that REJECTS the value — the '+' in
+# step-one — and not step-two's '>', which merely happened to be the point
+# where demand arrived (eu-1tkk.7.34).
+xs: [1, 2, "three", 4]
+step-one(l): l map(_ + 1)
+step-two(l): l filter(_ > 0)
+result: xs step-one step-two sum

@@ -276,6 +276,14 @@ fn run_debug_trace_with(path: &std::path::Path, extra: &[&str]) -> serde_json::V
     last_json_object(&[&stderr, &stdout]).unwrap_or(serde_json::Value::Null)
 }
 
+/// Does a JSON frame `kind` name a location in source the user wrote?
+///
+/// `user` and `force` both do; they differ only in whether the location may
+/// become the primary label (`common::diagnostic_json::FrameKind`).
+fn is_user_source_kind(kind: &serde_json::Value) -> bool {
+    kind == &serde_json::json!("user") || kind == &serde_json::json!("force")
+}
+
 /// Frame `(kind, name)` pairs from a JSON diagnostic's trace.
 fn frames(v: &serde_json::Value) -> Vec<(String, String)> {
     v["trace"]
@@ -352,7 +360,9 @@ fn debug_trace_restores_the_uncurated_trace() {
         "swap_args.eu: curated trace must name the boundary combinator, got {curated:?}"
     );
     assert!(
-        curated.iter().any(|(kind, _)| kind == "user"),
+        curated
+            .iter()
+            .any(|(kind, _)| kind == "user" || kind == "force"),
         "swap_args.eu: curated trace must keep the user anchor, got {curated:?}"
     );
 
@@ -387,7 +397,9 @@ fn debug_trace_restores_the_uncurated_trace() {
         "nth_out_of_range.eu: curated trace must name the boundary combinator, got {curated:?}"
     );
     assert!(
-        curated.iter().any(|(kind, _)| kind == "user"),
+        curated
+            .iter()
+            .any(|(kind, _)| kind == "user" || kind == "force"),
         "nth_out_of_range.eu: curated trace must keep the user anchor, got {curated:?}"
     );
 }
@@ -474,8 +486,14 @@ fn violations(v: &serde_json::Value, all_output: &str, code: Option<i32>, m: &Me
     // `primary_is_user` it could never independently fail, making it vacuous.
     // The strict form also catches the case a loose reading missed: an empty
     // trace paired with a non-user primary is a violation, not a pass.
+    //
+    // "User frame" here means "frame in source the user wrote", which covers
+    // both `user` and `force` kinds: a `force` frame is a user location that
+    // is merely barred from becoming the primary label (eu-1tkk.7.34). Testing
+    // for `user` alone would let the invariant lapse on any diagnostic whose
+    // only user anchor is a demand site.
     let trace = v["trace"].as_array().cloned().unwrap_or_default();
-    let has_user = trace.iter().any(|f| f["kind"] == serde_json::json!("user"));
+    let has_user = trace.iter().any(|f| is_user_source_kind(&f["kind"]));
     let primary_is_user = primary["in_user_file"] == serde_json::json!(true);
     let valid_iv = has_user || (trace.is_empty() && primary_is_user);
     if !valid_iv {

@@ -1,0 +1,18 @@
+mutation = "lazy-demand-site"
+description = "list combinator applied to a non-list; the only user frame on the stack is the demand site inside the section being forced"
+region_start_line = 6
+region_end_line = 6
+expected_class = "list"
+# No xfail. This fixture pins the demand-site rule (eu-1tkk.7.34) from the
+# invariant gate's side: its curated trace carries exactly one frame, and that
+# frame is `force` — a user location barred from becoming the primary. It is
+# therefore the fixture that makes invariant (iv)'s `user`-or-`force` reading
+# load-bearing: under a `user`-only reading it would report "trace not
+# user-anchored" despite the trace naming a line the user wrote.
+#
+# Note what this fixture does NOT gate. The region check is line-granular, and
+# both the right answer ('map', column 15) and the wrong one (the '+' at column
+# 20, inside a section that is correct code and that 'map' merely happened to be
+# forcing) sit on line 6 — so region 6..6 passes either way. The golden snapshot
+# is what pins the column. Contrast metadata_span, whose 2..3 → 3..3 narrowing
+# does pin its direction at gate level.

@@ -3188,6 +3188,15 @@ pub fn test_error_229_1tkk_7_38_underapplied_call_span() {
 }
 
 #[test]
+/// eu-1tkk.7.34 — a lazily built value forced in a different declaration from
+/// the one that rejects it. The primary must mark the rejecting operation (the
+/// `+` in `step-one`, line 6 column 22), not the demand site in `step-two`
+/// where the thunk merely happened to be forced.
+pub fn test_error_230_lazy_demand_site_blame() {
+    run_error_test(&error_opts("230_lazy_demand_site_blame.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
