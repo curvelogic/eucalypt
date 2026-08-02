@@ -25,5 +25,5 @@ error: numeric overflow: result of operating on 9223372036854775807 and 1 is out
 2 │ x: 9223372036854775807 + 1
   │                        ^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - x at 088_numeric_range.eu:2:24

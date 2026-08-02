@@ -25,5 +25,5 @@ error: assertion failed: expected false, got true
 1 │ x: true //=> false
   │         ^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - x at 010_assert.eu:1:9

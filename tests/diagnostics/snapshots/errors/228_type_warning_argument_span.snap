@@ -32,5 +32,5 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found string "8"
    │
    = to convert a string to a number, use 'num', e.g. 's num'
    = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
-   = stack trace:
+   = while evaluating (outermost first):
      - result at 228_type_warning_argument_span.eu:15:9

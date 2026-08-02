@@ -26,5 +26,5 @@ error: infinite loop detected: binding refers to itself
   │
   = a binding that references itself directly or indirectly creates an infinite loop
   = use a function parameter instead of self-reference, or break the cycle
-  = stack trace:
+  = while evaluating (outermost first):
     - ns at 019_no_such_key.eu:5:1

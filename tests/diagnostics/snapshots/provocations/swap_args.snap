@@ -10,7 +10,7 @@ warnings: 2
 code: -
 primary: user tests/diagnostics/corpus/swap_args.eu:2:9
 help-lines: 0
-note-lines: 1
+note-lines: 0
 secondary-labels: 0
 trace-frames: 2
 trace-user-frames: 1
@@ -38,7 +38,6 @@ error: tail requires a list, found 0
   │             │
   │             expected number, found (number, number, number)
   │
-  = head and tail require a list (e.g. [1, 2, 3]) as their argument
-  = stack trace:
+  = while evaluating (outermost first):
     - result at swap_args.eu:2:9
-    - in 'nth' at [prelude]
+    - in 'nth' (prelude)

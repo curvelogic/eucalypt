@@ -25,5 +25,5 @@ error: key 'y' not found in block
 2 │ result: { x: 1 }.y
   │                  ^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 130_simple_lookup_key_not_found.eu:2:18

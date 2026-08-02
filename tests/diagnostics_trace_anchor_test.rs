@@ -85,9 +85,9 @@ fn run(src: &str, heapsyn: bool) -> String {
 }
 
 /// The primary label's `file:line:col`, taken from the `┌─` line specifically
-/// — *not* from the `stack trace:` note, which a partial fix could satisfy on
-/// its own. The leading directory is dropped: each engine runs in its own
-/// temporary directory.
+/// — *not* from the `while evaluating (outermost first):` note, which a
+/// partial fix could satisfy on its own. The leading directory is dropped:
+/// each engine runs in its own temporary directory.
 fn primary_label_location(stderr: &str) -> String {
     let line = stderr
         .lines()

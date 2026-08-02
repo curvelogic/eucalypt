@@ -31,5 +31,5 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found string "2"
   │
   = to convert a string to a number, use 'num', e.g. 's num'
   = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
-  = stack trace:
+  = while evaluating (outermost first):
     - doubled at metadata_span.eu:3:1

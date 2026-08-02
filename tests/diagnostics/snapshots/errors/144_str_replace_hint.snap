@@ -26,5 +26,5 @@ error: key 'gsub' not found in block
   │              ^^^
   │
   = use 'str.replace(pattern, replacement, s)' to replace all regex matches, e.g. 'text str.replace("foo", "bar")'
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 144_str_replace_hint.eu:3:14

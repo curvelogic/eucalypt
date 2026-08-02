@@ -89,3 +89,39 @@ ahead of the 0.13 lever-(a) predecoded-IR work.
   If you are benchmarking anything performance-sensitive, always confirm
   which path is active (`cargo xtask prelude-compile` beforehand, or check
   for the `precompiled prelude not found` build warning).
+
+## Prelude mode in CI (eu-1tkk.7.43)
+
+Prelude mode is an explicit dimension of the `cargo test` matrix, not a side
+effect of which job runs which target. Two jobs form the pair, and both say so
+in their names:
+
+| job | mode |
+|---|---|
+| `Test Suite (source-prelude fallback, no blob)` | no blob — keeps the fallback exercised |
+| `Blob-mode cargo tests (all mode-sensitive targets)` | blob, via `scripts/blob-mode-tests.sh` |
+
+The blob-mode target list is **derived from the tree**, not maintained by
+hand. A target counts as prelude-mode-sensitive if it spawns the `eu` binary
+(`CARGO_BIN_EXE_eu` — `src/bin/eu.rs` is the only caller of
+`driver::eval::maybe_load_prelude_blob` besides the in-process tester) or is
+gated on `cfg(prelude_blob_ok)`. A new test target that spawns `eu` is
+therefore swept from its first CI run with no workflow edit.
+
+Two things follow when you write a mode-sensitive test.
+
+- **Gate a blob-only assertion on `cfg(prelude_blob_ok)`, and say why.**
+  Without the gate it runs blob-less too, where it either fails for the wrong
+  reason or — worse — passes vacuously. Register the file in
+  `tests/gate_liveness.rs`; that registry is enforced, and it now requires the
+  named CI job to *run* the target, not merely build a blob.
+- **Check the comparison is not a tautology.** `eu check` returns from
+  `bin/eu.rs` before `maybe_load_prelude_blob` is reached, so
+  `EU_SOURCE_PRELUDE=1` makes no difference to it; a blob-vs-source comparison
+  has to drive the eval path (`eu --strict <file>`) to compare two different
+  pipelines.
+
+A target that genuinely fails under a blob is recorded in
+`scripts/blob-mode-tests.sh` with its bead, ratchet-style: it is skipped in
+the whole-target run and required to *still fail* on its own, so fixing it
+turns CI red until the line is deleted.

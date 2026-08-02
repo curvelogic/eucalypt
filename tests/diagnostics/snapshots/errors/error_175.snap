@@ -32,5 +32,5 @@ error: type mismatch: expected empty list or list, found string
    │         │
    │         expected [number], found "not_a_list"
    │
-   = stack trace:
+   = while evaluating (outermost first):
      - result at error_175.eu:10:22

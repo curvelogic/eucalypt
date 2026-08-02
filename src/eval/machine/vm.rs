@@ -424,12 +424,16 @@ impl MachineState {
     ///
     /// Every write to `annotation` goes through here so the two registers
     /// cannot drift: `annotation` follows the evaluation scope exactly
-    /// (defaults included), `last_annotation` keeps the most recent real
-    /// location for use as an error-reporting fallback.
+    /// (defaults included, including a `Smid::global_slot` identity when
+    /// entering an unstamped prelude global), `last_annotation` keeps the
+    /// most recent *source* location — gated on
+    /// [`Smid::is_source_location`], not `is_valid`, so entering a prelude
+    /// global does not clobber the real call site that preceded it
+    /// (eu-1tkk.7.21) — for use as an error-reporting fallback.
     #[inline]
     pub fn set_annotation(&mut self, smid: Smid) {
         self.annotation = smid;
-        if smid.is_valid() {
+        if smid.is_source_location() {
             self.last_annotation = smid;
         }
     }
@@ -2232,6 +2236,13 @@ impl<'a> Machine<'a> {
     /// Current source annotation for error reporting
     pub fn annotation(&self) -> Smid {
         self.state.annotation
+    }
+
+    /// The most recent **valid** source annotation, for error reporting when
+    /// the live annotation has been reset by unstamped (prelude) code — see
+    /// [`MachineState::last_annotation`].
+    pub fn last_annotation(&self) -> Smid {
+        self.state.last_annotation()
     }
 
     /// Create a mutator heap view for heap access

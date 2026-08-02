@@ -493,12 +493,29 @@ eu --error-format human file.eu     # default human-readable (explicit)
 
 ### Error Traces
 
-The `stack trace:` an execution error carries is **curated** by default:
-library plumbing (a combinator recursing on its own tail) is dropped,
-recursion is collapsed, and the trace is anchored on your own call sites,
-with the named library combinator you invoked kept as context — for
-example `in 'nth'`. The same curation applies to the `trace` array of
+The `while evaluating (outermost first):` note an execution error carries is
+**curated** by default: library plumbing (a combinator recursing on its own
+tail) is dropped, recursion is collapsed, and the trace is anchored on your
+own call sites, with the named library combinator you invoked kept as
+context — for example `in 'nth'`. Frames read outermost first (top of the
+list is the outermost evaluation in progress), the parenthetical says so
+because nothing else on screen does. The same curation (though not the same
+presentation — see below) applies to the `trace` array of
 `--error-format json`.
+
+A frame resolving into bundled library source (e.g. the prelude) is shown
+as `in 'nth' (prelude)` in this note rather than a `file:line:col`
+coordinate — the exact line is useful to us maintaining the library, not to
+you, since you cannot edit or act on it. The JSON `trace` array is
+unaffected by this and always carries the real coordinate, since a
+machine-readable format has no equivalent risk of misdirecting a reader
+towards an unfixable location.
+
+This note is deliberately not called "stack trace": it is curated rather
+than the actual call stack (see `--debug-trace` below), its entries mix two
+different kinds of thing — a declaration mid-evaluation and a named
+combinator boundary kept as context — and laziness means the entries need
+not reflect the call nesting you wrote in source.
 
 To see the raw, uncurated continuation stack instead:
 

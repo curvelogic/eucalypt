@@ -1,2 +1,2 @@
 exit: 1
-stderr: "(?s)index 10 out of range for list of length 3.*195_og3u6_trace_anchor\.eu:15:12.*stack trace:.*- result at 195_og3u6_trace_anchor\.eu:15:12.*- in 'nth' at"
+stderr: "(?s)index 10 out of range for list of length 3.*195_og3u6_trace_anchor\.eu:15:12.*while evaluating \(outermost first\):.*- result at 195_og3u6_trace_anchor\.eu:15:12.*- in 'nth' \(prelude\)"
