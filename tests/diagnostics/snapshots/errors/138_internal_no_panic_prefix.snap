@@ -28,7 +28,9 @@ error: head requires a list, found "hello"
   ┌─ tests/harness/errors/138_internal_no_panic_prefix.eu:1:17
   │
 1 │ result: "hello" head
-  │                 ^^^^
+  │         ------- ^^^^
+  │         │
+  │         expected [a], found "hello"
   │
   = to concatenate strings, use string interpolation (e.g. "{a}{b}") or 'str.join-on', not '++' (which is for list append)
   = to get individual characters of a string, use 'str.letters'

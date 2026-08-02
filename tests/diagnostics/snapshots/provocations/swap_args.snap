@@ -34,7 +34,9 @@ error: tail requires a list, found 0
   ┌─ tests/diagnostics/corpus/swap_args.eu:2:9
   │
 2 │ result: nth(xs, 0)
-  │         ^^^
+  │         ^^^ --  - expected [a], found number
+  │             │
+  │             expected number, found (number, number, number)
   │
   = while evaluating (outermost first):
     - result at swap_args.eu:2:9

@@ -28,7 +28,9 @@ error: type mismatch: expected empty list or list, found string
    ┌─ tests/harness/errors/error_175.eu:10:22
    │
 10 │ result: "not_a_list" sort-nums
-   │                      ^^^^^^^^^
+   │         ------------ ^^^^^^^^^
+   │         │
+   │         expected [number], found "not_a_list"
    │
    = while evaluating (outermost first):
      - result at error_175.eu:10:22

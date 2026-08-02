@@ -1,0 +1,15 @@
+# eu-1tkk.7.40 — the type checker's argument-level finding is carried into
+# the runtime error's labels.
+#
+# The checker knows exactly what is wrong here: 'double-it' wants a number and
+# 'widths.w' is a string. It says so, and then the runtime error that follows
+# describes the failure in terms of the multiplication inside 'double-it' and
+# points only at the callee. The argument that supplied the bad value must
+# appear in the error's own labels, so the error stands on its own.
+
+widths: { w: "8" }
+
+` { type: "number -> number" }
+double-it(x): x * 2
+
+result: double-it(widths.w)

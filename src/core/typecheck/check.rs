@@ -33,7 +33,7 @@ use crate::{
         binding::{BoundVar, Var},
         expr::{BlockMap, Expr, Primitive, RcExpr},
         typecheck::{
-            error::TypeWarning,
+            error::{CallSite, TypeWarning},
             parse,
             subtype::{is_consistent, is_subtype},
             types::{unfold_mu, Constraint, Type, TypeScheme, TypeVarId},
@@ -1490,6 +1490,11 @@ impl Checker {
             _ => None,
         };
 
+        // The call site this application represents, carried on every
+        // argument-mismatch warning it emits so a later runtime error blamed
+        // on the same call can pick the warning up (eu-1tkk.7.40).
+        let call_site = CallSite::new(head.smid(), smid);
+
         // ── §A10: Monadic bind element-type pre-pass ─────────────────────────
         //
         // Detect the two-argument monadic bind pattern produced by
@@ -1563,6 +1568,7 @@ impl Checker {
                             a,
                             &mut pre_subst,
                             func_name.as_deref(),
+                            call_site,
                         )
                     });
                     (apply_subst(&ft, &pre_subst), constraints)
@@ -1587,6 +1593,7 @@ impl Checker {
                 arg,
                 &mut subst,
                 func_name.as_deref(),
+                call_site,
             );
         }
 
@@ -1662,6 +1669,8 @@ impl Checker {
     /// Emits a warning when the types do not unify and neither is uninformative.
     /// `func_name` is the caller-supplied name of the function being applied
     /// (e.g. `"add"`, `"+"`) and is included in the warning message when present.
+    /// `call_site` locates the application itself and is recorded on any warning
+    /// emitted, so a runtime error blamed on the same call can find it.
     fn apply_one_with_subst(
         &mut self,
         smid: Smid,
@@ -1669,6 +1678,7 @@ impl Checker {
         arg: &RcExpr,
         subst: &mut Substitution,
         func_name: Option<&str>,
+        call_site: CallSite,
     ) -> Type {
         // Apply any substitutions accumulated so far.
         let func_type = apply_subst(&func_type, subst);
@@ -1756,7 +1766,7 @@ impl Checker {
                 // otherwise suppress the warning.
                 if is_partial_type(&arg_type) && !is_partial_type(&param_applied) {
                     let message = build_arg_mismatch_message(func_name);
-                    self.emit_type_mismatch(smid, &param_applied, &arg_type, &message);
+                    self.emit_arg_mismatch(smid, call_site, &param_applied, &arg_type, &message);
                     return apply_subst(&result_type, subst);
                 }
 
@@ -1766,7 +1776,13 @@ impl Checker {
                         // Fall back to subtyping (e.g. Lens <: Traversal)
                         if !is_subtype(&arg_type, &param_applied) {
                             let message = build_arg_mismatch_message(func_name);
-                            self.emit_type_mismatch(smid, &param_applied, &arg_type, &message);
+                            self.emit_arg_mismatch(
+                                smid,
+                                call_site,
+                                &param_applied,
+                                &arg_type,
+                                &message,
+                            );
                         }
                         apply_subst(&result_type, subst)
                     }
@@ -1774,7 +1790,9 @@ impl Checker {
             }
 
             // Union-typed function — try each overload variant.
-            Type::Union(variants) => self.apply_union(smid, variants, arg, subst, func_name),
+            Type::Union(variants) => {
+                self.apply_union(smid, variants, arg, subst, func_name, call_site)
+            }
 
             // Block application (catenation): record type applied to an argument.
             //
@@ -1840,7 +1858,7 @@ impl Checker {
             // that the instantiated `Function` arm fires.
             Type::Forall(binders, body) => {
                 let instantiated = freshen_forall(&binders, &body, &mut self.var_counter);
-                self.apply_one_with_subst(smid, instantiated, arg, subst, func_name)
+                self.apply_one_with_subst(smid, instantiated, arg, subst, func_name, call_site)
             }
 
             // Unknown function type — recurse into arg to collect sub-warnings.
@@ -1870,6 +1888,7 @@ impl Checker {
         arg: &RcExpr,
         subst: &mut Substitution,
         func_name: Option<&str>,
+        call_site: CallSite,
     ) -> Type {
         let arg_type = self.synthesise(arg);
 
@@ -1914,7 +1933,7 @@ impl Checker {
                 Type::Union(param_types)
             };
             let message = build_overload_mismatch_message(func_name);
-            self.emit_type_mismatch(smid, &expected, &arg_type, &message);
+            self.emit_arg_mismatch(smid, call_site, &expected, &arg_type, &message);
         }
 
         Type::Any
@@ -2474,6 +2493,28 @@ impl Checker {
         use super::types::humanise;
         let warning = TypeWarning::new(message)
             .at(smid)
+            .with_types(humanise(expected).to_string(), humanise(found).to_string());
+        self.warnings.push(warning);
+    }
+
+    /// Emit a type mismatch for an argument passed to a call, recording the
+    /// call site alongside the argument location (eu-1tkk.7.40).
+    ///
+    /// Identical to [`Self::emit_type_mismatch`] except for the `call_site`,
+    /// which is what lets a runtime error blamed on the same call recover the
+    /// argument-level span this warning already knows.
+    fn emit_arg_mismatch(
+        &mut self,
+        smid: Smid,
+        call_site: CallSite,
+        expected: &Type,
+        found: &Type,
+        message: &str,
+    ) {
+        use super::types::humanise;
+        let warning = TypeWarning::new(message)
+            .at(smid)
+            .at_call(call_site)
             .with_types(humanise(expected).to_string(), humanise(found).to_string());
         self.warnings.push(warning);
     }

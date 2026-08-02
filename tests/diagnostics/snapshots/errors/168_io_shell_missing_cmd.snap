@@ -28,7 +28,7 @@ error: IO operations are not permitted; use the --allow-io (-I) flag to enable
   ┌─ tests/harness/errors/168_io_shell_missing_cmd.eu:3:7
   │
 3 │ main: io.shell({ stdin: "ignored" })
-  │       ^^
+  │       ^^       -------------------- expected string, found {stdin: "ignored", ..}
 
 === --source-prelude ===
 exit: 1
