@@ -28,7 +28,9 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found string "8"
    ┌─ tests/harness/errors/228_type_warning_argument_span.eu:15:9
    │
 15 │ result: double-it(widths.w)
-   │         ^^^^^^^^^ ------ expected number, found "8"
+   │         ^^^^^^^^^^^^^^^^^^^
+   │                   │
+   │                   expected number, found "8"
    │
    = to convert a string to a number, use 'num', e.g. 's num'
    = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'

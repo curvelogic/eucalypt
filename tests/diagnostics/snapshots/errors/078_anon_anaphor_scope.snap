@@ -22,7 +22,7 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found a function
   ┌─ tests/harness/errors/078_anon_anaphor_scope.eu:5:23
   │
 5 │ result: [1, 2, 3] map(double(_))
-  │                   --- ^^^^^^
+  │                   ----^^^^^^^^^-
   │                   │
   │                   called from here
   │

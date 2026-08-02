@@ -22,7 +22,7 @@ error: index 10 out of range for list of length 3
    ┌─ tests/harness/errors/195_og3u6_trace_anchor.eu:15:12
    │
 15 │ result: xs nth(10)
-   │            ^^^
+   │            ^^^^^^^
    │
    = while evaluating (outermost first):
      - result at 195_og3u6_trace_anchor.eu:15:12

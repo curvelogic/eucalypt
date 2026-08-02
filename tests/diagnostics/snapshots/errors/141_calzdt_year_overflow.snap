@@ -1,9 +1,34 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/141_calzdt_year_overflow
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/141_calzdt_year_overflow.eu
-prelude-modes: identical
+prelude-modes: divergent
 
-=== both prelude modes ===
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/141_calzdt_year_overflow.eu:3:9
+help-lines: 1
+note-lines: 1
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid date/time components: the combination (3000000000, 1, 1) does not form a valid calendar date (e.g. February has at most 29 days)
+  help: cal.zdt takes (year, month, day, hour, minute, second, timezone), e.g. cal.zdt(2023, 1, 15, 10, 30, 0, "UTC")
+  note: given components were (3000000000, 1, 1, 0, 0, 0, UTC)
+  ┌─ tests/harness/errors/141_calzdt_year_overflow.eu:3:9
+  │
+3 │ result: cal.zdt(3000000000, 1, 1, 0, 0, 0, "UTC")
+  │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  │
+  = valid ranges: year (any integer), month (1–12), day (1–28/29/30/31 depending on month), hour (0–23), minute (0–59), second (0–59)
+
+=== --source-prelude ===
 exit: 1
 errors: 1
 warnings: 0

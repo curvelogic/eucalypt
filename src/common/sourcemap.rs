@@ -334,6 +334,50 @@ impl SourceMap {
         smid
     }
 
+    /// Mint a `Smid` spanning both `first` and `second` (eu-1tkk.7.38).
+    ///
+    /// Used by `cook`'s shunting yard, where a syntactic construct's two
+    /// halves are separate nodes with separate `Smid`s — a call's callee and
+    /// its argument tuple — but the node the shunter builds from them is one
+    /// expression, and the diagnostic that blames it should underline all of
+    /// it. Without this, an `App`'s primary label could never reach beyond
+    /// the function name it was stamped with.
+    ///
+    /// Falls back to `first` unless both `Smid`s resolve to a real span in
+    /// the *same* file. Synthetic locations, blob-baked prelude locations
+    /// (which resolve to `None` inside the reserved foreign range) and
+    /// [`Smid::global_slot`] identities therefore leave the caller's existing
+    /// behaviour untouched rather than inventing a span that spuriously
+    /// joins two files.
+    ///
+    /// `first`'s annotation is carried over (falling back to `second`'s).
+    /// The annotation is the enclosing declaration's name — what a stack
+    /// trace frame is labelled with — so dropping it would silently
+    /// relabel every widened frame with the source text under the new,
+    /// wider span.
+    pub fn merge(&mut self, first: Smid, second: Smid) -> Smid {
+        let (Some(a), Some(b)) = (
+            self.source_info_for_smid(first),
+            self.source_info_for_smid(second),
+        ) else {
+            return first;
+        };
+        let (Some(file), Some(a_span), Some(b_span)) = (a.file, a.span, b.span) else {
+            return first;
+        };
+        if a.file != b.file {
+            return first;
+        }
+        let annotation = a.annotation.clone().or_else(|| b.annotation.clone());
+        let start = std::cmp::min(a_span.start(), b_span.start());
+        let end = std::cmp::max(a_span.end(), b_span.end());
+        let span = Span::new(start, end);
+        match annotation {
+            Some(ann) => self.add_annotated(file, span, ann),
+            None => self.add(file, span),
+        }
+    }
+
     /// Number of source entries minted so far.
     ///
     /// Reported by the `EU_ERROR_TRACE_DUMP` dump, where it is the difference
@@ -1042,6 +1086,54 @@ mod tests {
         let mut source_map = SourceMap::new();
         let smid = source_map.add(0, Span::new(0u32, 0u32));
         assert_eq!(smid.get(), Some(0));
+    }
+
+    /// `merge` spans both operands (eu-1tkk.7.38): a callee at 0..5 and an
+    /// argument tuple at 5..11 give one location covering 0..11.
+    #[test]
+    fn merge_spans_both_operands() {
+        let mut source_map = SourceMap::new();
+        let callee = source_map.add(0, Span::new(0u32, 5u32));
+        let args = source_map.add(0, Span::new(5u32, 11u32));
+        let merged = source_map.merge(callee, args);
+        let info = source_map.source_info_for_smid(merged).unwrap();
+        assert_eq!(info.file, Some(0));
+        assert_eq!(info.span, Some(Span::new(0u32, 11u32)));
+    }
+
+    /// The merged location keeps the first operand's annotation — the
+    /// enclosing declaration name a stack trace frame is labelled with.
+    #[test]
+    fn merge_keeps_the_first_operands_annotation() {
+        let mut source_map = SourceMap::new();
+        let callee = source_map.add_annotated(0, Span::new(0u32, 5u32), "result");
+        let args = source_map.add(0, Span::new(5u32, 11u32));
+        let merged = source_map.merge(callee, args);
+        let info = source_map.source_info_for_smid(merged).unwrap();
+        assert_eq!(info.annotation.as_deref(), Some("result"));
+    }
+
+    /// Nothing is minted, and the first operand is returned unchanged, when
+    /// either operand has no resolvable location — a synthetic Smid, an
+    /// invalid one, or one inside a reserved foreign range.
+    #[test]
+    fn merge_falls_back_to_the_first_operand_without_two_locations() {
+        let mut source_map = SourceMap::new();
+        let callee = source_map.add(0, Span::new(0u32, 5u32));
+        let synthetic = source_map.add_synthetic("__FOO");
+        assert_eq!(source_map.merge(callee, synthetic), callee);
+        assert_eq!(source_map.merge(callee, Smid::default()), callee);
+        assert_eq!(source_map.merge(Smid::default(), callee), Smid::default());
+    }
+
+    /// Two locations in different files never merge — a span joining them
+    /// would be meaningless.
+    #[test]
+    fn merge_refuses_to_join_two_files() {
+        let mut source_map = SourceMap::new();
+        let callee = source_map.add(0, Span::new(0u32, 5u32));
+        let elsewhere = source_map.add(1, Span::new(5u32, 11u32));
+        assert_eq!(source_map.merge(callee, elsewhere), callee);
     }
 
     /// `format_trace` must gracefully skip an invalid Smid rather than panic,

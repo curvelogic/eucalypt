@@ -237,7 +237,8 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
     let mut expr = merged.expr;
 
     // 8. Cook — operator precedence and expression anaphora
-    expr = cook::cook(expr).map_err(|e| core_error_to_pipeline_error(e, &source_map))?;
+    let cooked = cook::cook(expr, &mut source_map);
+    expr = cooked.map_err(|e| core_error_to_pipeline_error(e, &source_map))?;
 
     // 9. Inline (2 passes)
     for _ in 0..2 {

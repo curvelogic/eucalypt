@@ -28,7 +28,9 @@ error: type mismatch: expected symbol, found string
   ┌─ tests/harness/errors/064_has_string_not_sym.eu:3:13
   │
 3 │ check: data has("x")
-  │             ^^^ --- expected symbol, found "x"
+  │             ^^^^^^^^
+  │                 │
+  │                 expected symbol, found "x"
   │
   = a symbol was expected but a string was passed; add a colon prefix: ':yaml' not "yaml", ':key' not "key"
   = symbols (`:name`) and strings (`"name"`) are distinct in eucalypt; functions like 'render-as', 'has', 'lookup-or' take symbol arguments

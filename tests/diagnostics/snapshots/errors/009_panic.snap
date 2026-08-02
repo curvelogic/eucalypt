@@ -22,7 +22,7 @@ error: panic: This exits immediately with message and non-zero exit code
   ┌─ tests/harness/errors/009_panic.eu:1:14
   │
 1 │ x: { y: { z: panic("This exits immediately with message and non-zero exit code") } }
-  │              ^^^^^
+  │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
     - z at 009_panic.eu:1:14

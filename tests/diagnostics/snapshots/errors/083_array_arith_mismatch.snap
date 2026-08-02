@@ -1,9 +1,33 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/083_array_arith_mismatch
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/083_array_arith_mismatch.eu
-prelude-modes: identical
+prelude-modes: divergent
 
-=== both prelude modes ===
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/083_array_arith_mismatch.eu:4:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: array shape mismatch: arrays have incompatible shapes [2] and [3] for element-wise operation
+  ┌─ tests/harness/errors/083_array_arith_mismatch.eu:4:4
+  │
+4 │ c: arr.add(a, b)
+  │    ^^^^^^^^^^^^^
+  │
+  = while evaluating (outermost first):
+    - c at 083_array_arith_mismatch.eu:4:4
+
+=== --source-prelude ===
 exit: 1
 errors: 1
 warnings: 0

@@ -256,6 +256,33 @@ inlines aggressively, tail calls and fully-inlined helpers may not each
 appear as a separate frame, so a trace can be shorter than the source call
 chain suggests.
 
+### How wide the underline is
+
+The primary label underlines the whole of the expression the message is
+about. For a call that means the callee *and* its arguments — an
+under-applied call underlines all of it, because the incomplete call, not
+the function's name, is the thing that went wrong:
+
+```text
+error: type mismatch: expected number, found a function
+  ┌─ example.eu:2:7
+  │
+2 │ n: xs foldl(+, 0) + 1
+  │       ^^^^^^^^^^^ - called from here
+  │
+  = a function value cannot be used directly here; it must first be
+    called with all of its remaining arguments
+```
+
+The extent follows the *parse*, not the layout: `a.b(x)` underlines from
+`a`, `f(a)(b)` underlines both argument tuples, and a call spread over
+several lines underlines from its callee to its closing parenthesis.
+
+An error about the callee itself still underlines only the callee. A
+missing key in `text str.gsub("o", "0")`, for instance, is about `str`
+not having a `gsub` key, so `str` alone is underlined even though the
+enclosing call is wider.
+
 ### Getting more location detail
 
 Source spans are threaded through the pipeline as *source-map ids*

@@ -1,6 +1,6 @@
 //! Cooking is the process of resolving operator fixities and
 //! precedence to turn operator soup into hierarchical expressions.
-use crate::common::sourcemap::{HasSmid, Smid};
+use crate::common::sourcemap::{HasSmid, Smid, SourceMap};
 use crate::core::anaphora;
 use crate::core::binding::{Scope, Var};
 use crate::core::error::CoreError;
@@ -11,8 +11,16 @@ pub mod fill;
 pub mod fixity;
 pub mod shunt;
 
-pub fn cook(expr: RcExpr) -> Result<RcExpr, CoreError> {
-    Cooker::default().cook(expr)
+/// Cook an expression, minting whole-construct spans in `source_map`.
+///
+/// `source_map` must be the map whose `Smid`s the expression carries: cook
+/// widens an application's `Smid` to span its callee *and* its argument
+/// tuple (eu-1tkk.7.38), which means resolving both halves' spans and
+/// minting a new entry for the union. Passing an unrelated (or empty) map
+/// is safe — nothing resolves, so every `Smid` is left exactly as it was —
+/// which is what [`Cooker`]'s unit tests rely on.
+pub fn cook(expr: RcExpr, source_map: &mut SourceMap) -> Result<RcExpr, CoreError> {
+    Cooker::new(source_map).cook(expr)
 }
 
 /// Cook an expression, seeding fixity distribution with prelude operator metadata.
@@ -27,8 +35,9 @@ pub fn cook_with_prelude(
         String,
         crate::driver::unit_interface::OperatorInfo,
     >,
+    source_map: &mut SourceMap,
 ) -> Result<RcExpr, CoreError> {
-    let mut cooker = Cooker::default();
+    let mut cooker = Cooker::new(source_map);
     let prepped = fixity::distribute_with_prelude(expr, prelude_operators)?;
     cooker.cook_(prepped)
 }
@@ -60,8 +69,7 @@ pub fn cook_with_prelude(
 /// is true for an outer soup, `in_expr_anaphor_scope` is set to `true`.
 /// Inner soups then see this flag and do NOT create their own lambda,
 /// allowing their anaphors to propagate to the outer scope.
-#[derive(Default)]
-pub struct Cooker {
+pub struct Cooker<'smap> {
     /// True when we have traversed into the scope of expression anaphora
     in_expr_anaphor_scope: bool,
     /// While in the scope of anaphoric lambda, collect all the
@@ -70,6 +78,13 @@ pub struct Cooker {
     /// While in the scope of anaphoric lambda, collect all the
     /// anaphora for processing at the boundary of the scope
     pending_block_anaphora: HashMap<Anaphor<Smid, i32>, String>,
+    /// The map holding the spans the expression's `Smid`s refer to.
+    ///
+    /// Cook is otherwise a pure tree rewrite, but the shunting yard is the
+    /// only place that knows a call's callee and its argument tuple belong
+    /// to one expression, so it is the only place that can mint the `Smid`
+    /// spanning both (eu-1tkk.7.38).
+    source_map: &'smap mut SourceMap,
 }
 
 /// Split a list of cooked atoms at catenation operator boundaries.
@@ -105,7 +120,17 @@ fn is_cat_operator(expr: &RcExpr) -> bool {
     }
 }
 
-impl Cooker {
+impl<'smap> Cooker<'smap> {
+    /// Create a cooker that mints merged spans in `source_map`.
+    pub fn new(source_map: &'smap mut SourceMap) -> Self {
+        Cooker {
+            in_expr_anaphor_scope: false,
+            pending_expr_anaphora: HashMap::new(),
+            pending_block_anaphora: HashMap::new(),
+            source_map,
+        }
+    }
+
     /// Cook the expression `expr` resolving all operators and
     /// eliminating Expr::Soup in favour of hierarchical expressions.
     ///
@@ -200,12 +225,12 @@ impl Cooker {
             let groups = split_at_cat_operators(&atoms);
             let mut items = Vec::new();
             for group in groups {
-                items.push(shunt::shunt(group)?);
+                items.push(shunt::shunt(group, self.source_map)?);
             }
             let smid = exprs.first().map(|e| e.smid()).unwrap_or_default();
             RcExpr::from(Expr::List(smid, items))
         } else {
-            shunt::shunt(atoms)?
+            shunt::shunt(atoms, self.source_map)?
         };
 
         if wrap_lambda {
@@ -314,7 +339,7 @@ pub mod tests {
     use crate::core::expr::RcExpr;
 
     fn cook_soup(exprs: &[RcExpr]) -> RcExpr {
-        alpha_norm(cook(soup(exprs.to_vec())).unwrap())
+        alpha_norm(cook(soup(exprs.to_vec()), &mut SourceMap::new()).unwrap())
     }
 
     fn expected(expr: RcExpr) -> RcExpr {
@@ -616,7 +641,7 @@ pub mod tests {
 
         // The outer expression should NOT be a lambda — the inner paren group
         // is opaque (no subsumption).
-        let result = cook(outer).unwrap();
+        let result = cook(outer, &mut SourceMap::new()).unwrap();
         assert!(
             !matches!(&*result.inner, Expr::Lam(_, _, _)),
             "expected NOT a lambda (anon anaphora are opaque in parens without subsumption), got: {result:?}"
@@ -644,7 +669,7 @@ pub mod tests {
 
         // Outer should NOT be a lambda — numbered anaphora in parens are
         // opaque just like anonymous ones.
-        let result = cook(outer).unwrap();
+        let result = cook(outer, &mut SourceMap::new()).unwrap();
         assert!(
             !matches!(&*result.inner, Expr::Lam(_, _, _)),
             "expected NOT a lambda (numbered anaphora opaque in parens), got: {result:?}"
@@ -666,7 +691,7 @@ pub mod tests {
 
         // Should produce: DIV(lam([_0], ADD(_0, 1)), 2)
         // The section lambda stays inside — NOT lam([_0], DIV(ADD(_0, 1), 2))
-        let result = alpha_norm(cook(outer).unwrap());
+        let result = alpha_norm(cook(outer, &mut SourceMap::new()).unwrap());
         assert_eq!(
             result,
             expected(app(
@@ -676,6 +701,86 @@ pub mod tests {
                     num(2)
                 ]
             ))
+        );
+    }
+
+    /// A juxtaposed call's `App` node carries a location spanning the
+    /// callee *and* the argument tuple, not the callee alone
+    /// (eu-1tkk.7.38). This is what lets a diagnostic blaming an
+    /// under-applied call underline the whole call.
+    #[test]
+    fn call_application_spans_callee_and_arguments() {
+        use codespan::Span;
+
+        let mut source_map = SourceMap::new();
+        // `f(1, 2)`: callee at 0..1, argument tuple at 1..7.
+        let callee_smid = source_map.add(0, Span::new(0u32, 1u32));
+        let tuple_smid = source_map.add(0, Span::new(1u32, 7u32));
+
+        let cooked = cook(
+            soup(vec![
+                core::var(callee_smid, free("f")),
+                core::call(),
+                core::arg_tuple(tuple_smid, vec![num(1), num(2)]),
+            ]),
+            &mut source_map,
+        )
+        .unwrap();
+
+        let app_smid = match &*cooked.inner {
+            Expr::App(smid, _, _) => *smid,
+            other => panic!("expected an App, got {other:?}"),
+        };
+        assert_ne!(
+            app_smid, callee_smid,
+            "App must not reuse the callee's Smid"
+        );
+        assert_eq!(
+            source_map.source_info_for_smid(app_smid).unwrap().span,
+            Some(Span::new(0u32, 7u32))
+        );
+    }
+
+    /// A chained call `f(1)(2)` widens twice: the inner `App` spans
+    /// `f(1)` and the outer spans the whole of `f(1)(2)`.
+    #[test]
+    fn chained_call_applications_widen_cumulatively() {
+        use codespan::Span;
+
+        let mut source_map = SourceMap::new();
+        // `f(1)(2)`: callee 0..1, first tuple 1..4, second tuple 4..7.
+        let callee_smid = source_map.add(0, Span::new(0u32, 1u32));
+        let first_tuple = source_map.add(0, Span::new(1u32, 4u32));
+        let second_tuple = source_map.add(0, Span::new(4u32, 7u32));
+
+        let cooked = cook(
+            soup(vec![
+                core::var(callee_smid, free("f")),
+                core::call(),
+                core::arg_tuple(first_tuple, vec![num(1)]),
+                core::call(),
+                core::arg_tuple(second_tuple, vec![num(2)]),
+            ]),
+            &mut source_map,
+        )
+        .unwrap();
+
+        let (outer_smid, inner) = match &*cooked.inner {
+            Expr::App(smid, f, _) => (*smid, f.clone()),
+            other => panic!("expected an App, got {other:?}"),
+        };
+        let inner_smid = match &*inner.inner {
+            Expr::App(smid, _, _) => *smid,
+            other => panic!("expected a nested App, got {other:?}"),
+        };
+
+        assert_eq!(
+            source_map.source_info_for_smid(inner_smid).unwrap().span,
+            Some(Span::new(0u32, 4u32))
+        );
+        assert_eq!(
+            source_map.source_info_for_smid(outer_smid).unwrap().span,
+            Some(Span::new(0u32, 7u32))
         );
     }
 }

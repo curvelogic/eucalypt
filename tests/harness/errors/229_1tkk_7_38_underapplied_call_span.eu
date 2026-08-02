@@ -1,0 +1,10 @@
+# eu-1tkk.7.38: the primary label for an under-applied call must cover the
+# whole call, not just the function name.
+#
+# Catenation binds more loosely than `+`, so this parses as
+# `xs (foldl(+, 0) + 1)` and `+` is handed the partial application
+# `foldl(+, 0)`.  The caret must span all eleven columns of `foldl(+, 0)` —
+# the expression that is actually under-applied — and not the five columns
+# of `foldl` alone.
+xs: [1, 2, 3]
+n: xs foldl(+, 0) + 1

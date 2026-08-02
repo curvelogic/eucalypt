@@ -23,7 +23,7 @@ error: type mismatch: received a function where true or false was expected
   ┌─ tests/harness/errors/077_double_anaphora.eu:4:12
   │
 4 │ result: xs filter(_ > _ - 1)
-  │            ^^^^^^
+  │            ^^^^^^^^^^^^^^^^^
   │
   = if using '_' anaphora in a predicate, note that each '_' creates a separate parameter — '(_ > _ - 1)' is a two-argument function, not a one-argument predicate
   = to reuse the same value, use '_0' (or '_1', '_2' for multiple parameters): '(_0 > _0 - 1)' correctly compares the argument to itself

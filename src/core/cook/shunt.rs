@@ -1,32 +1,38 @@
 //! Logic for resolving operator precedences
-use crate::common::sourcemap::HasSmid;
+use crate::common::sourcemap::{HasSmid, SourceMap};
 use crate::core::error::CoreError;
 use crate::core::expr::*;
 
 /// Apply the shunting yard algorithm to exprs and return cooked
 /// expression
-pub fn shunt(exprs: Vec<RcExpr>) -> Result<RcExpr, CoreError> {
-    Shunter::new(exprs).shunt()
+///
+/// `source_map` is the map the exprs' `Smid`s index into; it is used to
+/// mint whole-call spans for the applications formed here
+/// (see [`Shunter::form_apply`]).
+pub fn shunt(exprs: Vec<RcExpr>, source_map: &mut SourceMap) -> Result<RcExpr, CoreError> {
+    Shunter::new(exprs, source_map).shunt()
 }
 
 /// Shunting algorithm state
 ///
 /// Input stream, output stream, ops stack and error state.
-struct Shunter {
+struct Shunter<'smap> {
     input: Vec<RcExpr>,
     output: Vec<RcExpr>,
     ops: Vec<RcExpr>,
     error: Option<CoreError>,
+    source_map: &'smap mut SourceMap,
 }
 
-impl Shunter {
-    pub fn new(mut exprs: Vec<RcExpr>) -> Self {
+impl<'smap> Shunter<'smap> {
+    pub fn new(mut exprs: Vec<RcExpr>, source_map: &'smap mut SourceMap) -> Self {
         exprs.reverse();
         Shunter {
             input: exprs,
             output: vec![],
             ops: vec![],
             error: None,
+            source_map,
         }
     }
 
@@ -184,7 +190,8 @@ impl Shunter {
 
     fn apply_one(&mut self, expr: RcExpr) {
         if let Some(operand) = self.pop_one_output() {
-            self.push_output(Self::form_apply(expr, &[operand]))
+            let applied = self.form_apply(expr, &[operand]);
+            self.push_output(applied)
         } else {
             self.error = Some(CoreError::TooFewOperands(expr.smid()))
         }
@@ -192,17 +199,29 @@ impl Shunter {
 
     fn apply_two(&mut self, expr: RcExpr) {
         if let Some((right, left)) = self.pop_two_output() {
-            self.push_output(Self::form_apply(expr, &[left, right]))
+            let applied = self.form_apply(expr, &[left, right]);
+            self.push_output(applied)
         } else {
             self.error = Some(CoreError::TooFewOperands(expr.smid()))
         }
     }
 
-    fn form_apply(op: RcExpr, xs: &[RcExpr]) -> RcExpr {
+    /// Build the expression an operator application denotes.
+    ///
+    /// For a juxtaposed call `f(a, b)` the resulting `App` is stamped with a
+    /// `Smid` spanning the callee *and* the argument tuple, rather than the
+    /// callee alone (eu-1tkk.7.38). The callee here is whatever precedence
+    /// resolution decided it is — `a.b` in `a.b(x)`, `f(a)` in `f(a)(b)` —
+    /// so the merged span is the whole call however it was written, and a
+    /// diagnostic blaming an under-applied call underlines all of it.
+    fn form_apply(&mut self, op: RcExpr, xs: &[RcExpr]) -> RcExpr {
         if op.is_pseudocall() {
             let f = xs[0].clone();
             match &*xs[1].inner {
-                Expr::ArgTuple(_, args) => RcExpr::from(Expr::App(f.smid(), f, args.to_vec())),
+                Expr::ArgTuple(tuple_smid, args) => {
+                    let smid = self.source_map.merge(f.smid(), *tuple_smid);
+                    RcExpr::from(Expr::App(smid, f, args.to_vec()))
+                }
                 _ => panic!("shunt: pseudocall op without arg tuple"),
             }
         } else if op.is_pseudodot() {

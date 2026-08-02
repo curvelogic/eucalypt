@@ -1,0 +1,2 @@
+exit: 1
+stderr: "(?s)type mismatch: expected number, found a function.*229_1tkk_7_38_underapplied_call_span\.eu:10:7.*[^^]\^{11}[^^].*a function value cannot be used directly here"

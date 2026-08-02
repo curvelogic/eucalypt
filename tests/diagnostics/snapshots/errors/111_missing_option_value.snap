@@ -22,7 +22,7 @@ error: option --output requires a value
   ┌─ tests/harness/errors/111_missing_option_value.eu:2:20
   │
 2 │ main: ["--output"] parse-args({ output: "default" })
-  │                    ^^^^^^^^^^
+  │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
     - main at 111_missing_option_value.eu:2:20

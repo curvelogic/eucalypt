@@ -28,7 +28,9 @@ error[EU-RENDER-SHAPE]: cannot render this document as eu: a block key is the nu
   ┌─ tests/harness/errors/220_eu_block_key.eu:9:7
   │
 9 │ main: kv-block(1, "a")
-  │       ^^^^^^^^ - expected symbol, found number
+  │       ^^^^^^^^^^^^^^^^
+  │                │
+  │                expected symbol, found number
   │
   = give the block symbol keys, e.g. 'kv-block(:one, "a")', or convert the key to text with 'str' before rendering
   = 'yaml' and 'edn' output both support keys that are not text, and render this block unchanged

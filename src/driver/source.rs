@@ -860,10 +860,16 @@ impl SourceLoader {
     pub fn cook(&mut self) -> Result<(), EucalyptError> {
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(ref blob) = self.prelude_blob {
-            self.core.expr = cook::cook_with_prelude(self.core.expr.clone(), &blob.operators)?;
+            let cooked = cook::cook_with_prelude(
+                self.core.expr.clone(),
+                &blob.operators,
+                &mut self.source_map,
+            )?;
+            self.core.expr = cooked;
             return Ok(());
         }
-        self.core.expr = cook::cook(self.core.expr.clone())?;
+        let cooked = cook::cook(self.core.expr.clone(), &mut self.source_map)?;
+        self.core.expr = cooked;
         Ok(())
     }
 

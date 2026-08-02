@@ -24,4 +24,4 @@ error: expected a primitive value but found an unevaluated function application
   ┌─ tests/diagnostics/corpus/hof_bad_arg.eu:2:12
   │
 2 │ result: xs map(_ + _)
-  │            ^^^
+  │            ^^^^^^^^^^

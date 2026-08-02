@@ -31,7 +31,7 @@ error: head of empty list
   ┌─ tests/harness/errors/135_head_empty_list.eu:1:9
   │
 1 │ result: head([])
-  │         ^^^^
+  │         ^^^^^^^^
   │
   = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
   = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty

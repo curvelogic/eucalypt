@@ -22,7 +22,7 @@ error: unknown option: -x
   ┌─ tests/harness/errors/110_unknown_short_arg.eu:2:14
   │
 2 │ main: ["-x"] parse-args({})
-  │              ^^^^^^^^^^
+  │              ^^^^^^^^^^^^^^
   │
   = while evaluating (outermost first):
     - main at 110_unknown_short_arg.eu:2:14
