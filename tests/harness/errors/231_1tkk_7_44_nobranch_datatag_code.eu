@@ -1,0 +1,8 @@
+# eu-1tkk.7.44 — NoBranchForDataTag shares TypeMismatch's exact
+# "type mismatch: expected X, found Y" message text and vocabulary, so it
+# joins the EU-EVAL-TYPE code allow-list. This is the case-branch-dispatch
+# path: a literal `.field` lookup on a value that evaluated to a number
+# (not a block) raises NoBranchForDataTag via the LookupLitForce
+# continuation, not TypeMismatch.
+n: 5
+result: n.foo

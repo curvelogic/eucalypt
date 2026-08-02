@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/049_dot_on_number
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/049_dot_on_number.eu
+fixture: errors/231_1tkk_7_44_nobranch_datatag_code
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/231_1tkk_7_44_nobranch_datatag_code.eu
 prelude-modes: identical
 
 === both prelude modes ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: EU-EVAL-TYPE
-primary: user tests/harness/errors/049_dot_on_number.eu:3:9
+primary: user tests/harness/errors/231_1tkk_7_44_nobranch_datatag_code.eu:8:9
 help-lines: 0
 note-lines: 3
 secondary-labels: 0
@@ -19,13 +19,13 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error[EU-EVAL-TYPE]: type mismatch: expected block, found number
-  ┌─ tests/harness/errors/049_dot_on_number.eu:3:9
+  ┌─ tests/harness/errors/231_1tkk_7_44_nobranch_datatag_code.eu:8:9
   │
-3 │ result: x.abs
+8 │ result: n.foo
   │         ^
   │
   = the '.' operator performs key lookup on blocks; numbers do not have fields
   = to apply a function to a number, use pipeline catenation, e.g. 'x abs' or 'x negate' instead of 'x.abs'
   = note: 'str' is a namespace of string functions, not a type conversion function; to convert a number to a string use 'str.of(x)' or string interpolation
   = while evaluating (outermost first):
-    - result at 049_dot_on_number.eu:3:9
+    - result at 231_1tkk_7_44_nobranch_datatag_code.eu:8:9

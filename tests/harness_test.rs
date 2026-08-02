@@ -3197,6 +3197,16 @@ pub fn test_error_230_lazy_demand_site_blame() {
 }
 
 #[test]
+/// eu-1tkk.7.44 — `NoBranchForDataTag` shares `TypeMismatch`'s exact
+/// "type mismatch: expected X, found Y" message text, so it joins the
+/// `EU-EVAL-TYPE` code allow-list. `n.foo` on a number raises
+/// `NoBranchForDataTag` via the `LookupLitForce` continuation (not
+/// `TypeMismatch`); the sidecar pins the coded header.
+pub fn test_error_231_1tkk_7_44_nobranch_datatag_code() {
+    run_error_test(&error_opts("231_1tkk_7_44_nobranch_datatag_code.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:

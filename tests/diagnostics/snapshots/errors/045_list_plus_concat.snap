@@ -7,7 +7,7 @@ prelude-modes: identical
 exit: 1
 errors: 1
 warnings: 0
-code: -
+code: EU-EVAL-TYPE
 primary: user tests/harness/errors/045_list_plus_concat.eu:4:11
 help-lines: 0
 note-lines: 2
@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: type mismatch: expected number, found list
+error[EU-EVAL-TYPE]: type mismatch: expected number, found list
   ┌─ tests/harness/errors/045_list_plus_concat.eu:4:11
   │
 4 │ result: a + b

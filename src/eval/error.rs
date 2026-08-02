@@ -1712,6 +1712,27 @@ impl ExecutionError {
             // being misreported as blocks, but the code allow-list was not
             // updated to follow (eu-1tkk.7.37).
             ExecutionError::UnexpectedFunction(..) => Some("EU-EVAL-TYPE"),
+            // Also the same message family: `NoBranchForDataTag` is the
+            // case-branch-dispatch counterpart of `TypeMismatch`, sharing its
+            // "type mismatch: expected X, found Y" text and vocabulary
+            // (`display_expected_tags`/`display_data_tag` use the same words —
+            // "block", "list", "number", "string" — as `IntrinsicType`'s
+            // `Display`). It fires for a `.field` lookup on a non-block
+            // (`n.foo` where `n` is a number), a case/branch table with no arm
+            // for the value's tag (e.g. a block passed to arithmetic), and —
+            // empirically the most common trigger — a prelude/native
+            // function's declared-argument-type check (`str.letters(42)`).
+            // All three are ordinary "wrong type of value" mistakes a user
+            // would recognise as a type mismatch. It never fires for function
+            // values: those have no data tag and get their own
+            // `CannotReturnFunToCase`, a genuinely different message shape
+            // ("received a function where X was expected", with its own
+            // precedence-related help note), which stays deliberately
+            // uncoded here — extending to it would be the kind of scope
+            // creep eu-1tkk.7.37 avoided. Left undecided by eu-1tkk.7.37
+            // ("even NoBranchForDataTag ... is deliberately left uncoded");
+            // decided and added after investigation by eu-1tkk.7.44.
+            ExecutionError::NoBranchForDataTag(..) => Some("EU-EVAL-TYPE"),
             ExecutionError::ContractViolation(..) => Some("EU-EVAL-CONTRACT"),
             ExecutionError::UnrepresentableValue(..) => Some("EU-RENDER-UNREPRESENTABLE"),
             ExecutionError::UnrenderableShape(..) => Some("EU-RENDER-SHAPE"),
