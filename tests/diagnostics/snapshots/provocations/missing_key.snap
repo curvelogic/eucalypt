@@ -25,5 +25,5 @@ error: key 'hostname' not found in block
 2 │ result: config.hostname
   │         ^^^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - result at missing_key.eu:2:9

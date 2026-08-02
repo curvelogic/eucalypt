@@ -18,12 +18,12 @@ trace-prelude-frames: 1
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: panic: index 10 out of range for list of length 3
+error: index 10 out of range for list of length 3
     ┌─ tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12
     │
 606 │ result: xs take-tenth
     │            ^^^^^^^^^^
     │
-    = stack trace:
+    = while evaluating (outermost first):
       - result at many_decls_nested_user_fn.eu:606:12
-      - in 'nth' at [prelude]
+      - in 'nth' (prelude)

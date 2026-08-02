@@ -25,5 +25,5 @@ error: assertion failed: expected "goodbye", got "hello"
 17 │ result: "hello" //= "goodbye"
    │                 ^^^
    │
-   = stack trace:
+   = while evaluating (outermost first):
      - result at error_177.eu:17:17

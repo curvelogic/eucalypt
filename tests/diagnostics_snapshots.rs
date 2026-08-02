@@ -343,7 +343,7 @@ mod normalisation {
 
     #[test]
     fn suppresses_prelude_line_numbers_but_keeps_the_combinator_name() {
-        let raw = "  = stack trace:\n    - in 'nth' at [prelude]:1391:3\n";
+        let raw = "  = while evaluating (outermost first):\n    - in 'nth' at [prelude]:1391:3\n";
         let out = norm(raw);
         assert!(
             out.contains("in 'nth' at [prelude]"),
@@ -388,7 +388,7 @@ mod normalisation {
             "1391 │ nth(n, l): l drop(n) head\n",
             "  │            ^^^^\n",
             "  │\n",
-            "  = stack trace:\n",
+            "  = while evaluating (outermost first):\n",
         );
         let out = norm(raw);
         assert!(
@@ -422,9 +422,9 @@ mod normalisation {
         let raw = concat!(
             "\u{1b}[31merror[EU-EVAL-TYPE]\u{1b}[0m: nope\n",
             "  ┌─ a.eu:1:1\n",
-            "  = stack trace:\n",
+            "  = while evaluating (outermost first):\n",
             "    - result at a.eu:1:1\n",
-            "    - in 'nth' at [prelude]:1391:3\n",
+            "    - in 'nth' (prelude)\n",
         );
         let once = norm(raw);
         assert_eq!(norm(&once), once);
@@ -441,9 +441,9 @@ mod normalisation {
             "  │      ^\n",
             "  │\n",
             "  = to convert a string to a number, use 'num'\n",
-            "  = stack trace:\n",
+            "  = while evaluating (outermost first):\n",
             "    - x at 030.eu:2:6\n",
-            "    - in 'nth' at [prelude]\n",
+            "    - in 'nth' (prelude)\n",
         );
         let f = facts(&norm(raw));
         assert_eq!(f.errors, 1);

@@ -42,7 +42,14 @@ jobs:
         run: cargo audit
 
   test:
-    name: Test Suite
+    # The prelude mode is in the job name deliberately (eu-1tkk.7.43). This job
+    # runs with NO `lib/prelude.blob` — that file is gitignored, so a plain
+    # checkout has none — which keeps the source-prelude fallback exercised and
+    # is the reason the name says so. A `#[cfg(prelude_blob_ok)]` test compiles
+    # to nothing here; its blob-mode counterpart is "Blob-mode cargo tests".
+    # A reader seeing this job red should read the failure as "…without a
+    # prelude blob", without opening the log.
+    name: Test Suite (source-prelude fallback, no blob)
     strategy:
       fail-fast: false
       matrix:
@@ -156,75 +163,54 @@ jobs:
         run: cargo test --test tick_parity_test
 
   diagnostics-blob-mode:
-    name: Diagnostics blob-mode integration
+    # The mode is the first thing in the name (eu-1tkk.7.43): this job is the
+    # blob-mode half of the `cargo test` matrix, and its counterpart is
+    # "Test Suite (source-prelude fallback, no blob)". A reader seeing this
+    # job red knows the failure is blob-specific without opening the log.
+    name: Blob-mode cargo tests (all mode-sensitive targets)
     runs-on: ubuntu-latest
+    env:
+      # gate_liveness's `prelude_blob_is_present_when_demanded` turns this into
+      # a runtime assertion that `cfg(prelude_blob_ok)` is actually set. Without
+      # it, a `prelude-compile` step that silently failed to take effect (the
+      # stale-mtime trap below) would leave every gated test compiled out and
+      # this whole job green having asserted nothing.
+      EU_REQUIRE_PRELUDE_BLOB: "1"
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
       - uses: dtolnay/rust-toolchain@stable
-      # Some integration tests only have teeth with an embedded prelude blob:
-      # tests/diagnostics_blame_plumbing_test.rs is gated wholesale on
-      # `#[cfg(prelude_blob_ok)]` (its assertions are about blob-mode Smid
-      # reconstruction, meaningless under the source-prelude fallback), and
-      # tests/diagnostics_invariants.rs's `corpus_satisfies_invariants` gate
-      # is blob-sensitive in practice even though it isn't cfg-gated. Neither
-      # the plain "Test Suite" job (deliberately blob-less, to keep the
-      # source-prelude fallback exercised) nor the blob-mode harness jobs
-      # ("Bytecode + blob harness", tick-parity, etc., which only run
-      # `eu test tests/harness` or a single non-diagnostics test) run these
-      # under a blob — so today they run in NO CI job at all (eu-1tkk.7.19).
+      # `lib/prelude.blob` is gitignored, so a plain checkout has none and the
+      # binary falls back to the source prelude. That fallback is a genuinely
+      # different pipeline — blob-mode prelude globals carry
+      # `Smid::global_slot(i)` stamps, the checker takes
+      # `run_type_checker_from_blob_core` rather than `run_type_checker`, and
+      # tests/diagnostics/DIVERGENCE.md is the checked-in inventory of fixtures
+      # that render a different diagnostic in each mode. Blob mode is what a
+      # released binary does.
       - name: Generate prelude blob
         run: cargo run --package xtask -- prelude-compile
-      # Whole targets, with a RATCHETED exclusion list — not an allowlist.
+      # Fail fast, and unmistakably, if the blob did not reach the build —
+      # rather than as a puzzling green after everything gated has quietly
+      # compiled out.
       #
-      # This used to name the one test it wanted
-      # (`cargo test --test diagnostics_invariants corpus_satisfies_invariants
-      # -- --exact`) beside a comment reading "widen the cargo test invocations
-      # below as each lands", with nothing enforcing the widening. Two tests
-      # were excluded by omission, a new test in either target would have been
-      # excluded the same way, and a `--exact` filter that matches nothing
-      # exits 0 — so a rename would have removed a gate silently (eu-oxtcq
-      # mechanism 3).
+      # The blob half of the golden diagnostic snapshots (eu-1tkk.7.4) is the
+      # sharpest case. A released binary uses the prelude blob, so the blob
+      # rendering is the one users see — but only a binary embedding a verified
+      # blob can reproduce it, so those two tests are `#[cfg(prelude_blob_ok)]`.
       #
-      # `scripts/diagnostics-gate.sh` runs each target whole, skipping only the
-      # named entries, and then requires every named entry to STILL FAIL. A
-      # known failure that gets fixed therefore turns this job RED until its
-      # line is deleted here. That is the mechanism working: delete the line,
-      # do not loosen the check.
-      #
-      # The exclusion list is currently EMPTY, and that is the ratchet having
-      # already fired once. This branch was written while eu-7x0r was open and
-      # excluded `secondary_labels_do_not_excerpt_library_internals` and
-      # `debug_trace_restores_the_uncurated_trace`. eu-7x0r landed as #1079,
-      # both now pass under a blob, and their lines are deleted rather than
-      # carried — leaving them would have turned this job red by design.
-      #
-      # (An earlier revision of this comment also claimed the harness-level
-      # typecheck fixtures 010/011/013/063/085 were red under blob mode per
-      # eu-rqwh. eu-rqwh closed on 2026-07-24 and all five now pass under a
-      # blob. Bringing harness_test itself into this job is eu-5yn9v.)
-      #
-      # `tests/blob_deprecation_test.rs` (eu-1tkk.2) is here for the same
-      # reason the others are: gated on `cfg(prelude_blob_ok)`, asserting
-      # behaviour that exists only on the eval path in blob mode, and reached
-      # by no other job — the blob-mode harness jobs run `eu test
-      # tests/harness`, which never reaches a `cargo test` integration test.
-      - name: Run blob-mode diagnostics integration tests
-        run: |
-          scripts/diagnostics-gate.sh diagnostics_blame_plumbing_test
-          scripts/diagnostics-gate.sh diagnostics_invariants
-          scripts/diagnostics-gate.sh blob_deprecation_test
-      # The blob half of the golden diagnostic snapshots (eu-1tkk.7.4). A
-      # released binary uses the prelude blob, so the blob rendering is the one
-      # users see — but only a binary embedding a verified blob can reproduce
-      # it, so these two tests are `#[cfg(prelude_blob_ok)]` and exist in no
-      # other job.
-      #
-      # The `--list` check is deliberately kept alongside
-      # `scripts/diagnostics-gate.sh` rather than replaced by it. The script's
-      # zero-test guard asks whether the target ran *anything*; this file has
-      # ungated tests too, so it would stay green with only those running while
-      # both blob-gated tests silently vanished. Naming the two tests is the
-      # stronger assertion, and it is the one this file needs.
+      # This named-test check is kept alongside the sweep below rather than
+      # replaced by it. The sweep's zero-test guard asks whether a target ran
+      # *anything*; `diagnostics_snapshots` has ungated tests too, so it would
+      # stay green with only those running while both blob-gated tests silently
+      # vanished. Naming the two is the stronger assertion.
       #
       # `build.rs` re-runs on `lib/prelude.blob` changing by *mtime*: restoring
       # a blob with an older timestamp leaves `prelude_blob_ok` unset, compiles
@@ -240,8 +226,36 @@ jobs:
               exit 1
             }
           done
-      - name: Run the blob-mode golden diagnostic snapshots
-        run: scripts/diagnostics-gate.sh diagnostics_snapshots
+      # Every prelude-mode-sensitive target, DISCOVERED FROM THE TREE.
+      #
+      # This step used to name the targets it wanted, and before that the
+      # individual tests (`cargo test --test diagnostics_invariants
+      # corpus_satisfies_invariants -- --exact`, beside a comment reading
+      # "widen as each lands" with nothing enforcing the widening). Both are
+      # allowlists, and both leaked: a `--exact` filter that matches nothing
+      # exits 0, so a rename removed a gate silently (eu-oxtcq mechanism 3),
+      # and a target absent from the list ran blob-less only. That second hole
+      # is what bit PR #1104 — a blob-mode-specific fix whose new
+      # `tests/harness_test.rs` tests ran in no blob-mode job anywhere, passed
+      # on the author's machine and failed on ubuntu and windows.
+      #
+      # `scripts/blob-mode-tests.sh` derives the target list instead: a target
+      # is swept if it spawns the `eu` binary (making the prelude mode a real
+      # input) or is gated on `cfg(prelude_blob_ok)` (making it vanish without
+      # one). A new test target is therefore covered from its first CI run with
+      # no edit here, and `tests/gate_liveness.rs` fails if the discovery rule
+      # and the registry drift apart.
+      #
+      # Each target still runs WHOLE through `scripts/diagnostics-gate.sh`, so
+      # the ratchet is unchanged: a known blob-mode failure is named in that
+      # script with its bead, skipped in the whole-target run, and required to
+      # STILL FAIL on its own — fixing it turns this job red until the line is
+      # deleted. Going red on a fix is the mechanism working; delete the line,
+      # never loosen the check. The list is EMPTY today, which is the ratchet
+      # having already fired once: it was written while eu-7x0r was open, and
+      # its two entries went when #1079 landed.
+      - name: Run every mode-sensitive target under the blob
+        run: scripts/blob-mode-tests.sh
 
   blob-determinism:
     name: Prelude blob determinism

@@ -2819,7 +2819,8 @@ pub fn test_error_178() {
 /// on the offending value — rather than aborting the process with a Rust
 /// panic. The sidecar asserts the label's `file:line:col`, not just the
 /// wording, and anchors on the `┌─` line so that a location regression
-/// cannot be masked by the `stack trace:` note (eu-1tkk.7.20).
+/// cannot be masked by the `while evaluating (outermost first):` note
+/// (eu-1tkk.7.20).
 pub fn test_error_171() {
     run_error_test(&error_opts("171_yaml_large_uint.eu"));
 }
@@ -2943,11 +2944,11 @@ pub fn test_192_1tkk_7_9_function_not_block() {
 /// the message reports the real index and the real length rather than
 /// leaking `drop`'s mechanical "tail of empty list"; the primary location
 /// is the user's own `xs nth(10)` call site, not a `[prelude]` line; and
-/// the curated `stack trace:` note keeps the user frame *and* names the
-/// boundary combinator (`in 'nth'`) that the raw continuation dump alone
-/// no longer carries — `nth` raises at its own edge, so its frame lives
-/// in the env (lexical scope) trace and is recovered by
-/// `curate_trace_with_env`.
+/// the curated `while evaluating (outermost first):` note keeps the user
+/// frame *and* names the boundary combinator (`in 'nth'`) that the raw
+/// continuation dump alone no longer carries — `nth` raises at its own
+/// edge, so its frame lives in the env (lexical scope) trace and is
+/// recovered by `curate_trace_with_env`.
 ///
 /// Engine-agnostic: this is presentation-layer curation over Smids both
 /// engines record identically, and it is verified under `cargo test`
@@ -3064,8 +3065,8 @@ pub fn test_228_bc34x_meta_body_memoisation() {
 ///
 /// The regex deliberately anchors on the `┌─` primary-label line rather than
 /// merely finding the fixture's name somewhere in the output: before the fix
-/// the user's file still appeared in the `stack trace:` note, so a looser
-/// pattern passes either way and gates nothing.
+/// the user's file still appeared in the `while evaluating (outermost
+/// first):` note, so a looser pattern passes either way and gates nothing.
 pub fn test_194_8a49h_library_blame() {
     run_error_test(&error_opts("194_8a49h_library_blame.eu"));
 }
@@ -3079,8 +3080,8 @@ pub fn test_194_8a49h_library_blame() {
 /// trace anchor name `pad0` — a binding the user never called — for a
 /// failure raised inside `nth`. The regex pins the primary label's own
 /// `file:line:col` (line 15, the `result` declaration) *before* the
-/// `stack trace:` marker, so a regression that only fixes the note cannot
-/// satisfy it.
+/// `while evaluating (outermost first):` marker, so a regression that only
+/// fixes the note cannot satisfy it.
 pub fn test_195_og3u6_trace_anchor() {
     run_error_test(&error_opts("195_og3u6_trace_anchor.eu"));
 }
@@ -4073,11 +4074,30 @@ pub fn test_eval_path_warns_on_record_key_typo() {
 }
 
 /// The blob-core merged check (default config) and the source-prelude merged
-/// check (`EU_SOURCE_PRELUDE=1`) must produce byte-identical `eu check
-/// --strict` output for the same file (eu-rb5n condition 2/4: the blob path
-/// is only a startup optimisation, never a different answer). Covers both
-/// config branches for a representative spread: a warning case, a clean
-/// case, and a case needing the deeper prefix-list inference.
+/// check (`EU_SOURCE_PRELUDE=1`) must produce byte-identical output for the
+/// same file (eu-rb5n condition 2/4: the blob path is only a startup
+/// optimisation, never a different answer). Covers a representative spread:
+/// a warning case, a suppressed case, and a case needing the deeper
+/// prefix-list inference.
+///
+/// # Two ways this used to be vacuous (eu-1tkk.7.43)
+///
+/// It compared `eu check --strict` invocations. `eu check` returns from
+/// `bin/eu.rs` at the `opt.check()` branch, *before* the
+/// `maybe_load_prelude_blob` call further down — it goes through
+/// `run_type_checker`, which always loads prelude source. So
+/// `EU_SOURCE_PRELUDE=1` made no difference to it, and the test compared the
+/// source prelude with itself no matter what CI did. The eval path
+/// (`eu --strict <file>`, as `test_eval_path_warns_on_record_key_typo` uses)
+/// is the one `run_type_checker_from_blob_core` is reached from, so that is
+/// what this drives now.
+///
+/// It was also ungated, and so ran in the blob-less "Test Suite" job where
+/// there is no blob to differ from — the same hazard the tick-parity tripwire
+/// records for itself. `cfg(prelude_blob_ok)` plus the blob-mode sweep in
+/// `scripts/blob-mode-tests.sh` puts it in a configuration where the two sides
+/// are genuinely different pipelines.
+#[cfg(prelude_blob_ok)]
 #[test]
 pub fn test_config_matrix_blob_vs_source_prelude_byte_equal() {
     let files = [
@@ -4087,22 +4107,29 @@ pub fn test_config_matrix_blob_vs_source_prelude_byte_equal() {
     ];
     for file in files {
         let blob = std::process::Command::new(eu_binary())
-            .args(["check", "--strict", file])
+            .args(["--strict", file])
             .output()
-            .expect("failed to run eu check (blob-core)");
+            .expect("failed to run eu (blob-core)");
         let source = std::process::Command::new(eu_binary())
             .env("EU_SOURCE_PRELUDE", "1")
-            .args(["check", "--strict", file])
+            .args(["--strict", file])
             .output()
-            .expect("failed to run eu check (source prelude)");
+            .expect("failed to run eu (source prelude)");
 
+        // Precondition: each fixture must actually produce a diagnostic,
+        // otherwise byte-equality of two empty streams proves nothing.
+        let blob_err = String::from_utf8_lossy(&blob.stderr);
+        assert!(
+            blob_err.contains(file),
+            "fixture {file} should produce a located diagnostic under the blob:\n{blob_err}"
+        );
         assert_eq!(
             blob.status.code(),
             source.status.code(),
             "exit code differs between blob-core and source-prelude checks for {file}"
         );
         assert_eq!(
-            String::from_utf8_lossy(&blob.stderr),
+            blob_err,
             String::from_utf8_lossy(&source.stderr),
             "stderr differs between blob-core and source-prelude checks for {file}"
         );

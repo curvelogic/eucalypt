@@ -27,5 +27,5 @@ error: key 'includes' not found in block
   │
   = use 'str.contains?(pattern, s)' to test if a string contains a pattern, e.g. 'text str.contains?("word")'
   = note: 'str.contains?' uses a regular expression, so special characters like '.', '+', '*' must be escaped with '\'
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 147_str_contains_hint.eu:3:14

@@ -26,5 +26,5 @@ error: expected a primitive number, string, or symbol but found a boolean
 2 │ result: true > 5
   │              ^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 134_bool_where_value.eu:2:14

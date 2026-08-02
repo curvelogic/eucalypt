@@ -192,7 +192,7 @@ what the checker does and does not catch.
 Raised while the program runs — applying a non-function, indexing past the
 end of a list, taking the `head` of an empty list, an explicit `panic`, a
 failed `requires:` constraint, and so on. These carry help text and,
-importantly, a **stack trace**:
+importantly, a **`while evaluating (outermost first):`** note:
 
 ```text
 error: tried to call a number as a function
@@ -213,11 +213,16 @@ operator captured an argument you meant to apply separately. See
 [Syntax Gotchas](../appendices/syntax-gotchas.md) for the precedence
 traps behind these messages.
 
-## Reading stack traces and source locations
+## Reading "while evaluating" traces and source locations
 
 When an error is raised deep inside a chain of calls, the diagnostic's
-primary pointer shows **where the fault occurred**, and the `stack trace`
-note shows **how execution got there**. Consider:
+primary pointer shows **where the fault occurred**, and the
+`while evaluating (outermost first):` note shows **how execution got
+there**. It is not literally the call stack: it is curated (library
+plumbing dropped, recursion collapsed), its entries mix declarations and
+named combinator boundaries, and laziness means the order need not match
+the call nesting you wrote — see [Error Traces](cli.md#error-traces) for
+the full explanation and `--debug-trace` for the raw form. Consider:
 
 ```eu,notest
 first-elem(xs): xs head
@@ -236,15 +241,18 @@ error: head of empty list
   │
   = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
   = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
-  = stack trace:
+  = while evaluating (outermost first):
     - first-elem at example.eu:1:20
 ```
 
 The pointer and the trace both land on `xs head` inside `first-elem` — the
 actual failure site — rather than on `main`, which merely started the
-chain. Each trace entry is `function at file:line:column`. Note that the
-trace reflects the *evaluated* call structure: because eucalypt is lazy
-and inlines aggressively, tail calls and fully-inlined helpers may not each
+chain. Each trace entry is `function at file:line:column` for a
+user-file frame, or `function (library-name)` — no coordinate — for a
+frame resolving into bundled library source such as the prelude, since
+that coordinate is not something you can act on. Note that the trace
+reflects the *evaluated* call structure: because eucalypt is lazy and
+inlines aggressively, tail calls and fully-inlined helpers may not each
 appear as a separate frame, so a trace can be shorter than the source call
 chain suggests.
 

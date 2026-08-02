@@ -26,5 +26,5 @@ error: type mismatch: expected block, found list
   │
   = the '.' operator performs key lookup on blocks, not lists
   = for lists, use pipeline functions: 'xs count' (length), 'xs head' (first element), 'xs tail' (rest), 'xs !! 0' (nth element, 0-indexed)
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 102_dot_on_list_source_loc.eu:3:9

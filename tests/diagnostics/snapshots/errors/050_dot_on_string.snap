@@ -27,5 +27,5 @@ error: type mismatch: expected block, found string
   = the '.' operator performs key lookup on blocks; strings do not have fields
   = to apply string functions, use pipeline catenation, e.g. 'x str.to-upper' or 'str.to-lower(x)' instead of 'x.upper'
   = note: 'str' is a namespace of string functions, not a type conversion function; use 'str.of(x)' or string interpolation to convert values to strings
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 050_dot_on_string.eu:3:9

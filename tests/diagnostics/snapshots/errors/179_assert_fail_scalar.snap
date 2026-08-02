@@ -25,5 +25,5 @@ error: assertion failed: expected 2, got 1
 4 │ x: 1 //=> 2
   │      ^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - x at 179_assert_fail_scalar.eu:4:6

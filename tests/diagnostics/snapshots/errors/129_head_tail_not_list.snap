@@ -10,7 +10,7 @@ warnings: 1
 code: -
 primary: user tests/harness/errors/129_head_tail_not_list.eu:1:7
 help-lines: 0
-note-lines: 2
+note-lines: 1
 secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
@@ -30,7 +30,6 @@ error: head requires a list, found 42
 1 │ x: 42 head
   │       ^^^^
   │
-  = head and tail require a list (e.g. [1, 2, 3]) as their argument
   = to create a list from a number, wrap it: '[n]'
-  = stack trace:
+  = while evaluating (outermost first):
     - x at 129_head_tail_not_list.eu:1:7

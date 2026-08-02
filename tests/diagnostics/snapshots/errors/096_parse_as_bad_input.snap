@@ -24,5 +24,5 @@ error: parse-as(toml): invalid toml syntax expected an equals, found an identifi
 3 │ x: "this is not valid toml = = =" parse-as(:toml)
   │                                   ^^^^^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - x at 096_parse_as_bad_input.eu:3:35

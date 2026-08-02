@@ -159,6 +159,22 @@ pub trait HasSmid {
     fn smid(&self) -> Smid;
 }
 
+/// The location half of a resolved trace entry (see
+/// [`SourceMap::resolve_trace_entry`]).
+///
+/// A user file gets a precise, actionable coordinate. A resource
+/// (bundled-library, e.g. prelude) frame gets only the library's name: the
+/// exact `line:col` is useful to maintainers of that library but the user
+/// cannot edit it, cannot act on the coordinate, and may reasonably think
+/// they are being asked to (eu-1tkk.7.36).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TraceLocation {
+    /// `at file:line:col` — a site the user can open and act on.
+    Site(String),
+    /// `(name)` — a bundled-library frame, named but not pinpointed.
+    Resource(String),
+}
+
 /// Source information to associate with a syntax element
 ///
 /// As well as associating a file location with a SMID, we can
@@ -213,7 +229,12 @@ pub struct SourceMap {
     ///
     /// Mirrors `PreludeBlob::binding_spans`. Together with
     /// [`SourceMap::prelude_file`] this is what lets a blob-mode trace frame
-    /// render a real `[prelude]:line:col` location rather than a bare name.
+    /// carry a real prelude location rather than a bare name — used by the
+    /// structured JSON trace (`--error-format json`) and, before
+    /// eu-1tkk.7.36, by the human `file:line:col` rendering too. The human
+    /// note now shows only the library name (`(prelude)`), not the
+    /// coordinate, but the coordinate is retained here for the JSON path and
+    /// for maintainers using `EU_ERROR_TRACE_DUMP=1`.
     slot_spans: HashMap<u32, Span>,
     /// File id of the prelude source in `files`, registered on demand on the
     /// blob path (eu-7x0r).
@@ -633,7 +654,7 @@ impl SourceMap {
         &self,
         smid: Smid,
         files: &SimpleFiles<String, String>,
-    ) -> Option<(String, Option<String>)> {
+    ) -> Option<(String, Option<TraceLocation>)> {
         // Both fixes are load-bearing here and neither subsumes the other
         // (eu-7x0r + eu-r4647). A `Smid::global_slot` identity has no `source`
         // entry by construction, so it must resolve through the blob's slot
@@ -667,21 +688,32 @@ impl SourceMap {
             }
         };
 
-        // Build file:line:col location string if we have a source location
+        // Build the location. A user file gets a precise, actionable
+        // `file:line:col` site. A resource (bundled library, e.g. the
+        // prelude) frame gets only the library's name, no coordinate: the
+        // exact line is useful to us when maintaining the prelude but the
+        // user cannot edit library source, cannot act on the coordinate,
+        // and may reasonably think they are being asked to (eu-1tkk.7.36).
         let location = info.file.and_then(|id| {
             let name = files.name(id).ok()?;
-            let span = info.span?;
-            let loc = files.location(id, span.start().to_usize()).ok()?;
             // Strip directory prefix for readability
             let short_name = std::path::Path::new(&name)
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or(&name);
-            Some(format!(
+
+            if !self.is_user_file(id) {
+                let hint = short_name.trim_start_matches('[').trim_end_matches(']');
+                return Some(TraceLocation::Resource(hint.to_string()));
+            }
+
+            let span = info.span?;
+            let loc = files.location(id, span.start().to_usize()).ok()?;
+            Some(TraceLocation::Site(format!(
                 "{short_name}:{line}:{col}",
                 line = loc.line_number,
                 col = loc.column_number
-            ))
+            )))
         });
 
         // Only include entries that have a user-visible name or source location.
@@ -698,7 +730,9 @@ impl SourceMap {
     /// Produces source-level references where file locations are
     /// available, e.g. `example.eu:5:3 (+)` for an intrinsic call at
     /// line 5 column 3, or `example.eu:2:10 (str.letters(99))` for a
-    /// source expression.
+    /// source expression. A frame resolving into bundled library source
+    /// (e.g. the prelude) carries only the library's name, not a
+    /// coordinate within it — see [`TraceLocation`].
     pub fn format_trace(&self, trace: &[Smid], files: &SimpleFiles<String, String>) -> String {
         // Collect entries in trace order (innermost-first from the VM),
         // then reverse so the output reads outermost-first (conventional order).
@@ -706,9 +740,9 @@ impl SourceMap {
             .iter()
             .filter_map(|&smid| {
                 let (name, location) = self.resolve_trace_entry(smid, files)?;
-                // Format: "name at file:line:col" or just "name" if no location
                 let entry = match location {
-                    Some(loc) => format!("- {name} at {loc}"),
+                    Some(TraceLocation::Site(loc)) => format!("- {name} at {loc}"),
+                    Some(TraceLocation::Resource(res)) => format!("- {name} ({res})"),
                     None => format!("- {name}"),
                 };
                 Some(entry)
@@ -745,7 +779,8 @@ impl SourceMap {
                     name
                 };
                 let entry = match location {
-                    Some(loc) => format!("- {label} at {loc}"),
+                    Some(TraceLocation::Site(loc)) => format!("- {label} at {loc}"),
+                    Some(TraceLocation::Resource(res)) => format!("- {label} ({res})"),
                     None => format!("- {label}"),
                 };
                 Some(entry)
@@ -1458,12 +1493,14 @@ mod tests {
     /// The rendering half of the blob-path classifier: a global-slot Smid has
     /// no `source` entry by construction, so before eu-7x0r the formatters
     /// dropped it and no prelude frame ever appeared in a shipped-binary
-    /// trace, however well it classified.
+    /// trace, however well it classified. Rendered as `(prelude)` with no
+    /// coordinate (eu-1tkk.7.36): the line:col is useful to us maintaining
+    /// the prelude, not to a user who cannot act on it.
     #[test]
     fn curated_trace_renders_a_blob_mode_global_slot_frame() {
         let (source_map, files, smid) = blob_path_fixture();
         let rendered = source_map.format_curated_trace(&[(smid, FrameKind::Boundary)], &files);
-        assert_eq!(rendered, "- in 'nth' at [prelude]:2:1");
+        assert_eq!(rendered, "- in 'nth' (prelude)");
     }
 
     /// The raw formatter shares `resolve_trace_entry`, so it must resolve the
@@ -1471,10 +1508,7 @@ mod tests {
     #[test]
     fn raw_trace_renders_a_blob_mode_global_slot_frame() {
         let (source_map, files, smid) = blob_path_fixture();
-        assert_eq!(
-            source_map.format_trace(&[smid], &files),
-            "- nth at [prelude]:2:1"
-        );
+        assert_eq!(source_map.format_trace(&[smid], &files), "- nth (prelude)");
     }
 
     /// Without a span the frame is still named — just locationless — rather

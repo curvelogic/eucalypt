@@ -25,5 +25,5 @@ error: division by zero in floor division (/)
 2 │ bomb: 1 / 0
   │         ^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - bomb at 006_div_by_zero.eu:2:9
