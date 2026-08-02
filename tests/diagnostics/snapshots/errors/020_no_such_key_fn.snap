@@ -25,5 +25,5 @@ error: key 'g' not found in block
 4 │ x: ns.g(1)
   │    ^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - x at 020_no_such_key_fn.eu:4:4

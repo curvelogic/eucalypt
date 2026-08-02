@@ -26,5 +26,5 @@ error[EU-EVAL-CONTRACT]: contract violation: 2 violations against {name: string,
   │
   = port: expected number, found string
   = (root): unexpected keys: debug
-  = stack trace:
+  = while evaluating (outermost first):
     - config at 201_sv3_contract_violation.eu:8:52

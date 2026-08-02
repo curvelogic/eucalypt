@@ -26,5 +26,5 @@ error: type mismatch: expected number, found list
   │
   = arithmetic operators like '+' work on numbers, not lists
   = to concatenate two lists, use 'append(xs, ys)' or the '++' operator
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 045_list_plus_concat.eu:4:11

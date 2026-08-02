@@ -25,5 +25,5 @@ error: key 'startsWith' not found in block
 3 │ result: text str.startsWith("hello")
   │              ^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 145_str_starts_with_hint.eu:3:14

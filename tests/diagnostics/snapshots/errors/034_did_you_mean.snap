@@ -25,5 +25,5 @@ error: key 'bax' not found in block
 2 │ x: ns.bax
   │    ^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - x at 034_did_you_mean.eu:2:4

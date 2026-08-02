@@ -32,5 +32,5 @@ error: head requires a list, found "hello"
   │
   = to concatenate strings, use string interpolation (e.g. "{a}{b}") or 'str.join-on', not '++' (which is for list append)
   = to get individual characters of a string, use 'str.letters'
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 138_internal_no_panic_prefix.eu:1:17

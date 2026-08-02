@@ -26,5 +26,5 @@ error: key 'lower' not found in block
   │              ^^^
   │
   = to convert a string to lower case, use 'str.to-lower', e.g. 'text str.to-lower'
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 068_str_lower_hint.eu:3:14

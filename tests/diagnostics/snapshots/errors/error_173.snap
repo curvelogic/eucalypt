@@ -25,5 +25,5 @@ error: expected a primitive value but found non-numeric value in number list
 10 │ result: graph.topo-sort(3, [["a", 1], [1, 2]])
    │         ^^^^^
    │
-   = stack trace:
+   = while evaluating (outermost first):
      - result at error_173.eu:10:9

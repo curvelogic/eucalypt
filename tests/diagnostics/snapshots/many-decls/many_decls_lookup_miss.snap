@@ -25,5 +25,5 @@ error: key 'gama' not found in block
 604 │ result: b.gama
     │         ^
     │
-    = stack trace:
+    = while evaluating (outermost first):
       - result at many_decls_lookup_miss.eu:604:9

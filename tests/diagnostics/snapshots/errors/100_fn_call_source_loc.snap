@@ -31,5 +31,5 @@ error: type mismatch: expected string, found number
   │         ^^^
   │
   = to convert a number to a string, use 'str' or string interpolation
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 100_fn_call_source_loc.eu:2:9

@@ -26,5 +26,5 @@ error: cannot look up a key on a function value
 2 │ result: add.x
   │         ^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 191_m93j_lookup_on_function.eu:2:9

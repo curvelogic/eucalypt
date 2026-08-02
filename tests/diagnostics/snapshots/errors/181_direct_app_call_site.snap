@@ -24,6 +24,6 @@ error: tail requires a list, found 3
 15 │ result: second(3)
    │         ^^^^^^
    │
-   = stack trace:
+   = while evaluating (outermost first):
      - result at 181_direct_app_call_site.eu:15:9
-     - in 'nth' at [prelude]
+     - in 'nth' (prelude)

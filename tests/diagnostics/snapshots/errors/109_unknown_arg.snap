@@ -24,5 +24,5 @@ error: unknown option: --unknown-flag
 2 │ main: ["--unknown-flag"] parse-args({})
   │                          ^^^^^^^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - main at 109_unknown_arg.eu:2:26

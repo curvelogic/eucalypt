@@ -26,5 +26,5 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found a function
   │
   = a function value cannot be used directly here; it must first be called with all of its remaining arguments
   = this can happen when a function is under-applied (missing an argument), or when low-precedence catenation groups an expression differently than intended — add parentheses to disambiguate
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 192_1tkk_7_9_function_not_block.eu:2:16
