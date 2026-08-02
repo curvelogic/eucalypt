@@ -7,7 +7,7 @@ prelude-modes: identical
 exit: 1
 errors: 1
 warnings: 1
-code: -
+code: EU-EVAL-TYPE
 primary: user tests/harness/errors/error_175.eu:10:22
 help-lines: 0
 note-lines: 0
@@ -24,7 +24,7 @@ warning: type mismatch calling 'sort-nums'
 10 │ result: "not_a_list" sort-nums
    │         ^^^^^^^^^^^^ expected [number], found "not_a_list"
 
-error: type mismatch: expected empty list or list, found string
+error[EU-EVAL-TYPE]: type mismatch: expected empty list or list, found string
    ┌─ tests/harness/errors/error_175.eu:10:22
    │
 10 │ result: "not_a_list" sort-nums

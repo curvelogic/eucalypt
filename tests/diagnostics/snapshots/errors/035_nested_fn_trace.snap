@@ -7,7 +7,7 @@ prelude-modes: divergent
 exit: 1
 errors: 1
 warnings: 0
-code: -
+code: EU-EVAL-TYPE
 primary: user tests/harness/errors/035_nested_fn_trace.eu:2:12
 help-lines: 0
 note-lines: 1
@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: type mismatch: expected string, found number
+error[EU-EVAL-TYPE]: type mismatch: expected string, found number
   ┌─ tests/harness/errors/035_nested_fn_trace.eu:2:12
   │
 2 │ middle(x): inner(x)
@@ -32,7 +32,7 @@ error: type mismatch: expected string, found number
 exit: 1
 errors: 1
 warnings: 0
-code: -
+code: EU-EVAL-TYPE
 primary: user tests/harness/errors/035_nested_fn_trace.eu:1:11
 help-lines: 0
 note-lines: 1
@@ -43,7 +43,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: type mismatch: expected string, found number
+error[EU-EVAL-TYPE]: type mismatch: expected string, found number
   ┌─ tests/harness/errors/035_nested_fn_trace.eu:1:11
   │
 1 │ inner(x): str.letters(x)

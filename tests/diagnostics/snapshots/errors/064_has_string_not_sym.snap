@@ -7,7 +7,7 @@ prelude-modes: identical
 exit: 1
 errors: 1
 warnings: 1
-code: -
+code: EU-EVAL-TYPE
 primary: user tests/harness/errors/064_has_string_not_sym.eu:3:13
 help-lines: 0
 note-lines: 2
@@ -24,7 +24,7 @@ warning: type mismatch calling 'has'
 3 │ check: data has("x")
   │                 ^^^ expected symbol, found "x"
 
-error: type mismatch: expected symbol, found string
+error[EU-EVAL-TYPE]: type mismatch: expected symbol, found string
   ┌─ tests/harness/errors/064_has_string_not_sym.eu:3:13
   │
 3 │ check: data has("x")

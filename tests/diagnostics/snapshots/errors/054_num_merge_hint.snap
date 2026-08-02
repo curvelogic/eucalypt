@@ -7,7 +7,7 @@ prelude-modes: identical
 exit: 1
 errors: 1
 warnings: 0
-code: -
+code: EU-EVAL-TYPE
 primary: user tests/harness/errors/054_num_merge_hint.eu:5:11
 help-lines: 0
 note-lines: 3
@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: type mismatch: expected block, found number
+error[EU-EVAL-TYPE]: type mismatch: expected block, found number
   ┌─ tests/harness/errors/054_num_merge_hint.eu:5:11
   │
 5 │ result: x str
