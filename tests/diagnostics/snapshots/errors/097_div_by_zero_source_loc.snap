@@ -25,5 +25,5 @@ error: division by zero in floor division (/)
 2 │ result: 1 / 0
   │           ^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 097_div_by_zero_source_loc.eu:2:11

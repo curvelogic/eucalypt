@@ -25,5 +25,5 @@ error: key 'y' not found in block
 2 │ f({x y}): x + y
   │ ^^^^^^^^^^^^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - f at 084_destructure_missing_field.eu:2:1

@@ -2703,7 +2703,8 @@ pub fn test_error_178() {
 /// on the offending value — rather than aborting the process with a Rust
 /// panic. The sidecar asserts the label's `file:line:col`, not just the
 /// wording, and anchors on the `┌─` line so that a location regression
-/// cannot be masked by the `stack trace:` note (eu-1tkk.7.20).
+/// cannot be masked by the `while evaluating (outermost first):` note
+/// (eu-1tkk.7.20).
 pub fn test_error_171() {
     run_error_test(&error_opts("171_yaml_large_uint.eu"));
 }
@@ -2827,11 +2828,11 @@ pub fn test_192_1tkk_7_9_function_not_block() {
 /// the message reports the real index and the real length rather than
 /// leaking `drop`'s mechanical "tail of empty list"; the primary location
 /// is the user's own `xs nth(10)` call site, not a `[prelude]` line; and
-/// the curated `stack trace:` note keeps the user frame *and* names the
-/// boundary combinator (`in 'nth'`) that the raw continuation dump alone
-/// no longer carries — `nth` raises at its own edge, so its frame lives
-/// in the env (lexical scope) trace and is recovered by
-/// `curate_trace_with_env`.
+/// the curated `while evaluating (outermost first):` note keeps the user
+/// frame *and* names the boundary combinator (`in 'nth'`) that the raw
+/// continuation dump alone no longer carries — `nth` raises at its own
+/// edge, so its frame lives in the env (lexical scope) trace and is
+/// recovered by `curate_trace_with_env`.
 ///
 /// Engine-agnostic: this is presentation-layer curation over Smids both
 /// engines record identically, and it is verified under `cargo test`
@@ -2948,8 +2949,8 @@ pub fn test_228_bc34x_meta_body_memoisation() {
 ///
 /// The regex deliberately anchors on the `┌─` primary-label line rather than
 /// merely finding the fixture's name somewhere in the output: before the fix
-/// the user's file still appeared in the `stack trace:` note, so a looser
-/// pattern passes either way and gates nothing.
+/// the user's file still appeared in the `while evaluating (outermost
+/// first):` note, so a looser pattern passes either way and gates nothing.
 pub fn test_194_8a49h_library_blame() {
     run_error_test(&error_opts("194_8a49h_library_blame.eu"));
 }
@@ -2963,8 +2964,8 @@ pub fn test_194_8a49h_library_blame() {
 /// trace anchor name `pad0` — a binding the user never called — for a
 /// failure raised inside `nth`. The regex pins the primary label's own
 /// `file:line:col` (line 15, the `result` declaration) *before* the
-/// `stack trace:` marker, so a regression that only fixes the note cannot
-/// satisfy it.
+/// `while evaluating (outermost first):` marker, so a regression that only
+/// fixes the note cannot satisfy it.
 pub fn test_195_og3u6_trace_anchor() {
     run_error_test(&error_opts("195_og3u6_trace_anchor.eu"));
 }

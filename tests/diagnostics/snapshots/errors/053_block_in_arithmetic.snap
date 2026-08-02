@@ -26,5 +26,5 @@ error: type mismatch: expected number, found block
   │
   = blocks (structured values) cannot be used in arithmetic
   = did you mean to access a specific field? use 'block.field' to extract a value before applying arithmetic
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 053_block_in_arithmetic.eu:3:16

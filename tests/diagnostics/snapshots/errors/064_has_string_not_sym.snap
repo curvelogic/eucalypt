@@ -32,5 +32,5 @@ error: type mismatch: expected symbol, found string
   │
   = a symbol was expected but a string was passed; add a colon prefix: ':yaml' not "yaml", ':key' not "key"
   = symbols (`:name`) and strings (`"name"`) are distinct in eucalypt; functions like 'render-as', 'has', 'lookup-or' take symbol arguments
-  = stack trace:
+  = while evaluating (outermost first):
     - check at 064_has_string_not_sym.eu:3:13

@@ -26,5 +26,5 @@ error[EU-RENDER-UNREPRESENTABLE]: cannot represent this value in YAML output: th
   │
   = render to a format that can carry the value — 'json', 'edn', 'text' and 'eu' output all keep integers of this magnitude
   = to keep the exact digits in this format, convert the value to a string first with 'str', e.g. 'n str'
-  = stack trace:
+  = while evaluating (outermost first):
     - main at 171_yaml_large_uint.eu:4:7

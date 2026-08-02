@@ -27,5 +27,5 @@ error: type mismatch: expected block, found number
   = the '.' operator performs key lookup on blocks; numbers do not have fields
   = to apply a function to a number, use pipeline catenation, e.g. 'x abs' or 'x negate' instead of 'x.abs'
   = note: 'str' is a namespace of string functions, not a type conversion function; to convert a number to a string use 'str.of(x)' or string interpolation
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 049_dot_on_number.eu:3:9

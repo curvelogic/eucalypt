@@ -166,16 +166,19 @@ fn blob_mode_trace_global_slot_resolves_to_declared_boundary_combinator() {
 /// blob-mode trace was silently dropped *after* classification — the shipped
 /// binary named no library combinator at all. `SourceMap::global_slot_info`
 /// (fed by `PreludeBlob::binding_spans` plus the lazily-registered prelude
-/// source) closes that, so the blob path renders the same
-/// `in 'nth' at [prelude]:LINE:COL` context line the source-compiled path does.
+/// source) closes that, so the blob path renders the same `in 'nth'
+/// (prelude)` context line the source-compiled path does — no coordinate,
+/// since a bundled-library line:col is not something a user can act on
+/// (eu-1tkk.7.36), but `PreludeBlob::binding_spans` still backs the real
+/// coordinate carried in the structured JSON trace.
 #[test]
 fn blob_mode_curated_trace_names_the_boundary_combinator_with_a_prelude_location() {
     let out = run_eu("xs: [1, 2, 3]\nresult: xs nth(10)\n", &[]);
 
     assert!(
-        out.contains("- in 'nth' at [prelude]:"),
+        out.contains("- in 'nth' (prelude)"),
         "blob-mode curated trace must name the boundary combinator with a prelude \
-         location, e.g. \"- in 'nth' at [prelude]:1386:1\"\noutput:\n{out}"
+         hint, e.g. \"- in 'nth' (prelude)\"\noutput:\n{out}"
     );
 }
 
@@ -320,7 +323,7 @@ fn blob_mode_trace_frames_cannot_alias_unrelated_user_declarations() {
     let out = run_eu(&src, &[]);
 
     assert!(
-        out.contains("- in 'nth' at [prelude]:"),
+        out.contains("- in 'nth' (prelude)"),
         "the trace must name the boundary combinator the error was raised inside\n\
          output:\n{out}"
     );

@@ -25,7 +25,7 @@ error: type mismatch: expected string, found number
   │            ^^^^^
   │
   = to convert a number to a string, use 'str' or string interpolation
-  = stack trace:
+  = while evaluating (outermost first):
     - outer at 035_nested_fn_trace.eu:3:8
 
 === --source-prelude ===
@@ -50,5 +50,5 @@ error: type mismatch: expected string, found number
   │           ^^^
   │
   = to convert a number to a string, use 'str' or string interpolation
-  = stack trace:
+  = while evaluating (outermost first):
     - outer at 035_nested_fn_trace.eu:3:8

@@ -774,7 +774,9 @@ impl<'a> Executor<'a> {
                                     .format_curated_trace(&curated.frames, &self.files)
                             };
                             if !stack_trace.is_empty() {
-                                notes.push(format!("stack trace:\n{stack_trace}"));
+                                notes.push(format!(
+                                    "while evaluating (outermost first):\n{stack_trace}"
+                                ));
                             }
                         }
 
@@ -898,8 +900,8 @@ impl<'a> Executor<'a> {
     /// `debug_trace` is set, the sequence is curated by
     /// [`curate_trace_with_env`] first (transparent plumbing dropped,
     /// recursion collapsed, boundary recovered, budget applied), so the JSON
-    /// `trace` and the human `stack trace:` note describe the same frames
-    /// (eu-1tkk.7.12).
+    /// `trace` and the human `while evaluating (outermost first):` note
+    /// describe the same frames (eu-1tkk.7.12).
     fn json_trace(&self, trace: &[Smid], env: &[Smid], debug_trace: bool) -> Vec<JsonFrame> {
         let classified: Vec<(Smid, FrameKind)> = if debug_trace {
             trace

@@ -24,5 +24,5 @@ error: malformed JSON in stream: key must be a string at line 1 column 2
 3 │ main: data count
   │            ^^^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - main at 169_malformed_jsonl_stream.eu:3:12

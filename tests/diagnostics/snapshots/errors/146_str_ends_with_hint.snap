@@ -25,5 +25,5 @@ error: key 'endsWith' not found in block
 3 │ result: text str.endsWith("world")
   │              ^^^
   │
-  = stack trace:
+  = while evaluating (outermost first):
     - result at 146_str_ends_with_hint.eu:3:14
