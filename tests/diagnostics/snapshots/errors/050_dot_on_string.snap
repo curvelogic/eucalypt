@@ -7,7 +7,7 @@ prelude-modes: identical
 exit: 1
 errors: 1
 warnings: 0
-code: -
+code: EU-EVAL-TYPE
 primary: user tests/harness/errors/050_dot_on_string.eu:3:9
 help-lines: 0
 note-lines: 3
@@ -18,7 +18,7 @@ trace-prelude-frames: 0
 prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
-error: type mismatch: expected block, found string
+error[EU-EVAL-TYPE]: type mismatch: expected block, found string
   ┌─ tests/harness/errors/050_dot_on_string.eu:3:9
   │
 3 │ result: s.length

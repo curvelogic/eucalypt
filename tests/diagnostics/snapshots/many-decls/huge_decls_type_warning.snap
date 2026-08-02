@@ -7,7 +7,7 @@ prelude-modes: divergent
 exit: 1
 errors: 1
 warnings: 1
-code: -
+code: EU-EVAL-TYPE
 primary: user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9
 help-lines: 0
 note-lines: 1
@@ -24,7 +24,7 @@ warning: argument type does not match function parameter
 1504 │ result: str.letters(42)
      │                     ^^ expected string, found number
 
-error: type mismatch: expected string, found number
+error[EU-EVAL-TYPE]: type mismatch: expected string, found number
      ┌─ tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9
      │
 1504 │ result: str.letters(42)
@@ -40,7 +40,7 @@ error: type mismatch: expected string, found number
 exit: 1
 errors: 1
 warnings: 1
-code: -
+code: EU-EVAL-TYPE
 primary: user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9
 help-lines: 0
 note-lines: 1
@@ -57,7 +57,7 @@ warning: argument type does not match function parameter
 1504 │ result: str.letters(42)
      │                     ^^ expected string, found number
 
-error: type mismatch: expected string, found number
+error[EU-EVAL-TYPE]: type mismatch: expected string, found number
      ┌─ tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9
      │
 1504 │ result: str.letters(42)
