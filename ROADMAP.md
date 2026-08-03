@@ -2,7 +2,7 @@
 
 - **Status:** Plan of record
 - **Date:** 2026-06-23
-- **Baseline:** eucalypt 0.10.1
+- **Baseline:** eucalypt 0.14.0
 
 ---
 
@@ -102,7 +102,7 @@ plan:
 - **Blocks** are cons-lists of key/value pairs with **O(n) lookup**,
   insertion-ordered.
 
-### What 0.7–0.10 shipped (ledger)
+### What 0.7–0.14 shipped (ledger)
 
 | Release | Landed |
 |---|---|
@@ -111,6 +111,10 @@ plan:
 | **0.8** | Real semver + stability tiers; `requires` guard; prelude selection; deprecation lifecycle; resilient parser (phase 1); conformance corpus + golden sidecars; GC-verified CI |
 | **0.9** | Pre-compiled prelude **blob** (postcard-serialised arena STG); incremental query-based LSP; `eu doc`; demand annotations on core bindings; parser error recovery (phase 2); proptest + fuzz targets |
 | **0.10** | **Strict eager evaluation** (the one runtime win — −38% allocs/−34% ticks on prelude-heavy, −76% on folds); prelude demand signatures; git imports restored; *generational GC attempted and reverted; demand cardinality/update-elision attempted and abandoned (§10)* |
+| **0.11** | **Type checking always-on** (TY); `s"…"` type-data values + `to-spec`/`as-spec` (SV1–2); optional record fields; type-free codegen wins — known-call direct dispatch, literal-key resolution, eager recursive args (CG1–3); legacy parser removed |
+| **0.12** | **Bytecode VM as default engine** (BV1, code out of the GC heap) + **BV5 embedded prelude blob** — the startup win; *0.12.1:* BV4 superinstructions / decode-cost fusion (narrows the decode-bound gap; does not close it) |
+| **0.13** | **Prefix-list type** `[A, B, C…]`; copy-specialised recursive higher-order combinators at every call site (blob and source paths); pre-inline type diagnostics; *0.13.1:* pre-decoded dispatch default (lever a Phase 2); *0.13.2:* XML entity-reference fix. *Phase-4 HeapSyn collapse, BV2/BV3, BV5-cache and type-gated CG all deferred* |
+| **0.14** | **DX diagnostics overhaul** (eu-1tkk.7 — location correctness, curated traces, blame in the blob binary, render/export error hardening, error catalogue); **PP** `par-map`/`par-sum`/… (experimental); **EF1** `do` combined effect monad; **W16/SV3** structural contracts (`validate`/`ensure`); blob-mode CI integrity (all mode-sensitive targets under both prelude modes) |
 
 ### Where it actually stands now (the empirical picture)
 
@@ -359,8 +363,8 @@ reordered as the cadence dictates.
 | **0.11** | Codegen wins, typing on, type-value foundation, bytecode spike | CG type-free tier; TY default-on; SV `s"…"` + `as-spec`; **optional record fields**; **BV0** gate |
 | **0.12** *(shipped scope)* | The bytecode core + the startup win | **BV1** (default engine, code out of the heap; Phase-4 collapse deferred) + **BV5 embedded prelude** (dual-form blob, deterministic; startup win on release binaries). *Unit cache spec'd + held (eu-lb0r)* |
 | **0.12.1** | Close the engine gap | **BV4** superinstructions / decode-cost fusion (eu-9mvh) + `ExecutionError` boxing (eu-adnu); bytecode block index (eu-4zhi). *Gap-close only — the Phase-4 collapse it unlocks lands in 0.13.* |
-| **0.13** | Frames, annotations, type-gated codegen, prefix-lists | **Phase-4 collapse** — retire HeapSyn once at parity (eu-oufc); **BV5-cache** whole-program unit cache (eu-lb0r); **BV2** side tables; **BV3** register frames + CG selective lifting; **CG** type-gated (unboxing); **prefix-list type** |
-| **0.14** | Polish, parallelism, effects, contracts, **diagnostics** | **PP** `par-map`/`par-fold`; **EF2** native filesystem IO + **EF1** effect-composition combinators; **W16** contracts; presence inference; **DX** diagnostics overhaul — location correctness, curated traces, evaluation harness with an objective invariant gate (design 2026-07-21; epic eu-1tkk.7) |
+| **0.13** *(shipped scope)* | Frames, annotations, type-gated codegen, prefix-lists | **Prefix-list type** + copy-specialised recursive combinators (both prelude paths) + pre-inline type diagnostics; *0.13.1* pre-decoded dispatch default (lever a Phase 2). *Phase-4 collapse (eu-oufc), BV5-cache (eu-lb0r), BV2 side tables, BV3 register frames and type-gated CG did not ship — carried forward* |
+| **0.14** *(shipped scope)* | Polish, parallelism, effects, contracts, **diagnostics** | **DX** diagnostics overhaul — location correctness, curated traces, blame in the blob binary, render/export error hardening (epic eu-1tkk.7); **PP** `par-map`/`par-sum`/… (experimental); **EF1** `do` combined effect monad; **W16/SV3** contracts (`validate`/`ensure`); blob-mode CI integrity. *EF2 native filesystem IO and presence inference did not ship — carried forward* |
 | **0.15+** | Value model, ecosystem, surface | **DS** persistent blocks + `vec`; **EF1** unified effect context; **W18** modules + **CU1** separate-unit compilation; **W19** watch/REPL + **CU2** per-unit incremental cache; **W17** hermetic; **W22** schema interop |
 | **1.0** *(milestone)* | Decide, prove, freeze | *No features.* Surface complete + **W5** conformance green → ratify and freeze the stable-surface tiers, turn on the version contract (§4.6) |
 | **post-1.0** | Curated bets | EF1.3 algebraic effect-rows; WASM-as-distribution; parallel Model B (maybe-never); a true separate-nursery GC *iff* a workload demands it |
