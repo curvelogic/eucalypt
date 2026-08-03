@@ -35,12 +35,12 @@ area(a, b): zip-with(-, a, b) map(abs ; (+ 1)) product
 best-from(ps): ps tail map(area(ps head)) max-of
 
 ` "Max area over all distinct pairs of points.
-Uses foldl instead of max-map to avoid materialising an intermediate
-list of areas — each tail is processed and discarded in turn."
+Each suffix's best area is independent of the others, so the per-suffix
+maxima run under `par-max` (same value as `map(best-from) max-of`;
+parallel on macOS/Linux when the suffix list clears the size threshold)."
 best-area(pts): {
-  step(best, suffix): max(best, best-from(suffix))
   tls: tails(pts) filter(count ; (> 1))
-}.(foldl(step, 0, tls))
+}.(tls par-max(best-from))
 
 parse(data): data filter(!= "") map(parse-coord)
 
