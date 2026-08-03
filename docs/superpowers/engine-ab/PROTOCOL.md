@@ -154,15 +154,27 @@ This is a real P0/P1 class-I finding for the transition, not a bench artefact.
   {"date":"2026-07-12","commit":"7a82ad2f","bench":"022_hof_fold","class":"C",
    "bc_wall_med":1.47,"hs_wall_med":1.66,"ratio":0.886,"hs_ticks":51985369,
    "hs_allocs":210167,"gc":0,"host":"Darwin-25.5.0-arm64","runs":5,
-   "prelude_config":"blob"}
+   "prelude_config":"blob","dispatch":"predecoded"}
   ```
 
-- `cargo xtask engine-ab [--runs N] [--eu PATH] [--dry-run]` runs the full suite
-  interleaved per §2–§3 and appends one row per bench.
-- `cargo xtask engine-ab --check` reads the last two rows per bench and prints a
-  one-screen table (bench, class, prev ratio, last ratio, Δ%, class threshold,
-  status). It exits **1** on a **regression** (ratio worsened > 15% vs the
-  previous row — the review-A P3 noise band). A per-class threshold crossing is
+  `dispatch` (eu-hxu6) records the bc side's dispatch strategy: `"predecoded"`
+  (default since eu-vcr8 Phase 2) or `"byte"` (`EU_PREDECODE=0`, the path
+  eu-1hcw is soaking before deletion). Rows written before this field existed
+  have no `dispatch` key; `--check` treats a missing value as `"predecoded"`,
+  which was the only bytecode path measured then.
+
+- `cargo xtask engine-ab [--runs N] [--eu PATH] [--dispatch predecoded|byte]
+  [--dry-run]` runs the full suite interleaved per §2–§3 and appends one row
+  per bench. `--dispatch byte` measures the byte-dispatch path instead of the
+  default predecoded one; it has no effect on the HeapSyn side of the pair.
+- `cargo xtask engine-ab --check` groups ledger rows into lineages keyed by
+  **(bench, prelude_config, dispatch)** and, within each lineage only, compares
+  its last two rows, printing a one-screen table (bench, config, dispatch,
+  class, prev ratio, last ratio, Δ%, class threshold, status). Comparing across
+  different `prelude_config` or `dispatch` values would read a config change
+  as an engine regression (eu-lhai) — never compare across lineages. It exits
+  **1** on a **regression** (ratio worsened > 15% vs the previous row in the
+  same lineage — the review-A P3 noise band). A per-class threshold crossing is
   reported as **WATCH** (informational); class E (the tripwire) is always WATCH,
   never a hard failure.
 - **Not wired into CI.** The benches are > 1 s and machine-noise-sensitive; CI
