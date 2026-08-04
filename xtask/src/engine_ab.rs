@@ -14,12 +14,24 @@
 //! blob-fairness skew is possible when it is literally one binary).
 //!
 //! Usage:
-//!   cargo xtask engine-ab [--runs N] [--eu PATH] [--dry-run]
+//!   cargo xtask engine-ab [--runs N] [--eu PATH] [--dispatch predecoded|byte] [--dry-run]
 //!   cargo xtask engine-ab --check
 //!
-//! `--check` reads the last two rows per bench and flags regressions
-//! (ratio worsened >15% vs the previous run) and per-class threshold
-//! crossings; it appends nothing and exits 1 if any regression is found.
+//! `--dispatch` selects the bytecode dispatch strategy for the `bc` side of
+//! each pair (predecoded is the default since eu-vcr8 Phase 2; `byte` sets
+//! `EU_PREDECODE=0` to measure the byte-dispatch path — see eu-hxu6/eu-1hcw).
+//! It has no effect on the HeapSyn side. The chosen mode is recorded in the
+//! ledger's `dispatch` field so the three engines (hs, bc-predecoded,
+//! bc-byte) are distinguishable rows rather than conflated under one `bc`
+//! column (eu-hxu6).
+//!
+//! `--check` reads, per (bench, prelude_config, dispatch) lineage, the last
+//! two rows and flags regressions (ratio worsened >15% vs the previous run
+//! in that SAME lineage) and per-class threshold crossings. Comparing across
+//! different `prelude_config` or `dispatch` values would read a config
+//! change as an engine regression (eu-lhai) — each lineage is compared only
+//! against its own history. Appends nothing; exits 1 if any regression is
+//! found.
 
 use std::{
     path::{Path, PathBuf},
@@ -136,6 +148,7 @@ pub fn run(args: &mut dyn Iterator<Item = String>) -> Result<()> {
     let mut eu = root.join("target/release/eu");
     let mut check = false;
     let mut dry_run = false;
+    let mut dispatch = "predecoded".to_string();
 
     let mut it = args.peekable();
     while let Some(a) = it.next() {
@@ -151,6 +164,12 @@ pub fn run(args: &mut dyn Iterator<Item = String>) -> Result<()> {
             }
             "--eu" => {
                 eu = PathBuf::from(it.next().context("--eu needs a path")?);
+            }
+            "--dispatch" => {
+                dispatch = it.next().context("--dispatch needs a value")?;
+                if dispatch != "predecoded" && dispatch != "byte" {
+                    bail!("--dispatch must be 'predecoded' or 'byte', got {dispatch}");
+                }
             }
             other => bail!("unknown engine-ab arg: {other}"),
         }
@@ -181,7 +200,9 @@ pub fn run(args: &mut dyn Iterator<Item = String>) -> Result<()> {
         SUITE.len()
     );
     println!("  eu     = {}", eu.display());
-    println!("  commit = {commit}   host = {host}   prelude = {prelude_config}");
+    println!(
+        "  commit = {commit}   host = {host}   prelude = {prelude_config}   dispatch = {dispatch}"
+    );
     println!("  ticks/allocs/gc read from the HeapSyn (-S) pass\n");
 
     println!(
@@ -198,8 +219,8 @@ pub fn run(args: &mut dyn Iterator<Item = String>) -> Result<()> {
         let mut bc = Vec::with_capacity(runs);
         let mut hs = Vec::with_capacity(runs);
         for _ in 0..runs {
-            bc.push(time_run(&eu, &file, b, false, false)?);
-            hs.push(time_run(&eu, &file, b, true, false)?);
+            bc.push(time_run(&eu, &file, b, false, false, &dispatch)?);
+            hs.push(time_run(&eu, &file, b, true, false, &dispatch)?);
         }
         // Separate HeapSyn -S pass for deterministic metrics (kept out of the
         // wall medians so `-S` reporting overhead never skews the ratio).
@@ -240,6 +261,7 @@ pub fn run(args: &mut dyn Iterator<Item = String>) -> Result<()> {
             &host,
             runs,
             prelude_config,
+            &dispatch,
         ));
     }
 
@@ -256,8 +278,21 @@ pub fn run(args: &mut dyn Iterator<Item = String>) -> Result<()> {
 }
 
 /// Run one invocation and return its wall time in seconds.
-fn time_run(eu: &Path, file: &Path, b: &Bench, heapsyn: bool, stats: bool) -> Result<f64> {
+fn time_run(
+    eu: &Path,
+    file: &Path,
+    b: &Bench,
+    heapsyn: bool,
+    stats: bool,
+    dispatch: &str,
+) -> Result<f64> {
     let mut cmd = base_cmd(eu, file, b, heapsyn, stats);
+    // Dispatch mode only meaningfully selects a path within the bytecode
+    // engine; HeapSyn ignores EU_PREDECODE entirely (see CLAUDE.md's
+    // EU_PREDECODE row), so it is only set on the bc side of each pair.
+    if !heapsyn && dispatch == "byte" {
+        cmd.env("EU_PREDECODE", "0");
+    }
     let start = Instant::now();
     let out = cmd.output().with_context(|| format!("run {}", b.id))?;
     let secs = start.elapsed().as_secs_f64();
@@ -353,6 +388,7 @@ fn row_json(
     host: &str,
     runs: usize,
     prelude_config: &str,
+    dispatch: &str,
 ) -> String {
     let v = serde_json::json!({
         "date": date,
@@ -368,6 +404,12 @@ fn row_json(
         "host": host,
         "runs": runs,
         "prelude_config": prelude_config,
+        // eu-hxu6: the bc side's dispatch strategy. "predecoded" is the
+        // default bytecode engine (eu-vcr8 Phase 2); "byte" is the
+        // EU_PREDECODE=0 byte-dispatch path retained through the eu-1hcw
+        // soak period. Absent on rows written before this field existed —
+        // treat a missing value as "predecoded" (see cmd_check).
+        "dispatch": dispatch,
     });
     v.to_string()
 }
@@ -395,13 +437,22 @@ fn append_rows(root: &Path, rows: &[String]) -> Result<()> {
 
 // ── --check ────────────────────────────────────────────────────────────────
 
-fn cmd_check(root: &Path) -> Result<()> {
-    let path = root.join(LEDGER);
-    let text =
-        std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+/// A (bench, prelude_config, dispatch) key identifying one comparable
+/// history within the ledger. Two rows are only ever compared against each
+/// other by `cmd_check` when their lineage keys match — see eu-lhai/eu-hxu6.
+type LineageKey = (String, String, String);
 
-    // Collect rows per bench in file order (append-only ⇒ chronological).
-    let mut per_bench: std::collections::BTreeMap<String, Vec<serde_json::Value>> =
+/// Parse ledger JSONL text into rows grouped by lineage, in file order
+/// (append-only ⇒ chronological within a lineage). Grouping by bench alone
+/// would compare a blob row against a source row (eu-lhai) or a predecoded
+/// row against a byte-dispatch row (eu-hxu6) whenever the ledger interleaves
+/// configs — either reads a config change as an engine regression. A row
+/// with no `dispatch` field predates eu-hxu6 and is treated as "predecoded"
+/// (that was the only bytecode path measured before this field existed).
+fn group_by_lineage(
+    text: &str,
+) -> Result<std::collections::BTreeMap<LineageKey, Vec<serde_json::Value>>> {
+    let mut per_lineage: std::collections::BTreeMap<LineageKey, Vec<serde_json::Value>> =
         Default::default();
     for line in text.lines() {
         let line = line.trim();
@@ -411,47 +462,113 @@ fn cmd_check(root: &Path) -> Result<()> {
         let v: serde_json::Value =
             serde_json::from_str(line).with_context(|| format!("parse ledger row: {line}"))?;
         if let Some(bench) = v.get("bench").and_then(|b| b.as_str()) {
-            per_bench.entry(bench.to_string()).or_default().push(v);
+            let config = v
+                .get("prelude_config")
+                .and_then(|c| c.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let dispatch = v
+                .get("dispatch")
+                .and_then(|d| d.as_str())
+                .unwrap_or("predecoded")
+                .to_string();
+            per_lineage
+                .entry((bench.to_string(), config, dispatch))
+                .or_default()
+                .push(v);
         }
     }
+    Ok(per_lineage)
+}
+
+/// The --check verdict for one lineage: (last_ratio, prev_ratio [NaN if
+/// none], delta, is_regression, status label).
+struct LineageVerdict {
+    class: String,
+    last_ratio: f64,
+    prev_ratio: f64,
+    delta: f64,
+    thresh: f64,
+    is_regression: bool,
+    status: &'static str,
+}
+
+/// Compute the regression/watch verdict for one lineage's row history.
+/// Pure function of the rows (no I/O) so it is directly unit-testable.
+fn evaluate_lineage(rows: &[serde_json::Value]) -> LineageVerdict {
+    let last = rows.last().expect("lineage groups are never empty");
+    let class = last
+        .get("class")
+        .and_then(|c| c.as_str())
+        .unwrap_or("?")
+        .to_string();
+    let last_ratio = last.get("ratio").and_then(|r| r.as_f64()).unwrap_or(0.0);
+    let thresh = class_threshold(&class);
+
+    let (prev_ratio, delta) = if rows.len() >= 2 {
+        let p = rows[rows.len() - 2]
+            .get("ratio")
+            .and_then(|r| r.as_f64())
+            .unwrap_or(last_ratio);
+        (p, (last_ratio - p) / p)
+    } else {
+        (f64::NAN, 0.0)
+    };
+
+    // Regression = ratio worsened by more than the noise band, WITHIN this
+    // lineage only.
+    let is_regression = rows.len() >= 2 && delta > REGRESSION_BAND;
+    // Watch = out of the class band (informational; class E is a tripwire).
+    let over_threshold = last_ratio > thresh;
+
+    let status = if is_regression {
+        "REGRESSED"
+    } else if over_threshold && class == "E" {
+        "WATCH (tripwire)"
+    } else if over_threshold {
+        "WATCH (over band)"
+    } else {
+        "ok"
+    };
+
+    LineageVerdict {
+        class,
+        last_ratio,
+        prev_ratio,
+        delta,
+        thresh,
+        is_regression,
+        status,
+    }
+}
+
+fn cmd_check(root: &Path) -> Result<()> {
+    let path = root.join(LEDGER);
+    let text =
+        std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+
+    let per_lineage = group_by_lineage(&text)?;
 
     println!(
-        "{:<26} {:>3} {:>8} {:>8} {:>8} {:>8}  status",
-        "bench", "cls", "prev", "last", "delta%", "thresh"
+        "{:<26} {:>8} {:>10} {:>3} {:>8} {:>8} {:>8} {:>8}  status",
+        "bench", "config", "dispatch", "cls", "prev", "last", "delta%", "thresh"
     );
 
     let mut regressed = false;
-    for (bench, rows) in &per_bench {
-        let last = rows.last().unwrap();
-        let class = last.get("class").and_then(|c| c.as_str()).unwrap_or("?");
-        let last_ratio = last.get("ratio").and_then(|r| r.as_f64()).unwrap_or(0.0);
-        let thresh = class_threshold(class);
-
-        let (prev_ratio, delta) = if rows.len() >= 2 {
-            let p = rows[rows.len() - 2]
-                .get("ratio")
-                .and_then(|r| r.as_f64())
-                .unwrap_or(last_ratio);
-            (p, (last_ratio - p) / p)
-        } else {
-            (f64::NAN, 0.0)
-        };
-
-        // Regression = ratio worsened by more than the noise band.
-        let is_regression = rows.len() >= 2 && delta > REGRESSION_BAND;
-        // Watch = out of the class band (informational; class E is a tripwire).
-        let over_threshold = last_ratio > thresh;
-
-        let status = if is_regression {
+    for ((bench, config, dispatch), rows) in &per_lineage {
+        let v = evaluate_lineage(rows);
+        let (class, last_ratio, prev_ratio, delta, thresh, is_regression, status) = (
+            v.class.as_str(),
+            v.last_ratio,
+            v.prev_ratio,
+            v.delta,
+            v.thresh,
+            v.is_regression,
+            v.status,
+        );
+        if is_regression {
             regressed = true;
-            "REGRESSED"
-        } else if over_threshold && class == "E" {
-            "WATCH (tripwire)"
-        } else if over_threshold {
-            "WATCH (over band)"
-        } else {
-            "ok"
-        };
+        }
 
         let prev_s = if prev_ratio.is_nan() {
             "  --  ".to_string()
@@ -464,8 +581,10 @@ fn cmd_check(root: &Path) -> Result<()> {
             format!("{:>+7.1}%", delta * 100.0)
         };
         println!(
-            "{:<26} {:>3} {} {:>8.3} {} {:>8.3}  {}",
+            "{:<26} {:>8} {:>10} {:>3} {} {:>8.3} {} {:>8.3}  {}",
             short_id(bench),
+            config,
+            dispatch,
             class,
             prev_s,
             last_ratio,
@@ -526,5 +645,172 @@ fn today() -> String {
     match out {
         Some(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         _ => "unknown".to_string(),
+    }
+}
+
+// ── tests (eu-lhai / eu-hxu6) ────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(bench: &str, config: &str, ratio: f64, class: &str) -> String {
+        serde_json::json!({
+            "date": "2026-08-01", "commit": "deadbeef", "bench": bench, "class": class,
+            "bc_wall_med": 1.0, "hs_wall_med": 1.0, "ratio": ratio, "hs_ticks": 1,
+            "hs_allocs": 1, "gc": 0, "host": "test", "runs": 5,
+            "prelude_config": config,
+        })
+        .to_string()
+    }
+
+    fn row_with_dispatch(bench: &str, config: &str, dispatch: &str, ratio: f64) -> String {
+        serde_json::json!({
+            "date": "2026-08-01", "commit": "deadbeef", "bench": bench, "class": "C",
+            "bc_wall_med": 1.0, "hs_wall_med": 1.0, "ratio": ratio, "hs_ticks": 1,
+            "hs_allocs": 1, "gc": 0, "host": "test", "runs": 5,
+            "prelude_config": config, "dispatch": dispatch,
+        })
+        .to_string()
+    }
+
+    /// eu-lhai: a blob row sandwiched between two source rows must never be
+    /// compared against the source lineage — each config gets its own
+    /// two-row (prev, last) history, so mixing configs does NOT synthesise a
+    /// spurious large delta.
+    #[test]
+    fn check_does_not_compare_across_prelude_config() {
+        let text = [
+            row("b", "source", 1.00, "C"), // source lineage, 1 row: no prev
+            row("b", "blob", 0.80, "C"),   // blob lineage, row 1
+            row("b", "source", 0.95, "C"), // source lineage, row 2: prev=1.00
+            row("b", "blob", 0.82, "C"),   // blob lineage, row 2: prev=0.80
+        ]
+        .join("\n");
+
+        let groups = group_by_lineage(&text).unwrap();
+        assert_eq!(groups.len(), 2, "blob and source must be separate lineages");
+
+        let blob = groups
+            .get(&(
+                "b".to_string(),
+                "blob".to_string(),
+                "predecoded".to_string(),
+            ))
+            .unwrap();
+        let v = evaluate_lineage(blob);
+        assert_eq!(blob.len(), 2);
+        assert!((v.prev_ratio - 0.80).abs() < 1e-9);
+        assert!((v.last_ratio - 0.82).abs() < 1e-9);
+        assert!(
+            !v.is_regression,
+            "0.80 -> 0.82 is well within the noise band"
+        );
+
+        let source = groups
+            .get(&(
+                "b".to_string(),
+                "source".to_string(),
+                "predecoded".to_string(),
+            ))
+            .unwrap();
+        assert_eq!(source.len(), 2);
+        let v2 = evaluate_lineage(source);
+        assert!((v2.prev_ratio - 1.00).abs() < 1e-9);
+        assert!((v2.last_ratio - 0.95).abs() < 1e-9);
+    }
+
+    /// Before the fix, comparing the LAST row overall (source, 0.95) against
+    /// the PREVIOUS row overall (blob, 0.80) would read a config swap as a
+    /// +18.75% ratio worsening — inside REGRESSION_BAND here but easily
+    /// exceeding it with realistic blob/source deltas (eu-lhai's actual
+    /// false positives). Confirm that cross-config pairing is impossible by
+    /// construction: no lineage's row list ever mixes configs.
+    #[test]
+    fn lineages_never_mix_config_or_dispatch() {
+        let text = [
+            row("x", "blob", 0.5, "C"),
+            row("x", "source", 0.9, "C"),
+            row("x", "blob", 0.6, "C"),
+        ]
+        .join("\n");
+        let groups = group_by_lineage(&text).unwrap();
+        for (_, rows) in groups {
+            let configs: std::collections::HashSet<_> = rows
+                .iter()
+                .map(|r| r["prelude_config"].as_str().unwrap())
+                .collect();
+            assert_eq!(configs.len(), 1, "a lineage must be a single config");
+        }
+    }
+
+    /// eu-hxu6: rows carrying an explicit `dispatch` are their own lineage,
+    /// distinct from `predecoded`-defaulted legacy rows and from each other.
+    #[test]
+    fn check_separates_dispatch_lineages() {
+        let text = [
+            row("x", "blob", 0.90, "C"), // legacy row, no `dispatch` field
+            row_with_dispatch("x", "blob", "predecoded", 0.88),
+            row_with_dispatch("x", "blob", "byte", 1.40),
+        ]
+        .join("\n");
+        let groups = group_by_lineage(&text).unwrap();
+        assert_eq!(
+            groups.len(),
+            2,
+            "legacy (implicit predecoded) and explicit predecoded rows share one lineage; byte is a separate lineage"
+        );
+        let predecoded = groups
+            .get(&(
+                "x".to_string(),
+                "blob".to_string(),
+                "predecoded".to_string(),
+            ))
+            .unwrap();
+        assert_eq!(predecoded.len(), 2, "legacy row + explicit predecoded row");
+        let byte = groups
+            .get(&("x".to_string(), "blob".to_string(), "byte".to_string()))
+            .unwrap();
+        assert_eq!(byte.len(), 1);
+    }
+
+    /// A genuine same-lineage regression is still caught.
+    #[test]
+    fn check_flags_genuine_same_lineage_regression() {
+        let text = [row("y", "blob", 0.80, "C"), row("y", "blob", 1.20, "C")].join("\n");
+        let groups = group_by_lineage(&text).unwrap();
+        let rows = groups
+            .get(&(
+                "y".to_string(),
+                "blob".to_string(),
+                "predecoded".to_string(),
+            ))
+            .unwrap();
+        let v = evaluate_lineage(rows);
+        assert!(v.is_regression, "0.80 -> 1.20 is a 50% worsening");
+        assert_eq!(v.status, "REGRESSED");
+    }
+
+    #[test]
+    fn class_e_over_threshold_is_watch_not_regression() {
+        let text = [
+            row("lookup", "blob", 11.0, "E"),
+            row("lookup", "blob", 12.0, "E"),
+        ]
+        .join("\n");
+        let groups = group_by_lineage(&text).unwrap();
+        let rows = groups
+            .get(&(
+                "lookup".to_string(),
+                "blob".to_string(),
+                "predecoded".to_string(),
+            ))
+            .unwrap();
+        let v = evaluate_lineage(rows);
+        assert!(
+            !v.is_regression,
+            "11.0 -> 12.0 is a 9% delta, inside the noise band"
+        );
+        assert_eq!(v.status, "WATCH (tripwire)");
     }
 }
