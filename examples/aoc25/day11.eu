@@ -92,14 +92,20 @@ part-1: solve(input)
 
 ` "Count paths from 'svr' to 'out' visiting both 'dac' and 'fft'.
 By inclusion-exclusion over graph variants with required nodes removed:
-  through_both = total - no_dac - no_fft + neither"
+  through_both = total - no_dac - no_fft + neither
+The four dynamic programming passes are independent, so they run under
+`par-map` over the graph variants (counts come back in variant order:
+total, no-dac, no-fft, neither; parallel on macOS/Linux when the
+variant list clears the size threshold — four elements need
+EU_PP_THRESHOLD lowered to fork)."
 solve2(data): {
   g: parse-graph(data)
-  total: g count-paths("svr")
-  no-dac: g remove-node("dac") count-paths("svr")
-  no-fft: g remove-node("fft") count-paths("svr")
-  neither: g remove-node("dac") remove-node("fft") count-paths("svr")
-}.(total - no-dac - no-fft + neither)
+  variants: [g,
+             g remove-node("dac"),
+             g remove-node("fft"),
+             g remove-node("dac") remove-node("fft")]
+  counts: variants par-map(count-paths("svr"))
+}.((counts !! 0) - (counts !! 1) - (counts !! 2) + (counts !! 3))
 
 ` { target: :test2
     import: "ex2=inputs/day11-ex2.txt" }

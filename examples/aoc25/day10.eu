@@ -66,8 +66,12 @@ solve-machine[target, buttons]: {
   solved?(k): has-solution?(k, target, buttons)
 }.(ℕ take(nb + 1) filter(solved?) min-of-or(nb + 1))
 
+` "Sum of minimum presses across machines. Machines are independent, so
+the per-machine solves run under `par-sum` (same value as
+`map(parse-machine ; solve-machine) sum`; parallel on macOS/Linux when
+the machine list clears the size threshold)."
 solve(data):
-  data filter(!= "") map(parse-machine ; solve-machine) sum
+  data filter(!= "") par-sum(parse-machine ; solve-machine)
 
 ` { target: :test
     import: "ex1=inputs/day10-ex1.txt" }

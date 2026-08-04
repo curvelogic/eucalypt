@@ -52,11 +52,14 @@ pairs-at(w, i, [h : t]): point-pairs(h, t take(w), i, i + 1)
 
 ` "Generate candidate pairs: each point paired with the next w points.
 Requires pts to be x-sorted so that nearby indices approximate spatial
-proximity. Low values of w may miss close pairs that are far apart in x."
-window-pairs(w, pts):
-  tails(pts)
-    zip-with(pairs-at(w), ℕ)
-    concat
+proximity. Low values of w may miss close pairs that are far apart in x.
+Each suffix's pair batch is independent, so generation runs under
+`par-concat` (same value as `zip-with(pairs-at(w), ℕ) concat` over the
+tails; parallel on macOS/Linux when the point count clears the size
+threshold)."
+window-pairs(w, pts): {
+  batch([i, suffix]): pairs-at(w, i, suffix)
+}.(zip(ℕ, tails(pts)) par-concat(batch))
 
 ` "Count elements in each consecutive group (run-length encoding)."
 count-groups: group-consecutive ; map(count)

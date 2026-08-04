@@ -27,7 +27,13 @@ is-fresh?(ranges, id): ranges any(contains-id?(id))
 
 parse(data): data split-when(= "") bimap(map(parse-range), filter(!= "") ; map(num))
 
-solve(ranges, ids): ids filter(is-fresh?(ranges)) count
+` "1 if `id` falls within any fresh range, else 0."
+fresh-bit(ranges, id): is-fresh?(ranges, id) then(1, 0)
+
+` "Count of fresh IDs. Each ID's range test is independent, so the tests
+run under `par-sum` (same value as `filter(is-fresh?(ranges)) count`;
+parallel on macOS/Linux when the ID list clears the size threshold)."
+solve(ranges, ids): ids par-sum(fresh-bit(ranges))
 
 ` "Merge a new range into [merged-so-far, current-range].  If the new
 range overlaps or is adjacent, extend current; otherwise emit current

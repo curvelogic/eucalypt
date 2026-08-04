@@ -4,7 +4,192 @@ Performance characteristics of the AoC 2025 eucalypt example programs, benchmark
 
 ---
 
-## Summary (0.11.0)
+## Summary (0.14 re-baseline, 2026-08-04)
+
+Re-baselined on 0.14 (bytecode engine default). Six examples now use the
+0.14 process parallelism combinators (`par-sum`, `par-max`, `par-map`,
+`par-concat`) at genuinely independent map sites — see the next section for
+the sites, the verification, the measurement session conditions, and the
+findings. Sequential and parallel arms ran interleaved on the same clean
+release binary; wall figures are median-of-5 with min–max spread in
+parentheses. The machine carried moderate background load (load average
+2.9–6.1), so per `docs/superpowers/engine-ab/PROTOCOL.md` every wall figure
+is labelled **measured-single** (one session; not yet independently
+reproduced on a quiet machine).
+
+| Example | 0.11.0 wall (historical) | 0.14 sequential | 0.14 parallel (forced fork) | Speedup | Confidence |
+|---------|--------------------------|-----------------|------------------------------|---------|------------|
+| day01-p1 | 0.527s | 0.098s (2%) | — | — | measured-single |
+| day01-p2 | 0.500s | 0.104s (11%) | — | — | measured-single |
+| day02-p1 | 0.007s | 0.034s (9%) | — | — | measured-single |
+| day02-p2 | 0.030s | 0.048s (2%) | — | — | measured-single |
+| day03-p1 | 0.556s | 0.338s (2%) | — | — | measured-single |
+| day03-p2 | 1.149s | 0.716s (3%) | — | — | measured-single |
+| day04-p1 | 1.559s | 0.615s (3%) | 0.104s (9%) | 5.9× | measured-single (par arm sub-200ms) |
+| day04-p2 | >600s | >600s | — | — | measured-single (n=1 probe) |
+| day05-p1 | 1.462s | 0.489s (2%) | 0.107s (11%) | 4.6× | measured-single (par arm sub-200ms) |
+| day05-p2 | 0.028s | 0.063s (5%) | — | — | measured-single |
+| day06-p1 | 0.636s | 0.073s (4%) | — | — | measured-single |
+| day06-p2 | 3.966s | 0.310s (3%) | — | — | measured-single |
+| day07-p1 | 1.231s | 0.358s (1%) | — | — | measured-single |
+| day07-p2 | 2.495s | 0.337s (3%) | — | — | measured-single |
+| day08-p1 | 6.082s | 3.445s (1%) | 0.712s (12%) | 4.8× | measured-single |
+| day08-p2 | >600s | >600s | — | — | measured-single (n=1 probe) |
+| day09-p1 | 5.005s | 2.002s (3%) | 0.478s (7%) | 4.2× | measured-single |
+| day09-p2 | >600s | >600s | — | — | measured-single (n=1 probe) |
+| day10-p1 | 10.99s | 7.858s (3%) | 1.091s (43%*) | 7.2× | measured-single |
+| day10-p2 | >600s | >600s | — | — | measured-single (n=1 probe) |
+| day11-p1 | 1.593s | 0.150s (2%) | — | — | measured-single |
+| day11-p2 | 146.5s | 4.429s (3%) | 1.161s (2%) | 3.8× | measured-single |
+| day12-p1 | 0.197s | 0.106s (3%) | — | — | measured-single |
+
+\* day10-p1 parallel spread is one 1.55s outlier in five runs (others
+1.077–1.122s); the median is robust to it.
+
+A `—` in the parallel column means the example has no `par-*` site (either no
+independent map, or the site was assessed and rejected — see below).
+day08-p2 inherits the `window-pairs` conversion from day08-p1 but its
+parallel arm is not reported: parallelism does not change its asymptotics.
+
+The sequential column is itself news: the 0.12–0.14 engine work (bytecode
+default, pre-decoded dispatch, lookup and codegen improvements) has made the
+whole corpus dramatically faster than the 0.11.0 baseline — most notably
+day11-p2 (146.5s → 4.4s) and day06-p2 (3.97s → 0.31s). The per-day
+bottleneck analyses below the historical summary describe the 0.10/0.11
+engines and should be read as historical.
+
+---
+
+## Process parallelism (0.14)
+
+Six sites were converted to the experimental `par-*` combinators
+(macOS/Linux; each is semantically identical to its sequential form). All
+conversions were verified to produce the same answer as the unconverted
+program on the real puzzle input, on both the sequential-fallback path and
+the forked path (`EU_PP_THRESHOLD=2`, fork confirmed via `EU_PP_TRACE=1`),
+plus the embedded example-input tests.
+
+| Example | Site | Combinator | Elements (real input) | Rationale |
+|---------|------|------------|-----------------------|-----------|
+| day04-p1 | `solve`: row sums of `survivals(grid)` | `par-sum(sum)` | 135 | each row's 3×3 convolution sums are independent |
+| day05-p1 | `solve`: per-ID freshness test | `par-sum(fresh-bit(ranges))` | 1,000 | each ID's range membership is independent |
+| day08-p1 | `window-pairs`: per-suffix pair batches | `par-concat(batch)` | 1,000 | each suffix's encoded-pair batch is independent; parent then sorts |
+| day09-p1 | `best-area`: per-suffix max area | `par-max(best-from)` | 495 | each suffix's pairwise-max is independent |
+| day10-p1 | `solve`: per-machine DFS solve | `par-sum(parse-machine ; solve-machine)` | 185 | machines are fully independent; heaviest per-element work in the corpus |
+| day11-p2 | `solve2`: four inclusion-exclusion DP passes | `par-map(count-paths("svr"))` | 4 | coarsest-grain site; each pass is an independent ~35s DP |
+
+**Sites assessed and rejected:**
+
+- **day06-p2** — the right-to-left grouping fold (`cols foldl(col-step, ...)`)
+  carries `[total, nums]` state between columns; no independent map. The
+  per-column `map(parse-col)` is independent but trivial per element.
+- **day07-p1/p2** — beam propagation folds a `[beam, count]` state row by
+  row; each row depends on the previous beam vector. No independent map.
+- **day11-p1** — a single DP pass over one topological order; sequential by
+  construction.
+- **day04-p2, day09-p2, day10-p2** — iteration-bound or search-bound
+  timeouts; parallelism does not change their asymptotics (day08-p2 inherits
+  its conversion incidentally from `window-pairs`).
+- Trivial examples (day01–day03, day05-p2, day06-p1, day12-p1) — under ~1s
+  with cheap per-element work; fork and serialisation cost cannot pay.
+
+**Threshold finding:** every converted site is below the default 1,024-element
+fork threshold (the corpus maximum is 1,000), so by default the `par-*` calls
+take the sequential fallback and the converted programs behave exactly as
+before. Demonstrating parallel speedup on this corpus requires lowering
+`EU_PP_THRESHOLD`. This is itself a finding for the feature: AoC-scale outer
+maps (tens to hundreds of heavy elements) sit below a threshold calibrated
+for many-thousand-element maps, and per-element cost is invisible to the
+element-count heuristic.
+
+### Measurement session (2026-08-04)
+
+Per `docs/superpowers/engine-ab/PROTOCOL.md` discipline: one clean-built
+release binary for both arms (master, rustc 1.97.1), interleaved arm pairs
+(seq, par, seq, par, …), 5 pairs per converted example, 5 sequential runs
+per unconverted example, wall median-of-5 with min–max spread. Platform:
+macOS ARM64, Apple M3 Max, 14 cores; `EU_PP_WORKERS` unset (the driver chose
+13 workers for large lists, 4 for day11-p2's 4-element list). Every run
+carried `EU_PP_TRACE=1`; the trace log confirms all 30 parallel-arm runs
+forked and all 30 sequential-arm runs took the fallback. **Deviations from
+protocol:** the machine carried moderate background load (load average
+2.9–6.1), so all figures are measured-single; and the day04-p1/day05-p1
+parallel-arm medians (~105 ms) sit below the ~200 ms ratio floor, so those
+two speedup ratios are indicative rather than load-bearing. Ticks are not
+comparable across the fork boundary, so the seq/par comparison is wall-only.
+
+The seq/par comparison is threshold-forced: the sequential arm pins
+`EU_PP_THRESHOLD` above any list size, the parallel arm pins it to 2. With
+the combinators' defaults (threshold 1,024) every converted site runs the
+sequential fallback — see the threshold finding above.
+
+From `examples/aoc25/`, with `EU` the release binary under test:
+
+```sh
+# Sequential arm (threshold forced above any list size — explicit fallback)
+EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 day04.eu -t part-1
+EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 day05.eu -t part-1
+EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 day08.eu -t part-1
+EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 day09.eu -t part-1
+EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 day10.eu -t part-1
+EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 day11.eu -t part-2
+
+# Parallel arm (threshold forced below every converted site's element count)
+EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 day04.eu -t part-1
+EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 day05.eu -t part-1
+EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 day08.eu -t part-1
+EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 day09.eu -t part-1
+EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 day10.eu -t part-1
+EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 day11.eu -t part-2
+```
+
+Unconverted examples were re-baselined with the sequential-arm command only.
+
+### Finding: does process parallelism pay on this corpus?
+
+**Yes — strongly, at every site with a genuinely independent outer map and
+non-trivial per-element work, but only once the fork threshold is lowered.**
+All six converted sites achieved 3.8×–7.2× wall speedup on a 14-core M3 Max
+(measured-single; see the summary table). Specifically:
+
+- **Coarse-grained heavy elements pay best.** day10-p1 (185 machines, each
+  an expensive DFS) achieved 7.2×, the corpus best.
+- **Even fine-grained elements pay.** day05-p1's per-element work is a
+  ~186-range membership test, ~0.5 ms each, and still achieved 4.6× —
+  fork-and-serialise overhead is low enough that modest per-element work
+  amortises it at corpus scale (~1,000 elements).
+- **Tiny lists of huge elements pay.** day11-p2's 4-element `par-map` over
+  ~1.1s DP passes achieved 3.8× against a ceiling of ~4× (the full-graph
+  pass is the critical path).
+- **Serialisation of large results is affordable.** day08-p1's `par-concat`
+  returns ~150,000 encoded numbers across the boundary and still achieved
+  4.8×.
+
+**The negative findings:**
+
+- **The default threshold excludes the entire corpus.** `par-*` falls back
+  to sequential below 1,024 elements; the corpus's largest independent map
+  is 1,000 elements (day05-p1, day08-p1). Every conversion is therefore a
+  no-op by default, and every speedup above required `EU_PP_THRESHOLD` to be
+  lowered. The element-count heuristic is also blind to per-element cost:
+  day10-p1 (185 elements × heavy DFS, 7.2× available) and day11-p2 (4
+  elements × ~1.1s DP, 3.8× available) are precisely the shapes the
+  threshold is designed to reject. A cost-aware or user-tunable-per-call
+  threshold would let this corpus benefit without environment variables.
+- **State-carrying folds have nothing to convert.** day06-p2 and
+  day07-p1/p2 thread an accumulator through every element; day11-p1 is a
+  single DP pass. No independent map exists, so process parallelism cannot
+  apply without algorithmic restructuring.
+- **Trivial programs cannot pay.** Everything under ~0.35s sequential is
+  dominated by startup and parse; fork cost has nothing to amortise
+  against.
+- **Parallelism does not rescue asymptotics.** The 0.11.0-era timeouts are
+  loop/search-bound; the conversion day08-p2 inherits from `window-pairs`
+  does not change what makes it slow.
+
+---
+
+## Historical summary (0.11.0)
 
 | Example | 0.10.0 | 0.11.0 | Δ wall | Ticks | Allocs | Bottleneck |
 |---------|--------|--------|--------|-------|--------|------------|

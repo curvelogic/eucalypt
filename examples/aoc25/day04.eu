@@ -56,7 +56,10 @@ survivals(grid): zip-with(zip-with(accessible?), grid, block-sums(grid))
 
 parse(data): data map(to-bits)
 
-solve(grid): survivals(grid) map(sum) sum
+` "Total accessible rolls. Row sums are independent, so they run under
+`par-sum` (same value as `map(sum) sum`; parallel on macOS/Linux when
+the row count clears the size threshold)."
+solve(grid): survivals(grid) par-sum(sum)
 
 ` "One removal step: returns [new-grid, count-removed]."
 remove-step[grid, _]: {
