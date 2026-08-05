@@ -35,12 +35,22 @@ use crate::eval::{
     },
 };
 
-/// Default minimum element count before forking is even considered. Below
-/// this, `par-map` runs sequentially (fork + arena overhead does not pay).
-/// Overridable via `EU_PP_THRESHOLD` (chiefly so tests can force the fork
-/// path on small inputs, and so the default can be tuned).
+/// Default minimum element count before forking is even considered.
+///
+/// `par-*` is an explicit caller opt-in: writing `par-map` over `map` already
+/// says "I want this forked", so the runtime no longer second-guesses that
+/// with a predicted-benefit gate. The corpus evidence that retired the old
+/// 1024-element gate (eu-2obtj) showed it rejecting exactly the workloads
+/// where forking pays most — 185 heavy elements at 7.2x, 4 very heavy
+/// elements at 3.8x — both far below the old threshold. The only remaining
+/// count condition is the degenerate `n < 2`, where there is nothing to
+/// parallelise. `EU_PP_THRESHOLD` remains as a tuning/testing escape hatch
+/// (chiefly so tests can force, or suppress, the fork path deterministically);
+/// it is not needed for ordinary use. See `docs/guide/parallelism.md` for the
+/// measured fixed per-call fork overhead callers should weigh against very
+/// cheap tiny workloads.
 #[cfg(unix)]
-const DEFAULT_THRESHOLD: usize = 1024;
+const DEFAULT_THRESHOLD: usize = 2;
 
 /// Per-element arena byte budget used to size the (virtual, demand-zero)
 /// mapping; a worker whose serialised result set overflows its segment simply

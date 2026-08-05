@@ -5,11 +5,11 @@
 >
 > **macOS/Linux only.** The mechanism is a POSIX `fork()`, so it is not
 > available on Windows. `par-*` still works there — every call falls back to
-> the ordinary sequential form, exactly as it does below the size threshold on
-> a supported platform — it just never forks, so there is no parallelism
-> speed-up, and `EU_PP_TRACE` has no effect on Windows. See [What is different
-> from `map`](#what-is-different-from-map) below: the value is identical
-> either way.
+> the ordinary sequential form, exactly as it does whenever the fork
+> mechanism is unavailable on a supported platform — it just never forks, so
+> there is no parallelism speed-up, and `EU_PP_TRACE` has no effect on
+> Windows. See [What is different from `map`](#what-is-different-from-map)
+> below: the value is identical either way.
 
 Eucalypt can evaluate a map over independent elements in parallel worker
 processes. The vocabulary is small and deliberately boring: each combinator
@@ -36,14 +36,27 @@ output.
 
 ## When it helps
 
-Parallel evaluation pays when `f` is genuinely expensive and there are many
-elements. Below a threshold (1024 elements by default) eucalypt does not
-bother: it runs the sequential map instead, because forking costs more than
-it saves on a small list. It also stays sequential when only one core is
+`par-*` is an explicit opt-in: writing it instead of the sequential form
+already says "fork this", so eucalypt no longer second-guesses that decision
+with a predicted-benefit size gate. It forks whenever there are at least two
+elements and the platform allows. It stays sequential only when there is
+nothing to parallelise (fewer than two elements), when only one core is
 available, on platforms without `fork`, and inside hosts that have not
 declared themselves safe to fork from — the language server, the WASM build,
 and the test harness all run `par-*` sequentially. The answer is the same in
 every case.
+
+Because the gate is gone, the caller is the one who should judge whether a
+workload is worth forking. The fixed per-call cost of the fork mechanism
+itself — process fork plus the shared arena, isolated from the
+serialise/deserialise codec both paths already pay — measures **~2–3ms** on
+macOS ARM64 (Apple Silicon, measured-single, moderate background load; see
+`docs/superpowers/reports/2026-08-04-eu-2obtj-fork-overhead.md` for the
+session). That is the amount a tiny,
+cheap `par-map` adds over the plain sequential form: worth it for anything
+with real per-element cost, easily lost in noise for a handful of trivial
+elements. `EU_PP_THRESHOLD` (below) remains available to force the
+sequential path back on for such cases, or for testing.
 
 ## What is different from `map`
 
@@ -108,6 +121,7 @@ par-sum: 12 elements — sequential (below threshold)
 ```
 
 `EU_PP_WORKERS` sets the worker count and `EU_PP_THRESHOLD` the element count
-below which `par-*` stays sequential — chiefly useful for forcing one path or
-the other while investigating. See
-[Debugging](../development/debugging.md) for the full list.
+below which `par-*` stays sequential (default 2, i.e. every call with two or
+more elements forks) — a tuning/testing escape hatch for forcing one path or
+the other while investigating, not something ordinary use needs to touch.
+See [Debugging](../development/debugging.md) for the full list.

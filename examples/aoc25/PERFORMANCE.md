@@ -102,6 +102,14 @@ maps (tens to hundreds of heavy elements) sit below a threshold calibrated
 for many-thousand-element maps, and per-element cost is invisible to the
 element-count heuristic.
 
+**Update (eu-2obtj, 0.14.1):** this finding drove an owner decision to remove
+the predicted-benefit gate entirely — `par-*` now forks whenever there are at
+least two elements (see `docs/guide/parallelism.md`). As of this change, all
+six converted sites above parallelise **by default**; the
+`EU_PP_THRESHOLD=2`/`EU_PP_THRESHOLD=999999999` forcing used throughout this
+document is no longer required to observe the speedups, only to reproduce the
+side-by-side comparison.
+
 ### Measurement session (2026-08-04)
 
 Per `docs/superpowers/engine-ab/PROTOCOL.md` discipline: one clean-built
