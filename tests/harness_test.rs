@@ -3682,12 +3682,17 @@ pub fn test_pp_default_threshold_forks_small_list() {
     }
 
     // EU_PP_THRESHOLD remains a working escape hatch to force sequential.
+    // `EU_PP_TRACE` (like the rest of the fork machinery) only has an effect
+    // on unix — on Windows `par-*` never forks in the first place, so there
+    // is no trace output to assert on.
     let forced_seq_stderr = run(&[("EU_PP_TRACE", "1"), ("EU_PP_THRESHOLD", "999999999")]);
-    assert!(
-        forced_seq_stderr.contains("sequential"),
-        "expected EU_PP_THRESHOLD=999999999 to force the sequential path, \
-         but the trace says:\n{forced_seq_stderr}"
-    );
+    if cfg!(unix) {
+        assert!(
+            forced_seq_stderr.contains("sequential"),
+            "expected EU_PP_THRESHOLD=999999999 to force the sequential path, \
+             but the trace says:\n{forced_seq_stderr}"
+        );
+    }
 }
 
 /// eu-u9xj.6 (PP) — the parallel driver must survive a collection that
