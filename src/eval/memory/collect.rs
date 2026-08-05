@@ -1188,22 +1188,22 @@ pub mod tests {
         let mut clock = Clock::default();
         clock.switch(ThreadOccupation::Mutator);
 
-        // We need objects in different blocks to test cross-block evacuation.
-        // Fill up blocks to push objects into rest.
+        // We need the *live* structure itself to span multiple blocks so
+        // that some of them survive the first collection into `rest` —
+        // `rest_count` reflects blocks holding surviving (marked) content,
+        // not raw allocation volume, so unrooted garbage (however much of
+        // it) contributes nothing here. Use a large bindings array, the
+        // same technique `test_evacuation_target_lines_marked_after_collection`
+        // relies on to reliably produce `rest` candidates.
         let (let_ptr, body_addr) = {
             let view = MutatorHeapView::new(&heap);
-
-            // Create garbage to fill initial blocks
-            for _ in 0..512 {
-                view.alloc(TestObj::Leaf(0)).unwrap();
-            }
 
             // Create a body object
             let body = view.alloc(TestObj::Leaf(99)).unwrap();
             let body_addr = body.as_ptr().as_ptr() as usize;
 
             // Create a Compound that references the body
-            let bindings = leaf_array(view, 4);
+            let bindings = leaf_array(view, 512);
             let let_ptr = view
                 .alloc(TestObj::Compound(bindings, body.as_ptr()))
                 .unwrap()
@@ -1212,24 +1212,124 @@ pub mod tests {
             (let_ptr, body_addr)
         };
 
-        // Perform a normal collection then an evacuating collection
-        collect(&mut vec![let_ptr], &mut heap, &mut clock, false);
+        // Perform a normal collection then an evacuating collection. Use a
+        // named root Vec (not a throwaway `vec![...]` per call) so that
+        // `scan_and_update` — which the collector runs on every marked
+        // object it holds, including this root vector's own contents — can
+        // rewrite `roots[0]` if `let_ptr` itself gets evacuated. Reading
+        // back through `roots[0]` afterwards, rather than the original
+        // `let_ptr`, is what makes the body-integrity check below
+        // meaningful instead of accidentally reading through a stale
+        // pre-evacuation pointer.
+        let mut roots = vec![let_ptr];
+        collect(&mut roots, &mut heap, &mut clock, false);
         heap.flush_unswept();
 
         let rest_count = heap.rest_block_count();
         if rest_count > 0 {
             let candidates: Vec<usize> = (2..2 + rest_count).collect();
-            collect_with_evacuation(
-                &mut vec![let_ptr],
-                &mut heap,
-                &mut clock,
-                &candidates,
-                false,
-            );
+            collect_with_evacuation(&mut roots, &mut heap, &mut clock, &candidates, false);
+        }
+        heap.flush_unswept();
+
+        // Allocate aggressively to pressure-fill any hole a missed mark on
+        // `body` would have left behind (mirrors
+        // `test_evacuation_target_lines_marked_after_collection`'s
+        // technique). Without this, an unmarked-but-not-yet-reclaimed `body`
+        // can still coincidentally read back correctly — nothing has
+        // actually overwritten its bytes yet — so the check below would
+        // pass vacuously on the very bug it exists to catch.
+        clock.switch(ThreadOccupation::Mutator);
+        {
+            let view = MutatorHeapView::new(&heap);
+            let _ = leaf_array(view, 1024);
         }
 
-        // If we reach here, evacuation with internal pointer updates succeeded
-        let _ = body_addr; // used for setup
+        // The real assertion: the Compound's `body` field — a pointer
+        // embedded in the *parent* object, not a root itself — must still
+        // resolve to live, correct data. A `scan()` that fails to report
+        // `body` as reachable (as HeapSyn's own `Let { bindings, body }`
+        // scan must, and as a regression in this fixture's Compound arm
+        // could silently fail to) lets the block backing `body` go
+        // unmarked; lazy sweep then treats it as a hole, the subsequent
+        // allocation burst above reuses it, and the Compound's own
+        // (never-rewritten, since it was never forwarded) `body` pointer
+        // now reads through to unrelated live data instead of `Leaf(99)`.
+        let final_ptr = roots[0];
+        let compound: &TestObj = unsafe { &*final_ptr.as_ptr() };
+        match compound {
+            TestObj::Compound(_, body) => {
+                let body_obj: &TestObj = unsafe { &*body.as_ptr() };
+                assert!(
+                    matches!(body_obj, TestObj::Leaf(99)),
+                    "Compound's body pointer does not resolve to the expected \
+                     Leaf(99) after collection — body was not properly marked, \
+                     evacuated, or forwarded: {body_obj:?}"
+                );
+            }
+            other => panic!("expected Compound after collection, got {other:?}"),
+        }
+        let _ = body_addr; // used only to seed the pre-collection address for setup
+    }
+
+    /// Direct, deterministic counterpart to `test_evacuate_with_internal_refs`:
+    /// calls `Compound`'s `scan` and `scan_and_update` directly rather than
+    /// going through `collect`/`collect_with_evacuation`'s block-eviction
+    /// heuristics, which — depending on allocator layout — do not
+    /// reliably select the block holding an isolated `body` object as an
+    /// evacuation target on every run. This test instead pins down the
+    /// exact property a correct `Compound::scan` must have: the `body`
+    /// pointer is reported for marking (`scan`) and rewritten when
+    /// forwarded (`scan_and_update`), the same way its `arr` elements are.
+    #[test]
+    pub fn test_compound_scan_reports_body_for_marking_and_forwarding() {
+        let mut heap = Heap::new();
+        let (compound_ptr, body_ptr) = {
+            let view = MutatorHeapView::new(&heap);
+            let body_ptr = view.alloc(TestObj::Leaf(99)).unwrap().as_ptr();
+            let bindings = view.array(&[]);
+            let compound_ptr = view
+                .alloc(TestObj::Compound(bindings, body_ptr))
+                .unwrap()
+                .as_ptr();
+            (compound_ptr, body_ptr)
+        };
+
+        let scope = Scope();
+        let mut heap_view = CollectorHeapView { heap: &mut heap };
+
+        // scan() must mark body and report it as a reachable object to scan.
+        heap_view.mark(compound_ptr);
+        let compound_obj: &TestObj = unsafe { &*compound_ptr.as_ptr() };
+        let mut out = Vec::new();
+        compound_obj.scan(&scope, &mut heap_view, &mut out);
+        assert!(
+            heap_view.is_marked(body_ptr),
+            "Compound::scan must mark its body pointer, not just its bindings array"
+        );
+        assert!(
+            out.iter().any(|sp| std::ptr::eq(
+                sp.get() as *const dyn GcScannable as *const (),
+                body_ptr.as_ptr() as *const ()
+            )),
+            "Compound::scan must push its body pointer onto the scan queue"
+        );
+
+        // scan_and_update() must forward body if it was evacuated. Simulate
+        // evacuation by evacuating body directly, then check the Compound's
+        // own scan_and_update rewrites its stored body pointer to match.
+        let new_body_ptr = heap_view.evacuate(body_ptr).expect("evacuate body");
+        let compound_mut: &mut TestObj = unsafe { &mut *compound_ptr.as_ptr() };
+        compound_mut.scan_and_update(&heap_view);
+        match compound_mut {
+            TestObj::Compound(_, body) => {
+                assert_eq!(
+                    *body, new_body_ptr,
+                    "Compound::scan_and_update must forward an evacuated body pointer"
+                );
+            }
+            other => panic!("expected Compound, got {other:?}"),
+        }
     }
 
     #[test]
