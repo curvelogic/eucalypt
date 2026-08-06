@@ -17,6 +17,12 @@
 //! one where the bug lives. The blanket relaxation additionally meant the
 //! ratchet asserted nothing at all under HeapSyn (eu-1tkk.7.17).
 //!
+//! HeapSyn itself was deleted by the Phase 4 collapse (eu-oufc); `Engine`
+//! below is now single-variant. It stays a named enum rather than
+//! collapsing to a bool because `xfail_engines` is a named list in the
+//! sidecar format, ready for a future engine axis (e.g. eu-1hcw's
+//! predecoded-vs-byte-dispatch split) without a format change.
+//!
 //! Two further hazards this file defends against, both instances of a gate
 //! that cannot fail (eu-oxtcq):
 //!
@@ -44,34 +50,31 @@ use eucalypt::eval::error::TRACE_BUDGET;
 
 /// The evaluation engine the fixture sweep is running under.
 ///
-/// Selected the same way the binary selects it, so the gate and the `eu`
-/// child process it spawns always agree: the child inherits `EU_HEAPSYN`
-/// from this process.
+/// Bytecode is the sole surviving engine (eu-oufc Phase 4 collapse deleted
+/// HeapSyn and its `EU_HEAPSYN` selector). This stays an enum — rather than
+/// collapsing straight to a bare bool — because `xfail_engines` is a named
+/// list in the sidecar format, and a future engine axis (e.g. the
+/// predecoded-vs-byte-dispatch split, eu-1hcw) would add a variant here
+/// exactly as HeapSyn once did.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Engine {
     Bytecode,
-    HeapSyn,
 }
 
 impl Engine {
     fn current() -> Engine {
-        if std::env::var("EU_HEAPSYN").as_deref() == Ok("1") {
-            Engine::HeapSyn
-        } else {
-            Engine::Bytecode
-        }
+        Engine::Bytecode
     }
 
     /// The name used in a sidecar's `xfail_engines` list.
     fn key(self) -> &'static str {
         match self {
             Engine::Bytecode => "bytecode",
-            Engine::HeapSyn => "heapsyn",
         }
     }
 
-    fn all() -> [Engine; 2] {
-        [Engine::Bytecode, Engine::HeapSyn]
+    fn all() -> [Engine; 1] {
+        [Engine::Bytecode]
     }
 }
 
@@ -594,7 +597,9 @@ mod meta_tests {
         assert_eq!(verdict(true, false), Verdict::UnexpectedPass);
     }
 
-    /// An `xfail_engines` list binds only the engines it names.
+    /// An `xfail_engines` list names the engine it applies to; naming it
+    /// scopes the marker as expected rather than acting as an engine-blind
+    /// switch (the retired `xfail = true` behaviour this format replaced).
     #[test]
     fn xfail_is_scoped_to_the_engines_it_names() {
         let m = parse_meta(
@@ -602,13 +607,9 @@ mod meta_tests {
             "region_start_line = 1\nregion_end_line = 2\nxfail_engines = [\"bytecode\"]\n",
         );
         assert!(m.is_xfail_on(Engine::Bytecode));
-        assert!(
-            !m.is_xfail_on(Engine::HeapSyn),
-            "a bytecode-only xfail must leave the fixture a live guard under HeapSyn"
-        );
         assert_eq!(
-            verdict(m.is_xfail_on(Engine::HeapSyn), true),
-            Verdict::HardFailure
+            verdict(m.is_xfail_on(Engine::Bytecode), true),
+            Verdict::AsExpected
         );
     }
 
@@ -666,15 +667,8 @@ mod meta_tests {
 
     #[test]
     fn engine_selection_matches_the_binarys() {
-        // Documents the contract the child process relies on: the gate reads
-        // the same variable `eu` does, and the child inherits it.
-        assert_eq!(
-            Engine::current(),
-            if std::env::var("EU_HEAPSYN").as_deref() == Ok("1") {
-                Engine::HeapSyn
-            } else {
-                Engine::Bytecode
-            }
-        );
+        // Bytecode is the sole surviving engine (eu-oufc); nothing selects
+        // between engines any more, so this is always Bytecode.
+        assert_eq!(Engine::current(), Engine::Bytecode);
     }
 }

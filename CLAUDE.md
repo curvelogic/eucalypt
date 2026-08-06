@@ -102,9 +102,7 @@ Generational GC with multiple generations: bump allocation for the young generat
 | `EU_STACK_DIAG=1` | Log continuation stack composition to stderr whenever a new max stack depth is reached. |
 | `EU_ERROR_TRACE_DUMP=1` | Dump full env trace and stack trace Smid details as diagnostic notes on every execution error. Useful for debugging which source locations are available at error time. |
 | `EU_IO_TRACE=1` | Trace all `io.shell` and `io.exec` commands to stderr before execution. Shows the command string and whether stdin is piped. |
-| `EU_HEAPSYN=1` | Select the legacy HeapSyn tree-walk engine instead of the default bytecode engine (BV1). Retained as the performance baseline and differential-testing engine; Phase 4 collapse is deferred pending an A/B perf study. Takes precedence over `EU_PREDECODE` entirely (the pre-decoded dispatch flag is a no-op under HeapSyn). |
-| `EU_BYTECODE=1` | Now redundant — the bytecode engine is the default. Still accepted as an explicit opt-in; `EU_HEAPSYN=1` takes precedence over it. |
-| `EU_PREDECODE=0` | Opt out of pre-decoded dispatch within the bytecode engine, selecting the byte-dispatch path instead (lever a, eu-2sa6.13). Pre-decoded dispatch is the **default** since Phase 2 (eu-vcr8) — unset or `EU_PREDECODE=1` selects it. The byte-dispatch path is retained through a soak period (CI job `test-byte-dispatch-baseline`) before Phase 3 deletes it. No effect when `EU_HEAPSYN=1`. |
+| `EU_PREDECODE=0` | Opt out of pre-decoded dispatch within the bytecode engine, selecting the byte-dispatch path instead (lever a, eu-2sa6.13). Pre-decoded dispatch is the **default** since Phase 2 (eu-vcr8) — unset or `EU_PREDECODE=1` selects it. The byte-dispatch path is retained through a soak period (CI job `test-byte-dispatch-baseline`) before Phase 3 deletes it. |
 
 The crash signal handler (SIGSEGV/SIGBUS diagnostics) is always active and has no environment variable — it installs unconditionally in `main()`.
 
@@ -154,20 +152,30 @@ Add `--debug-format` for the Rust Debug representation (shows full structure inc
 
 ## Engine Performance Claims — Mandatory Protocol
 
-Any bytecode-vs-HeapSyn performance number that enters CHANGELOG, ROADMAP, a
-release gate, a bead, or a report **must** be produced under the checked-in
-measurement standard and cite a dated report or a ledger row:
+The bytecode engine is the sole execution engine (the legacy HeapSyn
+tree-walk machine was deleted by the Phase 4 collapse, eu-oufc, once the
+eu-7oshh A/B study showed parity or a bytecode win everywhere that mattered
+— see `docs/superpowers/reports/2026-08-03-engine-ab-study.md`). There is no
+longer a second engine to compare against, so the bc-vs-hs protocol below is
+historical: `cargo xtask engine-ab`'s live A/B run was removed (it now
+refuses rather than silently comparing bytecode to itself) and `--check`
+only reads the existing ledger. A post-collapse redesign of this tooling —
+e.g. a predecoded-vs-byte-dispatch A/B, since that axis (eu-1hcw) is still a
+real second configuration — is tracked by follow-up bead eu-hn3j0.
 
-- **Protocol:** `docs/superpowers/engine-ab/PROTOCOL.md` — interleaved bc/hs
-  pairs on a quiet machine, ticks-first, wall median-of-N with spread, one
-  binary/one blob for both engines, nothing under ~200 ms in ratio analysis,
-  and a confidence label (measured-verified / measured-single / projected) on
-  every figure. Read it before quoting any engine number.
+- **Protocol (historical bc/hs form):** `docs/superpowers/engine-ab/PROTOCOL.md`
+  — interleaved pairs on a quiet machine, ticks-first, wall median-of-N with
+  spread, one binary/one blob for both configurations, nothing under ~200 ms
+  in ratio analysis, and a confidence label (measured-verified /
+  measured-single / projected) on every figure. Any performance number
+  comparing execution configurations that enters CHANGELOG, ROADMAP, a
+  release gate, a bead, or a report must still cite a dated report or a
+  ledger row produced under a protocol like this one.
 - **Canonical suite:** the eight `tests/harness/bench/{015..022}` benches (run
-  under `cargo test` and `EU_HEAPSYN=1 cargo test`).
-- **Runner + ledger:** `cargo xtask engine-ab` runs the suite interleaved and
-  appends to `docs/superpowers/engine-ab/results.jsonl`; `cargo xtask engine-ab
-  --check` flags regressions vs the previous run.
+  under `cargo test`).
+- **Ledger:** `docs/superpowers/engine-ab/results.jsonl` (historical rows
+  retained); `cargo xtask engine-ab --check` flags regressions vs the
+  previous run in a lineage.
 
 ## Code Quality, Style, and Security
 

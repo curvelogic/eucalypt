@@ -299,34 +299,8 @@ jobs:
         env:
           EU_SOURCE_PRELUDE: "1"
 
-  test-heapsyn-baseline:
-    name: HeapSyn harness (baseline)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build release binary
-        run: cargo build --release
-      # Bytecode is the default engine post-flip (eu-enyv); the standard
-      # `test` job exercises it. HeapSyn is retained as the A/B perf baseline
-      # and differential engine, so run the full harness on it too (behind
-      # EU_HEAPSYN=1) to keep the baseline from silently rotting.
-      - name: Run harness on HeapSyn baseline engine
-        run: ./target/release/eu test --allow-io tests/harness
-        env:
-          EU_HEAPSYN: "1"
-      # The diagnostics invariant gate is a `cargo test` target, so
-      # `eu test tests/harness` above never reaches it: until now it ran under
-      # NO engine but the default. Its expected-failure markers are per engine
-      # (`xfail_engines` in each fixture's sidecar), which only means anything
-      # if the gate is actually run on each engine it can name (eu-1tkk.7.17).
-      - name: Run the diagnostics invariant gate on HeapSyn
-        run: cargo test --test diagnostics_invariants
-        env:
-          EU_HEAPSYN: "1"
-
   test-pp-parallelism:
-    name: Process-parallelism (Linux, both engines)
+    name: Process-parallelism (Linux, both dispatch configs)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -339,13 +313,15 @@ jobs:
         run: cargo run --package xtask -- prelude-compile
       # The fork-safety spike (docs/superpowers/reports/2026-07-25-pp-fork-
       # safety-spike.md, risk R7) validated the COW-fork mechanism only on
-      # macOS/aarch64. `test_pp_fork_path_equivalence_both_engines` spawns a
-      # fresh (single-threaded-at-fork) `eu` binary and forks W workers on the
-      # default bytecode engine AND `EU_HEAPSYN=1`, asserting stdout is
-      # byte-identical to the sequential oracle. With EU_GC_VERIFY=2 in the job
-      # environment (inherited by the spawned binary and its forked workers),
-      # this proves the mechanism off macOS (R7), under GC verification in
-      # parent and workers, and covers engine equivalence (R5).
+      # macOS/aarch64. `test_pp_fork_path_equivalence_both_dispatch_configs`
+      # spawns a fresh (single-threaded-at-fork) `eu` binary and forks W
+      # workers under both bytecode dispatch configs (default pre-decoded AND
+      # `EU_PREDECODE=0` byte-dispatch — re-axised from the deleted HeapSyn
+      # engine, eu-oufc), asserting stdout is byte-identical to the
+      # sequential oracle. With EU_GC_VERIFY=2 in the job environment
+      # (inherited by the spawned binary and its forked workers), this proves
+      # the mechanism off macOS (R7), under GC verification in parent and
+      # workers, and covers dispatch-config equivalence (R5).
       # `test_222_pp_par_equivalence` and `test_error_225_pp_*` cover the
       # sequential codec path and the boundary error, including metadata
       # crossing the boundary (compared as rendered text against `map`, since
@@ -356,7 +332,7 @@ jobs:
       # is coverage EU_GC_VERIFY cannot provide — verification checks
       # reachability from roots, and the bug class it guards against is
       # handles that were never roots.
-      - name: Run PP tests (drives fork on both engines under GC verification)
+      - name: Run PP tests (drives fork on both dispatch configs under GC verification)
         run: cargo test --test harness_test pp
         env:
           EU_GC_VERIFY: "2"

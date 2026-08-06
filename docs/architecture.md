@@ -325,31 +325,28 @@ Validates transformed expressions before STG compilation:
 
 Eucalypt uses a Spineless Tagless G-machine (STG) as its evaluation model, providing lazy evaluation with memoisation.
 
-### Two execution engines share one STG
+### One execution engine: bytecode
 
-The STG syntax described below is the intermediate representation that
-**both** of eucalypt's execution engines consume. The engines differ only
-in how they *run* that syntax, not in what it means:
+The STG syntax described below is the intermediate representation the
+bytecode engine (`src/eval/bytecode/`, BV1) consumes: it compiles STG syntax
+to a flat bytecode program and runs that (see
+[The Bytecode Engine](#the-bytecode-engine-the-default) below).
 
-- **The HeapSyn tree-walk engine** (`src/eval/machine/vm.rs`) walks a
-  materialised STG tree of heap-allocated nodes directly. It was
-  historically the only engine and is retained as the performance
-  baseline and the differential-testing oracle. Select it with
-  `EU_HEAPSYN=1`.
-- **The bytecode engine (BV1)** (`src/eval/bytecode/`) compiles the same
-  STG syntax to a flat bytecode program and runs that. Since 0.12.0 it is
-  the **default**; `EU_BYTECODE=1` is a now-redundant explicit opt-in, and
-  `EU_HEAPSYN=1` takes precedence over it.
+Eucalypt originally had a second engine — a HeapSyn tree-walk machine
+(`src/eval/machine/vm.rs`) that walked a materialised STG tree of
+heap-allocated nodes directly, the only engine before 0.12.0 and retained
+afterwards as the performance baseline and differential-testing oracle
+behind an `EU_HEAPSYN=1` opt-out. Once an A/B study (eu-7oshh) confirmed the
+bytecode engine was at parity or ahead everywhere that mattered, the Phase 4
+collapse (eu-oufc) deleted HeapSyn, its `EU_HEAPSYN`/`EU_BYTECODE` selectors,
+and the differential-testing infrastructure that compared the two engines
+(what remains under `src/eval/bytecode/differential.rs` compares the
+bytecode engine's two *dispatch* configurations — pre-decoded vs
+byte-stream, below — not two engines).
 
-Both engines produce byte-identical rendered output on every input — this
-is enforced by a differential test suite (`src/eval/bytecode/differential.rs`)
-and is the invariant that lets the bytecode engine be the default while
-HeapSyn remains as a cross-check.
-
-The next four subsections (STG Syntax, STG Compiler, the tree-walk Virtual
-Machine, Continuations and Lazy Evaluation) describe the shared IR and the
-HeapSyn engine that walks it. [The Bytecode Engine](#the-bytecode-engine-bv1-the-default)
-below then describes how the default engine executes the same syntax.
+The next two subsections (STG Syntax, STG Compiler) describe the IR;
+[The Bytecode Engine](#the-bytecode-engine-the-default) describes how it
+runs.
 
 ### STG Syntax
 
@@ -409,50 +406,57 @@ impl Compiler {
 
 ### Virtual Machine
 
-*Implementation*: `src/eval/machine/vm.rs`
+*Implementation*: `src/eval/bytecode/machine.rs`
 
-The STG machine is a state machine executing closures:
+The STG machine is a state machine executing over a program counter into a
+flat bytecode buffer, rather than walking heap-allocated code nodes (see
+[The Bytecode Engine](#the-bytecode-engine-the-default) for why):
 
 ```rust
-pub struct MachineState {
-    root_env: SynEnvPtr,           // Empty root environment
-    closure: SynClosure,           // Current (code, environment) pair
-    globals: SynEnvPtr,            // Global bindings
-    stack: Vec<Continuation>,      // Continuation stack
+pub struct BcMachineState {
+    root_env: RefPtr<BcEnvFrame>,    // Empty root environment
+    globals: RefPtr<BcEnvFrame>,     // Global bindings
+    current: BcValue,                // Current (code closure or native) value
+    stack: Vec<BcContinuation>,      // Continuation stack
     terminated: bool,
-    annotation: Smid,              // Current source location
+    annotation: Smid,                // Current source location
+    // ...plus GC-root stash, constants, diagnostics, capture state
 }
 ```
 
-**Execution loop:**
+**Execution loop** (`BytecodeMachine::run`):
 ```rust
-fn run(&mut self) {
-    while !self.terminated {
+fn run(&mut self, limit: Option<usize>) {
+    while !self.state.terminated {
         if self.gc_check_needed() {
             self.collect_garbage();
         }
-        self.step();
+        self.step();  // reads one opcode, decodes operands, acts
     }
 }
 ```
 
-**Instruction dispatch** (`handle_instruction`):
+**Instruction dispatch** (`handle_op` / `handle_op_predecoded`):
 
-| Code Form | Action |
-|-----------|--------|
+| Opcode | Action |
+|--------|--------|
 | `Atom` | Resolve reference; push Update continuation if thunk |
 | `Case` | Push Branch continuation, evaluate scrutinee |
 | `Cons` | Return data constructor |
 | `App` | Push ApplyTo continuation, evaluate callable |
+| `DirectApp` | Exact-arity application to a statically known callee (superinstruction) |
 | `Bif` | Execute intrinsic directly |
 | `Let` | Allocate environment frame, continue in body |
 | `LetRec` | Allocate frame with backfilled recursive references |
 
 ### Continuations
 
-*Implementation*: `src/eval/machine/cont.rs`
+*Implementation*: `src/eval/bytecode/cont.rs`
 
-Four continuation types manage control flow:
+Four continuation types manage control flow (each also has a pre-decoded,
+`EU_PREDECODE`-only variant that references off-heap side pools instead of
+owning a fresh `Array`, described in
+[the pre-decoded IR](#the-pre-decoded-ir-lever-a-eu_predecode)):
 
 1. **Branch** - Pattern matching branches for CASE
 2. **Update** - Deferred thunk update (memoisation)
@@ -470,25 +474,26 @@ Laziness is achieved through thunks and updates:
 ```rust
 // When entering a local reference
 if closure.update() {
-    stack.push(Continuation::Update { environment, index });
+    stack.push(BcContinuation::Update { environment, index, annotation });
 }
 
 // After evaluation completes
-Continuation::Update { environment, index } => {
+BcContinuation::Update { environment, index, .. } => {
     self.update(environment, index);  // Replace thunk with result
 }
 ```
 
-### The Bytecode Engine (BV1, the default)
+### The Bytecode Engine (the default)
 
 *Implementation*: `src/eval/bytecode/` (`opcode.rs`, `program.rs`,
 `encode.rs`, `closure.rs`, `cont.rs`, `env_builder.rs`, `machine.rs`,
 `predecode.rs`)
 
-The default engine compiles STG syntax one step further, into a flat
-bytecode program, and interprets that. The motivation is a garbage-collection
-one: in the HeapSyn engine the *code* itself is a tree of heap-allocated
-`HeapSyn` nodes, so every code node must be scanned, marked and potentially
+The engine (BV1) compiles STG syntax one step further, into a flat
+bytecode program, and interprets that. The motivation was a
+garbage-collection one, relative to the now-deleted HeapSyn tree-walk
+engine: there, the *code* itself was a tree of heap-allocated `HeapSyn`
+nodes, so every code node had to be scanned, marked and potentially
 evacuated by the collector. Bytecode moves the code **off the GC heap**
 entirely — it lives in a plain `Vec<u8>` that never moves — so closures need
 no code-pointer fix-up during collection.
@@ -514,19 +519,18 @@ allocation.
 
 A bytecode runtime value (`closure.rs`) is either a code closure — an info
 table carrying a `CodeRef` plus a pointer to its environment frame — or a
-WHNF native carried directly. The **environment-frame cactus stack and the
-continuation model are shared verbatim with the HeapSyn engine**
-(`cont.rs` mirrors `machine::cont::Continuation` one-for-one, with `CodeRef`
-offsets in place of node pointers); only the code representation differs.
+WHNF native carried directly. The environment-frame cactus stack
+(`EnvironmentFrame<C>`, generic over the closure type `C`) and the
+continuation model's shape are the same design the deleted HeapSyn engine
+used, with `CodeRef` offsets in place of node pointers.
 
 #### How dispatch works
 
 The interpreter loop (`machine.rs`) keeps a program counter into the code
 buffer. Each step reads one opcode byte, decodes it (`Op::from_u8`), reads
-that opcode's inline operands from the following bytes, and acts —
-pushing continuations, allocating environment frames, forcing thunks and
-returning data constructors exactly as the tree-walk machine does. GC is
-polled on a countdown (every 500 steps by default), matching HeapSyn.
+that opcode's inline operands from the following bytes, and acts — pushing
+continuations, allocating environment frames, forcing thunks and returning
+data constructors. GC is polled on a countdown (every 500 steps by default).
 
 #### The pre-decoded IR (lever a, `EU_PREDECODE`)
 
@@ -553,16 +557,18 @@ release (CI's `test-byte-dispatch-baseline` job keeps it exercised) before
 Phase 3 deletes it, per the design's phased landing plan
 (`docs/superpowers/specs/2026-07-13-predecoded-execution-ir-design.md` §6).
 
-#### Why bytecode is the default, and the performance story
+#### Why bytecode won, and the performance story
 
-The bytecode engine wins decisively on garbage-collection-heavy and
+The bytecode engine won decisively on garbage-collection-heavy and
 allocation-bound workloads, where keeping code off the managed heap and out
 of every mark/sweep pays for itself; it also starts faster, because the
 prelude ships pre-encoded in the blob (below) rather than being compiled
 from source. On op-dense, allocation-light workloads the byte-stream
 interpreter's per-tick re-decode cost historically left it slower per tick
-than the HeapSyn tree-walk; closing that remaining gap is exactly what the
-pre-decoded IR and the fused-primop superinstructions target.
+than the HeapSyn tree-walk — closing that remaining gap is exactly what the
+pre-decoded IR and the fused-primop superinstructions targeted, and the
+eu-7oshh A/B study that authorised HeapSyn's deletion (eu-oufc) confirmed
+parity or a bytecode win across the canonical suite.
 
 All engine-versus-engine performance numbers in this project are governed by
 a checked-in measurement protocol
@@ -728,8 +734,8 @@ documentation is the authoritative anatomy; the load-bearing sections are:
 
 | Section | What it is | Consumer |
 |---|---|---|
-| `nodes` / `forms_pool` / `binding_entries` | Shared STG arena — compiled lambda forms for every prelude global | HeapSyn engine loader |
-| `bytecode` | Pre-encoded `BytecodeProgram` plus global forms | Bytecode engine loader |
+| `nodes` / `forms_pool` / `binding_entries` | STG arena — compiled lambda forms for every prelude global | Runtime global list (`rt.set_prelude_bindings`), consumed by the bytecode encoder |
+| `bytecode` | Pre-encoded `BytecodeProgram` plus global forms | Bytecode engine, straight off the blob (BV5) |
 | `name_to_slot` | Binding name → global slot index | STG compiler (`Ref::G` resolution) and loaders |
 | `operators` | Operator fixity/precedence extracted pre-`cook` | Seeds the cooker's operator distributor |
 | `desugared_unit_cores` | Each prelude-side unit's post-translate (desugared) core, exactly as `SourceLoader::translate` produced it | Eval-path merged type check |
@@ -910,8 +916,8 @@ The prelude is:
 | `src/core/desugar/` | AST to core | `desugarer.rs` |
 | `src/core/cook/` | Operator resolution | `shunt.rs`, `fixity.rs` |
 | `src/eval/stg/` | STG syntax, compiler, prelude blob | `syntax.rs`, `compiler.rs`, `blob.rs` |
-| `src/eval/machine/` | HeapSyn tree-walk engine | `vm.rs`, `cont.rs`, `env.rs` |
-| `src/eval/bytecode/` | Bytecode engine (BV1, default) | `machine.rs`, `encode.rs`, `predecode.rs` |
+| `src/eval/machine/` | Shared runtime infrastructure (env frames, intrinsic ABI, metrics, crash diagnostics) | `env.rs`, `intrinsic.rs`, `metrics.rs` |
+| `src/eval/bytecode/` | Bytecode engine (BV1, the sole engine since eu-oufc) | `machine.rs`, `encode.rs`, `predecode.rs` |
 | `src/eval/memory/` | Heap and GC | `heap.rs`, `collect.rs` |
 | `src/driver/` | CLI orchestration | `options.rs`, `eval.rs` |
 | `src/export/` | Output formats | `yaml.rs`, `json.rs` |

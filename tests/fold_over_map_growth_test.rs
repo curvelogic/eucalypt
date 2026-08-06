@@ -101,10 +101,13 @@ fn run_ticks(target: &str, stats_path: &Path) -> u64 {
 
 /// Assert that a `small`/`large` target pair grows no faster than linearly.
 ///
-/// The spawned `eu` inherits `EU_HEAPSYN`/`EU_PREDECODE` from this process, so
-/// whichever dispatch path this test itself runs under is the one measured —
-/// the same arrangement `tick_parity_test.rs` relies on. All three CI engine
-/// configurations therefore gate this independently.
+/// The spawned `eu` inherits `EU_PREDECODE` from this process, so whichever
+/// dispatch path this test itself runs under is the one measured — the same
+/// arrangement `tick_parity_test.rs` relies on. Both bytecode dispatch paths
+/// (pre-decoded default and `EU_PREDECODE=0` byte-dispatch) therefore gate
+/// this independently. HeapSyn — a third path this used to also gate,
+/// removed by the Phase 4 collapse (eu-oufc) — was linear too (see the
+/// module doc's growth table for the historical measurement).
 fn assert_linear_growth(kind: &str, small_target: &str, large_target: &str) {
     let dir = tempfile::tempdir().expect("create temp dir");
     let small_ticks = run_ticks(small_target, &dir.path().join("small.json"));
@@ -120,8 +123,8 @@ fn assert_linear_growth(kind: &str, small_target: &str, large_target: &str) {
          a ratio of {ratio:.2} against a cap of {MAX_GROWTH_RATIO}. Linear is ~4.0; the \
          original defect measured ~13.3. This means an argument naming a settled \
          environment slot is being re-aliased per recursion level again — see the \
-         settled-slot pass-through in `machine::env_builder` and its two bytecode twins \
-         `make_arg_array` / `make_arg_array_pd`, which must not drift apart."
+         settled-slot pass-through in `bytecode::machine::make_arg_array` and its \
+         pre-decoded twin `make_arg_array_pd`, which must not drift apart."
     );
 }
 

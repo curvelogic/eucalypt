@@ -5,127 +5,134 @@
 //! benchmarks shared a single heap: as `alloc_let` filled it, `alloc_letrec`
 //! ran against a heap with higher occupancy, causing phantom regressions of
 //! ±30–80% in criterion comparisons.
+//!
+//! Ported from the HeapSyn engine (`machine::env_builder::EnvBuilder`,
+//! `SynClosure`, `EnvFrame`) to the bytecode engine (`BcEnvBuilder`,
+//! `BcValue`, `BcEnvFrame`) by the Phase 4 collapse (eu-oufc), which deleted
+//! HeapSyn. Bytecode natives carry no code to live in (unlike a HeapSyn
+//! `Atom{V(native)}` node), so `native_one` needs no heap allocation at all —
+//! an architectural difference from the original `box_one`, not a
+//! benchmark-fidelity gap. Bytecode's frame-allocation primitive
+//! (`from_saturation`) does not distinguish let from letrec the way
+//! `HeapSyn::Let`/`HeapSyn::LetRec` did; `alloc_let`/`alloc_letrec` are kept
+//! as separate benchmarks (preserving their criterion history) even though
+//! they now measure the same underlying allocation.
 
 use std::iter;
 
 use eucalypt::{
     common::sourcemap::Smid,
     eval::{
-        machine::{
-            env::{EnvFrame, SynClosure},
-            env_builder::EnvBuilder,
-        },
+        bytecode::{encode, partially_apply, BcClosure, BcEnvBuilder, BcEnvFrame, BcValue},
         memory::{
-            alloc::ScopedAllocator,
-            array::Array,
-            heap::Heap,
-            mutator::MutatorHeapView,
-            syntax::{LambdaForm, Native, Ref, RefPtr, StgBuilder},
+            alloc::ScopedAllocator, array::Array, heap::Heap, mutator::MutatorHeapView,
+            symbol::SymbolPool, syntax::Native, syntax::RefPtr,
         },
-        stg::tags::DataConstructor,
+        stg::syntax::dsl,
     },
 };
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::hint::black_box;
 
-fn box_one(view: MutatorHeapView, empty: RefPtr<EnvFrame>) -> SynClosure {
-    SynClosure::new(
-        view.data(
-            DataConstructor::BoxedString.tag(),
-            Array::from_slice(&view, &[Ref::V(Native::Num(1.into()))]),
-        )
-        .unwrap()
-        .as_ptr(),
-        empty,
-    )
+/// A bare native WHNF value — no heap allocation, unlike the HeapSyn
+/// `box_one` this replaces (see the module doc).
+fn native_one() -> BcValue {
+    BcValue::Native(Native::Num(1.into()))
 }
 
-fn fake_bindings(view: MutatorHeapView, width: usize) -> Vec<LambdaForm> {
-    iter::repeat_with(|| {
-        LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
-    })
-    .take(width)
-    .collect()
+/// An arbitrary, never-entered code offset usable as a closure's `code`
+/// field in these allocation-only benchmarks (they never dispatch on it).
+const DUMMY_CODE: u32 = 0;
+
+fn fake_bindings(width: usize) -> Vec<BcValue> {
+    iter::repeat_with(native_one).take(width).collect()
 }
 
 fn fake_env_stack(
     view: MutatorHeapView,
-    empty: RefPtr<EnvFrame>,
+    empty: RefPtr<BcEnvFrame>,
     width: usize,
     height: usize,
-) -> RefPtr<EnvFrame> {
+) -> RefPtr<BcEnvFrame> {
     let mut base = empty;
 
     for _ in 0..height {
-        let bindings = fake_bindings(view, width);
-        base = view.from_letrec(&bindings, base, Smid::default()).unwrap();
+        let bindings = fake_bindings(width);
+        base = view
+            .from_values(bindings.into_iter(), width, base, Smid::default())
+            .unwrap();
     }
 
     base
 }
 
-/// Allocate a let frame of identity function bindings
+/// Allocate a let-shaped frame of native bindings
 fn alloc_let(
     view: MutatorHeapView,
-    empty: RefPtr<EnvFrame>,
-    bindings: &[LambdaForm],
-) -> RefPtr<EnvFrame> {
-    view.from_let(bindings, empty, Smid::default()).unwrap()
+    empty: RefPtr<BcEnvFrame>,
+    bindings: &[BcValue],
+) -> RefPtr<BcEnvFrame> {
+    view.from_saturation(Array::from_slice(&view, bindings), empty, Smid::default())
+        .unwrap()
 }
 
-/// Allocate a letrec frame of identity function bindings
+/// Allocate a letrec-shaped frame of native bindings
 fn alloc_letrec(
     view: MutatorHeapView,
-    empty: RefPtr<EnvFrame>,
-    bindings: &[LambdaForm],
-) -> RefPtr<EnvFrame> {
-    view.from_letrec(bindings, empty, Smid::default()).unwrap()
+    empty: RefPtr<BcEnvFrame>,
+    bindings: &[BcValue],
+) -> RefPtr<BcEnvFrame> {
+    view.from_saturation(Array::from_slice(&view, bindings), empty, Smid::default())
+        .unwrap()
 }
 
 /// Access deep closure
-fn access(view: MutatorHeapView, env: RefPtr<EnvFrame>, depth: usize) -> Option<SynClosure> {
+fn access(view: MutatorHeapView, env: RefPtr<BcEnvFrame>, depth: usize) -> Option<BcValue> {
     let e = view.scoped(env);
     (*e).get(&view, depth)
 }
 
 /// Update deep closure with a new value
-fn update(view: MutatorHeapView, empty: RefPtr<EnvFrame>, env: RefPtr<EnvFrame>, depth: usize) {
+fn update(view: MutatorHeapView, env: RefPtr<BcEnvFrame>, depth: usize) {
     let e = view.scoped(env);
-    let value = box_one(view, empty);
-    (*e).update(&view, depth, value).unwrap();
+    (*e).update(&view, depth, native_one()).unwrap();
 }
 
 /// Create an identity lambda and saturate it
-fn create_and_saturate_lambda(view: MutatorHeapView, empty: RefPtr<EnvFrame>) {
-    let lambda = SynClosure::close(
-        &LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
-        empty,
-    );
-    let args = vec![box_one(view, empty)];
-    view.saturate(&lambda, args.as_slice()).unwrap();
+fn create_and_saturate_lambda(view: MutatorHeapView, empty: RefPtr<BcEnvFrame>) {
+    let lambda = BcClosure::new_annotated_lambda(DUMMY_CODE, 1, empty, Smid::default());
+    let args = [native_one()];
+    view.saturate(&lambda, &args).unwrap();
 }
 
 /// Create a two-argument lambda, partially apply it, then saturate
-fn create_partially_apply_and_saturate_lambda(view: MutatorHeapView, empty: RefPtr<EnvFrame>) {
-    let lambda = SynClosure::close(
-        &LambdaForm::new(2, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
-        empty,
-    );
-    let first_arg = vec![box_one(view, empty)];
-    let second_arg = vec![box_one(view, empty)];
+fn create_partially_apply_and_saturate_lambda(
+    view: MutatorHeapView,
+    empty: RefPtr<BcEnvFrame>,
+    prog: &eucalypt::eval::bytecode::BytecodeProgram,
+) {
+    let lambda = BcClosure::new_annotated_lambda(DUMMY_CODE, 2, empty, Smid::default());
+    let first_arg = Array::from_slice(&view, &[native_one()]);
+    let second_arg = [native_one()];
 
-    let lambda = view.partially_apply(&lambda, first_arg.as_slice()).unwrap();
-    view.saturate(&lambda, second_arg.as_slice()).unwrap();
+    let lambda = partially_apply(view, prog, &lambda, first_arg).unwrap();
+    view.saturate(&lambda, &second_arg).unwrap();
 }
 
 pub fn criterion_benchmark(c: &mut Criterion) {
+    // A minimal encoded program, purely to get a `BytecodeProgram` with PAP
+    // templates populated for `create_partially_apply_and_saturate_lambda`.
+    let (prog, _root, _gforms) = encode(&dsl::atom(dsl::num(0)), &[]);
+    let mut pool = SymbolPool::new();
+
     // alloc_let — isolated heap so its GC pressure does not affect alloc_letrec.
     {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
-        let empty = view.alloc(EnvFrame::default()).unwrap().as_ptr();
-        let bindings = fake_bindings(view, 10);
+        let _constants = prog.prepare_constants(view, &mut pool);
+        let empty = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let bindings = fake_bindings(10);
         c.bench_function("alloc_let", |b| {
             b.iter(|| black_box(alloc_let(view, empty, &bindings)))
         });
@@ -135,8 +142,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
-        let empty = view.alloc(EnvFrame::default()).unwrap().as_ptr();
-        let bindings = fake_bindings(view, 10);
+        let empty = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let bindings = fake_bindings(10);
         c.bench_function("alloc_letrec", |b| {
             b.iter(|| black_box(alloc_letrec(view, empty, &bindings)))
         });
@@ -147,13 +154,13 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
-        let empty = view.alloc(EnvFrame::default()).unwrap().as_ptr();
+        let empty = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
         let env_stack = fake_env_stack(view, empty, 20, 4);
         c.bench_function("deep_env_access", |b| {
             b.iter(|| access(view, env_stack, black_box(73)))
         });
         c.bench_function("deep_env_update", |b| {
-            b.iter(|| update(view, empty, env_stack, black_box(73)))
+            b.iter(|| update(view, env_stack, black_box(73)))
         });
     }
 
@@ -161,12 +168,12 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
-        let empty = view.alloc(EnvFrame::default()).unwrap().as_ptr();
+        let empty = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
         c.bench_function("create_and_saturate_lambda", |b| {
             b.iter(|| create_and_saturate_lambda(view, empty))
         });
         c.bench_function("create_partially_apply_and_saturate_lambda", |b| {
-            b.iter(|| create_partially_apply_and_saturate_lambda(view, empty))
+            b.iter(|| create_partially_apply_and_saturate_lambda(view, empty, &prog))
         });
     }
 }

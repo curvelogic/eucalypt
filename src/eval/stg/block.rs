@@ -10,18 +10,12 @@ use crate::{
         emit::Emitter,
         error::ExecutionError,
         intrinsics,
-        machine::{
-            env::SynClosure,
-            env_builder::EnvBuilder,
-            intrinsic::{
-                AbiClosure, CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic,
-            },
-            vm::HeapNavigator,
+        machine::intrinsic::{
+            AbiClosure, CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic,
         },
         memory::{
-            array::Array,
             mutator::MutatorHeapView,
-            syntax::{HeapSyn, Native, Ref, StgBuilder},
+            syntax::{Native, Ref},
         },
     },
 };
@@ -463,16 +457,13 @@ impl StgIntrinsic for BlockPair {
 
 impl CallGlobal1 for BlockPair {}
 
-/// Threshold for building a block index. Blocks with at least this
-/// many elements will have an index built on first lookup.
-const BLOCK_INDEX_THRESHOLD: usize = 16;
-
 /// LOOKUPOR(key, default, obj) is lookup with default
 ///
-/// Uses a hybrid approach: first attempts an O(1) index lookup via
-/// a BIF, then falls back to a linear STG find loop if no index is
-/// available. Lazy indexing builds the index on first lookup for
-/// blocks with >= BLOCK_INDEX_THRESHOLD elements.
+/// Delegates to a linear STG find loop. Used to also attempt an O(1)
+/// index-lookup BIF first, with lazy indexing building the index on first
+/// lookup for blocks at or above a size threshold — a mutable optimisation
+/// only the (now-deleted) HeapSyn engine supported, since bytecode blocks
+/// are template closures with no in-place mutation (eu-oufc).
 pub struct LookupOr(pub NativeVariant);
 
 impl StgIntrinsic for LookupOr {
@@ -604,421 +595,23 @@ impl StgIntrinsic for LookupOr {
         machine: &mut dyn IntrinsicMachine,
         view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
-        args: &[Ref],
+        _args: &[Ref],
     ) -> Result<(), ExecutionError> {
         // args: [sym_key, blocklist, blockindex, block]
-        // When the mutable block-index optimisation is unavailable (bytecode
-        // engine), skip it and return ListNil to signal the STG find loop.
-        if !machine.block_index_enabled() {
-            return machine.return_closure_list(view, vec![]);
-        }
-        // Check for an existing index — use ok() for sym key since it
-        // may be an unforced thunk (BIF can't force thunks)
-        if let Ok(Native::Index(ref map)) = machine.nav(view).resolve_native(&args[2]) {
-            if let Ok(Native::Sym(sym_id)) = machine.nav(view).resolve_native(&args[0]) {
-                if let Some(&position) = map.get(&sym_id) {
-                    if let Some(value) = walk_list_to_position(machine, view, &args[1], position) {
-                        let value_env =
-                            view.from_closure(value, machine.root_env(), Smid::default())?;
-                        let nil_ref = Ref::V(Native::Num(serde_json::Number::from(0)));
-                        let cons = view.data(
-                            DataConstructor::ListCons.tag(),
-                            Array::from_slice(&view, &[Ref::L(0), nil_ref]),
-                        )?;
-                        return machine.set_closure(SynClosure::new(cons.as_ptr(), value_env));
-                    }
-                }
-            }
-            // Index exists but key not found or not resolved — return ListNil
-            let nil = view.nil()?;
-            return machine.set_closure(SynClosure::new(nil.as_ptr(), machine.root_env()));
-        }
-
-        // No index — check if we should build one
-        let count = count_list(machine, view, &args[1]);
-
-        if count >= BLOCK_INDEX_THRESHOLD {
-            // Build index
-            let map = build_index(machine, view, &args[1]);
-
-            // Try lookup — but the key may be an unforced thunk, so
-            // use ok() rather than ? to gracefully fall back to find loop
-            if let Ok(Native::Sym(sym_id)) = machine.nav(view).resolve_native(&args[0]) {
-                if let Some(&position) = map.get(&sym_id) {
-                    if let Some(value) = walk_list_to_position(machine, view, &args[1], position) {
-                        // Store the index in the block for future lookups
-                        store_index_in_block(view, machine, &args[3], map);
-
-                        let value_env =
-                            view.from_closure(value, machine.root_env(), Smid::default())?;
-                        let nil_ref = Ref::V(Native::Num(serde_json::Number::from(0)));
-                        let cons = view.data(
-                            DataConstructor::ListCons.tag(),
-                            Array::from_slice(&view, &[Ref::L(0), nil_ref]),
-                        )?;
-                        return machine.set_closure(SynClosure::new(cons.as_ptr(), value_env));
-                    }
-                }
-                // Key not found — store index for future lookups
-                store_index_in_block(view, machine, &args[3], map);
-            }
-            // Key wasn't a native sym (unforced thunk) — delegate to find loop
-        }
-
-        // No index available or below threshold — return ListNil to signal "use find loop"
-        let nil = view.nil()?;
-        machine.set_closure(SynClosure::new(nil.as_ptr(), machine.root_env()))
-    }
-}
-
-/// An iterator over a cons-list that resolves all ref types (L, V, G).
-///
-/// Unlike DataIterator, this handles lists whose cons cells may
-/// contain non-local refs (e.g. global refs to K[] / KEmptyList).
-/// Uses the HeapNavigator for global resolution, avoiding heap
-/// allocation.
-struct BlockListIterator<'a, 'scope> {
-    closure: SynClosure,
-    nav: &'a HeapNavigator<'scope>,
-    done: bool,
-}
-
-impl Iterator for BlockListIterator<'_, '_> {
-    type Item = SynClosure;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        use std::convert::TryInto;
-
-        if self.done {
-            return None;
-        }
-
-        let code = self.nav.view.scoped(self.closure.code());
-        match &*code {
-            HeapSyn::Cons { tag, args } => match (*tag).try_into() {
-                Ok(DataConstructor::ListCons) => {
-                    let h = args.get(0)?;
-                    let t = args.get(1)?;
-
-                    let head = self.nav.resolve_in_closure(&self.closure, h)?;
-
-                    match self.nav.resolve_in_closure(&self.closure, t) {
-                        Some(tail) => self.closure = tail,
-                        None => self.done = true,
-                    }
-
-                    Some(head)
-                }
-                Ok(DataConstructor::ListNil) => None,
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-}
-
-/// Walk a cons-list to the given position and extract the value from the pair.
-fn walk_list_to_position(
-    machine: &dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    blocklist_ref: &Ref,
-    position: usize,
-) -> Option<SynClosure> {
-    let nav = machine.nav(view);
-    let closure = nav.resolve(blocklist_ref).ok()?;
-    let pair = (BlockListIterator {
-        closure,
-        nav: &nav,
-        done: false,
-    })
-    .nth(position)?;
-    extract_value_from_pair(machine, view, &pair)
-}
-
-/// Extract the value from a block pair closure.
-///
-/// Only handles BlockPair form (which is what the index maps).
-fn extract_value_from_pair(
-    machine: &dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    pair: &SynClosure,
-) -> Option<SynClosure> {
-    use crate::eval::memory::syntax::HeapSyn;
-
-    let code = view.scoped(pair.code());
-    match &*code {
-        HeapSyn::Cons { tag, args } if *tag == DataConstructor::BlockPair.tag() => {
-            let v = args.get(1)?;
-            machine.nav(view).resolve_in_closure(pair, v.clone())
-        }
-        _ => None,
-    }
-}
-
-/// Count elements in a cons-list
-fn count_list(
-    machine: &dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    blocklist_ref: &Ref,
-) -> usize {
-    let nav = machine.nav(view);
-    match nav.resolve(blocklist_ref) {
-        Ok(closure) => (BlockListIterator {
-            closure,
-            nav: &nav,
-            done: false,
-        })
-        .count(),
-        Err(_) => 0,
-    }
-}
-
-/// Build a block index (HashMap<SymbolId, usize>) from a cons-list of pairs
-fn build_index(
-    machine: &dyn IntrinsicMachine,
-    view: MutatorHeapView<'_>,
-    blocklist_ref: &Ref,
-) -> std::collections::HashMap<crate::eval::memory::symbol::SymbolId, usize> {
-    let mut map = std::collections::HashMap::new();
-
-    let nav = machine.nav(view);
-    let closure = match nav.resolve(blocklist_ref) {
-        Ok(c) => c,
-        Err(_) => return map,
-    };
-
-    let iter = BlockListIterator {
-        closure,
-        nav: &nav,
-        done: false,
-    };
-
-    for (position, pair) in iter.enumerate() {
-        if let Some(sym_id) = pair_key_symbol_id(view, &pair) {
-            map.insert(sym_id, position);
-        }
-    }
-    map
-}
-
-/// Extract the symbol ID from a block pair's key, handling both raw
-/// symbol natives and boxed symbols (from dynamically constructed
-/// blocks).
-fn pair_key_symbol_id(
-    view: MutatorHeapView<'_>,
-    pair: &SynClosure,
-) -> Option<crate::eval::memory::symbol::SymbolId> {
-    use crate::eval::memory::syntax::HeapSyn;
-
-    let code = view.scoped(pair.code());
-    match &*code {
-        HeapSyn::Cons { tag, args } if *tag == DataConstructor::BlockPair.tag() => {
-            let k = args.get(0)?;
-
-            // Fast path: key is a direct native symbol
-            if let Ref::V(Native::Sym(id)) = k {
-                return Some(id);
-            }
-
-            // Follow the key reference to its closure
-            let key_closure = pair.navigate_local(&view, k.clone());
-            let key_code = view.scoped(key_closure.code());
-
-            match &*key_code {
-                // Raw atom containing a symbol
-                HeapSyn::Atom {
-                    evaluand: Ref::V(Native::Sym(id)),
-                } => Some(*id),
-                // Boxed symbol (from dynamically-constructed blocks)
-                HeapSyn::Cons {
-                    tag: inner_tag,
-                    args: inner_args,
-                } if *inner_tag == DataConstructor::BoxedSymbol.tag() => {
-                    let inner = inner_args.get(0)?;
-                    let native = key_closure.navigate_local_native(&view, inner);
-                    if let Native::Sym(id) = native {
-                        Some(id)
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            }
-        }
-        _ => None,
-    }
-}
-
-/// Store a freshly-built index back into the block's data structure.
-///
-/// Resolves the block ref to its Cons node and mutates args[1] from
-/// Num(0) to Index(map). Safe because the block has already been
-/// forced (we're inside its case branch) and the mutation only
-/// replaces a sentinel value with an equivalent-shaped Ref::V.
-fn store_index_in_block(
-    view: MutatorHeapView<'_>,
-    machine: &dyn IntrinsicMachine,
-    block_ref: &Ref,
-    map: std::collections::HashMap<crate::eval::memory::symbol::SymbolId, usize>,
-) {
-    if let Ok(closure) = machine.nav(view).resolve(block_ref) {
-        let code_ptr = closure.code();
-        // SAFETY: The block has been forced (we destructured it in a case
-        // branch), so code_ptr points to a valid HeapSyn::Cons. We mutate
-        // only args[1] which is the index slot — replacing the Num(0)
-        // sentinel with an Index value. No other code reads this slot
-        // concurrently during BIF execution.
-        let heap_syn = unsafe { &mut *code_ptr.as_ptr() };
-        if let HeapSyn::Cons { tag, ref mut args } = heap_syn {
-            if *tag == DataConstructor::Block.tag() {
-                let _ = args.set(1, Ref::V(Native::Index(std::rc::Rc::new(map))));
-            }
-        }
+        //
+        // This BIF used to also implement a mutable block-index optimisation
+        // (a `SymbolId -> position` cache mutated into the block's index slot
+        // in place) for the HeapSyn engine. The bytecode engine never
+        // supported it — blocks are template closures, so it always took
+        // this branch and fell back to the STG-level find loop — and HeapSyn
+        // was deleted by the Phase 4 collapse (eu-oufc), so the optimisation
+        // path (and the `nav`/`root_env`/`set_closure` calls it needed) went
+        // with it. Always signal "use the find loop" now.
+        machine.return_closure_list(view, vec![])
     }
 }
 
 impl CallGlobal3 for LookupOr {}
-
-/// Resolve a ref relative to a closure, handling L, G, and V cases.
-///
-/// For `Ref::L(i)`: navigates the closure's environment.
-/// For `Ref::G(i)`: resolves via the navigator's globals.
-/// For `Ref::V(_)`: wraps in an Atom closure.
-fn resolve_ref_in_closure(
-    nav: &HeapNavigator<'_>,
-    closure: &SynClosure,
-    r: Ref,
-) -> Option<SynClosure> {
-    nav.resolve_in_closure(closure, r)
-}
-
-/// Perform a literal-key lookup on a forced block.
-///
-/// `block_closure` must point to a `HeapSyn::Cons` with
-/// `DataConstructor::Block` tag (already in WHNF).  Returns `Some(value)`
-/// on hit, `None` on miss.  Uses the same hybrid index/linear-scan
-/// strategy as `LookupOr::execute`.
-pub(crate) fn lookup_lit_in_block(
-    nav: &HeapNavigator<'_>,
-    view: MutatorHeapView<'_>,
-    block_closure: &SynClosure,
-    sym_id: crate::eval::memory::symbol::SymbolId,
-) -> Option<SynClosure> {
-    let code = view.scoped(block_closure.code());
-    let (list_ref, index_ref) = match &*code {
-        HeapSyn::Cons { tag, args } if *tag == DataConstructor::Block.tag() => {
-            (args.get(0)?, args.get(1)?)
-        }
-        _ => return None,
-    };
-
-    // Check for existing index (index_ref is V(Index(map)) or V(Num(0)) sentinel)
-    if let Ref::V(Native::Index(ref map)) = index_ref {
-        if let Some(&position) = map.get(&sym_id) {
-            let list_closure = resolve_ref_in_closure(nav, block_closure, list_ref.clone())?;
-            return walk_list_to_position_from_closure(nav, view, &list_closure, position)
-                .and_then(|pair| extract_value_from_pair_closure(nav, view, &pair));
-        }
-        // Index exists but key not found
-        return None;
-    }
-
-    // No index — resolve the list closure and check it is navigable
-    let list_closure = resolve_ref_in_closure(nav, block_closure, list_ref.clone())?;
-
-    // Verify the list is in WHNF (a Cons or Nil). If it is still a
-    // thunk (App, Let, Case, etc.), return None so the caller falls
-    // through to the LookupOr fallback which can force it lazily.
-    {
-        let list_code = view.scoped(list_closure.code());
-        match &*list_code {
-            HeapSyn::Cons { tag, .. }
-                if *tag == DataConstructor::ListCons.tag()
-                    || *tag == DataConstructor::ListNil.tag() => {}
-            _ => return None,
-        }
-    }
-
-    // Linear scan (index building is left to the LookupOr fallback
-    // which runs as a BIF and can safely store the index; the check
-    // at the top of this function will use it on subsequent lookups).
-    linear_scan_for_key(nav, view, &list_closure, sym_id)
-}
-
-/// Walk a cons-list to a given position starting from a resolved closure.
-fn walk_list_to_position_from_closure(
-    nav: &HeapNavigator<'_>,
-    view: MutatorHeapView<'_>,
-    list_closure: &SynClosure,
-    position: usize,
-) -> Option<SynClosure> {
-    let mut current = list_closure.clone();
-    for _ in 0..position {
-        let code = view.scoped(current.code());
-        match &*code {
-            HeapSyn::Cons { tag, args } if *tag == DataConstructor::ListCons.tag() => {
-                let tail_ref = args.get(1)?;
-                current = resolve_ref_in_closure(nav, &current, tail_ref.clone())?;
-            }
-            _ => return None,
-        }
-    }
-    // current should be a ListCons with the pair at head
-    let code = view.scoped(current.code());
-    match &*code {
-        HeapSyn::Cons { tag, args } if *tag == DataConstructor::ListCons.tag() => {
-            let head_ref = args.get(0)?;
-            resolve_ref_in_closure(nav, &current, head_ref.clone())
-        }
-        _ => None,
-    }
-}
-
-/// Extract the value from a block pair closure (using closure-relative navigation).
-fn extract_value_from_pair_closure(
-    nav: &HeapNavigator<'_>,
-    view: MutatorHeapView<'_>,
-    pair: &SynClosure,
-) -> Option<SynClosure> {
-    let code = view.scoped(pair.code());
-    match &*code {
-        HeapSyn::Cons { tag, args } if *tag == DataConstructor::BlockPair.tag() => {
-            let v = args.get(1)?;
-            resolve_ref_in_closure(nav, pair, v.clone())
-        }
-        _ => None,
-    }
-}
-
-/// Count elements in a cons-list starting from a resolved closure.
-/// Linear scan of a cons-list for a key, returning the value closure on hit.
-fn linear_scan_for_key(
-    nav: &HeapNavigator<'_>,
-    view: MutatorHeapView<'_>,
-    list_closure: &SynClosure,
-    target: crate::eval::memory::symbol::SymbolId,
-) -> Option<SynClosure> {
-    let mut current = list_closure.clone();
-    loop {
-        let code = view.scoped(current.code());
-        match &*code {
-            HeapSyn::Cons { tag, args } if *tag == DataConstructor::ListCons.tag() => {
-                if let Some(head_ref) = args.get(0) {
-                    if let Some(pair) = resolve_ref_in_closure(nav, &current, head_ref.clone()) {
-                        if let Some(sym_id) = pair_key_symbol_id(view, &pair) {
-                            if sym_id == target {
-                                return extract_value_from_pair_closure(nav, view, &pair);
-                            }
-                        }
-                    }
-                }
-                let tail_ref = args.get(1)?;
-                current = resolve_ref_in_closure(nav, &current, tail_ref.clone())?;
-            }
-            _ => return None,
-        }
-    }
-}
 
 /// SAFE_LOOKUP(obj, k) — safe key lookup with null propagation.
 ///
@@ -1026,7 +619,9 @@ fn linear_scan_for_key(
 /// otherwise returns `null` (Unit). Null-propagating: if `obj` is
 /// `null` or any non-block value, returns `null` rather than erroring.
 ///
-/// Uses the same hybrid index/linear-search strategy as `LookupOr`.
+/// Delegates to the STG-level find loop, same as `LookupOr` (see its
+/// comment) — the mutable block-index optimisation it used to also try was
+/// HeapSyn-only and was deleted with it (eu-oufc).
 pub struct SafeLookup(pub NativeVariant);
 
 impl StgIntrinsic for SafeLookup {
@@ -1156,66 +751,14 @@ impl StgIntrinsic for SafeLookup {
         machine: &mut dyn IntrinsicMachine,
         view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
-        args: &[Ref],
+        _args: &[Ref],
     ) -> Result<(), ExecutionError> {
         // args: [sym_key, blocklist, blockindex, block]
-        // Same BIF logic as LookupOr: return ListCons on hit, ListNil on miss.
-        // The wrapper handles the null-propagation for non-block values.
-        if !machine.block_index_enabled() {
-            return machine.return_closure_list(view, vec![]);
-        }
-        if let Ok(Native::Index(ref map)) = machine.nav(view).resolve_native(&args[2]) {
-            if let Ok(Native::Sym(sym_id)) = machine.nav(view).resolve_native(&args[0]) {
-                if let Some(&position) = map.get(&sym_id) {
-                    if let Some(value) = walk_list_to_position(machine, view, &args[1], position) {
-                        let value_env =
-                            view.from_closure(value, machine.root_env(), Smid::default())?;
-                        let nil_ref = Ref::V(Native::Num(serde_json::Number::from(0)));
-                        let cons = view.data(
-                            DataConstructor::ListCons.tag(),
-                            Array::from_slice(&view, &[Ref::L(0), nil_ref]),
-                        )?;
-                        return machine.set_closure(SynClosure::new(cons.as_ptr(), value_env));
-                    }
-                }
-            }
-            // Index exists but key not found — return ListNil
-            let nil = view.nil()?;
-            return machine.set_closure(SynClosure::new(nil.as_ptr(), machine.root_env()));
-        }
-
-        // No index — check if we should build one
-        let count = count_list(machine, view, &args[1]);
-
-        if count >= BLOCK_INDEX_THRESHOLD {
-            // Build index
-            let map = build_index(machine, view, &args[1]);
-
-            if let Ok(Native::Sym(sym_id)) = machine.nav(view).resolve_native(&args[0]) {
-                if let Some(&position) = map.get(&sym_id) {
-                    if let Some(value) = walk_list_to_position(machine, view, &args[1], position) {
-                        // Store the index for future lookups
-                        store_index_in_block(view, machine, &args[3], map);
-
-                        let value_env =
-                            view.from_closure(value, machine.root_env(), Smid::default())?;
-                        let nil_ref = Ref::V(Native::Num(serde_json::Number::from(0)));
-                        let cons = view.data(
-                            DataConstructor::ListCons.tag(),
-                            Array::from_slice(&view, &[Ref::L(0), nil_ref]),
-                        )?;
-                        return machine.set_closure(SynClosure::new(cons.as_ptr(), value_env));
-                    }
-                }
-                // Key not found — store index for future lookups
-                store_index_in_block(view, machine, &args[3], map);
-            }
-            // Key wasn't a native sym — delegate to find loop
-        }
-
-        // No index or below threshold — return ListNil to signal "use find loop"
-        let nil = view.nil()?;
-        machine.set_closure(SynClosure::new(nil.as_ptr(), machine.root_env()))
+        // Same BIF logic as LookupOr (see its comment): the mutable
+        // block-index optimisation was HeapSyn-only and was deleted with it
+        // (eu-oufc). Always signal "use the find loop". The wrapper handles
+        // the null-propagation for non-block values.
+        machine.return_closure_list(view, vec![])
     }
 }
 

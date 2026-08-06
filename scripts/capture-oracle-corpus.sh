@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# OBSOLETE (eu-oufc, Phase 4 collapse): this prototype's whole mechanism was
+# cross-validating the bytecode engine's output against the HeapSyn engine
+# before freezing a golden snapshot. HeapSyn was deleted, so there is no
+# second engine left to validate against — do not run this script expecting
+# it to still confirm anything; a "captured" snapshot would just be an
+# unvalidated copy of bytecode's own output. Retained as a historical
+# record of the eu-2sa6.14 prototype; a real replacement (if still needed)
+# belongs to a fresh design, not a revival of this one.
+#
 # Prototype capture script for eu-2sa6.14 (Phase-4 oracle-replacement plan).
 #
 # For each standard (non-IO, non-error) harness test source, evaluates it

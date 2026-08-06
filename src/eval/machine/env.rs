@@ -3,23 +3,22 @@
 use std::fmt;
 
 use crate::eval::memory::collect::{CollectorHeapView, GcScannable, OpaqueHeapBytes, ScanPtr};
-use crate::eval::memory::infotable::{InfoTable, InfoTagged};
 use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
 use crate::eval::memory::{
     alloc::{MutatorScope, ScopedPtr, StgObject},
     array::Array,
-    syntax::{HeapSyn, Native, Ref, RefPtr},
+    syntax::RefPtr,
 };
 
 /// DIAGNOSTIC ONLY (bead eu-qm7f): runtime environment chain-walk depth
 /// histogram, gated by `EU_ENV_DEPTH_HISTOGRAM=1` (follows the
 /// `EU_STACK_DIAG` precedent — env-var gated, cached once, stderr output).
 ///
-/// Measures the hop count of every [`EnvironmentFrame::get`] lookup — the
-/// single walk implementation shared by HeapSyn's `Closing<S>` frames and
-/// both bytecode engines' `BcEnvFrame` (a type alias for this same generic
-/// struct) — without altering the lookup's behaviour or return value. The
+/// Measures the hop count of every [`EnvironmentFrame::get`] lookup — used
+/// by both the generic `Closing<S>` frame walk and the bytecode engine's
+/// `BcEnvFrame` (a type alias for this same generic struct) — without
+/// altering the lookup's behaviour or return value. The
 /// diagnostic performs its own read-only shadow traversal alongside the real
 /// one; it never influences what `get` returns, so enabling it cannot change
 /// program output, only add (deterministic, not wall-time) counters. Disabled
@@ -274,185 +273,6 @@ pub mod env_layout_diag {
             .dump("annotated: user code / source-compiled prelude");
         s.unannotated
             .dump("unannotated: blob-loaded prelude (Smid::default())");
-    }
-}
-
-/// Closure as stored in an environment frame
-///
-/// A closure consist of a static part (InfoTable) that can be
-/// statically compiled, and a pointer to an environment
-#[derive(Clone)]
-pub struct Closing<S>(InfoTagged<S>, RefPtr<EnvironmentFrame<Closing<S>>>)
-where
-    S: Copy;
-
-impl<S> StgObject for Closing<S> where S: Copy {}
-
-impl<S> InfoTable for Closing<S>
-where
-    S: Copy,
-{
-    /// Arity when partially applied args are taken into account
-    fn arity(&self) -> u8 {
-        self.0.arity()
-    }
-
-    /// Whether to update after evaluation
-    fn update(&self) -> bool {
-        self.0.update()
-    }
-
-    fn annotation(&self) -> Smid {
-        self.0.annotation()
-    }
-}
-
-impl<S: Copy> Closing<S> {
-    /// A new non-callable closure of `code` over environment `env`
-    pub fn new(code: S, env: RefPtr<EnvironmentFrame<Closing<S>>>) -> Self {
-        Closing(InfoTagged::new(0, code, Smid::default()), env)
-    }
-
-    /// A new non-callable closure of `code` over environment `env`
-    pub fn new_annotated(
-        code: S,
-        env: RefPtr<EnvironmentFrame<Closing<S>>>,
-        annotation: Smid,
-    ) -> Self {
-        Closing(InfoTagged::new(0, code, annotation), env)
-    }
-
-    /// A new non-callable closure of `code` over environment `env`
-    pub fn new_annotated_lambda(
-        code: S,
-        arity: u8,
-        env: RefPtr<EnvironmentFrame<Closing<S>>>,
-        annotation: Smid,
-    ) -> Self {
-        Closing(InfoTagged::new(arity, code, annotation), env)
-    }
-
-    /// Construct a closure from a lambda form
-    pub fn close(lambda_form: &InfoTagged<S>, env: RefPtr<EnvironmentFrame<Closing<S>>>) -> Self {
-        Closing(*lambda_form, env)
-    }
-
-    /// Reference to the closure's environment
-    pub fn env(&self) -> RefPtr<EnvironmentFrame<Closing<S>>> {
-        self.1
-    }
-
-    /// Redirect the closure's environment pointer (used by GC fixup).
-    pub fn set_env(&mut self, env: RefPtr<EnvironmentFrame<Closing<S>>>) {
-        self.1 = env;
-    }
-
-    /// Reference to the closure's code
-    pub fn code(&self) -> S {
-        self.0.body()
-    }
-
-    /// Unsafe means of navigating through closures by local Refs
-    ///
-    /// Used when read values of native lists that have been force
-    /// evaluated ahead of time. Panics at the drop of a hat
-    pub fn navigate_local<'guard>(
-        &'guard self,
-        guard: &'guard dyn MutatorScope,
-        arg: Ref,
-    ) -> Closing<S> {
-        if let Ref::L(i) = arg {
-            let env = &*ScopedPtr::from_non_null(guard, self.env());
-            if let Some(closure) = env.get(guard, i) {
-                closure
-            } else {
-                panic!("invalid ref")
-            }
-        } else {
-            panic!("non-local arg for str_list_arg")
-        }
-    }
-}
-
-impl Closing<RefPtr<HeapSyn>> {
-    /// Unsafe means of navigating through closures by local Refs
-    ///
-    /// Used when read values of native lists that have been force
-    /// evaluated ahead of time. Panics at the drop of a hat
-    pub fn navigate_local_native(&self, guard: &dyn MutatorScope, arg: Ref) -> Native {
-        let mut closure = match arg {
-            Ref::L(_) => self.navigate_local(guard, arg),
-            Ref::G(_) => panic!("cannot navigate global"),
-            Ref::V(n) => return n,
-        };
-
-        let mut code_ptr = ScopedPtr::from_non_null(guard, closure.code());
-
-        while let HeapSyn::Atom { evaluand: r } = &*code_ptr {
-            closure = match r {
-                Ref::L(_) => closure.navigate_local(guard, r.clone()),
-                Ref::G(_) => panic!("cannot navigate global"),
-                Ref::V(n) => return n.clone(),
-            };
-
-            code_ptr = ScopedPtr::from_non_null(guard, closure.code());
-        }
-        panic!("could not navigate to native")
-    }
-
-    /// Non-panicking variant of [`Self::navigate_local_native`].
-    ///
-    /// Follows `Atom` indirections through the local environment to a native
-    /// value, returning `None` — rather than panicking — when the chain ends
-    /// at a non-native (e.g. an unevaluated thunk, a data constructor, an
-    /// out-of-range or global ref). Used by the neutral `value_native` ABI so
-    /// that inspecting an unforced value (debug peek) cannot crash, matching
-    /// the bytecode engine's behaviour.
-    pub fn try_navigate_local_native(&self, guard: &dyn MutatorScope, arg: Ref) -> Option<Native> {
-        let i = match arg {
-            Ref::L(i) => i,
-            Ref::G(_) => return None,
-            Ref::V(n) => return Some(n),
-        };
-        let mut closure = {
-            let env = &*ScopedPtr::from_non_null(guard, self.env());
-            env.get(guard, i)?
-        };
-        let mut code_ptr = ScopedPtr::from_non_null(guard, closure.code());
-        while let HeapSyn::Atom { evaluand: r } = &*code_ptr {
-            let next_i = match r {
-                Ref::L(i) => *i,
-                Ref::G(_) => return None,
-                Ref::V(n) => return Some(n.clone()),
-            };
-            let env = &*ScopedPtr::from_non_null(guard, closure.env());
-            closure = env.get(guard, next_i)?;
-            code_ptr = ScopedPtr::from_non_null(guard, closure.code());
-        }
-        None
-    }
-}
-
-pub struct ScopeAndClosure<'guard>(pub &'guard dyn MutatorScope, pub &'guard SynClosure);
-
-impl fmt::Display for ScopeAndClosure<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let code = ScopedPtr::from_non_null(self.0, self.1.code());
-        let env = ScopedPtr::from_non_null(self.0, self.1.env());
-
-        if self.1.update() {
-            write!(f, "Th({code}|{env})")
-        } else if self.1.arity() > 0 {
-            write!(f, "λ{{{}}}({}|⒳→{})", self.1.arity(), code, env)
-        } else {
-            write!(f, "({code}|{env})")
-        }
-    }
-}
-
-impl fmt::Display for ScopedPtr<'_, SynClosure> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        ScopeAndClosure(self, self).fmt(f)
     }
 }
 
@@ -812,62 +632,10 @@ where
     }
 }
 
-/// For now, a Closure is closing HeapSyn over an environment
-pub type SynClosure = Closing<RefPtr<HeapSyn>>;
-
-impl GcScannable for SynClosure {
-    fn scan<'a>(
-        &'a self,
-        scope: &'a dyn crate::eval::memory::collect::CollectorScope,
-        marker: &mut crate::eval::memory::collect::CollectorHeapView<'a>,
-        out: &mut Vec<ScanPtr<'a>>,
-    ) {
-        let code = self.code();
-
-        // Validate code pointer before marking — catch corruption early
-        // with actionable diagnostics.
-        if crate::eval::memory::gc_debug::poison_enabled()
-            || crate::eval::memory::gc_debug::verify_enabled()
-        {
-            let code_addr = code.as_ptr() as usize;
-            if code_addr == usize::MAX || code_addr < 0x1000 {
-                panic!(
-                    "GC BUG: SynClosure at {:p} has corrupted code pointer {:p}\n\
-                     env pointer: {:p}\n\
-                     This closure's memory has been overwritten.",
-                    self as *const Self,
-                    code.as_ptr(),
-                    self.env().as_ptr(),
-                );
-            }
-        }
-
-        if marker.mark(code) {
-            out.push(ScanPtr::from_non_null(scope, code));
-        }
-
-        let env = self.env();
-        if marker.mark(env) {
-            out.push(ScanPtr::from_non_null(scope, env));
-        }
-    }
-
-    fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
-        if let Some(new_code) = heap.forwarded_to(self.code()) {
-            self.0.set_body(new_code);
-        }
-        if let Some(new_env) = heap.forwarded_to(self.env()) {
-            self.1 = new_env;
-        }
-    }
-}
-
-/// For now, an EnvFrame is an environment frame with HeapSyn Closures
-pub type EnvFrame = EnvironmentFrame<SynClosure>;
-
 // The environment-frame layout is independent of the closure code type
-// `C`; the same scan/scan_and_update logic serves both the HeapSyn
-// `SynClosure` frames and the bytecode `BcClosure` frames (spec §3).
+// `C` — the same scan/scan_and_update logic below serves the bytecode
+// engine's `BcClosure` frames (spec §3), and used to also serve the deleted
+// HeapSyn engine's `SynClosure` frames (eu-oufc).
 impl<C: Clone> StgObject for EnvironmentFrame<C> {}
 
 impl<C: Clone + GcScannable> GcScannable for EnvironmentFrame<C> {

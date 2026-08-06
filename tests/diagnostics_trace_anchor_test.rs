@@ -23,7 +23,14 @@
 //!
 //! Deliberately **not** gated on `prelude_blob_ok`: the defect reproduced
 //! identically with and without `lib/prelude.blob`, so this must run in every
-//! CI configuration. Both engines are exercised explicitly.
+//! CI configuration.
+//!
+//! This used to also run under the HeapSyn engine (`EU_HEAPSYN=1`) and assert
+//! engine parity — the defect was bytecode-only, so a parity check was the
+//! sharpest statement of what was wrong. HeapSyn was deleted by the Phase 4
+//! collapse (eu-oufc); bytecode is the sole remaining engine, so both the
+//! HeapSyn-side repeat and the cross-engine parity assertion were removed
+//! rather than left comparing bytecode against itself.
 
 use std::process::Command;
 
@@ -61,21 +68,14 @@ fn strip_ansi(s: &str) -> String {
     out
 }
 
-fn run(src: &str, heapsyn: bool) -> String {
-    let dir = std::env::temp_dir().join(format!(
-        "eu-og3u6-{}-{}",
-        std::process::id(),
-        if heapsyn { "hs" } else { "bc" }
-    ));
+fn run(src: &str) -> String {
+    let dir = std::env::temp_dir().join(format!("eu-og3u6-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("many_bindings.eu");
     std::fs::write(&path, src).unwrap();
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_eu"));
     cmd.args(["--heap-limit-mib", "4096"]).arg(&path);
-    if heapsyn {
-        cmd.env("EU_HEAPSYN", "1");
-    }
     let out = cmd.output().expect("run eu");
     assert!(
         !out.status.success(),
@@ -109,17 +109,16 @@ fn primary_label_location(stderr: &str) -> String {
         .to_string()
 }
 
-fn assert_anchors_on_the_caller(heapsyn: bool) {
+fn assert_anchors_on_the_caller() {
     let (src, result_line) = fixture();
-    let stderr = run(&src, heapsyn);
-    let engine = if heapsyn { "HeapSyn" } else { "bytecode" };
+    let stderr = run(&src);
 
     // The `nth` token starts at column 12 of `result: xs nth(10)`.
     let expected = format!("many_bindings.eu:{result_line}:12");
     let primary = primary_label_location(&stderr);
     assert!(
         primary == expected,
-        "{engine}: primary label must point at the `result` declaration \
+        "primary label must point at the `result` declaration \
          ({expected}), got {primary}\n---\n{stderr}"
     );
 
@@ -127,38 +126,17 @@ fn assert_anchors_on_the_caller(heapsyn: bool) {
     // neither as a label nor as a trace frame.
     assert!(
         !stderr.contains("pad"),
-        "{engine}: diagnostic blames a padding declaration\n---\n{stderr}"
+        "diagnostic blames a padding declaration\n---\n{stderr}"
     );
 
     // The curated trace must anchor on the same declaration.
     assert!(
         stderr.contains(&format!("- result at {expected}")),
-        "{engine}: curated trace must anchor on `result at {expected}`\n---\n{stderr}"
+        "curated trace must anchor on `result at {expected}`\n---\n{stderr}"
     );
 }
 
 #[test]
-fn many_binding_unit_anchors_blame_on_the_calling_declaration_bytecode() {
-    assert_anchors_on_the_caller(false);
-}
-
-#[test]
-fn many_binding_unit_anchors_blame_on_the_calling_declaration_heapsyn() {
-    assert_anchors_on_the_caller(true);
-}
-
-/// The two engines must agree, frame for frame, on a many-binding unit. The
-/// defect was bytecode-only — HeapSyn restores its annotation register
-/// unconditionally and always named `result` — so an engine-parity assertion
-/// is the sharpest statement of what was wrong.
-#[test]
-fn both_engines_agree_on_the_anchor_in_a_many_binding_unit() {
-    let (src, _) = fixture();
-    let bytecode = run(&src, false);
-    let heapsyn = run(&src, true);
-    assert_eq!(
-        primary_label_location(&bytecode),
-        primary_label_location(&heapsyn),
-        "engines disagree on the primary label\n--- bytecode\n{bytecode}\n--- heapsyn\n{heapsyn}"
-    );
+fn many_binding_unit_anchors_blame_on_the_calling_declaration() {
+    assert_anchors_on_the_caller();
 }

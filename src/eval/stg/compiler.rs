@@ -41,7 +41,7 @@ pub enum CompileError {
     MaxLambdaArgs,
     #[error(
         "program too large for the bytecode engine: {0} bytes of code exceed the \
-         32-bit code-offset limit ({} bytes) — run with EU_HEAPSYN=1",
+         32-bit code-offset limit ({} bytes)",
         u32::MAX
     )]
     BytecodeCodeTooLarge(usize),

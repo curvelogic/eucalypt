@@ -8,7 +8,7 @@ use serde_json::Number;
 
 use crate::eval::{
     error::ExecutionError,
-    machine::{env::SynClosure, intrinsic::*},
+    machine::intrinsic::*,
     memory::{
         alloc::{ScopedAllocator, ScopedPtr},
         mutator::MutatorHeapView,
@@ -720,18 +720,6 @@ pub fn machine_return_str_list(
         items.push(machine.data_value(view, DataConstructor::BoxedString.tag(), &[boxed])?);
     }
     machine.return_closure_list(view, items)
-}
-
-/// Return a list of closures from intrinsic
-pub fn machine_return_closure_list(
-    machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView,
-    list: Vec<SynClosure>,
-) -> Result<(), ExecutionError> {
-    // Delegate to the neutral list builder (HeapSyn items). Bytecode-native
-    // callers should build `AbiClosure`s and call `return_closure_list`
-    // directly.
-    machine.return_closure_list(view, list.into_iter().map(AbiClosure::Heap).collect())
 }
 
 /// Return a block's kv-list (a cons-list of `BlockPair(sym, value)`) from an

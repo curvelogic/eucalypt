@@ -34,7 +34,7 @@
 //! | Field | Purpose | Granularity | Pipeline stage | Consumer | Snapshot / derived |
 //! |---|---|---|---|---|---|
 //! | `source_hash` | SHA-256 of `lib/prelude.eu`, `src/eval/intrinsics.rs` and the wire-format version (see `stg::wire_format`); checked by `build.rs` | — | — | `build.rs` staleness check | — |
-//! | `nodes` / `forms_pool` / `binding_entries` | Shared STG arena: compiled lambda forms for every prelude global | binding (compiled) | `stg` (post `eu dump stg`) | HeapSyn engine loader | derived (compiled, not a source-structure snapshot) |
+//! | `nodes` / `forms_pool` / `binding_entries` | STG arena: compiled lambda forms for every prelude global | binding (compiled) | `stg` (post `eu dump stg`) | Runtime global list (`rt.set_prelude_bindings`), consumed by the bytecode encoder | derived (compiled, not a source-structure snapshot) |
 //! | `name_to_slot` | Binding name → global slot index | — | — | STG compiler (`Ref::G` resolution), loader | — |
 //! | `binding_spans` | Byte span of each binding's declaration in `lib/prelude.eu`, in slot order | binding | desugared (`SourceMap` lookup of the peeled body's Smid) | blob-mode trace renderers, via `SourceMap::global_slot_info` (eu-7x0r) | derived (span extract) |
 //! | `blame` | Binding name → declared blame classification (`:transparent`/`:boundary`) | binding | desugared (side channel, `TranslationUnit::blame`) | Phase 2 trace classifier (eu-1tkk.7.11/.7.12) | derived (reconciled `BlameSpec` → `FrameKind`) |
@@ -233,12 +233,14 @@ pub struct PreludeBlob {
 
     /// Pre-encoded prelude BytecodeProgram + global forms (BV5, eu-amp9).
     ///
-    /// Present alongside the STG arena form (`nodes` / `forms_pool`): the
-    /// HeapSyn engine loads the STG form, while the bytecode engine loads
-    /// this pre-encoded program directly instead of re-encoding the prelude
-    /// on every run. `Option` + `#[serde(default)]` so a blob generated
-    /// before BV5 (or one deliberately omitting it) deserialises to `None`
-    /// and the loader degrades gracefully to encode-from-STG.
+    /// Present alongside the STG arena form (`nodes` / `forms_pool`): when
+    /// present, the bytecode engine loads this pre-encoded program directly
+    /// instead of re-encoding the prelude from the STG arena on every run
+    /// (the STG arena form remains the fallback and the source of the
+    /// runtime global list either way, `rt.set_prelude_bindings`).
+    /// `Option` + `#[serde(default)]` so a blob generated before BV5 (or
+    /// one deliberately omitting it) deserialises to `None` and the loader
+    /// degrades gracefully to encode-from-STG.
     #[serde(default)]
     pub bytecode: Option<PreludeBytecodeImage>,
 }

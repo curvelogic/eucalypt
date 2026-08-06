@@ -15,8 +15,6 @@ pub mod io;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod io_common;
 #[cfg(not(target_arch = "wasm32"))]
-pub mod io_run;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod lsp;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod options;
