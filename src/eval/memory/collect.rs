@@ -745,56 +745,152 @@ fn try_evacuate(heap_view: &mut CollectorHeapView<'_>, data_ptr: *const u8, cand
 pub mod tests {
     use std::iter::repeat_with;
 
-    use crate::{
-        common::sourcemap::Smid,
-        eval::memory::{
-            mutator::MutatorHeapView,
-            syntax::{HeapSyn, LambdaForm, Ref, StgBuilder},
-        },
+    use crate::eval::memory::{
+        alloc::{ScopedAllocator, StgObject},
+        mutator::MutatorHeapView,
+        syntax::RefPtr,
     };
 
     use super::*;
+
+    /// Minimal `GcScannable` fixture used to exercise the collector
+    /// (mark, scan, evacuate, forwarding) without coupling GC unit tests to
+    /// any specific runtime value representation (HeapSyn, bytecode, or
+    /// otherwise). The variants mirror the pointer shapes the collector
+    /// must handle generically: no pointers, one embedded pointer (an
+    /// App/Ann-style body reference), an array of pointers (a Cons/Bif-style
+    /// args array), and an array-plus-body pair (a Let-style bindings array
+    /// with a separate body reference).
+    #[derive(Debug, Clone)]
+    enum TestObj {
+        /// No heap pointers.
+        Leaf(i64),
+        /// A single heap-pointer child.
+        Ptr(RefPtr<TestObj>),
+        /// An array of heap-pointer children, no separate body.
+        Many(Array<RefPtr<TestObj>>),
+        /// An array of heap-pointer children plus a separate body pointer
+        /// (mirrors `HeapSyn::Let { bindings, body }`).
+        Compound(Array<RefPtr<TestObj>>, RefPtr<TestObj>),
+    }
+
+    impl StgObject for TestObj {}
+
+    impl GcScannable for TestObj {
+        fn scan<'a>(
+            &'a self,
+            scope: &'a dyn CollectorScope,
+            marker: &mut CollectorHeapView<'a>,
+            out: &mut Vec<ScanPtr<'a>>,
+        ) {
+            match self {
+                TestObj::Leaf(_) => {}
+                TestObj::Ptr(p) => {
+                    if marker.mark(*p) {
+                        out.push(ScanPtr::from_non_null(scope, *p));
+                    }
+                }
+                TestObj::Many(arr) => {
+                    scan_ptr_array(arr, scope, marker, out);
+                }
+                TestObj::Compound(arr, body) => {
+                    scan_ptr_array(arr, scope, marker, out);
+                    if marker.mark(*body) {
+                        out.push(ScanPtr::from_non_null(scope, *body));
+                    }
+                }
+            }
+        }
+
+        fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
+            match self {
+                TestObj::Leaf(_) => {}
+                TestObj::Ptr(p) => {
+                    if let Some(new) = heap.forwarded_to(*p) {
+                        *p = new;
+                    }
+                }
+                TestObj::Many(arr) => {
+                    update_ptr_array(arr, heap);
+                }
+                TestObj::Compound(arr, body) => {
+                    update_ptr_array(arr, heap);
+                    if let Some(new) = heap.forwarded_to(*body) {
+                        *body = new;
+                    }
+                }
+            }
+        }
+    }
+
+    fn scan_ptr_array<'a>(
+        arr: &'a Array<RefPtr<TestObj>>,
+        scope: &'a dyn CollectorScope,
+        marker: &mut CollectorHeapView<'a>,
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
+        if marker.mark_array(arr) {
+            if let Some(backing_ptr) = arr.allocated_data() {
+                out.push(ScanPtr::from_non_null(
+                    scope,
+                    backing_ptr.cast::<OpaqueHeapBytes>(),
+                ));
+            }
+            for p in arr.iter() {
+                if marker.mark(*p) {
+                    out.push(ScanPtr::from_non_null(scope, *p));
+                }
+            }
+        }
+    }
+
+    fn update_ptr_array(arr: &mut Array<RefPtr<TestObj>>, heap: &CollectorHeapView<'_>) {
+        if let Some(old_ptr) = arr.allocated_data() {
+            if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                // SAFETY: new_ptr is a valid evacuated copy of the same
+                // backing allocation.
+                unsafe { arr.set_backing_ptr(new_ptr.cast()) };
+            }
+        }
+        for p in arr.iter_mut() {
+            if let Some(new) = heap.forwarded_to(*p) {
+                *p = new;
+            }
+        }
+    }
+
+    /// Allocate `n` fresh leaf objects and collect their pointers into an
+    /// array (the `TestObj` analogue of a `Let`'s bindings array).
+    fn leaf_array(view: MutatorHeapView, n: usize) -> Array<RefPtr<TestObj>> {
+        let ptrs: Vec<RefPtr<TestObj>> =
+            repeat_with(|| view.alloc(TestObj::Leaf(0)).unwrap().as_ptr())
+                .take(n)
+                .collect();
+        view.array(ptrs.as_slice())
+    }
 
     #[test]
     pub fn test_simple_collection() {
         let mut heap = Heap::new();
         let mut clock = Clock::default();
-        let mut pool = crate::eval::memory::symbol::SymbolPool::new();
 
         clock.switch(ThreadOccupation::Mutator);
 
         let let_ptr = {
             let view = MutatorHeapView::new(&heap);
-
-            // A bunch of garbage...
-
-            let ids = repeat_with(|| -> LambdaForm {
-                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
-            })
-            .take(1024)
-            .collect::<Vec<_>>();
-            let idarray = view.array(ids.as_slice());
-
-            view.let_(
-                idarray,
-                view.app(
-                    Ref::L(0),
-                    view.singleton(view.sym_ref(&mut pool, "foo").unwrap()),
-                )
-                .unwrap(),
-            )
-            .unwrap()
-            .as_ptr()
+            // A bunch of garbage, plus a body reference.
+            let bindings = leaf_array(view, 1024);
+            let body = view.alloc(TestObj::Leaf(0)).unwrap().as_ptr();
+            view.alloc(TestObj::Compound(bindings, body))
+                .unwrap()
+                .as_ptr()
         };
 
         clock.switch(ThreadOccupation::Mutator);
 
         let bif_ptr = {
             let view = MutatorHeapView::new(&heap);
-
-            let scoped_ptr = view.app_bif(13, view.array(&[])).unwrap();
-
-            scoped_ptr.as_ptr()
+            view.alloc(TestObj::Many(view.array(&[]))).unwrap().as_ptr()
         };
 
         {
@@ -816,26 +912,11 @@ pub mod tests {
 
         let let_ptr2 = {
             let view = MutatorHeapView::new(&heap);
-
-            // A bunch of garbage...
-
-            let ids = repeat_with(|| -> LambdaForm {
-                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
-            })
-            .take(256)
-            .collect::<Vec<_>>();
-            let idarray = view.array(ids.as_slice());
-
-            view.let_(
-                idarray,
-                view.app(
-                    Ref::L(0),
-                    view.singleton(view.sym_ref(&mut pool, "foo").unwrap()),
-                )
-                .unwrap(),
-            )
-            .unwrap()
-            .as_ptr()
+            let bindings = leaf_array(view, 256);
+            let body = view.alloc(TestObj::Leaf(0)).unwrap().as_ptr();
+            view.alloc(TestObj::Compound(bindings, body))
+                .unwrap()
+                .as_ptr()
         };
 
         {
@@ -861,16 +942,9 @@ pub mod tests {
         let let_ptr = {
             let view = MutatorHeapView::new(&heap);
 
-            // Create a simple HeapSyn object on the heap
-            let atom = view.atom(Ref::L(0)).unwrap();
-            let body = view.atom(Ref::L(1)).unwrap();
-            let let_obj = view
-                .let_(
-                    view.array(&[LambdaForm::new(1, atom.as_ptr(), Smid::default())]),
-                    body,
-                )
-                .unwrap();
-            let_obj.as_ptr()
+            // Create a simple single-pointer object on the heap.
+            let body = view.alloc(TestObj::Leaf(1)).unwrap().as_ptr();
+            view.alloc(TestObj::Ptr(body)).unwrap().as_ptr()
         };
 
         // Get a trait object reference
@@ -908,28 +982,16 @@ pub mod tests {
     pub fn test_evacuation_with_pointer_update() {
         let mut heap = Heap::new();
         let mut clock = Clock::default();
-        let mut pool = crate::eval::memory::symbol::SymbolPool::new();
         clock.switch(ThreadOccupation::Mutator);
 
         // Allocate enough objects to span multiple blocks
         let root_ptr = {
             let view = MutatorHeapView::new(&heap);
-            let ids = repeat_with(|| -> LambdaForm {
-                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
-            })
-            .take(512)
-            .collect::<Vec<_>>();
-            let idarray = view.array(ids.as_slice());
-            view.let_(
-                idarray,
-                view.app(
-                    Ref::L(0),
-                    view.singleton(view.sym_ref(&mut pool, "root").unwrap()),
-                )
-                .unwrap(),
-            )
-            .unwrap()
-            .as_ptr()
+            let bindings = leaf_array(view, 512);
+            let body = view.alloc(TestObj::Leaf(0)).unwrap().as_ptr();
+            view.alloc(TestObj::Compound(bindings, body))
+                .unwrap()
+                .as_ptr()
         };
 
         // Do a normal collection first
@@ -944,22 +1006,11 @@ pub mod tests {
         clock.switch(ThreadOccupation::Mutator);
         let ptr2 = {
             let view = MutatorHeapView::new(&heap);
-            let ids = repeat_with(|| -> LambdaForm {
-                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
-            })
-            .take(128)
-            .collect::<Vec<_>>();
-            let idarray = view.array(ids.as_slice());
-            view.let_(
-                idarray,
-                view.app(
-                    Ref::L(0),
-                    view.singleton(view.sym_ref(&mut pool, "child").unwrap()),
-                )
-                .unwrap(),
-            )
-            .unwrap()
-            .as_ptr()
+            let bindings = leaf_array(view, 128);
+            let body = view.alloc(TestObj::Leaf(0)).unwrap().as_ptr();
+            view.alloc(TestObj::Compound(bindings, body))
+                .unwrap()
+                .as_ptr()
         };
 
         let rest_after_alloc = heap.rest_block_count();
@@ -992,8 +1043,8 @@ pub mod tests {
         let mut heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
 
-        // Allocate a simple atom (HeapSyn::Atom { evaluand: Ref::L(42) })
-        let atom_ptr = view.atom(Ref::L(42)).unwrap().as_ptr();
+        // Allocate a simple leaf object
+        let atom_ptr = view.alloc(TestObj::Leaf(42)).unwrap().as_ptr();
         let original_addr = atom_ptr.as_ptr() as usize;
 
         // Manually perform evacuation via CollectorHeapView
@@ -1027,30 +1078,25 @@ pub mod tests {
         );
 
         // Data at new location should be intact
-        let new_obj: &HeapSyn = unsafe { &*new_ptr.as_ptr() };
+        let new_obj: &TestObj = unsafe { &*new_ptr.as_ptr() };
         match new_obj {
-            HeapSyn::Atom {
-                evaluand: Ref::L(42),
-            } => {} // correct
+            TestObj::Leaf(42) => {} // correct
             other => panic!("evacuated object has wrong data: {:?}", other),
         }
     }
 
-    /// Test that evacuation preserves data integrity for various HeapSyn
-    /// variants (Atom, App, Cons).
+    /// Test that evacuation preserves data integrity for various `TestObj`
+    /// variants (leaf, array).
     #[test]
     pub fn test_evacuate_preserves_data() {
         let mut heap = Heap::new();
-        let mut pool = crate::eval::memory::symbol::SymbolPool::new();
         let view = MutatorHeapView::new(&heap);
 
         // Create several different types of objects
-        let atom_ptr = view.atom(Ref::L(7)).unwrap().as_ptr();
+        let atom_ptr = view.alloc(TestObj::Leaf(7)).unwrap().as_ptr();
+        let elem = view.alloc(TestObj::Leaf(0)).unwrap().as_ptr();
         let app_ptr = view
-            .app(
-                Ref::L(0),
-                view.singleton(view.sym_ref(&mut pool, "test").unwrap()),
-            )
+            .alloc(TestObj::Many(view.array(&[elem])))
             .unwrap()
             .as_ptr();
 
@@ -1064,22 +1110,19 @@ pub mod tests {
         let new_app = heap_view.evacuate(app_ptr).expect("app evacuation");
 
         // Verify atom data
-        let atom_obj: &HeapSyn = unsafe { &*new_atom.as_ptr() };
+        let atom_obj: &TestObj = unsafe { &*new_atom.as_ptr() };
         match atom_obj {
-            HeapSyn::Atom {
-                evaluand: Ref::L(7),
-            } => {}
+            TestObj::Leaf(7) => {}
             other => panic!("evacuated atom has wrong data: {:?}", other),
         }
 
-        // Verify app data structure
-        let app_obj: &HeapSyn = unsafe { &*new_app.as_ptr() };
+        // Verify array data structure
+        let app_obj: &TestObj = unsafe { &*new_app.as_ptr() };
         match app_obj {
-            HeapSyn::App { callable, args, .. } => {
-                assert_eq!(*callable, Ref::L(0));
+            TestObj::Many(args) => {
                 assert_eq!(args.len(), 1);
             }
-            other => panic!("evacuated app has wrong data: {:?}", other),
+            other => panic!("evacuated array object has wrong data: {:?}", other),
         }
     }
 
@@ -1097,7 +1140,7 @@ pub mod tests {
         let ptrs: Vec<_> = {
             let view = MutatorHeapView::new(&heap);
             (0..400)
-                .map(|i| view.atom(Ref::L(i)).unwrap().as_ptr())
+                .map(|i| view.alloc(TestObj::Leaf(i)).unwrap().as_ptr())
                 .collect()
         };
 
@@ -1136,71 +1179,157 @@ pub mod tests {
 
     /// Test that evacuation correctly updates internal pointers.
     ///
-    /// Create a Let expression whose body points to another HeapSyn.
+    /// Create a `Compound` object whose body points to another `TestObj`.
     /// Evacuate the body object. After the update phase, verify the
-    /// Let's body pointer has been rewritten to the new location.
+    /// `Compound`'s body pointer has been rewritten to the new location.
     #[test]
     pub fn test_evacuate_with_internal_refs() {
         let mut heap = Heap::new();
         let mut clock = Clock::default();
-        let mut pool = crate::eval::memory::symbol::SymbolPool::new();
         clock.switch(ThreadOccupation::Mutator);
 
-        // We need objects in different blocks to test cross-block evacuation.
-        // Fill up blocks to push objects into rest.
+        // We need the *live* structure itself to span multiple blocks so
+        // that some of them survive the first collection into `rest` —
+        // `rest_count` reflects blocks holding surviving (marked) content,
+        // not raw allocation volume, so unrooted garbage (however much of
+        // it) contributes nothing here. Use a large bindings array, the
+        // same technique `test_evacuation_target_lines_marked_after_collection`
+        // relies on to reliably produce `rest` candidates.
         let (let_ptr, body_addr) = {
             let view = MutatorHeapView::new(&heap);
 
-            // Create garbage to fill initial blocks
-            let _garbage = repeat_with(|| -> LambdaForm {
-                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
-            })
-            .take(512)
-            .collect::<Vec<_>>();
-
             // Create a body object
-            let body = view.atom(Ref::L(99)).unwrap();
+            let body = view.alloc(TestObj::Leaf(99)).unwrap();
             let body_addr = body.as_ptr().as_ptr() as usize;
 
-            // Create a Let that references the body
-            let ids = repeat_with(|| -> LambdaForm {
-                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
-            })
-            .take(4)
-            .collect::<Vec<_>>();
+            // Create a Compound that references the body
+            let bindings = leaf_array(view, 512);
             let let_ptr = view
-                .let_(
-                    view.array(ids.as_slice()),
-                    view.app(
-                        Ref::L(0),
-                        view.singleton(view.sym_ref(&mut pool, "ref").unwrap()),
-                    )
-                    .unwrap(),
-                )
+                .alloc(TestObj::Compound(bindings, body.as_ptr()))
                 .unwrap()
                 .as_ptr();
 
             (let_ptr, body_addr)
         };
 
-        // Perform a normal collection then an evacuating collection
-        collect(&mut vec![let_ptr], &mut heap, &mut clock, false);
+        // Perform a normal collection then an evacuating collection. Use a
+        // named root Vec (not a throwaway `vec![...]` per call) so that
+        // `scan_and_update` — which the collector runs on every marked
+        // object it holds, including this root vector's own contents — can
+        // rewrite `roots[0]` if `let_ptr` itself gets evacuated. Reading
+        // back through `roots[0]` afterwards, rather than the original
+        // `let_ptr`, is what makes the body-integrity check below
+        // meaningful instead of accidentally reading through a stale
+        // pre-evacuation pointer.
+        let mut roots = vec![let_ptr];
+        collect(&mut roots, &mut heap, &mut clock, false);
         heap.flush_unswept();
 
         let rest_count = heap.rest_block_count();
         if rest_count > 0 {
             let candidates: Vec<usize> = (2..2 + rest_count).collect();
-            collect_with_evacuation(
-                &mut vec![let_ptr],
-                &mut heap,
-                &mut clock,
-                &candidates,
-                false,
-            );
+            collect_with_evacuation(&mut roots, &mut heap, &mut clock, &candidates, false);
+        }
+        heap.flush_unswept();
+
+        // Allocate aggressively to pressure-fill any hole a missed mark on
+        // `body` would have left behind (mirrors
+        // `test_evacuation_target_lines_marked_after_collection`'s
+        // technique). Without this, an unmarked-but-not-yet-reclaimed `body`
+        // can still coincidentally read back correctly — nothing has
+        // actually overwritten its bytes yet — so the check below would
+        // pass vacuously on the very bug it exists to catch.
+        clock.switch(ThreadOccupation::Mutator);
+        {
+            let view = MutatorHeapView::new(&heap);
+            let _ = leaf_array(view, 1024);
         }
 
-        // If we reach here, evacuation with internal pointer updates succeeded
-        let _ = body_addr; // used for setup
+        // The real assertion: the Compound's `body` field — a pointer
+        // embedded in the *parent* object, not a root itself — must still
+        // resolve to live, correct data. A `scan()` that fails to report
+        // `body` as reachable (as HeapSyn's own `Let { bindings, body }`
+        // scan must, and as a regression in this fixture's Compound arm
+        // could silently fail to) lets the block backing `body` go
+        // unmarked; lazy sweep then treats it as a hole, the subsequent
+        // allocation burst above reuses it, and the Compound's own
+        // (never-rewritten, since it was never forwarded) `body` pointer
+        // now reads through to unrelated live data instead of `Leaf(99)`.
+        let final_ptr = roots[0];
+        let compound: &TestObj = unsafe { &*final_ptr.as_ptr() };
+        match compound {
+            TestObj::Compound(_, body) => {
+                let body_obj: &TestObj = unsafe { &*body.as_ptr() };
+                assert!(
+                    matches!(body_obj, TestObj::Leaf(99)),
+                    "Compound's body pointer does not resolve to the expected \
+                     Leaf(99) after collection — body was not properly marked, \
+                     evacuated, or forwarded: {body_obj:?}"
+                );
+            }
+            other => panic!("expected Compound after collection, got {other:?}"),
+        }
+        let _ = body_addr; // used only to seed the pre-collection address for setup
+    }
+
+    /// Direct, deterministic counterpart to `test_evacuate_with_internal_refs`:
+    /// calls `Compound`'s `scan` and `scan_and_update` directly rather than
+    /// going through `collect`/`collect_with_evacuation`'s block-eviction
+    /// heuristics, which — depending on allocator layout — do not
+    /// reliably select the block holding an isolated `body` object as an
+    /// evacuation target on every run. This test instead pins down the
+    /// exact property a correct `Compound::scan` must have: the `body`
+    /// pointer is reported for marking (`scan`) and rewritten when
+    /// forwarded (`scan_and_update`), the same way its `arr` elements are.
+    #[test]
+    pub fn test_compound_scan_reports_body_for_marking_and_forwarding() {
+        let mut heap = Heap::new();
+        let (compound_ptr, body_ptr) = {
+            let view = MutatorHeapView::new(&heap);
+            let body_ptr = view.alloc(TestObj::Leaf(99)).unwrap().as_ptr();
+            let bindings = view.array(&[]);
+            let compound_ptr = view
+                .alloc(TestObj::Compound(bindings, body_ptr))
+                .unwrap()
+                .as_ptr();
+            (compound_ptr, body_ptr)
+        };
+
+        let scope = Scope();
+        let mut heap_view = CollectorHeapView { heap: &mut heap };
+
+        // scan() must mark body and report it as a reachable object to scan.
+        heap_view.mark(compound_ptr);
+        let compound_obj: &TestObj = unsafe { &*compound_ptr.as_ptr() };
+        let mut out = Vec::new();
+        compound_obj.scan(&scope, &mut heap_view, &mut out);
+        assert!(
+            heap_view.is_marked(body_ptr),
+            "Compound::scan must mark its body pointer, not just its bindings array"
+        );
+        assert!(
+            out.iter().any(|sp| std::ptr::eq(
+                sp.get() as *const dyn GcScannable as *const (),
+                body_ptr.as_ptr() as *const ()
+            )),
+            "Compound::scan must push its body pointer onto the scan queue"
+        );
+
+        // scan_and_update() must forward body if it was evacuated. Simulate
+        // evacuation by evacuating body directly, then check the Compound's
+        // own scan_and_update rewrites its stored body pointer to match.
+        let new_body_ptr = heap_view.evacuate(body_ptr).expect("evacuate body");
+        let compound_mut: &mut TestObj = unsafe { &mut *compound_ptr.as_ptr() };
+        compound_mut.scan_and_update(&heap_view);
+        match compound_mut {
+            TestObj::Compound(_, body) => {
+                assert_eq!(
+                    *body, new_body_ptr,
+                    "Compound::scan_and_update must forward an evacuated body pointer"
+                );
+            }
+            other => panic!("expected Compound, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1216,7 +1345,7 @@ pub mod tests {
         let initial_state = heap1.mark_state();
 
         // Perform collection on heap1 only
-        let mut empty_roots: Vec<NonNull<crate::eval::memory::syntax::HeapSyn>> = vec![];
+        let mut empty_roots: Vec<NonNull<TestObj>> = vec![];
         collect(&mut empty_roots, &mut heap1, &mut clock, true);
 
         // heap1's mark state should have flipped, heap2's should remain unchanged
@@ -1229,39 +1358,24 @@ pub mod tests {
     pub fn test_simple_collection_with_isolation() {
         let mut heap = Heap::new();
         let mut clock = Clock::default();
-        let mut pool = crate::eval::memory::symbol::SymbolPool::new();
 
         clock.switch(ThreadOccupation::Mutator);
 
         let let_ptr = {
             let view = MutatorHeapView::new(&heap);
-
-            // A bunch of garbage...
-            let ids = repeat_with(|| -> LambdaForm {
-                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
-            })
-            .take(1024)
-            .collect::<Vec<_>>();
-            let idarray = view.array(ids.as_slice());
-
-            view.let_(
-                idarray,
-                view.app(
-                    Ref::L(0),
-                    view.singleton(view.sym_ref(&mut pool, "foo").unwrap()),
-                )
-                .unwrap(),
-            )
-            .unwrap()
-            .as_ptr()
+            // A bunch of garbage, plus a body reference.
+            let bindings = leaf_array(view, 1024);
+            let body = view.alloc(TestObj::Leaf(0)).unwrap().as_ptr();
+            view.alloc(TestObj::Compound(bindings, body))
+                .unwrap()
+                .as_ptr()
         };
 
         clock.switch(ThreadOccupation::Mutator);
 
         let bif_ptr = {
             let view = MutatorHeapView::new(&heap);
-            let scoped_ptr = view.app_bif(13, view.array(&[])).unwrap();
-            scoped_ptr.as_ptr()
+            view.alloc(TestObj::Many(view.array(&[]))).unwrap().as_ptr()
         };
 
         {
@@ -1283,25 +1397,11 @@ pub mod tests {
 
         let let_ptr2 = {
             let view = MutatorHeapView::new(&heap);
-
-            // A bunch of garbage...
-            let ids = repeat_with(|| -> LambdaForm {
-                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
-            })
-            .take(256)
-            .collect::<Vec<_>>();
-            let idarray = view.array(ids.as_slice());
-
-            view.let_(
-                idarray,
-                view.app(
-                    Ref::L(0),
-                    view.singleton(view.sym_ref(&mut pool, "foo").unwrap()),
-                )
-                .unwrap(),
-            )
-            .unwrap()
-            .as_ptr()
+            let bindings = leaf_array(view, 256);
+            let body = view.alloc(TestObj::Leaf(0)).unwrap().as_ptr();
+            view.alloc(TestObj::Compound(bindings, body))
+                .unwrap()
+                .as_ptr()
         };
 
         {
@@ -1326,17 +1426,13 @@ pub mod tests {
 
         let pinned_ptr = {
             let view = MutatorHeapView::new(&heap);
-            let _garbage: Vec<_> = repeat_with(|| -> LambdaForm {
-                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
-            })
-            .take(512)
-            .collect();
-            let pinned = view.atom(Ref::L(42)).unwrap().as_ptr();
-            let _others: Vec<_> = repeat_with(|| -> LambdaForm {
-                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
-            })
-            .take(256)
-            .collect();
+            for _ in 0..512 {
+                view.alloc(TestObj::Leaf(0)).unwrap();
+            }
+            let pinned = view.alloc(TestObj::Leaf(42)).unwrap().as_ptr();
+            for _ in 0..256 {
+                view.alloc(TestObj::Leaf(0)).unwrap();
+            }
             pinned
         };
 
@@ -1368,11 +1464,9 @@ pub mod tests {
             "pinned object should not have been evacuated"
         );
 
-        let obj: &HeapSyn = unsafe { &*pinned_ptr.as_ptr() };
+        let obj: &TestObj = unsafe { &*pinned_ptr.as_ptr() };
         match obj {
-            HeapSyn::Atom {
-                evaluand: Ref::L(42),
-            } => {}
+            TestObj::Leaf(42) => {}
             other => panic!("pinned object has wrong data: {:?}", other),
         }
     }
@@ -1392,29 +1486,17 @@ pub mod tests {
     pub fn test_evacuation_target_lines_marked_after_collection() {
         let mut heap = Heap::new();
         let mut clock = Clock::default();
-        let mut pool = crate::eval::memory::symbol::SymbolPool::new();
         clock.switch(ThreadOccupation::Mutator);
 
         // Allocate enough objects to fill several blocks, producing at least
         // one `rest` block which can be used as an evacuation candidate.
         let root_ptr = {
             let view = MutatorHeapView::new(&heap);
-            let ids: Vec<LambdaForm> = repeat_with(|| -> LambdaForm {
-                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
-            })
-            .take(512)
-            .collect();
-            let idarray = view.array(ids.as_slice());
-            view.let_(
-                idarray,
-                view.app(
-                    Ref::L(0),
-                    view.singleton(view.sym_ref(&mut pool, "root-data").unwrap()),
-                )
-                .unwrap(),
-            )
-            .unwrap()
-            .as_ptr()
+            let bindings = leaf_array(view, 512);
+            let body = view.alloc(TestObj::Leaf(0)).unwrap().as_ptr();
+            view.alloc(TestObj::Compound(bindings, body))
+                .unwrap()
+                .as_ptr()
         };
 
         // First mark-in-place collection to establish rest blocks.
@@ -1449,21 +1531,16 @@ pub mod tests {
         clock.switch(ThreadOccupation::Mutator);
         {
             let view = MutatorHeapView::new(&heap);
-            let fillers: Vec<LambdaForm> = repeat_with(|| -> LambdaForm {
-                LambdaForm::new(1, view.atom(Ref::L(99)).unwrap().as_ptr(), Smid::default())
-            })
-            .take(1024)
-            .collect();
-            let _ = view.array(fillers.as_slice());
+            let _ = leaf_array(view, 1024);
         }
 
-        // Verify the evacuated object is still a valid LetRec node.
+        // Verify the evacuated object is still a valid Compound node.
         // If the evacuation target block was recycled and overwritten, reading
-        // evacuated_ptr gives garbage — a wrong HeapSyn variant or garbage fields.
-        let evacuated_obj: &HeapSyn = unsafe { &*evacuated_ptr.as_ptr() };
+        // evacuated_ptr gives garbage — a wrong TestObj variant or garbage fields.
+        let evacuated_obj: &TestObj = unsafe { &*evacuated_ptr.as_ptr() };
         assert!(
-            matches!(evacuated_obj, HeapSyn::Let { .. }),
-            "evacuation target corruption: expected Let node, got {:?}",
+            matches!(evacuated_obj, TestObj::Compound(..)),
+            "evacuation target corruption: expected Compound node, got {:?}",
             evacuated_obj
         );
     }
@@ -1529,29 +1606,17 @@ pub mod tests {
 
         let mut heap = Heap::new();
         let mut clock = Clock::default();
-        let mut pool = crate::eval::memory::symbol::SymbolPool::new();
         clock.switch(ThreadOccupation::Mutator);
 
         // Allocate enough objects to fill multiple blocks so we have rest
         // candidates to evacuate.
         let root_ptr = {
             let view = MutatorHeapView::new(&heap);
-            let ids: Vec<LambdaForm> = repeat_with(|| -> LambdaForm {
-                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
-            })
-            .take(512)
-            .collect();
-            let idarray = view.array(ids.as_slice());
-            view.let_(
-                idarray,
-                view.app(
-                    Ref::L(0),
-                    view.singleton(view.sym_ref(&mut pool, "root").unwrap()),
-                )
-                .unwrap(),
-            )
-            .unwrap()
-            .as_ptr()
+            let bindings = leaf_array(view, 512);
+            let body = view.alloc(TestObj::Leaf(0)).unwrap().as_ptr();
+            view.alloc(TestObj::Compound(bindings, body))
+                .unwrap()
+                .as_ptr()
         };
 
         // Mark-in-place collection to settle live objects into rest blocks.
