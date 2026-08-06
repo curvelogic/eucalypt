@@ -1,8 +1,17 @@
 # Engine A/B Measurement Protocol
 
-- **Status:** the checked-in measurement standard for all bytecode-vs-HeapSyn
-  performance claims (bead eu-2sa6.6; ratified by the 0.13 transition review,
+- **Status:** historical as of the Phase 4 collapse (eu-oufc, 2026-08),
+  which deleted the HeapSyn engine after the eu-7oshh A/B study confirmed
+  the bytecode engine at parity or ahead everywhere that mattered — there is
+  no longer a second engine for this bc/hs protocol to compare. It was the
+  checked-in measurement standard for all bytecode-vs-HeapSyn performance
+  claims (bead eu-2sa6.6; ratified by the 0.13 transition review,
   `docs/superpowers/specs/2026-07-12-bytecode-transition-review.md` §5.1).
+  `results.jsonl` and its history are retained; `cargo xtask engine-ab
+  --check` still reads them. A post-collapse redesign of this protocol for
+  the still-real predecoded-vs-byte-dispatch axis (eu-1hcw) is tracked by follow-up bead eu-hn3j0 rather than attempted here — read the rest of this
+  document as a record of the retired bc/hs methodology, not a live
+  procedure.
 - **Scope:** any engine performance number that enters CHANGELOG, ROADMAP, a
   release gate, a bead, or a report **must** be produced under this protocol and
   cite a dated report or a `results.jsonl` row.

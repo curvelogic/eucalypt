@@ -16,80 +16,46 @@ use crate::{
         error::ExecutionError,
         intrinsics,
         memory::{
-            alloc::ScopedAllocator,
-            array::Array,
-            infotable::{InfoTable, InfoTagged},
+            infotable::InfoTable,
             mutator::MutatorHeapView,
             symbol::SymbolPool,
-            syntax::{HeapSyn, LambdaForm, Native, Ref, RefPtr, StgBuilder},
+            syntax::{Native, Ref},
         },
         stg::{
             syntax::{dsl, StgSyn},
-            tags::{DataConstructor, Tag},
+            tags::Tag,
         },
     },
 };
 
-use super::{
-    env::{EnvFrame, SynClosure},
-    env_builder::EnvBuilder,
-    vm::HeapNavigator,
-};
-
-/// A code-type-erased closure handle passed across the intrinsic ABI
-/// (BV1 §5.5).
+/// A closure handle passed across the intrinsic ABI (BV1 §5.5).
 ///
-/// During the parallel-engine phase both closure kinds coexist: the
-/// HeapSyn engine produces/consumes `Heap`, the bytecode engine `Byte`.
-/// Intrinsics treat the handle opaquely; each engine downcasts to its own
-/// variant in the `IntrinsicMachine` method impls. Phase 4 collapses this
-/// to the sole surviving closure type.
+/// Historically code-type-erased over two coexisting engines — the deleted
+/// HeapSyn tree-walk machine's `SynClosure` (`Heap`) and the bytecode
+/// engine's `BcValue` (`Byte`) — with each engine downcasting to its own
+/// variant in the `IntrinsicMachine` method impls. The Phase 4 collapse
+/// (eu-oufc) deleted the `Heap` variant along with HeapSyn; `Byte` is now
+/// the only one, kept as a named wrapper (rather than a bare type alias for
+/// `BcValue`) since nothing outside this module and `bytecode::machine`
+/// pattern-matches its variants directly.
 #[derive(Clone)]
 pub enum AbiClosure {
-    Heap(SynClosure),
     /// A bytecode runtime value — a closure or a bare native (a resolved ref
     /// may be either, hence `BcValue` rather than a closure; BV1 REFINEMENT A).
     Byte(BcValue),
 }
 
 impl AbiClosure {
-    /// Unwrap the HeapSyn closure, panicking on a bytecode handle. Used by
-    /// the HeapSyn engine's ABI impls, which only ever see `Heap`.
-    pub fn expect_heap(self) -> SynClosure {
-        match self {
-            AbiClosure::Heap(c) => c,
-            AbiClosure::Byte(_) => {
-                unreachable!("bytecode closure handed to the HeapSyn intrinsic engine")
-            }
-        }
-    }
-
-    /// Unwrap the bytecode value, panicking on a HeapSyn handle. Used by the
-    /// bytecode engine's ABI impls, which only ever see `Byte`.
+    /// Unwrap the bytecode value.
     pub fn expect_byte(self) -> BcValue {
         match self {
             AbiClosure::Byte(v) => v,
-            AbiClosure::Heap(_) => {
-                unreachable!("HeapSyn closure handed to the bytecode intrinsic engine")
-            }
         }
     }
 
-    /// Borrow the HeapSyn closure, panicking on a bytecode handle.
-    pub fn as_heap(&self) -> &SynClosure {
-        match self {
-            AbiClosure::Heap(c) => c,
-            AbiClosure::Byte(_) => {
-                unreachable!("bytecode closure handed to the HeapSyn intrinsic engine")
-            }
-        }
-    }
-
-    /// The closure's arity (0 for a saturated/value closure). Works for
-    /// both engine variants via their `InfoTable` impls.
+    /// The closure's arity (0 for a saturated/value closure).
     pub fn arity(&self) -> u8 {
         match self {
-            AbiClosure::Heap(c) => c.arity(),
             AbiClosure::Byte(BcValue::Closure(c)) => c.arity(),
             AbiClosure::Byte(BcValue::Native(_)) => 0,
         }
@@ -100,18 +66,6 @@ impl AbiClosure {
 pub trait IntrinsicMachine {
     /// Access the regex cache
     fn rcache(&mut self) -> &mut LruCache<String, Regex>;
-
-    /// Update closure after completion
-    fn set_closure(&mut self, closure: SynClosure) -> Result<(), ExecutionError>;
-
-    /// Get a navigator for resolving references
-    fn nav<'guard>(&'guard self, view: MutatorHeapView<'guard>) -> HeapNavigator<'guard>;
-
-    /// Constant empty environment
-    fn root_env(&self) -> RefPtr<EnvFrame>;
-
-    /// Environment of current closure
-    fn env(&self, view: MutatorHeapView) -> RefPtr<EnvFrame>;
 
     /// Read-only access to the symbol pool
     fn symbol_pool(&self) -> &SymbolPool;
@@ -125,74 +79,39 @@ pub trait IntrinsicMachine {
     // ── Code-type-neutral primitives (BV1 §5.5) ─────────────────────
     //
     // These express argument resolution and result construction without
-    // naming the code type, so the bytecode engine can implement the same
-    // intrinsic layer. The default impls below are the HeapSyn behaviour
-    // (built from `nav`/`set_closure`); the bytecode engine overrides them
-    // to produce `BcClosure`s over constructor templates. Once every
-    // caller uses these, the `SynClosure`-typed methods above move to a
-    // HeapSyn-only sub-trait (plan Phase 1.5, later increment).
+    // naming the code type, so each engine implements the same intrinsic
+    // layer over its own runtime value representation. Abstract (no
+    // default body) since the bytecode engine is the sole implementor —
+    // the HeapSyn defaults these methods used to carry were deleted by the
+    // Phase 4 collapse (eu-oufc) along with `SynClosure`/`HeapSyn`.
 
     /// Resolve a ref to a native value, looking through atom indirections.
     fn resolve_native(
         &self,
         view: MutatorHeapView<'_>,
         arg: &Ref,
-    ) -> Result<Native, ExecutionError> {
-        self.nav(view).resolve_native(arg)
-    }
+    ) -> Result<Native, ExecutionError>;
 
     /// Set the machine result to a native value (scalar return).
     fn return_native(
         &mut self,
         view: MutatorHeapView<'_>,
         native: Native,
-    ) -> Result<(), ExecutionError> {
-        let env = self.root_env();
-        self.set_closure(SynClosure::new(
-            view.alloc(HeapSyn::Atom {
-                evaluand: Ref::V(native),
-            })?
-            .as_ptr(),
-            env,
-        ))
-    }
+    ) -> Result<(), ExecutionError>;
 
     /// Set the machine result to the unit value.
-    fn return_unit(&mut self, view: MutatorHeapView<'_>) -> Result<(), ExecutionError> {
-        let env = self.root_env();
-        self.set_closure(SynClosure::new(view.unit()?.as_ptr(), env))
-    }
+    fn return_unit(&mut self, view: MutatorHeapView<'_>) -> Result<(), ExecutionError>;
 
     /// Set the machine result to a `BoxedNumber` data value.
     fn return_boxed_num(
         &mut self,
         view: MutatorHeapView<'_>,
         n: Number,
-    ) -> Result<(), ExecutionError> {
-        let env = self.root_env();
-        let ptr = view
-            .data(
-                DataConstructor::BoxedNumber.tag(),
-                Array::from_slice(&view, &[Ref::V(Native::Num(n))]),
-            )?
-            .as_ptr();
-        self.set_closure(SynClosure::new(ptr, env))
-    }
+    ) -> Result<(), ExecutionError>;
 
     /// Set the machine result to a boolean, reusing the global TRUE/FALSE
     /// closures rather than allocating a fresh data cell.
-    fn return_bool(&mut self, view: MutatorHeapView<'_>, b: bool) -> Result<(), ExecutionError> {
-        use std::sync::OnceLock;
-        static TRUE_IDX: OnceLock<usize> = OnceLock::new();
-        static FALSE_IDX: OnceLock<usize> = OnceLock::new();
-        let idx = if b {
-            *TRUE_IDX.get_or_init(|| intrinsics::index("TRUE").unwrap())
-        } else {
-            *FALSE_IDX.get_or_init(|| intrinsics::index("FALSE").unwrap())
-        };
-        let closure = self.nav(view).global(idx)?;
-        self.set_closure(closure)
-    }
+    fn return_bool(&mut self, view: MutatorHeapView<'_>, b: bool) -> Result<(), ExecutionError>;
 
     // ── Neutral closure operations (BV1 §5.5, Increment C) ──────────
 
@@ -202,23 +121,17 @@ pub trait IntrinsicMachine {
         &self,
         view: MutatorHeapView<'_>,
         arg: &Ref,
-    ) -> Result<AbiClosure, ExecutionError> {
-        Ok(AbiClosure::Heap(self.nav(view).resolve(arg)?))
-    }
+    ) -> Result<AbiClosure, ExecutionError>;
 
     /// Resolve a ref to a closure that must be callable (errors on `V`).
     fn resolve_callable_closure(
         &self,
         view: MutatorHeapView<'_>,
         arg: &Ref,
-    ) -> Result<AbiClosure, ExecutionError> {
-        Ok(AbiClosure::Heap(self.nav(view).resolve_callable(arg)?))
-    }
+    ) -> Result<AbiClosure, ExecutionError>;
 
     /// Set the machine result to a previously-resolved closure handle.
-    fn set_result(&mut self, closure: AbiClosure) -> Result<(), ExecutionError> {
-        self.set_closure(closure.expect_heap())
-    }
+    fn set_result(&mut self, closure: AbiClosure) -> Result<(), ExecutionError>;
 
     /// Tail-call the global at `global_idx` applied to `arg_refs` (resolved in
     /// the current environment), replacing the machine's closure with that
@@ -230,36 +143,14 @@ pub trait IntrinsicMachine {
         view: MutatorHeapView<'_>,
         global_idx: usize,
         arg_refs: &[Ref],
-    ) -> Result<(), ExecutionError> {
-        // HeapSyn default: build an `App(G(idx), arg_refs)` closure in the
-        // current environment and enter it.
-        let app = view
-            .alloc(HeapSyn::App {
-                callable: Ref::G(global_idx),
-                args: Array::from_slice(&view, arg_refs),
-                eager_args: false,
-            })?
-            .as_ptr();
-        let env = self.env(view);
-        self.set_closure(SynClosure::new(app, env))
-    }
+    ) -> Result<(), ExecutionError>;
 
     /// Force a closure handle to WHNF.
-    fn force(&mut self, closure: AbiClosure) -> Result<AbiClosure, ExecutionError> {
-        Ok(AbiClosure::Heap(
-            self.evaluate_to_whnf(closure.expect_heap())?,
-        ))
-    }
+    fn force(&mut self, closure: AbiClosure) -> Result<AbiClosure, ExecutionError>;
 
     /// The data-constructor tag of a (WHNF) closure handle, if it is a
     /// data constructor; `None` otherwise.
-    fn data_tag(&self, view: MutatorHeapView<'_>, closure: &AbiClosure) -> Option<Tag> {
-        let code = view.scoped(closure.as_heap().code());
-        match &*code {
-            HeapSyn::Cons { tag, .. } => Some(*tag),
-            _ => None,
-        }
-    }
+    fn data_tag(&self, view: MutatorHeapView<'_>, closure: &AbiClosure) -> Option<Tag>;
 
     /// The `idx`-th field of a data-constructor closure, resolved within
     /// the closure's environment; `None` if not a constructor / out of range.
@@ -268,19 +159,7 @@ pub trait IntrinsicMachine {
         view: MutatorHeapView<'_>,
         closure: &AbiClosure,
         idx: usize,
-    ) -> Option<AbiClosure> {
-        let sc = closure.as_heap();
-        let field_ref = {
-            let code = view.scoped(sc.code());
-            match &*code {
-                HeapSyn::Cons { args, .. } => args.get(idx)?,
-                _ => return None,
-            }
-        };
-        Some(AbiClosure::Heap(
-            self.nav(view).resolve_in_closure(sc, field_ref)?,
-        ))
-    }
+    ) -> Option<AbiClosure>;
 
     /// The `idx`-th field of a data-constructor closure read as a native
     /// value (used by native-list iteration).
@@ -289,31 +168,13 @@ pub trait IntrinsicMachine {
         view: MutatorHeapView<'_>,
         closure: &AbiClosure,
         idx: usize,
-    ) -> Option<Native> {
-        let sc = closure.as_heap();
-        let code = view.scoped(sc.code());
-        match &*code {
-            HeapSyn::Cons { args, .. } => {
-                let field_ref = args.get(idx)?;
-                Some(sc.navigate_local_native(&view, field_ref))
-            }
-            _ => None,
-        }
-    }
+    ) -> Option<Native>;
 
     /// The native payload of a WHNF value: a bare native (an `Atom`) or a
     /// boxed scalar's field-0 payload (a `Cons`, e.g. `BoxedNumber`). `None`
     /// for a non-scalar (block/list) or a non-value. Used by native-list
     /// collectors and set construction.
-    fn value_native(&self, view: MutatorHeapView<'_>, closure: &AbiClosure) -> Option<Native> {
-        let sc = closure.as_heap();
-        let code = view.scoped(sc.code());
-        match &*code {
-            HeapSyn::Atom { evaluand } => sc.try_navigate_local_native(&view, evaluand.clone()),
-            HeapSyn::Cons { args, .. } => sc.try_navigate_local_native(&view, args.get(0)?.clone()),
-            _ => None,
-        }
-    }
+    fn value_native(&self, view: MutatorHeapView<'_>, closure: &AbiClosure) -> Option<Native>;
 
     // ── Neutral value/data construction (spec §5.5) ─────────────────
     // These build values engine-agnostically, so list/data-returning
@@ -324,16 +185,7 @@ pub trait IntrinsicMachine {
         &self,
         view: MutatorHeapView<'_>,
         native: Native,
-    ) -> Result<AbiClosure, ExecutionError> {
-        let env = self.root_env();
-        Ok(AbiClosure::Heap(SynClosure::new(
-            view.alloc(HeapSyn::Atom {
-                evaluand: Ref::V(native),
-            })?
-            .as_ptr(),
-            env,
-        )))
-    }
+    ) -> Result<AbiClosure, ExecutionError>;
 
     /// Build a data-constructor value of `tag` over `fields`, returned as a
     /// value handle (does not set the machine result).
@@ -342,85 +194,32 @@ pub trait IntrinsicMachine {
         view: MutatorHeapView<'_>,
         tag: Tag,
         fields: &[AbiClosure],
-    ) -> Result<AbiClosure, ExecutionError> {
-        let env = self.root_env();
-        let frame = view.from_closures(
-            fields.iter().map(|c| c.as_heap().clone()),
-            fields.len(),
-            env,
-            Smid::default(),
-        )?;
-        let refs: Vec<Ref> = (0..fields.len()).map(Ref::L).collect();
-        let code = view.data(tag, Array::from_slice(&view, &refs))?.as_ptr();
-        Ok(AbiClosure::Heap(SynClosure::new(code, frame)))
-    }
+    ) -> Result<AbiClosure, ExecutionError>;
 
     /// Wrap a body value with metadata, returned as a (WHNF) `Meta` value
     /// handle (does not set the machine result).
     ///
     /// Used when rebuilding a metadata-annotated data value (e.g. a YAML
     /// `!tag`-carrying scalar produced by `parse-as`) directly through the
-    /// neutral ABI. The HeapSyn default builds a `HeapSyn::Meta` node over an
-    /// env frame `[meta, body]`; the bytecode engine overrides this to build a
-    /// `Meta` value over its pre-encoded meta template.
+    /// neutral ABI.
     fn meta_value(
         &self,
         view: MutatorHeapView<'_>,
         meta: AbiClosure,
         body: AbiClosure,
-    ) -> Result<AbiClosure, ExecutionError> {
-        let env = self.root_env();
-        let frame = view.from_closures(
-            [meta.expect_heap(), body.expect_heap()].into_iter(),
-            2,
-            env,
-            Smid::default(),
-        )?;
-        let code = view
-            .alloc(HeapSyn::Meta {
-                meta: Ref::L(0),
-                body: Ref::L(1),
-            })?
-            .as_ptr();
-        Ok(AbiClosure::Heap(SynClosure::new(code, frame)))
-    }
+    ) -> Result<AbiClosure, ExecutionError>;
 
     /// Set the machine result to a cons-list of the given value handles.
     fn return_closure_list(
         &mut self,
         view: MutatorHeapView<'_>,
         items: Vec<AbiClosure>,
-    ) -> Result<(), ExecutionError> {
-        let list: Vec<SynClosure> = items.into_iter().map(|c| c.expect_heap()).collect();
-        let item_frame = view.from_closures(
-            list.iter().cloned(),
-            list.len(),
-            self.env(view),
-            Smid::default(),
-        )?;
-        let len = list.len();
-        let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
-        for i in (0..len + 1).rev() {
-            bindings.push(LambdaForm::value(
-                view.data(
-                    DataConstructor::ListCons.tag(),
-                    Array::from_slice(&view, &[Ref::L(len + i + 1), Ref::L(len - i)]),
-                )?
-                .as_ptr(),
-            ));
-        }
-        let syn = view
-            .letrec(Array::from_slice(&view, &bindings), view.atom(Ref::L(len))?)?
-            .as_ptr();
-        self.set_closure(SynClosure::new(syn, item_frame))
-    }
+    ) -> Result<(), ExecutionError>;
 
     // ── Fixed-shape thunk construction (spec §5.5, arena analysis) ──────
     // Two intrinsics build lazy application thunks as *stored values* (not
-    // tail calls). Their shape is fixed, so the bytecode engine pre-encodes
-    // one template each and overrides these to allocate only a GC-heap env
-    // frame over that template; the HeapSyn defaults build the App/Bif node
-    // directly.
+    // tail calls); the bytecode engine pre-encodes one template each and
+    // allocates only a GC-heap env frame over that template.
 
     /// Build a lazy unary application `f(a)` as a stored (updatable) value
     /// handle. Used by the process-parallelism driver to build the per-element
@@ -431,19 +230,7 @@ pub trait IntrinsicMachine {
         view: MutatorHeapView<'_>,
         f: AbiClosure,
         a: AbiClosure,
-    ) -> Result<AbiClosure, ExecutionError> {
-        // HeapSyn: `App(L0, [L1])` over a fresh `[f, a]` frame.
-        let frame = view.from_closures(
-            [f.expect_heap(), a.expect_heap()].into_iter(),
-            2,
-            self.root_env(),
-            Smid::default(),
-        )?;
-        let code = view
-            .app(Ref::L(0), Array::from_slice(&view, &[Ref::L(1)]))?
-            .as_ptr();
-        Ok(AbiClosure::Heap(SynClosure::new(code, frame)))
-    }
+    ) -> Result<AbiClosure, ExecutionError>;
 
     /// Build a lazy binary application `f(a0, a1)` as a stored (updatable)
     /// value handle. Used by `MERGEWITH` to combine colliding block values.
@@ -453,19 +240,7 @@ pub trait IntrinsicMachine {
         f: AbiClosure,
         a0: AbiClosure,
         a1: AbiClosure,
-    ) -> Result<AbiClosure, ExecutionError> {
-        // HeapSyn: `App(L0, [L1, L2])` over a fresh `[f, a0, a1]` frame.
-        let frame = view.from_closures(
-            [f.expect_heap(), a0.expect_heap(), a1.expect_heap()].into_iter(),
-            3,
-            self.root_env(),
-            Smid::default(),
-        )?;
-        let code = view
-            .app(Ref::L(0), Array::from_slice(&view, &[Ref::L(1), Ref::L(2)]))?
-            .as_ptr();
-        Ok(AbiClosure::Heap(SynClosure::new(code, frame)))
-    }
+    ) -> Result<AbiClosure, ExecutionError>;
 
     /// Build an updatable tail thunk that re-enters the intrinsic `bif_index`
     /// applied to `handle` when forced. Used by `PRODUCER_NEXT` to make the
@@ -476,33 +251,20 @@ pub trait IntrinsicMachine {
         view: MutatorHeapView<'_>,
         bif_index: u8,
         handle: u64,
-    ) -> Result<AbiClosure, ExecutionError> {
-        // HeapSyn: an updatable-thunk closure over `AppBif(idx, [handle])`
-        // with the handle inline as a value ref (no env slot needed).
-        let body = view
-            .app_bif(
-                bif_index,
-                Array::from_slice(&view, &[Ref::V(Native::Num(handle.into()))]),
-            )?
-            .as_ptr();
-        Ok(AbiClosure::Heap(SynClosure::close(
-            &InfoTagged::thunk(body),
-            self.root_env(),
-        )))
-    }
+    ) -> Result<AbiClosure, ExecutionError>;
 
     /// Request an emitter capture for the given format.
     ///
-    /// Sets a pending flag that `Machine::step()` reads to push a
-    /// format-specific capture emitter.  All subsequent emit BIF
-    /// output goes to the capture buffer until `CaptureEnd` fires.
+    /// Sets a pending flag that `step()` reads to push a format-specific
+    /// capture emitter. All subsequent emit BIF output goes to the capture
+    /// buffer until `CaptureEnd` fires.
     fn start_capture(&mut self, format: &str) -> Result<(), ExecutionError>;
 
     /// Push a `CaptureEnd` continuation onto the STG stack.
     fn push_capture_end(&mut self, view: MutatorHeapView<'_>) -> Result<(), ExecutionError>;
 
-    /// Take the latest capture result string (set by `Machine::step()`
-    /// after a `CaptureEnd` continuation fires).
+    /// Take the latest capture result string (set by `step()` after a
+    /// `CaptureEnd` continuation fires).
     fn take_capture_result(&mut self) -> Result<String, ExecutionError>;
 
     // ── GC root set for intrinsic-held handles (eu-u9xj.6) ──────────
@@ -512,15 +274,15 @@ pub trait IntrinsicMachine {
     // is invisible to the collector: it is neither the current closure nor on
     // the continuation stack, so evacuation moves or reclaims the object
     // behind it and leaves the handle dangling. `src/eval/stg/list.rs` states
-    // the rule ("no handle is held across a force"); `src/driver/io_run.rs`
-    // and `src/driver/bytecode_io_run.rs` are the two places that cannot obey
-    // it and use the machine's stash as a root set instead.
+    // the rule ("no handle is held across a force"); `src/driver/bytecode_io_run.rs`
+    // is the place that cannot obey it and uses the machine's stash as a root
+    // set instead.
     //
-    // `stash_push` is inherent on each engine's machine type, so an intrinsic
-    // written against `&mut dyn IntrinsicMachine` could not reach it. These
-    // methods expose the same root set neutrally, over `AbiClosure`, so a
-    // driver that genuinely must accumulate handles across forces (the
-    // process-parallelism driver and value serialiser) can be GC-safe.
+    // `stash_push` is inherent on the machine type, so an intrinsic written
+    // against `&mut dyn IntrinsicMachine` could not reach it. These methods
+    // expose the same root set neutrally, over `AbiClosure`, so a driver that
+    // genuinely must accumulate handles across forces (the process-parallelism
+    // driver and value serialiser) can be GC-safe.
     //
     // Protocol: push a handle, then **read it back** with `gc_root_get` after
     // every `force()` — the collector updates the entry in the root set, not
@@ -549,12 +311,12 @@ pub trait IntrinsicMachine {
     ///
     /// A `Meta` value reaching the top of a sub-evaluation with nothing to
     /// consume it is *stripped*: the machine continues with the body and the
-    /// metadata is gone (`return_meta` in both engines). That is right for
-    /// evaluation — metadata is transparent — but it means an intrinsic that
-    /// forces a value cannot see the metadata the value carried, and one that
-    /// copies values (the PP serialiser) would silently drop it.
+    /// metadata is gone (`return_meta`). That is right for evaluation —
+    /// metadata is transparent — but it means an intrinsic that forces a
+    /// value cannot see the metadata the value carried, and one that copies
+    /// values (the PP serialiser) would silently drop it.
     ///
-    /// Both engines record the stripped metadata here and clear it at the
+    /// The machine records the stripped metadata here and clears it at the
     /// start of each `force`, so an intrinsic can recover it immediately
     /// afterwards. Taking it clears it.
     fn take_stripped_meta(&mut self) -> Option<AbiClosure>;
@@ -574,45 +336,6 @@ pub trait IntrinsicMachine {
     /// `Executor::capture_output`, so the diagnostic never reaches
     /// `evidence.yaml` and can't gate a test's verdict (eu-ntwg.2).
     fn record_diagnostic(&mut self, msg: String);
-
-    /// Whether the mutable block-index optimisation is available.
-    ///
-    /// The optimisation caches a `SymbolId → position` map inside a block by
-    /// mutating its index slot in place. The HeapSyn engine supports this; the
-    /// bytecode engine does not (blocks are template closures), so `LookupOr`/
-    /// `SafeLookup` skip the index and fall back to the STG-level find loop —
-    /// same result, no in-place mutation. Defaults to `true`.
-    fn block_index_enabled(&self) -> bool {
-        true
-    }
-
-    /// Evaluate a closure to WHNF, safely handling a non-empty continuation stack.
-    ///
-    /// Moves the current stack to a GC-visible location, runs the sub-evaluation,
-    /// then restores the saved stack.  The result closure is returned in WHNF.
-    ///
-    /// Intrinsics that need to force thunks (e.g. to inspect values at
-    /// runtime) should use this method.
-    ///
-    /// # Architecture note
-    ///
-    /// The default implementation panics.  A real implementation requires
-    /// access to the heap and emitter, which are not available through
-    /// `MachineState` alone.  The full `Machine` type provides a working
-    /// implementation; future work may restructure the trait so that
-    /// `Machine` itself implements `IntrinsicMachine` directly.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` if the sub-evaluation encounters a machine error or
-    /// if it unexpectedly yields an IO constructor.
-    fn evaluate_to_whnf(&mut self, closure: SynClosure) -> Result<SynClosure, ExecutionError> {
-        let _ = closure;
-        panic!(
-            "evaluate_to_whnf is not available through IntrinsicMachine: \
-             use Machine::evaluate_to_whnf directly from contexts with full machine access"
-        )
-    }
 }
 
 /// All intrinsics have an STG syntax wrapper

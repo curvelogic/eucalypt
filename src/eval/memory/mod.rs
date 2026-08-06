@@ -9,7 +9,6 @@ pub mod gc_verify;
 pub mod header;
 pub mod heap;
 pub mod infotable;
-pub mod loader;
 pub mod lob;
 pub mod mark;
 pub mod mutator;

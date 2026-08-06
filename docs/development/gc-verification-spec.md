@@ -97,9 +97,10 @@ Checks:
 - **Header validity**: every marked object has tag 0-15 and plausible
   `alloc_length`
 - **Pointer validity**: every heap pointer within a marked object
-  (`Native::Str`, `Native::Set`, `Native::NdArray`, `Native::Vec`,
-  all `RefPtr<HeapSyn>` in Case/Let/App/Ann/DeMeta) targets an address
-  in `valid_allocs`
+  (`Native::Str`, `Native::Set`, `Native::NdArray`, `Native::Vec`, the
+  environment/backing-array pointers in a `BcClosure`/`EnvironmentFrame`,
+  the code-offset-adjacent env pointers in a `BcContinuation`) targets an
+  address in `valid_allocs`
 - **Line consistency**: every marked object's full allocation (header
   start through header + alloc_length, aligned) has all covering lines
   marked in the block's LineMap

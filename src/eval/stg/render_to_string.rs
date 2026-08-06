@@ -15,17 +15,14 @@ use crate::{
         error::ExecutionError,
         intrinsics,
         machine::intrinsic::{CallGlobal2, IntrinsicMachine, StgIntrinsic},
-        memory::{
-            mutator::MutatorHeapView,
-            syntax::{HeapSyn, Ref},
-        },
+        memory::{mutator::MutatorHeapView, syntax::Ref},
         primitive::Primitive,
     },
     export,
     export::error::RenderError,
 };
 
-use super::{support::sym_arg, tags::DataConstructor};
+use super::support::sym_arg;
 
 // ─── OwnedCaptureEmitter ─────────────────────────────────────────────────────
 
@@ -189,75 +186,3 @@ impl StgIntrinsic for RenderToString {
 }
 
 impl CallGlobal2 for RenderToString {}
-
-// ─── Helper for io_run.rs ─────────────────────────────────────────────────────
-
-/// Extract a string representation from a WHNF closure containing a
-/// simple scalar value (string, number, symbol, boolean, null).
-///
-/// This is used by the io-run driver to read spec-block field values
-/// without needing the full render machinery.  It handles the common
-/// cases directly and returns `None` for complex values (blocks, lists).
-pub fn extract_scalar_string(
-    view: &MutatorHeapView<'_>,
-    pool: &crate::eval::memory::symbol::SymbolPool,
-    closure: &crate::eval::machine::env::SynClosure,
-) -> Option<String> {
-    use std::convert::TryInto;
-
-    let code = view.scoped(closure.code());
-    match &*code {
-        HeapSyn::Atom { evaluand } => match evaluand {
-            Ref::V(native) => scalar_from_native(view, pool, native),
-            Ref::L(i) => {
-                let env = view.scoped(closure.env());
-                let inner = (*env).get(view, *i)?;
-                extract_scalar_string(view, pool, &inner)
-            }
-            Ref::G(_) => None,
-        },
-        HeapSyn::Cons { tag, args } => {
-            let dc: Result<DataConstructor, _> = (*tag).try_into();
-            match dc {
-                Ok(DataConstructor::Unit) => Some(String::new()),
-                Ok(DataConstructor::BoolTrue) => Some("true".to_string()),
-                Ok(DataConstructor::BoolFalse) => Some("false".to_string()),
-                Ok(DataConstructor::BoxedNumber)
-                | Ok(DataConstructor::BoxedString)
-                | Ok(DataConstructor::BoxedSymbol)
-                | Ok(DataConstructor::BoxedZdt) => {
-                    let inner_ref = args.get(0)?;
-                    let inner = match inner_ref {
-                        Ref::V(native) => {
-                            return scalar_from_native(view, pool, &native);
-                        }
-                        Ref::L(i) => {
-                            let env = view.scoped(closure.env());
-                            (*env).get(view, i)?
-                        }
-                        Ref::G(_) => return None,
-                    };
-                    extract_scalar_string(view, pool, &inner)
-                }
-                _ => None,
-            }
-        }
-        _ => None,
-    }
-}
-
-/// Convert a native value to its string representation.
-fn scalar_from_native(
-    view: &MutatorHeapView<'_>,
-    pool: &crate::eval::memory::symbol::SymbolPool,
-    native: &crate::eval::memory::syntax::Native,
-) -> Option<String> {
-    use crate::eval::memory::syntax::Native;
-    match native {
-        Native::Num(n) => Some(n.to_string()),
-        Native::Str(s) => Some((*view.scoped(*s)).as_str().to_string()),
-        Native::Sym(id) => Some(pool.resolve(*id).to_string()),
-        Native::Zdt(dt) => Some(dt.to_string()),
-        _ => None,
-    }
-}

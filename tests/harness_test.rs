@@ -565,8 +565,9 @@ pub fn test_harness_070() {
 // The seven new class-coverage benches plus the frozen env-walk fold. Each
 // carries a PASS/FAIL RESULT gated by an explicit `verify: ["default-expectation"]`
 // (a bare `bench-*` target would otherwise auto-pass). These run under `cargo
-// test` on the default (bytecode) engine and under `EU_HEAPSYN=1 cargo test` on
-// HeapSyn, so both engines are exercised. See docs/superpowers/engine-ab/.
+// test` on the sole remaining (bytecode) engine — they used to also run under
+// `EU_HEAPSYN=1 cargo test` on HeapSyn, deleted by the Phase 4 collapse
+// (eu-oufc). See docs/superpowers/engine-ab/.
 //
 // They are >1s each by design (to escape the startup-noise floor), so the whole
 // group adds ~15-20s to the suite. The full interleaved timing run lives in
@@ -3549,10 +3550,17 @@ pub fn test_223_pazes_max_of_linear() {
 }
 
 /// eu-u9xj.6 (PP) — the actual COW-fork path, validated out of process (a
-/// fresh single-threaded-at-fork `eu` binary, safe to fork) on BOTH engines
-/// (default bytecode and `EU_HEAPSYN=1`). Their stdout must be byte-identical
-/// to the sequential (oracle) run — the core "never semantically observable"
-/// guarantee (spec §8) plus engine equivalence (spike R5).
+/// fresh single-threaded-at-fork `eu` binary, safe to fork) on BOTH bytecode
+/// dispatch configurations (default pre-decoded, and `EU_PREDECODE=0`
+/// byte-dispatch). Their stdout must be byte-identical to the sequential
+/// (oracle) run — the core "never semantically observable" guarantee (spec
+/// §8) plus dispatch-config equivalence (spike R5).
+///
+/// This used to also cover the HeapSyn engine (`EU_HEAPSYN=1`); HeapSyn was
+/// deleted by the Phase 4 collapse (eu-oufc), so that leg was re-axised onto
+/// the byte-dispatch path — a still-real second configuration (eu-1hcw
+/// retains it through a soak period) — rather than left comparing the
+/// default engine against itself.
 ///
 /// GC verification of the fork path is not forced here (a blob-less debug
 /// binary compiling the prelude from source under `EU_GC_VERIFY=2`, spawned
@@ -3567,7 +3575,7 @@ pub fn test_223_pazes_max_of_linear() {
 /// the process is not a declared fork-safe host, say — would pass by matching
 /// the oracle it never left.
 #[test]
-pub fn test_pp_fork_path_equivalence_both_engines() {
+pub fn test_pp_fork_path_equivalence_both_dispatch_configs() {
     let fixture = "tests/harness/testdata/pp_fork_fixture.eu";
 
     let run = |env: &[(&str, &str)], must_fork: bool| -> String {
@@ -3611,8 +3619,13 @@ pub fn test_pp_fork_path_equivalence_both_engines() {
         stdout
     };
 
-    let oracle = run(&[], false);
-    let fork_bytecode = run(
+    // eu-2obtj: DEFAULT_THRESHOLD dropped from 1024 to 2, so this fixture's
+    // 16 elements now clear the default threshold too — the oracle must
+    // force the sequential path explicitly (it no longer falls out of
+    // "just don't override anything") to stay a genuine sequential baseline
+    // rather than silently becoming a third fork run.
+    let oracle = run(&[("EU_PP_THRESHOLD", "999999999")], false);
+    let fork_predecoded = run(
         &[
             ("EU_PP_THRESHOLD", "1"),
             ("EU_PP_WORKERS", "4"),
@@ -3620,9 +3633,13 @@ pub fn test_pp_fork_path_equivalence_both_engines() {
         ],
         true,
     );
-    let fork_heapsyn = run(
+    // eu-1hcw: the byte-dispatch path within the bytecode engine, retained
+    // through a soak period. Re-axised here from the deleted HeapSyn engine
+    // (eu-oufc) — still a genuinely different execution path, unlike a
+    // repeat of the default config.
+    let fork_byte_dispatch = run(
         &[
-            ("EU_HEAPSYN", "1"),
+            ("EU_PREDECODE", "0"),
             ("EU_PP_THRESHOLD", "1"),
             ("EU_PP_WORKERS", "4"),
             ("EU_PP_TRACE", "1"),
@@ -3631,12 +3648,12 @@ pub fn test_pp_fork_path_equivalence_both_engines() {
     );
 
     assert_eq!(
-        fork_bytecode, oracle,
-        "bytecode fork path diverged from the sequential result"
+        fork_predecoded, oracle,
+        "pre-decoded fork path diverged from the sequential result"
     );
     assert_eq!(
-        fork_heapsyn, oracle,
-        "HeapSyn fork path diverged from the sequential result"
+        fork_byte_dispatch, oracle,
+        "byte-dispatch fork path diverged from the sequential result"
     );
 }
 
@@ -3747,7 +3764,8 @@ pub fn test_pp_gc_collects_during_par_map() {
         // a fixture chosen to collect as often as possible multiplied the job
         // from under two minutes to sixteen. The fork path still runs under
         // `EU_GC_VERIFY=2` in that job via
-        // `test_pp_fork_path_equivalence_both_engines`, so no coverage is lost.
+        // `test_pp_fork_path_equivalence_both_dispatch_configs`, so no
+        // coverage is lost.
         cmd.env_remove("EU_GC_VERIFY");
         for (k, v) in env {
             cmd.env(k, v);
@@ -3795,14 +3813,20 @@ pub fn test_pp_gc_collects_during_par_map() {
     //
     // Only unix has a fork path; elsewhere this is a second sequential run and
     // the flag has no effect.
-    for engine in [None, Some(("EU_HEAPSYN", "1"))] {
+    //
+    // This used to also loop over the HeapSyn engine (`EU_HEAPSYN=1`); HeapSyn
+    // was deleted by the Phase 4 collapse (eu-oufc). Re-axised onto the
+    // byte-dispatch path (`EU_PREDECODE=0`, eu-1hcw) — a still-real second
+    // execution path — rather than left looping over the default dispatch
+    // config against itself.
+    for dispatch in [None, Some(("EU_PREDECODE", "0"))] {
         let mut env = vec![
             ("EU_GC_STRESS", "1"),
             ("EU_PP_THRESHOLD", "1"),
             ("EU_PP_WORKERS", "4"),
             ("EU_PP_STRICT", "1"),
         ];
-        if let Some(e) = engine {
+        if let Some(e) = dispatch {
             env.push(e);
         }
         // A larger fixture than the sequential configuration above: the fork
@@ -3813,7 +3837,7 @@ pub fn test_pp_gc_collects_during_par_map() {
         let forked = run(fork_fixture, &env, "8");
         assert_eq!(
             forked, fork_oracle,
-            "par-map (fork path, engine {engine:?}) diverged from map under GC stress"
+            "par-map (fork path, dispatch {dispatch:?}) diverged from map under GC stress"
         );
     }
 }

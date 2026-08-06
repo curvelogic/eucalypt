@@ -29,8 +29,8 @@ use crate::core::transform::fuse;
 use crate::core::unit::TranslationUnit;
 use crate::driver::io::{create_args_pseudoblock, create_io_pseudoblock};
 use crate::driver::resources::Resources;
-use crate::eval::machine::standard_machine;
-use crate::eval::stg::{self, make_standard_runtime, RenderType, StgSettings};
+use crate::eval::bytecode::{encode, BytecodeMachine};
+use crate::eval::stg::{self, make_standard_runtime, runtime::Runtime, RenderType, StgSettings};
 use crate::export;
 use crate::import;
 use crate::syntax::input::{Input, Locator};
@@ -302,8 +302,17 @@ fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, P
         location: None,
         notes: None,
     })?;
-    let mut machine = standard_machine(&stg_settings, syn, emitter, rt.as_ref())
-        .map_err(|e| execution_error_to_pipeline_error(e, &files, &source_map))?;
+    let (prog, root, gforms) = encode(&syn, &rt.globals());
+    let mut machine = BytecodeMachine::new(
+        prog,
+        root,
+        &gforms,
+        rt.intrinsics(),
+        emitter,
+        stg_settings.heap_limit_mib.unwrap_or(0),
+        stg_settings.test_mode,
+    )
+    .map_err(|e| execution_error_to_pipeline_error(e, &files, &source_map))?;
 
     let ret = machine.run(Some(MAX_STEPS));
     let stream_end = machine.take_emitter().stream_end();

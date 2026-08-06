@@ -1,122 +1,30 @@
-//! `cargo xtask engine-ab` — run the canonical engine A/B suite under the
-//! measurement protocol and append rows to the results ledger.
+//! `cargo xtask engine-ab` — historically ran the canonical engine A/B suite
+//! (bytecode vs HeapSyn) under the measurement protocol
+//! (`docs/superpowers/engine-ab/PROTOCOL.md`, bead eu-2sa6.6) and appended
+//! rows to the results ledger.
 //!
-//! This is the operational half of `docs/superpowers/engine-ab/PROTOCOL.md`
-//! (bead eu-2sa6.6). It runs each bench in the canonical suite interleaved on
-//! both engines (bytecode default, HeapSyn via `EU_HEAPSYN=1`), reports wall
-//! medians with spread and the HeapSyn-side deterministic metrics
-//! (ticks/allocs/GC), and appends one JSONL row per bench to
-//! `docs/superpowers/engine-ab/results.jsonl`.
-//!
-//! Both engines run the SAME binary at the SAME filesystem path, selected by
-//! the `EU_HEAPSYN` environment variable — the strictest realisation of the
-//! protocol's "same path / same blob" fairness rule (no binary-path-length or
-//! blob-fairness skew is possible when it is literally one binary).
+//! **Phase 4 collapse (eu-oufc):** the HeapSyn engine and its `EU_HEAPSYN`
+//! selector were deleted from the driver, so a live bc/hs A/B run is no
+//! longer possible — `run()` below refuses with a pointer to the follow-up
+//! bead rather than silently measuring bytecode twice under an "hs" label.
+//! `--check` still works: it only reads the historical ledger
+//! (`docs/superpowers/engine-ab/results.jsonl`), which this change does not
+//! touch, and flags regressions (ratio worsened >15% vs the previous run in
+//! the same (bench, prelude_config, dispatch) lineage — eu-lhai/eu-hxu6) and
+//! per-class threshold crossings.
 //!
 //! Usage:
-//!   cargo xtask engine-ab [--runs N] [--eu PATH] [--dispatch predecoded|byte] [--dry-run]
 //!   cargo xtask engine-ab --check
 //!
-//! `--dispatch` selects the bytecode dispatch strategy for the `bc` side of
-//! each pair (predecoded is the default since eu-vcr8 Phase 2; `byte` sets
-//! `EU_PREDECODE=0` to measure the byte-dispatch path — see eu-hxu6/eu-1hcw).
-//! It has no effect on the HeapSyn side. The chosen mode is recorded in the
-//! ledger's `dispatch` field so the three engines (hs, bc-predecoded,
-//! bc-byte) are distinguishable rows rather than conflated under one `bc`
-//! column (eu-hxu6).
-//!
-//! `--check` reads, per (bench, prelude_config, dispatch) lineage, the last
-//! two rows and flags regressions (ratio worsened >15% vs the previous run
-//! in that SAME lineage) and per-class threshold crossings. Comparing across
-//! different `prelude_config` or `dispatch` values would read a config
-//! change as an engine regression (eu-lhai) — each lineage is compared only
-//! against its own history. Appends nothing; exits 1 if any regression is
-//! found.
+//! A post-collapse redesign of the live-run half (e.g. a
+//! predecoded-vs-byte-dispatch A/B, per eu-1hcw) is tracked by a follow-up
+//! bead rather than attempted here.
 
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-    time::Instant,
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 
 const LEDGER: &str = "docs/superpowers/engine-ab/results.jsonl";
-const HEAP_LIMIT: &str = "12288";
-
-/// One bench in the canonical suite.
-struct Bench {
-    /// File stem (also the ledger `bench` field).
-    id: &'static str,
-    /// Path relative to the workspace root.
-    file: &'static str,
-    /// The `-t` target inside the file.
-    target: &'static str,
-    /// Workload class (review C taxonomy).
-    class: &'static str,
-    /// Needs `--allow-io`.
-    requires_io: bool,
-}
-
-/// The canonical suite (review C section 3; eu-2sa6.6).
-const SUITE: &[Bench] = &[
-    Bench {
-        id: "015_block_merge",
-        file: "tests/harness/bench/015_block_merge.eu",
-        target: "bench-block-merge",
-        class: "D",
-        requires_io: false,
-    },
-    Bench {
-        id: "016_import_export_yaml",
-        file: "tests/harness/bench/016_import_export_yaml.eu",
-        target: "bench-import-yaml",
-        class: "I",
-        requires_io: false,
-    },
-    Bench {
-        id: "017_import_export_toml",
-        file: "tests/harness/bench/017_import_export_toml.eu",
-        target: "bench-import-toml",
-        class: "I",
-        requires_io: false,
-    },
-    Bench {
-        id: "018_string_scale",
-        file: "tests/harness/bench/018_string_scale.eu",
-        target: "bench-string-scale",
-        class: "G",
-        requires_io: false,
-    },
-    Bench {
-        id: "019_list_scale",
-        file: "tests/harness/bench/019_list_scale.eu",
-        target: "bench-list-scale",
-        class: "H",
-        requires_io: false,
-    },
-    Bench {
-        id: "020_lookup_curve",
-        file: "tests/harness/bench/020_lookup_curve.eu",
-        target: "bench-lookup-curve",
-        class: "E",
-        requires_io: false,
-    },
-    Bench {
-        id: "021_io_loop",
-        file: "tests/harness/bench/021_io_loop.eu",
-        target: "bench-io-loop",
-        class: "L",
-        requires_io: true,
-    },
-    Bench {
-        id: "022_hof_fold",
-        file: "tests/harness/bench/022_hof_fold.eu",
-        target: "bench-hof-fold",
-        class: "C",
-        requires_io: false,
-    },
-];
 
 /// Per-class "bytecode wins" threshold (review C section 3 / review section 6).
 /// A bc/hs ratio above this is out of band for the class. Class E (the static
@@ -144,34 +52,17 @@ const REGRESSION_BAND: f64 = 0.15;
 
 pub fn run(args: &mut dyn Iterator<Item = String>) -> Result<()> {
     let root = workspace_root()?;
-    let mut runs: usize = 5; // protocol: >=5 multi-second (the whole suite is)
-    let mut eu = root.join("target/release/eu");
     let mut check = false;
-    let mut dry_run = false;
-    let mut dispatch = "predecoded".to_string();
 
-    let mut it = args.peekable();
-    while let Some(a) = it.next() {
+    for a in args {
         match a.as_str() {
             "--check" => check = true,
-            "--dry-run" => dry_run = true,
-            "--runs" => {
-                runs = it
-                    .next()
-                    .context("--runs needs a value")?
-                    .parse()
-                    .context("--runs value")?;
-            }
-            "--eu" => {
-                eu = PathBuf::from(it.next().context("--eu needs a path")?);
-            }
-            "--dispatch" => {
-                dispatch = it.next().context("--dispatch needs a value")?;
-                if dispatch != "predecoded" && dispatch != "byte" {
-                    bail!("--dispatch must be 'predecoded' or 'byte', got {dispatch}");
-                }
-            }
-            other => bail!("unknown engine-ab arg: {other}"),
+            other => bail!(
+                "engine-ab: the HeapSyn engine was deleted (eu-oufc Phase 4 collapse) — \
+                 only --check (read the historical ledger) is supported now; \
+                 got {other}. See the eu-hn3j0 follow-up bead for this harness's \
+                 post-collapse redesign."
+            ),
         }
     }
 
@@ -179,260 +70,18 @@ pub fn run(args: &mut dyn Iterator<Item = String>) -> Result<()> {
         return cmd_check(&root);
     }
 
-    if !eu.exists() {
-        bail!(
-            "eu binary not found at {} — build it first (cargo build --release)",
-            eu.display()
-        );
-    }
-
-    let commit = git_short_commit(&root).unwrap_or_else(|| "unknown".to_string());
-    let host = host_string();
-    let date = today();
-    let prelude_config = if root.join("lib/prelude.blob").exists() {
-        "blob"
-    } else {
-        "source"
-    };
-
-    println!(
-        "engine-ab: {} benches, {runs} interleaved runs each",
-        SUITE.len()
+    // Phase 4 collapse (eu-oufc): the HeapSyn engine and its EU_HEAPSYN
+    // selector were deleted from the driver, so a live interleaved bc/hs A/B
+    // pass — this command's whole former premise — is no longer possible.
+    // Refuse clearly rather than silently measuring bytecode twice under an
+    // "hs" label, which would corrupt the ledger with mislabelled rows.
+    // History in results.jsonl is untouched; `--check` above still reads it.
+    bail!(
+        "engine-ab: the HeapSyn engine was deleted (eu-oufc Phase 4 collapse) — \
+         a live bc/hs A/B run is no longer possible. Use --check to inspect \
+         historical ledger rows; see the eu-hn3j0 follow-up bead for this \
+         harness's post-collapse redesign."
     );
-    println!("  eu     = {}", eu.display());
-    println!(
-        "  commit = {commit}   host = {host}   prelude = {prelude_config}   dispatch = {dispatch}"
-    );
-    println!("  ticks/allocs/gc read from the HeapSyn (-S) pass\n");
-
-    println!(
-        "{:<26} {:>3} {:>9} {:>9} {:>7}  {:>14} {:>12} {:>4}",
-        "bench (class)", "n", "bc_med", "hs_med", "ratio", "hs_ticks", "hs_allocs", "gc"
-    );
-
-    let mut rows: Vec<String> = Vec::new();
-    let suite_start = Instant::now();
-
-    for b in SUITE {
-        let file = root.join(b.file);
-        // Interleaved bc/hs wall timings.
-        let mut bc = Vec::with_capacity(runs);
-        let mut hs = Vec::with_capacity(runs);
-        for _ in 0..runs {
-            bc.push(time_run(&eu, &file, b, false, false, &dispatch)?);
-            hs.push(time_run(&eu, &file, b, true, false, &dispatch)?);
-        }
-        // Separate HeapSyn -S pass for deterministic metrics (kept out of the
-        // wall medians so `-S` reporting overhead never skews the ratio).
-        let (ticks, allocs, gc) = stats_run(&eu, &file, b)?;
-
-        let bc_med = median(&mut bc);
-        let hs_med = median(&mut hs);
-        let ratio = bc_med / hs_med;
-        let bc_spread = spread(&bc);
-        let hs_spread = spread(&hs);
-
-        println!(
-            "{:<26} {:>3} {:>8.3}s {:>8.3}s {:>7.3}  {:>14} {:>12} {:>4}",
-            format!("{} ({})", short_id(b.id), b.class),
-            runs,
-            bc_med,
-            hs_med,
-            ratio,
-            ticks,
-            allocs,
-            gc
-        );
-        println!(
-            "{:<26}     spread bc [{:.3}..{:.3}] hs [{:.3}..{:.3}]",
-            "", bc_spread.0, bc_spread.1, hs_spread.0, hs_spread.1
-        );
-
-        rows.push(row_json(
-            &date,
-            &commit,
-            b,
-            bc_med,
-            hs_med,
-            ratio,
-            ticks,
-            allocs,
-            gc,
-            &host,
-            runs,
-            prelude_config,
-            &dispatch,
-        ));
-    }
-
-    println!("\nsuite wall: {:.1}s", suite_start.elapsed().as_secs_f64());
-
-    if dry_run {
-        println!("\n--dry-run: not appending to {LEDGER}");
-        return Ok(());
-    }
-
-    append_rows(&root, &rows)?;
-    println!("\nappended {} rows to {LEDGER}", rows.len());
-    Ok(())
-}
-
-/// Run one invocation and return its wall time in seconds.
-fn time_run(
-    eu: &Path,
-    file: &Path,
-    b: &Bench,
-    heapsyn: bool,
-    stats: bool,
-    dispatch: &str,
-) -> Result<f64> {
-    let mut cmd = base_cmd(eu, file, b, heapsyn, stats);
-    // Dispatch mode only meaningfully selects a path within the bytecode
-    // engine; HeapSyn ignores EU_PREDECODE entirely (see CLAUDE.md's
-    // EU_PREDECODE row), so it is only set on the bc side of each pair.
-    if !heapsyn && dispatch == "byte" {
-        cmd.env("EU_PREDECODE", "0");
-    }
-    let start = Instant::now();
-    let out = cmd.output().with_context(|| format!("run {}", b.id))?;
-    let secs = start.elapsed().as_secs_f64();
-    if !out.status.success() {
-        bail!(
-            "{} ({}) failed on {} engine:\n{}",
-            b.id,
-            b.target,
-            if heapsyn { "HeapSyn" } else { "bytecode" },
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-    Ok(secs)
-}
-
-/// Run one HeapSyn `-S` pass and parse ticks / allocs / GC collections.
-fn stats_run(eu: &Path, file: &Path, b: &Bench) -> Result<(u64, u64, u64)> {
-    let out = base_cmd(eu, file, b, true, true)
-        .output()
-        .with_context(|| format!("stats run {}", b.id))?;
-    let text = String::from_utf8_lossy(&out.stderr);
-    let ticks = parse_stat(&text, "Ticks").unwrap_or(0);
-    let allocs = parse_stat(&text, "Allocs").unwrap_or(0);
-    let gc = parse_stat(&text, "Collections").unwrap_or(0);
-    Ok((ticks, allocs, gc))
-}
-
-fn base_cmd(eu: &Path, file: &Path, b: &Bench, heapsyn: bool, stats: bool) -> Command {
-    let mut cmd = Command::new(eu);
-    if heapsyn {
-        cmd.env("EU_HEAPSYN", "1");
-    }
-    if stats {
-        cmd.arg("-S");
-    }
-    cmd.arg("--heap-limit-mib").arg(HEAP_LIMIT);
-    if b.requires_io {
-        cmd.arg("--allow-io");
-    }
-    cmd.arg("-t").arg(b.target).arg(file);
-    cmd
-}
-
-/// Parse a `Label          :     12,345,678` stat line.
-fn parse_stat(text: &str, label: &str) -> Option<u64> {
-    for line in text.lines() {
-        let t = line.trim_start();
-        if t.starts_with(label) {
-            if let Some((_, rhs)) = line.split_once(':') {
-                let digits: String = rhs.chars().filter(|c| c.is_ascii_digit()).collect();
-                if !digits.is_empty() {
-                    return digits.parse().ok();
-                }
-            }
-        }
-    }
-    None
-}
-
-fn median(xs: &mut [f64]) -> f64 {
-    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let n = xs.len();
-    if n == 0 {
-        0.0
-    } else if n % 2 == 1 {
-        xs[n / 2]
-    } else {
-        (xs[n / 2 - 1] + xs[n / 2]) / 2.0
-    }
-}
-
-fn spread(xs: &[f64]) -> (f64, f64) {
-    let mut min = f64::MAX;
-    let mut max = f64::MIN;
-    for &x in xs {
-        min = min.min(x);
-        max = max.max(x);
-    }
-    (min, max)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn row_json(
-    date: &str,
-    commit: &str,
-    b: &Bench,
-    bc: f64,
-    hs: f64,
-    ratio: f64,
-    ticks: u64,
-    allocs: u64,
-    gc: u64,
-    host: &str,
-    runs: usize,
-    prelude_config: &str,
-    dispatch: &str,
-) -> String {
-    let v = serde_json::json!({
-        "date": date,
-        "commit": commit,
-        "bench": b.id,
-        "class": b.class,
-        "bc_wall_med": round3(bc),
-        "hs_wall_med": round3(hs),
-        "ratio": round3(ratio),
-        "hs_ticks": ticks,
-        "hs_allocs": allocs,
-        "gc": gc,
-        "host": host,
-        "runs": runs,
-        "prelude_config": prelude_config,
-        // eu-hxu6: the bc side's dispatch strategy. "predecoded" is the
-        // default bytecode engine (eu-vcr8 Phase 2); "byte" is the
-        // EU_PREDECODE=0 byte-dispatch path retained through the eu-1hcw
-        // soak period. Absent on rows written before this field existed —
-        // treat a missing value as "predecoded" (see cmd_check).
-        "dispatch": dispatch,
-    });
-    v.to_string()
-}
-
-fn round3(x: f64) -> f64 {
-    (x * 1000.0).round() / 1000.0
-}
-
-fn append_rows(root: &Path, rows: &[String]) -> Result<()> {
-    use std::io::Write;
-    let path = root.join(LEDGER);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .with_context(|| format!("open {}", path.display()))?;
-    for r in rows {
-        writeln!(f, "{r}")?;
-    }
-    Ok(())
 }
 
 // ── --check ────────────────────────────────────────────────────────────────
@@ -615,37 +264,6 @@ fn workspace_root() -> Result<PathBuf> {
         return Ok(cwd);
     }
     bail!("could not find workspace root (no Cargo.toml in {cwd:?})")
-}
-
-fn git_short_commit(root: &Path) -> Option<String> {
-    let out = Command::new("git")
-        .current_dir(root)
-        .args(["rev-parse", "--short", "HEAD"])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
-}
-
-fn host_string() -> String {
-    let out = Command::new("uname").arg("-srm").output().ok();
-    match out {
-        Some(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout).trim().replace(' ', "-")
-        }
-        _ => format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
-    }
-}
-
-fn today() -> String {
-    // Cheap ISO date without a chrono dependency: shell out to `date`.
-    let out = Command::new("date").arg("+%Y-%m-%d").output().ok();
-    match out {
-        Some(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
-        _ => "unknown".to_string(),
-    }
 }
 
 // ── tests (eu-lhai / eu-hxu6) ────────────────────────────────────────────────

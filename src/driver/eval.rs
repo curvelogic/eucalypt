@@ -10,16 +10,15 @@ use crate::{
     },
     core::{expr::*, typecheck::error::TypeWarning},
     driver::{
+        bytecode_io_run::{inject_world_and_run, io_run_and_render, render_headless_result},
         error::EucalyptError,
         io_common::IoRunError,
-        io_run::{inject_world_and_run, io_run_and_render, render_headless_result},
         options::{ErrorFormat, EucalyptOptions},
         source::SourceLoader,
         warning_link::TypeWarningLinks,
     },
     eval::{
         error::{curate_trace_with_env, ExecutionError, TRACE_BUDGET},
-        machine::standard_machine,
         stg::{self, make_standard_runtime, runtime::Runtime, RenderType, StgSettings},
     },
     export,
@@ -112,41 +111,10 @@ fn io_run_error_to_execution(e: IoRunError) -> ExecutionError {
     }
 }
 
-/// Collect machine, GC, and heap statistics from the VM after all
-/// execution phases (eval, render, IO) have completed.
-fn collect_machine_stats(machine: &crate::eval::machine::vm::Machine<'_>, stats: &mut Statistics) {
-    use crate::eval::machine::metrics::ThreadOccupation;
-
-    // GC phase timings
-    for (k, v) in machine.clock().report() {
-        stats.timings_mut().record(k, v);
-    }
-
-    // Machine counters
-    stats.set_ticks(machine.metrics().ticks());
-    stats.set_allocs(machine.metrics().allocs());
-    stats.set_max_stack(machine.metrics().max_stack());
-
-    // Heap stats
-    let heap_stats = machine.heap_stats();
-    stats.set_blocks_allocated(heap_stats.blocks_allocated);
-    stats.set_lobs_allocated(heap_stats.lobs_allocated);
-    stats.set_blocks_used(heap_stats.used);
-    stats.set_blocks_recycled(heap_stats.recycled);
-    stats.set_collections_count(heap_stats.collections_count);
-    stats.set_peak_heap_blocks(heap_stats.peak_heap_blocks);
-
-    // Aggregate GC timings
-    stats.set_total_mark_time(machine.clock().duration(ThreadOccupation::CollectorMark));
-    stats.set_total_sweep_time(machine.clock().duration(ThreadOccupation::CollectorSweep));
-}
-
 /// Collect machine, GC, and heap statistics from the bytecode machine after
 /// all execution phases (eval, render, IO) have completed.
 ///
-/// The bytecode engine keeps the same `Metrics`/`Clock`/`HeapStats` records
-/// as the HeapSyn machine, so `-S` reports a comparable, single-counted set on
-/// both engines. Allocation counts come from the shared machine state (see
+/// Allocation counts come from the shared machine state (see
 /// `BytecodeMachine::allocs`) rather than `Metrics`, because they are recorded
 /// inside the free `handle_op` dispatch.
 fn collect_bytecode_stats(
@@ -558,17 +526,13 @@ impl<'a> Executor<'a> {
             if opt.dump_stg() {
                 println!("{}", prettify::prettify(&*syn));
                 Ok(None)
-            } else if crate::eval::bytecode::bytecode_enabled() {
-                // Default bytecode engine (BV1). HeapSyn is selected instead
-                // via the EU_HEAPSYN=1 opt-out — see `bytecode_enabled`.
-                //
-                // Compile headless (like the HeapSyn path — `syn` above is
+            } else {
+                // The bytecode engine (BV1). Compile headless (`syn` above is
                 // already the headless compile) so IO constructors yield to the
                 // bytecode io-run driver rather than being consumed by a
                 // RENDER_DOC wrapper. After the first run the result is handled
-                // in three cases exactly as the HeapSyn path below: a direct IO
-                // yield, a terminated IO function (inject world), or a plain
-                // document (RENDER_DOC in place).
+                // in three cases: a direct IO yield, a terminated IO function
+                // (inject world), or a plain document (RENDER_DOC in place).
                 // BV5 (eu-amp9): when the blob carries a pre-encoded prelude
                 // BytecodeProgram, run straight off it — append only the user
                 // program root and the per-invocation __args/__io override
@@ -621,9 +585,6 @@ impl<'a> Executor<'a> {
                     .timings_mut()
                     .record("bytecode-eval", t_exec.elapsed());
 
-                use crate::driver::bytecode_io_run::{
-                    inject_world_and_run, io_run_and_render, render_headless_result,
-                };
                 let result = if ret.is_ok() {
                     if m.io_yielded() {
                         let t_io = Instant::now();
@@ -661,83 +622,12 @@ impl<'a> Executor<'a> {
                 };
                 let result = finish_stream(m.take_emitter().as_mut(), result);
 
-                // Collect machine/GC statistics from all execution phases so
-                // that -S reports bytecode Machine/Heap/GC stats comparable to
-                // the HeapSyn path (collected even on error, mirroring the
-                // HeapSyn branch below).
+                // Collect machine/GC statistics from all execution phases,
+                // even on error (e.g. Interrupted), so that -S output is
+                // available.
                 collect_bytecode_stats(&m, stats);
 
                 let diagnostics = m.take_diagnostics();
-                Self::flush_diagnostics(&mut self.err, diagnostics);
-
-                result
-            } else {
-                emitter.stream_start().map_err(stream_write_error)?;
-                let mut machine = standard_machine(&stg_settings, syn, emitter, rt.as_ref())?;
-
-                let t_exec = Instant::now();
-                let ret = machine.run(None);
-                stats.timings_mut().record("stg-eval", t_exec.elapsed());
-
-                // The machine always runs in headless mode (no RENDER_DOC
-                // wrapper).  After the first run, handle the three cases:
-                //
-                // 1. Machine yielded on an IO constructor directly → run
-                //    the io-run loop (honours opt.allow_io).
-                //
-                // 2. Machine terminated normally → the top-level value is
-                //    either an IO function (PAP waiting for world) or a
-                //    plain document.  Inject the world token and re-run;
-                //    then handle the result as case 1 or 3.
-                //
-                // 3. No IO yield after world injection → the value is a
-                //    plain document; feed it through RENDER_DOC explicitly.
-                let result = if ret.is_ok() {
-                    if machine.io_yielded() {
-                        let t_io = Instant::now();
-                        let io_result = io_run_and_render(&mut machine, opt.allow_io)
-                            .map_err(io_run_error_to_execution);
-                        stats.timings_mut().record("io-run", t_io.elapsed());
-                        finish_stream(machine.take_emitter().as_mut(), io_result)
-                    } else {
-                        // Machine terminated without yielding.  Try world
-                        // injection to handle IO functions (case 2).
-                        let io_yielded =
-                            inject_world_and_run(&mut machine).map_err(io_run_error_to_execution);
-                        match io_yielded {
-                            Ok(true) => {
-                                // World injection triggered an IO yield;
-                                // proceed with the io-run loop.
-                                let t_io = Instant::now();
-                                let io_result = io_run_and_render(&mut machine, opt.allow_io)
-                                    .map_err(io_run_error_to_execution);
-                                stats.timings_mut().record("io-run", t_io.elapsed());
-                                finish_stream(machine.take_emitter().as_mut(), io_result)
-                            }
-                            Ok(false) => {
-                                // Still no IO yield after world injection;
-                                // treat as a plain document.  Render in place
-                                // using RENDER_DOC on the existing machine —
-                                // one compile, one machine.
-                                let t_render = Instant::now();
-                                let render_result = render_headless_result(&mut machine)
-                                    .map_err(io_run_error_to_execution);
-                                stats.timings_mut().record("stg-render", t_render.elapsed());
-                                finish_stream(machine.take_emitter().as_mut(), render_result)
-                            }
-                            Err(e) => finish_stream(machine.take_emitter().as_mut(), Err(e)),
-                        }
-                    }
-                } else {
-                    finish_stream(machine.take_emitter().as_mut(), ret.map(|_| None))
-                };
-
-                // Collect machine/GC statistics from all execution phases,
-                // even on error (e.g. Interrupted) so that -S output is
-                // available.
-                collect_machine_stats(&machine, stats);
-
-                let diagnostics = machine.take_diagnostics();
                 Self::flush_diagnostics(&mut self.err, diagnostics);
 
                 result

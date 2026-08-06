@@ -67,20 +67,21 @@ plan:
   arena-flattened, index-referenced, **postcard-serialisable** form
   (`ArenaStgSyn`/`PreludeBlob`, `src/eval/stg/blob.rs`). This is, in effect, a
   proto-bytecode.
-- **`HeapSyn`** (`src/eval/memory/syntax.rs:227`) — the on-heap form the legacy
-  tree-walk VM executes. On this path the loader translates `StgSyn → HeapSyn`
-  into the GC heap on **every run**, and **compiled code is GC-scanned and
-  evacuated like data** (`impl GcScannable for HeapSyn`,
-  `src/eval/memory/syntax.rs:400-547`). *(Since 0.12/BV1 this describes only the
-  `EU_HEAPSYN=1` opt-out engine — the default bytecode engine executes a flat
-  opcode stream from an off-heap arena and none of this applies to it.)*
+- **`HeapSyn`** — the on-heap form the legacy tree-walk VM executed, where the
+  loader translated `StgSyn → HeapSyn` into the GC heap on **every run**, and
+  **compiled code was GC-scanned and evacuated like data**
+  (`impl GcScannable for HeapSyn`). *Deleted by the Phase 4 collapse
+  (eu-oufc, 0.15) — see the status note below.*
 
-- **The VM** is a Spineless Tagless G-machine (`src/eval/machine/vm.rs`): the loop
-  `run`→`step`→`handle_instruction` (`vm.rs:1842,1663,389`) dispatches a `match` on
-  `HeapSyn` (`vm.rs:426`), with **six** continuation kinds (`Branch`, `Update`,
-  `ApplyTo`, `DeMeta`, `SeqBind`, `CaptureEnd`; `src/eval/machine/cont.rs:34`) on
-  an off-heap `Vec` stack (`vm.rs:282`), and **192** intrinsics
-  (`src/eval/intrinsics.rs:49`) invoked via a deferred-BIF path (`vm.rs:518,1722`).
+- **The VM** is a Spineless Tagless G-machine, now `src/eval/bytecode/machine.rs`
+  (the HeapSyn tree-walk `vm.rs` this paragraph originally described was deleted
+  by the Phase 4 collapse, eu-oufc, along with `machine/cont.rs`): the loop
+  `run`→`step` dispatches on a flat opcode stream, with **nine** continuation
+  kinds (`Branch`, `Update`, `ApplyTo`, `DeMeta`, `SeqBind`, `LookupLitForce`,
+  `CaptureEnd`, `FusedPrimopLeft`, `FusedPrimopRight` — plus a `BranchPredecoded`
+  tenth under `EU_PREDECODE`; `src/eval/bytecode/cont.rs`) on an off-heap `Vec`
+  stack, and **192** intrinsics (`src/eval/intrinsics.rs:49`) invoked via a
+  deferred-BIF path.
 - **Environment frames** (`src/eval/machine/env.rs:191`) are a cactus stack: each
   frame holds an `Array<C>` of bindings plus a `next` pointer to its parent; a
   local reference walks the chain (`cell`/`get`, `env.rs:334,352`), and **every
@@ -236,11 +237,13 @@ that the cost lives in code materialisation, dispatch and env-walk. Therefore:
   tables (annotation dispatch), superinstructions (hot patterns), and
   serialisability (the startup win). Estimated 3–10× on dispatch-bound code and a
   large drop in GC load, keeping the Immix GC, all intrinsics, the emitter, the
-  error machinery and the `EU_*` tooling. **Status (BV1, eu-enyv):** the bytecode
-  engine is now the **default**; the legacy HeapSyn tree-walk machine is retained
-  behind `EU_HEAPSYN=1` as the perf baseline and differential-testing engine. The
-  Phase 4 collapse (deleting HeapSyn + retiring `GcScannable`) is deferred pending
-  an A/B perf study.
+  error machinery and the `EU_*` tooling. **Status (BV1, eu-enyv → eu-oufc):** the
+  bytecode engine is the **sole** execution engine. The eu-7oshh A/B study
+  confirmed parity or a bytecode win everywhere that mattered; the Phase 4
+  collapse (eu-oufc, 0.15) then deleted the legacy HeapSyn tree-walk machine, its
+  `EU_HEAPSYN`/`EU_BYTECODE` selectors, and the bc/hs differential-testing
+  infrastructure, and trimmed (not fully retired — the bytecode engine's own
+  closures/env-frames/continuations still need it) `GcScannable`.
 - **Demand- and type-directed compilation rides on it** (Pillar CG): the bytecode is
   the substrate the smarter codegen emits into.
 - **The speculative generational-GC rebuild is shelved** (§10), to be revisited only
@@ -382,15 +385,15 @@ startup floor) is banked early:
    minimal threaded interpreter; **measure the dispatch ceiling**. Proceed only if
    ≥~2×; otherwise reassess. Weeks, low commitment.
 2. **BV1 — threaded-code interpreter, code out of the GC heap.** Replace the
-   `HeapSyn` tree-walk (`vm.rs:389`) with opcode dispatch over arena-resident
-   bytecode; keep continuations, env frames and the intrinsic boundary intact to
-   isolate variables. The big correctness lift; full harness green under
+   `HeapSyn` tree-walk with opcode dispatch over arena-resident bytecode; keep
+   continuations, env frames and the intrinsic boundary intact to isolate
+   variables. The big correctness lift; full harness green under
    `EU_GC_VERIFY=2`. **Shipped in 0.12 as the default engine** — on the default
    path code never enters the GC heap. The *physical* retirement of
-   `impl GcScannable for HeapSyn` (deleting the HeapSyn machine + loader) is the
-   **Phase-4 collapse, deferred** (eu-oufc; see §4.5): HeapSyn is retained behind
-   `EU_HEAPSYN=1` as the perf baseline and differential reference until the
-   decode-cost gap closes (eu-9mvh).
+   `impl GcScannable for HeapSyn` (deleting the HeapSyn machine + loader) was the
+   **Phase-4 collapse** (eu-oufc; see §4.5): **shipped in 0.15**, once the
+   eu-7oshh A/B study confirmed the decode-cost gap (eu-9mvh) had closed enough
+   that HeapSyn no longer won anywhere that mattered.
 3. **BV5 — serialisation & embedded prelude.** Execute directly from
    serialised bytecode; embed the prelude bytecode at build time. Reuses the
    postcard/`cfg(prelude_blob_ok)` plumbing. **Shipped in 0.12 in dual-form** — the
@@ -505,8 +508,9 @@ measured ratio: fib 2.14×). Closing that gap is eu-9mvh/eu-adnu and the BV4
 fusion work; per the 2026-07-12 transition review
 (`docs/superpowers/specs/2026-07-12-bytecode-transition-review.md`), fusion
 substantially narrows but does not close the residual per-tick decode
-envelope, and Phase-4 collapse is now gated on that document's §6 falsifiable
-criteria rather than on BV4 alone.)* BV5:
+envelope, and Phase-4 collapse was gated on that document's §6 falsifiable
+criteria rather than on BV4 alone — the eu-7oshh A/B study later confirmed
+those criteria met and the collapse shipped in 0.15, eu-oufc.)* BV5:
 `eu -e true` startup floor drops to ~20–30 ms on a plain build with no separate blob
 step. *(Realised, 0.12: ~10 ms measured — but on release/CI binaries only, where
 `xtask prelude-compile` embeds the blob; a plain dev `cargo build` still runs
@@ -1031,11 +1035,11 @@ engine gap) → Tier-0 gate artefacts (measurement protocol + canonical suite +
 results ledger, eu-2sa6.6; clean-room re-baseline, eu-2sa6.7; this record
 truth-up) → pre-decode spike decision point (eu-2sa6.9) → *if confirmed:*
 lever (a) pre-decoded execution IR with BV2 side tables folded in (eu-2sa6.1)
-→ BV3 register frames (eu-2sa6.2) → CG type-gated (0.13) → Phase-4 collapse
-(retire HeapSyn, eu-oufc) *only if* the falsifiable performance and
-non-performance criteria in the ratified transition review's §6 are met —
-otherwise HeapSyn stays behind `EU_HEAPSYN=1` another release → SV
-contracts + DS + modules (0.14–0.15) → W5 conformance green → the 1.0 milestone:
+→ BV3 register frames (eu-2sa6.2) → CG type-gated (0.13) → SV contracts +
+diagnostics (0.14) → the eu-7oshh A/B study confirmed the falsifiable
+performance and non-performance criteria in the ratified transition review's
+§6 were met → **Phase-4 collapse shipped (retire HeapSyn, eu-oufc, 0.15)** →
+DS + modules (0.15+) → W5 conformance green → the 1.0 milestone:
 ratify and freeze the surface (§4.6).** DS, PP and the post-1.0 candidates slot
 alongside or follow. **DX** (diagnostics) runs parallel to the spine and off it — its harness and invariant gate are a standing CI ratchet from 0.14. The 1.0 freeze is gated on the surface and conformance, not on
 the bytecode programme being finished — and no feature is scheduled *for* 1.0; they all
@@ -1050,7 +1054,8 @@ sequencing.)*
 | ID | Item | Release |
 |---|---|:---:|
 | **BV0** | Bytecode encoding + dispatch-ceiling spike (gate) | 0.11 |
-| **BV1** | Threaded interpreter; code out of the GC heap *(shipped — default engine; Phase-4 collapse deferred to 0.13)* | 0.12 |
+| **BV1** | Threaded interpreter; code out of the GC heap *(shipped — default engine; Phase-4 collapse shipped 0.15, eu-oufc)* | 0.12 |
+| **eu-oufc** | Phase-4 collapse: delete the HeapSyn tree-walk machine, its `EU_HEAPSYN`/`EU_BYTECODE` selectors and the bc/hs differential-testing infrastructure; trim `GcScannable`'s HeapSyn impls *(shipped — gated on the eu-7oshh A/B study confirming parity or a bytecode win everywhere that mattered)* | 0.15 |
 | **BV5** | Embedded bytecode prelude *(shipped, dual-form)* | 0.12 |
 | **BV5-cache** | Content-hash whole-program unit cache (spec `#953`; dispatch-ready, unbuilt — eu-lb0r) | 0.13 |
 | **T0** | Tier-0 gate artefacts: measurement protocol + canonical suite + results ledger + `xtask engine-ab` (eu-2sa6.6); clean-room re-baseline, source-vs-source and blob-vs-blob (eu-2sa6.7) *(gates all further engine work — transition review §7)* | 0.13 |

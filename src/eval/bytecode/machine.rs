@@ -19,10 +19,9 @@ use smallvec::SmallVec;
 use crate::common::sourcemap::Smid;
 use crate::eval::emit::{Emitter, NullEmitter};
 use crate::eval::error::ExecutionError;
-use crate::eval::machine::env::{EnvFrame, SynClosure};
 use crate::eval::machine::intrinsic::{AbiClosure, IntrinsicMachine, StgIntrinsic};
 use crate::eval::machine::metrics::{Clock, Metrics, ThreadOccupation};
-use crate::eval::machine::vm::{interrupted, HeapNavigator};
+use crate::eval::machine::vm::interrupted;
 use crate::eval::memory::alloc::ScopedAllocator;
 use crate::eval::memory::array::Array;
 use crate::eval::memory::collect::{
@@ -1812,9 +1811,11 @@ fn enter_meta_body(
 /// Build a partial-application (PAP) trampoline closure for a function
 /// applied to too few args. The result closes `[f, supplied…]` over `f`'s
 /// env and points at the pre-encoded `App(L(pending), …)` template
-/// (`prog.pap`); its arity is the count still pending. Mirrors the HeapSyn
-/// `partially_apply` (`env_builder.rs`).
-fn partially_apply(
+/// (`prog.pap`); its arity is the count still pending. Mirrors the deleted
+/// HeapSyn `partially_apply` (`machine::env_builder`, eu-oufc). `pub` so
+/// `benches/alloc.rs` can measure it directly, matching the deleted
+/// HeapSyn benchmark's coverage.
+pub fn partially_apply(
     view: MutatorHeapView<'_>,
     prog: &BytecodeProgram,
     fun: &BcClosure,
@@ -3417,6 +3418,14 @@ impl<'a> BytecodeMachine<'a> {
         std::mem::replace(&mut self.emitter, Box::new(NullEmitter))
     }
 
+    /// The events recorded by the active emitter (empty unless it is a
+    /// `CapturingEmitter`, e.g. under test). Test-only assertion helper,
+    /// mirroring the deleted HeapSyn `vm.rs` `Machine::captures` (eu-oufc).
+    #[cfg(test)]
+    pub fn captures(&self) -> &[crate::eval::emit::Event] {
+        self.emitter.captures()
+    }
+
     /// The process exit code from a terminated machine's result value
     /// (mirrors `Machine::exit_code`: a numeric result is the code, a
     /// tag-0 success constructor exits 0, anything else exits 1).
@@ -3487,6 +3496,81 @@ impl BytecodeMachine<'_> {
     /// The current machine value (a clone; GC roots stay in the state).
     pub fn current(&self) -> BcValue {
         self.state.current.clone()
+    }
+
+    /// Whether the machine has terminated (reached WHNF with an empty
+    /// continuation stack). Test-only assertion helper, mirroring the
+    /// deleted HeapSyn `vm.rs` `MachineState::terminated` (eu-oufc).
+    #[cfg(test)]
+    pub fn terminated(&self) -> bool {
+        self.state.terminated
+    }
+
+    /// The terminated machine's current value as a bare native, if it is
+    /// one (a data-constructor closure, e.g. a boxed number, is not).
+    /// Test-only assertion helper, mirroring the deleted HeapSyn `vm.rs`
+    /// `Machine::native_return` (eu-oufc): unlike HeapSyn, a bytecode
+    /// native has no code to live in, so there is no indirection to
+    /// follow — it is simply the current value or it isn't.
+    #[cfg(test)]
+    pub fn native_return(&self) -> Option<Native> {
+        if !self.state.terminated {
+            return None;
+        }
+        match &self.state.current {
+            BcValue::Native(n) => Some(n.clone()),
+            BcValue::Closure(_) => None,
+        }
+    }
+
+    /// Retrieve a native string return value if it exists. Test-only
+    /// assertion helper, mirroring the deleted HeapSyn `vm.rs`
+    /// `Machine::string_return` (eu-oufc).
+    #[cfg(test)]
+    pub fn string_return(&self) -> Option<String> {
+        if !self.state.terminated {
+            return None;
+        }
+        if let BcValue::Native(Native::Str(rp)) = &self.state.current {
+            let view = MutatorHeapView::new(&self.heap);
+            Some((*view.scoped(*rp)).as_str().to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Test-only assertion helper, mirroring the deleted HeapSyn `vm.rs`
+    /// `Machine::bool_return` (eu-oufc).
+    #[cfg(test)]
+    pub fn bool_return(&self) -> Option<bool> {
+        if !self.state.terminated {
+            return None;
+        }
+        let c = self.state.current.as_closure()?;
+        let (tag, _) = decode_cons(&self.program, &self.decoded, c)?;
+        if tag == DataConstructor::BoolTrue.tag() {
+            Some(true)
+        } else if tag == DataConstructor::BoolFalse.tag() {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    /// Test-only assertion helper, mirroring the deleted HeapSyn `vm.rs`
+    /// `Machine::unit_return` (eu-oufc).
+    #[cfg(test)]
+    pub fn unit_return(&self) -> bool {
+        if !self.state.terminated {
+            return false;
+        }
+        let Some(c) = self.state.current.as_closure() else {
+            return false;
+        };
+        matches!(
+            decode_cons(&self.program, &self.decoded, c),
+            Some((tag, _)) if tag == DataConstructor::Unit.tag()
+        )
     }
 
     /// The empty root environment frame.
@@ -4216,13 +4300,13 @@ fn scalar_from_native(
 
 /// The `IntrinsicMachine` implementation for the bytecode engine (spec §5.5).
 ///
-/// It overrides the neutral, code-type-agnostic ABI methods to operate over
+/// It implements the neutral, code-type-agnostic ABI methods to operate over
 /// `BcValue`s (resolving refs against the Bif closure's env / the globals
 /// frame / the constant pool, and returning results by mutating the machine
-/// `current`). The HeapSyn-typed methods (`nav`/`set_closure`/`root_env`/
-/// `env`/`evaluate_to_whnf`) are unreachable on this path and panic; an
-/// intrinsic still using them (or the not-yet-wired capture lifecycle)
-/// surfaces via the differential harness for migration.
+/// `current`). This is the sole implementor since the Phase 4 collapse
+/// (eu-oufc) deleted the HeapSyn engine and the HeapSyn-typed escape-hatch
+/// methods (`nav`/`set_closure`/`root_env`/`env`/`evaluate_to_whnf`) that
+/// used to panic here on the bytecode path.
 struct BcBifContext<'ctx, 'a> {
     state: &'ctx mut BcMachineState,
     program: &'ctx BytecodeProgram,
@@ -4519,33 +4603,6 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         self.state.diagnostics.push(msg);
     }
 
-    fn block_index_enabled(&self) -> bool {
-        // Bytecode blocks are template closures with no in-place mutation; use
-        // the STG find-loop fallback for lookups (same result).
-        false
-    }
-
-    // ── HeapSyn-typed methods: unreachable on the bytecode path ──────
-    // These name `SynClosure`/`EnvFrame`, which the bytecode engine never
-    // produces. An intrinsic reaching one has not been migrated to the
-    // neutral ABI and is caught by the differential harness.
-
-    fn set_closure(&mut self, _closure: SynClosure) -> Result<(), ExecutionError> {
-        panic!("bytecode BifContext: set_closure(SynClosure) — intrinsic uses the HeapSyn ABI")
-    }
-
-    fn nav<'guard>(&'guard self, _view: MutatorHeapView<'guard>) -> HeapNavigator<'guard> {
-        panic!("bytecode BifContext: nav — intrinsic uses the HeapSyn ABI")
-    }
-
-    fn root_env(&self) -> RefPtr<EnvFrame> {
-        panic!("bytecode BifContext: root_env — intrinsic uses the HeapSyn ABI")
-    }
-
-    fn env(&self, _view: MutatorHeapView) -> RefPtr<EnvFrame> {
-        panic!("bytecode BifContext: env — intrinsic uses the HeapSyn ABI")
-    }
-
     // ── Emitter capture lifecycle (spec §6; render-as) ──────────────
 
     fn start_capture(&mut self, format: &str) -> Result<(), ExecutionError> {
@@ -4622,15 +4679,9 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
     }
 
     fn set_result(&mut self, closure: AbiClosure) -> Result<(), ExecutionError> {
-        match closure {
-            AbiClosure::Byte(v) => {
-                self.state.current = v;
-                Ok(())
-            }
-            AbiClosure::Heap(_) => {
-                panic!("bytecode BifContext: set_result(Heap) — intrinsic uses the HeapSyn ABI")
-            }
-        }
+        let AbiClosure::Byte(v) = closure;
+        self.state.current = v;
+        Ok(())
     }
 
     fn tail_apply_global(
@@ -4661,19 +4712,17 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
     }
 
     fn force(&mut self, closure: AbiClosure) -> Result<AbiClosure, ExecutionError> {
-        match closure {
+        let AbiClosure::Byte(v) = closure;
+        match v {
             // A native is already WHNF — no sub-run, so clear here rather than
             // leaving an earlier force's metadata visible to
             // `take_stripped_meta` (`run_to_whnf` clears via
             // `enter_whnf_subrun`).
-            AbiClosure::Byte(v @ BcValue::Native(_)) => {
+            v @ BcValue::Native(_) => {
                 self.state.stripped_meta = None;
                 Ok(AbiClosure::Byte(v))
             }
-            AbiClosure::Byte(v) => Ok(AbiClosure::Byte(self.run_to_whnf(v)?)),
-            AbiClosure::Heap(_) => {
-                panic!("bytecode BifContext: force(Heap) — intrinsic uses the HeapSyn ABI")
-            }
+            v => Ok(AbiClosure::Byte(self.run_to_whnf(v)?)),
         }
     }
 
@@ -4757,16 +4806,12 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         closure: &AbiClosure,
         idx: usize,
     ) -> Option<Native> {
-        match self.data_field(view, closure, idx)? {
-            AbiClosure::Byte(v) => self.native_from_value(view, v).ok(),
-            AbiClosure::Heap(_) => None,
-        }
+        let AbiClosure::Byte(v) = self.data_field(view, closure, idx)?;
+        self.native_from_value(view, v).ok()
     }
 
     fn value_native(&self, view: MutatorHeapView<'_>, closure: &AbiClosure) -> Option<Native> {
-        let AbiClosure::Byte(v) = closure else {
-            return None;
-        };
+        let AbiClosure::Byte(v) = closure;
         match v {
             BcValue::Native(n) => Some(n.clone()),
             // A bare-native Atom → follow it; a boxed scalar → its field 0.
@@ -4793,11 +4838,9 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
     ) -> Result<AbiClosure, ExecutionError> {
         let bc_fields: Vec<BcValue> = fields
             .iter()
-            .map(|c| match c {
-                AbiClosure::Byte(v) => v.clone(),
-                AbiClosure::Heap(_) => {
-                    panic!("bytecode BifContext: data_value with a HeapSyn field")
-                }
+            .map(|c| {
+                let AbiClosure::Byte(v) = c;
+                v.clone()
             })
             .collect();
         Ok(AbiClosure::Byte(self.build_data(view, tag, &bc_fields)?))
@@ -4809,11 +4852,9 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         meta: AbiClosure,
         body: AbiClosure,
     ) -> Result<AbiClosure, ExecutionError> {
-        let unwrap = |c: AbiClosure| match c {
-            AbiClosure::Byte(v) => v,
-            AbiClosure::Heap(_) => {
-                panic!("bytecode BifContext: meta_value with a HeapSyn field")
-            }
+        let unwrap = |c: AbiClosure| {
+            let AbiClosure::Byte(v) = c;
+            v
         };
         let env = view.from_values(
             [unwrap(meta), unwrap(body)].into_iter(),
@@ -4836,9 +4877,7 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         // from the constructor template (no runtime code synthesis).
         let mut acc = self.build_data(view, DataConstructor::ListNil.tag(), &[])?;
         for item in items.into_iter().rev() {
-            let AbiClosure::Byte(head) = item else {
-                panic!("bytecode BifContext: return_closure_list with a HeapSyn item")
-            };
+            let AbiClosure::Byte(head) = item;
             acc = self.build_data(view, DataConstructor::ListCons.tag(), &[head, acc])?;
         }
         self.state.current = acc;
@@ -4853,9 +4892,7 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         f: AbiClosure,
         a: AbiClosure,
     ) -> Result<AbiClosure, ExecutionError> {
-        let (AbiClosure::Byte(fv), AbiClosure::Byte(av)) = (f, a) else {
-            panic!("bytecode BifContext: apply1_thunk with a HeapSyn field")
-        };
+        let (AbiClosure::Byte(fv), AbiClosure::Byte(av)) = (f, a);
         // A GC-heap env frame `[f, a]` over the fixed `App(L0,[L1])` template.
         let env = view.from_values(
             [fv, av].into_iter(),
@@ -4876,10 +4913,7 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
         a0: AbiClosure,
         a1: AbiClosure,
     ) -> Result<AbiClosure, ExecutionError> {
-        let (AbiClosure::Byte(fv), AbiClosure::Byte(a0v), AbiClosure::Byte(a1v)) = (f, a0, a1)
-        else {
-            panic!("bytecode BifContext: apply2_thunk with a HeapSyn field")
-        };
+        let (AbiClosure::Byte(fv), AbiClosure::Byte(a0v), AbiClosure::Byte(a1v)) = (f, a0, a1);
         // A GC-heap env frame `[f, a0, a1]` over the fixed `App(L0,[L1,L2])`
         // template — zero arena growth.
         let env = view.from_values(

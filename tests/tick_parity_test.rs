@@ -153,24 +153,21 @@ fn source_prelude_tick_parity_tripwire() {
     // The pre-decoded engine shrinks `machine_ticks` uniformly via
     // Ann-elimination, inflating this ratio without changing the absolute
     // handicap (see `MAX_SOURCE_PRELUDE_RATIO_PREDECODE`). The spawned `eu`
-    // inherits `EU_PREDECODE`/`EU_HEAPSYN` from this process, so both
-    // `run_ticks` calls above measured whichever engine this test itself
-    // runs under — select the matching cap.
+    // inherits `EU_PREDECODE` from this process, so both `run_ticks` calls
+    // above measured whichever dispatch path this test itself runs under —
+    // select the matching cap.
     //
     // Since Phase 2 (eu-vcr8) pre-decoded dispatch is the *default*: it is
-    // selected unless `EU_PREDECODE=0` opts out, and only when the bytecode
-    // engine itself is selected (`EU_HEAPSYN=1` takes precedence over
-    // `EU_PREDECODE` entirely, per `bytecode::predecode_enabled`). Mirror
-    // that precedence here rather than re-deriving it, so this test always
-    // picks the cap for the engine actually under test.
-    let heapsyn = std::env::var("EU_HEAPSYN").as_deref() == Ok("1");
-    let predecode = !heapsyn && std::env::var("EU_PREDECODE").as_deref() != Ok("0");
+    // selected unless `EU_PREDECODE=0` opts out (eu-1hcw retains the
+    // byte-dispatch path through its soak period). The HeapSyn engine this
+    // comment used to also branch on was deleted by the Phase 4 collapse
+    // (eu-oufc); bytecode is now the sole engine.
+    let predecode = std::env::var("EU_PREDECODE").as_deref() != Ok("0");
     let cap = if predecode {
         MAX_SOURCE_PRELUDE_RATIO_PREDECODE
     } else {
-        // Covers both the byte-dispatch engine (bytecode with EU_PREDECODE=0)
-        // and the HeapSyn baseline (EU_HEAPSYN=1): both measured at
-        // near-exact parity (eu-npp9), well inside this cap.
+        // The byte-dispatch engine (bytecode with EU_PREDECODE=0), measured
+        // at near-exact parity (eu-npp9), well inside this cap.
         MAX_SOURCE_PRELUDE_RATIO
     };
 

@@ -1232,10 +1232,6 @@ mod oom_tests {
             "String allocation should succeed for reasonable sizes"
         );
 
-        // Test that unit allocation returns a Result
-        let result = view.unit();
-        assert!(result.is_ok(), "Unit allocation should succeed");
-
         println!("✅ All allocation methods return Results instead of panicking");
     }
 
@@ -2929,15 +2925,7 @@ impl Heap {
 
 #[cfg(test)]
 pub mod tests {
-    use std::iter::repeat_with;
-
-    use crate::{
-        common::sourcemap::Smid,
-        eval::memory::{
-            mutator::MutatorHeapView,
-            syntax::{LambdaForm, Ref, StgBuilder},
-        },
-    };
+    use crate::eval::memory::{alloc::ScopedAllocator, mutator::MutatorHeapView, syntax::Ref};
 
     use super::*;
 
@@ -2971,24 +2959,11 @@ pub mod tests {
     pub fn test_large_object_block() {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
-        let mut pool = crate::eval::memory::symbol::SymbolPool::new();
 
-        let ids = repeat_with(|| -> LambdaForm {
-            LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
-        })
-        .take(32000)
-        .collect::<Vec<_>>();
-        let idarray = view.array(ids.as_slice());
-
-        view.let_(
-            idarray,
-            view.app(
-                Ref::L(0),
-                view.singleton(view.sym_ref(&mut pool, "foo").unwrap()),
-            )
-            .unwrap(),
-        )
-        .unwrap();
+        // A large enough backing array forces the LOB (large-object-block)
+        // allocation path, regardless of what value type it holds.
+        let refs: Vec<Ref> = (0..32000).map(Ref::num).collect();
+        let _idarray = view.array(refs.as_slice());
 
         assert_eq!(heap.stats().lobs_allocated, 1);
     }
@@ -3623,7 +3598,7 @@ pub mod tests {
     pub fn test_pin_and_unpin_block() {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
-        let ptr = view.atom(Ref::L(0)).unwrap().as_ptr();
+        let ptr = view.alloc(Ref::L(0)).unwrap().as_ptr();
         let base = crate::eval::memory::bump::block_base_of(ptr);
         assert!(!heap.is_block_pinned(base));
         let guard = view.pin(ptr);
@@ -3636,7 +3611,7 @@ pub mod tests {
     pub fn test_pin_ref_counting() {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
-        let ptr = view.atom(Ref::L(0)).unwrap().as_ptr();
+        let ptr = view.alloc(Ref::L(0)).unwrap().as_ptr();
         let base = crate::eval::memory::bump::block_base_of(ptr);
         let guard1 = view.pin(ptr);
         let guard2 = view.pin(ptr);
