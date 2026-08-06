@@ -300,7 +300,7 @@ jobs:
           EU_SOURCE_PRELUDE: "1"
 
   test-pp-parallelism:
-    name: Process-parallelism (Linux, both engines)
+    name: Process-parallelism (Linux, both dispatch configs)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -332,7 +332,7 @@ jobs:
       # is coverage EU_GC_VERIFY cannot provide — verification checks
       # reachability from roots, and the bug class it guards against is
       # handles that were never roots.
-      - name: Run PP tests (drives fork on both engines under GC verification)
+      - name: Run PP tests (drives fork on both dispatch configs under GC verification)
         run: cargo test --test harness_test pp
         env:
           EU_GC_VERIFY: "2"

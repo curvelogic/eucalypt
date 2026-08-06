@@ -101,8 +101,30 @@ fn io_bind_chain_threads_the_result_into_the_continuation() {
 #[test]
 fn io_shell_with_stdin_pipes_the_option_block_field() {
     // Parameterised (App-thunk) spec block with an options block (stdin).
+    //
+    // The command must actually consume stdin, and the two platforms'
+    // `io.shell` shells (`sh -c` on Unix, `pwsh -NoProfile -Command` on
+    // Windows — see `execute_shell` in `src/driver/io_common.rs`) have no
+    // single command in common that does that: on Windows, `cat` is a
+    // PowerShell alias for `Get-Content`, which demands a `-Path` and
+    // refuses piped stdin outright ("missing mandatory parameter: Path"),
+    // so it cannot stand in for Unix's `cat`. Rather than gate the
+    // assertion away on Windows (which would silently resurrect the exact
+    // vacuous-differential defect this PR eliminates — the old bc-vs-hs
+    // form "passed" there too, because both engines drove the identical
+    // failing `pwsh` invocation and "agreed"), pick a platform-appropriate
+    // stdin-consuming command so the property under test — the `stdin`
+    // option-block field is genuinely piped into the shelled-out process —
+    // is exercised for real on both platforms.
+    let cmd = if cfg!(windows) {
+        // Reads the raw redirected stdin stream directly (no dependence on
+        // PowerShell's `$input` pipeline-object semantics).
+        "[Console]::In.ReadToEnd()"
+    } else {
+        "cat"
+    };
     assert_output_contains(
-        "io.shell-with({ stdin: \"piped\\n\" }, \"cat\")",
+        &format!("io.shell-with({{ stdin: \"piped\\n\" }}, \"{cmd}\")"),
         &["piped", "exit-code: 0"],
     );
 }
