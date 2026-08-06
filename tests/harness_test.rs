@@ -3640,6 +3640,61 @@ pub fn test_pp_fork_path_equivalence_both_engines() {
     );
 }
 
+/// eu-2obtj — the DEFAULT threshold now forks whenever a `par-map` has at
+/// least two elements (previously 1024, which excluded every workload this
+/// small). Asserts the NEW default: a 4-element `par-map` forks with **no**
+/// `EU_PP_THRESHOLD` override at all, and that `EU_PP_THRESHOLD` still works
+/// as an escape hatch to force the sequential fallback back on.
+///
+/// Fault-injection verified: reverting `DEFAULT_THRESHOLD` to 1024 makes the
+/// first assertion below fail (the default-config run reports "sequential
+/// (below threshold)" rather than "forked"); restoring the change to 2 makes
+/// it pass again.
+#[test]
+pub fn test_pp_default_threshold_forks_small_list() {
+    let fixture = "tests/harness/testdata/pp_small_fork_fixture.eu";
+
+    let run = |env: &[(&str, &str)]| -> String {
+        let mut cmd = std::process::Command::new(eu_binary());
+        cmd.arg(fixture).arg("--heap-limit-mib").arg("12288");
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        let out = run_with_deadline(cmd, std::time::Duration::from_secs(120))
+            .expect("eu did not complete within the deadline");
+        assert!(
+            out.status.success(),
+            "eu exited non-zero for env {env:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stderr).to_string()
+    };
+
+    // Default configuration — no EU_PP_THRESHOLD override at all. On unix
+    // this must fork: DEFAULT_THRESHOLD is 2, and the fixture has 4 elements.
+    let default_stderr = run(&[("EU_PP_TRACE", "1")]);
+    if cfg!(unix) {
+        assert!(
+            default_stderr.contains("forked"),
+            "expected the default configuration to fork a 4-element par-map \
+             (DEFAULT_THRESHOLD=2), but the trace says:\n{default_stderr}"
+        );
+    }
+
+    // EU_PP_THRESHOLD remains a working escape hatch to force sequential.
+    // `EU_PP_TRACE` (like the rest of the fork machinery) only has an effect
+    // on unix — on Windows `par-*` never forks in the first place, so there
+    // is no trace output to assert on.
+    let forced_seq_stderr = run(&[("EU_PP_TRACE", "1"), ("EU_PP_THRESHOLD", "999999999")]);
+    if cfg!(unix) {
+        assert!(
+            forced_seq_stderr.contains("sequential"),
+            "expected EU_PP_THRESHOLD=999999999 to force the sequential path, \
+             but the trace says:\n{forced_seq_stderr}"
+        );
+    }
+}
+
 /// eu-u9xj.6 (PP) — the parallel driver must survive a collection that
 /// happens *during* the map.
 ///

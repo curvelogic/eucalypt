@@ -957,16 +957,24 @@ min-of-or(d, l): l nil? then(d, min-of(l))
 ##
 ## Semantics may change without notice. macOS/Linux only: the mechanism is a
 ## POSIX fork, so it is unavailable on Windows (there it degrades silently to
-## the same sequential fallback used below the size threshold - see
+## the same sequential fallback described below - see
 ## docs/guide/parallelism.md).
 ##
 ## Each combinator is semantically identical to its sequential form - a pure
 ## performance advisory. par-map evaluates a pure f over independent elements
 ## in parallel worker processes (Unix copy-on-write fork) and reassembles the
-## results in index order, falling back transparently to a sequential map
-## below a size threshold, on a single core, or on a non-Unix platform. f must
-## be pure and return serialisable data (numbers, strings, symbols, booleans,
-## null, lists, blocks); a non-serialisable result is a boundary error.
+## results in index order. par-* is an explicit caller opt-in: writing it
+## already says "fork this", so the runtime no longer second-guesses that
+## decision with a predicted-benefit size gate - it forks whenever there are
+## at least two elements and the platform allows. It still falls back
+## transparently to a sequential map on a single core, on a non-Unix
+## platform, or if the fork mechanism itself fails for any reason. The fixed
+## per-call cost of the fork mechanism is small (measured ~2-3ms on macOS
+## ARM64 - see docs/guide/parallelism.md), so callers, not a runtime
+## heuristic, are best placed to judge whether a cheap tiny list is worth
+## forking. f must be pure and return serialisable data (numbers, strings,
+## symbols, booleans, null, lists, blocks); a non-serialisable result is a
+## boundary error.
 
 ## The par-* combinators are strict in the SPINE of xs. __PARMAP's own STG
 ## wrapper (src/eval/stg/parallel/intrinic.rs) forces that spine, via the

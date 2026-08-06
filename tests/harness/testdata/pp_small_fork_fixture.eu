@@ -1,0 +1,9 @@
+# eu-2obtj — fixture for test_pp_default_threshold_forks_small_list in
+# harness_test.rs. Deliberately tiny (4 elements): before eu-2obtj the
+# default DEFAULT_THRESHOLD (1024) meant a list this small always took the
+# sequential fallback; after eu-2obtj the default (2) means it forks
+# whenever the platform allows, with no EU_PP_THRESHOLD override needed.
+
+sq(x): x * x
+
+result: [1, 2, 3, 4] par-map(sq)
