@@ -2,7 +2,13 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.14.0] - Unreleased
+## [0.14.1] - 2026-08-06
+
+### Changed
+
+- **`par-*` no longer gates on a predicted-benefit element-count threshold (eu-2obtj)** — owner decision, 2026-08-04: `par-*` is already an explicit caller opt-in (writing it instead of the sequential form already says "fork this"), so the runtime should not second-guess that with a size heuristic. `DEFAULT_THRESHOLD` in `src/eval/stg/parallel/driver.rs` moves from 1024 to 2, so the only remaining count condition is the degenerate `n < 2` (nothing to parallelise); the AoC-2025 corpus findings that drove this (`examples/aoc25/PERFORMANCE.md`) showed the old 1024-element gate rejecting exactly the workloads where forking paid most — 185 heavy elements at 7.2×, 4 very heavy elements at 3.8×, both far below the threshold. Feasibility fallbacks (worker fault, per-element arena cap, single core, non-Unix) are unchanged; `par-*` remains advisory and semantically identical to its sequential form either way. `EU_PP_THRESHOLD` remains as a tuning/testing escape hatch. Measured fixed per-call fork overhead: ~2–3ms on macOS ARM64 (measured-single; `docs/superpowers/reports/2026-08-04-eu-2obtj-fork-overhead.md`), now documented in the prelude advisory and `docs/guide/parallelism.md` so callers can judge whether a cheap tiny list is worth forking
+
+## [0.14.0] - 2026-08-02
 
 ### Breaking changes
 
