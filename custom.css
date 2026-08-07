@@ -1,0 +1,19 @@
+/* Custom styles for eucalypt documentation */
+
+/* Style blockquotes that start with bold Note/Warning as admonitions */
+blockquote {
+    border-left: 4px solid #4a9eff;
+    background-color: rgba(74, 158, 255, 0.05);
+    padding: 0.5em 1em;
+    margin: 1em 0;
+}
+
+blockquote p strong:first-child {
+    display: inline;
+}
+
+/* Warning-style blockquotes */
+blockquote p:first-child strong:first-child:only-child,
+blockquote p:first-child strong:first-child {
+    color: inherit;
+}

@@ -1,0 +1,350 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Operator Precedence Table - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/reference/operators-and-identifiers.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="operators-and-identifiers"><a class="header" href="#operators-and-identifiers">Operators and Identifiers</a></h1>
+<p>Eucalypt distinguishes two different types of identifier, <em>normal</em>
+identifiers, like <code>x</code>, <code>y</code>, <code>α</code>, <code>א</code>, <code>ziggety-zaggety</code>, <code>zoom?</code>, and
+<em>operator identifiers</em> like <code>*</code>, <code>@</code>, <code>&amp;&amp;</code>, <code>∧</code>, <code>∘</code>, <code>⊙⊙⊙</code>, <code>&lt;&gt;</code> and
+so on.</p>
+<p>It is entirely a matter of the component characters which category an
+identifier falls into. Normal identifiers contain letters (including
+non-ASCII characters), numbers, "-", "?", "$". Operator identifiers
+contain the usual suspects and anything identified as an operator or
+symbol in unicode. Neither can contain ":" or "," or brackets which
+are special in eucalypt.</p>
+<p>Any sequence of characters at all can be treated as a normal
+identifier by surrounding them in single quotes. This is the only use
+of single quotes in eucalypt. This can be useful when you want to use
+file paths or other external identifiers as block keys for instance:</p>
+<pre><code class="language-eu notest">home: {
+  '.bashrc': false
+  '.emacs.d': false
+  'notes.txt': true
+}
+
+z: home.'notes.txt'
+</code></pre>
+<h2 id="normal-identifiers"><a class="header" href="#normal-identifiers">Normal identifiers</a></h2>
+<p>Normal identifiers are brought into scope by declarations and can be
+referred to without qualification in their own block or in more
+nested blocks:</p>
+<pre><code class="language-eu">x: {
+  z: 99
+  foo: z //=&gt; 99
+  bar: {
+    y: z //=&gt; 99
+  }
+}
+</code></pre>
+<p>They can be accessed from within other blocks using the lookup
+operator:</p>
+<pre><code class="language-eu">x: {
+  z: 99
+}
+
+y: x.z //=&gt; 99
+</code></pre>
+<p>They can be overridden using generalised lookup:</p>
+<pre><code class="language-eu">z: 99
+y: { z: 100 }."z is {z}" //=&gt; "z is 100"
+</code></pre>
+<p>They can be shadowed:</p>
+<pre><code class="language-eu">z: 99
+y: { z: 100 r: z //=&gt; 100 }
+</code></pre>
+<p>But beware trying to access the outer value:</p>
+<pre><code class="language-eu notest">name: "foo"
+x: { name: name } //=&gt; infinite recursion
+</code></pre>
+<p>Accessing shadowed values is not yet easily possible unless you can
+refer to an enclosing block and use a lookup.</p>
+<h2 id="prefix-operators"><a class="header" href="#prefix-operators">Prefix operators</a></h2>
+<p>Some operators are defined as prefix (unary) operators rather than
+infix (binary) operators. These bind tightly to the expression that
+follows.</p>
+<p>For example, the <code>↑</code> operator is a tight-binding prefix form of <code>head</code>:</p>
+<pre><code class="language-eu">xs: [1, 2, 3]
+first: ↑xs  //=&gt; 1
+</code></pre>
+<p>Because it binds tightly (precedence 95), it works naturally in
+pipelines without parentheses:</p>
+<pre><code class="language-eu">xs: [[1, 2], [3, 4]]
+result: xs map(↑)  # map head over list of lists
+</code></pre>
+<p>Other prefix operators include <code>!</code> and <code>¬</code> for boolean negation, and
+<code>∸</code> for numeric negation.</p>
+<h2 id="operator-identifiers"><a class="header" href="#operator-identifiers">Operator identifiers</a></h2>
+<p>Operator identifiers are more limited than normal identifiers.</p>
+<p>They are brought into scope by operator declarations and available
+without qualification in their own block and more nested blocks:</p>
+<pre><code class="language-eu">( l --&gt;&gt; r): "{l} shoots arrow at {r}"
+
+x: {
+  y: 2 --&gt;&gt; 3 //=&gt; "2 shoots arrow at 3"
+}
+</code></pre>
+<p>...and can be shadowed:</p>
+<pre><code class="language-eu">(l !!! r): l + r
+
+y: {
+  (l !!! r): l - r
+  z: 100 !!! 1 //=&gt; 99
+}
+</code></pre>
+<p>But:</p>
+<ul>
+<li>they cannot be accessed by lookup, so there is no way of forming a
+qualified name to access an operator</li>
+<li>they cannot be overridden by generalised lookup</li>
+</ul>
+<h2 id="operator-precedence-table"><a class="header" href="#operator-precedence-table">Operator Precedence Table</a></h2>
+<p>Operator precedence determines how operator expressions are parsed
+when parentheses are omitted — higher numbers bind more tightly. This
+table is verified against <code>named_precedence</code> in
+<code>src/core/metadata.rs</code> and the operator declarations in
+<code>lib/prelude.eu</code>:</p>
+<div class="table-wrapper"><table><thead><tr><th>Prec</th><th>Name</th><th>Assoc</th><th>Operators</th><th>Description</th></tr></thead><tbody>
+<tr><td>95</td><td>--</td><td>prefix</td><td><code>↑</code></td><td>Head (tight prefix)</td></tr>
+<tr><td>90</td><td>lookup</td><td>left</td><td><code>.</code> (built-in)</td><td>Property lookup</td></tr>
+<tr><td>90</td><td>lookup</td><td>left</td><td><code>~</code></td><td>Safe key lookup (null-propagating)</td></tr>
+<tr><td>90</td><td>call</td><td>left</td><td>(built-in)</td><td>Function call</td></tr>
+<tr><td>88</td><td>bool-unary</td><td>prefix</td><td><code>!</code>, <code>¬</code></td><td>Boolean negation</td></tr>
+<tr><td>88</td><td>bool-unary</td><td>postfix</td><td><code>✓</code></td><td>Not-null check (true if not null)</td></tr>
+<tr><td>88</td><td>--</td><td>--</td><td><code>∘</code>, <code>;</code></td><td>Composition</td></tr>
+<tr><td>85</td><td>exp</td><td>right</td><td><code>^</code></td><td>Power</td></tr>
+<tr><td>85</td><td>exp</td><td>--</td><td><code>!!</code> (nth)</td><td>Indexing</td></tr>
+<tr><td>80</td><td>prod</td><td>left</td><td><code>*</code>, <code>/</code>, <code>÷</code>, <code>%</code></td><td>Multiplication, floor division, precise division, floor modulo</td></tr>
+<tr><td>75</td><td>sum</td><td>left</td><td><code>+</code>, <code>-</code></td><td>Addition, subtraction</td></tr>
+<tr><td>60</td><td>shift</td><td>--</td><td>(shift ops)</td><td>Reserved</td></tr>
+<tr><td>55</td><td>bitwise</td><td>--</td><td>(bitwise ops)</td><td>Reserved — <code>‖</code> (cons) also uses this numeric level, <code>precedence: 55</code> in <code>lib/prelude.eu</code></td></tr>
+<tr><td>50</td><td>cmp</td><td>left</td><td><code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code></td><td>Comparison</td></tr>
+<tr><td>45</td><td>append</td><td>left</td><td><code>++</code></td><td>List concatenation</td></tr>
+<tr><td>45</td><td>append</td><td>left</td><td><code>&lt;&lt;</code></td><td>Deep merge</td></tr>
+<tr><td>42</td><td>map</td><td>left</td><td><code>&lt;$&gt;</code></td><td>Functor map</td></tr>
+<tr><td>40</td><td>eq</td><td>left</td><td><code>=</code>, <code>!=</code></td><td>Equality</td></tr>
+<tr><td>35</td><td>bool-prod</td><td>left</td><td><code>&amp;&amp;</code>, <code>∧</code></td><td>Logical AND</td></tr>
+<tr><td>30</td><td>bool-sum</td><td>left</td><td><code>||</code>, <code>∨</code></td><td>Logical OR</td></tr>
+<tr><td>20</td><td>cat</td><td>left</td><td><em>(catenation)</em></td><td>Juxtaposition / pipeline</td></tr>
+<tr><td>15</td><td>clause</td><td>left</td><td><code>=&gt;</code>, <code>⇒</code></td><td>Cond clause builder (<code>condition =&gt; result</code>)</td></tr>
+<tr><td>10</td><td>apply</td><td>left</td><td><code>@</code></td><td>Function application</td></tr>
+<tr><td>5</td><td>meta</td><td>left</td><td><code>//</code>, <code>//&lt;&lt;</code>, <code>//=</code>, <code>//=&gt;</code>, <code>//=?</code>, <code>//=?&gt;</code>, <code>//!</code></td><td>Metadata and assertions</td></tr>
+</tbody></table>
+</div>
+<p><strong>User-defined operators</strong> default to left-associative, precedence 50.
+Set custom values via metadata:</p>
+<pre><code class="language-eu notest">` { associates: :right precedence: :sum }
+(x +++ y): x + y
+</code></pre>
+<p>See <a href="agent-reference.html">Agent Reference §2</a> for the full named-level
+list and more examples.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../reference/syntax.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../reference/prelude/index.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../reference/syntax.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../reference/prelude/index.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>

@@ -1,0 +1,464 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Structural Contracts - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/guide/contracts.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="structural-contracts"><a class="header" href="#structural-contracts">Structural Contracts</a></h1>
+<p>Eucalypt's type checker runs before evaluation and is erased afterwards.
+That is the right trade for code you wrote yourself — but it says nothing
+about data that arrives from outside the program. An imported YAML file, a
+CSV, a JSON payload: none of it was checked by anything, and by the time a
+missing field surfaces as a lookup error you are several transformations
+away from the thing that was actually wrong.</p>
+<p><strong>Structural contracts</strong> guard that boundary. You write a spec as an
+ordinary <code>s"…"</code> type literal — the same type language as <code>type:</code>
+annotations — apply it where the data comes in, and get back a precise
+account of what does not conform.</p>
+<pre><code class="language-eu notest">{ import: ["contract.eu", "cfg=config.yaml"] }
+
+schema: s"{ name: string, port: number, tags?: [string] }"
+
+config: cfg ensure(schema)
+</code></pre>
+<p>Contracts are <strong>explicit</strong>: nothing is checked unless you write the check,
+and nothing is forced unless the spec names it.</p>
+<h2 id="two-functions"><a class="header" href="#two-functions">Two functions</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Returns</th><th>Raises</th></tr></thead><tbody>
+<tr><td><code>validate(spec, data)</code></td><td>a list of violations; <code>[]</code> means conformant</td><td>not for any <em>shape</em> of data — see below</td></tr>
+<tr><td><code>ensure(spec, data)</code></td><td><code>data</code>, unchanged</td><td>when the data does not conform</td></tr>
+</tbody></table>
+</div>
+<p><code>validate</code> is for when you want to <em>look</em> at the problems — count them,
+group them, render them into a report, decide for yourself what to do.
+<code>ensure</code> is for when there is nothing sensible to do but stop.</p>
+<p><strong>What "does not raise" means precisely.</strong> No <em>shape</em> of data makes
+<code>validate</code> raise: however malformed, unexpected or partial a value is, you
+get violations rather than an error. Two things do still raise, and neither
+is about the data's shape:</p>
+<ul>
+<li>a <strong>spec</strong> that is not a type spec at all (covered below — it is a
+program bug, deliberately not reportable as a data violation);</li>
+<li>forcing a value the spec <strong>names</strong>, if evaluating that value raises. This
+is the unavoidable flip side of spec-directed forcing: <code>validate</code> is
+total with respect to shape, not with respect to evaluation. A spec that
+does not name a subtree never touches it, so it cannot be caught by one.</li>
+</ul>
+<p>Both take the receiver last, so both read naturally in a pipeline:
+<code>data validate(spec)</code>, <code>data ensure(spec)</code>.</p>
+<p>Import them with:</p>
+<pre><code class="language-eu notest">{ import: "contract.eu" }
+</code></pre>
+<h2 id="the-report"><a class="header" href="#the-report">The report</a></h2>
+<p>Given <code>servers.yaml</code>:</p>
+<pre><code class="language-yaml">servers:
+  - host: "a.example.com"
+    port: 8080
+  - host: "b.example.com"
+    port: 9090
+  - host: "c.example.com"
+    port: "7070"
+  - port: 6060
+debug: true
+</code></pre>
+<p>and the spec:</p>
+<pre><code class="language-eu notest">{ import: ["contract.eu", "data=servers.yaml"] }
+
+schema: s"{ servers: [{ host: string, port: number }] }"
+
+report: data validate(schema)
+</code></pre>
+<p><code>report</code> is:</p>
+<pre><code class="language-yaml">- path: "servers[2].port"
+  kind: type-mismatch
+  expected: "number"
+  found: "string"
+- path: "servers[3]"
+  kind: missing
+  expected: "host"
+  found: absent
+- path: ""
+  kind: unexpected
+  expected: closed
+  found: [debug]
+</code></pre>
+<p>Three separate faults, three separate entries — every violation is
+collected, not just the first, because a boundary check exists to let you
+fix the data in one pass rather than N.</p>
+<p>The report is a plain list of plain blocks. It can be filtered, grouped,
+counted, rendered to a table, or emitted as YAML like any other eucalypt
+data. That is the point of returning data rather than a string.</p>
+<h3 id="the-four-kinds"><a class="header" href="#the-four-kinds">The four kinds</a></h3>
+<div class="table-wrapper"><table><thead><tr><th><code>kind</code></th><th>Raised when</th><th><code>path</code> points at</th><th><code>expected</code></th><th><code>found</code></th></tr></thead><tbody>
+<tr><td><code>:type-mismatch</code></td><td>a value is present but does not match its spec</td><td>the <strong>value</strong></td><td>the rendered type expected there</td><td>the runtime type name of the value</td></tr>
+<tr><td><code>:missing</code></td><td>a required record field is absent</td><td>the <strong>containing record</strong></td><td>the missing field's key</td><td><code>:absent</code></td></tr>
+<tr><td><code>:unexpected</code></td><td>a <strong>closed</strong> record has surplus keys</td><td>the <strong>record</strong></td><td><code>:closed</code></td><td>the surplus keys</td></tr>
+<tr><td><code>:length</code></td><td>a tuple or prefix-list has the wrong arity</td><td>the <strong>list</strong></td><td>the required length</td><td>the actual length</td></tr>
+</tbody></table>
+</div>
+<p>The runtime type names in <code>found</code> are the predicate vocabulary the language
+already exposes: <code>"number"</code>, <code>"string"</code>, <code>"symbol"</code>, <code>"bool"</code>, <code>"null"</code>,
+<code>"datetime"</code>, <code>"list"</code>, <code>"block"</code>, <code>"function"</code>, <code>"type-data"</code>.</p>
+<h3 id="paths"><a class="header" href="#paths">Paths</a></h3>
+<p><code>path</code> is a string, and it is the primary locator — format-independent,
+always available, and meaningful for every input format:</p>
+<div class="table-wrapper"><table><thead><tr><th>Step</th><th>Rendering</th></tr></thead><tbody>
+<tr><td>the root</td><td><code>""</code></td></tr>
+<tr><td>a record field</td><td><code>.name</code>, with the leading <code>.</code> elided at the root — so <code>port</code>, <code>server.port</code></td></tr>
+<tr><td>a field whose key is not identifier-shaped</td><td><code>.'my key'</code></td></tr>
+<tr><td>a list or tuple index</td><td><code>[3]</code>, appended with no separator — <code>servers[2].port</code></td></tr>
+</tbody></table>
+</div>
+<p>The format is chosen to be <strong>readable at a glance</strong> and to match how you
+would describe the position in prose or a bug report. It is not eucalypt
+source: a path containing an index does not evaluate as written, because
+<code>[2]</code> is a list literal and <code>servers[2]</code> reads as catenation rather than
+indexing. To navigate to the offending value, translate the path — a field
+step is <code>.name</code> or <code>lookup(:name)</code>, and an index step is <code>nth(2)</code>:</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+
+# For the path "servers[2].port" — note the parentheses, since `.` binds
+# tighter than catenation.
+v: (data.servers nth(2)).port
+l: data view(‹:servers 2 :port›)
+</code></pre>
+<p>An index-free path <em>is</em> a usable <code>.</code>-chain (<code>server.port</code>), which is why
+the format elides the leading <code>.</code> at the root.</p>
+<h2 id="ensure-and-the-error-it-raises"><a class="header" href="#ensure-and-the-error-it-raises"><code>ensure</code> and the error it raises</a></h2>
+<p><code>ensure</code> returns the data <strong>unchanged</strong> on success, so it drops into a
+pipeline without restructuring the code around it — the binding it feeds
+looks the same with or without the check.</p>
+<p>When the data does not conform it raises:</p>
+<pre><code class="language-text">error[EU-EVAL-CONTRACT]: contract violation: 2 violations against {name: string, port: number}
+  ┌─ deploy.eu:7:39
+  │
+7 │ config: { name: "web", port: "8080" } ensure(schema)
+  │                                       ^^^^^^^^^^^^^^
+  │
+  = port: expected number, found string
+  = (root): unexpected keys: debug
+</code></pre>
+<p>Two locators, doing two different jobs. The <strong>source location</strong> is meant to
+be the <code>ensure</code> call site — it answers "which contract failed" — while the
+<strong>paths in the notes</strong> answer "which field to fix". Pointing at a line in
+the data file itself is a separate matter, discussed under <em>What is not
+covered</em> below.</p>
+<p>The source location is the <code>ensure</code> call site under both prelude modes.
+It briefly was not: a shipped library imported by filename was
+misclassified as user code, so a frame inside <code>lib/contract.eu</code> could win
+the "blame user code" ranking and become the primary label under the
+pre-compiled prelude. That was <strong>eu-8a49h</strong>, not specific to contracts,
+and it is fixed. <code>tests/harness/errors/201_sv3_contract_violation.eu</code>
+anchors the primary label on the <code>ensure</code> call site so a regression fails
+the build.</p>
+<p><code>ensure</code> on conforming data costs exactly one <code>validate</code> — the failure
+branch is lazy, so nothing is rendered when there is nothing to report.</p>
+<h2 id="open-and-closed-records"><a class="header" href="#open-and-closed-records">Open and closed records</a></h2>
+<p>A spec literal means the <strong>same thing</strong> statically and at runtime. The
+checker treats <code>s"{a: number}"</code> as a closed record, so the validator does
+too:</p>
+<pre><code class="language-eu notest">{ import: "contract.eu" }
+
+data: { a: 1, b: 2 }
+
+closed: data validate(s"{a: number}")       # one :unexpected entry for b
+open:   data validate(s"{a: number, ..}")   # []
+</code></pre>
+<p>Adding <code>..</code> — or a named row variable, <code>..r</code>, which means the same thing to
+a validator — permits surplus keys. This matters most for external data,
+where a payload routinely carries fields you do not care about: reach for
+the open form unless you genuinely want to be told about extras.</p>
+<h2 id="optional-fields"><a class="header" href="#optional-fields">Optional fields</a></h2>
+<p><code>k?: T</code> means <em>absent is fine, present must match</em>:</p>
+<pre><code class="language-eu notest">{ import: "contract.eu" }
+
+schema: s"{ host: string, port?: number }"
+
+a: { host: "x" }              validate(schema)   # [] — absence is conformant
+b: { host: "x", port: 80 }    validate(schema)   # [] — present and correct
+c: { host: "x", port: "80" }  validate(schema)   # one :type-mismatch at "port"
+</code></pre>
+<h2 id="cost-is-paid-only-where-written"><a class="header" href="#cost-is-paid-only-where-written">Cost is paid only where written</a></h2>
+<p>The interpreter forces <strong>only the paths the spec names</strong>:</p>
+<ul>
+<li>A record spec forces the value far enough to know it is a block and
+enumerates its keys. Key enumeration walks the block's spine and forces
+<strong>no</strong> value. Only the values under keys the spec <em>names</em> are forced —
+so detecting surplus keys is a key-set comparison, never a value forcing,
+and even a closed spec is cheap.</li>
+<li>A list, tuple or prefix-list spec forces the spine, and forces each
+element only as far as its element spec demands.</li>
+<li>A primitive spec forces its value just far enough to name its type.</li>
+<li><code>any</code>, <code>top</code>, type variables and unrecognised tags force <strong>nothing</strong>.</li>
+</ul>
+<p>Three consequences worth relying on:</p>
+<ul>
+<li><code>s"{ .. }"</code> against a 10 000-key imported block forces the spine and
+nothing else.</li>
+<li><code>s"{name: string, ..}"</code> against that block forces exactly <code>name</code>.</li>
+<li>A spec is safe to apply to a value with expensive or diverging subtrees,
+as long as it does not name them.</li>
+</ul>
+<p><code>ensure</code> inherits this discipline exactly.</p>
+<h2 id="a-malformed-spec-is-a-different-problem"><a class="header" href="#a-malformed-spec-is-a-different-problem">A malformed spec is a different problem</a></h2>
+<p>A typo in a <em>schema</em> is a program bug, not a data problem, so it must not
+appear in the report — otherwise it would send you to inspect the wrong
+file. <code>validate</code> raises when its first argument is not a type spec at all:</p>
+<pre><code class="language-eu notest">{ import: "contract.eu" }
+r: { a: 1 } validate({ not: "a spec" })
+# error: validate: not a type spec
+</code></pre>
+<p>That is a different error from a contract violation, distinguishable both
+on stderr and in an error test's <code>.expect</code> sidecar.</p>
+<p>An unrecognised <em>tag inside a well-formed spec</em> is not malformed — it is
+valid type data this version cannot check, so it accepts.</p>
+<h2 id="contracts-and-as-spec"><a class="header" href="#contracts-and-as-spec">Contracts and <code>as-spec</code></a></h2>
+<p><code>as-spec</code> and <code>match?</code> are unchanged and still available. The difference is
+what you get back:</p>
+<pre><code class="language-eu notest">{ import: "contract.eu" }
+
+data match?(spec as-spec)   # a bare boolean
+data validate(spec)         # a located account of what is wrong
+</code></pre>
+<p><code>match?</code> is the right tool for a branch; <code>validate</code> is the right tool for a
+boundary, where "something is wrong" is not actionable. Note that <code>match?</code>
+matches records <strong>openly</strong> by design, so it agrees with <code>validate</code> on open
+specs and deliberately differs on closed ones.</p>
+<h2 id="what-is-not-covered"><a class="header" href="#what-is-not-covered">What is not covered</a></h2>
+<ul>
+<li><strong><code>Dict(T)</code>, <code>NonEmpty([T])</code> and recursive types are accepted without
+checking</strong>, matching <code>as-spec</code>, so the two agree about what conforms for
+these. Extending them is future work, and will extend both together.</li>
+<li><strong>Literal types are the one place <code>validate</code> and <code>as-spec</code> disagree.</strong>
+<code>validate</code> checks a literal (<code>"prod"</code>, <code>:ok</code>) by equality, as you would
+expect. <code>as-spec</code> has no arm for literal types, so it falls through to
+"matches anything" — <code>s"\"prod\"" as-spec</code> accepts any value at all. That
+is a defect on the <code>as-spec</code> side, tracked as <strong>eu-pub3r</strong>; <code>validate</code>
+does the right thing rather than replicating it. Until the bead lands, do
+not expect <code>data match?(spec as-spec)</code> and <code>(data validate(spec)) nil?</code>
+to agree on a spec containing a literal type.</li>
+<li><strong>Data-file blame</strong> — reporting <code>config.yaml:12</code> rather than the <code>ensure</code>
+call site — needs every importer to carry per-value source provenance.
+Today only the YAML reader (which also serves JSON) does; offering it for
+those two alone would make the quality of an error message depend on the
+file extension. The <code>path</code> in the report is the locator that works
+everywhere.</li>
+<li><strong>Default-fill</strong> — a spec supplying a value for an absent optional field
+— is a <em>transformer</em>, not a check, so it is not folded into <code>ensure</code>.</li>
+</ul>
+<h2 id="reference"><a class="header" href="#reference">Reference</a></h2>
+<ul>
+<li><a href="type-checking.html">Type Checking</a> — the type language the specs are
+written in, and <code>to-data</code> / <code>from-data</code> / <code>type-str</code></li>
+<li><a href="navigating-nested-data.html">Navigating Nested Data</a> — <code>match?</code> and safe
+navigation</li>
+<li><a href="../reference/error-codes.html">Error Codes</a> — <code>EU-EVAL-CONTRACT</code></li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../guide/type-checking.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../guide/advanced-topics.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../guide/type-checking.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../guide/advanced-topics.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>

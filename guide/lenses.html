@@ -1,0 +1,466 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Lenses - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/guide/lenses.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="lenses"><a class="header" href="#lenses">Lenses</a></h1>
+<p>In this chapter you will learn:</p>
+<ul>
+<li>What a lens is and what problem it solves</li>
+<li>How to read, update, and transform nested data with <code>view</code> and <code>over</code></li>
+<li>What a traversal is and how it generalises lenses to multiple foci</li>
+<li>How to compose lenses and traversals with <code>∘</code> and the <code>‹›</code> shorthand</li>
+<li>How to operate on all foci as a group with <code>parts-of</code></li>
+</ul>
+<h2 id="the-problem-updating-nested-data"><a class="header" href="#the-problem-updating-nested-data">The Problem: Updating Nested Data</a></h2>
+<p>Reading a value deep inside a structure is easy with dot-lookup:</p>
+<pre><code class="language-eu notest">config.server.db.host   # =&gt; "localhost"
+</code></pre>
+<p>But modifying it is painful. If you want to change just that one field
+and keep the rest of the structure intact, you must manually reconstruct
+every layer:</p>
+<pre><code class="language-eu notest">config { server: config.server { db: config.server.db { host: "10.0.0.5" } } }
+</code></pre>
+<p>This is verbose, error-prone, and breaks whenever the structure changes.
+Lenses solve this.</p>
+<h2 id="importing-the-lens-library"><a class="header" href="#importing-the-lens-library">Importing the Lens Library</a></h2>
+<p>Lenses are not built into the prelude — they live in <code>lib/lens.eu</code>:</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+</code></pre>
+<p>All functions described in this chapter come from that import.</p>
+<h2 id="what-is-a-lens"><a class="header" href="#what-is-a-lens">What Is a Lens?</a></h2>
+<p>A <strong>lens</strong> is a reusable description of a <em>position</em> inside a data structure.
+Once you have a lens, you can:</p>
+<ul>
+<li><strong>Read</strong> the value at that position with <code>view</code></li>
+<li><strong>Replace</strong> it with a new value using <code>over</code> and the <code>-&gt;</code> const operator</li>
+<li><strong>Transform</strong> it with a function using <code>over</code></li>
+</ul>
+<p>Crucially, <code>over</code> always returns the <em>complete</em> updated structure — you never
+lose the surrounding data.</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+
+config: { server: { db: { host: "localhost", port: 5432 } } }
+
+# Read with view
+host: config view(‹:server :db :host›)
+# =&gt; "localhost"
+
+# Replace with over (note: -&gt; discards the old value)
+migrated: config over(‹:server :db :host›, -&gt; "10.0.0.5")
+# =&gt; { server: { db: { host: "10.0.0.5", port: 5432 } } }
+
+# Transform with over
+bumped: config over(‹:server :db :port›, + 1)
+# =&gt; { server: { db: { host: "localhost", port: 5433 } } }
+</code></pre>
+<p>The lens <code>‹:server :db :host›</code> is defined <em>once</em> and can be reused for any
+combination of reading and modifying. Everything else in <code>config</code> — the
+<code>:port</code>, other sibling keys — is preserved automatically.</p>
+<h2 id="building-lenses"><a class="header" href="#building-lenses">Building Lenses</a></h2>
+<h3 id="the-at-constructor"><a class="header" href="#the-at-constructor">The <code>at</code> Constructor</a></h3>
+<p><code>at(key)</code> creates a lens that focuses on a block value at the given symbol key:</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+
+data: { name: "Alice", score: 95 }
+
+data view(at(:name))            # =&gt; "Alice"
+data over(at(:score), + 5)      # =&gt; { name: "Alice", score: 100 }
+</code></pre>
+<h3 id="the-ix-constructor"><a class="header" href="#the-ix-constructor">The <code>ix</code> Constructor</a></h3>
+<p><code>ix(n)</code> creates a lens that focuses on a list element at index <code>n</code> (zero-based):</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+
+items: ["a", "b", "c"]
+
+items view(ix(1))               # =&gt; "b"
+items over(ix(0), str.to-upper) # =&gt; ["A", "b", "c"]
+</code></pre>
+<h3 id="the-item-constructor"><a class="header" href="#the-item-constructor">The <code>item</code> Constructor</a></h3>
+<p><code>item(pred)</code> focuses on the <em>first</em> list element matching a predicate:</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+
+records: [{id: 1, value: "a"}, {id: 2, value: "b"}]
+
+records view(item(_.id = 2))    # =&gt; {id: 2, value: "b"}
+records over(item(_.id = 1) ∘ at(:value), str.to-upper)
+# =&gt; [{id: 1, value: "A"}, {id: 2, value: "b"}]
+</code></pre>
+<h2 id="composing-lenses"><a class="header" href="#composing-lenses">Composing Lenses</a></h2>
+<p>Compose lenses with <code>∘</code> (right-to-left) to navigate deeper into a structure.
+A lens composed with another lens is still a lens:</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+
+# Navigate to a nested field step by step
+at(:server) ∘ at(:db) ∘ at(:host)
+
+# Shorter: the ‹› bracket shorthand
+# Symbols become at(), numbers become ix()
+‹:server :db :host›
+‹:items 0 :meta :title›    # at(:items) ∘ ix(0) ∘ at(:meta) ∘ at(:title)
+</code></pre>
+<p>The <code>‹›</code> shorthand accepts:</p>
+<ul>
+<li><strong>Symbols</strong> — converted to <code>at(sym)</code></li>
+<li><strong>Numbers</strong> — converted to <code>ix(n)</code></li>
+<li><strong>Lens values</strong> — used directly (e.g. <code>item(pred)</code>, <code>element(pred)</code>)</li>
+</ul>
+<p>Mixed paths are fine:</p>
+<pre><code class="language-eu notest"># Lens function inside a path
+‹element(by-key(_ = :b)) _value›
+# =&gt; element(by-key(_ = :b)) ∘ _value
+</code></pre>
+<h2 id="traversals"><a class="header" href="#traversals">Traversals</a></h2>
+<p>A <strong>traversal</strong> generalises a lens to focus on <em>multiple</em> positions.
+<code>over</code> applies a function at each focus; <code>to-list-of</code> collects all
+foci into a list.</p>
+<h3 id="the-each-traversal"><a class="header" href="#the-each-traversal">The <code>each</code> Traversal</a></h3>
+<p><code>each</code> traverses all elements of a list:</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+
+items: [1, 2, 3, 4, 5]
+
+items to-list-of(each)          # =&gt; [1, 2, 3, 4, 5]
+items over(each, * 2)           # =&gt; [2, 4, 6, 8, 10]
+</code></pre>
+<p>Compose <code>each</code> with <code>at</code> to reach a field inside every element:</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+
+records: [{name: "alice", score: 10}, {name: "bob", score: 20}]
+
+# Collect all scores
+records to-list-of(each ∘ at(:score))     # =&gt; [10, 20]
+
+# Double all scores (whole list returned, :name untouched)
+records over(each ∘ at(:score), * 2)
+# =&gt; [{name: "alice", score: 20}, {name: "bob", score: 40}]
+</code></pre>
+<h3 id="the-filtered-traversal"><a class="header" href="#the-filtered-traversal">The <code>filtered</code> Traversal</a></h3>
+<p><code>filtered(pred)</code> traverses only the list elements that satisfy the predicate.
+Non-matching elements are left untouched by <code>over</code>:</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+
+[1, 2, 3, 4, 5] over(filtered(_ &gt; 3), negate)
+# =&gt; [1, 2, 3, -4, -5]
+
+[1, 2, 3, 4, 5] to-list-of(filtered(_ &gt; 3))
+# =&gt; [4, 5]
+</code></pre>
+<h3 id="block-traversals"><a class="header" href="#block-traversals">Block Traversals</a></h3>
+<p>For blocks, <code>each-element</code> traverses all <code>[key, value]</code> pairs, and
+<code>filtered-elements(pred)</code> traverses only those matching the predicate.
+Pair with <code>_value</code> (focus on index 1) or <code>_key</code> (focus on index 0):</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+
+data: {a: 1, b: 2, c: 3}
+
+# Collect all values
+data to-list-of(each-element ∘ _value)         # =&gt; [1, 2, 3]
+
+# Double all values
+data over(each-element ∘ _value, * 10)          # =&gt; {a: 10, b: 20, c: 30}
+
+# Only values greater than 1
+data over(filtered-elements(by-value(_ &gt; 1)) ∘ _value, negate)
+# =&gt; {a: 1, b: -2, c: -3}
+</code></pre>
+<h2 id="composing-lenses-and-traversals"><a class="header" href="#composing-lenses-and-traversals">Composing Lenses and Traversals</a></h2>
+<p>A lens composed with a traversal yields a traversal. This lets you
+navigate into a specific part of a structure and then traverse <em>within</em>
+that part:</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+
+data: {x: [{y: 1}, {y: 2}, {y: 3}]}
+
+# Lens into :x, then traverse each element, then lens into :y
+data to-list-of(at(:x) ∘ each ∘ at(:y))
+# =&gt; [1, 2, 3]
+
+data over(at(:x) ∘ each ∘ at(:y), * 10)
+# =&gt; {x: [{y: 10}, {y: 20}, {y: 30}]}
+</code></pre>
+<p>The same applies to <code>filtered</code>:</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+
+data: {x: [{y: 1}, {y: 2}, {y: 3}]}
+
+# Only y values greater than 1
+data to-list-of(at(:x) ∘ filtered(_.y &gt; 1) ∘ at(:y))
+# =&gt; [2, 3]
+</code></pre>
+<h2 id="operating-on-all-foci-as-a-group-parts-of"><a class="header" href="#operating-on-all-foci-as-a-group-parts-of">Operating on All Foci as a Group: <code>parts-of</code></a></h2>
+<p>Sometimes you want to treat all the traversal foci as a <em>single list</em>
+and apply a list-level operation — sorting, reversing, replacing with a
+given list. <code>parts-of(traversal)</code> turns a traversal into a lens that
+focuses on the list of all foci.</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+
+# Sort all elements
+[3, 1, 4, 1, 5] over(parts-of(each), sort-nums)
+# =&gt; [1, 1, 3, 4, 5]
+
+# Reverse only the filtered elements; non-matching elements stay put
+[1, 4, 2, 5, 3] over(parts-of(filtered(&gt; 2)), reverse)
+# =&gt; [1, 3, 2, 5, 4]
+
+# Collect: view on parts-of is the same as to-list-of
+[1, 2, 3] view(parts-of(each))    # =&gt; [1, 2, 3]
+
+# Replace all foci with a new list
+[1, 2, 3] over(parts-of(each), -&gt; [10, 20, 30])   # =&gt; [10, 20, 30]
+</code></pre>
+<p>Works equally well on deep compositions:</p>
+<pre><code class="language-eu notest">{ import: "lens.eu" }
+
+data: {x: [{y: 1}, {y: 2}, {y: 3}]}
+
+data over(parts-of(at(:x) ∘ each ∘ at(:y)), reverse)
+# =&gt; {x: [{y: 3}, {y: 2}, {y: 1}]}
+</code></pre>
+<h2 id="quick-reference"><a class="header" href="#quick-reference">Quick Reference</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>view(lens, data)</code></td><td>Read the focused value (lens only, not traversal)</td></tr>
+<tr><td><code>over(optic, fn, data)</code></td><td>Apply <code>fn</code> at each focus; return whole structure</td></tr>
+<tr><td><code>to-list-of(optic, data)</code></td><td>Collect all foci into a list</td></tr>
+<tr><td><code>parts-of(traversal)</code></td><td>Lens on the list of all foci</td></tr>
+</tbody></table>
+</div><div class="table-wrapper"><table><thead><tr><th>Constructor</th><th>Type</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>at(key)</code></td><td>Lens</td><td>Block value at symbol key</td></tr>
+<tr><td><code>ix(n)</code></td><td>Lens</td><td>List element at index <code>n</code></td></tr>
+<tr><td><code>item(p?)</code></td><td>Lens</td><td>First list element matching predicate</td></tr>
+<tr><td><code>element(p?)</code></td><td>Lens</td><td>First block <code>[key, value]</code> pair matching predicate</td></tr>
+<tr><td><code>_value</code></td><td>Lens</td><td>Value (index 1) of a <code>[key, value]</code> pair</td></tr>
+<tr><td><code>_key</code></td><td>Lens</td><td>Key (index 0) of a <code>[key, value]</code> pair</td></tr>
+<tr><td><code>each</code></td><td>Traversal</td><td>All list elements</td></tr>
+<tr><td><code>filtered(p?)</code></td><td>Traversal</td><td>List elements matching predicate</td></tr>
+<tr><td><code>each-element</code></td><td>Traversal</td><td>All block <code>[key, value]</code> pairs</td></tr>
+<tr><td><code>filtered-elements(p?)</code></td><td>Traversal</td><td>Block pairs matching predicate</td></tr>
+</tbody></table>
+</div>
+<p><strong>Composition</strong>: <code>∘</code> (right-to-left). <code>‹sym num ...›</code> shorthand converts
+symbols to <code>at()</code> and numbers to <code>ix()</code>.</p>
+<h2 id="type-checker-integration"><a class="header" href="#type-checker-integration">Type Checker Integration</a></h2>
+<p>The type checker understands <code>Lens(a, b)</code> and <code>Traversal(a, b)</code> as
+opaque types. Passing a traversal to <code>view</code> triggers a type warning —
+use <code>to-list-of</code> instead. Composing optics with incompatible inner and
+outer types also produces a warning.</p>
+<pre><code class="language-eu notest">` { type: "Lens(a, b) → a → b" }
+view: ...
+
+# Type warning: each is Traversal([a], a), not Lens
+[1, 2, 3] view(each)       # warning: use to-list-of for traversals
+</code></pre>
+<p>See <a href="navigating-nested-data.html">Navigating Nested Data</a> for a tutorial
+that combines lenses with <code>~</code> safe navigation and <code>match?</code> pattern
+matching, and the
+<a href="../reference/agent-reference.html#11-lens-library-liblenseu">Agent Reference Section 11</a>
+for a terse all-in-one summary.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../guide/navigating-nested-data.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../guide/imports-and-modules.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../guide/navigating-nested-data.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../guide/imports-and-modules.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>
