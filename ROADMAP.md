@@ -87,7 +87,10 @@ plan:
   local reference walks the chain (`cell`/`get`, `env.rs:334,352`), and **every
   `let` allocates a frame** (`from_let`/`from_letrec`, `vm.rs:525`).
 - **Annotation nodes** (`StgSyn::Ann`, `src/eval/stg/syntax.rs:152`) carry source
-  `Smid`s inline in the code and **cost a dispatch step each** (`vm.rs:536`).
+  `Smid`s inline in the wire format; on the default pre-decoded path they are
+  **peeled once at decode** into an ordinal-keyed side table
+  (`src/eval/bytecode/predecode.rs`, BV2 absorbed — §10.6), costing no dispatch
+  step at runtime.
 - **The GC** is Immix-inspired (`src/eval/memory/`): 32 KiB blocks, 128 B lines,
   mark-sweep with opportunistic evacuation and lazy sweep, single-threaded
   stop-the-world. Excellent debug instrumentation (`EU_GC_VERIFY`, `EU_GC_STRESS`,
@@ -405,12 +408,17 @@ startup floor) is banked early:
    `cargo build` still falls back to source-prelude. The **content-hash
    whole-program unit cache did not ship** — spec + plan are merged
    (`docs/superpowers/specs/2026-07-03-bv5-unit-cache-design.md`, `#953`); it is a
-   separate deliverable (**BV5-cache**, §9, 0.13, eu-lb0r), and the *per-unit
+   separate deliverable (**BV5-cache**, §9, re-scoped to 0.16+ as the
+   serialisation-envelope milestone of CU2, eu-lb0r), and the *per-unit
    incremental* cache is a further step behind the defer-merge restructure
    (**CU1/CU2**, §7, eu-nzps/eu-y7le).
 4. **BV2 — side tables for annotations.** Move `Smid`s out of the instruction stream
-   (retire the `Ann` dispatch step, `vm.rs:536`) into offset-keyed side tables the
-   error machinery reads. Additive, low risk.
+   (retire the `Ann` dispatch step) into offset-keyed side tables the
+   error machinery reads. Additive, low risk. **Shipped via eu-2sa6.13** — delivered
+   as the smid side-table fold-in inside the pre-decoded execution IR
+   (`src/eval/bytecode/predecode.rs`: `DecodedProgram::smids`, ordinal-keyed;
+   `ordinal_for` peels `Ann` at decode). The residue spike (eu-2sa6.1) returned
+   NO-GO 2026-07-17; see §10.6.
 5. **BV3 — register frames.** Replace cactus-env churn (`env.rs:191`, `from_let`
    `vm.rs:525`) with flat register frames for the common case, spilling to heap
    frames only where a closure genuinely escapes. This is the structural env-walk fix
@@ -911,8 +919,9 @@ The surviving cross-unit and surface work that lets 1.0 be declared and frozen.
   serialisation format and version/build-id invalidation envelope (**CU2**). CU2 is the
   payoff `eu watch`/REPL (W19) most wants; CU1 is the enabler shared with the module
   system (W18). Both 0.15+. (BV5-cache's *whole-program* cache — a hit only when the
-  entire input set is byte-identical — is the 0.13 step that comes first and builds the
-  reusable envelope.)
+  entire input set is byte-identical — did not ship standalone; per the 2026-08-11
+  assessment it is re-scoped to its reusable part, the serialisation/invalidation
+  envelope, built as **milestone 1 of CU2** — eu-lb0r, 0.16+.)
 - **W5 Conformance, property tests & fuzzing (continue to the 1.0 bar).** The golden
   corpus + properties + fuzzers — and now the **proof that every BV phase changes
   nothing observable** (the dual-engine conformance the corpus was built for). Bar:
@@ -1034,8 +1043,10 @@ ExecutionError boxing (0.12.1, substantially narrows but does not close the
 engine gap) → Tier-0 gate artefacts (measurement protocol + canonical suite +
 results ledger, eu-2sa6.6; clean-room re-baseline, eu-2sa6.7; this record
 truth-up) → pre-decode spike decision point (eu-2sa6.9) → *if confirmed:*
-lever (a) pre-decoded execution IR with BV2 side tables folded in (eu-2sa6.1)
-→ BV3 register frames (eu-2sa6.2) → CG type-gated (0.13) → SV contracts +
+lever (a) pre-decoded execution IR with BV2 side tables folded in (eu-2sa6.1;
+shipped, default from 0.13.1 — BV3 register frames now deferred unscheduled
+and CG type-gated re-gated to ≥0.16, both off the critical path per the
+2026-08-11 assessments, §9) → SV contracts +
 diagnostics (0.14) → the eu-7oshh A/B study confirmed the falsifiable
 performance and non-performance criteria in the ratified transition review's
 §6 were met → **Phase-4 collapse shipped (retire HeapSyn, eu-oufc, 0.15)** →
@@ -1057,25 +1068,25 @@ sequencing.)*
 | **BV1** | Threaded interpreter; code out of the GC heap *(shipped — default engine; Phase-4 collapse shipped 0.15, eu-oufc)* | 0.12 |
 | **eu-oufc** | Phase-4 collapse: delete the HeapSyn tree-walk machine, its `EU_HEAPSYN`/`EU_BYTECODE` selectors and the bc/hs differential-testing infrastructure; trim `GcScannable`'s HeapSyn impls *(shipped — gated on the eu-7oshh A/B study confirming parity or a bytecode win everywhere that mattered)* | 0.15 |
 | **BV5** | Embedded bytecode prelude *(shipped, dual-form)* | 0.12 |
-| **BV5-cache** | Content-hash whole-program unit cache (spec `#953`; dispatch-ready, unbuilt — eu-lb0r) | 0.13 |
+| **BV5-cache** | Content-hash whole-program unit cache (spec `#953`; spec refresh required before build — eu-lb0r) | 0.16+ *(re-scoped: serialisation envelope, milestone 1 of CU2 — eu-lb0r)* |
 | **T0** | Tier-0 gate artefacts: measurement protocol + canonical suite + results ledger + `xtask engine-ab` (eu-2sa6.6); clean-room re-baseline, source-vs-source and blob-vs-blob (eu-2sa6.7) *(gates all further engine work — transition review §7)* | 0.13 |
 | **BV-spike** | Pre-decode spike: hand-rolled pre-decoded inner loop for `drop_cons` hot opcodes, falsification experiment and decision point (eu-2sa6.9) | 0.13 |
-| **BV2** | Side tables for annotations *(folded into lever (a) pre-decoded execution IR if the spike confirms — transition review §7 item 7)* | 0.13 |
-| **BV3** | Register frames *(sequenced after lever (a) — transition review §7 item 8)* | 0.13 |
+| **BV2** | Side tables for annotations *(absorbed — delivered inside the pre-decoded IR, eu-2sa6.13; residue spike NO-GO, eu-2sa6.1 closed — see §10.6 and the 2026-08-11 assessment)* | 0.13.1 |
+| **BV3** | Register frames *(sequenced after lever (a) — transition review §7 item 8)* | deferred — unscheduled *(revival gate: measured-verified enter_local+get ≥ ~25–30% on a workload that matters; see eu-2sa6.2 and the 2026-08-11 assessment)* |
 | **BV4** | Superinstructions / decode-cost fusion *(shipped 0.12.1 — substantially narrows the decode-bound gap; does not by itself close it or gate Phase-4, see transition review §1–§2)* | 0.12.1 |
 | **CG1–4** | Type-free codegen (direct dispatch, key resolution, strict folds, lifting) | 0.11 |
-| **CG5** | Type-gated codegen (unboxing, dead-branch, interpolation) | 0.13 |
+| **CG5** | Type-gated codegen (unboxing, dead-branch, interpolation) | ≥0.16 *(gated: BV3 + checker-synthesis milestone eu-03fg8 + a ≥200ms string workload — eu-u9xj.5)* |
 | **TY** | Typing default-on | 0.11 |
 | **SV1–2** | `s"…"` type-data + `as-spec`/`to-spec` | 0.11 |
 | **SV — optional fields** | Optional (presence-annotated) record fields *(promoted)* | 0.11 |
-| **SV — prefix-list type** | Fixed-prefix + variable-tail list type (markup/hiccup) | 0.13 |
+| **SV — prefix-list type** | Fixed-prefix + variable-tail list type (markup/hiccup) *(shipped — `Type::PrefixList`, eu-2sa6.3, test 187)* | 0.13 |
 | **SV3 (W16)** | Structural contracts & runtime validation | 0.14 |
 | **SV4 (W8/W22)** | `eu doc` schema / schema interop | 0.15+ |
 | **DS1** | Persistent O(log n) blocks (GC-native CHAMP+RRB) | 0.15+ |
 | **DS2 (W14)** | Generalise `vec` to arbitrary values | 0.15+ |
 | **PP** | Process parallelism (`par-map`/`par-fold`, mmap arena) | 0.14+ |
 | **EF1** | Effect composition (combinators → unified context → effect-rows) | 0.14 → post-1.0 |
-| **EF2** | Native filesystem/IO capabilities (`walk`/`read`/`stat`, streamable) | 0.14 |
+| **EF2** | Native filesystem/IO capabilities (`walk`/`read`/`stat`, streamable) | 0.15 *(carried; bead eu-1tkk.3, now under epic eu-sks3l)* |
 | **DX0** | Diagnostics substrate + evaluation harness (structured diagnostics, error codes, invariant CI gate, golden snapshots, AI fixer/critic) — eu-1tkk.7 | 0.14 |
 | **DX1** | Location correctness (metadata-in-span, user call-site attribution, wrong-noun, eu-m93j, panic-guard) | 0.14 |
 | **DX2** | Blame annotations + curated user-anchored trace | 0.14 |
@@ -1161,3 +1172,22 @@ Strict prelude globals (0.10.0) removed the recurring collections that premise r
 on; on real workloads GC now does **0 collections** while dispatch and env-walk
 dominate. The performance plan is therefore rebuilt around compilation and dispatch
 (§4.5): **Pillars BV and CG supersede W10 and W13.**
+
+### 10.6 BV2 standalone side-table work — absorbed (0.13.1)
+
+BV2 (Smids out of the instruction stream, `Op::Ann` retired as a dispatch step,
+error machinery reading a side table) was **delivered in full inside the
+pre-decoded execution IR** (eu-2sa6.13, PRs #1002/#1004/#1009; default engine
+since 0.13.1) — exactly the fold-in §9's conditional note anticipated.
+`DecodedProgram::smids` is the ordinal-keyed side table; `ordinal_for` peels
+`Ann` at decode (chained `Ann`s collapse innermost-smid-wins, matching the byte
+path); the dispatch prologue feeds `state.annotation` so all existing
+diagnostics work unchanged, with the source-location errors harness green on
+the default engine. The spike §9 conditioned on ran (**eu-2sa6.1**, closed
+2026-07-17) and returned **NO-GO** on any further standalone work,
+coordinator-verified against the code. One deliberate residue remains: the
+**wire format still carries `Ann` inline** (`encode.rs`, 9 bytes per
+annotation). Post-predecode this is a load-time-only cost — every `Ann` is
+peeled once at startup, bounded by the ~10 ms measured startup floor — so it
+is left in place; it travels for free with any future blob-format rev.
+Full record: `docs/superpowers/reports/2026-08-11-assessment-bv2-side-tables.md`.
