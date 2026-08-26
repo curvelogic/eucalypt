@@ -6,7 +6,9 @@ use crate::core::binding::{BoundVar, Var};
 use crate::core::demand::Demand;
 use crate::{
     common::sourcemap::{HasSmid, Smid, SourceMap},
-    core::expr::{BlockMap, Expr, LamScope, LetScope, Primitive, RcExpr, INTERNAL_FREE_VAR_PREFIX},
+    core::expr::{
+        BlockMap, Expr, LamScope, LetScope, LetType, Primitive, RcExpr, INTERNAL_FREE_VAR_PREFIX,
+    },
     eval::{
         intrinsics,
         machine::intrinsic::{CallGlobal1, Const, StgIntrinsic},
@@ -946,8 +948,21 @@ impl ProtoSyntax for ProtoLet {
         use crate::core::demand::Strictness;
 
         let scope = self.scope();
+        // A block's keys are mutually in scope, so the desugarer lifts every
+        // block value into a `DefaultBlockLet` and leaves a `Var` in the
+        // block map. A literal *datum* therefore arrives here, not at
+        // `compile_block` — this is where a row's own location gets stamped
+        // on the value that holds it (eu-1tkk.7.45).
+        let block_let = matches!(&*self.expr.inner, Expr::Let(_, _, LetType::DefaultBlockLet));
         let mut binder = LetBinder::for_scope(self.expr.clone(), context);
         for b in scope.pattern.iter() {
+            if block_let {
+                if let Some(syntax) = compiler.provenance_literal(&b.expr) {
+                    let index = binder.add(syntax)?;
+                    binder.add_var_index(index);
+                    continue;
+                }
+            }
             let annotation = b.expr.smid();
             // For recursive bindings, pass the binding's own name as
             // self_recurse so that self-recursive calls in its body
@@ -2009,6 +2024,70 @@ impl<'rt> Compiler<'rt> {
         Ok(ProtoLambda::new(expr.clone(), annotation, self_recurse))
     }
 
+    /// Compile a list element or block value as a binding, stamping the
+    /// element's *own* source location on the resulting closure.
+    ///
+    /// A data element is where a bad value normally originates in a
+    /// templating language: a row of a list literal, or a key's value in a
+    /// block literal. Compiled through `compile_binding` alone a literal
+    /// element loses its location entirely — `Expr::Literal` ignores the
+    /// annotation it is passed and the resulting `Value` form carries
+    /// `Smid::default()` — so a downstream type error can only blame the
+    /// library code that consumed the value, never the row that held it
+    /// (eu-1tkk.7.45).
+    ///
+    /// Wrapping the compiled literal in an `Ann` makes the machine stamp the
+    /// element's location as it enters the closure, so the location is live
+    /// when the consumer raises its error. `is_whnf` sees through `Ann`, so
+    /// the binding stays a `Value`: no update frame, and the annotation
+    /// survives repeated reads of the same element.
+    ///
+    /// Non-literal elements are left to `compile_binding`, which already
+    /// threads locations of its own (an application gets the app site's
+    /// `Ann`, a nested block or list recurses through here again); they are
+    /// only given the element's own Smid in place of the container's.
+    fn compile_data_element(
+        &self,
+        binder: &mut LetBinder,
+        item: &RcExpr,
+        container: Smid,
+    ) -> Result<Ref, CompileError> {
+        if let Some(syntax) = self.provenance_literal(item) {
+            return binder.add(syntax);
+        }
+
+        let own = if item.smid().is_valid() {
+            item.smid()
+        } else {
+            container
+        };
+
+        self.compile_binding(binder, item.clone(), own, Demand::default(), None)
+    }
+
+    /// The compiled form of a literal data value, carrying the literal's
+    /// own source location, or `None` when `expr` is not a literal or
+    /// annotations are disabled.
+    ///
+    /// See `compile_data_element` for why the annotation is needed. Most
+    /// block values never reach `compile_block` as literals: a block's keys
+    /// are mutually in scope, so the desugarer lifts every value into a
+    /// `LetType::DefaultBlockLet` and leaves `Var`s behind in the block map
+    /// (`{a: 1}` becomes `let a = 1 in {a: a}`). `ProtoLet` therefore stamps
+    /// block-let literal bindings through here too, which is what carries a
+    /// row's own location in the common `[{...}, {...}]` shape.
+    fn provenance_literal(&self, expr: &RcExpr) -> Option<Rc<StgSyn>> {
+        if !self.generate_annotations() {
+            return None;
+        }
+        match &*expr.inner {
+            Expr::Literal(s, prim) if s.is_valid() => {
+                Some(dsl::ann(*s, compile_boxed_literal(prim)))
+            }
+            _ => None,
+        }
+    }
+
     /// Compile a list into a chain of cons cells in the environment
     /// together with the compiled contents
     pub fn compile_list_body(
@@ -2026,8 +2105,7 @@ impl<'rt> Compiler<'rt> {
                 Some(data) => binder.add(data)?,
                 None => KEmptyList.gref(),
             };
-            let item_index =
-                self.compile_binding(binder, item.clone(), smid, Demand::default(), None)?;
+            let item_index = self.compile_data_element(binder, item, smid)?;
             last_cons = Some(dsl::cons(item_index, last_index));
         }
 
@@ -2054,8 +2132,7 @@ impl<'rt> Compiler<'rt> {
                 Some(data) => binder.add(data)?,
                 None => KEmptyList.gref(),
             };
-            let item_index =
-                self.compile_binding(binder, item.clone(), smid, Demand::default(), None)?;
+            let item_index = self.compile_data_element(binder, item, smid)?;
             last_cons = Some(dsl::cons(item_index, last_index));
         }
 
@@ -2076,7 +2153,7 @@ impl<'rt> Compiler<'rt> {
 
         let mut index = KEmptyList.gref();
         for (k, v) in block_map.iter().rev() {
-            let v_index = self.compile_binding(binder, v.clone(), smid, Demand::default(), None)?;
+            let v_index = self.compile_data_element(binder, v, smid)?;
             let kv_index = binder.add(dsl::pair(k, v_index))?;
             index = binder.add(dsl::cons(kv_index, index))?;
         }
