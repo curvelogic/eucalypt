@@ -78,7 +78,7 @@ libc = "0.2"
 ctrlc = "3"
 clap = { version = "4.5", features = ["derive"] }
 dirs = "4.0.0"
-webbrowser = "0.8.0"
+webbrowser = "1.2.4"
 lsp-server = "0.7"
 lsp-types = "0.95"
 uuid = { version = "1.1.2", features = ["v4"] }
