@@ -1,0 +1,5967 @@
+# eucalypt diagnostic snapshot bundle v1
+capture: master a1af1f0b (0.14.0-dev, 2026-07-27)
+fixtures: 195
+#
+# One entry per corpus fixture, sorted by id. See
+# tests/diagnostics/SNAPSHOTS.md for the format and the normalisation rules.
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/001_dot_in_metadata_key
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/001_dot_in_metadata_key.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid block key: dotted names are not allowed as block keys
+ = block keys must be simple names (e.g. `x`), not dotted paths (e.g. `x.y`)
+ = example of valid metadata: `` ` { x: val } `` — use 'x', not 'x.y' as the key
+ = if you need nested metadata, use nested blocks: `` ` { x: { y: val } } ``
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/002_lists
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/002_lists.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/002_lists.eu:3:7
+help-lines: 0
+note-lines: 4
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: head of empty list
+  ┌─ tests/harness/errors/002_lists.eu:3:7
+  │
+3 │ x: [] __HEAD
+  │       ^^^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+
+error: head of empty list
+  ┌─ tests/harness/errors/002_lists.eu:3:7
+  │
+3 │ x: [] __HEAD
+  │       ^^^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+  = stack trace:
+    - x at 002_lists.eu:3:7
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/003_free_var_arg
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/003_free_var_arg.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/003_free_var_arg.eu:6:6
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'xs'
+  ┌─ tests/harness/errors/003_free_var_arg.eu:6:6
+  │
+6 │ f: z(xs)
+  │      ^^
+  │
+  = check that the variable is defined and in scope
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/004_circular
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/004_circular.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/004_circular.eu:3:4
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: binding 'f' refers to itself — this will always diverge
+  ┌─ tests/harness/errors/004_circular.eu:3:4
+  │
+3 │ f: f(f)
+  │    ^
+  │
+  = the binding `f: f` (or `f: f(…)`) always loops
+  = if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/005_free_var
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/005_free_var.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/005_free_var.eu:4:4
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'nonesuch'
+  ┌─ tests/harness/errors/005_free_var.eu:4:4
+  │
+4 │ x: nonesuch
+  │    ^^^^^^^^
+  │
+  = check that the variable is defined and in scope
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/006_div_by_zero
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/006_div_by_zero.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/006_div_by_zero.eu:2:9
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: division by zero in floor division (/)
+  help: the divisor evaluated to zero
+  ┌─ tests/harness/errors/006_div_by_zero.eu:2:9
+  │
+2 │ bomb: 1 / 0
+  │         ^
+  │
+  = stack trace:
+    - bomb at 006_div_by_zero.eu:2:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/008_op_spacing
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/008_op_spacing.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 0
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+<no output>
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/009_panic
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/009_panic.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/009_panic.eu:1:14
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: This exits immediately with message and non-zero exit code
+  ┌─ tests/harness/errors/009_panic.eu:1:14
+  │
+1 │ x: { y: { z: panic("This exits immediately with message and non-zero exit code") } }
+  │              ^^^^^
+  │
+  = stack trace:
+    - z at 009_panic.eu:1:14
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/010_assert
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/010_assert.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/010_assert.eu:1:9
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+EXPECT FAILED: expected false, got true
+error: assertion failed: expected false, got true
+  ┌─ tests/harness/errors/010_assert.eu:1:9
+  │
+1 │ x: true //=> false
+  │         ^^^^
+  │
+  = stack trace:
+    - x at 010_assert.eu:1:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/011_assert_pred
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/011_assert_pred.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/011_assert_pred.eu:1:14
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+EXPECT FAILED: expected to satisfy predicate, got -10
+error: assertion failed: expected to satisfy predicate, got -10
+  ┌─ tests/harness/errors/011_assert_pred.eu:1:14
+  │
+1 │ x: -10 //=? (> 0)
+  │        ----  ^
+  │        │
+  │        called from here
+  │
+  = stack trace:
+    - x at 011_assert_pred.eu:1:8
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/012_bad_value
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/012_bad_value.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/012_bad_value.eu:3:3
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: empty expression where a value was expected
+  ┌─ tests/harness/errors/012_bad_value.eu:3:3
+  │
+3 │ c:
+  │   ^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/013_bad_nested_value
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/013_bad_nested_value.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/013_bad_nested_value.eu:3:13
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: empty expression where a value was expected
+  ┌─ tests/harness/errors/013_bad_nested_value.eu:3:13
+  │
+3 │ c: { d: 1 e: }
+  │             ^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/014_unterm_strlit
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/014_unterm_strlit.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/014_unterm_strlit.eu:1:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unterminated string literal
+  ┌─ tests/harness/errors/014_unterm_strlit.eu:1:4
+  │
+1 │   a: "unending
+  │ ╭────^
+2 │ │
+  │ ╰^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/015_missing_argtuple_close
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/015_missing_argtuple_close.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/015_missing_argtuple_close.eu:1:5
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid parenthesised expression
+  ┌─ tests/harness/errors/015_missing_argtuple_close.eu:1:5
+  │
+1 │   x: f(2
+  │ ╭─────^
+2 │ │
+  │ ╰^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/016_empty_brackets
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/016_empty_brackets.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/016_empty_brackets.eu:1:5
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: empty expression where a value was expected
+  ┌─ tests/harness/errors/016_empty_brackets.eu:1:5
+  │
+1 │ a: ()
+  │     ^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/017_too_many_args
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/017_too_many_args.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/017_too_many_args.eu:2:4
+help-lines: 2
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: tried to call a number as a function
+  help: only functions and blocks can be called with arguments
+  help: this often means too many arguments were passed to a function
+  ┌─ tests/harness/errors/017_too_many_args.eu:2:4
+  │
+2 │ y: f(1, 2)
+  │    ^
+  │
+  = a number value is not a function; check for a missing operator or extra argument
+  = note: catenation (juxtaposition) has low precedence — 'f(a) + 1' binds as 'f(a + 1)'; add parentheses to disambiguate
+  = stack trace:
+    - y at 017_too_many_args.eu:2:4
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/019_no_such_key
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/019_no_such_key.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/019_no_such_key.eu:5:1
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: infinite loop detected: binding refers to itself
+  ┌─ tests/harness/errors/019_no_such_key.eu:5:1
+  │
+5 │ ns.y
+  │ ^^
+  │
+  = a binding that references itself directly or indirectly creates an infinite loop
+  = use a function parameter instead of self-reference, or break the cycle
+  = stack trace:
+    - ns at 019_no_such_key.eu:5:1
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/020_no_such_key_fn
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/020_no_such_key_fn.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/020_no_such_key_fn.eu:4:4
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'g' not found in block
+  help: similar keys: 'f'
+  ┌─ tests/harness/errors/020_no_such_key_fn.eu:4:4
+  │
+4 │ x: ns.g(1)
+  │    ^^
+  │
+  = stack trace:
+    - x at 020_no_such_key_fn.eu:4:4
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/021_bad_num_parse
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/021_bad_num_parse.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/021_bad_num_parse.eu:1:6
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: bad number format: blah
+  ┌─ tests/harness/errors/021_bad_num_parse.eu:1:6
+  │
+1 │ bad: __NUMPARSE("blah")
+  │      ^^^^^^^^^^
+  │
+  = valid number formats are: integers (e.g. 42), decimals (e.g. 3.14), and scientific notation (e.g. 1.5e10)
+  = use 'str' to convert numbers to strings; to convert strings to numbers use 'num'
+  = stack trace:
+    - bad at 021_bad_num_parse.eu:1:6
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/023_arg_types
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/023_arg_types.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/023_arg_types.eu:1:4
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: argument type does not match function parameter
+  ┌─ tests/harness/errors/023_arg_types.eu:1:16
+  │
+1 │ x: str.letters(99)
+  │                ^^ expected string, found number
+
+error: type mismatch: expected string, found number
+  ┌─ tests/harness/errors/023_arg_types.eu:1:4
+  │
+1 │ x: str.letters(99)
+  │    ^^^
+  │
+  = to convert a number to a string, use 'str' or string interpolation
+  = stack trace:
+    - x at 023_arg_types.eu:1:4
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/024_invalid_zdt_literal
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/024_invalid_zdt_literal.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/024_invalid_zdt_literal.eu:2:4
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: date/time literal contains an invalid date
+  help: check that the day exists in the given month and year (e.g. February has at most 29 days, and only in a leap year)
+  ┌─ tests/harness/errors/024_invalid_zdt_literal.eu:2:4
+  │
+2 │ x: t"2023-02-30"
+  │    ^^^^^^^^^^^^^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/025_malformed_zdt_literal
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/025_malformed_zdt_literal.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/025_malformed_zdt_literal.eu:2:4
+help-lines: 2
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid date/time literal
+  help: the t-string syntax requires ISO 8601 format, e.g. 2023-01-15 or 2023-01-15T10:30:00Z
+  help: supported formats: YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS, YYYY-MM-DDTHH:MM:SSZ, YYYY-MM-DDTHH:MM:SS+HH:MM
+  ┌─ tests/harness/errors/025_malformed_zdt_literal.eu:2:4
+  │
+2 │ x: t"not-a-date"
+  │    ^^^^^^^^^^^^^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/026_empty_zdt_literal
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/026_empty_zdt_literal.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/026_empty_zdt_literal.eu:2:4
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: date/time literal cannot be empty
+  help: the t-string syntax requires a valid ISO 8601 date or date-time, e.g. 2023-01-15 or 2023-01-15T10:30:00Z
+  ┌─ tests/harness/errors/026_empty_zdt_literal.eu:2:4
+  │
+2 │ x: t""
+  │    ^^^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/027_self_ref
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/027_self_ref.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/027_self_ref.eu:1:4
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: binding 'x' refers to itself — this will always diverge
+  ┌─ tests/harness/errors/027_self_ref.eu:1:4
+  │
+1 │ x: x
+  │    ^
+  │
+  = the binding `x: x` (or `x: x(…)`) always loops
+  = if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/028_mutual_cycle
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/028_mutual_cycle.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/028_mutual_cycle.eu:1:11
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'a'
+  ┌─ tests/harness/errors/028_mutual_cycle.eu:1:11
+  │
+1 │ {a: b, b: a}
+  │           ^
+  │
+  = check that the variable is defined and in scope
+  = note: eucalypt has no arrow functions; '->' is the const operator, not lambda syntax
+  = use anaphora (_ + 1), sections (+ 1), or named functions instead
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/029_type_mismatch_num
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/029_type_mismatch_num.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/029_type_mismatch_num.eu:2:4
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: argument type does not match function parameter
+  ┌─ tests/harness/errors/029_type_mismatch_num.eu:2:16
+  │
+2 │ x: str.letters(42)
+  │                ^^ expected string, found number
+
+error: type mismatch: expected string, found number
+  ┌─ tests/harness/errors/029_type_mismatch_num.eu:2:4
+  │
+2 │ x: str.letters(42)
+  │    ^^^
+  │
+  = to convert a number to a string, use 'str' or string interpolation
+  = stack trace:
+    - x at 029_type_mismatch_num.eu:2:4
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/030_type_mismatch_str
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/030_type_mismatch_str.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/030_type_mismatch_str.eu:2:6
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "hello"
+  ┌─ tests/harness/errors/030_type_mismatch_str.eu:2:6
+  │
+2 │ x: 1 + "hello"
+  │      ^
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = stack trace:
+    - x at 030_type_mismatch_str.eu:2:6
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/031_type_mismatch_block_as_num
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/031_type_mismatch_block_as_num.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/031_type_mismatch_block_as_num.eu:2:11
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected number, found block
+  ┌─ tests/harness/errors/031_type_mismatch_block_as_num.eu:2:11
+  │
+2 │ x: {a: 1} + 1
+  │           ^
+  │
+  = blocks (structured values) cannot be used in arithmetic
+  = did you mean to access a specific field? use 'block.field' to extract a value before applying arithmetic
+  = stack trace:
+    - x at 031_type_mismatch_block_as_num.eu:2:11
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/032_type_mismatch_num_as_str
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/032_type_mismatch_num_as_str.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/032_type_mismatch_num_as_str.eu:2:4
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: argument type does not match function parameter
+  ┌─ tests/harness/errors/032_type_mismatch_num_as_str.eu:2:14
+  │
+2 │ x: str.split(42, ",")
+  │              ^^ expected string, found number
+
+error: type mismatch: expected string, found number
+  ┌─ tests/harness/errors/032_type_mismatch_num_as_str.eu:2:4
+  │
+2 │ x: str.split(42, ",")
+  │    ^^^
+  │
+  = to convert a number to a string, use 'str' or string interpolation
+  = stack trace:
+    - x at 032_type_mismatch_num_as_str.eu:2:4
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/033_type_mismatch_str_as_num
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/033_type_mismatch_str_as_num.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/033_type_mismatch_str_as_num.eu:2:12
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "hello"
+  ┌─ tests/harness/errors/033_type_mismatch_str_as_num.eu:2:12
+  │
+2 │ x: "hello" - 1
+  │            ^
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = stack trace:
+    - x at 033_type_mismatch_str_as_num.eu:2:12
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/034_did_you_mean
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/034_did_you_mean.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/034_did_you_mean.eu:2:4
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'bax' not found in block
+  help: similar keys: 'bar', 'baz'
+  ┌─ tests/harness/errors/034_did_you_mean.eu:2:4
+  │
+2 │ x: ns.bax
+  │    ^^
+  │
+  = stack trace:
+    - x at 034_did_you_mean.eu:2:4
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/035_nested_fn_trace
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/035_nested_fn_trace.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/035_nested_fn_trace.eu:1:11
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected string, found number
+  ┌─ tests/harness/errors/035_nested_fn_trace.eu:1:11
+  │
+1 │ inner(x): str.letters(x)
+  │           ^^^
+  │
+  = to convert a number to a string, use 'str' or string interpolation
+  = stack trace:
+    - outer at 035_nested_fn_trace.eu:3:8
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/036_arrow_as_lambda
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/036_arrow_as_lambda.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/036_arrow_as_lambda.eu:3:16
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'x'
+  ┌─ tests/harness/errors/036_arrow_as_lambda.eu:3:16
+  │
+3 │ result: xs map(x -> x + 1)
+  │                ^
+  │
+  = check that the variable is defined and in scope
+  = note: eucalypt has no arrow functions; '->' is the const operator, not lambda syntax
+  = use anaphora (_ + 1), sections (+ 1), or named functions instead
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/038_double_equals
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/038_double_equals.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/038_double_equals.eu:2:6
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable '=='
+  ┌─ tests/harness/errors/038_double_equals.eu:2:6
+  │
+2 │ a: 1 == 1
+  │      ^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt uses '=' for equality, not '=='
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/040_json_error_format
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/040_json_error_format.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/040_json_error_format.eu:1:6
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "hello"
+  ┌─ tests/harness/errors/040_json_error_format.eu:1:6
+  │
+1 │ x: 1 + "hello"
+  │      ^
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = stack trace:
+    - x at 040_json_error_format.eu:1:6
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/041_modulo_by_zero
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/041_modulo_by_zero.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/041_modulo_by_zero.eu:2:9
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: division by zero in modulo (%)
+  help: the divisor evaluated to zero
+  ┌─ tests/harness/errors/041_modulo_by_zero.eu:2:9
+  │
+2 │ bomb: 5 % 0
+  │         ^
+  │
+  = stack trace:
+    - bomb at 041_modulo_by_zero.eu:2:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/042_map_non_list
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/042_map_non_list.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/042_map_non_list.eu:3:16
+help-lines: 0
+note-lines: 2
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: argument type does not match function parameter
+  ┌─ tests/harness/errors/042_map_non_list.eu:3:9
+  │
+3 │ result: x map((+ 1))
+  │         ^ expected [a], found number
+
+error: head requires a list, found 42
+  ┌─ tests/harness/errors/042_map_non_list.eu:3:16
+  │
+3 │ result: x map((+ 1))
+  │           ---  ^
+  │           │
+  │           called from here
+  │
+  = head and tail require a list (e.g. [1, 2, 3]) as their argument
+  = to create a list from a number, wrap it: '[n]'
+  = stack trace:
+    - result at 042_map_non_list.eu:3:16
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/043_assignment_syntax
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/043_assignment_syntax.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/043_assignment_syntax.eu:2:8
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: assignment-style syntax: 'result = ...' is not a valid eucalypt declaration
+  ┌─ tests/harness/errors/043_assignment_syntax.eu:2:8
+  │
+2 │ result = 42
+  │        ^
+  │
+  = eucalypt uses ':' for declarations, not '='; write 'result: <value>' instead of 'result = <value>'
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/044_double_colon_type_annot
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/044_double_colon_type_annot.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/044_double_colon_type_annot.eu:2:3
+help-lines: 2
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: '::' is not valid syntax in eucalypt
+  help: use ':' for declarations (e.g. `name: value`)
+  help: '::' is used in Haskell/Rust for type annotations, but eucalypt does not have type annotations
+  ┌─ tests/harness/errors/044_double_colon_type_annot.eu:2:3
+  │
+2 │ x :: Int
+  │   ^^
+  │   │
+  │   unexpected content after expression
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/045_list_plus_concat
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/045_list_plus_concat.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/045_list_plus_concat.eu:4:11
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected number, found list
+  ┌─ tests/harness/errors/045_list_plus_concat.eu:4:11
+  │
+4 │ result: a + b
+  │           ^
+  │
+  = arithmetic operators like '+' work on numbers, not lists
+  = to concatenate two lists, use 'append(xs, ys)' or the '++' operator
+  = stack trace:
+    - result at 045_list_plus_concat.eu:4:11
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/046_import_keyword
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/046_import_keyword.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/046_import_keyword.eu:3:4
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'import'
+  ┌─ tests/harness/errors/046_import_keyword.eu:3:4
+  │
+3 │ x: import
+  │    ^^^^^^
+  │
+  = check that the variable is defined and in scope
+  = note: eucalypt does not have an import statement; use import metadata to bring a file into scope in a block
+  = example: ` { import: path/to/file.eu }  my-block: { ... }
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/047_str_plus_plus
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/047_str_plus_plus.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: head requires a list, found "Hello, "
+ = head and tail require a list (e.g. [1, 2, 3]) as their argument
+ = to concatenate strings, use string interpolation (e.g. "{a}{b}") or 'str.join-on', not '++' (which is for list append)
+ = to get individual characters of a string, use 'str.letters'
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/048_unclosed_interpolation
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/048_unclosed_interpolation.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/048_unclosed_interpolation.eu:4:18
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unterminated string interpolation (missing '}')
+  ┌─ tests/harness/errors/048_unclosed_interpolation.eu:4:18
+  │
+4 │ greeting: "Hello {name more stuff"
+  │                  ^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/049_dot_on_number
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/049_dot_on_number.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/049_dot_on_number.eu:3:9
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected block, found number
+  ┌─ tests/harness/errors/049_dot_on_number.eu:3:9
+  │
+3 │ result: x.abs
+  │         ^
+  │
+  = the '.' operator performs key lookup on blocks; numbers do not have fields
+  = to apply a function to a number, use pipeline catenation, e.g. 'x abs' or 'x negate' instead of 'x.abs'
+  = note: 'str' is a namespace of string functions, not a type conversion function; to convert a number to a string use 'str.of(x)' or string interpolation
+  = stack trace:
+    - result at 049_dot_on_number.eu:3:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/050_dot_on_string
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/050_dot_on_string.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/050_dot_on_string.eu:3:9
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected block, found string
+  ┌─ tests/harness/errors/050_dot_on_string.eu:3:9
+  │
+3 │ result: s.length
+  │         ^
+  │
+  = the '.' operator performs key lookup on blocks; strings do not have fields
+  = to apply string functions, use pipeline catenation, e.g. 'x str.to-upper' or 'str.to-lower(x)' instead of 'x.upper'
+  = note: 'str' is a namespace of string functions, not a type conversion function; use 'str.of(x)' or string interpolation to convert values to strings
+  = stack trace:
+    - result at 050_dot_on_string.eu:3:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/051_missing_flatten
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/051_missing_flatten.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/051_missing_flatten.eu:3:14
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'flatten'
+  ┌─ tests/harness/errors/051_missing_flatten.eu:3:14
+  │
+3 │ flat: nested flatten
+  │              ^^^^^^^
+  │
+  = check that the variable is defined and in scope
+  = to flatten a list of lists, use 'concat', e.g. 'xs concat'
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/052_missing_length
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/052_missing_length.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/052_missing_length.eu:3:7
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'length'
+  ┌─ tests/harness/errors/052_missing_length.eu:3:7
+  │
+3 │ n: xs length
+  │       ^^^^^^
+  │
+  = check that the variable is defined and in scope
+  = to count the elements of a list, use 'count', e.g. 'xs count'
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/053_block_in_arithmetic
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/053_block_in_arithmetic.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/053_block_in_arithmetic.eu:3:16
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected number, found block
+  ┌─ tests/harness/errors/053_block_in_arithmetic.eu:3:16
+  │
+3 │ result: config + 5
+  │                ^
+  │
+  = blocks (structured values) cannot be used in arithmetic
+  = did you mean to access a specific field? use 'block.field' to extract a value before applying arithmetic
+  = stack trace:
+    - result at 053_block_in_arithmetic.eu:3:16
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/054_num_merge_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/054_num_merge_hint.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/054_num_merge_hint.eu:5:11
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected block, found number
+  ┌─ tests/harness/errors/054_num_merge_hint.eu:5:11
+  │
+5 │ result: x str
+  │           ^^^
+  │
+  = the '.' operator performs key lookup on blocks; numbers do not have fields
+  = to apply a function to a number, use pipeline catenation, e.g. 'x abs' or 'x negate' instead of 'x.abs'
+  = note: 'str' is a namespace of string functions, not a type conversion function; to convert a number to a string use 'str.of(x)' or string interpolation
+  = stack trace:
+    - result at 054_num_merge_hint.eu:5:11
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/055_list_not_callable
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/055_list_not_callable.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/055_list_not_callable.eu:5:9
+help-lines: 2
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: tried to call a list as a function
+  help: only functions and blocks can be called with arguments
+  help: this often means too many arguments were passed to a function
+  ┌─ tests/harness/errors/055_list_not_callable.eu:5:9
+  │
+5 │ result: items(2)
+  │         ^^^^^
+  │
+  = lists are not callable; to access elements by index use 'nth(index, list)' or pipeline form 'list nth(index)'
+  = for the first element use 'list head'; for the rest use 'list tail'
+  = stack trace:
+    - result at 055_list_not_callable.eu:5:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/056_fold_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/056_fold_hint.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/056_fold_hint.eu:4:14
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'fold'
+  ┌─ tests/harness/errors/056_fold_hint.eu:4:14
+  │
+4 │ result: nums fold((+), 0)
+  │              ^^^^
+  │
+  = check that the variable is defined and in scope
+  = to fold a list, use 'foldl' (left fold) or 'foldr' (right fold), e.g. 'foldl(+, 0, xs)' to sum a list
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/057_head_empty_list
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/057_head_empty_list.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/057_head_empty_list.eu:5:14
+help-lines: 0
+note-lines: 4
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: head of empty list
+  ┌─ tests/harness/errors/057_head_empty_list.eu:5:14
+  │
+5 │ result: nums head
+  │              ^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+
+error: head of empty list
+  ┌─ tests/harness/errors/057_head_empty_list.eu:5:14
+  │
+5 │ result: nums head
+  │              ^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+  = stack trace:
+    - result at 057_head_empty_list.eu:5:14
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/058_python_true
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/058_python_true.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/058_python_true.eu:2:4
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'True'
+  ┌─ tests/harness/errors/058_python_true.eu:2:4
+  │
+2 │ x: True
+  │    ^^^^
+  │
+  = check that the variable is defined and in scope
+  = note: eucalypt uses lowercase 'true', not 'True'
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/059_else_keyword
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/059_else_keyword.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/059_else_keyword.eu:3:29
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'else'
+  ┌─ tests/harness/errors/059_else_keyword.eu:3:29
+  │
+3 │ result: if x > 5 then "big" else "small"
+  │                             ^^^^
+  │
+  = check that the variable is defined and in scope
+  = note: eucalypt does not use 'if…then…else' syntax; use the 'if' function: 'if(condition, then-value, else-value)'
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/060_return_keyword
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/060_return_keyword.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/060_return_keyword.eu:2:7
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'return'
+  ┌─ tests/harness/errors/060_return_keyword.eu:2:7
+  │
+2 │ f(x): return x * 2
+  │       ^^^^^^
+  │
+  = check that the variable is defined and in scope
+  = note: eucalypt has no 'return' statement; functions evaluate to their body expression — the last binding value is the function result
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/061_lambda_keyword
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/061_lambda_keyword.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/061_lambda_keyword.eu:3:9
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'lambda'
+  ┌─ tests/harness/errors/061_lambda_keyword.eu:3:9
+  │
+3 │ double: lambda x: x * 2
+  │         ^^^^^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt has no 'lambda' keyword; use anaphora for anonymous functions: '(_ * 2)' is a doubling function, or define a named function with 'double(x): x * 2'
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/064_has_string_not_sym
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/064_has_string_not_sym.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/064_has_string_not_sym.eu:3:13
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: type mismatch calling 'has'
+  ┌─ tests/harness/errors/064_has_string_not_sym.eu:3:17
+  │
+3 │ check: data has("x")
+  │                 ^^^ expected symbol, found "x"
+
+error: type mismatch: expected symbol, found string
+  ┌─ tests/harness/errors/064_has_string_not_sym.eu:3:13
+  │
+3 │ check: data has("x")
+  │             ^^^
+  │
+  = a symbol was expected but a string was passed; add a colon prefix: ':yaml' not "yaml", ':key' not "key"
+  = symbols (`:name`) and strings (`"name"`) are distinct in eucalypt; functions like 'render-as', 'has', 'lookup-or' take symbol arguments
+  = stack trace:
+    - check at 064_has_string_not_sym.eu:3:13
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/065_even_predicate_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/065_even_predicate_hint.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/065_even_predicate_hint.eu:3:18
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'even?'
+  ┌─ tests/harness/errors/065_even_predicate_hint.eu:3:18
+  │
+3 │ evens: xs filter(even?)
+  │                  ^^^^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt has no built-in 'even?' predicate; test with the modulo operator: '(_ % 2 = 0)'
+  = example: 'xs filter(_ % 2 = 0)' to keep even numbers
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/066_odd_predicate_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/066_odd_predicate_hint.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/066_odd_predicate_hint.eu:3:17
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'odd?'
+  ┌─ tests/harness/errors/066_odd_predicate_hint.eu:3:17
+  │
+3 │ odds: xs filter(odd?)
+  │                 ^^^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt has no built-in 'odd?' predicate; test with the modulo operator: '(_ % 2 = 1)'
+  = example: 'xs filter(_ % 2 = 1)' to keep odd numbers
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/067_str_upper_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/067_str_upper_hint.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/067_str_upper_hint.eu:3:14
+help-lines: 1
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'upper' not found in block
+  help: available keys: 'of', 'split', 'split-on', 'join', 'join-on', 'match', 'match-with', 'extract' (and 25 more)
+  ┌─ tests/harness/errors/067_str_upper_hint.eu:3:14
+  │
+3 │ result: text str.upper
+  │              ^^^
+  │
+  = to convert a string to upper case, use 'str.to-upper', e.g. 'text str.to-upper'
+  = stack trace:
+    - result at 067_str_upper_hint.eu:3:14
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/068_str_lower_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/068_str_lower_hint.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/068_str_lower_hint.eu:3:14
+help-lines: 1
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'lower' not found in block
+  help: available keys: 'of', 'split', 'split-on', 'join', 'join-on', 'match', 'match-with', 'extract' (and 25 more)
+  ┌─ tests/harness/errors/068_str_lower_hint.eu:3:14
+  │
+3 │ result: text str.lower
+  │              ^^^
+  │
+  = to convert a string to lower case, use 'str.to-lower', e.g. 'text str.to-lower'
+  = stack trace:
+    - result at 068_str_lower_hint.eu:3:14
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/069_parse_num_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/069_parse_num_hint.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/069_parse_num_hint.eu:3:11
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'parse-num'
+  ┌─ tests/harness/errors/069_parse_num_hint.eu:3:11
+  │
+3 │ result: s parse-num
+  │           ^^^^^^^^^
+  │
+  = check that the variable is defined and in scope
+  = to convert a string to a number in eucalypt, use 'num', e.g. 's num'
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/070_str_upper_method
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/070_str_upper_method.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/070_str_upper_method.eu:2:12
+help-lines: 1
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'upper' not found in block
+  help: available keys: 'of', 'split', 'split-on', 'join', 'join-on', 'match', 'match-with', 'extract' (and 25 more)
+  ┌─ tests/harness/errors/070_str_upper_method.eu:2:12
+  │
+2 │ x: "hello" str.upper
+  │            ^^^
+  │
+  = to convert a string to upper case, use 'str.to-upper', e.g. 'text str.to-upper'
+  = stack trace:
+    - x at 070_str_upper_method.eu:2:12
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/071_def_keyword
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/071_def_keyword.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/071_def_keyword.eu:2:1
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'def'
+  ┌─ tests/harness/errors/071_def_keyword.eu:2:1
+  │
+2 │ def square(x): x * x
+  │ ^^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt does not use a 'def' or 'fn' keyword for functions; define a function with 'name(args): body', e.g. 'square(x): x * x'
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/072_io_fail
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/072_io_fail.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: IO operations are not permitted; use the --allow-io (-I) flag to enable
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/073_sprintf_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/073_sprintf_hint.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/073_sprintf_hint.eu:3:11
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'sprintf'
+  ┌─ tests/harness/errors/073_sprintf_hint.eu:3:11
+  │
+3 │ greeting: sprintf("Hello, %s!", name)
+  │           ^^^^^^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt has no sprintf/format function; for printf-style numeric formatting use 'str.fmt', e.g. 'x str.fmt("%.2f")' for two decimal places
+  = for string interpolation of named values, use "Hello, {name}!" where 'name' is a binding in scope
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/074_where_keyword
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/074_where_keyword.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/074_where_keyword.eu:3:3
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'where'
+  ┌─ tests/harness/errors/074_where_keyword.eu:3:3
+  │
+3 │   where
+  │   ^^^^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt has no 'where' clause; define helper bindings inside a block: '{ helper: 1  result: helper + 2 }'
+  = or bind before use at the top level: 'helper: 1  result: helper + 2'
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/075_let_keyword
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/075_let_keyword.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/075_let_keyword.eu:2:18
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'in'
+  ┌─ tests/harness/errors/075_let_keyword.eu:2:18
+  │
+2 │ result: let x: 1 in x + 2
+  │                  ^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt has no 'in' keyword for list comprehensions; use 'map' and 'filter' instead: 'xs filter(_ > 0) map(_ * 2)'
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/076_fn_keyword
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/076_fn_keyword.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/076_fn_keyword.eu:3:9
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'fn'
+  ┌─ tests/harness/errors/076_fn_keyword.eu:3:9
+  │
+3 │ result: fn(42)
+  │         ^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt does not use a 'def' or 'fn' keyword for functions; define a function with 'name(args): body', e.g. 'square(x): x * x'
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/077_double_anaphora
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/077_double_anaphora.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/077_double_anaphora.eu:4:12
+help-lines: 1
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: received a function where true or false was expected
+  help: this often happens due to operator precedence; try adding parentheses, e.g. `(xs f) + 1` instead of `xs f + 1`
+  ┌─ tests/harness/errors/077_double_anaphora.eu:4:12
+  │
+4 │ result: xs filter(_ > _ - 1)
+  │            ^^^^^^
+  │
+  = if using '_' anaphora in a predicate, note that each '_' creates a separate parameter — '(_ > _ - 1)' is a two-argument function, not a one-argument predicate
+  = to reuse the same value, use '_0' (or '_1', '_2' for multiple parameters): '(_0 > _0 - 1)' correctly compares the argument to itself
+  = stack trace:
+    - result at 077_double_anaphora.eu:4:12
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/078_anon_anaphor_scope
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/078_anon_anaphor_scope.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/078_anon_anaphor_scope.eu:5:23
+help-lines: 0
+note-lines: 2
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected number, found a function
+  ┌─ tests/harness/errors/078_anon_anaphor_scope.eu:5:23
+  │
+5 │ result: [1, 2, 3] map(double(_))
+  │                   --- ^^^^^^
+  │                   │
+  │                   called from here
+  │
+  = a function value cannot be used directly here; it must first be called with all of its remaining arguments
+  = this can happen when a function is under-applied (missing an argument), or when low-precedence catenation groups an expression differently than intended — add parentheses to disambiguate
+  = stack trace:
+    - # Mistake: using '_' inside a nested function call when a function arg is expected.… at 078_anon_anaphor_scope.eu:1:1
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/079_camelcase_take_while
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/079_camelcase_take_while.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/079_camelcase_take_while.eu:3:9
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'takeWhile'
+  ┌─ tests/harness/errors/079_camelcase_take_while.eu:3:9
+  │
+3 │ result: takeWhile((_ < 4), xs)
+  │         ^^^^^^^^^
+  │
+  = check that the variable is defined and in scope
+  = eucalypt uses kebab-case: 'take-while', e.g. 'xs take-while(_ < 4)'
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/080_array_oob
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/080_array_oob.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/080_array_oob.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: array index out of bounds: coordinates [5, 0] are outside the array bounds
+  ┌─ tests/harness/errors/080_array_oob.eu:2:4
+  │
+2 │ a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([5, 0])
+  │    ^^^                                 --- called from here
+  │
+  = stack trace:
+    - a at 080_array_oob.eu:2:4
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/081_array_shape_mismatch
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/081_array_shape_mismatch.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/081_array_shape_mismatch.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: array shape mismatch: shape [2, 2] requires 4 elements but 3 were provided
+  ┌─ tests/harness/errors/081_array_shape_mismatch.eu:2:4
+  │
+2 │ a: arr.from-flat([2, 2], [1, 2, 3])
+  │    ^^^
+  │
+  = stack trace:
+    - a at 081_array_shape_mismatch.eu:2:4
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/082_array_reshape_mismatch
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/082_array_reshape_mismatch.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/082_array_reshape_mismatch.eu:2:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: array shape mismatch: cannot reshape 4 elements into shape [5] (5 elements required)
+  ┌─ tests/harness/errors/082_array_reshape_mismatch.eu:2:4
+  │
+2 │ a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.reshape([5])
+  │    ^^^                                 --- called from here
+  │
+  = stack trace:
+    - a at 082_array_reshape_mismatch.eu:2:40
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/083_array_arith_mismatch
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/083_array_arith_mismatch.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/083_array_arith_mismatch.eu:4:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: array shape mismatch: arrays have incompatible shapes [2] and [3] for element-wise operation
+  ┌─ tests/harness/errors/083_array_arith_mismatch.eu:4:4
+  │
+4 │ c: arr.add(a, b)
+  │    ^^^
+  │
+  = stack trace:
+    - a at 083_array_arith_mismatch.eu:2:4
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/084_destructure_missing_field
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/084_destructure_missing_field.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/084_destructure_missing_field.eu:2:1
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'y' not found in block
+  help: similar keys: 'x'
+  ┌─ tests/harness/errors/084_destructure_missing_field.eu:2:1
+  │
+2 │ f({x y}): x + y
+  │ ^^^^^^^^^^^^^^^
+  │
+  = stack trace:
+    - f at 084_destructure_missing_field.eu:2:1
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/085_destructure_short_list
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/085_destructure_short_list.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/085_destructure_short_list.eu:2:1
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 2
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: head of empty list
+  ┌─ tests/harness/errors/085_destructure_short_list.eu:2:1
+  │
+2 │ f([a, b, c]): a + b + c
+  │ ^^^^^^^^^^^^^^^^^^^^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+  = stack trace:
+    - f at 085_destructure_short_list.eu:2:21
+    - f at 085_destructure_short_list.eu:2:1
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/086_destructure_empty_cons
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/086_destructure_empty_cons.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/086_destructure_empty_cons.eu:2:1
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: head of empty list
+  ┌─ tests/harness/errors/086_destructure_empty_cons.eu:2:1
+  │
+2 │ f([x : xs]): x
+  │ ^^^^^^^^^^^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+  = stack trace:
+    - f at 086_destructure_empty_cons.eu:2:1
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/087_bad_regex
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/087_bad_regex.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 2
+warnings: 0
+code: -
+primary: user tests/harness/errors/087_bad_regex.eu:2:12
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: bad regex: regex parse error:
+    [invalid
+    ^
+error: unclosed character class
+  help: the pattern '[invalid' is not a valid regular expression
+  ┌─ tests/harness/errors/087_bad_regex.eu:2:12
+  │
+2 │ x: "hello" str.matches?("[invalid")
+  │            ^^^
+  │
+  = stack trace:
+    - x at 087_bad_regex.eu:2:12
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/088_numeric_range
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/088_numeric_range.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/088_numeric_range.eu:2:24
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: numeric overflow: result of operating on 9223372036854775807 and 1 is out of range
+  help: the result exceeds the representable range for this numeric type
+  ┌─ tests/harness/errors/088_numeric_range.eu:2:24
+  │
+2 │ x: 9223372036854775807 + 1
+  │                        ^
+  │
+  = stack trace:
+    - x at 088_numeric_range.eu:2:24
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/089_numeric_domain
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/089_numeric_domain.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/089_numeric_domain.eu:2:11
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: result of (-1.0)^(0.5) is not a real number
+  help: raising a negative base to a fractional exponent yields a complex result; use a non-negative base or an integer exponent
+  ┌─ tests/harness/errors/089_numeric_domain.eu:2:11
+  │
+2 │ x: (-1.0) ^ 0.5
+  │           ^
+  │
+  = stack trace:
+    - x at 089_numeric_domain.eu:2:11
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/090_bad_format_string
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/090_bad_format_string.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/090_bad_format_string.eu:2:4
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: bad format string: 'Value is %d' is not a printf specifier (must start with '%', e.g. '%d', '%s', '%.2f')
+  help: format strings use printf-style %-specifiers, e.g. %d (integer), %f (float), %s (string), %e (scientific)
+  ┌─ tests/harness/errors/090_bad_format_string.eu:2:4
+  │
+2 │ x: str.fmt(42, "Value is %d")
+  │    ^^^
+  │
+  = stack trace:
+    - x at 090_bad_format_string.eu:2:4
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/091_unknown_format
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/091_unknown_format.eu -x xml
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unknown export format 'xml'
+  help: supported formats are: yaml, json, toml, text, edn, html
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/092_target_not_found
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/092_target_not_found.eu -t nonexistent
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: target 'nonexistent' not found
+  help: use 'eu list-targets' to see available targets
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/093_monad_missing_marker
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/093_monad_missing_marker.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/093_monad_missing_marker.eu:4:1
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: bracket block definition body must be marked with ':monad' — use '{ :monad bind: id-bind return: id-return }'
+  ┌─ tests/harness/errors/093_monad_missing_marker.eu:4:1
+  │
+4 │ ⟦{}⟧: { bind: id-bind  return: id-return }
+  │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/094_io_no_flag
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/094_io_no_flag.eu -t result -L tests/harness
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: IO operations are not permitted; use the --allow-io (-I) flag to enable
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/095_parse_as_bad_format
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/095_parse_as_bad_format.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/095_parse_as_bad_format.eu:2:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: parse-as(badformat): unknown source format badformat
+  ┌─ tests/harness/errors/095_parse_as_bad_format.eu:2:12
+  │
+2 │ x: "hello" parse-as(:badformat)
+  │            ^^^^^^^^
+  │
+  = stack trace:
+    - x at 095_parse_as_bad_format.eu:2:12
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/096_parse_as_bad_input
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/096_parse_as_bad_input.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/096_parse_as_bad_input.eu:3:35
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: parse-as(toml): invalid toml syntax expected an equals, found an identifier at line 1 column 6
+  ┌─ tests/harness/errors/096_parse_as_bad_input.eu:3:35
+  │
+3 │ x: "this is not valid toml = = =" parse-as(:toml)
+  │                                   ^^^^^^^^
+  │
+  = stack trace:
+    - x at 096_parse_as_bad_input.eu:3:35
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/097_div_by_zero_source_loc
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/097_div_by_zero_source_loc.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/097_div_by_zero_source_loc.eu:2:11
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: division by zero in floor division (/)
+  help: the divisor evaluated to zero
+  ┌─ tests/harness/errors/097_div_by_zero_source_loc.eu:2:11
+  │
+2 │ result: 1 / 0
+  │           ^
+  │
+  = stack trace:
+    - result at 097_div_by_zero_source_loc.eu:2:11
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/098_type_mismatch_operator_loc
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/098_type_mismatch_operator_loc.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/098_type_mismatch_operator_loc.eu:2:11
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "hello"
+  ┌─ tests/harness/errors/098_type_mismatch_operator_loc.eu:2:11
+  │
+2 │ result: 5 + "hello"
+  │           ^
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = stack trace:
+    - result at 098_type_mismatch_operator_loc.eu:2:11
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/099_string_minus_loc
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/099_string_minus_loc.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/099_string_minus_loc.eu:2:13
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "a"
+  ┌─ tests/harness/errors/099_string_minus_loc.eu:2:13
+  │
+2 │ result: "a" - 1
+  │             ^
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = stack trace:
+    - result at 099_string_minus_loc.eu:2:13
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/100_fn_call_source_loc
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/100_fn_call_source_loc.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/100_fn_call_source_loc.eu:2:9
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: argument type does not match function parameter
+  ┌─ tests/harness/errors/100_fn_call_source_loc.eu:2:21
+  │
+2 │ result: str.letters(42)
+  │                     ^^ expected string, found number
+
+error: type mismatch: expected string, found number
+  ┌─ tests/harness/errors/100_fn_call_source_loc.eu:2:9
+  │
+2 │ result: str.letters(42)
+  │         ^^^
+  │
+  = to convert a number to a string, use 'str' or string interpolation
+  = stack trace:
+    - result at 100_fn_call_source_loc.eu:2:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/101_named_fn_source_loc
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/101_named_fn_source_loc.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/101_named_fn_source_loc.eu:4:9
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "hello"
+  ┌─ tests/harness/errors/101_named_fn_source_loc.eu:4:9
+  │
+4 │ result: double("hello")
+  │         ^^^^^^
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = stack trace:
+    - result at 101_named_fn_source_loc.eu:4:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/102_dot_on_list_source_loc
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/102_dot_on_list_source_loc.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/102_dot_on_list_source_loc.eu:3:9
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected block, found list
+  ┌─ tests/harness/errors/102_dot_on_list_source_loc.eu:3:9
+  │
+3 │ result: xs.first
+  │         ^^
+  │
+  = the '.' operator performs key lookup on blocks, not lists
+  = for lists, use pipeline functions: 'xs count' (length), 'xs head' (first element), 'xs tail' (rest), 'xs !! 0' (nth element, 0-indexed)
+  = stack trace:
+    - result at 102_dot_on_list_source_loc.eu:3:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/103_comparison_type_mismatch
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/103_comparison_type_mismatch.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/103_comparison_type_mismatch.eu:2:11
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: cannot compare incompatible types with '>': operands must both be numbers, strings, symbols, or datetimes
+  ┌─ tests/harness/errors/103_comparison_type_mismatch.eu:2:11
+  │
+2 │ result: 5 > "hello"
+  │           ^
+  │
+  = stack trace:
+    - result at 103_comparison_type_mismatch.eu:2:11
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/104_comparison_type_mismatch_lte
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/104_comparison_type_mismatch_lte.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/104_comparison_type_mismatch_lte.eu:2:14
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: cannot compare incompatible types with '<=': operands must both be numbers, strings, symbols, or datetimes
+  ┌─ tests/harness/errors/104_comparison_type_mismatch_lte.eu:2:14
+  │
+2 │ result: :foo <= 42
+  │              ^^
+  │
+  = stack trace:
+    - result at 104_comparison_type_mismatch_lte.eu:2:14
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/105_base64_decode_invalid
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/105_base64_decode_invalid.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/105_base64_decode_invalid.eu:2:31
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: str.base64-decode: invalid byte 0x20 at position 3; base64 uses only A-Z, a-z, 0-9, +, / and = for padding
+  ┌─ tests/harness/errors/105_base64_decode_invalid.eu:2:31
+  │
+2 │ result: "not valid base64!!!" str.base64-decode
+  │                               ^^^
+  │
+  = stack trace:
+    - result at 105_base64_decode_invalid.eu:2:31
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/106_io_check_fail
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/106_io_check_fail.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: IO operations are not permitted; use the --allow-io (-I) flag to enable
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/107_source_location_in_error
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/107_source_location_in_error.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/107_source_location_in_error.eu:2:9
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: division by zero in floor division (/)
+  help: the divisor evaluated to zero
+  ┌─ tests/harness/errors/107_source_location_in_error.eu:2:9
+  │
+2 │ bomb: 1 / 0
+  │         ^
+  │
+  = stack trace:
+    - bomb at 107_source_location_in_error.eu:2:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/108_secondary_labels
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/108_secondary_labels.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/108_secondary_labels.eu:4:1
+help-lines: 0
+note-lines: 2
+secondary-labels: 2
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "a"
+  ┌─ tests/harness/errors/108_secondary_labels.eu:4:1
+  │
+4 │ transform(items): items map(_ + 1)
+  │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  │                         │     │
+  │                         │     called from here
+  │                         called from here
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = stack trace:
+    - transform at 108_secondary_labels.eu:4:1
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/109_unknown_arg
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/109_unknown_arg.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/109_unknown_arg.eu:2:26
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: unknown option: --unknown-flag
+  ┌─ tests/harness/errors/109_unknown_arg.eu:2:26
+  │
+2 │ main: ["--unknown-flag"] parse-args({})
+  │                          ^^^^^^^^^^
+  │
+  = stack trace:
+    - main at 109_unknown_arg.eu:2:26
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/110_unknown_short_arg
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/110_unknown_short_arg.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/110_unknown_short_arg.eu:2:14
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: unknown option: -x
+  ┌─ tests/harness/errors/110_unknown_short_arg.eu:2:14
+  │
+2 │ main: ["-x"] parse-args({})
+  │              ^^^^^^^^^^
+  │
+  = stack trace:
+    - main at 110_unknown_short_arg.eu:2:14
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/111_missing_option_value
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/111_missing_option_value.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/111_missing_option_value.eu:2:20
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: option --output requires a value
+  ┌─ tests/harness/errors/111_missing_option_value.eu:2:20
+  │
+2 │ main: ["--output"] parse-args({ output: "default" })
+  │                    ^^^^^^^^^^
+  │
+  = stack trace:
+    - main at 111_missing_option_value.eu:2:20
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/112_head_empty_list
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/112_head_empty_list.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/112_head_empty_list.eu:1:12
+help-lines: 0
+note-lines: 4
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: head of empty list
+  ┌─ tests/harness/errors/112_head_empty_list.eu:1:12
+  │
+1 │ result: [] head
+  │            ^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+
+error: head of empty list
+  ┌─ tests/harness/errors/112_head_empty_list.eu:1:12
+  │
+1 │ result: [] head
+  │            ^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+  = stack trace:
+    - result at 112_head_empty_list.eu:1:12
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/113_tail_empty_list
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/113_tail_empty_list.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/113_tail_empty_list.eu:1:12
+help-lines: 0
+note-lines: 4
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: tail of empty list
+  ┌─ tests/harness/errors/113_tail_empty_list.eu:1:12
+  │
+1 │ result: [] tail
+  │            ^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs tail)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+
+error: tail of empty list
+  ┌─ tests/harness/errors/113_tail_empty_list.eu:1:12
+  │
+1 │ result: [] tail
+  │            ^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+  = stack trace:
+    - result at 113_tail_empty_list.eu:1:12
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/115_render_as_invalid_format
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/115_render_as_invalid_format.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unknown render format 'invalid-format'
+  help: supported formats for render-as are: :yaml, :json, :toml, :text, :edn, :html
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/116_dbg_scalar
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/116_dbg_scalar.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 0
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+▶ 42
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/117_dbg_list
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/117_dbg_list.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 0
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+▶ [1, 2, 3]
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/118_dbg_pipeline_tap
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/118_dbg_pipeline_tap.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 0
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+▶ [2, 4, 6]
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/119_dbg_function_wrap
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/119_dbg_function_wrap.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 0
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+▶ 2
+▶ 4
+▶ 6
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/120_dbg_pipeline_function
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/120_dbg_pipeline_function.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 0
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+▶ [2, 4, 6]
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/121_dbg_labelled
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/121_dbg_labelled.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 0
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+▶ answer: 42
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/122_dbg_multiarg_function
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/122_dbg_multiarg_function.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 0
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+▶ 6
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/123_dbg_block
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/123_dbg_block.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 0
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+▶ { a: 1, b: 2 }
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/124_dbg_io_map
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/124_dbg_io_map.eu -t result
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: IO operations are not permitted; use the --allow-io (-I) flag to enable
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/125_dbg_io_function_wrap
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/125_dbg_io_function_wrap.eu -t result
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: IO operations are not permitted; use the --allow-io (-I) flag to enable
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/126_stray_colon_in_call_args
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/126_stray_colon_in_call_args.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/126_stray_colon_in_call_args.eu:3:13
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: expected CLOSE_PAREN, found COLON
+  ┌─ tests/harness/errors/126_stray_colon_in_call_args.eu:3:13
+  │
+3 │ test: f(2, 2:)
+  │             ^
+  │             │
+  │             unexpected content after expression
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/127_type_mismatch_value_str
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/127_type_mismatch_value_str.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/127_type_mismatch_value_str.eu:6:12
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "hello"
+  ┌─ tests/harness/errors/127_type_mismatch_value_str.eu:6:12
+  │
+6 │ x: "hello" + 1
+  │            ^
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = stack trace:
+    - x at 127_type_mismatch_value_str.eu:6:12
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/128_type_mismatch_value_sym
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/128_type_mismatch_value_sym.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/128_type_mismatch_value_sym.eu:6:9
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found symbol :foo
+  ┌─ tests/harness/errors/128_type_mismatch_value_sym.eu:6:9
+  │
+6 │ x: :foo + 1
+  │         ^
+  │
+  = stack trace:
+    - x at 128_type_mismatch_value_sym.eu:6:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/129_head_tail_not_list
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/129_head_tail_not_list.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/129_head_tail_not_list.eu:1:7
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: type mismatch calling 'head'
+  ┌─ tests/harness/errors/129_head_tail_not_list.eu:1:4
+  │
+1 │ x: 42 head
+  │    ^^ expected [a], found number
+
+error: head requires a list, found 42
+  ┌─ tests/harness/errors/129_head_tail_not_list.eu:1:7
+  │
+1 │ x: 42 head
+  │       ^^^^
+  │
+  = head and tail require a list (e.g. [1, 2, 3]) as their argument
+  = to create a list from a number, wrap it: '[n]'
+  = stack trace:
+    - x at 129_head_tail_not_list.eu:1:7
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/130_simple_lookup_key_not_found
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/130_simple_lookup_key_not_found.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/130_simple_lookup_key_not_found.eu:2:18
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'y' not found in block
+  help: similar keys: 'x'
+  ┌─ tests/harness/errors/130_simple_lookup_key_not_found.eu:2:18
+  │
+2 │ result: { x: 1 }.y
+  │                  ^
+  │
+  = stack trace:
+    - result at 130_simple_lookup_key_not_found.eu:2:18
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/131_map_user_location
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/131_map_user_location.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/131_map_user_location.eu:4:18
+help-lines: 0
+note-lines: 2
+secondary-labels: 1
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "hello"
+  ┌─ tests/harness/errors/131_map_user_location.eu:4:18
+  │
+4 │ result: data map(+ "hello")
+  │              --- ^
+  │              │
+  │              called from here
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/132_foldl_user_location
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/132_foldl_user_location.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/132_foldl_user_location.eu:3:19
+help-lines: 0
+note-lines: 2
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "zero"
+  ┌─ tests/harness/errors/132_foldl_user_location.eu:3:19
+  │
+3 │ result: [1, 2, 3] foldl(+, "zero")
+  │                   ^^^^^ - called from here
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = stack trace:
+    - result at 132_foldl_user_location.eu:3:19
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/133_stack_trace_cycle_dedup
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/133_stack_trace_cycle_dedup.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/133_stack_trace_cycle_dedup.eu:3:19
+help-lines: 0
+note-lines: 2
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "zero"
+  ┌─ tests/harness/errors/133_stack_trace_cycle_dedup.eu:3:19
+  │
+3 │ result: [1, 2, 3] foldl(+, "zero")
+  │                   ^^^^^ - called from here
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = stack trace:
+    - result at 133_stack_trace_cycle_dedup.eu:3:19
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/134_bool_where_value
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/134_bool_where_value.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/134_bool_where_value.eu:2:14
+help-lines: 2
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: expected a primitive number, string, or symbol but found a boolean
+  help: use 'if(condition, then_value, else_value)' to convert a boolean to a value
+  help: eucalypt booleans cannot be used in arithmetic or as strings directly
+  ┌─ tests/harness/errors/134_bool_where_value.eu:2:14
+  │
+2 │ result: true > 5
+  │              ^
+  │
+  = stack trace:
+    - result at 134_bool_where_value.eu:2:14
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/135_head_empty_list
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/135_head_empty_list.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/135_head_empty_list.eu:1:9
+help-lines: 0
+note-lines: 4
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: head of empty list
+  ┌─ tests/harness/errors/135_head_empty_list.eu:1:9
+  │
+1 │ result: head([])
+  │         ^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+
+error: head of empty list
+  ┌─ tests/harness/errors/135_head_empty_list.eu:1:9
+  │
+1 │ result: head([])
+  │         ^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+  = stack trace:
+    - result at 135_head_empty_list.eu:1:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/136_tail_empty_list
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/136_tail_empty_list.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/136_tail_empty_list.eu:1:9
+help-lines: 0
+note-lines: 4
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: tail of empty list
+  ┌─ tests/harness/errors/136_tail_empty_list.eu:1:9
+  │
+1 │ result: tail([])
+  │         ^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs tail)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+
+error: tail of empty list
+  ┌─ tests/harness/errors/136_tail_empty_list.eu:1:9
+  │
+1 │ result: tail([])
+  │         ^^^^
+  │
+  = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
+  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+  = stack trace:
+    - result at 136_tail_empty_list.eu:1:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/137_user_panic
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/137_user_panic.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/137_user_panic.eu:1:9
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: deliberate failure
+  ┌─ tests/harness/errors/137_user_panic.eu:1:9
+  │
+1 │ result: panic("deliberate failure")
+  │         ^^^^^
+  │
+  = stack trace:
+    - result at 137_user_panic.eu:1:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/138_internal_no_panic_prefix
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/138_internal_no_panic_prefix.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/138_internal_no_panic_prefix.eu:1:17
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: type mismatch calling 'head'
+  ┌─ tests/harness/errors/138_internal_no_panic_prefix.eu:1:9
+  │
+1 │ result: "hello" head
+  │         ^^^^^^^ expected [a], found "hello"
+
+error: head requires a list, found "hello"
+  ┌─ tests/harness/errors/138_internal_no_panic_prefix.eu:1:17
+  │
+1 │ result: "hello" head
+  │                 ^^^^
+  │
+  = head and tail require a list (e.g. [1, 2, 3]) as their argument
+  = to concatenate strings, use string interpolation (e.g. "{a}{b}") or 'str.join-on', not '++' (which is for list append)
+  = to get individual characters of a string, use 'str.letters'
+  = stack trace:
+    - result at 138_internal_no_panic_prefix.eu:1:17
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/139_list_index_oob
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/139_list_index_oob.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/139_list_index_oob.eu:2:19
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: index 10 out of range for list of length 3
+  ┌─ tests/harness/errors/139_list_index_oob.eu:2:19
+  │
+2 │ result: [1, 2, 3] nth(10)
+  │                   ^^^
+  │
+  = stack trace:
+    - result at 139_list_index_oob.eu:2:19
+    - in 'nth' at [prelude]
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/140_invalid_string_interpolation
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/140_invalid_string_interpolation.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/140_invalid_string_interpolation.eu:1:24
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid string interpolation
+  ┌─ tests/harness/errors/140_invalid_string_interpolation.eu:1:24
+  │
+1 │ ` { type: "[number] -> {..}"}
+  │                        ^^^^
+  │
+  = the content between { and } was not a valid variable name or dotted path
+  = if you want a literal brace in a string, escape it by doubling: {{ and }}
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/141_calzdt_year_overflow
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/141_calzdt_year_overflow.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/141_calzdt_year_overflow.eu:3:9
+help-lines: 1
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid date/time components: the combination (3000000000, 1, 1) does not form a valid calendar date (e.g. February has at most 29 days)
+  help: cal.zdt takes (year, month, day, hour, minute, second, timezone), e.g. cal.zdt(2023, 1, 15, 10, 30, 0, "UTC")
+  note: given components were (3000000000, 1, 1, 0, 0, 0, UTC)
+  ┌─ tests/harness/errors/141_calzdt_year_overflow.eu:3:9
+  │
+3 │ result: cal.zdt(3000000000, 1, 1, 0, 0, 0, "UTC")
+  │         ^^^
+  │
+  = valid ranges: year (any integer), month (1–12), day (1–28/29/30/31 depending on month), hour (0–23), minute (0–59), second (0–59)
+  = stack trace:
+    - result at 141_calzdt_year_overflow.eu:3:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/142_render_unknown_format
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/142_render_unknown_format.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unknown render format 'badformat'
+  help: supported formats for render-as are: :yaml, :json, :toml, :text, :edn, :html
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/143_bitwise_float
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/143_bitwise_float.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/143_bitwise_float.eu:3:13
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: bitwise operations require integer arguments (got 1.5, which is not a whole number)
+  ┌─ tests/harness/errors/143_bitwise_float.eu:3:13
+  │
+3 │ result: 1.5 bit.and(2)
+  │             ^^^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/144_str_replace_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/144_str_replace_hint.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/144_str_replace_hint.eu:3:14
+help-lines: 1
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'gsub' not found in block
+  help: available keys: 'of', 'split', 'split-on', 'join', 'join-on', 'match', 'match-with', 'extract' (and 25 more)
+  ┌─ tests/harness/errors/144_str_replace_hint.eu:3:14
+  │
+3 │ result: text str.gsub("o", "0")
+  │              ^^^
+  │
+  = use 'str.replace(pattern, replacement, s)' to replace all regex matches, e.g. 'text str.replace("foo", "bar")'
+  = stack trace:
+    - result at 144_str_replace_hint.eu:3:14
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/145_str_starts_with_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/145_str_starts_with_hint.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/145_str_starts_with_hint.eu:3:14
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'startsWith' not found in block
+  help: similar keys: 'starts-with?'
+  ┌─ tests/harness/errors/145_str_starts_with_hint.eu:3:14
+  │
+3 │ result: text str.startsWith("hello")
+  │              ^^^
+  │
+  = stack trace:
+    - result at 145_str_starts_with_hint.eu:3:14
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/146_str_ends_with_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/146_str_ends_with_hint.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/146_str_ends_with_hint.eu:3:14
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'endsWith' not found in block
+  help: similar keys: 'ends-with?'
+  ┌─ tests/harness/errors/146_str_ends_with_hint.eu:3:14
+  │
+3 │ result: text str.endsWith("world")
+  │              ^^^
+  │
+  = stack trace:
+    - result at 146_str_ends_with_hint.eu:3:14
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/147_str_contains_hint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/147_str_contains_hint.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/147_str_contains_hint.eu:3:14
+help-lines: 1
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'includes' not found in block
+  help: available keys: 'of', 'split', 'split-on', 'join', 'join-on', 'match', 'match-with', 'extract' (and 25 more)
+  ┌─ tests/harness/errors/147_str_contains_hint.eu:3:14
+  │
+3 │ result: text str.includes("hello")
+  │              ^^^
+  │
+  = use 'str.contains?(pattern, s)' to test if a string contains a pattern, e.g. 'text str.contains?("word")'
+  = note: 'str.contains?' uses a regular expression, so special characters like '.', '+', '*' must be escaped with '\'
+  = stack trace:
+    - result at 147_str_contains_hint.eu:3:14
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/148_not_callable_source_loc
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/148_not_callable_source_loc.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/148_not_callable_source_loc.eu:3:9
+help-lines: 2
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: tried to call a number as a function
+  help: only functions and blocks can be called with arguments
+  help: this often means too many arguments were passed to a function
+  ┌─ tests/harness/errors/148_not_callable_source_loc.eu:3:9
+  │
+3 │ result: x(10)
+  │         ^
+  │
+  = a number value is not a function; check for a missing operator or extra argument
+  = note: catenation (juxtaposition) has low precedence — 'f(a) + 1' binds as 'f(a + 1)'; add parentheses to disambiguate
+  = stack trace:
+    - result at 148_not_callable_source_loc.eu:3:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/149_not_value_source_loc
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/149_not_value_source_loc.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/149_not_value_source_loc.eu:4:9
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 2
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: expected a primitive value but found a let binding
+  help: this can occur when a function or structured value appears where a primitive (number, string, etc.) was expected
+  ┌─ tests/harness/errors/149_not_value_source_loc.eu:4:9
+  │
+4 │ result: str.of(f)
+  │         ^^^
+  │
+  = stack trace:
+    - result at 149_not_value_source_loc.eu:4:9
+    - # Error: passing a function where a primitive value is expected — source location… at 149_not_value_source_loc.eu:1:1
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/150_bad_timezone_source_loc
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/150_bad_timezone_source_loc.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/150_bad_timezone_source_loc.eu:2:9
+help-lines: 1
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unrecognised time zone 'NotATimezone'
+  help: use an IANA timezone name (e.g. 'Europe/London', 'America/New_York') or a UTC offset string (e.g. '+0100', '-0530', 'UTC')
+  ┌─ tests/harness/errors/150_bad_timezone_source_loc.eu:2:9
+  │
+2 │ result: cal.zdt(2024, 1, 15, 10, 30, 0, "NotATimezone")
+  │         ^^^
+  │
+  = timezone must be a UTC offset string like '+0100', '-0530', or 'UTC'
+  = stack trace:
+    - result at 150_bad_timezone_source_loc.eu:2:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/151_set_add_non_set
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/151_set_add_non_set.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/151_set_add_non_set.eu:1:17
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected set, found string "hello"
+  ┌─ tests/harness/errors/151_set_add_non_set.eu:1:17
+  │
+1 │ result: "hello" set.add("world")
+  │                 ^^^
+  │
+  = stack trace:
+    - result at 151_set_add_non_set.eu:1:17
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/152_set_element_type_mismatch
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/152_set_element_type_mismatch.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/152_set_element_type_mismatch.eu:1:11
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected set, found set
+  ┌─ tests/harness/errors/152_set_element_type_mismatch.eu:1:11
+  │
+1 │ result: ∅ set.add([1, 2, 3] set.from-list)
+  │           ^^^
+  │
+  = stack trace:
+    - result at 152_set_element_type_mismatch.eu:1:11
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/153_unexpected_expr_stg_compiler
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/153_unexpected_expr_stg_compiler.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: found temporary pseudo-operators remaining in evaluand
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/154_internal_import_error
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/154_internal_import_error.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/154_internal_import_error.eu:3:9
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'priv-helper'
+  ┌─ tests/harness/errors/154_internal_import_error.eu:3:9
+  │
+3 │ result: priv-helper(1)
+  │         ^^^^^^^^^^^
+  │
+  = note: 'priv-helper' is marked `export: :internal` in its unit and cannot be accessed by importers
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/155_block_content_in_soup_bracket
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/155_block_content_in_soup_bracket.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/155_block_content_in_soup_bracket.eu:6:9
+help-lines: 0
+note-lines: 4
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: block-style content inside non-monad bracket pair '⟦⟧' — this bracket accepts expressions, not declarations
+  ┌─ tests/harness/errors/155_block_content_in_soup_bracket.eu:6:9
+  │
+6 │ result: ⟦ a: 1 ⟧
+  │         ^^^^^^^^
+  │
+  = '⟦⟧' is an expression bracket — it accepts soup expressions, not 'name: value' declarations
+  = the ':' inside the brackets triggered block-mode parsing
+  = to pass a block literal as content, wrap it: '⟦ {key: value} ⟧'
+  = to declare a monad bracket: '⟦{}⟧': { :monad bind(m, f): f(m)  return(a): a }
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/156_soup_content_in_monad_bracket
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/156_soup_content_in_monad_bracket.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/156_soup_content_in_monad_bracket.eu:6:9
+help-lines: 0
+note-lines: 4
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: expression content inside monad bracket '⟦⟧' — this bracket requires declarations ('name: value' bindings)
+  ┌─ tests/harness/errors/156_soup_content_in_monad_bracket.eu:6:9
+  │
+6 │ result: ⟦ 1 2 3 ⟧
+  │         ^^^^^^^^^
+  │
+  = '⟦⟧' is a monad bracket — its content must contain at least one 'name: value' binding
+  = no ':' colon was found inside the brackets, so the content was parsed as expressions
+  = example: '⟦ x: expr ⟧'.x, or '⟦ x: e1  y: x + 1 ⟧'.y
+  = to use expression content, declare without '{}': '⟦ x ⟧': x
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/157_self_ref_function_call
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/157_self_ref_function_call.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/157_self_ref_function_call.eu:8:4
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: binding 'p' refers to itself — this will always diverge
+  ┌─ tests/harness/errors/157_self_ref_function_call.eu:8:4
+  │
+8 │ p: p(1)
+  │    ^
+  │
+  = the binding `p: p` (or `p: p(…)`) always loops
+  = if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/158_self_assign_direct
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/158_self_assign_direct.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/158_self_assign_direct.eu:2:11
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: binding 'x' refers to itself — this will always diverge
+  ┌─ tests/harness/errors/158_self_assign_direct.eu:2:11
+  │
+2 │ out: { x: x }
+  │           ^
+  │
+  = the binding `x: x` (or `x: x(…)`) always loops
+  = if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/159_self_assign_function_pos
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/159_self_assign_function_pos.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/159_self_assign_function_pos.eu:2:11
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: binding 'f' refers to itself — this will always diverge
+  ┌─ tests/harness/errors/159_self_assign_function_pos.eu:2:11
+  │
+2 │ out: { f: f(1) }
+  │           ^
+  │
+  = the binding `f: f` (or `f: f(…)`) always loops
+  = if you want a lazy fixpoint, put the self-reference in argument position: e.g. `ones: cons(1, ones)`
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/160_unclosed_block
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/160_unclosed_block.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/160_unclosed_block.eu:3:4
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unterminated block (missing '}')
+  ┌─ tests/harness/errors/160_unclosed_block.eu:3:4
+  │
+3 │   x: { y: 1
+  │ ╭────^
+4 │ │ RESULT: x
+5 │ │
+  │ ╰^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/161_unclosed_list
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/161_unclosed_list.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/161_unclosed_list.eu:3:24
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: expected CLOSE_SQUARE, found CLOSE_BRACE
+  ┌─ tests/harness/errors/161_unclosed_list.eu:3:24
+  │
+3 │ x: { y: [1, 2, 3  z: 4 }
+  │                        ^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/162_unclosed_paren
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/162_unclosed_paren.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/162_unclosed_paren.eu:3:18
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: expected CLOSE_PAREN, found COLON
+  ┌─ tests/harness/errors/162_unclosed_paren.eu:3:18
+  │
+3 │ x: { y: (a + b  z: 4 }
+  │         ---------^---
+  │         │        │
+  │         │        unexpected content after expression
+  │         invalid parenthesised expression
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/163_malformed_decl_head
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/163_malformed_decl_head.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/163_malformed_decl_head.eu:3:11
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: empty expression where a value was expected
+  ┌─ tests/harness/errors/163_malformed_decl_head.eu:3:11
+  │
+3 │ x: { a: 1 ` }
+  │           ^
+  │           │
+  │           empty expression where a value was expected
+  │           missing ':' after declaration head
+  │           malformed declaration head
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/164_error_recovery_bare_colon
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/164_error_recovery_bare_colon.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/164_error_recovery_bare_colon.eu:4:1
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: malformed declaration head
+  ┌─ tests/harness/errors/164_error_recovery_bare_colon.eu:4:1
+  │
+4 │ ╭ : bad
+5 │ │ good: 1
+  │ ╰────^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/165_error_recovery_nested_block
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/165_error_recovery_nested_block.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/165_error_recovery_nested_block.eu:5:3
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: malformed declaration head
+  ┌─ tests/harness/errors/165_error_recovery_nested_block.eu:5:3
+  │
+5 │ ╭   : malformed
+6 │ │   a: 1
+  │ ╰───^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/168_io_shell_missing_cmd
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/168_io_shell_missing_cmd.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: argument type does not match function parameter
+  ┌─ tests/harness/errors/168_io_shell_missing_cmd.eu:3:16
+  │
+3 │ main: io.shell({ stdin: "ignored" })
+  │                ^^^^^^^^^^^^^^^^^^^^ expected string, found {stdin: "ignored", ..}
+
+error: IO operations are not permitted; use the --allow-io (-I) flag to enable
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/169_malformed_jsonl_stream
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/169_malformed_jsonl_stream.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/169_malformed_jsonl_stream.eu:3:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: malformed JSON in stream: key must be a string at line 1 column 2
+  ┌─ tests/harness/errors/169_malformed_jsonl_stream.eu:3:12
+  │
+3 │ main: data count
+  │            ^^^^^
+  │
+  = stack trace:
+    - main at 169_malformed_jsonl_stream.eu:3:12
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/171_yaml_large_uint
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/171_yaml_large_uint.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 101
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: yes
+--- stderr ---
+
+thread '<unnamed>' panicked at src/export/yaml.rs:LINE:COL:
+number 9999999999999999999 is too large to represent as a YAML integer (max i64)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'main' panicked at src/bin/eu.rs:LINE:COL:
+main thread panicked: Any { .. }
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/172_yaml_complex_key
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/172_yaml_complex_key.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user testdata/complex_key.yaml:1:1
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid key YAML mapping keys must be string literals
+  ┌─ testdata/complex_key.yaml:1:1
+  │
+1 │ ? [1, 2]
+  │ ^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/179_assert_fail_scalar
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/179_assert_fail_scalar.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/179_assert_fail_scalar.eu:4:6
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+EXPECT FAILED: expected 2, got 1
+error: assertion failed: expected 2, got 1
+  ┌─ tests/harness/errors/179_assert_fail_scalar.eu:4:6
+  │
+4 │ x: 1 //=> 2
+  │      ^^^^
+  │
+  = stack trace:
+    - x at 179_assert_fail_scalar.eu:4:6
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/180_lookup_fail_large_block
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/180_lookup_fail_large_block.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/180_lookup_fail_large_block.eu:46:7
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'k99' not found in block
+  help: similar keys: 'k09', 'k19', 'k29'
+   ┌─ tests/harness/errors/180_lookup_fail_large_block.eu:46:7
+   │
+46 │ miss: b.k99
+   │       ^
+   │
+   = stack trace:
+     - miss at 180_lookup_fail_large_block.eu:46:7
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/181_direct_app_call_site
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/181_direct_app_call_site.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/181_direct_app_call_site.eu:15:9
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: tail requires a list, found 3
+   ┌─ tests/harness/errors/181_direct_app_call_site.eu:15:9
+   │
+15 │ result: second(3)
+   │         ^^^^^^
+   │
+   = head and tail require a list (e.g. [1, 2, 3]) as their argument
+   = stack trace:
+     - result at 181_direct_app_call_site.eu:15:9
+     - in 'nth' at [prelude]
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/191_m93j_lookup_on_function
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/191_m93j_lookup_on_function.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/191_m93j_lookup_on_function.eu:2:9
+help-lines: 2
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: cannot look up a key on a function value
+  help: '.' looks up keys in blocks; the value before '.' must be a block, not a function
+  help: if the function returns a block when called, call it first, e.g. 'f(x).key' instead of 'f.key'
+  ┌─ tests/harness/errors/191_m93j_lookup_on_function.eu:2:9
+  │
+2 │ result: add.x
+  │         ^^^
+  │
+  = stack trace:
+    - result at 191_m93j_lookup_on_function.eu:2:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/192_1tkk_7_9_function_not_block
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/192_1tkk_7_9_function_not_block.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/192_1tkk_7_9_function_not_block.eu:2:9
+help-lines: 0
+note-lines: 2
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected number, found a function
+  ┌─ tests/harness/errors/192_1tkk_7_9_function_not_block.eu:2:9
+  │
+2 │ result: add(1) + 1
+  │         ^^^    - called from here
+  │
+  = a function value cannot be used directly here; it must first be called with all of its remaining arguments
+  = this can happen when a function is under-applied (missing an argument), or when low-precedence catenation groups an expression differently than intended — add parentheses to disambiguate
+  = stack trace:
+    - result at 192_1tkk_7_9_function_not_block.eu:2:16
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/193_1tkk_7_12_curated_trace
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/193_1tkk_7_12_curated_trace.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/193_1tkk_7_12_curated_trace.eu:5:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: index 10 out of range for list of length 3
+  ┌─ tests/harness/errors/193_1tkk_7_12_curated_trace.eu:5:12
+  │
+5 │ result: xs nth(10)
+  │            ^^^
+  │
+  = stack trace:
+    - result at 193_1tkk_7_12_curated_trace.eu:5:12
+    - in 'nth' at [prelude]
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/error_166
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/error_166.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/error_166.eu:12:1
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: malformed declaration head
+   ┌─ tests/harness/errors/error_166.eu:12:1
+   │
+12 │ ╭ : bad_value
+13 │ │ y: 20
+   │ ╰─^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/error_167
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/error_167.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: git imports require a commit SHA for reproducibility
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/error_173
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/error_173.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/error_173.eu:10:9
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: expected a primitive value but found non-numeric value in number list
+  help: this can occur when a function or structured value appears where a primitive (number, string, etc.) was expected
+   ┌─ tests/harness/errors/error_173.eu:10:9
+   │
+10 │ result: graph.topo-sort(3, [["a", 1], [1, 2]])
+   │         ^^^^^
+   │
+   = stack trace:
+     - result at error_173.eu:10:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/error_174
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/error_174.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/error_174.eu:10:19
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: argument type does not match function parameter
+   ┌─ tests/harness/errors/error_174.eu:10:9
+   │
+10 │ result: [1, 2, 3] str.join-on(",")
+   │         ^^^^^^^^^ expected [string], found [number]
+
+error: type mismatch: expected string, found number
+   ┌─ tests/harness/errors/error_174.eu:10:19
+   │
+10 │ result: [1, 2, 3] str.join-on(",")
+   │                   ^^^
+   │
+   = to convert a number to a string, use 'str' or string interpolation
+   = stack trace:
+     - result at error_174.eu:10:19
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/error_175
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/error_175.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/harness/errors/error_175.eu:10:22
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: type mismatch calling 'sort-nums'
+   ┌─ tests/harness/errors/error_175.eu:10:9
+   │
+10 │ result: "not_a_list" sort-nums
+   │         ^^^^^^^^^^^^ expected [number], found "not_a_list"
+
+error: type mismatch: expected empty list or list, found string
+   ┌─ tests/harness/errors/error_175.eu:10:22
+   │
+10 │ result: "not_a_list" sort-nums
+   │                      ^^^^^^^^^
+   │
+   = stack trace:
+     - result at error_175.eu:10:22
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/error_176
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/error_176.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/error_176.eu:16:22
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+EXPECT FAILED: expected "goodbye world", got "hello world"
+error: assertion failed: expected "goodbye world", got "hello world"
+   ┌─ tests/harness/errors/error_176.eu:16:22
+   │
+16 │ make-greeting(name): "hello {name}"
+   │                      ^^^^^^^^^^^^^^
+   ·
+19 │ result: make-greeting("world") //= "goodbye world"
+   │                                --- called from here
+   │
+   = stack trace:
+     - result at error_176.eu:19:32
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/error_177
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/error_177.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/error_177.eu:17:17
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+EXPECT FAILED: expected "goodbye", got "hello"
+error: assertion failed: expected "goodbye", got "hello"
+   ┌─ tests/harness/errors/error_177.eu:17:17
+   │
+17 │ result: "hello" //= "goodbye"
+   │                 ^^^
+   │
+   = stack trace:
+     - result at error_177.eu:17:17
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/error_178
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/error_178.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/error_178.eu:1:1
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid embedding - invalid type annotation: type annotation parse error at position 0: unexpected character '4'
+  ┌─ tests/harness/errors/error_178.eu:1:1
+  │
+1 │ s"42"
+  │ ^^^^^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/x007_bad_block_element
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/x007_bad_block_element.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 0
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+<no output>
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/x018_missing_comma
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/x018_missing_comma.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 0
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+<no output>
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/x021_dot_in_key
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/x021_dot_in_key.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 3
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid block key: dotted names are not allowed as block keys
+ = block keys must be simple names (e.g. `x`), not dotted paths (e.g. `x.y`)
+ = example of valid metadata: `` ` { x: val } `` — use 'x', not 'x.y' as the key
+ = if you need nested metadata, use nested blocks: `` ` { x: { y: val } } ``
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: errors/x022_redef
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/x022_redef.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 0
+errors: 0
+warnings: 0
+code: -
+primary: none
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+<no output>
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: many-decls/huge_decls_type_mismatch
+argv: run -L tests/diagnostics/snapshot-corpus --heap-limit-mib 2048 tests/diagnostics/snapshot-corpus/huge_decls_type_mismatch.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/diagnostics/snapshot-corpus/huge_decls_type_mismatch.eu:2005:13
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "a"
+     ┌─ tests/diagnostics/snapshot-corpus/huge_decls_type_mismatch.eu:2005:13
+     │
+2005 │ result: "a" + 1
+     │             ^
+     │
+     = to convert a string to a number, use 'num', e.g. 's num'
+     = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+     = stack trace:
+       - pad0000 at huge_decls_type_mismatch.eu:5:12
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: many-decls/huge_decls_type_warning
+argv: run -L tests/diagnostics/snapshot-corpus --heap-limit-mib 2048 tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 1
+code: -
+primary: user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: argument type does not match function parameter
+     ┌─ tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:21
+     │
+1504 │ result: str.letters(42)
+     │                     ^^ expected string, found number
+
+error: type mismatch: expected string, found number
+     ┌─ tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9
+     │
+1504 │ result: str.letters(42)
+     │         ^^^
+     │
+     = to convert a number to a string, use 'str' or string interpolation
+     = stack trace:
+       - pad0000 at huge_decls_type_warning.eu:4:12
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: many-decls/many_decls_early_nth
+argv: run -L tests/diagnostics/snapshot-corpus --heap-limit-mib 2048 tests/diagnostics/snapshot-corpus/many_decls_early_nth.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/snapshot-corpus/many_decls_early_nth.eu:5:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: index 10 out of range for list of length 3
+  ┌─ tests/diagnostics/snapshot-corpus/many_decls_early_nth.eu:5:12
+  │
+5 │ result: xs nth(10)
+  │            ^^^
+  │
+  = stack trace:
+    - result at many_decls_early_nth.eu:5:12
+    - in 'nth' at [prelude]
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: many-decls/many_decls_late_nth
+argv: run -L tests/diagnostics/snapshot-corpus --heap-limit-mib 2048 tests/diagnostics/snapshot-corpus/many_decls_late_nth.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/snapshot-corpus/many_decls_late_nth.eu:7:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: index 10 out of range for list of length 3
+  ┌─ tests/diagnostics/snapshot-corpus/many_decls_late_nth.eu:7:12
+  │
+7 │ pad0000: 0 + 0
+  │            ^
+  │
+  = stack trace:
+    - pad0000 at many_decls_late_nth.eu:7:12
+    - in 'nth' at [prelude]
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: many-decls/many_decls_lookup_miss
+argv: run -L tests/diagnostics/snapshot-corpus --heap-limit-mib 2048 tests/diagnostics/snapshot-corpus/many_decls_lookup_miss.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/snapshot-corpus/many_decls_lookup_miss.eu:604:9
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 2
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'gama' not found in block
+  help: similar keys: 'gamma'
+    ┌─ tests/diagnostics/snapshot-corpus/many_decls_lookup_miss.eu:604:9
+    │
+604 │ result: b.gama
+    │         ^
+    │
+    = stack trace:
+      - pad0000 at many_decls_lookup_miss.eu:4:12
+      - result at many_decls_lookup_miss.eu:604:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: many-decls/many_decls_middle_nth
+argv: run -L tests/diagnostics/snapshot-corpus --heap-limit-mib 2048 tests/diagnostics/snapshot-corpus/many_decls_middle_nth.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/snapshot-corpus/many_decls_middle_nth.eu:5:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: index 10 out of range for list of length 3
+  ┌─ tests/diagnostics/snapshot-corpus/many_decls_middle_nth.eu:5:12
+  │
+5 │ pad0000: 0 + 0
+  │            ^
+  │
+  = stack trace:
+    - pad0000 at many_decls_middle_nth.eu:5:12
+    - in 'nth' at [prelude]
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: many-decls/many_decls_nested_user_fn
+argv: run -L tests/diagnostics/snapshot-corpus --heap-limit-mib 2048 tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:6:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: index 10 out of range for list of length 3
+  ┌─ tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:6:12
+  │
+6 │ pad0000: 0 + 0
+  │            ^
+  │
+  = stack trace:
+    - pad0000 at many_decls_nested_user_fn.eu:6:12
+    - in 'nth' at [prelude]
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: provocations/catenation_arith
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/catenation_arith.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/corpus/catenation_arith.eu:2:7
+help-lines: 0
+note-lines: 2
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: type mismatch: expected number, found a function
+  ┌─ tests/diagnostics/corpus/catenation_arith.eu:2:7
+  │
+2 │ n: xs foldl(+, 0) + 1
+  │       ^^^^^       - called from here
+  │
+  = a function value cannot be used directly here; it must first be called with all of its remaining arguments
+  = this can happen when a function is under-applied (missing an argument), or when low-precedence catenation groups an expression differently than intended — add parentheses to disambiguate
+  = stack trace:
+    - n at catenation_arith.eu:2:19
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: provocations/hof_bad_arg
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/hof_bad_arg.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/corpus/hof_bad_arg.eu:2:12
+help-lines: 2
+note-lines: 0
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: expected a primitive value but found an unevaluated function application
+  help: this often means a function received fewer arguments than it needs, producing a partial application instead of a result
+  help: check that all functions in the pipeline receive the correct number of arguments — e.g. 'add(x, y)' needs two args but 'xs map(add)' applies 'add' to each element with only one arg
+  ┌─ tests/diagnostics/corpus/hof_bad_arg.eu:2:12
+  │
+2 │ result: xs map(_ + _)
+  │            ^^^
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: provocations/lookup_on_function
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/lookup_on_function.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/corpus/lookup_on_function.eu:2:9
+help-lines: 2
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: cannot look up a key on a function value
+  help: '.' looks up keys in blocks; the value before '.' must be a block, not a function
+  help: if the function returns a block when called, call it first, e.g. 'f(x).key' instead of 'f.key'
+  ┌─ tests/diagnostics/corpus/lookup_on_function.eu:2:9
+  │
+2 │ result: add.x
+  │         ^^^
+  │
+  = stack trace:
+    - result at lookup_on_function.eu:2:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: provocations/metadata_span
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/metadata_span.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/diagnostics/corpus/metadata_span.eu:3:1
+help-lines: 0
+note-lines: 2
+secondary-labels: 2
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "2"
+  ┌─ tests/diagnostics/corpus/metadata_span.eu:3:1
+  │
+2 │ scale(factor, xs): xs map(* factor)
+  │ -----------------------------------
+  │ │                     │
+  │ │                     called from here
+  │ called from here
+3 │ doubled(xs): scale("2", xs)
+  │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = stack trace:
+    - doubled at metadata_span.eu:3:1
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: provocations/missing_key
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/missing_key.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/corpus/missing_key.eu:2:9
+help-lines: 1
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key 'hostname' not found in block
+  help: similar keys: 'host'
+  ┌─ tests/diagnostics/corpus/missing_key.eu:2:9
+  │
+2 │ result: config.hostname
+  │         ^^^^^^
+  │
+  = stack trace:
+    - result at missing_key.eu:2:9
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: provocations/nth_out_of_range
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/nth_out_of_range.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/corpus/nth_out_of_range.eu:2:12
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: panic: index 10 out of range for list of length 3
+  ┌─ tests/diagnostics/corpus/nth_out_of_range.eu:2:12
+  │
+2 │ result: xs nth(10)
+  │            ^^^
+  │
+  = stack trace:
+    - result at nth_out_of_range.eu:2:12
+    - in 'nth' at [prelude]
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: provocations/string_plus_number
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/string_plus_number.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/diagnostics/corpus/string_plus_number.eu:2:6
+help-lines: 0
+note-lines: 2
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "3"
+  ┌─ tests/diagnostics/corpus/string_plus_number.eu:2:6
+  │
+2 │ b: a + 1
+  │      ^
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+  = stack trace:
+    - b at string_plus_number.eu:2:6
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: provocations/swap_args
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/swap_args.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 2
+code: -
+primary: user tests/diagnostics/corpus/swap_args.eu:2:9
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+warning: type mismatch calling 'nth'
+  ┌─ tests/diagnostics/corpus/swap_args.eu:2:13
+  │
+2 │ result: nth(xs, 0)
+  │             ^^ expected number, found (number, number, number)
+
+warning: type mismatch calling 'nth'
+  ┌─ tests/diagnostics/corpus/swap_args.eu:2:17
+  │
+2 │ result: nth(xs, 0)
+  │                 ^ expected [a], found number
+
+error: tail requires a list, found 0
+  ┌─ tests/diagnostics/corpus/swap_args.eu:2:9
+  │
+2 │ result: nth(xs, 0)
+  │         ^^^
+  │
+  = head and tail require a list (e.g. [1, 2, 3]) as their argument
+  = stack trace:
+    - result at swap_args.eu:2:9
+    - in 'nth' at [prelude]
+
+════════════════════════════════════════════════════════════════════
+# eucalypt diagnostic snapshot v1
+fixture: provocations/undefined_name
+argv: run -L tests/diagnostics/corpus --heap-limit-mib 2048 tests/diagnostics/corpus/undefined_name.eu
+prelude-modes: source-only
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/diagnostics/corpus/undefined_name.eu:3:16
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: unresolved variable 'undefined-thing'
+  ┌─ tests/diagnostics/corpus/undefined_name.eu:3:16
+  │
+3 │ total: a + b + undefined-thing
+  │                ^^^^^^^^^^^^^^^
+  │
+  = check that the variable is defined and in scope
