@@ -1,0 +1,129 @@
+name: Homebrew bump
+
+# When a release is PUBLISHED (the owner publishing the draft staged by the
+# prepare-release job in build-rust.yaml), regenerate Formula/eucalypt.rb from
+# the release's SHA256SUMS asset and open a PR against curvelogic/homebrew-tap.
+# A PR, not a direct commit, so the tap change stays human-visible and
+# revertable.
+#
+# The formula is produced by the committed, locally-testable script
+# `scripts/generate-homebrew-formula.sh` — all-or-nothing: any missing or
+# malformed checksum fails the job before anything is written, so the tap can
+# never receive a half-updated formula.
+#
+# Cross-repo write needs a dedicated secret: `HOMEBREW_TAP_TOKEN`, a
+# fine-grained PAT restricted to curvelogic/homebrew-tap with Contents:
+# read+write and Pull requests: read+write. The default GITHUB_TOKEN cannot
+# write to another repository. The secret is used ONLY in the final tap-push
+# step; every other step runs with the read-only default token. Until the
+# secret is visible to this repository the workflow fails loudly at that step
+# (by design).
+#
+# `workflow_dispatch` with a tag input allows manual runs — re-running a failed
+# bump or testing against an existing published release.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag to bump the formula to (e.g. 0.14.1)"
+        required: true
+        type: string
+
+permissions: {}
+
+# One bump at a time; never cancel a run that may be mid-push to the tap.
+concurrency:
+  group: homebrew-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Open tap PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout the script; download release assets
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Resolve tag
+        id: v
+        # The tag comes through the environment and is validated before use —
+        # never interpolated into script text (release tag names are
+        # repo-controlled but treat them as untrusted anyway). Eucalypt tags
+        # carry no leading "v", so the tag is the version.
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+        run: |
+          case "$TAG" in
+            *[!A-Za-z0-9.-]*)
+              echo "release tag contains characters outside [A-Za-z0-9.-]; refusing" >&2
+              exit 1 ;;
+          esac
+          if ! printf '%s' "$TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$'; then
+            echo "unexpected release tag format: '$TAG' (expected e.g. 0.14.1)" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Bumping Homebrew formula to $TAG"
+      - name: Download release checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.v.outputs.tag }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern SHA256SUMS --dir sums
+          cat sums/SHA256SUMS
+      - name: Generate formula
+        # Fails (producing nothing) unless all three formula checksums are
+        # present and well-formed.
+        env:
+          TAG: ${{ steps.v.outputs.tag }}
+        run: |
+          scripts/generate-homebrew-formula.sh "$TAG" sums/SHA256SUMS > eucalypt.rb
+          echo "Generated Formula/eucalypt.rb:"
+          cat eucalypt.rb
+      - name: Open PR against curvelogic/homebrew-tap
+        # The ONLY step that sees HOMEBREW_TAP_TOKEN. The tap is public, so the
+        # clone is anonymous; the token is supplied on the push URL and to `gh`
+        # only, and is never written into git config (no credential persist).
+        # Idempotent on re-run: the branch is force-pushed and PR creation is
+        # skipped if an open PR for it already exists.
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ steps.v.outputs.tag }}
+          SRC_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN secret is not set. Create a fine-grained PAT" >&2
+            echo "restricted to curvelogic/homebrew-tap (Contents: read+write," >&2
+            echo "Pull requests: read+write) and make it visible to this repository." >&2
+            exit 1
+          fi
+          tap=curvelogic/homebrew-tap
+          branch="eucalypt-${TAG}"
+          git clone --depth 1 "https://github.com/${tap}.git" tap
+          cp eucalypt.rb tap/Formula/eucalypt.rb
+          cd tap || exit 1
+          git add Formula/eucalypt.rb
+          if git diff --quiet --cached; then
+            echo "Formula already up to date for ${TAG}; nothing to do."
+            exit 0
+          fi
+          git checkout -b "$branch"
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "eucalypt ${TAG}"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${tap}.git" "HEAD:refs/heads/${branch}"
+          if [ -n "$(gh pr list --repo "$tap" --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            echo "Open PR for ${branch} already exists; branch updated."
+            exit 0
+          fi
+          gh pr create --repo "$tap" --head "$branch" \
+            --title "eucalypt ${TAG}" \
+            --body "Automated formula bump for [${SRC_REPO} ${TAG}](https://github.com/${SRC_REPO}/releases/tag/${TAG}).
+
+          Version and per-platform sha256 values regenerated from the release's \`SHA256SUMS\` asset by [this workflow run](${RUN_URL})."
