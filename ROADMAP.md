@@ -106,7 +106,7 @@ plan:
 - **Blocks** are cons-lists of key/value pairs with **O(n) lookup**,
   insertion-ordered.
 
-### What 0.7–0.14 shipped (ledger)
+### What 0.7–0.15 shipped (ledger)
 
 | Release | Landed |
 |---|---|
@@ -119,6 +119,7 @@ plan:
 | **0.12** | **Bytecode VM as default engine** (BV1, code out of the GC heap) + **BV5 embedded prelude blob** — the startup win; *0.12.1:* BV4 superinstructions / decode-cost fusion (narrows the decode-bound gap; does not close it) |
 | **0.13** | **Prefix-list type** `[A, B, C…]`; copy-specialised recursive higher-order combinators at every call site (blob and source paths); pre-inline type diagnostics; *0.13.1:* pre-decoded dispatch default (lever a Phase 2); *0.13.2:* XML entity-reference fix. *Phase-4 HeapSyn collapse, BV2/BV3, BV5-cache and type-gated CG all deferred* |
 | **0.14** | **DX diagnostics overhaul** (eu-1tkk.7 — location correctness, curated traces, blame in the blob binary, render/export error hardening, error catalogue); **PP** `par-map`/`par-sum`/… (experimental); **EF1** `do` combined effect monad; **W16/SV3** structural contracts (`validate`/`ensure`); blob-mode CI integrity (all mode-sensitive targets under both prelude modes) |
+| **0.15** | **Single engine** — the BV1 Phase-4 collapse (eu-oufc) deleted the HeapSyn tree-walk engine and its `EU_HEAPSYN`/`EU_BYTECODE` selectors, leaving bytecode (default since 0.12) as the only engine; *0.14.1:* `par-*` element-count threshold removed (eu-2obtj). *EF2 native filesystem IO did not ship — moved to 0.16* |
 
 ### Where it actually stands now (the empirical picture)
 
@@ -371,6 +372,8 @@ reordered as the cadence dictates.
 | **0.12.1** | Close the engine gap | **BV4** superinstructions / decode-cost fusion (eu-9mvh) + `ExecutionError` boxing (eu-adnu); bytecode block index (eu-4zhi). *Gap-close only — the Phase-4 collapse it unlocks lands in 0.13.* |
 | **0.13** *(shipped scope)* | Frames, annotations, type-gated codegen, prefix-lists | **Prefix-list type** + copy-specialised recursive combinators (both prelude paths) + pre-inline type diagnostics; *0.13.1* pre-decoded dispatch default (lever a Phase 2). *Phase-4 collapse (eu-oufc), BV5-cache (eu-lb0r), BV2 side tables, BV3 register frames and type-gated CG did not ship — carried forward* |
 | **0.14** *(shipped scope)* | Polish, parallelism, effects, contracts, **diagnostics** | **DX** diagnostics overhaul — location correctness, curated traces, blame in the blob binary, render/export error hardening (epic eu-1tkk.7); **PP** `par-map`/`par-sum`/… (experimental); **EF1** `do` combined effect monad; **W16/SV3** contracts (`validate`/`ensure`); blob-mode CI integrity. *EF2 native filesystem IO and presence inference did not ship — carried forward* |
+| **0.15** *(shipped scope)* | One engine | **BV1 Phase-4 collapse** (eu-oufc) — HeapSyn tree-walk engine deleted, bytecode the sole engine; dependency security fix (RUSTSEC-2026-0257). *EF2 moved to 0.16 (owner decision, 2026-10-17)* |
+| **0.16** | Native filesystem IO | **EF2** native filesystem/IO capabilities — `io.read-file`/`walk`/`ls`/`stat`/`glob`, streamable (bead eu-1tkk.3, epic eu-sks3l) |
 | **0.15+** | Value model, ecosystem, surface | **DS** persistent blocks + `vec`; **EF1** unified effect context; **W18** modules + **CU1** separate-unit compilation; **W19** watch/REPL + **CU2** per-unit incremental cache; **W17** hermetic; **W22** schema interop |
 | **1.0** *(milestone)* | Decide, prove, freeze | *No features.* Surface complete + **W5** conformance green → ratify and freeze the stable-surface tiers, turn on the version contract (§4.6) |
 | **post-1.0** | Curated bets | EF1.3 algebraic effect-rows; WASM-as-distribution; parallel Model B (maybe-never); a true separate-nursery GC *iff* a workload demands it |
@@ -868,7 +871,7 @@ lazy-pure; IO interpreted by the driver). Staged direction:
    beyond the IO monad (promoted from a deferred candidate). Heavier type machinery; the
    end-state, not the near-term step.
 
-**EF2 — Native filesystem / IO capabilities.** The entire IO surface is `io.shell` /
+**EF2 — Native filesystem / IO capabilities** *(scheduled for 0.16 — moved from 0.15 by owner decision, 2026-10-17)*. The entire IO surface is `io.shell` /
 `io.exec` plus env/args/epoch (`lib/prelude.eu:34-78`) — there is **no** `io.read-file`,
 `io.ls`, `io.walk` or `io.stat`. So gathering a filesystem tree means shelling out
 (`ls`/`find`), receiving one large stdout *string*, splitting it, and rebuilding a
@@ -1086,7 +1089,7 @@ sequencing.)*
 | **DS2 (W14)** | Generalise `vec` to arbitrary values | 0.15+ |
 | **PP** | Process parallelism (`par-map`/`par-fold`, mmap arena) | 0.14+ |
 | **EF1** | Effect composition (combinators → unified context → effect-rows) | 0.14 → post-1.0 |
-| **EF2** | Native filesystem/IO capabilities (`walk`/`read`/`stat`, streamable) | 0.15 *(carried; bead eu-1tkk.3, now under epic eu-sks3l)* |
+| **EF2** | Native filesystem/IO capabilities (`walk`/`read`/`stat`, streamable) | 0.16 *(carried from 0.14 and 0.15 — moved by owner decision 2026-10-17; bead eu-1tkk.3, now under epic eu-sks3l)* |
 | **DX0** | Diagnostics substrate + evaluation harness (structured diagnostics, error codes, invariant CI gate, golden snapshots, AI fixer/critic) — eu-1tkk.7 | 0.14 |
 | **DX1** | Location correctness (metadata-in-span, user call-site attribution, wrong-noun, eu-m93j, panic-guard) | 0.14 |
 | **DX2** | Blame annotations + curated user-anchored trace | 0.14 |
