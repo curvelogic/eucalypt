@@ -51,4 +51,7 @@ description: Working on eucalypt's error diagnostics and test infrastructure —
 - Work in a worktree branched from `master`, PR to `master`.
 - Run the `CLAUDE.md` pre-commit checklist (`cargo fmt --all`, `cargo clippy
   --workspace --all-targets -- -D warnings`, `cargo test`) before every PR.
+- The bead (`bd show <id>`) and any spec it references in
+  `docs/superpowers/specs/` must be met in full — every phase and success
+  criterion — before the work is called complete.
 - Review and merge: a fresh `rig-review` against `REVIEW.md` on `master`.

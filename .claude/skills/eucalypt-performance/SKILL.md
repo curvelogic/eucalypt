@@ -36,6 +36,9 @@ reviews (`REVIEW.md`); a directed task is reviewed normally.
 
 - Run the `CLAUDE.md` pre-commit checklist (`cargo fmt --all`, `cargo clippy
   --workspace --all-targets -- -D warnings`, `cargo test`) before every PR.
+- The bead (`bd show <id>`) and any spec it references in
+  `docs/superpowers/specs/` must be met in full — every phase and success
+  criterion — before the work is called complete.
 - Review and merge: a fresh `rig-review` against `REVIEW.md` on `master`.
 
 ## Claims about performance — mandatory protocol
