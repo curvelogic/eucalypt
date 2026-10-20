@@ -3058,6 +3058,14 @@ pub fn test_228_bc34x_meta_body_memoisation() {
     run_test(&opts("228_bc34x_meta_body_memoisation.eu"));
 }
 
+/// eu-uhd7d: a '}' run straight after a string interpolation was lexed as
+/// the '}}' escape inside the interpolation, so `"{x}}}"` lost its brace and
+/// `"{x}}"` failed to parse. Each case in the file is in its RESULT.
+#[test]
+pub fn test_230_uhd7d_close_brace_after_interpolation() {
+    run_test(&opts("230_uhd7d_close_brace_after_interpolation.eu"));
+}
+
 #[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame

@@ -126,6 +126,19 @@ example: "Use {{braces}} for interpolation"
 example: Use {braces} for interpolation
 ```
 
+The same holds straight after an interpolation: the interpolation's own
+`}` closes it, and what follows is ordinary text.
+
+```eu
+name: "x"
+example: "{{{name}}}"
+```
+
+```yaml
+name: x
+example: "{x}"
+```
+
 This is also needed in regular expressions within interpolated
 strings:
 
@@ -388,6 +401,8 @@ table: rows map(format-row)
 - Empty braces `{}` and numbered braces `{0}`, `{1}` create string
   functions (anaphora)
 - Format specifiers follow a colon: `{value:%06d}`
-- Escape literal braces by doubling them: `{{` and `}}`
+- Escape literal braces by doubling them: `{{` and `}}`. This works
+  straight after an interpolation too: `"{x}}}"` is the value of `x`
+  followed by `}`
 - The `str` namespace provides splitting, joining, case conversion,
   matching, and more

@@ -2,6 +2,12 @@
 
 All notable changes to eucalypt are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- **A `}` straight after a string interpolation is no longer lost (eu-uhd7d)** — inside an interpolation the lexer read `}}` as the escape for a literal `}` instead of closing the interpolation, so `"{x}}}"` silently dropped its brace (giving the value of `x` alone) and `"{x}}"` failed with "unterminated string interpolation". The first `}` now always closes the interpolation, so `"{x}}}"` and `"{x}}"` both give the value of `x` followed by `}`, and `"{{{x}}}"` gives it wrapped in braces. Strings without a `}` run after an interpolation are unaffected.
+
 ## [0.15.0] - Unreleased
 
 Eucalypt 0.15 is the single-engine release. The bytecode engine has been the
