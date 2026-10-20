@@ -29,6 +29,8 @@ gc-bench-baseline.json
 .beads/daemon-*.log.gz
 .beads/.sync.lock
 .beads/sync_base.jsonl
+.beads/dolt-server-config.yaml
+.beads.gate.lock
 .beads-wisp/
 
 # VS Code extension build artefacts
