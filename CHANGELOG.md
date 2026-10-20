@@ -7,7 +7,8 @@ All notable changes to eucalypt are documented here.
 Eucalypt 0.15 is the single-engine release. The bytecode engine has been the
 default since 0.12; the legacy HeapSyn tree-walk engine it replaced is now
 deleted, so every program runs on one engine. It also carries a dependency
-security fix.
+security fix and a string-lexing fix: a `}` straight after an interpolation is
+no longer lost.
 
 ### Changed
 

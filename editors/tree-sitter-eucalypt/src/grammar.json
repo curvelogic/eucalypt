@@ -1297,7 +1297,7 @@
               },
               {
                 "type": "SYMBOL",
-                "name": "_lone_close_brace"
+                "name": "_r_lone_close_brace"
               }
             ]
           }
@@ -1518,6 +1518,15 @@
       },
       "named": true,
       "value": "string_content"
+    },
+    "_r_lone_close_brace": {
+      "type": "ALIAS",
+      "content": {
+        "type": "STRING",
+        "value": "}"
+      },
+      "named": true,
+      "value": "r_string_content"
     },
     "brace_escape": {
       "type": "CHOICE",

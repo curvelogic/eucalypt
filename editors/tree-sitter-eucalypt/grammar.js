@@ -419,7 +419,7 @@ module.exports = grammar({
         $.r_string_content,
         $.interpolation,
         $.brace_escape,
-        $._lone_close_brace,
+        $._r_lone_close_brace,
       )),
       '"',
     ),
@@ -509,6 +509,7 @@ module.exports = grammar({
     // literal '}'). The lexer takes the longest match, so '}}' is still the
     // escape.
     _lone_close_brace: $ => alias('}', $.string_content),
+    _r_lone_close_brace: $ => alias('}', $.r_string_content),
 
     // Brace escapes for plain and raw strings ({{ and }})
     brace_escape: $ => choice(
