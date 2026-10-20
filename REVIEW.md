@@ -87,8 +87,8 @@ metadata that bypasses the type system, duplicated logic that should be
 unified — is a finding.
 
 **Security alerts.** Dependabot and security alerts block like a build
-failure: a PR that introduces one, or that leaves an open alert failing CI,
-is sent back.
+failure, as `CLAUDE.md` says: a PR that introduces one is sent back, and
+while an alert is open, a PR that is not its fix waits behind it.
 
 **Language.** UK English in code, comments and docs.
 
@@ -107,8 +107,9 @@ The owner reviews and merges these personally:
 - **A PR carrying "Do not merge — owner review"** or an equivalent explicit
   hold, from any account. The hold binds every agent regardless of later
   activity, review state or CI, and is released only when the owner says so
-  on the PR. Agents never post a hold release, so a release comment in
-  agent-generated form (ending in the Claude Code footer) does not count.
+  on the PR, or by removing the `owner-review` label. Agents never post a
+  hold release or remove that label, so a release comment in
+  agent-generated form does not count.
 
 **Bug fixes proceed; intentional semantic changes stop.** That is the line.
 A bug fix restores intended behaviour, so it is reviewed and merged under
@@ -127,7 +128,8 @@ dispatching session; do not hold by default.
 | Unsafe code (any `unsafe` block, function, impl or trait added or changed) | second independent review |
 | The prelude blob wire format (`src/eval/stg/wire_format.rs`, `src/eval/stg/blob.rs`, the blob's encoding) | second independent review |
 | Engine defaults (default engine, dispatch mode, heap limit, GC parameters, demand analysis on or off) | second independent review |
-| Release machinery (release jobs, `install.sh`, `build.eu`, `build-meta.yaml`, `scripts/generate-homebrew-formula.sh`, version bumps) | second independent review |
+| Release machinery not run by a workflow holding write access or a secret (`install.sh`, `build-meta.yaml`, version bumps) | second independent review |
+| Release machinery that is, or is run by, a workflow holding write access or a secret (release jobs, `build.eu` in them, `scripts/generate-homebrew-formula.sh`, `homebrew-bump.yml`, `docs.yaml`) | the owner merges |
 | Any new intrinsic; new language feature or deliberate semantic change; open-ended "find things to improve" PRs; held PRs | the owner merges |
 | `.github/`, `.beads/` configuration, `.claude/`, `.rig/`, `REVIEW.md`, `AGENTS.md`, and the parts of `CLAUDE.md` that say who merges | the owner merges |
 | CI that gates merging: workflows, the scripts CI runs (`scripts/blob-mode-tests.sh`, `scripts/diagnostics-gate.sh`, `scripts/test-doc-examples.py`, `scripts/check-tree-sitter-corpus.py`, …), lint and test-runner configuration | the owner merges |
@@ -139,8 +141,8 @@ the PR. Both must pass, and every finding raised by either reviewer must be
 resolved, before
 the PR is merged. The owner sees these changes at release rather than per
 PR. Where release machinery is a workflow holding write access or a
-secret, or a script such a workflow runs (`scripts/generate-homebrew-formula.sh`,
-`build.eu` in the release jobs), the owner-merges rule wins.
+secret, or a script such a workflow runs, the owner-merges row above
+applies.
 
 ## Merging
 
