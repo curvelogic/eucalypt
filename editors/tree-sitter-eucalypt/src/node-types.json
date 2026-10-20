@@ -698,6 +698,10 @@
         {
           "type": "r_string_content",
           "named": true
+        },
+        {
+          "type": "string_content",
+          "named": true
         }
       ]
     }

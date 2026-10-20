@@ -1224,6 +1224,10 @@
               {
                 "type": "SYMBOL",
                 "name": "brace_escape"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "_lone_close_brace"
               }
             ]
           }
@@ -1290,6 +1294,10 @@
               {
                 "type": "SYMBOL",
                 "name": "brace_escape"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "_lone_close_brace"
               }
             ]
           }
@@ -1501,6 +1509,15 @@
           "value": "}"
         }
       ]
+    },
+    "_lone_close_brace": {
+      "type": "ALIAS",
+      "content": {
+        "type": "STRING",
+        "value": "}"
+      },
+      "named": true,
+      "value": "string_content"
     },
     "brace_escape": {
       "type": "CHOICE",
