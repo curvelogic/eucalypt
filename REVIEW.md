@@ -10,6 +10,9 @@ the stricter rule applies.
 else. Never merge on a failing or pending check — no exceptions. A failing
 check is named first in the send-back.
 
+**Code review skill.** Run a code-review skill (`/code-review`) on the diff
+as well as reading it yourself. It is mandatory here, not optional.
+
 **The check.** In your worktree, all clean:
 
 ```bash
@@ -31,10 +34,8 @@ confirm the test FAILs, restore it, confirm it PASSes. Do not take the
 author's word for it; the PR must also state that it was done. A test that
 cannot fail blocks the PR.
 
-**Harness tests.** Every PR includes harness tests in `tests/harness/`; no
-tests is a send-back. The only exception is a PR with nothing a harness
-test can exercise (docs, CI, editor tooling, agent configuration): it says
-so, and you confirm it from the diff. Each test must gate
+**Harness tests.** Every PR includes harness tests in `tests/harness/`. No
+tests is a send-back. Each test must gate
 — a failing assertion fails `cargo test` — with each target's `RESULT`
 computed from its checks (`docs/guide/testing.md`; the pattern in
 `tests/harness/189_r9oy_union_as_spec.eu` and
@@ -82,8 +83,9 @@ should — a hard-coded special case for particular types or functions,
 metadata that bypasses the type system, duplicated logic that should be
 unified — is a finding.
 
-**Security alerts.** A Dependabot or security alert the PR introduces or
-leaves failing CI blocks it, like a build failure.
+**Security alerts.** Dependabot and security alerts block like a build
+failure: a PR that introduces one, or that leaves an open alert failing CI,
+is sent back.
 
 **Language.** UK English in code, comments and docs.
 
@@ -102,7 +104,8 @@ The owner reviews and merges these personally:
 - **A PR carrying "Do not merge — owner review"** or an equivalent explicit
   hold, from any account. The hold binds every agent regardless of later
   activity, review state or CI, and is released only when the owner says so
-  on the PR.
+  on the PR. Agents never post a hold release, so a release comment in
+  agent-generated form (ending in the Claude Code footer) does not count.
 
 **Bug fixes proceed; intentional semantic changes stop.** That is the line.
 A bug fix restores intended behaviour, so it is reviewed and merged under
@@ -128,7 +131,8 @@ dispatching session; do not hold by default.
 
 A second independent review is one by a separately dispatched `rig-review`
 that formed its verdict without reading the first, recorded as a comment on
-the PR. Both must pass, with every finding either raised resolved, before
+the PR. Both must pass, and every finding raised by either reviewer must be
+resolved, before
 the PR is merged. The owner sees these changes at release rather than per
 PR. Where release machinery is a workflow holding write access or a
 secret, the owner-merges rule wins.
