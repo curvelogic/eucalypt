@@ -16,8 +16,10 @@
 # Pins. Bump RUST_VERSION when Rust stable moves (CI runs
 # dtolnay/rust-toolchain@stable), together with the channel manifest's
 # digest, from https://static.rust-lang.org/dist/channel-rust-<v>.toml.sha256.
-# rustup checks every component it installs against that manifest's own
-# SHA-256 entries, so pinning the manifest pins the toolchain.
+# The pinned digest checks the manifest as served before installing;
+# rustup then fetches the manifest itself and checks every component
+# against its SHA-256 entries. Versioned manifests are immutable, so the
+# two copies are the same file.
 
 set -euo pipefail
 
