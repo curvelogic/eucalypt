@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# DEPRECATED: superseded by curve-rig provisioning. A cloud environment that
+# installs curve-rig provisions this repository through `.rig/setup.sh` (the
+# toolchain) and rig's SessionStart hook (bd, dolt and the beads store). This
+# script is kept, unchanged below, only because an existing environment still
+# fetches it from master; do not extend it, and do not point new
+# environments at it.
+#
 # setup-claude-web-env.sh - Provision a Claude Code remote dev environment.
 #
 # This script exists solely to bootstrap Claude Code on the web (remote dev
