@@ -49,3 +49,8 @@ description: Working on eucalypt's error diagnostics and test infrastructure —
 - A PR from an open-ended "find things to improve" dispatch is one the
   owner reviews (`REVIEW.md`); directed work is reviewed normally.
 - Work in a worktree branched from `master`, PR to `master`.
+- Run the `CLAUDE.md` pre-commit checklist (`cargo fmt --all`, `cargo clippy
+  --workspace --all-targets -- -D warnings`, `cargo test`) before every PR.
+- Review and merge: `REVIEW.md` on `master`. Until it lands, the same rules
+  are in `CLAUDE.md` ("Recorded review before merge", "Owner-hold PRs") and
+  the current gatekeeper's owner review filter.

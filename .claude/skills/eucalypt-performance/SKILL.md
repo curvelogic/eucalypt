@@ -34,6 +34,12 @@ Performance work runs in two phases. Do not skip to the second.
 A PR from an open-ended "find things to improve" dispatch is one the owner
 reviews (`REVIEW.md`); a directed task is reviewed normally.
 
+- Run the `CLAUDE.md` pre-commit checklist (`cargo fmt --all`, `cargo clippy
+  --workspace --all-targets -- -D warnings`, `cargo test`) before every PR.
+- Review and merge: `REVIEW.md` on `master`. Until it lands, the same rules
+  are in `CLAUDE.md` ("Recorded review before merge", "Owner-hold PRs") and
+  the current gatekeeper's owner review filter.
+
 ## Claims about performance — mandatory protocol
 
 `CLAUDE.md` "Engine Performance Claims — Mandatory Protocol" is binding.

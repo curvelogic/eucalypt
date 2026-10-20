@@ -55,3 +55,6 @@ description: Working on eucalypt's backend — the STG compiler, the bytecode en
   every `eu` run in `timeout`.
 - Work in a worktree branched from `master`, one bead per PR, PR to
   `master`.
+- Review and merge: `REVIEW.md` on `master`. Until it lands, the same rules
+  are in `CLAUDE.md` ("Recorded review before merge", "Owner-hold PRs") and
+  the current gatekeeper's owner review filter.

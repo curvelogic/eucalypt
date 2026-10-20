@@ -41,3 +41,8 @@ description: Writing or changing eucalypt's user documentation — the guide, re
   PR, not in user documentation or the PR body.
 - A PR from an open-ended "find things to improve" dispatch is one the
   owner reviews (`REVIEW.md`); directed work is reviewed normally.
+- Run the `CLAUDE.md` pre-commit checklist (`cargo fmt --all`, `cargo clippy
+  --workspace --all-targets -- -D warnings`, `cargo test`) before every PR.
+- Review and merge: `REVIEW.md` on `master`. Until it lands, the same rules
+  are in `CLAUDE.md` ("Recorded review before merge", "Owner-hold PRs") and
+  the current gatekeeper's owner review filter.
