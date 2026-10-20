@@ -150,15 +150,12 @@ impl<'text> Iterator for StringPatternLexer<'text> {
             }
             '}' => {
                 if self.in_interpolation {
-                    // Check for escaped }}
-                    if let Some(&'}') = self.peek() {
-                        Some(self.escaped_close(start))
-                    } else {
-                        // End interpolation
-                        self.in_interpolation = false;
-                        self.in_format_spec = false;
-                        Some((CLOSE_BRACE, self.make_span(start, self.position), "}"))
-                    }
+                    // Always ends the interpolation: a target cannot contain
+                    // '}', so a following '}' belongs to the literal text
+                    // after it ("{x}}}" is "{x}" then the "}}" escape).
+                    self.in_interpolation = false;
+                    self.in_format_spec = false;
+                    Some((CLOSE_BRACE, self.make_span(start, self.position), "}"))
                 } else {
                     // Outside interpolation, check for escaped }}
                     if let Some(&'}') = self.peek() {
@@ -415,6 +412,30 @@ mod tests {
                 (STRING_LITERAL_CONTENT, "world"),
                 (STRING_ESCAPED_CLOSE, "}}"),
                 (STRING_LITERAL_CONTENT, " test")
+            ]
+        );
+    }
+
+    #[test]
+    fn test_close_brace_run_after_interpolation() {
+        // eu-uhd7d: the first '}' closes the interpolation; what follows is
+        // literal text, so "}}" is the escape and a lone '}' is literal.
+        assert_eq!(
+            lex("{x}}}"),
+            vec![
+                (OPEN_BRACE, "{"),
+                (STRING_INTERPOLATION_TARGET, "x"),
+                (CLOSE_BRACE, "}"),
+                (STRING_ESCAPED_CLOSE, "}}")
+            ]
+        );
+        assert_eq!(
+            lex("{x}}"),
+            vec![
+                (OPEN_BRACE, "{"),
+                (STRING_INTERPOLATION_TARGET, "x"),
+                (CLOSE_BRACE, "}"),
+                (STRING_LITERAL_CONTENT, "}")
             ]
         );
     }

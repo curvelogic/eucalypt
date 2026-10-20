@@ -13,6 +13,10 @@ security fix.
 
 - **One engine: the HeapSyn tree-walk engine is deleted (BV1 Phase 4, eu-oufc)** — the bytecode engine has been the default since 0.12, and the eu-7oshh A/B study (`docs/superpowers/reports/2026-08-03-engine-ab-study.md`) found it at parity or ahead everywhere that mattered, so the fallback engine is gone. Output is unchanged; programs that already ran on the default engine run exactly as before. What you might notice: the engine-select environment variables **`EU_HEAPSYN` and `EU_BYTECODE` are removed and now silently ignored** — setting either no longer changes anything and raises no error, so a script or CI job that set `EU_HEAPSYN=1` to pick the old engine now runs on bytecode. `EU_PREDECODE=0` (byte-dispatch within the bytecode engine) is unaffected. Internally this removes ~8,600 lines — the tree-walk VM, its loader and the `HeapSyn` representation, the bc/hs differential tests and `cargo xtask engine-ab`'s live A/B run (`--check` and the ledger remain). Verified under `EU_GC_VERIFY=2`/`EU_GC_POISON=1` and the full test suite. Full detail: `docs/superpowers/reports/2026-08-06-eu-oufc-phase4-collapse.md`.
 
+### Fixed
+
+- **A `}` straight after a string interpolation is no longer lost (eu-uhd7d)** — inside an interpolation the lexer read `}}` as the escape for a literal `}` instead of closing the interpolation, so `"{x}}}"` silently dropped its brace (giving the value of `x` alone) and `"{x}}"` failed with "unterminated string interpolation". The first `}` now always closes the interpolation, so `"{x}}}"` and `"{x}}"` both give the value of `x` followed by `}`, and `"{{{x}}}"` gives it wrapped in braces. Strings without a `}` run after an interpolation are unaffected.
+
 ### Security
 
 - **`webbrowser` bumped 0.8 → 1.2.4 for RUSTSEC-2026-0257** — `webbrowser` 0.8.15's handling of the Unix `BROWSER` environment variable allowed browser argument injection. Its only call site in eucalypt is `eu test --open`, which opens the generated test report in a browser; nothing else in `eu` launches a browser. The call is unchanged in 1.x, so `eu test --open` behaves as before.

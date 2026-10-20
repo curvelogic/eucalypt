@@ -1,0 +1,34 @@
+{ doc: "230 close braces after a string interpolation (eu-uhd7d)" }
+
+# A '}' inside an interpolation always closes it. A '}' run straight after
+# an interpolation is literal text: '}}' is the escape for one '}', and a
+# lone '}' is a literal '}' as it is anywhere else in a string. Expected
+# values write literal braces with the escapes, which the first check shows
+# work away from an interpolation.
+
+x: "abc"
+
+` { target: :test }
+test: {
+
+  # The escape on its own, before and after an interpolation
+  escape-alone: "}}" = "}"
+  escape-before: "}}{x}" = "}abc"
+  plain-after: "{x}z" = "abcz"
+
+  # The cases that were mis-lexed
+  escape-after: "{x}}}" = "abc}"
+  lone-after: "{x}}" = "abc}"
+  escape-between: "{x}}}{x}" = "abc}abc"
+  wrapped: "{{{x}}}" = "{{abc}}"
+  after-format: "{x:%5s}}}" = "  abc}"
+
+  # Open braces are unaffected
+  open-after: "{x}{{" = "abc{{"
+  escaped-pair: (("{{x}}" str.len) = 3) ∧ ("{{x}}" != x)
+
+  RESULT: [escape-alone, escape-before, plain-after,
+           escape-after, lone-after, escape-between, wrapped, after-format,
+           open-after, escaped-pair]
+    all-true? then(:PASS, :FAIL)
+}
