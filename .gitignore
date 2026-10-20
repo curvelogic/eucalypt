@@ -17,8 +17,9 @@ gc-bench-baseline.json
 
 .runtime/
 
-# Gas Town (added by gt)
-.claude/
+# Gas Town (added by gt). Project skills are tracked.
+/.claude/*
+!/.claude/skills/
 .logs/
 
 # Beads runtime state (not tracked in git)
