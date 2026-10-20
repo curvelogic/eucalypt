@@ -107,9 +107,9 @@ The owner reviews and merges these personally:
 - **A PR carrying "Do not merge — owner review"** or an equivalent explicit
   hold, from any account. The hold binds every agent regardless of later
   activity, review state or CI, and is released only when the owner says so
-  on the PR, or by removing the `owner-review` label. Agents never post a
-  hold release or remove that label, so a release comment in
-  agent-generated form does not count.
+  in a comment on the PR (removing the `owner-review` label alone does not
+  release it). Agents never post a hold release or remove that label, so a
+  release comment in agent-generated form does not count.
 
 **Bug fixes proceed; intentional semantic changes stop.** That is the line.
 A bug fix restores intended behaviour, so it is reviewed and merged under
