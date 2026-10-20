@@ -36,9 +36,7 @@ reviews (`REVIEW.md`); a directed task is reviewed normally.
 
 - Run the `CLAUDE.md` pre-commit checklist (`cargo fmt --all`, `cargo clippy
   --workspace --all-targets -- -D warnings`, `cargo test`) before every PR.
-- Review and merge: `REVIEW.md` on `master`. Until it lands, the same rules
-  are in `CLAUDE.md` ("Recorded review before merge", "Owner-hold PRs") and
-  the current gatekeeper's owner review filter.
+- Review and merge: a fresh `rig-review` against `REVIEW.md` on `master`.
 
 ## Claims about performance — mandatory protocol
 

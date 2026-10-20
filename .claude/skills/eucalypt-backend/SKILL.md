@@ -19,7 +19,7 @@ description: Working on eucalypt's backend — the STG compiler, the bytecode en
 ## Read first
 
 - `CLAUDE.md` — pre-commit checklist, debug environment variables, `eu dump`
-  phases, "Panics Are Critical", "Recorded review before merge"
+  phases, "Panics Are Critical", "Review and merge"
 - `docs/development/gc-implementation.md` and
   `docs/development/gc-verification-spec.md` — before any change under
   `src/eval/memory/`. The GC is subtle: read the code carefully as well.
@@ -45,8 +45,7 @@ description: Working on eucalypt's backend — the STG compiler, the bytecode en
 - A new intrinsic is a change the owner reviews (`REVIEW.md`); a fix to an
   existing one is not. Bug fixes proceed; intentional semantic changes stop.
 - GC or memory management, unsafe code, the blob wire format and engine
-  defaults are sensitive areas with a review rule of their own (`REVIEW.md`,
-  or `CLAUDE.md` "Recorded review before merge").
+  defaults are sensitive areas with a review rule of their own (`REVIEW.md`).
 - Convert user-reachable `panic!`/`expect()` into `ExecutionError`
   diagnostics; every panic fix carries a regression test.
 - Harness tests must gate and be fault-injection verified (`CLAUDE.md`
@@ -55,6 +54,4 @@ description: Working on eucalypt's backend — the STG compiler, the bytecode en
   every `eu` run in `timeout`.
 - Work in a worktree branched from `master`, one bead per PR, PR to
   `master`.
-- Review and merge: `REVIEW.md` on `master`. Until it lands, the same rules
-  are in `CLAUDE.md` ("Recorded review before merge", "Owner-hold PRs") and
-  the current gatekeeper's owner review filter.
+- Review and merge: a fresh `rig-review` against `REVIEW.md` on `master`.
