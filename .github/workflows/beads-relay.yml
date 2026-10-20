@@ -1,0 +1,24 @@
+# Applies the beads deltas that cloud sessions push on beads-inbox/*
+# branches, and pushes refs/dolt/data, which a session cannot. Dispatched on
+# the default branch by beads-inbox.yml; can also be run by hand with an
+# empty input to sweep every inbox branch. See curve-rig's docs/relay.md.
+#
+# Both SHAs below must be the same reviewed curve-rig commit on its main
+# branch: the first chooses the workflow, the second the scripts it runs.
+# Bump them together, by hand.
+name: beads relay
+on:
+  workflow_dispatch:
+    inputs:
+      inbox-branch:
+        description: Inbox branch that dispatched this run; empty sweeps all
+        type: string
+        required: false
+jobs:
+  relay:
+    uses: curvelogic/curve-rig/.github/workflows/beads-relay.yml@ed3974307262bf88fe64a0ebabd956c1b6dab8e9 # v0.1.0
+    with:
+      rig-ref: ed3974307262bf88fe64a0ebabd956c1b6dab8e9
+      inbox-branch: ${{ inputs.inbox-branch }}
+    permissions:
+      contents: write
