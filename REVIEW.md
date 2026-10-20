@@ -78,6 +78,9 @@ injection on the regression test.
 **Documentation.** New features have docs; changed behaviour has its docs
 changed. Generated prelude reference pages are regenerated, not edited.
 
+**Safety.** Memory management, GC interactions and signal safety are read
+for correctness, not only exercised by tests.
+
 **Architecture.** A domain-specific mechanism where a general one exists or
 should — a hard-coded special case for particular types or functions,
 metadata that bypasses the type system, duplicated logic that should be
@@ -127,6 +130,7 @@ dispatching session; do not hold by default.
 | Release machinery (release jobs, `install.sh`, `build.eu`, `build-meta.yaml`, `scripts/generate-homebrew-formula.sh`, version bumps) | second independent review |
 | Any new intrinsic; new language feature or deliberate semantic change; open-ended "find things to improve" PRs; held PRs | the owner merges |
 | `.github/`, `.beads/` configuration, `.claude/`, `.rig/`, `REVIEW.md`, `AGENTS.md`, and the parts of `CLAUDE.md` that say who merges | the owner merges |
+| CI that gates merging: workflows, the scripts CI runs (`scripts/blob-mode-tests.sh`, `scripts/diagnostics-gate.sh`, `scripts/test-doc-examples.py`, `scripts/check-tree-sitter-corpus.py`, …), lint and test-runner configuration | the owner merges |
 | A PR from outside (from a fork, or opened by another account) | the owner merges |
 
 A second independent review is one by a separately dispatched `rig-review`
@@ -135,7 +139,8 @@ the PR. Both must pass, and every finding raised by either reviewer must be
 resolved, before
 the PR is merged. The owner sees these changes at release rather than per
 PR. Where release machinery is a workflow holding write access or a
-secret, the owner-merges rule wins.
+secret, or a script such a workflow runs (`scripts/generate-homebrew-formula.sh`,
+`build.eu` in the release jobs), the owner-merges rule wins.
 
 ## Merging
 

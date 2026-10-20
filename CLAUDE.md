@@ -213,7 +213,7 @@ Keep a PR body under 50 lines and an agent report to the session that dispatched
 
 ### Reserved for the owner
 
-Merging anything `REVIEW.md` reserves for the owner; changes to `REVIEW.md`, `.github/`, `.beads/` configuration, `.claude/`, `.rig/`, `AGENTS.md` or this section; releases.
+Merging anything `REVIEW.md` reserves for the owner; changes to `REVIEW.md`, `.github/`, `.beads/` configuration, `.claude/`, `.rig/`, `AGENTS.md`, the "Review and merge" section or this one; releases.
 
 ### Public repository rules
 
