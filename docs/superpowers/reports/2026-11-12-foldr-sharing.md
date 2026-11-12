@@ -65,3 +65,17 @@ from 43.1M to 40.7M, `016` from 6.05M to 5.93M and `019` from 911k to 875k.
 The largest rises are `002_thunk_updates` (515,229 → 520,228) and
 `004_generations` (465,418 → 470,408), both about 1%. No wall-clock claims
 are made.
+
+## eu-oaz72.48 (same mechanism)
+
+`m: range(0, 20000) count`, `x: [m]`, `y: [x first, x first, x first]` under
+`--suppress-demand-analysis`: `y` cost 4,875,337 ticks on master against
+1,625,097 for `m` alone, and 1,645,225 on this branch. The list literal's
+field refers to `m` outside its own frame, and cause 1 lost the update.
+Gated by `test_235_oaz72_48_list_element_sharing` (`tests/harness_test.rs`),
+which needs demand analysis suppressed to reach the defect.
+
+A related shape is **not** fixed here: `p(n): { m: slow(n) }.([m])` still
+recomputes `m` per force with demand analysis on. Demand analysis marks a
+list-literal element `(Strict, AtMostOnce)`, so `m` is bound without an
+update. That is eu-oaz72.40's subject (list elements are lazy).
