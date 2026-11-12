@@ -705,8 +705,11 @@ impl HeapState {
 
     /// Look for reclaimable blocks and move to recycled list (eager sweep)
     ///
-    /// This sweeps all blocks in both `rest` and `unswept`. Used for
-    /// emergency collections and as a fallback.
+    /// This sweeps all blocks in both `rest` and `unswept`. It is sound
+    /// only straight after a mark phase, while every line map reflects
+    /// that mark: a block retired to `rest` since then holds objects its
+    /// line map has never seen (eu-oaz72.59). Use `sweep_unswept` when
+    /// no mark has just run.
     pub fn sweep(&mut self) {
         let mut unusable: VecDeque<BumpBlock> = VecDeque::new();
 
@@ -735,6 +738,15 @@ impl HeapState {
     /// lazy sweep at allocation time. Called after mark phase.
     pub fn defer_sweep(&mut self) {
         self.unswept.append(&mut self.rest);
+    }
+
+    /// Sweep every block still in `unswept`, without a mark phase.
+    ///
+    /// Sound at any time: those blocks have not been allocated into
+    /// since the mark that drew their line maps, which is what lazy
+    /// sweep already relies on. Blocks in `rest` are left alone.
+    pub fn sweep_unswept(&mut self) {
+        while self.lazy_sweep_next() {}
     }
 
     /// Lazily sweep blocks from `unswept` until one is recycled or
@@ -2677,9 +2689,12 @@ impl Heap {
             stats_before.blocks_allocated, stats_before.recycled
         );
 
-        // Strategy 1: Try to reclaim blocks that are completely unused
-        // This is safe because we're not relying on reachability analysis
-        heap_state.sweep();
+        // Strategy 1: finish any sweep deferred from the last collection.
+        // No mark runs here, so only `unswept` blocks have line maps that
+        // describe their contents; blocks retired to `rest` since that
+        // mark hold objects their maps have never seen and must not be
+        // recycled against them (eu-oaz72.59).
+        heap_state.sweep_unswept();
 
         // Strategy 2: If we still need space, try to free the current head block
         // if it's mostly empty (this is more aggressive but still relatively safe)
@@ -3709,6 +3724,59 @@ pub mod tests {
 
         // Should have consumed one recycled block
         assert_eq!(state.recycled.len(), recycled_count_before - 1);
+    }
+
+    /// eu-oaz72.59: an emergency sweep runs without a mark phase, so a
+    /// block retired to `rest` since the last collection carries a line
+    /// map that knows nothing of the objects bumped into it since. It
+    /// must not be recycled against that map, or its live objects are
+    /// handed out again as free space.
+    #[test]
+    fn test_emergency_sweep_spares_blocks_retired_since_mark() {
+        let heap = Heap::new();
+
+        // A live object in the (fresh, never-marked) head block, below
+        // the top line, which `find_hole` always withholds.
+        for i in 0..64 {
+            heap.alloc(Ref::num(i)).unwrap();
+        }
+        let sentinel = heap.alloc(Ref::num(4242)).unwrap();
+        let sentinel_block = bump::block_base_of(sentinel);
+        // Compare raw bytes: an overwritten `Ref` is not safe to inspect.
+        let sentinel_bytes = |p: NonNull<Ref>| unsafe {
+            std::ptr::read(p.as_ptr() as *const [u8; size_of::<Ref>()])
+        };
+        let original = sentinel_bytes(sentinel);
+
+        // Retire the head to `rest`, as the allocator does when it fills.
+        let state = unsafe { &mut *heap.state.get() };
+        state.replace_head();
+        assert!(state
+            .rest
+            .iter()
+            .any(|b| b.base_address() == sentinel_block));
+
+        let _ = heap.attempt_emergency_collection(1024);
+
+        let state = unsafe { &*heap.state.get() };
+        assert!(
+            !state
+                .recycled
+                .iter()
+                .any(|b| b.base_address() == sentinel_block),
+            "emergency sweep recycled a block holding a live object"
+        );
+
+        // Allocate well over a block's worth: nothing may land on the
+        // sentinel.
+        for i in 0..(4 * BLOCK_SIZE_BYTES / 32) {
+            heap.alloc(Ref::num(i as i64)).unwrap();
+        }
+        assert_eq!(
+            sentinel_bytes(sentinel),
+            original,
+            "a live object was overwritten"
+        );
     }
 
     #[test]
