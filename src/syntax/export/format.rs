@@ -17,6 +17,38 @@ use crate::syntax::rowan::kind::{SyntaxKind, SyntaxNode, SyntaxToken};
 use pretty::RcDoc;
 use rowan::ast::AstNode;
 
+/// The formatted parts of a declaration, each formatted once and shared
+/// between the single-line and multi-line layouts.
+struct DeclParts {
+    meta: Option<RcDoc<'static, ()>>,
+    head: RcDoc<'static, ()>,
+    body: Option<RcDoc<'static, ()>>,
+}
+
+impl DeclParts {
+    /// `head: body`, without metadata (single-line block layout).
+    fn inline(&self) -> RcDoc<'static, ()> {
+        let doc = self.head.clone().append(RcDoc::text(": "));
+        match &self.body {
+            Some(body) => doc.append(body.clone()),
+            None => doc,
+        }
+    }
+
+    /// Metadata on its own line, then `head: body`.
+    fn multi_line(&self) -> RcDoc<'static, ()> {
+        let mut doc = RcDoc::nil();
+        if let Some(meta) = &self.meta {
+            doc = doc.append(meta.clone()).append(RcDoc::hardline());
+        }
+        doc = doc.append(self.head.clone()).append(RcDoc::text(":"));
+        match &self.body {
+            Some(body) => doc.append(RcDoc::space()).append(body.clone()),
+            None => doc,
+        }
+    }
+}
+
 /// Configuration for the formatter
 #[derive(Debug, Clone)]
 pub struct FormatterConfig {
@@ -227,31 +259,24 @@ impl Formatter {
     }
 
     fn reformat_declaration(&self, decl: &rowan_ast::Declaration) -> RcDoc<'static, ()> {
-        let mut doc = RcDoc::nil();
+        self.declaration_parts(decl).multi_line()
+    }
 
-        // Handle metadata
-        if let Some(meta) = decl.meta() {
-            doc = doc
-                .append(self.reformat_decl_metadata(&meta))
-                .append(RcDoc::hardline());
+    /// Format each part of a declaration once, so a caller choosing
+    /// between layouts does not format the body twice (which would make
+    /// nested blocks exponential).
+    fn declaration_parts(&self, decl: &rowan_ast::Declaration) -> DeclParts {
+        DeclParts {
+            meta: decl.meta().map(|m| self.reformat_decl_metadata(&m)),
+            head: decl
+                .head()
+                .map(|h| self.reformat_decl_head(&h))
+                .unwrap_or_else(RcDoc::nil),
+            body: decl
+                .body()
+                .and_then(|b| b.soup())
+                .map(|soup| self.reformat_soup(&soup)),
         }
-
-        // Format head
-        if let Some(head) = decl.head() {
-            doc = doc.append(self.reformat_decl_head(&head));
-        }
-
-        // Colon with proper spacing
-        doc = doc.append(RcDoc::text(":"));
-
-        // Format body
-        if let Some(body) = decl.body() {
-            if let Some(soup) = body.soup() {
-                doc = doc.append(RcDoc::space()).append(self.reformat_soup(&soup));
-            }
-        }
-
-        doc
     }
 
     fn reformat_decl_head(&self, head: &rowan_ast::DeclarationHead) -> RcDoc<'static, ()> {
@@ -443,10 +468,7 @@ impl Formatter {
 
     fn reformat_block(&self, block: &rowan_ast::Block) -> RcDoc<'static, ()> {
         let decls: Vec<_> = block.declarations().collect();
-        let meta = block
-            .meta()
-            .and_then(|m| m.soup())
-            .map(|soup| self.reformat_soup(&soup));
+        let meta = block.meta().map(|m| self.reformat_block_metadata(&m));
 
         if decls.is_empty() {
             // A block with only metadata (e.g. the `{x y}` shorthand) keeps it.
@@ -456,68 +478,52 @@ impl Formatter {
             };
         }
 
-        // Single line: { meta a: 1, b: 2 }
-        let mut docs = vec![RcDoc::text("{ ")];
-        if let Some(meta) = &meta {
-            docs.push(meta.clone());
-            docs.push(RcDoc::space());
-        }
-        for (i, decl) in decls.iter().enumerate() {
-            if i > 0 {
-                docs.push(RcDoc::text(", "));
-            }
-            docs.push(self.reformat_declaration_inline(decl));
-        }
-        docs.push(RcDoc::text(" }"));
-        let single_line = RcDoc::concat(docs);
+        let parts: Vec<_> = decls.iter().map(|d| self.declaration_parts(d)).collect();
 
-        // Declaration metadata is only emitted in the multi-line layout.
-        let can_single_line = self.flat_width(&single_line)
-            <= self.config.line_width.saturating_sub(SINGLE_LINE_MARGIN)
-            && decls.len() <= MAX_SINGLE_LINE_DECLS
+        // Cheap structural checks first. Declaration metadata is only
+        // emitted in the multi-line layout.
+        let may_single_line = decls.len() <= MAX_SINGLE_LINE_DECLS
             && !self.has_nested_block(block)
-            && decls.iter().all(|d| d.meta().is_none());
+            && parts.iter().all(|p| p.meta.is_none());
 
-        if can_single_line {
-            single_line
-        } else {
-            // Multi-line block
-            let indent = self.config.indent_size;
-            let mut inner_docs = Vec::new();
-
-            if let Some(meta) = meta {
-                inner_docs.push(meta);
+        if may_single_line {
+            // Single line: { meta a: 1, b: 2 }
+            let mut docs = vec![RcDoc::text("{ ")];
+            if let Some(meta) = &meta {
+                docs.push(meta.clone());
+                docs.push(RcDoc::space());
             }
-            for decl in &decls {
-                inner_docs.push(self.reformat_declaration(decl));
+            for (i, part) in parts.iter().enumerate() {
+                if i > 0 {
+                    docs.push(RcDoc::text(", "));
+                }
+                docs.push(part.inline());
             }
+            docs.push(RcDoc::text(" }"));
+            let single_line = RcDoc::concat(docs);
 
-            let inner = RcDoc::intersperse(inner_docs, RcDoc::hardline());
-
-            // Nest includes the leading hardline so first line gets indented too
-            RcDoc::text("{")
-                .append(RcDoc::hardline().append(inner).nest(indent as isize))
-                .append(RcDoc::hardline())
-                .append(RcDoc::text("}"))
-        }
-    }
-
-    fn reformat_declaration_inline(&self, decl: &rowan_ast::Declaration) -> RcDoc<'static, ()> {
-        let mut doc = RcDoc::nil();
-
-        if let Some(head) = decl.head() {
-            doc = doc.append(self.reformat_decl_head(&head));
-        }
-
-        doc = doc.append(RcDoc::text(": "));
-
-        if let Some(body) = decl.body() {
-            if let Some(soup) = body.soup() {
-                doc = doc.append(self.reformat_soup(&soup));
+            if self.flat_width(&single_line)
+                <= self.config.line_width.saturating_sub(SINGLE_LINE_MARGIN)
+            {
+                return single_line;
             }
         }
 
-        doc
+        // Multi-line block
+        let indent = self.config.indent_size;
+        let mut inner_docs = Vec::new();
+        if let Some(meta) = meta {
+            inner_docs.push(meta);
+        }
+        inner_docs.extend(parts.iter().map(DeclParts::multi_line));
+
+        let inner = RcDoc::intersperse(inner_docs, RcDoc::hardline());
+
+        // Nest includes the leading hardline so first line gets indented too
+        RcDoc::text("{")
+            .append(RcDoc::hardline().append(inner).nest(indent as isize))
+            .append(RcDoc::hardline())
+            .append(RcDoc::text("}"))
     }
 
     fn reformat_list(&self, list: &rowan_ast::List) -> RcDoc<'static, ()> {
@@ -772,6 +778,13 @@ impl Formatter {
     }
 
     fn has_nested_block(&self, block: &rowan_ast::Block) -> bool {
+        let meta_has_block = block.meta().and_then(|m| m.soup()).is_some_and(|soup| {
+            soup.elements()
+                .any(|elem| matches!(elem, rowan_ast::Element::Block(_)))
+        });
+        if meta_has_block {
+            return true;
+        }
         for decl in block.declarations() {
             if let Some(body) = decl.body() {
                 if let Some(soup) = body.soup() {
@@ -1345,6 +1358,31 @@ mod correctness_tests {
         let spread = format!("x: {{ items: [1,{}2] }}\n", " ".repeat(80));
         let compact = "x: { items: [1, 2] }\n";
         assert_eq!(reformat_checked(&spread), reformat_checked(compact));
+    }
+
+    #[test]
+    fn test_deep_nesting_formats_in_linear_time() {
+        // Formatting a body for both layouts at every level made deep
+        // nesting exponential (depth 20 took seconds). Run on a thread
+        // so a regression fails on the deadline rather than hanging.
+        let depth = 40;
+        let mut source = String::from("x: ");
+        for i in 0..depth {
+            source.push_str(&format!("{{ a{i}: [ "));
+        }
+        source.push('1');
+        for _ in 0..depth {
+            source.push_str(" ] }");
+        }
+        source.push('\n');
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(reformat_checked(&source));
+        });
+        let out = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("reformatting deeply nested blocks did not finish in 10s");
+        assert!(out.contains("a39: [1]"), "{out}");
     }
 
     #[test]

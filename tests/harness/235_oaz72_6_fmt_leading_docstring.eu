@@ -30,4 +30,4 @@ checks: {
   nested-decl-meta-kept: (meta(nested.a).tag) = :inner
 }
 
-RESULT: if(checks values all-true?, :PASS, :FAIL)
+RESULT: checks values all-true? then(:PASS, :FAIL)
