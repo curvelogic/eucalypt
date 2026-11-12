@@ -267,7 +267,7 @@ mod tests {
     fn format_document_leading_docstring_parses_and_is_idempotent() {
         for source in [
             "\"doc\"\nx: 1\n",
-            include_str!("../../../tests/harness/234_oaz72_6_fmt_leading_docstring.eu"),
+            include_str!("../../../tests/harness/235_oaz72_6_fmt_leading_docstring.eu"),
         ] {
             let formatted =
                 apply_document_edits(source, &format_document(source, &default_options()));

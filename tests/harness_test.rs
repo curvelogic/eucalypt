@@ -3131,8 +3131,8 @@ fn reformat_round_trip(label: &str, source: &str) -> String {
 /// The file passes, its reformat parses and is a fixed point, and the
 /// reformatted copy passes too. LSP formatting shares this path; see
 /// `src/driver/lsp/formatting.rs` for its test on the same file.
-pub fn test_234_oaz72_6_fmt_leading_docstring() {
-    let name = "234_oaz72_6_fmt_leading_docstring.eu";
+pub fn test_235_oaz72_6_fmt_leading_docstring() {
+    let name = "235_oaz72_6_fmt_leading_docstring.eu";
     run_test(&opts(name));
 
     let source = std::fs::read_to_string(format!("tests/harness/{name}")).unwrap();
@@ -3150,7 +3150,7 @@ pub fn test_234_oaz72_6_fmt_leading_docstring() {
 #[test]
 /// eu-oaz72.6: every shipped library and AoC 2025 example reformats to
 /// source that parses and reformats to itself.
-pub fn test_234_oaz72_6_reformat_corpus_round_trip() {
+pub fn test_235_oaz72_6_reformat_corpus_round_trip() {
     let mut files: Vec<PathBuf> = ["lib", "examples/aoc25"]
         .iter()
         .flat_map(|dir| std::fs::read_dir(dir).unwrap())
