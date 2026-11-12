@@ -56,7 +56,20 @@ without an owner decision:
   (evaluate in place rather than thunk-then-`seq`). The second also
   removes the +3 ticks per iteration of loop A above.
 
-Baselines on master for reference: source mode `sum`, `foldl(+)` and
-`count` over `range(0, 1e6)` are 101.75 M / 101.75 M / 87.75 M ticks,
-each with a max stack of ~2,000,000. In blob mode they are 136.0 M / 129.25 M /
-132.0 M ticks, with max stacks of 11 / 2,000,005 / 11.
+Master baselines over `range(0, 1e6)`:
+
+| | source mode ticks / max stack | blob mode ticks / max stack |
+|---|---|---|
+| `sum` | 101.75 M / 2,000,006 | 136.0 M / 11 |
+| `foldl(+, 0)` | 101.75 M / 2,000,006 | 129.25 M / 2,000,005 |
+| `count` | 87.75 M / 2,000,003 | 132.0 M / 11 |
+
+## Known limit: signatures shared by name
+
+The STG compiler finds a callee's signature by name, so two bindings with
+the same name (two local `go` loops) share one entry. That entry is now the
+lub of their signatures, which is sound for both. Before, the last one
+recorded won, and with strict accumulators that forced a lazy loop's
+argument. The cost is precision: a strict loop that shares its name with a
+lazy one keeps an O(n) stack. Keying signatures by binder in the compiler
+would remove this.

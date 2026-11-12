@@ -64,6 +64,12 @@ one-branch(a, n): (n = 0) then(0, one-branch(a, n - 1) + ((n > 1000) then(a, 0))
 ` "Returns a closure; building it must not force what it captures."
 adder(a): { y: • }.(a + y)
 
+` "Never forces `a`; shares the name `go` with `strict-go`'s loop, which is strict in it."
+lazy-go(n): { go(a, i): (i = n) then(0, go(a, i + 1)) }.(go(panic("lazy go forced"), 0))
+
+` "A strict accumulator loop also called `go`."
+strict-go(n): { go(a, i): (i = n) then(a, go(a + 1, i + 1)) }.(go(0, 0))
+
 ` { target: :test-laziness }
 test-laziness: {
   unused: unused-acc(0, 10) = 1
@@ -71,5 +77,6 @@ test-laziness: {
   closure: (adder(panic("captured value forced")) block?) = false
   closure-applied: adder(2)(3) = 5
   lazy-foldl: ([1, 2, 3] foldl({ acc: • x: • }.(x), panic("foldl accumulator forced"))) = 3
-  RESULT: [unused, untaken, closure, closure-applied, lazy-foldl] all-true? then(:PASS, :FAIL)
+  same-name: [lazy-go(3), strict-go(3)] = [0, 3]
+  RESULT: [unused, untaken, closure, closure-applied, lazy-foldl, same-name] all-true? then(:PASS, :FAIL)
 }

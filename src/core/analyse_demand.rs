@@ -340,9 +340,10 @@ fn constructor_env(env: DemandEnv) -> DemandEnv {
 /// demanded Multi (eu-oaz72.41). And building the closure does not run its
 /// body, which may never be applied, so every demand is lazy: carrying the
 /// body's strictness out unscaled made `k(a): { y: • }.(a + y)` strict in
-/// `a`, and `k(panic("x")) block?` forced the panic (eu-oaz72.27). The
-/// demands of a call are accounted for where the lambda is applied, through
-/// its signature.
+/// `a`, and `k(panic("x")) block?` forced the panic (eu-oaz72.27). Where
+/// the lambda is applied, its signature gives the demand on its arguments;
+/// what it captures stays lazy, a deliberate loss of precision (in
+/// `{ b: n * 2  h(x): x + b }.(h(1))`, `b` is not found strict).
 fn shared_env(env: DemandEnv) -> DemandEnv {
     env.into_iter()
         .map(|(k, d)| {
@@ -398,8 +399,21 @@ pub struct DemandAnalyser {
     intrinsic_sigs: HashMap<String, DemandSignature>,
     /// Signatures discovered during analysis (keyed by Lam body pointer).
     signatures: SignatureTable,
-    /// Name-keyed signatures for user function calls.
-    named_signatures: NamedSignatureTable,
+    /// Name-keyed signatures for user function calls. The STG compiler
+    /// looks them up by callee name, so bindings that share a name share
+    /// an entry: it holds the lub of their signatures (sound for each), or
+    /// `None` once two of them disagree in arity.
+    named_signatures: HashMap<String, Option<DemandSignature>>,
+    /// Previous values of `named_signatures` entries changed by the
+    /// current fixpoint rounds, so a discarded round can be undone.
+    named_log: Vec<(String, Option<Option<DemandSignature>>)>,
+    /// The last signatures a `Let` group settled on, keyed by its scope's
+    /// address in the input tree. An enclosing group re-analyses a nested
+    /// one on each of its own rounds; starting from the previous answer
+    /// lets a stable nested group settle in one round, rather than
+    /// repeating its whole fixpoint, so cost does not multiply with nesting
+    /// depth.
+    seeds: HashMap<usize, Vec<Option<DemandSignature>>>,
     /// The root unit's block (pointer to its `Expr`), reached by following
     /// `Let` and `Meta` bodies from the analysed expression. It is the
     /// document RENDER_DOC renders, so its fields are all forced and keep
@@ -425,6 +439,8 @@ impl DemandAnalyser {
             intrinsic_sigs: build_intrinsic_signatures(),
             signatures: HashMap::new(),
             named_signatures: HashMap::new(),
+            named_log: Vec::new(),
+            seeds: HashMap::new(),
             root_block: None,
             frames: Vec::new(),
             sig_log: Vec::new(),
@@ -437,7 +453,12 @@ impl DemandAnalyser {
     pub fn analyse(mut self, expr: &RcExpr) -> (RcExpr, SignatureTable, NamedSignatureTable) {
         self.root_block = root_block(expr);
         let (new_expr, _env) = self.analyse_expr(expr);
-        (new_expr, self.signatures, self.named_signatures)
+        let named = self
+            .named_signatures
+            .into_iter()
+            .filter_map(|(name, sig)| sig.map(|sig| (name, sig)))
+            .collect();
+        (new_expr, self.signatures, named)
     }
 
     /// Analyse an expression, returning the annotated expression and
@@ -584,6 +605,10 @@ impl DemandAnalyser {
         // Steps 1–2: analyse the RHSs, then the body, with the signatures
         // of the scope's lambda bindings in a frame so that calls to them
         // use their demands.
+        self.frames.push(SigFrame {
+            sigs: Vec::new(),
+            consulted: false,
+        });
         let (new_rhs_exprs, rhs_envs) = self.analyse_let_rhss(scope);
         let (new_body, body_env) = self.analyse_expr(&scope.body);
         self.frames.pop();
@@ -800,9 +825,8 @@ impl DemandAnalyser {
             // bare `Lam`s here.
             if let Expr::Lam(_, _, ref lam_scope) = &*peel_meta(&new_rhs_exprs[i]).inner {
                 let key = Rc::as_ptr(&lam_scope.body.inner) as usize;
-                if let Some(sig) = self.signatures.get(&key) {
-                    self.named_signatures
-                        .insert(binding.name.clone(), sig.clone());
+                if let Some(sig) = self.signatures.get(&key).cloned() {
+                    self.record_named_signature(&binding.name, sig);
                 }
             }
 
@@ -821,8 +845,25 @@ impl DemandAnalyser {
         (RcExpr::from(Expr::Let(s, new_scope, let_type)), outer_env)
     }
 
-    /// Analyse the RHSs of a `Let`, pushing the scope's signature frame
-    /// (left on the stack for the body; the caller pops it).
+    /// Record `sig` as the signature of a binding called `name`, merging it
+    /// with any other binding's of the same name (see `named_signatures`).
+    fn record_named_signature(&mut self, name: &str, sig: DemandSignature) {
+        let previous = self.named_signatures.get(name).cloned();
+        let merged = match &previous {
+            None => Some(sig),
+            Some(None) => None,
+            Some(Some(other)) if other.len() == sig.len() => {
+                Some(other.iter().zip(&sig).map(|(a, b)| a.lub(*b)).collect())
+            }
+            Some(Some(_)) => None,
+        };
+        self.named_log.push((name.to_string(), previous));
+        self.named_signatures.insert(name.to_string(), merged);
+    }
+
+    /// Analyse the RHSs of a `Let` in the scope's signature frame (the
+    /// innermost; the caller pushes and pops it), leaving in it the
+    /// signatures the RHSs settled on, for the body.
     ///
     /// A lambda binding's signature depends on the signatures of the calls
     /// in its body, its own recursive calls included, so the group's
@@ -851,19 +892,20 @@ impl DemandAnalyser {
                 _ => None,
             })
             .collect();
-        let initial = arities
-            .iter()
-            .map(|a| a.map(|k| vec![Demand::strict_once(); k]))
-            .collect();
-        self.frames.push(SigFrame {
-            sigs: initial,
-            consulted: false,
-        });
+        let seed_key = scope as *const LetScope<RcExpr> as usize;
         let frame = self.frames.len() - 1;
+        self.frames[frame].sigs = match self.seeds.get(&seed_key) {
+            Some(seed) => seed.clone(),
+            None => arities
+                .iter()
+                .map(|a| a.map(|k| vec![Demand::strict_once(); k]))
+                .collect(),
+        };
 
         let mut rounds = 0;
         loop {
             let mark = self.sig_log.len();
+            let named_mark = self.named_log.len();
             self.frames[frame].consulted = false;
 
             let mut new_rhs_exprs = Vec::with_capacity(arities.len());
@@ -894,6 +936,7 @@ impl DemandAnalyser {
                 || derived == self.frames[frame].sigs;
             if settled {
                 // Body calls see the signatures the RHSs actually have.
+                self.seeds.insert(seed_key, derived.clone());
                 self.frames[frame].sigs = derived;
                 return (new_rhs_exprs, rhs_envs);
             }
@@ -902,6 +945,12 @@ impl DemandAnalyser {
             // expressions are dropped and their addresses may be reused.
             for key in self.sig_log.drain(mark..) {
                 self.signatures.remove(&key);
+            }
+            for (name, previous) in self.named_log.drain(named_mark..).rev() {
+                match previous {
+                    Some(entry) => self.named_signatures.insert(name, entry),
+                    None => self.named_signatures.remove(&name),
+                };
             }
             rounds += 1;
             self.frames[frame].sigs = if rounds == MAX_SIGNATURE_ITERATIONS {
@@ -1003,9 +1052,6 @@ impl DemandAnalyser {
         let mut new_args = Vec::with_capacity(args.len());
         for (i, arg) in args.iter().enumerate() {
             let (new_arg, arg_env) = self.analyse_expr(arg);
-            if is_if && i > 0 {
-                branch_envs.push(arg_env.clone());
-            }
 
             // The demand the function places on this argument position.
             let arg_demand = sig
@@ -1029,6 +1075,9 @@ impl DemandAnalyser {
                 env = merge_envs(&env, &scaled_env);
             }
 
+            if is_if && i > 0 {
+                branch_envs.push(arg_env);
+            }
             new_args.push(new_arg);
         }
 
@@ -1038,11 +1087,8 @@ impl DemandAnalyser {
         // Cardinality keeps the conservative sum.
         if let [then_env, else_env] = branch_envs.as_slice() {
             for (key, d) in then_env {
-                let both = d.strictness == Strictness::Strict
-                    && else_env
-                        .get(key)
-                        .is_some_and(|e| e.strictness == Strictness::Strict);
-                if both {
+                let joined = else_env.get(key).map(|e| d.lub(*e));
+                if joined.is_some_and(|j| j.strictness == Strictness::Strict) {
                     if let Some(entry) = env.get_mut(key) {
                         entry.strictness = Strictness::Strict;
                     }
