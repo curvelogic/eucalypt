@@ -273,8 +273,50 @@ fn retag_call_site(reduced: RcExpr, call_smid: Smid) -> RcExpr {
     reduced
 }
 
+/// Merge a curried application of a closed inlinable lambda into one saturated
+/// application when, together, the nested argument lists exactly saturate it.
+///
+/// Catenation produces this shape: `c then(t, f)` is `then(t, f)(c)`, i.e.
+/// `App(App(λ(t, f, c). …, [t, f]), [c])`. Neither application alone matches
+/// the lambda's arity, so without merging the combinator is never reduced
+/// and every pipeline call through it allocates a partial application, and
+/// its branches as thunks (eu-oaz72.34). Arguments are unevaluated in both
+/// forms, so merging changes no value or evaluation order.
+fn saturate_curried_inline(expr: &RcExpr) -> Option<RcExpr> {
+    let Expr::App(call_smid, f, xs) = &*expr.inner else {
+        return None;
+    };
+    let mut head = f;
+    let mut groups = vec![xs];
+    while let Expr::App(_, g, ys) = &*head.inner {
+        groups.push(ys);
+        head = g;
+    }
+    if groups.len() < 2 {
+        return None;
+    }
+    let Expr::Lam(_, true, scope) = &*head.inner else {
+        return None;
+    };
+    // Only closed-bodied combinators (`then`, `when`, operator sections…):
+    // a recursive combinator is copy-specialised only at saturated call
+    // sites, and extending that to every pipeline is a separate decision.
+    if !crate::core::inline::tag::closed_body(&scope.body) {
+        return None;
+    }
+    let total: usize = groups.iter().map(|g| g.len()).sum();
+    if total != scope.pattern.len() {
+        return None;
+    }
+    let args: Vec<RcExpr> = groups.into_iter().rev().flatten().cloned().collect();
+    Some(RcExpr::from(Expr::App(*call_smid, head.clone(), args)))
+}
+
 /// Apply lambdas which have been distribute to function positions
 fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
+    if let Some(saturated) = saturate_curried_inline(expr) {
+        return beta_reduce(&saturated);
+    }
     match &*expr.inner {
         Expr::App(call_smid, f, xs) => {
             match &*f.inner {
@@ -902,5 +944,46 @@ pub mod tests {
             }
             other => panic!("expected an App under the sharing Let, got {other:?}"),
         }
+    }
+
+    /// eu-oaz72.34: the curried shape catenation produces,
+    /// `f(22)(23)` for a closed two-parameter combinator, is reduced as if
+    /// it were the saturated `f(22, 23)`.
+    #[test]
+    pub fn test_curried_closed_combinator_is_reduced() {
+        let f = free("f");
+        let x = free("x");
+        let y = free("y");
+        let combinator = inline(vec![x.clone(), y.clone()], var(y.clone()));
+
+        let original = let_(
+            vec![(f.clone(), combinator.clone())],
+            app(app(var(f.clone()), vec![num(22)]), vec![num(23)]),
+        );
+        let expected = let_(vec![(f, combinator)], num(23));
+
+        assert_eq!(inline_pass(&original).unwrap(), expected);
+    }
+
+    /// Too few arguments overall, or a combinator whose body is not closed
+    /// (here it calls a free `g`, as a recursive combinator calls itself),
+    /// leave the curried application alone.
+    #[test]
+    pub fn test_curried_application_left_when_unsaturated_or_not_closed() {
+        let g = free("g");
+        let x = free("x");
+        let y = free("y");
+        let z = free("z");
+
+        let closed = inline(vec![x.clone(), y.clone(), z.clone()], var(y.clone()));
+        let unsaturated = app(app(closed, vec![num(1)]), vec![num(2)]);
+        assert!(saturate_curried_inline(&unsaturated).is_none());
+
+        let open = inline(
+            vec![x.clone(), y.clone()],
+            app(var(g), vec![var(x), var(y)]),
+        );
+        let curried = app(app(open, vec![num(1)]), vec![num(2)]);
+        assert!(saturate_curried_inline(&curried).is_none());
     }
 }

@@ -287,6 +287,14 @@ fn cmd_prelude_compile() -> Result<()> {
         inlinable_bindings.len()
     );
 
+    // Intrinsic aliases are substituted into each candidate before it is
+    // tagged, so a combinator written through an alias (`then(t, f, c):
+    // if(c, t, f)`) has the closed body `IF(c, t, f)` that tagging requires.
+    // Without this it stays an opaque global in blob mode while the source
+    // path inlines it, and a self-recursive loop through `then` pushes a
+    // stack frame per iteration (eu-oaz72.34).
+    let intrinsic_aliases: Vec<(String, RcExpr)> = inlinable_bindings.clone();
+
     // Iterate: add lambdas whose Free vars are all in the set
     loop {
         let mut added = 0;
@@ -294,6 +302,7 @@ fn cmd_prelude_compile() -> Result<()> {
             if inlinable_names.contains(name) {
                 continue;
             }
+            let body = &body.substs(&intrinsic_aliases);
             let tagged = tag_combinators_named(body, Some(name))
                 .with_context(|| format!("tag_combinators on '{name}'"))?;
             let peeled = peel_meta(&tagged);

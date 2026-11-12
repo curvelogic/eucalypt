@@ -3066,6 +3066,17 @@ pub fn test_230_uhd7d_close_brace_after_interpolation() {
     run_test(&opts("230_uhd7d_close_brace_after_interpolation.eu"));
 }
 
+/// eu-oaz72.34 — a self-recursive loop through `if` or `then` with a strict
+/// accumulator must run in constant stack: the saturated `if` compiles its
+/// branches in tail position, and the curried `then(t, f)(c)` that
+/// catenation produces is reduced to it. The `loops` target's
+/// `constant-stack` validator checks `max-stack` and FAILs on master, where
+/// each `then` iteration pushed a frame (max-stack ~1e5 at n = 1e5).
+#[test]
+pub fn test_231_oaz72_constant_stack_loops() {
+    run_test(&opts("231_oaz72_constant_stack_loops.eu"));
+}
+
 #[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame
