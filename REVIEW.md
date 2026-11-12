@@ -96,7 +96,8 @@ while an alert is open, a PR that is not its fix waits behind it.
 
 The owner reviews and merges these personally:
 
-- **Any new intrinsic.**
+- **Any new intrinsic or new prelude API**, unless it is *specified in
+  advance* (below).
 - **Any new language feature, or any deliberate change to what a construct
   means** — a semantic change the PR set out to make.
 - **A PR from an open-ended "find things to improve" dispatch** — work
@@ -110,6 +111,25 @@ The owner reviews and merges these personally:
   in a comment on the PR (removing the `owner-review` label alone does not
   release it). Agents never post a hold release or remove that label, so a
   release comment in agent-generated form does not count.
+
+**Specified in advance.** A new intrinsic, a new prelude function or
+namespace, or a deliberate change to an existing prelude function's
+behaviour (such as a rename with an alias, or a deprecation) is not in this
+filter when its names, signatures and behaviour are fixed in advance by the
+owner: in an owner-merged plan of record under `docs/superpowers/plans/`,
+or in owner decisions recorded on the PR's bead. Such a PR:
+
+- implements what the plan or bead fixes, exactly. Any deviation, or any
+  observable choice the plan and bead leave open (a name, an argument order,
+  an error case, a rendering), puts the PR back in the filter. Say which in
+  the review; don't decide it yourself.
+- needs a **second independent review**, as for the sensitive areas below.
+- carries the `api-review` label, so the owner can review every such change
+  before the next release. The PR body links the plan section or bead
+  decision it implements.
+
+A new language feature or a change to what a construct means is never
+specified in advance this way: it stays in the filter.
 
 **Bug fixes proceed; intentional semantic changes stop.** That is the line.
 A bug fix restores intended behaviour, so it is reviewed and merged under
@@ -131,6 +151,7 @@ dispatching session; do not hold by default.
 | Release machinery not run by a workflow holding write access or a secret (`install.sh`, `build-meta.yaml`, version bumps) | second independent review |
 | Release machinery that is, or is run by, a workflow holding write access or a secret (release jobs, `build.eu` in them, `scripts/generate-homebrew-formula.sh`, `homebrew-bump.yml`, `docs.yaml`) | the owner merges |
 | Any new intrinsic; new language feature or deliberate semantic change; open-ended "find things to improve" PRs; held PRs | the owner merges |
+| A new intrinsic or prelude API specified in advance (see *Owner review filter*), implemented exactly as specified and labelled `api-review` | second independent review |
 | `.github/`, `.beads/` configuration, `.claude/`, `.rig/`, `REVIEW.md`, `AGENTS.md`, and the parts of `CLAUDE.md` that say who merges | the owner merges |
 | CI that gates merging: workflows, the scripts CI runs (`scripts/blob-mode-tests.sh`, `scripts/diagnostics-gate.sh`, `scripts/test-doc-examples.py`, `scripts/check-tree-sitter-corpus.py`, …), lint and test-runner configuration | the owner merges |
 | A PR from outside (from a fork, or opened by another account) | the owner merges |

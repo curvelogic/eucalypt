@@ -1,0 +1,28 @@
+# eu-oaz72.1: demand analysis forced a block binding used only in an
+# untaken branch. With `drop-while` called in prefix form, the inlined
+# predicate became a nested `let` inside `a`'s right-hand side; the
+# analyser propagated that right-hand side's demands outward without
+# scaling them by the (lazy) demand on `a`, so `b` was marked strict and
+# `max-of` of an empty list was forced in the `then` branch that never
+# uses it. The pipeline form already passed: the predicate there is an
+# application argument, whose demands are scaled.
+#
+# Each check is in RESULT, so a regression fails `cargo test`.
+
+# The bead's repro: prefix call.
+prefix(k, ds): { b: ds max-of  a: drop-while(!= b, ds) }.((k = 0) then([], cons(b, prefix(k - 1, a tail))))
+
+# The same with the pipeline call.
+pipeline(k, ds): { b: ds max-of  a: ds drop-while(!= b) }.((k = 0) then([], cons(b, pipeline(k - 1, a tail))))
+
+# Prefix take-while: another inlined combinator whose predicate captures b.
+taking(k, ds): { b: ds max-of  a: take-while(!= b, ds) }.((k = 0) then([], cons(b, taking(k - 1, a))))
+
+t1: prefix(1, [3]) = [3]
+t2: pipeline(1, [3]) = [3]
+t3: prefix(2, [1, 5, 2, 4]) = [5, 4]
+t4: pipeline(2, [1, 5, 2, 4]) = [5, 4]
+t5: prefix(0, []) = []
+t6: taking(1, [3]) = [3]
+
+RESULT: if([t1, t2, t3, t4, t5, t6] all-true?, :PASS, :FAIL)
