@@ -24,7 +24,6 @@
 
 use std::cmp::Ordering;
 use std::mem::{align_of, size_of};
-use std::ptr::NonNull;
 
 use ordered_float::OrderedFloat;
 use serde_json::Number;
@@ -880,13 +879,14 @@ impl<'a> Dict<'a> {
     }
 }
 
-/// A non-null pointer to a dict node, as stored in roots.
-pub type NodePtr = NonNull<DictNode>;
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::eval::bytecode::{BcClosure, BcEnvFrame};
+    use std::ptr::NonNull;
+
+    /// A non-null pointer to a dict node, as stored in roots.
+    type NodePtr = NonNull<DictNode>;
     use crate::eval::machine::metrics::{Clock, ThreadOccupation};
     use crate::eval::memory::collect::{collect, collect_with_evacuation};
     use crate::eval::memory::heap::Heap;
@@ -1232,6 +1232,61 @@ mod tests {
             _ => {}
         });
         out
+    }
+
+    /// Key lists span several heap lines; a mark-in-place collection must
+    /// mark every line of each list (not just the first), or lazy sweep
+    /// hands the tail to the filler allocations and the elements read back
+    /// corrupted. Runs without any GC debug variable set.
+    #[test]
+    fn multi_line_key_lists_survive_mark_in_place() {
+        let mut heap = Heap::new();
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+        let pool = SymbolPool::new();
+        let (n, width) = (300_i64, 30_i64);
+        let mut roots: Vec<NodePtr> = {
+            let view = MutatorHeapView::new(&heap);
+            let d = Dict::new(view, &pool);
+            let mut t: Tree = None;
+            for i in 0..n {
+                let elems: Vec<DictKey> = (0..width).map(|j| int(i * 1000 + j)).collect();
+                let lst = DictKeyList::alloc(&view, &elems).unwrap();
+                t = d.insert(t, DictKey::List(lst), val(i)).unwrap();
+                // Garbage between the lists, so freed lines sit beside them.
+                for _ in 0..4 {
+                    let _ = view.str("garbage-garbage-garbage-garbage").unwrap();
+                }
+            }
+            vec![t.unwrap()]
+        };
+        collect(&mut roots, &mut heap, &mut clock, false);
+        heap.flush_unswept();
+        clock.switch(ThreadOccupation::Mutator);
+        {
+            let view = MutatorHeapView::new(&heap);
+            for i in 0..20_000 {
+                let _ = view.str(format!("filler-{i:08}")).unwrap();
+            }
+        }
+        let view = MutatorHeapView::new(&heap);
+        let d = Dict::new(view, &pool);
+        let t = Some(roots[0]);
+        d.check_invariants(t).unwrap();
+        let mut seen = 0;
+        d.for_each(t, |nd| {
+            let elems = nd.key().list_in(&view).unwrap();
+            let i = val_of(nd.value());
+            assert_eq!(elems.len(), width as usize);
+            for (j, e) in elems.iter().enumerate() {
+                assert!(
+                    matches!(e, DictKey::Int(x) if *x == i * 1000 + j as i64),
+                    "key list {i} element {j} corrupted: {e:?}"
+                );
+            }
+            seen += 1;
+        });
+        assert_eq!(seen, n);
     }
 
     /// Addresses of the env frames of every closure value.
