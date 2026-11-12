@@ -115,14 +115,40 @@ Uses global mark bit flipping to avoid clearing marks:
 
 ## Collection Triggering
 
-### Policy-Based Collection
+### Policy-Based Collection (allocation volume, eu-oaz72.4)
 
-Collection occurs only when:
-1. User sets `--heap-limit-mib` command line option
-2. Allocated blocks ≥ limit AND recycled blocks < 25% of total
-3. Check performed every 500 execution steps
+Collection is triggered by **allocation volume since the last collection**,
+not by heap size, with or without a heap limit:
 
-*Implementation*: `src/eval/machine/vm.rs:810-818`
+1. The heap counts the lines it hands to the allocator: all of a fresh
+   block's, only the free lines of a recycled one, and the size of each
+   large object.
+2. Each collection measures the live volume: the bytes of every object the
+   mark phase marks for the first time (an evacuated copy is not counted
+   again).
+3. The next collection runs once `max(32 MiB, growth × live)` has been
+   allocated. The growth factor starts at 4 and doubles, up to 8, after a
+   collection that reclaims less than a quarter of what was allocated; it
+   resets after one that reclaims more than half.
+4. Under `--heap-limit-mib`, the trigger is capped at the headroom left
+   below the limit; if more than 7/8 of the limit is live after a
+   collection, evaluation stops with a "heap limit exceeded" error instead
+   of collecting on every poll.
+5. The check runs every 500 execution steps (`gc_poll`).
+
+The previous rule (collect only once allocated blocks reach the limit) never
+collected under the 32 GiB default and thrashed under a small limit.
+
+*Implementation*: `Heap::policy_requires_collection`,
+`gc_trigger_blocks_for`, `next_gc_growth_factor` and
+`Heap::record_collection` in `src/eval/memory/heap.rs`; `gc_poll` in
+`src/eval/bytecode/machine.rs`.
+
+Marking finds an object's line map through a base-address index
+(`HeapState::line_map_index`) rather than by searching the block lists, and
+evacuation resolves its candidate blocks to a set of base addresses once per
+collection; both searches were O(blocks) per marked object, which the old
+policy hid by rarely collecting.
 
 ### No Emergency Collection
 
@@ -135,7 +161,7 @@ Collection occurs only when:
 ### Collection Frequency
 
 - **Check interval**: Every 500 VM execution steps
-- **Default behavior**: No automatic collection (no heap limit set)
+- **Default behavior**: Collection on allocation volume (see above)
 - **Final collection**: Always performed at program termination
 
 ## Memory Management Integration
@@ -271,7 +297,7 @@ src/eval/memory/
 - Large objects (> 32KB) receive dedicated allocation blocks
 
 ### Collection Triggering
-- Collection occurs when heap limit is exceeded (if set)
+- Collection occurs after an allocation volume set from the live volume
 - Emergency collection attempts when allocation fails
 - Explicit collection can be triggered programmatically
 
@@ -284,7 +310,7 @@ src/eval/memory/
 
 GC-related options:
 
-- `--heap-limit-mib <SIZE>`: Set heap limit in MiB (enables automatic GC)
+- `--heap-limit-mib <SIZE>`: Set heap limit in MiB; live data beyond 7/8 of it is an error
 - `--heap-dump-at-gc`: Dump heap state during collection (debugging)
 - `-S, --statistics`: Print execution metrics including GC stats
 

@@ -6,6 +6,7 @@ All notable changes to eucalypt are documented here.
 
 ### Fixed
 
+- **The garbage collector now runs on allocation volume, not only at the heap limit (eu-oaz72.4)** — it used to collect only once the heap reached `--heap-limit-mib`, so under the 32 GiB default it never collected and long-running programs grew until the operating system killed them, while under a small limit it collected on almost every check once the limit was reached. It now collects after an allocation volume set from the live data the previous collection left (at least 32 MiB), so a program with little live data keeps a small heap. Live data that a `--heap-limit-mib` limit cannot hold now stops evaluation with a `heap limit exceeded` error instead of exceeding the limit. Marking no longer searches the block lists for every object, which made collections slow on large heaps.
 - **A `}` straight after a string interpolation is no longer lost (eu-uhd7d)** — inside an interpolation the lexer read `}}` as the escape for a literal `}` instead of closing the interpolation, so `"{x}}}"` silently dropped its brace (giving the value of `x` alone) and `"{x}}"` failed with "unterminated string interpolation". The first `}` now always closes the interpolation, so `"{x}}}"` and `"{x}}"` both give the value of `x` followed by `}`, and `"{{{x}}}"` gives it wrapped in braces. Strings without a `}` run after an interpolation are unaffected.
 
 ## [0.15.0] - Unreleased
