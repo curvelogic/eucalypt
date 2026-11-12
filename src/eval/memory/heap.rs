@@ -1693,58 +1693,28 @@ mod oom_tests {
 
     #[test]
     fn test_emergency_collection_implementation() {
-        // Test that emergency collection can free space
+        // Blocks retired to `rest` since the last mark are never
+        // reclaimable by an emergency sweep (eu-oaz72.59): with nothing
+        // in `unswept`, it frees nothing and says so.
         let heap = Heap::new();
 
-        // Force allocation of multiple blocks by allocating large amounts
         let heap_state = unsafe { &mut *heap.state.get() };
-        let _block1 = heap_state.head(); // Forces first block allocation
-        let _block2 = heap_state.overflow(); // Forces second block allocation
-
-        // Move blocks to "rest" list by replacing them
+        let _block1 = heap_state.head();
+        let _block2 = heap_state.overflow();
         heap_state.replace_head();
         heap_state.replace_overflow();
 
-        let stats_before = heap_state.stats();
-        eprintln!(
-            "Before emergency collection: {} blocks allocated, {} in rest, {} recycled",
-            stats_before.blocks_allocated, stats_before.used, stats_before.recycled
-        );
-
-        // Now attempt emergency collection
+        let recycled_before = heap.stats().recycled;
         let result = heap.attempt_emergency_collection(1024);
 
-        let stats_after = heap.stats();
-        eprintln!(
-            "After emergency collection: {} blocks allocated, {} in rest, {} recycled",
-            stats_after.blocks_allocated, stats_after.used, stats_after.recycled
+        assert!(
+            matches!(
+                result,
+                Err(HeapError::EmergencyCollectionInsufficient { .. })
+            ),
+            "expected insufficient, got {result:?}"
         );
-
-        // Emergency collection should have attempted to free space
-        // Even if it doesn't succeed (because blocks might not be reclaimable),
-        // it should not crash and should provide proper error reporting
-
-        match result {
-            Ok(()) => {
-                println!("✅ Emergency collection successfully freed space");
-                assert!(
-                    stats_after.recycled > stats_before.recycled,
-                    "Should have recycled some blocks"
-                );
-            }
-            Err(HeapError::EmergencyCollectionInsufficient { .. }) => {
-                println!(
-                    "✅ Emergency collection completed but insufficient space freed (expected)"
-                );
-                // This is fine - the emergency collection ran but couldn't free enough space
-            }
-            Err(e) => {
-                // Log unexpected errors but don't panic - this is production hardening
-                eprintln!("⚠️ Unexpected error from emergency collection: {e:?}");
-                // Emergency collection can fail for various reasons (e.g., no GC limit set)
-                // This should not cause a panic in production
-            }
-        }
+        assert_eq!(heap.stats().recycled, recycled_before);
 
         // Verify cooldown is in effect
         let emergency_state = unsafe { &*heap.emergency_state.get() };
@@ -1752,6 +1722,39 @@ mod oom_tests {
             !emergency_state.can_attempt_emergency_collection(),
             "Should be in cooldown period after emergency collection"
         );
+    }
+
+    #[test]
+    fn test_emergency_collection_recycles_unswept_blocks() {
+        // A block awaiting lazy sweep has a line map from the last mark,
+        // so the emergency sweep may recycle it; `rest` stays put.
+        let heap = Heap::new();
+        let heap_state = unsafe { &mut *heap.state.get() };
+
+        let mut unswept = BumpBlock::new();
+        for i in 0..50 {
+            unswept.mark_line_for_test(i);
+        }
+        let unswept_base = unswept.base_address();
+        heap_state.unswept.push_back(unswept);
+
+        let retired = BumpBlock::new();
+        let retired_base = retired.base_address();
+        heap_state.rest.push_back(retired);
+
+        let result = heap.attempt_emergency_collection(1024);
+        assert!(result.is_ok(), "expected success, got {result:?}");
+
+        let heap_state = unsafe { &*heap.state.get() };
+        assert!(heap_state.unswept.is_empty());
+        assert!(heap_state
+            .recycled
+            .iter()
+            .any(|b| b.base_address() == unswept_base));
+        assert!(heap_state
+            .rest
+            .iter()
+            .any(|b| b.base_address() == retired_base));
     }
 
     #[test]
@@ -2738,7 +2741,8 @@ impl Heap {
 
         let emergency_time = start_time.elapsed();
         let stats_after = self.stats();
-        let bytes_freed = (stats_after.recycled - stats_before.recycled) * BLOCK_SIZE_BYTES;
+        let bytes_freed =
+            stats_after.recycled.saturating_sub(stats_before.recycled) * BLOCK_SIZE_BYTES;
 
         // Update emergency collection metrics
         self.update_emergency_collection_metrics(emergency_time, success, bytes_freed as u64);
@@ -2771,13 +2775,9 @@ impl Heap {
         // describe their contents; blocks retired to `rest` since that
         // mark hold objects their maps have never seen and must not be
         // recycled against them (eu-oaz72.59).
+        // Retiring the head (the former "strategy 2") freed nothing: it
+        // only moved the head to `rest`, which this sweep must not touch.
         heap_state.sweep_unswept();
-
-        // Strategy 2: If we still need space, try to free the current head block
-        // if it's mostly empty (this is more aggressive but still relatively safe)
-        if stats_before.recycled == heap_state.stats().recycled {
-            self.try_emergency_head_replacement(heap_state);
-        }
 
         let stats_after = heap_state.stats();
         eprintln!(
@@ -2786,7 +2786,7 @@ impl Heap {
         );
 
         // Check if we freed enough space
-        let blocks_freed = stats_after.recycled - stats_before.recycled;
+        let blocks_freed = stats_after.recycled.saturating_sub(stats_before.recycled);
         let bytes_freed = blocks_freed * BLOCK_SIZE_BYTES;
 
         eprintln!("Emergency collection: freed {blocks_freed} blocks ({bytes_freed} bytes)");
@@ -2794,28 +2794,6 @@ impl Heap {
         // Success if we freed at least one block worth of space
         // (This is conservative - we could be more sophisticated about size requirements)
         blocks_freed > 0
-    }
-
-    /// Try to replace the head block if it's mostly empty
-    /// This is more aggressive but still relatively safe
-    fn try_emergency_head_replacement(&self, heap_state: &mut HeapState) {
-        // Only replace head if it exists and has very little allocated space
-        if let Some(ref head) = heap_state.head {
-            let hole_size = head.current_hole_size();
-            let utilisation_percent =
-                ((BLOCK_SIZE_BYTES - hole_size) as f64 / BLOCK_SIZE_BYTES as f64) * 100.0;
-
-            eprintln!(
-                "Emergency collection: head block utilisation {utilisation_percent:.1}% (hole size: {hole_size} bytes)"
-            );
-
-            // If head block is less than 10% utilised, replace it
-            // This is aggressive but in an emergency situation it's reasonable
-            if utilisation_percent < 10.0 {
-                eprintln!("Emergency collection: replacing underutilised head block");
-                heap_state.replace_head();
-            }
-        }
     }
 
     /// Return the allocated size for a given object size, ensuring proper alignment
@@ -3166,9 +3144,7 @@ impl Heap {
     pub fn flush_unswept(&self) {
         // SAFETY: Single-threaded access during test.
         let heap_state = unsafe { &mut *self.state.get() };
-        while !heap_state.unswept.is_empty() {
-            heap_state.lazy_sweep_next();
-        }
+        heap_state.sweep_unswept();
     }
 
     /// Return the number of marked lines in the current evacuation target block.
