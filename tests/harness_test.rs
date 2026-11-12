@@ -3179,6 +3179,13 @@ pub fn test_234_oaz72_4_gc_volume_trigger() {
 }
 
 #[test]
+/// eu-oaz72.49: window and window-all with positive arguments are unchanged
+/// once a non-positive step (and window size) became errors.
+pub fn test_235_oaz72_49_window_step() {
+    run_test(&opts("235_oaz72_49_window_step.eu"));
+}
+
+#[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame
 /// inside it could win `to_diagnostic`'s "prefer a user file" test and become
@@ -3346,6 +3353,31 @@ pub fn test_error_233_oaz72_43_nth_negative() {
 /// update of element 0.
 pub fn test_error_233_oaz72_43_update_nth_negative() {
     run_error_test(&error_opts("233_oaz72_43_update_nth_negative.eu"));
+}
+
+#[test]
+/// eu-oaz72.49: a zero step to window is an error rather than a hang.
+pub fn test_error_235_oaz72_49_window_step_zero() {
+    run_error_test(&error_opts("235_oaz72_49_window_step_zero.eu"));
+}
+
+#[test]
+/// eu-oaz72.49: a negative step to window is an error rather than a hang.
+pub fn test_error_235_oaz72_49_window_step_negative() {
+    run_error_test(&error_opts("235_oaz72_49_window_step_negative.eu"));
+}
+
+#[test]
+/// eu-oaz72.49: a zero size to window is an error rather than an infinite
+/// list of empty windows.
+pub fn test_error_235_oaz72_49_window_size_zero() {
+    run_error_test(&error_opts("235_oaz72_49_window_size_zero.eu"));
+}
+
+#[test]
+/// eu-oaz72.49: a zero step to window-all is an error rather than a hang.
+pub fn test_error_235_oaz72_49_window_all_step_zero() {
+    run_error_test(&error_opts("235_oaz72_49_window_all_step_zero.eu"));
 }
 
 #[test]
