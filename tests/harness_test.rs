@@ -3099,6 +3099,62 @@ pub fn test_233_oaz72_34_constant_stack_loops() {
     run_test(&opts("233_oaz72_34_constant_stack_loops.eu"));
 }
 
+/// eu-oaz72.36 — a list built by `foldr` or `filter` is computed once and
+/// shared across traversals. Each target sums its list eight times; its
+/// `shared` validator checks the tick count and FAILs on master, where a
+/// constructor field copied out of a deeper frame, or a parameter reached
+/// through an alias binding, was recomputed on every traversal.
+#[test]
+pub fn test_236_oaz72_36_constructor_field_sharing() {
+    run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));
+}
+
+/// Ticks reported by `-S` for one target of a harness file, run with demand
+/// analysis suppressed.
+fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
+    let output = std::process::Command::new(eu_binary())
+        .args([
+            "run",
+            "--suppress-demand-analysis",
+            "-S",
+            "-t",
+            target,
+            &format!("tests/harness/{file}"),
+        ])
+        .output()
+        .expect("eu runs");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "eu failed on {file} target {target}:\n{stderr}"
+    );
+    stderr
+        .lines()
+        .find_map(|l| {
+            let (name, value) = l.split_once(':')?;
+            (name.trim() == "Ticks").then(|| value.trim().replace(',', "").parse().ok())?
+        })
+        .unwrap_or_else(|| panic!("no tick count in -S output:\n{stderr}"))
+}
+
+/// eu-oaz72.48 — a list element referring to a let-bound thunk outside the
+/// list's own frame was copied when the list was taken apart, so each force
+/// updated a copy and recomputed the thunk. With demand analysis suppressed
+/// (as on master, where it hid nothing), forcing the element three times must
+/// cost about one fold, not three.
+#[test]
+pub fn test_237_oaz72_48_list_element_sharing() {
+    let file = "237_oaz72_48_list_element_sharing.eu";
+    let fold = ticks_without_demand_analysis(file, "fold");
+    let shared = ticks_without_demand_analysis(file, "shared");
+    assert!(
+        shared * 2 < fold * 3,
+        "three forces of a list element cost {shared} ticks against {fold} for one \
+         fold: the element's thunk is recomputed on each force (eu-oaz72.48)"
+    );
+    run_test(&opts(file));
+}
+
 /// eu-oaz72.3: whitespace inside a string interpolation is kept in the
 /// syntax tree as trivia and does not change the interpolation's meaning.
 #[test]
