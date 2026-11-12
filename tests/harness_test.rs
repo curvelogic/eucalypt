@@ -3521,52 +3521,28 @@ pub fn test_error_235_oaz72_49_window_all_step_zero() {
     run_error_test(&error_opts("235_oaz72_49_window_all_step_zero.eu"));
 }
 
-/// eu-oaz72.28: diagnostic hints shown only on source evidence
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
 #[test]
-pub fn test_error_236_oaz72_28_and_or_named() {
-    run_error_test(&error_opts("236_oaz72_28_and_or_named.eu"));
+pub fn test_error_261_and_or_between_booleans() {
+    run_error_test(&error_opts("261_and_or_between_booleans.eu"));
 }
 
-/// eu-oaz72.28: diagnostic hints shown only on source evidence
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
 #[test]
-pub fn test_error_236_oaz72_28_arrow_lambda() {
-    run_error_test(&error_opts("236_oaz72_28_arrow_lambda.eu"));
+pub fn test_error_262_catenation_before_comparison() {
+    run_error_test(&error_opts("262_catenation_before_comparison.eu"));
 }
 
-/// eu-oaz72.28: diagnostic hints shown only on source evidence
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
 #[test]
-pub fn test_error_236_oaz72_28_bool_called_no_and_or() {
-    run_error_test(&error_opts("236_oaz72_28_bool_called_no_and_or.eu"));
+pub fn test_error_263_catenation_before_sum() {
+    run_error_test(&error_opts("263_catenation_before_sum.eu"));
 }
 
-/// eu-oaz72.28: diagnostic hints shown only on source evidence
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
 #[test]
-pub fn test_error_236_oaz72_28_catenation_operator() {
-    run_error_test(&error_opts("236_oaz72_28_catenation_operator.eu"));
-}
-
-/// eu-oaz72.28: diagnostic hints shown only on source evidence
-#[test]
-pub fn test_error_236_oaz72_28_literal_juxtaposed() {
-    run_error_test(&error_opts("236_oaz72_28_literal_juxtaposed.eu"));
-}
-
-/// eu-oaz72.28: diagnostic hints shown only on source evidence
-#[test]
-pub fn test_error_236_oaz72_28_number_called_directly() {
-    run_error_test(&error_opts("236_oaz72_28_number_called_directly.eu"));
-}
-
-/// eu-oaz72.28: diagnostic hints shown only on source evidence
-#[test]
-pub fn test_error_236_oaz72_28_single_letter_no_arrow() {
-    run_error_test(&error_opts("236_oaz72_28_single_letter_no_arrow.eu"));
-}
-
-/// eu-oaz72.28: diagnostic hints shown only on source evidence
-#[test]
-pub fn test_error_236_oaz72_28_too_many_args() {
-    run_error_test(&error_opts("236_oaz72_28_too_many_args.eu"));
+pub fn test_error_264_literal_after_value() {
+    run_error_test(&error_opts("264_literal_after_value.eu"));
 }
 
 #[test]

@@ -1,3 +1,0 @@
-# 'x -> ...' written as a lambda: the arrow hint has its evidence (eu-oaz72.28)
-f: x -> x + 1
-r: f(2)

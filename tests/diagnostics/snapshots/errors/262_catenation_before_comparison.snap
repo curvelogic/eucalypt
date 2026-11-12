@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/236_oaz72_28_bool_called_no_and_or
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/236_oaz72_28_bool_called_no_and_or.eu
+fixture: errors/262_catenation_before_comparison
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/262_catenation_before_comparison.eu
 prelude-modes: identical
 
 === both prelude modes ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/236_oaz72_28_bool_called_no_and_or.eu:5:22
+primary: user tests/harness/errors/262_catenation_before_comparison.eu:5:22
 help-lines: 1
 note-lines: 2
 secondary-labels: 0
@@ -20,7 +20,7 @@ rust-panic: no
 --- stderr ---
 error: tried to call a false as a function
   help: only functions and blocks can be called with arguments
-  ┌─ tests/harness/errors/236_oaz72_28_bool_called_no_and_or.eu:5:22
+  ┌─ tests/harness/errors/262_catenation_before_comparison.eu:5:22
   │
 5 │ r: (cells vec.nth(i) = "S")
   │                      ^
@@ -28,4 +28,4 @@ error: tried to call a false as a function
   = note: the value called here is the result of '='
   = note: catenation (juxtaposition) binds more loosely than '=', so 'x f(y) = z' is read as 'x (f(y) = z)' — write '(x f(y)) = z'
   = while evaluating (outermost first):
-    - r at 236_oaz72_28_bool_called_no_and_or.eu:5:22
+    - r at 262_catenation_before_comparison.eu:5:22

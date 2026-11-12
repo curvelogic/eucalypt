@@ -1,4 +1,0 @@
-exit: 1
-stderr: "tried to call a number as a function"
-stderr-absent: "catenation"
-stderr-absent: "often means"

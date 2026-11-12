@@ -1,6 +1,6 @@
 # eucalypt diagnostic snapshot v1
-fixture: errors/236_oaz72_28_literal_juxtaposed
-argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/236_oaz72_28_literal_juxtaposed.eu
+fixture: errors/264_literal_after_value
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/264_literal_after_value.eu
 prelude-modes: identical
 
 === both prelude modes ===
@@ -8,7 +8,7 @@ exit: 1
 errors: 1
 warnings: 0
 code: -
-primary: user tests/harness/errors/236_oaz72_28_literal_juxtaposed.eu:4:6
+primary: user tests/harness/errors/264_literal_after_value.eu:4:6
 help-lines: 1
 note-lines: 1
 secondary-labels: 0
@@ -20,11 +20,11 @@ rust-panic: no
 --- stderr ---
 error: tried to call a number as a function
   help: only functions and blocks can be called with arguments
-  ┌─ tests/harness/errors/236_oaz72_28_literal_juxtaposed.eu:4:6
+  ┌─ tests/harness/errors/264_literal_after_value.eu:4:6
   │
 4 │ r: x 5
   │      ^
   │
   = note: '5' follows another expression with no operator between them, so it is called with that expression as its argument (catenation: 'x f' means 'f(x)')
   = while evaluating (outermost first):
-    - r at 236_oaz72_28_literal_juxtaposed.eu:4:6
+    - r at 264_literal_after_value.eu:4:6

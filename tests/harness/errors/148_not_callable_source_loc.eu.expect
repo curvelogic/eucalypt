@@ -1,2 +1,5 @@
 exit: 1
 stderr: "148_not_callable_source_loc"
+# a number called directly: no catenation note, no argument-count guess (eu-oaz72.28)
+stderr-absent: "catenation"
+stderr-absent: "often means"
