@@ -3479,6 +3479,19 @@ pub fn test_error_240_oaz72_32_set_of_non_primitive() {
 }
 
 #[test]
+/// eu-oaz72.32: a datetime element in set.of raises set.add's type mismatch,
+/// not "empty boxed value" from its unforced inner value.
+pub fn test_error_240_oaz72_32_set_of_datetime() {
+    run_error_test(&error_opts("240_oaz72_32_set_of_datetime.eu"));
+}
+
+#[test]
+/// eu-oaz72.32: a function element in set.from-list raises set.add's error.
+pub fn test_error_240_oaz72_32_set_of_function() {
+    run_error_test(&error_opts("240_oaz72_32_set_of_function.eu"));
+}
+
+#[test]
 /// eu-oaz72.49: a negative step to window is an error rather than a hang.
 pub fn test_error_235_oaz72_49_window_step_negative() {
     run_error_test(&error_opts("235_oaz72_49_window_step_negative.eu"));

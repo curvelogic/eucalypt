@@ -1,0 +1,2 @@
+# eu-oaz72.32: a datetime element in set.of raises the type mismatch set.add raises.
+result: [t"2024-01-01T00:00:00Z"] set.of

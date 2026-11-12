@@ -425,8 +425,19 @@ pub fn resolve_native_unboxing(
     // closure and, if it is a boxed scalar, read its inner native via the
     // neutral ABI (`value_native` unboxes a boxed Cons's field 0).
     let closure = machine.resolve_closure(view, arg)?;
+    closure_native_unboxing(machine, view, &closure)
+}
+
+/// Read the native value of an already-resolved value handle (a list
+/// element, say), looking through boxed scalar constructors. Raises the
+/// same errors as [`resolve_native_unboxing`] for anything else.
+pub fn closure_native_unboxing(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    closure: &AbiClosure,
+) -> Result<Native, ExecutionError> {
     let dc: Option<DataConstructor> = machine
-        .data_tag(view, &closure)
+        .data_tag(view, closure)
         .and_then(|tag| tag.try_into().ok());
     match dc {
         Some(
@@ -436,7 +447,7 @@ pub fn resolve_native_unboxing(
             | DataConstructor::BoxedZdt
             | DataConstructor::BoxedTypeData,
         ) => machine
-            .value_native(view, &closure)
+            .value_native(view, closure)
             .ok_or_else(|| ExecutionError::Panic(Smid::default(), "empty boxed value".to_string())),
         Some(_) => Err(ExecutionError::NotValue(
             machine.annotation(),

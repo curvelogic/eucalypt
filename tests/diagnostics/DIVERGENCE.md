@@ -10,7 +10,7 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**29 of 226 fixtures diverge.**
+**30 of 228 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
@@ -40,6 +40,7 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/218_json_block_key` | user tests/harness/errors/218_json_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
 | `errors/219_toml_block_key` | user tests/harness/errors/219_toml_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
 | `errors/220_eu_block_key` | user tests/harness/errors/220_eu_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
+| `errors/240_oaz72_32_set_of_datetime` | user tests/harness/errors/240_oaz72_32_set_of_datetime.eu:2:10 | user tests/harness/errors/240_oaz72_32_set_of_datetime.eu:2:10 | 1 (1 user) | 1 (1 user) |
 | `errors/error_173` | user tests/harness/errors/error_173.eu:10:9 | user tests/harness/errors/error_173.eu:10:9 | 1 (1 user) | 1 (1 user) |
 | `errors/error_176` | user tests/harness/errors/error_176.eu:19:32 | user tests/harness/errors/error_176.eu:19:32 | 1 (1 user) | 0 (0 user) |
 | `many-decls/huge_decls_type_warning` | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | 1 (1 user) | 1 (1 user) |

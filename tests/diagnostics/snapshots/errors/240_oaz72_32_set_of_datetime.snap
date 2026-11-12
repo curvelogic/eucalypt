@@ -1,0 +1,52 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/240_oaz72_32_set_of_datetime
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/240_oaz72_32_set_of_datetime.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/240_oaz72_32_set_of_datetime.eu:2:10
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected set, found datetime
+  ┌─ tests/harness/errors/240_oaz72_32_set_of_datetime.eu:2:10
+  │
+2 │ result: [t"2024-01-01T00:00:00Z"] set.of
+  │          ^^^^^^^^^^^^^^^^^^^^^^^  --- called from here
+  │
+  = while evaluating (outermost first):
+    - result at 240_oaz72_32_set_of_datetime.eu:2:35
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: EU-EVAL-TYPE
+primary: user tests/harness/errors/240_oaz72_32_set_of_datetime.eu:2:10
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error[EU-EVAL-TYPE]: type mismatch: expected set, found datetime
+  ┌─ tests/harness/errors/240_oaz72_32_set_of_datetime.eu:2:10
+  │
+2 │ result: [t"2024-01-01T00:00:00Z"] set.of
+  │          ^^^^^^^^^^^^^^^^^^^^^^^
+  │
+  = while evaluating (outermost first):
+    - result at 240_oaz72_32_set_of_datetime.eu:2:35

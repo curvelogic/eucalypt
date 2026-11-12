@@ -1,0 +1,2 @@
+# eu-oaz72.32: a function element in set.from-list raises the error set.add raises.
+result: [(_ + 1)] set.from-list
