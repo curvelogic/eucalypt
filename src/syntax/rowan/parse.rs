@@ -79,12 +79,20 @@ impl<'text> Parser<'text> {
     }
 
     /// Calculate the text range of the next token for when reporting errors.
+    ///
+    /// At end of input there is no next token, so the result is an empty
+    /// range at the end of the text (an unclosed bracket at end of file
+    /// reports its error there rather than indexing past the tokens).
     fn next_range(&self) -> TextRange {
+        let end = self.next_token.min(self.tokens.len());
         let mut ch: TextSize = 0.into();
-        for (_, s) in &self.tokens[0..self.next_token] {
+        for (_, s) in &self.tokens[0..end] {
             ch += TextSize::of(*s);
         }
-        TextRange::at(ch, TextSize::of(self.tokens[self.next_token].1))
+        match self.tokens.get(self.next_token) {
+            Some((_, s)) => TextRange::at(ch, TextSize::of(*s)),
+            None => TextRange::empty(ch),
+        }
     }
 
     /// Calculate a text range covering the last consumed token and the next token.
@@ -3012,5 +3020,28 @@ SOUP@0..8
             debug.contains("DECLARATION@"),
             "expected DECLARATION node for `good: 42`\ntree:\n{debug}"
         );
+    }
+
+    /// Regression (eu-oaz72.2): an unclosed unicode bracket at end of file
+    /// reported its error via `next_range`, which indexed past the token
+    /// vector and panicked.  It must report `UnclosedBracketExpr` with an
+    /// empty range at the end of the text instead.
+    #[test]
+    pub fn test_unclosed_unicode_bracket_at_eof() {
+        use super::ParseError;
+        use rowan::{TextRange, TextSize};
+
+        for text in ["«: 1", "x: «", "⟦", "x: 1 ⟦"] {
+            let parse = parse_unit(text);
+            let end = TextSize::of(text);
+            assert!(
+                parse.errors().iter().any(|e| matches!(
+                    e,
+                    ParseError::UnclosedBracketExpr { range } if *range == TextRange::empty(end)
+                )),
+                "expected UnclosedBracketExpr at end of {text:?}, got {:?}",
+                parse.errors()
+            );
+        }
     }
 }

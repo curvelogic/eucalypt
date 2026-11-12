@@ -319,6 +319,18 @@ mod tests {
         assert_eq!(diags[0].source.as_deref(), Some("eucalypt"));
     }
 
+    /// Regression (eu-oaz72.2): an unclosed unicode bracket at end of
+    /// file must produce a parse error diagnostic rather than panic.
+    #[test]
+    fn error_for_unclosed_unicode_bracket_at_eof() {
+        for source in ["«: 1", "x: «", "⟦", "x: 1 ⟦"] {
+            let parse = parse_unit(source);
+            let diags = diagnostics_from_parse_errors(source, parse.errors());
+            assert!(!diags.is_empty(), "no diagnostic for {source:?}");
+            assert_eq!(diags[0].severity, Some(DiagnosticSeverity::ERROR));
+        }
+    }
+
     #[test]
     fn error_for_empty_declaration_body() {
         let source = "x:\n";
