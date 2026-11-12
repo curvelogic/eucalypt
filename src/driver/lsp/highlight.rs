@@ -8,7 +8,7 @@ use crate::syntax::rowan::kind::{SyntaxKind, SyntaxNode};
 use lsp_types::{DocumentHighlight, DocumentHighlightKind, Position};
 
 use super::diagnostics::text_range_to_lsp_range;
-use super::selection::position_to_offset;
+use super::selection::position_to_tree_offset;
 
 /// Compute document highlights for the given cursor position.
 ///
@@ -20,7 +20,7 @@ pub fn document_highlights(
     root: &SyntaxNode,
     position: &Position,
 ) -> Vec<DocumentHighlight> {
-    let offset = position_to_offset(source, position);
+    let offset = position_to_tree_offset(source, root, position);
 
     // Try right-biased first so a cursor at the very start of a multi-byte
     // bracket character (token boundary) finds the bracket, not whitespace.
