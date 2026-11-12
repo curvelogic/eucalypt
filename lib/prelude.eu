@@ -1444,7 +1444,7 @@ nth(n, l): {
   aux(i, xs): if(xs nil?,
                  out-of-range(l count),
                  if(i zero?, xs head,
-                    if(n < 0, panic("index {n} out of range: list indices start at 0"),
+                    if((n number?) ∧ (n < 0), panic("index {n} out of range: list indices start at 0"),
                        aux(i dec, xs tail))))
 }.aux(n, l)
 
