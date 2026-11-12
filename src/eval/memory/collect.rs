@@ -463,6 +463,8 @@ fn collect_mark_in_place(
 
     // Defer sweep to allocation time (lazy sweeping)
     heap_view.defer_sweep();
+    // Large objects are freed eagerly: they have no line map to sweep
+    heap_view.heap.sweep_large_objects();
 
     // Post-sweep verification (level 2)
     if verify >= 2 {
@@ -661,6 +663,8 @@ pub fn collect_with_evacuation(
         let mut heap_view = CollectorHeapView { heap };
         heap_view.defer_sweep();
     }
+    // Large objects are freed eagerly: they have no line map to sweep
+    heap.sweep_large_objects();
 
     // Checkpoint 4 — Post-sweep
     if verify >= 2 {
@@ -886,6 +890,115 @@ pub mod tests {
                 .take(n)
                 .collect();
         view.array(ptrs.as_slice())
+    }
+
+    /// Allocate a `Many` whose pointer array is a large object: `n`
+    /// leaves numbered from `seed`, the array itself over `BLOCK_SIZE_BYTES`.
+    fn large_many(view: MutatorHeapView, seed: i64, n: usize) -> RefPtr<TestObj> {
+        let ptrs: Vec<RefPtr<TestObj>> = (0..n)
+            .map(|i| view.alloc(TestObj::Leaf(seed + i as i64)).unwrap().as_ptr())
+            .collect();
+        view.alloc(TestObj::Many(view.array(ptrs.as_slice())))
+            .unwrap()
+            .as_ptr()
+    }
+
+    /// Check a `large_many` object still holds leaves `seed..seed + n`.
+    fn assert_large_many_intact(obj: RefPtr<TestObj>, seed: i64, n: usize) {
+        match unsafe { &*obj.as_ptr() } {
+            TestObj::Many(arr) => {
+                assert_eq!(arr.len(), n, "large array length changed");
+                for (i, leaf) in arr.iter().enumerate() {
+                    match unsafe { &*leaf.as_ptr() } {
+                        TestObj::Leaf(v) => assert_eq!(*v, seed + i as i64),
+                        other => panic!("large array element {i} corrupted: {other:?}"),
+                    }
+                }
+            }
+            other => panic!("expected Many, got {other:?}"),
+        }
+    }
+
+    /// Large-object churn (eu-oaz72.55): each round allocates a large
+    /// array and drops the previous one. Collection must free the dead
+    /// large object blocks — before the fix `HeapState::lobs` only grew,
+    /// one block per round — and must keep the live one intact.
+    #[test]
+    pub fn test_large_object_churn_frees_blocks() {
+        // 5000 pointers: 40 000 bytes, a large object
+        const N: usize = 5000;
+        const ROUNDS: i64 = 40;
+
+        // Under a small heap limit, as `--heap-limit-mib 8`.
+        let mut heap = Heap::with_limit(8);
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+
+        let first = large_many(MutatorHeapView::new(&heap), 0, N);
+        assert_eq!(
+            heap.stats().lobs_allocated,
+            1,
+            "fixture must be a large object"
+        );
+        let mut roots = vec![first];
+
+        for round in 1..=ROUNDS {
+            let seed = round * 10_000;
+            roots[0] = large_many(MutatorHeapView::new(&heap), seed, N);
+            collect(&mut roots, &mut heap, &mut clock, false);
+            clock.switch(ThreadOccupation::Mutator);
+
+            // Only the rooted large object survives a collection.
+            assert_eq!(
+                heap.stats().lobs_allocated,
+                1,
+                "round {round}: dead large object blocks were not freed"
+            );
+            assert_large_many_intact(roots[0], seed, N);
+        }
+
+        // A collection with no roots frees the last one too.
+        roots.clear();
+        collect(&mut roots, &mut heap, &mut clock, false);
+        assert_eq!(heap.stats().lobs_allocated, 0);
+    }
+
+    /// A large object reachable only through another heap object stays
+    /// live across repeated collections (and evacuations of the bump
+    /// blocks around it), and marking it touches no line map (eu-y6fx).
+    #[test]
+    pub fn test_large_object_reachable_via_heap_survives() {
+        const N: usize = 5000;
+        let mut heap = Heap::new();
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+
+        let holder = {
+            let view = MutatorHeapView::new(&heap);
+            let inner = large_many(view, 7, N);
+            view.alloc(TestObj::Ptr(inner)).unwrap().as_ptr()
+        };
+        let mut roots = vec![holder];
+
+        for _ in 0..5 {
+            // Garbage around it, large and small
+            let _ = large_many(MutatorHeapView::new(&heap), -1, N);
+            let _ = leaf_array(MutatorHeapView::new(&heap), 1024);
+            collect(&mut roots, &mut heap, &mut clock, false);
+            clock.switch(ThreadOccupation::Mutator);
+            heap.flush_unswept();
+            let rest = heap.rest_block_count();
+            if rest > 0 {
+                let candidates: Vec<usize> = (2..2 + rest).collect();
+                collect_with_evacuation(&mut roots, &mut heap, &mut clock, &candidates, false);
+                clock.switch(ThreadOccupation::Mutator);
+            }
+            assert_eq!(heap.stats().lobs_allocated, 1);
+            match unsafe { &*roots[0].as_ptr() } {
+                TestObj::Ptr(inner) => assert_large_many_intact(*inner, 7, N),
+                other => panic!("expected Ptr, got {other:?}"),
+            }
+        }
     }
 
     #[test]

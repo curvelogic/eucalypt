@@ -49,13 +49,28 @@ pub(crate) fn verify_marked_object<T>(heap: &Heap, obj: NonNull<T>) {
     let length = header.length() as usize;
     let header_size = size_of::<AllocHeader>();
     assert!(
-        length > 0 && length <= BLOCK_SIZE_BYTES,
+        length > 0,
         "POST-MARK: object at {obj_addr:#x}: implausible alloc_length {length}",
     );
 
+    let heap_state = unsafe { heap.heap_state() };
+
+    // A large object lives alone at the start of a large object block
+    // and has no line map: its header mark is its liveness (eu-oaz72.55).
+    if Heap::alloc_size_of(header_size + length) >= BLOCK_SIZE_BYTES {
+        assert!(
+            heap_state
+                .all_lobs()
+                .iter()
+                .any(|lob| lob.space() as usize == header_addr),
+            "POST-MARK: large object at {obj_addr:#x} (length {length}) is not \
+             at the start of any large object block",
+        );
+        return;
+    }
+
     // Line consistency: verify all lines covering the full allocation
     // (header + payload) are marked in the block's line map.
-    let heap_state = unsafe { heap.heap_state() };
     let alloc_total = header_size + length;
 
     // Find which block this object is in
@@ -181,6 +196,19 @@ pub(crate) fn verify_post_update(heap: &Heap) {
 /// liveness.
 pub(crate) fn verify_post_sweep(heap: &Heap) {
     let heap_state = unsafe { heap.heap_state() };
+
+    // Every large object block that survived the sweep holds a marked
+    // object; an unmarked one is garbage the sweep missed (eu-oaz72.55).
+    let mark_state = heap.mark_state();
+    for lob in heap_state.all_lobs() {
+        let header = unsafe { &*(lob.space() as *const AllocHeader) };
+        assert!(
+            header.is_marked_with_state(mark_state),
+            "POST-SWEEP: large object block at {:#x} survived the sweep \
+             but its object is unmarked",
+            lob.space() as usize,
+        );
+    }
 
     // Block list disjointness: no block appears in multiple lists
     let lists = heap_state.block_lists_for_disjointness();
