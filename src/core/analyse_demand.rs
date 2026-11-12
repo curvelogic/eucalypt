@@ -844,11 +844,15 @@ impl DemandAnalyser {
 
     /// Analyse an `App` expression.
     fn analyse_app(&mut self, s: Smid, f: &RcExpr, args: &[RcExpr]) -> (RcExpr, DemandEnv) {
-        // Analyse the function. A lambda literal in function position is
-        // applied once here, so its captured variables keep their
-        // cardinality (see `analyse_lam_once`).
+        // Analyse the function. A lambda literal in function position that
+        // receives all its parameters is applied once here, so its captured
+        // variables keep their cardinality (see `analyse_lam_once`). A
+        // partial application returns a closure that may be called any
+        // number of times, so it takes the shared path.
         let (new_f, f_env) = match &*f.inner {
-            Expr::Lam(ls, inl, scope) => self.analyse_lam_once(*ls, *inl, scope),
+            Expr::Lam(ls, inl, scope) if args.len() >= scope.pattern.len() => {
+                self.analyse_lam_once(*ls, *inl, scope)
+            }
             _ => self.analyse_expr(f),
         };
         let mut env = f_env;
@@ -1468,6 +1472,41 @@ mod tests {
                     scope.pattern[0].demand.cardinality,
                     Cardinality::AtMostOnce,
                     "x captured by a lambda applied once in place — AtMostOnce"
+                );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn binding_captured_by_partially_applied_lambda_gets_multi() {
+        // let x = 1 in (\y z -> ADD(x, ADD(y, z)))(2)
+        // A partial application returns a closure that may be called any
+        // number of times, so x must be Multi.
+        let x = free("x");
+        let y = free("y");
+        let z = free("z");
+        let expr = let_(
+            vec![(x.clone(), num(1))],
+            app(
+                lam(
+                    vec!["y".to_string(), "z".to_string()],
+                    app(
+                        bif("ADD"),
+                        vec![var(x), app(bif("ADD"), vec![var(y), var(z)])],
+                    ),
+                ),
+                vec![num(2)],
+            ),
+        );
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(
+                    scope.pattern[0].demand.cardinality,
+                    Cardinality::Multi,
+                    "x captured by a partially applied lambda — must be Multi"
                 );
             }
             other => panic!("expected Let, got: {other:?}"),

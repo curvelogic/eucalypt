@@ -3288,7 +3288,7 @@ pub fn test_239_oaz72_40_constructor_sharing() {
 pub fn test_240_oaz72_41_lambda_capture_sharing() {
     let file = "240_oaz72_41_lambda_capture_sharing.eu";
     let fold = ticks_with_demand_analysis(file, "fold");
-    for target in ["let-bound", "returned"] {
+    for target in ["let-bound", "returned", "partial-app"] {
         let shared = ticks_with_demand_analysis(file, target);
         assert!(
             shared * 2 < fold * 3,

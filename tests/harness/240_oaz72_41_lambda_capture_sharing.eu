@@ -14,6 +14,7 @@ passes(context): (context.result.ok) then(:PASS, :FAIL)
 one(ds): { b: ds foldl(+, 0)  h(x): x + b }.(h(1))
 six(ds): { b: ds foldl(+, 0)  h(x): x + b }.(h(1) + h(2) + h(3) + h(4) + h(5) + h(6))
 adder(ds): { b: ds foldl(+, 0)  h(x): x + b }.(h)
+partial(ds): { b: ds foldl(+, 0) }.((_0 + _1 + b)(1))
 
 ` { target: :fold
     verify: [:passes] }
@@ -34,4 +35,12 @@ let-bound: {
 returned: {
   g: adder(range(0, 20000))
   ok: (g(1) + g(2) + g(3) + g(4) + g(5) + g(6)) = 1199940021
+}
+
+# A partially applied lambda called six times: one fold if b is shared.
+` { target: :partial-app
+    verify: [:passes] }
+partial-app: {
+  g: partial(range(0, 20000))
+  ok: (g(1) + g(2) + g(3) + g(4) + g(5) + g(6)) = 1199940027
 }
