@@ -1,0 +1,68 @@
+{
+  title: "236 lists built by foldr and filter keep their sharing"
+  doc: "eu-oaz72.36: a list built by `foldr` or `filter` must be computed once
+        and shared, however often it is traversed. Each target sums its list
+        eight times; the `shared` validator FAILs when the elements or the
+        spine are recomputed on every traversal."
+}
+
+# One evaluation of `slow` costs tens of thousands of ticks, so ten of them
+# dominate a target's tick count.
+slow(y): range(0, 2000) foldl(+, y)
+p?(y): slow(y) > 0
+
+# A cons-building function called by foldr: `CONS(slow(x), a)` compiles to a
+# constructor whose tail field lives in the caller's argument frame. Taking
+# such a value apart copied its unevaluated field thunks, so each traversal
+# recomputed them (engine: `env_from_data_args_copy`).
+f(x, a): cons(slow(x), a)
+
+# `filter` passes the recursive result to `{x: • xs: •}`, which stores it in
+# a cons. Demand analysis credited that parameter a single use, so the
+# argument was bound without an update and each traversal re-ran the
+# predicate (demand analysis: alias bindings).
+ws: range(0, 10) foldr(f, [])
+xs: range(0, 10) filter(p?)
+
+# The same through a user-defined fold and a lambda defined inside a function
+# body (the shape of the prelude's `filter`).
+my-fold(o, i, l): if(l nil?, i, o(l head, my-fold(o, i, l tail)))
+my-filter(q?, l): my-fold({x: • xs: •}.(if(x q?, cons(x, xs), xs)), [], l)
+ys: range(0, 10) my-filter(p?)
+
+eight(l): [l sum, l sum, l sum, l sum, l sum, l sum, l sum, l sum] sum
+
+# Ten shared evaluations of `slow` cost about 2.0M ticks; recomputing them on
+# every traversal costs about eight times that (about 16M). The budget sits
+# about three times above the shared cost and five below the unshared one.
+budget: 6000000
+
+` "the list is computed once however often it is traversed"
+shared(context): (context.stats.ticks < budget) then(:PASS, :FAIL)
+
+` "the traversals compute the right totals"
+values(context): {
+  r: context.result
+  checks: [r.sum = r.expected]
+}.(checks all-true? then(:PASS, :FAIL))
+
+` { target: :foldr-cons
+    verify: [:values, :shared] }
+foldr-cons: {
+  sum: eight(ws)
+  expected: 8 * (10 * 1999000 + 45)
+}
+
+` { target: :prelude-filter
+    verify: [:values, :shared] }
+prelude-filter: {
+  sum: eight(xs)
+  expected: 8 * 45
+}
+
+` { target: :lambda-filter
+    verify: [:values, :shared] }
+lambda-filter: {
+  sum: eight(ys)
+  expected: 8 * 45
+}

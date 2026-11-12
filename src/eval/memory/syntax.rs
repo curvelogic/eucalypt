@@ -13,7 +13,7 @@
 use crate::eval::error::ExecutionError;
 use chrono::{DateTime, FixedOffset};
 use serde_json::Number;
-use std::{collections::HashMap, fmt, ptr::NonNull, rc::Rc};
+use std::{fmt, ptr::NonNull};
 
 use super::alloc::{ScopedPtr, StgObject};
 use super::ndarray::HeapNdArray;
@@ -24,9 +24,6 @@ use super::vec::HeapVec;
 
 /// References between allocated objects use RefPtr
 pub type RefPtr<T> = NonNull<T>;
-
-/// Block index mapping interned symbol IDs to list positions.
-pub type BlockIndex = HashMap<SymbolId, usize>;
 
 /// Enum based primitive storage.
 #[derive(Clone, Debug)]
@@ -39,8 +36,6 @@ pub enum Native {
     Num(Number),
     /// A zoned datetime
     Zdt(DateTime<FixedOffset>),
-    /// A block index (cache, not semantic content)
-    Index(Rc<BlockIndex>),
     /// A set of primitive values
     Set(RefPtr<HeapSet>),
     /// An n-dimensional array of f64 values
@@ -60,8 +55,6 @@ impl PartialEq for Native {
             (Native::Str(a), Native::Str(b)) => a == b,
             (Native::Num(a), Native::Num(b)) => a == b,
             (Native::Zdt(a), Native::Zdt(b)) => a == b,
-            // Index is a cache — always equal to another Index
-            (Native::Index(_), Native::Index(_)) => true,
             (Native::Set(a), Native::Set(b)) => a == b,
             (Native::NdArray(a), Native::NdArray(b)) => a == b,
             (Native::Vec(a), Native::Vec(b)) => a == b,
@@ -82,7 +75,6 @@ impl Native {
             Native::Str(_) => "string",
             Native::Num(_) => "number",
             Native::Zdt(_) => "datetime",
-            Native::Index(_) => "block index",
             Native::Set(_) => "set",
             Native::NdArray(_) => "array",
             Native::Vec(_) => "vec",
@@ -108,9 +100,6 @@ impl fmt::Display for Native {
             }
             Native::Zdt(t) => {
                 write!(f, "☽{t}")
-            }
-            Native::Index(idx) => {
-                write!(f, "<index:{}>", idx.len())
             }
             Native::Set(_) => {
                 write!(f, "<set>")
