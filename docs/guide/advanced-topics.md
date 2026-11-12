@@ -150,7 +150,7 @@ Sets are unordered collections of unique values, provided by the
 ### Creating Sets
 
 ```sh
-eu -e '[1, 2, 2, 3, 3, 3] set.from-list set.to-list'
+eu -e '[1, 2, 2, 3, 3, 3] set.of set.to-list'
 ```
 
 ```yaml
@@ -159,7 +159,8 @@ eu -e '[1, 2, 2, 3, 3, 3] set.from-list set.to-list'
 - 3
 ```
 
-Duplicates are removed and elements are sorted.
+Duplicates are removed and elements are sorted. `set.from-list` is an
+alias of `set.of` — the same function, pairing with `set.to-list`.
 
 The empty set is written as `∅`:
 

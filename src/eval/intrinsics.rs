@@ -525,7 +525,7 @@ lazy_static! {
             strict: vec![],
     },
     Intrinsic { // 94
-            name: "SET.FROM_LIST",
+            name: "SET.OF",
             ty: function(vec![list(), unk()]).unwrap(),
             strict: vec![0],
     },

@@ -1978,9 +1978,13 @@ cal: {
     doc: "Functions for working with sets of primitive values (numbers, strings, symbols)." }
 set: {
 
-  ` { doc: "`set.from-list(xs)` - create a set from list `xs` of primitive values."
+  ` { doc: "`set.of(xs)` - create a set from list `xs` of primitive values, in one pass (duplicates removed)."
       type: s"[a] → any" }
-  from-list(xs): foldl({s: • e: •}.(s add(e)), ∅, xs)
+  of: '__SET.OF'
+
+  ` { doc: "`set.from-list(xs)` - alias of `set.of`: create a set from list `xs` of primitive values."
+      type: s"[a] → any" }
+  from-list: of
 
   ` { doc: "`set.to-list(s)` - return sorted list of elements in set `s`."
       type: s"any → [a]" }
@@ -2056,6 +2060,10 @@ vec: {
   ` { doc: "`vec.of(xs)` - convert list `xs` of primitive values to a vec for O(1) indexed access."
       type: s"[a] → any" }
   of: '__VEC.OF'
+
+  ` { doc: "`vec.from-list(xs)` - alias of `vec.of`: convert list `xs` of primitive values to a vec."
+      type: s"[a] → any" }
+  from-list: of
 
   ` { doc: "`vec.len(v)` - return the number of elements in vec `v`."
       type: s"vec → number" }
