@@ -3161,6 +3161,11 @@ pub fn test_250_dict() {
     run_test(&opts(file));
 }
 
+#[test]
+pub fn test_241_oaz72_32_set_vec_of() {
+    run_test(&opts("241_oaz72_32_set_vec_of.eu"));
+}
+
 /// Ticks reported by `-S` for one target of a harness file, run with demand
 /// analysis suppressed.
 fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
@@ -3583,6 +3588,26 @@ pub fn test_error_250_dict_value_cycle() {
 /// eu-oaz72.21: dict operations reject a value that is not a dict.
 pub fn test_error_250_dict_not_a_dict() {
     run_error_test(&error_opts("250_dict_not_a_dict.eu"));
+}
+
+#[test]
+/// eu-oaz72.32: a non-primitive element in set.of / set.from-list raises the
+/// typed "expected a primitive value" error with help, as set.add does.
+pub fn test_error_241_oaz72_32_set_of_non_primitive() {
+    run_error_test(&error_opts("241_oaz72_32_set_of_non_primitive.eu"));
+}
+
+#[test]
+/// eu-oaz72.32: a datetime element in set.of raises set.add's type mismatch,
+/// not "empty boxed value" from its unforced inner value.
+pub fn test_error_241_oaz72_32_set_of_datetime() {
+    run_error_test(&error_opts("241_oaz72_32_set_of_datetime.eu"));
+}
+
+#[test]
+/// eu-oaz72.32: a function element in set.from-list raises set.add's error.
+pub fn test_error_241_oaz72_32_set_of_function() {
+    run_error_test(&error_opts("241_oaz72_32_set_of_function.eu"));
 }
 
 #[test]

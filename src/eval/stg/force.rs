@@ -104,7 +104,7 @@ impl CallGlobal1 for SeqNumList {}
 ///
 /// Unlike `SeqNumList` / `SeqStrList`, this accepts all primitive
 /// types (numbers, strings, symbols).  Used by `VecOf` and
-/// `SetFromList` which need fully-evaluated elements before their
+/// `SetOf` which need fully-evaluated elements before their
 /// `execute()` methods navigate heap closures.
 ///
 /// Uses the same pattern as `SeqNumList`: force head, force inner

@@ -19,14 +19,16 @@ use crate::{
             syntax::{Native, Ref},
         },
         stg::tags::DataConstructor,
+        types::IntrinsicType,
     },
 };
 
 use super::{
     force::SeqList,
     support::{
-        data_list_arg, machine_return_bool, machine_return_num, machine_return_set,
-        native_to_set_primitive, resolve_native_unboxing, set_arg, set_primitive_to_native,
+        closure_native_unboxing, data_list_arg, machine_return_bool, machine_return_num,
+        machine_return_set, native_to_set_primitive, resolve_native_unboxing, set_arg,
+        set_primitive_to_native,
     },
     syntax::{
         dsl::{app_bif, case, force, lambda, local, lref},
@@ -94,12 +96,12 @@ impl StgIntrinsic for SetEmpty {
 
 impl CallGlobal0 for SetEmpty {}
 
-/// SET.FROM_LIST — convert a list of primitives to a set
-pub struct SetFromList;
+/// SET.OF — build a set from a list of primitives in one pass
+pub struct SetOf;
 
-impl StgIntrinsic for SetFromList {
+impl StgIntrinsic for SetOf {
     fn name(&self) -> &str {
-        "SET.FROM_LIST"
+        "SET.OF"
     }
 
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {
@@ -122,17 +124,24 @@ impl StgIntrinsic for SetFromList {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        // Each element is a bare native (Atom) or a boxed scalar (BoxedNumber
-        // / BoxedString / BoxedSymbol); `value_native` handles both.
+        // Resolve each element exactly as SET.ADD resolves its argument, so
+        // a non-primitive element raises the same error SET.ADD would.
         let items = data_list_arg(machine, view, args[0].clone())?;
-        let mut primitives = Vec::new();
+        let mut primitives = Vec::with_capacity(items.len());
         for item in &items {
-            let native = machine.value_native(view, item).ok_or_else(|| {
-                ExecutionError::Panic(
-                    Smid::default(),
-                    "non-primitive value in set construction".to_string(),
-                )
-            })?;
+            let native = match machine.value_native(view, item) {
+                Some(native) => native,
+                // The wrapper forces each element only to its box, so a
+                // datetime's inner value may still be a thunk. A datetime is
+                // never a set element: raise SET.ADD's type mismatch for it.
+                None if machine.data_tag(view, item) == Some(DataConstructor::BoxedZdt.tag()) => {
+                    return Err(ExecutionError::TypeMismatch(
+                        machine.annotation(),
+                        Box::new((IntrinsicType::Set, IntrinsicType::ZonedDateTime, None)),
+                    ))
+                }
+                None => closure_native_unboxing(machine, view, item)?,
+            };
             primitives.push(native_to_set_primitive(machine.annotation(), &native)?);
         }
         // One sort + dedup: O(n log n), not n repeated insertions.
@@ -141,7 +150,7 @@ impl StgIntrinsic for SetFromList {
     }
 }
 
-impl CallGlobal1 for SetFromList {}
+impl CallGlobal1 for SetOf {}
 
 /// SET.TO_LIST — convert a set to a sorted list of boxed values
 pub struct SetToList;

@@ -1029,7 +1029,7 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
 
         // Set operations
         "SET.EMPTY" => Some("set.empty"),
-        "SET.FROM_LIST" => Some("set.from-list"),
+        "SET.OF" => Some("set.of"),
         "SET.TO_LIST" => Some("set.to-list"),
         "SET.ADD" => Some("set.add"),
         "SET.REMOVE" => Some("set.remove"),

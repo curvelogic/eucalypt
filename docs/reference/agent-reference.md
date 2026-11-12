@@ -817,6 +817,20 @@ Patterns: bare `foo` = `**.foo`; `*` = one level; `**` = any depth.
 { a: 1 } dissoc([:a])                  # {}
 ```
 
+### 3.2a Sets and Vecs
+
+Build a collection from a list with `of`; `from-list` is an alias of it
+(the same function), pairing with `to-list`. Elements must be primitives
+(numbers, strings, symbols).
+
+```
+s: [3, 1, 3, 2] set.of           # set of 1, 2, 3 (alias: set.from-list)
+s set.to-list                    # [1, 2, 3] — sorted, duplicates removed
+2 ∈ s                            # true
+v: [10, 20, 30] vec.of           # O(1) indexed access (alias: vec.from-list)
+v vec.nth(1)                     # 20
+```
+
 ### 3.2b Dicts
 
 A dict is a persistent dictionary ordered by key, with O(log n) `get`,
