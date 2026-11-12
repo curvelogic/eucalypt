@@ -9,12 +9,18 @@
 //!
 //! ```text
 //! cargo xtask highlight-html [-o OUT] [--title TITLE] [--fragment] FILE.eu...
+//! cargo xtask highlight-html [-o OUT] --css
 //! ```
 //!
 //! Without `-o` the page is written to stdout. `--fragment` writes only the
-//! `<pre>` blocks (no page, no stylesheet), for embedding in other pages.
+//! `<pre>` blocks (no page, no stylesheet), for embedding in other pages;
+//! `--css` writes only the stylesheet, to go with them.
 
-use std::{fmt::Write as _, path::PathBuf};
+use std::{
+    fmt::Write as _,
+    io::{ErrorKind, Write as _},
+    path::PathBuf,
+};
 
 use anyhow::{bail, Context, Result};
 use tree_sitter_highlight::{HighlightConfiguration, Highlighter, HtmlRenderer};
@@ -51,6 +57,8 @@ const EMPHASIS: &[(&str, &str)] = &[
     ("comment", "font-style: italic;"),
     ("keyword", "font-weight: 600;"),
     ("function", "font-weight: 600;"),
+    // Calls inherit `ts-function`; only definitions are bold.
+    ("function.call", "font-weight: normal;"),
 ];
 
 /// A CSS class for a dotted highlight name: `string.escape` → `ts-string-escape`.
@@ -208,17 +216,28 @@ pub fn run(args: &mut impl Iterator<Item = String>) -> Result<()> {
     let mut out: Option<PathBuf> = None;
     let mut title: Option<String> = None;
     let mut fragment = false;
+    let mut css_only = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "-o" | "--output" => out = Some(args.next().context("-o needs a path")?.into()),
             "--title" => title = Some(args.next().context("--title needs a value")?),
             "--fragment" => fragment = true,
+            "--css" => css_only = true,
             flag if flag.starts_with('-') => bail!("unknown highlight-html option: {flag}"),
             file => files.push(PathBuf::from(file)),
         }
     }
+    if css_only {
+        if !files.is_empty() || fragment {
+            bail!("--css takes no files and cannot be combined with --fragment");
+        }
+        return emit(out, &stylesheet());
+    }
     if files.is_empty() {
-        bail!("usage: cargo xtask highlight-html [-o OUT] [--title T] [--fragment] FILE.eu...");
+        bail!(
+            "usage: cargo xtask highlight-html [-o OUT] [--title T] [--fragment] FILE.eu...\n       \
+             cargo xtask highlight-html [-o OUT] --css"
+        );
     }
 
     let highlighter = EuHighlighter::new()?;
@@ -234,13 +253,21 @@ pub fn run(args: &mut impl Iterator<Item = String>) -> Result<()> {
         let title = title.unwrap_or_else(|| blocks[0].0.clone());
         page(&title, &blocks)
     };
+    emit(out, &html)
+}
+
+/// Write `text` to `out`, or to stdout when `out` is `None`. A closed
+/// stdout (e.g. piping into `head`) ends the output quietly.
+fn emit(out: Option<PathBuf>, text: &str) -> Result<()> {
     match out {
         Some(path) => {
-            std::fs::write(&path, html).with_context(|| format!("writing {}", path.display()))?
+            std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))
         }
-        None => print!("{html}"),
+        None => match std::io::stdout().lock().write_all(text.as_bytes()) {
+            Err(e) if e.kind() == ErrorKind::BrokenPipe => Ok(()),
+            r => r.context("writing to stdout"),
+        },
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -272,6 +299,32 @@ mod tests {
         assert!(html.contains("<span class=\"ts-comment ts-comment-documentation\">"));
         assert!(html.contains("a&lt;b"));
         assert!(!html.contains("<b"), "unescaped source text in output");
+    }
+
+    #[test]
+    fn styles_namespaced_prelude_names_only() {
+        let h = EuHighlighter::new().unwrap();
+        let html = h
+            .render("a: set.of[1]\nb: vec.from-list(xs)\nc: arr.set(m, [0], 1)\nset: 1\n")
+            .unwrap();
+        assert!(html.contains("<span class=\"ts-keyword\">set</span>"));
+        assert!(html.contains("<span class=\"ts-keyword\">of</span>"));
+        assert!(html.contains("<span class=\"ts-keyword\">vec</span>"));
+        assert!(html.contains("<span class=\"ts-keyword\">from-list</span>"));
+        assert!(html.contains("<span class=\"ts-function ts-function-call\">set</span>"));
+        assert!(html.contains("<span class=\"ts-property\">set</span>"));
+        assert_eq!(
+            html.matches("<span class=\"ts-keyword\">set</span>")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn function_calls_are_not_bold() {
+        assert!(stylesheet().contains(
+            "pre.eu .ts-function-call { color: var(--eu-function-call); font-weight: normal; }"
+        ));
     }
 
     #[test]

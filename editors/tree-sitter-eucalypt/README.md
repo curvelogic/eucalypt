@@ -99,6 +99,7 @@ follows `prefers-color-scheme`; set `data-theme="light"` or
 - `--title TITLE` — the page title (default: the first file's path)
 - `--fragment` — write only the `<pre class="eu"><code>` blocks, without
   page or stylesheet, for embedding in another page
+- `--css` — write only the stylesheet (no files), to accompany fragments
 
 Several files may be given; each gets its own block under a heading.
 Spans carry one class per level of the capture name, so `@string.escape`
