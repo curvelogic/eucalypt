@@ -7,7 +7,7 @@ use crate::syntax::rowan::kind::{SyntaxKind, SyntaxNode, SyntaxToken};
 use lsp_types::{GotoDefinitionResponse, Location, Position};
 use rowan::TextSize;
 
-use super::selection::position_to_offset;
+use super::selection::position_to_tree_offset;
 use super::symbol_table::SymbolTable;
 
 /// Find the definition of the symbol at the given cursor position.
@@ -20,7 +20,7 @@ pub fn goto_definition(
     position: &Position,
     table: &SymbolTable,
 ) -> Option<GotoDefinitionResponse> {
-    let offset = position_to_offset(source, position);
+    let offset = position_to_tree_offset(source, root, position);
 
     // Check for bracket delimiter go-to-definition first.
     if let Some(result) = bracket_goto_definition(root, offset, table) {
