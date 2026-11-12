@@ -95,13 +95,32 @@ pub fn error_test_with_binary(
 
     match expectation.validate(actual_exit, &actual_stderr) {
         Ok(()) => {
-            println!("{}...PASS", path.display());
+            stdout_ok(writeln!(std::io::stdout(), "{}...PASS", path.display()))?;
             Ok(0)
         }
         Err(reason) => {
-            println!("{}...FAIL: {reason}", path.display());
+            stdout_ok(writeln!(
+                std::io::stdout(),
+                "{}...FAIL: {reason}",
+                path.display()
+            ))?;
             Ok(1)
         }
+    }
+}
+
+/// Pass on a stdout write failure, except a closed pipe.
+///
+/// When the reader of our output has gone (`eu test … | head`), the
+/// remaining progress lines have nowhere to go, but the suite must still
+/// run to completion and the exit code must still report its true verdict:
+/// a failing suite exits non-zero whether or not anyone is reading. So a
+/// broken pipe is dropped here rather than propagated, and any other write
+/// failure (a full disk) is still an error.
+fn stdout_ok(result: std::io::Result<()>) -> std::io::Result<()> {
+    match result {
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        other => other,
     }
 }
 
@@ -156,6 +175,9 @@ fn load_plan(
 pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, EucalyptError> {
     let tester = InProcessTester {};
     let mut exit: i32 = 0;
+    // Write rather than `print!`, which panics on a closed pipe
+    // (`eu test … | head`). See `stdout_ok`.
+    let mut stdout = std::io::stdout();
 
     for test in tests {
         let mut lib_path = opt.lib_path().to_vec();
@@ -171,13 +193,17 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
         // Failing here would incorrectly penalise CI environments that do
         // not enable shell execution by default.
         if test.requires_io() && !opt.allow_io() {
-            println!("{}...SKIP (requires --allow-io)", test.title());
+            stdout_ok(writeln!(
+                stdout,
+                "{}...SKIP (requires --allow-io)",
+                test.title()
+            ))?;
             continue;
         }
 
         test.prepare_directory()?;
 
-        print!("{}...", test.title());
+        stdout_ok(write!(stdout, "{}...", test.title()))?;
 
         let mut execution_opts = test_opts.clone();
         if !test.is_error_test() {
@@ -186,7 +212,7 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
         tester.run(test, &execution_opts)?;
         tester.validate(test)?;
         let summary = tester.summary(test)?.to_string();
-        print!("{summary}");
+        stdout_ok(write!(stdout, "{summary}"))?;
 
         if !summary.starts_with("PASS") {
             exit = 1;
@@ -194,7 +220,11 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
     }
 
     let report = tester.report(tests)?;
-    println!("Report generated at {}", report.to_string_lossy());
+    stdout_ok(writeln!(
+        stdout,
+        "Report generated at {}",
+        report.to_string_lossy()
+    ))?;
 
     if opt.open_browser() {
         let _ = report.to_str().and_then(|s| webbrowser::open(s).ok());
@@ -210,7 +240,11 @@ fn directory_plans(
     run_id: &str,
     dir: &Path,
 ) -> Result<Vec<TestPlan>, EucalyptError> {
-    println!("Gathering tests in {}", dir.display());
+    stdout_ok(writeln!(
+        std::io::stdout(),
+        "Gathering tests in {}",
+        dir.display()
+    ))?;
     let mut tests: Vec<_> = fs::read_dir(dir)?
         .filter_map(Result::ok)
         .filter(|f| {

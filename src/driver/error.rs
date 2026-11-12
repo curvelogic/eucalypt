@@ -67,6 +67,20 @@ where
 }
 
 impl EucalyptError {
+    /// Whether this error is the reader of our stdout having stopped
+    /// listening (EPIPE) — `eu … | head`, or quitting `less`.
+    ///
+    /// The CLI exits 0 silently on this, as it already does for a closed
+    /// pipe during rendering (eu-1tkk.7.25): the consumer has what it
+    /// wanted, so nothing went wrong.
+    pub fn is_broken_pipe(&self) -> bool {
+        match self {
+            EucalyptError::Io(e) => e.kind() == io::ErrorKind::BrokenPipe,
+            EucalyptError::Execution(e) => e.is_output_stream_closed(),
+            _ => false,
+        }
+    }
+
     /// Convert to a diagnostic
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
         match self {

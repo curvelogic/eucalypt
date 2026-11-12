@@ -83,6 +83,18 @@ fn stream_write_error(error: crate::export::error::RenderError) -> ExecutionErro
     }
 }
 
+/// Classify a write failure from an `eu dump` printing straight to stdout.
+///
+/// As for rendered output, a closed pipe (`eu dump stg … | head`) becomes
+/// `OutputStreamClosed` — a silent exit 0 — and anything else is reported.
+fn stdout_dump_error(error: std::io::Error) -> ExecutionError {
+    if error.kind() == std::io::ErrorKind::BrokenPipe {
+        ExecutionError::OutputStreamClosed
+    } else {
+        ExecutionError::OutputWriteFailed(Smid::default(), error.to_string())
+    }
+}
+
 /// Finish the output stream, folding any write failure into `result`.
 ///
 /// A write failure at `stream_end` must not be lost just because evaluation
@@ -454,7 +466,8 @@ impl<'a> Executor<'a> {
         }
 
         if opt.dump_runtime() {
-            println!("{}", prettify::prettify(rt.as_ref()));
+            writeln!(std::io::stdout(), "{}", prettify::prettify(rt.as_ref()))
+                .map_err(stdout_dump_error)?;
             Ok(None)
         } else {
             // Always compile in headless mode so that IO constructors can
@@ -508,11 +521,12 @@ impl<'a> Executor<'a> {
 
             if opt.dump_reflatten() {
                 if opt.quote_debug() {
-                    println!("{:#?}", self.evaluand);
+                    writeln!(std::io::stdout(), "{:#?}", self.evaluand)
                 } else {
                     let pretty = crate::common::prettify::prettify(&self.evaluand);
-                    println!("{pretty}");
+                    writeln!(std::io::stdout(), "{pretty}")
                 }
+                .map_err(stdout_dump_error)?;
                 return Ok(None);
             }
 
@@ -524,7 +538,8 @@ impl<'a> Executor<'a> {
             };
 
             if opt.dump_stg() {
-                println!("{}", prettify::prettify(&*syn));
+                writeln!(std::io::stdout(), "{}", prettify::prettify(&*syn))
+                    .map_err(stdout_dump_error)?;
                 Ok(None)
             } else {
                 // The bytecode engine (BV1). Compile headless (`syn` above is
