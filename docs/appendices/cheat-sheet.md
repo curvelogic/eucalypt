@@ -355,14 +355,14 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `foldl(f, init)` | Left fold |
 | `foldr(f, init)` | Right fold |
 | `sort-by(f)` | Sort by key function |
-| `take(n)` | First n elements |
+| `take(n)` | First n elements (`[]` if n <= 0) |
 | `drop(n)` | Remove first n |
 | `zip` | Pair elements from two lists |
 | `zip-with(f)` | Combine elements with function |
 | `concat` | Flatten nested lists one level (use `concat`, not `flatten` — does not exist) |
 | `reverse` | Reverse a list |
 | `count` | Number of elements |
-| `range(a, b)` | Integers from a to b-1 |
+| `range(a, b)` | Integers from a to b-1 (`[]` if b <= a) |
 | `nil?` | Is the list empty? |
 | `any(p?)` | Does any element match? |
 | `all(p?)` | Do all elements match? |
