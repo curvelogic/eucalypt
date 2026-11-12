@@ -12,7 +12,7 @@ use std::rc::Rc;
 
 use crate::common::sourcemap::Smid;
 use crate::core::binding::{CoreBinding, Scope, Var};
-use crate::core::demand::{Cardinality, Demand};
+use crate::core::demand::{Cardinality, Demand, Strictness};
 use crate::core::expr::*;
 use crate::eval::intrinsics;
 
@@ -296,6 +296,24 @@ fn unshift_env(env: &DemandEnv) -> DemandEnv {
         .collect()
 }
 
+/// Weaken every demand in an environment to lazy, keeping cardinality.
+///
+/// Used for the contents of a data constructor (block field, list
+/// element), which the constructor does not evaluate.
+fn lazy_env(env: DemandEnv) -> DemandEnv {
+    env.into_iter()
+        .map(|(k, d)| {
+            (
+                k,
+                Demand {
+                    strictness: Strictness::Lazy,
+                    ..d
+                },
+            )
+        })
+        .collect()
+}
+
 /// Merge two demand environments, combining demands for the same
 /// variable using `plus` (sequential composition).
 fn merge_envs(a: &DemandEnv, b: &DemandEnv) -> DemandEnv {
@@ -379,22 +397,30 @@ impl DemandAnalyser {
             }
 
             Expr::List(s, xs) => {
+                // A list constructor does not force its elements: each
+                // element's free-variable demands are lazy (eu-oaz72.40).
                 let mut env = DemandEnv::new();
                 let mut new_xs = Vec::with_capacity(xs.len());
                 for x in xs {
                     let (new_x, x_env) = self.analyse_expr(x);
-                    env = merge_envs(&env, &x_env);
+                    env = merge_envs(&env, &lazy_env(x_env));
                     new_xs.push(new_x);
                 }
                 (RcExpr::from(Expr::List(*s, new_xs)), env)
             }
 
             Expr::Block(s, block_map) => {
+                // A block constructor does not force its field values: a
+                // field is evaluated only when it is looked up or rendered,
+                // so each value's free-variable demands are lazy. Treating
+                // them as strict forced a binding used only by an
+                // unselected field, e.g. `{ b: ds max-of  a: 1 }.a`
+                // (eu-oaz72.40).
                 let mut env = DemandEnv::new();
                 let mut new_entries = Vec::new();
                 for (k, v) in block_map.iter() {
                     let (new_v, v_env) = self.analyse_expr(v);
-                    env = merge_envs(&env, &v_env);
+                    env = merge_envs(&env, &lazy_env(v_env));
                     new_entries.push((k.clone(), new_v));
                 }
                 (
@@ -836,7 +862,6 @@ fn print_demands_inner(expr: &RcExpr, depth: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::demand::Strictness;
     use crate::core::expr::acore::*;
 
     #[test]
@@ -1020,6 +1045,31 @@ mod tests {
                     Cardinality::Multi,
                     "x is used in body and sibling RHS — must be Multi"
                 );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn constructor_contents_are_lazy() {
+        // eu-oaz72.40:
+        //   let b = 1; c = 2 in { b: b, l: [c] }
+        // A block or list constructor does not evaluate its contents, so
+        // `b` and `c`, used only inside one, must be Lazy. Before the fix
+        // they were Strict and forced even when their field was unselected.
+        let b = free("b");
+        let c = free("c");
+        let body = block([
+            ("b".to_string(), var(b.clone())),
+            ("l".to_string(), list(vec![var(c.clone())])),
+        ]);
+        let expr = let_(vec![(b, num(1)), (c, num(2))], body);
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(scope.pattern[0].demand.strictness, Strictness::Lazy);
+                assert_eq!(scope.pattern[1].demand.strictness, Strictness::Lazy);
             }
             other => panic!("expected Let, got: {other:?}"),
         }

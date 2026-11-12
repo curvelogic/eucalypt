@@ -1,0 +1,31 @@
+# eu-oaz72.40: demand analysis forced a block binding used only by a
+# field that is never selected. A block (or list) constructor does not
+# evaluate its contents, but the analyser treated every field value's
+# free variables as strict, so in `{ b: ds max-of  a: 1 }.a` the binding
+# `b` was compiled strictly and `max-of` of an empty list was forced.
+#
+# Each check is in RESULT, so a regression fails `cargo test`.
+
+# The bead's repro: `b` feeds only the unselected field `b`.
+field(ds): { b: ds max-of  a: 1 }.a
+
+# `b` feeds an unselected field through a nested block.
+nested(ds): { b: ds max-of  n: { m: b }  a: 2 }.a
+
+# `b` sits in a list element that is never examined.
+listed(ds): { b: ds max-of  r: [b, 3] count }.r
+
+# A list literal directly in a function body.
+direct(ds): [ds max-of, 4] last
+
+# The selected field still forces its binding when demanded.
+selected(ds): { b: ds max-of  a: 1 }.b
+
+t1: field([]) = 1
+t2: nested([]) = 2
+t3: listed([]) = 2
+t4: direct([]) = 4
+t5: selected([1, 7, 2]) = 7
+t6: field([5]) = 1
+
+RESULT: if([t1, t2, t3, t4, t5, t6] all-true?, :PASS, :FAIL)

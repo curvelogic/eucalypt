@@ -3081,6 +3081,14 @@ pub fn test_232_oaz72_35_range_take_termination() {
     run_test(&opts("232_oaz72_35_range_take_termination.eu"));
 }
 
+/// eu-oaz72.40: demand analysis treated block field values and list
+/// elements as strict, forcing a binding used only by an unselected
+/// field. Each case is in RESULT.
+#[test]
+pub fn test_233_oaz72_40_block_body_demand() {
+    run_test(&opts("233_oaz72_40_block_body_demand.eu"));
+}
+
 #[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame
