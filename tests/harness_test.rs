@@ -3179,6 +3179,69 @@ pub fn test_235_oaz72_47_prelude_loops_inline_if() {
     run_test(&opts("235_oaz72_47_prelude_loops_inline_if.eu"));
 }
 
+/// Reformat `source` as `eu fmt --reformat` does and check the result
+/// parses and is a fixed point. Returns the reformatted text.
+fn reformat_round_trip(label: &str, source: &str) -> String {
+    use eucalypt::syntax::export::format::{format_source, FormatterConfig};
+    use eucalypt::syntax::rowan::parse_unit;
+
+    let config = FormatterConfig::new(80, 2, true);
+    let once =
+        format_source(source, &config).unwrap_or_else(|e| panic!("{label}: reformat failed: {e}"));
+    let errors = parse_unit(&once).errors().clone();
+    assert!(
+        errors.is_empty(),
+        "{label}: reformatted output does not parse: {errors:?}\n{once}"
+    );
+    let twice = format_source(&once, &config)
+        .unwrap_or_else(|e| panic!("{label}: second reformat failed: {e}"));
+    assert_eq!(once, twice, "{label}: reformat is not idempotent");
+    once
+}
+
+#[test]
+/// eu-oaz72.6: reformatting a file that opens with a unit docstring keeps it
+/// unit metadata (no backtick), and keeps block and declaration metadata.
+/// The file passes, its reformat parses and is a fixed point, and the
+/// reformatted copy passes too. LSP formatting shares this path; see
+/// `src/driver/lsp/formatting.rs` for its test on the same file.
+pub fn test_235_oaz72_6_fmt_leading_docstring() {
+    let name = "235_oaz72_6_fmt_leading_docstring.eu";
+    run_test(&opts(name));
+
+    let source = std::fs::read_to_string(format!("tests/harness/{name}")).unwrap();
+    let formatted = reformat_round_trip(name, &source);
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join(name);
+    std::fs::write(&path, formatted).unwrap();
+    let reformatted_opts = EucalyptOptions::default()
+        .with_explicit_inputs(vec![Input::from_str(path.to_str().unwrap()).unwrap()])
+        .build();
+    run_test(&reformatted_opts);
+}
+
+#[test]
+/// eu-oaz72.6: every shipped library and AoC 2025 example reformats to
+/// source that parses and reformats to itself.
+pub fn test_235_oaz72_6_reformat_corpus_round_trip() {
+    let mut files: Vec<PathBuf> = ["lib", "examples/aoc25"]
+        .iter()
+        .flat_map(|dir| std::fs::read_dir(dir).unwrap())
+        .map(|entry| entry.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "eu"))
+        .collect();
+    files.sort();
+    assert!(
+        files.len() >= 20,
+        "expected the lib and aoc25 corpus, got {files:?}"
+    );
+    for file in files {
+        let source = std::fs::read_to_string(&file).unwrap();
+        reformat_round_trip(&file.display().to_string(), &source);
+    }
+}
+
 /// eu-oaz72.4: collection runs on allocation volume, not only at the heap
 /// limit. The fixture allocates far past the 32 MiB minimum trigger with
 /// little live data and checks that data live across the collections
