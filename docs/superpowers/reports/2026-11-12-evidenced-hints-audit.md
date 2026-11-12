@@ -42,7 +42,7 @@ or keyed on the exact name or key the user wrote).
 | `format_cannot_return_fun` | "this often happens due to operator precedence" (headline) | X; G catenation note for `CannotReturnFunToCase` |
 | `CannotReturnFunToCase` bool | "'_' anaphora … two-argument function" | G: `_` on the label's line |
 | `type_mismatch_notes` / `data_tag_mismatch_notes` | "to concatenate strings/lists … instead of '+'" | G: `+` on the line |
-| `data_tag_mismatch_notes` | "'str' is a namespace … not a type conversion function" | G: `str(` called on the line |
+| `data_tag_mismatch_notes` | "'str' is a namespace … not a type conversion function" | G: bare `str` (not `str.…`) on the line, as in `str(x)` or `x str` |
 | `type_mismatch_notes` / `data_tag_mismatch_notes` / `BadNumberFormat` | "use 'str' to convert a number to a string" | R: `str.of` (`str` is a namespace) |
 | `NoBranchForNative` string | "if you called 'head' or 'tail' on an empty list …" + `nil?` guard | G: `head`/`tail` on the line |
 | `NoBranchForNative` string | "'++' is for list append" | G: `++` on the line |

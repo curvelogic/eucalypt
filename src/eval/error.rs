@@ -400,7 +400,7 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8], ev: &Evidence) -> Vec<St
              e.g. 'x abs' or 'x negate' instead of 'x.abs'"
                 .to_string(),
         ];
-        if ev.has_call("str") {
+        if ev.uses_bare("str") {
             notes.push(
                 "note: 'str' is a namespace of string functions, not a type conversion function; \
                  to convert a number to a string use 'str.of(x)' or string interpolation"
@@ -417,7 +417,7 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8], ev: &Evidence) -> Vec<St
              e.g. 'x str.to-upper' or 'str.to-lower(x)' instead of 'x.upper'"
                 .to_string(),
         ];
-        if ev.has_call("str") {
+        if ev.uses_bare("str") {
             notes.push(
                 "note: 'str' is a namespace of string functions, not a type conversion function; \
                  use 'str.of(x)' or string interpolation to convert values to strings"
@@ -710,10 +710,14 @@ impl Evidence<'_> {
         self.0.as_ref().is_some_and(|s| s.line_has_word(word))
     }
 
-    /// The labelled line calls `name` with parentheses, as in `str(x)`.
-    fn has_call(&self, name: &str) -> bool {
+    /// The labelled line uses `name` bare — as a whole identifier not
+    /// followed by `.` — as in `str(x)` or `x str`, but not `str.of`.
+    fn uses_bare(&self, name: &str) -> bool {
         self.0.as_ref().is_some_and(|s| {
-            evidence::has_word(s.line, name) && s.line.contains(&format!("{name}("))
+            let ident = |c: char| c.is_alphanumeric() || "-_?!$'*.".contains(c);
+            s.line.match_indices(name).any(|(i, _)| {
+                !s.line[..i].ends_with(ident) && !s.line[i + name.len()..].starts_with(ident)
+            })
         })
     }
 
