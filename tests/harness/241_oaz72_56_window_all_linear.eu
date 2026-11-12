@@ -24,34 +24,33 @@ semantics: {
   w-exact: ([1, 2, 3, 4, 5] window(2, 2)) = [[1, 2], [3, 4]]
 }
 
-# Laziness: the old window-all counted the whole remaining list before
-# yielding each window, so on an infinite list it never returned. A long
-# finite list stands in for an infinite one here, so a regression FAILs on
-# the tick budget instead of hanging: taking three windows must cost
-# nothing like the length of the list.
+` "A long finite list standing in for an infinite one, so a regression FAILs on the tick budget instead of hanging."
 long: range(0, 1000000)
 
 ` "taking a few windows does not walk the list"
 few-ticks(context): (context.stats.ticks < 100000) then(:PASS, :FAIL)
 
 ` { target: :lazy
-    verify: [:passes, :few-ticks] }
+    verify: [:passes, :few-ticks]
+    doc: "The old `window-all` counted the whole remaining list before
+          yielding each window, so on an infinite list it never returned.
+          Taking a few windows must cost nothing like the length of the list." }
 lazy: {
   wa: (long window-all(2, 1) take(3)) = [[0, 1], [1, 2], [2, 3]]
   pa: (long partition-all(3) take(2)) = [[0, 1, 2], [3, 4, 5]]
   w: (long window(2, 3) take(2)) = [[0, 1], [3, 4]]
 }
 
-# Linear cost: one count per window over the remaining list made this
-# quadratic. The budget is per element, generous for the linear version
-# and far below the quadratic one at this n.
+` "List length for the cost target: the linear version is far inside the budget, the quadratic one far outside it."
 n: 4000
 
 ` "the cost is linear in the length of the list"
 linear-cost(context): (context.stats.ticks < 1000 * n) then(:PASS, :FAIL)
 
 ` { target: :cost
-    verify: [:passes, :linear-cost] }
+    verify: [:passes, :linear-cost]
+    doc: "One `count` per window over the remaining list made `window-all`
+          quadratic; the tick budget is per element." }
 cost: {
   pa: (range(0, n) partition-all(2) count) = n / 2
   wa: (range(0, n) window-all(2, 1) count) = n
