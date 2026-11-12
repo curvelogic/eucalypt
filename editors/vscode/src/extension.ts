@@ -13,6 +13,25 @@ import {
   LanguageClientOptions,
   ServerOptions,
 } from "vscode-languageclient/node";
+import { Minimatch } from "minimatch";
+
+// minimatch is forced to >=11.0.1 by the `overrides` entry in package.json
+// (GHSA-g3hv-75wg-m249). minimatch 11 removed `Minimatch#makeRe`, which
+// vscode-languageclient 9.x still calls, only for its truthiness, to reject
+// invalid glob patterns from the server (file operation filters, pull
+// diagnostic and notebook document selectors). Without it those paths throw a
+// TypeError. Restore the check: minimatch 5.x's `makeRe` returned false
+// exactly when the pattern compiled to an empty set (a comment or an empty
+// pattern) and a truthy value otherwise. Remove this once a released
+// vscode-languageclient works with a patched minimatch.
+const minimatchProto = Minimatch.prototype as unknown as {
+  makeRe?: () => boolean;
+};
+if (typeof minimatchProto.makeRe !== "function") {
+  minimatchProto.makeRe = function (this: Minimatch): boolean {
+    return this.set.length > 0;
+  };
+}
 
 let client: LanguageClient | undefined;
 
