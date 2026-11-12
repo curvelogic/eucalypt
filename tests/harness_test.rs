@@ -3091,6 +3091,14 @@ pub fn test_234_oaz72_5_native_storage_gc() {
     run_test(&opts("234_oaz72_5_native_storage_gc.eu"));
 }
 
+/// eu-oaz72.55 — large-object churn computes correctly and a large object
+/// live across the churn survives; `tests/large_object_churn_test.rs`
+/// gates that the dead ones are freed.
+#[test]
+pub fn test_238_oaz72_55_large_object_churn() {
+    run_test(&opts("238_oaz72_55_large_object_churn.eu"));
+}
+
 /// eu-oaz72.35 — `take(n)` with n <= 0 is [] (it used to run past zero on
 /// a negative count), so `range(b, e)` with e <= b is [] instead of hanging.
 #[test]
@@ -3228,6 +3236,16 @@ pub fn test_233_oaz72_43_negative_counts() {
     run_test(&opts("233_oaz72_43_negative_counts.eu"));
 }
 
+/// eu-oaz72.47: the pre-compiled prelude resolves intrinsic aliases in each
+/// binding body, so `foldl` and the loops built on it branch on an inlined
+/// case rather than calling the global `if`. The per-element tick budgets
+/// FAIL against a blob compiled without it (blob mode only; source mode
+/// inlined these already).
+#[test]
+pub fn test_235_oaz72_47_prelude_loops_inline_if() {
+    run_test(&opts("235_oaz72_47_prelude_loops_inline_if.eu"));
+}
+
 /// Reformat `source` as `eu fmt --reformat` does and check the result
 /// parses and is a fixed point. Returns the reformatted text.
 fn reformat_round_trip(label: &str, source: &str) -> String {
@@ -3329,6 +3347,24 @@ pub fn test_239_oaz72_40_constructor_sharing() {
             shared * 2 < fold * 3,
             "target {target}: three reads cost {shared} ticks against {fold} for one \
              fold: the binding is recomputed on each read (eu-oaz72.40)"
+        );
+    }
+    run_test(&opts(file));
+}
+
+/// eu-oaz72.41 — a binding captured by a lambda was left AtMostOnce, so its
+/// update was elided and every call of the lambda recomputed it. With
+/// demand analysis on, six calls must cost about one fold.
+#[test]
+pub fn test_240_oaz72_41_lambda_capture_sharing() {
+    let file = "240_oaz72_41_lambda_capture_sharing.eu";
+    let fold = ticks_with_demand_analysis(file, "fold");
+    for target in ["let-bound", "returned", "partial-app"] {
+        let shared = ticks_with_demand_analysis(file, target);
+        assert!(
+            shared * 2 < fold * 3,
+            "target {target}: six calls cost {shared} ticks against {fold} for one \
+             fold: the captured binding is recomputed on each call (eu-oaz72.41)"
         );
     }
     run_test(&opts(file));
