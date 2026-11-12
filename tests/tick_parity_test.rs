@@ -112,11 +112,24 @@ fn eu_binary() -> &'static Path {
 /// Run the tick-parity fixture and return `machine_ticks` from the
 /// `--statistics-file` JSON output.
 fn run_ticks(source_prelude: bool, stats_path: &Path) -> u64 {
+    run_fixture_ticks(
+        "tick-parity-fib",
+        "tests/fixtures/tick_parity_fib.eu",
+        source_prelude,
+        stats_path,
+    )
+}
+
+/// Run `target` in `fixture` and return `machine_ticks` from the
+/// `--statistics-file` JSON output.
+fn run_fixture_ticks(target: &str, fixture: &str, source_prelude: bool, stats_path: &Path) -> u64 {
     let mut cmd = std::process::Command::new(eu_binary());
-    cmd.args(["run", "-t", "tick-parity-fib", "--statistics-file"])
+    cmd.args(["run", "-t", target, "--statistics-file"])
         .arg(stats_path)
         .args(["--heap-limit-mib", "2048"])
-        .arg("tests/fixtures/tick_parity_fib.eu");
+        .arg(fixture);
+    // Keep any `par-*` work sequential so tick counts are comparable.
+    cmd.env("EU_PP_THRESHOLD", "999999999");
     if source_prelude {
         cmd.arg("--source-prelude");
     }
@@ -180,5 +193,33 @@ fn source_prelude_tick_parity_tripwire() {
          blob, default and --source-prelude use the identical code path and this assertion \
          should be trivially satisfied — a failure here with no blob present points at a \
          different regression, not the (closed) historical handicap."
+    );
+}
+
+/// Regression tripwire for the opposite direction: prelude loops in blob
+/// mode must not cost much more than in source mode (eu-oaz72.47).
+///
+/// The blob used to compile each prelude binding without resolving its
+/// intrinsic aliases, so `foldl` and the loops built on it called the global
+/// `if` with thunked branches: ~1.73x the source-mode ticks on this fixture.
+/// Resolved, the ratio is ~1.36 (2026-11-12; ticks are deterministic); most
+/// of the remainder is source mode unrolling `foldl` into itself a few
+/// levels. Vacuous without an embedded blob, like the test above.
+const MAX_BLOB_PRELUDE_LOOP_RATIO: f64 = 1.5;
+
+#[test]
+fn blob_prelude_loop_tick_tripwire() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let fixture = "tests/fixtures/tick_parity_prelude_loops.eu";
+    let target = "tick-parity-prelude-loops";
+    let blob_ticks = run_fixture_ticks(target, fixture, false, &dir.path().join("blob.json"));
+    let source_ticks = run_fixture_ticks(target, fixture, true, &dir.path().join("source.json"));
+    let ratio = blob_ticks as f64 / source_ticks as f64;
+    assert!(
+        ratio <= MAX_BLOB_PRELUDE_LOOP_RATIO,
+        "blob-mode prelude loops cost {ratio:.3}x their source-mode ticks \
+         (default={blob_ticks}, --source-prelude={source_ticks}, cap \
+         {MAX_BLOB_PRELUDE_LOOP_RATIO}): has the blob stopped resolving \
+         intrinsic aliases in prelude bindings (eu-oaz72.47)?"
     );
 }

@@ -3091,6 +3091,16 @@ pub fn test_233_oaz72_34_constant_stack_loops() {
     run_test(&opts("233_oaz72_34_constant_stack_loops.eu"));
 }
 
+/// eu-oaz72.47: the pre-compiled prelude resolves intrinsic aliases in each
+/// binding body, so `foldl` and the loops built on it branch on an inlined
+/// case rather than calling the global `if`. The per-element tick budgets
+/// FAIL against a blob compiled without it (blob mode only; source mode
+/// inlined these already).
+#[test]
+pub fn test_234_oaz72_47_prelude_loops_inline_if() {
+    run_test(&opts("234_oaz72_47_prelude_loops_inline_if.eu"));
+}
+
 #[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame

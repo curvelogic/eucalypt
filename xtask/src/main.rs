@@ -30,9 +30,14 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 use eucalypt::{
+    common::sourcemap::HasSmid,
     core::{
-        expr::{open_let_scope_full, Expr, RcExpr},
-        inline::tag::{all_free_vars_in_set_with_self, tag_combinators_named},
+        expr::{close_let_scope, open_let_scope_full, Expr, LetType, RcExpr},
+        inline::{
+            reduce,
+            tag::{all_free_vars_in_set_with_self, tag_combinators_named},
+        },
+        transform::fuse,
         typecheck::check::type_check,
     },
     driver::source::SourceLoader,
@@ -183,6 +188,9 @@ fn cmd_prelude_compile() -> Result<()> {
     // ~295 prelude top-level bindings to only a handful in the compiled STG.
     // Preserving all Let bindings here ensures the blob has one LambdaForm
     // per prelude name, which Phase 5 loads into global slots INTRINSIC_COUNT+i.
+    // Intrinsic aliases are inlined into each binding body on its own
+    // instead, just before its STG compile (`inline_intrinsic_aliases`,
+    // eu-oaz72.47).
     loader.fuse_destructure().context("fuse_destructure")?;
     // No eliminate — every prelude binding must be retained in the blob.
 
@@ -378,7 +386,9 @@ fn cmd_prelude_compile() -> Result<()> {
     let stg_settings = eucalypt::eval::stg::StgSettings {
         generate_annotations: false,
         suppress_updates: false,
-        suppress_inlining: true,
+        // Inline intrinsic wrappers, as user and source-mode code compile
+        // (eu-oaz72.47): the `IF` the inline pass leaves becomes a case.
+        suppress_inlining: false,
         suppress_optimiser: false,
         render_type: eucalypt::eval::stg::RenderType::Headless,
         // Resolve Var::Free references to prelude names as Ref::G.
@@ -388,6 +398,12 @@ fn cmd_prelude_compile() -> Result<()> {
 
     let mut forms: Vec<LambdaForm> = Vec::with_capacity(binding_bodies.len());
     for (name, body) in &binding_bodies {
+        // Resolve intrinsic aliases in this binding (eu-oaz72.47), as source
+        // mode's whole-prelude inline pass does. Without this, `foldl` and
+        // the other prelude loops call the global `if` with thunked branches
+        // instead of branching on an inlined case.
+        let body = &inline_intrinsic_aliases(name, body, &inlinable_bindings)
+            .with_context(|| format!("inline intrinsic aliases into '{name}'"))?;
         // Compile with the binding's own name as the self-recursion context
         // (eu-e3c3i). After peeling, a binding's recursive self-reference is
         // `Var::Free(<own name>)` — invisible to demand analysis, which can
@@ -608,6 +624,47 @@ fn peel_meta(expr: &RcExpr) -> &RcExpr {
         Expr::Meta(_, inner, _) => peel_meta(inner),
         _ => expr,
     }
+}
+
+/// Run the core inline pass over one peeled prelude binding body with the
+/// prelude's intrinsic aliases (`if: __IF`, `nil?`, `head`, `=`, ...) in
+/// scope, so a call through an alias becomes a call of the intrinsic itself
+/// (eu-oaz72.47). With `suppress_inlining` off, the STG compiler then
+/// inlines the intrinsic's wrapper: `IF` becomes a case on the condition
+/// instead of a call to the global `if` with both branches thunked.
+///
+/// Only the bare aliases (round 0 of the inlinable set) are bound, not the
+/// combinator lambdas built on them. Inlining those as well (`//=`, `nth`,
+/// ...) moves an assertion's blob-mode primary location away from the
+/// source-mode one, the hazard noted at `intrinsic_aliases` above.
+///
+/// The aliases are bound in a `Let` around the body, which `inline_pass`
+/// distributes to call sites; `fuse` then folds the static destructures this
+/// exposes, as source mode's `fuse_destructure` does. The `Let` is opened
+/// again afterwards, so an alias left in a value position goes back to
+/// `Var::Free` and compiles to its global slot, as before.
+fn inline_intrinsic_aliases(
+    name: &str,
+    body: &RcExpr,
+    inlinable_bindings: &[(String, RcExpr)],
+) -> Result<RcExpr> {
+    let aliases: Vec<(String, RcExpr)> = inlinable_bindings
+        .iter()
+        .filter(|(n, b)| n != name && matches!(&*b.inner, Expr::Intrinsic(_, _)))
+        .cloned()
+        .collect();
+    let tagged = tag_combinators_named(body, Some(name))?;
+    let wrapped = RcExpr::from(Expr::Let(
+        tagged.smid(),
+        close_let_scope(aliases, tagged),
+        LetType::OtherLet,
+    ));
+    let inlined = reduce::inline_pass(&wrapped)?;
+    let Expr::Let(_, scope, _) = &*inlined.inner else {
+        bail!("inline pass did not preserve the alias scope");
+    };
+    let (_, opened) = open_let_scope_full(scope);
+    Ok(fuse::fuse(&opened)?)
 }
 
 /// Peel all top-level `Let` scopes from the merged prelude core expression,
