@@ -7,7 +7,8 @@
 # Fixed: a step that is not positive is an error for both, and so is a
 # size that is not positive for `window`
 # (tests/harness/errors/235_oaz72_49_*.eu). `window-all` with size <= 0
-# already gave [] and still does. Positive arguments behave as before,
+# already gave [] (whatever the step) and still does, so `partition-all(n)`
+# with n <= 0 is still []. Positive arguments behave as before,
 # including `window` on infinite lists (bounded by `take`).
 
 checks: {
@@ -24,6 +25,10 @@ checks: {
   partition-all-ok: ([1, 2, 3] partition-all(2)) = [[1, 2], [3]]
   window-all-size-zero: ([1, 2, 3] window-all(0, 1)) nil?
   window-all-size-negative: ([1, 2, 3] window-all(-1, 1)) nil?
+  window-all-size-zero-step-zero: ([1, 2, 3] window-all(0, 0)) nil?
+  window-all-size-negative-step-zero: ([1, 2, 3] window-all(-1, 0)) nil?
+  partition-all-zero: ([1, 2, 3] partition-all(0)) nil?
+  partition-all-negative: ([1, 2, 3] partition-all(-2)) nil?
 }
 
 RESULT: if(checks values all-true?, :PASS, :FAIL)
