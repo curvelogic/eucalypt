@@ -611,10 +611,25 @@ impl DemandAnalyser {
             let binding_demand = demands[i];
 
             // Propagate the RHS's outward demands for non-absent bindings.
+            //
+            // Strictness is scaled by the demand on the binding itself:
+            // the RHS is only evaluated when the binding is, so a free
+            // variable it forces is strict outside only if the binding is
+            // strict (eu-oaz72.1). Without this, a binding needed only in
+            // an untaken branch made its RHS's free variables strict, and
+            // they were forced eagerly. Cardinality is left as the RHS's
+            // own: an updated thunk evaluates its RHS at most once however
+            // often the binding is demanded.
             if binding_demand.cardinality != Cardinality::Absent
                 && binding_demand.cardinality != Cardinality::Unknown
             {
-                let shifted = unshift_env(&rhs_envs[i]);
+                let shifted: DemandEnv = unshift_env(&rhs_envs[i])
+                    .into_iter()
+                    .map(|(k, d)| {
+                        let strictness = d.scale(binding_demand).strictness;
+                        (k, Demand { strictness, ..d })
+                    })
+                    .collect();
                 outer_env = merge_envs(&outer_env, &shifted);
             }
 
@@ -1005,6 +1020,37 @@ mod tests {
                     Cardinality::Multi,
                     "x is used in body and sibling RHS — must be Multi"
                 );
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lazy_binding_rhs_does_not_make_outer_free_variable_strict() {
+        // eu-oaz72.1:
+        //   let b = 1; cond = 0 in (let a = ADD(b, 1) in IF(cond, 0, a))
+        // `a` is needed only in an IF branch, so it is lazy, and `b` —
+        // used only by `a`'s RHS — must be lazy too. Before the fix the
+        // inner Let propagated `a`'s RHS demands outward unscaled, so `b`
+        // was marked strict and forced even when that branch is untaken.
+        let b = free("b");
+        let cond = free("cond");
+        let a = free("a");
+        let inner = let_(
+            vec![(a.clone(), app(bif("ADD"), vec![var(b.clone()), num(1)]))],
+            app(bif("IF"), vec![var(cond.clone()), num(0), var(a)]),
+        );
+        let expr = let_(vec![(b, num(1)), (cond, num(0))], inner);
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(
+                    scope.pattern[0].demand.strictness,
+                    Strictness::Lazy,
+                    "b is needed only through the lazy binding a — must be Lazy"
+                );
+                assert_eq!(scope.pattern[1].demand.strictness, Strictness::Strict);
             }
             other => panic!("expected Let, got: {other:?}"),
         }
