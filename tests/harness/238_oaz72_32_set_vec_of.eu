@@ -39,6 +39,8 @@ t15: (v vec.len) = 3
 t16: [v vec.nth(0), v vec.nth(1), v vec.nth(2)] = [10, 20, 30]
 t17: ([] vec.from-list vec.len) = 0
 ys: ["a", :b, 1, 2.5]
-t18: (ys vec.from-list vec.nth(0)) = (ys vec.of vec.nth(0))
+vec-at(v, i): v vec.nth(i)
+elems(v): range(0, v vec.len) map(vec-at(v))
+t18: elems(ys vec.from-list) = elems(ys vec.of)
 
 RESULT: if([t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18] all-true?, :PASS, :FAIL)

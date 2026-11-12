@@ -3430,6 +3430,13 @@ pub fn test_error_235_oaz72_49_window_step_zero() {
 }
 
 #[test]
+/// eu-oaz72.32: a non-primitive element in set.of / set.from-list raises the
+/// typed "expected a primitive value" error with help, as set.add does.
+pub fn test_error_238_oaz72_32_set_of_non_primitive() {
+    run_error_test(&error_opts("238_oaz72_32_set_of_non_primitive.eu"));
+}
+
+#[test]
 /// eu-oaz72.49: a negative step to window is an error rather than a hang.
 pub fn test_error_235_oaz72_49_window_step_negative() {
     run_error_test(&error_opts("235_oaz72_49_window_step_negative.eu"));

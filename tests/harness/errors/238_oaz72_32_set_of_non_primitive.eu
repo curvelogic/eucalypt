@@ -1,0 +1,3 @@
+# eu-oaz72.32: a non-primitive element in set.of / set.from-list raises the
+# same typed error set.add does, not a bare panic.
+result: [1, [2]] set.from-list

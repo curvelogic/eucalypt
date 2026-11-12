@@ -122,16 +122,16 @@ impl StgIntrinsic for SetOf {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        // Each element is a bare native (Atom) or a boxed scalar (BoxedNumber
-        // / BoxedString / BoxedSymbol); `value_native` handles both.
-        let smid = machine.annotation();
+        // Each element is a bare native (Atom) or a boxed scalar, which
+        // `value_native` reads. Anything else raises the same typed NotValue
+        // error SET.ADD raises for a non-primitive element.
         let items = data_list_arg(machine, view, args[0].clone())?;
         let mut primitives = Vec::with_capacity(items.len());
         for item in &items {
             let native = machine.value_native(view, item).ok_or_else(|| {
-                ExecutionError::Panic(smid, "non-primitive value in set construction".to_string())
+                ExecutionError::NotValue(machine.annotation(), "non-boxed constructor".to_string())
             })?;
-            primitives.push(native_to_set_primitive(smid, &native)?);
+            primitives.push(native_to_set_primitive(machine.annotation(), &native)?);
         }
         // One sort + dedup: O(n log n), not n repeated insertions.
         let sorted = sort_dedup(&view, primitives);
