@@ -307,17 +307,26 @@ fn root_block(expr: &RcExpr) -> Option<usize> {
     }
 }
 
-/// Weaken every demand in an environment to lazy, keeping cardinality.
+/// The demand a data constructor (block field, list element) places on
+/// the free variables of its contents.
 ///
-/// Used for the contents of a data constructor (block field, list
-/// element), which the constructor does not evaluate.
-fn lazy_env(env: DemandEnv) -> DemandEnv {
+/// The constructor does not evaluate its contents, so every demand is
+/// weakened to lazy. And once built, the structure can be read any number
+/// of times, so a used variable is demanded Multi: a syntactic AtMostOnce
+/// there would let the STG compiler skip the update frame and recompute
+/// the binding on every read, e.g. `{ m: slow(n) }.([m])` (eu-oaz72.40).
+fn constructor_env(env: DemandEnv) -> DemandEnv {
     env.into_iter()
         .map(|(k, d)| {
+            let cardinality = match d.cardinality {
+                Cardinality::AtMostOnce => Cardinality::Multi,
+                c => c,
+            };
             (
                 k,
                 Demand {
                     strictness: Strictness::Lazy,
+                    cardinality,
                     ..d
                 },
             )
@@ -421,7 +430,7 @@ impl DemandAnalyser {
                 let mut new_xs = Vec::with_capacity(xs.len());
                 for x in xs {
                     let (new_x, x_env) = self.analyse_expr(x);
-                    env = merge_envs(&env, &lazy_env(x_env));
+                    env = merge_envs(&env, &constructor_env(x_env));
                     new_xs.push(new_x);
                 }
                 (RcExpr::from(Expr::List(*s, new_xs)), env)
@@ -476,7 +485,11 @@ impl DemandAnalyser {
         let mut new_entries = Vec::new();
         for (k, v) in block_map.iter() {
             let (new_v, v_env) = self.analyse_expr(v);
-            let v_env = if rendered { v_env } else { lazy_env(v_env) };
+            let v_env = if rendered {
+                v_env
+            } else {
+                constructor_env(v_env)
+            };
             env = merge_envs(&env, &v_env);
             new_entries.push((k.clone(), new_v));
         }
@@ -1149,7 +1162,8 @@ mod tests {
     fn list_elements_are_lazy() {
         //   let c = 2 in [c]
         // A list constructor does not evaluate its elements, so `c` must
-        // be Lazy (eu-oaz72.40).
+        // be Lazy; and the list can be read many times, so Multi
+        // (eu-oaz72.40).
         let c = free("c");
         let expr = let_(vec![(c.clone(), num(2))], list(vec![var(c)]));
         let (result, _sigs, _named_sigs) = analyse_demands(&expr);
@@ -1157,6 +1171,7 @@ mod tests {
         match &*result.inner {
             Expr::Let(_, scope, _) => {
                 assert_eq!(scope.pattern[0].demand.strictness, Strictness::Lazy);
+                assert_eq!(scope.pattern[0].demand.cardinality, Cardinality::Multi);
             }
             other => panic!("expected Let, got: {other:?}"),
         }
