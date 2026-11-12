@@ -3119,8 +3119,8 @@ pub fn test_236_oaz72_36_constructor_field_sharing() {
 }
 
 #[test]
-pub fn test_238_oaz72_32_set_vec_of() {
-    run_test(&opts("238_oaz72_32_set_vec_of.eu"));
+pub fn test_240_oaz72_32_set_vec_of() {
+    run_test(&opts("240_oaz72_32_set_vec_of.eu"));
 }
 
 /// Ticks reported by `-S` for one target of a harness file, run with demand
@@ -3474,8 +3474,8 @@ pub fn test_error_235_oaz72_49_window_step_zero() {
 #[test]
 /// eu-oaz72.32: a non-primitive element in set.of / set.from-list raises the
 /// typed "expected a primitive value" error with help, as set.add does.
-pub fn test_error_238_oaz72_32_set_of_non_primitive() {
-    run_error_test(&error_opts("238_oaz72_32_set_of_non_primitive.eu"));
+pub fn test_error_240_oaz72_32_set_of_non_primitive() {
+    run_error_test(&error_opts("240_oaz72_32_set_of_non_primitive.eu"));
 }
 
 #[test]
