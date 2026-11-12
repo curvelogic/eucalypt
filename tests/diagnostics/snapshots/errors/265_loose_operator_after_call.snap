@@ -22,8 +22,8 @@ error: tried to call a number as a function
   help: only functions and blocks can be called with arguments
   ┌─ tests/harness/errors/265_loose_operator_after_call.eu:4:11
   │
-4 │ r: cond[1 f(1) => "x", "y"]
-  │    -------^^^^-------------
+4 │ r: cond[1 f(1) => "x", false => "y", "z"]
+  │    -------^^^^---------------------------
   │    │
   │    called from here
   │

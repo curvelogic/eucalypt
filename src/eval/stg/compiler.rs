@@ -141,20 +141,19 @@ impl CompileError {
                 }
                 // Only when the source shows an arrow-function shape: the
                 // unresolved name is followed by '->', possibly after further
-                // parameters, and used again after it, as in `x -> x + 1` or
-                // `(x, y) -> x` (eu-oaz72.28).
+                // parameters, and either opens a call argument or parameter
+                // list, as in `map(x -> y + 1)` or `(x, y) -> 1`, or is used
+                // again after the arrow, as in `x -> x + 1` (eu-oaz72.28).
+                // `xs foo -> 1` is the const operator used correctly.
                 if source.as_ref().is_some_and(|src| {
+                    let opens_argument = src.before().trim_end().ends_with(['(', ',']);
                     src.text() == name.as_str()
                         && src.after().find("->").is_some_and(|i| {
                             src.after()[..i].chars().all(|c| {
                                 c.is_alphanumeric()
                                     || c.is_whitespace()
                                     || matches!(c, ',' | ')' | '_' | '-' | '?')
-                            })
-                            // ...and the name is used again after the
-                            // arrow, as a lambda body would: `foo -> 1`
-                            // is the const operator used correctly.
-                            && has_word(&src.after()[i + 2..], name)
+                            }) && (opens_argument || has_word(&src.after()[i + 2..], name))
                         })
                 }) {
                     notes.push(

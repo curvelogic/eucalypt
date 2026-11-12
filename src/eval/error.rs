@@ -741,21 +741,11 @@ impl Evidence<'_> {
         })
     }
 
-    /// The labelled line contains a '.' lookup: a '.' between a value and
-    /// a key name, as in `x.name` or `f(x).name` (not `1.5`).
+    /// The labelled value is looked up with '.': `x.name`, `"abc".upper`,
+    /// or `[1, 2]` followed by `.name` on a continuation line. A namespace
+    /// call elsewhere on the line, such as `str.of`, is not evidence.
     fn has_lookup(&self) -> bool {
-        self.0.as_ref().is_some_and(|s| {
-            s.line.match_indices('.').any(|(i, _)| {
-                let before_ok = s.line[..i].chars().next_back().is_some_and(|c| {
-                    c.is_alphanumeric() || matches!(c, ')' | ']' | '}' | '_' | '?')
-                });
-                let after_ok = s.line[i + 1..]
-                    .chars()
-                    .next()
-                    .is_some_and(|c| c.is_alphabetic() || c == '_');
-                before_ok && after_ok
-            })
-        })
+        self.0.as_ref().is_some_and(LabelSource::is_looked_up)
     }
 
     /// When the label is an infix operator whose left operand is a

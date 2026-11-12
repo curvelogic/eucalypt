@@ -19,6 +19,8 @@ pub struct LabelSource<'a> {
     pub start: usize,
     /// End of the label within `line` (clamped to the end of the line).
     pub end: usize,
+    /// The rest of the source after the label, across lines.
+    pub following: &'a str,
 }
 
 impl<'a> LabelSource<'a> {
@@ -38,13 +40,15 @@ impl<'a> LabelSource<'a> {
             .find('\n')
             .map_or(source.len(), |i| start + i);
         let end = label.range.end.clamp(start, line_end);
-        if !source.is_char_boundary(end) {
+        let label_end = label.range.end.clamp(start, source.len());
+        if !source.is_char_boundary(end) || !source.is_char_boundary(label_end) {
             return None;
         }
         Some(LabelSource {
             line: &source[line_start..line_end],
             start: start - line_start,
             end: end - line_start,
+            following: &source[label_end..],
         })
     }
 
@@ -68,6 +72,35 @@ impl<'a> LabelSource<'a> {
     pub fn line_has_word(&self, word: &str) -> bool {
         has_word(self.line, word)
     }
+
+    /// Whether the labelled value is looked up with `.`: the label holds
+    /// a lookup (`x.name`), or is followed by one, on the same line or a
+    /// continuation line (`"abc".upper`, `[1, 2]` then `  .name`). A
+    /// namespace call elsewhere on the line, such as `str.of`, is not
+    /// a lookup on the labelled value.
+    pub fn is_looked_up(&self) -> bool {
+        has_lookup(self.text()) || starts_lookup(self.following.trim_start())
+    }
+}
+
+/// Whether `text` starts with a `.` followed by a key name, as in `.name`
+/// (not `.5`).
+fn starts_lookup(text: &str) -> bool {
+    text.strip_prefix('.')
+        .and_then(|rest| rest.chars().next())
+        .is_some_and(|c| c.is_alphabetic() || c == '_')
+}
+
+/// Whether `text` contains a `.` lookup between a value and a key name:
+/// `x.name`, `f(x).name`, `"abc".upper` or `xs!.name` (not `1.5`).
+fn has_lookup(text: &str) -> bool {
+    text.match_indices('.').any(|(i, _)| {
+        text[..i]
+            .chars()
+            .next_back()
+            .is_some_and(|c| is_ident_char(c) || matches!(c, ')' | ']' | '}' | '"'))
+            && starts_lookup(&text[i..])
+    })
 }
 
 /// Whether the left operand of an operator, given the text `before` it on
@@ -148,7 +181,7 @@ fn binds_tighter_than_catenation(op: &str) -> bool {
 }
 
 /// Whether `c` can occur in a eucalypt normal identifier.
-fn is_ident_char(c: char) -> bool {
+pub fn is_ident_char(c: char) -> bool {
     c.is_alphanumeric() || matches!(c, '_' | '-' | '?' | '!' | '$' | '\'' | '*')
 }
 
@@ -200,6 +233,19 @@ mod tests {
         assert!(!has_word("sort-order(band)", "or"));
         assert!(!has_word("random", "and"));
         assert!(!has_word("or-else", "or"));
+    }
+
+    #[test]
+    fn lookups_on_the_labelled_value() {
+        assert!(has_lookup("x.name"));
+        assert!(has_lookup("\"abc\".upper"));
+        assert!(has_lookup("xs!.name"));
+        assert!(has_lookup("f(x).name"));
+        assert!(!has_lookup("1.5"));
+        assert!(!has_lookup("x {a: 1}"));
+        assert!(starts_lookup(".name"));
+        assert!(!starts_lookup(".5"));
+        assert!(!starts_lookup("{a: 1}]"));
     }
 
     #[test]

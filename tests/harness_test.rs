@@ -3588,6 +3588,30 @@ pub fn test_error_267_str_looked_up_on_number() {
     run_error_test(&error_opts("267_str_looked_up_on_number.eu"));
 }
 
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_268_arrow_lambda_in_call_argument() {
+    run_error_test(&error_opts("268_arrow_lambda_in_call_argument.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_269_lookup_on_string_literal() {
+    run_error_test(&error_opts("269_lookup_on_string_literal.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_270_lookup_on_continuation_line() {
+    run_error_test(&error_opts("270_lookup_on_continuation_line.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_271_namespace_call_beside_merge() {
+    run_error_test(&error_opts("271_namespace_call_beside_merge.eu"));
+}
+
 #[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.

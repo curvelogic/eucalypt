@@ -1,4 +1,4 @@
 f(n): n
 
 ` "`=>` binds more loosely than catenation, so no catenation note is shown for it (eu-oaz72.28)"
-r: cond[1 f(1) => "x", "y"]
+r: cond[1 f(1) => "x", false => "y", "z"]

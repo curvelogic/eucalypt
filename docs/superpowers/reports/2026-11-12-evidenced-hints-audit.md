@@ -51,7 +51,7 @@ or keyed on the exact name or key the user wrote).
 | `HeadOfEmptyList` / `TailOfEmptyList` | "use 'nth(0, xs)' or pattern matching if the list may be empty" | R: removed — `nth(0, [])` fails too |
 | `lookup_failure_notes` `trim`/`strip` | "eucalypt has no 'trim'/'strip' function" | R: false — `str.trim` exists |
 | `lookup_failure_notes` other keys | Python/JS method names → `str.*` | K (keyed on the key written) |
-| `type_mismatch_notes` / `data_tag_mismatch_notes` `.`-on-list/number/string | "the '.' operator performs key lookup …" and its remedies | G: a `.` lookup (`x.name`) on the line |
+| `type_mismatch_notes` / `data_tag_mismatch_notes` `.`-on-list/number/string | "the '.' operator performs key lookup …" and its remedies | G: the labelled value is looked up with `.`: the label holds `x.name`, or is followed by `.name` on its line or a continuation line (`"abc".upper`; `[1, 2]` then `  .name`). A namespace call elsewhere on the line (`str.of`) is not evidence |
 | `type_mismatch_notes` / `data_tag_mismatch_notes` symbol/string, null, block | language facts about the found type | K |
 | `format_not_value`, `format_lookup_on_function`, datetime, timezone, format-string, division, export-format messages | facts about the operation | K |
 | `format_not_value` "a function application" | "this often means a function received fewer arguments" | K for now — see open items |
@@ -65,7 +65,7 @@ or keyed on the exact name or key the user wrote).
 | `export: :internal` note | K (fact from the name) |
 | `_` out of scope: friendly message and scope note | K (fact from the mangled name) |
 | "'f(_)' does not create a section" | G: the `_` is written as a call argument |
-| "eucalypt has no arrow functions" (any single-letter name) | G: the name is followed by `->` (after optional further parameters) and used again after it, as a lambda body would; `foo -> 1` is a correct use of the const operator |
+| "eucalypt has no arrow functions" (any single-letter name) | G: the name is followed by `->` (after optional further parameters) and either opens a call argument or parameter list (`map(x -> y + 1)`, `(x, y) -> 1`) or is used again after the arrow, as a lambda body would; `xs foo -> 1` is a correct use of the const operator |
 | `==`, `=`, `+=`…, `import`, `fold`, `sort`, `True`, `None`, `then`, `lambda`, `for`, … | K (keyed on the exact name written) |
 
 ## Open items

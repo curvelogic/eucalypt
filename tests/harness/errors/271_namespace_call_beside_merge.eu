@@ -1,0 +1,4 @@
+x: 5
+
+` "A number merged with a block beside a namespace call: `str.of` is not a lookup on the failing value, so no `.` notes (eu-oaz72.28)"
+r: [1 str.of, x {a: 1}]
