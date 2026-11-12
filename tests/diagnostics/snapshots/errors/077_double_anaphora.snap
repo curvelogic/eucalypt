@@ -9,7 +9,7 @@ errors: 1
 warnings: 0
 code: -
 primary: user tests/harness/errors/077_double_anaphora.eu:4:12
-help-lines: 1
+help-lines: 0
 note-lines: 2
 secondary-labels: 0
 trace-frames: 1
@@ -19,7 +19,6 @@ prelude-excerpt-lines: 0
 rust-panic: no
 --- stderr ---
 error: type mismatch: received a function where true or false was expected
-  help: this often happens due to operator precedence; try adding parentheses, e.g. `(xs f) + 1` instead of `xs f + 1`
   ┌─ tests/harness/errors/077_double_anaphora.eu:4:12
   │
 4 │ result: xs filter(_ > _ - 1)

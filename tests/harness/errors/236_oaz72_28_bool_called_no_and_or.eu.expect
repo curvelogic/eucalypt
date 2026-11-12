@@ -1,0 +1,4 @@
+exit: 1
+stderr: "binds more loosely than '=', so 'x f\(y\) = z' is read as 'x \(f\(y\) = z\)'"
+stderr-absent: "'and' and 'or'"
+stderr-absent: "boolean expression"

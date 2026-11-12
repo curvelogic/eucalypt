@@ -1,0 +1,3 @@
+exit: 1
+stderr: "unresolved variable 'g'"
+stderr-absent: "arrow functions"

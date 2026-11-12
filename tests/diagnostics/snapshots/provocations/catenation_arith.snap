@@ -25,6 +25,6 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found a function
   │       ^^^^^^^^^^^ - called from here
   │
   = a function value cannot be used directly here; it must first be called with all of its remaining arguments
-  = this can happen when a function is under-applied (missing an argument), or when low-precedence catenation groups an expression differently than intended — add parentheses to disambiguate
+  = note: catenation (juxtaposition) binds more loosely than '+', so 'x f(y) + z' is read as 'x (f(y) + z)' — write '(x f(y)) + z'
   = while evaluating (outermost first):
     - n at catenation_arith.eu:2:19

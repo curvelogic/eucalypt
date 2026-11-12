@@ -10,7 +10,7 @@ warnings: 0
 code: EU-EVAL-TYPE
 primary: user tests/diagnostics/corpus/metadata_span.eu:3:1
 help-lines: 0
-note-lines: 2
+note-lines: 1
 secondary-labels: 2
 trace-frames: 1
 trace-user-frames: 1
@@ -30,6 +30,5 @@ error[EU-EVAL-TYPE]: type mismatch: expected number, found string "2"
   │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^
   │
   = to convert a string to a number, use 'num', e.g. 's num'
-  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
   = while evaluating (outermost first):
     - doubled at metadata_span.eu:3:1

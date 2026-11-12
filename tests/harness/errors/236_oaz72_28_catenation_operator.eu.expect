@@ -1,0 +1,3 @@
+exit: 1
+stderr: "'x f\(y\) \+ z' is read as 'x \(f\(y\) \+ z\)'"
+stderr-absent: "binds as 'f\(a \+ 1\)'"

@@ -1,0 +1,2 @@
+# 'and' written between booleans: the and/or hint has its evidence (eu-oaz72.28)
+r: (1 > 0) and (2 > 1)

@@ -1,0 +1,2 @@
+exit: 1
+stderr: "'f\(1, 2\)' passes 2 arguments"

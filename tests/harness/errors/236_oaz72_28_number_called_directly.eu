@@ -1,0 +1,4 @@
+# a number called directly, with no catenation: no catenation note
+# and no guess about argument counts (eu-oaz72.28)
+x: 42
+result: x(10)
