@@ -1,0 +1,37 @@
+#!/usr/bin/env eu
+# eu-oaz72.35: `take(n, l)` stopped only when the count reached exactly
+# zero, so a negative count never stopped: on a finite list it returned the
+# whole list, and on an infinite one it never terminated. `range(b, e)` is
+# `ints-from(b) take(e - b)`, so a reversed range (e < b) hung.
+#
+# Fixed: `take(n)` with n <= 0 is [], hence `range(b, e)` with e <= b is [].
+#
+# Every check feeds RESULT, so a failing check fails the build. Checks that
+# would force an infinite list on the old code are bounded (`nil?`, or
+# `take(100)` before counting), so with the bug present they fail rather
+# than hang.
+
+# Count of the inclusive range [lo, hi] for a pair of bounds.
+span(bounds): range(bounds first, (bounds second) + 1) take(100) count
+
+checks: {
+  reversed-range: range(10, 9) nil?
+  empty-range: range(5, 5) nil?
+  far-reversed-range: range(0, -1000) nil?
+  forward-range: range(3, 6) = [3, 4, 5]
+  negative-forward-range: range(-2, 1) = [-2, -1, 0]
+  reversed-range-count: (range(10, 9) take(100) count) = 0
+
+  take-negative-finite: ([1, 2, 3] take(-1)) = []
+  take-zero-finite: ([1, 2, 3] take(0)) = []
+  take-negative-infinite: ints-from(0) take(-1) nil?
+  take-zero-infinite: ints-from(0) take(0) nil?
+  take-positive-infinite: (ints-from(0) take(3)) = [0, 1, 2]
+  take-beyond-finite: ([1, 2] take(5)) = [1, 2]
+
+  # Reversed bounds in a computed range are skipped, not looped over
+  # (the shape of the AoC 2025 day 10 part 2 inner search).
+  skipped: ([[1, 5], [7, 3], [4, 4]] map(span)) = [5, 0, 1]
+}
+
+RESULT: if(checks values all-true?, :PASS, :FAIL)

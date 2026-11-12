@@ -3074,6 +3074,13 @@ pub fn test_231_oaz72_1_demand_untaken_branch() {
     run_test(&opts("231_oaz72_1_demand_untaken_branch.eu"));
 }
 
+/// eu-oaz72.35 — `take(n)` with n <= 0 is [] (it used to run past zero on
+/// a negative count), so `range(b, e)` with e <= b is [] instead of hanging.
+#[test]
+pub fn test_232_oaz72_35_range_take_termination() {
+    run_test(&opts("232_oaz72_35_range_take_termination.eu"));
+}
+
 #[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame
