@@ -1,0 +1,5 @@
+# Fixture for `debug_trace_restores_the_uncurated_trace`
+# (tests/diagnostics_invariants.rs): the error is raised under `filter`, a
+# transparent library frame, in both prelude modes, so the raw
+# `--debug-trace` dump carries it and the curated trace must drop it.
+result: [1, 2] filter(_ + "a")

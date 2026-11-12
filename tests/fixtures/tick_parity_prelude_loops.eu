@@ -1,0 +1,12 @@
+# Fixture for the blob-mode prelude-loop tripwire (eu-oaz72.47).
+#
+# Prelude loops (`foldl`, and `sum` / `count` built on it) are compiled
+# into the blob. Before eu-oaz72.47 the blob compiled them without
+# resolving intrinsic aliases, so they called the global `if` with thunked
+# branches and cost ~1.7x the ticks of the same loops in source mode.
+snd(a, b): b
+
+n: 20000
+
+` { target: :tick-parity-prelude-loops }
+tick-parity-prelude-loops: [range(0, n) foldl(snd, 0), range(0, n) sum, range(0, n) count]
