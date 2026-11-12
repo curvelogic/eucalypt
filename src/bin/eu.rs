@@ -75,9 +75,10 @@ fn run() -> i32 {
 
     // For a dry run, just explain the options
     if opt.explain() {
-        // A closed pipe is a normal end; ignore it rather than panic.
-        let _ = writeln!(std::io::stdout(), "{}", opt.explanation());
-        return 0;
+        return match writeln!(std::io::stdout(), "{}", opt.explanation()) {
+            Err(e) => failure_exit_code(e.into()),
+            Ok(()) => 0,
+        };
     }
 
     // `eu error <CODE>`: look up a stable error code in the catalogue and exit
@@ -136,8 +137,10 @@ fn run() -> i32 {
         eucalypt::driver::options::EucalyptCli::command()
             .print_help()
             .ok();
-        let _ = writeln!(std::io::stdout());
-        return 0;
+        return match writeln!(std::io::stdout()) {
+            Err(e) => failure_exit_code(e.into()),
+            Ok(()) => 0,
+        };
     }
 
     // Anything else is going to involve reading the inputs

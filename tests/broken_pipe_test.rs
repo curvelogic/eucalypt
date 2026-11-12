@@ -203,3 +203,46 @@ fn cli_stdout_writes_end_quietly_on_a_closed_pipe() {
         );
     }
 }
+
+/// A closed pipe must not hide a failing suite.
+///
+/// Silencing EPIPE is right for the progress lines, but `eu test` must
+/// still run every test and exit with the suite's real verdict: under
+/// `set -o pipefail`, `eu test failing.eu | head` has to fail. Reading the
+/// closed pipe as success here would report a failing suite as passing.
+#[test]
+fn eu_test_with_a_closed_pipe_still_reports_failure() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let suite = dir.path().join("suite");
+    std::fs::create_dir(&suite).expect("create suite dir");
+    let failing = suite.join("a_failing.eu");
+    std::fs::write(&failing, "` { target: :test }\nt: { RESULT: :FAIL }\n")
+        .expect("write failing fixture");
+    std::fs::write(suite.join("b_passing.eu"), PASSING_TEST).expect("write passing fixture");
+
+    // Sanity: with a reader, the failing suite exits 1.
+    let with_reader = Command::new(env!("CARGO_BIN_EXE_eu"))
+        .args(["test", failing.to_str().unwrap()])
+        .current_dir(dir.path())
+        .output()
+        .expect("run eu test");
+    assert_eq!(
+        with_reader.status.code(),
+        Some(1),
+        "failing suite should exit 1"
+    );
+
+    // A directory suite: the failing test runs first and a passing one
+    // after, so the verdict depends on the run reaching the end and keeping
+    // the earlier failure.
+    let (code, stderr) = run_with_reader_gone(&["test", suite.to_str().unwrap()], dir.path());
+    assert!(
+        !stderr.contains("panicked"),
+        "eu test panicked on a closed pipe (exit {code:?}):\n{stderr}"
+    );
+    assert_eq!(
+        code,
+        Some(1),
+        "a failing suite must exit 1 even with its reader gone, stderr:\n{stderr}"
+    );
+}
