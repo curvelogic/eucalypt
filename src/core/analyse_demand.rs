@@ -680,14 +680,37 @@ impl DemandAnalyser {
             // they were forced eagerly. Cardinality is left as the RHS's
             // own: an updated thunk evaluates its RHS at most once however
             // often the binding is demanded.
+            //
+            // The exception is an alias, a binding whose RHS is a bare bound
+            // variable: the STG optimiser erases it, substituting the
+            // variable for every use, so no thunk of its own stands between
+            // the variable and those uses. The variable then takes the
+            // binding's cardinality too (eu-oaz72.36). Without this, a
+            // lambda parameter reached only through such an alias (`filter`'s
+            // `{x: • xs: •}`) was credited a single use, its caller let-bound
+            // the argument without an update, and the `Cons` that stored it
+            // recomputed it on every traversal.
             if binding_demand.cardinality != Cardinality::Absent
                 && binding_demand.cardinality != Cardinality::Unknown
             {
+                let is_alias = matches!(&*new_rhs_exprs[i].inner, Expr::Var(_, Var::Bound(_)));
                 let shifted: DemandEnv = unshift_env(&rhs_envs[i])
                     .into_iter()
                     .map(|(k, d)| {
-                        let strictness = d.scale(binding_demand).strictness;
-                        (k, Demand { strictness, ..d })
+                        let scaled = d.scale(binding_demand);
+                        let cardinality = if is_alias {
+                            scaled.cardinality
+                        } else {
+                            d.cardinality
+                        };
+                        (
+                            k,
+                            Demand {
+                                strictness: scaled.strictness,
+                                cardinality,
+                                ..d
+                            },
+                        )
                     })
                     .collect();
                 outer_env = merge_envs(&outer_env, &shifted);

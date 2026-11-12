@@ -439,11 +439,6 @@ pub fn fmt(
                 num,
             )?,
             Native::Zdt(dt) => write!(&mut output, "{dt}").map_err(PrintfError::FmtError)?,
-            Native::Index(_) => {
-                return Err(PrintfError::InvalidFormatString(
-                    "cannot format block index".to_string(),
-                ))
-            }
             Native::Set(_) => {
                 return Err(PrintfError::InvalidFormatString(
                     "cannot format set".to_string(),

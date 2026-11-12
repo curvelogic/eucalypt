@@ -65,7 +65,7 @@ fn native_type(native: &Native) -> IntrinsicType {
         Native::NdArray(_) => IntrinsicType::Array,
         Native::Vec(_) => IntrinsicType::Vec,
         Native::Set(_) => IntrinsicType::Set,
-        Native::Index(_) | Native::Prng(_) | Native::Producer(_) => IntrinsicType::Unknown,
+        Native::Prng(_) | Native::Producer(_) => IntrinsicType::Unknown,
     }
 }
 
@@ -467,16 +467,17 @@ pub fn list_value(
     Ok(acc)
 }
 
-/// Convert a Native value to a set Primitive
+/// Convert a Native value to a set/vec Primitive.
+///
+/// A string element shares the argument's `HeapString` (no copy).
 pub fn native_to_set_primitive(
     smid: Smid,
-    view: MutatorHeapView,
     native: &Native,
 ) -> Result<crate::eval::memory::set::Primitive, ExecutionError> {
     use crate::eval::memory::set::Primitive as SetPrim;
     match native {
         Native::Num(n) => Ok(SetPrim::from_number(n)),
-        Native::Str(s) => Ok(SetPrim::Str(view.scoped(*s).as_str().to_string())),
+        Native::Str(s) => Ok(SetPrim::Str(*s)),
         Native::Sym(id) => Ok(SetPrim::Sym(*id)),
         _ => Err(ExecutionError::TypeMismatch(
             smid,
@@ -489,24 +490,17 @@ pub fn native_to_set_primitive(
     }
 }
 
-/// Convert a set Primitive back to a Native value
-pub fn set_primitive_to_native(
-    _machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView,
-    prim: &crate::eval::memory::set::Primitive,
-) -> Result<Native, ExecutionError> {
+/// Convert a set/vec Primitive back to a Native value
+pub fn set_primitive_to_native(prim: &crate::eval::memory::set::Primitive) -> Native {
     use crate::eval::memory::set::Primitive as SetPrim;
     match prim {
         SetPrim::Num(n) => {
             let num = serde_json::Number::from_f64(n.into_inner())
                 .unwrap_or_else(|| serde_json::Number::from(0));
-            Ok(Native::Num(num))
+            Native::Num(num)
         }
-        SetPrim::Str(s) => {
-            let ptr = view.str(s.as_str())?.as_ptr();
-            Ok(Native::Str(ptr))
-        }
-        SetPrim::Sym(id) => Ok(Native::Sym(*id)),
+        SetPrim::Str(s) => Native::Str(*s),
+        SetPrim::Sym(id) => Native::Sym(*id),
     }
 }
 
@@ -531,12 +525,14 @@ pub fn set_arg<'guard>(
     }
 }
 
-/// Return a set from intrinsic
+/// Return a set from intrinsic, copying `sorted` (already sorted and
+/// deduplicated) into the heap.
 pub fn machine_return_set(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
-    set: HeapSet,
+    sorted: &[crate::eval::memory::set::Primitive],
 ) -> Result<(), ExecutionError> {
+    let set = HeapSet::from_sorted(&view, sorted)?;
     let ptr = view.alloc(set)?.as_ptr();
     machine.return_native(view, Native::Set(ptr))
 }
@@ -558,12 +554,14 @@ pub fn ndarray_arg<'guard>(
     }
 }
 
-/// Return an ndarray from intrinsic
+/// Return an ndarray from intrinsic, copying the transient result into
+/// the heap.
 pub fn machine_return_ndarray(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
-    arr: HeapNdArray,
+    arr: ndarray::ArrayD<f64>,
 ) -> Result<(), ExecutionError> {
+    let arr = HeapNdArray::from_ndarray(&view, &arr)?;
     let ptr = view.alloc(arr)?.as_ptr();
     machine.return_native(view, Native::NdArray(ptr))
 }
@@ -585,12 +583,13 @@ pub fn vec_arg<'guard>(
     }
 }
 
-/// Return a vec from an intrinsic.
+/// Return a vec from an intrinsic, copying `elements` into the heap.
 pub fn machine_return_vec(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
-    vec: HeapVec,
+    elements: &[crate::eval::memory::set::Primitive],
 ) -> Result<(), ExecutionError> {
+    let vec = HeapVec::from_slice(&view, elements)?;
     let ptr = view.alloc(vec)?.as_ptr();
     machine.return_native(view, Native::Vec(ptr))
 }

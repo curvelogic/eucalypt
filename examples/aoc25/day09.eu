@@ -53,10 +53,6 @@ test: {
   RESULT: part-1 then(:PASS, :FAIL)
 }
 
-` { target: :part-1
-    import: "input=inputs/day09.txt" }
-part-1: input parse solve
-
 ` "Level-building machinery for the polygon sweep.
 A level is [y, left, right, tile-xs] representing the polygon
 cross-section and red tile positions at a given y-coordinate."
@@ -203,7 +199,3 @@ test2: {
   part-2: ex1 parse solve2 //= 24
   RESULT: part-2 then(:PASS, :FAIL)
 }
-
-` { target: :part-2
-    import: "input=inputs/day09.txt" }
-part-2: input parse solve2

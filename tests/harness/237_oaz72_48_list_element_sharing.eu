@@ -1,0 +1,29 @@
+{
+  title: "237 a thunk in a list literal is shared across forces"
+  doc: "eu-oaz72.48: forcing a list element that refers to a let-bound thunk
+        outside the list's own frame must update that thunk, not a copy of
+        it. The tick gate is in `tests/harness_test.rs`, which runs both
+        targets with demand analysis suppressed (so no strictness rewrite
+        hides the defect) and requires `shared` to cost about one fold."
+}
+
+m: range(0, 20000) count
+x: [m]
+
+` "the target computes the right value"
+passes(context): (context.result.ok) then(:PASS, :FAIL)
+
+` { target: :fold
+    verify: [:passes] }
+fold: {
+  ok: m = 20000
+}
+
+# Three forces of the element: one fold if the thunk is shared, three if
+# each force recomputes it from a copy.
+` { target: :shared
+    verify: [:passes] }
+shared: {
+  y: [x first, x first, x first]
+  ok: y = [20000, 20000, 20000]
+}

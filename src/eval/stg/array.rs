@@ -17,7 +17,7 @@ use crate::{
         },
         memory::{
             mutator::MutatorHeapView,
-            ndarray::HeapNdArray,
+            ndarray,
             syntax::{Native, Ref},
         },
     },
@@ -69,7 +69,7 @@ impl StgIntrinsic for ArrayZeros {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let shape = num_list_to_usize_vec(machine, view, &args[0])?;
-        machine_return_ndarray(machine, view, HeapNdArray::zeros(&shape))
+        machine_return_ndarray(machine, view, ndarray::zeros(&shape))
     }
 }
 
@@ -115,7 +115,7 @@ impl StgIntrinsic for ArrayFill {
     ) -> Result<(), ExecutionError> {
         let shape = num_list_to_usize_vec(machine, view, &args[0])?;
         let value = num_arg(machine, view, &args[1])?.as_f64().unwrap_or(0.0);
-        machine_return_ndarray(machine, view, HeapNdArray::filled(&shape, value))
+        machine_return_ndarray(machine, view, ndarray::filled(&shape, value))
     }
 }
 
@@ -157,7 +157,7 @@ impl StgIntrinsic for ArrayFromFlat {
         let values = num_list_to_f64_vec(machine, view, &args[1])?;
         let smid = machine.annotation();
         let data_len = values.len();
-        match HeapNdArray::from_flat(&shape, values) {
+        match ndarray::from_flat(&shape, values) {
             Some(arr) => machine_return_ndarray(machine, view, arr),
             None => {
                 let expected: usize = shape.iter().product();

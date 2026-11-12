@@ -3074,6 +3074,14 @@ pub fn test_231_oaz72_1_demand_untaken_branch() {
     run_test(&opts("231_oaz72_1_demand_untaken_branch.eu"));
 }
 
+/// eu-oaz72.5: set and vec storage lives in the GC heap with string
+/// elements traced. Churns string sets/vecs whose strings are reachable only
+/// through the container, and checks contents, order and set algebra.
+#[test]
+pub fn test_234_oaz72_5_native_storage_gc() {
+    run_test(&opts("234_oaz72_5_native_storage_gc.eu"));
+}
+
 /// eu-oaz72.35 — `take(n)` with n <= 0 is [] (it used to run past zero on
 /// a negative count), so `range(b, e)` with e <= b is [] instead of hanging.
 #[test]
@@ -3091,12 +3099,98 @@ pub fn test_233_oaz72_34_constant_stack_loops() {
     run_test(&opts("233_oaz72_34_constant_stack_loops.eu"));
 }
 
+/// eu-oaz72.36 — a list built by `foldr` or `filter` is computed once and
+/// shared across traversals. Each target sums its list eight times; its
+/// `shared` validator checks the tick count and FAILs on master, where a
+/// constructor field copied out of a deeper frame, or a parameter reached
+/// through an alias binding, was recomputed on every traversal.
+#[test]
+pub fn test_236_oaz72_36_constructor_field_sharing() {
+    run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));
+}
+
+/// Ticks reported by `-S` for one target of a harness file, run with demand
+/// analysis suppressed.
+fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
+    let output = std::process::Command::new(eu_binary())
+        .args([
+            "run",
+            "--suppress-demand-analysis",
+            "-S",
+            "-t",
+            target,
+            &format!("tests/harness/{file}"),
+        ])
+        .output()
+        .expect("eu runs");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "eu failed on {file} target {target}:\n{stderr}"
+    );
+    stderr
+        .lines()
+        .find_map(|l| {
+            let (name, value) = l.split_once(':')?;
+            (name.trim() == "Ticks").then(|| value.trim().replace(',', "").parse().ok())?
+        })
+        .unwrap_or_else(|| panic!("no tick count in -S output:\n{stderr}"))
+}
+
+/// eu-oaz72.48 — a list element referring to a let-bound thunk outside the
+/// list's own frame was copied when the list was taken apart, so each force
+/// updated a copy and recomputed the thunk. With demand analysis suppressed
+/// (as on master, where it hid nothing), forcing the element three times must
+/// cost about one fold, not three.
+#[test]
+pub fn test_237_oaz72_48_list_element_sharing() {
+    let file = "237_oaz72_48_list_element_sharing.eu";
+    let fold = ticks_without_demand_analysis(file, "fold");
+    let shared = ticks_without_demand_analysis(file, "shared");
+    assert!(
+        shared * 2 < fold * 3,
+        "three forces of a list element cost {shared} ticks against {fold} for one \
+         fold: the element's thunk is recomputed on each force (eu-oaz72.48)"
+    );
+    run_test(&opts(file));
+}
+
+/// eu-oaz72.3: whitespace inside a string interpolation is kept in the
+/// syntax tree as trivia and does not change the interpolation's meaning.
+#[test]
+pub fn test_234_oaz72_3_interpolation_whitespace() {
+    run_test(&opts("234_oaz72_3_interpolation_whitespace.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: negative counts to drop, split-at and rotate are consistent
+/// with take and terminate on infinite lists.
+pub fn test_233_oaz72_43_negative_counts() {
+    run_test(&opts("233_oaz72_43_negative_counts.eu"));
+}
+
+/// eu-oaz72.4: collection runs on allocation volume, not only at the heap
+/// limit. The fixture allocates far past the 32 MiB minimum trigger with
+/// little live data and checks that data live across the collections
+/// survives them. Each check is in RESULT.
+#[test]
+pub fn test_234_oaz72_4_gc_volume_trigger() {
+    run_test(&opts("234_oaz72_4_gc_volume_trigger.eu"));
+}
+
+#[test]
+/// eu-oaz72.49: window and window-all with positive arguments are unchanged
+/// once a non-positive step (and window size) became errors.
+pub fn test_235_oaz72_49_window_step() {
+    run_test(&opts("235_oaz72_49_window_step.eu"));
+}
+
 /// eu-oaz72.40: demand analysis treated block field values and list
 /// elements as strict, forcing a binding used only by an unselected
 /// field. Each case is in RESULT.
 #[test]
-pub fn test_234_oaz72_40_block_body_demand() {
-    run_test(&opts("234_oaz72_40_block_body_demand.eu"));
+pub fn test_238_oaz72_40_block_body_demand() {
+    run_test(&opts("238_oaz72_40_block_body_demand.eu"));
 }
 
 #[test]
@@ -3253,6 +3347,45 @@ pub fn test_error_231_1tkk_7_44_nobranch_datatag_code() {
 /// error instead of panicking the parser.
 pub fn test_error_232_oaz72_2_unclosed_bracket_eof() {
     run_error_test(&error_opts("232_oaz72_2_unclosed_bracket_eof.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: a negative index to nth is an error rather than a hang on
+/// an infinite list (checked on a finite one to stay bounded).
+pub fn test_error_233_oaz72_43_nth_negative() {
+    run_error_test(&error_opts("233_oaz72_43_nth_negative.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: a negative index to update-nth is an error, not a silent
+/// update of element 0.
+pub fn test_error_233_oaz72_43_update_nth_negative() {
+    run_error_test(&error_opts("233_oaz72_43_update_nth_negative.eu"));
+}
+
+#[test]
+/// eu-oaz72.49: a zero step to window is an error rather than a hang.
+pub fn test_error_235_oaz72_49_window_step_zero() {
+    run_error_test(&error_opts("235_oaz72_49_window_step_zero.eu"));
+}
+
+#[test]
+/// eu-oaz72.49: a negative step to window is an error rather than a hang.
+pub fn test_error_235_oaz72_49_window_step_negative() {
+    run_error_test(&error_opts("235_oaz72_49_window_step_negative.eu"));
+}
+
+#[test]
+/// eu-oaz72.49: a zero size to window is an error rather than an infinite
+/// list of empty windows.
+pub fn test_error_235_oaz72_49_window_size_zero() {
+    run_error_test(&error_opts("235_oaz72_49_window_size_zero.eu"));
+}
+
+#[test]
+/// eu-oaz72.49: a zero step to window-all is an error rather than a hang.
+pub fn test_error_235_oaz72_49_window_all_step_zero() {
+    run_error_test(&error_opts("235_oaz72_49_window_all_step_zero.eu"));
 }
 
 #[test]
@@ -3777,9 +3910,9 @@ pub fn test_pp_default_threshold_forks_small_list() {
 /// `pp_fork_fixture.eu` is 16 elements with a trivial `f`, so no collection
 /// occurs during its map and the window never opens.
 ///
-/// This test opens the window deliberately: a heap limit low enough to be
-/// crossed partway through the map (the heap collects only once its limit is
-/// reached) plus `EU_GC_STRESS=1`, which forces every collection to evacuate
+/// This test opens the window deliberately: a heap limit low enough that the
+/// collection trigger (allocation volume, capped at the headroom below the
+/// limit — eu-oaz72.4) is reached partway through the map, plus `EU_GC_STRESS=1`, which forces every collection to evacuate
 /// rather than merely mark — so a stale handle is guaranteed to be stale, not
 /// merely at risk. The answer is compared with the `map` oracle, not with
 /// another run of the driver.
@@ -3879,9 +4012,10 @@ pub fn test_pp_gc_collects_during_par_map() {
         }
         // A larger fixture than the sequential configuration above: the fork
         // path splits the work four ways, so each worker needs enough
-        // allocation *within its own chunk* to reach the heap limit. On the
+        // allocation *within its own chunk* to trigger a collection. On a
         // smaller shape no worker collects and removing the worker-loop root
-        // set goes undetected — verified, which is why there are two fixtures.
+        // set goes undetected — verified (again after eu-oaz72.4 changed the
+        // trigger), which is why there are two fixtures.
         let forked = run(fork_fixture, &env, "8");
         assert_eq!(
             forked, fork_oracle,

@@ -125,6 +125,15 @@ const REGISTRY: &[Gate] = &[
                     dev-dependency",
     },
     Gate {
+        path: "tests/gc_volume_trigger_test.rs",
+        cfg: "not(target_arch = \"wasm32\")",
+        supplier: Supplier::NativeTargetsOnly,
+        rationale: "spawns the eu binary to gate the GC trigger policy and \
+                    the heap-limit-exceeded error (eu-oaz72.4); there is no \
+                    binary to spawn under wasm32, and it also needs \
+                    tempfile, a non-wasm32 dev-dependency",
+    },
+    Gate {
         path: "tests/property_test.rs",
         cfg: "not(target_arch = \"wasm32\")",
         supplier: Supplier::NativeTargetsOnly,

@@ -350,8 +350,7 @@ fn encode_scalar(
             write_len_bytes(out, dt.to_rfc3339().as_bytes());
             Ok(())
         }
-        Native::Index(_)
-        | Native::Set(_)
+        Native::Set(_)
         | Native::NdArray(_)
         | Native::Vec(_)
         | Native::Prng(_)

@@ -1,0 +1,19 @@
+#!/usr/bin/env eu
+# eu-oaz72.3: whitespace inside a string interpolation was dropped by the
+# string lexer, so the syntax tree was shorter than the source and LSP
+# hover panicked with rowan "Bad offset". Whitespace is now kept in the
+# tree as trivia; it must not change what an interpolation means.
+
+a: 1
+n: 7
+r: { b: { c: "deep" } }
+
+t1: "{ a }" = "{a}"
+t2: "<{ a }|{a }|{  a}>" = "<1|1|1>"
+t3: "{ n :%03d}" = "{n:%03d}"
+t4: "{ r.b.c }" = "{r.b.c}"
+t5: "{ r . b . c }" = "deep"
+t6: c"{ a }\t" = c"1\t"
+t7: "{	a	}" = "1"
+
+RESULT: if([t1, t2, t3, t4, t5, t6, t7] all-true?, :PASS, :FAIL)

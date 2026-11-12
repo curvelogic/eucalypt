@@ -1018,8 +1018,10 @@ impl<'text> Parser<'text> {
                     self.sink().finish_node(); // end STRING_INTERPOLATION
                 }
                 _ => {
-                    // Unexpected token - consume and continue
+                    // Unexpected token - consume and keep it in the tree so
+                    // that the tree remains lossless
                     self.next();
+                    self.sink().token(kind, tok_len);
                 }
             }
         }
@@ -1029,6 +1031,8 @@ impl<'text> Parser<'text> {
 
     /// Parse the content inside an interpolation {...}
     fn parse_string_interpolation_content(&mut self) {
+        self.add_trivia();
+
         // Check if we have dotted references by looking ahead
         let has_dots = self
             .tokens
@@ -1049,6 +1053,7 @@ impl<'text> Parser<'text> {
                 self.sink().token(STRING_INTERPOLATION_TARGET, len);
                 self.sink().finish_node(); // end NAME
             }
+            self.add_trivia();
 
             // Parse alternating dots and targets
             while let Some((OPERATOR_IDENTIFIER, text)) = self.peek() {
@@ -1059,6 +1064,7 @@ impl<'text> Parser<'text> {
                     self.sink().start_node(NAME);
                     self.sink().token(OPERATOR_IDENTIFIER, dot_len);
                     self.sink().finish_node(); // end NAME
+                    self.add_trivia();
 
                     // Parse the following target
                     if let Some((STRING_INTERPOLATION_TARGET, tgt_text)) = self.peek() {
@@ -1067,6 +1073,7 @@ impl<'text> Parser<'text> {
                         self.sink().start_node(NAME);
                         self.sink().token(STRING_INTERPOLATION_TARGET, tgt_len);
                         self.sink().finish_node(); // end NAME
+                        self.add_trivia();
                     } else {
                         // Malformed - dot without following target
                         break;
@@ -1086,6 +1093,7 @@ impl<'text> Parser<'text> {
                 self.sink().token(STRING_INTERPOLATION_TARGET, len);
                 self.sink().finish_node();
             }
+            self.add_trivia();
         }
 
         // Check for format spec (colon followed by format)
@@ -1093,6 +1101,7 @@ impl<'text> Parser<'text> {
             let colon_len = TextSize::of(colon_text);
             self.next(); // consume :
             self.sink().token(COLON, colon_len);
+            self.add_trivia();
 
             if let Some((STRING_FORMAT_SPEC, spec_text)) = self.peek() {
                 let spec_len = TextSize::of(spec_text);
@@ -2604,6 +2613,46 @@ UNIT@0..105
             );
             assert!(parse.ok().is_ok());
         }
+    }
+
+    /// Whitespace inside a string interpolation must stay in the tree:
+    /// the tree's text must equal the source (eu-oaz72.3). A shorter tree
+    /// made LSP handlers panic with rowan "Bad offset".
+    #[test]
+    fn string_interpolation_whitespace_is_lossless() {
+        let cases = [
+            "x: \"{ a }\"\n",
+            "x: \"{a }\"\n",
+            "x: \"{\ta:%03d }\"\n",
+            "x: \"{ a . b . c : %d }\"\n",
+            "x: c\"{ a }\\n\"\n",
+            "x: \"{ a b }\"\n",
+            "x: \"{ }\"\n",
+            "x: \"{ \"\n",
+            // eu-oaz72.3 repro, found by fuzzing edits of 096_monadic_blocks.eu
+            "(M.\"\n⌈{}⌉: { :monad bind: b }\n`\n\"N\"\n",
+        ];
+        for src in cases {
+            let parse = parse_unit(src);
+            let root = parse.syntax_node();
+            assert_eq!(
+                root.text().to_string(),
+                src,
+                "tree text differs from source:\n{root:#?}"
+            );
+        }
+
+        // Whitespace is trivia: the interpolation target is unchanged.
+        let parse = parse_unit("x: \"{ a }\"\n");
+        let interp = parse
+            .syntax_node()
+            .descendants()
+            .find_map(crate::syntax::rowan::ast::StringInterpolation::cast)
+            .expect("interpolation");
+        assert_eq!(
+            interp.target().and_then(|t| t.value()).as_deref(),
+            Some("a")
+        );
     }
 
     #[test]
