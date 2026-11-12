@@ -1,0 +1,2 @@
+` "a computed `dict.of` element that is not a `[key, value]` pair is described by its evaluated cells."
+result: dict.of[range(0, 4)] dict.size

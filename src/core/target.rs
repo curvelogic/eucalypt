@@ -24,6 +24,10 @@ pub struct Target {
     path: Vec<String>,
     /// Validations
     validations: Vec<String>,
+    /// Whether the target's body carries test checks (a `RESULT`
+    /// binding or an inline assertion operator), so the tester must
+    /// run it for those checks to gate
+    has_checks: bool,
 }
 
 impl fmt::Display for Target {
@@ -54,7 +58,19 @@ impl Target {
             format,
             path,
             validations,
+            has_checks: false,
         }
+    }
+
+    /// Mark whether the target's body carries test checks
+    pub fn with_checks(self, has_checks: bool) -> Self {
+        Self { has_checks, ..self }
+    }
+
+    /// Whether the target's body carries test checks (a `RESULT`
+    /// binding or an inline assertion operator)
+    pub fn has_checks(&self) -> bool {
+        self.has_checks
     }
 
     /// Return name

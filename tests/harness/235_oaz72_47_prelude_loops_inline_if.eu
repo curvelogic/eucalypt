@@ -45,7 +45,7 @@ count-loop: range(0, n) count
 ` "count counts every element"
 count-value(context): (context.result = n) then(:PASS, :FAIL)
 
-` { target: :semantics }
+` { target: :test-semantics }
 semantics: {
   # The loops still evaluate lazily and terminate on empty input.
   empty-foldl: foldl(+, 7, []) = 7

@@ -1,0 +1,2 @@
+exit: 1
+stderr: "list keys may be nested at most 32 deep"

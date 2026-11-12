@@ -181,6 +181,9 @@ pub struct TestPlan {
     error_expectation: Option<ErrorExpectation>,
     /// Whether this test requires `--allow-io` to run
     requires_io: bool,
+    /// Targets declared in the file whose bodies carry checks but which
+    /// the tester does not run, so their checks would never gate
+    unrun_checked_targets: Vec<Target>,
 }
 
 impl TestPlan {
@@ -215,6 +218,15 @@ impl TestPlan {
     /// `--allow-io` is not set.
     pub fn requires_io(&self) -> bool {
         self.requires_io
+    }
+
+    /// Targets declared in the file under test whose bodies carry checks
+    /// (a `RESULT` binding or an inline assertion) but which the tester
+    /// does not run: not named `test…` or `bench-…`, not `main`, and
+    /// with no `verify`. Their checks would never gate, so the tester
+    /// fails the file.
+    pub fn unrun_checked_targets(&self) -> &[Target] {
+        &self.unrun_checked_targets
     }
 
     /// Whether this plan contains any benchmark targets
@@ -281,6 +293,7 @@ impl TestPlan {
         // The `:main` target and any explicitly validated targets are drawn from
         // the full `targets` set so they work even when declared in imported files.
         let mut targets: Vec<(Target, Vec<String>)> = vec![];
+        let mut unrun_checked_targets: Vec<Target> = vec![];
         for t in &unit.targets {
             let include = if t.name().starts_with("test") || t.is_benchmark() {
                 // Only auto-run test/bench targets from the file itself.
@@ -296,8 +309,11 @@ impl TestPlan {
                 } else {
                     targets.push((t.clone(), formats.clone()))
                 }
+            } else if t.has_checks() && unit.own_targets.contains(t) {
+                unrun_checked_targets.push(t.clone());
             }
         }
+        unrun_checked_targets.sort_by(|a, b| a.name().cmp(b.name()));
 
         // default to empty target if there are none
         if targets.is_empty() {
@@ -319,6 +335,7 @@ impl TestPlan {
             targets,
             error_expectation: None,
             requires_io: header.requires_io,
+            unrun_checked_targets,
         })
     }
 
@@ -359,6 +376,7 @@ impl TestPlan {
             targets: vec![(target, vec!["yaml".to_string()])],
             error_expectation: Some(expectation),
             requires_io: false,
+            unrun_checked_targets: vec![],
         }
     }
 
@@ -376,6 +394,7 @@ impl TestPlan {
             targets: vec![(Target::default(), vec!["yaml".to_string()])],
             error_expectation: None,
             requires_io: false,
+            unrun_checked_targets: vec![],
         }
     }
 }
@@ -534,6 +553,62 @@ fib: 42
     pub fn test_no_bench_targets() {
         let plan = source_to_test_plan("RESULT: :PASS");
         assert!(!plan.has_benchmarks());
+    }
+
+    fn unrun_checked_names(plan: &TestPlan) -> Vec<String> {
+        plan.unrun_checked_targets()
+            .iter()
+            .map(|t| t.name().clone())
+            .collect()
+    }
+
+    /// A target with checks that the tester does not run is reported;
+    /// targets the tester runs, and targets without checks, are not.
+    #[test]
+    pub fn test_unrun_checked_targets() {
+        let plan = source_to_test_plan(
+            "
+` { target: :semantics }
+semantics: { a: 1 = 1 RESULT: a then(:PASS, :FAIL) }
+
+` { target: :asserted }
+asserted: { a: 1 //=> 1 }
+
+` { target: :predicate }
+predicate: { a: 1 //=?> pos? }
+
+` { target: :test-named }
+named: { RESULT: :PASS }
+
+` { target: :verified verify: [:v] }
+verified: { RESULT: :PASS }
+
+` { target: :fixture }
+fixture: 1
+
+v(context): :PASS
+",
+        );
+        assert_eq!(
+            unrun_checked_names(&plan),
+            vec![
+                "asserted".to_string(),
+                "predicate".to_string(),
+                "semantics".to_string()
+            ]
+        );
+    }
+
+    /// A metadata pass-through (`//`) is not an assertion.
+    #[test]
+    pub fn test_metadata_operator_is_not_a_check() {
+        let plan = source_to_test_plan(
+            "
+` { target: :tagged }
+tagged: 1 // { a: 1 }
+",
+        );
+        assert!(unrun_checked_names(&plan).is_empty());
     }
 
     pub fn source_to_test_plan(text: &str) -> TestPlan {

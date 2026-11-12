@@ -73,7 +73,11 @@ use sha2::{Digest, Sha256};
 ///   warning, so the failure mode is a slow start rather than a wrong answer —
 ///   but the bump is what makes it a *detected* staleness rather than a
 ///   decode accident.
-pub const BYTECODE_WIRE_FORMAT_VERSION: u32 = 8;
+/// - v9: `BytecodeProgram::cell_template` added (the dict value-cell
+///   template, eu-oaz72.21). Postcard is positional, so a v8 image would
+///   decode as a shifted field sequence; the bump makes that staleness
+///   detected rather than a decode accident.
+pub const BYTECODE_WIRE_FORMAT_VERSION: u32 = 9;
 
 /// Path, relative to the workspace root, of the prelude source baked into the
 /// blob.

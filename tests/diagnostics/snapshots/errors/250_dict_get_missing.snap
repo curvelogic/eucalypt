@@ -1,0 +1,54 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/250_dict_get_missing
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_get_missing.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/250_dict_get_missing.eu:2:9
+help-lines: 0
+note-lines: 1
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key [1, 3] not found in dict
+  ┌─ tests/harness/errors/250_dict_get_missing.eu:2:9
+  │
+2 │ result: dict.of[[[1, 2], :a]] dict.get[1, 3]
+  │         ^^^^^^^^^^^^^^^^^^^^^ -------------- called from here
+  │
+  = use 'dict.get-or(k, default, d)' when the key may be absent, or test with 'dict.contains?(k, d)' first
+  = while evaluating (outermost first):
+    - result at 250_dict_get_missing.eu:2:31
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/250_dict_get_missing.eu:2:9
+help-lines: 0
+note-lines: 1
+secondary-labels: 1
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: key [1, 3] not found in dict
+  ┌─ tests/harness/errors/250_dict_get_missing.eu:2:9
+  │
+2 │ result: dict.of[[[1, 2], :a]] dict.get[1, 3]
+  │         ^^^^                  ---- called from here
+  │
+  = use 'dict.get-or(k, default, d)' when the key may be absent, or test with 'dict.contains?(k, d)' first
+  = while evaluating (outermost first):
+    - result at 250_dict_get_missing.eu:2:31

@@ -1,0 +1,50 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/250_dict_render
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_render.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/250_dict_render.eu:2:9
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: cannot render a dict
+  ┌─ tests/harness/errors/250_dict_render.eu:2:9
+  │
+2 │ result: dict.of[[1, 2]]
+  │         ^^^^^^^^^^^^^^^
+  │
+  = convert the dict to a list of [key, value] pairs with 'dict.to-list' before rendering it
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/250_dict_render.eu:2:9
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 0
+trace-user-frames: 0
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: cannot render a dict
+  ┌─ tests/harness/errors/250_dict_render.eu:2:9
+  │
+2 │ result: dict.of[[1, 2]]
+  │         ^^^^
+  │
+  = convert the dict to a list of [key, value] pairs with 'dict.to-list' before rendering it

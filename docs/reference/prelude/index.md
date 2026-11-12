@@ -12,11 +12,12 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 - [Combinators](combinators.md) -- function composition, application, utilities (14 entries)
 - [Calendar](calendar.md) -- date and time functions (8 entries)
 - [Sets](sets.md) -- set operations (15 entries)
+- [Dicts](dicts.md) -- persistent ordered dictionaries (11 entries)
 - [Random Numbers](random.md) -- random number generation, monadic random: namespace (15 entries)
 - [Metadata](metadata.md) -- metadata and assertion functions (4 entries)
 - [IO](io.md) -- environment, time, argument access, and monad utility (86 entries)
 
-*377 documented entries in total.*
+*388 documented entries in total.*
 
 ## Standard Libraries
 
