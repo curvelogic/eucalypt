@@ -16,7 +16,7 @@ pub use program::*;
 mod encode;
 pub use encode::*;
 
-mod closure;
+pub(crate) mod closure;
 pub use closure::*;
 
 mod cont;
