@@ -10,7 +10,7 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**42 of 235 fixtures diverge.**
+**43 of 236 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
@@ -48,6 +48,7 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/241_oaz72_32_set_of_datetime` | user tests/harness/errors/241_oaz72_32_set_of_datetime.eu:2:10 | user tests/harness/errors/241_oaz72_32_set_of_datetime.eu:2:10 | 1 (1 user) | 1 (1 user) |
 | `errors/250_dict_bad_key` | user tests/harness/errors/250_dict_bad_key.eu:2:9 | user tests/harness/errors/250_dict_bad_key.eu:2:9 | 1 (1 user) | 1 (1 user) |
 | `errors/250_dict_bad_pair` | user tests/harness/errors/250_dict_bad_pair.eu:2:9 | user tests/harness/errors/250_dict_bad_pair.eu:2:9 | 1 (1 user) | 1 (1 user) |
+| `errors/250_dict_bad_pair_computed` | user tests/harness/errors/250_dict_bad_pair_computed.eu:2:30 | user tests/harness/errors/250_dict_bad_pair_computed.eu:2:30 | 1 (1 user) | 1 (1 user) |
 | `errors/250_dict_get_missing` | user tests/harness/errors/250_dict_get_missing.eu:2:9 | user tests/harness/errors/250_dict_get_missing.eu:2:9 | 1 (1 user) | 1 (1 user) |
 | `errors/250_dict_key_depth` | user tests/harness/errors/250_dict_key_depth.eu:5:9 | user tests/harness/errors/250_dict_key_depth.eu:5:48 | 2 (2 user) | 2 (2 user) |
 | `errors/250_dict_not_a_dict` | user tests/harness/errors/250_dict_not_a_dict.eu:2:16 | user tests/harness/errors/250_dict_not_a_dict.eu:2:16 | 1 (1 user) | 1 (1 user) |

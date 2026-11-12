@@ -262,12 +262,12 @@ impl StgIntrinsic for SeqDictPairs {
 
         // The well-formed path, once `rest` (the cell after the value) is
         // known to be `ListNil` (no fields bound):
-        //   [v rest] [fk] [k r] [p t] [xs]
-        //    0  1     2    3 4   5 6   7
+        //   [v rest] [fk] [k r] [fp] [p t] [xs]
+        //    0  1     2    3 4   5    6 7   8
         let well_formed = force(
-            SeqDictPairs.global(lref(6)),
-            // [st] [v rest] [fk] [k r] [p t] [xs]
-            //  0    1  2     3    4 5   6 7   8
+            SeqDictPairs.global(lref(7)),
+            // [st] [v rest] [fk] [k r] [fp] [p t] [xs]
+            //  0    1  2     3    4 5   6    7 8   9
             let_(
                 vec![value(data(
                     DataConstructor::BlockPair.tag(),
@@ -286,35 +286,69 @@ impl StgIntrinsic for SeqDictPairs {
                     (DataConstructor::ListNil.tag(), local(0)),
                     (
                         DataConstructor::ListCons.tag(), // [p t] [xs]
-                        case(
+                        // Force the element and keep it bound, so a malformed
+                        // one is passed on evaluated: the error then describes
+                        // the value, not the alias it arrived as.
+                        force(
                             local(0),
-                            vec![(
-                                DataConstructor::ListCons.tag(), // [k r] [p t] [xs]
-                                force(
-                                    SeqKey.global(lref(0)),
-                                    // [fk] [k r] [p t] [xs]
-                                    //  0    1 2   3 4   5
-                                    case(
-                                        local(2),
-                                        vec![(
-                                            DataConstructor::ListCons.tag(),
-                                            // [v rest] [fk] [k r] [p t] [xs]
-                                            case(
-                                                local(1),
-                                                vec![(DataConstructor::ListNil.tag(), well_formed)],
-                                                // [frest] [v rest] [fk] [k r] [p t] [xs]
-                                                //  0       1 2      3    4 5   6 7
-                                                pass_through(6, 7),
-                                            ),
-                                        )],
-                                        // [fr] [fk] [k r] [p t] [xs]
-                                        //  0    1    2 3   4 5
-                                        pass_through(4, 5),
-                                    ),
-                                ),
-                            )],
                             // [fp] [p t] [xs]
-                            pass_through(1, 2),
+                            case(
+                                local(0),
+                                vec![(
+                                    DataConstructor::ListCons.tag(), // [k r] [fp] [p t] [xs]
+                                    force(
+                                        SeqKey.global(lref(0)),
+                                        // [fk] [k r] [fp] [p t] [xs]
+                                        //  0    1 2   3    4 5   6
+                                        case(
+                                            local(2),
+                                            vec![(
+                                                DataConstructor::ListCons.tag(),
+                                                // [v rest] [fk] [k r] [fp] [p t] [xs]
+                                                case(
+                                                    local(1),
+                                                    vec![(
+                                                        DataConstructor::ListNil.tag(),
+                                                        well_formed,
+                                                    )],
+                                                    // [frest] [v rest] [fk] [k r] [fp] [p t] [xs]
+                                                    //  0       1 2      3    4 5   6    7 8   9
+                                                    // Pass `fk : v : frest`, the
+                                                    // cells already forced, so the
+                                                    // error counts them.
+                                                    force(
+                                                        SeqDictPairs.global(lref(8)),
+                                                        // [st] [frest] [v rest] [fk] ...
+                                                        let_(
+                                                            vec![value(data(
+                                                                DataConstructor::ListCons.tag(),
+                                                                vec![lref(2), lref(1)],
+                                                            ))],
+                                                            // [c2] [st] [frest] [v rest] [fk] ...
+                                                            let_(
+                                                                vec![value(data(
+                                                                    DataConstructor::ListCons.tag(),
+                                                                    vec![lref(5), lref(0)],
+                                                                ))],
+                                                                // [c1] [c2] [st] ...
+                                                                data(
+                                                                    DataConstructor::ListCons.tag(),
+                                                                    vec![lref(0), lref(2)],
+                                                                ),
+                                                            ),
+                                                        ),
+                                                    ),
+                                                ),
+                                            )],
+                                            // [fr] [fk] [k r] [fp] [p t] [xs]
+                                            //  0    1    2 3   4    5 6   7
+                                            pass_through(4, 6),
+                                        ),
+                                    ),
+                                )],
+                                // [ffp] [fp] [p t] [xs]
+                                pass_through(0, 3),
+                            ),
                         ),
                     ),
                 ],

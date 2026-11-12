@@ -3580,6 +3580,12 @@ pub fn test_error_250_dict_bad_pair() {
 }
 
 #[test]
+/// eu-oaz72.21: a computed bad `dict.of` element is described evaluated, not as an alias.
+pub fn test_error_250_dict_bad_pair_computed() {
+    run_error_test(&error_opts("250_dict_bad_pair_computed.eu"));
+}
+
+#[test]
 /// eu-oaz72.21: a dict reaching output is a clear error until dict rendering lands.
 pub fn test_error_250_dict_render() {
     run_error_test(&error_opts("250_dict_render.eu"));

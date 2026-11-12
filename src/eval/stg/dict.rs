@@ -55,6 +55,8 @@ fn describe(machine: &dyn IntrinsicMachine, view: MutatorHeapView<'_>, v: &AbiCl
         Some(t) if t == DataConstructor::Unit.tag() => "null".to_string(),
         Some(t) if t == DataConstructor::ListNil.tag() => "an empty list".to_string(),
         Some(t) if t == DataConstructor::ListCons.tag() => {
+            // Count the cells already evaluated; a tail not yet evaluated
+            // ends the count, which is then a lower bound.
             let mut n = 0usize;
             let mut cur = v.clone();
             while machine.data_tag(view, &cur) == Some(DataConstructor::ListCons.tag()) {
@@ -64,10 +66,12 @@ fn describe(machine: &dyn IntrinsicMachine, view: MutatorHeapView<'_>, v: &AbiCl
                     None => break,
                 }
             }
-            if n == 1 {
-                "a list of 1 element".to_string()
+            let exact = machine.data_tag(view, &cur) == Some(DataConstructor::ListNil.tag());
+            let noun = if n == 1 { "element" } else { "elements" };
+            if exact {
+                format!("a list of {n} {noun}")
             } else {
-                format!("a list of {n} elements")
+                format!("a list of at least {n} {noun}")
             }
         }
         Some(t) if t == DataConstructor::BoxedNumber.tag() => "a number".to_string(),
