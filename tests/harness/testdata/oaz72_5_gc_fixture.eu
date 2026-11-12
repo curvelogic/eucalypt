@@ -1,0 +1,24 @@
+# eu-oaz72.5 GC fixture, run by `test_oaz72_5_native_storage_under_collection`
+# with a small --heap-limit-mib so that collections (evacuating under
+# EU_GC_STRESS) run while string sets and vecs are live. `key(n)` builds a
+# fresh heap string per call, so the strings inside `churned` and `vs` are
+# reachable only through the set or vec.
+key(n): "k-{n}"
+
+churn-step(s, i): s set.remove(key(i % 40)) set.add(key(i % 40))
+
+churned: foldl(churn-step, range(0, 40) map(key) set.from-list, range(0, 400))
+
+vs: range(0, 40) map(key) vec.of
+
+vec-step(acc, i): vs vec.slice(0, 40) vec.nth(i % 40)
+
+checks: [
+  (churned set.size) = 40,
+  (churned set.to-list) = (range(0, 40) map(key) set.from-list set.to-list),
+  churned set.contains?("k-17"),
+  (vs vec.to-list) = (range(0, 40) map(key)),
+  foldl(vec-step, "", range(0, 400)) = "k-39"
+]
+
+RESULT: if(checks all-true?, :PASS, :FAIL)

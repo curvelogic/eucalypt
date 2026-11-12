@@ -3082,6 +3082,35 @@ pub fn test_232_oaz72_5_native_storage_gc() {
     run_test(&opts("232_oaz72_5_native_storage_gc.eu"));
 }
 
+/// eu-oaz72.5: the same churn, run through the `eu` binary with a 2 MiB heap
+/// limit so the collector actually runs (hundreds of collections) while
+/// string sets and vecs are live in env frames and `current`. Run under
+/// `EU_GC_STRESS=1` (every collection evacuates) and `EU_GC_POISON=1` (swept
+/// memory is poisoned): a container or element the collector fails to trace
+/// or forward is read after it is swept and the fixture fails or crashes.
+/// The in-process harness run above sets no heap limit and never collects.
+#[test]
+pub fn test_oaz72_5_native_storage_under_collection() {
+    let mut cmd = std::process::Command::new(eu_binary());
+    cmd.arg("tests/harness/testdata/oaz72_5_gc_fixture.eu")
+        .arg("--heap-limit-mib")
+        .arg("2")
+        .arg("-e")
+        .arg("RESULT")
+        .env("EU_GC_STRESS", "1")
+        .env("EU_GC_POISON", "1");
+    // ~6 s in a debug build; a tracing fault typically hangs the run, so a
+    // tight deadline keeps a failure from stalling the suite.
+    let out = run_with_deadline(cmd, std::time::Duration::from_secs(180))
+        .expect("oaz72_5 GC fixture timed out (a GC tracing fault can hang it)");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success() && stdout.contains("PASS"),
+        "native storage GC fixture failed under collection:\nstdout: {stdout}\nstderr: {stderr}"
+    );
+}
+
 #[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame

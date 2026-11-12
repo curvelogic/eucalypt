@@ -2,14 +2,14 @@
 
 # Set and vec contents used to be Rust-owned (never freed when swept);
 # they now live in the GC heap, and their string elements are heap strings
-# the collector traces. These checks churn sets and vecs of computed strings
-# so that collections (frequent under EU_GC_STRESS) run while they are
-# live, then check every element survived with its value and order intact.
+# the collector traces. This file checks the semantics (contents, order and
+# set algebra) are unchanged. It runs in-process with no heap limit, so it
+# does not itself collect: the GC paths are gated by
+# `test_oaz72_5_native_storage_under_collection` (testdata fixture under a
+# 2 MiB limit) and the machine.rs `native_container*` unit tests.
 
 # `key(n)` builds a fresh heap string on every call, so the strings inside
-# `churned` and `vs` are reachable only through the set or vec themselves:
-# if the collector failed to trace set/vec elements, they would be swept
-# (and poisoned under EU_GC_POISON) before the checks read them.
+# `churned` and `vs` are reachable only through the set or vec themselves.
 key(n): "k-{n}"
 
 keys: range(0, 300) map(key)

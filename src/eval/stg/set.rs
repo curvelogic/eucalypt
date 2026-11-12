@@ -210,11 +210,12 @@ impl StgIntrinsic for SetAdd {
         let native = resolve_native_unboxing(machine, view, &args[0])?;
         let prim = native_to_set_primitive(machine.annotation(), &native)?;
         let set = set_arg(machine, view, &args[1])?;
-        match set.with_added(&view, prim) {
-            Some(elements) => machine_return_set(machine, view, &elements),
-            // Already a member: the (immutable) set is its own result.
-            None => machine.return_native(view, Native::Set(set.as_ptr())),
-        }
+        // Always a fresh set, even when `prim` is already a member: set `=`
+        // compares by identity, so returning the input would change it.
+        let elements = set
+            .with_added(&view, prim)
+            .unwrap_or_else(|| set.elements().to_vec());
+        machine_return_set(machine, view, &elements)
     }
 }
 
@@ -242,11 +243,11 @@ impl StgIntrinsic for SetRemove {
         let native = resolve_native_unboxing(machine, view, &args[0])?;
         let prim = native_to_set_primitive(machine.annotation(), &native)?;
         let set = set_arg(machine, view, &args[1])?;
-        match set.with_removed(&view, &prim) {
-            Some(elements) => machine_return_set(machine, view, &elements),
-            // Not a member: the (immutable) set is its own result.
-            None => machine.return_native(view, Native::Set(set.as_ptr())),
-        }
+        // Always a fresh set, even when `prim` is not a member (see SET.ADD).
+        let elements = set
+            .with_removed(&view, &prim)
+            .unwrap_or_else(|| set.elements().to_vec());
+        machine_return_set(machine, view, &elements)
     }
 }
 

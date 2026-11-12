@@ -5991,18 +5991,18 @@ mod tests {
         }
     }
 
+    /// Heap containers built by [`native_containers_fixture`].
+    struct NativeContainers {
+        root: RefPtr<BcEnvFrame>,
+        set: RefPtr<crate::eval::memory::set::HeapSet>,
+        vec: RefPtr<crate::eval::memory::vec::HeapVec>,
+        arr: RefPtr<crate::eval::memory::ndarray::HeapNdArray>,
+    }
+
     /// Build a set, a vec and an n-d array whose storage is spread across
     /// heap blocks (string elements interleaved with unrooted fillers), with
     /// the containers reachable only through a bif frame.
-    #[allow(clippy::type_complexity)]
-    fn native_containers_fixture(
-        heap: &Heap,
-    ) -> (
-        RefPtr<BcEnvFrame>,
-        RefPtr<crate::eval::memory::set::HeapSet>,
-        RefPtr<crate::eval::memory::vec::HeapVec>,
-        RefPtr<crate::eval::memory::ndarray::HeapNdArray>,
-    ) {
+    fn native_containers_fixture(heap: &Heap) -> NativeContainers {
         use crate::eval::memory::ndarray::{self, HeapNdArray};
         use crate::eval::memory::set::{sort_dedup, HeapSet, Primitive};
         use crate::eval::memory::string::HeapString;
@@ -6041,7 +6041,12 @@ mod tests {
             )
             .unwrap()
             .as_ptr();
-        (root, set, vec, arr)
+        NativeContainers {
+            root,
+            set,
+            vec,
+            arr,
+        }
     }
 
     /// Assert the fixture's containers read back intact.
@@ -6093,7 +6098,12 @@ mod tests {
         let mut heap = Heap::new();
         let mut clock = Clock::default();
         clock.switch(ThreadOccupation::Mutator);
-        let (root, set, vec, arr) = native_containers_fixture(&heap);
+        let NativeContainers {
+            root,
+            set,
+            vec,
+            arr,
+        } = native_containers_fixture(&heap);
         // Backing-buffer addresses: a full evacuation must move each one.
         let old_backings = {
             let view = MutatorHeapView::new(&heap);
@@ -6172,6 +6182,79 @@ mod tests {
             old_strs.len(),
             "every vec string element must be forwarded by a full evacuation"
         );
+    }
+
+    #[test]
+    fn native_containers_in_runtime_values_survive_gc_evacuation() {
+        // eu-oaz72.5: a running program holds sets/vecs/arrays as
+        // `BcValue::Native` — in env-frame slots and as `current` — which
+        // are scanned by `scan_native`, not the constant-pool `scan_const`.
+        // Root the containers only that way and check a full evacuation
+        // forwards every backing buffer and keeps the contents intact.
+        use crate::common::sourcemap::Smid;
+        use crate::eval::machine::metrics::ThreadOccupation;
+        use crate::eval::memory::collect::{collect, collect_with_evacuation};
+
+        let mut heap = Heap::new();
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+        let NativeContainers {
+            root,
+            set,
+            vec,
+            arr,
+        } = native_containers_fixture(&heap);
+        let (env, old_backings) = {
+            let view = MutatorHeapView::new(&heap);
+            let env = view
+                .from_saturation(
+                    view.array(&[
+                        BcValue::Native(Native::Vec(vec)),
+                        BcValue::Native(Native::NdArray(arr)),
+                    ]),
+                    root,
+                    Smid::default(),
+                )
+                .unwrap();
+            let old = [
+                view.scoped(set).elements().as_ptr() as usize,
+                view.scoped(vec).elements().as_ptr() as usize,
+                view.scoped(arr).view().as_ptr() as usize,
+            ];
+            (env, old)
+        };
+        let mut state = BcMachineState::new(BcValue::Native(Native::Set(set)), env, root, vec![]);
+
+        let rest = heap.rest_block_count();
+        let candidates: Vec<usize> = (0..2 + rest).collect();
+        collect_with_evacuation(&mut state, &mut heap, &mut clock, &candidates, false);
+        collect(&mut state, &mut heap, &mut clock, false);
+        heap.flush_unswept();
+
+        let set = match &state.current {
+            BcValue::Native(Native::Set(s)) => *s,
+            _ => panic!("current is no longer a set"),
+        };
+        let view = MutatorHeapView::new(&heap);
+        let frame = view.scoped(state.globals);
+        let (vec, arr) = match (frame.get(&view, 0), frame.get(&view, 1)) {
+            (Some(BcValue::Native(Native::Vec(v))), Some(BcValue::Native(Native::NdArray(a)))) => {
+                (v, a)
+            }
+            _ => panic!("env frame slots changed shape"),
+        };
+        let new_backings = [
+            view.scoped(set).elements().as_ptr() as usize,
+            view.scoped(vec).elements().as_ptr() as usize,
+            view.scoped(arr).view().as_ptr() as usize,
+        ];
+        for (i, (new, old)) in new_backings.iter().zip(old_backings.iter()).enumerate() {
+            assert_ne!(
+                new, old,
+                "backing buffer {i} (set, vec, data) held by a runtime value was not forwarded"
+            );
+        }
+        assert_native_containers_intact(&heap, set, vec, arr);
     }
 
     #[test]
