@@ -1,2 +1,4 @@
 exit: 1
 stderr: "str.*namespace of string functions"
+# no lookup in the source, so no notes about the '.' operator (eu-oaz72.28)
+stderr-absent: "operator performs key lookup"

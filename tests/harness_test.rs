@@ -3545,6 +3545,24 @@ pub fn test_error_264_literal_after_value() {
     run_error_test(&error_opts("264_literal_after_value.eu"));
 }
 
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_265_loose_operator_after_call() {
+    run_error_test(&error_opts("265_loose_operator_after_call.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_266_const_operator_unresolved_name() {
+    run_error_test(&error_opts("266_const_operator_unresolved_name.eu"));
+}
+
+/// Diagnostic hints shown only on source evidence (eu-oaz72.28).
+#[test]
+pub fn test_error_267_str_looked_up_on_number() {
+    run_error_test(&error_opts("267_str_looked_up_on_number.eu"));
+}
+
 #[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.

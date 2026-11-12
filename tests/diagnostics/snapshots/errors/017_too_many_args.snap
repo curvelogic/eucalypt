@@ -10,7 +10,7 @@ warnings: 0
 code: -
 primary: user tests/harness/errors/017_too_many_args.eu:2:4
 help-lines: 1
-note-lines: 1
+note-lines: 0
 secondary-labels: 0
 trace-frames: 1
 trace-user-frames: 1
@@ -25,6 +25,5 @@ error: tried to call a number as a function
 2 │ y: f(1, 2)
   │    ^^^^^^^
   │
-  = note: 'f(1, 2)' passes 2 arguments, but applying 'f' to fewer of them already gave a number, which cannot take the rest
   = while evaluating (outermost first):
     - y at 017_too_many_args.eu:2:4

@@ -1410,9 +1410,7 @@ impl Checker {
                          'if(xs nil?, default, xs {proj_name})'"
                         ))
                         .with_note(
-                            "'head' and 'tail' are only defined on non-empty lists; \
-                         use 'nth(0, xs)' or pattern matching if the list may be empty"
-                                .to_string(),
+                            "'head' and 'tail' are only defined on non-empty lists".to_string(),
                         );
                     self.warnings.push(warning);
                     return Type::Any;

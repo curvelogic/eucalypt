@@ -25,7 +25,7 @@ warning: head of empty list
   │            ^^^^
   │
   = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
-  = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
+  = 'head' and 'tail' are only defined on non-empty lists
 
 error: head of empty list
   ┌─ tests/harness/errors/112_head_empty_list.eu:1:12

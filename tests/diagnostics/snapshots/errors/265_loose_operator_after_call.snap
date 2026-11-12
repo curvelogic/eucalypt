@@ -1,0 +1,32 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/265_loose_operator_after_call
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/265_loose_operator_after_call.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/265_loose_operator_after_call.eu:4:11
+help-lines: 1
+note-lines: 0
+secondary-labels: 1
+trace-frames: 2
+trace-user-frames: 2
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: tried to call a number as a function
+  help: only functions and blocks can be called with arguments
+  ┌─ tests/harness/errors/265_loose_operator_after_call.eu:4:11
+  │
+4 │ r: cond[1 f(1) => "x", "y"]
+  │    -------^^^^-------------
+  │    │
+  │    called from here
+  │
+  = while evaluating (outermost first):
+    - f(n): n… at 265_loose_operator_after_call.eu:1:1
+    - r at 265_loose_operator_after_call.eu:4:16

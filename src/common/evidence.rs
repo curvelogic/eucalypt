@@ -122,44 +122,29 @@ pub fn left_operand_is_catenation(before: &str) -> bool {
 pub fn operator_after_catenation(source: &LabelSource) -> Option<String> {
     let label = source.text().trim();
     if is_operator(label) {
+        if !binds_tighter_than_catenation(label) {
+            return None;
+        }
         return left_operand_is_catenation(source.before()).then(|| label.to_string());
     }
     let after = source.after().trim_start();
     let op: String = after.chars().take_while(|c| !c.is_whitespace()).collect();
     let operand = &source.line[..source.end];
     (is_operator(&op)
+        && binds_tighter_than_catenation(&op)
         && after[op.len()..].starts_with(char::is_whitespace)
         && left_operand_is_catenation(operand))
     .then_some(op)
 }
 
-/// For a label that is a call written `name(a, b, ...)`, the name and the
-/// number of arguments, when there are at least two.
-pub fn call_with_arguments(text: &str) -> Option<(&str, usize)> {
-    let text = text.trim();
-    let open = text.find('(')?;
-    let name = &text[..open];
-    if name.is_empty()
-        || !name.chars().all(|c| is_ident_char(c) || c == '.')
-        || !text.ends_with(')')
-    {
-        return None;
-    }
-    let inner = &text[open + 1..text.len() - 1];
-    let mut depth = 0i32;
-    let mut count = 1;
-    for c in inner.chars() {
-        match c {
-            '(' | '[' | '{' => depth += 1,
-            ')' | ']' | '}' => depth -= 1,
-            ',' if depth == 0 => count += 1,
-            _ => {}
-        }
-        if depth < 0 {
-            return None;
-        }
-    }
-    (count >= 2).then_some((name, count))
+/// Whether an infix operator binds more tightly than catenation
+/// (precedence 20). The prelude operators that do not — `=>` and `⇒`
+/// (15), `@` (`:apply`, 10), and the `:meta` operators `//`, `//=`,
+/// `//=>`, `=!`, `%!` and the rest of the `//` family (5) — would make
+/// the catenation note false. A user-defined operator is assumed to bind
+/// tightly.
+fn binds_tighter_than_catenation(op: &str) -> bool {
+    !(op.starts_with("//") || matches!(op, "=>" | "⇒" | "@" | "=!" | "%!"))
 }
 
 /// Whether `c` can occur in a eucalypt normal identifier.
@@ -215,6 +200,16 @@ mod tests {
         assert!(!has_word("sort-order(band)", "or"));
         assert!(!has_word("random", "and"));
         assert!(!has_word("or-else", "or"));
+    }
+
+    #[test]
+    fn loose_operators_are_not_catenation_traps() {
+        assert!(binds_tighter_than_catenation("+"));
+        assert!(binds_tighter_than_catenation("="));
+        assert!(!binds_tighter_than_catenation("=>"));
+        assert!(!binds_tighter_than_catenation("//"));
+        assert!(!binds_tighter_than_catenation("//=>"));
+        assert!(!binds_tighter_than_catenation("@"));
     }
 
     #[test]

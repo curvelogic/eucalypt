@@ -267,6 +267,8 @@ fn type_mismatch_notes(
 ) -> Vec<String> {
     use IntrinsicType::*;
     match (expected, actual) {
+        // The '.' notes need a '.' lookup in the source (eu-oaz72.28).
+        (Record(_), _) if !ev.has_lookup() => vec![],
         (Record(_), List(_)) => vec![
             "the '.' operator performs key lookup on blocks, not lists".to_string(),
             "for lists, use the index operator for indexing (e.g. xs index 0) or \
@@ -337,6 +339,18 @@ fn type_mismatch_notes(
     }
 }
 
+/// The 'str'-as-converter note for a number, shown when the source uses a
+/// bare `str` (eu-oaz72.28).
+const STR_NAMESPACE_NUMBER_NOTE: &str = "note: 'str' is a namespace of string functions, \
+     not a type conversion function; to convert a number to a string use 'str.of(x)' or \
+     string interpolation";
+
+/// The 'str'-as-converter note for a string, shown when the source uses a
+/// bare `str` (eu-oaz72.28).
+const STR_NAMESPACE_STRING_NOTE: &str = "note: 'str' is a namespace of string functions, \
+     not a type conversion function; use 'str.of(x)' or string interpolation to convert \
+     values to strings";
+
 /// Generate contextual help notes for data tag mismatch errors
 fn data_tag_mismatch_notes(actual: u8, expected: &[u8], ev: &Evidence) -> Vec<String> {
     let is_list =
@@ -359,7 +373,17 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8], ev: &Evidence) -> Vec<St
         ];
     }
 
-    if is_list && expects_block {
+    if (is_list || is_number || is_string) && expects_block && !ev.has_lookup() {
+        // The '.' notes need a '.' lookup in the source (eu-oaz72.28);
+        // the 'str' note has its own evidence.
+        if is_number && ev.uses_bare("str") {
+            vec![STR_NAMESPACE_NUMBER_NOTE.to_string()]
+        } else if is_string && ev.uses_bare("str") {
+            vec![STR_NAMESPACE_STRING_NOTE.to_string()]
+        } else {
+            vec![]
+        }
+    } else if is_list && expects_block {
         vec![
             "the '.' operator performs key lookup on blocks, not lists".to_string(),
             "for lists, use pipeline functions: 'xs count' (length), 'xs head' (first element), \
@@ -401,11 +425,7 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8], ev: &Evidence) -> Vec<St
                 .to_string(),
         ];
         if ev.uses_bare("str") {
-            notes.push(
-                "note: 'str' is a namespace of string functions, not a type conversion function; \
-                 to convert a number to a string use 'str.of(x)' or string interpolation"
-                    .to_string(),
-            );
+            notes.push(STR_NAMESPACE_NUMBER_NOTE.to_string());
         }
         notes
     } else if is_string && expects_block {
@@ -418,11 +438,7 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8], ev: &Evidence) -> Vec<St
                 .to_string(),
         ];
         if ev.uses_bare("str") {
-            notes.push(
-                "note: 'str' is a namespace of string functions, not a type conversion function; \
-                 use 'str.of(x)' or string interpolation to convert values to strings"
-                    .to_string(),
-            );
+            notes.push(STR_NAMESPACE_STRING_NOTE.to_string());
         }
         notes
     } else if is_block && expects_number && expects_string {
@@ -711,12 +727,33 @@ impl Evidence<'_> {
     }
 
     /// The labelled line uses `name` bare — as a whole identifier not
-    /// followed by `.` — as in `str(x)` or `x str`, but not `str.of`.
+    /// followed by `.` — as in `str(x)`, `x str` or `x.str`, but not
+    /// `str.of`.
     fn uses_bare(&self, name: &str) -> bool {
         self.0.as_ref().is_some_and(|s| {
             let ident = |c: char| c.is_alphanumeric() || "-_?!$'*.".contains(c);
+            // A preceding '.' still counts: `x.str` looks `str` up as if
+            // it were a field of `x`.
             s.line.match_indices(name).any(|(i, _)| {
-                !s.line[..i].ends_with(ident) && !s.line[i + name.len()..].starts_with(ident)
+                !s.line[..i].ends_with(|c: char| c != '.' && ident(c))
+                    && !s.line[i + name.len()..].starts_with(ident)
+            })
+        })
+    }
+
+    /// The labelled line contains a '.' lookup: a '.' between a value and
+    /// a key name, as in `x.name` or `f(x).name` (not `1.5`).
+    fn has_lookup(&self) -> bool {
+        self.0.as_ref().is_some_and(|s| {
+            s.line.match_indices('.').any(|(i, _)| {
+                let before_ok = s.line[..i].chars().next_back().is_some_and(|c| {
+                    c.is_alphanumeric() || matches!(c, ')' | ']' | '}' | '_' | '?')
+                });
+                let after_ok = s.line[i + 1..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphabetic() || c == '_');
+                before_ok && after_ok
             })
         })
     }
@@ -757,13 +794,6 @@ fn not_callable_notes(actual_type: &str, ev: &Evidence) -> Vec<String> {
             ));
         }
         notes.push(note);
-    } else if let Some((name, n)) = evidence::call_with_arguments(label) {
-        // `f(1, 2)` raising "not callable" means applying `f` to the first
-        // arguments already gave a non-function, which cannot take the rest.
-        notes.push(format!(
-            "note: '{label}' passes {n} arguments, but applying '{name}' to fewer of them \
-             already gave a {actual_type}, which cannot take the rest"
-        ));
     } else if let Some(source) = ev.0.as_ref() {
         // A literal called because it follows another expression: `x 5`.
         let before = source.before().trim_end();

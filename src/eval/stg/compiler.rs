@@ -5,7 +5,7 @@ use std::{collections::HashMap, convert::TryInto, rc::Rc};
 use crate::core::binding::{BoundVar, Var};
 use crate::core::demand::Demand;
 use crate::{
-    common::evidence::LabelSource,
+    common::evidence::{has_word, LabelSource},
     common::sourcemap::{HasSmid, Smid, SourceMap},
     core::expr::{BlockMap, Expr, LamScope, LetScope, Primitive, RcExpr, INTERNAL_FREE_VAR_PREFIX},
     eval::{
@@ -141,7 +141,8 @@ impl CompileError {
                 }
                 // Only when the source shows an arrow-function shape: the
                 // unresolved name is followed by '->', possibly after further
-                // parameters, as in `x -> x + 1` or `(x, y) -> x` (eu-oaz72.28).
+                // parameters, and used again after it, as in `x -> x + 1` or
+                // `(x, y) -> x` (eu-oaz72.28).
                 if source.as_ref().is_some_and(|src| {
                     src.text() == name.as_str()
                         && src.after().find("->").is_some_and(|i| {
@@ -150,6 +151,10 @@ impl CompileError {
                                     || c.is_whitespace()
                                     || matches!(c, ',' | ')' | '_' | '-' | '?')
                             })
+                            // ...and the name is used again after the
+                            // arrow, as a lambda body would: `foo -> 1`
+                            // is the const operator used correctly.
+                            && has_word(&src.after()[i + 2..], name)
                         })
                 }) {
                     notes.push(
