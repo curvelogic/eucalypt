@@ -3074,13 +3074,37 @@ pub fn test_231_oaz72_1_demand_untaken_branch() {
     run_test(&opts("231_oaz72_1_demand_untaken_branch.eu"));
 }
 
+/// eu-oaz72.35 — `take(n)` with n <= 0 is [] (it used to run past zero on
+/// a negative count), so `range(b, e)` with e <= b is [] instead of hanging.
+#[test]
+pub fn test_232_oaz72_35_range_take_termination() {
+    run_test(&opts("232_oaz72_35_range_take_termination.eu"));
+}
+
+/// eu-oaz72.34 — a self-recursive loop through `if` or `then` with a strict
+/// accumulator must run in constant stack: the curried `then(t, f)(c)` that
+/// catenation produces is reduced to a saturated `if`. The `loops` target's
+/// `constant-stack` validator checks `max-stack` and FAILs on master, where
+/// each `then` iteration pushed a frame (max-stack ~1e5 at n = 1e5).
+#[test]
+pub fn test_233_oaz72_34_constant_stack_loops() {
+    run_test(&opts("233_oaz72_34_constant_stack_loops.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: negative counts to drop, split-at and rotate are consistent
+/// with take and terminate on infinite lists.
+pub fn test_233_oaz72_43_negative_counts() {
+    run_test(&opts("233_oaz72_43_negative_counts.eu"));
+}
+
 /// eu-oaz72.4: collection runs on allocation volume, not only at the heap
 /// limit. The fixture allocates far past the 32 MiB minimum trigger with
 /// little live data and checks that data live across the collections
 /// survives them. Each check is in RESULT.
 #[test]
-pub fn test_232_oaz72_4_gc_volume_trigger() {
-    run_test(&opts("232_oaz72_4_gc_volume_trigger.eu"));
+pub fn test_234_oaz72_4_gc_volume_trigger() {
+    run_test(&opts("234_oaz72_4_gc_volume_trigger.eu"));
 }
 
 #[test]
@@ -3230,6 +3254,27 @@ pub fn test_error_230_lazy_demand_site_blame() {
 /// `TypeMismatch`); the sidecar pins the coded header.
 pub fn test_error_231_1tkk_7_44_nobranch_datatag_code() {
     run_error_test(&error_opts("231_1tkk_7_44_nobranch_datatag_code.eu"));
+}
+
+#[test]
+/// eu-oaz72.2: an unclosed unicode bracket at end of file reports a parse
+/// error instead of panicking the parser.
+pub fn test_error_232_oaz72_2_unclosed_bracket_eof() {
+    run_error_test(&error_opts("232_oaz72_2_unclosed_bracket_eof.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: a negative index to nth is an error rather than a hang on
+/// an infinite list (checked on a finite one to stay bounded).
+pub fn test_error_233_oaz72_43_nth_negative() {
+    run_error_test(&error_opts("233_oaz72_43_nth_negative.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: a negative index to update-nth is an error, not a silent
+/// update of element 0.
+pub fn test_error_233_oaz72_43_update_nth_negative() {
+    run_error_test(&error_opts("233_oaz72_43_update_nth_negative.eu"));
 }
 
 #[test]

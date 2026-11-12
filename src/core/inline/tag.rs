@@ -197,7 +197,7 @@ fn node_count(expr: &RcExpr) -> usize {
 /// - `abs(n)`   → `__IF(__LT(n, 0), __SUB(0, n), n)`
 /// - `max(l,r)` → `__IF(__GT(l, r), l, r)`
 /// - `!=(l,r)`  → `__NOT(__EQ(l, r))`
-fn closed_body(expr: &RcExpr) -> bool {
+pub fn closed_body(expr: &RcExpr) -> bool {
     match &*expr.inner {
         Expr::Var(_, Var::Bound(bv)) => bv.scope == 0,
         Expr::Literal(_, _) => true,

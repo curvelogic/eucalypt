@@ -67,7 +67,3 @@ solve-all(data): {
 
   fits?(r): area-ok?(r) ∧ box-ok?(r)
 }.(regions filter(fits?) count)
-
-` { target: :part-1
-    import: "input=inputs/day12.txt" }
-part-1: solve-all(input)

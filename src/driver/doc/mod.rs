@@ -14,6 +14,7 @@ mod prelude;
 mod render;
 
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 use crate::driver::error::EucalyptError;
@@ -135,7 +136,7 @@ fn render_and_output(
         DocFormat::Json => render_json_schema(entries, title),
     };
 
-    println!("{output}");
+    writeln!(std::io::stdout(), "{output}")?;
     Ok(0)
 }
 
@@ -148,18 +149,20 @@ fn render_coverage(entries: &[DocEntry], title: &str) -> Result<i32, EucalyptErr
         cov.documented as f64 / cov.total as f64 * 100.0
     };
 
-    println!("# Documentation coverage: {title}");
-    println!();
-    println!(
+    let mut out = std::io::stdout().lock();
+    writeln!(out, "# Documentation coverage: {title}")?;
+    writeln!(out)?;
+    writeln!(
+        out,
         "{}/{} public bindings documented ({:.0}%)",
         cov.documented, cov.total, pct
-    );
+    )?;
 
     if !cov.undocumented_names.is_empty() {
-        println!();
-        println!("Undocumented:");
+        writeln!(out)?;
+        writeln!(out, "Undocumented:")?;
         for name in &cov.undocumented_names {
-            println!("  - {name}");
+            writeln!(out, "  - {name}")?;
         }
     }
 
