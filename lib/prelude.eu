@@ -1626,7 +1626,7 @@ any(p?, l): l map(p?) any-true?
     type: s"number → number → [a] → [[a]]"
     blame: :boundary }
 window(n, step, l): {
-  skip(k, ys): __IF((k <= 0) ∨ (ys nil?), ys, skip(k dec, ys tail))
+  skip(k, ys): ((k <= 0) ∨ (ys nil?)) then(ys, skip(k dec, ys tail))
   aux(xs): { chunk: xs take(n) }.((count(chunk) >= n) then(cons(chunk, xs skip(step) aux), []))
 }.(if((n number?) ∧ (n <= 0), panic("window size {n} must be positive"),
    if((step number?) ∧ (step <= 0), panic("window step {step} must be positive"), aux(l))))
@@ -1639,7 +1639,7 @@ partition(n): window(n, n)
     type: s"number → number → [a] → [[a]]"
     blame: :boundary }
 window-all(n, step, l): {
-  skip(k, ys): __IF((k <= 0) ∨ (ys nil?), ys, skip(k dec, ys tail))
+  skip(k, ys): ((k <= 0) ∨ (ys nil?)) then(ys, skip(k dec, ys tail))
   aux(xs): { chunk: xs take(n) }.((chunk nil?) then([], cons(chunk, xs skip(step) aux)))
 }.(if((n number?) ∧ (n <= 0), [],
    if((step number?) ∧ (step <= 0), panic("window step {step} must be positive"), aux(l))))

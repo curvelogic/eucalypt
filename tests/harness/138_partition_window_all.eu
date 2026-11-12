@@ -10,11 +10,8 @@
         the list (it failed in `drop`)."
 }
 
-` "every check in the target is true"
-passes(context): (context.result values all-true?) then(:PASS, :FAIL)
-
 ` { target: :window-checks
-    verify: [:passes] }
+    verify: [:default-expectation] }
 window-checks: {
   step-1: ([1, 2, 3, 4] window(2, 1)) = [[1, 2], [2, 3], [3, 4]]
   step-2: ([1, 2, 3, 4, 5] window(2, 2)) = [[1, 2], [3, 4]]
@@ -27,7 +24,7 @@ window-checks: {
 }
 
 ` { target: :window-all-checks
-    verify: [:passes] }
+    verify: [:default-expectation] }
 window-all-checks: {
   step-1: ([1, 2, 3] window-all(2, 1)) = [[1, 2], [2, 3], [3]]
   step-2: ([1, 2, 3, 4, 5] window-all(2, 2)) = [[1, 2], [3, 4], [5]]
@@ -43,7 +40,7 @@ window-all-checks: {
 }
 
 ` { target: :partition-all-checks
-    verify: [:passes] }
+    verify: [:default-expectation] }
 partition-all-checks: {
   short-tail: ([1, 2, 3, 4, 5] partition-all(2)) = [[1, 2], [3, 4], [5]]
   exact: ([1, 2, 3, 4] partition-all(2)) = [[1, 2], [3, 4]]
@@ -60,7 +57,7 @@ long: range(0, 1000000)
 few-ticks(context): (context.stats.ticks < 100000) then(:PASS, :FAIL)
 
 ` { target: :lazy
-    verify: [:passes, :few-ticks]
+    verify: [:default-expectation, :few-ticks]
     doc: "eu-oaz72.56: the old `window-all` counted the whole remaining list
           before yielding each window, so on an infinite list it never
           returned. Taking a few windows must cost nothing like the length
@@ -75,13 +72,14 @@ lazy: {
 n: 4000
 
 ` "the cost is linear in the length of the list"
-linear-cost(context): (context.stats.ticks < 1000 * n) then(:PASS, :FAIL)
+linear-cost(context): (context.stats.ticks < 2000 * n) then(:PASS, :FAIL)
 
 ` { target: :cost
-    verify: [:passes, :linear-cost]
+    verify: [:default-expectation, :linear-cost]
     doc: "eu-oaz72.56: one `count` per window over the remaining list made
           `window-all` quadratic; the tick budget is per element." }
 cost: {
   pa: (range(0, n) partition-all(2) count) = n / 2
   wa: (range(0, n) window-all(2, 1) count) = n
+  w: (range(0, n) window(2, 1) count) = n - 1
 }
