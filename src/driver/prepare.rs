@@ -11,6 +11,7 @@ use crate::syntax::input::{Input, Locator};
 use crate::syntax::rowan::kind::SyntaxNode;
 use crate::{common::prettify::prettify, core::export};
 use rowan::ast::AstNode;
+use std::io::{self, Write};
 use std::time::Instant;
 
 use super::statistics::Timings;
@@ -139,9 +140,10 @@ pub fn prepare(
 
     // If we're dumping parses, dump every file read during the load
     if opt.parse_only() {
+        let mut out = io::stdout().lock();
         for (loc, ast) in loader.asts() {
-            println!("--- {loc} ---\n");
-            dump_ast(ast, opt);
+            writeln!(out, "--- {loc} ---\n")?;
+            dump_ast(ast, opt, &mut out)?;
         }
         return Ok(Command::Exit);
     }
@@ -202,14 +204,15 @@ pub fn prepare(
 
     // List targets discovered
     if opt.list_targets() {
-        println!("Available targets\n");
+        let mut out = io::stdout().lock();
+        writeln!(out, "Available targets\n")?;
         for t in format_target_table(loader.core().targets.iter()) {
-            println!("{t}");
+            writeln!(out, "{t}")?;
         }
 
-        println!("\nFrom inputs\n");
+        writeln!(out, "\nFrom inputs\n")?;
         for i in &inputs {
-            println!("  - {i}");
+            writeln!(out, "  - {i}")?;
         }
         return Ok(Command::Exit);
     }
@@ -217,7 +220,7 @@ pub fn prepare(
     // Prior to further processing, dump?
     if opt.dump_desugared() {
         let c = loader.core();
-        dump_core(c.expr.clone(), opt);
+        dump_core(c.expr.clone(), opt)?;
         return Ok(Command::Exit);
     }
 
@@ -238,7 +241,7 @@ pub fn prepare(
 
     if opt.dump_cooked() {
         let c = loader.core();
-        dump_core(c.expr.clone(), opt);
+        dump_core(c.expr.clone(), opt)?;
         return Ok(Command::Exit);
     }
 
@@ -256,7 +259,7 @@ pub fn prepare(
 
     if opt.dump_split() {
         let c = loader.core();
-        dump_core(c.expr.clone(), opt);
+        dump_core(c.expr.clone(), opt)?;
         return Ok(Command::Exit);
     }
 
@@ -353,7 +356,7 @@ pub fn prepare(
 
     if opt.dump_inlined() {
         let c = loader.core();
-        dump_core(c.expr.clone(), opt);
+        dump_core(c.expr.clone(), opt)?;
         return Ok(Command::Exit);
     }
 
@@ -374,37 +377,39 @@ pub fn prepare(
 
     if opt.dump_pruned() {
         let c = loader.core();
-        dump_core(c.expr.clone(), opt);
+        dump_core(c.expr.clone(), opt)?;
         return Ok(Command::Exit);
     }
 
     if opt.dump_demands() {
         let c = loader.core();
         let (annotated, sigs, named_sigs) = crate::core::analyse_demand::analyse_demands(&c.expr);
-        dump_core(annotated.clone(), opt);
+        dump_core(annotated.clone(), opt)?;
         // Print demand annotations for all let-bound names.
-        println!("\n-- demand annotations --");
-        crate::core::analyse_demand::print_demands(&annotated);
+        let mut out = io::stdout().lock();
+        writeln!(out, "\n-- demand annotations --")?;
+        crate::core::analyse_demand::print_demands(&annotated, &mut out)?;
         // Print signature table summary.
-        println!("\n-- signature table ({} entries) --", sigs.len());
+        writeln!(out, "\n-- signature table ({} entries) --", sigs.len())?;
         for (key, sig) in &sigs {
             let demands: Vec<String> = sig
                 .iter()
                 .map(|d| format!("({:?},{:?})", d.strictness, d.cardinality))
                 .collect();
-            println!("  {:016x}: [{}]", key, demands.join(", "));
+            writeln!(out, "  {:016x}: [{}]", key, demands.join(", "))?;
         }
         // Print named signature table.
-        println!(
+        writeln!(
+            out,
             "\n-- named signature table ({} entries) --",
             named_sigs.len()
-        );
+        )?;
         for (name, sig) in &named_sigs {
             let demands: Vec<String> = sig
                 .iter()
                 .map(|d| format!("({:?},{:?})", d.strictness, d.cardinality))
                 .collect();
-            println!("  {}: [{}]", name, demands.join(", "));
+            writeln!(out, "  {}: [{}]", name, demands.join(", "))?;
         }
         return Ok(Command::Exit);
     }
@@ -437,66 +442,72 @@ pub fn prepare(
 ///
 /// Interior nodes show their kind and text range.
 /// Leaf tokens show their kind, text range, and quoted text content.
-fn print_syntax_tree(node: &SyntaxNode, indent: usize) {
+fn print_syntax_tree(node: &SyntaxNode, indent: usize, out: &mut dyn Write) -> io::Result<()> {
     let pad = "  ".repeat(indent);
     let range = node.text_range();
-    println!(
+    writeln!(
+        out,
         "{pad}{:?} {}..{}",
         node.kind(),
         u32::from(range.start()),
         u32::from(range.end())
-    );
+    )?;
     for child in node.children_with_tokens() {
         match child {
-            rowan::NodeOrToken::Node(n) => print_syntax_tree(&n, indent + 1),
+            rowan::NodeOrToken::Node(n) => print_syntax_tree(&n, indent + 1, out)?,
             rowan::NodeOrToken::Token(t) => {
                 let tr = t.text_range();
-                println!(
+                writeln!(
+                    out,
                     "{pad}  {:?} {}..{} {:?}",
                     t.kind(),
                     u32::from(tr.start()),
                     u32::from(tr.end()),
                     t.text()
-                );
+                )?;
             }
         }
     }
+    Ok(())
 }
 
 /// Dump AST expression using whatever format specified by options
-fn dump_ast(ast: &ParsedAst, opt: &EucalyptOptions) {
+fn dump_ast(ast: &ParsedAst, opt: &EucalyptOptions, out: &mut dyn Write) -> io::Result<()> {
     if opt.quote_embed() {
         match ast {
             ParsedAst::Unit(unit) => {
                 let embedded = unit.embed();
-                println!("{}\n", express(&embedded));
+                writeln!(out, "{}\n", express(&embedded))?;
             }
             ParsedAst::Soup(soup) => {
                 let embedded = soup.embed();
-                println!("{}\n", express(&embedded));
+                writeln!(out, "{}\n", express(&embedded))?;
             }
         }
     } else if opt.quote_debug() {
-        println!("{ast:#?}");
+        writeln!(out, "{ast:#?}")?;
     } else {
         let node = match ast {
             ParsedAst::Unit(unit) => unit.syntax().clone(),
             ParsedAst::Soup(soup) => soup.syntax().clone(),
         };
-        print_syntax_tree(&node, 0);
+        print_syntax_tree(&node, 0, out)?;
     }
+    Ok(())
 }
 
 /// Dump core expression using whatever format specified by options
-fn dump_core(expr: RcExpr, opt: &EucalyptOptions) {
+fn dump_core(expr: RcExpr, opt: &EucalyptOptions) -> io::Result<()> {
+    let mut out = io::stdout().lock();
     if opt.quote_embed() {
-        println!("{}\n\n", export::quote_embed_core_unit(&expr));
+        writeln!(out, "{}\n\n", export::quote_embed_core_unit(&expr))?;
     } else if opt.quote_debug() {
-        println!("{expr:#?}");
+        writeln!(out, "{expr:#?}")?;
     } else {
         // direct expression
-        print!("{}", prettify(&expr));
+        write!(out, "{}", prettify(&expr))?;
     }
+    Ok(())
 }
 
 /// Print diagnostics for all errors beyond the first.

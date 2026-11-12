@@ -3,7 +3,7 @@
 use crate::driver::options::EucalyptOptions;
 use crate::syntax::export::format::{format_source, needs_formatting, FormatterConfig};
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::Path;
 
 /// Run the format command
@@ -86,7 +86,7 @@ fn format_file(
         }
     } else {
         // Output to stdout
-        print!("{}", formatted);
+        write_stdout(&formatted)?;
     }
 
     Ok(0)
@@ -109,7 +109,21 @@ fn format_stdin(config: &FormatterConfig, opt: &EucalyptOptions) -> Result<i32, 
     }
 
     let formatted = format_source(&source, config)?;
-    print!("{}", formatted);
+    write_stdout(&formatted)?;
 
     Ok(0)
+}
+
+/// Write formatted source to stdout without panicking on a write failure.
+///
+/// A closed pipe (`eu fmt … | head`) is not a failure — the reader has what
+/// it wanted — so it is treated as success; any other write failure is
+/// reported.
+fn write_stdout(formatted: &str) -> Result<(), String> {
+    match io::stdout().write_all(formatted.as_bytes()) {
+        Err(e) if e.kind() != io::ErrorKind::BrokenPipe => {
+            Err(format!("Failed to write to stdout: {e}"))
+        }
+        _ => Ok(()),
+    }
 }
