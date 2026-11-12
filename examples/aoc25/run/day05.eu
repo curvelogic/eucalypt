@@ -1,0 +1,7 @@
+{ import: ["../day05.eu", "input=../inputs/day05.txt"] }
+
+` { target: :part-1 }
+part-1: input parse uncurry(solve)
+
+` { target: :part-2 }
+part-2: input parse first solve2
