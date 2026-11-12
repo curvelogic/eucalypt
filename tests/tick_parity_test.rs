@@ -202,7 +202,7 @@ fn source_prelude_tick_parity_tripwire() {
 /// The blob used to compile each prelude binding without resolving its
 /// intrinsic aliases, so `foldl` and the loops built on it called the global
 /// `if` with thunked branches: ~1.73x the source-mode ticks on this fixture.
-/// Resolved, the ratio is ~1.36 (2026-11-12; ticks are deterministic); most
+/// Resolved, the ratio is ~1.4 (2026-11-12; ticks are deterministic); most
 /// of the remainder is source mode unrolling `foldl` into itself a few
 /// levels. Vacuous without an embedded blob, like the test above.
 const MAX_BLOB_PRELUDE_LOOP_RATIO: f64 = 1.5;
