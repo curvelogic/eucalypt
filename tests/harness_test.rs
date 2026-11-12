@@ -3224,6 +3224,13 @@ pub fn test_error_231_1tkk_7_44_nobranch_datatag_code() {
 }
 
 #[test]
+/// eu-oaz72.2: an unclosed unicode bracket at end of file reports a parse
+/// error instead of panicking the parser.
+pub fn test_error_232_oaz72_2_unclosed_bracket_eof() {
+    run_error_test(&error_opts("232_oaz72_2_unclosed_bracket_eof.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:
