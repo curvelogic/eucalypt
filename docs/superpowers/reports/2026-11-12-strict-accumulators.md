@@ -66,10 +66,16 @@ Master baselines over `range(0, 1e6)`:
 
 ## Known limit: signatures shared by name
 
-The STG compiler finds a callee's signature by name, so two bindings with
-the same name (two local `go` loops) share one entry. That entry is now the
-lub of their signatures, which is sound for both. Before, the last one
-recorded won, and with strict accumulators that forced a lazy loop's
-argument. The cost is precision: a strict loop that shares its name with a
-lazy one keeps an O(n) stack. Keying signatures by binder in the compiler
-would remove this.
+The STG compiler finds a callee's signature by name, so every binding of a
+name shares one entry. Two let-bound lambdas of the same arity (two local
+`go` loops) share the lub of their signatures, which is sound for both.
+Before, the last one recorded won, and with strict accumulators that forced
+a lazy loop's argument. The lub alone is not enough when a name is also
+bound to something whose signature is unknown: an alias (`step: f`), a
+lambda parameter, or a lambda of another arity, where in blob mode the
+compiler would fall back to a prelude signature of the same name. Such a
+name gets an empty signature, so no call through it forces an argument
+(`ambiguous_names` in `src/core/analyse_demand.rs`). The cost is precision:
+a strict loop that shares its name with a lazy one, or with a parameter,
+keeps an O(n) stack. Keying signatures by binder in the compiler would
+remove this.

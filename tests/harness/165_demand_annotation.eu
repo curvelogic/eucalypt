@@ -59,7 +59,7 @@ constant-stack(context): (context.stats.max-stack < 1000) then(:PASS, :FAIL)
 unused-acc(a, n): (n = 0) then(1, unused-acc(a + panic("accumulator forced"), n - 1))
 
 ` "The accumulator is needed only when `n > 1000`, which never happens here."
-one-branch(a, n): (n = 0) then(0, one-branch(a, n - 1) + ((n > 1000) then(a, 0)))
+one-branch(a, n): { late: (n > 1000) then(a, 0) }.((n = 0) then(0, one-branch(a, n - 1) + late))
 
 ` "Returns a closure; building it must not force what it captures."
 adder(a): { y: • }.(a + y)
@@ -70,6 +70,24 @@ lazy-go(n): { go(a, i): (i = n) then(0, go(a, i + 1)) }.(go(panic("lazy go force
 ` "A strict accumulator loop also called `go`."
 strict-go(n): { go(a, i): (i = n) then(a, go(a + 1, i + 1)) }.(go(0, 0))
 
+` "Takes two arguments and forces only the second."
+second-of(a, i): i
+
+` "Calls through an alias named `step`, like `strict-step`'s strict loop: the alias may be lazy."
+via-alias(f): { step: f }.(step(panic("alias forced"), 1))
+
+` "Calls a parameter named `step`, like `strict-step`'s loop: the parameter may be lazy."
+via-param(step): step(panic("parameter forced"), 1)
+
+` "A strict accumulator loop called `step`."
+strict-step(n): { step(a, i): (i = n) then(a, step(a + 1, i + 1)) }.(step(0, 0))
+
+` "A local `min` of two arguments that never forces its second (recursive, so not inlined away)."
+first-max(n): { min(a, b): (a > 9) then(a, min(a + 1, b)) }.(min(n, panic("min argument forced")))
+
+` "A local `min` of one argument, recursive so it is not inlined away."
+next-max(n): { min(x): (x > 9) then(x, min(x + 1)) }.(min(n))
+
 ` { target: :test-laziness }
 test-laziness: {
   unused: unused-acc(0, 10) = 1
@@ -78,5 +96,9 @@ test-laziness: {
   closure-applied: adder(2)(3) = 5
   lazy-foldl: ([1, 2, 3] foldl({ acc: • x: • }.(x), panic("foldl accumulator forced"))) = 3
   same-name: [lazy-go(3), strict-go(3)] = [0, 3]
-  RESULT: [unused, untaken, closure, closure-applied, lazy-foldl, same-name] all-true? then(:PASS, :FAIL)
+  alias: [via-alias(second-of), strict-step(3)] = [1, 3]
+  parameter: [via-param(second-of), strict-step(3)] = [1, 3]
+  arities: [first-max(3), next-max(3)] = [10, 10]
+  RESULT: [unused, untaken, closure, closure-applied, lazy-foldl, same-name, alias, parameter, arities]
+          all-true? then(:PASS, :FAIL)
 }

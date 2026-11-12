@@ -7,7 +7,7 @@
 //! Also produces a signature side-table mapping lambda body pointers
 //! to per-argument demand vectors for use by the STG compiler.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::common::sourcemap::Smid;
@@ -54,6 +54,78 @@ fn peel_meta(expr: &RcExpr) -> &RcExpr {
         Expr::Meta(_, inner, _) => peel_meta(inner),
         _ => expr,
     }
+}
+
+/// Names whose name-keyed signature would not be sound for every call
+/// that uses the name: names bound anywhere as a lambda parameter or as a
+/// let binding whose right-hand side is not a lambda (an alias such as
+/// `step: f` may refer to a lazy function), and names bound to lambdas of
+/// different arities. A parameter counts even when it is the name's only
+/// binding: in blob mode the prelude is not in the tree, and a call to a
+/// parameter named like a prelude function must not take its signature. Let-bound lambdas of one arity remain merged by
+/// `record_named_signature`, whose lub is sound for each of them.
+fn ambiguous_names(expr: &RcExpr) -> HashSet<String> {
+    #[derive(Default)]
+    struct Uses {
+        /// Arities of let-bound lambdas with this name.
+        arities: HashSet<usize>,
+        /// Bound as a parameter or as a non-lambda let binding.
+        other: bool,
+    }
+
+    fn visit(expr: &RcExpr, uses: &mut HashMap<String, Uses>) {
+        match &*expr.inner {
+            Expr::Let(_, scope, _) => {
+                for binding in &scope.pattern {
+                    let entry = uses.entry(binding.name.clone()).or_default();
+                    match &*peel_meta(&binding.expr).inner {
+                        Expr::Lam(_, _, lam) => {
+                            entry.arities.insert(lam.pattern.len());
+                        }
+                        _ => entry.other = true,
+                    }
+                    visit(&binding.expr, uses);
+                }
+                visit(&scope.body, uses);
+            }
+            Expr::Lam(_, _, scope) => {
+                for param in &scope.pattern {
+                    let entry = uses.entry(param.clone()).or_default();
+                    entry.other = true;
+                }
+                visit(&scope.body, uses);
+            }
+            Expr::Lookup(_, e, _, fallback) => {
+                visit(e, uses);
+                if let Some(fb) = fallback {
+                    visit(fb, uses);
+                }
+            }
+            Expr::List(_, xs) | Expr::ArgTuple(_, xs) | Expr::Soup(_, xs, _) => {
+                xs.iter().for_each(|x| visit(x, uses));
+            }
+            Expr::Block(_, block_map) => {
+                block_map.iter().for_each(|(_, v)| visit(v, uses));
+            }
+            Expr::Meta(_, e, m) => {
+                visit(e, uses);
+                visit(m, uses);
+            }
+            Expr::App(_, f, xs) => {
+                visit(f, uses);
+                xs.iter().for_each(|x| visit(x, uses));
+            }
+            Expr::Operator(_, _, _, e) => visit(e, uses),
+            _ => {}
+        }
+    }
+
+    let mut uses = HashMap::new();
+    visit(expr, &mut uses);
+    uses.into_iter()
+        .filter(|(_, u)| u.other || u.arities.len() > 1)
+        .map(|(name, _)| name)
+        .collect()
 }
 
 /// Build intrinsic seed signatures from the INTRINSICS catalogue.
@@ -425,6 +497,9 @@ pub struct DemandAnalyser {
     /// recorded by a discarded fixpoint iteration can be removed: their
     /// expressions are dropped and the pointers may be reused.
     sig_log: Vec<SigKey>,
+    /// Number of expressions analysed, counting re-analysis in later
+    /// fixpoint rounds: the measure of the analysis' work.
+    visits: usize,
 }
 
 impl Default for DemandAnalyser {
@@ -444,6 +519,7 @@ impl DemandAnalyser {
             root_block: None,
             frames: Vec::new(),
             sig_log: Vec::new(),
+            visits: 0,
         }
     }
 
@@ -453,17 +529,26 @@ impl DemandAnalyser {
     pub fn analyse(mut self, expr: &RcExpr) -> (RcExpr, SignatureTable, NamedSignatureTable) {
         self.root_block = root_block(expr);
         let (new_expr, _env) = self.analyse_expr(expr);
-        let named = self
+        let mut named: NamedSignatureTable = self
             .named_signatures
             .into_iter()
             .filter_map(|(name, sig)| sig.map(|sig| (name, sig)))
             .collect();
+        // The compiler finds a call's signature by the callee's name, so a
+        // name that does not refer to let-bound lambdas of one arity alone
+        // gets an empty signature: no argument is strict, and the empty
+        // entry stops the compiler falling back to a prelude signature of
+        // the same name.
+        for name in ambiguous_names(expr) {
+            named.insert(name, Vec::new());
+        }
         (new_expr, self.signatures, named)
     }
 
     /// Analyse an expression, returning the annotated expression and
     /// the demand environment it places on its free variables.
     fn analyse_expr(&mut self, expr: &RcExpr) -> (RcExpr, DemandEnv) {
+        self.visits += 1;
         match &*expr.inner {
             Expr::Var(_s, Var::Bound(bv)) => {
                 let mut env = DemandEnv::new();
@@ -1924,5 +2009,53 @@ mod tests {
             }
             other => panic!("expected Let, got: {other:?}"),
         }
+    }
+
+    /// `depth` recursive accumulator loops, each nested in the base case of
+    /// the one enclosing it:
+    /// `let gK = λ(a, n). IF(EQ(n, 0), <loop K-1>, gK(ADD(a, 1), SUB(n, 1))) in gK(0, 3)`.
+    fn nested_loops(depth: usize) -> RcExpr {
+        (1..=depth).fold(num(0), |inner, k| {
+            let g = free(&format!("g{k}"));
+            let a = free("a");
+            let n = free("n");
+            let body = app(
+                bif("IF"),
+                vec![
+                    app(bif("EQ"), vec![var(n.clone()), num(0)]),
+                    inner,
+                    app(
+                        var(g.clone()),
+                        vec![
+                            app(bif("ADD"), vec![var(a.clone()), num(1)]),
+                            app(bif("SUB"), vec![var(n.clone()), num(1)]),
+                        ],
+                    ),
+                ],
+            );
+            let_(
+                vec![(g.clone(), lam(vec![a, n], body))],
+                app(var(g), vec![num(0), num(3)]),
+            )
+        })
+    }
+
+    #[test]
+    fn nested_fixpoints_cost_grows_linearly_with_depth() {
+        // Each nested let group is re-analysed on every round of the group
+        // enclosing it. Seeded from its last result, it settles in one
+        // round, so work is linear in the nesting depth; restarted from
+        // optimistic signatures, it repeats its fixpoint and the work
+        // doubles or more with each level (round-1 review of eu-oaz72.27).
+        let visits = |depth| {
+            let mut analyser = DemandAnalyser::new();
+            analyser.analyse_expr(&nested_loops(depth));
+            analyser.visits
+        };
+        let (shallow, deep) = (visits(8), visits(16));
+        assert!(
+            deep < shallow * 4,
+            "analysis work at depth 16 ({deep}) should be about twice that at depth 8 ({shallow})"
+        );
     }
 }
