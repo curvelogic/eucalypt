@@ -1,0 +1,3 @@
+# Error test (eu-oaz72.2): an unclosed unicode bracket at end of file
+# must report a parse error, not panic the parser. No trailing newline.
+x: 1 ⟦

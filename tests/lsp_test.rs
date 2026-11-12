@@ -79,6 +79,17 @@ fn single_open_square() {
     s.exercise_all();
 }
 
+/// Regression (eu-oaz72.2): an unclosed unicode bracket at end of
+/// file panicked the parser (index out of bounds), killing the server.
+#[test]
+fn unclosed_unicode_bracket_at_eof() {
+    for src in ["«: 1", "x: «", "⟦", "x: 1 ⟦"] {
+        let mut s = LspTestSession::new();
+        s.open(src);
+        s.exercise_all();
+    }
+}
+
 #[test]
 fn single_colon() {
     let mut s = LspTestSession::new();

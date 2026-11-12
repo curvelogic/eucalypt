@@ -29,14 +29,14 @@
 | `repeat(i)` | Return infinite list of instances of item `i` |
 | `iterate(f, i)` | Return list of `i` with subsequent repeated applications of `f` to `i` |
 | `ints-from` | Return infinite list of integers from `n` upwards, alias `iota` for backwards compatibility |
-| `range(b, e)` | Return list of ints from `b` to `e` (not including `e`) |
+| `range(b, e)` | Return list of ints from `b` to `e` (not including `e`); `[]` when `e` <= `b` |
 | `cycle(l)` | Create infinite list by cycling elements of list `l` |
 
 ## Transformations
 
 | Function | Description |
 |----------|-------------|
-| `take(n, l)` | Return initial segment of integer `n` elements from list `l` |
+| `take(n, l)` | Return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0 |
 | `drop(n, l)` | Return result of dropping integer `n` elements from list `l` |
 | `take-while(p?, l)` | Initial elements of list `l` while `p?` is true |
 | `take-until(p?)` | Initial elements of list `l` while `p?` is false |

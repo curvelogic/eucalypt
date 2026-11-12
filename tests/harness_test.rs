@@ -3078,8 +3078,8 @@ pub fn test_231_oaz72_1_demand_untaken_branch() {
 /// elements traced. Churns string sets/vecs whose strings are reachable only
 /// through the container, and checks contents, order and set algebra.
 #[test]
-pub fn test_232_oaz72_5_native_storage_gc() {
-    run_test(&opts("232_oaz72_5_native_storage_gc.eu"));
+pub fn test_234_oaz72_5_native_storage_gc() {
+    run_test(&opts("234_oaz72_5_native_storage_gc.eu"));
 }
 
 /// eu-oaz72.5: the same churn, run through the `eu` binary with a 2 MiB heap
@@ -3109,6 +3109,21 @@ pub fn test_oaz72_5_native_storage_under_collection() {
         out.status.success() && stdout.contains("PASS"),
         "native storage GC fixture failed under collection:\nstdout: {stdout}\nstderr: {stderr}"
     );
+/// eu-oaz72.35 — `take(n)` with n <= 0 is [] (it used to run past zero on
+/// a negative count), so `range(b, e)` with e <= b is [] instead of hanging.
+#[test]
+pub fn test_232_oaz72_35_range_take_termination() {
+    run_test(&opts("232_oaz72_35_range_take_termination.eu"));
+}
+
+/// eu-oaz72.34 — a self-recursive loop through `if` or `then` with a strict
+/// accumulator must run in constant stack: the curried `then(t, f)(c)` that
+/// catenation produces is reduced to a saturated `if`. The `loops` target's
+/// `constant-stack` validator checks `max-stack` and FAILs on master, where
+/// each `then` iteration pushed a frame (max-stack ~1e5 at n = 1e5).
+#[test]
+pub fn test_233_oaz72_34_constant_stack_loops() {
+    run_test(&opts("233_oaz72_34_constant_stack_loops.eu"));
 }
 
 #[test]
@@ -3258,6 +3273,13 @@ pub fn test_error_230_lazy_demand_site_blame() {
 /// `TypeMismatch`); the sidecar pins the coded header.
 pub fn test_error_231_1tkk_7_44_nobranch_datatag_code() {
     run_error_test(&error_opts("231_1tkk_7_44_nobranch_datatag_code.eu"));
+}
+
+#[test]
+/// eu-oaz72.2: an unclosed unicode bracket at end of file reports a parse
+/// error instead of panicking the parser.
+pub fn test_error_232_oaz72_2_unclosed_bracket_eof() {
+    run_error_test(&error_opts("232_oaz72_2_unclosed_bracket_eof.eu"));
 }
 
 #[test]

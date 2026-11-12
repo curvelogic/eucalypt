@@ -1380,9 +1380,9 @@ __dbg-after(f, x): ▶(f(x))
 ## List library functions, maps and folds
 #
 
-` { doc: "`take(n, l)` - return initial segment of integer `n` elements from list `l`."
+` { doc: "`take(n, l)` - return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0."
     type: s"number → [a] → [a]" }
-take(n, l): __IF((n zero?) ∨ (l nil?), [], cons(l head, take(n dec, l tail)))
+take(n, l): __IF((n <= 0) ∨ (l nil?), [], cons(l head, take(n dec, l tail)))
  
 ` { doc: "`drop(n, l)` - return result of dropping integer `n` elements from list `l`."
     type: s"number → [a] → [a]"
@@ -1507,7 +1507,7 @@ ints-from: iota
     type: s"[number]" }
 ℕ: iota(0)
 
-` { doc: "`range(b, e)` - return list of ints from `b` to `e` (not including `e`)."
+` { doc: "`range(b, e)` - return list of ints from `b` to `e` (not including `e`); `[]` when `e` <= `b`."
     type: s"number → number → [number]" }
 range(b, e): ints-from(b) take(e - b)
 

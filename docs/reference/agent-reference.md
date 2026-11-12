@@ -1154,6 +1154,7 @@ ints-from(1) take(5)                 # [1, 2, 3, 4, 5]
 
 # Range (finite)
 range(1, 6)                          # [1, 2, 3, 4, 5]
+range(6, 1)                          # [] (empty when e <= b)
 
 # Infinite iteration
 iterate(* 2, 1) take(6)             # [1, 2, 4, 8, 16, 32]
