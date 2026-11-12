@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use super::diagnostics::text_range_to_lsp_range;
 use super::navigation::find_identifier_at;
-use super::selection::position_to_offset;
+use super::selection::position_to_tree_offset;
 
 /// Prepare a rename operation — validate that the cursor is on a
 /// renameable symbol and return its range.
@@ -19,7 +19,7 @@ pub fn prepare_rename(
     root: &SyntaxNode,
     position: &Position,
 ) -> Option<PrepareRenameResponse> {
-    let offset = position_to_offset(source, position);
+    let offset = position_to_tree_offset(source, root, position);
     let token = find_identifier_at(root, offset)?;
     let range = text_range_to_lsp_range(source, token.text_range());
     let placeholder = identifier_text(&token);
@@ -35,7 +35,7 @@ pub fn rename(
     new_name: &str,
     uri: &Url,
 ) -> Option<WorkspaceEdit> {
-    let offset = position_to_offset(source, position);
+    let offset = position_to_tree_offset(source, root, position);
     let token = find_identifier_at(root, offset)?;
     let name = identifier_text(&token);
 

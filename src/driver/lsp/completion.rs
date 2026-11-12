@@ -14,7 +14,7 @@ use lsp_types::{
 };
 use rowan::TextSize;
 
-use super::selection::position_to_offset;
+use super::selection::position_to_tree_offset;
 use super::symbol_table::{DeclKind, SymbolInfo, SymbolTable};
 
 /// Compute completions at the given cursor position.
@@ -30,7 +30,7 @@ pub fn completions(
     table: &SymbolTable,
     type_env: Option<&HashMap<String, Type>>,
 ) -> CompletionResponse {
-    let offset = position_to_offset(source, position);
+    let offset = position_to_tree_offset(source, root, position);
 
     // Check for monad tag context: is cursor after `{ :` or `:` in block metadata?
     if let Some(items) = detect_monad_tag_completion(root, offset, table) {

@@ -24,7 +24,7 @@ pub fn hover(
     table: &SymbolTable,
     type_env: Option<&HashMap<String, Type>>,
 ) -> Option<Hover> {
-    let offset = super::selection::position_to_offset(source, position);
+    let offset = super::selection::position_to_tree_offset(source, root, position);
 
     // Check for bracket delimiter hover (⟦, ⟧, etc.)
     if let Some(hover) = bracket_delimiter_hover(root, offset, table) {
