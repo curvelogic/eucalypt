@@ -27,7 +27,7 @@ pub fn selection_ranges(
 
 /// Build the selection range chain for a single cursor position.
 fn selection_range_at(source: &str, root: &SyntaxNode, position: &Position) -> SelectionRange {
-    let offset = position_to_offset(source, position);
+    let offset = position_to_tree_offset(source, root, position);
 
     // Find the deepest node containing this offset
     let mut node = root.clone();
@@ -64,6 +64,24 @@ fn build_selection_chain(source: &str, node: &SyntaxNode) -> SelectionRange {
 pub(super) fn position_to_offset(source: &str, position: &Position) -> TextSize {
     let line_index = super::diagnostics::LineIndex::new(source);
     line_index.utf16_position_to_byte_offset(position)
+}
+
+/// Convert an LSP position to a byte offset that is safe to use with the
+/// syntax tree `root` (e.g. in `token_at_offset`).
+///
+/// The offset is clamped to the tree's text range. The parser is meant to
+/// be lossless, so the tree normally spans the whole document, but rowan
+/// panics ("Bad offset") on an offset outside the tree, and an LSP request
+/// must never crash the server — a tree that is shorter than the document
+/// (a parser bug, or a tree that is stale relative to the text) degrades
+/// to a lookup at the tree's end instead.
+pub(super) fn position_to_tree_offset(
+    source: &str,
+    root: &SyntaxNode,
+    position: &Position,
+) -> TextSize {
+    let range = root.text_range();
+    position_to_offset(source, position).clamp(range.start(), range.end())
 }
 
 #[cfg(test)]
@@ -184,5 +202,56 @@ mod tests {
             },
         );
         assert_eq!(offset, TextSize::from(4));
+    }
+
+    /// Every LSP handler that maps a document position into the tree must
+    /// cope with a tree shorter than the document (eu-oaz72.3): rowan
+    /// panics with "Bad offset" on an offset beyond the tree's range.
+    #[test]
+    fn handlers_survive_tree_shorter_than_document() {
+        use crate::driver::lsp::symbol_table::{SymbolSource, SymbolTable};
+
+        let source = "x: 1\ny: x\nzzz: y\n";
+        // Parse only a prefix, so the tree is shorter than `source`.
+        let parse = parse_unit("x: 1\ny: x");
+        let root = parse.syntax_node();
+        assert!(usize::from(root.text_range().end()) < source.len());
+
+        let uri = lsp_types::Url::parse("file:///test/file.eu").unwrap();
+        let mut table = SymbolTable::new();
+        table.add_from_unit(&parse.tree(), source, &uri, SymbolSource::Local);
+
+        for line in 0..4 {
+            for character in 0..8 {
+                let pos = Position { line, character };
+                let _ = super::super::hover::hover(source, &root, &pos, &table, None);
+                let _ = super::super::navigation::goto_definition(source, &root, &pos, &table);
+                let _ = super::super::completion::completions(source, &root, &pos, &table, None);
+                let _ = super::super::highlight::document_highlights(source, &root, &pos);
+                let _ = super::super::references::find_references(source, &root, &pos, &uri, true);
+                let _ = super::super::rename::prepare_rename(source, &root, &pos);
+                let _ = super::super::rename::rename(source, &root, &pos, "w", &uri);
+                let _ = selection_ranges(source, &root, &[pos]);
+            }
+        }
+    }
+
+    /// The eu-oaz72.3 repro, end to end: hover at line 2, character 1.
+    #[test]
+    fn hover_on_interpolation_whitespace_repro() {
+        use crate::driver::lsp::symbol_table::{SymbolSource, SymbolTable};
+
+        let source = "(M.\"\n⌈{}⌉: { :monad bind: b }\n`\n\"N\"\n";
+        let parse = parse_unit(source);
+        let root = parse.syntax_node();
+        let uri = lsp_types::Url::parse("file:///test/file.eu").unwrap();
+        let mut table = SymbolTable::new();
+        table.add_from_unit(&parse.tree(), source, &uri, SymbolSource::Local);
+        let pos = Position {
+            line: 2,
+            character: 1,
+        };
+        let _ = super::super::hover::hover(source, &root, &pos, &table, None);
+        assert_eq!(usize::from(root.text_range().end()), source.len());
     }
 }

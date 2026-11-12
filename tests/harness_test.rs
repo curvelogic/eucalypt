@@ -3091,14 +3091,28 @@ pub fn test_233_oaz72_34_constant_stack_loops() {
     run_test(&opts("233_oaz72_34_constant_stack_loops.eu"));
 }
 
+/// eu-oaz72.3: whitespace inside a string interpolation is kept in the
+/// syntax tree as trivia and does not change the interpolation's meaning.
+#[test]
+pub fn test_234_oaz72_3_interpolation_whitespace() {
+    run_test(&opts("234_oaz72_3_interpolation_whitespace.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: negative counts to drop, split-at and rotate are consistent
+/// with take and terminate on infinite lists.
+pub fn test_233_oaz72_43_negative_counts() {
+    run_test(&opts("233_oaz72_43_negative_counts.eu"));
+}
+
 /// eu-oaz72.47: the pre-compiled prelude resolves intrinsic aliases in each
 /// binding body, so `foldl` and the loops built on it branch on an inlined
 /// case rather than calling the global `if`. The per-element tick budgets
 /// FAIL against a blob compiled without it (blob mode only; source mode
 /// inlined these already).
 #[test]
-pub fn test_234_oaz72_47_prelude_loops_inline_if() {
-    run_test(&opts("234_oaz72_47_prelude_loops_inline_if.eu"));
+pub fn test_235_oaz72_47_prelude_loops_inline_if() {
+    run_test(&opts("235_oaz72_47_prelude_loops_inline_if.eu"));
 }
 
 #[test]
@@ -3255,6 +3269,20 @@ pub fn test_error_231_1tkk_7_44_nobranch_datatag_code() {
 /// error instead of panicking the parser.
 pub fn test_error_232_oaz72_2_unclosed_bracket_eof() {
     run_error_test(&error_opts("232_oaz72_2_unclosed_bracket_eof.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: a negative index to nth is an error rather than a hang on
+/// an infinite list (checked on a finite one to stay bounded).
+pub fn test_error_233_oaz72_43_nth_negative() {
+    run_error_test(&error_opts("233_oaz72_43_nth_negative.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: a negative index to update-nth is an error, not a silent
+/// update of element 0.
+pub fn test_error_233_oaz72_43_update_nth_negative() {
+    run_error_test(&error_opts("233_oaz72_43_update_nth_negative.eu"));
 }
 
 #[test]

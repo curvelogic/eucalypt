@@ -1,5 +1,5 @@
 {
-  title: "234 prelude loops inline their conditional in blob mode"
+  title: "235 prelude loops inline their conditional in blob mode"
   doc: "eu-oaz72.47: the pre-compiled prelude now resolves intrinsic
         aliases in each binding body, as source mode does, so `foldl` and
         the loops built on it branch on an inlined case instead of calling

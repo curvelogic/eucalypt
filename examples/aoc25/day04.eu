@@ -86,11 +86,3 @@ test: {
   part-2: ex1 parse solve2 //= 43
   RESULT: (part-1 ∧ part-2) then(:PASS, :FAIL)
 }
-
-` { target: :part-1
-    import: "input=inputs/day04.txt" }
-part-1: input parse solve
-
-` { target: :part-2
-    import: "input=inputs/day04.txt" }
-part-2: input parse solve2

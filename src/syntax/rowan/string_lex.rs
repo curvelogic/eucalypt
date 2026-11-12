@@ -129,9 +129,19 @@ impl<'text> Iterator for StringPatternLexer<'text> {
     type Item = (SyntaxKind, Span, &'text str);
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Skip whitespace in interpolation contexts but preserve in literals
+        // Whitespace inside an interpolation is emitted as a WHITESPACE
+        // trivia token so that the syntax tree stays lossless (its text
+        // length must equal the source length).
         if self.in_interpolation {
-            self.skip_whitespace();
+            let start = self.position;
+            if self.skip_whitespace() {
+                let end = self.position;
+                return Some((
+                    WHITESPACE,
+                    self.make_span(start, end),
+                    self.slice(start, end),
+                ));
+            }
         }
 
         let (start, ch) = self.bump()?;
@@ -321,9 +331,19 @@ impl<'text> Iterator for CStringPatternLexer<'text> {
     type Item = (SyntaxKind, Span, &'text str);
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Skip whitespace in interpolation contexts but preserve in literals
+        // Whitespace inside an interpolation is emitted as a WHITESPACE
+        // trivia token so that the syntax tree stays lossless (its text
+        // length must equal the source length).
         if self.in_interpolation {
-            self.skip_whitespace();
+            let start = self.position;
+            if self.skip_whitespace() {
+                let end = self.position;
+                return Some((
+                    WHITESPACE,
+                    self.make_span(start, end),
+                    self.slice(start, end),
+                ));
+            }
         }
 
         let (start, ch) = self.bump()?;
