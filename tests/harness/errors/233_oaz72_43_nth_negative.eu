@@ -1,0 +1,6 @@
+# Error test (eu-oaz72.43): a negative index to `nth` is reported as a
+# negative index. It used to count down past zero until the list ran out —
+# forever on an infinite list. A finite list keeps this test bounded if the
+# fix regresses: the old code reports "out of range for list of length 3"
+# instead, which fails the expected stderr.
+x: [1, 2, 3] nth(-1)

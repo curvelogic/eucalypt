@@ -3246,9 +3246,9 @@ pub fn test_error_232_oaz72_2_unclosed_bracket_eof() {
 
 #[test]
 /// eu-oaz72.43: a negative index to nth is an error rather than a hang on
-/// an infinite list.
-pub fn test_error_233_oaz72_43_nth_negative_infinite() {
-    run_error_test(&error_opts("233_oaz72_43_nth_negative_infinite.eu"));
+/// an infinite list (checked on a finite one to stay bounded).
+pub fn test_error_233_oaz72_43_nth_negative() {
+    run_error_test(&error_opts("233_oaz72_43_nth_negative.eu"));
 }
 
 #[test]

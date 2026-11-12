@@ -1,3 +1,0 @@
-# Error test (eu-oaz72.43): a negative index to `nth` is an error, even on
-# an infinite list, where it used to count down past zero forever.
-x: ints-from(0) nth(-1)

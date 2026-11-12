@@ -7,7 +7,7 @@
 #
 # Fixed: n <= 0 makes `drop` the identity, `split-at` return [[], l] and
 # `rotate` the identity. `nth` with a negative index is an error (covered by
-# tests/harness/errors/233_oaz72_43_nth_negative_infinite.eu).
+# tests/harness/errors/233_oaz72_43_nth_negative.eu).
 #
 # Every check feeds RESULT. Checks on infinite lists are bounded by
 # `take`, so with the bug present they fail rather than hang where possible.
