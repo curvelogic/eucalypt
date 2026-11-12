@@ -66,8 +66,13 @@ The B-tree alternative remains viable; if chosen, the node layout in §3
 becomes a fixed-capacity entry array per node and §5's algorithms change,
 but the GC, key, value, rendering and typing design is unchanged.
 
-Balance parameters follow Straka's corrected values (Δ = 3, Γ = 2), which
-are proven correct for insert, delete, split and join.
+Balance parameters are (Δ, Γ) = (3, 2), the only integer pair proved to
+keep the balance invariant under insert and delete (Hirai and Yamamoto,
+"Balancing weight-balanced trees", JFP 2011; Straka, "Adams' trees
+revisited", TFP 2011) and the pair `Data.Map` uses. Split, join and the
+join-based set operations follow Blelloch, Ferizovic and Sun, "Just join
+for parallel ordered sets" (SPAA 2016), which proves join correct for
+weight-balanced trees.
 
 ## 3. Node layout
 
@@ -108,7 +113,35 @@ pub struct DictKeyList { len: u32, /* [DictKey; len] follows */ }
   and shares untouched subtrees. Nothing mutates a published node, so there
   is no write barrier question.
 - `DictKeyList` is a single variable-size allocation (header + inline
-  elements), so it needs no `OpaqueHeapBytes` backing-buffer handling.
+  elements), so it needs no `OpaqueHeapBytes` backing-buffer handling. It
+  is the first variable-size *typed* heap object (strings and `Array`
+  backings are raw bytes), so PR 1 adds an allocation constructor that
+  sizes the header for `len` inline elements.
+
+### GC tracing and evacuation
+
+Sets, vecs and arrays are leaves today: `scan_native` in
+`src/eval/bytecode/closure.rs` and the `Ref::V` arms in
+`src/eval/bytecode/machine.rs` (around lines 490–530) only *mark* them and
+never push them for scanning. A dict arm copied from the set arm would
+leave every node below the root unscanned and stale after evacuation. So:
+
+- **Entry points.** `Native::Dict` (and `Native::Set` once on nodes) is
+  handled like `Native::Str`: mark the root and, if newly marked, push it
+  as `ScanPtr::from_non_null` so its `scan` runs; `update_native` and the
+  `Ref::V` update arm rewrite the root pointer from `forwarded_to`. Both
+  sites (closure env values and machine `Ref::V` constants) get the arm.
+- **`DictNode::scan`** marks and pushes `left`, `right`, the key's heap
+  pointer (`Str` string, which then marks its byte backing as
+  `HeapString::scan` does; `List` key list) and the value (`BcValue`:
+  closure env or native, via the existing `scan_native`/closure path).
+- **`DictNode::scan_and_update`** rewrites each of those pointers from
+  `forwarded_to`.
+- **`DictKeyList::scan` / `scan_and_update`** do the same for each inline
+  element's `Str`/`List` pointer.
+- Under `EU_GC_STRESS=1` every collection evacuates, so PR 1's unit tests
+  build trees, force a stress collection and walk the result under
+  `EU_GC_VERIFY=2` and `EU_GC_POISON=1`.
 
 ## 4. Keys: equality, order and hashing
 
@@ -120,18 +153,38 @@ offending type. Converting a forced eucalypt value to a `DictKey` allocates
 heap strings/key lists but never forces, so an intrinsic never re-enters
 the machine mid-operation (§5).
 
+**OPEN 10 — keys hold heap references.** Owner decision 2 says forced keys
+"hold no heap references"; the bead's constraint 5 says strings are held as
+GC heap strings, not Rust `String`s (ADR-002 rules the latter out). Both
+cannot hold literally. This note reads decision 2 as "no references to
+lazy or user structure": a key holds only immutable heap strings and key
+lists, which `DictNode::scan` traces (§3). **Recommendation:** accept that
+reading. The alternative — interning every string key as a symbol-like id
+— avoids the references but grows a never-collected pool.
+
 **Numbers.** `Native::Num` is a `serde_json::Number` (i64, u64 or f64).
 Keys keep integers exact (fixing for dicts the 2^53 collision eu-oaz72.10
 reports for sets). Comparison:
 
 - int vs int: exact (via i128 for i64/u64);
 - float vs float: `OrderedFloat` total order — `-0.0` equals `0.0`, all
-  NaNs are one key, greater than every other number;
+  NaNs are one key, greater than every other number (a `serde_json::Number`
+  cannot hold NaN or infinity today, so the NaN rule only fixes the order
+  should a non-finite number ever reach a key);
 - int vs float: exact numeric comparison (an integral float within range
   compares as an integer, otherwise by value; NaN greatest).
 
 So `1` and `1.0` are the same key, matching `1 = 1.0` (`num_eq` in
-`src/eval/stg/eq.rs`). On `assoc` of an equal key the stored key is kept
+`src/eval/stg/eq.rs`).
+
+**OPEN 11 — key equality is not exactly `=`.** It differs from `num_eq` in
+two places: `num_eq` compares an integer with a float through f64, so
+`9007199254740993 = 9007199254740992.0` is true but they are different
+keys; and `NaN = NaN` is false but NaN is one key (a key must equal itself
+for lookup to work). **Recommendation:** accept both differences and
+document them; the exact-integer rule is what eu-oaz72.10 asks for.
+
+On `assoc` of an equal key the stored key is kept
 and only the value replaced (**OPEN 6**, minor: affects only whether `1.0`
 or `1` renders).
 
@@ -161,7 +214,8 @@ alike, `-0.0` as `0.0`).
 
 ## 5. Operations and GC safety
 
-**Construction.** `dict.of(pairs)` collects forced keys, sorts (stable),
+**Construction.** `dict.of(pairs)` forces the list spine, each pair and
+each key — never the values — then sorts (stable),
 resolves duplicates last-wins (the same rule as block merge), and builds a
 perfectly balanced tree bottom-up in O(n) after the O(n log n) sort — one
 pass, no repeated `assoc` (the fix eu-oaz72.32 applies to `set.of`).
@@ -182,17 +236,32 @@ allocations, as `SET.ADD` does today. Any future operation that must force
 **Lazy values and memoisation.** A value passed to `assoc` arrives as an
 env-slot reference. Storing a thunk closure by value in the node would lose
 memoisation: each `get` would re-run it, which makes memo tables
-exponential. So:
+exponential. Memoisation in the engine happens only in `enter_local` /
+`enter_global`, which black-hole the slot and push `Update` **only for a
+closure whose `update()` flag is set**. The closures `apply1_thunk` and
+`apply2_thunk` build (`BcClosure::new`) are *not* updatable — their callers
+store them in a cons cell or block slot whose own entry memoises — so
+storing them, or a cell around them, unchanged would re-run `f` on every
+`get`. The rule is therefore:
 
-- a value already in WHNF (a native, a constructor, a lambda) is stored
-  directly as a `BcValue`;
-- a thunk is wrapped in a **value cell**: a one-slot env frame holding the
-  thunk, plus a fixed "enter slot 0" code template (allocated once, like
-  the `apply1_thunk` templates). Entering the cell goes through the normal
-  black-hole + `Update` path on slot 0, so the first `get` memoises it, all
-  later `get`s — from any version of the dict sharing the cell — see the
-  value, and a cyclic self-reference is reported as a black hole, not a
-  hang.
+- **Which values get a cell:** every stored value that is not already in
+  WHNF — any `BcValue::Closure` of arity 0 that is not a data constructor,
+  updatable or not, which covers user thunks passed to `assoc`/`of` and the
+  `f(old)` / `f(a, b)` applications `update` and `merge-with` build. A
+  value already in WHNF (a native, a constructor, a partial application or
+  lambda) is stored directly as a `BcValue`, with no cell.
+- **The cell:** a one-slot env frame holding the value, and in the node a
+  closure over that frame of a fixed "enter local 0" template (pre-encoded
+  once, like the `apply1_thunk` template). The *slot-0 value* is made
+  updatable: the thunk is stored with the update flag set (for the
+  `apply*_thunk` results, a dict-specific variant of those builders sets
+  it). Entering the node's closure does `enter_local(cell, 0)`, which
+  black-holes slot 0 and pushes `Update { cell, 0 }`; the first `get`
+  memoises, later `get`s — from any dict version sharing the cell — read
+  the value, and a cyclic self-reference is reported as a black hole.
+- PR 2 tests this directly: a value whose evaluation increments an
+  observable counter (via a debug/trace intrinsic) is fetched twice, and a
+  memoised Fibonacci over a self-referential `dict.of` runs in linear time.
 
 **OPEN 7 — strict variants.** Lazy values let counting loops build long
 `+` thunk chains (`update(k, (+ n))` repeated across a step). The
@@ -213,33 +282,52 @@ split/join, `to-list` an in-order walk, `sample` by rank. `set.of`
 free (a deliberate widening; **OPEN 8** — recommendation: allow, it is the
 same key type and AoC wants `[x, y]` sets).
 
-eu-oaz72.5 first moves set storage into a sorted heap array; this work
-replaces that array with tree nodes. The conversion helpers between
-`Primitive` and keys become `DictKey` helpers shared by both types.
+eu-oaz72.5 first moves set storage into the GC heap (its fix design picks
+the representation); this work replaces whatever it lands with tree nodes.
+The conversion helpers between `Primitive` and keys become `DictKey`
+helpers shared by both types.
+
+**Visible change to set contents.** Sets store numbers as f64 today
+(`Primitive::from_number`), so `set.to-list` returns `9007199254740992`
+for an added `9007199254740993`. On `DictKey`
+numbers stay exact. This fixes eu-oaz72.10 for sets but changes what
+`set.to-list` returns for such elements, beyond the order question of
+OPEN 2; the owner should confirm it (recommendation: accept, and close
+eu-oaz72.10's set half with this work).
 
 ## 7. API
 
 Collection argument last, for pipelines (`d dict.get(k)`), matching `set.*`.
 Names from the owner decision; `range`/`min`/`max`/`pop-*` from the plan.
+Rows marked † go beyond the owner's list or fix a result shape the plan
+leaves open (OPEN 4).
 
 | Function | Result | Cost |
 |---|---|---|
 | `dict.of(pairs)`, `dict.from-list` | dict from `[k, v]` pairs, last wins | O(n log n) |
-| `dict.empty` | the empty dict | O(1) |
+| `dict.empty` † | the empty dict | O(1) |
 | `dict.to-list(d)` | sorted `[k, v]` pairs | O(n) |
 | `dict.keys(d)`, `dict.values(d)` | in key order | O(n) |
-| `dict.get(k, d)` | value; error naming the key if absent | O(log n) |
+| `dict.get(k, d)` | value; † error naming the key if absent | O(log n) |
 | `dict.get-or(k, default, d)` | value or `default` | O(log n) |
 | `dict.assoc(k, v, d)`, `dict.dissoc(k, d)` | new dict | O(log n) |
-| `dict.update(k, f, default, d)` | `assoc(k, f(get-or(k, default)))` | O(log n) |
-| `dict.contains?(k, d)`, `dict.size(d)`, `dict.empty?(d)` | | O(log n), O(1) |
+| `dict.update(k, f, default, d)` † | `assoc(k, f(get-or(k, default)))` | O(log n) |
+| `dict.contains?(k, d)`, `dict.size(d)`, `dict.empty?(d)` † | | O(log n), O(1) |
 | `dict.merge-with(f, a, b)` | union; `f(va, vb)` on collision | split/join |
-| `dict.min(d)`, `dict.max(d)` | `[k, v]` | O(log n) |
-| `dict.pop-min(d)`, `dict.pop-max(d)` | `[k, v, rest]` | O(log n) |
+| `dict.min(d)`, `dict.max(d)` | † `[k, v]` | O(log n) |
+| `dict.pop-min(d)`, `dict.pop-max(d)` | † `[k, v, rest]` | O(log n) |
 | `dict.range(lo, hi, d)` | sub-dict with `lo ≤ k < hi` | O(log n) |
 | `dict.from-block(b)`, `dict.to-block(d)` | conversion | O(n log n), O(n) |
 
-**OPEN 4 — edge behaviour.** Recommendations:
+**OPEN 4 — API additions and edge behaviour.** Recommendations:
+
+- Add `dict.empty` and `dict.empty?` (sets have `∅` and `set.empty?`; a
+  search loop needs both).
+- `get` on a missing key is an error naming the key (as block lookup of a
+  missing key is); `get-or` is the total form.
+- `min`/`max` return `[k, v]` and `pop-min`/`pop-max` return
+  `[k, v, rest]`: flat lists destructure in one pattern, matching the shape
+  eu-oaz72.22's acceptance proposes for `pq.pop`.
 
 - `range` is half-open `[lo, hi)`, like `range(b, e)` for lists; a
   `range-incl` is not added unless asked.
@@ -259,19 +347,31 @@ sequence number is needed; `[priority, seq, x]` otherwise), `pop-min` to
 take the next item, `assoc` to push, `dissoc` of the old key for
 decrease-key. eu-oaz72.22 closes with a 141×141 Dijkstra example.
 
-**Out of scope here:** structural `=` on dicts (stays reference identity,
-as for sets today — documented), insertion-order helpers (owner decision 4:
-only if needed), and a parametric `set(k)` type.
+**OPEN 12 — `=` on dicts.** `=` on two sets today is pointer identity (the
+`(l, r) => l == r` fallback in `eq.rs`), so two equal sets built separately
+are not `=`. **Recommendation:** dicts behave the same in this work,
+documented, since structural equality would have to force and compare lazy
+values; sets on nodes could gain cheap structural `=` (keys only) as a
+follow-up decision.
+
+**Out of scope here:** insertion-order helpers (owner decision 4: only if
+needed) and a parametric `set(k)` type.
 
 ## 8. Rendering
 
 The render wrapper (`src/eval/stg/render.rs`) dispatches on constructor
 tags and sends natives to `EmitNative`, which emits sets and vecs strictly.
-A dict's values are lazy and arbitrary, so a dict renders through the block
-path instead: the native branch recognises `Native::Dict` and converts it
-(one intrinsic) into a block of `[stringified-key, value]` pairs in key
-order, which the existing block renderer emits as a mapping, forcing and
-rendering each value as for any block. Order is therefore deterministic in
+A dict's values are lazy and arbitrary, so `EmitNative` cannot emit them
+(it would have to force user code). A dict renders through the block path
+instead. Today the wrapper's final fallback is `EmitNative(x)`
+(`render.rs`, the native arm). That fallback becomes a case on a new
+intrinsic `DICT.RENDER_VIEW(x)`, which returns a `Block` of
+`[stringified-key, value]` pairs in key order when `x` is a dict (values
+copied as stored, unforced) and `x` unchanged otherwise; the `Block` arm
+re-enters the existing block render branch, which emits a mapping, forcing
+and rendering each value as for any block, and every other result goes to
+`EmitNative` as before. Non-dict values pay one intrinsic call on the
+native path only; PR 4 measures that against the render-heavy benches. Order is therefore deterministic in
 every format. Dicts are runtime values only; nothing reaches the prelude blob.
 
 - Number keys stringify as they render as values (`1`, `2.5`); string keys
@@ -281,8 +381,9 @@ every format. Dicts are runtime values only; nothing reaches the prelude blob.
   YAML complex keys can follow on request), naming the key; two keys that
   stringify to the same text (`1` and `"1"`) are also an error, since JSON,
   TOML and YAML all reject duplicate keys.
-- `printf`, `assert` messages and `describe_native` print
-  `<dict:N>` (size), like `<set>` today.
+- The `Display` impl for `Native`, `printf` and `assert` messages print
+  `<dict:N>` (size), like `<set>` today; `describe_native` (which has no
+  set arm today) gets none either.
 - Parallel serialisation (`par-*`): a dict is "opaque value — not
   serialisable", as sets are today; a follow-up can serialise it.
 
@@ -304,9 +405,9 @@ Design of `dict(k, v)`:
   `[a]`.
 - Prelude signatures, e.g. `get: k → dict(k, v) → v`,
   `assoc: k → v → dict(k, v) → dict(k, v)`,
-  `to-list: dict(k, v) → [(k, v)]`, `pop-min: dict(k, v) → [any]`
-  (the checker has no type for a 3-element heterogeneous result beyond a
-  prefix-list; `[k, v, dict(k, v)…]` is not expressible, so `[any]`).
+  `to-list: dict(k, v) → [(k, v)]`, `min: dict(k, v) → (k, v)`,
+  `pop-min: dict(k, v) → (k, v, dict(k, v))` — fixed tuples, which the
+  checker already parses (`Type::Tuple`).
 - `set` stays the nullary `set` type.
 
 ## 10. Implementation breakdown
@@ -320,8 +421,9 @@ modes); intrinsic-adding PRs merge under the plan's §4 rule. Lane: dict.
    weight-balanced insert/delete/split/join/bulk-build, Rust unit tests
    including evacuation under `EU_GC_VERIFY=2`. No user-visible change.
 2. **`Native::Dict` and the core intrinsics:** `of`, `to-list`, `get`,
-   `get-or`, `assoc`, `dissoc`, `contains?`, `size`, value cells, the tag
-   checks, `describe_native`/printf/assert/serialise arms, prelude `dict`
+   `get-or`, `assoc`, `dissoc`, `contains?`, `size`, value cells, the
+   GC entry points (`scan_native`/`update_native` and the machine's
+   `Ref::V` arms, §3), the tag checks, `describe_native`/printf/assert/serialise arms, prelude `dict`
    namespace, harness tests (fault-injection verified), 1e5 insert+lookup
    measurement.
 3. **Ordered operations:** `min`, `max`, `pop-min`, `pop-max`, `range`,
@@ -353,3 +455,8 @@ the new `dict.*` names.
 | 7 | Strict variants | add `update-strict`, `merge-with-strict` after the benchmark |
 | 8 | List elements in sets | allow |
 | 9 | Clash with block type `Dict(T)` | rename block type to `Block(T)`, deprecate `Dict(T)` |
+| 10 | Keys hold heap strings/key lists vs "no heap references" | accept: no references to lazy or user structure |
+| 11 | Key equality differs from `=` above 2^53 and for NaN | accept and document |
+| 12 | `=` on dicts | reference identity, as sets today |
+| — | Exact numbers in sets change `set.to-list` for >2^53 (§6) | accept; closes eu-oaz72.10's set half |
+| — | Additions beyond the owner's list: `empty`, `empty?`, `update` default, result shapes (OPEN 4) | as §7 |
