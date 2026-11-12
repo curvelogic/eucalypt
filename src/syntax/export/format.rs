@@ -443,34 +443,51 @@ impl Formatter {
 
     fn reformat_block(&self, block: &rowan_ast::Block) -> RcDoc<'static, ()> {
         let decls: Vec<_> = block.declarations().collect();
+        let meta = block
+            .meta()
+            .and_then(|m| m.soup())
+            .map(|soup| self.reformat_soup(&soup));
 
         if decls.is_empty() {
-            return RcDoc::text("{ }");
+            // A block with only metadata (e.g. the `{x y}` shorthand) keeps it.
+            return match meta {
+                Some(meta) => RcDoc::text("{ ").append(meta).append(RcDoc::text(" }")),
+                None => RcDoc::text("{ }"),
+            };
         }
 
-        // Check if block can be single line (short enough, no nested blocks)
-        let single_line_len = self.estimate_block_single_line_len(block);
-        let can_single_line = single_line_len
+        // Single line: { meta a: 1, b: 2 }
+        let mut docs = vec![RcDoc::text("{ ")];
+        if let Some(meta) = &meta {
+            docs.push(meta.clone());
+            docs.push(RcDoc::space());
+        }
+        for (i, decl) in decls.iter().enumerate() {
+            if i > 0 {
+                docs.push(RcDoc::text(", "));
+            }
+            docs.push(self.reformat_declaration_inline(decl));
+        }
+        docs.push(RcDoc::text(" }"));
+        let single_line = RcDoc::concat(docs);
+
+        // Declaration metadata is only emitted in the multi-line layout.
+        let can_single_line = self.flat_width(&single_line)
             <= self.config.line_width.saturating_sub(SINGLE_LINE_MARGIN)
             && decls.len() <= MAX_SINGLE_LINE_DECLS
-            && !self.has_nested_block(block);
+            && !self.has_nested_block(block)
+            && decls.iter().all(|d| d.meta().is_none());
 
         if can_single_line {
-            // Single line: { a: 1, b: 2 }
-            let mut docs = vec![RcDoc::text("{ ")];
-            for (i, decl) in decls.iter().enumerate() {
-                if i > 0 {
-                    docs.push(RcDoc::text(", "));
-                }
-                docs.push(self.reformat_declaration_inline(decl));
-            }
-            docs.push(RcDoc::text(" }"));
-            RcDoc::concat(docs)
+            single_line
         } else {
             // Multi-line block
             let indent = self.config.indent_size;
             let mut inner_docs = Vec::new();
 
+            if let Some(meta) = meta {
+                inner_docs.push(meta);
+            }
             for decl in &decls {
                 inner_docs.push(self.reformat_declaration(decl));
             }
@@ -524,22 +541,20 @@ impl Formatter {
                 .append(RcDoc::text("]"));
         }
 
-        // Estimate single-line length
-        let single_line_len: usize = items
-            .iter()
-            .map(|s| usize::from(s.syntax().text().len()) + 2)
-            .sum();
+        let docs: Vec<_> = items.iter().map(|s| self.reformat_soup(s)).collect();
 
-        if single_line_len <= self.config.line_width.saturating_sub(10) {
-            // Single line: [a, b, c]
-            let docs: Vec<_> = items.iter().map(|s| self.reformat_soup(s)).collect();
-            RcDoc::text("[")
-                .append(RcDoc::intersperse(docs, RcDoc::text(", ")))
-                .append(RcDoc::text("]"))
+        // Single line: [a, b, c]
+        let single_line = RcDoc::text("[")
+            .append(RcDoc::intersperse(docs.clone(), RcDoc::text(", ")))
+            .append(RcDoc::text("]"));
+
+        if self.flat_width(&single_line)
+            <= self.config.line_width.saturating_sub(SINGLE_LINE_MARGIN)
+        {
+            single_line
         } else {
             // Multi-line - same pattern as blocks for consistent indentation
             let indent = self.config.indent_size;
-            let docs: Vec<_> = items.iter().map(|s| self.reformat_soup(s)).collect();
             let inner = RcDoc::intersperse(docs, RcDoc::text(",").append(RcDoc::hardline()));
 
             RcDoc::text("[")
@@ -584,9 +599,12 @@ impl Formatter {
         RcDoc::text(sp.syntax().text().to_string())
     }
 
+    /// Block (and unit) metadata is a bare expression before the first
+    /// declaration — unlike declaration metadata it has no backtick, so
+    /// emitting one would turn it into metadata on the next declaration.
     fn reformat_block_metadata(&self, meta: &rowan_ast::BlockMetadata) -> RcDoc<'static, ()> {
         if let Some(soup) = meta.soup() {
-            RcDoc::text("` ").append(self.reformat_soup(&soup))
+            self.reformat_soup(&soup)
         } else {
             RcDoc::nil()
         }
@@ -736,12 +754,21 @@ impl Formatter {
     // Helper Methods
     // ========================================================================
 
-    fn estimate_block_single_line_len(&self, block: &rowan_ast::Block) -> usize {
-        let mut len = 4; // "{ " and " }"
-        for decl in block.declarations() {
-            len += usize::from(decl.syntax().text().len()) + 2; // ", " separator
+    /// Width of `doc` laid out on one line: the length of its formatted
+    /// text, or `usize::MAX` if it contains a line break.
+    ///
+    /// Layout decisions are made on the formatted text rather than the
+    /// original source, so they depend only on the syntax tree and a
+    /// second pass makes the same decisions (idempotence).
+    fn flat_width(&self, doc: &RcDoc<'static, ()>) -> usize {
+        let mut out = Vec::new();
+        if doc.render(usize::MAX, &mut out).is_err() {
+            return usize::MAX;
         }
-        len
+        match String::from_utf8(out) {
+            Ok(text) if !text.contains('\n') => text.chars().count(),
+            _ => usize::MAX,
+        }
     }
 
     fn has_nested_block(&self, block: &rowan_ast::Block) -> bool {
@@ -1271,6 +1298,53 @@ mod correctness_tests {
     fn reformat(source: &str) -> String {
         let config = FormatterConfig::new(80, 2, true);
         format_source(source, &config).unwrap()
+    }
+
+    /// Reformat and assert the output parses and is a fixed point.
+    fn reformat_checked(source: &str) -> String {
+        let once = reformat(source);
+        let errors = crate::syntax::rowan::parse_unit(&once).errors().clone();
+        assert!(
+            errors.is_empty(),
+            "output does not parse: {errors:?}\n{once}"
+        );
+        assert_eq!(once, reformat(&once), "reformat is not idempotent");
+        once
+    }
+
+    #[test]
+    fn test_leading_unit_docstring_stays_unit_metadata() {
+        // eu-oaz72.6: no backtick, which would make it declaration metadata.
+        assert_eq!(reformat_checked("\"doc\"\nx: 1\n"), "\"doc\"\n\nx: 1\n");
+        assert_eq!(
+            reformat_checked("# header\n\"doc\"\nx: 1\n"),
+            "# header\n\n\"doc\"\n\nx: 1\n"
+        );
+    }
+
+    #[test]
+    fn test_block_metadata_preserved() {
+        assert_eq!(reformat_checked("y: { :m a: 1 }\n"), "y: { :m a: 1 }\n");
+        assert_eq!(reformat_checked("y: {x y}\n"), "y: { x y }\n");
+    }
+
+    #[test]
+    fn test_declaration_metadata_in_block_preserved() {
+        assert_eq!(
+            reformat_checked("y: { ` \"d\" a: 1 b: 2 }\n"),
+            "y: {\n  ` \"d\"\n  a: 1\n  b: 2\n}\n"
+        );
+    }
+
+    #[test]
+    fn test_layout_independent_of_source_layout() {
+        // Decisions were made on the original text's length, so a block
+        // written across lines and the same block on one line differed.
+        // The padding makes the source text of `items` exceed the width
+        // budget while its formatted form is short.
+        let spread = format!("x: {{ items: [1,{}2] }}\n", " ".repeat(80));
+        let compact = "x: { items: [1, 2] }\n";
+        assert_eq!(reformat_checked(&spread), reformat_checked(compact));
     }
 
     #[test]

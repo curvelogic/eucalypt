@@ -247,6 +247,51 @@ mod tests {
         assert_eq!(pos.character, 0);
     }
 
+    /// Apply a whole-document formatting response to `source`.
+    fn apply_document_edits(source: &str, edits: &[TextEdit]) -> String {
+        match edits {
+            [] => source.to_string(),
+            [edit] => {
+                assert_eq!(edit.range.start, Position::new(0, 0));
+                assert_eq!(edit.range.end, end_of_document(source));
+                edit.new_text.clone()
+            }
+            _ => panic!("expected a single whole-document edit, got {edits:?}"),
+        }
+    }
+
+    /// eu-oaz72.6: formatting a document that opens with a unit docstring
+    /// keeps it unit metadata: the result parses, and formatting it again
+    /// requests no edits.
+    #[test]
+    fn format_document_leading_docstring_parses_and_is_idempotent() {
+        for source in [
+            "\"doc\"\nx: 1\n",
+            include_str!("../../../tests/harness/234_oaz72_6_fmt_leading_docstring.eu"),
+        ] {
+            let formatted =
+                apply_document_edits(source, &format_document(source, &default_options()));
+            let errors = crate::syntax::rowan::parse_unit(&formatted)
+                .errors()
+                .clone();
+            assert!(
+                errors.is_empty(),
+                "formatted output does not parse: {errors:?}\n{formatted}"
+            );
+            let first_item = formatted
+                .lines()
+                .find(|l| !l.is_empty() && !l.starts_with('#'));
+            assert!(
+                first_item.is_some_and(|l| l.starts_with('"')),
+                "unit docstring is no longer the first item:\n{formatted}"
+            );
+            assert!(
+                format_document(&formatted, &default_options()).is_empty(),
+                "formatting is not idempotent:\n{formatted}"
+            );
+        }
+    }
+
     #[test]
     fn options_to_config_respects_tab_size() {
         let mut opts = default_options();
