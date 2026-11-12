@@ -3091,6 +3091,13 @@ pub fn test_233_oaz72_34_constant_stack_loops() {
     run_test(&opts("233_oaz72_34_constant_stack_loops.eu"));
 }
 
+/// eu-oaz72.3: whitespace inside a string interpolation is kept in the
+/// syntax tree as trivia and does not change the interpolation's meaning.
+#[test]
+pub fn test_234_oaz72_3_interpolation_whitespace() {
+    run_test(&opts("234_oaz72_3_interpolation_whitespace.eu"));
+}
+
 #[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame
