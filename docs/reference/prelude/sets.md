@@ -4,7 +4,8 @@
 
 | Function | Description |
 |----------|-------------|
-| `set.from-list(xs)` | Create a set from list `xs` of primitive values |
+| `set.of` | Create a set from list `xs` of primitive values, in one pass (duplicates removed) |
+| `set.from-list` | Alias of `set.of`: create a set from list `xs` of primitive values |
 | `set.to-list` | Return sorted list of elements in set `s` |
 | `set.add` | Add element `e` to set `s` |
 | `set.remove` | Remove element `e` from set `s` |
@@ -20,7 +21,7 @@
 | `(l ∉ r)` | True if element `v` is not a member of set `s` |
 
 ```eu
-s: set.from-list([1, 2, 3, 2, 1])
+s: set.of([1, 2, 3, 2, 1])
 # s contains {1, 2, 3} (duplicates removed)
 ```
 

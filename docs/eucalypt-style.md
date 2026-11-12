@@ -190,14 +190,14 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 
 ## Sets for membership
 
-- Use sets (`set.from-list`) for repeated membership testing, not `any(= x)` over a list. Faster and reads better with `∈`:
+- Use sets (`set.of`) for repeated membership testing, not `any(= x)` over a list. Faster and reads better with `∈`:
   ```eu,notest
   # Before
   allowed: [:a, :b, :c]
   allowed any(= v)
 
   # After
-  allowed: set.from-list[:a, :b, :c]
+  allowed: set.of[:a, :b, :c]
   v ∈ allowed            # as expression
   v when(∈ allowed, f)   # section as predicate
   ```
