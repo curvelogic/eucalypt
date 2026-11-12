@@ -1,6 +1,6 @@
 # dict — design note
 
-- **Status:** Draft for owner agreement (not yet agreed)
+- **Status:** Agreed 2026-11-12 (owner accepted every §11 recommendation)
 - **Date:** 2026-11-12
 - **Bead:** eu-oaz72.21 (eu-oaz72.22, priority queue, folded in)
 - **Plan:** `docs/superpowers/plans/2026-11-12-aoc-2026-preparation.md`
