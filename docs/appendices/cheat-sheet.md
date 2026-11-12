@@ -521,6 +521,17 @@ records over(each ∘ at(:score), * 2)          # scores doubled
 The standard `+`, `-`, `*`, `/` operators are polymorphic and apply element-wise when
 either operand is an array. Scalar broadcasting is supported.
 
+### Sets and Vecs (`set` / `vec` namespaces)
+
+| Expression | Description |
+|---|---|
+| `xs set.of` / `xs set.from-list` | Set of primitives from a list (one pass; the names are aliases) |
+| `s set.to-list` | Sorted list of a set's elements |
+| `v ∈ s` / `v ∉ s` | Membership |
+| `∅` | The empty set |
+| `xs vec.of` / `xs vec.from-list` | Vec of primitives with O(1) indexed access (aliases) |
+| `v vec.nth(n)` / `vec.len(v)` | Element at index `n` (0-based) / length |
+
 ### IO
 
 | Binding / Function | Description |

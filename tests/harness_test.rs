@@ -3132,6 +3132,11 @@ pub fn test_236_oaz72_36_constructor_field_sharing() {
     run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));
 }
 
+#[test]
+pub fn test_241_oaz72_32_set_vec_of() {
+    run_test(&opts("241_oaz72_32_set_vec_of.eu"));
+}
+
 /// Ticks reported by `-S` for one target of a harness file, run with demand
 /// analysis suppressed.
 fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
@@ -3506,6 +3511,26 @@ pub fn test_error_233_oaz72_43_update_nth_negative() {
 /// eu-oaz72.49: a zero step to window is an error rather than a hang.
 pub fn test_error_235_oaz72_49_window_step_zero() {
     run_error_test(&error_opts("235_oaz72_49_window_step_zero.eu"));
+}
+
+#[test]
+/// eu-oaz72.32: a non-primitive element in set.of / set.from-list raises the
+/// typed "expected a primitive value" error with help, as set.add does.
+pub fn test_error_241_oaz72_32_set_of_non_primitive() {
+    run_error_test(&error_opts("241_oaz72_32_set_of_non_primitive.eu"));
+}
+
+#[test]
+/// eu-oaz72.32: a datetime element in set.of raises set.add's type mismatch,
+/// not "empty boxed value" from its unforced inner value.
+pub fn test_error_241_oaz72_32_set_of_datetime() {
+    run_error_test(&error_opts("241_oaz72_32_set_of_datetime.eu"));
+}
+
+#[test]
+/// eu-oaz72.32: a function element in set.from-list raises set.add's error.
+pub fn test_error_241_oaz72_32_set_of_function() {
+    run_error_test(&error_opts("241_oaz72_32_set_of_function.eu"));
 }
 
 #[test]
