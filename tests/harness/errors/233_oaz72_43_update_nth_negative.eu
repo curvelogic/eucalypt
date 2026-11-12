@@ -1,0 +1,4 @@
+# Error test (eu-oaz72.43): a negative index to `update-nth` is an error.
+# `update-nth` is built on `split-at`, and `split-at(n <= 0)` is [[], l],
+# so without its own guard `update-nth(-1)` would silently update element 0.
+x: [1, 2, 3] update-nth(-1, inc)
