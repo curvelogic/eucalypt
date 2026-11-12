@@ -1,0 +1,2 @@
+` "eu-oaz72.32: a non-primitive element in set.from-list raises the typed error set.add raises, not a bare panic."
+result: [1, [2]] set.from-list

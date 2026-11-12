@@ -179,7 +179,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(encoding::Base64Decode));
     rt.add(Box::new(encoding::Sha256Hash));
     rt.add(Box::new(set::SetEmpty));
-    rt.add(Box::new(set::SetFromList));
+    rt.add(Box::new(set::SetOf));
     rt.add(Box::new(set::SetToList));
     rt.add(Box::new(set::SetAdd));
     rt.add(Box::new(set::SetRemove));

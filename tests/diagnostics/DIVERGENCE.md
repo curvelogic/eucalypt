@@ -10,7 +10,7 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**34 of 225 fixtures diverge.**
+**35 of 228 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
@@ -34,7 +34,7 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/141_calzdt_year_overflow` | user tests/harness/errors/141_calzdt_year_overflow.eu:3:9 | user tests/harness/errors/141_calzdt_year_overflow.eu:3:9 | 0 (0 user) | 0 (0 user) |
 | `errors/150_bad_timezone_source_loc` | user tests/harness/errors/150_bad_timezone_source_loc.eu:2:9 | user tests/harness/errors/150_bad_timezone_source_loc.eu:2:9 | 0 (0 user) | 0 (0 user) |
 | `errors/151_set_add_non_set` | user tests/harness/errors/151_set_add_non_set.eu:1:17 | user tests/harness/errors/151_set_add_non_set.eu:1:17 | 1 (1 user) | 1 (1 user) |
-| `errors/152_set_element_type_mismatch` | user tests/harness/errors/152_set_element_type_mismatch.eu:1:11 | user tests/harness/errors/152_set_element_type_mismatch.eu:1:11 | 1 (1 user) | 1 (1 user) |
+| `errors/152_set_element_type_mismatch` | user tests/harness/errors/152_set_element_type_mismatch.eu:1:29 | user tests/harness/errors/152_set_element_type_mismatch.eu:1:29 | 1 (1 user) | 1 (1 user) |
 | `errors/168_io_shell_missing_cmd` | user tests/harness/errors/168_io_shell_missing_cmd.eu:3:7 | none | 0 (0 user) | 0 (0 user) |
 | `errors/181_direct_app_call_site` | user tests/harness/errors/181_direct_app_call_site.eu:15:9 | user tests/harness/errors/181_direct_app_call_site.eu:15:9 | 2 (1 user) | 2 (1 user) |
 | `errors/218_json_block_key` | user tests/harness/errors/218_json_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
@@ -45,6 +45,7 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/235_oaz72_49_window_size_zero` | user tests/harness/errors/235_oaz72_49_window_size_zero.eu:4:27 | user tests/harness/errors/235_oaz72_49_window_size_zero.eu:4:27 | 2 (1 user) | 2 (1 user) |
 | `errors/235_oaz72_49_window_step_negative` | user tests/harness/errors/235_oaz72_49_window_step_negative.eu:3:28 | user tests/harness/errors/235_oaz72_49_window_step_negative.eu:3:28 | 2 (1 user) | 2 (1 user) |
 | `errors/235_oaz72_49_window_step_zero` | user tests/harness/errors/235_oaz72_49_window_step_zero.eu:3:27 | user tests/harness/errors/235_oaz72_49_window_step_zero.eu:3:27 | 2 (1 user) | 2 (1 user) |
+| `errors/241_oaz72_32_set_of_datetime` | user tests/harness/errors/241_oaz72_32_set_of_datetime.eu:2:10 | user tests/harness/errors/241_oaz72_32_set_of_datetime.eu:2:10 | 1 (1 user) | 1 (1 user) |
 | `errors/error_176` | user tests/harness/errors/error_176.eu:19:32 | user tests/harness/errors/error_176.eu:19:32 | 1 (1 user) | 0 (0 user) |
 | `many-decls/huge_decls_type_warning` | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | 1 (1 user) | 1 (1 user) |
 | `many-decls/many_decls_nested_user_fn` | user tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12 | user tests/diagnostics/snapshot-corpus/many_decls_nested_user_fn.eu:606:12 | 2 (1 user) | 2 (1 user) |
