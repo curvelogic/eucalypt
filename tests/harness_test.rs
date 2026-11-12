@@ -3109,6 +3109,8 @@ pub fn test_oaz72_5_native_storage_under_collection() {
         out.status.success() && stdout.contains("PASS"),
         "native storage GC fixture failed under collection:\nstdout: {stdout}\nstderr: {stderr}"
     );
+}
+
 /// eu-oaz72.35 — `take(n)` with n <= 0 is [] (it used to run past zero on
 /// a negative count), so `range(b, e)` with e <= b is [] instead of hanging.
 #[test]
