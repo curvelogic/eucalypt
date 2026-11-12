@@ -1311,7 +1311,7 @@ pub const MIN_GC_TRIGGER_BLOCKS: usize = (32 * 1_048_576) / BLOCK_SIZE_BYTES;
 /// volume the last collection left (eu-oaz72.4). Each collection's marking
 /// costs about the live volume, so a factor of 4 bounds marking at about a
 /// quarter of a byte per byte allocated, for a footprint of up to about five
-/// times live. (2 measured too costly on heaps that grow steadily while the
+/// times live (about nine at [`MAX_GC_GROWTH_FACTOR`]). (2 measured too costly on heaps that grow steadily while the
 /// continuation stack retains them, e.g. `tests/harness/bench/022_hof_fold`.)
 pub const GC_GROWTH_FACTOR: usize = 4;
 

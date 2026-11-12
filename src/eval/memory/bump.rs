@@ -79,7 +79,7 @@ impl LineMap {
         // Validate that the region fits within this block
         debug_assert!(
             offset + bytes <= BLOCK_SIZE_BYTES,
-            "mark_region: object at offset {offset} with size {bytes} bytes extends beyond block boundary (block size: {BLOCK_SIZE_BYTES} bytes)"
+            "mark_bytes: object at offset {offset} with size {bytes} bytes extends beyond block boundary (block size: {BLOCK_SIZE_BYTES} bytes)"
         );
 
         // Compute the inclusive range of lines that the region occupies.
@@ -97,7 +97,7 @@ impl LineMap {
 
         debug_assert!(
             last_line <= LINE_COUNT,
-            "mark_region: calculated line range {first_line}..{last_line} exceeds LINE_COUNT {LINE_COUNT} (offset: {offset}, bytes: {bytes})"
+            "mark_bytes: calculated line range {first_line}..{last_line} exceeds LINE_COUNT {LINE_COUNT} (offset: {offset}, bytes: {bytes})"
         );
 
         for line in first_line..last_line {
