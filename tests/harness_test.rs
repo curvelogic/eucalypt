@@ -3318,6 +3318,24 @@ pub fn test_239_oaz72_40_constructor_sharing() {
     run_test(&opts(file));
 }
 
+/// eu-oaz72.41 — a binding captured by a lambda was left AtMostOnce, so its
+/// update was elided and every call of the lambda recomputed it. With
+/// demand analysis on, six calls must cost about one fold.
+#[test]
+pub fn test_240_oaz72_41_lambda_capture_sharing() {
+    let file = "240_oaz72_41_lambda_capture_sharing.eu";
+    let fold = ticks_with_demand_analysis(file, "fold");
+    for target in ["let-bound", "returned", "partial-app"] {
+        let shared = ticks_with_demand_analysis(file, target);
+        assert!(
+            shared * 2 < fold * 3,
+            "target {target}: six calls cost {shared} ticks against {fold} for one \
+             fold: the captured binding is recomputed on each call (eu-oaz72.41)"
+        );
+    }
+    run_test(&opts(file));
+}
+
 #[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame
