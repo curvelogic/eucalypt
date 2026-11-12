@@ -1,5 +1,5 @@
 {
-  title: "240 window-all is linear and lazy; window survives a step past the end"
+  title: "241 window-all is linear and lazy; window survives a step past the end"
   doc: "eu-oaz72.56: window-all (and partition-all) called count on the
         remaining list at every step, so it was O(n^2) and never terminated
         on an infinite list. window dropped `step` items with the prelude

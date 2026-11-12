@@ -3132,8 +3132,8 @@ pub fn test_236_oaz72_36_constructor_field_sharing() {
 /// on master), and `window` with a step past the end of the list no longer
 /// fails on `drop`.
 #[test]
-pub fn test_240_oaz72_56_window_all_linear() {
-    run_test(&opts("240_oaz72_56_window_all_linear.eu"));
+pub fn test_241_oaz72_56_window_all_linear() {
+    run_test(&opts("241_oaz72_56_window_all_linear.eu"));
 }
 
 /// Ticks reported by `-S` for one target of a harness file, run with demand
