@@ -984,6 +984,10 @@ pub fn test_harness_137() {
     run_test(&opts("137_diamond_import.eu"));
 }
 
+/// window, window-all, partition and partition-all, including eu-oaz72.49
+/// (positive arguments unchanged once non-positive ones became errors) and
+/// eu-oaz72.56 (`window-all` linear and lazy, gated by the `lazy` and `cost`
+/// targets' tick budgets; `window` with a step past the end of the list).
 #[test]
 pub fn test_harness_138() {
     run_test(&opts("138_partition_window_all.eu"));
@@ -3126,16 +3130,6 @@ pub fn test_236_oaz72_36_constructor_field_sharing() {
     run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));
 }
 
-/// eu-oaz72.56 — `window-all` and `partition-all` skip `step` items with a
-/// nil-safe helper instead of counting the remaining list at every step, so
-/// they are linear and lazy (the `lazy` and `cost` targets' tick budgets FAIL
-/// on master), and `window` with a step past the end of the list no longer
-/// fails on `drop`.
-#[test]
-pub fn test_241_oaz72_56_window_all_linear() {
-    run_test(&opts("241_oaz72_56_window_all_linear.eu"));
-}
-
 /// Ticks reported by `-S` for one target of a harness file, run with demand
 /// analysis suppressed.
 fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
@@ -3282,13 +3276,6 @@ pub fn test_235_oaz72_6_reformat_corpus_round_trip() {
 #[test]
 pub fn test_234_oaz72_4_gc_volume_trigger() {
     run_test(&opts("234_oaz72_4_gc_volume_trigger.eu"));
-}
-
-#[test]
-/// eu-oaz72.49: window and window-all with positive arguments are unchanged
-/// once a non-positive step (and window size) became errors.
-pub fn test_235_oaz72_49_window_step() {
-    run_test(&opts("235_oaz72_49_window_step.eu"));
 }
 
 /// eu-oaz72.40: demand analysis treated block field values and list
