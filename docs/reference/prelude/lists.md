@@ -68,7 +68,7 @@
 | `split-at(n, l)` | Split list into two at `n`th item and return pair; `[[], l]` when `n` <= 0 |
 | `split-after(p?, l)` | Split list where `p?` becomes false and return pair |
 | `split-when(p?, l)` | Split list where `p?` becomes true and return pair |
-| `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offset `step` |
+| `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offset `step`; a size or step that is not positive is an error |
 | `partition(n)` | List of lists of non-overlapping segments of list `l` of size `n` |
 | `discriminate(pred, xs)` | Return pair of `xs` for which `pred(_)` is true and `xs` for which `pred(_)` is false |
 
@@ -143,7 +143,7 @@ Returns `l` unchanged if no element matches |
 | `butlast(l)` | Return all elements of list `l` except the last |
 | `unzip(pairs)` | List of pairs to pair of lists. Inverse of zip |
 | `interleave(a, b)` | Alternate elements from lists `a` and `b`. When one is exhausted, the remainder of the other is appended |
-| `window-all(n, step, l)` | Like window but includes the final short chunk even if smaller than `n` |
+| `window-all(n, step, l)` | Like window but includes the final short chunk even if smaller than `n`; a step that is not positive is an error, and a size that is not positive gives `[]` |
 | `partition-all(n)` | List of lists of non-overlapping segments of `l`, including any final short chunk |
 | `group-consecutive-by(f, xs)` | Group consecutive elements where `f` returns equal values into sublists |
 | `group-consecutive` | Group consecutive equal elements into sublists |

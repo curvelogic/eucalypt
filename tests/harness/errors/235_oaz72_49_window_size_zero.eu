@@ -1,0 +1,4 @@
+# Error test (eu-oaz72.49): a zero size to `window` is an error, not an
+# infinite list of empty windows.
+# `take(3)` keeps the result finite, so a regression fails on exit code, not memory.
+x: [1, 2, 3] window(0, 1) take(3)

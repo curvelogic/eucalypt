@@ -1622,17 +1622,24 @@ any-true?(l): foldr(or, false, l)
     type: s"(a → bool) → [a] → bool" }
 any(p?, l): l map(p?) any-true?
 
-` { doc: "`window(n, step, l)` - list of lists of sliding windows over list `l` of size `n` and offset `step`."
-    type: s"number → number → [a] → [[a]]" }
-window(n, step, l): { chunk: l take(n) }.(if(count(chunk) >= n, cons(chunk, l drop(step) window(n, step)), []))
+` { doc: "`window(n, step, l)` - list of lists of sliding windows over list `l` of size `n` and offset `step`; a size or step that is not positive is an error."
+    type: s"number → number → [a] → [[a]]"
+    blame: :boundary }
+window(n, step, l): {
+  aux(xs): { chunk: xs take(n) }.(if(count(chunk) >= n, cons(chunk, xs drop(step) aux), []))
+}.(if((n number?) ∧ (n <= 0), panic("window size {n} must be positive"),
+   if((step number?) ∧ (step <= 0), panic("window step {step} must be positive"), aux(l))))
 
 ` { doc: "`partition(n, l)` - list of lists of non-overlapping segments of list `l` of size `n`."
     type: s"number → [a] → [[a]]" }
 partition(n): window(n, n)
 
-` { doc: "`window-all(n, step, l)` - like window but includes the final short chunk even if smaller than `n`."
-    type: s"number → number → [a] → [[a]]" }
-window-all(n, step, l): { chunk: l take(n) }.(if(chunk nil?, [], cons(chunk, (if(count(l) <= step, [], l drop(step))) window-all(n, step))))
+` { doc: "`window-all(n, step, l)` - like window but includes the final short chunk even if smaller than `n`; a step that is not positive is an error, and a size that is not positive gives `[]`."
+    type: s"number → number → [a] → [[a]]"
+    blame: :boundary }
+window-all(n, step, l): {
+  aux(xs): { chunk: xs take(n) }.(if(chunk nil?, [], cons(chunk, (if(count(xs) <= step, [], xs drop(step))) aux)))
+}.(if((step number?) ∧ (step <= 0), panic("window step {step} must be positive"), aux(l)))
 
 ` { doc: "`partition-all(n, l)` - list of lists of non-overlapping segments of `l`, including any final short chunk."
     type: s"number → [a] → [[a]]" }
