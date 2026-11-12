@@ -346,13 +346,14 @@ impl BumpBlock {
 
     /// Bump cursor back by size
     pub fn bump(&mut self, size: usize) -> Option<*const u8> {
-        self.bump_checked(size, super::gc_debug::poison_enabled())
+        self.bump_checked(size, super::gc_debug::poison_enabled)
     }
 
     /// Bump cursor back by size; `poison` says whether `EU_GC_POISON`
     /// checks apply (a parameter so that tests need not set the
-    /// process-wide flag).
-    fn bump_checked(&mut self, size: usize, poison: bool) -> Option<*const u8> {
+    /// process-wide flag). It is consulted only when moving to a new
+    /// hole, keeping the fast path free of the flag load.
+    fn bump_checked(&mut self, size: usize, poison: fn() -> bool) -> Option<*const u8> {
         if size > self.cursor {
             None
         } else {
@@ -361,7 +362,7 @@ impl BumpBlock {
                 // find next hole
                 let hole = self.line_map.borrow().find_hole(self.cursor);
                 if let Some((lower, cursor)) = hole {
-                    if poison && self.holes_poisoned {
+                    if self.holes_poisoned && poison() {
                         // `recycle` poisoned this hole and no GC has run
                         // since, so nothing may have written into it.
                         if let Some(offset) = self.first_unpoisoned_byte(lower, cursor) {
@@ -603,8 +604,6 @@ pub mod tests {
 
     use super::*;
 
-    use crate::eval::memory::gc_debug::POISON_BYTE;
-
     /// A block with live lines at 10, 50, 51 and 200, giving several
     /// holes, swept as `recycle` would after a GC.
     fn block_with_holes(poison: bool) -> BumpBlock {
@@ -633,7 +632,10 @@ pub mod tests {
     /// Allocate in 64-byte chunks until the block is exhausted.
     fn exhaust(b: &mut BumpBlock, poison: bool) -> usize {
         let mut n = 0;
-        while b.bump_checked(64, poison).is_some() {
+        while b
+            .bump_checked(64, if poison { || true } else { || false })
+            .is_some()
+        {
             n += 1;
         }
         n
@@ -699,11 +701,17 @@ pub mod tests {
             b.mark_line_for_test(line);
         }
         assert!(exhaust(&mut b, true) > 100);
-        // Without poison the check never applies, even to a poisoned block.
-        let mut c = block_with_holes(true);
-        write_byte(&c, holes[holes.len() - 1].0, 0x42);
-        assert!(exhaust(&mut c, false) > 100);
-        assert_ne!(POISON_BYTE, 0x42);
+    }
+
+    /// eu-oaz72.51: without `EU_GC_POISON` the hole check never runs,
+    /// even on a block whose holes were poisoned.
+    #[test]
+    pub fn test_hole_check_off_without_poison() {
+        let mut b = block_with_holes(true);
+        let holes = holes_of(&b);
+        let (l, _) = holes[holes.len() - 1];
+        write_byte(&b, l + 8, 0x42);
+        assert!(exhaust(&mut b, false) > 100);
     }
 
     #[test]
