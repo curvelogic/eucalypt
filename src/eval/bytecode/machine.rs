@@ -810,6 +810,7 @@ fn env_from_data_args(
     state: &BcMachineState,
     view: MutatorHeapView<'_>,
     args: &[DecodedRef],
+    atoms: &[CodeRef],
     next: RefPtr<BcEnvFrame>,
 ) -> Result<RefPtr<BcEnvFrame>, ExecutionError> {
     let cons_env = state
@@ -848,7 +849,7 @@ fn env_from_data_args(
                 ))?
                 .as_ptr())
         }
-        BcArgPattern::RequiresCopy => env_from_data_args_copy(state, view, args, next),
+        BcArgPattern::RequiresCopy => env_from_data_args_copy(state, view, args, atoms, next),
     }
 }
 
@@ -856,10 +857,20 @@ fn env_from_data_args(
 /// values (the copy path of `vm.rs` `env_from_data_args_copy`, `:978`). Used
 /// when the arg pattern cannot share backing (non-local refs, > 4 args, or an
 /// index reaching a deeper frame).
+///
+/// A `Local` or `Global` field whose slot still holds an unevaluated update thunk is not
+/// copied: a copy would be forced and updated in the branch frame while the
+/// constructor's own slot stayed unevaluated, so every traversal of the value
+/// would recompute it (eu-oaz72.36). Such a field is bound instead to a lazy
+/// alias closure over its `OP_ATOM` node (`atoms`, run-parallel to `args`) in
+/// the constructor's env — the same alias `make_arg_array` passes for an
+/// unsettled argument — so forcing it enters, black-holes and updates the
+/// original slot. Evaluated values are copied directly, as before.
 fn env_from_data_args_copy(
     state: &BcMachineState,
     view: MutatorHeapView<'_>,
     args: &[DecodedRef],
+    atoms: &[CodeRef],
     next: RefPtr<BcEnvFrame>,
 ) -> Result<RefPtr<BcEnvFrame>, ExecutionError> {
     let cons_env = state
@@ -875,15 +886,30 @@ fn env_from_data_args_copy(
     let local = view.scoped(cons_env);
     let globals = view.scoped(state.globals);
 
+    // An unevaluated update thunk is bound as an alias over its atom so that
+    // forcing it updates the slot it lives in, not a copy.
+    let share = |v: BcValue, j: usize| match (&v, atoms.get(j)) {
+        (BcValue::Closure(c), Some(atom)) if c.update() => {
+            BcValue::Closure(BcClosure::new(*atom, cons_env))
+        }
+        _ => v,
+    };
+
     let mut array = Array::with_capacity(&view, args.len());
-    for a in args {
+    for (j, a) in args.iter().enumerate() {
         let v = match a {
-            DecodedRef::Local(i) => (*local)
-                .get(&view, *i as usize)
-                .ok_or(ExecutionError::BadEnvironmentIndex(*i as usize))?,
-            DecodedRef::Global(i) => (*globals)
-                .get(&view, *i as usize)
-                .ok_or(ExecutionError::BadGlobalIndex(*i as usize))?,
+            DecodedRef::Local(i) => share(
+                (*local)
+                    .get(&view, *i as usize)
+                    .ok_or(ExecutionError::BadEnvironmentIndex(*i as usize))?,
+                j,
+            ),
+            DecodedRef::Global(i) => share(
+                (*globals)
+                    .get(&view, *i as usize)
+                    .ok_or(ExecutionError::BadGlobalIndex(*i as usize))?,
+                j,
+            ),
             DecodedRef::Value(k) => match state.constants.get(*k as usize) {
                 Some(Ref::V(n)) => BcValue::Native(n.clone()),
                 _ => {
@@ -1038,6 +1064,7 @@ pub fn return_data(
     decoded: &DecodedProgram,
     tag: Tag,
     args: &[DecodedRef],
+    atoms: &[CodeRef],
 ) -> Result<(), ExecutionError> {
     let Some(cont) = state.stack.pop() else {
         state.terminated = true;
@@ -1063,7 +1090,7 @@ pub fn return_data(
                 let env = if args.is_empty() {
                     environment
                 } else {
-                    env_from_data_args(state, view, args, environment)?
+                    env_from_data_args(state, view, args, atoms, environment)?
                 };
                 state.current = BcValue::Closure(BcClosure::new(body, env));
             } else if let Some(fb) = fallback {
@@ -1098,7 +1125,7 @@ pub fn return_data(
                 let env = if args.is_empty() {
                     environment
                 } else {
-                    env_from_data_args(state, view, args, environment)?
+                    env_from_data_args(state, view, args, atoms, environment)?
                 };
                 state.current = BcValue::Closure(BcClosure::new(body, env));
             } else if fallback != NO_BRANCH {
@@ -2095,7 +2122,7 @@ pub fn handle_op(
                 .iter()
                 .map(|off| arg_ref(code, *off))
                 .collect::<Result<_, _>>()?;
-            return_data(state, view, prog, decoded, tag, &arg_refs)?;
+            return_data(state, view, prog, decoded, tag, &arg_refs, &arg_offs)?;
         }
         Op::Case => {
             let scr_off = read_u32(code, &mut pc);
@@ -2623,6 +2650,7 @@ pub fn handle_op_predecoded(
         },
         Op::Cons => {
             let (start, len) = instr.pool();
+            let atoms = instr.b as usize;
             return_data(
                 state,
                 view,
@@ -2630,6 +2658,7 @@ pub fn handle_op_predecoded(
                 decoded,
                 instr.tag_byte(),
                 &decoded.refs[start..start + len],
+                &decoded.offsets[atoms..atoms + len],
             )?;
         }
         Op::Bif => {
@@ -5273,6 +5302,7 @@ mod tests {
             &DecodedProgram::default(),
             7,
             &[DecodedRef::Local(0)],
+            &[],
         )
         .unwrap();
 
@@ -5312,6 +5342,7 @@ mod tests {
             &BytecodeProgram::default(),
             &DecodedProgram::default(),
             6,
+            &[],
             &[],
         );
         assert!(matches!(err, Err(ExecutionError::NoBranchForDataTag(..))));

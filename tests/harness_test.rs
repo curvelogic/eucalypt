@@ -3091,6 +3091,16 @@ pub fn test_233_oaz72_34_constant_stack_loops() {
     run_test(&opts("233_oaz72_34_constant_stack_loops.eu"));
 }
 
+/// eu-oaz72.36 — a list built by `foldr` or `filter` is computed once and
+/// shared across traversals. Each target sums its list eight times; its
+/// `shared` validator checks the tick count and FAILs on master, where a
+/// constructor field copied out of a deeper frame, or a parameter reached
+/// through an alias binding, was recomputed on every traversal.
+#[test]
+pub fn test_234_oaz72_36_constructor_field_sharing() {
+    run_test(&opts("234_oaz72_36_constructor_field_sharing.eu"));
+}
+
 #[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame
