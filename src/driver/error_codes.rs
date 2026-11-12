@@ -5,6 +5,7 @@
 //! both here and in that file so the two stay in sync.
 
 use crate::driver::options::EucalyptOptions;
+use std::io::Write;
 
 /// `(code, catalogue entry)`. The entry is plain text, ready to print to a
 /// terminal as-is (no markdown rendering).
@@ -160,8 +161,14 @@ pub fn run(opt: &EucalyptOptions) -> Result<i32, String> {
 
     match catalogue_entry(code) {
         Some(entry) => {
-            println!("{entry}");
-            Ok(0)
+            // A closed pipe (`eu error E… | head`) is not a failure; any
+            // other write failure is reported rather than panicking.
+            match writeln!(std::io::stdout(), "{entry}") {
+                Err(e) if e.kind() != std::io::ErrorKind::BrokenPipe => {
+                    Err(format!("eu error: failed to write to stdout: {e}"))
+                }
+                _ => Ok(0),
+            }
         }
         None => {
             eprintln!("eu error: unknown error code '{code}'");

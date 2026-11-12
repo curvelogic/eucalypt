@@ -122,3 +122,127 @@ fn piping_into_a_short_reader_exits_quietly() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// The CLI's own stdout writes (eu-oaz72.39)
+//
+// The tests above cover rendered documents. `eu test`, the `eu dump` phases,
+// `eu list-targets`, `eu doc`, `eu fmt` and `eu error` print to stdout
+// themselves, and used `print!`/`println!`, which panic on EPIPE:
+// `eu test FILE | head -1` aborted with a backtrace and exit 101. Each must
+// now end as rendering does on a closed pipe: exit 0, nothing on stderr.
+// ---------------------------------------------------------------------------
+
+/// A tiny passing test file, so `eu test` prints a result line and the
+/// report path.
+const PASSING_TEST: &str = "` { target: :test }\nt: { RESULT: :PASS }\n";
+
+/// Run `eu <args>` with stdout a pipe whose read end is closed before eu
+/// writes a byte, so its first stdout write gets EPIPE. Returns
+/// `(exit code, stderr)`.
+///
+/// The read end is dropped immediately after spawning: eu has not finished
+/// starting up, let alone printed anything, by then.
+fn run_with_reader_gone(args: &[&str], cwd: &std::path::Path) -> (Option<i32>, String) {
+    let child = Command::new(env!("CARGO_BIN_EXE_eu"))
+        .args(args)
+        .current_dir(cwd)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn eu");
+
+    let mut child = child;
+    drop(child.stdout.take().expect("stdout piped"));
+
+    let output = child.wait_with_output().expect("wait for eu");
+    (
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+    )
+}
+
+#[test]
+fn cli_stdout_writes_end_quietly_on_a_closed_pipe() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let test_file = dir.path().join("pipe_test.eu");
+    std::fs::write(&test_file, PASSING_TEST).expect("write test fixture");
+    let big = write_fixture(dir.path());
+    let prelude = concat!(env!("CARGO_MANIFEST_DIR"), "/lib/prelude.eu");
+    let test_path = test_file.to_str().unwrap();
+    let big_path = big.to_str().unwrap();
+
+    let cases: Vec<Vec<&str>> = vec![
+        vec!["test", test_path],
+        vec!["dump", "ast", big_path],
+        vec!["dump", "cooked", big_path],
+        vec!["dump", "demands", big_path],
+        vec!["dump", "reflatten", big_path],
+        vec!["dump", "stg", big_path],
+        vec!["dump", "runtime", big_path],
+        vec!["list-targets", big_path],
+        vec!["doc", prelude],
+        vec!["fmt", prelude],
+        vec!["error", "EU-EVAL-TYPE"],
+    ];
+
+    for args in cases {
+        let (code, stderr) = run_with_reader_gone(&args, dir.path());
+        assert!(
+            !stderr.contains("panicked"),
+            "eu {args:?} panicked on a closed pipe (exit {code:?}):\n{stderr}"
+        );
+        assert_eq!(
+            code,
+            Some(0),
+            "eu {args:?}: expected exit 0 on a closed pipe, stderr:\n{stderr}"
+        );
+        assert!(
+            stderr.is_empty(),
+            "eu {args:?}: expected empty stderr on a closed pipe, got:\n{stderr}"
+        );
+    }
+}
+
+/// A closed pipe must not hide a failing suite.
+///
+/// Silencing EPIPE is right for the progress lines, but `eu test` must
+/// still run every test and exit with the suite's real verdict: under
+/// `set -o pipefail`, `eu test failing.eu | head` has to fail. Reading the
+/// closed pipe as success here would report a failing suite as passing.
+#[test]
+fn eu_test_with_a_closed_pipe_still_reports_failure() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let suite = dir.path().join("suite");
+    std::fs::create_dir(&suite).expect("create suite dir");
+    let failing = suite.join("a_failing.eu");
+    std::fs::write(&failing, "` { target: :test }\nt: { RESULT: :FAIL }\n")
+        .expect("write failing fixture");
+    std::fs::write(suite.join("b_passing.eu"), PASSING_TEST).expect("write passing fixture");
+
+    // Sanity: with a reader, the failing suite exits 1.
+    let with_reader = Command::new(env!("CARGO_BIN_EXE_eu"))
+        .args(["test", failing.to_str().unwrap()])
+        .current_dir(dir.path())
+        .output()
+        .expect("run eu test");
+    assert_eq!(
+        with_reader.status.code(),
+        Some(1),
+        "failing suite should exit 1"
+    );
+
+    // A directory suite: the failing test runs first and a passing one
+    // after, so the verdict depends on the run reaching the end and keeping
+    // the earlier failure.
+    let (code, stderr) = run_with_reader_gone(&["test", suite.to_str().unwrap()], dir.path());
+    assert!(
+        !stderr.contains("panicked"),
+        "eu test panicked on a closed pipe (exit {code:?}):\n{stderr}"
+    );
+    assert_eq!(
+        code,
+        Some(1),
+        "a failing suite must exit 1 even with its reader gone, stderr:\n{stderr}"
+    );
+}
