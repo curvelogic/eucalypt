@@ -199,6 +199,11 @@ pub struct BumpBlock {
     cursor: usize,
     /// Block map to store mark flags
     line_map: LineMap,
+    /// True when `recycle` poisoned every hole under the current line
+    /// map (`EU_GC_POISON`). Until the next GC resets the line map,
+    /// each hole must still hold only poison bytes when `bump` enters
+    /// it. Cleared by `reset_region_marks`.
+    holes_poisoned: bool,
 }
 
 impl Default for BumpBlock {
@@ -287,11 +292,19 @@ impl BumpBlock {
             cursor: BLOCK_SIZE_BYTES,
             lower: 0,
             line_map: LineMap::default(),
+            holes_poisoned: false,
         }
     }
 
     /// Bump cursor back by size
     pub fn bump(&mut self, size: usize) -> Option<*const u8> {
+        self.bump_checked(size, super::gc_debug::poison_enabled())
+    }
+
+    /// Bump cursor back by size; `poison` says whether `EU_GC_POISON`
+    /// checks apply (a parameter so that tests need not set the
+    /// process-wide flag).
+    fn bump_checked(&mut self, size: usize, poison: bool) -> Option<*const u8> {
         if size > self.cursor {
             None
         } else {
@@ -299,21 +312,25 @@ impl BumpBlock {
             if next < self.lower {
                 // find next hole
                 if let Some((lower, cursor)) = self.line_map.find_hole(self.cursor) {
-                    // When GC poison is enabled, check that the hole doesn't
-                    // contain any data that looks like valid heap pointers.
-                    // This catches line-marking bugs where live object memory
-                    // is incorrectly classified as a free hole.
-                    if super::gc_debug::poison_enabled() {
-                        self.verify_hole_is_dead(lower, cursor);
-                    }
-
-                    if cfg!(debug_assertions) {
+                    if poison && self.holes_poisoned {
+                        // `recycle` poisoned this hole and no GC has run
+                        // since, so nothing may have written into it.
+                        if let Some(offset) = self.first_unpoisoned_byte(lower, cursor) {
+                            panic!(
+                                "GC HOLE: block {:p} hole [{lower}..{cursor}] was \
+                                 reclaimed and poisoned but byte {offset} has been \
+                                 overwritten: a write through a stale pointer, or a \
+                                 live object in an unmarked line",
+                                self.block.as_ptr(),
+                            );
+                        }
+                    } else if cfg!(debug_assertions) {
                         self.block.fill(lower, cursor - lower);
                     }
 
                     self.lower = lower;
                     self.cursor = cursor;
-                    self.bump(size)
+                    self.bump_checked(size, poison)
                 } else {
                     None
                 }
@@ -329,55 +346,42 @@ impl BumpBlock {
         }
     }
 
-    /// Verify that a hole region doesn't contain marked objects.
-    ///
-    /// Walks through the hole looking for AllocHeader patterns that
-    /// indicate a live (marked) object.  If found, the line map failed
-    /// to mark the lines covering this object — a GC bug.
-    fn verify_hole_is_dead(&self, lower: usize, upper: usize) {
-        let base = self.block.as_ptr();
-        // We check both mark states since we can't easily access
-        // Heap's current mark_state from here.
-        let header_size = std::mem::size_of::<super::header::AllocHeader>();
-
-        // Walk through the hole in header_size steps looking for valid headers
-        let mut offset = lower;
-        while offset + header_size <= upper {
-            unsafe {
-                let ptr = base.add(offset) as *const super::header::AllocHeader;
-                // Check if this looks like a marked header (either mark state)
-                if (*ptr).is_marked_with_state(true) || (*ptr).is_marked_with_state(false) {
-                    let length = (*ptr).length();
-                    // A length of 0 or very large values are likely garbage
-                    if length > 0 && (length as usize) < BLOCK_SIZE_BYTES {
-                        eprintln!(
-                            "GC HOLE WARNING: block {:p} hole [{lower}..{upper}] \
-                             contains marked object at offset {offset} \
-                             (length={length}, marked_true={}, marked_false={})",
-                            base,
-                            (*ptr).is_marked_with_state(true),
-                            (*ptr).is_marked_with_state(false),
-                        );
-                        // Don't panic — this is diagnostic. The real corruption
-                        // will be caught when the 0xFF fill overwrites the data.
-                    }
-                }
-            }
-            offset += header_size;
-        }
+    /// Offset of the first byte in `[lower, upper)` that is not
+    /// `POISON_BYTE`, if any.
+    fn first_unpoisoned_byte(&self, lower: usize, upper: usize) -> Option<usize> {
+        // SAFETY: `lower..upper` is a hole returned by `find_hole`, so
+        // it lies within the block, which owns the memory.
+        let hole =
+            unsafe { std::slice::from_raw_parts(self.block.as_ptr().add(lower), upper - lower) };
+        hole.iter()
+            .position(|&b| b != super::gc_debug::POISON_BYTE)
+            .map(|i| lower + i)
     }
 
     /// Recycle partially used block; reset cursor etc.
     pub fn recycle(&mut self) -> bool {
+        self.recycle_checked(super::gc_debug::poison_enabled())
+    }
+
+    /// Recycle; `poison` says whether to poison the reclaimed holes.
+    ///
+    /// When poisoning, every hole in the block is filled — not only the
+    /// first — so that any use-after-free dereference hits a distinctive
+    /// pattern and `bump` can verify each hole is untouched when it
+    /// enters it.
+    fn recycle_checked(&mut self, poison: bool) -> bool {
         if let Some((lower, cursor)) = self.line_map.find_hole(BLOCK_SIZE_BYTES) {
-            // When poisoning is enabled, fill the reclaimed hole with poison
-            // bytes so that any use-after-free dereferences hit a distinctive
-            // pattern instead of stale data.
-            if super::gc_debug::poison_enabled() {
-                unsafe {
-                    let start = self.block.as_ptr() as *mut u8;
-                    super::gc_debug::poison_region(start.add(lower), cursor - lower);
+            if poison {
+                let start = self.block.as_ptr() as *mut u8;
+                let mut hole = Some((lower, cursor));
+                while let Some((l, u)) = hole {
+                    // SAFETY: `l..u` is a hole returned by `find_hole`,
+                    // within the block, which owns the memory; holes
+                    // hold no live objects.
+                    unsafe { super::gc_debug::poison_region(start.add(l), u - l) };
+                    hole = self.line_map.find_hole(l);
                 }
+                self.holes_poisoned = true;
             }
             self.cursor = cursor;
             self.lower = lower;
@@ -396,6 +400,9 @@ impl BumpBlock {
 
     /// Reset line maps ready for GC trace
     pub fn reset_region_marks(&mut self) {
+        // A new mark phase redraws the holes; those not yet entered were
+        // never poisoned under the new map.
+        self.holes_poisoned = false;
         self.line_map.reset();
     }
 
@@ -559,6 +566,109 @@ pub mod tests {
     use regex::Regex;
 
     use super::*;
+
+    use crate::eval::memory::gc_debug::POISON_BYTE;
+
+    /// A block with live lines at 10, 50, 51 and 200, giving several
+    /// holes, swept as `recycle` would after a GC.
+    fn block_with_holes(poison: bool) -> BumpBlock {
+        let mut b = BumpBlock::new();
+        for line in [10, 50, 51, 200] {
+            b.mark_line_for_test(line);
+        }
+        assert!(b.recycle_checked(poison));
+        b
+    }
+
+    fn holes_of(b: &BumpBlock) -> Vec<(usize, usize)> {
+        let mut holes = vec![];
+        let mut below = BLOCK_SIZE_BYTES;
+        while let Some((l, u)) = b.line_map.find_hole(below) {
+            holes.push((l, u));
+            below = l;
+        }
+        holes
+    }
+
+    fn write_byte(b: &BumpBlock, offset: usize, byte: u8) {
+        unsafe { *(b.block.as_ptr() as *mut u8).add(offset) = byte };
+    }
+
+    /// Allocate in 64-byte chunks until the block is exhausted.
+    fn exhaust(b: &mut BumpBlock, poison: bool) -> usize {
+        let mut n = 0;
+        while b.bump_checked(64, poison).is_some() {
+            n += 1;
+        }
+        n
+    }
+
+    /// eu-oaz72.51: `recycle` under poison fills every hole, not only
+    /// the first, so `bump` can check each hole when it enters it.
+    #[test]
+    pub fn test_recycle_poisons_every_hole() {
+        let b = block_with_holes(true);
+        let holes = holes_of(&b);
+        assert!(
+            holes.len() >= 3,
+            "fixture should give several holes: {holes:?}"
+        );
+        for (l, u) in holes {
+            assert_eq!(
+                b.first_unpoisoned_byte(l, u),
+                None,
+                "hole [{l}..{u}] not poisoned"
+            );
+        }
+    }
+
+    /// eu-oaz72.51: stale dead data in reclaimed holes is not a GC
+    /// defect. The former check flagged any header-shaped word there;
+    /// allocating through every hole of a poisoned block must pass.
+    #[test]
+    pub fn test_bump_through_poisoned_holes_is_silent() {
+        let mut b = block_with_holes(true);
+        assert!(exhaust(&mut b, true) > 100);
+    }
+
+    /// eu-oaz72.51: a write into a poisoned hole before the allocator
+    /// reaches it (a write through a stale pointer, or a live object in
+    /// an unmarked line) is reported.
+    #[test]
+    #[should_panic(expected = "GC HOLE")]
+    pub fn test_bump_detects_write_into_poisoned_hole() {
+        let mut b = block_with_holes(true);
+        let holes = holes_of(&b);
+        let (l, _) = holes[holes.len() - 1];
+        write_byte(&b, l + 8, 0x42);
+        exhaust(&mut b, true);
+    }
+
+    /// eu-oaz72.51: once a GC resets the line map, holes not yet
+    /// entered were never poisoned under the new map, so their stale
+    /// content must not be reported.
+    #[test]
+    pub fn test_reset_region_marks_stops_hole_check() {
+        let mut b = block_with_holes(true);
+        let holes = holes_of(&b);
+        // Dead data from earlier allocations, as a block holds after a
+        // GC that did not recycle it.
+        for (l, u) in &holes {
+            for off in (*l..*u).step_by(16) {
+                write_byte(&b, off, 0x01);
+            }
+        }
+        b.reset_region_marks();
+        for line in [10, 50, 51, 200] {
+            b.mark_line_for_test(line);
+        }
+        assert!(exhaust(&mut b, true) > 100);
+        // Without poison the check never applies, even to a poisoned block.
+        let mut c = block_with_holes(true);
+        write_byte(&c, holes[holes.len() - 1].0, 0x42);
+        assert!(exhaust(&mut c, false) > 100);
+        assert_ne!(POISON_BYTE, 0x42);
+    }
 
     #[test]
     pub fn test_find_hole() {
