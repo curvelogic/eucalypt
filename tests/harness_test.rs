@@ -83,28 +83,37 @@ fn run_with_deadline(
         .spawn()
         .expect("failed to spawn eu");
 
-    match child.wait_timeout(deadline).expect("wait_timeout failed") {
-        Some(status) => {
-            let mut stdout = Vec::new();
-            let mut stderr = Vec::new();
-            if let Some(mut s) = child.stdout.take() {
-                let _ = s.read_to_end(&mut stdout);
+    // Drain both pipes while waiting: a child that writes more than a
+    // pipe buffer's worth would otherwise block on write and never exit,
+    // turning a chatty run into a spurious timeout.
+    fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> std::thread::JoinHandle<Vec<u8>> {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut p) = pipe {
+                let _ = p.read_to_end(&mut buf);
             }
-            if let Some(mut s) = child.stderr.take() {
-                let _ = s.read_to_end(&mut stderr);
-            }
-            Some(std::process::Output {
-                status,
-                stdout,
-                stderr,
-            })
-        }
+            buf
+        })
+    }
+    let stdout = drain(child.stdout.take());
+    let stderr = drain(child.stderr.take());
+
+    let status = match child.wait_timeout(deadline).expect("wait_timeout failed") {
+        Some(status) => Some(status),
         None => {
             let _ = child.kill();
             let _ = child.wait();
             None
         }
-    }
+    };
+    // The child has exited (or been killed), so both pipes reach EOF.
+    let stdout = stdout.join().expect("stdout reader panicked");
+    let stderr = stderr.join().expect("stderr reader panicked");
+    status.map(|status| std::process::Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 /// Run an error test — validates against `.expect` sidecar if present,
@@ -3117,15 +3126,21 @@ pub fn test_238_oaz72_32_set_vec_of() {
 /// Ticks reported by `-S` for one target of a harness file, run with demand
 /// analysis suppressed.
 fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
+    ticks(file, target, &["--suppress-demand-analysis"])
+}
+
+/// Tick count for one target of a harness file, run with demand analysis.
+fn ticks_with_demand_analysis(file: &str, target: &str) -> u64 {
+    ticks(file, target, &[])
+}
+
+fn ticks(file: &str, target: &str, flags: &[&str]) -> u64 {
+    let path = format!("tests/harness/{file}");
+    let mut args = vec!["run"];
+    args.extend_from_slice(flags);
+    args.extend_from_slice(&["-S", "-t", target, &path]);
     let output = std::process::Command::new(eu_binary())
-        .args([
-            "run",
-            "--suppress-demand-analysis",
-            "-S",
-            "-t",
-            target,
-            &format!("tests/harness/{file}"),
-        ])
+        .args(&args)
         .output()
         .expect("eu runs");
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -3251,6 +3266,33 @@ pub fn test_234_oaz72_4_gc_volume_trigger() {
 /// once a non-positive step (and window size) became errors.
 pub fn test_235_oaz72_49_window_step() {
     run_test(&opts("235_oaz72_49_window_step.eu"));
+}
+
+/// eu-oaz72.40: demand analysis treated block field values and list
+/// elements as strict, forcing a binding used only by an unselected
+/// field. Each case is in RESULT.
+#[test]
+pub fn test_238_oaz72_40_block_body_demand() {
+    run_test(&opts("238_oaz72_40_block_body_demand.eu"));
+}
+
+/// eu-oaz72.40: a binding referred to once inside a block field or list
+/// element was marked AtMostOnce, so it skipped its update frame and each
+/// read through the structure recomputed it. With demand analysis on, three
+/// reads must cost about one fold, not three.
+#[test]
+pub fn test_239_oaz72_40_constructor_sharing() {
+    let file = "239_oaz72_40_constructor_sharing.eu";
+    let fold = ticks_with_demand_analysis(file, "fold");
+    for target in ["list-body", "list-field"] {
+        let shared = ticks_with_demand_analysis(file, target);
+        assert!(
+            shared * 2 < fold * 3,
+            "target {target}: three reads cost {shared} ticks against {fold} for one \
+             fold: the binding is recomputed on each read (eu-oaz72.40)"
+        );
+    }
+    run_test(&opts(file));
 }
 
 #[test]
@@ -4587,5 +4629,56 @@ pub fn test_blob_core_vs_source_prelude_byte_equal_on_a_large_file() {
     assert_eq!(
         blob_err, source_err,
         "stderr differs between blob-core and source-prelude eval-path checks on a large file"
+    );
+}
+
+/// eu-oaz72.51: under `EU_GC_POISON` at a small heap limit, list churn
+/// must collect many times without any GC hole diagnostic. The former
+/// hole check treated every stale (dead) header in a reclaimed hole as
+/// a live object and printed hundreds of thousands of false
+/// `GC HOLE WARNING` lines; the check now verifies that each poisoned
+/// hole is untouched, so any `GC HOLE` output is a genuine defect.
+#[test]
+fn gc_poison_small_heap_churn_reports_no_hole() {
+    let mut cmd = std::process::Command::new(eu_binary());
+    cmd.env("EU_GC_POISON", "1").args([
+        "--heap-limit-mib",
+        "2",
+        "-S",
+        "tests/fixtures/gc_hole_churn.eu",
+        "-e",
+        "result",
+    ]);
+    let out = run_with_deadline(cmd, std::time::Duration::from_secs(300))
+        .expect("eu did not finish within the deadline");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "eu failed: {}",
+        stderr.chars().take(4000).collect::<String>()
+    );
+    assert!(
+        stdout.lines().any(|l| l.trim() == "18393300"),
+        "wrong result: {stdout}"
+    );
+    // Precondition: the run must actually collect, or it proves nothing.
+    let collections: usize = stderr
+        .lines()
+        .find(|l| l.trim_start().starts_with("Collections"))
+        .and_then(|l| l.split(':').nth(1))
+        .map(|n| n.trim().replace(',', ""))
+        .and_then(|n| n.parse().ok())
+        .expect("no Collections line in -S statistics");
+    assert!(
+        collections >= 100,
+        "expected many collections, got {collections}"
+    );
+    let holes = stderr.lines().filter(|l| l.contains("GC HOLE")).count();
+    assert_eq!(
+        holes,
+        0,
+        "GC hole diagnostics under EU_GC_POISON, first: {}",
+        stderr.lines().find(|l| l.contains("GC HOLE")).unwrap_or("")
     );
 }
