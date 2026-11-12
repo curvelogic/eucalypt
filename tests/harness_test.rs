@@ -3097,8 +3097,8 @@ pub fn test_233_oaz72_34_constant_stack_loops() {
 /// constructor field copied out of a deeper frame, or a parameter reached
 /// through an alias binding, was recomputed on every traversal.
 #[test]
-pub fn test_234_oaz72_36_constructor_field_sharing() {
-    run_test(&opts("234_oaz72_36_constructor_field_sharing.eu"));
+pub fn test_236_oaz72_36_constructor_field_sharing() {
+    run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));
 }
 
 /// Ticks reported by `-S` for one target of a harness file, run with demand
@@ -3135,8 +3135,8 @@ fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
 /// (as on master, where it hid nothing), forcing the element three times must
 /// cost about one fold, not three.
 #[test]
-pub fn test_235_oaz72_48_list_element_sharing() {
-    let file = "235_oaz72_48_list_element_sharing.eu";
+pub fn test_237_oaz72_48_list_element_sharing() {
+    let file = "237_oaz72_48_list_element_sharing.eu";
     let fold = ticks_without_demand_analysis(file, "fold");
     let shared = ticks_without_demand_analysis(file, "shared");
     assert!(
@@ -3145,6 +3145,20 @@ pub fn test_235_oaz72_48_list_element_sharing() {
          fold: the element's thunk is recomputed on each force (eu-oaz72.48)"
     );
     run_test(&opts(file));
+}
+
+/// eu-oaz72.3: whitespace inside a string interpolation is kept in the
+/// syntax tree as trivia and does not change the interpolation's meaning.
+#[test]
+pub fn test_234_oaz72_3_interpolation_whitespace() {
+    run_test(&opts("234_oaz72_3_interpolation_whitespace.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: negative counts to drop, split-at and rotate are consistent
+/// with take and terminate on infinite lists.
+pub fn test_233_oaz72_43_negative_counts() {
+    run_test(&opts("233_oaz72_43_negative_counts.eu"));
 }
 
 #[test]
@@ -3301,6 +3315,20 @@ pub fn test_error_231_1tkk_7_44_nobranch_datatag_code() {
 /// error instead of panicking the parser.
 pub fn test_error_232_oaz72_2_unclosed_bracket_eof() {
     run_error_test(&error_opts("232_oaz72_2_unclosed_bracket_eof.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: a negative index to nth is an error rather than a hang on
+/// an infinite list (checked on a finite one to stay bounded).
+pub fn test_error_233_oaz72_43_nth_negative() {
+    run_error_test(&error_opts("233_oaz72_43_nth_negative.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: a negative index to update-nth is an error, not a silent
+/// update of element 0.
+pub fn test_error_233_oaz72_43_update_nth_negative() {
+    run_error_test(&error_opts("233_oaz72_43_update_nth_negative.eu"));
 }
 
 #[test]

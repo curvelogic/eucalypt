@@ -72,7 +72,7 @@ are made.
 `--suppress-demand-analysis`: `y` cost 4,875,337 ticks on master against
 1,625,097 for `m` alone, and 1,645,225 on this branch. The list literal's
 field refers to `m` outside its own frame, and cause 1 lost the update.
-Gated by `test_235_oaz72_48_list_element_sharing` (`tests/harness_test.rs`),
+Gated by `test_237_oaz72_48_list_element_sharing` (`tests/harness_test.rs`),
 which needs demand analysis suppressed to reach the defect.
 
 A related shape is **not** fixed here: `p(n): { m: slow(n) }.([m])` still

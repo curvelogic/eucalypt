@@ -1,0 +1,28 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/233_oaz72_43_update_nth_negative
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/233_oaz72_43_update_nth_negative.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/233_oaz72_43_update_nth_negative.eu:4:14
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: index -1 out of range: list indices start at 0
+  ┌─ tests/harness/errors/233_oaz72_43_update_nth_negative.eu:4:14
+  │
+4 │ x: [1, 2, 3] update-nth(-1, inc)
+  │              ^^^^^^^^^^^^^^^^^^^
+  │
+  = while evaluating (outermost first):
+    - x at 233_oaz72_43_update_nth_negative.eu:4:14

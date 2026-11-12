@@ -8,7 +8,7 @@ use lsp_types::{Location, Position, Url};
 
 use super::diagnostics::text_range_to_lsp_range;
 use super::navigation::find_identifier_at;
-use super::selection::position_to_offset;
+use super::selection::position_to_tree_offset;
 
 /// Find all references to the symbol at the given cursor position.
 ///
@@ -22,7 +22,7 @@ pub fn find_references(
     uri: &Url,
     include_declaration: bool,
 ) -> Option<Vec<Location>> {
-    let offset = position_to_offset(source, position);
+    let offset = position_to_tree_offset(source, root, position);
     let token = find_identifier_at(root, offset)?;
     let name = identifier_text(&token);
 

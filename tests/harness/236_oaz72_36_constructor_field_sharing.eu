@@ -1,5 +1,5 @@
 {
-  title: "234 lists built by foldr and filter keep their sharing"
+  title: "236 lists built by foldr and filter keep their sharing"
   doc: "eu-oaz72.36: a list built by `foldr` or `filter` must be computed once
         and shared, however often it is traversed. Each target sums its list
         eight times; the `shared` validator FAILs when the elements or the

@@ -1,5 +1,5 @@
 {
-  title: "235 a thunk in a list literal is shared across forces"
+  title: "237 a thunk in a list literal is shared across forces"
   doc: "eu-oaz72.48: forcing a list element that refers to a let-bound thunk
         outside the list's own frame must update that thunk, not a copy of
         it. The tick gate is in `tests/harness_test.rs`, which runs both
