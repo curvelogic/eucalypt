@@ -400,6 +400,10 @@ pub struct HeapState {
     /// [`HeapState::mark_region_in_block`]; entries are `Weak`, so an entry
     /// for a dropped block fails to upgrade and falls back to the search.
     line_map_index: HashMap<usize, Weak<RefCell<LineMap>>, BuildBlockBaseHasher>,
+    /// Line marks that found no block for their pointer: each one leaves
+    /// a live object's lines unprotected from lazy sweep. Large objects
+    /// once arrived here on every mark (eu-y6fx); tests assert it stays 0.
+    mark_misses: usize,
 }
 
 /// Hasher for block base addresses (multiples of `BLOCK_SIZE_BYTES`): a
@@ -481,6 +485,7 @@ impl HeapState {
             filled_evacuation_blocks: Vec::new(),
             lines_since_gc: 0,
             line_map_index: HashMap::default(),
+            mark_misses: 0,
         }
     }
 
@@ -621,8 +626,13 @@ impl HeapState {
         let mut best_index: Option<usize> = None;
         let mut best_waste: f64 = f64::MAX;
 
+        // Reuse a block only if at most half of it would be wasted: a
+        // recycled block is held outside the heap limit's accounting.
+        const MAX_WASTE_PERCENT: f64 = 50.0;
         for (index, lob) in self.recycled_lobs.iter().enumerate() {
-            if lob.can_fit(required_size) {
+            if lob.can_fit(required_size)
+                && lob.waste_percentage(required_size) <= MAX_WASTE_PERCENT
+            {
                 let waste = lob.waste_percentage(required_size);
                 if waste < best_waste {
                     best_waste = waste;
@@ -640,7 +650,9 @@ impl HeapState {
     }
 
     /// Recycle a large object block for future reuse
-    /// This would typically be called during garbage collection when a large object is freed
+    ///
+    /// Called by [`HeapState::sweep_large_objects`] for each large
+    /// object found dead by a collection.
     pub fn recycle_lob(&mut self, lob: LargeObjectBlock) {
         // For now, we'll add a simple limit to prevent unbounded growth
         const MAX_RECYCLED_LOBS: usize = 16;
@@ -649,6 +661,69 @@ impl HeapState {
             self.recycled_lobs.push(lob);
         }
         // If we're at the limit, just drop the block (let it be deallocated)
+    }
+
+    /// Free the large objects a mark phase left unmarked (eu-oaz72.55).
+    ///
+    /// Must run after a complete mark phase and before the mark state
+    /// flips: a large object block holds exactly one allocation, its
+    /// header at the start of the block, so the header's mark bit is the
+    /// block's liveness. Dead blocks are recycled (up to the recycle
+    /// limit) or returned to the system allocator. Recycled blocks left
+    /// unused through a whole collection cycle are released first, so
+    /// the memory held for reuse is bounded by one cycle's dead blocks.
+    ///
+    /// Returns the number of blocks freed.
+    pub fn sweep_large_objects(&mut self, mark_state: bool) -> usize {
+        self.recycled_lobs.clear();
+
+        let poison = super::gc_debug::poison_enabled();
+        let mut dead = Vec::new();
+        let mut index = 0;
+        while index < self.lobs.len() {
+            // SAFETY: every large object block holds one allocation
+            // written by `Heap::alloc*` with its AllocHeader at
+            // `space()`; the block is owned by `self.lobs`, so the
+            // header is valid to read.
+            let header = unsafe { &*(self.lobs[index].space() as *const AllocHeader) };
+            if header.is_marked_with_state(mark_state) {
+                index += 1;
+            } else {
+                dead.push(self.lobs.swap_remove(index));
+            }
+        }
+
+        let freed = dead.len();
+        for lob in dead {
+            if poison {
+                // SAFETY: the block is exclusively owned here and its
+                // object is unreachable; poisoning lets a stale pointer
+                // into it be caught by the mark-time poison check.
+                unsafe {
+                    super::gc_debug::poison_region(lob.space() as *mut u8, lob.allocated_size())
+                };
+            }
+            self.recycle_lob(lob);
+        }
+        freed
+    }
+
+    /// Drop line-map index entries whose block no longer exists
+    /// (eu-oaz72.55): without this the index only grows.
+    pub fn prune_line_map_index(&mut self) {
+        self.line_map_index.retain(|_, map| map.strong_count() > 0);
+    }
+
+    /// Line marks that found no block for their pointer (see
+    /// `mark_misses`).
+    pub fn mark_misses(&self) -> usize {
+        self.mark_misses
+    }
+
+    /// Number of entries in the line-map index (for tests).
+    #[cfg(test)]
+    pub fn line_map_index_len(&self) -> usize {
+        self.line_map_index.len()
     }
 
     /// Acquire a fresh evacuation target block for the collector.
@@ -808,6 +883,7 @@ impl HeapState {
         }
 
         // No block found for this pointer
+        self.mark_misses += 1;
         if super::gc_debug::poison_enabled() || super::gc_debug::verify_enabled() {
             eprintln!(
                 "GC BUG: mark_line_in_block({:p}) could not find block with base {base:#x}",
@@ -886,6 +962,7 @@ impl HeapState {
 
         // No block found — this means a live object's lines won't be marked,
         // causing lazy sweep to reclaim live data.
+        self.mark_misses += 1;
         if super::gc_debug::poison_enabled() || super::gc_debug::verify_enabled() {
             eprintln!(
                 "GC BUG: mark_region_in_block({:p}, {bytes}) could not find block with base {base:#x}\n\
@@ -2940,10 +3017,44 @@ impl Heap {
         // Mark from the header start, covering header + payload, so that
         // all lines spanned by the full allocation are protected from
         // lazy sweep.
+        if Self::is_large_allocation(total_size) {
+            return;
+        }
         // SAFETY: header is at ptr - size_of::<AllocHeader>(), always
         // within the same block as ptr.
         let header_ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr().sub(header_size)) };
         heap_state.mark_region_in_block(header_ptr, total_size);
+    }
+
+    /// Whether an allocation of `total_size` bytes (header + payload) was
+    /// placed in a large object block rather than a bump block.
+    ///
+    /// A large object has no line map: its header's mark bit is its
+    /// block's liveness, read by [`Heap::sweep_large_objects`]. Passing it
+    /// to `mark_region_in_block` finds no block (eu-y6fx) after searching
+    /// every block list.
+    pub(crate) fn is_large_allocation(total_size: usize) -> bool {
+        SizeClass::for_size(Self::alloc_size_of(total_size)) == SizeClass::Large
+    }
+
+    /// Line marks, over this heap's life, that found no block for their
+    /// pointer. Always 0 in a correct collector (eu-y6fx).
+    pub fn mark_misses(&self) -> usize {
+        // SAFETY: Read-only access to heap state. Single-threaded.
+        unsafe { (*self.state.get()).mark_misses() }
+    }
+
+    /// Free large objects left unmarked by the mark phase just completed
+    /// and prune dead line-map index entries (eu-oaz72.55).
+    ///
+    /// Called by the collector after marking (and any evacuation) and
+    /// before the mark state flips. Returns the number of large object
+    /// blocks freed.
+    pub fn sweep_large_objects(&mut self) -> usize {
+        let mark_state = self.mark_state();
+        let heap_state = self.state.get_mut();
+        heap_state.prune_line_map_index();
+        heap_state.sweep_large_objects(mark_state)
     }
 
     /// Mark all lines covering the full allocation (header + object).
@@ -2968,6 +3079,9 @@ impl Heap {
         let header_size = size_of::<AllocHeader>();
         let total_size = header_size + size_of::<T>();
 
+        if Self::is_large_allocation(total_size) {
+            return;
+        }
         // SAFETY: header_ptr is always within the same block as ptr
         // because allocations never span blocks. The header is written
         // at ptr - size_of::<AllocHeader>() during allocation.
@@ -3754,6 +3868,58 @@ pub mod tests {
         // Should create new block when no recycled blocks available
         let _block = state.replace_head_targeted(1024);
         assert!(state.head.is_some());
+    }
+
+    /// Line-map index entries for blocks that no longer exist are pruned
+    /// (eu-oaz72.55); entries for live blocks are kept.
+    #[test]
+    fn test_line_map_index_pruned() {
+        let mut state = HeapState::new();
+        for _ in 0..4 {
+            state.rest.push_back(BumpBlock::new());
+        }
+        let ptrs: Vec<NonNull<u8>> = state
+            .rest
+            .iter()
+            .map(|b| NonNull::new(b.base_address() as *mut u8).unwrap())
+            .collect();
+        for ptr in &ptrs {
+            state.mark_region_in_block(*ptr, 32);
+        }
+        assert_eq!(state.line_map_index_len(), 4);
+
+        // Drop two blocks: their entries are dead
+        state.rest.truncate(2);
+        state.prune_line_map_index();
+        assert_eq!(state.line_map_index_len(), 2);
+    }
+
+    /// Sweeping large objects frees the unmarked and keeps the marked,
+    /// and recycled blocks do not accumulate across sweeps (eu-oaz72.55).
+    #[test]
+    fn test_sweep_large_objects() {
+        let mut state = HeapState::new();
+        let mark_state = true;
+        let write_header = |state: &mut HeapState, marked: bool| {
+            let lob = state.lob(40 * 1024);
+            let mut header = AllocHeader::new_with_mark_state(40 * 1024 - 16, mark_state);
+            if marked {
+                header.mark_with_state(mark_state);
+            }
+            unsafe { write(lob.space() as *mut AllocHeader, header) };
+        };
+        for i in 0..10 {
+            write_header(&mut state, i % 5 == 0);
+        }
+        assert_eq!(state.lobs.len(), 10);
+        assert_eq!(state.sweep_large_objects(mark_state), 8);
+        assert_eq!(state.lobs.len(), 2);
+        assert_eq!(state.recycled_lobs.len(), 8);
+
+        // The next sweep releases recycled blocks left unused
+        assert_eq!(state.sweep_large_objects(mark_state), 0);
+        assert_eq!(state.lobs.len(), 2);
+        assert_eq!(state.recycled_lobs.len(), 0);
     }
 
     #[test]
