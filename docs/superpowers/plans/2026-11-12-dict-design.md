@@ -483,6 +483,18 @@ Recorded as built; none changes an agreed choice.
   fresh frame, since the box also closes over its binding frame); an
   unevaluated one is stored as a cell around the original alias, so it
   memoises in the slot it names and the cell drops the alias once evaluated.
+- **Limit of that fix.** Only an evaluated scalar (number, string,
+  symbol, datetime) is detached from the caller's frame. Any other
+  evaluated value (a list such as `[i, i]`, a block, a function) and any
+  unevaluated value (`i + 1`, an interpolated string) still closes over
+  the frame it was built in, so a loop that threads a dict and stores such
+  values retains earlier versions until those values are replaced
+  (measured: 4,616 / 11,161 / 27,039 peak heap blocks at 25k / 100k /
+  200k chained updates storing `[i, i]`; measured-single). An
+  unevaluated value must keep its environment — that is laziness, as for
+  any lazy list — but an evaluated constructor could be rebuilt over a
+  fresh frame field by field. That is left to a later dict PR; until
+  then, long update loops should store scalar values where they can.
 - **Key forcing** happens in the wrappers: `seqKey` deep-forces a key and
   `seqDictPairs` prepares `dict.of`'s list, rebuilding each well-formed pair
   as `BlockPair(forced key, value)`. List keys may nest at most 32 deep

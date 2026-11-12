@@ -506,7 +506,7 @@ and each is computed at most once.
 | `d dict.get(k)` | Value at `k`; an error if absent |
 | `d dict.get-or(k, default)` | Value at `k`, or `default` |
 | `d dict.assoc(k, v)` / `d dict.dissoc(k)` | New dict with `k` set / removed (O(log n)) |
-| `d dict.contains?(k)` / `dict.size(d)` | Holds `k`? / number of entries |
+| `d dict.contains?(k)` / `d dict.size` | Holds `k`? / number of entries |
 | `d dict.to-list` | `[key, value]` pairs in key order |
 
 Keys order numbers < strings < symbols < lists; `1` and `1.0` are the same
