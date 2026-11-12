@@ -1,7 +1,7 @@
 {
-  title: "231 self-recursive loops through if and then run in constant stack"
-  doc: "eu-oaz72.34: a saturated `if` (and `then`, which reduces to it) compiles
-        its branches in tail position, so a self-recursive loop with a strict
+  title: "233 self-recursive loops through if and then run in constant stack"
+  doc: "eu-oaz72.34: the curried `then(t, f)(c)` that catenation produces is
+        reduced to a saturated `if`, so a self-recursive loop with a strict
         accumulator no longer pushes a frame per iteration."
 }
 

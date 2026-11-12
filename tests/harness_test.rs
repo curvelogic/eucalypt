@@ -3066,15 +3066,29 @@ pub fn test_230_uhd7d_close_brace_after_interpolation() {
     run_test(&opts("230_uhd7d_close_brace_after_interpolation.eu"));
 }
 
+/// eu-oaz72.1: demand analysis marked a block binding strict when it was
+/// needed only in an untaken branch, via a lazy sibling whose right-hand
+/// side held a nested `let` (prefix `drop-while`). Each case is in RESULT.
+#[test]
+pub fn test_231_oaz72_1_demand_untaken_branch() {
+    run_test(&opts("231_oaz72_1_demand_untaken_branch.eu"));
+}
+
+/// eu-oaz72.35 — `take(n)` with n <= 0 is [] (it used to run past zero on
+/// a negative count), so `range(b, e)` with e <= b is [] instead of hanging.
+#[test]
+pub fn test_232_oaz72_35_range_take_termination() {
+    run_test(&opts("232_oaz72_35_range_take_termination.eu"));
+}
+
 /// eu-oaz72.34 — a self-recursive loop through `if` or `then` with a strict
-/// accumulator must run in constant stack: the saturated `if` compiles its
-/// branches in tail position, and the curried `then(t, f)(c)` that
-/// catenation produces is reduced to it. The `loops` target's
+/// accumulator must run in constant stack: the curried `then(t, f)(c)` that
+/// catenation produces is reduced to a saturated `if`. The `loops` target's
 /// `constant-stack` validator checks `max-stack` and FAILs on master, where
 /// each `then` iteration pushed a frame (max-stack ~1e5 at n = 1e5).
 #[test]
-pub fn test_231_oaz72_constant_stack_loops() {
-    run_test(&opts("231_oaz72_constant_stack_loops.eu"));
+pub fn test_233_oaz72_34_constant_stack_loops() {
+    run_test(&opts("233_oaz72_34_constant_stack_loops.eu"));
 }
 
 #[test]
@@ -3224,6 +3238,13 @@ pub fn test_error_230_lazy_demand_site_blame() {
 /// `TypeMismatch`); the sidecar pins the coded header.
 pub fn test_error_231_1tkk_7_44_nobranch_datatag_code() {
     run_error_test(&error_opts("231_1tkk_7_44_nobranch_datatag_code.eu"));
+}
+
+#[test]
+/// eu-oaz72.2: an unclosed unicode bracket at end of file reports a parse
+/// error instead of panicking the parser.
+pub fn test_error_232_oaz72_2_unclosed_bracket_eof() {
+    run_error_test(&error_opts("232_oaz72_2_unclosed_bracket_eof.eu"));
 }
 
 #[test]
