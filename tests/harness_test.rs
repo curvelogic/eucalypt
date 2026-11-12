@@ -1994,6 +1994,12 @@ pub fn test_harness_164() {
     run_test(&opts("164_s_string.eu"));
 }
 
+/// Demand annotation. The `strict-accumulators` target (eu-oaz72.27) runs
+/// self-recursive and mutually recursive accumulator loops: its
+/// `constant-stack` validator FAILs on master, where loop A
+/// (`(n = 0) then(a, loop(a + 1, n - 1))`) grew the stack two frames per
+/// step. `test-laziness` checks that accumulators not needed on every path,
+/// values captured by a returned closure and `foldl`'s accumulator stay lazy.
 #[test]
 pub fn test_harness_165() {
     run_test(&opts("165_demand_annotation.eu"));
@@ -3324,18 +3330,6 @@ pub fn test_240_oaz72_41_lambda_capture_sharing() {
         );
     }
     run_test(&opts(file));
-}
-
-/// eu-oaz72.27 — demand analysis proves a self-recursive accumulator
-/// strict: a let group's lambda signatures are a fixpoint over their own
-/// calls and an `if` whose branches both force a variable forces it. The
-/// `loops` target's `constant-stack` validator FAILs on master, where loop A
-/// (`if(n = 0, a, loop(a + 1, n - 1))`) grew the stack two frames per step.
-/// The `test-laziness` target checks that accumulators not needed on every path,
-/// values captured by a returned closure and `foldl`'s accumulator stay lazy.
-#[test]
-pub fn test_241_oaz72_27_strict_accumulators() {
-    run_test(&opts("241_oaz72_27_strict_accumulators.eu"));
 }
 
 #[test]
