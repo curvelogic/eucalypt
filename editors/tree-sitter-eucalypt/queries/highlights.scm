@@ -170,7 +170,7 @@
     "nub-by" "uniq" "partition-all" "window-all"
     "div" "mod" "rem" "quot" "pow"
     "dbg"
-    "eu" "io" "cal" "iosm"))
+    "eu" "io" "cal" "iosm" "set"))
 
 ; Metadata
 (metadata

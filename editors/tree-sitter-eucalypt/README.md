@@ -75,6 +75,35 @@ npm run test
 npx tree-sitter parse /path/to/file.eu
 ```
 
+### Rust
+
+The Rust binding (`bindings/rust/lib.rs`) exports `language()`,
+`NODE_TYPES` and `HIGHLIGHTS_QUERY` (the contents of
+`queries/highlights.scm`), ready for `tree-sitter-highlight`.
+
+## Highlighted HTML
+
+To share eucalypt code as a highlighted web page, run from the repository
+root:
+
+```bash
+cargo xtask highlight-html -o day01.html examples/aoc25/day01.eu
+```
+
+This writes a standalone HTML page with an inline stylesheet that covers
+every capture name in `queries/highlights.scm`, in light and dark (dark
+follows `prefers-color-scheme`; set `data-theme="light"` or
+`data-theme="dark"` on `<html>` to force one). Options:
+
+- `-o PATH` — write to `PATH` instead of stdout
+- `--title TITLE` — the page title (default: the first file's path)
+- `--fragment` — write only the `<pre class="eu"><code>` blocks, without
+  page or stylesheet, for embedding in another page
+
+Several files may be given; each gets its own block under a heading.
+Spans carry one class per level of the capture name, so `@string.escape`
+is rendered as `<span class="ts-string ts-string-escape">`.
+
 ## Language Overview
 
 Eucalypt is a functional language for generating, templating, and rendering structured data formats (YAML, JSON, TOML).
