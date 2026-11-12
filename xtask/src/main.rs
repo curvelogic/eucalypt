@@ -287,13 +287,22 @@ fn cmd_prelude_compile() -> Result<()> {
         inlinable_bindings.len()
     );
 
-    // Intrinsic aliases are substituted into each candidate before it is
-    // tagged, so a combinator written through an alias (`then(t, f, c):
+    // The `if` intrinsic alias is substituted into each candidate before it
+    // is tagged, so a combinator written through an alias (`then(t, f, c):
     // if(c, t, f)`) has the closed body `IF(c, t, f)` that tagging requires.
     // Without this it stays an opaque global in blob mode while the source
     // path inlines it, and a self-recursive loop through `then` pushes a
     // stack frame per iteration (eu-oaz72.34).
-    let intrinsic_aliases: Vec<(String, RcExpr)> = inlinable_bindings.clone();
+    //
+    // Only the `if` alias is substituted: that is what the conditional
+    // combinators need. Substituting every alias also admits combinators
+    // such as `//=?`, whose inlining moves an assertion's blob-mode
+    // diagnostic location — a separate decision.
+    let intrinsic_aliases: Vec<(String, RcExpr)> = inlinable_bindings
+        .iter()
+        .filter(|(name, _)| name == "if")
+        .cloned()
+        .collect();
 
     // Iterate: add lambdas whose Free vars are all in the set
     loop {

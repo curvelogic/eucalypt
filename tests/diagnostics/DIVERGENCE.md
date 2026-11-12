@@ -10,11 +10,11 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**29 of 218 fixtures diverge.**
+**29 of 219 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
-| `errors/011_assert_pred` | user tests/harness/errors/011_assert_pred.eu:1:8 | user tests/harness/errors/011_assert_pred.eu:1:14 | 1 (1 user) | 1 (1 user) |
+| `errors/011_assert_pred` | user tests/harness/errors/011_assert_pred.eu:1:14 | user tests/harness/errors/011_assert_pred.eu:1:14 | 1 (1 user) | 1 (1 user) |
 | `errors/023_arg_types` | user tests/harness/errors/023_arg_types.eu:1:4 | user tests/harness/errors/023_arg_types.eu:1:4 | 1 (1 user) | 1 (1 user) |
 | `errors/029_type_mismatch_num` | user tests/harness/errors/029_type_mismatch_num.eu:2:4 | user tests/harness/errors/029_type_mismatch_num.eu:2:4 | 1 (1 user) | 1 (1 user) |
 | `errors/032_type_mismatch_num_as_str` | user tests/harness/errors/032_type_mismatch_num_as_str.eu:2:4 | user tests/harness/errors/032_type_mismatch_num_as_str.eu:2:4 | 1 (1 user) | 1 (1 user) |
