@@ -67,3 +67,7 @@ lib/prelude.blob
 
 # Beads / Dolt files (added by bd init)
 .beads/proxieddb/
+
+# Advent of Code puzzle inputs must not be published; readers supply their own
+/examples/aoc25/inputs/day??.txt
+/examples/aoc25/.result/

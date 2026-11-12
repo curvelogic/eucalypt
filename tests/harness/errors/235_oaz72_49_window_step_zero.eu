@@ -1,0 +1,3 @@
+# Error test (eu-oaz72.49): a zero step to `window` is an error, not a hang.
+# `take(3)` keeps the result finite, so a regression fails on exit code, not memory.
+x: [1, 2, 3] window(2, 0) take(3)

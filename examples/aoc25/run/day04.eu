@@ -1,0 +1,7 @@
+{ import: ["../day04.eu", "input=../inputs/day04.txt"] }
+
+` { target: :part-1 }
+part-1: input parse solve
+
+` { target: :part-2 }
+part-2: input parse solve2

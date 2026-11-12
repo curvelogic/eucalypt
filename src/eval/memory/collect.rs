@@ -8,7 +8,11 @@ use std::{collections::VecDeque, mem::size_of, ptr::NonNull};
 
 use crate::eval::machine::metrics::{Clock, ThreadOccupation};
 
-use super::{array::Array, header::AllocHeader, heap::Heap};
+use super::{
+    array::Array,
+    header::AllocHeader,
+    heap::{BlockBaseSet, Heap},
+};
 
 pub struct ScanPtr<'scope> {
     value: &'scope dyn GcScannable,
@@ -178,6 +182,7 @@ impl CollectorHeapView<'_> {
         if obj != NonNull::dangling() && !self.heap.is_marked(obj) {
             self.heap.mark_object(obj);
             self.heap.mark_line(obj);
+            self.heap.note_live_bytes(self.heap.allocation_bytes(obj));
 
             let verify = super::gc_debug::verify_level();
             if verify >= 2 {
@@ -210,6 +215,7 @@ impl CollectorHeapView<'_> {
         if !self.heap.is_marked(ptr) {
             self.heap.mark_object(ptr);
             self.heap.mark_lines_for_bytes(ptr);
+            self.heap.note_live_bytes(self.heap.allocation_bytes(ptr));
             true
         } else {
             false
@@ -224,6 +230,7 @@ impl CollectorHeapView<'_> {
             if !self.heap.is_marked(ptr) {
                 self.heap.mark_object(ptr);
                 self.heap.mark_lines_for_bytes(ptr);
+                self.heap.note_live_bytes(self.heap.allocation_bytes(ptr));
                 true
             } else {
                 false
@@ -283,8 +290,12 @@ impl CollectorHeapView<'_> {
     }
 
     /// Check whether an object resides in a candidate block.
-    pub fn is_in_candidate_block<T>(&self, ptr: NonNull<T>, candidates: &[usize]) -> bool {
-        self.heap.is_in_candidate_block(ptr, candidates)
+    pub fn is_in_candidate_block<T>(
+        &self,
+        ptr: NonNull<T>,
+        candidate_bases: &BlockBaseSet,
+    ) -> bool {
+        self.heap.is_in_candidate_block(ptr, candidate_bases)
     }
 
     /// Evacuate an object from a candidate block to the evacuation target.
@@ -452,6 +463,8 @@ fn collect_mark_in_place(
 
     // Defer sweep to allocation time (lazy sweeping)
     heap_view.defer_sweep();
+    // Large objects are freed eagerly: they have no line map to sweep
+    heap_view.heap.sweep_large_objects();
 
     // Post-sweep verification (level 2)
     if verify >= 2 {
@@ -531,6 +544,10 @@ pub fn collect_with_evacuation(
     // scan_and_update implementation.
     let mut live_heap_objects: Vec<(*const u8, *const ())> = Vec::new();
 
+    // Candidate indices resolved to block base addresses once, before the
+    // mark phase moves anything (eu-oaz72.4).
+    let candidate_bases = heap.candidate_block_bases(candidates);
+
     {
         let mut heap_view = CollectorHeapView { heap: &mut *heap };
         heap_view.reset();
@@ -552,7 +569,7 @@ pub fn collect_with_evacuation(
 
                 // Evacuate if in a candidate block. The old copy is still
                 // scanned normally — its data is intact.
-                try_evacuate(&mut heap_view, data_ptr, candidates);
+                try_evacuate(&mut heap_view, data_ptr, &candidate_bases);
             }
 
             obj.scan(&scope, &mut heap_view, &mut scan_buffer);
@@ -646,6 +663,8 @@ pub fn collect_with_evacuation(
         let mut heap_view = CollectorHeapView { heap };
         heap_view.defer_sweep();
     }
+    // Large objects are freed eagerly: they have no line map to sweep
+    heap.sweep_large_objects();
 
     // Checkpoint 4 — Post-sweep
     if verify >= 2 {
@@ -723,14 +742,18 @@ fn raw_parts_of(obj: &dyn GcScannable) -> (*const u8, *const ()) {
 }
 
 /// Attempt to evacuate an object at `data_ptr` if it resides in a candidate block.
-fn try_evacuate(heap_view: &mut CollectorHeapView<'_>, data_ptr: *const u8, candidates: &[usize]) {
-    if candidates.is_empty() {
+fn try_evacuate(
+    heap_view: &mut CollectorHeapView<'_>,
+    data_ptr: *const u8,
+    candidate_bases: &BlockBaseSet,
+) {
+    if candidate_bases.is_empty() {
         return;
     }
     let Some(ptr) = NonNull::new(data_ptr as *mut u8) else {
         return;
     };
-    if !heap_view.is_in_candidate_block(ptr, candidates) {
+    if !heap_view.is_in_candidate_block(ptr, candidate_bases) {
         return;
     }
     // Skip evacuation for pinned blocks
@@ -869,6 +892,124 @@ pub mod tests {
         view.array(ptrs.as_slice())
     }
 
+    /// Allocate a `Many` whose pointer array is a large object: `n`
+    /// leaves numbered from `seed`, the array itself over `BLOCK_SIZE_BYTES`.
+    fn large_many(view: MutatorHeapView, seed: i64, n: usize) -> RefPtr<TestObj> {
+        let ptrs: Vec<RefPtr<TestObj>> = (0..n)
+            .map(|i| view.alloc(TestObj::Leaf(seed + i as i64)).unwrap().as_ptr())
+            .collect();
+        view.alloc(TestObj::Many(view.array(ptrs.as_slice())))
+            .unwrap()
+            .as_ptr()
+    }
+
+    /// Check a `large_many` object still holds leaves `seed..seed + n`.
+    fn assert_large_many_intact(obj: RefPtr<TestObj>, seed: i64, n: usize) {
+        match unsafe { &*obj.as_ptr() } {
+            TestObj::Many(arr) => {
+                assert_eq!(arr.len(), n, "large array length changed");
+                for (i, leaf) in arr.iter().enumerate() {
+                    match unsafe { &*leaf.as_ptr() } {
+                        TestObj::Leaf(v) => assert_eq!(*v, seed + i as i64),
+                        other => panic!("large array element {i} corrupted: {other:?}"),
+                    }
+                }
+            }
+            other => panic!("expected Many, got {other:?}"),
+        }
+    }
+
+    /// Large-object churn (eu-oaz72.55): each round allocates a large
+    /// array and drops the previous one. Collection must free the dead
+    /// large object blocks — before the fix `HeapState::lobs` only grew,
+    /// one block per round — and must keep the live one intact.
+    #[test]
+    pub fn test_large_object_churn_frees_blocks() {
+        // 5000 pointers: 40 000 bytes, a large object
+        const N: usize = 5000;
+        const ROUNDS: i64 = 40;
+
+        // Under a small heap limit, as `--heap-limit-mib 8`.
+        let mut heap = Heap::with_limit(8);
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+
+        let first = large_many(MutatorHeapView::new(&heap), 0, N);
+        assert_eq!(
+            heap.stats().lobs_allocated,
+            1,
+            "fixture must be a large object"
+        );
+        let mut roots = vec![first];
+
+        for round in 1..=ROUNDS {
+            let seed = round * 10_000;
+            roots[0] = large_many(MutatorHeapView::new(&heap), seed, N);
+            collect(&mut roots, &mut heap, &mut clock, false);
+            clock.switch(ThreadOccupation::Mutator);
+
+            // Only the rooted large object survives a collection.
+            assert_eq!(
+                heap.stats().lobs_allocated,
+                1,
+                "round {round}: dead large object blocks were not freed"
+            );
+            assert_large_many_intact(roots[0], seed, N);
+        }
+
+        // Marking a large object never goes looking for a bump block's
+        // line map (eu-y6fx): every line mark found its block.
+        assert_eq!(heap.mark_misses(), 0, "a line mark found no block");
+
+        // A collection with no roots frees the last one too.
+        roots.clear();
+        collect(&mut roots, &mut heap, &mut clock, false);
+        assert_eq!(heap.stats().lobs_allocated, 0);
+    }
+
+    /// A large object reachable only through another heap object stays
+    /// live across repeated collections (and evacuations of the bump
+    /// blocks around it), and marking it touches no line map (eu-y6fx).
+    #[test]
+    pub fn test_large_object_reachable_via_heap_survives() {
+        const N: usize = 5000;
+        let mut heap = Heap::new();
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+
+        let holder = {
+            let view = MutatorHeapView::new(&heap);
+            let inner = large_many(view, 7, N);
+            view.alloc(TestObj::Ptr(inner)).unwrap().as_ptr()
+        };
+        let mut roots = vec![holder];
+
+        for _ in 0..5 {
+            // Garbage around it, large and small
+            let _ = large_many(MutatorHeapView::new(&heap), -1, N);
+            let _ = leaf_array(MutatorHeapView::new(&heap), 1024);
+            collect(&mut roots, &mut heap, &mut clock, false);
+            clock.switch(ThreadOccupation::Mutator);
+            heap.flush_unswept();
+            let rest = heap.rest_block_count();
+            if rest > 0 {
+                let candidates: Vec<usize> = (2..2 + rest).collect();
+                collect_with_evacuation(&mut roots, &mut heap, &mut clock, &candidates, false);
+                clock.switch(ThreadOccupation::Mutator);
+            }
+            assert_eq!(heap.stats().lobs_allocated, 1);
+            match unsafe { &*roots[0].as_ptr() } {
+                TestObj::Ptr(inner) => assert_large_many_intact(*inner, 7, N),
+                other => panic!("expected Ptr, got {other:?}"),
+            }
+        }
+        assert_eq!(
+            heap.mark_misses(),
+            0,
+            "a line mark found no block (eu-y6fx)"
+        );
+    }
+
     #[test]
     pub fn test_simple_collection() {
         let mut heap = Heap::new();
@@ -931,6 +1072,40 @@ pub mod tests {
         assert!(stats_a.recycled < stats_b.recycled,
                "Second collection should recycle more blocks after removing let_ptr root. stats_a.recycled ({}) < stats_b.recycled ({})",
                stats_a.recycled, stats_b.recycled);
+    }
+
+    /// eu-oaz72.4: the live volume a collection measures counts each live
+    /// object once — the same whether or not it is evacuated (an evacuated
+    /// copy re-marks its lines, so line marks would count it twice) — and
+    /// excludes garbage.
+    #[test]
+    pub fn test_live_volume_counted_once_under_evacuation() {
+        let measure = |evacuate: bool| -> (usize, usize) {
+            let mut heap = Heap::new();
+            let mut clock = Clock::default();
+            clock.switch(ThreadOccupation::Mutator);
+            // Every other object is rooted; the rest is garbage.
+            let live: Vec<_> = {
+                let view = MutatorHeapView::new(&heap);
+                (0..4000)
+                    .map(|i| view.alloc(TestObj::Leaf(i)).unwrap().as_ptr())
+                    .step_by(2)
+                    .collect()
+            };
+            let expected: usize = live.iter().map(|p| heap.allocation_bytes(*p)).sum();
+            let mut roots = live.clone();
+            if evacuate {
+                let candidates: Vec<usize> = (0..2 + heap.rest_block_count()).collect();
+                collect_with_evacuation(&mut roots, &mut heap, &mut clock, &candidates, false);
+            } else {
+                collect_mark_in_place_for_test(&mut roots, &mut heap, &mut clock);
+            }
+            (heap.marked_live_bytes(), expected)
+        };
+        let (in_place, expected) = measure(false);
+        assert_eq!(in_place, expected);
+        let (evacuated, expected) = measure(true);
+        assert_eq!(evacuated, expected);
     }
 
     /// Test that the transmute-based fat pointer reconstruction works for

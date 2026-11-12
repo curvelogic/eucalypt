@@ -25,19 +25,25 @@
 //! - Header is always at `object_ptr - size_of::<AllocHeader>()`
 //! - Allocations are properly aligned for their types
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Debug;
 use std::ptr::NonNull;
 
+use std::rc::Weak;
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
-use std::{cell::UnsafeCell, mem::size_of};
+use std::{
+    cell::{RefCell, UnsafeCell},
+    mem::size_of,
+};
 use std::{ptr::write, slice::from_raw_parts_mut};
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
-use super::bump::{BlockDensity, BLOCK_SIZE_BYTES, MAX_ALLOC_SIZE};
+use super::bump::{
+    BlockDensity, LineMap, BLOCK_SIZE_BYTES, LINE_COUNT, LINE_SIZE_BYTES, MAX_ALLOC_SIZE,
+};
 use super::{
     alloc::{Allocator, MutatorScope},
     bump::{self, BumpBlock},
@@ -378,7 +384,54 @@ pub struct HeapState {
     evacuation_target: Option<BumpBlock>,
     /// Blocks filled during evacuation (integrated into rest after collection)
     filled_evacuation_blocks: Vec<BumpBlock>,
+    /// Allocation volume since the last collection, in lines (eu-oaz72.4).
+    ///
+    /// Incremented by a bump block's free lines each time it is put into
+    /// service as `head` or `overflow` (all of a fresh block's; only the
+    /// unmarked lines of a recycled one — counting a recycled block whole
+    /// over-counts badly in a mostly-live heap) and by the line-equivalent
+    /// size of each large object. Reset by [`HeapState::record_collection`].
+    /// Drives [`Heap::policy_requires_collection`].
+    lines_since_gc: usize,
+    /// Line maps of bump blocks by block base address, so marking finds an
+    /// object's line map in O(1) rather than by searching every block list
+    /// (eu-oaz72.4: with collections no longer deferred to the heap limit,
+    /// that search made each mark O(blocks)). Filled lazily by
+    /// [`HeapState::mark_region_in_block`]; entries are `Weak`, so an entry
+    /// for a dropped block fails to upgrade and falls back to the search.
+    line_map_index: HashMap<usize, Weak<RefCell<LineMap>>, BuildBlockBaseHasher>,
+    /// Line marks that found no block for their pointer: each one leaves
+    /// a live object's lines unprotected from lazy sweep. Large objects
+    /// once arrived here on every mark (eu-y6fx); tests assert it stays 0.
+    mark_misses: usize,
 }
+
+/// Hasher for block base addresses (multiples of `BLOCK_SIZE_BYTES`): a
+/// Fibonacci multiply of the block number. The line-map index is consulted
+/// on every mark, where SipHash's cost is measurable (eu-oaz72.4).
+#[derive(Default, Clone, Copy)]
+pub struct BlockBaseHasher(u64);
+
+impl std::hash::Hasher for BlockBaseHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = (self.0.rotate_left(8) ^ u64::from(b)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        }
+    }
+
+    fn write_usize(&mut self, n: usize) {
+        self.0 = ((n >> bump::BLOCK_SIZE_BITS) as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    }
+}
+
+type BuildBlockBaseHasher = std::hash::BuildHasherDefault<BlockBaseHasher>;
+
+/// A set of block base addresses, hashed with [`BlockBaseHasher`].
+pub type BlockBaseSet = HashSet<usize, BuildBlockBaseHasher>;
 
 impl Default for HeapState {
     fn default() -> Self {
@@ -430,13 +483,22 @@ impl HeapState {
             peak_heap_blocks: 0,
             evacuation_target: None,
             filled_evacuation_blocks: Vec::new(),
+            lines_since_gc: 0,
+            line_map_index: HashMap::default(),
+            mark_misses: 0,
         }
+    }
+
+    /// Allocation volume since the last collection, in blocks.
+    pub fn blocks_since_gc(&self) -> usize {
+        self.lines_since_gc / LINE_COUNT
     }
 
     /// Get head block, creating if necessary
     pub fn head(&mut self) -> &mut BumpBlock {
         if self.head.is_none() {
             self.head = Some(BumpBlock::new());
+            self.lines_since_gc += LINE_COUNT;
         }
 
         self.head.as_mut().expect("head block was just initialised")
@@ -446,6 +508,7 @@ impl HeapState {
     pub fn overflow(&mut self) -> &mut BumpBlock {
         if self.overflow.is_none() {
             self.overflow = Some(BumpBlock::new());
+            self.lines_since_gc += LINE_COUNT;
         }
 
         self.overflow
@@ -459,6 +522,7 @@ impl HeapState {
             self.lazy_sweep_next();
         }
         let replacement = self.recycled.pop_front().unwrap_or_default();
+        self.lines_since_gc += replacement.free_lines();
 
         self.head.replace(replacement).and_then(|old| {
             self.rest.push_back(old);
@@ -488,6 +552,7 @@ impl HeapState {
             self.find_best_recycled_block(allocation_size)
                 .unwrap_or_default()
         };
+        self.lines_since_gc += replacement.free_lines();
 
         self.head.replace(replacement).and_then(|old| {
             self.rest.push_back(old);
@@ -528,6 +593,7 @@ impl HeapState {
     }
 
     pub fn replace_overflow(&mut self) -> &mut BumpBlock {
+        self.lines_since_gc += LINE_COUNT;
         self.overflow.replace(BumpBlock::new()).and_then(|old| {
             self.rest.push_back(old);
             None as Option<BumpBlock>
@@ -540,6 +606,7 @@ impl HeapState {
     /// Create and return a new large object block able to store data
     /// of the specified size. Tries to reuse recycled blocks first.
     pub fn lob(&mut self, size: usize) -> &mut LargeObjectBlock {
+        self.lines_since_gc += size.div_ceil(LINE_SIZE_BYTES);
         // First, try to find a recycled block that can fit this allocation
         if let Some(recycled_block) = self.find_suitable_recycled_lob(size) {
             self.lobs.push(recycled_block);
@@ -559,8 +626,13 @@ impl HeapState {
         let mut best_index: Option<usize> = None;
         let mut best_waste: f64 = f64::MAX;
 
+        // Reuse a block only if at most half of it would be wasted: a
+        // recycled block is held outside the heap limit's accounting.
+        const MAX_WASTE_PERCENT: f64 = 50.0;
         for (index, lob) in self.recycled_lobs.iter().enumerate() {
-            if lob.can_fit(required_size) {
+            if lob.can_fit(required_size)
+                && lob.waste_percentage(required_size) <= MAX_WASTE_PERCENT
+            {
                 let waste = lob.waste_percentage(required_size);
                 if waste < best_waste {
                     best_waste = waste;
@@ -578,7 +650,9 @@ impl HeapState {
     }
 
     /// Recycle a large object block for future reuse
-    /// This would typically be called during garbage collection when a large object is freed
+    ///
+    /// Called by [`HeapState::sweep_large_objects`] for each large
+    /// object found dead by a collection.
     pub fn recycle_lob(&mut self, lob: LargeObjectBlock) {
         // For now, we'll add a simple limit to prevent unbounded growth
         const MAX_RECYCLED_LOBS: usize = 16;
@@ -587,6 +661,69 @@ impl HeapState {
             self.recycled_lobs.push(lob);
         }
         // If we're at the limit, just drop the block (let it be deallocated)
+    }
+
+    /// Free the large objects a mark phase left unmarked (eu-oaz72.55).
+    ///
+    /// Must run after a complete mark phase and before the mark state
+    /// flips: a large object block holds exactly one allocation, its
+    /// header at the start of the block, so the header's mark bit is the
+    /// block's liveness. Dead blocks are recycled (up to the recycle
+    /// limit) or returned to the system allocator. Recycled blocks left
+    /// unused through a whole collection cycle are released first, so
+    /// the memory held for reuse is bounded by one cycle's dead blocks.
+    ///
+    /// Returns the number of blocks freed.
+    pub fn sweep_large_objects(&mut self, mark_state: bool) -> usize {
+        self.recycled_lobs.clear();
+
+        let poison = super::gc_debug::poison_enabled();
+        let mut dead = Vec::new();
+        let mut index = 0;
+        while index < self.lobs.len() {
+            // SAFETY: every large object block holds one allocation
+            // written by `Heap::alloc*` with its AllocHeader at
+            // `space()`; the block is owned by `self.lobs`, so the
+            // header is valid to read.
+            let header = unsafe { &*(self.lobs[index].space() as *const AllocHeader) };
+            if header.is_marked_with_state(mark_state) {
+                index += 1;
+            } else {
+                dead.push(self.lobs.swap_remove(index));
+            }
+        }
+
+        let freed = dead.len();
+        for lob in dead {
+            if poison {
+                // SAFETY: the block is exclusively owned here and its
+                // object is unreachable; poisoning lets a stale pointer
+                // into it be caught by the mark-time poison check.
+                unsafe {
+                    super::gc_debug::poison_region(lob.space() as *mut u8, lob.allocated_size())
+                };
+            }
+            self.recycle_lob(lob);
+        }
+        freed
+    }
+
+    /// Drop line-map index entries whose block no longer exists
+    /// (eu-oaz72.55): without this the index only grows.
+    pub fn prune_line_map_index(&mut self) {
+        self.line_map_index.retain(|_, map| map.strong_count() > 0);
+    }
+
+    /// Line marks that found no block for their pointer (see
+    /// `mark_misses`).
+    pub fn mark_misses(&self) -> usize {
+        self.mark_misses
+    }
+
+    /// Number of entries in the line-map index (for tests).
+    #[cfg(test)]
+    pub fn line_map_index_len(&self) -> usize {
+        self.line_map_index.len()
     }
 
     /// Acquire a fresh evacuation target block for the collector.
@@ -746,6 +883,7 @@ impl HeapState {
         }
 
         // No block found for this pointer
+        self.mark_misses += 1;
         if super::gc_debug::poison_enabled() || super::gc_debug::verify_enabled() {
             eprintln!(
                 "GC BUG: mark_line_in_block({:p}) could not find block with base {base:#x}",
@@ -773,9 +911,17 @@ impl HeapState {
             }
         }
 
+        if let Some(line_map) = self.line_map_index.get(&base).and_then(Weak::upgrade) {
+            line_map
+                .borrow_mut()
+                .mark_bytes(ptr.as_ptr() as usize - base, bytes);
+            return;
+        }
+
         for block in &mut self.rest {
             if block.base_address() == base {
                 block.mark_region(ptr, bytes);
+                self.line_map_index.insert(base, block.line_map_handle());
                 return;
             }
         }
@@ -783,6 +929,7 @@ impl HeapState {
         for block in &mut self.unswept {
             if block.base_address() == base {
                 block.mark_region(ptr, bytes);
+                self.line_map_index.insert(base, block.line_map_handle());
                 return;
             }
         }
@@ -790,6 +937,7 @@ impl HeapState {
         for block in &mut self.recycled {
             if block.base_address() == base {
                 block.mark_region(ptr, bytes);
+                self.line_map_index.insert(base, block.line_map_handle());
                 return;
             }
         }
@@ -800,18 +948,21 @@ impl HeapState {
         if let Some(target) = &mut self.evacuation_target {
             if target.base_address() == base {
                 target.mark_region(ptr, bytes);
+                self.line_map_index.insert(base, target.line_map_handle());
                 return;
             }
         }
         for block in &mut self.filled_evacuation_blocks {
             if block.base_address() == base {
                 block.mark_region(ptr, bytes);
+                self.line_map_index.insert(base, block.line_map_handle());
                 return;
             }
         }
 
         // No block found — this means a live object's lines won't be marked,
         // causing lazy sweep to reclaim live data.
+        self.mark_misses += 1;
         if super::gc_debug::poison_enabled() || super::gc_debug::verify_enabled() {
             eprintln!(
                 "GC BUG: mark_region_in_block({:p}, {bytes}) could not find block with base {base:#x}\n\
@@ -847,6 +998,7 @@ impl HeapState {
     /// Record that a collection occurred and update peak blocks
     pub fn record_collection(&mut self) {
         self.collections_count += 1;
+        self.lines_since_gc = 0;
         self.update_peak_blocks();
     }
 
@@ -1212,6 +1364,82 @@ pub struct Heap {
     /// Never reset to zero — `verify_mark_integrity` uses a before/after
     /// snapshot to detect objects missed during a single mark phase.
     mark_count: std::cell::Cell<u64>,
+    /// Bytes (header + payload) newly marked in the current collection.
+    ///
+    /// Reset with the line marks at the start of each mark phase and
+    /// counted only on an object's *first* mark, so the evacuated copy of
+    /// an object is not counted twice (eu-oaz72.4).
+    live_bytes: std::cell::Cell<usize>,
+    /// Live volume measured by the last collection, in blocks.
+    last_live_blocks: std::cell::Cell<usize>,
+    /// Allocation volume (blocks) that triggers the next collection.
+    gc_trigger_blocks: std::cell::Cell<usize>,
+    /// Current adaptive growth factor (see [`next_gc_growth_factor`]).
+    gc_growth_factor: std::cell::Cell<usize>,
+}
+
+/// Minimum allocation volume between collections: 32 MiB (eu-oaz72.4).
+///
+/// Absorbs the live floor every program carries (the prelude and its
+/// globals, ~10 MB) so small programs do not collect on every few blocks.
+pub const MIN_GC_TRIGGER_BLOCKS: usize = (32 * 1_048_576) / BLOCK_SIZE_BYTES;
+
+/// Base allocation volume between collections, as a multiple of the live
+/// volume the last collection left (eu-oaz72.4). Each collection's marking
+/// costs about the live volume, so a factor of 4 bounds marking at about a
+/// quarter of a byte per byte allocated, for a footprint of up to about five
+/// times live (about nine at [`MAX_GC_GROWTH_FACTOR`]). (2 measured too costly on heaps that grow steadily while the
+/// continuation stack retains them, e.g. `tests/harness/bench/022_hof_fold`.)
+pub const GC_GROWTH_FACTOR: usize = 4;
+
+/// Ceiling for the adaptive growth factor (see [`next_gc_growth_factor`]).
+pub const MAX_GC_GROWTH_FACTOR: usize = 8;
+
+/// Growth factor for the next cycle, adapted to how productive the last
+/// collection was (eu-oaz72.4).
+///
+/// A collection that reclaims less than a quarter of what was allocated
+/// since the previous one (`prev_live + allocated - live`) did little but
+/// mark a growing live heap — typically one pinned by a deep continuation
+/// stack — so the factor doubles, up to [`MAX_GC_GROWTH_FACTOR`], making
+/// the total marking a geometric series in the final live volume. A
+/// collection reclaiming more than half returns it to [`GC_GROWTH_FACTOR`].
+pub fn next_gc_growth_factor(
+    current: usize,
+    prev_live_blocks: usize,
+    allocated_blocks: usize,
+    live_blocks: usize,
+) -> usize {
+    let reclaimed = (prev_live_blocks + allocated_blocks).saturating_sub(live_blocks);
+    if reclaimed.saturating_mul(4) < allocated_blocks {
+        current.saturating_mul(2).min(MAX_GC_GROWTH_FACTOR)
+    } else if reclaimed.saturating_mul(2) > allocated_blocks {
+        GC_GROWTH_FACTOR
+    } else {
+        current
+    }
+}
+
+/// Allocation volume, in blocks, after which the next collection runs,
+/// given `live_blocks` surviving the last one, the growth factor and an
+/// optional block limit.
+///
+/// Collect once `growth` times what survived has been allocated, but never
+/// sooner than [`MIN_GC_TRIGGER_BLOCKS`]; under a limit, never later than
+/// the headroom left below it.
+pub fn gc_trigger_blocks_for(live_blocks: usize, growth: usize, limit: Option<usize>) -> usize {
+    let trigger = MIN_GC_TRIGGER_BLOCKS.max(live_blocks.saturating_mul(growth));
+    match limit {
+        Some(limit) => trigger.min(limit.saturating_sub(live_blocks)).max(1),
+        None => trigger,
+    }
+}
+
+/// Whether `live_blocks` surviving a collection exhausts a heap of `limit`
+/// blocks: more than 7/8 of the limit is live, so the headroom left would
+/// make the collector run on almost every allocation (eu-oaz72.4).
+pub fn heap_limit_exhausted(live_blocks: usize, limit: Option<usize>) -> bool {
+    limit.is_some_and(|limit| live_blocks.saturating_mul(8) > limit.saturating_mul(7))
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -1675,6 +1903,14 @@ impl Heap {
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
             pin_counts: UnsafeCell::new(HashMap::new()),
             mark_count: std::cell::Cell::new(0),
+            live_bytes: std::cell::Cell::new(0),
+            last_live_blocks: std::cell::Cell::new(0),
+            gc_trigger_blocks: std::cell::Cell::new(gc_trigger_blocks_for(
+                0,
+                GC_GROWTH_FACTOR,
+                None,
+            )),
+            gc_growth_factor: std::cell::Cell::new(GC_GROWTH_FACTOR),
         }
     }
 
@@ -1689,6 +1925,14 @@ impl Heap {
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
             pin_counts: UnsafeCell::new(HashMap::new()),
             mark_count: std::cell::Cell::new(0),
+            live_bytes: std::cell::Cell::new(0),
+            last_live_blocks: std::cell::Cell::new(0),
+            gc_trigger_blocks: std::cell::Cell::new(gc_trigger_blocks_for(
+                0,
+                GC_GROWTH_FACTOR,
+                Some(block_limit),
+            )),
+            gc_growth_factor: std::cell::Cell::new(GC_GROWTH_FACTOR),
         }
     }
 
@@ -1697,10 +1941,65 @@ impl Heap {
         unsafe { (*self.state.get()).stats() }
     }
 
-    /// Record that a GC collection occurred, incrementing count and updating peak blocks
+    /// Record that a GC collection occurred: increment the count, update
+    /// peak blocks, and set the next collection's trigger from the live
+    /// volume this collection's mark phase measured (eu-oaz72.4).
     pub fn record_collection(&self) {
+        let live_blocks = self.live_bytes.get().div_ceil(BLOCK_SIZE_BYTES);
+        // SAFETY: Read-only access; single-threaded, during collection.
+        let allocated_blocks = unsafe { (*self.state.get()).blocks_since_gc() };
+        let growth = next_gc_growth_factor(
+            self.gc_growth_factor.get(),
+            self.last_live_blocks.get(),
+            allocated_blocks,
+            live_blocks,
+        );
+        self.gc_growth_factor.set(growth);
+        self.last_live_blocks.set(live_blocks);
+        self.gc_trigger_blocks
+            .set(gc_trigger_blocks_for(live_blocks, growth, self.limit));
         // SAFETY: Single-threaded mutation. Called from collect() which has &mut Heap.
         unsafe { (*self.state.get()).record_collection() }
+    }
+
+    /// Count `bytes` as live in the current collection's mark phase.
+    pub fn note_live_bytes(&self, bytes: usize) {
+        self.live_bytes.set(self.live_bytes.get() + bytes);
+    }
+
+    /// Total size (header + payload) of the allocation holding `ptr`.
+    pub fn allocation_bytes<T>(&self, ptr: NonNull<T>) -> usize {
+        let header = self.get_header(ptr);
+        // SAFETY: `ptr` is a heap allocation with an AllocHeader prefix;
+        // the header is only read.
+        size_of::<AllocHeader>() + unsafe { header.as_ref() }.length() as usize
+    }
+
+    /// Bytes counted live by the current (or last) mark phase.
+    pub fn marked_live_bytes(&self) -> usize {
+        self.live_bytes.get()
+    }
+
+    /// Live volume measured by the last collection, in blocks.
+    pub fn last_live_blocks(&self) -> usize {
+        self.last_live_blocks.get()
+    }
+
+    /// Allocation volume, in blocks, that triggers the next collection.
+    pub fn gc_trigger_blocks(&self) -> usize {
+        self.gc_trigger_blocks.get()
+    }
+
+    /// If the last collection left more live data than the heap limit can
+    /// accommodate, return `(live MiB, limit MiB)` (eu-oaz72.4).
+    pub fn heap_limit_exceeded(&self) -> Option<(usize, usize)> {
+        let live = self.last_live_blocks.get();
+        if heap_limit_exhausted(live, self.limit) {
+            let mib = |blocks: usize| (blocks * BLOCK_SIZE_BYTES).div_ceil(1_048_576);
+            self.limit.map(|limit| (mib(live), mib(limit)))
+        } else {
+            None
+        }
     }
 
     /// Get the current mark state for this heap
@@ -1764,14 +2063,14 @@ impl Heap {
         heap_state.finalise_evacuation();
     }
 
+    /// Collect once the allocation volume since the last collection reaches
+    /// the trigger set from the live volume (eu-oaz72.4). Volume, not heap
+    /// size: a heap-size test either never fires below a large limit or,
+    /// once at the limit, fires on nearly every poll.
     pub fn policy_requires_collection(&self) -> bool {
-        if let Some(limit) = self.limit {
-            let stats = self.stats();
-            stats.blocks_allocated >= limit
-                && (stats.recycled as f32 / stats.blocks_allocated as f32) < 0.25
-        } else {
-            false
-        }
+        // SAFETY: Read-only access to heap state. Single-threaded, Heap owns state.
+        let since = unsafe { (*self.state.get()).blocks_since_gc() };
+        since >= self.gc_trigger_blocks.get()
     }
 
     /// Analyze fragmentation across all blocks and determine optimal collection strategy
@@ -2587,6 +2886,8 @@ impl Heap {
 
     /// Reset all region marks ready for a fresh GC
     pub fn reset_region_marks(&self) {
+        // A new mark phase starts: live volume is re-measured from zero.
+        self.live_bytes.set(0);
         // SAFETY: Mutable access during GC mark phase.
         // Called during stop-the-world collection, no concurrent mutation.
         let heap_state = unsafe { &mut *self.state.get() };
@@ -2631,22 +2932,30 @@ impl Heap {
 
     /// Check whether an object resides in one of the candidate blocks
     /// marked for evacuation.
-    pub fn is_in_candidate_block<T>(&self, ptr: NonNull<T>, candidates: &[usize]) -> bool {
-        let base = bump::block_base_of(ptr);
+    pub fn is_in_candidate_block<T>(
+        &self,
+        ptr: NonNull<T>,
+        candidate_bases: &BlockBaseSet,
+    ) -> bool {
+        candidate_bases.contains(&bump::block_base_of(ptr))
+    }
+
+    /// Base addresses of the candidate blocks (indices as in
+    /// [`CollectionStrategy`]: 0 head, 1 overflow, n ≥ 2 `rest[n - 2]`).
+    ///
+    /// Resolved once per collection so the per-object candidate test is a
+    /// set lookup rather than a scan of the candidate list (eu-oaz72.4).
+    pub fn candidate_block_bases(&self, candidates: &[usize]) -> BlockBaseSet {
         // SAFETY: Read-only access to heap state during collection.
         let heap_state = unsafe { &*self.state.get() };
-
-        for &idx in candidates {
-            let block_base = match idx {
+        candidates
+            .iter()
+            .filter_map(|&idx| match idx {
                 0 => heap_state.head.as_ref().map(|b| b.base_address()),
                 1 => heap_state.overflow.as_ref().map(|b| b.base_address()),
                 n => heap_state.rest.get(n - 2).map(|b| b.base_address()),
-            };
-            if block_base == Some(base) {
-                return true;
-            }
-        }
-        false
+            })
+            .collect()
     }
 
     /// Check whether an object is marked
@@ -2708,10 +3017,44 @@ impl Heap {
         // Mark from the header start, covering header + payload, so that
         // all lines spanned by the full allocation are protected from
         // lazy sweep.
+        if Self::is_large_allocation(total_size) {
+            return;
+        }
         // SAFETY: header is at ptr - size_of::<AllocHeader>(), always
         // within the same block as ptr.
         let header_ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr().sub(header_size)) };
         heap_state.mark_region_in_block(header_ptr, total_size);
+    }
+
+    /// Whether an allocation of `total_size` bytes (header + payload) was
+    /// placed in a large object block rather than a bump block.
+    ///
+    /// A large object has no line map: its header's mark bit is its
+    /// block's liveness, read by [`Heap::sweep_large_objects`]. Passing it
+    /// to `mark_region_in_block` finds no block (eu-y6fx) after searching
+    /// every block list.
+    pub(crate) fn is_large_allocation(total_size: usize) -> bool {
+        SizeClass::for_size(Self::alloc_size_of(total_size)) == SizeClass::Large
+    }
+
+    /// Line marks, over this heap's life, that found no block for their
+    /// pointer. Always 0 in a correct collector (eu-y6fx).
+    pub fn mark_misses(&self) -> usize {
+        // SAFETY: Read-only access to heap state. Single-threaded.
+        unsafe { (*self.state.get()).mark_misses() }
+    }
+
+    /// Free large objects left unmarked by the mark phase just completed
+    /// and prune dead line-map index entries (eu-oaz72.55).
+    ///
+    /// Called by the collector after marking (and any evacuation) and
+    /// before the mark state flips. Returns the number of large object
+    /// blocks freed.
+    pub fn sweep_large_objects(&mut self) -> usize {
+        let mark_state = self.mark_state();
+        let heap_state = self.state.get_mut();
+        heap_state.prune_line_map_index();
+        heap_state.sweep_large_objects(mark_state)
     }
 
     /// Mark all lines covering the full allocation (header + object).
@@ -2736,6 +3079,9 @@ impl Heap {
         let header_size = size_of::<AllocHeader>();
         let total_size = header_size + size_of::<T>();
 
+        if Self::is_large_allocation(total_size) {
+            return;
+        }
         // SAFETY: header_ptr is always within the same block as ptr
         // because allocations never span blocks. The header is written
         // at ptr - size_of::<AllocHeader>() during allocation.
@@ -3524,6 +3870,58 @@ pub mod tests {
         assert!(state.head.is_some());
     }
 
+    /// Line-map index entries for blocks that no longer exist are pruned
+    /// (eu-oaz72.55); entries for live blocks are kept.
+    #[test]
+    fn test_line_map_index_pruned() {
+        let mut state = HeapState::new();
+        for _ in 0..4 {
+            state.rest.push_back(BumpBlock::new());
+        }
+        let ptrs: Vec<NonNull<u8>> = state
+            .rest
+            .iter()
+            .map(|b| NonNull::new(b.base_address() as *mut u8).unwrap())
+            .collect();
+        for ptr in &ptrs {
+            state.mark_region_in_block(*ptr, 32);
+        }
+        assert_eq!(state.line_map_index_len(), 4);
+
+        // Drop two blocks: their entries are dead
+        state.rest.truncate(2);
+        state.prune_line_map_index();
+        assert_eq!(state.line_map_index_len(), 2);
+    }
+
+    /// Sweeping large objects frees the unmarked and keeps the marked,
+    /// and recycled blocks do not accumulate across sweeps (eu-oaz72.55).
+    #[test]
+    fn test_sweep_large_objects() {
+        let mut state = HeapState::new();
+        let mark_state = true;
+        let write_header = |state: &mut HeapState, marked: bool| {
+            let lob = state.lob(40 * 1024);
+            let mut header = AllocHeader::new_with_mark_state(40 * 1024 - 16, mark_state);
+            if marked {
+                header.mark_with_state(mark_state);
+            }
+            unsafe { write(lob.space() as *mut AllocHeader, header) };
+        };
+        for i in 0..10 {
+            write_header(&mut state, i % 5 == 0);
+        }
+        assert_eq!(state.lobs.len(), 10);
+        assert_eq!(state.sweep_large_objects(mark_state), 8);
+        assert_eq!(state.lobs.len(), 2);
+        assert_eq!(state.recycled_lobs.len(), 8);
+
+        // The next sweep releases recycled blocks left unused
+        assert_eq!(state.sweep_large_objects(mark_state), 0);
+        assert_eq!(state.lobs.len(), 2);
+        assert_eq!(state.recycled_lobs.len(), 0);
+    }
+
     #[test]
     fn test_large_object_recycling() {
         let heap = Heap::new();
@@ -3578,6 +3976,93 @@ pub mod tests {
         assert!(remaining_sizes.len() == 2);
         assert!(remaining_sizes.contains(&(64 * 1024))); // Small block
         assert!(remaining_sizes.contains(&(256 * 1024))); // Large block
+    }
+
+    /// eu-oaz72.4: the trigger is the larger of the floor and the live
+    /// volume, capped by the headroom under a limit.
+    #[test]
+    fn test_gc_trigger_arithmetic() {
+        let min = MIN_GC_TRIGGER_BLOCKS;
+        let g = GC_GROWTH_FACTOR;
+        assert_eq!(min, 1024);
+        assert_eq!(g, 4);
+        assert_eq!(gc_trigger_blocks_for(0, g, None), min);
+        assert_eq!(gc_trigger_blocks_for(10, g, None), min);
+        assert_eq!(gc_trigger_blocks_for(5000, g, None), 20000);
+        assert_eq!(gc_trigger_blocks_for(5000, 8, None), 40000);
+        // Limit of 1 GiB = 32768 blocks: headroom does not bind.
+        assert_eq!(gc_trigger_blocks_for(5000, g, Some(32768)), 20000);
+        // Headroom binds near the limit.
+        assert_eq!(gc_trigger_blocks_for(5000, 8, Some(32768)), 27768);
+        assert_eq!(gc_trigger_blocks_for(30000, g, Some(32768)), 2768);
+        // A limit below the floor caps the first trigger.
+        assert_eq!(gc_trigger_blocks_for(0, g, Some(512)), 512);
+        // Never zero, even with no headroom.
+        assert_eq!(gc_trigger_blocks_for(600, g, Some(512)), 1);
+    }
+
+    /// eu-oaz72.4: the growth factor doubles (to a ceiling) after an
+    /// unproductive collection and resets after a productive one.
+    #[test]
+    fn test_gc_growth_factor_adapts() {
+        let g = GC_GROWTH_FACTOR;
+        // All 1000 allocated blocks survived: double.
+        assert_eq!(next_gc_growth_factor(g, 100, 1000, 1100), 8);
+        assert_eq!(
+            next_gc_growth_factor(8, 100, 1000, 1100),
+            MAX_GC_GROWTH_FACTOR
+        );
+        // All of it was garbage: back to the base factor.
+        assert_eq!(next_gc_growth_factor(8, 100, 1000, 100), g);
+        // In between (40% reclaimed): unchanged.
+        assert_eq!(next_gc_growth_factor(4, 100, 1000, 700), 4);
+        // Nothing allocated (a forced collection): unchanged.
+        assert_eq!(next_gc_growth_factor(4, 100, 0, 100), 4);
+    }
+
+    /// eu-oaz72.4: exhaustion is live data above 7/8 of the limit.
+    #[test]
+    fn test_heap_limit_exhaustion_threshold() {
+        assert!(!heap_limit_exhausted(usize::MAX / 2, None));
+        assert!(!heap_limit_exhausted(0, Some(800)));
+        assert!(!heap_limit_exhausted(700, Some(800)));
+        assert!(heap_limit_exhausted(701, Some(800)));
+    }
+
+    /// eu-oaz72.4: allocation volume, not heap size, triggers collection —
+    /// unbounded heaps collect too, and the counter resets on collection.
+    #[test]
+    fn test_policy_triggers_on_allocation_volume() {
+        for heap in [Heap::new(), Heap::with_limit(16)] {
+            let trigger = heap.gc_trigger_blocks();
+            assert!(!heap.policy_requires_collection());
+            let view = MutatorHeapView::new(&heap);
+            let mut n = 0usize;
+            while !heap.policy_requires_collection() {
+                view.alloc(Ref::num(n as i64)).unwrap();
+                n += 1;
+                assert!(
+                    n < 64 * 1_048_576 / 16,
+                    "no collection requested after 64 MiB of allocation"
+                );
+            }
+            let since = unsafe { (*heap.state.get()).blocks_since_gc() };
+            assert_eq!(since, trigger);
+            heap.record_collection();
+            let since = unsafe { (*heap.state.get()).blocks_since_gc() };
+            assert_eq!(since, 0);
+            assert!(!heap.policy_requires_collection());
+        }
+    }
+
+    /// eu-oaz72.4: large objects count towards allocation volume.
+    #[test]
+    fn test_large_objects_count_towards_volume() {
+        let heap = Heap::new();
+        let state = unsafe { &mut *heap.state.get() };
+        let before = state.lines_since_gc;
+        state.lob(3 * BLOCK_SIZE_BYTES + 1);
+        assert_eq!(state.lines_since_gc - before, 3 * LINE_COUNT + 1);
     }
 
     #[test]

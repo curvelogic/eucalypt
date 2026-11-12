@@ -83,28 +83,37 @@ fn run_with_deadline(
         .spawn()
         .expect("failed to spawn eu");
 
-    match child.wait_timeout(deadline).expect("wait_timeout failed") {
-        Some(status) => {
-            let mut stdout = Vec::new();
-            let mut stderr = Vec::new();
-            if let Some(mut s) = child.stdout.take() {
-                let _ = s.read_to_end(&mut stdout);
+    // Drain both pipes while waiting: a child that writes more than a
+    // pipe buffer's worth would otherwise block on write and never exit,
+    // turning a chatty run into a spurious timeout.
+    fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> std::thread::JoinHandle<Vec<u8>> {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut p) = pipe {
+                let _ = p.read_to_end(&mut buf);
             }
-            if let Some(mut s) = child.stderr.take() {
-                let _ = s.read_to_end(&mut stderr);
-            }
-            Some(std::process::Output {
-                status,
-                stdout,
-                stderr,
-            })
-        }
+            buf
+        })
+    }
+    let stdout = drain(child.stdout.take());
+    let stderr = drain(child.stderr.take());
+
+    let status = match child.wait_timeout(deadline).expect("wait_timeout failed") {
+        Some(status) => Some(status),
         None => {
             let _ = child.kill();
             let _ = child.wait();
             None
         }
-    }
+    };
+    // The child has exited (or been killed), so both pipes reach EOF.
+    let stdout = stdout.join().expect("stdout reader panicked");
+    let stderr = stderr.join().expect("stderr reader panicked");
+    status.map(|status| std::process::Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 /// Run an error test — validates against `.expect` sidecar if present,
@@ -3074,6 +3083,22 @@ pub fn test_231_oaz72_1_demand_untaken_branch() {
     run_test(&opts("231_oaz72_1_demand_untaken_branch.eu"));
 }
 
+/// eu-oaz72.5: set and vec storage lives in the GC heap with string
+/// elements traced. Churns string sets/vecs whose strings are reachable only
+/// through the container, and checks contents, order and set algebra.
+#[test]
+pub fn test_234_oaz72_5_native_storage_gc() {
+    run_test(&opts("234_oaz72_5_native_storage_gc.eu"));
+}
+
+/// eu-oaz72.55 — large-object churn computes correctly and a large object
+/// live across the churn survives; `tests/large_object_churn_test.rs`
+/// gates that the dead ones are freed.
+#[test]
+pub fn test_238_oaz72_55_large_object_churn() {
+    run_test(&opts("238_oaz72_55_large_object_churn.eu"));
+}
+
 /// eu-oaz72.35 — `take(n)` with n <= 0 is [] (it used to run past zero on
 /// a negative count), so `range(b, e)` with e <= b is [] instead of hanging.
 #[test]
@@ -3089,6 +3114,198 @@ pub fn test_232_oaz72_35_range_take_termination() {
 #[test]
 pub fn test_233_oaz72_34_constant_stack_loops() {
     run_test(&opts("233_oaz72_34_constant_stack_loops.eu"));
+}
+
+/// eu-oaz72.36 — a list built by `foldr` or `filter` is computed once and
+/// shared across traversals. Each target sums its list eight times; its
+/// `shared` validator checks the tick count and FAILs on master, where a
+/// constructor field copied out of a deeper frame, or a parameter reached
+/// through an alias binding, was recomputed on every traversal.
+#[test]
+pub fn test_236_oaz72_36_constructor_field_sharing() {
+    run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));
+}
+
+/// Ticks reported by `-S` for one target of a harness file, run with demand
+/// analysis suppressed.
+fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
+    ticks(file, target, &["--suppress-demand-analysis"])
+}
+
+/// Tick count for one target of a harness file, run with demand analysis.
+fn ticks_with_demand_analysis(file: &str, target: &str) -> u64 {
+    ticks(file, target, &[])
+}
+
+fn ticks(file: &str, target: &str, flags: &[&str]) -> u64 {
+    let path = format!("tests/harness/{file}");
+    let mut args = vec!["run"];
+    args.extend_from_slice(flags);
+    args.extend_from_slice(&["-S", "-t", target, &path]);
+    let output = std::process::Command::new(eu_binary())
+        .args(&args)
+        .output()
+        .expect("eu runs");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "eu failed on {file} target {target}:\n{stderr}"
+    );
+    stderr
+        .lines()
+        .find_map(|l| {
+            let (name, value) = l.split_once(':')?;
+            (name.trim() == "Ticks").then(|| value.trim().replace(',', "").parse().ok())?
+        })
+        .unwrap_or_else(|| panic!("no tick count in -S output:\n{stderr}"))
+}
+
+/// eu-oaz72.48 — a list element referring to a let-bound thunk outside the
+/// list's own frame was copied when the list was taken apart, so each force
+/// updated a copy and recomputed the thunk. With demand analysis suppressed
+/// (as on master, where it hid nothing), forcing the element three times must
+/// cost about one fold, not three.
+#[test]
+pub fn test_237_oaz72_48_list_element_sharing() {
+    let file = "237_oaz72_48_list_element_sharing.eu";
+    let fold = ticks_without_demand_analysis(file, "fold");
+    let shared = ticks_without_demand_analysis(file, "shared");
+    assert!(
+        shared * 2 < fold * 3,
+        "three forces of a list element cost {shared} ticks against {fold} for one \
+         fold: the element's thunk is recomputed on each force (eu-oaz72.48)"
+    );
+    run_test(&opts(file));
+}
+
+/// eu-oaz72.3: whitespace inside a string interpolation is kept in the
+/// syntax tree as trivia and does not change the interpolation's meaning.
+#[test]
+pub fn test_234_oaz72_3_interpolation_whitespace() {
+    run_test(&opts("234_oaz72_3_interpolation_whitespace.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: negative counts to drop, split-at and rotate are consistent
+/// with take and terminate on infinite lists.
+pub fn test_233_oaz72_43_negative_counts() {
+    run_test(&opts("233_oaz72_43_negative_counts.eu"));
+}
+
+/// eu-oaz72.47: the pre-compiled prelude resolves intrinsic aliases in each
+/// binding body, so `foldl` and the loops built on it branch on an inlined
+/// case rather than calling the global `if`. The per-element tick budgets
+/// FAIL against a blob compiled without it (blob mode only; source mode
+/// inlined these already).
+#[test]
+pub fn test_235_oaz72_47_prelude_loops_inline_if() {
+    run_test(&opts("235_oaz72_47_prelude_loops_inline_if.eu"));
+}
+
+/// Reformat `source` as `eu fmt --reformat` does and check the result
+/// parses and is a fixed point. Returns the reformatted text.
+fn reformat_round_trip(label: &str, source: &str) -> String {
+    use eucalypt::syntax::export::format::{format_source, FormatterConfig};
+    use eucalypt::syntax::rowan::parse_unit;
+
+    let config = FormatterConfig::new(80, 2, true);
+    let once =
+        format_source(source, &config).unwrap_or_else(|e| panic!("{label}: reformat failed: {e}"));
+    let errors = parse_unit(&once).errors().clone();
+    assert!(
+        errors.is_empty(),
+        "{label}: reformatted output does not parse: {errors:?}\n{once}"
+    );
+    let twice = format_source(&once, &config)
+        .unwrap_or_else(|e| panic!("{label}: second reformat failed: {e}"));
+    assert_eq!(once, twice, "{label}: reformat is not idempotent");
+    once
+}
+
+#[test]
+/// eu-oaz72.6: reformatting a file that opens with a unit docstring keeps it
+/// unit metadata (no backtick), and keeps block and declaration metadata.
+/// The file passes, its reformat parses and is a fixed point, and the
+/// reformatted copy passes too. LSP formatting shares this path; see
+/// `src/driver/lsp/formatting.rs` for its test on the same file.
+pub fn test_235_oaz72_6_fmt_leading_docstring() {
+    let name = "235_oaz72_6_fmt_leading_docstring.eu";
+    run_test(&opts(name));
+
+    let source = std::fs::read_to_string(format!("tests/harness/{name}")).unwrap();
+    let formatted = reformat_round_trip(name, &source);
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join(name);
+    std::fs::write(&path, formatted).unwrap();
+    let reformatted_opts = EucalyptOptions::default()
+        .with_explicit_inputs(vec![Input::from_str(path.to_str().unwrap()).unwrap()])
+        .build();
+    run_test(&reformatted_opts);
+}
+
+#[test]
+/// eu-oaz72.6: every shipped library and AoC 2025 example reformats to
+/// source that parses and reformats to itself.
+pub fn test_235_oaz72_6_reformat_corpus_round_trip() {
+    let mut files: Vec<PathBuf> = ["lib", "examples/aoc25"]
+        .iter()
+        .flat_map(|dir| std::fs::read_dir(dir).unwrap())
+        .map(|entry| entry.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "eu"))
+        .collect();
+    files.sort();
+    assert!(
+        files.len() >= 20,
+        "expected the lib and aoc25 corpus, got {files:?}"
+    );
+    for file in files {
+        let source = std::fs::read_to_string(&file).unwrap();
+        reformat_round_trip(&file.display().to_string(), &source);
+    }
+}
+
+/// eu-oaz72.4: collection runs on allocation volume, not only at the heap
+/// limit. The fixture allocates far past the 32 MiB minimum trigger with
+/// little live data and checks that data live across the collections
+/// survives them. Each check is in RESULT.
+#[test]
+pub fn test_234_oaz72_4_gc_volume_trigger() {
+    run_test(&opts("234_oaz72_4_gc_volume_trigger.eu"));
+}
+
+#[test]
+/// eu-oaz72.49: window and window-all with positive arguments are unchanged
+/// once a non-positive step (and window size) became errors.
+pub fn test_235_oaz72_49_window_step() {
+    run_test(&opts("235_oaz72_49_window_step.eu"));
+}
+
+/// eu-oaz72.40: demand analysis treated block field values and list
+/// elements as strict, forcing a binding used only by an unselected
+/// field. Each case is in RESULT.
+#[test]
+pub fn test_238_oaz72_40_block_body_demand() {
+    run_test(&opts("238_oaz72_40_block_body_demand.eu"));
+}
+
+/// eu-oaz72.40: a binding referred to once inside a block field or list
+/// element was marked AtMostOnce, so it skipped its update frame and each
+/// read through the structure recomputed it. With demand analysis on, three
+/// reads must cost about one fold, not three.
+#[test]
+pub fn test_239_oaz72_40_constructor_sharing() {
+    let file = "239_oaz72_40_constructor_sharing.eu";
+    let fold = ticks_with_demand_analysis(file, "fold");
+    for target in ["list-body", "list-field"] {
+        let shared = ticks_with_demand_analysis(file, target);
+        assert!(
+            shared * 2 < fold * 3,
+            "target {target}: three reads cost {shared} ticks against {fold} for one \
+             fold: the binding is recomputed on each read (eu-oaz72.40)"
+        );
+    }
+    run_test(&opts(file));
 }
 
 #[test]
@@ -3245,6 +3462,45 @@ pub fn test_error_231_1tkk_7_44_nobranch_datatag_code() {
 /// error instead of panicking the parser.
 pub fn test_error_232_oaz72_2_unclosed_bracket_eof() {
     run_error_test(&error_opts("232_oaz72_2_unclosed_bracket_eof.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: a negative index to nth is an error rather than a hang on
+/// an infinite list (checked on a finite one to stay bounded).
+pub fn test_error_233_oaz72_43_nth_negative() {
+    run_error_test(&error_opts("233_oaz72_43_nth_negative.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: a negative index to update-nth is an error, not a silent
+/// update of element 0.
+pub fn test_error_233_oaz72_43_update_nth_negative() {
+    run_error_test(&error_opts("233_oaz72_43_update_nth_negative.eu"));
+}
+
+#[test]
+/// eu-oaz72.49: a zero step to window is an error rather than a hang.
+pub fn test_error_235_oaz72_49_window_step_zero() {
+    run_error_test(&error_opts("235_oaz72_49_window_step_zero.eu"));
+}
+
+#[test]
+/// eu-oaz72.49: a negative step to window is an error rather than a hang.
+pub fn test_error_235_oaz72_49_window_step_negative() {
+    run_error_test(&error_opts("235_oaz72_49_window_step_negative.eu"));
+}
+
+#[test]
+/// eu-oaz72.49: a zero size to window is an error rather than an infinite
+/// list of empty windows.
+pub fn test_error_235_oaz72_49_window_size_zero() {
+    run_error_test(&error_opts("235_oaz72_49_window_size_zero.eu"));
+}
+
+#[test]
+/// eu-oaz72.49: a zero step to window-all is an error rather than a hang.
+pub fn test_error_235_oaz72_49_window_all_step_zero() {
+    run_error_test(&error_opts("235_oaz72_49_window_all_step_zero.eu"));
 }
 
 #[test]
@@ -3769,9 +4025,9 @@ pub fn test_pp_default_threshold_forks_small_list() {
 /// `pp_fork_fixture.eu` is 16 elements with a trivial `f`, so no collection
 /// occurs during its map and the window never opens.
 ///
-/// This test opens the window deliberately: a heap limit low enough to be
-/// crossed partway through the map (the heap collects only once its limit is
-/// reached) plus `EU_GC_STRESS=1`, which forces every collection to evacuate
+/// This test opens the window deliberately: a heap limit low enough that the
+/// collection trigger (allocation volume, capped at the headroom below the
+/// limit — eu-oaz72.4) is reached partway through the map, plus `EU_GC_STRESS=1`, which forces every collection to evacuate
 /// rather than merely mark — so a stale handle is guaranteed to be stale, not
 /// merely at risk. The answer is compared with the `map` oracle, not with
 /// another run of the driver.
@@ -3871,9 +4127,10 @@ pub fn test_pp_gc_collects_during_par_map() {
         }
         // A larger fixture than the sequential configuration above: the fork
         // path splits the work four ways, so each worker needs enough
-        // allocation *within its own chunk* to reach the heap limit. On the
+        // allocation *within its own chunk* to trigger a collection. On a
         // smaller shape no worker collects and removing the worker-loop root
-        // set goes undetected — verified, which is why there are two fixtures.
+        // set goes undetected — verified (again after eu-oaz72.4 changed the
+        // trigger), which is why there are two fixtures.
         let forked = run(fork_fixture, &env, "8");
         assert_eq!(
             forked, fork_oracle,
@@ -4378,5 +4635,56 @@ pub fn test_blob_core_vs_source_prelude_byte_equal_on_a_large_file() {
     assert_eq!(
         blob_err, source_err,
         "stderr differs between blob-core and source-prelude eval-path checks on a large file"
+    );
+}
+
+/// eu-oaz72.51: under `EU_GC_POISON` at a small heap limit, list churn
+/// must collect many times without any GC hole diagnostic. The former
+/// hole check treated every stale (dead) header in a reclaimed hole as
+/// a live object and printed hundreds of thousands of false
+/// `GC HOLE WARNING` lines; the check now verifies that each poisoned
+/// hole is untouched, so any `GC HOLE` output is a genuine defect.
+#[test]
+fn gc_poison_small_heap_churn_reports_no_hole() {
+    let mut cmd = std::process::Command::new(eu_binary());
+    cmd.env("EU_GC_POISON", "1").args([
+        "--heap-limit-mib",
+        "2",
+        "-S",
+        "tests/fixtures/gc_hole_churn.eu",
+        "-e",
+        "result",
+    ]);
+    let out = run_with_deadline(cmd, std::time::Duration::from_secs(300))
+        .expect("eu did not finish within the deadline");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "eu failed: {}",
+        stderr.chars().take(4000).collect::<String>()
+    );
+    assert!(
+        stdout.lines().any(|l| l.trim() == "18393300"),
+        "wrong result: {stdout}"
+    );
+    // Precondition: the run must actually collect, or it proves nothing.
+    let collections: usize = stderr
+        .lines()
+        .find(|l| l.trim_start().starts_with("Collections"))
+        .and_then(|l| l.split(':').nth(1))
+        .map(|n| n.trim().replace(',', ""))
+        .and_then(|n| n.parse().ok())
+        .expect("no Collections line in -S statistics");
+    assert!(
+        collections >= 100,
+        "expected many collections, got {collections}"
+    );
+    let holes = stderr.lines().filter(|l| l.contains("GC HOLE")).count();
+    assert_eq!(
+        holes,
+        0,
+        "GC hole diagnostics under EU_GC_POISON, first: {}",
+        stderr.lines().find(|l| l.contains("GC HOLE")).unwrap_or("")
     );
 }

@@ -71,7 +71,8 @@ pub struct Instr {
     /// payload, or Cons tag / Bif intrinsic index in its low byte).
     pub a: u32,
     /// Secondary operand (fallback/body/right/handler ordinal, second packed
-    /// ref payload, or a Let/LetRec `u32` binding count).
+    /// ref payload, a Let/LetRec `u32` binding count, or the start of a Cons's
+    /// field-atom ordinal run in the `offsets` pool).
     pub b: u32,
     /// Tertiary operand (side-pool start index, or or_else/default ordinal).
     pub c: u32,
@@ -349,12 +350,17 @@ impl<'a> Decoder<'a> {
                 let tag = read_u8(code, &mut pc);
                 let arg_offs = read_arg_offsets(code, &mut pc);
                 let (start, len) = self.push_refs(&arg_offs)?;
+                // The fields' `OP_ATOM` ordinals, run-parallel to the refs:
+                // destructuring the value may bind a field as a lazy alias
+                // over its atom rather than copying an unevaluated thunk
+                // (eu-oaz72.36, `env_from_data_args_copy`).
+                let (atoms, _) = self.push_offsets(&arg_offs);
                 Instr {
                     op,
                     flags: 0,
                     len,
                     a: tag as u32,
-                    b: 0,
+                    b: atoms,
                     c: start,
                 }
             }

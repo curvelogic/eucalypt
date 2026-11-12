@@ -131,24 +131,25 @@ The seq/par comparison is threshold-forced: the sequential arm pins
 the combinators' defaults (threshold 1,024) every converted site runs the
 sequential fallback — see the threshold finding above.
 
-From `examples/aoc25/`, with `EU` the release binary under test:
+From `examples/aoc25/`, with `EU` the release binary under test and your own
+puzzle inputs in `inputs/` (see `README.md`):
 
 ```sh
 # Sequential arm (threshold forced above any list size — explicit fallback)
-EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 day04.eu -t part-1
-EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 day05.eu -t part-1
-EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 day08.eu -t part-1
-EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 day09.eu -t part-1
-EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 day10.eu -t part-1
-EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 day11.eu -t part-2
+EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 run/day04.eu -t part-1
+EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 run/day05.eu -t part-1
+EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 run/day08.eu -t part-1
+EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 run/day09.eu -t part-1
+EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 run/day10.eu -t part-1
+EU_PP_THRESHOLD=999999999 timeout 600 $EU --heap-limit-mib 12288 run/day11.eu -t part-2
 
 # Parallel arm (threshold forced below every converted site's element count)
-EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 day04.eu -t part-1
-EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 day05.eu -t part-1
-EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 day08.eu -t part-1
-EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 day09.eu -t part-1
-EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 day10.eu -t part-1
-EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 day11.eu -t part-2
+EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 run/day04.eu -t part-1
+EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 run/day05.eu -t part-1
+EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 run/day08.eu -t part-1
+EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 run/day09.eu -t part-1
+EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 run/day10.eu -t part-1
+EU_PP_THRESHOLD=2 timeout 600 $EU --heap-limit-mib 12288 run/day11.eu -t part-2
 ```
 
 Unconverted examples were re-baselined with the sequential-arm command only.
@@ -596,7 +597,7 @@ Same bit-vector beam structure as part 1 but sums beam counts rather than taking
 **Potential improvements:**
 - *Source-level (primary):* Part 2 counts timelines with `zip-with(+, p, emitted)` — still a list of integers, not packed. For part 2, counts can exceed 1, so bitwise packing does not directly apply. However, the same structural improvement applies: rather than list-of-counts-of-width-w, a direct fold over beam state without materialising per-element lists would reduce the 28.5M ticks substantially.
 - *Source-level:* The `solve2` final step `foldl(row-step2, b0) sum` forces the final beam vector to a single sum. With a packed representation, `sum` becomes `popcount`. The divergence in instruction cost between parts 1 and 2 (same ticks, but part 2 is 1.68× slower) is likely because the `+` combiner in the summation path creates more thunks than the `max` combiner in part 1.
-- *Compiler-level:* The `handle_instruction` self-time of 54.5% (vs 36.9% in part 1) and near-identical tick counts suggest the summation combiner generates different STG instructions that are individually more expensive. `eu dump stg day07.eu -t part-2` vs `-t part-1` would reveal the difference.
+- *Compiler-level:* The `handle_instruction` self-time of 54.5% (vs 36.9% in part 1) and near-identical tick counts suggest the summation combiner generates different STG instructions that are individually more expensive. `eu dump stg run/day07.eu -t part-2` vs `-t part-1` would reveal the difference.
 
 ---
 

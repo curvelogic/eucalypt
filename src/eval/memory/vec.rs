@@ -2,34 +2,50 @@
 //!
 //! Vecs contain only primitive values (numbers, strings, symbols) and
 //! provide O(1) indexed access, slicing, and random sampling.
+//!
+//! All storage lives in the GC heap (eu-oaz72.5): elements are a heap
+//! [`Array`] of [`Primitive`]s whose string elements are
+//! `RefPtr<HeapString>`s traced by the collector.
 
-use super::alloc::StgObject;
-use super::set::Primitive;
+use super::{
+    alloc::{ScopedAllocator, StgObject},
+    array::Array,
+    collect::{CollectorHeapView, CollectorScope, GcScannable, ScanPtr},
+    set::{scan_primitive_array, update_primitive_array, Primitive},
+};
+use crate::eval::error::ExecutionError;
 
-/// A vector of primitive values, stored on the heap.
-///
-/// GC does not trace into vec contents because primitives contain no
-/// heap references (strings are owned, symbols are interned IDs).
-#[derive(Debug, Clone)]
+/// A vector of primitive values, stored entirely in the GC heap.
 pub struct HeapVec {
-    elements: Vec<Primitive>,
+    elements: Array<Primitive>,
 }
 
 impl StgObject for HeapVec {}
 
-impl HeapVec {
-    /// Create an empty vec.
-    pub fn empty() -> Self {
-        HeapVec {
-            elements: Vec::new(),
-        }
+impl GcScannable for HeapVec {
+    fn scan<'a>(
+        &'a self,
+        scope: &'a dyn CollectorScope,
+        marker: &mut CollectorHeapView<'a>,
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
+        scan_primitive_array(&self.elements, scope, marker, out);
     }
 
-    /// Create a vec from an iterator of primitives.
-    pub fn from_primitives(iter: impl Iterator<Item = Primitive>) -> Self {
-        HeapVec {
-            elements: iter.collect(),
-        }
+    fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
+        update_primitive_array(&mut self.elements, heap);
+    }
+}
+
+impl HeapVec {
+    /// Create a vec by copying a slice of primitives into the heap.
+    pub fn from_slice<'guard, A: ScopedAllocator<'guard>>(
+        mem: &A,
+        elements: &[Primitive],
+    ) -> Result<Self, ExecutionError> {
+        Ok(HeapVec {
+            elements: Array::try_from_slice(mem, elements)?,
+        })
     }
 
     /// Return the number of elements.
@@ -43,86 +59,70 @@ impl HeapVec {
     }
 
     /// Return the element at the given index, or None if out of bounds.
-    pub fn get(&self, index: usize) -> Option<&Primitive> {
-        self.elements.get(index)
+    pub fn get(&self, index: usize) -> Option<Primitive> {
+        self.elements().get(index).copied()
     }
 
-    /// Return a sub-vec containing elements in the range `[from, to)`.
-    ///
-    /// Indices are clamped to the vec length.
-    pub fn slice(&self, from: usize, to: usize) -> Self {
-        let from = from.min(self.elements.len());
-        let to = to.min(self.elements.len()).max(from);
-        HeapVec {
-            elements: self.elements[from..to].to_vec(),
-        }
+    /// Return the elements in the range `[from, to)`, clamped to the
+    /// vec length.
+    pub fn slice(&self, from: usize, to: usize) -> &[Primitive] {
+        let elems = self.elements();
+        let from = from.min(elems.len());
+        let to = to.min(elems.len()).max(from);
+        &elems[from..to]
     }
 
     /// Return all elements as a slice.
     pub fn elements(&self) -> &[Primitive] {
-        &self.elements
+        self.elements.as_slice()
     }
 }
-
-impl PartialEq for HeapVec {
-    fn eq(&self, other: &Self) -> bool {
-        self.elements == other.elements
-    }
-}
-
-impl Eq for HeapVec {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::eval::memory::{heap::Heap, mutator::MutatorHeapView};
     use ordered_float::OrderedFloat;
+
+    fn num(n: f64) -> Primitive {
+        Primitive::Num(OrderedFloat(n))
+    }
+
+    fn val(p: Option<Primitive>) -> Option<f64> {
+        p.map(|p| match p {
+            Primitive::Num(n) => n.into_inner(),
+            _ => panic!("not a number"),
+        })
+    }
 
     #[test]
     fn empty_vec_has_no_elements() {
-        let v = HeapVec::empty();
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let v = HeapVec::from_slice(&view, &[]).unwrap();
         assert!(v.is_empty());
         assert_eq!(v.len(), 0);
     }
 
     #[test]
-    fn from_primitives_preserves_order() {
-        let v = HeapVec::from_primitives(
-            vec![
-                Primitive::Num(OrderedFloat(1.0)),
-                Primitive::Num(OrderedFloat(2.0)),
-                Primitive::Num(OrderedFloat(3.0)),
-            ]
-            .into_iter(),
-        );
+    fn preserves_order_and_bounds() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let v = HeapVec::from_slice(&view, &[num(3.0), num(1.0), num(2.0)]).unwrap();
         assert_eq!(v.len(), 3);
-        assert_eq!(v.get(0), Some(&Primitive::Num(OrderedFloat(1.0))));
-        assert_eq!(v.get(2), Some(&Primitive::Num(OrderedFloat(3.0))));
-    }
-
-    #[test]
-    fn get_returns_none_out_of_bounds() {
-        let v = HeapVec::from_primitives(vec![Primitive::Num(OrderedFloat(1.0))].into_iter());
-        assert!(v.get(1).is_none());
+        assert_eq!(val(v.get(0)), Some(3.0));
+        assert_eq!(val(v.get(2)), Some(2.0));
+        assert!(v.get(3).is_none());
     }
 
     #[test]
     fn slice_clamps_to_bounds() {
-        let v = HeapVec::from_primitives(
-            vec![
-                Primitive::Num(OrderedFloat(1.0)),
-                Primitive::Num(OrderedFloat(2.0)),
-                Primitive::Num(OrderedFloat(3.0)),
-            ]
-            .into_iter(),
-        );
-        let s = v.slice(1, 3);
-        assert_eq!(s.len(), 2);
-        assert_eq!(s.get(0), Some(&Primitive::Num(OrderedFloat(2.0))));
-        // Clamping beyond end
-        let s2 = v.slice(2, 100);
-        assert_eq!(s2.len(), 1);
-        // Empty when from >= to
-        let s3 = v.slice(3, 3);
-        assert_eq!(s3.len(), 0);
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let v = HeapVec::from_slice(&view, &[num(1.0), num(2.0), num(3.0)]).unwrap();
+        assert_eq!(v.slice(1, 3).len(), 2);
+        assert_eq!(v.slice(2, 100).len(), 1);
+        assert_eq!(v.slice(3, 3).len(), 0);
+        assert_eq!(v.slice(5, 1).len(), 0);
     }
 }

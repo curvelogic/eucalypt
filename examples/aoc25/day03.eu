@@ -43,11 +43,3 @@ test: {
   part-2: solve(ex1, 12) //= 3121910778619
   RESULT: (part-1 ∧ part-2) then(:PASS, :FAIL)
 }
-
-` { target: :part-1
-    import: "input=inputs/day03.txt" }
-part-1: solve(input, 2)
-
-` { target: :part-2
-    import: "input=inputs/day03.txt" }
-part-2: solve(input, 12)

@@ -565,10 +565,7 @@ fn is_consistent_co(s: &Type, t: &Type, assumed: &mut Vec<(Type, Type)>) -> bool
             let s_has_required_extra = s_fields
                 .iter()
                 .any(|(k, fp)| !t_fields.contains_key(k) && fp.is_required());
-            if !t_open && s_has_required_extra && !s_is_open {
-                return false;
-            }
-            true
+            *t_open || !s_has_required_extra || s_is_open
         }
 
         // Dict consistency.
