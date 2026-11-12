@@ -590,6 +590,11 @@ fn gc_poll(
     if heap.policy_requires_collection() {
         gc_collect(state, heap, clock, dump_heap);
         clock.switch(ThreadOccupation::Mutator);
+        // Live data the limit cannot hold is an error, not a reason to
+        // collect on every poll or grow past the limit (eu-oaz72.4).
+        if let Some((live_mib, limit_mib)) = heap.heap_limit_exceeded() {
+            return Err(ExecutionError::HeapLimitExceeded(live_mib, limit_mib));
+        }
     }
     Ok(())
 }

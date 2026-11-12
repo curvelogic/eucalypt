@@ -3178,6 +3178,15 @@ pub fn test_233_oaz72_43_negative_counts() {
     run_test(&opts("233_oaz72_43_negative_counts.eu"));
 }
 
+/// eu-oaz72.4: collection runs on allocation volume, not only at the heap
+/// limit. The fixture allocates far past the 32 MiB minimum trigger with
+/// little live data and checks that data live across the collections
+/// survives them. Each check is in RESULT.
+#[test]
+pub fn test_234_oaz72_4_gc_volume_trigger() {
+    run_test(&opts("234_oaz72_4_gc_volume_trigger.eu"));
+}
+
 #[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame
@@ -3870,9 +3879,9 @@ pub fn test_pp_default_threshold_forks_small_list() {
 /// `pp_fork_fixture.eu` is 16 elements with a trivial `f`, so no collection
 /// occurs during its map and the window never opens.
 ///
-/// This test opens the window deliberately: a heap limit low enough to be
-/// crossed partway through the map (the heap collects only once its limit is
-/// reached) plus `EU_GC_STRESS=1`, which forces every collection to evacuate
+/// This test opens the window deliberately: a heap limit low enough that the
+/// collection trigger (allocation volume, capped at the headroom below the
+/// limit — eu-oaz72.4) is reached partway through the map, plus `EU_GC_STRESS=1`, which forces every collection to evacuate
 /// rather than merely mark — so a stale handle is guaranteed to be stale, not
 /// merely at risk. The answer is compared with the `map` oracle, not with
 /// another run of the driver.
@@ -3972,9 +3981,10 @@ pub fn test_pp_gc_collects_during_par_map() {
         }
         // A larger fixture than the sequential configuration above: the fork
         // path splits the work four ways, so each worker needs enough
-        // allocation *within its own chunk* to reach the heap limit. On the
+        // allocation *within its own chunk* to trigger a collection. On a
         // smaller shape no worker collects and removing the worker-loop root
-        // set goes undetected — verified, which is why there are two fixtures.
+        // set goes undetected — verified (again after eu-oaz72.4 changed the
+        // trigger), which is why there are two fixtures.
         let forked = run(fork_fixture, &env, "8");
         assert_eq!(
             forked, fork_oracle,

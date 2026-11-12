@@ -8,7 +8,11 @@ use std::{collections::VecDeque, mem::size_of, ptr::NonNull};
 
 use crate::eval::machine::metrics::{Clock, ThreadOccupation};
 
-use super::{array::Array, header::AllocHeader, heap::Heap};
+use super::{
+    array::Array,
+    header::AllocHeader,
+    heap::{BlockBaseSet, Heap},
+};
 
 pub struct ScanPtr<'scope> {
     value: &'scope dyn GcScannable,
@@ -178,6 +182,7 @@ impl CollectorHeapView<'_> {
         if obj != NonNull::dangling() && !self.heap.is_marked(obj) {
             self.heap.mark_object(obj);
             self.heap.mark_line(obj);
+            self.heap.note_live_bytes(self.heap.allocation_bytes(obj));
 
             let verify = super::gc_debug::verify_level();
             if verify >= 2 {
@@ -210,6 +215,7 @@ impl CollectorHeapView<'_> {
         if !self.heap.is_marked(ptr) {
             self.heap.mark_object(ptr);
             self.heap.mark_lines_for_bytes(ptr);
+            self.heap.note_live_bytes(self.heap.allocation_bytes(ptr));
             true
         } else {
             false
@@ -224,6 +230,7 @@ impl CollectorHeapView<'_> {
             if !self.heap.is_marked(ptr) {
                 self.heap.mark_object(ptr);
                 self.heap.mark_lines_for_bytes(ptr);
+                self.heap.note_live_bytes(self.heap.allocation_bytes(ptr));
                 true
             } else {
                 false
@@ -283,8 +290,12 @@ impl CollectorHeapView<'_> {
     }
 
     /// Check whether an object resides in a candidate block.
-    pub fn is_in_candidate_block<T>(&self, ptr: NonNull<T>, candidates: &[usize]) -> bool {
-        self.heap.is_in_candidate_block(ptr, candidates)
+    pub fn is_in_candidate_block<T>(
+        &self,
+        ptr: NonNull<T>,
+        candidate_bases: &BlockBaseSet,
+    ) -> bool {
+        self.heap.is_in_candidate_block(ptr, candidate_bases)
     }
 
     /// Evacuate an object from a candidate block to the evacuation target.
@@ -531,6 +542,10 @@ pub fn collect_with_evacuation(
     // scan_and_update implementation.
     let mut live_heap_objects: Vec<(*const u8, *const ())> = Vec::new();
 
+    // Candidate indices resolved to block base addresses once, before the
+    // mark phase moves anything (eu-oaz72.4).
+    let candidate_bases = heap.candidate_block_bases(candidates);
+
     {
         let mut heap_view = CollectorHeapView { heap: &mut *heap };
         heap_view.reset();
@@ -552,7 +567,7 @@ pub fn collect_with_evacuation(
 
                 // Evacuate if in a candidate block. The old copy is still
                 // scanned normally — its data is intact.
-                try_evacuate(&mut heap_view, data_ptr, candidates);
+                try_evacuate(&mut heap_view, data_ptr, &candidate_bases);
             }
 
             obj.scan(&scope, &mut heap_view, &mut scan_buffer);
@@ -723,14 +738,18 @@ fn raw_parts_of(obj: &dyn GcScannable) -> (*const u8, *const ()) {
 }
 
 /// Attempt to evacuate an object at `data_ptr` if it resides in a candidate block.
-fn try_evacuate(heap_view: &mut CollectorHeapView<'_>, data_ptr: *const u8, candidates: &[usize]) {
-    if candidates.is_empty() {
+fn try_evacuate(
+    heap_view: &mut CollectorHeapView<'_>,
+    data_ptr: *const u8,
+    candidate_bases: &BlockBaseSet,
+) {
+    if candidate_bases.is_empty() {
         return;
     }
     let Some(ptr) = NonNull::new(data_ptr as *mut u8) else {
         return;
     };
-    if !heap_view.is_in_candidate_block(ptr, candidates) {
+    if !heap_view.is_in_candidate_block(ptr, candidate_bases) {
         return;
     }
     // Skip evacuation for pinned blocks
@@ -931,6 +950,40 @@ pub mod tests {
         assert!(stats_a.recycled < stats_b.recycled,
                "Second collection should recycle more blocks after removing let_ptr root. stats_a.recycled ({}) < stats_b.recycled ({})",
                stats_a.recycled, stats_b.recycled);
+    }
+
+    /// eu-oaz72.4: the live volume a collection measures counts each live
+    /// object once — the same whether or not it is evacuated (an evacuated
+    /// copy re-marks its lines, so line marks would count it twice) — and
+    /// excludes garbage.
+    #[test]
+    pub fn test_live_volume_counted_once_under_evacuation() {
+        let measure = |evacuate: bool| -> (usize, usize) {
+            let mut heap = Heap::new();
+            let mut clock = Clock::default();
+            clock.switch(ThreadOccupation::Mutator);
+            // Every other object is rooted; the rest is garbage.
+            let live: Vec<_> = {
+                let view = MutatorHeapView::new(&heap);
+                (0..4000)
+                    .map(|i| view.alloc(TestObj::Leaf(i)).unwrap().as_ptr())
+                    .step_by(2)
+                    .collect()
+            };
+            let expected: usize = live.iter().map(|p| heap.allocation_bytes(*p)).sum();
+            let mut roots = live.clone();
+            if evacuate {
+                let candidates: Vec<usize> = (0..2 + heap.rest_block_count()).collect();
+                collect_with_evacuation(&mut roots, &mut heap, &mut clock, &candidates, false);
+            } else {
+                collect_mark_in_place_for_test(&mut roots, &mut heap, &mut clock);
+            }
+            (heap.marked_live_bytes(), expected)
+        };
+        let (in_place, expected) = measure(false);
+        assert_eq!(in_place, expected);
+        let (evacuated, expected) = measure(true);
+        assert_eq!(evacuated, expected);
     }
 
     /// Test that the transmute-based fat pointer reconstruction works for

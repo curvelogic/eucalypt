@@ -1,7 +1,13 @@
 //! Basic (downward) bump allocation and line map
 //!
 
-use std::{fmt::Debug, process::abort, ptr::NonNull};
+use std::{
+    cell::RefCell,
+    fmt::Debug,
+    process::abort,
+    ptr::NonNull,
+    rc::{Rc, Weak},
+};
 
 use bitmaps::Bitmap;
 
@@ -65,6 +71,43 @@ impl LineMap {
     pub fn clear(&mut self, index: usize) {
         debug_assert!(index < LINE_COUNT);
         self.0.set(index, false);
+    }
+
+    /// Mark the lines spanned by the region of `bytes` bytes starting at
+    /// byte `offset` within the block.
+    pub fn mark_bytes(&mut self, offset: usize, bytes: usize) {
+        // Validate that the region fits within this block
+        debug_assert!(
+            offset + bytes <= BLOCK_SIZE_BYTES,
+            "mark_bytes: object at offset {offset} with size {bytes} bytes extends beyond block boundary (block size: {BLOCK_SIZE_BYTES} bytes)"
+        );
+
+        // Compute the inclusive range of lines that the region occupies.
+        // The previous calculation `bytes / LINE_SIZE + 1` was wrong for
+        // regions that straddle a line boundary without filling a full
+        // line from the start (e.g. a 48-byte region starting at byte 240
+        // within a 256-byte line: it spans bytes 240-287, crossing into
+        // the next line, but `48/256 + 1 = 1` only marks line 0).
+        //
+        // The correct upper bound is derived from the last byte of the
+        // region, not from the size alone.
+        let first_line = offset / LINE_SIZE_BYTES;
+        let last_byte = offset + bytes.saturating_sub(1);
+        let last_line = last_byte / LINE_SIZE_BYTES + 1;
+
+        debug_assert!(
+            last_line <= LINE_COUNT,
+            "mark_bytes: calculated line range {first_line}..{last_line} exceeds LINE_COUNT {LINE_COUNT} (offset: {offset}, bytes: {bytes})"
+        );
+
+        for line in first_line..last_line {
+            self.mark(line);
+        }
+    }
+
+    /// Number of marked lines
+    pub fn marked_count(&self) -> usize {
+        self.0.len()
     }
 
     /// Check whether the specified line is marked
@@ -197,8 +240,13 @@ pub struct BumpBlock {
     lower: usize,
     /// Pointer to move as regions are allocated
     cursor: usize,
-    /// Block map to store mark flags
-    line_map: LineMap,
+    /// Block map to store mark flags.
+    ///
+    /// Shared (`Rc`) so the heap can index it by block base address and
+    /// mark lines in O(1) without searching its block lists; the index holds
+    /// only a `Weak`, so a dropped block can never be marked through a stale
+    /// entry, even if a new block later reuses its address (eu-oaz72.4).
+    line_map: Rc<RefCell<LineMap>>,
     /// True when `recycle` poisoned every hole under the current line
     /// map (`EU_GC_POISON`). Until the next GC resets the line map,
     /// each hole must still hold only poison bytes when `bump` enters
@@ -266,7 +314,7 @@ impl Debug for BumpBlock {
         let (q3, q4) = below.split_at(halfway.0);
 
         writeln!(f, "  {q1}   {q2}")?;
-        write!(f, "{:?}", self.line_map)?;
+        write!(f, "{:?}", self.line_map.borrow())?;
         writeln!(f, "  {q3}   {q4}")
     }
 }
@@ -291,7 +339,7 @@ impl BumpBlock {
             block: Block::new(BLOCK_SIZE_BYTES).unwrap_or_else(|_| abort()),
             cursor: BLOCK_SIZE_BYTES,
             lower: 0,
-            line_map: LineMap::default(),
+            line_map: Rc::new(RefCell::new(LineMap::default())),
             holes_poisoned: false,
         }
     }
@@ -311,7 +359,8 @@ impl BumpBlock {
             let next = self.cursor - size;
             if next < self.lower {
                 // find next hole
-                if let Some((lower, cursor)) = self.line_map.find_hole(self.cursor) {
+                let hole = self.line_map.borrow().find_hole(self.cursor);
+                if let Some((lower, cursor)) = hole {
                     if poison && self.holes_poisoned {
                         // `recycle` poisoned this hole and no GC has run
                         // since, so nothing may have written into it.
@@ -370,7 +419,8 @@ impl BumpBlock {
     /// pattern and `bump` can verify each hole is untouched when it
     /// enters it.
     fn recycle_checked(&mut self, poison: bool) -> bool {
-        if let Some((lower, cursor)) = self.line_map.find_hole(BLOCK_SIZE_BYTES) {
+        let first = self.line_map.borrow().find_hole(BLOCK_SIZE_BYTES);
+        if let Some((lower, cursor)) = first {
             if poison {
                 let start = self.block.as_ptr() as *mut u8;
                 let mut hole = Some((lower, cursor));
@@ -379,7 +429,7 @@ impl BumpBlock {
                     // within the block, which owns the memory; holes
                     // hold no live objects.
                     unsafe { super::gc_debug::poison_region(start.add(l), u - l) };
-                    hole = self.line_map.find_hole(l);
+                    hole = self.line_map.borrow().find_hole(l);
                 }
                 self.holes_poisoned = true;
             }
@@ -403,7 +453,7 @@ impl BumpBlock {
         // A new mark phase redraws the holes; those not yet entered were
         // never poisoned under the new map.
         self.holes_poisoned = false;
-        self.line_map.reset();
+        self.line_map.borrow_mut().reset();
     }
 
     /// If ptr is within the block, mark line containing the ptr.
@@ -412,7 +462,7 @@ impl BumpBlock {
     /// line is treated as implicitly marked
     pub fn mark_line<T>(&mut self, ptr: NonNull<T>) {
         if let Some(offset) = self.block.byte_offset_of(ptr) {
-            self.line_map.mark(offset / LINE_SIZE_BYTES);
+            self.line_map.borrow_mut().mark(offset / LINE_SIZE_BYTES);
         }
     }
 
@@ -420,49 +470,35 @@ impl BumpBlock {
     /// starting at ptr and extending for bytes.
     pub fn mark_region(&mut self, ptr: NonNull<u8>, bytes: usize) {
         if let Some(offset) = self.block.byte_offset_of(ptr) {
-            // Validate that the region fits within this block
-            debug_assert!(
-                offset + bytes <= BLOCK_SIZE_BYTES,
-                "mark_region: object at offset {offset} with size {bytes} bytes extends beyond block boundary (block size: {BLOCK_SIZE_BYTES} bytes)"
-            );
-
-            // Compute the inclusive range of lines that the region occupies.
-            // The previous calculation `bytes / LINE_SIZE + 1` was wrong for
-            // regions that straddle a line boundary without filling a full
-            // line from the start (e.g. a 48-byte region starting at byte 240
-            // within a 256-byte line: it spans bytes 240-287, crossing into
-            // the next line, but `48/256 + 1 = 1` only marks line 0).
-            //
-            // The correct upper bound is derived from the last byte of the
-            // region, not from the size alone.
-            let first_line = offset / LINE_SIZE_BYTES;
-            let last_byte = offset + bytes.saturating_sub(1);
-            let last_line = last_byte / LINE_SIZE_BYTES + 1;
-
-            debug_assert!(
-                last_line <= LINE_COUNT,
-                "mark_region: calculated line range {first_line}..{last_line} exceeds LINE_COUNT {LINE_COUNT} (offset: {offset}, bytes: {bytes})"
-            );
-
-            for line in first_line..last_line {
-                self.line_map.mark(line);
-            }
+            self.line_map.borrow_mut().mark_bytes(offset, bytes);
         }
+    }
+
+    /// Number of unmarked lines: the space this block offers the allocator
+    /// (all of it for a fresh block, the holes for a recycled one).
+    pub fn free_lines(&self) -> usize {
+        LINE_COUNT - self.line_map.borrow().marked_count()
+    }
+
+    /// A weak handle on this block's line map, for the heap's base-address
+    /// index (eu-oaz72.4).
+    pub fn line_map_handle(&self) -> Weak<RefCell<LineMap>> {
+        Rc::downgrade(&self.line_map)
     }
 
     /// Returns (count holes, count free, count marked)
     pub fn stats(&self) -> (usize, usize, usize) {
-        self.line_map.stats()
+        self.line_map.borrow().stats()
     }
 
     /// Returns true if the given line index is marked in the line map.
     pub(crate) fn is_line_marked(&self, line: usize) -> bool {
-        self.line_map.marked(line)
+        self.line_map.borrow().marked(line)
     }
 
     /// Analyze block density for fragmentation detection
     pub fn analyze_density(&self) -> BlockDensity {
-        let (_holes, _free, marked) = self.line_map.stats();
+        let (_holes, _free, marked) = self.line_map.borrow().stats();
         let total_lines = LINE_COUNT;
         let utilisation = marked as f64 / total_lines as f64;
 
@@ -493,7 +529,7 @@ impl BumpBlock {
         let mut current_offset = BLOCK_SIZE_BYTES;
 
         // Search for holes from top of block downward
-        while let Some((lower, upper)) = self.line_map.find_hole(current_offset) {
+        while let Some((lower, upper)) = self.line_map.borrow().find_hole(current_offset) {
             let hole_size = upper - lower;
 
             match largest_hole {
@@ -520,7 +556,7 @@ impl BumpBlock {
         let mut current_offset = BLOCK_SIZE_BYTES;
 
         // Sum all holes from top of block downward
-        while let Some((lower, upper)) = self.line_map.find_hole(current_offset) {
+        while let Some((lower, upper)) = self.line_map.borrow().find_hole(current_offset) {
             total += upper - lower;
             current_offset = if lower > 0 { lower } else { break };
         }
@@ -556,7 +592,7 @@ impl BumpBlock {
 
     /// Mark a line in the line map (for testing purposes)
     pub fn mark_line_for_test(&mut self, line: usize) {
-        self.line_map.mark(line);
+        self.line_map.borrow_mut().mark(line);
     }
 }
 
@@ -583,7 +619,7 @@ pub mod tests {
     fn holes_of(b: &BumpBlock) -> Vec<(usize, usize)> {
         let mut holes = vec![];
         let mut below = BLOCK_SIZE_BYTES;
-        while let Some((l, u)) = b.line_map.find_hole(below) {
+        while let Some((l, u)) = b.line_map.borrow().find_hole(below) {
             holes.push((l, u));
             below = l;
         }
@@ -808,11 +844,11 @@ pub mod tests {
     #[test]
     pub fn test_block_density_sparse() {
         // Test sparse block (1-25% utilisation)
-        let mut block = BumpBlock::new();
+        let block = BumpBlock::new();
 
         // Mark ~10% of lines (25 out of 256 lines)
         for i in 0..25 {
-            block.line_map.mark(i * 10); // Spread marks throughout block
+            block.line_map.borrow_mut().mark(i * 10); // Spread marks throughout block
         }
 
         assert_eq!(block.analyze_density(), BlockDensity::Sparse);
@@ -826,11 +862,11 @@ pub mod tests {
     #[test]
     pub fn test_block_density_fragmented() {
         // Test fragmented block (25-75% utilisation)
-        let mut block = BumpBlock::new();
+        let block = BumpBlock::new();
 
         // Mark ~50% of lines (128 out of 256 lines)
         for i in 0..128 {
-            block.line_map.mark(i * 2); // Every other line
+            block.line_map.borrow_mut().mark(i * 2); // Every other line
         }
 
         assert_eq!(block.analyze_density(), BlockDensity::Fragmented);
@@ -845,11 +881,11 @@ pub mod tests {
     #[test]
     pub fn test_block_density_dense() {
         // Test dense block (75%+ utilisation)
-        let mut block = BumpBlock::new();
+        let block = BumpBlock::new();
 
         // Mark ~90% of lines (230 out of 256 lines)
         for i in 0..230 {
-            block.line_map.mark(i);
+            block.line_map.borrow_mut().mark(i);
         }
 
         assert_eq!(block.analyze_density(), BlockDensity::Dense);
@@ -863,28 +899,28 @@ pub mod tests {
     #[test]
     pub fn test_block_density_boundary_cases() {
         // Test exact boundary cases
-        let mut block = BumpBlock::new();
+        let block = BumpBlock::new();
 
         // Test exactly 25% utilisation (should be Sparse)
         let sparse_lines = (LINE_COUNT as f64 * 0.25) as usize;
         for i in 0..sparse_lines {
-            block.line_map.mark(i);
+            block.line_map.borrow_mut().mark(i);
         }
         assert_eq!(block.analyze_density(), BlockDensity::Sparse);
 
         // Clear and test exactly 75% utilisation (should be Fragmented)
-        block.line_map = LineMap::default();
+        *block.line_map.borrow_mut() = LineMap::default();
         let fragmented_lines = (LINE_COUNT as f64 * 0.75) as usize;
         for i in 0..fragmented_lines {
-            block.line_map.mark(i);
+            block.line_map.borrow_mut().mark(i);
         }
         assert_eq!(block.analyze_density(), BlockDensity::Fragmented);
 
         // Clear and test just over 75% utilisation (should be Dense)
-        block.line_map = LineMap::default();
+        *block.line_map.borrow_mut() = LineMap::default();
         let dense_lines = (LINE_COUNT as f64 * 0.76) as usize;
         for i in 0..dense_lines {
-            block.line_map.mark(i);
+            block.line_map.borrow_mut().mark(i);
         }
         assert_eq!(block.analyze_density(), BlockDensity::Dense);
     }
@@ -901,9 +937,9 @@ pub mod tests {
             (128, BlockDensity::Fragmented), // 50% utilisation
             (200, BlockDensity::Dense),      // ~78% utilisation
         ] {
-            let mut block = BumpBlock::new();
+            let block = BumpBlock::new();
             for i in 0..lines_to_mark {
-                block.line_map.mark(i);
+                block.line_map.borrow_mut().mark(i);
             }
             assert_eq!(block.analyze_density(), expected_density);
             blocks.push(block);
@@ -928,19 +964,19 @@ pub mod tests {
 
     #[test]
     pub fn test_find_largest_hole() {
-        let mut block = BumpBlock::new();
+        let block = BumpBlock::new();
 
         // Mark some lines to create holes
         for i in 0..50 {
-            block.line_map.mark(i);
+            block.line_map.borrow_mut().mark(i);
         }
         // Leave hole from 50-75 (25 lines = 3200 bytes)
         for i in 76..100 {
-            block.line_map.mark(i);
+            block.line_map.borrow_mut().mark(i);
         }
         // Leave hole from 100-150 (50 lines = 6400 bytes) - this should be largest
         for i in 151..200 {
-            block.line_map.mark(i);
+            block.line_map.borrow_mut().mark(i);
         }
 
         let largest = block.find_largest_hole();
@@ -955,19 +991,19 @@ pub mod tests {
 
     #[test]
     pub fn test_total_available_space() {
-        let mut block = BumpBlock::new();
+        let block = BumpBlock::new();
 
         // Create pattern: marked, hole (10 lines), marked, hole (20 lines), marked
         for i in 0..50 {
-            block.line_map.mark(i);
+            block.line_map.borrow_mut().mark(i);
         }
         // Hole from 50-60 (10 lines)
         for i in 60..80 {
-            block.line_map.mark(i);
+            block.line_map.borrow_mut().mark(i);
         }
         // Hole from 80-100 (20 lines)
         for i in 100..LINE_COUNT {
-            block.line_map.mark(i);
+            block.line_map.borrow_mut().mark(i);
         }
 
         let total = block.total_available_space();
@@ -979,16 +1015,16 @@ pub mod tests {
 
     #[test]
     pub fn test_allocation_suitability_score() {
-        let mut block = BumpBlock::new();
+        let block = BumpBlock::new();
 
         // Create a hole that can fit exactly 1024 bytes
         let hole_lines = 1024 / LINE_SIZE_BYTES + 1; // Need at least this many lines
         for i in 0..50 {
-            block.line_map.mark(i);
+            block.line_map.borrow_mut().mark(i);
         }
         // Leave hole from 50 to (50 + hole_lines)
         for i in (50 + hole_lines + 1)..LINE_COUNT {
-            block.line_map.mark(i);
+            block.line_map.borrow_mut().mark(i);
         }
 
         // Test perfect fit (should score high)
@@ -1007,18 +1043,18 @@ pub mod tests {
     #[test]
     pub fn test_allocation_suitability_density_bonus() {
         // Create two blocks with same hole but different density
-        let mut sparse_block = BumpBlock::new();
-        let mut dense_block = BumpBlock::new();
+        let sparse_block = BumpBlock::new();
+        let dense_block = BumpBlock::new();
 
         // Both have hole from 0-10 (can fit any small allocation)
         for i in 10..LINE_COUNT {
-            sparse_block.line_map.mark(i);
-            dense_block.line_map.mark(i);
+            sparse_block.line_map.borrow_mut().mark(i);
+            dense_block.line_map.borrow_mut().mark(i);
         }
 
         // Make dense_block actually dense by marking most lines
         for i in 0..(LINE_COUNT * 3 / 4) {
-            dense_block.line_map.mark(i);
+            dense_block.line_map.borrow_mut().mark(i);
         }
 
         let sparse_score = sparse_block.allocation_suitability_score(512);
