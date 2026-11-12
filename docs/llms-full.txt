@@ -5043,6 +5043,21 @@ result: lib-function(42)
 The `commit` field is mandatory and should be a full SHA. This ensures
 the import is repeatable and cacheable.
 
+A relative import declared *inside* the fetched file (e.g. `{ import:
+"other.eu" }`) is itself fetched from the same repository and commit,
+so a multi-file library works exactly as it would via a simple import.
+
+Like a simple import, a git import can be namespaced by prefixing the
+repository-relative path with `name=`:
+
+```eu,notest
+{ import: { git: "https://github.com/user/eu-lib"
+            commit: "abc123def456"
+            import: "lib=lib/helpers.eu" } }
+
+result: lib.lib-function(42)
+```
+
 Multiple git imports can be listed alongside simple imports:
 
 ```eu,notest
@@ -5961,6 +5976,75 @@ test: {
 Several test targets can be embedded in one file. Each is run as a
 separate test.
 
+## How the default verdict is computed
+
+Each test target is rendered to output, and that output is parsed back
+into eucalypt data as `result`. An *expectation function* maps the
+evidence to `:PASS` or `:FAIL`. Unless a target names its own validator
+(see [Custom validators](#custom-validators)), the built-in
+`default-expectation` in `lib/test.eu` is used, and it derives the
+verdict from `result` as follows:
+
+- if `result` is a block containing a `RESULT` key, the verdict is that
+  key's value — `true` gives `:PASS`, `false` gives `:FAIL`, and any
+  other value is used as the verdict directly;
+- otherwise, if `result` is a block, it passes when every value in the
+  block is `true`;
+- otherwise `result` is treated as a bare boolean, passing on `true`.
+
+Because the `RESULT` key takes precedence, a target that defines
+`RESULT` is judged solely on that value; its other bindings reach the
+verdict only through whatever computes `RESULT`. Computing `RESULT`
+from the checks keeps every check in the verdict — see
+`tests/harness/189_r9oy_union_as_spec.eu` and
+`tests/harness/182_typedata_alias_resolution.eu`, which gather their
+checks into a list and finish with `all-true? then(:PASS, :FAIL)`.
+
+Regardless of `RESULT`, `default-expectation` also fails the target if
+`stderr` contains an `EXPECT FAILED` diagnostic (see
+[Inline assertions](#inline-assertions) below) — a target can no longer
+mask a genuinely failing `//=`/`//!`/`//=>`/`//=?`/`//=?>` assertion
+behind a `RESULT` that doesn't account for it, such as a hardcoded
+`RESULT: :PASS`. Tests that deliberately construct assertions expected
+to fail, to verify the assertion mechanism itself reports failure
+correctly, should use `unguarded-expectation` instead (a target-level
+`verify: ["unguarded-expectation"]`) — see
+`tests/harness/125_expectations.eu`, which checks that `//=` and `//!`
+correctly return `false` on mismatch and therefore genuinely triggers
+`EXPECT FAILED` diagnostics as part of passing.
+
+## Inline assertions
+
+An expression can carry an inline expected value with the `//=>`
+operator:
+
+```eu
+total: [1, 2, 3] sum //=> 6
+```
+
+`//=>` is a pass-through assertion: when it holds, the expression keeps
+its value and so composes inside larger expressions. When it does not
+hold, eucalypt emits an `EXPECT FAILED` diagnostic to `stderr`; in test
+mode the expression then evaluates to `false` and execution continues
+(outside test mode an assertion error is raised instead). Like any
+binding, an inline assertion reaches a target's verdict only through
+the `result` the expectation function sees — for instance by feeding
+its value into `RESULT`, or via the all-values-true inference when no
+`RESULT` key is present — and, independently of `result`, through
+`default-expectation`'s `stderr` gate described above.
+
+Because a failing `//=>` returns `false` in test mode regardless of
+whether the *expected* value was `true` or `false`, an assertion that
+expects `false` cannot be told apart from a passing one by its return
+value alone: `x //=> false` evaluates to `false` both when `x` really
+is `false` (pass) and when `x` mismatches (fail). Hand-computing a
+`RESULT` with `all-true?` over such bindings therefore cannot
+distinguish pass from fail for expecting-`false` assertions. Use the
+raw predicate result instead (with `not()` where you want to assert
+absence), as `tests/harness/182_typedata_alias_resolution.eu` and
+`tests/harness/183_widen_type_def_literals.eu` do, rather than folding
+a `//=>`-wrapped expecting-`false` value into the aggregate.
+
 ## Test files
 
 If your intention is not to embed tests in a eucalypt file but instead
@@ -6469,6 +6553,136 @@ build your own monads, see
 
 ---
 
+# Parallel Evaluation
+
+> **HIGHLY EXPERIMENTAL.** This feature is new, and its semantics may change
+> without notice in a future release.
+>
+> **macOS/Linux only.** The mechanism is a POSIX `fork()`, so it is not
+> available on Windows. `par-*` still works there — every call falls back to
+> the ordinary sequential form, exactly as it does whenever the fork
+> mechanism is unavailable on a supported platform — it just never forks, so
+> there is no parallelism speed-up, and `EU_PP_TRACE` has no effect on
+> Windows. See [What is different from `map`](#what-is-different-from-map)
+> below: the value is identical either way.
+
+Eucalypt can evaluate a map over independent elements in parallel worker
+processes. The vocabulary is small and deliberately boring: each combinator
+computes the **same value** as its sequential form, so adding one is a
+performance decision, never a semantic one.
+
+| Parallel | Same value as |
+|----------|---------------|
+| `xs par-map(f)` | `xs map(f)` |
+| `xs par-sum(f)` | `xs map(f) sum` |
+| `xs par-max(f)` | `xs map(f) max-of` |
+| `xs par-min(f)` | `xs map(f) min-of` |
+| `xs par-concat(f)` | `xs map(f) concat` |
+
+```eu,notest
+scores: candidates par-map(expensive-score)
+best:   candidates par-max(expensive-score)
+```
+
+Results come back in input order, always. The mechanism is deterministic:
+each worker is given a contiguous range of indices and the parent reassembles
+the ranges in order, so two runs of the same program produce byte-identical
+output.
+
+## When it helps
+
+`par-*` is an explicit opt-in: writing it instead of the sequential form
+already says "fork this", so eucalypt no longer second-guesses that decision
+with a predicted-benefit size gate. It forks whenever there are at least two
+elements and the platform allows. It stays sequential only when there is
+nothing to parallelise (fewer than two elements), when only one core is
+available, on platforms without `fork`, and inside hosts that have not
+declared themselves safe to fork from — the language server, the WASM build,
+and the test harness all run `par-*` sequentially. The answer is the same in
+every case.
+
+Because the gate is gone, the caller is the one who should judge whether a
+workload is worth forking. The fixed per-call cost of the fork mechanism
+itself — process fork plus the shared arena, isolated from the
+serialise/deserialise codec both paths already pay — measures **~2–3ms** on
+macOS ARM64 (Apple Silicon, measured-single, moderate background load; see
+`docs/superpowers/reports/2026-08-04-eu-2obtj-fork-overhead.md` for the
+session). That is the amount a tiny,
+cheap `par-map` adds over the plain sequential form: worth it for anything
+with real per-element cost, easily lost in noise for a handful of trivial
+elements. `EU_PP_THRESHOLD` (below) remains available to force the
+sequential path back on for such cases, or for testing.
+
+## What is different from `map`
+
+Three things. They are the whole contract.
+
+**`par-*` is strict.** `map` is lazy: it builds a list of thunks and forces
+only what the consumer looks at. `par-*` forces the spine of `xs` and every
+result before returning. So:
+
+- an infinite or unbounded list works with `map` and does not with `par-map`;
+- an error in `f` that `map` would never have reached — because nothing looked
+  at that element — is raised by `par-map`;
+- taking the head of a parallel map costs the whole map.
+
+```eu,notest
+g(x): if(x = 3, panic("boom"), x)
+
+[1, 2, 3] map(g) head        # 1 — the third element is never forced
+[1, 2, 3] par-map(g) head    # error: boom
+```
+
+**`f` must be pure.** Workers run in separate processes, so a side effect in
+`f` happens in a child and is lost, and two workers sharing a file descriptor
+would each advance the other's read position. Eucalypt catches the case it can
+see — advancing a lazy impure producer, such as a streaming import, inside a
+worker raises a boundary error rather than corrupting the stream — but it
+cannot detect every impurity, so keep `f` pure.
+
+**Results must be data.** Only the serialisable subset crosses between
+processes: numbers, strings, symbols, booleans, null, lists of those, and
+blocks of those. A function, an IO action or an opaque value (a set, a vector,
+a PRNG, a producer handle) is a boundary error naming the value's kind and the
+combinator, not a silent misinterpretation:
+
+```
+par-map: cannot serialise a function across the parallel boundary
+```
+
+That is a programmer error at the boundary and it is reported as one, on the
+sequential fallback path too, so a program cannot pass in testing and fail
+only when it grows large enough to fork.
+
+Metadata travels with its value, so a `:suppress` or `:doc` annotation on a
+result still applies after a `par-map` exactly as it does after a `map`. The
+consequence of carrying it rather than discarding it is that metadata must be
+data too: metadata holding a function raises the same boundary error. `map`
+would have carried that function along unevaluated, so this is a real
+difference — but the alternative is dropping the annotation silently, which
+would let a `par-map` re-expose a key its author marked internal, with nothing
+to show for it. Values compare equal with or without metadata, so nothing else
+would notice.
+
+## Tuning and diagnosis
+
+Because every parallel path has a sequential fallback that produces the
+identical answer, a build that silently never forks looks exactly like one
+that does. `EU_PP_TRACE=1` says which path each call took:
+
+```
+par-map: 20000 elements — forked 13 workers
+par-sum: 12 elements — sequential (below threshold)
+```
+
+`EU_PP_WORKERS` sets the worker count and `EU_PP_THRESHOLD` the element count
+below which `par-*` stays sequential (default 2, i.e. every call with two or
+more elements forks) — a tuning/testing escape hatch for forcing one path or
+the other while investigating, not something ordinary use needs to touch.
+See [Debugging](../development/debugging.md) for the full list.
+
+---
+
 # Monads and the monad() Utility
 
 Eucalypt has first-class support for monadic programming. Two built-in
@@ -6822,7 +7036,7 @@ partial application pattern used throughout eucalypt.
 | `random.return(v)` | State monad return |
 | `random.run(action, stream)` | Run action on stream; returns value/rest block |
 | `random.eval(action, stream)` | Run action, return only the value |
-| `random.exec(action, stream)` | Run action, return only the remaining stream |
+| `random.exec(action, stream)` | **Deprecated** — use `random.run(action, stream).rest`. Run action, return only the remaining stream |
 | `random.float` | Action: random float in [0,1) |
 | `random.int(n)` | Action: random integer in [0,n) |
 | `random.choice(list)` | Action: random element from list |
@@ -6832,6 +7046,104 @@ partial application pattern used throughout eucalypt.
 Derived combinators (`map`, `then`, `join`, `sequence`, `map-m`,
 `filter-m`) are also available — see
 [Random Numbers reference](../reference/prelude/random.md).
+
+---
+
+## The combined effect monad (`do`)
+
+The `io`, `state` and `random` monads each solve one problem in
+isolation, but a realistic pipeline often needs all three at once — a
+stateful, seeded computation that also runs shell commands. Threading a
+`(state, seed)` context by hand through every IO step is exactly the
+verbose plumbing the monads were meant to remove.
+
+The `do` monad (from `lib/do.eu`) combines them. It threads a
+`{ state, seed }` context alongside IO, so one `{ :do ... }` block can
+use every capability as a native `do.*` action. Import it with:
+
+```eu,notest
+{ import: "do.eu" }
+```
+
+### A `do` action
+
+A `do` action is a function from a context to an IO action producing a
+`{ value, ctx }` pair, where `ctx` is `{ state: <block>, seed: <stream> }`.
+IO carries the context on its value channel, so `io.bind` handles the
+delicate effect sequencing and `do` only threads the context on top. It
+is a small, fixed state-and-seed layer over IO — not a general
+transformer stack.
+
+The only new code is `bind`/`return` plus three lift functions; every
+effect stays in `io`/`state`/`random`, and all derived combinators
+(`map`, `then`, `and-then`, `join`, `sequence`, `map-m`, `filter-m`)
+come from `monad(do)`.
+
+### Worked example
+
+```eu,notest
+{ import: "do.eu" }
+
+gather: { :do
+  files: do.shell("ls")             # io capability
+  pick:  do.choice(files.stdout lines)  # random capability
+  _:     do.modify(:seen, (+ 1))    # state capability
+}.(pick)
+
+` :main
+main: do.eval(gather, { state: { seen: 0 }, seed: random.stream(42) })
+```
+
+One block, one monad, all three capabilities threaded automatically —
+no hand-rolled `(state, seed)` plumbing and no mixed block metadata.
+
+### Running a `do` pipeline
+
+A `do` block evaluates to an action; run it with a runner and an initial
+context:
+
+| Runner | Result |
+|--------|--------|
+| `do.run(action, ctx0)` | `IO({value, ctx})` — value **and** final context |
+| `do.eval(action, ctx0)` | `IO(value)` — value only (the usual entry point) |
+
+The niche "final context only" result is `do.run` projected with `.ctx`.
+
+### Capability surface
+
+Each member lifts an existing `io`/`state`/`random` action into the
+`do` monad:
+
+| Member | Delegates to |
+|--------|--------------|
+| `do.shell(cmd)` / `do.shell-with(opts, cmd)` | `io.shell` / `io.shell-with` |
+| `do.exec(args)` / `do.exec-with(opts, args)` | `io.exec` / `io.exec-with` |
+| `do.get` / `do.put(k, v)` / `do.modify(k, f)` / `do.query(f)` | `state.*` |
+| `do.float` / `do.int(n)` / `do.choice(xs)` | `random.*` |
+| `do.pure(v)` | `do.return` — a pure value, no effect |
+| `do.st(action)` | lift **any** state action (terse) |
+| `do.rnd(action)` | lift **any** random action (terse) |
+| `do.lift-io(action)` | lift **any** IO action |
+
+### State lens operators inside `do`
+
+The state monad's lens operators `=!` (set) and `%!` (modify) produce
+state actions, so they work inside a `do` block through the terse lift —
+no new operators:
+
+```eu,notest
+{ :do
+  _: do.st(:count =! 0)
+  _: do.st(:total %! (+ 1))
+}
+```
+
+### `:let` and `:for` compose by nesting
+
+A `do` block never carries foreign block metadata. For a pure
+intermediate value use `n: do.pure(expr)`; for pure comprehension embed
+an ordinary `{ :for ... }` block as a sub-expression; for effectful
+traversal use the derived `do.map-m(f, xs)` / `do.sequence(actions)`.
 
 ---
 
@@ -6994,6 +7306,9 @@ for examples and a full explanation.
   list comprehensions with filtering via `[x] filter(pred?)`
 - The `let` namespace is the identity monad — `{ :let ... }` blocks
   give sequential bindings without block self-reference
+- The `do` namespace (from `lib/do.eu`) is the combined effect monad —
+  `{ :do ... }` blocks thread a `{ state, seed }` context over IO so
+  `io`, `state` and `random` capabilities compose in one block
 
 ---
 
@@ -7062,7 +7377,7 @@ action: { :state
   _: state.put(:name, "step-2")
 }
 
-result: state.exec(action, {count: 0, name: "init"})
+result: state.run(action, {count: 0, name: "init"}).state
 ```
 
 ```yaml
@@ -7079,8 +7394,9 @@ Each step sees the state left by the previous step:
 - The implicit return synthesises `{n: n}` from the non-underscore
   bindings (or use `.(expr)` for an explicit return)
 
-Run the action by passing an initial state to `state.run`,
-`state.eval` (value only), or `state.exec` (final state only).
+Run the action by passing an initial state to `state.run` (returns a
+`value`/`state` block) or `state.eval` (value only); the final state
+alone is `state.run(action, s).state`.
 
 ## Primitives
 
@@ -7098,7 +7414,7 @@ Run the action by passing an initial state to `state.run`,
 |----------|-------------|
 | `state.run(action, s)` | Run action from state `s`, return block with `value` and `state` fields |
 | `state.eval(action, s)` | Run action, return only the value |
-| `state.exec(action, s)` | Run action, return only the final state |
+| `state.exec(action, s)` | **Deprecated** — use `state.run(action, s).state`. Run action, return only the final state |
 
 ## Using Existing Pipeline Functions
 
@@ -7140,7 +7456,7 @@ action: { :state
   _: :count %! (+ 1)
 }
 
-result: state.exec(action, {count: 99}).count
+result: state.run(action, {count: 99}).state.count
 ```
 
 ```yaml
@@ -7227,6 +7543,11 @@ Type issues are reported as **warnings**, not errors, and only abort
 evaluation when `--strict` is passed. `--type-check` is a deprecated
 no-op flag kept for backwards compatibility — type checking already
 runs whether or not it is passed.
+
+A genuine parse error is a different matter: `eu check` always exits
+non-zero on one, with or without `--strict` — a file that never
+produced a syntax tree cannot be meaningfully type-checked, so this is
+not gated the way an ordinary type warning is.
 
 ---
 
@@ -8213,8 +8534,18 @@ a: s"[number]" to-data
 # a => [:t-list, [:t-prim, :number]]
 
 b: s"{ name: string }" to-data
-# b => [:t-record, { name: [:t-field, :required, [:t-prim, :string]] }]
+# b => [:t-record, { name: [:t-field, :required, [:t-prim, :string]] }, false]
 ```
+
+The third element of a `:t-record` node is the record's **closedness**:
+`false` for a closed record (`{k: T}`), `true` for an open one
+(`{k: T, ..}`). A named row variable (`{k: T, ..r}`) collapses to the same
+boolean — extra fields are permitted either way, and a runtime consumer
+cannot interpret a type variable, so none ever appears in projected data.
+
+The element is additive growth of the versioned `t-*` surface: a
+hand-written two-element `[:t-record, {…}]` remains valid and is read as
+**closed**, so existing hand-built type data keeps working.
 
 `from-data(td)` is the inverse — it rebuilds a type-data value from such
 a tagged list, so the two round-trip:
@@ -8231,6 +8562,23 @@ h: [:t-list, [:t-prim, :string]] from-data
 
 `to-data` passes non-type-data values through unchanged, so it is safe to
 apply speculatively.
+
+### `type-str`: naming a type from its tags
+
+`type-str(td)` renders a `t-*` tagged list back to its canonical type-DSL
+string, without wrapping the result as a type-data value. Reach for it when
+you are already walking the tagged list and want to *name* the type you are
+looking at — for instance to tell a user what a value was expected to be:
+
+```eu,notest
+{ import: "reflect.eu" }
+s: s"{ name: string, .. }" to-data type-str
+# s => "{name: string, ..}"
+```
+
+`type-str` is total: a tag it does not recognise renders as `"any"` rather
+than raising. `from-data` is exactly `type-str` followed by the type-data
+wrap.
 
 ### `as-spec`: types as runtime validators
 
@@ -8307,6 +8655,320 @@ b: { tags: [1, 2] }     match?(spec)   # => false
 | Type alias (declaration) | `` ` { type-def: "Name" } ``          |
 | Cond clause              | `condition => result`                 |
 | Multi-way conditional    | `cond[c1 => r1, c2 => r2, default]`   |
+
+---
+
+# Structural Contracts
+
+Eucalypt's type checker runs before evaluation and is erased afterwards.
+That is the right trade for code you wrote yourself — but it says nothing
+about data that arrives from outside the program. An imported YAML file, a
+CSV, a JSON payload: none of it was checked by anything, and by the time a
+missing field surfaces as a lookup error you are several transformations
+away from the thing that was actually wrong.
+
+**Structural contracts** guard that boundary. You write a spec as an
+ordinary `s"…"` type literal — the same type language as `type:`
+annotations — apply it where the data comes in, and get back a precise
+account of what does not conform.
+
+```eu,notest
+{ import: ["contract.eu", "cfg=config.yaml"] }
+
+schema: s"{ name: string, port: number, tags?: [string] }"
+
+config: cfg ensure(schema)
+```
+
+Contracts are **explicit**: nothing is checked unless you write the check,
+and nothing is forced unless the spec names it.
+
+## Two functions
+
+| Function | Returns | Raises |
+|---|---|---|
+| `validate(spec, data)` | a list of violations; `[]` means conformant | not for any *shape* of data — see below |
+| `ensure(spec, data)` | `data`, unchanged | when the data does not conform |
+
+`validate` is for when you want to *look* at the problems — count them,
+group them, render them into a report, decide for yourself what to do.
+`ensure` is for when there is nothing sensible to do but stop.
+
+**What "does not raise" means precisely.** No *shape* of data makes
+`validate` raise: however malformed, unexpected or partial a value is, you
+get violations rather than an error. Two things do still raise, and neither
+is about the data's shape:
+
+- a **spec** that is not a type spec at all (covered below — it is a
+  program bug, deliberately not reportable as a data violation);
+- forcing a value the spec **names**, if evaluating that value raises. This
+  is the unavoidable flip side of spec-directed forcing: `validate` is
+  total with respect to shape, not with respect to evaluation. A spec that
+  does not name a subtree never touches it, so it cannot be caught by one.
+
+Both take the receiver last, so both read naturally in a pipeline:
+`data validate(spec)`, `data ensure(spec)`.
+
+Import them with:
+
+```eu,notest
+{ import: "contract.eu" }
+```
+
+## The report
+
+Given `servers.yaml`:
+
+```yaml
+servers:
+  - host: "a.example.com"
+    port: 8080
+  - host: "b.example.com"
+    port: 9090
+  - host: "c.example.com"
+    port: "7070"
+  - port: 6060
+debug: true
+```
+
+and the spec:
+
+```eu,notest
+{ import: ["contract.eu", "data=servers.yaml"] }
+
+schema: s"{ servers: [{ host: string, port: number }] }"
+
+report: data validate(schema)
+```
+
+`report` is:
+
+```yaml
+- path: "servers[2].port"
+  kind: type-mismatch
+  expected: "number"
+  found: "string"
+- path: "servers[3]"
+  kind: missing
+  expected: "host"
+  found: absent
+- path: ""
+  kind: unexpected
+  expected: closed
+  found: [debug]
+```
+
+Three separate faults, three separate entries — every violation is
+collected, not just the first, because a boundary check exists to let you
+fix the data in one pass rather than N.
+
+The report is a plain list of plain blocks. It can be filtered, grouped,
+counted, rendered to a table, or emitted as YAML like any other eucalypt
+data. That is the point of returning data rather than a string.
+
+### The four kinds
+
+| `kind` | Raised when | `path` points at | `expected` | `found` |
+|---|---|---|---|---|
+| `:type-mismatch` | a value is present but does not match its spec | the **value** | the rendered type expected there | the runtime type name of the value |
+| `:missing` | a required record field is absent | the **containing record** | the missing field's key | `:absent` |
+| `:unexpected` | a **closed** record has surplus keys | the **record** | `:closed` | the surplus keys |
+| `:length` | a tuple or prefix-list has the wrong arity | the **list** | the required length | the actual length |
+
+The runtime type names in `found` are the predicate vocabulary the language
+already exposes: `"number"`, `"string"`, `"symbol"`, `"bool"`, `"null"`,
+`"datetime"`, `"list"`, `"block"`, `"function"`, `"type-data"`.
+
+### Paths
+
+`path` is a string, and it is the primary locator — format-independent,
+always available, and meaningful for every input format:
+
+| Step | Rendering |
+|---|---|
+| the root | `""` |
+| a record field | `.name`, with the leading `.` elided at the root — so `port`, `server.port` |
+| a field whose key is not identifier-shaped | `.'my key'` |
+| a list or tuple index | `[3]`, appended with no separator — `servers[2].port` |
+
+The format is chosen to be **readable at a glance** and to match how you
+would describe the position in prose or a bug report. It is not eucalypt
+source: a path containing an index does not evaluate as written, because
+`[2]` is a list literal and `servers[2]` reads as catenation rather than
+indexing. To navigate to the offending value, translate the path — a field
+step is `.name` or `lookup(:name)`, and an index step is `nth(2)`:
+
+```eu,notest
+{ import: "lens.eu" }
+
+# For the path "servers[2].port" — note the parentheses, since `.` binds
+# tighter than catenation.
+v: (data.servers nth(2)).port
+l: data view(‹:servers 2 :port›)
+```
+
+An index-free path *is* a usable `.`-chain (`server.port`), which is why
+the format elides the leading `.` at the root.
+
+## `ensure` and the error it raises
+
+`ensure` returns the data **unchanged** on success, so it drops into a
+pipeline without restructuring the code around it — the binding it feeds
+looks the same with or without the check.
+
+When the data does not conform it raises:
+
+```text
+error[EU-EVAL-CONTRACT]: contract violation: 2 violations against {name: string, port: number}
+  ┌─ deploy.eu:7:39
+  │
+7 │ config: { name: "web", port: "8080" } ensure(schema)
+  │                                       ^^^^^^^^^^^^^^
+  │
+  = port: expected number, found string
+  = (root): unexpected keys: debug
+```
+
+Two locators, doing two different jobs. The **source location** is meant to
+be the `ensure` call site — it answers "which contract failed" — while the
+**paths in the notes** answer "which field to fix". Pointing at a line in
+the data file itself is a separate matter, discussed under *What is not
+covered* below.
+
+The source location is the `ensure` call site under both prelude modes.
+It briefly was not: a shipped library imported by filename was
+misclassified as user code, so a frame inside `lib/contract.eu` could win
+the "blame user code" ranking and become the primary label under the
+pre-compiled prelude. That was **eu-8a49h**, not specific to contracts,
+and it is fixed. `tests/harness/errors/201_sv3_contract_violation.eu`
+anchors the primary label on the `ensure` call site so a regression fails
+the build.
+
+`ensure` on conforming data costs exactly one `validate` — the failure
+branch is lazy, so nothing is rendered when there is nothing to report.
+
+## Open and closed records
+
+A spec literal means the **same thing** statically and at runtime. The
+checker treats `s"{a: number}"` as a closed record, so the validator does
+too:
+
+```eu,notest
+{ import: "contract.eu" }
+
+data: { a: 1, b: 2 }
+
+closed: data validate(s"{a: number}")       # one :unexpected entry for b
+open:   data validate(s"{a: number, ..}")   # []
+```
+
+Adding `..` — or a named row variable, `..r`, which means the same thing to
+a validator — permits surplus keys. This matters most for external data,
+where a payload routinely carries fields you do not care about: reach for
+the open form unless you genuinely want to be told about extras.
+
+## Optional fields
+
+`k?: T` means *absent is fine, present must match*:
+
+```eu,notest
+{ import: "contract.eu" }
+
+schema: s"{ host: string, port?: number }"
+
+a: { host: "x" }              validate(schema)   # [] — absence is conformant
+b: { host: "x", port: 80 }    validate(schema)   # [] — present and correct
+c: { host: "x", port: "80" }  validate(schema)   # one :type-mismatch at "port"
+```
+
+## Cost is paid only where written
+
+The interpreter forces **only the paths the spec names**:
+
+- A record spec forces the value far enough to know it is a block and
+  enumerates its keys. Key enumeration walks the block's spine and forces
+  **no** value. Only the values under keys the spec *names* are forced —
+  so detecting surplus keys is a key-set comparison, never a value forcing,
+  and even a closed spec is cheap.
+- A list, tuple or prefix-list spec forces the spine, and forces each
+  element only as far as its element spec demands.
+- A primitive spec forces its value just far enough to name its type.
+- `any`, `top`, type variables and unrecognised tags force **nothing**.
+
+Three consequences worth relying on:
+
+- `s"{ .. }"` against a 10 000-key imported block forces the spine and
+  nothing else.
+- `s"{name: string, ..}"` against that block forces exactly `name`.
+- A spec is safe to apply to a value with expensive or diverging subtrees,
+  as long as it does not name them.
+
+`ensure` inherits this discipline exactly.
+
+## A malformed spec is a different problem
+
+A typo in a *schema* is a program bug, not a data problem, so it must not
+appear in the report — otherwise it would send you to inspect the wrong
+file. `validate` raises when its first argument is not a type spec at all:
+
+```eu,notest
+{ import: "contract.eu" }
+r: { a: 1 } validate({ not: "a spec" })
+# error: validate: not a type spec
+```
+
+That is a different error from a contract violation, distinguishable both
+on stderr and in an error test's `.expect` sidecar.
+
+An unrecognised *tag inside a well-formed spec* is not malformed — it is
+valid type data this version cannot check, so it accepts.
+
+## Contracts and `as-spec`
+
+`as-spec` and `match?` are unchanged and still available. The difference is
+what you get back:
+
+```eu,notest
+{ import: "contract.eu" }
+
+data match?(spec as-spec)   # a bare boolean
+data validate(spec)         # a located account of what is wrong
+```
+
+`match?` is the right tool for a branch; `validate` is the right tool for a
+boundary, where "something is wrong" is not actionable. Note that `match?`
+matches records **openly** by design, so it agrees with `validate` on open
+specs and deliberately differs on closed ones.
+
+## What is not covered
+
+- **`Dict(T)`, `NonEmpty([T])` and recursive types are accepted without
+  checking**, matching `as-spec`, so the two agree about what conforms for
+  these. Extending them is future work, and will extend both together.
+- **Literal types are the one place `validate` and `as-spec` disagree.**
+  `validate` checks a literal (`"prod"`, `:ok`) by equality, as you would
+  expect. `as-spec` has no arm for literal types, so it falls through to
+  "matches anything" — `s"\"prod\"" as-spec` accepts any value at all. That
+  is a defect on the `as-spec` side, tracked as **eu-pub3r**; `validate`
+  does the right thing rather than replicating it. Until the bead lands, do
+  not expect `data match?(spec as-spec)` and `(data validate(spec)) nil?`
+  to agree on a spec containing a literal type.
+- **Data-file blame** — reporting `config.yaml:12` rather than the `ensure`
+  call site — needs every importer to carry per-value source provenance.
+  Today only the YAML reader (which also serves JSON) does; offering it for
+  those two alone would make the quality of an error message depend on the
+  file extension. The `path` in the report is the locator that works
+  everywhere.
+- **Default-fill** — a spec supplying a value for an absent optional field
+  — is a *transformer*, not a check, so it is not folded into `ensure`.
+
+## Reference
+
+- [Type Checking](type-checking.md) — the type language the specs are
+  written in, and `to-data` / `from-data` / `type-str`
+- [Navigating Nested Data](navigating-nested-data.md) — `match?` and safe
+  navigation
+- [Error Codes](../reference/error-codes.md) — `EU-EVAL-CONTRACT`
 
 ---
 
@@ -9679,11 +10341,12 @@ The eucalypt **prelude** is a standard library of functions, operators, and cons
 - [Combinators](combinators.md) -- function composition, application, utilities (14 entries)
 - [Calendar](calendar.md) -- date and time functions (8 entries)
 - [Sets](sets.md) -- set operations (14 entries)
+- [Dicts](dicts.md) -- persistent ordered dictionaries (11 entries)
 - [Random Numbers](random.md) -- random number generation, monadic random: namespace (15 entries)
 - [Metadata](metadata.md) -- metadata and assertion functions (4 entries)
-- [IO](io.md) -- environment, time, argument access, and monad utility (80 entries)
+- [IO](io.md) -- environment, time, argument access, and monad utility (85 entries)
 
-*370 documented entries in total.*
+*386 documented entries in total.*
 
 ## Standard Libraries
 
@@ -9728,15 +10391,15 @@ ship with eucalypt:
 | `repeat(i)` | Return infinite list of instances of item `i` |
 | `iterate(f, i)` | Return list of `i` with subsequent repeated applications of `f` to `i` |
 | `ints-from` | Return infinite list of integers from `n` upwards, alias `iota` for backwards compatibility |
-| `range(b, e)` | Return list of ints from `b` to `e` (not including `e`) |
+| `range(b, e)` | Return list of ints from `b` to `e` (not including `e`); `[]` when `e` <= `b` |
 | `cycle(l)` | Create infinite list by cycling elements of list `l` |
 
 ## Transformations
 
 | Function | Description |
 |----------|-------------|
-| `take(n, l)` | Return initial segment of integer `n` elements from list `l` |
-| `drop(n, l)` | Return result of dropping integer `n` elements from list `l` |
+| `take(n, l)` | Return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0. A non-integer `n` is not rejected |
+| `drop(n, l)` | Return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0. A non-integer `n` is not rejected |
 | `take-while(p?, l)` | Initial elements of list `l` while `p?` is true |
 | `take-until(p?)` | Initial elements of list `l` while `p?` is false |
 | `drop-while(p?, l)` | Skip initial elements of list `l` while `p?` is true |
@@ -9764,11 +10427,11 @@ ship with eucalypt:
 
 | Function | Description |
 |----------|-------------|
-| `split-at(n, l)` | Split list into two at `n`th item and return pair |
+| `split-at(n, l)` | Split list into two at `n`th item and return pair; `[[], l]` when `n` <= 0 |
 | `split-after(p?, l)` | Split list where `p?` becomes false and return pair |
 | `split-when(p?, l)` | Split list where `p?` becomes true and return pair |
-| `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offset `step` |
-| `partition(n)` | List of lists of non-overlapping segments of list `l` of size `n` |
+| `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offset `step`; a size or step that is not positive is an error |
+| `partition(n)` | List of lists of non-overlapping segments of list `l` of size `n`; a size that is not positive is an error |
 | `discriminate(pred, xs)` | Return pair of `xs` for which `pred(_)` is true and `xs` for which `pred(_)` is false |
 
 ## Folds and Scans
@@ -9818,7 +10481,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `nth(n, l)` | Return `n`th item of list if it exists, otherwise error |
+| `nth(n, l)` | Return `n`th item (from 0) of list if it exists, otherwise error; a negative `n` is an error |
 | `(l !! r)` | Return `n`th item of list `l` if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and !! delegates to `arr.get` |
 | `count(l)` | Return count of items in list `l` |
 | `last` | Return last element of list `l` |
@@ -9829,10 +10492,10 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `rotate(n, l)` | Rotate list `l` left by `n` positions |
+| `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0 |
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`.
-Panics if `n` is out of range |
+Panics if `n` is out of range, including a negative `n` |
 | `update-first(p?, f, l)` | Apply `f` to the first element matching `p?` in list `l`.
 Returns `l` unchanged if no element matches |
 | `reduce(op, l)` | Left fold with no initial value; uses first element as seed. Panics on empty list |
@@ -9842,8 +10505,8 @@ Returns `l` unchanged if no element matches |
 | `butlast(l)` | Return all elements of list `l` except the last |
 | `unzip(pairs)` | List of pairs to pair of lists. Inverse of zip |
 | `interleave(a, b)` | Alternate elements from lists `a` and `b`. When one is exhausted, the remainder of the other is appended |
-| `window-all(n, step, l)` | Like window but includes the final short chunk even if smaller than `n` |
-| `partition-all(n)` | List of lists of non-overlapping segments of `l`, including any final short chunk |
+| `window-all(n, step, l)` | Like window but includes the final short chunk even if smaller than `n`; a size that is not positive gives `[]`, otherwise a step that is not positive is an error |
+| `partition-all(n)` | List of lists of non-overlapping segments of `l`, including any final short chunk; a size that is not positive gives `[]` |
 | `group-consecutive-by(f, xs)` | Group consecutive elements where `f` returns equal values into sublists |
 | `group-consecutive` | Group consecutive equal elements into sublists |
 | `uniq(xs)` | Remove consecutive duplicates from a list |
@@ -10213,6 +10876,28 @@ d: set.diff(a, b) set.to-list        # [1]
 
 ---
 
+# Dicts
+
+## Dict Operations
+
+> Functions for working with dicts — persistent dictionaries ordered by key. Keys are numbers, strings, symbols or lists of those; values are arbitrary and lazy.
+
+| Function | Description |
+|----------|-------------|
+| `dict.of` | Create a dict from list `pairs` of `[key, value]` pairs. Keys are evaluated fully; values stay lazy. Where keys are equal (`1` and `1.0` are equal keys), the first key and the last value are kept |
+| `dict.from-list` | Alias of `dict.of` |
+| `dict.empty` | The empty dict |
+| `dict.to-list` | Return the entries of dict `d` as `[key, value]` pairs in key order |
+| `dict.get` | Return the value at key `k` in dict `d`; an error naming the key if `d` does not hold it |
+| `dict.get-or` | Return the value at key `k` in dict `d`, or `default` if `d` does not hold it |
+| `dict.assoc` | Return dict `d` with key `k` mapped to the lazy value `v`. If `d` holds an equal key, that key is kept and only its value replaced |
+| `dict.dissoc` | Return dict `d` without key `k` |
+| `dict.contains?` | True if dict `d` holds key `k` |
+| `dict.size` | Return the number of entries in dict `d` |
+| `dict.empty?(d)` | True if dict `d` has no entries |
+
+---
+
 # Random Numbers
 
 Eucalypt provides pseudo-random number generation through the `io.random`
@@ -10255,7 +10940,7 @@ eu --seed 42 example.eu
 | `random.sample(n, lst, stream)` | State-monad action returning n elements sampled without replacement |
 | `random.run(action, stream)` | Run a random action on a stream; returns a value/rest block |
 | `random.eval(action, stream)` | Run a random action and return only the value |
-| `random.exec(action, stream)` | Run a random action and return only the remaining stream |
+| `random.exec(action, stream)` | DEPRECATED: use random.run(action, stream).rest. Run a random action and return only the remaining stream |
 
 ## Usage Pattern
 
@@ -10329,8 +11014,8 @@ import declarations, operator definitions, and testing assertions.
 | Function | Description |
 |----------|-------------|
 | `with-meta` | Add metadata block `m` to expression `e` |
-| `meta` | Retrieve expression metadata for `e` |
-| `raw-meta` | Retrieve immediate metadata of e without recursing into inner layers |
+| `meta` | Retrieve expression metadata for `e`, combining every stacked metadata layer. Block layers merge, outer winning; a non-block layer is opaque and stands alone |
+| `raw-meta` | Retrieve the outermost metadata layer of e alone, without recursing into inner layers and so without merging |
 | `merge-meta(m, e)` | Merge block `m` into `e`'s metadata |
 
 ## Documentation Metadata
@@ -10358,6 +11043,42 @@ For richer metadata, use a block:
     associates: :left }
 (a + b): __ADD(a, b)
 ```
+
+### Reading Metadata Back
+
+A value can carry several stacked metadata layers — declaration
+metadata over a `//` layer, or one `//` over another. `meta` combines
+them all; `raw-meta` reports only the outermost layer.
+
+```eu
+` { doc: "documented" }
+counter: 7 // { unit: :seconds }
+
+combined: counter meta          # { unit: :seconds, doc: "documented" }
+outermost: counter raw-meta     # { doc: "documented" }
+
+RESULT: (combined.unit = :seconds) ∧ (outermost.doc = "documented")
+```
+
+Two block layers merge, with the outer (later applied) layer winning on
+key conflicts. A layer that is **not** a block is *opaque*: it cannot be
+merged, so the outermost layer stands as the answer on its own. This is
+what the leading-symbol block shorthand produces — the tag is attached
+as a bare symbol, not a block:
+
+```eu
+spec: { :only k: 1 }
+
+tag: spec meta          # :only — the symbol itself, not a block
+raw-tag: spec raw-meta  # :only
+
+RESULT: (tag = :only) ∧ (raw-tag = :only)
+```
+
+Note that the built-in monadic tags (`:io`, `:for`, `:let`, `:random`,
+`:state`) never reach the runtime this way — the desugarer consumes
+them and rewrites the block into a bind chain, so the resulting value
+has no metadata at all.
 
 ### Common Metadata Keys
 
@@ -10422,6 +11143,11 @@ For richer metadata, use a block:
 | `bit.popcount(n)` | Count set bits in integer `n` |
 | `bit.ctz(n)` | Count trailing zeros in integer `n` (position of lowest set bit). Returns 64 if n is 0 |
 | `bit.clz(n)` | Count leading zeros in integer `n` |
+| `par-map(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-map(f, xs)` - parallel map, order-preserving. Same value as `xs map(f)` but STRICT: it forces the spine of `xs` and every result, so it is unusable on an infinite or partially-consumed list and raises an error that `map` would have left unevaluated. `f` must be pure and return serialisable data |
+| `par-sum(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-sum(f, xs)` - parallel sum of `f(x)` over `xs`. Same value as `xs map(f) sum`; strict in the same way as par-map |
+| `par-max(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-max(f, xs)` - parallel max of `f(x)` over `xs`. Same value as `xs map(f) max-of`; strict in the same way as par-map |
+| `par-min(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-min(f, xs)` - parallel min of `f(x)` over `xs`. Same value as `xs map(f) min-of`; strict in the same way as par-map |
+| `par-concat(f, xs)` | EXPERIMENTAL (macOS/Linux only, semantics may change without notice). `par-concat(f, xs)` - parallel map-then-concat. Same value as `xs map(f) concat`; strict in the same way as par-map |
 | `render(value)` | Serialise value to a YAML string |
 | `render-as(fmt, value)` | Serialise value to a string in the named format. Pipeline-friendly: data render-as(:json). Supported formats: :yaml, :json, :toml, :text, :edn, :html, :eu |
 | `parse-as(fmt, str)` | Parse a string of structured data in the named format and return eucalypt data. The inverse of render-as. Supported formats: :json, :yaml, :toml, :csv, :xml, :edn, :jsonl. Content is parsed as inert data; embedded eucalypt expressions (e.g. YAML !eu tags) are never evaluated |
@@ -10522,6 +11248,8 @@ eu [GLOBAL_OPTIONS] [SUBCOMMAND] [SUBCOMMAND_OPTIONS] [FILES...]
 - `check` - Type-check eucalypt source files
 - `doc` - Extract documentation from eucalypt source files
 - `dump` - Dump intermediate representations
+- `error <CODE>` - Print the catalogue entry for a stable error code (e.g.
+  `eu error EU-EVAL-TYPE`); see the [error-code catalogue](error-codes.md)
 - `version` - Show version information
 - `explain` - Explain what would be executed
 - `list-targets` - List targets defined in the source
@@ -10965,6 +11693,12 @@ eu --heap-limit-mib 1024 file.eu    # limit to 1 GiB
 eu --heap-limit-mib 0    file.eu    # unbounded
 ```
 
+The garbage collector runs on allocation volume, whatever the limit, so a
+program whose live data is small stays small. If the live data left after a
+collection exceeds about 7/8 of the limit, evaluation stops with a
+`heap limit exceeded` error naming both sizes; raise the limit (or use 0)
+for such a program.
+
 ### Error Output Format
 
 By default, errors are formatted for human reading. For programmatic use:
@@ -10973,6 +11707,41 @@ By default, errors are formatted for human reading. For programmatic use:
 eu --error-format json file.eu      # structured JSON errors
 eu --error-format human file.eu     # default human-readable (explicit)
 ```
+
+### Error Traces
+
+The `while evaluating (outermost first):` note an execution error carries is
+**curated** by default: library plumbing (a combinator recursing on its own
+tail) is dropped, recursion is collapsed, and the trace is anchored on your
+own call sites, with the named library combinator you invoked kept as
+context — for example `in 'nth'`. Frames read outermost first (top of the
+list is the outermost evaluation in progress), the parenthetical says so
+because nothing else on screen does. The same curation (though not the same
+presentation — see below) applies to the `trace` array of
+`--error-format json`.
+
+A frame resolving into bundled library source (e.g. the prelude) is shown
+as `in 'nth' (prelude)` in this note rather than a `file:line:col`
+coordinate — the exact line is useful to us maintaining the library, not to
+you, since you cannot edit or act on it. The JSON `trace` array is
+unaffected by this and always carries the real coordinate, since a
+machine-readable format has no equivalent risk of misdirecting a reader
+towards an unfixable location.
+
+This note is deliberately not called "stack trace": it is curated rather
+than the actual call stack (see `--debug-trace` below), its entries mix two
+different kinds of thing — a declaration mid-evaluation and a named
+combinator boundary kept as context — and laziness means the entries need
+not reflect the call nesting you wrote in source.
+
+To see the raw, uncurated continuation stack instead:
+
+```sh
+eu run --debug-trace file.eu
+```
+
+This is a debugging aid for working on the diagnostics machinery itself,
+or for cases where the curated trace has hidden the frame you need.
 
 ### Type Checking
 
@@ -11252,6 +12021,13 @@ import is repeatable and cacheable.
 
 `import` identifies the file within the repository to import.
 
+Fetched files are cached under `<home>/.eu/cache/git/`, keyed by
+repository URL and commit, so repeat imports of the same file at the
+same commit are served from the cache without any git or network
+operations. `<home>` is the user's home directory, unless the
+`EU_CACHE_HOME` environment variable is set, in which case it is used
+instead — useful for isolating the cache (e.g. in tests).
+
 Just as with simple imports, several git imports may be listed:
 
 ```eu
@@ -11259,6 +12035,28 @@ Just as with simple imports, several git imports may be listed:
 ```
 
 ...and simple imports and git imports may be freely mixed.
+
+If the imported file itself declares further relative imports (e.g.
+`{ import: "helpers.eu" }`), those are fetched from the same repository
+at the same commit — not resolved against the local filesystem — so a
+multi-file library works exactly as it would via a simple import.
+
+#### Namespacing a git import
+
+A git import can be namespaced under a name, exactly like a simple
+import, by prefixing the repository-relative path in `import` with
+`name=`:
+
+```eu,notest
+{ import: { git: "https://github.com/gmorpheme/eu.aws"
+            commit: "0140232cf882a922bdd67b520ed56f0cddbd0637"
+            import: "aws=aws/cloudformation.eu" } }
+
+stack: aws.template(...)
+```
+
+Without the `name=` prefix the imported file's declarations are
+spliced directly into scope, the same as an unnamed simple import.
 
 ## YAML import features
 
@@ -11526,9 +12324,11 @@ real terminal the severity word and the underlines are colourised.
 ## Anatomy of a diagnostic
 
 Eucalypt renders diagnostics in the `codespan` style — the same style
-used by `rustc`. There are no numeric error codes to memorise; a
-diagnostic is identified by its **message**, and the location is shown by
-pointing at the offending source span.
+used by `rustc`. Some diagnostics carry a stable code (e.g.
+`error[EU-EVAL-TYPE]`); see [Error Codes](error-codes.md) for the
+catalogue. A diagnostic without a code is still identified by its
+**message**, and the location is shown by pointing at the offending
+source span.
 
 A typical diagnostic has four parts:
 
@@ -11704,7 +12504,7 @@ what the checker does and does not catch.
 Raised while the program runs — applying a non-function, indexing past the
 end of a list, taking the `head` of an empty list, an explicit `panic`, a
 failed `requires:` constraint, and so on. These carry help text and,
-importantly, a **stack trace**:
+importantly, a **`while evaluating (outermost first):`** note:
 
 ```text
 error: tried to call a number as a function
@@ -11725,11 +12525,16 @@ operator captured an argument you meant to apply separately. See
 [Syntax Gotchas](../appendices/syntax-gotchas.md) for the precedence
 traps behind these messages.
 
-## Reading stack traces and source locations
+## Reading "while evaluating" traces and source locations
 
 When an error is raised deep inside a chain of calls, the diagnostic's
-primary pointer shows **where the fault occurred**, and the `stack trace`
-note shows **how execution got there**. Consider:
+primary pointer shows **where the fault occurred**, and the
+`while evaluating (outermost first):` note shows **how execution got
+there**. It is not literally the call stack: it is curated (library
+plumbing dropped, recursion collapsed), its entries mix declarations and
+named combinator boundaries, and laziness means the order need not match
+the call nesting you wrote — see [Error Traces](cli.md#error-traces) for
+the full explanation and `--debug-trace` for the raw form. Consider:
 
 ```eu,notest
 first-elem(xs): xs head
@@ -11748,17 +12553,47 @@ error: head of empty list
   │
   = guard against empty lists with 'nil?', e.g. 'if(xs nil?, default, xs head)'
   = 'head' and 'tail' are only defined on non-empty lists; use 'nth(0, xs)' or pattern matching if the list may be empty
-  = stack trace:
+  = while evaluating (outermost first):
     - first-elem at example.eu:1:20
 ```
 
 The pointer and the trace both land on `xs head` inside `first-elem` — the
 actual failure site — rather than on `main`, which merely started the
-chain. Each trace entry is `function at file:line:column`. Note that the
-trace reflects the *evaluated* call structure: because eucalypt is lazy
-and inlines aggressively, tail calls and fully-inlined helpers may not each
+chain. Each trace entry is `function at file:line:column` for a
+user-file frame, or `function (library-name)` — no coordinate — for a
+frame resolving into bundled library source such as the prelude, since
+that coordinate is not something you can act on. Note that the trace
+reflects the *evaluated* call structure: because eucalypt is lazy and
+inlines aggressively, tail calls and fully-inlined helpers may not each
 appear as a separate frame, so a trace can be shorter than the source call
 chain suggests.
+
+### How wide the underline is
+
+The primary label underlines the whole of the expression the message is
+about. For a call that means the callee *and* its arguments — an
+under-applied call underlines all of it, because the incomplete call, not
+the function's name, is the thing that went wrong:
+
+```text
+error: type mismatch: expected number, found a function
+  ┌─ example.eu:2:7
+  │
+2 │ n: xs foldl(+, 0) + 1
+  │       ^^^^^^^^^^^ - called from here
+  │
+  = a function value cannot be used directly here; it must first be
+    called with all of its remaining arguments
+```
+
+The extent follows the *parse*, not the layout: `a.b(x)` underlines from
+`a`, `f(a)(b)` underlines both argument tuples, and a call spread over
+several lines underlines from its callee to its closing parenthesis.
+
+An error about the callee itself still underlines only the callee. A
+missing key in `text str.gsub("o", "0")`, for instance, is about `str`
+not having a `gsub` key, so `str` alone is underlined even though the
+enclosing call is wider.
 
 ### Getting more location detail
 
@@ -11769,6 +12604,212 @@ a real file location. If you are debugging a diagnostic that points at a
 surprising place, set `EU_ERROR_TRACE_DUMP=1` to dump the full environment
 and stack traces with their `Smid` details to stderr, which shows every
 source location available at the point of failure.
+
+---
+
+# Error Codes
+
+Some eucalypt diagnostics carry a stable code such as `EU-EVAL-TYPE`,
+shown in the diagnostic header (`error[EU-EVAL-TYPE]: ...`) and in the
+`code` field of `--error-format json` output. A code is stable across
+releases: once assigned, it identifies the same category of problem even
+if the wording of the message changes, so it is safe to match on in
+scripts, editor integrations, or your own notes.
+
+Not every diagnostic has a code yet — codes are being added
+incrementally, category by category. A diagnostic without a code is
+still fully described by its message, source location, and notes; see
+[Error Messages Guide](error-messages.md) for how to read those.
+
+Codes are namespaced by area: `EU-<AREA>-<SLUG>`, e.g. `EU-EVAL-TYPE`
+for a runtime evaluation error, `EU-PARSE-*` for a parser error,
+`EU-NAME-*` for name resolution, `EU-TYPE-*` for a type-checker warning.
+
+Look up a code from the command line with `eu error <CODE>`, e.g.
+`eu error EU-EVAL-TYPE` prints the catalogue entry below. This is
+independent of `eu explain <FILES>`, which explains what a run would do
+given input files rather than looking up a code.
+
+## Catalogue
+
+### `EU-EVAL-TYPE`
+
+**What it means:** a value of one type was used where a different type
+was required — for example, a string was passed to an arithmetic
+operator that expects a number, or a number was used where a block was
+expected. This is a runtime error: the mismatch was only discovered when
+the value was evaluated.
+
+**Example:**
+
+```eucalypt
+a: "3"
+result: a + 1
+```
+
+```text
+error[EU-EVAL-TYPE]: type mismatch: expected number, found string "3"
+  ┌─ example.eu:2:11
+  │
+2 │ result: a + 1
+  │           ^
+  │
+  = to convert a string to a number, use 'num', e.g. 's num'
+  = to concatenate strings, use string interpolation or 'str.join-on' instead of '+'
+```
+
+**How to fix it:** convert the value to the type the operator expects
+before using it — for example, `a num + 1` converts the string to a
+number first. See the [prelude reference](prelude/) for the conversion
+functions available for each type (`num`, `str`, `str.of`, and so on).
+
+### `EU-EVAL-CONTRACT`
+
+**What it means:** data failed a structural contract applied with `ensure`.
+The contract is an ordinary type spec written as an `s"…"` literal, and the
+diagnostic's notes list every position that did not conform, each with a
+path into the data. The source location is the `ensure` call site — the
+contract that failed — while the paths in the notes say where in the data
+to look.
+
+**Example:**
+
+```eucalypt
+{ import: "contract.eu" }
+schema: s"{ name: string, port: number }"
+config: { name: "web", port: "8080", debug: true } ensure(schema)
+```
+
+```text
+error[EU-EVAL-CONTRACT]: contract violation: 2 violations against {name: string, port: number}
+  ┌─ example.eu:3:51
+  │
+3 │ config: { name: "web", port: "8080", debug: true } ensure(schema)
+  │                                                   ^^^^^^^^^^^^^^
+  │
+  = port: expected number, found string
+  = (root): unexpected keys: debug
+```
+
+**How to fix it:** correct the data at each path the notes name, or widen
+the spec if the shape you are receiving is the shape you intended — a
+closed record spec such as `{name: string}` reports surplus keys, and
+adding `..` (`{name: string, ..}`) permits them. To inspect the violations
+as data rather than aborting, call `validate(spec, data)` instead: it
+returns the same information as a list of blocks and never raises. See the
+[Contracts guide](../guide/contracts.md).
+
+### `EU-RENDER-UNREPRESENTABLE`
+
+**What it means:** a value survived evaluation intact, but the output
+format you asked for has no way to carry it. The commonest case is an
+integer above `9223372036854775807` (the signed 64-bit maximum): JSON,
+EDN and eucalypt itself carry it happily, but a YAML integer scalar and
+a TOML integer are both signed 64-bit. TOML also has no null, so a null
+value cannot be rendered as TOML either.
+
+**Example:** given `big.json` holding `{"n": 9999999999999999999}`,
+
+```eucalypt
+` { target: :main output: :yaml import: "data=big.json" }
+main: data.n
+```
+
+```text
+error[EU-RENDER-UNREPRESENTABLE]: cannot represent this value in YAML output: the integer 9999999999999999999 is above 9223372036854775807, the largest integer a YAML integer scalar can carry
+  ┌─ example.eu:2:7
+  │
+2 │ main: data.n
+  │       ^^^^^^
+  │
+  = render to a format that can carry the value — 'json', 'edn', 'text' and 'eu' output all keep integers of this magnitude
+  = to keep the exact digits in this format, convert the value to a string first with 'str', e.g. 'n str'
+```
+
+**How to fix it:** render to a format that can carry the value — `-x
+json`, `-x edn`, `-x text` and `-x eu` all keep integers of this
+magnitude — or convert it to a string first with `str`, so the exact
+digits are preserved as text. For a null being rendered as TOML, give
+the key a value or drop it from the block before rendering. eucalypt
+reports this rather than quietly rounding the value or changing its
+type, so that what you export matches what you evaluated.
+
+### `EU-RENDER-SHAPE`
+
+**What it means:** the output format needs the document to have a
+particular structure, and the value being rendered does not have it.
+Two cases raise it.
+
+**Whole-document shape.** `html` output renders *hiccup* markup — a list
+whose first item is the tag, optionally followed by an attribute block
+and then contents — so rendering a block, or a bare scalar, has no
+meaning as html.
+
+**Block keys.** `json`, `toml` and `eu` output all need block keys to be
+text: JSON object keys and TOML keys are strings, and eucalypt's own
+syntax needs a name. Block literals always have symbol keys, but
+`kv-block` and `block` accept any key at all, so `kv-block(1, "a")` — or
+a boolean, list or block key — produces a block those three formats
+cannot render. `yaml` and `edn` both represent such keys (`1: a` and
+`{1 "a"}` respectively) and render the block unchanged. The type checker
+warns on such a key too (`type mismatch calling 'kv-block'`), so this
+diagnostic confirms a mistake already flagged rather than refusing
+something idiomatic.
+
+**Example (document shape):**
+
+```eucalypt
+` { target: :main format: :html }
+main: { a: 1 b: 2 }
+```
+
+```text
+error[EU-RENDER-SHAPE]: cannot render this document as html: the value to render is a block, but markup output needs a hiccup element — a list whose first item is the tag
+  = html output renders hiccup markup: a list of tag, attribute block and contents, e.g. '[:div, { id: "top" }, "hello"]'
+  = select the markup value with a target or '-e', e.g. 'eu -x html -e page.eu'; rendering a whole unit gives html the unit's block, which is not markup
+  = to render arbitrary data instead, choose a format that accepts any shape, such as 'yaml', 'json' or 'text'
+```
+
+**Example (block key):**
+
+```eucalypt
+` { target: :main format: :json }
+main: kv-block(1, "a")
+```
+
+```text
+error[EU-RENDER-SHAPE]: cannot render this document as JSON: a block key is the number 1, but JSON object keys must be text
+  = give the block symbol keys, e.g. 'kv-block(:one, "a")', or convert the key to text with 'str' before rendering
+  = 'yaml' and 'edn' output both support keys that are not text, and render this block unchanged
+```
+
+**How to fix it:** for a shape mismatch, build the value as hiccup
+markup, e.g. `[:div, { id: "top" }, "hello"]`, and select it with a
+target or `-e` so that html is given the markup itself rather than the
+enclosing unit's block. For a block key, give the block symbol keys —
+e.g. `kv-block(:one, "a")` — or convert the key to text with `str`
+before rendering. In either case you can instead choose a format that
+accepts the document as it stands: `yaml`, `json` or `text` for
+arbitrary shapes, and `yaml` or `edn` for keys that are not text.
+
+eucalypt reports this rather than coercing the value — a key rendered as
+`"1"` is not the key that was evaluated, and the difference survives into
+anything that re-reads the output.
+
+This diagnostic often has no source location: the document's root events
+are emitted by the render pipeline rather than by a user expression, and
+a literal block key records no annotation, so there is frequently no span
+to point at.
+
+<!--
+To add a new code: append a `### EU-<AREA>-<SLUG>` section here with
+"What it means", "Example", and "How to fix it" — positive guidance only,
+no anti-pattern enumeration. Then map the variant to the code in the
+relevant `code()` method (`ExecutionError::code`, and analogous methods
+as they are added for `CoreError`, `ParserError`, `TypeWarning`), and add
+a matching entry to the `CATALOGUE` in `src/driver/error_codes.rs` so
+`eu error <CODE>` can look it up too.
+-->
 
 ---
 
@@ -12059,6 +13100,15 @@ Referencing a deprecated declaration emits a warning on stderr.
 Under `eu check --strict`, deprecation warnings become errors.
 Deprecated declarations still work — deprecation is advisory.
 
+A top-level declaration is matched by its bare name; a declaration nested in a
+namespace block is matched by the dotted path a caller writes (`state.exec`),
+so both `io.exec` and an unrelated top-level `exec` stay silent. A reference
+counts only when it resolves to the declaration, so a lambda parameter called
+`state` and a local `{ state: … }.( … )` block are both silent, as is a nested
+declaration referenced by its bare name from inside its own block. The residual
+case that still matches by name alone is a top-level block of your own sharing a
+deprecated library namespace's name.
+
 **Type annotations** (optional, advisory): add `type:` alongside `doc:`
 to annotate declarations for the type checker (`eu check`):
 
@@ -12281,10 +13331,17 @@ host: cfg.host
 ` { import: "math.eu" }
 calculations: { result: advanced-calc(10) }
 
-# Git import
+# Git import (transitive relative imports inside the fetched file
+# are also resolved from the same repo/commit, not the local filesystem)
 { import: { git: "https://github.com/user/lib"
             commit: "abc123def456"
             import: "helpers.eu" } }
+
+# Namespaced git import — prefix the repo-relative path with "name="
+{ import: { git: "https://github.com/user/lib"
+            commit: "abc123def456"
+            import: "x=helpers.eu" } }
+x.some-function()
 
 # Streaming imports (lazy, for large files)
 { import: "events=jsonl-stream@events.jsonl" }
@@ -12575,6 +13632,27 @@ Patterns: bare `foo` = `**.foo`; `*` = one level; `**` = any depth.
 { a: 1 } dissoc([:a])                  # {}
 ```
 
+### 3.2b Dicts
+
+A dict is a persistent dictionary ordered by key, with O(log n) `get`,
+`assoc` and `dissoc`. Keys are numbers, strings, symbols, or lists of those
+(nested at most 32 deep); `1` and `1.0` are the same key. Values are lazy
+and computed at most once, so a dict can refer to itself as a memo table.
+Collection argument last, as for sets.
+
+```
+d: [[:b, 2], [:a, 1]] dict.of    # alias: dict.from-list
+d dict.get(:a)                   # 1 (an error if absent)
+d dict.get-or(:z, 0)             # 0
+d dict.assoc([3, 4], :pt)        # list keys, e.g. coordinates
+d dict.dissoc(:b) dict.size      # 1
+d dict.to-list                   # [[:a, 1], [:b, 2]] — key order
+```
+
+Order across types: numbers < strings < symbols (by name) < lists
+(lexicographic). `dict.of` keeps the first of equal keys and the last value.
+A dict cannot be rendered yet; render `dict.to-list` instead.
+
 ### 3.3 String Functions (str namespace)
 
 #### `str.split-on(re, s)` — split string on regex
@@ -12665,6 +13743,58 @@ schema: s"{ name: string, age: number }" as-spec
 | `A → B` function | Predicate: `__SATURATED not` (checks it is a function) |
 | `forall …` | Erase quantifier, spec the body |
 | Type variables | `any?` (unconstrained at runtime) |
+
+### 3.5b Structural Contracts — `validate` and `ensure`
+
+`as-spec`/`match?` answer one bit. For external data at an ingress
+boundary, `lib/contract.eu` gives a **located report** instead.
+
+```eu,notest
+{ import: "contract.eu" }
+
+schema: s"{ name: string, port: number, tags?: [string] }"
+
+# A report — a list of blocks. [] means conformant. No SHAPE of data makes
+# it raise (see the caveat below).
+report: { name: "web", port: "8080" } validate(schema)
+# => [{ path: "port", kind: :type-mismatch, expected: "number", found: "string" }]
+
+# Data returned unchanged on success; raises EU-EVAL-CONTRACT otherwise.
+config: { name: "web", port: 8080 } ensure(schema)
+```
+
+Both take the receiver **last**, so `data validate(spec)` reads correctly.
+
+| `kind` | `path` points at | `expected` | `found` |
+|---|---|---|---|
+| `:type-mismatch` | the value | rendered type | runtime type name |
+| `:missing` | the containing record | the missing key | `:absent` |
+| `:unexpected` | the record | `:closed` | list of surplus keys |
+| `:length` | the list | required length | actual length |
+
+Paths are strings for reading, not eucalypt source: `servers[2].port`, `""`
+at the root, `'my key'` for a non-identifier key. An indexed path does not
+evaluate as written (`[2]` is a list literal, so `servers[2]` is
+catenation) — navigate with `(xs nth(2)).port` or a lens.
+
+- A **closed** spec (`{a: number}`) reports surplus keys; an **open** one
+  (`{a: number, ..}` or `{a: number, ..r}`) ignores them — the spec literal
+  means the same thing statically and at runtime.
+- `k?: T` — absent is conformant, present must match.
+- **Only the paths the spec names are forced.** Key enumeration (and so
+  closedness detection) never forces a value; `any`, `top` and type
+  variables force nothing at all. A spec is safe to apply to a value with
+  diverging subtrees it does not name.
+- **The raise caveat**: no *shape* of data makes `validate` raise, but it
+  propagates a raise from forcing a value the spec **names** — total with
+  respect to shape, not to evaluation.
+- A malformed **spec** raises `panic("validate: not a type spec")` — a
+  different error from a contract violation, so a schema typo cannot
+  masquerade as bad data.
+- Literal types (`"prod"`, `:ok`) are checked by equality here but **not**
+  by `as-spec`, which matches anything for them (eu-pub3r).
+
+See [Structural Contracts](../guide/contracts.md).
 
 ### 3.6 Command-line Argument Parsing
 
@@ -12860,6 +13990,7 @@ ints-from(1) take(5)                 # [1, 2, 3, 4, 5]
 
 # Range (finite)
 range(1, 6)                          # [1, 2, 3, 4, 5]
+range(6, 1)                          # [] (empty when e <= b)
 
 # Infinite iteration
 iterate(* 2, 1) take(6)             # [1, 2, 4, 8, 16, 32]
@@ -13958,6 +15089,36 @@ a + b * c     →  (+ a (* b c))      // with standard precedence
 - **Pruning** - Dead code elimination
 - **Inlining** - Inline marked expressions
 
+##### Argument sharing in beta reduction
+
+`beta_reduce` substitutes a call's arguments into the callee body. Doing
+that unconditionally would copy the argument *expression* once per
+occurrence of its binder, and separate copies become separate thunks that
+share nothing — so a callee that uses a parameter twice would evaluate
+that argument twice, and a caller passing its own recursive call would go
+from linear to exponential (eu-gua64).
+
+An argument is therefore substituted directly only when doing so
+duplicates no work:
+
+- the argument is *duplicable* — a variable (which already names a single
+  shared thunk), a literal, or an intrinsic reference; or
+- its binder occurs at most once in the callee body.
+
+Otherwise the argument is bound once in a `Let` wrapped round the reduced
+body, under a fresh name, and every occurrence becomes a reference to that
+binding. `close_let_scope` performs the de Bruijn shift for both the body
+and the bound argument expressions as they move inside the new scope.
+
+These sharing bindings are never mutually recursive: each holds a
+call-site expression, and the fresh names are chosen disjoint from every
+free name in the body and in all the arguments, so no binding can
+reference a sibling. Only the body refers to them.
+
+The reduced application keeps the *call site's* `Smid` rather than the
+callee's, so a diagnostic blames the user's call rather than the library
+body it was inlined from; the sharing `Let` carries the same `Smid`.
+
 #### Verification
 
 *Implementation*: `src/core/verify/`
@@ -13970,31 +15131,28 @@ Validates transformed expressions before STG compilation:
 
 Eucalypt uses a Spineless Tagless G-machine (STG) as its evaluation model, providing lazy evaluation with memoisation.
 
-### Two execution engines share one STG
+### One execution engine: bytecode
 
-The STG syntax described below is the intermediate representation that
-**both** of eucalypt's execution engines consume. The engines differ only
-in how they *run* that syntax, not in what it means:
+The STG syntax described below is the intermediate representation the
+bytecode engine (`src/eval/bytecode/`, BV1) consumes: it compiles STG syntax
+to a flat bytecode program and runs that (see
+[The Bytecode Engine](#the-bytecode-engine-the-default) below).
 
-- **The HeapSyn tree-walk engine** (`src/eval/machine/vm.rs`) walks a
-  materialised STG tree of heap-allocated nodes directly. It was
-  historically the only engine and is retained as the performance
-  baseline and the differential-testing oracle. Select it with
-  `EU_HEAPSYN=1`.
-- **The bytecode engine (BV1)** (`src/eval/bytecode/`) compiles the same
-  STG syntax to a flat bytecode program and runs that. Since 0.12.0 it is
-  the **default**; `EU_BYTECODE=1` is a now-redundant explicit opt-in, and
-  `EU_HEAPSYN=1` takes precedence over it.
+Eucalypt originally had a second engine — a HeapSyn tree-walk machine
+(`src/eval/machine/vm.rs`) that walked a materialised STG tree of
+heap-allocated nodes directly, the only engine before 0.12.0 and retained
+afterwards as the performance baseline and differential-testing oracle
+behind an `EU_HEAPSYN=1` opt-out. Once an A/B study (eu-7oshh) confirmed the
+bytecode engine was at parity or ahead everywhere that mattered, the Phase 4
+collapse (eu-oufc) deleted HeapSyn, its `EU_HEAPSYN`/`EU_BYTECODE` selectors,
+and the differential-testing infrastructure that compared the two engines
+(what remains under `src/eval/bytecode/differential.rs` compares the
+bytecode engine's two *dispatch* configurations — pre-decoded vs
+byte-stream, below — not two engines).
 
-Both engines produce byte-identical rendered output on every input — this
-is enforced by a differential test suite (`src/eval/bytecode/differential.rs`)
-and is the invariant that lets the bytecode engine be the default while
-HeapSyn remains as a cross-check.
-
-The next four subsections (STG Syntax, STG Compiler, the tree-walk Virtual
-Machine, Continuations and Lazy Evaluation) describe the shared IR and the
-HeapSyn engine that walks it. [The Bytecode Engine](#the-bytecode-engine-bv1-the-default)
-below then describes how the default engine executes the same syntax.
+The next two subsections (STG Syntax, STG Compiler) describe the IR;
+[The Bytecode Engine](#the-bytecode-engine-the-default) describes how it
+runs.
 
 ### STG Syntax
 
@@ -14054,50 +15212,57 @@ impl Compiler {
 
 ### Virtual Machine
 
-*Implementation*: `src/eval/machine/vm.rs`
+*Implementation*: `src/eval/bytecode/machine.rs`
 
-The STG machine is a state machine executing closures:
+The STG machine is a state machine executing over a program counter into a
+flat bytecode buffer, rather than walking heap-allocated code nodes (see
+[The Bytecode Engine](#the-bytecode-engine-the-default) for why):
 
 ```rust
-pub struct MachineState {
-    root_env: SynEnvPtr,           // Empty root environment
-    closure: SynClosure,           // Current (code, environment) pair
-    globals: SynEnvPtr,            // Global bindings
-    stack: Vec<Continuation>,      // Continuation stack
+pub struct BcMachineState {
+    root_env: RefPtr<BcEnvFrame>,    // Empty root environment
+    globals: RefPtr<BcEnvFrame>,     // Global bindings
+    current: BcValue,                // Current (code closure or native) value
+    stack: Vec<BcContinuation>,      // Continuation stack
     terminated: bool,
-    annotation: Smid,              // Current source location
+    annotation: Smid,                // Current source location
+    // ...plus GC-root stash, constants, diagnostics, capture state
 }
 ```
 
-**Execution loop:**
+**Execution loop** (`BytecodeMachine::run`):
 ```rust
-fn run(&mut self) {
-    while !self.terminated {
+fn run(&mut self, limit: Option<usize>) {
+    while !self.state.terminated {
         if self.gc_check_needed() {
             self.collect_garbage();
         }
-        self.step();
+        self.step();  // reads one opcode, decodes operands, acts
     }
 }
 ```
 
-**Instruction dispatch** (`handle_instruction`):
+**Instruction dispatch** (`handle_op` / `handle_op_predecoded`):
 
-| Code Form | Action |
-|-----------|--------|
+| Opcode | Action |
+|--------|--------|
 | `Atom` | Resolve reference; push Update continuation if thunk |
 | `Case` | Push Branch continuation, evaluate scrutinee |
 | `Cons` | Return data constructor |
 | `App` | Push ApplyTo continuation, evaluate callable |
+| `DirectApp` | Exact-arity application to a statically known callee (superinstruction) |
 | `Bif` | Execute intrinsic directly |
 | `Let` | Allocate environment frame, continue in body |
 | `LetRec` | Allocate frame with backfilled recursive references |
 
 ### Continuations
 
-*Implementation*: `src/eval/machine/cont.rs`
+*Implementation*: `src/eval/bytecode/cont.rs`
 
-Four continuation types manage control flow:
+Four continuation types manage control flow (each also has a pre-decoded,
+`EU_PREDECODE`-only variant that references off-heap side pools instead of
+owning a fresh `Array`, described in
+[the pre-decoded IR](#the-pre-decoded-ir-lever-a-eu_predecode)):
 
 1. **Branch** - Pattern matching branches for CASE
 2. **Update** - Deferred thunk update (memoisation)
@@ -14115,25 +15280,26 @@ Laziness is achieved through thunks and updates:
 ```rust
 // When entering a local reference
 if closure.update() {
-    stack.push(Continuation::Update { environment, index });
+    stack.push(BcContinuation::Update { environment, index, annotation });
 }
 
 // After evaluation completes
-Continuation::Update { environment, index } => {
+BcContinuation::Update { environment, index, .. } => {
     self.update(environment, index);  // Replace thunk with result
 }
 ```
 
-### The Bytecode Engine (BV1, the default)
+### The Bytecode Engine (the default)
 
 *Implementation*: `src/eval/bytecode/` (`opcode.rs`, `program.rs`,
 `encode.rs`, `closure.rs`, `cont.rs`, `env_builder.rs`, `machine.rs`,
 `predecode.rs`)
 
-The default engine compiles STG syntax one step further, into a flat
-bytecode program, and interprets that. The motivation is a garbage-collection
-one: in the HeapSyn engine the *code* itself is a tree of heap-allocated
-`HeapSyn` nodes, so every code node must be scanned, marked and potentially
+The engine (BV1) compiles STG syntax one step further, into a flat
+bytecode program, and interprets that. The motivation was a
+garbage-collection one, relative to the now-deleted HeapSyn tree-walk
+engine: there, the *code* itself was a tree of heap-allocated `HeapSyn`
+nodes, so every code node had to be scanned, marked and potentially
 evacuated by the collector. Bytecode moves the code **off the GC heap**
 entirely — it lives in a plain `Vec<u8>` that never moves — so closures need
 no code-pointer fix-up during collection.
@@ -14159,49 +15325,56 @@ allocation.
 
 A bytecode runtime value (`closure.rs`) is either a code closure — an info
 table carrying a `CodeRef` plus a pointer to its environment frame — or a
-WHNF native carried directly. The **environment-frame cactus stack and the
-continuation model are shared verbatim with the HeapSyn engine**
-(`cont.rs` mirrors `machine::cont::Continuation` one-for-one, with `CodeRef`
-offsets in place of node pointers); only the code representation differs.
+WHNF native carried directly. The environment-frame cactus stack
+(`EnvironmentFrame<C>`, generic over the closure type `C`) and the
+continuation model's shape are the same design the deleted HeapSyn engine
+used, with `CodeRef` offsets in place of node pointers.
 
 #### How dispatch works
 
 The interpreter loop (`machine.rs`) keeps a program counter into the code
 buffer. Each step reads one opcode byte, decodes it (`Op::from_u8`), reads
-that opcode's inline operands from the following bytes, and acts —
-pushing continuations, allocating environment frames, forcing thunks and
-returning data constructors exactly as the tree-walk machine does. GC is
-polled on a countdown (every 500 steps by default), matching HeapSyn.
+that opcode's inline operands from the following bytes, and acts — pushing
+continuations, allocating environment frames, forcing thunks and returning
+data constructors. GC is polled on a countdown (every 500 steps by default).
 
 #### The pre-decoded IR (lever a, `EU_PREDECODE`)
 
 The classic byte-stream interpreter re-reads and re-decodes operands from
-the buffer on *every* tick. A newly merged **pre-decoded execution IR**
-(`predecode.rs`, currently behind `EU_PREDECODE=1`) removes that per-tick
-cost: at machine load the whole program is decoded **once** into a flat
-array of fixed-width, typed `Instr` records (16 bytes each) plus a set of
-off-heap side pools (argument-reference lists, application arg ordinals,
-`Let`/`LetRec` form headers and densified `Case` branch tables). Dispatch
-then reads typed fields instead of re-parsing bytes. Two representation
-changes accompany the decode: a `CodeRef` becomes an *instruction ordinal*
-rather than a byte offset, and source annotations move into a side table
-keyed by ordinal so `Ann` nodes are peeled at decode time and never cost a
-dispatch step. The byte stream is retained unchanged as the *serialisation*
-format; pre-decoding is purely an execution-time transform, and with the
-flag off behaviour is byte-identical to the byte-stream path. Nothing in the
-pre-decoded structures is a GC pointer, so code stays off the collector's
-scan set just as the byte stream does.
+the buffer on *every* tick. The **pre-decoded execution IR** (`predecode.rs`)
+removes that per-tick cost: at machine load the whole program is decoded
+**once** into a flat array of fixed-width, typed `Instr` records (16 bytes
+each) plus a set of off-heap side pools (argument-reference lists,
+application arg ordinals, `Let`/`LetRec` form headers and densified `Case`
+branch tables). Dispatch then reads typed fields instead of re-parsing bytes.
+Two representation changes accompany the decode: a `CodeRef` becomes an
+*instruction ordinal* rather than a byte offset, and source annotations move
+into a side table keyed by ordinal so `Ann` nodes are peeled at decode time
+and never cost a dispatch step. The byte stream is retained unchanged as the
+*serialisation* format; pre-decoding is purely an execution-time transform,
+and with pre-decoded dispatch off, behaviour is byte-identical to the
+byte-stream path. Nothing in the pre-decoded structures is a GC pointer, so
+code stays off the collector's scan set just as the byte stream does.
 
-#### Why bytecode is the default, and the performance story
+As of Phase 2 of the lever-(a) rollout (eu-vcr8), pre-decoded dispatch is the
+**default** — unset or `EU_PREDECODE=1` selects it; `EU_PREDECODE=0` opts
+out to the byte-dispatch path, which is retained and soaked through this
+release (CI's `test-byte-dispatch-baseline` job keeps it exercised) before
+Phase 3 deletes it, per the design's phased landing plan
+(`docs/superpowers/specs/2026-07-13-predecoded-execution-ir-design.md` §6).
 
-The bytecode engine wins decisively on garbage-collection-heavy and
+#### Why bytecode won, and the performance story
+
+The bytecode engine won decisively on garbage-collection-heavy and
 allocation-bound workloads, where keeping code off the managed heap and out
 of every mark/sweep pays for itself; it also starts faster, because the
 prelude ships pre-encoded in the blob (below) rather than being compiled
 from source. On op-dense, allocation-light workloads the byte-stream
 interpreter's per-tick re-decode cost historically left it slower per tick
-than the HeapSyn tree-walk; closing that remaining gap is exactly what the
-pre-decoded IR and the fused-primop superinstructions target.
+than the HeapSyn tree-walk — closing that remaining gap is exactly what the
+pre-decoded IR and the fused-primop superinstructions targeted, and the
+eu-7oshh A/B study that authorised HeapSyn's deletion (eu-oufc) confirmed
+parity or a bytecode win across the canonical suite.
 
 All engine-versus-engine performance numbers in this project are governed by
 a checked-in measurement protocol
@@ -14339,11 +15512,27 @@ with **postcard** (a compact binary format) and is the runtime's default
 source for the prelude; the build falls back to compiling from source only
 when the blob is absent or stale.
 
-Staleness is detected by a hash: the blob records
-`SHA-256(lib/prelude.eu ‖ bytecode-wire-format-version)`, and `build.rs`
-recomputes it. Folding the **bytecode wire-format version** (currently 3)
-into the hash means a change to the serialised code layout invalidates a
-stale-format blob even when the prelude source itself is unchanged.
+Staleness is detected by a hash covering every input that can invalidate a
+blob. `cargo xtask prelude-compile` stamps it into the blob's `source_hash`
+field and `build.rs` recomputes it; the recipe, the version constant and the
+staleness verdict all live in one file, `src/eval/stg/wire_format.rs`, which
+`build.rs` `include!`s (a build script cannot depend on its own crate). The
+three hashed inputs are:
+
+- **`lib/prelude.eu`** — the prelude bindings themselves.
+- **`src/eval/intrinsics.rs`** — the intrinsic catalogue. Its length fixes the
+  global slot numbering the blob bakes in as `Ref::G(INTRINSIC_COUNT + prelude
+  slot)`, so adding or removing an intrinsic shifts *every* prelude global's
+  slot. Hashing the catalogue makes that invalidation automatic (eu-3skeg);
+  before it did, a stale blob was silently accepted with an off-by-N slot map
+  and the binary returned wrong answers with no warning.
+- **`BYTECODE_WIRE_FORMAT_VERSION`** — the serialised code-stream layout, which
+  nothing on disk reveals. This constant is hand-bumped, and only when the
+  encoder's byte layout changes; intrinsic-table changes need no bump.
+
+A blob that fails the check is not used: `build.rs` emits a `cargo:warning`
+naming `cargo xtask prelude-compile` and sets `cfg(prelude_blob_stale)`, and
+the driver compiles the prelude from source instead.
 
 The blob is not a single artefact but a set of sections, each a snapshot or
 derived artefact of a specific compiler stage. `blob.rs`'s module
@@ -14351,8 +15540,8 @@ documentation is the authoritative anatomy; the load-bearing sections are:
 
 | Section | What it is | Consumer |
 |---|---|---|
-| `nodes` / `forms_pool` / `binding_entries` | Shared STG arena — compiled lambda forms for every prelude global | HeapSyn engine loader |
-| `bytecode` | Pre-encoded `BytecodeProgram` plus global forms | Bytecode engine loader |
+| `nodes` / `forms_pool` / `binding_entries` | STG arena — compiled lambda forms for every prelude global | Runtime global list (`rt.set_prelude_bindings`), consumed by the bytecode encoder |
+| `bytecode` | Pre-encoded `BytecodeProgram` plus global forms | Bytecode engine, straight off the blob (BV5) |
 | `name_to_slot` | Binding name → global slot index | STG compiler (`Ref::G` resolution) and loaders |
 | `operators` | Operator fixity/precedence extracted pre-`cook` | Seeds the cooker's operator distributor |
 | `desugared_unit_cores` | Each prelude-side unit's post-translate (desugared) core, exactly as `SourceLoader::translate` produced it | Eval-path merged type check |
@@ -14533,8 +15722,8 @@ The prelude is:
 | `src/core/desugar/` | AST to core | `desugarer.rs` |
 | `src/core/cook/` | Operator resolution | `shunt.rs`, `fixity.rs` |
 | `src/eval/stg/` | STG syntax, compiler, prelude blob | `syntax.rs`, `compiler.rs`, `blob.rs` |
-| `src/eval/machine/` | HeapSyn tree-walk engine | `vm.rs`, `cont.rs`, `env.rs` |
-| `src/eval/bytecode/` | Bytecode engine (BV1, default) | `machine.rs`, `encode.rs`, `predecode.rs` |
+| `src/eval/machine/` | Shared runtime infrastructure (env frames, intrinsic ABI, metrics, crash diagnostics) | `env.rs`, `intrinsic.rs`, `metrics.rs` |
+| `src/eval/bytecode/` | Bytecode engine (BV1, the sole engine since eu-oufc) | `machine.rs`, `encode.rs`, `predecode.rs` |
 | `src/eval/memory/` | Heap and GC | `heap.rs`, `collect.rs` |
 | `src/driver/` | CLI orchestration | `options.rs`, `eval.rs` |
 | `src/export/` | Output formats | `yaml.rs`, `json.rs` |
@@ -15137,6 +16326,20 @@ combined: sa set.union(sb) set.to-list sort-nums //=> [1, 2, 3, 4, 5, 6]
 diff: sa set.diff(sb) set.to-list sort-nums //=> [1, 2]
 ```
 
+## Project
+
+### What licence is eucalypt released under?
+
+Eucalypt is dual-licensed under the Apache License, Version 2.0 and the
+MIT License, at your option — the customary dual licence of the Rust
+ecosystem. The full texts are in
+[LICENSE-APACHE](https://github.com/curvelogic/eucalypt/blob/master/LICENSE-APACHE)
+and
+[LICENSE-MIT](https://github.com/curvelogic/eucalypt/blob/master/LICENSE-MIT).
+
+Unless you state otherwise, any contribution you submit for inclusion in
+the project is dual-licensed on the same terms.
+
 ---
 
 # Syntax Cheat Sheet
@@ -15357,6 +16560,14 @@ old-fn(x): x
 Deprecation warnings appear on stderr during evaluation and in LSP diagnostics.
 Under `eu check --strict`, deprecation warnings become errors.
 
+A declaration nested inside a namespace block is matched by the dotted path a
+caller writes, not by its bare name — deprecating `exec` inside `state` warns on
+`state.exec` and leaves both `io.exec` and any unrelated top-level `exec` alone.
+A reference only counts if it resolves to the declaration: a lambda parameter or
+a local block that merely shares the namespace's name never inherits its
+deprecation. The one case that does still match by name is a top-level block of
+your own sharing a deprecated library namespace's name.
+
 ## Function Application
 
 ```eu,notest
@@ -15488,14 +16699,14 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `foldl(f, init)` | Left fold |
 | `foldr(f, init)` | Right fold |
 | `sort-by(f)` | Sort by key function |
-| `take(n)` | First n elements |
-| `drop(n)` | Remove first n |
+| `take(n)` | First n elements (`[]` if n <= 0) |
+| `drop(n)` | Remove first n (list unchanged if n <= 0) |
 | `zip` | Pair elements from two lists |
 | `zip-with(f)` | Combine elements with function |
 | `concat` | Flatten nested lists one level (use `concat`, not `flatten` — does not exist) |
 | `reverse` | Reverse a list |
 | `count` | Number of elements |
-| `range(a, b)` | Integers from a to b-1 |
+| `range(a, b)` | Integers from a to b-1 (`[]` if b <= a) |
 | `nil?` | Is the list empty? |
 | `any(p?)` | Does any element match? |
 | `all(p?)` | Do all elements match? |
@@ -15625,6 +16836,25 @@ records to-list-of(each ∘ at(:score))         # [10, 20]
 records over(each ∘ at(:score), * 2)          # scores doubled
 [3, 1, 2] over(parts-of(each), sort-nums)     # [1, 2, 3]
 ```
+
+### Dicts (`dict` namespace)
+
+Persistent dictionaries ordered by key. Keys are numbers, strings, symbols or
+lists of those (e.g. `[x, y]` coordinates); values are arbitrary and lazy,
+and each is computed at most once.
+
+| Expression | Description |
+|---|---|
+| `pairs dict.of` / `pairs dict.from-list` | Dict from `[key, value]` pairs (aliases); equal keys keep the first key and the last value |
+| `dict.empty` / `d dict.empty?` | The empty dict / has no entries? |
+| `d dict.get(k)` | Value at `k`; an error if absent |
+| `d dict.get-or(k, default)` | Value at `k`, or `default` |
+| `d dict.assoc(k, v)` / `d dict.dissoc(k)` | New dict with `k` set / removed (O(log n)) |
+| `d dict.contains?(k)` / `dict.size(d)` | Holds `k`? / number of entries |
+| `d dict.to-list` | `[key, value]` pairs in key order |
+
+Keys order numbers < strings < symbols < lists; `1` and `1.0` are the same
+key. A dict cannot be rendered yet: convert it with `dict.to-list` first.
 
 ### Arrays (`arr` namespace)
 

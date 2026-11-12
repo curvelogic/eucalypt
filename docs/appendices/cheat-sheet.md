@@ -493,6 +493,25 @@ records over(each ∘ at(:score), * 2)          # scores doubled
 [3, 1, 2] over(parts-of(each), sort-nums)     # [1, 2, 3]
 ```
 
+### Dicts (`dict` namespace)
+
+Persistent dictionaries ordered by key. Keys are numbers, strings, symbols or
+lists of those (e.g. `[x, y]` coordinates); values are arbitrary and lazy,
+and each is computed at most once.
+
+| Expression | Description |
+|---|---|
+| `pairs dict.of` / `pairs dict.from-list` | Dict from `[key, value]` pairs (aliases); equal keys keep the first key and the last value |
+| `dict.empty` / `d dict.empty?` | The empty dict / has no entries? |
+| `d dict.get(k)` | Value at `k`; an error if absent |
+| `d dict.get-or(k, default)` | Value at `k`, or `default` |
+| `d dict.assoc(k, v)` / `d dict.dissoc(k)` | New dict with `k` set / removed (O(log n)) |
+| `d dict.contains?(k)` / `d dict.size` | Holds `k`? / number of entries |
+| `d dict.to-list` | `[key, value]` pairs in key order |
+
+Keys order numbers < strings < symbols < lists; `1` and `1.0` are the same
+key. A dict cannot be rendered yet: convert it with `dict.to-list` first.
+
 ### Arrays (`arr` namespace)
 
 | Function | Description |

@@ -358,6 +358,9 @@ impl StgIntrinsic for EmitNative {
                     &Primitive::ZonedDateTime(dt),
                 )?;
             }
+            memory::syntax::Native::Dict(_) => {
+                return Err(ExecutionError::DictNotRenderable(machine.annotation()));
+            }
             memory::syntax::Native::Prng(_) | memory::syntax::Native::Producer(_) => {
                 return Err(ExecutionError::NotScalar(machine.annotation()));
             }
@@ -420,6 +423,9 @@ impl StgIntrinsic for EmitTagNative {
                     &RenderMetadata::new(tag),
                     &Primitive::ZonedDateTime(dt),
                 )?;
+            }
+            memory::syntax::Native::Dict(_) => {
+                return Err(ExecutionError::DictNotRenderable(machine.annotation()));
             }
             memory::syntax::Native::Prng(_) | memory::syntax::Native::Producer(_) => {
                 return Err(ExecutionError::NotScalar(machine.annotation()));

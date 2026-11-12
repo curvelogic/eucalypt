@@ -13,6 +13,7 @@ pub mod compiler;
 pub mod constant;
 pub mod contract;
 pub mod debug;
+pub mod dict;
 pub mod embed;
 pub mod emit;
 pub mod encoding;
@@ -267,6 +268,16 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(typedata::TypeFromString));
     rt.add(Box::new(parallel::intrinsic::ParMap));
     rt.add(Box::new(force::SeqSpine));
+    rt.add(Box::new(force::SeqKey));
+    rt.add(Box::new(force::SeqDictPairs));
+    rt.add(Box::new(dict::DictOf));
+    rt.add(Box::new(dict::DictToList));
+    rt.add(Box::new(dict::DictGet));
+    rt.add(Box::new(dict::DictGetOr));
+    rt.add(Box::new(dict::DictAssoc));
+    rt.add(Box::new(dict::DictDissoc));
+    rt.add(Box::new(dict::DictContains));
+    rt.add(Box::new(dict::DictSize));
     rt.prepare(source_map);
     Box::new(rt)
 }

@@ -501,6 +501,10 @@ fn scan_const<'a>(
             // Push so the container scans (and evacuates) its heap storage.
             out.push(ScanPtr::from_non_null(scope, *ptr));
         }
+        Ref::V(Native::Dict(Some(ptr))) if marker.mark(*ptr) => {
+            // Push the root node so `DictNode::scan` traces the whole tree.
+            out.push(ScanPtr::from_non_null(scope, *ptr));
+        }
         Ref::V(Native::NdArray(ptr)) if marker.mark(*ptr) => {
             // Push so the container scans (and evacuates) its heap storage.
             out.push(ScanPtr::from_non_null(scope, *ptr));
@@ -523,6 +527,11 @@ fn update_const(r: &mut Ref, heap: &CollectorHeapView<'_>) {
             }
         }
         Ref::V(Native::Set(ptr)) => {
+            if let Some(new) = heap.forwarded_to(*ptr) {
+                *ptr = new;
+            }
+        }
+        Ref::V(Native::Dict(Some(ptr))) => {
             if let Some(new) = heap.forwarded_to(*ptr) {
                 *ptr = new;
             }
@@ -3202,6 +3211,7 @@ impl<'a> BytecodeMachine<'a> {
             program.apply1_template = d.apply1_template;
             program.apply2_template = d.apply2_template;
             program.producer_tail_template = d.producer_tail_template;
+            program.cell_template = d.cell_template;
             program.pap = d.pap.clone();
             d
         } else {
@@ -4983,6 +4993,102 @@ impl IntrinsicMachine for BcBifContext<'_, '_> {
             &InfoTagged::thunk(self.program.producer_tail_template),
             env,
         ))))
+    }
+
+    fn memo_cell(
+        &self,
+        view: MutatorHeapView<'_>,
+        value: AbiClosure,
+    ) -> Result<AbiClosure, ExecutionError> {
+        let AbiClosure::Byte(original) = value;
+        // An argument usually arrives as an `OP_ATOM` alias over the caller's
+        // frame. Storing the alias would keep that frame alive — and the
+        // frame can hold the previous version of the very dict being updated
+        // (`acc dict.assoc(k, v)` in a loop), so every version would be
+        // retained. Look through aliases to the value they name.
+        let target = self.follow_aliases(view, original.clone())?;
+        let c = match &target {
+            BcValue::Native(_) => return Ok(AbiClosure::Byte(target)),
+            BcValue::Closure(c) => *c,
+        };
+        let target = AbiClosure::Byte(target);
+        if let Some(tag) = self.data_tag(view, &target) {
+            // A boxed scalar whose payload is evaluated is rebuilt over a
+            // fresh frame, for the same reason: the box closes over the frame
+            // it was bound in.
+            let boxed = [
+                DataConstructor::BoxedNumber,
+                DataConstructor::BoxedString,
+                DataConstructor::BoxedSymbol,
+                DataConstructor::BoxedZdt,
+            ]
+            .iter()
+            .any(|dc| dc.tag() == tag);
+            if boxed {
+                if let Some(AbiClosure::Byte(BcValue::Native(n))) =
+                    self.data_field(view, &target, 0)
+                {
+                    return self.data_value(view, tag, &[AbiClosure::Byte(BcValue::Native(n))]);
+                }
+            }
+            // Any other data constructor is in WHNF: store it.
+            return Ok(target);
+        }
+        if (c.arity() > 0 && !c.update()) || c.code() == self.program.cell_template {
+            // A lambda or partial application, or an existing cell.
+            return Ok(target);
+        }
+        // Not yet evaluated. Cell the original value: entering an alias
+        // enters (and memoises) the slot it names, so the value is shared
+        // with any other reader of that slot; the cell then memoises the
+        // result itself, dropping the alias once evaluated. The update flag
+        // (keeping code, env and annotation) makes entering the cell's slot
+        // memoise even a non-updatable thunk.
+        let BcValue::Closure(oc) = original else {
+            return Ok(target);
+        };
+        let thunk = BcValue::Closure(BcClosure::close(
+            &InfoTagged::thunk_annotated(oc.code(), oc.annotation()),
+            oc.env(),
+        ));
+        let frame = view.from_value(thunk, self.state.root_env, self.state.annotation)?;
+        Ok(AbiClosure::Byte(BcValue::Closure(BcClosure::new(
+            self.program.cell_template,
+            frame,
+        ))))
+    }
+}
+
+impl BcBifContext<'_, '_> {
+    /// Follow `OP_ATOM` alias closures to the value they name (at most a
+    /// bounded number of hops; a longer chain is returned where it stops).
+    fn follow_aliases(
+        &self,
+        view: MutatorHeapView<'_>,
+        mut value: BcValue,
+    ) -> Result<BcValue, ExecutionError> {
+        for _ in 0..64 {
+            let BcValue::Closure(c) = &value else {
+                break;
+            };
+            if c.update() || c.arity() > 0 {
+                break;
+            }
+            let code = self.program.code.as_slice();
+            let mut pc = peek_pc(self.decoded, c);
+            if Op::from_u8(read_u8(code, &mut pc)) != Some(Op::Atom) {
+                break;
+            }
+            let dref = read_ref(code, &mut pc)?;
+            value = resolve_ref(
+                view,
+                &self.state.constants,
+                c.env(),
+                self.state.globals,
+                dref,
+            )?;
+        }
+        Ok(value)
     }
 }
 

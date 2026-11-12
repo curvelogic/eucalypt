@@ -48,6 +48,7 @@
   - [Combinators](reference/prelude/combinators.md)
   - [Calendar](reference/prelude/calendar.md)
   - [Sets](reference/prelude/sets.md)
+  - [Dicts](reference/prelude/dicts.md)
   - [Random Numbers](reference/prelude/random.md)
   - [Metadata](reference/prelude/metadata.md)
   - [IO](reference/prelude/io.md)

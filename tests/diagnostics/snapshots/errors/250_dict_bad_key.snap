@@ -1,0 +1,54 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/250_dict_bad_key
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/250_dict_bad_key.eu
+prelude-modes: divergent
+
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/250_dict_bad_key.eu:2:9
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid dict key: a block cannot be a key
+  ┌─ tests/harness/errors/250_dict_bad_key.eu:2:9
+  │
+2 │ result: dict.of[[{a: 1}, 2]] dict.size
+  │         ^^^^^^^^^^^^^^^^^^^^
+  │
+  = dict keys are numbers, strings, symbols, or lists of those (nested at most 32 deep)
+  = while evaluating (outermost first):
+    - result at 250_dict_bad_key.eu:2:30
+
+=== --source-prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/250_dict_bad_key.eu:2:9
+help-lines: 0
+note-lines: 1
+secondary-labels: 0
+trace-frames: 1
+trace-user-frames: 1
+trace-prelude-frames: 0
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: invalid dict key: a block cannot be a key
+  ┌─ tests/harness/errors/250_dict_bad_key.eu:2:9
+  │
+2 │ result: dict.of[[{a: 1}, 2]] dict.size
+  │         ^^^^
+  │
+  = dict keys are numbers, strings, symbols, or lists of those (nested at most 32 deep)
+  = while evaluating (outermost first):
+    - result at 250_dict_bad_key.eu:2:30

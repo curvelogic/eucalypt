@@ -1081,6 +1081,20 @@ pub enum ExecutionError {
     ArrayNegativeIndex(Smid, f64),
     #[error("list index out of bounds: index {1} is beyond the end of the list")]
     ListIndexOutOfBounds(Smid, usize),
+    /// `dict.get` of a key the dict does not hold; `.1` renders the key.
+    #[error("key {1} not found in dict")]
+    DictKeyNotFound(Smid, String),
+    /// A value that cannot be a dict key; `.1` says what it is and why.
+    #[error("invalid dict key: {1}")]
+    BadDictKey(Smid, String),
+    /// A `dict.of` element that is not a two-element `[key, value]` list;
+    /// `.1` describes it.
+    #[error("invalid dict entry: expected a [key, value] pair, found {1}")]
+    BadDictPair(Smid, String),
+    /// A dict reached an output format (dict rendering is not implemented
+    /// yet; eu-oaz72.21 PR 4).
+    #[error("cannot render a dict")]
+    DictNotRenderable(Smid),
     #[error("head requires a list, found {1}")]
     HeadOfNonList(Smid, String),
     #[error("tail requires a list, found {1}")]
@@ -1167,6 +1181,10 @@ impl HasSmid for ExecutionError {
             ExecutionError::IoTimeout(s, _) => *s,
             ExecutionError::IoCommandError(s, _) => *s,
             ExecutionError::ListIndexOutOfBounds(s, _) => *s,
+            ExecutionError::DictKeyNotFound(s, _) => *s,
+            ExecutionError::BadDictKey(s, _) => *s,
+            ExecutionError::BadDictPair(s, _) => *s,
+            ExecutionError::DictNotRenderable(s) => *s,
             ExecutionError::HeadOfNonList(s, _) => *s,
             ExecutionError::TailOfNonList(s, _) => *s,
             ExecutionError::HeadOfEmptyList(s) => *s,
@@ -1538,6 +1556,27 @@ impl ExecutionError {
                 } else {
                     vec![]
                 }
+            }
+            ExecutionError::DictKeyNotFound(_, _) => {
+                vec![
+                    "use 'dict.get-or(k, default, d)' when the key may be absent, or test \
+                     with 'dict.contains?(k, d)' first"
+                        .to_string(),
+                ]
+            }
+            ExecutionError::BadDictKey(_, _) => {
+                vec![
+                    "dict keys are numbers, strings, symbols, or lists of those (nested at \
+                     most 32 deep)"
+                        .to_string(),
+                ]
+            }
+            ExecutionError::DictNotRenderable(_) => {
+                vec![
+                    "convert the dict to a list of [key, value] pairs with 'dict.to-list' \
+                     before rendering it"
+                        .to_string(),
+                ]
             }
             ExecutionError::ListIndexOutOfBounds(_, _) => {
                 vec![
