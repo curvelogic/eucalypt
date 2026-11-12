@@ -831,6 +831,27 @@ v: [10, 20, 30] vec.of           # O(1) indexed access (alias: vec.from-list)
 v vec.nth(1)                     # 20
 ```
 
+### 3.2b Dicts
+
+A dict is a persistent dictionary ordered by key, with O(log n) `get`,
+`assoc` and `dissoc`. Keys are numbers, strings, symbols, or lists of those
+(nested at most 32 deep); `1` and `1.0` are the same key. Values are lazy
+and computed at most once, so a dict can refer to itself as a memo table.
+Collection argument last, as for sets.
+
+```
+d: [[:b, 2], [:a, 1]] dict.of    # alias: dict.from-list
+d dict.get(:a)                   # 1 (an error if absent)
+d dict.get-or(:z, 0)             # 0
+d dict.assoc([3, 4], :pt)        # list keys, e.g. coordinates
+d dict.dissoc(:b) dict.size      # 1
+d dict.to-list                   # [[:a, 1], [:b, 2]] — key order
+```
+
+Order across types: numbers < strings < symbols (by name) < lists
+(lexicographic). `dict.of` keeps the first of equal keys and the last value.
+A dict cannot be rendered yet; render `dict.to-list` instead.
+
 ### 3.3 String Functions (str namespace)
 
 #### `str.split-on(re, s)` — split string on regex

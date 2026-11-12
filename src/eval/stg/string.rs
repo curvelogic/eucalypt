@@ -126,6 +126,7 @@ impl StgIntrinsic for Str {
             Native::Num(n) => format!("{n}"),
             Native::Zdt(d) => format!("{d}"),
             Native::Set(_) => "<set>".to_string(),
+            d @ Native::Dict(_) => d.to_string(),
             Native::NdArray(_) => "<array>".to_string(),
             Native::Vec(_) => "<vec>".to_string(),
             Native::Prng(_) => "<prng>".to_string(),

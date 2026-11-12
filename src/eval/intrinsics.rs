@@ -1062,6 +1062,56 @@ lazy_static! {
             ty: function(vec![list(), list()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 198
+            name: "seqKey",
+            ty: function(vec![any(), any()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 199
+            name: "seqDictPairs",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 200
+            name: "DICT.OF",
+            ty: function(vec![list(), dict_type()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 201
+            name: "DICT.TO_LIST",
+            ty: function(vec![dict_type(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 202
+            name: "DICT.GET",
+            ty: function(vec![any(), dict_type(), any()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 203
+            name: "DICT.GET_OR",
+            ty: function(vec![any(), any(), dict_type(), any()]).unwrap(),
+            strict: vec![0, 2],
+    },
+    Intrinsic { // 204
+            name: "DICT.ASSOC",
+            ty: function(vec![any(), any(), dict_type(), dict_type()]).unwrap(),
+            strict: vec![0, 2],
+    },
+    Intrinsic { // 205
+            name: "DICT.DISSOC",
+            ty: function(vec![any(), dict_type(), dict_type()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 206
+            name: "DICT.CONTAINS",
+            ty: function(vec![any(), dict_type(), bool_()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 207
+            name: "DICT.SIZE",
+            ty: function(vec![dict_type(), num()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 

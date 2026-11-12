@@ -1,0 +1,237 @@
+{
+  title: "250 dict: persistent ordered dictionaries"
+  doc: "Dict construction, lookup, persistent update, key equality and order,
+        laziness and memoisation of values (eu-oaz72.21; design in
+        docs/superpowers/plans/2026-11-12-dict-design.md). Each target
+        computes `ok` from its checks. The tick and peak-heap gates in
+        `tests/harness_test.rs` run the `fold`, `*-shared`, `merged-*` and
+        `assoc-chain` targets."
+}
+
+` "the target computes the right value"
+passes(context): (context.result.ok) then(:PASS, :FAIL)
+
+#
+# API, keys and laziness
+#
+
+` { target: :api
+    verify: [:passes] }
+api: {
+  ` :suppress
+  d: dict.of[[3, "c"], [1, "a"], [2, "b"]]
+
+  ` "construction, size and sorted iteration"
+  construction: [
+    (d dict.size) = 3,
+    (d dict.to-list) = [[1, "a"], [2, "b"], [3, "c"]],
+    (dict.from-list[[2, :b], [1, :a]] dict.to-list) = [[1, :a], [2, :b]],
+    (dict.empty dict.size) = 0,
+    dict.empty dict.empty?,
+    not(d dict.empty?),
+    dict.of[] dict.empty?,
+    (dict.empty dict.to-list) = []
+  ]
+
+  ` "lookup"
+  lookup: [
+    (d dict.get(2)) = "b",
+    (d dict.get-or(1, "z")) = "a",
+    (d dict.get-or(9, "z")) = "z",
+    d dict.contains?(3),
+    not(d dict.contains?(4)),
+    not(dict.empty dict.contains?(1))
+  ]
+
+  ` :suppress
+  d2: d dict.assoc(4, "d") dict.assoc(2, "B") dict.dissoc(1)
+
+  ` "updates are persistent: the original is unchanged"
+  updates: [
+    (d2 dict.to-list) = [[2, "B"], [3, "c"], [4, "d"]],
+    (d dict.to-list) = [[1, "a"], [2, "b"], [3, "c"]],
+    (d dict.dissoc(99) dict.to-list) = (d dict.to-list),
+    d dict.dissoc(1) dict.dissoc(2) dict.dissoc(3) dict.empty?
+  ]
+
+  ` :suppress
+  dup: dict.of[[1, :first], [2, :two], [1.0, :last]]
+
+  ` "equal keys in `dict.of` keep the first key and the last value; `assoc` keeps the stored key"
+  equal-keys: [
+    (dup dict.size) = 2,
+    (dup dict.get(1)) = :last,
+    (dup dict.to-list head first) = 1,
+    (dup dict.assoc(1.0, :x) dict.to-list head) = [1, :x]
+  ]
+
+  ` :suppress
+  big: dict.of[[9007199254740993, :odd], [9007199254740992, :even]]
+
+  ` "numbers are exact: `1` = `1.0` and `-0.0` = `0`, but integers above 2^53 stay distinct"
+  numbers: [
+    dict.of[[1, :a]] dict.contains?(1.0),
+    dict.of[[0, :a]] dict.contains?(-0.0),
+    (big dict.size) = 2,
+    (big dict.get(9007199254740993)) = :odd
+  ]
+
+  ` :suppress
+  mixed: dict.of[[[1, 0], 8], [:zed, 6], ["b", 4], [[1], 7], [:abc, 5], [10, 2], [[2], 9], ["a", 3], [-1.5, 1]]
+
+  ` "numbers < strings < symbols (by name) < lists (lexicographic, a prefix first)"
+  order: [
+    (mixed dict.to-list map(second)) = [1, 2, 3, 4, 5, 6, 7, 8, 9],
+    (mixed dict.to-list map(first)) = [-1.5, 10, "a", "b", :abc, :zed, [1], [1, 0], [2]]
+  ]
+
+  ` "the cells of row `y` of a 5 by 5 grid, keyed by `[x, y]`"
+  row(y): range(0, 5) map({x: •}.[[x, y], :cell])
+
+  ` :suppress
+  grid: range(0, 5) mapcat(row) dict.of
+
+  ` "a computed part of a string key"
+  suffix: 1 + 1
+
+  ` :suppress
+  nested: dict.of[[[[1, "x"], :s], :deep]]
+
+  ` "list keys (coordinates), nested list keys, and computed keys forced before use"
+  list-keys: [
+    (grid dict.size) = 25,
+    (grid dict.get[1 + 2, 4]) = :cell,
+    not(grid dict.contains?[5, 0]),
+    (nested dict.get[[1, "x"], :s]) = :deep,
+    (dict.of[[[], :nil]] dict.get[]) = :nil,
+    (dict.of[[2 + 3, :five]] dict.get(10 / 2)) = :five,
+    (dict.of[["a{suffix}", 1]] dict.get("a2")) = 1
+  ]
+
+  ` :suppress
+  lazy: dict.of[[1, panic("never")], [2, 5]]
+
+  ` :suppress
+  fns: dict.of[[:inc, inc], [:dbl, * 2]]
+
+  ` "the Fibonacci entry for `n`, reading earlier entries of `memo` itself"
+  fib-entry(n): [n, (n < 2) then(n, (memo dict.get(n - 1)) + (memo dict.get(n - 2)))]
+
+  ` :suppress
+  memo: range(0, 91) map(fib-entry) dict.of
+
+  ` "values are lazy and arbitrary, and may refer to the dict itself"
+  values: [
+    (lazy dict.get(2)) = 5,
+    (lazy dict.size) = 2,
+    (lazy dict.assoc(3, panic("no")) dict.get(2)) = 5,
+    (d dict.get-or(1, panic("no"))) = "a",
+    ((fns dict.get(:dbl))(21)) = 42,
+    (dict.of[[:inner, d]] dict.get(:inner) dict.get(3)) = "c",
+    (memo dict.get(90)) = 2880067194370816120
+  ]
+
+  ` "the `i`th step of a bulk build by `assoc`"
+  bulk-step(acc, i): acc dict.assoc(i * 7 % 10000, i)
+
+  ` "whether `bulk` maps the key for `k` to `k`"
+  bulk-hit?(k): (bulk dict.get(k * 7 % 10000)) = k
+
+  ` :suppress
+  bulk: range(0, 10000) foldl(bulk-step, dict.empty)
+
+  ` "1e4 entries built by `assoc`, all looked up; `dict.of` agrees with folding `assoc`"
+  bulk-checks: [
+    (bulk dict.size) = 10000,
+    range(0, 10000) all(bulk-hit?),
+    (bulk dict.to-list map(first)) = range(0, 10000),
+    (dict.of[[2, :b], [1, :a], [2, :c]] dict.to-list) = (dict.empty dict.assoc(2, :b) dict.assoc(1, :a) dict.assoc(2, :c) dict.to-list)
+  ]
+
+  ` "`str.of` and `=` (reference identity, as for sets)"
+  identity: [(d str.of) = "<dict:3>", d = d]
+
+  ok: [construction, lookup, updates, equal-keys, numbers, order, list-keys, values, bulk-checks, identity] concat all-true?
+}
+
+#
+# Memoisation: a lazy value is computed at most once, however many dict
+# versions share it. `fold` is the cost of one evaluation; each `*-shared`
+# target reads a value three times and must cost about the same.
+#
+
+` { target: :fold
+    verify: [:passes] }
+fold: {
+  ok: (range(0, 20000) foldl(+, 0)) = 199990000
+}
+
+` { target: :of-shared
+    verify: [:passes] }
+of-shared: {
+  ` :suppress
+  d: dict.of[[1, range(0, 20000) foldl(+, 0)], [2, 0]]
+  y: [d dict.get(1), d dict.assoc(3, 0) dict.get(1), d dict.dissoc(2) dict.get-or(1, 0)]
+  ok: y = [199990000, 199990000, 199990000]
+}
+
+` { target: :assoc-shared
+    verify: [:passes] }
+assoc-shared: {
+  ` :suppress
+  d: dict.empty dict.assoc(:k, range(0, 20000) foldl(+, 0))
+  y: [d dict.get(:k), d dict.get(:k), d dict.assoc(:j, 1) dict.get(:k)]
+  ok: y = [199990000, 199990000, 199990000]
+}
+
+` { target: :to-list-shared
+    verify: [:passes] }
+to-list-shared: {
+  ` :suppress
+  d: dict.of[[1, range(0, 20000) foldl(+, 0)]]
+  y: [d dict.to-list head second, d dict.get(1), d dict.to-list head second]
+  ok: y = [199990000, 199990000, 199990000]
+}
+
+# A non-updatable thunk: the block merge intrinsic builds each combined
+# value as a bare `f(a, b)` application that does not memoise itself, so
+# only the dict's value cell can stop three reads recomputing it.
+
+` "an expensive combination of two merged values"
+combine(a, b): range(0, 20000) foldl(+, a + b)
+
+` { target: :merged-once
+    verify: [:passes] }
+merged-once: {
+  b: __MERGEWITH({k: 1}, {k: 2}, combine)
+  ok: [b.k] = [199990003]
+}
+
+` { target: :merged-shared
+    verify: [:passes] }
+merged-shared: {
+  b: __MERGEWITH({k: 1}, {k: 2}, combine)
+  ` :suppress
+  d: b elements dict.of
+  y: [d dict.get(:k), d dict.get(:k), d dict.get-or(:k, 0)]
+  ok: y = [199990003, 199990003, 199990003]
+}
+
+#
+# Retention: each version of a dict threaded through a loop must become
+# garbage once the next is built. The gate bounds `assoc-chain`'s peak heap.
+#
+
+` "the number of steps `chain` takes"
+chain-n: 50000
+
+` "thread a dict through `chain-n` steps; the condition forces it at each step"
+chain(i, acc): (i = chain-n ∨ (acc dict.size) < 0) then(acc, chain(i + 1, acc dict.assoc(i % 1000, 0) dict.assoc(:last, i)))
+
+` { target: :assoc-chain
+    verify: [:passes] }
+assoc-chain: {
+  ` :suppress
+  d: chain(0, dict.empty)
+  ok: (d dict.size) = 1001 ∧ (d dict.get(:last)) = 49999
+}

@@ -502,6 +502,7 @@ struct Fixtures {
     apply1_template: CodeRef,
     apply2_template: CodeRef,
     producer_tail_template: CodeRef,
+    cell_template: CodeRef,
     global_forms: Vec<GlobalForm>,
 }
 
@@ -535,6 +536,12 @@ fn emit_fixtures_and_globals(enc: &mut Encoder, globals: &[LambdaForm]) -> Fixtu
         crate::eval::intrinsics::index("PRODUCER_NEXT").expect("PRODUCER_NEXT intrinsic") as u8;
     let producer_tail_template =
         enc.encode_node(&dsl::app_bif(producer_next_index, vec![dsl::lref(0)]));
+    // `cell_template`: `Atom(L0)` — a dict value cell (eu-oaz72.21). A lazy
+    // dict value lives in slot 0 of a one-slot env frame with its update
+    // flag set; the node stores `BcClosure(cell_template, frame)`, so entering
+    // it black-holes the slot and pushes `Update`, memoising the value for
+    // every dict version that shares the cell.
+    let cell_template = enc.encode_node(&dsl::local(0));
 
     let global_forms: Vec<GlobalForm> = globals
         .iter()
@@ -569,6 +576,7 @@ fn emit_fixtures_and_globals(enc: &mut Encoder, globals: &[LambdaForm]) -> Fixtu
         apply1_template,
         apply2_template,
         producer_tail_template,
+        cell_template,
         global_forms,
     }
 }
@@ -587,6 +595,7 @@ fn build_program(enc: Encoder, f: &Fixtures) -> BytecodeProgram {
         apply1_template: f.apply1_template,
         apply2_template: f.apply2_template,
         producer_tail_template: f.producer_tail_template,
+        cell_template: f.cell_template,
     }
 }
 
@@ -679,6 +688,7 @@ pub fn encode_root_onto(base: &BytecodeProgram, root: &Rc<StgSyn>) -> (BytecodeP
         apply1_template: base.apply1_template,
         apply2_template: base.apply2_template,
         producer_tail_template: base.producer_tail_template,
+        cell_template: base.cell_template,
     };
     (program, root_off)
 }
@@ -732,6 +742,7 @@ pub fn encode_overrides_and_root(
         apply1_template: base.apply1_template,
         apply2_template: base.apply2_template,
         producer_tail_template: base.producer_tail_template,
+        cell_template: base.cell_template,
     };
     (program, root_off)
 }

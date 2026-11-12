@@ -1,0 +1,6 @@
+` { doc: "a dict whose value depends on itself"
+    export: :suppress }
+d: dict.of[[1, (d dict.get(1)) + 1]]
+
+` "the self-dependent value is reported as a cycle, because its cell black-holes while it is computed (eu-oaz72.21)."
+result: d dict.get(1)
