@@ -4,6 +4,8 @@
 //!
 //! - `cargo xtask prelude-compile` — compile `lib/prelude.eu` and write
 //!   the pre-compiled prelude blob to `lib/prelude.blob`.
+//! - `cargo xtask highlight-html FILE.eu...` — render eucalypt source to a
+//!   standalone highlighted HTML page (see `highlight_html.rs`).
 //!
 //! ## How the blob is generated
 //!
@@ -53,6 +55,7 @@ use eucalypt::{
 
 mod diag_snapshot;
 mod engine_ab;
+mod highlight_html;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -60,6 +63,7 @@ fn main() -> Result<()> {
         Some("prelude-compile") => cmd_prelude_compile(),
         Some("engine-ab") => engine_ab::run(&mut args),
         Some("diag-snapshot") => diag_snapshot::run(&mut args),
+        Some("highlight-html") => highlight_html::run(&mut args),
         Some(cmd) => bail!("unknown xtask command: {cmd}"),
         None => {
             eprintln!("Usage: cargo xtask <command>");
@@ -70,6 +74,7 @@ fn main() -> Result<()> {
             eprintln!(
                 "  diag-snapshot     Golden diagnostic snapshots (--bless/--capture/--compare)"
             );
+            eprintln!("  highlight-html    Render .eu files to highlighted HTML (tree-sitter)");
             std::process::exit(1);
         }
     }

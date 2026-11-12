@@ -31,6 +31,15 @@ test: {
 Several test targets can be embedded in one file. Each is run as a
 separate test.
 
+The tester runs a file's `test-` and `bench-` targets, its `main`
+target, and any target that names validators with `verify`. Any other
+target is not run. So that its checks are not skipped silently,
+`eu test` fails a file that declares such a target when the target's
+body binds `RESULT` or uses an inline assertion (`//=`, `//=>`, `//!`,
+`//=?`, `//=?>`): name it `test-…` or give it `verify`. The check reads
+the target's own body, so checks reached only through a reference to
+another declaration are not seen.
+
 ## How the default verdict is computed
 
 Each test target is rendered to output, and that output is parsed back

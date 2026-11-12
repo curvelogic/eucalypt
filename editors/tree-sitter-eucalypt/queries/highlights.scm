@@ -172,6 +172,19 @@
     "dbg"
     "eu" "io" "cal" "iosm"))
 
+; Namespaced prelude functions (`ns.member`), matched as a whole so that a
+; bare `set` (e.g. `arr.set` or a user name) is not styled as a keyword.
+; Every capture here is a highlight name: an `@_` capture on a node would
+; claim it and leave it unstyled.
+((soup
+  (name (identifier) @keyword) .
+  (operator) @operator .
+  [(name (identifier) @keyword)
+   (application (name (identifier) @keyword))
+   (list_application (name (identifier) @keyword))])
+  (#eq? @operator ".")
+  (#any-of? @keyword "set" "vec" "of" "from-list"))
+
 ; Metadata
 (metadata
   "`" @attribute)
