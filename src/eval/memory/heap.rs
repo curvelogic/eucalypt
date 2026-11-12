@@ -400,6 +400,10 @@ pub struct HeapState {
     /// [`HeapState::mark_region_in_block`]; entries are `Weak`, so an entry
     /// for a dropped block fails to upgrade and falls back to the search.
     line_map_index: HashMap<usize, Weak<RefCell<LineMap>>, BuildBlockBaseHasher>,
+    /// Line marks that found no block for their pointer: each one leaves
+    /// a live object's lines unprotected from lazy sweep. Large objects
+    /// once arrived here on every mark (eu-y6fx); tests assert it stays 0.
+    mark_misses: usize,
 }
 
 /// Hasher for block base addresses (multiples of `BLOCK_SIZE_BYTES`): a
@@ -481,6 +485,7 @@ impl HeapState {
             filled_evacuation_blocks: Vec::new(),
             lines_since_gc: 0,
             line_map_index: HashMap::default(),
+            mark_misses: 0,
         }
     }
 
@@ -621,8 +626,13 @@ impl HeapState {
         let mut best_index: Option<usize> = None;
         let mut best_waste: f64 = f64::MAX;
 
+        // Reuse a block only if at most half of it would be wasted: a
+        // recycled block is held outside the heap limit's accounting.
+        const MAX_WASTE_PERCENT: f64 = 50.0;
         for (index, lob) in self.recycled_lobs.iter().enumerate() {
-            if lob.can_fit(required_size) {
+            if lob.can_fit(required_size)
+                && lob.waste_percentage(required_size) <= MAX_WASTE_PERCENT
+            {
                 let waste = lob.waste_percentage(required_size);
                 if waste < best_waste {
                     best_waste = waste;
@@ -702,6 +712,12 @@ impl HeapState {
     /// (eu-oaz72.55): without this the index only grows.
     pub fn prune_line_map_index(&mut self) {
         self.line_map_index.retain(|_, map| map.strong_count() > 0);
+    }
+
+    /// Line marks that found no block for their pointer (see
+    /// `mark_misses`).
+    pub fn mark_misses(&self) -> usize {
+        self.mark_misses
     }
 
     /// Number of entries in the line-map index (for tests).
@@ -867,6 +883,7 @@ impl HeapState {
         }
 
         // No block found for this pointer
+        self.mark_misses += 1;
         if super::gc_debug::poison_enabled() || super::gc_debug::verify_enabled() {
             eprintln!(
                 "GC BUG: mark_line_in_block({:p}) could not find block with base {base:#x}",
@@ -945,6 +962,7 @@ impl HeapState {
 
         // No block found — this means a live object's lines won't be marked,
         // causing lazy sweep to reclaim live data.
+        self.mark_misses += 1;
         if super::gc_debug::poison_enabled() || super::gc_debug::verify_enabled() {
             eprintln!(
                 "GC BUG: mark_region_in_block({:p}, {bytes}) could not find block with base {base:#x}\n\
@@ -2999,11 +3017,11 @@ impl Heap {
         // Mark from the header start, covering header + payload, so that
         // all lines spanned by the full allocation are protected from
         // lazy sweep.
-        // SAFETY: header is at ptr - size_of::<AllocHeader>(), always
-        // within the same block as ptr.
         if Self::is_large_allocation(total_size) {
             return;
         }
+        // SAFETY: header is at ptr - size_of::<AllocHeader>(), always
+        // within the same block as ptr.
         let header_ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr().sub(header_size)) };
         heap_state.mark_region_in_block(header_ptr, total_size);
     }
@@ -3015,8 +3033,15 @@ impl Heap {
     /// block's liveness, read by [`Heap::sweep_large_objects`]. Passing it
     /// to `mark_region_in_block` finds no block (eu-y6fx) after searching
     /// every block list.
-    fn is_large_allocation(total_size: usize) -> bool {
+    pub(crate) fn is_large_allocation(total_size: usize) -> bool {
         SizeClass::for_size(Self::alloc_size_of(total_size)) == SizeClass::Large
+    }
+
+    /// Line marks, over this heap's life, that found no block for their
+    /// pointer. Always 0 in a correct collector (eu-y6fx).
+    pub fn mark_misses(&self) -> usize {
+        // SAFETY: Read-only access to heap state. Single-threaded.
+        unsafe { (*self.state.get()).mark_misses() }
     }
 
     /// Free large objects left unmarked by the mark phase just completed
@@ -3054,12 +3079,12 @@ impl Heap {
         let header_size = size_of::<AllocHeader>();
         let total_size = header_size + size_of::<T>();
 
-        // SAFETY: header_ptr is always within the same block as ptr
-        // because allocations never span blocks. The header is written
-        // at ptr - size_of::<AllocHeader>() during allocation.
         if Self::is_large_allocation(total_size) {
             return;
         }
+        // SAFETY: header_ptr is always within the same block as ptr
+        // because allocations never span blocks. The header is written
+        // at ptr - size_of::<AllocHeader>() during allocation.
         let header_ptr =
             unsafe { NonNull::new_unchecked((ptr.as_ptr() as *mut u8).sub(header_size)) };
         heap_state.mark_region_in_block(header_ptr, total_size);

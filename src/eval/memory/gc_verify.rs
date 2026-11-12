@@ -57,7 +57,7 @@ pub(crate) fn verify_marked_object<T>(heap: &Heap, obj: NonNull<T>) {
 
     // A large object lives alone at the start of a large object block
     // and has no line map: its header mark is its liveness (eu-oaz72.55).
-    if Heap::alloc_size_of(header_size + length) >= BLOCK_SIZE_BYTES {
+    if Heap::is_large_allocation(header_size + length) {
         assert!(
             heap_state
                 .all_lobs()

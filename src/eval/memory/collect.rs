@@ -957,6 +957,10 @@ pub mod tests {
             assert_large_many_intact(roots[0], seed, N);
         }
 
+        // Marking a large object never goes looking for a bump block's
+        // line map (eu-y6fx): every line mark found its block.
+        assert_eq!(heap.mark_misses(), 0, "a line mark found no block");
+
         // A collection with no roots frees the last one too.
         roots.clear();
         collect(&mut roots, &mut heap, &mut clock, false);
@@ -999,6 +1003,11 @@ pub mod tests {
                 other => panic!("expected Ptr, got {other:?}"),
             }
         }
+        assert_eq!(
+            heap.mark_misses(),
+            0,
+            "a line mark found no block (eu-y6fx)"
+        );
     }
 
     #[test]

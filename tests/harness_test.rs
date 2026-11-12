@@ -3082,6 +3082,14 @@ pub fn test_234_oaz72_5_native_storage_gc() {
     run_test(&opts("234_oaz72_5_native_storage_gc.eu"));
 }
 
+/// eu-oaz72.55 — large-object churn computes correctly and a large object
+/// live across the churn survives; `tests/large_object_churn_test.rs`
+/// gates that the dead ones are freed.
+#[test]
+pub fn test_238_oaz72_55_large_object_churn() {
+    run_test(&opts("238_oaz72_55_large_object_churn.eu"));
+}
+
 /// eu-oaz72.35 — `take(n)` with n <= 0 is [] (it used to run past zero on
 /// a negative count), so `range(b, e)` with e <= b is [] instead of hanging.
 #[test]
