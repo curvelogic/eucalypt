@@ -1,0 +1,29 @@
+# eucalypt diagnostic snapshot v1
+fixture: errors/235_oaz72_49_window_size_zero
+argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/235_oaz72_49_window_size_zero.eu
+prelude-modes: identical
+
+=== both prelude modes ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/235_oaz72_49_window_size_zero.eu:4:27
+help-lines: 0
+note-lines: 0
+secondary-labels: 0
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: window size 0 must be positive
+  ┌─ tests/harness/errors/235_oaz72_49_window_size_zero.eu:4:27
+  │
+4 │ x: [1, 2, 3] window(0, 1) take(3)
+  │                           ^^^^^^^
+  │
+  = while evaluating (outermost first):
+    - x at 235_oaz72_49_window_size_zero.eu:4:27
+    - in 'window' (prelude)
