@@ -80,10 +80,6 @@ test: {
   RESULT: part-1 then(:PASS, :FAIL)
 }
 
-` { target: :part-1
-    import: "input=inputs/day10.txt" }
-part-1: solve(input)
-
 ` "Parse machine for Part 2: [joltage-targets, button-bit-vectors]."
 parse-machine2(line): {
   joltage: line str.split-on(" ") last str.matches-of("[0-9]+") map(num)
@@ -377,7 +373,3 @@ test2: {
   part-2: solve2(ex1) //= 33
   RESULT: part-2 then(:PASS, :FAIL)
 }
-
-` { target: :part-2
-    import: "input=inputs/day10.txt" }
-part-2: solve2(input)

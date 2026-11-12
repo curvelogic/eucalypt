@@ -1,0 +1,4 @@
+{ import: ["../day12.eu", "input=../inputs/day12.txt"] }
+
+` { target: :part-1 }
+part-1: solve-all(input)
