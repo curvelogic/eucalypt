@@ -3109,6 +3109,11 @@ pub fn test_236_oaz72_36_constructor_field_sharing() {
     run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));
 }
 
+#[test]
+pub fn test_238_oaz72_32_set_vec_of() {
+    run_test(&opts("238_oaz72_32_set_vec_of.eu"));
+}
+
 /// Ticks reported by `-S` for one target of a harness file, run with demand
 /// analysis suppressed.
 fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {

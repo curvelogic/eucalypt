@@ -35,7 +35,7 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/141_calzdt_year_overflow` | user tests/harness/errors/141_calzdt_year_overflow.eu:3:9 | user tests/harness/errors/141_calzdt_year_overflow.eu:3:9 | 0 (0 user) | 0 (0 user) |
 | `errors/150_bad_timezone_source_loc` | user tests/harness/errors/150_bad_timezone_source_loc.eu:2:9 | user tests/harness/errors/150_bad_timezone_source_loc.eu:2:9 | 0 (0 user) | 0 (0 user) |
 | `errors/151_set_add_non_set` | user tests/harness/errors/151_set_add_non_set.eu:1:17 | user tests/harness/errors/151_set_add_non_set.eu:1:17 | 1 (1 user) | 1 (1 user) |
-| `errors/152_set_element_type_mismatch` | user tests/harness/errors/152_set_element_type_mismatch.eu:1:11 | user tests/harness/errors/152_set_element_type_mismatch.eu:1:11 | 1 (1 user) | 1 (1 user) |
+| `errors/152_set_element_type_mismatch` | user tests/harness/errors/152_set_element_type_mismatch.eu:1:29 | user tests/harness/errors/152_set_element_type_mismatch.eu:1:29 | 1 (1 user) | 1 (1 user) |
 | `errors/168_io_shell_missing_cmd` | user tests/harness/errors/168_io_shell_missing_cmd.eu:3:7 | none | 0 (0 user) | 0 (0 user) |
 | `errors/218_json_block_key` | user tests/harness/errors/218_json_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
 | `errors/219_toml_block_key` | user tests/harness/errors/219_toml_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |

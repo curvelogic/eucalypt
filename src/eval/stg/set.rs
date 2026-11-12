@@ -94,12 +94,12 @@ impl StgIntrinsic for SetEmpty {
 
 impl CallGlobal0 for SetEmpty {}
 
-/// SET.FROM_LIST — convert a list of primitives to a set
-pub struct SetFromList;
+/// SET.OF — build a set from a list of primitives in one pass
+pub struct SetOf;
 
-impl StgIntrinsic for SetFromList {
+impl StgIntrinsic for SetOf {
     fn name(&self) -> &str {
-        "SET.FROM_LIST"
+        "SET.OF"
     }
 
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {
@@ -124,16 +124,14 @@ impl StgIntrinsic for SetFromList {
     ) -> Result<(), ExecutionError> {
         // Each element is a bare native (Atom) or a boxed scalar (BoxedNumber
         // / BoxedString / BoxedSymbol); `value_native` handles both.
+        let smid = machine.annotation();
         let items = data_list_arg(machine, view, args[0].clone())?;
-        let mut primitives = Vec::new();
+        let mut primitives = Vec::with_capacity(items.len());
         for item in &items {
             let native = machine.value_native(view, item).ok_or_else(|| {
-                ExecutionError::Panic(
-                    Smid::default(),
-                    "non-primitive value in set construction".to_string(),
-                )
+                ExecutionError::Panic(smid, "non-primitive value in set construction".to_string())
             })?;
-            primitives.push(native_to_set_primitive(machine.annotation(), &native)?);
+            primitives.push(native_to_set_primitive(smid, &native)?);
         }
         // One sort + dedup: O(n log n), not n repeated insertions.
         let sorted = sort_dedup(&view, primitives);
@@ -141,7 +139,7 @@ impl StgIntrinsic for SetFromList {
     }
 }
 
-impl CallGlobal1 for SetFromList {}
+impl CallGlobal1 for SetOf {}
 
 /// SET.TO_LIST — convert a set to a sorted list of boxed values
 pub struct SetToList;

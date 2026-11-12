@@ -64,6 +64,7 @@
 | `alter?(k?, v!, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
 | `update?(k?, f, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
 | `vec.of` | Convert list `xs` of primitive values to a vec for O(1) indexed access |
+| `vec.from-list` | Alias of `vec.of`: convert list `xs` of primitive values to a vec |
 | `vec.len` | Return the number of elements in vec `v` |
 | `vec.nth` | Return the element at index `n` (0-based) in vec `v` |
 | `vec.slice` | Return a new vec with elements in the range `[from, to)` of `v` |
