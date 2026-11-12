@@ -773,12 +773,19 @@ pub fn analyse_demands(expr: &RcExpr) -> (RcExpr, SignatureTable, NamedSignature
 }
 
 /// Walk the annotated core expression and print demand annotations for
-/// every let-bound name. Used by `eu dump demands`.
-pub fn print_demands(expr: &RcExpr) {
-    print_demands_inner(expr, 0);
+/// every let-bound name to `out`. Used by `eu dump demands`.
+///
+/// Write failures are returned rather than panicking, so a closed pipe
+/// (`eu dump demands … | head`) can end the dump quietly.
+pub fn print_demands(expr: &RcExpr, out: &mut dyn std::io::Write) -> std::io::Result<()> {
+    print_demands_inner(expr, 0, out)
 }
 
-fn print_demands_inner(expr: &RcExpr, depth: usize) {
+fn print_demands_inner(
+    expr: &RcExpr,
+    depth: usize,
+    out: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
     use crate::core::demand::{Cardinality, Strictness};
 
     match &*expr.inner {
@@ -795,42 +802,43 @@ fn print_demands_inner(expr: &RcExpr, depth: usize) {
                     Cardinality::Absent => "Absent",
                     Cardinality::Unknown => "Unknown",
                 };
-                println!("{}{}: ({}, {})", "  ".repeat(depth), b.name, s, c);
-                print_demands_inner(&b.expr, depth + 1);
+                writeln!(out, "{}{}: ({}, {})", "  ".repeat(depth), b.name, s, c)?;
+                print_demands_inner(&b.expr, depth + 1, out)?;
             }
-            print_demands_inner(&scope.body, depth);
+            print_demands_inner(&scope.body, depth, out)?;
         }
         Expr::Lam(_, _, scope) => {
-            print_demands_inner(&scope.body, depth);
+            print_demands_inner(&scope.body, depth, out)?;
         }
         Expr::App(_, f, args) => {
-            print_demands_inner(f, depth);
+            print_demands_inner(f, depth, out)?;
             for a in args {
-                print_demands_inner(a, depth);
+                print_demands_inner(a, depth, out)?;
             }
         }
         Expr::Lookup(_, obj, _, fb) => {
-            print_demands_inner(obj, depth);
+            print_demands_inner(obj, depth, out)?;
             if let Some(f) = fb {
-                print_demands_inner(f, depth);
+                print_demands_inner(f, depth, out)?;
             }
         }
         Expr::List(_, xs) => {
             for x in xs {
-                print_demands_inner(x, depth);
+                print_demands_inner(x, depth, out)?;
             }
         }
         Expr::Block(_, bm) => {
             for (_, v) in bm.iter() {
-                print_demands_inner(v, depth);
+                print_demands_inner(v, depth, out)?;
             }
         }
         Expr::Meta(_, e, m) => {
-            print_demands_inner(e, depth);
-            print_demands_inner(m, depth);
+            print_demands_inner(e, depth, out)?;
+            print_demands_inner(m, depth, out)?;
         }
         _ => {}
     }
+    Ok(())
 }
 
 #[cfg(test)]

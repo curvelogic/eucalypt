@@ -95,11 +95,11 @@ pub fn error_test_with_binary(
 
     match expectation.validate(actual_exit, &actual_stderr) {
         Ok(()) => {
-            println!("{}...PASS", path.display());
+            writeln!(std::io::stdout(), "{}...PASS", path.display())?;
             Ok(0)
         }
         Err(reason) => {
-            println!("{}...FAIL: {reason}", path.display());
+            writeln!(std::io::stdout(), "{}...FAIL: {reason}", path.display())?;
             Ok(1)
         }
     }
@@ -156,6 +156,9 @@ fn load_plan(
 pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, EucalyptError> {
     let tester = InProcessTester {};
     let mut exit: i32 = 0;
+    // Write rather than `print!`: a closed pipe (`eu test … | head`) must
+    // surface as an error the CLI exits quietly on, not a panic.
+    let mut stdout = std::io::stdout();
 
     for test in tests {
         let mut lib_path = opt.lib_path().to_vec();
@@ -171,13 +174,13 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
         // Failing here would incorrectly penalise CI environments that do
         // not enable shell execution by default.
         if test.requires_io() && !opt.allow_io() {
-            println!("{}...SKIP (requires --allow-io)", test.title());
+            writeln!(stdout, "{}...SKIP (requires --allow-io)", test.title())?;
             continue;
         }
 
         test.prepare_directory()?;
 
-        print!("{}...", test.title());
+        write!(stdout, "{}...", test.title())?;
 
         let mut execution_opts = test_opts.clone();
         if !test.is_error_test() {
@@ -186,7 +189,7 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
         tester.run(test, &execution_opts)?;
         tester.validate(test)?;
         let summary = tester.summary(test)?.to_string();
-        print!("{summary}");
+        write!(stdout, "{summary}")?;
 
         if !summary.starts_with("PASS") {
             exit = 1;
@@ -194,7 +197,7 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
     }
 
     let report = tester.report(tests)?;
-    println!("Report generated at {}", report.to_string_lossy());
+    writeln!(stdout, "Report generated at {}", report.to_string_lossy())?;
 
     if opt.open_browser() {
         let _ = report.to_str().and_then(|s| webbrowser::open(s).ok());
@@ -210,7 +213,7 @@ fn directory_plans(
     run_id: &str,
     dir: &Path,
 ) -> Result<Vec<TestPlan>, EucalyptError> {
-    println!("Gathering tests in {}", dir.display());
+    writeln!(std::io::stdout(), "Gathering tests in {}", dir.display())?;
     let mut tests: Vec<_> = fs::read_dir(dir)?
         .filter_map(Result::ok)
         .filter(|f| {

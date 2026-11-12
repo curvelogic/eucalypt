@@ -3,10 +3,11 @@ extern crate eucalypt;
 use std::process;
 use std::thread;
 
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
 
 use eucalypt::driver::check;
 use eucalypt::driver::doc;
+use eucalypt::driver::error::EucalyptError;
 use eucalypt::driver::error_codes;
 use eucalypt::driver::format;
 use eucalypt::driver::lsp;
@@ -74,7 +75,8 @@ fn run() -> i32 {
 
     // For a dry run, just explain the options
     if opt.explain() {
-        println!("{}", opt.explanation());
+        // A closed pipe is a normal end; ignore it rather than panic.
+        let _ = writeln!(std::io::stdout(), "{}", opt.explanation());
         return 0;
     }
 
@@ -94,10 +96,7 @@ fn run() -> i32 {
     if opt.test() {
         match tester::test(&opt) {
             Ok(exit) => return exit,
-            Err(e) => {
-                eprintln!("{e}");
-                return 2;
-            }
+            Err(e) => return failure_exit_code(e),
         }
     }
 
@@ -127,10 +126,7 @@ fn run() -> i32 {
     if opt.doc_mode() {
         match doc::doc(&opt) {
             Ok(exit) => return exit,
-            Err(e) => {
-                eprintln!("{e}");
-                return 2;
-            }
+            Err(e) => return failure_exit_code(e),
         }
     }
 
@@ -140,7 +136,7 @@ fn run() -> i32 {
         eucalypt::driver::options::EucalyptCli::command()
             .print_help()
             .ok();
-        println!();
+        let _ = writeln!(std::io::stdout());
         return 0;
     }
 
@@ -168,6 +164,7 @@ fn run() -> i32 {
     // diagnostic
     let mut statistics = Statistics::default();
     match prepare::prepare(&opt, &mut loader, statistics.timings_mut()) {
+        Err(e) if e.is_broken_pipe() => return exit_code(&opt, 0, &statistics),
         Err(e) => {
             let diag = e.to_diagnostic(loader.source_map());
             loader.diagnose_to_stderr(&diag);
@@ -299,6 +296,20 @@ fn run() -> i32 {
     }
 
     exit_code(&opt, 0, &statistics)
+}
+
+/// Report a driver error on stderr and return exit code 2.
+///
+/// A closed stdout pipe (`eu test … | head`) is not a failure — the reader
+/// has what it wanted — so it exits 0 silently, as rendering already does
+/// for a broken pipe (eu-1tkk.7.25).
+fn failure_exit_code(e: EucalyptError) -> i32 {
+    if e.is_broken_pipe() {
+        0
+    } else {
+        eprintln!("{e}");
+        2
+    }
 }
 
 /// Optionally dump stats to stderr and/or write JSON file, then return exit code.
