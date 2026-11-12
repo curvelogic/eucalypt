@@ -3074,6 +3074,14 @@ pub fn test_231_oaz72_1_demand_untaken_branch() {
     run_test(&opts("231_oaz72_1_demand_untaken_branch.eu"));
 }
 
+/// eu-oaz72.5: set and vec storage lives in the GC heap with string
+/// elements traced. Churns string sets/vecs whose strings are reachable only
+/// through the container, and checks contents, order and set algebra.
+#[test]
+pub fn test_234_oaz72_5_native_storage_gc() {
+    run_test(&opts("234_oaz72_5_native_storage_gc.eu"));
+}
+
 /// eu-oaz72.35 — `take(n)` with n <= 0 is [] (it used to run past zero on
 /// a negative count), so `range(b, e)` with e <= b is [] instead of hanging.
 #[test]
