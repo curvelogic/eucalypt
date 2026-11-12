@@ -497,14 +497,17 @@ fn scan_const<'a>(
         Ref::V(Native::Str(ptr)) if marker.mark(*ptr) => {
             out.push(ScanPtr::from_non_null(scope, *ptr));
         }
-        Ref::V(Native::Set(ptr)) => {
-            marker.mark(*ptr);
+        Ref::V(Native::Set(ptr)) if marker.mark(*ptr) => {
+            // Push so the container scans (and evacuates) its heap storage.
+            out.push(ScanPtr::from_non_null(scope, *ptr));
         }
-        Ref::V(Native::NdArray(ptr)) => {
-            marker.mark(*ptr);
+        Ref::V(Native::NdArray(ptr)) if marker.mark(*ptr) => {
+            // Push so the container scans (and evacuates) its heap storage.
+            out.push(ScanPtr::from_non_null(scope, *ptr));
         }
-        Ref::V(Native::Vec(ptr)) => {
-            marker.mark(*ptr);
+        Ref::V(Native::Vec(ptr)) if marker.mark(*ptr) => {
+            // Push so the container scans (and evacuates) its heap storage.
+            out.push(ScanPtr::from_non_null(scope, *ptr));
         }
         _ => {}
     }
@@ -5986,6 +5989,233 @@ mod tests {
             ),
             _ => panic!("arg 0 is not a string"),
         }
+    }
+
+    /// Build a set, a vec and an n-d array whose storage is spread across
+    /// heap blocks (string elements interleaved with unrooted fillers), with
+    /// the containers reachable only through a bif frame.
+    #[allow(clippy::type_complexity)]
+    fn native_containers_fixture(
+        heap: &Heap,
+    ) -> (
+        RefPtr<BcEnvFrame>,
+        RefPtr<crate::eval::memory::set::HeapSet>,
+        RefPtr<crate::eval::memory::vec::HeapVec>,
+        RefPtr<crate::eval::memory::ndarray::HeapNdArray>,
+    ) {
+        use crate::eval::memory::ndarray::{self, HeapNdArray};
+        use crate::eval::memory::set::{sort_dedup, HeapSet, Primitive};
+        use crate::eval::memory::string::HeapString;
+        use crate::eval::memory::vec::HeapVec;
+        use ordered_float::OrderedFloat;
+
+        let view = MutatorHeapView::new(heap);
+        let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+        let mut elems = Vec::new();
+        for i in 0..64 {
+            let s = view
+                .alloc(HeapString::from_str(&view, &format!("elem-{i:03}")))
+                .unwrap()
+                .as_ptr();
+            elems.push(Primitive::Str(s));
+            elems.push(Primitive::Num(OrderedFloat(i as f64)));
+            for _ in 0..128 {
+                view.alloc(HeapString::from_str(&view, "filler-0123456789abcdef"))
+                    .unwrap();
+            }
+        }
+        let vec = view
+            .alloc(HeapVec::from_slice(&view, &elems).unwrap())
+            .unwrap()
+            .as_ptr();
+        let sorted = sort_dedup(&view, elems);
+        let set = view
+            .alloc(HeapSet::from_sorted(&view, &sorted).unwrap())
+            .unwrap()
+            .as_ptr();
+        let flat: Vec<f64> = (0..600).map(|i| i as f64).collect();
+        let arr = view
+            .alloc(
+                HeapNdArray::from_ndarray(&view, &ndarray::from_flat(&[20, 30], flat).unwrap())
+                    .unwrap(),
+            )
+            .unwrap()
+            .as_ptr();
+        (root, set, vec, arr)
+    }
+
+    /// Assert the fixture's containers read back intact.
+    fn assert_native_containers_intact(
+        heap: &Heap,
+        set: RefPtr<crate::eval::memory::set::HeapSet>,
+        vec: RefPtr<crate::eval::memory::vec::HeapVec>,
+        arr: RefPtr<crate::eval::memory::ndarray::HeapNdArray>,
+    ) {
+        use crate::eval::memory::set::Primitive;
+        let view = MutatorHeapView::new(heap);
+        let v = view.scoped(vec);
+        assert_eq!(v.len(), 128);
+        for i in 0..64 {
+            assert_eq!(
+                v.get(2 * i).unwrap().str_in(&view),
+                Some(format!("elem-{i:03}").as_str()),
+                "vec string element {i} lost across GC"
+            );
+            assert!(matches!(v.get(2 * i + 1), Some(Primitive::Num(n)) if n.0 == i as f64));
+        }
+        let s = view.scoped(set);
+        assert_eq!(s.len(), 128);
+        for (i, e) in s.elements()[64..].iter().enumerate() {
+            assert_eq!(
+                e.str_in(&view),
+                Some(format!("elem-{i:03}").as_str()),
+                "set string element {i} lost across GC"
+            );
+        }
+        let a = view.scoped(arr);
+        assert_eq!(a.shape(), &[20, 30]);
+        assert_eq!(a.get(&[19, 29]), Some(599.0));
+        assert_eq!(a.get(&[7, 3]), Some(213.0));
+    }
+
+    #[test]
+    fn native_container_storage_survives_gc_evacuation() {
+        // eu-oaz72.5: set, vec and n-d array storage lives in the GC heap.
+        // The containers are reachable only through a bif frame; a mark
+        // collection and then an evacuation of every block must keep their
+        // backing arrays and string elements live and forward every pointer.
+        // With all blocks as candidates, a live string must move: an element
+        // pointer left at its old address means it was not traced/updated.
+        use crate::eval::machine::metrics::ThreadOccupation;
+        use crate::eval::memory::collect::{collect, collect_with_evacuation};
+        use crate::eval::memory::set::Primitive;
+
+        let mut heap = Heap::new();
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+        let (root, set, vec, arr) = native_containers_fixture(&heap);
+        // Backing-buffer addresses: a full evacuation must move each one.
+        let old_backings = {
+            let view = MutatorHeapView::new(&heap);
+            [
+                view.scoped(set).elements().as_ptr() as usize,
+                view.scoped(vec).elements().as_ptr() as usize,
+                view.scoped(arr).shape().as_ptr() as usize,
+                view.scoped(arr).view().as_ptr() as usize,
+            ]
+        };
+        let old_strs: Vec<_> = {
+            let view = MutatorHeapView::new(&heap);
+            view.scoped(vec)
+                .elements()
+                .iter()
+                .filter_map(|e| match e {
+                    Primitive::Str(p) => Some(*p),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        let mut state = BcMachineState::new(BcValue::Native(num(0)), root, root, vec![]);
+        state.bif_frames.push(BifFrame {
+            env: root,
+            args: vec![
+                Ref::V(Native::Set(set)),
+                Ref::V(Native::Vec(vec)),
+                Ref::V(Native::NdArray(arr)),
+            ],
+        });
+
+        // Evacuate straight away: before any collection every filled block
+        // is still a `rest` block, so head + overflow + rest is every block.
+        let rest = heap.rest_block_count();
+        let candidates: Vec<usize> = (0..2 + rest).collect();
+        collect_with_evacuation(&mut state, &mut heap, &mut clock, &candidates, false);
+        // ...then a second, mark-in-place collection over the moved graph.
+        collect(&mut state, &mut heap, &mut clock, false);
+        heap.flush_unswept();
+
+        let frame = state.bif_frames.last().expect("bif frame present");
+        let (set, vec, arr) = match &frame.args[..] {
+            [Ref::V(Native::Set(s)), Ref::V(Native::Vec(v)), Ref::V(Native::NdArray(a))] => {
+                (*s, *v, *a)
+            }
+            _ => panic!("bif frame args changed shape"),
+        };
+        assert_native_containers_intact(&heap, set, vec, arr);
+        let view = MutatorHeapView::new(&heap);
+        let new_backings = [
+            view.scoped(set).elements().as_ptr() as usize,
+            view.scoped(vec).elements().as_ptr() as usize,
+            view.scoped(arr).shape().as_ptr() as usize,
+            view.scoped(arr).view().as_ptr() as usize,
+        ];
+        for (i, (new, old)) in new_backings.iter().zip(old_backings.iter()).enumerate() {
+            assert_ne!(
+                new, old,
+                "backing buffer {i} (set, vec, shape, data) was not forwarded"
+            );
+        }
+        let moved = view
+            .scoped(vec)
+            .elements()
+            .iter()
+            .filter_map(|e| match e {
+                Primitive::Str(p) => Some(*p),
+                _ => None,
+            })
+            .zip(old_strs.iter())
+            .filter(|(new, old)| new != *old)
+            .count();
+        assert_eq!(
+            moved,
+            old_strs.len(),
+            "every vec string element must be forwarded by a full evacuation"
+        );
+    }
+
+    #[test]
+    fn unreachable_native_container_storage_is_reclaimed() {
+        // eu-oaz72.5: set/vec/array storage that becomes unreachable is
+        // reclaimed by the collector (it used to be Rust-owned and leaked).
+        // Allocate many large, unrooted sets: a collection must recycle the
+        // blocks holding their backing arrays.
+        use crate::eval::machine::metrics::ThreadOccupation;
+        use crate::eval::memory::collect::collect;
+        use crate::eval::memory::set::{HeapSet, Primitive};
+        use ordered_float::OrderedFloat;
+
+        let mut heap = Heap::new();
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+        let root = {
+            let view = MutatorHeapView::new(&heap);
+            let root = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+            let elems: Vec<Primitive> = (0..1000)
+                .map(|i| Primitive::Num(OrderedFloat(i as f64)))
+                .collect();
+            for _ in 0..200 {
+                view.alloc(HeapSet::from_sorted(&view, &elems).unwrap())
+                    .unwrap();
+            }
+            root
+        };
+        let before = heap.stats();
+        assert!(
+            before.blocks_allocated >= 90,
+            "fixture should fill ~100 blocks, got {}",
+            before.blocks_allocated
+        );
+        let mut state = BcMachineState::new(BcValue::Native(num(0)), root, root, vec![]);
+        collect(&mut state, &mut heap, &mut clock, false);
+        heap.flush_unswept();
+        let after = heap.stats();
+        assert!(
+            after.recycled * 10 >= before.blocks_allocated * 9,
+            "unreachable set storage not reclaimed: {} of {} blocks recycled",
+            after.recycled,
+            before.blocks_allocated
+        );
     }
 
     #[test]

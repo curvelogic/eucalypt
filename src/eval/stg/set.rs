@@ -15,7 +15,7 @@ use crate::{
         },
         memory::{
             mutator::MutatorHeapView,
-            set::HeapSet,
+            set::sort_dedup,
             syntax::{Native, Ref},
         },
         stg::tags::DataConstructor,
@@ -88,7 +88,7 @@ impl StgIntrinsic for SetEmpty {
         _emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        machine_return_set(machine, view, HeapSet::empty())
+        machine_return_set(machine, view, &[])
     }
 }
 
@@ -133,17 +133,11 @@ impl StgIntrinsic for SetFromList {
                     "non-primitive value in set construction".to_string(),
                 )
             })?;
-            primitives.push(native_to_set_primitive(
-                machine.annotation(),
-                view,
-                &native,
-            )?);
+            primitives.push(native_to_set_primitive(machine.annotation(), &native)?);
         }
-        machine_return_set(
-            machine,
-            view,
-            HeapSet::from_primitives(primitives.into_iter()),
-        )
+        // One sort + dedup: O(n log n), not n repeated insertions.
+        let sorted = sort_dedup(&view, primitives);
+        machine_return_set(machine, view, &sorted)
     }
 }
 
@@ -165,12 +159,14 @@ impl StgIntrinsic for SetToList {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let set = set_arg(machine, view, &args[0])?;
-        let sorted = set.sorted_elements();
+        // Copy the (Copy) elements out so no borrow of the set spans the
+        // allocations below.
+        let sorted = set.elements().to_vec();
 
         // Box each element and assemble the (sorted) list via the neutral ABI.
         let mut items = Vec::with_capacity(sorted.len());
-        for prim in sorted {
-            let native = set_primitive_to_native(machine, view, prim)?;
+        for prim in &sorted {
+            let native = set_primitive_to_native(prim);
             let box_tag = match &native {
                 Native::Num(_) => DataConstructor::BoxedNumber.tag(),
                 Native::Str(_) => DataConstructor::BoxedString.tag(),
@@ -212,9 +208,13 @@ impl StgIntrinsic for SetAdd {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let native = resolve_native_unboxing(machine, view, &args[0])?;
-        let prim = native_to_set_primitive(machine.annotation(), view, &native)?;
+        let prim = native_to_set_primitive(machine.annotation(), &native)?;
         let set = set_arg(machine, view, &args[1])?;
-        machine_return_set(machine, view, set.with_added(prim))
+        match set.with_added(&view, prim) {
+            Some(elements) => machine_return_set(machine, view, &elements),
+            // Already a member: the (immutable) set is its own result.
+            None => machine.return_native(view, Native::Set(set.as_ptr())),
+        }
     }
 }
 
@@ -240,9 +240,13 @@ impl StgIntrinsic for SetRemove {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let native = resolve_native_unboxing(machine, view, &args[0])?;
-        let prim = native_to_set_primitive(machine.annotation(), view, &native)?;
+        let prim = native_to_set_primitive(machine.annotation(), &native)?;
         let set = set_arg(machine, view, &args[1])?;
-        machine_return_set(machine, view, set.with_removed(&prim))
+        match set.with_removed(&view, &prim) {
+            Some(elements) => machine_return_set(machine, view, &elements),
+            // Not a member: the (immutable) set is its own result.
+            None => machine.return_native(view, Native::Set(set.as_ptr())),
+        }
     }
 }
 
@@ -276,12 +280,12 @@ impl StgIntrinsic for SetContains {
             Ok(n) => n,
             Err(_) => return machine_return_bool(machine, view, false),
         };
-        let prim = match native_to_set_primitive(machine.annotation(), view, &native) {
+        let prim = match native_to_set_primitive(machine.annotation(), &native) {
             Ok(p) => p,
             Err(_) => return machine_return_bool(machine, view, false),
         };
         let set = set_arg(machine, view, &args[1])?;
-        machine_return_bool(machine, view, set.contains(&prim))
+        machine_return_bool(machine, view, set.contains(&view, &prim))
     }
 }
 
@@ -328,7 +332,8 @@ impl StgIntrinsic for SetUnion {
         // Pipeline: `a set.union(b)` → SET.UNION(b, a) → args[0]=b, args[1]=a
         let a = set_arg(machine, view, &args[1])?;
         let b = set_arg(machine, view, &args[0])?;
-        machine_return_set(machine, view, a.union(&b))
+        let elements = a.union(&view, &b);
+        machine_return_set(machine, view, &elements)
     }
 }
 
@@ -352,7 +357,8 @@ impl StgIntrinsic for SetIntersect {
         // Pipeline: `a set.intersect(b)` → SET.INTERSECT(b, a) → args[0]=b, args[1]=a
         let a = set_arg(machine, view, &args[1])?;
         let b = set_arg(machine, view, &args[0])?;
-        machine_return_set(machine, view, a.intersect(&b))
+        let elements = a.intersect(&view, &b);
+        machine_return_set(machine, view, &elements)
     }
 }
 
@@ -376,7 +382,8 @@ impl StgIntrinsic for SetDiff {
         // Pipeline: `a set.diff(b)` → SET.DIFF(b, a) → args[0]=b, args[1]=a
         let a = set_arg(machine, view, &args[1])?;
         let b = set_arg(machine, view, &args[0])?;
-        machine_return_set(machine, view, a.diff(&b))
+        let elements = a.diff(&view, &b);
+        machine_return_set(machine, view, &elements)
     }
 }
 
@@ -437,7 +444,7 @@ impl StgIntrinsic for SetSample {
 
         let floats = collect_num_list(machine, view, args[0].clone())?;
         let s = set_arg(machine, view, &args[1])?;
-        let elements = s.sorted_elements();
+        let elements = s.elements();
         let len = elements.len();
         let count = floats.len().min(len);
 
@@ -449,9 +456,12 @@ impl StgIntrinsic for SetSample {
             indices.swap(i, j);
         }
 
-        let sampled =
-            HeapSet::from_primitives(indices[..count].iter().map(|&idx| elements[idx].clone()));
-        machine_return_set(machine, view, sampled)
+        // The sample is a subset, so re-sorting restores set order.
+        let sampled = sort_dedup(
+            &view,
+            indices[..count].iter().map(|&idx| elements[idx]).collect(),
+        );
+        machine_return_set(machine, view, &sampled)
     }
 }
 

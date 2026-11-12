@@ -12,7 +12,6 @@ use crate::eval::{
         mutator::MutatorHeapView,
         set::Primitive,
         syntax::{Native, Ref},
-        vec::HeapVec,
     },
     stg::tags::DataConstructor,
 };
@@ -66,14 +65,10 @@ impl StgIntrinsic for VecOf {
             let native = machine.value_native(view, item).ok_or_else(|| {
                 ExecutionError::Panic(smid, "non-primitive value in vec construction".to_string())
             })?;
-            primitives.push(native_to_set_primitive(smid, view, &native)?);
+            primitives.push(native_to_set_primitive(smid, &native)?);
         }
 
-        machine_return_vec(
-            machine,
-            view,
-            HeapVec::from_primitives(primitives.into_iter()),
-        )
+        machine_return_vec(machine, view, &primitives)
     }
 }
 
@@ -140,7 +135,7 @@ impl StgIntrinsic for VecNth {
                 format!("vec.nth: index {} out of bounds (len {})", n, v.len()),
             )
         })?;
-        let native = set_primitive_to_native(machine, view, prim)?;
+        let native = set_primitive_to_native(&prim);
         // Return a boxed value (BoxedNumber/BoxedString/BoxedSymbol) so that the
         // result is comparable via the EQ wrapper's Cons branches, matching the
         // format of list elements and the output of other intrinsics.
@@ -209,7 +204,8 @@ impl StgIntrinsic for VecSlice {
             }
         };
         let v = vec_arg(machine, view, &args[2])?;
-        machine_return_vec(machine, view, v.slice(from, to))
+        let elements = v.slice(from, to).to_vec();
+        machine_return_vec(machine, view, &elements)
     }
 }
 
@@ -268,9 +264,8 @@ impl StgIntrinsic for VecSample {
         let sampled: Vec<Primitive> = indices[..count]
             .iter()
             .filter_map(|&idx| v.get(idx))
-            .cloned()
             .collect();
-        machine_return_vec(machine, view, HeapVec::from_primitives(sampled.into_iter()))
+        machine_return_vec(machine, view, &sampled)
     }
 }
 
@@ -320,11 +315,7 @@ impl StgIntrinsic for VecShuffle {
             let j = ((f * (i + 1) as f64) as usize) % (i + 1);
             elements.swap(i, j);
         }
-        machine_return_vec(
-            machine,
-            view,
-            HeapVec::from_primitives(elements.into_iter()),
-        )
+        machine_return_vec(machine, view, &elements)
     }
 }
 
@@ -353,7 +344,7 @@ impl StgIntrinsic for VecToList {
         // Box each element and assemble the list via the neutral ABI.
         let mut items = Vec::with_capacity(elements.len());
         for prim in elements {
-            let native = set_primitive_to_native(machine, view, &prim)?;
+            let native = set_primitive_to_native(&prim);
             let box_tag = match &native {
                 Native::Num(_) => DataConstructor::BoxedNumber.tag(),
                 Native::Str(_) => DataConstructor::BoxedString.tag(),

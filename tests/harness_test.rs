@@ -3074,6 +3074,14 @@ pub fn test_231_oaz72_1_demand_untaken_branch() {
     run_test(&opts("231_oaz72_1_demand_untaken_branch.eu"));
 }
 
+/// eu-oaz72.5: set and vec storage lives in the GC heap with string
+/// elements traced. Churns string sets/vecs whose strings are reachable only
+/// through the container, and checks contents, order and set algebra.
+#[test]
+pub fn test_232_oaz72_5_native_storage_gc() {
+    run_test(&opts("232_oaz72_5_native_storage_gc.eu"));
+}
+
 #[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame

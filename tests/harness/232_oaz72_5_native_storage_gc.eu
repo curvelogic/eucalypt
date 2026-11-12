@@ -1,0 +1,97 @@
+"eu-oaz72.5: set and vec storage lives in the GC heap, with string elements traced."
+
+# Set and vec contents used to be Rust-owned (never freed when swept);
+# they now live in the GC heap, and their string elements are heap strings
+# the collector traces. These checks churn sets and vecs of computed strings
+# so that collections (frequent under EU_GC_STRESS) run while they are
+# live, then check every element survived with its value and order intact.
+
+# `key(n)` builds a fresh heap string on every call, so the strings inside
+# `churned` and `vs` are reachable only through the set or vec themselves:
+# if the collector failed to trace set/vec elements, they would be swept
+# (and poisoned under EU_GC_POISON) before the checks read them.
+key(n): "k-{n}"
+
+keys: range(0, 300) map(key)
+
+` "String set churn: remove then re-add every key, many times"
+
+churn-step(s, i): s set.remove(key(i % 300)) set.add(key(i % 300))
+
+churned: foldl(churn-step, range(0, 300) map(key) set.from-list, range(0, 1500))
+
+churn-checks: {
+  trues: [
+    (churned set.size) = 300,
+    (churned set.to-list) = (keys set.from-list set.to-list),
+    (churned set.to-list head) = "k-0",
+    (churned set.to-list last) = "k-99",
+    churned set.contains?("k-150"),
+    not(churned set.contains?("k-300"))
+  ]
+}
+
+` "Set built by repeated add equals the bulk-built set"
+
+add-key(s, k): s set.add(k)
+
+added: foldl(add-key, ∅, keys)
+
+add-checks: {
+  trues: [
+    (added set.size) = 300,
+    (added set.to-list) = (keys set.from-list set.to-list)
+  ]
+}
+
+` "Order and algebra over mixed element types"
+
+mixed: [:b, "x", 2, :a, "a", 1, "x", 2] set.from-list
+
+even?(n): n % 2 = 0
+
+evens: range(0, 300) filter(even?) map(str.of) map("k-{}") set.from-list
+
+algebra-checks: {
+  trues: [
+    (mixed set.to-list) = [1, 2, "a", "x", :a, :b],
+    (mixed set.add("x") set.to-list) = [1, 2, "a", "x", :a, :b],
+    (mixed set.remove("nope") set.to-list) = [1, 2, "a", "x", :a, :b],
+    (mixed set.remove("x") set.to-list) = [1, 2, "a", :a, :b],
+    (churned set.diff(evens) set.size) = 150,
+    (churned set.intersect(evens) set.to-list) = (evens set.to-list),
+    (evens set.union(churned) set.size) = 300,
+    (["b", "c"] set.from-list set.union(["a", "c", "d"] set.from-list) set.to-list)
+      = ["a", "b", "c", "d"],
+    (["a", "b", "c"] set.from-list set.intersect(["b", "c", "d"] set.from-list) set.to-list)
+      = ["b", "c"],
+    (["a", "b", "c"] set.from-list set.diff(["b"] set.from-list) set.to-list) = ["a", "c"]
+  ]
+}
+
+` "Vec of computed strings keeps insertion order"
+
+vs: range(0, 300) map(key) vec.of
+
+vec-step(acc, i): vs vec.slice(0, 300) vec.nth(i % 300)
+
+vec-checks: {
+  trues: [
+    (vs vec.len) = 300,
+    (vs vec.nth(0)) = "k-0",
+    (vs vec.nth(299)) = "k-299",
+    (vs vec.to-list) = keys,
+    (vs vec.slice(100, 103) vec.to-list) = ["k-100", "k-101", "k-102"],
+    foldl(vec-step, "", range(0, 600)) = "k-299",
+    ([3, "b", :c, 1] vec.of vec.to-list) = [3, "b", :c, 1]
+  ]
+}
+
+pass: [
+  churn-checks.trues all-true?,
+  add-checks.trues all-true?,
+  algebra-checks.trues all-true?,
+  vec-checks.trues all-true?
+] all-true?
+
+RESULT: if(pass, :PASS, :FAIL)
