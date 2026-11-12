@@ -161,8 +161,8 @@ policy hid by rarely collecting.
 ### Collection Frequency
 
 - **Check interval**: Every 500 VM execution steps
-- **Default behavior**: Collection on allocation volume (see above)
-- **Final collection**: Always performed at program termination
+- **Default behaviour**: Collection on allocation volume (see above)
+- **Final collection**: At the end of a run, only if the volume trigger has been reached (`policy_requires_collection`)
 
 ## Memory Management Integration
 

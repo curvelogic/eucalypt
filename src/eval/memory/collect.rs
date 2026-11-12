@@ -4,15 +4,15 @@
 //! tracing, marking and potentially, in future, moving.
 //!
 
-use std::{
-    collections::{HashSet, VecDeque},
-    mem::size_of,
-    ptr::NonNull,
-};
+use std::{collections::VecDeque, mem::size_of, ptr::NonNull};
 
 use crate::eval::machine::metrics::{Clock, ThreadOccupation};
 
-use super::{array::Array, header::AllocHeader, heap::Heap};
+use super::{
+    array::Array,
+    header::AllocHeader,
+    heap::{BlockBaseSet, Heap},
+};
 
 pub struct ScanPtr<'scope> {
     value: &'scope dyn GcScannable,
@@ -293,7 +293,7 @@ impl CollectorHeapView<'_> {
     pub fn is_in_candidate_block<T>(
         &self,
         ptr: NonNull<T>,
-        candidate_bases: &HashSet<usize>,
+        candidate_bases: &BlockBaseSet,
     ) -> bool {
         self.heap.is_in_candidate_block(ptr, candidate_bases)
     }
@@ -741,7 +741,7 @@ fn raw_parts_of(obj: &dyn GcScannable) -> (*const u8, *const ()) {
 fn try_evacuate(
     heap_view: &mut CollectorHeapView<'_>,
     data_ptr: *const u8,
-    candidate_bases: &HashSet<usize>,
+    candidate_bases: &BlockBaseSet,
 ) {
     if candidate_bases.is_empty() {
         return;
@@ -952,9 +952,6 @@ pub mod tests {
                stats_a.recycled, stats_b.recycled);
     }
 
-    /// Test that the transmute-based fat pointer reconstruction works for
-    /// scan_and_update by manually creating an object, extracting its
-    /// fat pointer components, and calling scan_and_update via transmute.
     /// eu-oaz72.4: the live volume a collection measures counts each live
     /// object once — the same whether or not it is evacuated (an evacuated
     /// copy re-marks its lines, so line marks would count it twice) — and
@@ -989,6 +986,9 @@ pub mod tests {
         assert_eq!(evacuated, expected);
     }
 
+    /// Test that the transmute-based fat pointer reconstruction works for
+    /// scan_and_update by manually creating an object, extracting its
+    /// fat pointer components, and calling scan_and_update via transmute.
     #[test]
     pub fn test_transmute_scan_and_update() {
         let mut heap = Heap::new();

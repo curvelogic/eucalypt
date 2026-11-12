@@ -14,15 +14,15 @@
 # under `EU_GC_STRESS=1` so every collection evacuates rather than merely
 # marking, and comparing the answer with the `map` oracle beside this file.
 #
-# The shape is tuned so a collection lands mid-map: the heap limit the test
-# passes is crossed partway through (this heap collects only once its limit is
-# reached), and each element allocates a 60-element intermediate list. Raise
-# the limit enough and the run finishes without collecting at all and the gate
-# stops gating — at `--heap-limit-mib 64` this same shape completes in 0.1s and
-# detects nothing. It is deliberately small: once the limit is reached every
-# poll collects, so cost grows steeply with the work done afterwards. If this
-# fixture is ever retuned, re-verify by fault injection that it still fails
-# when the root set is removed.
+# The shape is tuned so a collection lands mid-map: under the small heap
+# limit the test passes, the collection trigger (allocation volume since the
+# last collection, capped at the headroom below the limit — eu-oaz72.4) is
+# reached partway through, and each element allocates a 60-element
+# intermediate list. Raise the limit enough and the run finishes without
+# collecting at all and the gate stops gating. Re-verified after eu-oaz72.4
+# changed when collections happen: holding the results on the Rust stack
+# still fails the test. If this fixture is ever retuned, re-verify by fault
+# injection that it still fails when the root set is removed.
 
 f(x): range(0, 60) map((_0 + x)) sum
 xs: range(1, 30)

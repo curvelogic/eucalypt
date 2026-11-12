@@ -426,6 +426,9 @@ impl std::hash::Hasher for BlockBaseHasher {
 
 type BuildBlockBaseHasher = std::hash::BuildHasherDefault<BlockBaseHasher>;
 
+/// A set of block base addresses, hashed with [`BlockBaseHasher`].
+pub type BlockBaseSet = HashSet<usize, BuildBlockBaseHasher>;
+
 impl Default for HeapState {
     fn default() -> Self {
         HeapState::new()
@@ -2855,7 +2858,7 @@ impl Heap {
     pub fn is_in_candidate_block<T>(
         &self,
         ptr: NonNull<T>,
-        candidate_bases: &HashSet<usize>,
+        candidate_bases: &BlockBaseSet,
     ) -> bool {
         candidate_bases.contains(&bump::block_base_of(ptr))
     }
@@ -2865,7 +2868,7 @@ impl Heap {
     ///
     /// Resolved once per collection so the per-object candidate test is a
     /// set lookup rather than a scan of the candidate list (eu-oaz72.4).
-    pub fn candidate_block_bases(&self, candidates: &[usize]) -> HashSet<usize> {
+    pub fn candidate_block_bases(&self, candidates: &[usize]) -> BlockBaseSet {
         // SAFETY: Read-only access to heap state during collection.
         let heap_state = unsafe { &*self.state.get() };
         candidates
