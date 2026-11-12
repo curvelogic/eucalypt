@@ -1,9 +1,36 @@
 # eucalypt diagnostic snapshot v1
 fixture: errors/235_oaz72_49_window_step_zero
 argv: run -L tests/harness/errors --heap-limit-mib 2048 tests/harness/errors/235_oaz72_49_window_step_zero.eu
-prelude-modes: identical
+prelude-modes: divergent
 
-=== both prelude modes ===
+=== blob prelude ===
+exit: 1
+errors: 1
+warnings: 0
+code: -
+primary: user tests/harness/errors/235_oaz72_49_window_step_zero.eu:3:27
+help-lines: 0
+note-lines: 0
+secondary-labels: 1
+trace-frames: 2
+trace-user-frames: 1
+trace-prelude-frames: 1
+prelude-excerpt-lines: 0
+rust-panic: no
+--- stderr ---
+error: window step 0 must be positive
+  ┌─ tests/harness/errors/235_oaz72_49_window_step_zero.eu:3:27
+  │
+3 │ x: [1, 2, 3] window(2, 0) take(3)
+  │              ------------ ^^^^^^^
+  │              │
+  │              called from here
+  │
+  = while evaluating (outermost first):
+    - x at 235_oaz72_49_window_step_zero.eu:3:27
+    - in 'window' (prelude)
+
+=== --source-prelude ===
 exit: 1
 errors: 1
 warnings: 0
