@@ -870,6 +870,13 @@ pub enum ExecutionError {
     Traced(Box<ExecutionError>, Box<(Vec<Smid>, Vec<Smid>, Smid)>),
     #[error("allocation error")]
     AllocationError,
+    /// Live data surviving a collection exhausts the `--heap-limit-mib`
+    /// limit: `(live MiB, limit MiB)` (eu-oaz72.4).
+    #[error(
+        "heap limit exceeded: {0} MiB of live data remains after garbage collection, \
+         against a heap limit of {1} MiB (raise --heap-limit-mib, or use 0 for no limit)"
+    )]
+    HeapLimitExceeded(usize, usize),
     #[error("expected {1} received {2}")]
     ArityMismatch(Smid, usize, usize),
     #[error("binding missing from environment")]

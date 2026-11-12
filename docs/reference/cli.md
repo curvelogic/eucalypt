@@ -482,6 +482,12 @@ eu --heap-limit-mib 1024 file.eu    # limit to 1 GiB
 eu --heap-limit-mib 0    file.eu    # unbounded
 ```
 
+The garbage collector runs on allocation volume, whatever the limit, so a
+program whose live data is small stays small. If the live data left after a
+collection exceeds about 7/8 of the limit, evaluation stops with a
+`heap limit exceeded` error naming both sizes; raise the limit (or use 0)
+for such a program.
+
 ### Error Output Format
 
 By default, errors are formatted for human reading. For programmatic use:
