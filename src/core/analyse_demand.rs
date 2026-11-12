@@ -296,6 +296,17 @@ fn unshift_env(env: &DemandEnv) -> DemandEnv {
         .collect()
 }
 
+/// Find the root unit's block: follow `Let` and `Meta` bodies from the
+/// analysed expression to the `Block` they end in, if any.
+fn root_block(expr: &RcExpr) -> Option<usize> {
+    match &*expr.inner {
+        Expr::Let(_, scope, _) => root_block(&scope.body),
+        Expr::Meta(_, e, _) => root_block(e),
+        Expr::Block(_, _) => Some(Rc::as_ptr(&expr.inner) as usize),
+        _ => None,
+    }
+}
+
 /// Weaken every demand in an environment to lazy, keeping cardinality.
 ///
 /// Used for the contents of a data constructor (block field, list
@@ -333,6 +344,11 @@ pub struct DemandAnalyser {
     signatures: SignatureTable,
     /// Name-keyed signatures for user function calls.
     named_signatures: NamedSignatureTable,
+    /// The root unit's block (pointer to its `Expr`), reached by following
+    /// `Let` and `Meta` bodies from the analysed expression. It is the
+    /// document RENDER_DOC renders, so its fields are all forced and keep
+    /// strict demand; every other block's fields are lazy.
+    root_block: Option<usize>,
 }
 
 impl Default for DemandAnalyser {
@@ -347,6 +363,7 @@ impl DemandAnalyser {
             intrinsic_sigs: build_intrinsic_signatures(),
             signatures: HashMap::new(),
             named_signatures: HashMap::new(),
+            root_block: None,
         }
     }
 
@@ -354,6 +371,7 @@ impl DemandAnalyser {
     /// annotated expression, the pointer-keyed signature table, and the
     /// name-keyed signature table for user function calls.
     pub fn analyse(mut self, expr: &RcExpr) -> (RcExpr, SignatureTable, NamedSignatureTable) {
+        self.root_block = root_block(expr);
         let (new_expr, _env) = self.analyse_expr(expr);
         (new_expr, self.signatures, self.named_signatures)
     }
@@ -410,23 +428,8 @@ impl DemandAnalyser {
             }
 
             Expr::Block(s, block_map) => {
-                // A block constructor does not force its field values: a
-                // field is evaluated only when it is looked up or rendered,
-                // so each value's free-variable demands are lazy. Treating
-                // them as strict forced a binding used only by an
-                // unselected field, e.g. `{ b: ds max-of  a: 1 }.a`
-                // (eu-oaz72.40).
-                let mut env = DemandEnv::new();
-                let mut new_entries = Vec::new();
-                for (k, v) in block_map.iter() {
-                    let (new_v, v_env) = self.analyse_expr(v);
-                    env = merge_envs(&env, &lazy_env(v_env));
-                    new_entries.push((k.clone(), new_v));
-                }
-                (
-                    RcExpr::from(Expr::Block(*s, new_entries.into_iter().collect())),
-                    env,
-                )
+                let rendered = self.root_block == Some(Rc::as_ptr(&expr.inner) as usize);
+                self.analyse_block(*s, block_map, rendered)
             }
 
             Expr::Meta(s, e, m) => {
@@ -450,6 +453,37 @@ impl DemandAnalyser {
             // Remaining variants: pass through unchanged
             _ => (expr.clone(), DemandEnv::new()),
         }
+    }
+
+    /// Analyse a `Block` constructor.
+    ///
+    /// A block constructor does not force its field values: a field is
+    /// evaluated only when it is looked up or rendered, so each value's
+    /// free-variable demands are weakened to lazy. Treating them as strict
+    /// forced a binding used only by an unselected field, e.g.
+    /// `{ b: ds max-of  a: 1 }.a` (eu-oaz72.40): a block literal is a `Let`
+    /// whose body is a `Block`, so a block body is not by itself evidence
+    /// that the block is rendered. `rendered` is set only for the root
+    /// unit's block, whose fields RENDER_DOC forces, and keeps their
+    /// demands as they are.
+    fn analyse_block(
+        &mut self,
+        s: Smid,
+        block_map: &BlockMap<RcExpr>,
+        rendered: bool,
+    ) -> (RcExpr, DemandEnv) {
+        let mut env = DemandEnv::new();
+        let mut new_entries = Vec::new();
+        for (k, v) in block_map.iter() {
+            let (new_v, v_env) = self.analyse_expr(v);
+            let v_env = if rendered { v_env } else { lazy_env(v_env) };
+            env = merge_envs(&env, &v_env);
+            new_entries.push((k.clone(), new_v));
+        }
+        (
+            RcExpr::from(Expr::Block(s, new_entries.into_iter().collect())),
+            env,
+        )
     }
 
     /// Analyse a `Let` expression using fixed-point iteration.
@@ -1053,16 +1087,21 @@ mod tests {
     #[test]
     fn constructor_contents_are_lazy() {
         // eu-oaz72.40:
-        //   let b = 1; c = 2 in { b: b, l: [c] }
+        //   let b = 1; c = 2 in { b: b, l: [c], a: 1 }.a
         // A block or list constructor does not evaluate its contents, so
         // `b` and `c`, used only inside one, must be Lazy. Before the fix
-        // they were Strict and forced even when their field was unselected.
+        // they were Strict and forced although their field is unselected.
         let b = free("b");
         let c = free("c");
-        let body = block([
-            ("b".to_string(), var(b.clone())),
-            ("l".to_string(), list(vec![var(c.clone())])),
-        ]);
+        let body = lookup(
+            block([
+                ("b".to_string(), var(b.clone())),
+                ("l".to_string(), list(vec![var(c.clone())])),
+                ("a".to_string(), num(1)),
+            ]),
+            "a",
+            None,
+        );
         let expr = let_(vec![(b, num(1)), (c, num(2))], body);
         let (result, _sigs, _named_sigs) = analyse_demands(&expr);
 
@@ -1070,6 +1109,26 @@ mod tests {
             Expr::Let(_, scope, _) => {
                 assert_eq!(scope.pattern[0].demand.strictness, Strictness::Lazy);
                 assert_eq!(scope.pattern[1].demand.strictness, Strictness::Lazy);
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rendered_block_body_fields_stay_strict() {
+        //   let b = 1 in { b: b }
+        // A Block that is a Let body is a rendered scope: RENDER_DOC forces
+        // every field, so `b` keeps strict demand.
+        let b = free("b");
+        let expr = let_(
+            vec![(b.clone(), num(1))],
+            block([("b".to_string(), var(b))]),
+        );
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(scope.pattern[0].demand.strictness, Strictness::Strict);
             }
             other => panic!("expected Let, got: {other:?}"),
         }
