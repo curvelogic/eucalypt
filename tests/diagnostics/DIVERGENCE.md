@@ -10,7 +10,7 @@ eu-9wq0s: the same program, the same mistake, two different answers.
 The full text of both renderings is in the fixture's `.snap` file under
 `tests/diagnostics/snapshots/`.
 
-**29 of 225 fixtures diverge.**
+**36 of 232 fixtures diverge.**
 
 | fixture | blob primary | source primary | blob trace | source trace |
 |---|---|---|---|---|
@@ -40,6 +40,13 @@ The full text of both renderings is in the fixture's `.snap` file under
 | `errors/218_json_block_key` | user tests/harness/errors/218_json_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
 | `errors/219_toml_block_key` | user tests/harness/errors/219_toml_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
 | `errors/220_eu_block_key` | user tests/harness/errors/220_eu_block_key.eu:9:7 | none | 0 (0 user) | 0 (0 user) |
+| `errors/241_oaz72_21_dict_bad_key` | user tests/harness/errors/241_oaz72_21_dict_bad_key.eu:2:9 | user tests/harness/errors/241_oaz72_21_dict_bad_key.eu:2:9 | 1 (1 user) | 1 (1 user) |
+| `errors/241_oaz72_21_dict_bad_pair` | user tests/harness/errors/241_oaz72_21_dict_bad_pair.eu:2:9 | user tests/harness/errors/241_oaz72_21_dict_bad_pair.eu:2:9 | 1 (1 user) | 1 (1 user) |
+| `errors/241_oaz72_21_dict_get_missing` | user tests/harness/errors/241_oaz72_21_dict_get_missing.eu:2:9 | user tests/harness/errors/241_oaz72_21_dict_get_missing.eu:2:9 | 1 (1 user) | 1 (1 user) |
+| `errors/241_oaz72_21_dict_key_depth` | user tests/harness/errors/241_oaz72_21_dict_key_depth.eu:4:9 | user tests/harness/errors/241_oaz72_21_dict_key_depth.eu:4:48 | 1 (1 user) | 1 (1 user) |
+| `errors/241_oaz72_21_dict_not_a_dict` | user tests/harness/errors/241_oaz72_21_dict_not_a_dict.eu:2:16 | user tests/harness/errors/241_oaz72_21_dict_not_a_dict.eu:2:16 | 1 (1 user) | 1 (1 user) |
+| `errors/241_oaz72_21_dict_render` | user tests/harness/errors/241_oaz72_21_dict_render.eu:3:9 | user tests/harness/errors/241_oaz72_21_dict_render.eu:3:9 | 0 (0 user) | 0 (0 user) |
+| `errors/241_oaz72_21_dict_value_cycle` | user tests/harness/errors/241_oaz72_21_dict_value_cycle.eu:4:20 | user tests/harness/errors/241_oaz72_21_dict_value_cycle.eu:4:20 | 3 (3 user) | 3 (3 user) |
 | `errors/error_173` | user tests/harness/errors/error_173.eu:10:9 | user tests/harness/errors/error_173.eu:10:9 | 1 (1 user) | 1 (1 user) |
 | `errors/error_176` | user tests/harness/errors/error_176.eu:19:32 | user tests/harness/errors/error_176.eu:19:32 | 1 (1 user) | 0 (0 user) |
 | `many-decls/huge_decls_type_warning` | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | user tests/diagnostics/snapshot-corpus/huge_decls_type_warning.eu:1504:9 | 1 (1 user) | 1 (1 user) |

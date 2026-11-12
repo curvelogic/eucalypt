@@ -3118,6 +3118,44 @@ pub fn test_236_oaz72_36_constructor_field_sharing() {
     run_test(&opts("236_oaz72_36_constructor_field_sharing.eu"));
 }
 
+#[test]
+pub fn test_241_oaz72_21_dict_core() {
+    run_test(&opts("241_oaz72_21_dict_core.eu"));
+}
+
+/// eu-oaz72.21 PR 2: a lazy dict value lives in a memoising cell, so three
+/// reads of it — through `get`, `get-or` and `to-list`, from several dict
+/// versions sharing the cell — must cost about one fold, not three.
+#[test]
+pub fn test_241_oaz72_21_dict_memo() {
+    let file = "241_oaz72_21_dict_memo.eu";
+    let fold = ticks_with_demand_analysis(file, "fold");
+    for target in ["of-shared", "assoc-shared", "to-list-shared"] {
+        let shared = ticks_with_demand_analysis(file, target);
+        assert!(
+            shared * 2 < fold * 3,
+            "target {target}: three reads cost {shared} ticks against {fold} for one \
+             fold: the dict value is recomputed on each read (eu-oaz72.21)"
+        );
+    }
+    // A non-updatable thunk value: only the dict's value cell memoises it.
+    let once = ticks_with_demand_analysis(file, "merged-once");
+    let shared = ticks_with_demand_analysis(file, "merged-shared");
+    assert!(
+        shared * 10 < once * 12,
+        "three dict reads of a non-updatable thunk cost {shared} ticks against {once} \
+         for one read: the value cell does not memoise it (eu-oaz72.21)"
+    );
+    // Threading a dict through a loop must not retain earlier versions.
+    let peak = stat(file, "assoc-chain", &[], "Peak Blocks");
+    assert!(
+        peak < 2500,
+        "assoc-chain peaked at {peak} heap blocks: earlier dict versions are being \
+         retained by stored values (eu-oaz72.21)"
+    );
+    run_test(&opts(file));
+}
+
 /// Ticks reported by `-S` for one target of a harness file, run with demand
 /// analysis suppressed.
 fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
@@ -3130,6 +3168,12 @@ fn ticks_with_demand_analysis(file: &str, target: &str) -> u64 {
 }
 
 fn ticks(file: &str, target: &str, flags: &[&str]) -> u64 {
+    stat(file, target, flags, "Ticks")
+}
+
+/// One numeric `-S` statistic (e.g. `Ticks`, `Peak Blocks`) for one target
+/// of a harness file.
+fn stat(file: &str, target: &str, flags: &[&str], name: &str) -> u64 {
     let path = format!("tests/harness/{file}");
     let mut args = vec!["run"];
     args.extend_from_slice(flags);
@@ -3146,10 +3190,10 @@ fn ticks(file: &str, target: &str, flags: &[&str]) -> u64 {
     stderr
         .lines()
         .find_map(|l| {
-            let (name, value) = l.split_once(':')?;
-            (name.trim() == "Ticks").then(|| value.trim().replace(',', "").parse().ok())?
+            let (key, value) = l.split_once(':')?;
+            (key.trim() == name).then(|| value.trim().replace(',', "").parse().ok())?
         })
-        .unwrap_or_else(|| panic!("no tick count in -S output:\n{stderr}"))
+        .unwrap_or_else(|| panic!("no {name} in -S output:\n{stderr}"))
 }
 
 /// eu-oaz72.48 — a list element referring to a let-bound thunk outside the
@@ -3464,6 +3508,48 @@ pub fn test_error_233_oaz72_43_update_nth_negative() {
 /// eu-oaz72.49: a zero step to window is an error rather than a hang.
 pub fn test_error_235_oaz72_49_window_step_zero() {
     run_error_test(&error_opts("235_oaz72_49_window_step_zero.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: `dict.get` of an absent key is an error naming the key.
+pub fn test_error_241_oaz72_21_dict_get_missing() {
+    run_error_test(&error_opts("241_oaz72_21_dict_get_missing.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: a block cannot be a dict key.
+pub fn test_error_241_oaz72_21_dict_bad_key() {
+    run_error_test(&error_opts("241_oaz72_21_dict_bad_key.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: list keys nested more than 32 deep are an error, not unbounded recursion.
+pub fn test_error_241_oaz72_21_dict_key_depth() {
+    run_error_test(&error_opts("241_oaz72_21_dict_key_depth.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: a `dict.of` element must be a two-element `[key, value]` list.
+pub fn test_error_241_oaz72_21_dict_bad_pair() {
+    run_error_test(&error_opts("241_oaz72_21_dict_bad_pair.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: a dict reaching output is a clear error until dict rendering lands.
+pub fn test_error_241_oaz72_21_dict_render() {
+    run_error_test(&error_opts("241_oaz72_21_dict_render.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: a dict value that depends on itself is reported as a cycle.
+pub fn test_error_241_oaz72_21_dict_value_cycle() {
+    run_error_test(&error_opts("241_oaz72_21_dict_value_cycle.eu"));
+}
+
+#[test]
+/// eu-oaz72.21: dict operations reject a value that is not a dict.
+pub fn test_error_241_oaz72_21_dict_not_a_dict() {
+    run_error_test(&error_opts("241_oaz72_21_dict_not_a_dict.eu"));
 }
 
 #[test]

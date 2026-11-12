@@ -1,0 +1,4 @@
+# eu-oaz72.21: list keys nested more than 32 deep are rejected with an
+# error rather than recursing without bound.
+nest(n, x): if(n = 0, x, nest(n - 1, [x]))
+result: dict.empty dict.assoc(nest(33, 1), :v) dict.size

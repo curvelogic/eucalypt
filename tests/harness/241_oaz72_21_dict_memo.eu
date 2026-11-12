@@ -1,0 +1,88 @@
+{
+  title: "241 dict values are memoised across reads and dict versions"
+  doc: "eu-oaz72.21 PR 2: a lazy dict value lives in a memoising cell, so it
+        is computed at most once however many times it is read, from
+        whichever dict version shares it. The tick gate is in
+        `tests/harness_test.rs`, which requires each three-read target to
+        cost about one fold."
+}
+
+` "the target computes the right value"
+passes(context): (context.result.ok) then(:PASS, :FAIL)
+
+` { target: :fold
+    verify: [:passes] }
+fold: {
+  ok: (range(0, 20000) foldl(+, 0)) = 199990000
+}
+
+# A value from dict.of, read three times through three dict versions.
+` { target: :of-shared
+    verify: [:passes] }
+of-shared: {
+  ` :suppress
+  d: dict.of([[1, range(0, 20000) foldl(+, 0)], [2, 0]])
+  y: [d dict.get(1), d dict.assoc(3, 0) dict.get(1), d dict.dissoc(2) dict.get-or(1, 0)]
+  ok: y = [199990000, 199990000, 199990000]
+}
+
+# A value from dict.assoc, read three times.
+` { target: :assoc-shared
+    verify: [:passes] }
+assoc-shared: {
+  ` :suppress
+  d: dict.empty dict.assoc(:k, range(0, 20000) foldl(+, 0))
+  y: [d dict.get(:k), d dict.get(:k), d dict.assoc(:j, 1) dict.get(:k)]
+  ok: y = [199990000, 199990000, 199990000]
+}
+
+# A value read through dict.to-list, then through get.
+` { target: :to-list-shared
+    verify: [:passes] }
+to-list-shared: {
+  ` :suppress
+  d: dict.of([[1, range(0, 20000) foldl(+, 0)]])
+  y: [d dict.to-list head second, d dict.get(1), d dict.to-list head second]
+  ok: y = [199990000, 199990000, 199990000]
+}
+
+# A value that is a non-updatable thunk. The block merge intrinsic builds
+# each combined value as a bare `f(a, b)` application that does not
+# memoise itself (its block slot is not an update target), so only the
+# dict's value cell can stop three gets recomputing it. `merged-once` reads
+# it once; `merged-shared` three times through the dict, and must cost
+# about the same (the gate in `tests/harness_test.rs` allows 20%).
+combine(a, b): range(0, 20000) foldl(+, a + b)
+
+` { target: :merged-once
+    verify: [:passes] }
+merged-once: {
+  b: __MERGEWITH({k: 1}, {k: 2}, combine)
+  ok: [b.k] = [199990003]
+}
+
+` { target: :merged-shared
+    verify: [:passes] }
+merged-shared: {
+  b: __MERGEWITH({k: 1}, {k: 2}, combine)
+  ` :suppress
+  d: b elements dict.of
+  y: [d dict.get(:k), d dict.get(:k), d dict.get-or(:k, 0)]
+  ok: y = [199990003, 199990003, 199990003]
+}
+
+# Each version of a dict threaded through a loop must become garbage once
+# the next is built. A stored value that still closed over the loop's frame
+# (an argument alias, or a boxed literal bound there) kept the previous
+# version alive, and so every version. The gate in `tests/harness_test.rs`
+# bounds this target's peak heap.
+chain-n: 50000
+chain(i, acc): if(i = chain-n, acc, if((acc dict.size) >= 0, chain(i + 1, acc dict.assoc(i % 1000, 0) dict.assoc(:last, i)), acc))
+
+` { target: :assoc-chain
+    verify: [:passes] }
+assoc-chain: {
+  ` :suppress
+  d: chain(0, dict.empty)
+  ok: (d dict.size) = 1001 ∧ (d dict.get(:last)) = 49999
+}

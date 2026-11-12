@@ -1,0 +1,120 @@
+#!/usr/bin/env eu
+# eu-oaz72.21 PR 2: dict core intrinsics and prelude (`dict.of`,
+# `from-list`, `empty`, `empty?`, `to-list`, `get`, `get-or`, `assoc`,
+# `dissoc`, `contains?`, `size`). Design:
+# docs/superpowers/plans/2026-11-12-dict-design.md §4, §5 and §7.
+#
+# Every check feeds RESULT, so any failure fails the build.
+
+` :suppress
+d: dict.of([[3, "c"], [1, "a"], [2, "b"]])
+
+# Construction, size and sorted iteration
+t-size: (d dict.size) = 3
+t-to-list: (d dict.to-list) = [[1, "a"], [2, "b"], [3, "c"]]
+t-from-list: (dict.from-list([[2, :b], [1, :a]]) dict.to-list) = [[1, :a], [2, :b]]
+t-empty: (dict.empty dict.size) = 0
+t-empty?: dict.empty dict.empty?
+t-not-empty?: not(d dict.empty?)
+t-empty-of: dict.of([]) dict.empty?
+t-empty-to-list: (dict.empty dict.to-list) = []
+
+# Lookup
+t-get: (d dict.get(2)) = "b"
+t-get-or-hit: (d dict.get-or(1, "z")) = "a"
+t-get-or-miss: (d dict.get-or(9, "z")) = "z"
+t-contains: d dict.contains?(3)
+t-not-contains: not(d dict.contains?(4))
+t-empty-contains: not(dict.empty dict.contains?(1))
+
+# Updates are persistent: the original is unchanged
+` :suppress
+d2: d dict.assoc(4, "d") dict.assoc(2, "B") dict.dissoc(1)
+t-assoc: (d2 dict.to-list) = [[2, "B"], [3, "c"], [4, "d"]]
+t-persistent: (d dict.to-list) = [[1, "a"], [2, "b"], [3, "c"]]
+t-dissoc-absent: (d dict.dissoc(99) dict.to-list) = (d dict.to-list)
+t-dissoc-all: d dict.dissoc(1) dict.dissoc(2) dict.dissoc(3) dict.empty?
+
+# Equal keys in dict.of: the first key and the last value are kept
+` :suppress
+dup: dict.of([[1, :first], [2, :two], [1.0, :last]])
+t-dup-size: (dup dict.size) = 2
+t-dup-value: (dup dict.get(1)) = :last
+t-dup-key: (dup dict.to-list head head) = 1
+# ... and assoc of an equal key keeps the stored key
+t-assoc-equal-key: (dup dict.assoc(1.0, :x) dict.to-list head) = [1, :x]
+
+# Numbers are exact: 1 and 1.0 are one key, -0.0 and 0 are one key, but
+# integers above 2^53 stay distinct
+t-int-float: dict.of([[1, :a]]) dict.contains?(1.0)
+t-neg-zero: dict.of([[0, :a]]) dict.contains?(-0.0)
+` :suppress
+big: dict.of([[9007199254740993, :odd], [9007199254740992, :even]])
+t-big: (big dict.size) = 2 ∧ (big dict.get(9007199254740993)) = :odd
+
+# Key order across types: numbers < strings < symbols < lists; symbols by
+# name; lists lexicographically, a prefix first
+` :suppress
+mixed: dict.of([[[1, 0], 8], [:zed, 6], ["b", 4], [[1], 7], [:abc, 5], [10, 2], [[2], 9], ["a", 3], [-1.5, 1]])
+t-order: (mixed dict.to-list map(second)) = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+t-keys-back: (mixed dict.to-list map(first)) = [-1.5, 10, "a", "b", :abc, :zed, [1], [1, 0], [2]]
+
+# List keys (e.g. coordinates), computed keys and nested lists
+row(y): range(0, 5) map({x: •}.[[x, y], :cell])
+` :suppress
+grid: range(0, 5) mapcat(row) dict.of
+t-grid-size: (grid dict.size) = 25
+t-grid-get: (grid dict.get([1 + 2, 4])) = :cell
+t-grid-miss: not(grid dict.contains?([5, 0]))
+` :suppress
+nested: dict.of([[[[1, "x"], :s], :deep]])
+t-nested: (nested dict.get([[1, "x"], :s])) = :deep
+t-empty-list-key: (dict.of([[[], :nil]]) dict.get([])) = :nil
+
+# Computed (boxed, thunked) keys are forced before use
+t-computed-key: (dict.of([[2 + 3, :five]]) dict.get(10 / 2)) = :five
+t-string-key: (dict.of([[str.join-on("", ["a", "b"]), 1]]) dict.get("ab")) = 1
+
+# Values are lazy: an unused panicking value is never evaluated
+` :suppress
+lazy: dict.of([[1, panic("never")], [2, 5]])
+t-lazy-of: (lazy dict.get(2)) = 5 ∧ (lazy dict.size) = 2
+t-lazy-assoc: (lazy dict.assoc(3, panic("no")) dict.get(2)) = 5
+t-lazy-default: (d dict.get-or(1, panic("no"))) = "a"
+
+# Values may be any value, including functions and dicts
+` :suppress
+fns: dict.of([[:inc, inc], [:dbl, _ * 2]])
+t-fn-values: ((fns dict.get(:dbl))(21)) = 42
+t-dict-value: (dict.of([[:inner, d]]) dict.get(:inner) dict.get(3)) = "c"
+
+# A self-referential memo table: values refer to the dict itself
+` :suppress
+memo: dict.of(range(0, 91) map({n: •}.[n, if(n < 2, n, (memo dict.get(n - 1)) + (memo dict.get(n - 2)))]))
+t-memo-fib: (memo dict.get(90)) = 2880067194370816120
+
+# Bulk: 1e4 entries built by assoc, then all looked up
+` :suppress
+bulk: range(0, 10000) foldl({acc: •0 i: •1}.(acc dict.assoc(i * 7 % 10000, i)), dict.empty)
+t-bulk-size: (bulk dict.size) = 10000
+t-bulk-get: range(0, 10000) all({k: •}.((bulk dict.get(k * 7 % 10000)) = k))
+t-bulk-sorted: (bulk dict.to-list map(first)) = range(0, 10000)
+
+# dict.of agrees with folding assoc
+t-of-vs-assoc: (dict.of([[2, :b], [1, :a], [2, :c]]) dict.to-list) = (dict.empty dict.assoc(2, :b) dict.assoc(1, :a) dict.assoc(2, :c) dict.to-list)
+
+# str.of and = (reference identity, as for sets)
+t-str-of: (d str.of) = "<dict:3>"
+t-identity: d = d
+
+RESULT: if([t-size, t-to-list, t-from-list, t-empty, t-empty?, t-not-empty?,
+            t-empty-of, t-empty-to-list, t-get, t-get-or-hit, t-get-or-miss,
+            t-contains, t-not-contains, t-empty-contains, t-assoc,
+            t-persistent, t-dissoc-absent, t-dissoc-all, t-dup-size,
+            t-dup-value, t-dup-key, t-assoc-equal-key, t-int-float,
+            t-neg-zero, t-big, t-order, t-keys-back, t-grid-size, t-grid-get,
+            t-grid-miss, t-nested, t-empty-list-key, t-computed-key,
+            t-string-key, t-lazy-of, t-lazy-assoc, t-lazy-default,
+            t-fn-values, t-dict-value, t-memo-fib, t-bulk-size, t-bulk-get,
+            t-bulk-sorted, t-of-vs-assoc, t-str-of, t-identity] all-true?,
+          :PASS, :FAIL)

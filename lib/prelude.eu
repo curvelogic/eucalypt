@@ -2046,6 +2046,61 @@ set: {
 
 
 ##
+## Dicts (persistent ordered dictionaries)
+##
+
+` { export: :suppress
+    doc: "Functions for working with dicts — persistent dictionaries ordered by key. Keys are numbers, strings, symbols or lists of those; values are arbitrary and lazy." }
+dict: {
+
+  ` { doc: "`dict.of(pairs)` - create a dict from list `pairs` of `[key, value]` pairs. Keys are evaluated fully; values stay lazy. Where keys are equal (`1` and `1.0` are equal keys), the first key and the last value are kept."
+      type: s"[[any]] → any" }
+  of: '__DICT.OF'
+
+  ` { doc: "`dict.from-list(pairs)` - alias of `dict.of`."
+      type: s"[[any]] → any" }
+  from-list: of
+
+  ` { doc: "`dict.empty` - the empty dict."
+      type: s"any" }
+  empty: of([])
+
+  ` { doc: "`dict.to-list(d)` - return the entries of dict `d` as `[key, value]` pairs in key order."
+      type: s"any → [[any]]" }
+  to-list: '__DICT.TO_LIST'
+
+  ` { doc: "`dict.get(k, d)` - return the value at key `k` in dict `d`; an error naming the key if `d` does not hold it."
+      type: s"any → any → any" }
+  get: '__DICT.GET'
+
+  ` { doc: "`dict.get-or(k, default, d)` - return the value at key `k` in dict `d`, or `default` if `d` does not hold it."
+      type: s"any → any → any → any" }
+  get-or: '__DICT.GET_OR'
+
+  ` { doc: "`dict.assoc(k, v, d)` - return dict `d` with key `k` mapped to the lazy value `v`. If `d` holds an equal key, that key is kept and only its value replaced."
+      type: s"any → any → any → any" }
+  assoc: '__DICT.ASSOC'
+
+  ` { doc: "`dict.dissoc(k, d)` - return dict `d` without key `k`."
+      type: s"any → any → any" }
+  dissoc: '__DICT.DISSOC'
+
+  ` { doc: "`dict.contains?(k, d)` - true if dict `d` holds key `k`."
+      type: s"any → any → bool" }
+  contains?: '__DICT.CONTAINS'
+
+  ` { doc: "`dict.size(d)` - return the number of entries in dict `d`."
+      type: s"any → number" }
+  size: '__DICT.SIZE'
+
+  ` { doc: "`dict.empty?(d)` - true if dict `d` has no entries."
+      type: s"any → bool" }
+  empty?(d): (d size) = 0
+}
+
+
+
+##
 ## Vecs (O(1) indexed access)
 ##
 

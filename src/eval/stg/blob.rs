@@ -505,6 +505,7 @@ mod tests {
         program.apply1_template = 1;
         program.apply2_template = 2;
         program.producer_tail_template = 3;
+        program.cell_template = 5;
 
         blob.bytecode = Some(PreludeBytecodeImage {
             program,
@@ -536,6 +537,7 @@ mod tests {
         assert_eq!(img.program.blackhole, 4);
         assert_eq!(img.program.pap, vec![13, 14]);
         assert_eq!(img.program.producer_tail_template, 3);
+        assert_eq!(img.program.cell_template, 5);
         assert_eq!(img.global_forms.len(), 2);
         assert_eq!(img.global_forms[1].arity, 2);
         assert_eq!(img.global_forms[1].entry, 3);
@@ -707,6 +709,10 @@ mod tests {
         assert_eq!(
             image.program.producer_tail_template, fresh.producer_tail_template,
             "producer tail"
+        );
+        assert_eq!(
+            image.program.cell_template, fresh.cell_template,
+            "dict cell"
         );
         assert_eq!(
             image.program.global_entries,

@@ -65,6 +65,7 @@ fn native_type(native: &Native) -> IntrinsicType {
         Native::NdArray(_) => IntrinsicType::Array,
         Native::Vec(_) => IntrinsicType::Vec,
         Native::Set(_) => IntrinsicType::Set,
+        Native::Dict(_) => IntrinsicType::Dict,
         Native::Prng(_) | Native::Producer(_) => IntrinsicType::Unknown,
     }
 }
@@ -518,6 +519,60 @@ pub fn set_arg<'guard>(
             machine.annotation(),
             Box::new((
                 crate::eval::types::IntrinsicType::Set,
+                native_type(&native),
+                describe_native(&native, machine, view),
+            )),
+        ))
+    }
+}
+
+/// Helper for intrinsics to access a dict arg: the root of its tree.
+pub fn dict_arg(
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+) -> Result<crate::eval::memory::dict::Tree, ExecutionError> {
+    let closure = machine.resolve_closure(view, arg)?;
+    let tag: Option<DataConstructor> = machine
+        .data_tag(view, &closure)
+        .and_then(|tag| tag.try_into().ok());
+    let boxed = matches!(
+        tag,
+        None | Some(
+            DataConstructor::BoxedNumber
+                | DataConstructor::BoxedString
+                | DataConstructor::BoxedSymbol
+                | DataConstructor::BoxedZdt
+        )
+    );
+    let native = if boxed {
+        machine.value_native(view, &closure)
+    } else {
+        None
+    };
+    let Some(native) = native else {
+        // A structured value (block, list, boolean, ...): not a dict.
+        let found = match tag {
+            Some(DataConstructor::Block) => IntrinsicType::Record(Default::default()),
+            Some(DataConstructor::ListCons | DataConstructor::ListNil) => {
+                IntrinsicType::List(Box::new(IntrinsicType::Any))
+            }
+            Some(DataConstructor::BoolTrue | DataConstructor::BoolFalse) => IntrinsicType::Bool,
+            Some(DataConstructor::Unit) => IntrinsicType::Unit,
+            _ => IntrinsicType::Unknown,
+        };
+        return Err(ExecutionError::TypeMismatch(
+            machine.annotation(),
+            Box::new((IntrinsicType::Dict, found, None)),
+        ));
+    };
+    if let Native::Dict(root) = native {
+        Ok(root)
+    } else {
+        Err(ExecutionError::TypeMismatch(
+            machine.annotation(),
+            Box::new((
+                IntrinsicType::Dict,
                 native_type(&native),
                 describe_native(&native, machine, view),
             )),

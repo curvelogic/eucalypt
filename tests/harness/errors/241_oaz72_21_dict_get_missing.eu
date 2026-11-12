@@ -1,0 +1,2 @@
+# eu-oaz72.21: dict.get of an absent key is an error naming the key.
+result: dict.of([[[1, 2], :a]]) dict.get([1, 3])
