@@ -3184,6 +3184,16 @@ pub fn test_233_oaz72_43_negative_counts() {
     run_test(&opts("233_oaz72_43_negative_counts.eu"));
 }
 
+/// eu-oaz72.47: the pre-compiled prelude resolves intrinsic aliases in each
+/// binding body, so `foldl` and the loops built on it branch on an inlined
+/// case rather than calling the global `if`. The per-element tick budgets
+/// FAIL against a blob compiled without it (blob mode only; source mode
+/// inlined these already).
+#[test]
+pub fn test_235_oaz72_47_prelude_loops_inline_if() {
+    run_test(&opts("235_oaz72_47_prelude_loops_inline_if.eu"));
+}
+
 /// Reformat `source` as `eu fmt --reformat` does and check the result
 /// parses and is a fixed point. Returns the reformatted text.
 fn reformat_round_trip(label: &str, source: &str) -> String {
