@@ -1443,14 +1443,14 @@ nth(n, l): {
   out-of-range(len): panic("index {n} out of range for list of length {len}")
   aux(i, xs): if(xs nil?,
                  out-of-range(l count),
-                 if(i zero?, xs head,
-                    if((n number?) ∧ (n < 0), panic("index {n} out of range: list indices start at 0"),
-                       aux(i dec, xs tail))))
-}.aux(n, l)
+                 if(i zero?, xs head, aux(i dec, xs tail)))
+}.(if((n number?) ∧ (n < 0), panic("index {n} out of range: list indices start at 0"), aux(n, l)))
 
 ` "`update-nth(n, f, l)` - apply `f` to element at index `n` in list `l`.
-Panics if `n` is out of range."
-update-nth(n, f, l): { rejoin([prefix, [s: suffix]]): prefix ++ (f(s) ‖ suffix) }.(l split-at(n) rejoin)
+Panics if `n` is out of range, including a negative `n`."
+update-nth(n, f, l): {
+  rejoin([prefix, [s: suffix]]): prefix ++ (f(s) ‖ suffix)
+}.(if((n number?) ∧ (n < 0), panic("index {n} out of range: list indices start at 0"), l split-at(n) rejoin))
 
 ` "`update-first(p?, f, l)` - apply `f` to the first element matching `p?` in list `l`.
 Returns `l` unchanged if no element matches."

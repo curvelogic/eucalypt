@@ -3252,6 +3252,13 @@ pub fn test_error_233_oaz72_43_nth_negative() {
 }
 
 #[test]
+/// eu-oaz72.43: a negative index to update-nth is an error, not a silent
+/// update of element 0.
+pub fn test_error_233_oaz72_43_update_nth_negative() {
+    run_error_test(&error_opts("233_oaz72_43_update_nth_negative.eu"));
+}
+
+#[test]
 /// W4p2 integration: valid declarations structurally equivalent to those
 /// that would survive error recovery evaluate correctly end-to-end.
 /// Paired with test_error_164/165 to prove the full recovery story:

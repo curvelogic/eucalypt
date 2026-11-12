@@ -6,8 +6,8 @@
 # infinite one.
 #
 # Fixed: n <= 0 makes `drop` the identity, `split-at` return [[], l] and
-# `rotate` the identity. `nth` with a negative index is an error (covered by
-# tests/harness/errors/233_oaz72_43_nth_negative.eu).
+# `rotate` the identity. `nth` and `update-nth` with a negative index are
+# errors (tests/harness/errors/233_oaz72_43_{nth,update_nth}_negative.eu).
 #
 # Every check feeds RESULT. Checks on infinite lists are bounded by
 # `take`, so with the bug present they fail rather than hang where possible.
@@ -30,6 +30,8 @@ checks: {
 
   nth-zero-infinite: (ints-from(5) nth(0)) = 5
   nth-positive: ([1, 2, 3] nth(2)) = 3
+  update-nth-zero: ([1, 2, 3] update-nth(0, inc)) = [2, 2, 3]
+  update-nth-positive: ([1, 2, 3] update-nth(2, inc)) = [1, 2, 4]
 }
 
 RESULT: if(checks values all-true?, :PASS, :FAIL)
