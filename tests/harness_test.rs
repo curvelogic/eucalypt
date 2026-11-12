@@ -3066,11 +3066,19 @@ pub fn test_230_uhd7d_close_brace_after_interpolation() {
     run_test(&opts("230_uhd7d_close_brace_after_interpolation.eu"));
 }
 
+/// eu-oaz72.1: demand analysis marked a block binding strict when it was
+/// needed only in an untaken branch, via a lazy sibling whose right-hand
+/// side held a nested `let` (prefix `drop-while`). Each case is in RESULT.
+#[test]
+pub fn test_231_oaz72_1_demand_untaken_branch() {
+    run_test(&opts("231_oaz72_1_demand_untaken_branch.eu"));
+}
+
 /// eu-oaz72.35 — `take(n)` with n <= 0 is [] (it used to run past zero on
 /// a negative count), so `range(b, e)` with e <= b is [] instead of hanging.
 #[test]
-pub fn test_231_oaz72_35_range_take_termination() {
-    run_test(&opts("231_oaz72_35_range_take_termination.eu"));
+pub fn test_232_oaz72_35_range_take_termination() {
+    run_test(&opts("232_oaz72_35_range_take_termination.eu"));
 }
 
 #[test]
