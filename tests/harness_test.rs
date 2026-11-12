@@ -3082,6 +3082,13 @@ pub fn test_232_oaz72_35_range_take_termination() {
 }
 
 #[test]
+/// eu-oaz72.43: negative counts to drop, split-at and rotate are consistent
+/// with take and terminate on infinite lists.
+pub fn test_233_oaz72_43_negative_counts() {
+    run_test(&opts("233_oaz72_43_negative_counts.eu"));
+}
+
+#[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame
 /// inside it could win `to_diagnostic`'s "prefer a user file" test and become
@@ -3235,6 +3242,13 @@ pub fn test_error_231_1tkk_7_44_nobranch_datatag_code() {
 /// error instead of panicking the parser.
 pub fn test_error_232_oaz72_2_unclosed_bracket_eof() {
     run_error_test(&error_opts("232_oaz72_2_unclosed_bracket_eof.eu"));
+}
+
+#[test]
+/// eu-oaz72.43: a negative index to nth is an error rather than a hang on
+/// an infinite list.
+pub fn test_error_233_oaz72_43_nth_negative_infinite() {
+    run_error_test(&error_opts("233_oaz72_43_nth_negative_infinite.eu"));
 }
 
 #[test]

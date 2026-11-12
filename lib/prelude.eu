@@ -1380,23 +1380,23 @@ __dbg-after(f, x): ▶(f(x))
 ## List library functions, maps and folds
 #
 
-` { doc: "`take(n, l)` - return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0."
+` { doc: "`take(n, l)` - return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0. A non-integer `n` is not rejected."
     type: s"number → [a] → [a]" }
 take(n, l): __IF((n <= 0) ∨ (l nil?), [], cons(l head, take(n dec, l tail)))
  
-` { doc: "`drop(n, l)` - return result of dropping integer `n` elements from list `l`."
+` { doc: "`drop(n, l)` - return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0. A non-integer `n` is not rejected."
     type: s"number → [a] → [a]"
     blame: :transparent }
-drop(n, l): __IF((n zero?), l, drop(n dec, l tail))
+drop(n, l): __IF((n <= 0), l, drop(n dec, l tail))
 
-` { doc: "`rotate(n, l)` - rotate list `l` left by `n` positions."
+` { doc: "`rotate(n, l)` - rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0."
     type: s"number → [a] → [a]" }
 rotate(n, l): { s: split-at(n, l) }.(second(s) ++ first(s))
 
-` { doc: "`split-at(n, l)` - split list into two at `n`th item and return pair."
+` { doc: "`split-at(n, l)` - split list into two at `n`th item and return pair; `[[], l]` when `n` <= 0."
     type: s"number → [a] → ([a], [a])" }
 split-at(n, l): {
-  aux(n, xs, prefix): if((xs nil?) ∨ (n zero?), [prefix reverse, xs], aux(n dec, xs tail, cons(xs head, prefix)))
+  aux(n, xs, prefix): if((xs nil?) ∨ (n <= 0), [prefix reverse, xs], aux(n dec, xs tail, cons(xs head, prefix)))
 }.aux(n, l, [])
 
 ` { doc: "`transpose(rows)` - transpose a matrix (list of lists)."
@@ -1436,7 +1436,7 @@ split-after(p?, l): {
     type: s"(a → bool) → [a] → ([a], [a])" }
 split-when(p?, l): split-after(p? complement, l)
 
-` { doc: "`nth(n, l)` - return `n`th item of list if it exists, otherwise error."
+` { doc: "`nth(n, l)` - return `n`th item (from 0) of list if it exists, otherwise error; a negative `n` is an error."
     type: s"number → [a] → a?"
     blame: :boundary }
 nth(n, l): {
@@ -1444,7 +1444,7 @@ nth(n, l): {
   aux(i, xs): if(xs nil?,
                  out-of-range(l count),
                  if(i zero?, xs head, aux(i dec, xs tail)))
-}.aux(n, l)
+}.(if(n < 0, panic("index {n} out of range: list indices start at 0"), aux(n, l)))
 
 ` "`update-nth(n, f, l)` - apply `f` to element at index `n` in list `l`.
 Panics if `n` is out of range."

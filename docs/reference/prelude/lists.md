@@ -36,8 +36,8 @@
 
 | Function | Description |
 |----------|-------------|
-| `take(n, l)` | Return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0 |
-| `drop(n, l)` | Return result of dropping integer `n` elements from list `l` |
+| `take(n, l)` | Return initial segment of integer `n` elements from list `l`; `[]` when `n` <= 0. A non-integer `n` is not rejected |
+| `drop(n, l)` | Return result of dropping integer `n` elements from list `l`; `l` unchanged when `n` <= 0. A non-integer `n` is not rejected |
 | `take-while(p?, l)` | Initial elements of list `l` while `p?` is true |
 | `take-until(p?)` | Initial elements of list `l` while `p?` is false |
 | `drop-while(p?, l)` | Skip initial elements of list `l` while `p?` is true |
@@ -65,7 +65,7 @@
 
 | Function | Description |
 |----------|-------------|
-| `split-at(n, l)` | Split list into two at `n`th item and return pair |
+| `split-at(n, l)` | Split list into two at `n`th item and return pair; `[[], l]` when `n` <= 0 |
 | `split-after(p?, l)` | Split list where `p?` becomes false and return pair |
 | `split-when(p?, l)` | Split list where `p?` becomes true and return pair |
 | `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offset `step` |
@@ -119,7 +119,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `nth(n, l)` | Return `n`th item of list if it exists, otherwise error |
+| `nth(n, l)` | Return `n`th item (from 0) of list if it exists, otherwise error; a negative `n` is an error |
 | `(l !! r)` | Return `n`th item of list `l` if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and !! delegates to `arr.get` |
 | `count(l)` | Return count of items in list `l` |
 | `last` | Return last element of list `l` |
@@ -130,7 +130,7 @@ by-age: people sort-by-num(.age)         # sorted by age
 
 | Function | Description |
 |----------|-------------|
-| `rotate(n, l)` | Rotate list `l` left by `n` positions |
+| `rotate(n, l)` | Rotate list `l` left by `n` positions; `l` unchanged when `n` <= 0 |
 | `transpose(rows)` | Transpose a matrix (list of lists) |
 | `update-nth(n, f, l)` | Apply `f` to element at index `n` in list `l`.
 Panics if `n` is out of range |
