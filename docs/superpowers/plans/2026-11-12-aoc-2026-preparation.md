@@ -102,10 +102,13 @@ eu-oaz72.14 (tree-sitter mis-parses), eu-oaz72.20 (WASM API), eu-oaz72.38
 
 ## 4. Constraints
 
-- **Owner merge queue.** New intrinsics and prelude API are merged by the
-  owner alone (`REVIEW.md`): eu-oaz72.21, eu-oaz72.24, eu-oaz72.25,
-  eu-oaz72.26, eu-oaz72.30, eu-oaz72.31, eu-oaz72.32.
-  Batch them so the queue is reviewed in few sittings.
+- **New intrinsics and prelude API** (eu-oaz72.21, eu-oaz72.24,
+  eu-oaz72.25, eu-oaz72.26, eu-oaz72.30, eu-oaz72.31, eu-oaz72.32) are
+  specified in advance by this plan's decisions (§6) and the owner
+  decisions on their beads. Under `REVIEW.md`'s *Specified in advance*
+  rule they merge after two independent reviews, labelled `api-review`
+  for the owner's review before release. A deviation, or a choice this
+  plan and the bead leave open, goes to the owner instead.
 - **GC area.** PRs for eu-oaz72.4, eu-oaz72.5, eu-oaz72.21 and eu-oaz72.30 need two independent
   `rig-review`s recorded on the PR, and must pass `EU_GC_VERIFY=2`,
   `EU_GC_POISON=1` and `EU_GC_STRESS=1`.
