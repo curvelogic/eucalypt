@@ -460,6 +460,11 @@ pub fn test_harness_044() {
 }
 
 #[test]
+pub fn test_harness_045() {
+    run_test(&opts("045_csv_import.eu"));
+}
+
+#[test]
 pub fn test_harness_046() {
     run_test(&opts("046_commas.eu"));
 }
@@ -706,6 +711,11 @@ pub fn test_harness_083() {
 #[test]
 pub fn test_harness_084() {
     run_test(&opts("084_bitwise.eu"));
+}
+
+#[test]
+pub fn test_harness_085() {
+    run_test(&opts("085_deep_merge_dynamic.eu"));
 }
 
 #[test]
@@ -4730,4 +4740,13 @@ fn gc_poison_small_heap_churn_reports_no_hole() {
         "GC hole diagnostics under EU_GC_POISON, first: {}",
         stderr.lines().find(|l| l.contains("GC HOLE")).unwrap_or("")
     );
+}
+
+/// A target that carries checks but is not run by the tester (not named
+/// `test-…`, no `verify`) must fail the file, so its checks cannot be
+/// silently skipped.
+#[test]
+pub fn test_tester_fails_unrun_checked_target() {
+    let exit_code = tester::test(&opts("testdata/unrun_checked_target.eu")).unwrap();
+    assert_eq!(exit_code, 1);
 }

@@ -37,7 +37,7 @@ loop-values(context): {
 ` "no loop grows the stack with its iteration count"
 constant-stack(context): (context.stats.max-stack < 1000) then(:PASS, :FAIL)
 
-` { target: :semantics }
+` { target: :test-semantics }
 semantics: {
   # The unchosen branch is never evaluated.
   unchosen-true: if(true, 1, panic("else branch evaluated")) = 1
