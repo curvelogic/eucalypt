@@ -37,7 +37,7 @@ use super::{
     symbol::{SymbolId, SymbolPool},
     syntax::RefPtr,
 };
-use crate::eval::bytecode::closure::BcValue;
+use crate::eval::bytecode::BcValue;
 use crate::eval::error::ExecutionError;
 
 /// Weight-balance factor Δ: a subtree may be at most Δ times the size of
@@ -802,15 +802,17 @@ impl<'a> Dict<'a> {
         self.bin(*k, v.clone(), l, r)
     }
 
-    /// Sort entries by key (stably) and keep the last of each run of equal
-    /// keys, ready for [`Dict::build_sorted`].
+    /// Sort entries by key (stably) and keep, for each run of equal keys,
+    /// the last value under the first key — the result repeated
+    /// [`Dict::insert`]s would give (an equal key keeps the stored key and
+    /// replaces the value) — ready for [`Dict::build_sorted`].
     pub fn sort_last_wins(&self, mut entries: Vec<Entry>) -> Vec<Entry> {
         entries.sort_by(|a, b| self.cmp_keys(&a.0, &b.0));
         let mut out: Vec<Entry> = Vec::with_capacity(entries.len());
-        for e in entries {
+        for (k, v) in entries {
             match out.last_mut() {
-                Some(last) if self.cmp_keys(&last.0, &e.0) == Ordering::Equal => *last = e,
-                _ => out.push(e),
+                Some(last) if self.cmp_keys(&last.0, &k) == Ordering::Equal => last.1 = v,
+                _ => out.push((k, v)),
             }
         }
         out
@@ -884,6 +886,7 @@ pub type NodePtr = NonNull<DictNode>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::eval::bytecode::{BcClosure, BcEnvFrame};
     use crate::eval::machine::metrics::{Clock, ThreadOccupation};
     use crate::eval::memory::collect::{collect, collect_with_evacuation};
     use crate::eval::memory::heap::Heap;
@@ -1204,6 +1207,11 @@ mod tests {
         d.check_invariants(t).unwrap();
         assert_eq!(d.size(t), 1000);
         assert_eq!(val_of(d.node(d.lookup(t, &int(7)).unwrap()).value()), -7);
+        // The first key of an equal run is kept, as repeated inserts keep it.
+        assert!(matches!(
+            d.node(d.lookup(t, &int(7)).unwrap()).key(),
+            DictKey::Int(7)
+        ));
         assert_eq!(val_of(d.node(d.lookup(t, &int(3)).unwrap()).value()), -3);
         assert_eq!(val_of(d.node(d.lookup(t, &int(4)).unwrap()).value()), 4);
         assert!(d.build_sorted(&[]).unwrap().is_none());
@@ -1226,6 +1234,17 @@ mod tests {
         out
     }
 
+    /// Addresses of the env frames of every closure value.
+    fn closure_envs(d: &Dict<'_>, t: Tree) -> Vec<usize> {
+        let mut out = vec![];
+        d.for_each(t, |nd| {
+            if let BcValue::Closure(c) = nd.value() {
+                out.push(c.env().as_ptr() as usize);
+            }
+        });
+        out
+    }
+
     /// Build trees with string, list and string-valued entries, then run a
     /// full evacuation (every block a candidate) and a mark-in-place
     /// collection, rooting only the tree roots. Every node, key string,
@@ -1239,7 +1258,7 @@ mod tests {
         let sym = pool.intern("sym");
         let n = 400;
 
-        let (mut roots, old_nodes, old_strs) = {
+        let (mut roots, old_nodes, old_strs, old_envs) = {
             let view = MutatorHeapView::new(&heap);
             let d = Dict::new(view, &pool);
             let mut t: Tree = None;
@@ -1254,6 +1273,13 @@ mod tests {
                     .insert(t, DictKey::Str(s), BcValue::Native(Native::Str(vstr)))
                     .unwrap();
                 t = d.insert(t, DictKey::List(lst), val(i)).unwrap();
+                // A closure value (its env must be traced and forwarded)
+                // under a nested list key.
+                let env = view.alloc(BcEnvFrame::default()).unwrap().as_ptr();
+                let inner = DictKeyList::alloc(&view, &[int(i)]).unwrap();
+                let nested = DictKeyList::alloc(&view, &[DictKey::List(inner)]).unwrap();
+                let clo = BcValue::Closure(BcClosure::new(i as u32, env));
+                t = d.insert(t, DictKey::List(nested), clo).unwrap();
                 // Garbage interleaved with live data.
                 let _ = view.str("garbage").unwrap();
             }
@@ -1263,7 +1289,7 @@ mod tests {
             let roots: Vec<NodePtr> = vec![t.unwrap(), pruned.unwrap()];
             let mut nodes = vec![];
             d.for_each(t, |nd| nodes.push(nd as *const DictNode as usize));
-            (roots, nodes, key_strings(&d, t))
+            (roots, nodes, key_strings(&d, t), closure_envs(&d, t))
         };
 
         let rest = heap.rest_block_count();
@@ -1287,8 +1313,8 @@ mod tests {
         let pruned = Some(roots[1]);
         d.check_invariants(t).unwrap();
         d.check_invariants(pruned).unwrap();
-        assert_eq!(d.size(t), 2 * n as u64);
-        assert_eq!(d.size(pruned), 2 * n as u64 - 1);
+        assert_eq!(d.size(t), 3 * n as u64);
+        assert_eq!(d.size(pruned), 3 * n as u64 - 1);
 
         let mut new_nodes = vec![];
         d.for_each(t, |nd| new_nodes.push(nd as *const DictNode as usize));
@@ -1310,10 +1336,24 @@ mod tests {
             "every key string (and key-list string) must be forwarded"
         );
 
+        let new_envs = closure_envs(&d, t);
+        assert_eq!(new_envs.len(), n as usize);
+        let moved = new_envs
+            .iter()
+            .zip(&old_envs)
+            .filter(|(a, b)| a != b)
+            .count();
+        assert_eq!(
+            moved,
+            old_envs.len(),
+            "every closure value's env must be forwarded"
+        );
+
         // Contents intact: string keys map to their value strings, list
         // keys hold their elements and map to their numbers.
         let mut strs = 0;
         let mut lists = 0;
+        let mut nested = 0;
         d.for_each(t, |nd| match nd.key() {
             DictKey::Str(_) => {
                 let k = nd.key().str_in(&view).unwrap();
@@ -1323,6 +1363,17 @@ mod tests {
                 };
                 assert_eq!(view.scoped(*v).as_str(), format!("v{i}"));
                 strs += 1;
+            }
+            DictKey::List(_) if nd.key().list_in(&view).unwrap().len() == 1 => {
+                // Nested list key [[i]] with a closure value of code i.
+                let outer = nd.key().list_in(&view).unwrap();
+                let inner = outer[0].list_in(&view).expect("nested list key");
+                let i = int_of(&inner[0]);
+                let BcValue::Closure(c) = nd.value() else {
+                    panic!("closure value expected");
+                };
+                assert_eq!(c.code(), i as u32);
+                nested += 1;
             }
             DictKey::List(_) => {
                 let elems = nd.key().list_in(&view).unwrap();
@@ -1335,7 +1386,7 @@ mod tests {
             }
             other => panic!("unexpected key {other:?}"),
         });
-        assert_eq!((strs, lists), (n, n));
+        assert_eq!((strs, lists, nested), (n, n, n));
         let probe = DictKey::Str(view.str("k0123").unwrap().as_ptr());
         assert!(d.lookup(t, &probe).is_some());
         let probe0 = DictKey::Str(view.str("k0000").unwrap().as_ptr());
