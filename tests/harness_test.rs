@@ -3112,15 +3112,21 @@ pub fn test_236_oaz72_36_constructor_field_sharing() {
 /// Ticks reported by `-S` for one target of a harness file, run with demand
 /// analysis suppressed.
 fn ticks_without_demand_analysis(file: &str, target: &str) -> u64 {
+    ticks(file, target, &["--suppress-demand-analysis"])
+}
+
+/// Tick count for one target of a harness file, run with demand analysis.
+fn ticks_with_demand_analysis(file: &str, target: &str) -> u64 {
+    ticks(file, target, &[])
+}
+
+fn ticks(file: &str, target: &str, flags: &[&str]) -> u64 {
+    let path = format!("tests/harness/{file}");
+    let mut args = vec!["run"];
+    args.extend_from_slice(flags);
+    args.extend_from_slice(&["-S", "-t", target, &path]);
     let output = std::process::Command::new(eu_binary())
-        .args([
-            "run",
-            "--suppress-demand-analysis",
-            "-S",
-            "-t",
-            target,
-            &format!("tests/harness/{file}"),
-        ])
+        .args(&args)
         .output()
         .expect("eu runs");
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -3256,6 +3262,33 @@ pub fn test_234_oaz72_4_gc_volume_trigger() {
 /// once a non-positive step (and window size) became errors.
 pub fn test_235_oaz72_49_window_step() {
     run_test(&opts("235_oaz72_49_window_step.eu"));
+}
+
+/// eu-oaz72.40: demand analysis treated block field values and list
+/// elements as strict, forcing a binding used only by an unselected
+/// field. Each case is in RESULT.
+#[test]
+pub fn test_238_oaz72_40_block_body_demand() {
+    run_test(&opts("238_oaz72_40_block_body_demand.eu"));
+}
+
+/// eu-oaz72.40: a binding referred to once inside a block field or list
+/// element was marked AtMostOnce, so it skipped its update frame and each
+/// read through the structure recomputed it. With demand analysis on, three
+/// reads must cost about one fold, not three.
+#[test]
+pub fn test_239_oaz72_40_constructor_sharing() {
+    let file = "239_oaz72_40_constructor_sharing.eu";
+    let fold = ticks_with_demand_analysis(file, "fold");
+    for target in ["list-body", "list-field"] {
+        let shared = ticks_with_demand_analysis(file, target);
+        assert!(
+            shared * 2 < fold * 3,
+            "target {target}: three reads cost {shared} ticks against {fold} for one \
+             fold: the binding is recomputed on each read (eu-oaz72.40)"
+        );
+    }
+    run_test(&opts(file));
 }
 
 #[test]
