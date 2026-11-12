@@ -3081,12 +3081,22 @@ pub fn test_232_oaz72_35_range_take_termination() {
     run_test(&opts("232_oaz72_35_range_take_termination.eu"));
 }
 
+/// eu-oaz72.34 — a self-recursive loop through `if` or `then` with a strict
+/// accumulator must run in constant stack: the curried `then(t, f)(c)` that
+/// catenation produces is reduced to a saturated `if`. The `loops` target's
+/// `constant-stack` validator checks `max-stack` and FAILs on master, where
+/// each `then` iteration pushed a frame (max-stack ~1e5 at n = 1e5).
+#[test]
+pub fn test_233_oaz72_34_constant_stack_loops() {
+    run_test(&opts("233_oaz72_34_constant_stack_loops.eu"));
+}
+
 /// eu-oaz72.40: demand analysis treated block field values and list
 /// elements as strict, forcing a binding used only by an unselected
 /// field. Each case is in RESULT.
 #[test]
-pub fn test_233_oaz72_40_block_body_demand() {
-    run_test(&opts("233_oaz72_40_block_body_demand.eu"));
+pub fn test_234_oaz72_40_block_body_demand() {
+    run_test(&opts("234_oaz72_40_block_body_demand.eu"));
 }
 
 #[test]
