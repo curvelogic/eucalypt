@@ -207,7 +207,9 @@ first), with elements compared by the same total order, so `[2, 10]` <
 recommendation: null < booleans (false < true) < numbers, so a missing
 value sorts first.
 
-**Hashing** is not needed: the ordered tree uses comparison only and
+**Hashing** is not needed (owner decision 2 says keys are "hashed
+structurally", written before the ordered-tree decision; under OPEN 1
+either tree needs only comparison): the ordered tree uses comparison only and
 equality is `compare == Equal`. If a CHAMP follows (plan §6), its hash must
 agree with this equality (hash an integral float as its integer, all NaNs
 alike, `-0.0` as `0.0`).
@@ -291,7 +293,9 @@ helpers shared by both types.
 (`Primitive::from_number`), so `set.to-list` returns `9007199254740992`
 for an added `9007199254740993`. On `DictKey`
 numbers stay exact. This fixes eu-oaz72.10 for sets but changes what
-`set.to-list` returns for such elements, beyond the order question of
+`set.to-list` returns for such elements — and, since every set number is
+an f64 today, possibly how ordinary integers come back (PR 5 checks this
+against the existing set tests), beyond the order question of
 OPEN 2; the owner should confirm it (recommendation: accept, and close
 eu-oaz72.10's set half with this work).
 
@@ -313,7 +317,7 @@ leaves open (OPEN 4).
 | `dict.assoc(k, v, d)`, `dict.dissoc(k, d)` | new dict | O(log n) |
 | `dict.update(k, f, default, d)` † | `assoc(k, f(get-or(k, default)))` | O(log n) |
 | `dict.contains?(k, d)`, `dict.size(d)`, `dict.empty?(d)` † | | O(log n), O(1) |
-| `dict.merge-with(f, a, b)` | union; `f(va, vb)` on collision | split/join |
+| `dict.merge-with(f, a, b)` | union; † `f(va, vb)` on collision (`a`'s value first, as block `merge-with`) | split/join |
 | `dict.min(d)`, `dict.max(d)` | † `[k, v]` | O(log n) |
 | `dict.pop-min(d)`, `dict.pop-max(d)` | † `[k, v, rest]` | O(log n) |
 | `dict.range(lo, hi, d)` | sub-dict with `lo ≤ k < hi` | O(log n) |
@@ -381,9 +385,9 @@ every format. Dicts are runtime values only; nothing reaches the prelude blob.
   YAML complex keys can follow on request), naming the key; two keys that
   stringify to the same text (`1` and `"1"`) are also an error, since JSON,
   TOML and YAML all reject duplicate keys.
-- The `Display` impl for `Native`, `printf` and `assert` messages print
-  `<dict:N>` (size), like `<set>` today; `describe_native` (which has no
-  set arm today) gets none either.
+- The `Display` impl for `Native` and `assert` messages print `<dict:N>`
+  (size), like `<set>` today; `printf` errors "cannot format dict" as it
+  does for sets; `describe_native` (no set arm today) gets none either.
 - Parallel serialisation (`par-*`): a dict is "opaque value — not
   serialisable", as sets are today; a follow-up can serialise it.
 
@@ -423,7 +427,7 @@ modes); intrinsic-adding PRs merge under the plan's §4 rule. Lane: dict.
 2. **`Native::Dict` and the core intrinsics:** `of`, `to-list`, `get`,
    `get-or`, `assoc`, `dissoc`, `contains?`, `size`, value cells, the
    GC entry points (`scan_native`/`update_native` and the machine's
-   `Ref::V` arms, §3), the tag checks, `describe_native`/printf/assert/serialise arms, prelude `dict`
+   `Ref::V` arms, §3), the tag checks, `Display`/printf/assert/serialise arms, prelude `dict`
    namespace, harness tests (fault-injection verified), 1e5 insert+lookup
    measurement.
 3. **Ordered operations:** `min`, `max`, `pop-min`, `pop-max`, `range`,
@@ -456,7 +460,7 @@ the new `dict.*` names.
 | 8 | List elements in sets | allow |
 | 9 | Clash with block type `Dict(T)` | rename block type to `Block(T)`, deprecate `Dict(T)` |
 | 10 | Keys hold heap strings/key lists vs "no heap references" | accept: no references to lazy or user structure |
-| 11 | Key equality differs from `=` above 2^53 and for NaN | accept and document |
+| 11 | Key equality differs from `=` above 2^53 (and NaN, should it ever occur) | accept and document |
 | 12 | `=` on dicts | reference identity, as sets today |
 | — | Exact numbers in sets change `set.to-list` for >2^53 (§6) | accept; closes eu-oaz72.10's set half |
 | — | Additions beyond the owner's list: `empty`, `empty?`, `update` default, result shapes (OPEN 4) | as §7 |
