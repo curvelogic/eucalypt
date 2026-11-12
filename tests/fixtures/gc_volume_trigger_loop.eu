@@ -1,0 +1,4 @@
+# eu-oaz72.4: a loop whose live data stays small but which allocates far
+# more than the 32 MiB minimum collection trigger.
+loop(i, a): if(a < 0, a, if(i = 0, a, loop(i - 1, a + 1)))
+r: loop(300000, 0)

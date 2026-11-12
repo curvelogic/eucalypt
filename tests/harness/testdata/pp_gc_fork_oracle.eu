@@ -5,7 +5,7 @@
 # than against another run of itself. Run without a heap limit and without GC
 # stress, so it is fast and is not itself under test.
 
-f(x): range(0, 100) map((_0 + x)) sum
+f(x): range(0, 1000) map((_0 + x)) sum
 xs: range(1, 60)
 r: xs map(f)
 n: r sum

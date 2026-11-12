@@ -1,0 +1,22 @@
+#!/usr/bin/env eu
+# eu-oaz72.4: the collector used to run only once the heap reached its
+# limit, so with the default limit it never ran at all. It now runs on
+# allocation volume: this program allocates several hundred MiB (far past
+# the 32 MiB minimum trigger) while holding little live data, so it
+# collects many times. The checks confirm that data live across those
+# collections (`xs`, forced before the loop and read after it) and the
+# loop's own result survive them intact — under the GC-verified CI jobs
+# this exercises volume-triggered collection with heap verification.
+
+xs: range(0, 5000) map(_ * 3)
+
+loop(i, a): if(a < 0, a, if(i = 0, a, loop(i - 1, a + 1)))
+
+# `xs count` is forced before the loop runs; `xs` stays live through it.
+r: loop(200000, xs count)
+
+t1: r = 205000
+t2: (xs sum) = 37492500
+t3: (xs last) = 14997
+
+RESULT: if([t1, t2, t3] all-true?, :PASS, :FAIL)

@@ -88,6 +88,7 @@ fn write_failure(machine: &dyn IntrinsicMachine, error: RenderError) -> Executio
 fn set_primitive_to_render_primitive(
     prim: &SetPrimitive,
     machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
 ) -> Primitive {
     match prim {
         SetPrimitive::Num(n) => {
@@ -95,7 +96,7 @@ fn set_primitive_to_render_primitive(
                 .unwrap_or_else(|| serde_json::Number::from(0));
             Primitive::Num(num)
         }
-        SetPrimitive::Str(s) => Primitive::Str(s.clone()),
+        SetPrimitive::Str(s) => Primitive::Str(view.scoped(*s).as_str().to_string()),
         SetPrimitive::Sym(id) => Primitive::Sym(machine.symbol_pool().resolve(*id).to_string()),
     }
 }
@@ -114,8 +115,8 @@ fn emit_set(
         emitter,
         Event::OutputSequenceStart(metadata.clone()),
     )?;
-    for elem in set.sorted_elements() {
-        let prim = set_primitive_to_render_primitive(elem, machine);
+    for elem in set.elements() {
+        let prim = set_primitive_to_render_primitive(elem, machine, view);
         emit_scalar(machine, emitter, &RenderMetadata::empty(), &prim)?;
     }
     emit_event(machine, emitter, Event::OutputSequenceEnd)
@@ -130,13 +131,13 @@ fn emit_set(
 fn emit_ndarray_data(
     machine: &dyn IntrinsicMachine,
     emitter: &mut dyn Emitter,
-    arr: &HeapNdArray,
+    arr: ndarray::ArrayViewD<'_, f64>,
     metadata: &RenderMetadata,
 ) -> Result<(), ExecutionError> {
-    let rank = arr.rank();
+    let rank = arr.ndim();
     if rank == 0 {
         // A scalar array: emit the single element value
-        let val = arr.get(&[]).unwrap_or(0.0);
+        let val = arr.get(ndarray::IxDyn(&[])).copied().unwrap_or(0.0);
         let num = serde_json::Number::from_f64(val).unwrap_or_else(|| serde_json::Number::from(0));
         emit_scalar(machine, emitter, metadata, &Primitive::Num(num))?;
     } else if rank == 1 {
@@ -147,7 +148,7 @@ fn emit_ndarray_data(
         )?;
         let len = arr.shape()[0];
         for i in 0..len {
-            let val = arr.get(&[i]).unwrap_or(0.0);
+            let val = arr.get(ndarray::IxDyn(&[i])).copied().unwrap_or(0.0);
             let num =
                 serde_json::Number::from_f64(val).unwrap_or_else(|| serde_json::Number::from(0));
             emit_scalar(
@@ -166,9 +167,8 @@ fn emit_ndarray_data(
         )?;
         let rows = arr.shape()[0];
         for i in 0..rows {
-            if let Some(sub) = arr.slice_along(0, i) {
-                emit_ndarray_data(machine, emitter, &sub, &RenderMetadata::empty())?;
-            }
+            let sub = arr.index_axis(ndarray::Axis(0), i);
+            emit_ndarray_data(machine, emitter, sub, &RenderMetadata::empty())?;
         }
         emit_event(machine, emitter, Event::OutputSequenceEnd)?;
     }
@@ -184,7 +184,7 @@ fn emit_ndarray(
     metadata: &RenderMetadata,
 ) -> Result<(), ExecutionError> {
     let arr: crate::eval::memory::alloc::ScopedPtr<'_, HeapNdArray> = view.scoped(arr_ref);
-    emit_ndarray_data(machine, emitter, &arr, metadata)
+    emit_ndarray_data(machine, emitter, arr.view(), metadata)
 }
 
 /// Emit a vec as a sequence of scalars in element order.
@@ -202,7 +202,7 @@ fn emit_vec(
         Event::OutputSequenceStart(metadata.clone()),
     )?;
     for elem in vec.elements() {
-        let prim = set_primitive_to_render_primitive(elem, machine);
+        let prim = set_primitive_to_render_primitive(elem, machine, view);
         emit_scalar(machine, emitter, &RenderMetadata::empty(), &prim)?;
     }
     emit_event(machine, emitter, Event::OutputSequenceEnd)
@@ -358,9 +358,7 @@ impl StgIntrinsic for EmitNative {
                     &Primitive::ZonedDateTime(dt),
                 )?;
             }
-            memory::syntax::Native::Index(_)
-            | memory::syntax::Native::Prng(_)
-            | memory::syntax::Native::Producer(_) => {
+            memory::syntax::Native::Prng(_) | memory::syntax::Native::Producer(_) => {
                 return Err(ExecutionError::NotScalar(machine.annotation()));
             }
         }
@@ -423,9 +421,7 @@ impl StgIntrinsic for EmitTagNative {
                     &Primitive::ZonedDateTime(dt),
                 )?;
             }
-            memory::syntax::Native::Index(_)
-            | memory::syntax::Native::Prng(_)
-            | memory::syntax::Native::Producer(_) => {
+            memory::syntax::Native::Prng(_) | memory::syntax::Native::Producer(_) => {
                 return Err(ExecutionError::NotScalar(machine.annotation()));
             }
         }

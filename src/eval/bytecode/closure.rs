@@ -135,14 +135,17 @@ fn scan_native<'a>(
             // Push so HeapString::scan marks the backing bytes.
             out.push(ScanPtr::from_non_null(scope, *ptr));
         }
-        Native::Set(ptr) => {
-            marker.mark(*ptr);
+        Native::Set(ptr) if marker.mark(*ptr) => {
+            // Push so the container scans (and evacuates) its heap storage.
+            out.push(ScanPtr::from_non_null(scope, *ptr));
         }
-        Native::NdArray(ptr) => {
-            marker.mark(*ptr);
+        Native::NdArray(ptr) if marker.mark(*ptr) => {
+            // Push so the container scans (and evacuates) its heap storage.
+            out.push(ScanPtr::from_non_null(scope, *ptr));
         }
-        Native::Vec(ptr) => {
-            marker.mark(*ptr);
+        Native::Vec(ptr) if marker.mark(*ptr) => {
+            // Push so the container scans (and evacuates) its heap storage.
+            out.push(ScanPtr::from_non_null(scope, *ptr));
         }
         _ => {}
     }
