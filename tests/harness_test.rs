@@ -3326,6 +3326,18 @@ pub fn test_240_oaz72_41_lambda_capture_sharing() {
     run_test(&opts(file));
 }
 
+/// eu-oaz72.27 — demand analysis proves a self-recursive accumulator
+/// strict: a let group's lambda signatures are a fixpoint over their own
+/// calls and an `if` whose branches both force a variable forces it. The
+/// `loops` target's `constant-stack` validator FAILs on master, where loop A
+/// (`if(n = 0, a, loop(a + 1, n - 1))`) grew the stack two frames per step.
+/// The `test-laziness` target checks that accumulators not needed on every path,
+/// values captured by a returned closure and `foldl`'s accumulator stay lazy.
+#[test]
+pub fn test_241_oaz72_27_strict_accumulators() {
+    run_test(&opts("241_oaz72_27_strict_accumulators.eu"));
+}
+
 #[test]
 /// eu-8a49h — a shipped library imported by filename (`Locator::Fs` served
 /// from baked-in resource text) was classified as *user* code, so a frame

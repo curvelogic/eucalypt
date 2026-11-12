@@ -1,0 +1,61 @@
+{
+  title: "241 demand analysis proves self-recursive accumulators strict"
+  doc: "eu-oaz72.27: a let group's lambda signatures are a fixpoint over
+        their own calls, and a variable both branches of an `if` force is
+        strict, so an accumulator passed back to the loop is evaluated on
+        each step instead of building a chain of thunks."
+}
+
+# Loop A: the accumulator is never forced by the condition; it is only
+# returned at the end and passed back with one more `+ 1`.
+loop-a(a, n): if(n = 0, a, loop-a(a + 1, n - 1))
+
+# The same through catenated `then`.
+via-then(a, n): (n = 0) then(a, via-then(a + 1, n - 1))
+
+# Mutual recursion: the group's signatures are found together.
+ping(a, n): if(n = 0, a, pong(a + 1, n - 1))
+pong(a, n): if(n = 0, a, ping(a + 2, n - 1))
+
+# A loop local to a function body (a nested let group).
+local-loop(n): { go(a, i): if(i = n, a, go(a + 1, i + 1)) }.(go(0, 0))
+
+n: 100000
+
+` { target: :loops
+    verify: [:loop-values, :constant-stack] }
+loops: {
+  simple: loop-a(0, n)
+  then-loop: via-then(0, n)
+  mutual: ping(0, n)
+  local: local-loop(n)
+}
+
+` "every loop computes its value"
+loop-values(context): {
+  r: context.result
+  checks: [r.simple = 100000,
+           r.then-loop = 100000,
+           r.mutual = 150000,
+           r.local = 100000]
+}.(checks all-true? then(:PASS, :FAIL))
+
+` "no loop grows the stack with its iteration count"
+constant-stack(context): (context.stats.max-stack < 1000) then(:PASS, :FAIL)
+
+# An accumulator that is not needed on every path stays lazy.
+unused-acc(a, n): if(n = 0, 1, unused-acc(a + panic("accumulator forced"), n - 1))
+one-branch(a, n): if(n = 0, 0, one-branch(a, n - 1) + 0) + if(n > 1000, a, 0)
+
+# A function returning a closure does not force what the closure captures.
+adder(a): { y: • }.(a + y)
+
+` { target: :test-laziness }
+test-laziness: {
+  unused: unused-acc(0, 10) = 1
+  untaken: one-branch(panic("accumulator forced"), 3) = 0
+  closure: (adder(panic("captured value forced")) block?) = false
+  closure-applied: adder(2)(3) = 5
+  lazy-foldl: ([1, 2, 3] foldl({ acc: • x: • }.(x), panic("foldl accumulator forced"))) = 3
+  RESULT: [unused, untaken, closure, closure-applied, lazy-foldl] all-true? then(:PASS, :FAIL)
+}

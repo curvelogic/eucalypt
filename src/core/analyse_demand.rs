@@ -337,7 +337,12 @@ fn constructor_env(env: DemandEnv) -> DemandEnv {
 /// The demand a lambda value places on the variables its body captures.
 ///
 /// The lambda may be applied any number of times, so a used variable is
-/// demanded Multi (eu-oaz72.41). Strictness is left unchanged.
+/// demanded Multi (eu-oaz72.41). And building the closure does not run its
+/// body, which may never be applied, so every demand is lazy: carrying the
+/// body's strictness out unscaled made `k(a): { y: • }.(a + y)` strict in
+/// `a`, and `k(panic("x")) block?` forced the panic (eu-oaz72.27). The
+/// demands of a call are accounted for where the lambda is applied, through
+/// its signature.
 fn shared_env(env: DemandEnv) -> DemandEnv {
     env.into_iter()
         .map(|(k, d)| {
@@ -345,10 +350,36 @@ fn shared_env(env: DemandEnv) -> DemandEnv {
                 Cardinality::AtMostOnce => Cardinality::Multi,
                 c => c,
             };
-            (k, Demand { cardinality, ..d })
+            (
+                k,
+                Demand {
+                    strictness: Strictness::Lazy,
+                    cardinality,
+                    ..d
+                },
+            )
         })
         .collect()
 }
+
+/// Signatures known for the binders of one de Bruijn scope.
+///
+/// The analyser keeps one frame per `Let` or `Lam` scope it is inside, so a
+/// `Var::Bound` resolves to its frame by its scope index. A `Let` frame
+/// holds the current signature of each binding whose RHS is a lambda; a
+/// `Lam` frame holds none (parameters are not known functions).
+struct SigFrame {
+    sigs: Vec<Option<DemandSignature>>,
+    /// Set when a call was analysed with one of this frame's signatures, so
+    /// the result depends on them.
+    consulted: bool,
+}
+
+/// Iterations of a `Let` group's signature fixpoint before falling back to
+/// pessimistic signatures for its lambda bindings. Each iteration can only
+/// weaken some parameter's demand (strict to lazy, once to multi), so a
+/// group converges in a few; the cap bounds pathological cases.
+const MAX_SIGNATURE_ITERATIONS: usize = 8;
 
 /// Merge two demand environments, combining demands for the same
 /// variable using `plus` (sequential composition).
@@ -374,6 +405,12 @@ pub struct DemandAnalyser {
     /// document RENDER_DOC renders, so its fields are all forced and keep
     /// strict demand; every other block's fields are lazy.
     root_block: Option<usize>,
+    /// One frame per enclosing `Let`/`Lam` scope, innermost last.
+    frames: Vec<SigFrame>,
+    /// Keys inserted into `signatures`, in order, so that the entries
+    /// recorded by a discarded fixpoint iteration can be removed: their
+    /// expressions are dropped and the pointers may be reused.
+    sig_log: Vec<SigKey>,
 }
 
 impl Default for DemandAnalyser {
@@ -389,6 +426,8 @@ impl DemandAnalyser {
             signatures: HashMap::new(),
             named_signatures: HashMap::new(),
             root_block: None,
+            frames: Vec::new(),
+            sig_log: Vec::new(),
         }
     }
 
@@ -522,7 +561,8 @@ impl DemandAnalyser {
     /// source may be evaluated many times through mutual or self-recursion.
     ///
     /// The algorithm:
-    /// 1. Analyse body and all RHSs once (their structure is fixed).
+    /// 1. Analyse all RHSs, iterating until the signatures of the scope's
+    ///    lambda bindings are stable (`analyse_let_rhss`), then the body.
     /// 2. Build an intra-scope dependency graph: edge i→j means binding i's
     ///    RHS references binding j at scope 0.
     /// 3. Find recursive bindings: those that can reach themselves through
@@ -541,17 +581,12 @@ impl DemandAnalyser {
     ) -> (RcExpr, DemandEnv) {
         let n = scope.pattern.len();
 
-        // Step 1: Analyse the body (fixed — doesn't depend on binding demands).
+        // Steps 1–2: analyse the RHSs, then the body, with the signatures
+        // of the scope's lambda bindings in a frame so that calls to them
+        // use their demands.
+        let (new_rhs_exprs, rhs_envs) = self.analyse_let_rhss(scope);
         let (new_body, body_env) = self.analyse_expr(&scope.body);
-
-        // Step 2: Analyse each RHS (fixed).
-        let mut new_rhs_exprs = Vec::with_capacity(n);
-        let mut rhs_envs: Vec<DemandEnv> = Vec::with_capacity(n);
-        for binding in &scope.pattern {
-            let (new_rhs, rhs_env) = self.analyse_expr(&binding.expr);
-            new_rhs_exprs.push(new_rhs);
-            rhs_envs.push(rhs_env);
-        }
+        self.frames.pop();
 
         // Step 3: Build the intra-scope dependency graph.
         // deps[i] = set of binding indices that binding i's RHS references (at scope 0).
@@ -786,6 +821,100 @@ impl DemandAnalyser {
         (RcExpr::from(Expr::Let(s, new_scope, let_type)), outer_env)
     }
 
+    /// Analyse the RHSs of a `Let`, pushing the scope's signature frame
+    /// (left on the stack for the body; the caller pops it).
+    ///
+    /// A lambda binding's signature depends on the signatures of the calls
+    /// in its body, its own recursive calls included, so the group's
+    /// signatures are computed as a fixpoint. They start optimistic — every
+    /// parameter strict and used once — and each round re-analyses the
+    /// RHSs with the signatures the previous round produced, until they
+    /// stop changing. The result is a fixpoint of the analysis, so it
+    /// accounts for every path through the recursion: `loop(a, n): if(n =
+    /// 0, a, loop(a + 1, n - 1))` is strict in `a` (each path forces it),
+    /// so the recursive call evaluates `a + 1` eagerly instead of building
+    /// a chain of thunks (eu-oaz72.27); `foldl` passes its accumulator to
+    /// an unknown `op` and stays lazy in it.
+    ///
+    /// A round that consulted none of the group's signatures cannot depend
+    /// on them and ends the iteration. After `MAX_SIGNATURE_ITERATIONS`
+    /// rounds the signatures are reset to pessimistic (`lazy_multi`) and
+    /// one final round is analysed with them: every demand it reports is
+    /// then justified by the RHS itself, so it is sound without being a
+    /// fixpoint.
+    fn analyse_let_rhss(&mut self, scope: &LetScope<RcExpr>) -> (Vec<RcExpr>, Vec<DemandEnv>) {
+        let arities: Vec<Option<usize>> = scope
+            .pattern
+            .iter()
+            .map(|b| match &*peel_meta(&b.expr).inner {
+                Expr::Lam(_, _, lam) => Some(lam.pattern.len()),
+                _ => None,
+            })
+            .collect();
+        let initial = arities
+            .iter()
+            .map(|a| a.map(|k| vec![Demand::strict_once(); k]))
+            .collect();
+        self.frames.push(SigFrame {
+            sigs: initial,
+            consulted: false,
+        });
+        let frame = self.frames.len() - 1;
+
+        let mut rounds = 0;
+        loop {
+            let mark = self.sig_log.len();
+            self.frames[frame].consulted = false;
+
+            let mut new_rhs_exprs = Vec::with_capacity(arities.len());
+            let mut rhs_envs = Vec::with_capacity(arities.len());
+            for binding in &scope.pattern {
+                let (new_rhs, rhs_env) = self.analyse_expr(&binding.expr);
+                new_rhs_exprs.push(new_rhs);
+                rhs_envs.push(rhs_env);
+            }
+
+            let derived: Vec<Option<DemandSignature>> = new_rhs_exprs
+                .iter()
+                .zip(&arities)
+                .map(|(rhs, arity)| {
+                    (*arity)?;
+                    match &*peel_meta(rhs).inner {
+                        Expr::Lam(_, _, lam) => self
+                            .signatures
+                            .get(&(Rc::as_ptr(&lam.body.inner) as usize))
+                            .cloned(),
+                        _ => None,
+                    }
+                })
+                .collect();
+
+            let settled = !self.frames[frame].consulted
+                || rounds >= MAX_SIGNATURE_ITERATIONS
+                || derived == self.frames[frame].sigs;
+            if settled {
+                // Body calls see the signatures the RHSs actually have.
+                self.frames[frame].sigs = derived;
+                return (new_rhs_exprs, rhs_envs);
+            }
+
+            // Discard this round's pointer-keyed signatures: its
+            // expressions are dropped and their addresses may be reused.
+            for key in self.sig_log.drain(mark..) {
+                self.signatures.remove(&key);
+            }
+            rounds += 1;
+            self.frames[frame].sigs = if rounds == MAX_SIGNATURE_ITERATIONS {
+                arities
+                    .iter()
+                    .map(|a| a.map(|k| vec![Demand::lazy_multi(); k]))
+                    .collect()
+            } else {
+                derived
+            };
+        }
+    }
+
     /// Analyse a `Lam` expression as a value.
     ///
     /// A lambda value can be applied any number of times, and every
@@ -814,8 +943,14 @@ impl DemandAnalyser {
     ) -> (RcExpr, DemandEnv) {
         let num_params = scope.pattern.len();
 
-        // Analyse the body
+        // Analyse the body in a frame of its own: parameters are not known
+        // functions.
+        self.frames.push(SigFrame {
+            sigs: Vec::new(),
+            consulted: false,
+        });
         let (new_body, body_env) = self.analyse_expr(&scope.body);
+        self.frames.pop();
 
         // Extract the demand signature: one Demand per parameter
         let mut sig = Vec::with_capacity(num_params);
@@ -830,6 +965,7 @@ impl DemandAnalyser {
         // Store the signature keyed by the body's Rc pointer
         let sig_key = Rc::as_ptr(&new_body.inner) as usize;
         self.signatures.insert(sig_key, sig);
+        self.sig_log.push(sig_key);
 
         // The outer env is the body env with scope-0 entries removed
         let outer_env = unshift_env(&body_env);
@@ -858,12 +994,18 @@ impl DemandAnalyser {
         let mut env = f_env;
 
         // Try to find the function's signature
-        let sig = self.lookup_signature(f);
+        let sig = self.lookup_signature(f, args.len());
+        let is_if =
+            matches!(&*f.inner, Expr::Intrinsic(_, name) if name == "IF") && args.len() == 3;
+        let mut branch_envs: Vec<DemandEnv> = Vec::new();
 
         // Analyse each argument with the demand from the signature
         let mut new_args = Vec::with_capacity(args.len());
         for (i, arg) in args.iter().enumerate() {
             let (new_arg, arg_env) = self.analyse_expr(arg);
+            if is_if && i > 0 {
+                branch_envs.push(arg_env.clone());
+            }
 
             // The demand the function places on this argument position.
             let arg_demand = sig
@@ -890,12 +1032,46 @@ impl DemandAnalyser {
             new_args.push(new_arg);
         }
 
+        // Exactly one branch of an `IF` is evaluated, so a variable that
+        // both branches force is forced whichever is taken (the lub of the
+        // branches). The signature's lazy branch demands cannot see that.
+        // Cardinality keeps the conservative sum.
+        if let [then_env, else_env] = branch_envs.as_slice() {
+            for (key, d) in then_env {
+                let both = d.strictness == Strictness::Strict
+                    && else_env
+                        .get(key)
+                        .is_some_and(|e| e.strictness == Strictness::Strict);
+                if both {
+                    if let Some(entry) = env.get_mut(key) {
+                        entry.strictness = Strictness::Strict;
+                    }
+                }
+            }
+        }
+
         (RcExpr::from(Expr::App(s, new_f, new_args)), env)
     }
 
-    /// Look up the demand signature for a function expression.
-    fn lookup_signature(&self, f: &RcExpr) -> Option<DemandSignature> {
+    /// Look up the demand signature for a function expression applied to
+    /// `nargs` arguments.
+    fn lookup_signature(&mut self, f: &RcExpr, nargs: usize) -> Option<DemandSignature> {
         match &*f.inner {
+            // A let-bound lambda: its (current) signature from the scope's
+            // frame. Only a saturated call runs the body; a partial
+            // application builds a closure that forces nothing yet.
+            Expr::Var(_, Var::Bound(bv)) => {
+                let index = self.frames.len().checked_sub(1 + bv.scope as usize)?;
+                let frame = &mut self.frames[index];
+                let sig = frame.sigs.get(bv.binder as usize)?.as_ref()?;
+                if nargs < sig.len() {
+                    return None;
+                }
+                let sig = sig.clone();
+                frame.consulted = true;
+                Some(sig)
+            }
+
             // Intrinsic function: use seed signature
             Expr::Intrinsic(_, name) => self.intrinsic_sigs.get(name).cloned(),
 
@@ -905,8 +1081,6 @@ impl DemandAnalyser {
                 self.signatures.get(&key).cloned()
             }
 
-            // Bound variable pointing to a known lambda: we'd need to
-            // trace through the binding. For now, conservative.
             _ => None,
         }
     }
@@ -1521,6 +1695,72 @@ mod tests {
         assert_eq!(if_sig[0], Demand::strict_once());
         assert_eq!(if_sig[1], Demand::lazy_once());
         assert_eq!(if_sig[2], Demand::lazy_once());
+    }
+
+    /// `loop(a, n) = IF(n, a, loop(ADD(a, 1), n))`: `a` is returned on
+    /// one path and passed to the strict accumulator of the recursive call
+    /// on the other, so the signature fixpoint finds it strict
+    /// (eu-oaz72.27).
+    #[test]
+    fn self_recursive_accumulator_is_strict() {
+        let lp = free("loop");
+        let a = free("a");
+        let n = free("n");
+        let body = app(
+            bif("IF"),
+            vec![
+                var(n.clone()),
+                var(a.clone()),
+                app(
+                    var(lp.clone()),
+                    vec![app(bif("ADD"), vec![var(a), num(1)]), var(n)],
+                ),
+            ],
+        );
+        let expr = let_(
+            vec![(lp.clone(), lam(vec!["a".into(), "n".into()], body))],
+            app(var(lp), vec![num(0), num(1)]),
+        );
+        let (_result, _sigs, named) = analyse_demands(&expr);
+        let sig = named.get("loop").expect("loop signature");
+        assert_eq!(sig[0].strictness, Strictness::Strict);
+        assert_eq!(sig[1].strictness, Strictness::Strict);
+    }
+
+    /// A left fold passes its accumulator to an unknown `op`, so the
+    /// optimistic start must not survive the fixpoint: `i` stays lazy.
+    #[test]
+    fn accumulator_passed_to_unknown_function_stays_lazy() {
+        let f = free("f");
+        let op = free("op");
+        let i = free("i");
+        let l = free("l");
+        let body = app(
+            bif("IF"),
+            vec![
+                var(l.clone()),
+                var(i.clone()),
+                app(
+                    var(f.clone()),
+                    vec![
+                        var(op.clone()),
+                        app(var(op), vec![var(i), var(l.clone())]),
+                        var(l),
+                    ],
+                ),
+            ],
+        );
+        let expr = let_(
+            vec![(
+                f.clone(),
+                lam(vec!["op".into(), "i".into(), "l".into()], body),
+            )],
+            var(f),
+        );
+        let (_result, _sigs, named) = analyse_demands(&expr);
+        let sig = named.get("f").expect("f signature");
+        assert_eq!(sig[1].strictness, Strictness::Lazy);
+        assert_eq!(sig[2].strictness, Strictness::Strict);
     }
 
     #[test]
