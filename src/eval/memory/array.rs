@@ -75,6 +75,40 @@ impl<T: Sized> RawArray<T> {
         }
     }
 
+    /// Initialise by copying from a slice, returning an error rather
+    /// than panicking when the heap cannot satisfy the allocation.
+    ///
+    /// Used for user-sized storage (set, vec and n-d array contents),
+    /// where exhausting the heap limit is a reachable condition.
+    pub fn try_with_data<'guard, A: ScopedAllocator<'guard>>(
+        mem: &A,
+        data: &[T],
+    ) -> Result<Self, ExecutionError> {
+        if data.is_empty() {
+            return Ok(RawArray::new());
+        }
+        let capacity_bytes = data.len().checked_mul(size_of::<T>()).ok_or_else(|| {
+            ExecutionError::from(super::heap::HeapError::InvalidAllocationSize {
+                requested_size: usize::MAX,
+                max_size: isize::MAX as usize,
+            })
+        })?;
+        let raw = mem.alloc_bytes_uninit(capacity_bytes)?;
+        let new = RefPtr::new(raw.as_ptr() as *mut T).expect("allocation returned null");
+        // SAFETY: The copy is valid because:
+        // - `data.as_ptr()` points to valid, initialised memory
+        // - `new` points to freshly allocated heap memory of
+        //   `data.len() * size_of::<T>()` bytes
+        // - The regions do not overlap (new is freshly allocated)
+        unsafe {
+            std::ptr::copy_nonoverlapping(data.as_ptr(), new.as_ptr(), data.len());
+        }
+        Ok(RawArray {
+            capacity: data.len(),
+            ptr: Some(new),
+        })
+    }
+
     /// Resize to new capacity, copying data if required
     pub fn resize<'guard, A: ScopedAllocator<'guard>>(&mut self, mem: &A, new_capacity: usize) {
         let new_ptr = Self::alloc(mem, new_capacity);
@@ -182,6 +216,18 @@ impl<T: Sized + Clone> Array<T> {
             length: slice.len(),
             data: RawArray::with_data(mem, slice),
         }
+    }
+
+    /// Construct an Array from a slice, returning an error rather than
+    /// panicking if the heap cannot satisfy the allocation.
+    pub fn try_from_slice<'guard, A: ScopedAllocator<'guard>>(
+        mem: &A,
+        slice: &[T],
+    ) -> Result<Self, ExecutionError> {
+        Ok(Array {
+            length: slice.len(),
+            data: RawArray::try_with_data(mem, slice)?,
+        })
     }
 
     /// Length of the array

@@ -1,0 +1,4 @@
+# eu-oaz72.4: live data that cannot fit a small heap limit. The reversed
+# list is held live (both ends are needed) while it is built.
+xs: range(0, 2000000) reverse
+r: [xs head, xs last]

@@ -125,7 +125,6 @@ impl StgIntrinsic for Str {
             Native::Str(s) => (*view.scoped(s)).as_str().to_string(),
             Native::Num(n) => format!("{n}"),
             Native::Zdt(d) => format!("{d}"),
-            Native::Index(idx) => format!("<index:{}>", idx.len()),
             Native::Set(_) => "<set>".to_string(),
             Native::NdArray(_) => "<array>".to_string(),
             Native::Vec(_) => "<vec>".to_string(),

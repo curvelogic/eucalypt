@@ -640,9 +640,9 @@ fn peel_meta(expr: &RcExpr) -> &RcExpr {
 ///
 /// The aliases are bound in a `Let` around the body, which `inline_pass`
 /// distributes to call sites; `fuse` then folds the static destructures this
-/// exposes, as source mode's `fuse_destructure` does. The `Let` is opened
-/// again afterwards, so an alias left in a value position goes back to
-/// `Var::Free` and compiles to its global slot, as before.
+/// exposes, as source mode's `fuse_destructure` does. The `Let` is then
+/// opened again so the body no longer refers to it; an alias in a value
+/// position has by then been replaced by the bare intrinsic.
 fn inline_intrinsic_aliases(
     name: &str,
     body: &RcExpr,
