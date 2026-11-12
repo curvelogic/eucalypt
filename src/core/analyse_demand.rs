@@ -1123,10 +1123,27 @@ mod tests {
     }
 
     #[test]
+    fn list_elements_are_lazy() {
+        //   let c = 2 in [c]
+        // A list constructor does not evaluate its elements, so `c` must
+        // be Lazy (eu-oaz72.40).
+        let c = free("c");
+        let expr = let_(vec![(c.clone(), num(2))], list(vec![var(c)]));
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => {
+                assert_eq!(scope.pattern[0].demand.strictness, Strictness::Lazy);
+            }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
     fn rendered_block_body_fields_stay_strict() {
         //   let b = 1 in { b: b }
-        // A Block that is a Let body is a rendered scope: RENDER_DOC forces
-        // every field, so `b` keeps strict demand.
+        // The root unit's block is rendered: RENDER_DOC forces every
+        // field, so `b` keeps strict demand.
         let b = free("b");
         let expr = let_(
             vec![(b.clone(), num(1))],
@@ -1138,6 +1155,32 @@ mod tests {
             Expr::Let(_, scope, _) => {
                 assert_eq!(scope.pattern[0].demand.strictness, Strictness::Strict);
             }
+            other => panic!("expected Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn nested_block_body_fields_are_lazy() {
+        //   let x = (let b = 1 in { b: b }) in { x: x }
+        // A block literal is a Let whose body is a Block, so a Block body
+        // alone is not evidence of rendering: only the root unit's block
+        // keeps strict fields. The inner `b` must be Lazy.
+        let b = free("b");
+        let x = free("x");
+        let inner = let_(
+            vec![(b.clone(), num(1))],
+            block([("b".to_string(), var(b))]),
+        );
+        let expr = let_(vec![(x.clone(), inner)], block([("x".to_string(), var(x))]));
+        let (result, _sigs, _named_sigs) = analyse_demands(&expr);
+
+        match &*result.inner {
+            Expr::Let(_, scope, _) => match &*scope.pattern[0].expr.inner {
+                Expr::Let(_, inner_scope, _) => {
+                    assert_eq!(inner_scope.pattern[0].demand.strictness, Strictness::Lazy);
+                }
+                other => panic!("expected inner Let, got: {other:?}"),
+            },
             other => panic!("expected Let, got: {other:?}"),
         }
     }
